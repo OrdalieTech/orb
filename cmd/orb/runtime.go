@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -40,6 +41,7 @@ type runtimeInputs struct {
 	PromptOptions    agent.SystemPromptOptions
 	Clock            func() int64
 	Auth             *config.AuthStorage
+	Accounts         *accounts.Store
 	RuntimeAuth      *runtimeCredentials
 	Diagnostics      []modes.StartupDiagnostic
 	// ResourceDiagnostics carries skill/prompt resource warnings, shown in
@@ -127,6 +129,16 @@ func (credentials *runtimeCredentials) List(ctx context.Context) ([]aiauth.Crede
 		}
 	}
 	return result, nil
+}
+
+func (credentials *runtimeCredentials) ForProvider(ctx context.Context, provider string) (aiauth.CredentialStore, error) {
+	credentials.mu.RLock()
+	key, override := credentials.overrides[provider]
+	credentials.mu.RUnlock()
+	if override {
+		return aiauth.NewMemoryStore(map[string]*aiauth.Credential{provider: aiauth.APIKeyCredential(key)}), nil
+	}
+	return aiauth.BindCredentialStore(ctx, credentials.store, provider)
 }
 
 func (credentials *runtimeCredentials) Modify(
@@ -287,7 +299,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		extensionRegistry = extensions.NewRegistry(cwd)
 	}
 
-	registry, err := config.NewModelRegistry(agentDir)
+	accountStore := accounts.NewStore(filepath.Join(agentDir, "accounts.json"), authStorage)
+	runtimeAuth := newRuntimeCredentials(accountStore)
+	registry, err := config.NewModelRegistryWithCredentials(agentDir, runtimeAuth)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -368,7 +382,6 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		provider := model.Provider
 		cliAPIKeyProvider = &provider
 	}
-	runtimeAuth := newRuntimeCredentials(authStorage)
 	if cliAPIKeyProvider != nil {
 		runtimeAuth.SetRuntimeAPIKey(string(*cliAPIKeyProvider), *args.APIKey)
 	}
@@ -434,6 +447,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			return createBuiltInTools(cwd, baseToolNames, settings, rebuildSandboxMode)
 		},
 		Auth:                authStorage,
+		Accounts:            accountStore,
 		RuntimeAuth:         runtimeAuth,
 		Diagnostics:         diagnostics,
 		ResourceDiagnostics: resourceDiagnostics,

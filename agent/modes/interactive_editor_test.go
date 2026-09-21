@@ -221,14 +221,14 @@ func TestDirectShortcutsPreserveEnterAndDraft(t *testing.T) {
 	if rename != 1 || resume != 0 || editor.GetText() != "keep this draft" {
 		t.Fatalf("rename=%d resume=%d draft=%q", rename, resume, editor.GetText())
 	}
-	for _, key := range []string{"\x1b[109;5u", "\x0c"} {
+	for _, key := range []string{"\x1b[109;5u"} {
 		editor.HandleInput(tui.KeyEvent{Raw: key})
 	}
-	if models != 2 || submits != 0 {
+	if models != 1 || submits != 0 {
 		t.Fatalf("model shortcuts: models=%d submits=%d", models, submits)
 	}
 	editor.HandleInput(tui.KeyEvent{Raw: "\r"})
-	if submits != 1 || models != 2 {
+	if submits != 1 || models != 1 {
 		t.Fatalf("Enter was intercepted: models=%d submits=%d", models, submits)
 	}
 }

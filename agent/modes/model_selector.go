@@ -78,7 +78,7 @@ func NewModelSelectorComponent(
 		))
 	} else {
 		component.container.AddChild(tui.NewTruncatedText(
-			theme.FG("muted", KeyText("app.commandPalette")+" → Connect provider"),
+			theme.FG("muted", KeyText("app.commandPalette")+" → Providers"),
 			0, 0,
 		))
 	}
@@ -281,7 +281,7 @@ type modelSelectorRow struct {
 func (row modelSelectorRow) Render(width int) []string {
 	prefix := "  "
 	if row.selected {
-		prefix = theme.FG("accent", "› ")
+		prefix = theme.FG("text", "› ")
 	}
 	mark := ""
 	if row.current {
@@ -295,7 +295,7 @@ func (row modelSelectorRow) Render(width int) []string {
 	line := prefix + theme.FG("text", tui.TruncateToWidth(row.model.ID, available, "…", true)) + mark + provider
 	line = tui.TruncateToWidth(line, width, "…", true)
 	if row.selected {
-		line = tui.ApplyBackgroundToLine(line, width, func(text string) string { return theme.BG("selectedBg", text) })
+		line = tui.ApplyBackgroundToLine(line, width, func(text string) string { return menuSelectedBackground(text) })
 	}
 	return []string{line}
 }

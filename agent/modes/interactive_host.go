@@ -3,11 +3,13 @@ package modes
 import (
 	"context"
 
+	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/usage"
 )
 
 // InteractiveSessionHost owns the live SessionRuntime behind the interactive
@@ -57,6 +59,17 @@ type InteractiveSessionHost interface {
 	Dispose()
 }
 
+// InteractiveProviderHost is optional so existing embedders retain their host contract.
+type InteractiveProviderHost interface {
+	ProviderAccounts(context.Context) ([]accounts.Account, error)
+	ChangeAccount(context.Context, string, string, string, string) error
+	LoginAccount(context.Context, string, aiauth.AuthType, string, string, aiauth.AuthInteraction) error
+	AccountUsage(context.Context, string, string) (usage.Snapshot, error)
+	CachedAccountUsage(string, string) (usage.Snapshot, bool)
+	UsageEnabled() bool
+	SetUsageEnabled(bool) error
+}
+
 type InteractiveForkResult struct {
 	Cancelled    bool
 	SelectedText string
@@ -78,6 +91,9 @@ type InteractiveAuthProvider struct {
 	Configured     bool
 	Status         *InteractiveAuthStatus
 	LoginAvailable bool
+	AccountID      string
+	AccountName    string
+	AccountLogin   bool
 }
 
 type InteractiveAuthStatus struct {

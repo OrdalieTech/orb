@@ -29,6 +29,7 @@ type ModelRegistry struct {
 	all           []ai.Model
 	errors        []string
 	authProviders map[string]*aiauth.Credential
+	credentials   aiauth.CredentialStore
 
 	providerConfigs     map[string]extensions.ProviderConfig
 	nativeProviders     map[string]extensions.Provider
@@ -45,12 +46,19 @@ func NewModelRegistry(agentDir string) (*ModelRegistry, error) {
 	return newModelRegistry(agentDir, !offline)
 }
 
+// NewModelRegistryWithCredentials uses an instance-owned credential source for
+// both model availability and refresh, without changing the disk format.
+func NewModelRegistryWithCredentials(agentDir string, credentials aiauth.CredentialStore) (*ModelRegistry, error) {
+	_, offline := os.LookupEnv("PI_OFFLINE")
+	return newModelRegistry(agentDir, !offline, credentials)
+}
+
 // NewOfflineModelRegistry loads the catalog without refreshing provider models.
 func NewOfflineModelRegistry(agentDir string) (*ModelRegistry, error) {
 	return newModelRegistry(agentDir, false)
 }
 
-func newModelRegistry(agentDir string, allowModelNetwork bool) (*ModelRegistry, error) {
+func newModelRegistry(agentDir string, allowModelNetwork bool, sources ...aiauth.CredentialStore) (*ModelRegistry, error) {
 	normalized, err := NormalizePath(agentDir)
 	if err != nil {
 		return nil, err
@@ -60,6 +68,9 @@ func newModelRegistry(agentDir string, allowModelNetwork bool) (*ModelRegistry, 
 		nativeProviders:   make(map[string]extensions.Provider),
 		providerVersions:  make(map[string]uint64),
 		allowModelNetwork: allowModelNetwork,
+	}
+	if len(sources) > 0 {
+		registry.credentials = sources[0]
 	}
 	if err := registry.Reload(); err != nil {
 		return nil, err
@@ -84,7 +95,10 @@ func (registry *ModelRegistry) Reload() error {
 		return err
 	}
 	base := builtin.MergedModels(stored)
-	authProviders := cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json")))
+	authProviders, err := registry.readCredentials()
+	if err != nil {
+		return err
+	}
 	return registry.refreshSnapshot(base, config, authProviders)
 }
 
@@ -98,8 +112,33 @@ func (registry *ModelRegistry) RefreshAuth() error {
 	base := append([]ai.Model(nil), registry.base...)
 	config := registry.config
 	registry.mu.RUnlock()
-	authProviders := cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json")))
+	authProviders, err := registry.readCredentials()
+	if err != nil {
+		return err
+	}
 	return registry.refreshSnapshot(base, config, authProviders)
+}
+
+func (registry *ModelRegistry) readCredentials() (map[string]*aiauth.Credential, error) {
+	if registry.credentials == nil {
+		return cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json"))), nil
+	}
+	ctx := context.Background()
+	entries, err := registry.credentials.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*aiauth.Credential, len(entries))
+	for _, entry := range entries {
+		credential, err := registry.credentials.Read(ctx, entry.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		if credential != nil {
+			result[entry.ProviderID] = credential
+		}
+	}
+	return result, nil
 }
 
 func (registry *ModelRegistry) refreshSnapshot(base []ai.Model, config *ModelConfig, authProviders map[string]*aiauth.Credential) error {
@@ -533,9 +572,13 @@ func (registry *ModelRegistry) ResolveProviderAuthWithOverrides(
 	methods := registry.providerAuthLocked(provider)
 	agentDir := registry.agentDir
 	registry.mu.RUnlock()
-	credentials, err := NewAuthStorage(filepath.Join(agentDir, "auth.json"))
-	if err != nil {
-		return nil, err
+	credentials := registry.credentials
+	if credentials == nil {
+		var err error
+		credentials, err = NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+		if err != nil {
+			return nil, err
+		}
 	}
 	return aiauth.ResolveProviderAuth(ctx, provider, methods, credentials, registryAuthContext{env: env}, overrides)
 }
@@ -988,11 +1031,18 @@ type RequestAuth struct {
 func (registry *ModelRegistry) DefaultRequestAuthResolver(credentials aiauth.CredentialStore) func(context.Context, ai.ProviderID) (*RequestAuth, error) {
 	var credentialsErr error
 	if credentials == nil {
+		credentials = registry.credentials
+	}
+	if credentials == nil {
 		credentials, credentialsErr = NewAuthStorage(filepath.Join(registry.agentDir, "auth.json"))
 	}
 	return func(ctx context.Context, providerID ai.ProviderID) (*RequestAuth, error) {
 		if credentialsErr != nil {
 			return nil, credentialsErr
+		}
+		credentials, err := aiauth.BindCredentialStore(ctx, credentials, string(providerID))
+		if err != nil {
+			return nil, err
 		}
 		stored, err := credentials.Read(ctx, string(providerID))
 		if err != nil {

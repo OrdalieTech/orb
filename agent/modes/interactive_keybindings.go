@@ -16,7 +16,7 @@ var AppKeybindingDefinitions = []tui.KeybindingDefinition{
 	{ID: "app.thinking.cycle", DefaultKeys: []tui.KeyID{"shift+tab"}, Description: "Cycle thinking level"},
 	{ID: "app.model.cycleForward", DefaultKeys: nil, Description: "Cycle to next model"},
 	{ID: "app.model.cycleBackward", DefaultKeys: nil, Description: "Cycle to previous model"},
-	{ID: "app.model.select", DefaultKeys: []tui.KeyID{"ctrl+m", "ctrl+l"}, Description: "Open model selector"},
+	{ID: "app.model.select", DefaultKeys: []tui.KeyID{"ctrl+m"}, Description: "Open model selector"},
 	{ID: "app.tools.expand", DefaultKeys: []tui.KeyID{"ctrl+o"}, Description: "Toggle tool output"},
 	{ID: "app.thinking.toggle", DefaultKeys: []tui.KeyID{"ctrl+t"}, Description: "Toggle thinking blocks"},
 	{ID: "app.session.toggleNamedFilter", DefaultKeys: []tui.KeyID{"ctrl+n"}, Description: "Toggle named session filter"},

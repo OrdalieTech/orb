@@ -1961,3 +1961,39 @@ func BenchmarkCommandPaletteRender(b *testing.B) {
 		})
 	}
 }
+
+type clickableFooterData struct {
+	fakeFooterDataProvider
+	clicked int
+}
+
+func (data *clickableFooterData) StatusAction(key string) func() {
+	if key == "quota" {
+		return func() { data.clicked++ }
+	}
+	return nil
+}
+func TestFooterStatusClickTracksResizeAndIgnoresOtherCells(t *testing.T) {
+	initTestTheme(t)
+	data := &clickableFooterData{fakeFooterDataProvider: fakeFooterDataProvider{cwd: "/workspace", statuses: map[string]string{"quota": "Codex 5h 82% · 7d 46% left"}}}
+	footer := NewFooterComponent(layoutFooterSession{}, data, false)
+	for _, width := range []int{120, 48, 80} {
+		line := tui.StripANSI(footer.Render(width)[0])
+		column := strings.Index(line, "Codex")
+		if column < 0 {
+			t.Fatalf("status disappeared at width %d: %q", width, line)
+		}
+		before := data.clicked
+		if !footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: column + 1}) || data.clicked != before+1 {
+			t.Fatal("status click did not activate")
+		}
+		if footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: width - 2}) {
+			t.Fatal("model label activated account switcher")
+		}
+	}
+	data.statuses = nil
+	footer.Render(80)
+	if footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: 1}) {
+		t.Fatal("removed status kept a click target")
+	}
+}
