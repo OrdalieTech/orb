@@ -36,6 +36,8 @@ type Row struct {
 // Options are the explicit inputs of one assembly; nothing is read from the
 // environment.
 type Options struct {
+	// BridgeManagement exposes the host-supplied settings page before service activation.
+	BridgeManagement bool
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
 	CWD              string
@@ -71,6 +73,8 @@ func Rows(options Options) ([]Row, []string) {
 		rows = append(rows, Row{
 			ID: name, Description: plugins.Description(name),
 			Source: SourcePlugin, Factory: catalog[name],
+			Hidden:         name == "bridge" || name == "bridge-agent-calls",
+			DefaultEnabled: name == "bridge" && options.BridgeManagement && options.Bridge != nil,
 		})
 	}
 	var warnings []string
@@ -100,7 +104,7 @@ type Resolved struct {
 
 // Resolve applies the settings gates: DefaultEnabled, then the goExtensions
 // override, then — for plugin rows — the plugins gates (plugin-control is
-// always on; every actual plugin is off unless settings.plugins says on).
+// always on, as is host-supplied Bridge management; capability execution stays opt-in).
 // disableAll (--no-extensions) turns everything off.
 func Resolve(rows []Row, settings *config.SettingsManager, disableAll bool) []Resolved {
 	goOverrides := settings.GetGoExtensions()
@@ -112,7 +116,7 @@ func Resolve(rows []Row, settings *config.SettingsManager, disableAll bool) []Re
 			entry.Enabled, entry.DecidedBy = override, "goExtensions"
 		}
 		if row.Source == SourcePlugin {
-			if row.ID == "plugin-control" {
+			if row.ID == "plugin-control" || (row.ID == "bridge" && row.DefaultEnabled) {
 				entry.Enabled, entry.DecidedBy = true, "always"
 			} else if gate, exists := pluginGates[row.ID]; exists {
 				entry.Enabled, entry.DecidedBy = gate, "plugins"

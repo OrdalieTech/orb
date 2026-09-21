@@ -2085,9 +2085,18 @@ func (mode *InteractiveMode) settingItems() []tui.SettingItem {
 		}
 		return "false"
 	}
-	items := []tui.SettingItem{
-		{ID: "autocompact", Label: "Auto-compact", Description: "Automatically compact context when it gets too large", CurrentValue: boolText(mode.session.AutoCompactionEnabled()), Values: []string{"true", "false"}},
+	items := []tui.SettingItem{}
+	if runner := mode.session.ExtensionRunner(); runner != nil {
+		for _, page := range []struct{ name, label, description string }{
+			{"bridge", "Bridge", "Connect devices, share conversations, and manage access"},
+			{"plugins", "Plugins", "Configure bundled plugins and external CLIs"},
+		} {
+			if runner.Command(page.name) != nil {
+				items = append(items, tui.SettingItem{ID: page.name, Label: page.label, Description: page.description, CurrentValue: "Open", Values: []string{"Open"}})
+			}
+		}
 	}
+	items = append(items, tui.SettingItem{ID: "autocompact", Label: "Auto-compact", Description: "Automatically compact context when it gets too large", CurrentValue: boolText(mode.session.AutoCompactionEnabled()), Values: []string{"true", "false"}})
 	if tui.GetCapabilities().Images != "" {
 		items = append(items,
 			tui.SettingItem{ID: "show-images", Label: "Show images", Description: "Render images inline in terminal", CurrentValue: boolText(settings.ShowImages), Values: []string{"true", "false"}},
@@ -2140,6 +2149,11 @@ func (mode *InteractiveMode) showSettingsSelector() {
 		mode.ui.RequestRender()
 	}
 	list := tui.NewSettingsList(items, 10, settingsListTheme(), func(id, value string) {
+		if id == "bridge" || id == "plugins" {
+			closeSelector()
+			mode.runPaletteCommand(id)
+			return
+		}
 		mode.applySetting(id, value)
 	}, closeSelector, tui.SettingsListOptions{EnableSearch: true, FixedGeometry: true})
 	handle = mode.ui.ShowOverlay(menuFrame("Settings", list), configOverlayOptions())
@@ -4814,7 +4828,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		"fork": "Fork from message", "clone": "Duplicate session", "compact": "Compact context", "session": "Session details",
 		"export": "Export session", "import": "Import session", "login": "Providers",
 		"trust": "Project trust", "reload": "Reload resources", "scoped-models": "Favorite models", "hotkeys": "Keyboard shortcuts",
-		"changelog": "Changelog", "quit": "Quit Orb",
+		"changelog": "Changelog", "quit": "Quit Orb", "plugins": "Plugins", "bridge": "Bridge",
 	}
 	shortcuts := map[string]string{"model": "app.model.select", "name": "app.session.rename", "new": "app.session.new", "copy": "app.message.copy"}
 	rows := make([]tui.GridRow, 0, len(commands))
@@ -4848,7 +4862,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 	}
 	if mode.session != nil {
 		for _, item := range mode.settingItems() {
-			if item.ID == "thinking" && seen["thinking"] {
+			if seen[item.ID] && (item.ID == "thinking" || item.ID == "bridge" || item.ID == "plugins") {
 				continue
 			}
 			rows = append(rows, tui.GridRow{
@@ -4890,6 +4904,12 @@ func (mode *InteractiveMode) showCommandPalette() {
 }
 
 func (mode *InteractiveMode) runPaletteCommand(value string) {
+	if value == "bridge" || value == "plugins" {
+		if runner := mode.session.ExtensionRunner(); runner != nil {
+			go runner.ExecuteCommand(mode.authenticationContext(), value, "")
+		}
+		return
+	}
 	if id, ok := strings.CutPrefix(value, "setting:"); ok {
 		for _, item := range mode.settingItems() {
 			if item.ID != id {

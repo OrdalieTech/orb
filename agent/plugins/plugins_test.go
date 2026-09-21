@@ -1552,3 +1552,12 @@ refreshed:
 	runner.Emit(t.Context(), extensions.SessionShutdownEvent{})
 	wait(stopped)
 }
+
+func TestBridgeUsesDedicatedSettingsInsteadOfPluginToggles(t *testing.T) {
+	settings := must(config.NewSettingsManager(t.TempDir(), config.WithAgentDir(t.TempDir())))
+	for _, row := range pluginGridRows(settings, extensions.NewNoopUI().Theme()) {
+		if row.Value == "bridge" || row.Value == "bridge-agent-calls" {
+			t.Fatalf("duplicate Bridge activation: %s", row.Value)
+		}
+	}
+}

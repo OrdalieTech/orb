@@ -28,7 +28,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 		t.Fatalf("diagnostics = %v", diagnostics)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:pirate>,<inline:status-line>,<inline:plugin-control>" {
+	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:pirate>,<inline:status-line>,<inline:plugin-control>,<inline:bridge>" {
 		t.Fatalf("compiled extension order = %q", got)
 	}
 	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)
@@ -45,12 +45,12 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 		wantPath    string
 		wantWarning string
 	}{
-		{name: "absent", settings: `{}`, wantPath: "<inline:plugin-control>"},
-		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`, wantPath: "<inline:plugin-control>"},
-		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`, wantPath: "<inline:plugin-control>"},
+		{name: "absent", settings: `{}`, wantPath: "<inline:plugin-control>,<inline:bridge>"},
+		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`, wantPath: "<inline:plugin-control>,<inline:bridge>"},
+		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`, wantPath: "<inline:plugin-control>,<inline:bridge>"},
 		{name: "all extensions disabled", settings: `{"mcpServers":[]}`, args: CLIArgs{NoExtensions: true}},
-		{name: "invalid", settings: `{"mcpServers":[]}`, wantPath: "<inline:plugin-control>", wantWarning: "mcpServers"},
-		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"orb-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "<inline:plugin-control>,<inline:mcp>"},
+		{name: "invalid", settings: `{"mcpServers":[]}`, wantPath: "<inline:plugin-control>,<inline:bridge>", wantWarning: "mcpServers"},
+		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"orb-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "<inline:plugin-control>,<inline:bridge>,<inline:mcp>"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

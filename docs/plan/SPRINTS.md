@@ -137,7 +137,8 @@ Verification and release measurements are recorded in PROGRESS (2026-09-21).
 4. Add strict framed RPC, TLS identity pinning, recoverable pairing, grants, and revocation.
 5. Map safe commands with durable receipts, crash recovery, atomic snapshots, and bounded replay.
 6. Add signed scoped reconciliation and separately opt-in agent calls with both grants required.
-7. Assemble `orb bridge`, default-off plugin/TUI management, and the remote conversation view.
+7. Assemble `orb bridge`, built-in Settings/Ctrl+P management with explicit service activation,
+   and the remote conversation view. Agent calls are an option inside Bridge, not a second UI plugin.
 
 Each slice starts with failing tests and commits only after `make check`. Closure requires
 20-instance restart/grant tests; local/remote races; persistence fault injection and quotas;

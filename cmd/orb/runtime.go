@@ -473,7 +473,7 @@ func hasNonControlExtensions(registry *extensions.Registry) bool {
 		return false
 	}
 	for _, extension := range registry.Extensions() {
-		if extension.Path != "<inline:plugin-control>" {
+		if extension.Path != "<inline:plugin-control>" && extension.Path != "<inline:bridge>" {
 			return true
 		}
 	}

@@ -47,7 +47,9 @@ Nine paradigms. Everything else in this record is operational memory.
   widened ad hoc: if the extension API cannot express a capability, the API is extended by recorded
   decision. Seams are cut when a second implementation is real, never speculatively.
 - **P4 — Minimal by default.** New capabilities default off. Stock `orb` stays lean; power is
-  opt-in per user (settings, `/plugins`) or per assembly (embedder wiring).
+  opt-in per user (settings, `/plugins`) or per assembly (embedder wiring). Configuration pages
+  may be available before activation: the owner requested built-in Bridge management in Settings
+  and Ctrl+P (2026-09-21), with service activation and agent-call opt-in inside that page.
 - **P5 — Pi compatibility is a kernel, not an identity** *(recasts D2, D4, D5, D6, D13)*. Orb
   maintains byte-compatibility on the kernel surfaces listed below, verified by conformance
   fixtures; inside the kernel, upstream quirks are spec. Outside it, Orb evolves freely and
