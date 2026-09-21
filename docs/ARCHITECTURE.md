@@ -276,7 +276,8 @@ extension commands. Ctrl+M selects models when the terminal disambiguates it fro
 palette also exposes model selection on legacy terminals. Ctrl+N starts a session and Ctrl+R renames it. Existing explicit
 keybindings win over these new defaults. Native composer slash suggestions appear above the input with commands, skills, and templates;
 extension editors keep the complete pi completion surface. Selecting a resource
-inserts its canonical invocation into the draft for arguments and explicit submission. Floating
+inserts its canonical invocation into the draft for arguments and explicit submission. Plugins
+and Bridge are page destinations: selecting them opens their UI immediately and preserves the draft. Floating
 modals dim the background; non-capturing extension overlays keep their opt-in backdrop. The native
 composer reserves Shift+Enter for newlines, including ambiguous legacy Escape+Return input;
 explicit protocol Alt+Enter continues to queue follow-ups.
@@ -324,8 +325,10 @@ is native Go; executing package-provided JavaScript requires the D31 Node/Bun ru
 
 The owner-approved native delivery is one `orb` executable: `orb bridge` administers an
 explicit profile, while `orb --bridge <profile> --instance <alias>` attaches a runtime.
-Bridge is default-off in the plugin controls, `/bridge`, and the command palette. Its focused
-remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
+Bridge management is built into Settings, Ctrl+P, and `/bridge`; opening it starts no service.
+Its dedicated page owns the service switch, devices and pending approvals, sharing, agent-call
+opt-in, and advanced discovery controls. Bridge has no duplicate toggles in the Plugins page.
+Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
 specification governs the protocol; this section supersedes its two-executable packaging.
 Restricted launching, mobile UIs, browser transports, and platform hosting adapters are excluded.
 

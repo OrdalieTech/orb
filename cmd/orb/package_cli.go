@@ -120,6 +120,7 @@ func listFullComposition(cwd, agentDir string, settings *config.SettingsManager,
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 		Compiled: compiledExtensions, MCP: true,
+		Bridge: bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)

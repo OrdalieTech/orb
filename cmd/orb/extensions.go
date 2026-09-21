@@ -79,7 +79,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
-		Bridge: bridgeExtension(args, settings),
+		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
 		BridgeAgentCalls: bridgeagent.Extension(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
 			var result json.RawMessage
 			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)

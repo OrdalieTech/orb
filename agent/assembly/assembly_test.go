@@ -169,3 +169,33 @@ func TestConcurrentAssembliesAreIndependent(t *testing.T) {
 	go run(settingsOff, rootOff, agentDirOff, false)
 	wg.Wait()
 }
+
+func TestBridgeManagementIsAvailableWithoutEnablingNetworking(t *testing.T) {
+	settings, root, dir := newTestSettings(t, `{"plugins":{"bridge":false,"bridge-agent-calls":false}}`)
+	rows, _ := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory, BridgeManagement: true})
+	for _, row := range assembly.Resolve(rows, settings, false) {
+		switch row.ID {
+		case "bridge":
+			if !row.Enabled || !row.Hidden {
+				t.Fatalf("Bridge management must be built in: %+v", row)
+			}
+		case "bridge-agent-calls":
+			if row.Enabled || !row.Hidden {
+				t.Fatalf("Agent calls must remain optional inside Bridge: %+v", row)
+			}
+		}
+	}
+	if settings.GetPlugins()["bridge"] {
+		t.Fatal("opening management enabled networking")
+	}
+}
+
+func TestBridgeFactoryRemainsOptInForExistingAssemblies(t *testing.T) {
+	settings, root, dir := newTestSettings(t, "")
+	rows, _ := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory})
+	for _, row := range assembly.Resolve(rows, settings, false) {
+		if row.ID == "bridge" && row.Enabled {
+			t.Fatal("host factory enabled without explicit management opt-in")
+		}
+	}
+}

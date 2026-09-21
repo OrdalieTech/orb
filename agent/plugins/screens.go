@@ -60,6 +60,9 @@ func pluginGridRows(settings *config.SettingsManager, th extensions.Theme) []tui
 	enabled := settings.GetPlugins()
 	rows := make([]tui.GridRow, 0, len(names))
 	for _, name := range names {
+		if name == "bridge" || name == "bridge-agent-calls" {
+			continue // Bridge has a dedicated Settings page.
+		}
 		// Disabled plugins recede: the whole row goes dim, not just the pill.
 		nameStyle, descriptionStyle, valueStyle := "text", "muted", "accent"
 		if !enabled[name] {
@@ -437,6 +440,9 @@ func legacyPluginsSelect(ctx context.Context, command extensions.CommandContext,
 		choices := make([]string, 0, len(names)+1)
 		choiceNames := make(map[string]string, len(names))
 		for _, name := range names {
+			if name == "bridge" || name == "bridge-agent-calls" {
+				continue
+			}
 			mark := " "
 			if enabled[name] {
 				mark = "x"

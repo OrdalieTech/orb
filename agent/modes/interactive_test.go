@@ -2196,3 +2196,71 @@ func TestFooterReasoningBarsClickAtNarrowWidths(t *testing.T) {
 		}
 	}
 }
+
+func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
+	initTestTheme(t)
+	mode := newF12AutocompleteMode(t, true)
+	cwd := t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := make(chan string, 2)
+	registry := extensions.NewRegistry(cwd)
+	err = registry.Register("management", func(api extensions.API) error {
+		for _, name := range []string{"plugins", "bridge"} {
+			api.RegisterCommand(name, extensions.Command{Handler: func(context.Context, string, extensions.CommandContext) error { opened <- name; return nil }})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings, ExtensionRegistry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	mode.session = runtime
+	mode.setupAutocomplete()
+	mode.editor.SetText("keep my draft")
+	for _, name := range []string{"plugins", "bridge"} {
+		found := false
+		for _, row := range mode.commandPaletteRows() {
+			if row.Value == name {
+				found = true
+			}
+			if row.Value == "/"+name {
+				t.Fatalf("%s still inserts a slash command", name)
+			}
+		}
+		if !found {
+			t.Fatalf("%s page missing", name)
+		}
+		mode.runPaletteCommand(name)
+		select {
+		case got := <-opened:
+			if got != name {
+				t.Fatal(got)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not open", name)
+		}
+		if mode.editor.GetText() != "keep my draft" {
+			t.Fatal("page navigation changed draft")
+		}
+	}
+	found := false
+	for _, item := range mode.settingItems() {
+		if item.ID == "bridge" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Bridge is missing from Settings")
+	}
+}

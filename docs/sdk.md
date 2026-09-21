@@ -460,9 +460,10 @@ negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `c
 source attachment's authenticated outbound route, which checks source grants before the
 destination checks its own grants. Discovery never authorizes execution.
 
-In Orb, enable Bridge in `/plugins`, then open `/bridge` for pairing, grants, discovery scopes,
-and shared conversations. `orb --bridge personal --instance work` explicitly attaches a named
-runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
+In Orb, open Bridge directly from Settings, Ctrl+P, or `/bridge`, then use its service switch.
+The page includes pairing, grants, discovery scopes, shared conversations, and the optional
+agent-call tool. It is available before activation; opening it creates no profile or network
+service. `orb --bridge personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
 re-enable. `orb bridge view <peer-id> <instance-id>` opens the same focused conversation view
 without constructing a local model or requiring provider credentials. Invitations contain a
 private transport locator and one-use claim secret; exchange them with the intended device,

@@ -582,6 +582,26 @@ Bridge-only protocol schemas are in ARCHITECTURE and tests in `connect`/`bridge`
 and user commands are documented in `docs/sdk.md`. Unrelated concurrent progress and UI changes
 were preserved. Isolated remote test services and scratch profiles were removed after validation.
 
+## 2026-09-21 — Built-in Bridge settings and direct page navigation
+
+Bridge management is always assembled in the CLI and opens directly from Settings, Ctrl+P,
+or `/bridge`. Its single service switch starts and attaches this Orb, including when a service
+is already running; stopping saves the disabled preference and retains the explicit stop marker.
+Devices and pending pairing requests, sharing/access, optional agent calls, and advanced controls
+use the existing framed lists and dialogs. Both Bridge toggles are removed from the Plugins UI;
+existing configuration keys, assembly IDs, SDK factories, and authority checks are preserved.
+Plugins also opens directly from Ctrl+P, preserving the composer draft.
+
+Regression checks started red for direct navigation and built-in management. Coverage includes
+inactive startup without profile/network side effects, project overrides, native IPC enable/stop,
+agent-tool reload, submenu return, focus restoration, and narrow-terminal layout. A real PTY
+caught a completion/focus deadlock; the regression now passes with callbacks dispatched after
+unlocking. Isolated built-binary PTY checks passed Ctrl+P Bridge, Ctrl+P Plugins, Settings → Bridge,
+and service enable → attached runtime → persistent stop. Test services and profiles were removed.
+`make check` passes with the documented Node 24 fixture runner: static build, vet, zero lint
+issues, complete race suite, layering checks, and shipped-build Pi/provider conformance.
+Existing Orb-owned snapshots remain green; no golden changes or new dependencies were needed.
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.

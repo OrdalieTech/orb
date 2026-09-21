@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Make Bridge a built-in Settings and Ctrl+P page with one service switch, paired devices, access controls, and an optional agent-call setting. Plugins opens its page directly from Ctrl+P without changing the draft.
+
 - Show reasoning as a single clickable height glyph in the footer, with a dot for off.
 
 - Add searchable, scrolling favorite models; keep the modal and pointer position stable while toggling choices. Scroll long option dialogs within the terminal height.
