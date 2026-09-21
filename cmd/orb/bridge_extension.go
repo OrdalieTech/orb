@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -42,7 +42,7 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 			c.UI().SetStatus("bridge", &message)
 			return nil, nil
 		})
-		api.RegisterCommand("bridge", extensions.Command{Description: "Manage paired devices, shared instances, and discovery scopes", Handler: func(ctx context.Context, _ string, c extensions.CommandContext) error {
+		api.RegisterCommand("bridge", extensions.Command{Description: "Connect devices and open their conversations", Handler: func(ctx context.Context, _ string, c extensions.CommandContext) error {
 			if c.Mode() != extensions.ModeTUI {
 				return fmt.Errorf("bridge administration requires the local TUI")
 			}
@@ -57,8 +57,6 @@ type bridgeSettingsStatus struct {
 	PeerStates         map[string]string   `json:"peer_states"`
 	PeerID             string              `json:"peer_id"`
 	Groups             map[string]string   `json:"groups"`
-	Scopes             map[string][]string `json:"scopes"`
-	Instances          []bridge.Instance   `json:"instances"`
 	Pending            []bridge.Invitation `json:"pending"`
 	Peers              []string            `json:"peers"`
 	Grants             []bridge.Grant      `json:"grants"`
@@ -93,19 +91,35 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 		}
 		cancel()
 		running := probeErr == nil
-		if !running && page != "" {
-			page = ""
+		if client != nil {
+			_ = client.Close()
 		}
 		result, ok, menuErr := ui.Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
-			rows := bridgeSettingsRows(page, running, args.BridgeProfile != "" || settings.GetPlugins()["bridge"], settings.GetPlugins()["bridge-agent-calls"], status, th)
-			if notice != "" {
-				for i := range rows {
-					if !rows[i].Header {
-						rows[i].Detail = append([]string{th.FG("warning", notice)}, rows[i].Detail...)
+			enabled, agentCalls := args.BridgeProfile != "" || settings.GetPlugins()["bridge"], settings.GetPlugins()["bridge-agent-calls"]
+			rows := bridgeSettingsRows(page, running, enabled, agentCalls, status, th)
+			panel := newBridgeSettingsPanel(profile, page, selected, rows, th, host.Height, done)
+			page, notice, status := page, notice, status
+			panel.watch(ctx, host, func(ctx context.Context) []tui.GridRow {
+				probe, cancel := context.WithTimeout(ctx, time.Second)
+				defer cancel()
+				var current bridgeSettingsStatus
+				client, err := bridgeAdmin(probe, profile)
+				if err == nil {
+					err = client.Call(probe, "status", struct{}{}, &current)
+					_ = client.Close()
+				}
+				if err == nil {
+					status = current
+				}
+				rows := bridgeSettingsRows(page, err == nil, enabled, agentCalls, status, th)
+				if notice != "" {
+					for i := range rows {
+						rows[i].Detail = []string{th.FG("warning", notice)}
 					}
 				}
-			}
-			return newBridgeSettingsPanel(profile, page, selected, rows, th, host.Height, done), nil
+				return rows
+			})
+			return panel, nil
 		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true}})
 		action, _ := result.(string)
 		if menuErr != nil || !ok || action == "" {
@@ -122,6 +136,14 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 			return nil
 		}
 		selected, notice = action, ""
+		status = bridgeSettingsStatus{}
+		probe, cancel = context.WithTimeout(ctx, time.Second)
+		client, probeErr = bridgeAdmin(probe, profile)
+		if probeErr == nil {
+			probeErr = client.Call(probe, "status", struct{}{}, &status)
+		}
+		cancel()
+		running = probeErr == nil
 		actionErr := func() error {
 			defer func() {
 				if client != nil {
@@ -172,12 +194,13 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				return nil
 			}
 			switch action {
-			case "refresh":
-				return nil
 			case "Start":
 				selected = "Stop"
 				return enable()
 			case "Stop":
+				if !running {
+					return fmt.Errorf("bridge is already offline")
+				}
 				if err := setBridgeSetting(settings, "bridge", false); err != nil {
 					return err
 				}
@@ -218,72 +241,59 @@ func bridgeSettingsRows(page string, running, enabled, agentCalls bool, status b
 	row := func(value, label, state, detail string) tui.GridRow {
 		return tui.GridRow{Value: value, Cells: []string{th.FG("text", label), th.FG("muted", state)}, Detail: []string{detail}}
 	}
-	pending := 0
-	for _, inv := range status.Pending {
-		if inv.Claimant != "" && inv.Status != "approved" {
-			pending++
+	if page == "add" {
+		return []tui.GridRow{
+			row("SSH", "Connect a server", "SSH", "Enter user@host. Orb handles installation and pairing."),
+			row("Join device", "Paste an invitation", "", "Connect using an invitation from another Orb."),
+			row("Invite device", "Create an invitation", "", "Invite another device. Both Orbs share all current and future conversations."),
 		}
 	}
-	switch page {
-	case "devices":
-		rows := []tui.GridRow{
-			row("Invite device", "Share this Orb", "Create invitation", "Connect trusted Orbs with full access to current and future conversations."),
-			row("Join device", "Connect to a device", "Paste invitation", "Paste an invitation from the Orb you want to control."),
+	if page == "advanced" {
+		calls := "Off"
+		if agentCalls {
+			calls = "On"
 		}
-		if pending > 0 {
-			rows = append(rows, row("Approve pairing", "Pairing requests", fmt.Sprintf("%d pending", pending), "Verify the device fingerprint and approve its exact access."))
-		}
-		for _, peer := range status.Peers {
-			state := map[string]string{"connected": "Connected", "blocked": "Blocked"}[status.PeerStates[peer]]
-			if state == "" {
-				state = "Not connected"
-			}
-			fingerprint := strings.TrimPrefix(peer, "orb:ed25519:")
-			rows = append(rows, row("peer:"+peer, "Device "+fingerprint[:min(10, len(fingerprint))], state, "Fingerprint: "+peer))
-		}
-		if len(status.Peers) == 0 {
-			rows = append(rows, tui.GridRow{Header: true, Cells: []string{th.FG("dim", "No paired devices yet")}})
+		rows := []tui.GridRow{row("agent-calls", "Agent calls", calls, "Allow agents to use Bridge tools. Requires separate grants on both devices.")}
+		if running {
+			rows = append(rows, row("Status", "This device's fingerprint", "", status.PeerID))
 		}
 		return rows
-	case "access":
-		return []tui.GridRow{
-			row("Grant access", "Share conversations", "View or control", "Choose a device, resource group, and permitted controls."),
-			row("Revoke access", "Manage grants", fmt.Sprintf("%d grants", len(status.Grants)), "Remove a grant to revoke its access immediately."),
-			row("Instances", "Local instances", fmt.Sprintf("%d registered", len(status.Instances)), "Assign an instance to a resource group."),
-			row("Groups", "Create a group", fmt.Sprintf("%d groups", len(status.Groups)), "Group instances to share them with the same devices."),
+	}
+	service := row("Start", "Enable Bridge", "○ Off", "Connect your devices to share conversations. Local work continues when Bridge is off.")
+	if running && !enabled {
+		service = row("Start", "Share this conversation", "Bridge on", "Attach this conversation and enable Bridge for future launches.")
+	}
+	if running && enabled {
+		service = row("Stop", "Bridge", th.FG("success", "● On"), "Turn off remote access. Your devices stay saved for next time.")
+	}
+	rows := []tui.GridRow{service, row("page:add", "Add device", "", "Connect a server through SSH or exchange an invitation.")}
+	for _, inv := range status.Pending {
+		if running && inv.Claimant != "" && inv.Status != "approved" && inv.Expires > time.Now().Unix() {
+			rows = append(rows, row("Approve pairing", "Connection request", "Review", "Verify the other device before allowing access."))
+			break
 		}
-	case "advanced":
-		return []tui.GridRow{
-			row("Discovery scopes", "Discovery scopes", fmt.Sprintf("%d scopes", len(status.Scopes)), "Choose which devices may exchange contacts. Discovery grants no control."),
-			row("Operation status", "Look up an operation", "Receipt", "Check the durable outcome of a remote command."),
-			row("Status", "Device identity", "Fingerprint", status.PeerID),
+	}
+	if len(status.Peers) > 0 {
+		rows = append(rows, tui.GridRow{Header: true, Cells: []string{th.FG("dim", "Devices")}})
+	}
+	for _, peer := range status.Peers {
+		state := "Offline"
+		if running {
+			switch status.PeerStates[peer] {
+			case "connected":
+				state = "Connected"
+			case "blocked":
+				state = "Blocked"
+			}
 		}
+		rows = append(rows, row("peer:"+peer, bridgeDeviceLabel(peer), state, "Open this device's conversations. Availability updates automatically."))
 	}
-	connectRows := []tui.GridRow{
-		row("Invite device", "Share this Orb", "Create invitation", "Connect trusted Orbs with full access to current and future conversations."),
-		row("Join device", "Connect to a device", "Paste invitation", "Paste an invitation from another Orb. Starts Bridge if needed."),
-		row("SSH", "Connect using SSH", "user@host", "Pair a server using your SSH login, then open its shared conversations."),
-	}
-	if !running {
-		return append([]tui.GridRow{
-			row("Start", "Enable Bridge", "○ Off", "The service keeps running after Orb closes. Pairings are saved when stopped."),
-		}, connectRows...)
-	}
-	calls := "Off"
-	if agentCalls {
-		calls = "On"
-	}
-	service := row("Stop", "Bridge", th.FG("success", "● Running"), "Turn off Bridge and disconnect remote access. Local work continues.")
-	if !enabled {
-		service = row("Start", "Enable Bridge", "Service running", "Connect this Orb to the running service and enable it for future launches.")
-	}
-	return append(connectRows, []tui.GridRow{
-		service,
-		row("page:devices", "Devices", fmt.Sprintf("%d paired · %d pending", len(status.Peers), pending), "Pair a device, approve requests, or open a shared conversation."),
-		row("page:access", "Sharing & access", fmt.Sprintf("%d grants", len(status.Grants)), "Manage shared instances, groups, and permissions."),
-		row("agent-calls", "Agent calls", calls, "Let agents call shared instances. Both devices must grant access."),
-		row("page:advanced", "Advanced", "Open", "Discovery scopes, operation receipts, and this device's identity."),
-	}...)
+	return append(rows, row("page:advanced", "Advanced", "", "Agent tools and this device's fingerprint."))
+}
+
+func bridgeDeviceLabel(peer string) string {
+	fingerprint := strings.TrimPrefix(peer, "orb:ed25519:")
+	return "Device " + fingerprint[:min(10, len(fingerprint))]
 }
 
 type bridgeSettingsPanel struct {
@@ -313,21 +323,14 @@ func newBridgeSettingsPanel(profile, page, selected string, rows []tui.GridRow, 
 	panel := &bridgeSettingsPanel{list: list, height: height}
 	list.OnConfirm = func(value string) { panel.pending = func() { done(value) } }
 	list.OnCancel = func() { panel.pending = func() { done(nil) } }
-	list.OnKey = func(key tui.KeyEvent, _ string) bool {
-		if key.Raw == "r" {
-			panel.pending = func() { done("refresh") }
-			return true
-		}
-		return false
+	title := "Bridge"
+	if profile != "personal" {
+		title += " · " + profile
 	}
-	title := "Bridge · " + profile
 	if page != "" {
-		title += " / " + map[string]string{"devices": "Devices", "access": "Sharing & access", "advanced": "Advanced"}[page]
+		title += " / " + map[string]string{"add": "Add device", "advanced": "Advanced"}[page]
 	}
-	footer := "enter select · r refresh · esc"
-	if page != "" {
-		footer += " back"
-	}
+	footer := "enter select · esc back"
 	frame := tui.NewPanel(title, footer,
 		func(s string) string { return th.Bold(th.FG("text", s)) },
 		func(s string) string { return th.FG("dim", s) },
@@ -335,6 +338,33 @@ func newBridgeSettingsPanel(profile, page, selected string, rows []tui.GridRow, 
 	panel.Frame = frame
 	return panel
 }
+func (p *bridgeSettingsPanel) watch(ctx context.Context, host extensions.UIHost, load func(context.Context) []tui.GridRow) {
+	ctx, p.cancel = context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		var previous []tui.GridRow
+		for {
+			rows := load(ctx)
+			if ctx.Err() != nil {
+				return
+			}
+			if !reflect.DeepEqual(rows, previous) {
+				p.mu.Lock()
+				p.list.SetRows(rows)
+				p.mu.Unlock()
+				previous = rows
+				host.Invalidate()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
 func (p *bridgeSettingsPanel) Render(width int) []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -380,74 +410,13 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		}
 		return v, e
 	}
-	group := func() (string, error) {
-		if len(status.Groups) == 1 {
-			for id := range status.Groups {
-				return id, nil
-			}
-		}
-		labels := []string{}
-		ids := map[string]string{}
-		for id, name := range status.Groups {
-			label := name + " · " + id
-			labels = append(labels, label)
-			ids[label] = id
-		}
-		slices.Sort(labels)
-		v, ok, e := ui.Select(ctx, "Resource group", labels, nil)
-		if !ok && e == nil {
-			e = context.Canceled
-		}
-		return ids[v], e
-	}
-	choosePeer := func() (string, error) {
-		if len(status.Peers) == 0 {
-			return "", fmt.Errorf("pair a device first in Devices")
-		}
-		v, ok, e := ui.Select(ctx, "Paired device", status.Peers, nil)
-		if !ok && e == nil {
-			e = context.Canceled
-		}
-		return v, e
-	}
-	selectGrant := func() (bridge.Grant, error) {
-		g := bridge.Grant{}
-		var e error
-		g.GroupID, e = group()
-		if e != nil {
-			return g, e
-		}
-		count := 0
-		for _, instance := range status.Instances {
-			if instance.Group == g.GroupID {
-				count++
-			}
-		}
-		mode, ok, e := ui.Select(ctx, fmt.Sprintf("Share %s · %d current instances", status.Groups[g.GroupID], count), []string{"View conversations", "Control conversations"}, nil)
-		if e != nil || !ok {
-			return g, context.Canceled
-		}
-		g.Permissions = []string{"instance.list", "instance.inspect"}
-		if mode == "Control conversations" {
-			g.Permissions = append(g.Permissions, "instance.prompt", "instance.steer", "instance.follow_up", "instance.cancel", "instance.session.manage")
-		}
-		scope, ok, e := ui.Select(ctx, "Which conversations can this device access?", []string{"Current conversations only", "Current and future conversations"}, nil)
-		if e != nil {
-			return g, e
-		}
-		if !ok {
-			return g, context.Canceled
-		}
-		g.IncludeFuture = scope == "Current and future conversations"
-		return g, nil
-	}
 	peer, isPeer := strings.CutPrefix(action, "peer:")
 	if isPeer {
 		action = "Peers"
 	}
 	switch action {
 	case "Status":
-		ui.Notify(fmt.Sprintf("%s\n%d instances · %d peers · %d grants", status.PeerID, len(status.Instances), len(status.Peers), len(status.Grants)), extensions.NotifyInfo)
+		ui.Notify(status.PeerID, extensions.NotifyInfo)
 	case "Invite device":
 		var inv bridge.Invitation
 		if e := client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{fullBridgeGrant("")}}, &inv); e != nil {
@@ -485,7 +454,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 			return e
 		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
-		return openSharedBridgeConversation(ctx, ui, profile, inv.PeerID, client)
+		return openSharedBridgeConversation(ctx, ui, profile, inv.PeerID)
 	case "SSH":
 		target, e := input("Connect using SSH · user@host or SSH alias")
 		if e != nil {
@@ -501,13 +470,13 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 			return e
 		}
 		ui.Notify("Server paired through SSH.", extensions.NotifyInfo)
-		return openSharedBridgeConversation(ctx, ui, profile, peer, client)
+		return openSharedBridgeConversation(ctx, ui, profile, peer)
 
 	case "Approve pairing":
 		choices := []string{}
 		claims := map[string]bridge.Invitation{}
 		for _, i := range status.Pending {
-			if i.Claimant != "" && i.Status != "approved" {
+			if i.Claimant != "" && i.Status != "approved" && i.Expires > time.Now().Unix() {
 				label := i.Claimant + " · " + i.ID
 				choices = append(choices, label)
 				claims[label] = i
@@ -520,112 +489,10 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		inv := claims[choice]
 		return approveBridgePairing(ctx, ui, client, inv, status.Groups)
 	case "Peers":
-		choice, ok, e := ui.Select(ctx, peer, []string{"Open conversation", "Block device"}, nil)
-		if e != nil || !ok {
-			return e
+		if status.PeerStates[peer] == "blocked" {
+			return fmt.Errorf("this device is blocked.\nIts access has been revoked")
 		}
-		if choice == "Block device" {
-			yes, e := ui.Confirm(ctx, "Block device", "End current access and deny new calls from "+peer+"?", nil)
-			if e != nil || !yes {
-				return e
-			}
-			return client.Call(ctx, "block", map[string]string{"peer_id": peer}, nil)
-		}
-		return openSharedBridgeConversation(ctx, ui, profile, peer, client)
-	case "Grant access":
-		peer, e := choosePeer()
-		if e != nil {
-			return e
-		}
-		g, e := selectGrant()
-		if e != nil {
-			return e
-		}
-		g.Principal = connect.Principal{PeerID: peer, Subject: connect.Subject{Kind: "controller"}}
-		return client.Call(ctx, "grant", g, nil)
-	case "Revoke access":
-		if len(status.Grants) == 0 {
-			return fmt.Errorf("no access grants to remove")
-		}
-		labels := []string{}
-		ids := map[string]string{}
-		for _, g := range status.Grants {
-			label := g.Principal.PeerID + " · " + strings.Join(g.Permissions, ", ") + " · " + g.ID
-			labels = append(labels, label)
-			ids[label] = g.ID
-		}
-		label, ok, e := ui.Select(ctx, "Revoke grant", labels, nil)
-		if e != nil || !ok {
-			return e
-		}
-		return client.Call(ctx, "revoke", map[string]string{"grant_id": ids[label]}, nil)
-	case "Instances":
-		if len(status.Instances) == 0 {
-			return fmt.Errorf("no local instances are attached")
-		}
-		choices := []string{}
-		for _, r := range status.Instances {
-			availability := "unavailable"
-			if r.Available {
-				availability = "connected"
-			}
-			choices = append(choices, r.Alias+" · "+r.ID+" · "+availability)
-		}
-		choice, ok, e := ui.Select(ctx, "Local instances", choices, nil)
-		if e != nil || !ok {
-			return e
-		}
-		parts := strings.Split(choice, " · ")
-		id, e := group()
-		if e != nil {
-			return e
-		}
-		return client.Call(ctx, "assign", map[string]string{"instance_id": parts[1], "group_id": id}, nil)
-	case "Groups":
-		name, e := input("New resource group name")
-		if e != nil {
-			return e
-		}
-		return client.Call(ctx, "group", map[string]string{"name": name}, nil)
-	case "Discovery scopes":
-		id, e := input("Scope ID (leave empty to create)")
-		if e != nil {
-			return e
-		}
-		if id == "" {
-			id = protocol.NewID()
-		}
-		peers, e := input("Allowed PeerIDs, separated by commas")
-		if e != nil {
-			return e
-		}
-		members := []string{}
-		for _, p := range strings.Split(peers, ",") {
-			members = append(members, strings.TrimSpace(p))
-		}
-		if e = client.Call(ctx, "scope", map[string]any{"scope_id": id, "peers": members}, nil); e != nil {
-			return e
-		}
-		return client.Call(ctx, "publish", map[string]any{"scope_id": id, "display_name": profile, "withdrawn": false}, nil)
-	case "Operation status":
-		peer, e := choosePeer()
-		if e != nil {
-			return e
-		}
-		instance, e := input("Instance ID")
-		if e != nil {
-			return e
-		}
-		operation, e := input("Operation ID")
-		if e != nil {
-			return e
-		}
-		var result json.RawMessage
-		e = client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": "operations.get", "params": map[string]string{"instance_id": instance, "operation_id": operation}}, &result)
-		if e != nil {
-			return e
-		}
-		ui.Notify(string(result), extensions.NotifyInfo)
+		return openSharedBridgeConversation(ctx, ui, profile, peer)
 	}
 	return nil
 }
@@ -645,7 +512,7 @@ func parseBridgeInvitation(text string) (bridge.Invitation, error) {
 		var err error
 		raw, err = base64.RawURLEncoding.Strict().DecodeString(code)
 		if err != nil {
-			return inv, fmt.Errorf("invalid invitation; copy it again from Share this Orb")
+			return inv, fmt.Errorf("invalid invitation; copy it again from Create an invitation")
 		}
 	}
 	if err := protocol.Decode(raw, &inv); err != nil {
@@ -660,31 +527,119 @@ func parseBridgeInvitation(text string) (bridge.Invitation, error) {
 	return inv, nil
 }
 
-func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile, peer string, client *protocol.Conn) error {
-	var catalog struct {
-		Items []bridge.Instance `json:"items"`
+func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer string, th extensions.Theme) ([]tui.GridRow, error) {
+	rows := []tui.GridRow{}
+	cursor, count := "", 0
+	for count < 4096 {
+		var catalog struct {
+			Items  []bridge.Instance `json:"items"`
+			Cursor string            `json:"cursor"`
+		}
+		if err := client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": "instances.list", "params": map[string]string{"cursor": cursor}}, &catalog); err != nil {
+			return nil, err
+		}
+		count += len(catalog.Items)
+		if count > 4096 || len(catalog.Items) == 0 && catalog.Cursor != "" {
+			return nil, connect.Fail("resource_exhausted")
+		}
+		for _, instance := range catalog.Items {
+			if !instance.Available {
+				continue
+			}
+			label := instance.Alias
+			if label == "" {
+				label = "Conversation"
+			}
+			rows = append(rows, tui.GridRow{Value: instance.ID, Cells: []string{th.FG("text", label)}, Detail: []string{"Open conversation"}})
+		}
+		if catalog.Cursor == "" {
+			if len(rows) == 0 {
+				rows = append(rows, tui.GridRow{Header: true, Cells: []string{th.FG("muted", "No conversations open yet")}}, tui.GridRow{Header: true, Cells: []string{th.FG("dim", "Open Orb on this device with Bridge enabled.")}})
+			}
+			return rows, nil
+		}
+		if catalog.Cursor == cursor {
+			break
+		}
+		cursor = catalog.Cursor
 	}
-	if e := client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": "instances.list", "params": struct{}{}}, &catalog); e != nil {
-		return e
+	return nil, connect.Fail("resource_exhausted")
+}
+
+func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile, peer string) error {
+	selected := ""
+	for ctx.Err() == nil {
+		result, ok, err := ui.Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
+			panel := newBridgeSettingsPanel(profile, "", "", []tui.GridRow{{Header: true, Cells: []string{"Connecting…"}}}, th, host.Height, done)
+			panel.Title = bridgeDeviceLabel(peer)
+			preferred := selected
+			panel.watch(ctx, host, func(ctx context.Context) []tui.GridRow {
+				probe, cancel := context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+				client, err := bridgeAdmin(probe, profile)
+				var rows []tui.GridRow
+				if err == nil {
+					rows, err = bridgeConversationRows(probe, client, peer, th)
+					_ = client.Close()
+				}
+				if err != nil {
+					message, detail := "Reconnecting…", "Keep Bridge on at both devices. Retrying automatically."
+					switch connect.Code(err) {
+					case "unauthorized":
+						message, detail = "Access unavailable", "Check that this device has granted access to your Orb."
+					case "resource_exhausted":
+						message, detail = "Too many conversations", "This device's conversation list exceeds the Bridge limit."
+					}
+					rows = []tui.GridRow{{Header: true, Cells: []string{th.FG("warning", message)}}, {Header: true, Cells: []string{th.FG("dim", detail)}}}
+				}
+				rows = append(rows, tui.GridRow{Value: "disconnect", Cells: []string{th.FG("muted", "Block device")}, Detail: []string{"Block this device and revoke its access to your conversations."}})
+				if preferred != "" {
+					panel.mu.Lock()
+					for i, row := range rows {
+						if row.Value == preferred {
+							panel.list.SetRows(rows)
+							panel.list.ListSelectRow(i)
+							break
+						}
+					}
+					panel.mu.Unlock()
+					preferred = ""
+				}
+				return rows
+			})
+			return panel, nil
+		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true}})
+		if err != nil || !ok || result == nil {
+			return err
+		}
+		selected, _ = result.(string)
+		if selected == "disconnect" {
+			yes, err := ui.Confirm(ctx, "Block device?", "Revoke access to your conversations from this device.\n"+peer, nil)
+			if err != nil {
+				return err
+			}
+			if !yes {
+				continue
+			}
+			client, err := bridgeAdmin(ctx, profile)
+			if err != nil {
+				return err
+			}
+			err = client.Call(ctx, "block", map[string]string{"peer_id": peer}, nil)
+			_ = client.Close()
+			return err
+		}
+		if selected != "" {
+			if err := openBridgeView(ctx, ui, profile, peer, selected); err != nil {
+				return err
+			}
+		}
 	}
-	labels := []string{}
-	for _, r := range catalog.Items {
-		labels = append(labels, r.Alias+" · "+r.ID)
-	}
-	if len(labels) == 0 {
-		ui.Notify("Orb connected. Enable Bridge in a conversation on the other device to share it.", extensions.NotifyInfo)
-		return nil
-	}
-	choice, ok, e := ui.Select(ctx, "Shared conversations", labels, nil)
-	if e != nil || !ok {
-		return e
-	}
-	_, instance, _ := strings.Cut(choice, " · ")
-	return openBridgeView(ctx, ui, profile, peer, instance)
+	return ctx.Err()
 }
 
 func shareBridgeInvitation(ctx context.Context, ui extensions.UI, client *protocol.Conn, inv bridge.Invitation, groups map[string]string) error {
-	claimed, err := waitBridgePairing(ctx, ui, "Share this Orb", "Paste in Bridge → Connect to a device on the other Orb.", inv, bridgeInvitationCode(inv), func(ctx context.Context) (bridge.Invitation, error) {
+	claimed, err := waitBridgePairing(ctx, ui, "Create invitation", "Paste in Bridge → Add device → Paste an invitation on the other Orb.", inv, bridgeInvitationCode(inv), func(ctx context.Context) (bridge.Invitation, error) {
 		var status bridgeSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
 			return bridge.Invitation{}, err
@@ -790,7 +745,7 @@ func waitBridgePairing(ctx context.Context, ui extensions.UI, title, instruction
 				if err := clipboard.CopyToClipboard(code); err != nil {
 					notice = "Copy unavailable. Choose Show invitation to copy it manually."
 				} else {
-					notice = "Copied. Paste it in Connect to a device on the other Orb."
+					notice = "Copied. Paste it in Add device → Paste an invitation on the other Orb."
 				}
 			case "fingerprint":
 				if _, _, err := ui.Editor(ctx, "Your fingerprint · verify on the sharing device", &inv.Claimant); err != nil {

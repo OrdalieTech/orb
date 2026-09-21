@@ -571,15 +571,14 @@ Final static release builds use `CGO_ENABLED=0`, the release tags, `-trimpath`, 
 
 | Target | Bytes |
 |---|---:|
-| linux-amd64 | 50,565,280 |
+| linux-amd64 | 50,557,088 |
 | linux-arm64 | 47,710,368 |
-| darwin-amd64 | 51,594,864 |
-| darwin-arm64 | 49,112,658 |
+| darwin-amd64 | 51,586,992 |
+| darwin-arm64 | 49,096,482 |
 
-Refreshed after stale-daemon replacement: all remain below 55 MB decimal. Forty warm-cache
-Darwin/arm64 `--version` runs after five warmups measured 11.68 ms mean, 11.50 ms median, and
-18.19 ms maximum (50 ms budget). The first batch, immediately after live remote checks, measured
-15.10 ms mean with a 66.59 ms outlier; the repeat used output redirected to `/dev/null`.
+Refreshed after Bridge navigation simplification: all remain below 55 MB decimal. Forty warm-cache
+Darwin/arm64 `--version` runs after five warmups measured 9.48 ms mean, 9.43 ms median, and
+10.31 ms maximum (50 ms budget), with output redirected to `/dev/null`.
 Bridge-only protocol schemas are in ARCHITECTURE and tests in `connect`/`bridge`; SDK assembly
 and user commands are documented in `docs/sdk.md`. Unrelated concurrent progress and UI changes
 were preserved. Isolated remote test services and scratch profiles were removed after validation.
@@ -685,6 +684,33 @@ local conversation over Bridge. The server currently has no attached conversatio
 
 `make check` passes, including race and Pi conformance checks, and all four static release builds
 remain below 55 MB. No SDK interface, runtime ownership, or peer protocol changed.
+
+## 2026-09-21 — Minimal, live Bridge navigation
+
+Bridge now opens on its service switch, Add device, and paired devices. Add device contains SSH
+setup and invitation exchange; selecting a device opens its conversations directly. Advanced
+keeps only agent-call opt-in and the fingerprint. Removed the duplicate device page and the TUI
+forms for groups, grants, scopes, instance assignment, and operation receipts; the CLI retains
+those operations. Opening configuration still starts no service, and trust remains explicit.
+
+Home and conversation panels refresh bounded reads in the background, retain selection by ID,
+and cancel outstanding requests on close. Actions re-read local status before dispatch instead
+of using the snapshot from when the panel opened. Remote catalogs follow pagination within the
+existing instance bound, omit unavailable runtimes, and use InstanceIDs independently of display
+names. An empty device stays open until a conversation appears; interrupted catalogs reconnect
+without replaying commands. Error details retain the two-line layout.
+
+Regression checks started red for the simplified navigation and live refresh. Race checks cover
+selection, cancellation, native status updates while the page stays open, and paginated catalogs
+with duplicate separator-containing aliases and stale entries. Built-binary PTY checks verified
+actual invitation copying, both trust confirmations, direct remote viewing, a newly attached
+conversation appearing automatically, recovery after remote daemon restart, Escape navigation,
+and the complete SSH login diagnostic. Profiles, clipboard interception, and test runtimes were
+isolated and cleaned. No core runtime, SDK contract, dependency, or source file was added.
+Production code shrank by 45 lines. `make check` passes, including race and Pi conformance; an
+initial F13 background-lifecycle mismatch passed both its isolated rerun and the subsequent
+complete gate without fixture changes. All four static release builds and startup measurements
+above remain within their budgets. Concurrent footer changes were preserved.
 
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.

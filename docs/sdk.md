@@ -461,25 +461,27 @@ source attachment's authenticated outbound route, which checks source grants bef
 destination checks its own grants. Discovery never authorizes execution.
 
 In Orb, open Bridge directly from Settings, Ctrl+P, or `/bridge`, then use its service switch.
-The page includes pairing, grants, discovery scopes, shared conversations, and the optional
-agent-call tool. It is available before activation; opening it creates no profile or network
-service. `orb --bridge personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
+The home page shows the service switch, **Add device**, and your devices. Select a device to
+open its conversations; both lists update automatically. **Advanced** contains the optional
+agent-call tool and your fingerprint. Groups, grants, scopes, and receipts stay in the CLI.
+Opening Bridge before activation creates no profile or network service. `orb --bridge personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
 re-enable. `orb bridge view <peer-id> <instance-id>` opens the same focused conversation view
 without constructing a local model or requiring provider credentials. Invitations contain a
 private transport locator and one-use claim secret; exchange them with the intended device,
 verify both displayed PeerIDs, and approve the exact directional grants locally.
 
-To pair two Orbs, choose **Share this Orb** and copy its invitation. On the other Orb choose
-**Connect to a device**, paste the invitation, and confirm **Trust this Orb** after checking the
+To pair two Orbs, choose **Add device → Create an invitation** and copy it. On the other Orb
+choose **Add device → Paste an invitation**, paste it, and confirm **Trust this Orb** after checking the
 fingerprint. The sharing screen automatically asks its owner to confirm the joining identity.
 Both Orbs then have full control of each other's current and future conversations, including
 new groups. The joining device opens the shared conversation picker. Either action enables
-Bridge when needed. Existing restricted grants remain unchanged; advanced sharing controls
-remain available. Controller trust does not enable agent calls or remote Bridge administration.
-Saved devices remain listed after stopping; **Connected**, **Not connected**, and **Blocked**
-describe actual access/connection state when the page is opened or refreshed.
+Bridge when needed. Existing restricted grants remain unchanged and can be managed through the
+CLI. Controller trust does not enable agent calls or remote Bridge administration.
+Saved pairings survive stopping; **Connected**, **Offline**, and **Blocked** describe current
+connection state. Open device panels retry after interruptions and show newly attached conversations
+without reopening the picker. Closed conversations disappear automatically.
 
-For a server you already access through SSH, choose **Connect using SSH** or run
+For a server you already access through SSH, choose **Add device → Connect a server** or run
 `orb bridge connect-ssh user@host`. Your system SSH client must already connect without a
 password or host-key prompt; SSH aliases and configuration are supported. Setup finds Orb on
 PATH or in `~/.local/bin` and installs or updates it there if needed, using a checksum-verified
