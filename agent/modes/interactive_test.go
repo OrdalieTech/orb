@@ -1039,6 +1039,23 @@ func TestSkillAtAutocompleteInvokesCanonicalCommand(t *testing.T) {
 	if entry := <-mode.inputCh; entry.text != "/skill:inspect-skill Please continue" {
 		t.Fatalf("submitted inline skill = %q", entry.text)
 	}
+	inlineAt := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"Please use @insp now"}, 0, len("Please use @insp"), false)
+	if inlineAt == nil || len(inlineAt.Items) == 0 || inlineAt.Items[0].Label != "[skill] inspect-skill" {
+		t.Fatalf("inline @ skill suggestions = %#v", inlineAt)
+	}
+	inserted := mode.autocompleteProvider.ApplyCompletion([]string{"Please use @insp now"}, 0, len("Please use @insp"), inlineAt.Items[0], inlineAt.Prefix)
+	if inserted.Lines[0] != "Please use /skill:inspect-skill now" {
+		t.Fatalf("inline @ skill completion = %#v", inserted)
+	}
+	mode.editor.SetText(inserted.Lines[0])
+	mode.editor.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if entry := <-mode.inputCh; entry.text != "/skill:inspect-skill Please use now" {
+		t.Fatalf("submitted inline @ skill = %q", entry.text)
+	}
+	secondLine := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"Please help", "with @insp"}, 1, len("with @insp"), false)
+	if secondLine == nil || len(secondLine.Items) == 0 || secondLine.Items[0].Label != "[skill] inspect-skill" {
+		t.Fatalf("second-line @ skill suggestions = %#v", secondLine)
+	}
 
 	for _, test := range []struct {
 		name     string
@@ -1046,7 +1063,6 @@ func TestSkillAtAutocompleteInvokesCanonicalCommand(t *testing.T) {
 		col      int
 		disabled bool
 	}{
-		{name: "inline", line: "use @inspect", col: 12},
 		{name: "quoted", line: `@"inspect`, col: 9},
 		{name: "disabled", line: "@inspect", col: 8, disabled: true},
 	} {
