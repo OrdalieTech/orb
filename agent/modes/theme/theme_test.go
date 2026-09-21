@@ -490,6 +490,12 @@ func TestTerminalPaletteContrastAndLiveSwitch(t *testing.T) {
 	for _, bg := range []tui.RgbColor{{R: 255, G: 252, B: 239}, {R: 24, G: 27, B: 32}, {R: 255, G: 255, B: 255}, {R: 0, G: 0, B: 0}} {
 		native.SetTerminalBackground(bg)
 		colors := native.ResolvedColors(false)
+		if luminanceHex(colors["modalBackdropBg"]) > luminanceHex(native.ExportColors()["pageBg"]) {
+			t.Fatal("backdrop lightens the terminal")
+		}
+		if colors["modalBackdropBg"] == colors["toolPendingBg"] || colors["modalBackdropText"] == colors["muted"] {
+			t.Fatal("backdrop does not separate modal from background")
+		}
 		for _, token := range []string{"accent", "muted", "dim", "customMessageLabel", "error", "warning", "success"} {
 			for _, surface := range []string{native.ExportColors()["pageBg"], colors["toolPendingBg"], colors["selectedBg"]} {
 				a, b := luminanceHex(colors[token]), luminanceHex(surface)
