@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -52,6 +53,21 @@ func TestThinkingCommandSelectionAndPersistence(t *testing.T) {
 	if settings.GetDefaultThinkingLevel() != ai.ModelThinkingLow {
 		t.Fatal("default selection not persisted")
 	}
+	mode.StatusAction("orb:thinking")()
+	if runtime.State().ThinkingLevel != ai.ModelThinkingMedium || !strings.Contains(tui.StripANSI(mode.statusNoticeText()), "Reasoning: medium") {
+		t.Fatal("footer click did not advance reasoning and show its temporary label")
+	}
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeStarted = time.Now().Add(-100 * time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	entering := mode.statusNoticeText()
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeStarted = time.Now().Add(-2350 * time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	if leaving := mode.statusNoticeText(); !strings.Contains(entering, "\x1b[38;2;") || leaving == entering {
+		t.Fatalf("reasoning label did not animate in true color: entering=%q leaving=%q", entering, leaving)
+	}
+	mode.showStatusMessage("")
 	if err := runtime.WaitForIdle(context.Background()); err != nil {
 		t.Fatal(err)
 	}

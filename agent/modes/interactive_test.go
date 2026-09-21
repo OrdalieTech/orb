@@ -1305,9 +1305,9 @@ func TestCompactFooterKeepsStatusAndModel(t *testing.T) {
 
 func TestThinkingFooterSlotHasFixedWidth(t *testing.T) {
 	want := map[ai.ModelThinkingLevel]string{
-		ai.ModelThinkingOff: "·", ai.ModelThinkingMinimal: "▁", ai.ModelThinkingLow: "▂",
-		ai.ModelThinkingMedium: "▄", ai.ModelThinkingHigh: "▆",
-		ai.ModelThinkingXHigh: "▇", ai.ModelThinkingMax: "█",
+		ai.ModelThinkingOff: "·", ai.ModelThinkingMinimal: "○", ai.ModelThinkingLow: "◔",
+		ai.ModelThinkingMedium: "◑", ai.ModelThinkingHigh: "◕",
+		ai.ModelThinkingXHigh: "●", ai.ModelThinkingMax: "◉",
 	}
 	width := 0
 	for level, meter := range want {
@@ -2050,7 +2050,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		if width >= 36 && (!strings.Contains(line, "gpt-5.6-luna") || !strings.Contains(line, "Codex 69% left")) {
 			t.Fatalf("lost model or quota at %d: %q", width, line)
 		}
-		if width >= 80 && (!strings.Contains(line, "gpt-5.6-luna ▆") || !strings.Contains(line, "ctx 4%")) {
+		if width >= 80 && (!strings.Contains(line, "gpt-5.6-luna ◕") || !strings.Contains(line, "ctx 4%")) {
 			t.Fatalf("lost useful detail: %q", line)
 		}
 	}

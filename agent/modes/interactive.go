@@ -130,6 +130,8 @@ type InteractiveMode struct {
 	editorChromeTitleShown     bool
 	statusNotice               string
 	statusNoticeTimer          *time.Timer
+	statusNoticeStarted        time.Time
+	statusNoticeAnimated       bool
 	footerStatuses             map[string]string
 	autocompleteProvider       tui.AutocompleteProvider
 	paletteCommands            []tui.SlashCommand
@@ -1460,13 +1462,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		mode.editor.SetText("")
 	})
 
-	mode.editor.OnAction("app.thinking.cycle", func() {
-		_, err := mode.session.CycleThinkingLevel()
-		if err != nil {
-			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
-		}
-		mode.ui.RequestRender()
-	})
+	mode.editor.OnAction("app.thinking.cycle", mode.cycleThinkingLevel)
 
 	mode.editor.OnAction("app.thinking.toggle", func() {
 		mode.mu.Lock()
@@ -1975,6 +1971,17 @@ func (mode *InteractiveMode) selectThinkingLevel(level ai.ModelThinkingLevel, pe
 		prefix = "Default thinking level: "
 	}
 	mode.showStatusMessage(prefix + string(level))
+}
+
+func (mode *InteractiveMode) cycleThinkingLevel() {
+	level, err := mode.session.CycleThinkingLevel()
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	if level != nil {
+		mode.showStatusMessageWithAnimation("Reasoning: "+string(*level), true)
+	}
 }
 
 type thinkingSelector struct {
@@ -2666,15 +2673,25 @@ func pluralMessages(count int) string {
 }
 
 func (mode *InteractiveMode) showStatusMessage(text string) {
+	mode.showStatusMessageWithAnimation(text, false)
+}
+
+func (mode *InteractiveMode) showStatusMessageWithAnimation(text string, animated bool) {
 	mode.statusMessageMu.Lock()
 	if mode.statusNoticeTimer != nil {
 		mode.statusNoticeTimer.Stop()
 		mode.statusNoticeTimer = nil
 	}
 	mode.statusNotice = strings.Join(strings.Fields(text), " ")
+	mode.statusNoticeStarted = time.Now()
+	mode.statusNoticeAnimated = animated && mode.statusNotice != ""
 	if mode.statusNotice != "" {
 		var timer *time.Timer
-		timer = time.AfterFunc(3*time.Second, func() {
+		duration := 3 * time.Second
+		if mode.statusNoticeAnimated {
+			duration = 2500 * time.Millisecond
+		}
+		timer = time.AfterFunc(duration, func() {
 			mode.statusMessageMu.Lock()
 			if mode.statusNoticeTimer == timer {
 				mode.statusNotice, mode.statusNoticeTimer = "", nil
@@ -2683,6 +2700,9 @@ func (mode *InteractiveMode) showStatusMessage(text string) {
 			mode.ui.RequestRender()
 		})
 		mode.statusNoticeTimer = timer
+		if mode.statusNoticeAnimated {
+			go mode.animateStatusNotice(timer)
+		}
 	}
 	mode.statusMessageMu.Unlock()
 	if mode.ui != nil {
@@ -2690,10 +2710,51 @@ func (mode *InteractiveMode) showStatusMessage(text string) {
 	}
 }
 
+func (mode *InteractiveMode) animateStatusNotice(timer *time.Timer) {
+	ticker := time.NewTicker(33 * time.Millisecond)
+	defer ticker.Stop()
+	for range ticker.C {
+		mode.statusMessageMu.Lock()
+		active := mode.statusNoticeTimer == timer
+		elapsed := time.Since(mode.statusNoticeStarted)
+		mode.statusMessageMu.Unlock()
+		if !active {
+			return
+		}
+		if elapsed < 200*time.Millisecond || elapsed > 2200*time.Millisecond {
+			mode.ui.RequestRender()
+		}
+	}
+}
+
 func (mode *InteractiveMode) statusNoticeText() string {
 	mode.statusMessageMu.Lock()
-	defer mode.statusMessageMu.Unlock()
-	return mode.statusNotice
+	text, animated, started := mode.statusNotice, mode.statusNoticeAnimated, mode.statusNoticeStarted
+	mode.statusMessageMu.Unlock()
+	if !animated || text == "" {
+		return text
+	}
+	elapsed := time.Since(started)
+	alpha := 1.0
+	if elapsed < 200*time.Millisecond {
+		progress := float64(elapsed) / float64(200*time.Millisecond)
+		alpha = 1 - (1-progress)*(1-progress)*(1-progress)
+	} else if elapsed > 2200*time.Millisecond {
+		progress := float64(2500*time.Millisecond-elapsed) / float64(300*time.Millisecond)
+		alpha = max(0, progress*progress)
+	}
+	if alpha >= 1 || theme.Current() == nil || theme.Current().ColorMode() != theme.TrueColor {
+		return text
+	}
+	var bgR, bgG, bgB, fgR, fgG, fgB int
+	if _, err := fmt.Sscanf(theme.BGANSI("toolPendingBg"), "\x1b[48;2;%d;%d;%dm", &bgR, &bgG, &bgB); err != nil {
+		return text
+	}
+	if _, err := fmt.Sscanf(theme.FGANSI("dim"), "\x1b[38;2;%d;%d;%dm", &fgR, &fgG, &fgB); err != nil {
+		return text
+	}
+	channel := func(bg, fg int) int { return bg + int(float64(fg-bg)*alpha) }
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[39m", channel(bgR, fgR), channel(bgG, fgG), channel(bgB, fgB), text)
 }
 
 func (mode *InteractiveMode) setToolsExpanded(expanded bool) {
@@ -3735,7 +3796,7 @@ func (mode *InteractiveMode) AvailableProviderCount() int {
 
 func (mode *InteractiveMode) StatusAction(key string) func() {
 	if key == "orb:thinking" {
-		return func() { mode.handleThinkingCommand("") }
+		return mode.cycleThinkingLevel
 	}
 	if key == "provider-usage" {
 		if host, ok := mode.options.Host.(InteractiveProviderHost); ok {

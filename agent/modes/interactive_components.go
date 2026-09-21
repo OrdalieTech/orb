@@ -1050,17 +1050,17 @@ func modelFooterForms(display engine.AgentDisplayState, providerCount int) []str
 func thinkingMeter(level string) string {
 	switch level {
 	case "minimal":
-		return "▁"
+		return "○"
 	case "low":
-		return "▂"
+		return "◔"
 	case "medium":
-		return "▄"
+		return "◑"
 	case "high":
-		return "▆"
+		return "◕"
 	case "xhigh":
-		return "▇"
+		return "●"
 	case "max":
-		return "█"
+		return "◉"
 	default:
 		return "·"
 	}
