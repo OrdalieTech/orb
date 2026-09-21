@@ -1282,19 +1282,24 @@ func (layoutFooterSession) State() engine.AgentState {
 func TestFooterComponentCompactAndVerboseLayouts(t *testing.T) {
 	initTestTheme(t)
 	provider := &fakeFooterDataProvider{cwd: "/workspace", branch: "main"}
+	compact := NewFooterComponent(layoutFooterSession{}, provider, false)
 	for _, width := range []int{28, 88} {
-		lines := NewFooterComponent(layoutFooterSession{}, provider, false).Render(width)
+		lines := compact.Render(width)
 		if len(lines) != 1 || tui.VisibleWidth(lines[0]) != width {
 			t.Fatalf("compact footer at %d = %#v", width, lines)
 		}
 		if width == 88 {
 			plain := normalizeWP450Lines(lines)[0]
-			want := " fixture-model"
-			if plain != want {
-				t.Fatalf("compact footer = %q, want %q", plain, want)
+			if !strings.Contains(plain, "fixture-model") || !strings.Contains(plain, "/workspace") {
+				t.Fatalf("compact footer omits the model or current session directory: %q", plain)
 			}
 		}
 	}
+	provider.cwd = "/another/project"
+	if line := normalizeWP450Lines(compact.Render(88))[0]; !strings.Contains(line, "/another/project") || strings.Contains(line, "/workspace") {
+		t.Fatalf("compact footer did not follow the current session directory: %q", line)
+	}
+	provider.cwd = "/workspace"
 
 	verbose := normalizeWP450Lines(NewFooterComponent(layoutFooterSession{}, provider, true).Render(88))
 	if len(verbose) != 2 || verbose[0] != " /workspace (main)" ||
@@ -1312,8 +1317,8 @@ func TestCompactFooterKeepsStatusAndModel(t *testing.T) {
 		if len(lines) != 1 || !strings.Contains(lines[0], "active") {
 			t.Fatalf("compact status footer for cwd %q = %#v", cwd, lines)
 		}
-		if !strings.Contains(lines[0], "fixture-model") || strings.Contains(lines[0], "workspace") {
-			t.Fatalf("compact footer did not keep only model and status for cwd %q: %#v", cwd, lines)
+		if !strings.Contains(lines[0], "fixture-model") || (cwd != "" && !strings.Contains(lines[0], "/workspace")) {
+			t.Fatalf("compact footer omitted the model or current session directory for cwd %q: %#v", cwd, lines)
 		}
 	}
 	narrow := normalizeWP450Lines(NewFooterComponent(
@@ -1321,6 +1326,12 @@ func TestCompactFooterKeepsStatusAndModel(t *testing.T) {
 	).Render(40))
 	if len(narrow) != 1 || !strings.Contains(narrow[0], "active") {
 		t.Fatalf("narrow footer dropped the higher-priority status: %#v", narrow)
+	}
+	long := normalizeWP450Lines(NewFooterComponent(
+		layoutFooterSession{}, &fakeFooterDataProvider{cwd: "/a/very/long/project", statuses: map[string]string{"extension": "active"}}, false,
+	).Render(40))
+	if len(long) != 1 || !strings.Contains(long[0], "project") || !strings.Contains(long[0], "active") {
+		t.Fatalf("narrow footer hid the current directory or status: %#v", long)
 	}
 }
 

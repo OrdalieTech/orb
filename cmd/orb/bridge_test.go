@@ -255,12 +255,18 @@ type bridgeScriptUI struct {
 	t       *testing.T
 	actions []string
 	screens []string
+	status  []string
 	observe func(*bridgeSettingsPanel)
 }
 
 func (*bridgeScriptUI) Width() int  { return 80 }
 func (*bridgeScriptUI) Height() int { return 24 }
 func (*bridgeScriptUI) Invalidate() {}
+func (ui *bridgeScriptUI) SetStatus(_ string, value *string) {
+	if value != nil {
+		ui.status = append(ui.status, *value)
+	}
+}
 func (ui *bridgeScriptUI) Custom(_ context.Context, factory extensions.CustomFactory, _ *extensions.CustomOptions) (any, bool, error) {
 	ui.t.Helper()
 	if len(ui.actions) == 0 {
@@ -393,6 +399,9 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 	}
 	if !strings.Contains(ui.screens[len(ui.screens)-1], "Enable Bridge") {
 		t.Fatal("screen did not reflect stopped service")
+	}
+	if len(ui.status) != 0 {
+		t.Fatalf("healthy Bridge wrote a footer label: %v", ui.status)
 	}
 }
 

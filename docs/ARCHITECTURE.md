@@ -301,8 +301,9 @@ that footer status opens a native account switcher with cached percentages and a
 concurrent refreshes; closing it cancels requests. Switching providers keeps an identical model
 when available, otherwise opens the model picker. Neither accounts nor usage imports agent/TUI
 code, and no quota network request blocks startup or rendering. The compact footer keeps the model
-and reasoning level on the left, with the most limited remaining quota and a rounded context
-percentage on the right. Detailed windows and resets stay in the account menu; compact rendering
+and reasoning level on the left, with the current session working directory, the most limited
+remaining quota, and a rounded context percentage on the right. Healthy Bridge adds no redundant
+footer label; startup disconnection stays visible. Detailed windows and resets stay in the account menu; compact rendering
 does not probe Git metadata.
 
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →

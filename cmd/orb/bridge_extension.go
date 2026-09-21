@@ -38,8 +38,7 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 			if err := args.bridgeLink.configureBridge(true); err != nil {
 				return nil, err
 			}
-			message := "Bridge · " + profile
-			c.UI().SetStatus("bridge", &message)
+			c.UI().SetStatus("bridge", nil)
 			return nil, nil
 		})
 		api.RegisterCommand("bridge", extensions.Command{Description: "Connect devices and open their conversations", Handler: func(ctx context.Context, _ string, c extensions.CommandContext) error {
@@ -161,8 +160,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				if err := args.bridgeLink.configureBridge(true); err != nil {
 					return err
 				}
-				message := "Bridge · " + profile
-				ui.SetStatus("bridge", &message)
+				ui.SetStatus("bridge", nil)
 				return nil
 			}
 			if action == "Invite device" || action == "Join device" || action == "SSH" {
