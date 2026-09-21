@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
@@ -40,14 +41,15 @@ type document struct {
 }
 
 type Theme struct {
-	Name       string
-	SourcePath string
-	SourceInfo *extensions.SourceInfo
-	mode       ColorMode
-	foreground map[string]string
-	background map[string]string
-	resolved   map[string]resolvedColor
-	export     map[string]resolvedColor
+	terminalPalette *atomic.Pointer[Theme]
+	Name            string
+	SourcePath      string
+	SourceInfo      *extensions.SourceInfo
+	mode            ColorMode
+	foreground      map[string]string
+	background      map[string]string
+	resolved        map[string]resolvedColor
+	export          map[string]resolvedColor
 }
 
 func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
@@ -131,9 +133,9 @@ func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
 }
 
 func terminalTheme(mode ColorMode) *Theme {
-	theme := &Theme{Name: "terminal", mode: mode, foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]resolvedColor{}}
+	theme := &Theme{terminalPalette: &atomic.Pointer[Theme]{}, Name: "terminal", mode: mode, foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]resolvedColor{}}
 	colors := map[string]int{
-		"muted": 8, "dim": 8, "borderMuted": 8, "thinkingText": 8, "syntaxComment": 8,
+		"accent": 6, "borderAccent": 6, "mdHeading": 6, "mdLink": 6, "mdCode": 6, "syntaxFunction": 6, "thinkingMedium": 6, "thinkingHigh": 5, "thinkingXhigh": 5, "thinkingMax": 5,
 		"success": 2, "toolDiffAdded": 2, "syntaxString": 2,
 		"error": 1, "toolDiffRemoved": 1,
 		"warning": 3, "syntaxNumber": 3,
@@ -153,14 +155,81 @@ func terminalTheme(mode ColorMode) *Theme {
 		}
 	}
 	for _, name := range []string{"selectedBg", "searchMatchBg", "scrollbarThumb"} {
-		theme.background[name] = "\x1b[7m"
+		theme.background[name] = "\x1b[4m"
 	}
 	return theme
+}
+
+// SetTerminalBackground swaps an immutable palette so existing render closures
+// adopt terminal appearance changes without rebuilding conversation components.
+func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
+	if theme.terminalPalette == nil {
+		return
+	}
+	next := terminalTheme(theme.mode)
+	bg := fmt.Sprintf("#%02x%02x%02x", background.R, background.G, background.B)
+	light := luminance(background.R, background.G, background.B) > .179
+	ink, accent, purple, green, red, amber := "#eeeeee", "#70c9bf", "#c4a7e7", "#91c789", "#ed9993", "#dfba73"
+	if light {
+		ink, accent, purple, green, red, amber = "#202428", "#087f83", "#8552a0", "#387348", "#b04040", "#916018"
+	}
+	blend := func(a, b string, amount float64) string {
+		ar, ag, ab, _ := parseHex(a)
+		br, bg, bb, _ := parseHex(b)
+		return fmt.Sprintf("#%02x%02x%02x", int(float64(ar)*(1-amount)+float64(br)*amount), int(float64(ag)*(1-amount)+float64(bg)*amount), int(float64(ab)*(1-amount)+float64(bb)*amount))
+	}
+	panel, selected := blend(bg, ink, .045), blend(bg, accent, .16)
+	set := func(names, value string) {
+		for _, name := range strings.Fields(names) {
+			color := resolvedColor{text: &value}
+			next.resolved[name] = color
+			if backgroundTokens[name] {
+				next.background[name], _ = color.background(theme.mode)
+			} else {
+				next.foreground[name], _ = color.foreground(theme.mode)
+			}
+		}
+	}
+	readable := func(value string) string {
+		for range 32 {
+			minimum := 21.0
+			for _, surface := range []string{bg, panel, selected} {
+				a, b := luminanceHex(value), luminanceHex(surface)
+				if a < b {
+					a, b = b, a
+				}
+				minimum = min(minimum, (a+.05)/(b+.05))
+			}
+			if minimum >= 4.5 {
+				break
+			}
+			value = blend(value, ink, .12)
+		}
+		return value
+	}
+	set("accent borderAccent mdHeading mdLink mdCode syntaxFunction syntaxType thinkingLow thinkingMedium", readable(accent))
+	set("customMessageLabel syntaxKeyword thinkingHigh thinkingXhigh thinkingMax", readable(purple))
+	set("success toolDiffAdded syntaxString", readable(green))
+	set("error toolDiffRemoved", readable(red))
+	set("warning syntaxNumber bashMode", readable(amber))
+	set("muted dim border borderMuted thinkingText syntaxComment mdLinkUrl mdCodeBlockBorder mdQuote mdQuoteBorder mdHr toolDiffContext thinkingOff thinkingMinimal", readable(blend(bg, ink, .65)))
+	set("toolPendingBg userMessageBg customMessageBg", panel)
+	set("selectedBg searchMatchBg scrollbarThumb", selected)
+	set("toolSuccessBg diffAddedBg", blend(bg, green, .09))
+	set("toolErrorBg diffRemovedBg", blend(bg, red, .09))
+	set("diffGutterBg", bg)
+	next.export = map[string]resolvedColor{"pageBg": {text: &bg}, "cardBg": {text: &panel}, "infoBg": {text: &panel}}
+	theme.terminalPalette.Store(next)
 }
 
 func (theme *Theme) ColorMode() ColorMode { return theme.mode }
 
 func (theme *Theme) ForegroundANSI(name string) (string, error) {
+	if theme.terminalPalette != nil {
+		if palette := theme.terminalPalette.Load(); palette != nil {
+			theme = palette
+		}
+	}
 	value, ok := theme.foreground[name]
 	if !ok {
 		return "", fmt.Errorf("unknown theme color: %s", name)
@@ -169,6 +238,11 @@ func (theme *Theme) ForegroundANSI(name string) (string, error) {
 }
 
 func (theme *Theme) BackgroundANSI(name string) (string, error) {
+	if theme.terminalPalette != nil {
+		if palette := theme.terminalPalette.Load(); palette != nil {
+			theme = palette
+		}
+	}
 	value, ok := theme.background[name]
 	if !ok {
 		return "", fmt.Errorf("unknown theme background color: %s", name)
@@ -189,8 +263,8 @@ func (theme *Theme) Background(name, value string) string {
 	if err != nil {
 		panic(err)
 	}
-	if prefix == "\x1b[7m" {
-		return prefix + tui.ReopenAfterReset(prefix, value) + "\x1b[27m"
+	if prefix == "\x1b[4m" {
+		return prefix + tui.ReopenAfterReset(prefix, value) + "\x1b[24m"
 	}
 	return prefix + value + "\x1b[49m"
 }
@@ -220,6 +294,11 @@ func (theme *Theme) Markdown(codeBlockIndent string) tui.MarkdownTheme {
 }
 
 func (theme *Theme) ResolvedColors(light bool) map[string]string {
+	if theme.terminalPalette != nil {
+		if palette := theme.terminalPalette.Load(); palette != nil {
+			theme = palette
+		}
+	}
 	defaultText := "#e5e5e7"
 	if light {
 		defaultText = "#000000"
@@ -389,6 +468,11 @@ func GetTheme(name string) *Theme {
 }
 
 func (theme *Theme) ExportColors() map[string]string {
+	if theme.terminalPalette != nil {
+		if palette := theme.terminalPalette.Load(); palette != nil {
+			theme = palette
+		}
+	}
 	result := map[string]string{}
 	for name, color := range theme.export {
 		value, err := color.hex("")

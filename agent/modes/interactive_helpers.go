@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"strings"
@@ -36,7 +37,7 @@ func (border *DynamicBorder) Render(width int) []string {
 }
 
 func menuSelectedBackground(text string) string {
-	if theme.BGANSI("selectedBg") == "\x1b[7m" {
+	if current := theme.Current(); current != nil && current.Name == "terminal" {
 		return theme.BG("selectedBg", text)
 	}
 	prefix := strings.Replace(theme.FGANSI("borderMuted"), "[38;", "[48;", 1)
@@ -78,7 +79,14 @@ func menuFrame(title string, child tui.Component) *tui.Frame {
 		func(text string) string { return theme.FG("dim", text) },
 		child)
 	frame.Plain = true
-	frame.TitleStyle = func(text string) string { return theme.Bold(theme.FG("text", text)) }
+	frame.ActionSelected = func(text string) string { return menuSelectedBackground(theme.Bold(theme.FG("accent", text))) }
+	frame.TitleStyle = func(text string) string {
+		color := "text"
+		if current := theme.Current(); current != nil && current.Name == "terminal" {
+			color = "accent"
+		}
+		return theme.Bold(theme.FG(color, text))
+	}
 	frame.Background = func(text string) string {
 		background := theme.BGANSI("toolPendingBg")
 		return background + strings.ReplaceAll(tui.ReopenAfterReset(background, text), "\x1b[49m", "\x1b[49m"+background) + "\x1b[49m"
@@ -227,6 +235,19 @@ type commandPalette struct {
 func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, height func() int, selectItem func(string), cancel func()) *commandPalette {
 	palette := &commandPalette{input: newSearchInput(), bindings: bindings, height: height, onCancel: cancel}
 	palette.list = tui.NewGridList(rows, 10, tui.GridListTheme{
+		Cell: func(row tui.GridRow, column int, text string) string {
+			if current := theme.Current(); current == nil || current.Name != "terminal" {
+				return text
+			}
+			color := "text"
+			if column > 0 || strings.HasPrefix(row.Value, "add:") {
+				color = "muted"
+			}
+			if column == 0 && strings.HasPrefix(row.Value, "/skill:") {
+				color = "customMessageLabel"
+			}
+			return theme.FG(color, tui.StripANSI(text))
+		},
 		SelectedBg: func(s string) string { return menuSelectedBackground(s) },
 		Detail:     func(s string) string { return theme.FG("muted", s) },
 		ScrollInfo: func(s string) string { return theme.FG("dim", s) },
@@ -297,4 +318,44 @@ func (palette *commandPalette) HandleMouse(event tui.MouseEvent) bool {
 	palette.mu.Lock()
 	defer palette.unlockAndDispatch()
 	return palette.list.HandleMouse(event)
+}
+
+func (mode *InteractiveMode) watchTerminalBackground(ctx context.Context) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	refresh := make(chan struct{}, 1)
+	refresh <- struct{}{}
+	unsubscribe := mode.ui.OnTerminalColorSchemeChange(func(tui.TerminalColorScheme) {
+		select {
+		case refresh <- struct{}{}:
+		default:
+		}
+	})
+	mode.ui.SetTerminalColorSchemeNotifications(true)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-refresh:
+			}
+			query := mode.ui.QueryTerminalBackgroundColor(200 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return
+			case background := <-query:
+				if background == nil {
+					return
+				}
+				if native := theme.GetTheme("terminal"); native != nil && native.SourcePath == "" {
+					native.SetTerminalBackground(*background)
+					if theme.Current() == native {
+						mode.ui.Invalidate()
+					}
+				}
+			}
+		}
+	}()
+	return func() { unsubscribe(); cancel(); <-done; mode.ui.SetTerminalColorSchemeNotifications(false) }
 }
