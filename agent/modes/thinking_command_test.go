@@ -58,14 +58,18 @@ func TestThinkingCommandSelectionAndPersistence(t *testing.T) {
 		t.Fatal("footer click did not advance reasoning and show its temporary label")
 	}
 	mode.statusMessageMu.Lock()
-	mode.statusNoticeStarted = time.Now().Add(-100 * time.Millisecond)
+	mode.statusNoticeStarted = time.Now().Add(-45 * time.Millisecond)
 	mode.statusMessageMu.Unlock()
-	entering := mode.statusNoticeText()
+	replacing := mode.animatedStatusNoticeText()
 	mode.statusMessageMu.Lock()
-	mode.statusNoticeStarted = time.Now().Add(-2350 * time.Millisecond)
+	mode.statusNoticeStarted = time.Now().Add(-180 * time.Millisecond)
 	mode.statusMessageMu.Unlock()
-	if leaving := mode.statusNoticeText(); !strings.Contains(entering, "\x1b[38;2;") || leaving == entering {
-		t.Fatalf("reasoning label did not animate in true color: entering=%q leaving=%q", entering, leaving)
+	entering := mode.animatedStatusNoticeText()
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeStarted = time.Now().Add(-2800 * time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	if leaving := mode.animatedStatusNoticeText(); tui.VisibleWidth(replacing) != tui.VisibleWidth(entering) || !strings.Contains(replacing, "\x1b[38;2;") || leaving == entering {
+		t.Fatalf("reasoning replacement closed the gap or missed its fade: replacing=%q entering=%q leaving=%q", replacing, entering, leaving)
 	}
 	mode.showStatusMessage("")
 	if err := runtime.WaitForIdle(context.Background()); err != nil {
