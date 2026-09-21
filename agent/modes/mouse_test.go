@@ -81,8 +81,8 @@ func TestTreeSelectorClickSelectsRowAndDoubleClickConfirms(t *testing.T) {
 	if got := selector.selectedID(); got != "m3" {
 		t.Fatalf("single click selected %q, want m3", got)
 	}
-	if confirmed != "" {
-		t.Fatalf("single click confirmed %q", confirmed)
+	if confirmed != "m3" {
+		t.Fatalf("single click confirmed %q, want m3", confirmed)
 	}
 	if selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 0, Column: 2, Clicks: 1}) {
 		t.Fatal("click on the selector header was consumed")
@@ -146,6 +146,10 @@ func TestTreeSelectorClickTogglesFoldAcrossHorizontalScroll(t *testing.T) {
 		t.Fatalf("click beside the marker = folded %v selected %q", selector.folded["m4"], selector.selectedID())
 	}
 
+	if confirmed != "m4" {
+		t.Fatal("click beside fold marker did not confirm the entry")
+	}
+	confirmed = ""
 	selector.Render(28)
 	_, _, _, scroll = selector.rowLayout()
 	row = treeScreenRow(t, selector, "m4")
@@ -234,7 +238,7 @@ func TestSessionSelectorClickSelectsAndDoubleClickResumes(t *testing.T) {
 	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
 		t.Fatal("session click was not consumed")
 	}
-	if resumed != "" {
+	if resumed != "/tmp/three.jsonl" {
 		t.Fatalf("single click resumed %q", resumed)
 	}
 	selector.Render(100)
@@ -269,8 +273,8 @@ func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
 		t.Fatal("model click was not consumed")
 	}
-	if confirmed != "" {
-		t.Fatalf("single click confirmed %q, want a selection only", confirmed)
+	if confirmed != "model-02" {
+		t.Fatalf("single click confirmed %q, want model-02", confirmed)
 	}
 	if index := lineIndexContaining(t, component.Render(80), "› model-02"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
@@ -460,8 +464,8 @@ func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testi
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
 		t.Fatal("provider click was not consumed")
 	}
-	if chosen != "" {
-		t.Fatalf("single click confirmed %q, want a selection only", chosen)
+	if chosen != "beta" {
+		t.Fatalf("single click confirmed %q, want beta", chosen)
 	}
 	if index := lineIndexContaining(t, component.Render(80), "› Beta"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
@@ -571,8 +575,8 @@ func TestExtensionSelectorClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
 		t.Fatal("option click was not consumed")
 	}
-	if chosen != "" {
-		t.Fatalf("single click confirmed %q, want a selection only", chosen)
+	if chosen != "s approve for this session" {
+		t.Fatalf("single click confirmed %q, want session approval", chosen)
 	}
 	if index := lineIndexContaining(t, component.Render(60), "› s approve for this session"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
@@ -583,5 +587,35 @@ func TestExtensionSelectorClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	}
 	if component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: 0, Clicks: 1}) {
 		t.Fatal("click on the dialog border was consumed")
+	}
+}
+
+func TestProviderPaletteClickMatchesEnter(t *testing.T) {
+	initTestTheme(t)
+	for _, pointer := range []bool{false, true} {
+		calls := 0
+		var palette *commandPalette
+		palette = newCommandPalette([]tui.GridRow{{Header: true, Cells: []string{"Providers"}}, {Value: "account", Cells: []string{"Work account"}}}, NewAppKeybindings(nil), func() int { return 30 }, func(value string) {
+			if value != "account" {
+				t.Errorf("selected %q", value)
+			}
+			calls++
+			palette.SetFocused(false)
+		}, func() {})
+		row := lineIndexContaining(t, palette.Render(60), "Work account")
+		if pointer {
+			palette.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row})
+			if calls != 0 {
+				t.Fatal("hover confirmed")
+			}
+			palette.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1})
+			palette.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+			palette.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: row})
+		} else {
+			palette.HandleInput(tui.KeyEvent{Raw: "\r"})
+		}
+		if calls != 1 {
+			t.Fatalf("pointer=%v confirmations=%d", pointer, calls)
+		}
 	}
 }

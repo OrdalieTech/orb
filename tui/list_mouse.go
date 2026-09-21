@@ -1,14 +1,7 @@
 package tui
 
-// This file is the single implementation of the pointer semantic every
-// list-like component shares (SelectList, SettingsList, and the modes
-// selectors): hovering or clicking a row moves the selection highlight to it
-// IN PLACE — the visible window must not re-anchor — a double click confirms
-// the current selection, and the wheel moves the selection exactly as the
-// component's keyboard scrolling does. Keeping the window still under the
-// pointer is what makes hover safe on scrollable lists: a recentring window
-// would shift rows under the stationary cursor and feed back into
-// hit-testing.
+// Lists highlight on hover and confirm on a single click. Pointer selection
+// freezes the visible window so rows stay under the cursor.
 
 // ListWindow anchors the visible window of a selection-windowed list.
 // Non-pointer selection changes (keyboard, wheel, filtering) recenter the
@@ -71,7 +64,7 @@ type ListMouseTarget interface {
 	// component applies its own per-tick step and recenters as its keyboard
 	// scrolling does.
 	ListScroll(direction int)
-	// ListConfirm confirms the current selection (double click).
+	// ListConfirm confirms the current selection, as Enter does.
 	ListConfirm()
 }
 
@@ -112,10 +105,8 @@ func HandleListMouse(target ListMouseTarget, event MouseEvent) bool {
 		if !ok {
 			return false
 		}
-		// The first press of a double click already selected this cell, and
-		// the frozen window kept it under the cursor; confirm it as-is.
+		// Do not activate twice, or click through into a newly opened menu.
 		if event.Clicks >= 2 {
-			target.ListConfirm()
 			return true
 		}
 		if clicker, ok := target.(ListRowClicker); ok {
@@ -123,6 +114,7 @@ func HandleListMouse(target ListMouseTarget, event MouseEvent) bool {
 		} else {
 			target.ListSelectRow(index)
 		}
+		target.ListConfirm()
 		return true
 	}
 	return false

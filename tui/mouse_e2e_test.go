@@ -273,8 +273,8 @@ func TestMouseE2EClickAndDoubleClickThroughBytes(t *testing.T) {
 	row := fixture.selectorScreenRow(list, 2)
 	fixture.terminal.deliver(sgr(0, 4, row, false))
 	fixture.terminal.deliver(sgr(0, 4, row, true))
-	if item, _ := list.GetSelectedItem(); item.Value != "item-02" || confirmed != "" {
-		t.Fatalf("click selected %q confirmed %q, want item-02 and no confirm", item.Value, confirmed)
+	if item, _ := list.GetSelectedItem(); item.Value != "item-02" || confirmed != "item-02" {
+		t.Fatalf("click selected %q confirmed %q, want item-02 selected and confirmed", item.Value, confirmed)
 	}
 	fixture.terminal.deliver(sgr(0, 4, row, false))
 	if confirmed != "item-02" {

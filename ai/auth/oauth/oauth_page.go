@@ -79,34 +79,38 @@ const oauthPageTemplate = `<!doctype html>
 </body>
 </html>`
 
+const orbOAuthLogo = `<span style="font:600 36px ui-sans-serif,system-ui,sans-serif;letter-spacing:-2px">orb</span>`
+
 func successPage(message string) string {
-	return OAuthSuccessHTML(message)
+	return renderOAuthPage("Connected · Orb", "Connected to Orb", message+" Return to your Orb terminal.", "", orbOAuthLogo)
 }
 
 func errorPage(message string) string {
-	return OAuthErrorHTML(message, "")
+	return errorPageWithDetails(message, "")
 }
 
 func errorPageWithDetails(message, details string) string {
-	return OAuthErrorHTML(message, details)
+	return renderOAuthPage("Connection failed · Orb", "Couldn’t connect to Orb", message, details, orbOAuthLogo)
 }
 
+// OAuthSuccessHTML retains the upstream HTML helper contract; browser callbacks
+// use the Orb presentation above.
 func OAuthSuccessHTML(message string) string {
-	return renderOAuthPage("Authentication successful", "Authentication successful", message, "")
+	return renderOAuthPage("Authentication successful", "Authentication successful", message, "", oauthLogoSVG)
 }
 
 func OAuthErrorHTML(message, details string) string {
-	return renderOAuthPage("Authentication failed", "Authentication failed", message, details)
+	return renderOAuthPage("Authentication failed", "Authentication failed", message, details, oauthLogoSVG)
 }
 
-func renderOAuthPage(title, heading, message, details string) string {
+func renderOAuthPage(title, heading, message, details, logo string) string {
 	detailsHTML := ""
 	if details != "" {
 		detailsHTML = `<div class="details">` + escapeOAuthHTML(details) + `</div>`
 	}
 	replacer := strings.NewReplacer(
 		"{{TITLE}}", escapeOAuthHTML(title),
-		"{{LOGO}}", oauthLogoSVG,
+		"{{LOGO}}", logo,
 		"{{HEADING}}", escapeOAuthHTML(heading),
 		"{{MESSAGE}}", escapeOAuthHTML(message),
 		"{{DETAILS}}", detailsHTML,

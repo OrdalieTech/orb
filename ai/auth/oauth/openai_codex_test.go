@@ -172,3 +172,17 @@ func quoted(value string) string {
 }
 
 func stringPort(port int) string { return strings.TrimPrefix((&net.TCPAddr{Port: port}).String(), ":") }
+
+func TestOAuthCallbackPagesUseOrbBrandAndEscapeContent(t *testing.T) {
+	for _, page := range []string{successPage("<script>bad</script>"), errorPageWithDetails("<script>bad</script>", "<trace>")} {
+		if !strings.Contains(page, ">orb</span>") || strings.Contains(page, oauthLogoSVG) {
+			t.Fatal("callback retained upstream branding")
+		}
+		if strings.Contains(page, "<script>") || !strings.Contains(page, "&lt;script&gt;") {
+			t.Fatal("callback failed to escape provider text")
+		}
+	}
+	if !strings.Contains(successPage("Connected"), "Return to your Orb terminal.") {
+		t.Fatal("missing return instruction")
+	}
+}
