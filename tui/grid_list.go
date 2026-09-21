@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -403,14 +404,19 @@ func (list *GridList) counter() string {
 // Frame pads every row to cover the overlay beneath it. Plain panels retain
 // the bordered layout offsets so focus and mouse routing stay identical.
 type Frame struct {
-	Plain      bool
-	Background StyleFunc
-	Title      string
-	TitleStyle StyleFunc // defaults to Border
-	Footer     string
-	Border     StyleFunc
-	Hint       StyleFunc
-	Child      Component
+	mu                                   sync.Mutex
+	Action                               string
+	OnAction                             func()
+	actionFocused                        bool
+	actionRow, actionColumn, actionWidth int
+	Plain                                bool
+	Background                           StyleFunc
+	Title                                string
+	TitleStyle                           StyleFunc // defaults to Border
+	Footer                               string
+	Border                               StyleFunc
+	Hint                                 StyleFunc
+	Child                                Component
 }
 
 func NewFrame(title, footer string, border, hint StyleFunc, child Component) *Frame {
@@ -425,6 +431,9 @@ func (frame *Frame) style(fn StyleFunc, text string) string {
 }
 
 func (frame *Frame) Render(width int) []string {
+	frame.mu.Lock()
+	defer frame.mu.Unlock()
+	frame.actionWidth = 0
 	if width < 8 {
 		return nil
 	}
@@ -449,7 +458,25 @@ func (frame *Frame) Render(width int) []string {
 		if frame.Plain && interior >= 8 {
 			title = TruncateToWidth(title, interior-4, "…", true) + " " + frame.style(frame.Hint, "esc")
 		}
-		lines = append(lines, wrap(title), wrap(""))
+		spacer := ""
+		if frame.Action != "" && frame.OnAction != nil {
+			action := TruncateToWidth("["+frame.Action+"]", interior, "…", false)
+			frame.actionWidth = VisibleWidth(action)
+			frame.actionRow, frame.actionColumn = 1, width-2-frame.actionWidth
+			if frame.actionFocused {
+				action = "\x1b[7m" + action + "\x1b[27m"
+			} else {
+				action = frame.style(titleStyle, action)
+			}
+			plainTitle := frame.style(titleStyle, frame.Title)
+			if VisibleWidth(plainTitle)+1+frame.actionWidth <= interior {
+				title = plainTitle + strings.Repeat(" ", interior-VisibleWidth(plainTitle)-frame.actionWidth) + action
+			} else {
+				spacer = strings.Repeat(" ", interior-frame.actionWidth) + action
+				frame.actionRow = 2
+			}
+		}
+		lines = append(lines, wrap(title), wrap(spacer))
 	}
 	if frame.Child != nil {
 		for _, line := range frame.Child.Render(interior) {
@@ -474,14 +501,36 @@ func (frame *Frame) Render(width int) []string {
 // Frame forwards focus and input to its child so it can wrap Focusable
 // components directly.
 func (frame *Frame) HandleInput(event KeyEvent) {
+	if frame.OnAction != nil {
+		frame.mu.Lock()
+		tab := MatchesKey(event.Raw, "tab") || MatchesKey(event.Raw, "shift+tab")
+		activate := frame.actionFocused && MatchesKey(event.Raw, "enter")
+		if tab {
+			frame.actionFocused = !frame.actionFocused
+		} else {
+			frame.actionFocused = false
+		}
+		frame.mu.Unlock()
+		frame.SetFocused(true)
+		if tab {
+			return
+		}
+		if activate {
+			frame.OnAction()
+			return
+		}
+	}
 	if handler, ok := frame.Child.(InputHandler); ok {
 		handler.HandleInput(event)
 	}
 }
 
 func (frame *Frame) SetFocused(focused bool) {
+	frame.mu.Lock()
+	childFocused := focused && !frame.actionFocused
+	frame.mu.Unlock()
 	if focusable, ok := frame.Child.(Focusable); ok {
-		focusable.SetFocused(focused)
+		focusable.SetFocused(childFocused)
 	}
 }
 
@@ -495,6 +544,22 @@ func (frame *Frame) WantsMouseMotion() bool {
 // HandleMouse translates to the child's coordinate space (chrome rows above
 // the child, border + padding columns) before forwarding.
 func (frame *Frame) HandleMouse(event MouseEvent) bool {
+	frame.mu.Lock()
+	hitAction := frame.OnAction != nil && event.Row == frame.actionRow && event.Column >= frame.actionColumn && event.Column < frame.actionColumn+frame.actionWidth
+	restoreFocus := !hitAction && event.Type == MousePress && frame.actionFocused
+	if restoreFocus {
+		frame.actionFocused = false
+	}
+	frame.mu.Unlock()
+	if hitAction {
+		if event.Type == MousePress && event.Button == 0 && event.Clicks < 2 {
+			frame.OnAction()
+		}
+		return true
+	}
+	if restoreFocus {
+		frame.SetFocused(true)
+	}
 	handler, ok := frame.Child.(MouseHandler)
 	if !ok {
 		return false
