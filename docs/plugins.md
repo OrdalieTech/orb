@@ -1,8 +1,8 @@
 # Plugins, permissions, and MCP — configuration reference
 
-Everything here lives in `settings.json` — global at `~/.pi/agent/settings.json`,
-per-project at `.pi/settings.json` (merged one level deep, project wins, and
-project settings only apply once the project is trusted).
+Settings use the `settings.json` schema. Native global settings live in SQLite; trusted project
+overrides remain in `.pi/settings.json` (merged one level deep, project wins). File-backed SDK
+and explicit Pi-file compatibility keep global settings at `~/.pi/agent/settings.json`.
 
 Three surfaces expose the same configuration:
 
@@ -12,12 +12,13 @@ Three surfaces expose the same configuration:
   external sub-agent CLIs (known CLIs found on PATH appear ready to enable),
   and install packages without leaving the session.
 - **From the shell**: `orb plugins …` and `orb mcp …` work without a session.
-- **By hand**: edit `settings.json` directly; invalid values fail closed at
-  startup with the exact key named.
+- **By hand**: export native global settings with `orb storage config export settings.json file.json`,
+  edit that file, then apply it with `orb storage config import settings.json file.json`. Project
+  settings remain directly editable. Invalid plugin values fail closed at startup with the key named.
 
 ## Plugins
 
-Bundled plugins are **off by default** (`orb plugins list` shows the five).
+Bundled plugins are **off by default** (`orb plugins list` shows the available modules).
 A plugin's value is either a boolean or an object holding its settings:
 
 ```json
@@ -94,7 +95,7 @@ sandbox.
 ### memory, tasks, websearch
 
 Boolean gates. `memory` persists bounded remember/recall/replace/forget notes
-under the agent dir; `tasks` adds the todo tool and live task widget;
+in native SQLite (or under the agent dir for file-backed SDKs); `tasks` adds the todo tool and live task widget;
 `websearch` adds web search and readable page fetching.
 
 ## MCP servers

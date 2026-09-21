@@ -1,9 +1,10 @@
 # Orb
 
 A faithful, slim, pure-Go port of Mario Zechner's MIT-licensed [pi coding agent](https://pi.dev),
-built by Ordalie as an SDK-first Go module and a single static CLI binary. Byte-compatible with
-upstream pi's session format, wire protocols, config files, and extension examples at the pinned
-upstream version in [UPSTREAM.lock](UPSTREAM.lock); every divergence is recorded in
+built by Ordalie as an SDK-first Go module and a single static CLI binary. Native CLI state lives
+in SQLite, with Pi JSONL import/export and file-backed SDK defaults. Wire protocols, compatibility
+formats and extension behavior follow the pinned version in [UPSTREAM.lock](UPSTREAM.lock);
+every divergence is recorded in
 [docs/DECISIONS.md](docs/DECISIONS.md). The `orb` binary deliberately coexists with upstream's
 `pi`.
 
@@ -33,9 +34,26 @@ orb                                  # interactive TUI
 orb -p "explain this repository"    # headless print mode
 ```
 
-Sessions are plain JSONL, interchangeable with upstream pi: a session written by Orb opens in
-TS pi and vice versa. `orb --mode rpc` speaks upstream's RPC protocol; upstream's own RPC test
-suite runs unmodified against it.
+Sessions and global state live in `~/.orb/state/orb.db` by default. On first launch, Orb migrates
+legacy state and preserves the original files; close older Orb and Bridge processes first. Use
+`orb storage import <session.jsonl>` and `orb storage export <session-id> <output.jsonl>` to exchange
+sessions with Pi. Native sessions have IDs rather than live JSONL paths. SDK defaults remain
+file-backed, and `orb --pi-files ...` provides explicit compatibility in a separate state root.
+See the [storage guide](docs/sdk.md#session-management) and [0.8.0 upgrade notes](CHANGELOG.md#080---2026-09-21).
+
+`orb --mode rpc` retains the upstream RPC protocol; upstream's unmodified suite also passes
+through the explicit Pi-file entry point.
+
+## Connect devices with Bridge
+
+Open **Bridge** from Settings or **Ctrl+P**, enable it, and choose **Add device**. Pair with an
+invitation or existing SSH access; SSH setup installs or updates remote Orb when needed, then
+conversation traffic uses Bridge over Tailcat. From the shell: `orb bridge connect-ssh user@host`.
+Pairing grants mutual conversation access. Bridge runs in the background until explicitly stopped;
+turning it off retains saved pairings. Recent foreign previews are read-only offline.
+
+The current release controls attached conversations. Managed remote hosting and a unified
+multi-Bridge Sessions page remain planned; see the [release notes](CHANGELOG.md#080---2026-09-21).
 
 ## Embed the SDK
 
@@ -58,7 +76,7 @@ Orb executes many upstream TypeScript extensions unmodified through a local Node
 pirate example from the pinned upstream revision and load it:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/845d6ff1f6643aba440341cce877ce1c43ebbc39/packages/coding-agent/examples/extensions/pirate.ts
+curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc/packages/coding-agent/examples/extensions/pirate.ts
 orb --extension ./pirate.ts
 ```
 
@@ -77,7 +95,7 @@ the exact package-by-package result and remaining runtime ceilings.
 ## Plugins, permissions, and MCP
 
 Orb's bundled plugins (tasks, websearch, subagents, permissions, memory) are off by default and
-configured through `settings.json` — including external CLIs as sub-agents, a fail-closed bash
+configured through Settings or the CLI — including external CLIs as sub-agents, a fail-closed bash
 filesystem sandbox, and MCP servers. `/plugins`, `/permissions`, and `/mcp` open configuration
 windows in the TUI; `orb plugins …` and `orb mcp …` configure everything from the shell without a
 session. See [docs/plugins.md](docs/plugins.md) for the full reference.
