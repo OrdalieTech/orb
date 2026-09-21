@@ -224,6 +224,7 @@ func (mode *InteractiveMode) requestChatRender(component tui.Component) {
 }
 
 func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any) *ToolExecutionComponent {
+	mode.ui.SetViewportMouseMotion(true)
 	requester := &chatRenderRequester{mode: mode}
 	component := NewToolExecutionComponent(name, id, args, mode.showImages(), mode.toolDefinition(name), requester, mode.cwd)
 	requester.Bind(component)
@@ -231,6 +232,7 @@ func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any
 }
 
 func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFromContext bool) *BashExecutionComponent {
+	mode.ui.SetViewportMouseMotion(true)
 	requester := &chatRenderRequester{mode: mode}
 	component := NewBashExecutionComponent(command, requester, excludeFromContext)
 	requester.Bind(component)
@@ -4215,6 +4217,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		label := mode.thinkingLabel
 		mode.mu.Unlock()
 		comp := NewAssistantMessageComponent(nil, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
+		comp.onChange = func() { mode.requestChatRender(comp) }
 		mode.mu.Lock()
 		mode.currentStreaming = comp
 		mode.mu.Unlock()
@@ -4502,10 +4505,7 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 					return container
 				}
 			}
-			if name == "bash" {
-				return newToolOutputPreview(strings.TrimSpace(renderer.RenderResult(result)), options, palette)
-			}
-			return tui.NewText(palette.FG("toolOutput", renderer.RenderResult(result)), 0, 0, nil)
+			return newToolOutputPreview(strings.TrimSpace(renderer.RenderResult(result)), options, palette)
 		},
 	}
 }
@@ -4646,6 +4646,7 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 		hidden, label := mode.thinkingHidden, mode.thinkingLabel
 		mode.mu.Unlock()
 		component := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
+		component.onChange = func() { mode.requestChatRender(component) }
 		mode.chat.AddChild(component)
 		for _, block := range assistant.Content {
 			call, ok := block.(*ai.ToolCall)

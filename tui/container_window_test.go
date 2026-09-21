@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -116,6 +117,28 @@ func TestWindowedContainerRendersOnlyChangedTail(t *testing.T) {
 	}
 	if appended.renders != 1 || children[999].renders != 2 {
 		t.Fatalf("append rendered old tail=%d new=%d", children[999].renders, appended.renders)
+	}
+}
+
+func TestWindowedContainerReleasesOffscreenRenderCache(t *testing.T) {
+	container := NewWindowedContainer()
+	first, middle, last := NewText("first", 0, 0, nil), NewText("middle", 0, 0, nil), NewText("last", 0, 0, nil)
+	container.AddChild(first)
+	container.AddChild(middle)
+	container.AddChild(last)
+	ui := NewTUI(newFakeTerminal(80, 2))
+	ui.SetViewport(container, NewText("input", 0, 0, nil))
+	if frame := ui.renderViewport(80, 2); !strings.Contains(frame[0], "last") {
+		t.Fatalf("tail viewport = %q", frame)
+	}
+	if container.windowChildLines[0] != nil || container.windowChildLines[1] != nil || first.cacheLines != nil || middle.cacheLines != nil {
+		t.Fatal("offscreen rendered lines remain cached")
+	}
+	if got := container.RenderLines(79, 0, 1); len(got) != 1 || strings.TrimSpace(got[0]) != "first" {
+		t.Fatalf("restored first line = %q", got)
+	}
+	if container.windowChildLines[2] != nil || last.cacheLines != nil {
+		t.Fatal("previously visible tail remains cached after scrolling away")
 	}
 }
 
