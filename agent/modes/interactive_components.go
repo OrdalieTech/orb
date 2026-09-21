@@ -1024,9 +1024,7 @@ func footerContextSummary(display engine.AgentDisplayState, usage *harness.Conte
 	return percent + "%/" + formatTokens(contextWindow)
 }
 
-// modelFooterForms keeps the model readable while the footer narrows. The
-// thinking meter is deliberately paired with its word label: the shape scans
-// quickly, while the text keeps it unambiguous in unfamiliar fonts.
+// modelFooterForms keeps the model readable while the footer narrows.
 func modelFooterForms(display engine.AgentDisplayState, providerCount int) []string {
 	if !display.HasModel {
 		return []string{"no-model"}
@@ -1037,7 +1035,7 @@ func modelFooterForms(display engine.AgentDisplayState, providerCount int) []str
 		if level == "" {
 			level = "off"
 		}
-		thinking = " · " + thinkingMeter(level) + " " + level + strings.Repeat(" ", max(0, 7-tui.VisibleWidth(level)))
+		thinking = " " + thinkingMeter(level)
 	}
 	forms := make([]string, 0, 3)
 	if providerCount > 1 {
@@ -1050,24 +1048,22 @@ func modelFooterForms(display engine.AgentDisplayState, providerCount int) []str
 }
 
 func thinkingMeter(level string) string {
-	meter := ""
 	switch level {
 	case "minimal":
-		meter = "▁"
+		return "▁"
 	case "low":
-		meter = "▁▂"
+		return "▂"
 	case "medium":
-		meter = "▁▂▃"
+		return "▄"
 	case "high":
-		meter = "▁▃▅"
+		return "▆"
 	case "xhigh":
-		meter = "▁▃▅▇"
+		return "▇"
 	case "max":
-		meter = "▂▄▆█"
+		return "█"
 	default:
-		meter = "·"
+		return "·"
 	}
-	return meter + strings.Repeat("·", 4-tui.VisibleWidth(meter))
 }
 
 func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int) string {
@@ -1076,16 +1072,13 @@ func compactFooterLine(display engine.AgentDisplayState, context *harness.Contex
 		model = "Choose model"
 	}
 	left := model
-	if display.Reasoning && display.ThinkingLevel != "" {
-		left += " · " + thinkingMeter(string(display.ThinkingLevel)) + " " + string(display.ThinkingLevel)
+	if display.Reasoning {
+		left += " " + thinkingMeter(string(display.ThinkingLevel))
 	}
 	right := strings.Join(statuses, " · ")
 	leftBudget := width
 	if right != "" {
 		leftBudget = max(min(tui.VisibleWidth(model), width*2/3), width-tui.VisibleWidth(right)-2)
-	}
-	if tui.VisibleWidth(left) > leftBudget && display.Reasoning {
-		left = model + " · " + thinkingMeter(string(display.ThinkingLevel))
 	}
 	if tui.VisibleWidth(left) > leftBudget {
 		left = model
@@ -1236,15 +1229,21 @@ func (f *FooterComponent) recordStatusHits(text string, row int, keys, values []
 }
 
 func (f *FooterComponent) recordThinkingHit(text string, row int, display engine.AgentDisplayState) {
-	if !display.Reasoning {
+	provider, ok := f.provider.(interface{ StatusAction(string) func() })
+	if !display.Reasoning || !ok {
 		return
 	}
-	meter := thinkingMeter(string(display.ThinkingLevel))
-	label := meter + " " + string(display.ThinkingLevel)
-	if !strings.Contains(tui.StripANSI(text), label) {
-		label = meter
+	text = tui.StripANSI(text)
+	label := display.ModelID + " " + thinkingMeter(string(display.ThinkingLevel))
+	start := strings.Index(text, label)
+	action := provider.StatusAction("orb:thinking")
+	if start < 0 || action == nil {
+		return
 	}
-	f.recordStatusHits(text, row, []string{"orb:thinking"}, []string{label})
+	column := tui.VisibleWidth(text[:start]) + tui.VisibleWidth(label)
+	f.hitMu.Lock()
+	f.hits = append(f.hits, statusHit{row: row, start: column, end: column + 1, action: action})
+	f.hitMu.Unlock()
 }
 
 func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
