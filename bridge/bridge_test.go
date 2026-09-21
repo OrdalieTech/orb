@@ -72,6 +72,35 @@ func TestPairOnceTwentyInstancesAndFixedGrants(t *testing.T) {
 		t.Fatal("block ignored")
 	}
 }
+
+func TestFullAccessCoversCurrentAndFutureGroupsButNotAgentCalls(t *testing.T) {
+	b, peer := newBridge(t), newBridge(t)
+	grant := Grant{Principal: peer.Principal(), GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.prompt"}}
+	if err := b.AddGrant(grant); err != nil {
+		t.Fatal(err)
+	}
+	group := protocol.NewID()
+	if _, err := b.Admin(t.Context(), "group", connect.JSON(map[string]string{"group_id": group, "name": "later"})); err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range []string{b.PersonalGroup(), group} {
+		instance, _, err := b.Enroll("test-"+g, g)
+		if err != nil || !b.Allowed(peer.Principal(), instance.ID, "instance.prompt") {
+			t.Fatalf("full access missing: %v", err)
+		}
+		agent := peer.Principal()
+		agent.Subject = connect.Subject{Kind: "instance", InstanceID: protocol.NewID()}
+		if b.Allowed(agent, instance.ID, "instance.prompt") {
+			t.Fatal("controller trust granted agent access")
+		}
+	}
+	if err := b.Block(peer.PeerID()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Catalog(peer.Principal())) != 0 {
+		t.Fatal("blocked peer retained full access")
+	}
+}
 func TestRegistrationCredentialIsolationAndFencing(t *testing.T) {
 	b := newBridge(t)
 	r, secret, err := b.Enroll("one", b.PersonalGroup())

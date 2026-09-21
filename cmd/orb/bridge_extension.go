@@ -221,7 +221,7 @@ func bridgeSettingsRows(page string, running, enabled, agentCalls bool, status b
 	switch page {
 	case "devices":
 		rows := []tui.GridRow{
-			row("Invite device", "Share this Orb", "Choose access", "Choose access, copy an invitation, then approve the device that connects."),
+			row("Invite device", "Share this Orb", "Create invitation", "Connect trusted Orbs with full access to current and future conversations."),
 			row("Join device", "Connect to a device", "Paste invitation", "Paste an invitation from the Orb you want to control."),
 		}
 		if pending > 0 {
@@ -254,7 +254,7 @@ func bridgeSettingsRows(page string, running, enabled, agentCalls bool, status b
 		}
 	}
 	connectRows := []tui.GridRow{
-		row("Invite device", "Share this Orb", "Choose access", "Choose access, then copy an invitation. Starts Bridge if needed."),
+		row("Invite device", "Share this Orb", "Create invitation", "Connect trusted Orbs with full access to current and future conversations."),
 		row("Join device", "Connect to a device", "Paste invitation", "Paste an invitation from another Orb. Starts Bridge if needed."),
 		row("SSH", "Connect using SSH", "user@host", "Pair a server using your SSH login, then open its shared conversations."),
 	}
@@ -297,6 +297,7 @@ func newBridgeSettingsPanel(profile, page, selected string, rows []tui.GridRow, 
 		Cursor:     th.FG("accent", "› "),
 	})
 	list.DetailHeight = 2
+	list.WrapDetail = true
 	for i, row := range rows {
 		if row.Value == selected {
 			list.ListSelectRow(i)
@@ -442,12 +443,8 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 	case "Status":
 		ui.Notify(fmt.Sprintf("%s\n%d instances · %d peers · %d grants", status.PeerID, len(status.Instances), len(status.Peers), len(status.Grants)), extensions.NotifyInfo)
 	case "Invite device":
-		g, e := selectGrant()
-		if e != nil {
-			return e
-		}
 		var inv bridge.Invitation
-		if e = client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{g}}, &inv); e != nil {
+		if e := client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{fullBridgeGrant("")}}, &inv); e != nil {
 			return e
 		}
 
@@ -461,7 +458,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
-		ok, e := ui.Confirm(ctx, "Connect to this device?", inv.PeerID+"\nVerify this fingerprint on the device that shared the invitation.", nil)
+		ok, e := ui.Confirm(ctx, "Trust this Orb?", inv.PeerID+"\nAllow full control of your current and future conversations.\nVerify this fingerprint on the sharing Orb.", nil)
 		if e != nil || !ok {
 			return e
 		}
@@ -478,6 +475,9 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
+		if e = trustBridgePeer(ctx, client, inv.PeerID); e != nil {
+			return e
+		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
 		return openSharedBridgeConversation(ctx, ui, profile, inv.PeerID, client)
 	case "SSH":
@@ -485,13 +485,12 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
-		scope, ok, e := ui.Select(ctx, "Control conversations in the server's personal group", []string{"Current conversations only", "Current and future conversations"}, nil)
+		ok, e := ui.Confirm(ctx, "Trust "+target+"?", "Share full control of current and future conversations in both directions.\nOrb will be installed or updated on the server if needed.", nil)
 		if e != nil || !ok {
 			return e
 		}
-		future := scope == "Current and future conversations"
-		ui.Notify("Connecting to "+target+" using SSH…", extensions.NotifyInfo)
-		peer, e := connectBridgeSSH(ctx, client, status.PeerID, target, "personal", "orb", future)
+		ui.Notify("Setting up Orb on "+target+"…", extensions.NotifyInfo)
+		peer, e := connectBridgeSSH(ctx, client, status.PeerID, target, "personal", "orb")
 		if e != nil {
 			return e
 		}
@@ -513,18 +512,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 			return e
 		}
 		inv := claims[choice]
-		details := "Claimant: " + inv.Claimant
-		for _, g := range inv.Grants {
-			details += "\n" + status.Groups[g.GroupID] + ": " + strings.Join(g.Permissions, ", ")
-			if g.IncludeFuture {
-				details += " (including future instances)"
-			}
-		}
-		ok, e = ui.Confirm(ctx, "Approve these exact grants?", details, nil)
-		if e != nil || !ok {
-			return e
-		}
-		return client.Call(ctx, "approve", map[string]string{"invitation_id": inv.ID, "claimant": inv.Claimant}, nil)
+		return approveBridgePairing(ctx, ui, client, inv, status.Groups)
 	case "Peers":
 		choice, ok, e := ui.Select(ctx, peer, []string{"Open conversation", "Block device"}, nil)
 		if e != nil || !ok {
@@ -678,7 +666,8 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 		labels = append(labels, r.Alias+" · "+r.ID)
 	}
 	if len(labels) == 0 {
-		return fmt.Errorf("device paired, but no conversations are available; enable Bridge in an Orb on that device and check its sharing grants")
+		ui.Notify("Orb connected. Enable Bridge in a conversation on the other device to share it.", extensions.NotifyInfo)
+		return nil
 	}
 	choice, ok, e := ui.Select(ctx, "Shared conversations", labels, nil)
 	if e != nil || !ok {
@@ -704,19 +693,27 @@ func shareBridgeInvitation(ctx context.Context, ui extensions.UI, client *protoc
 	if err != nil {
 		return err
 	}
+	return approveBridgePairing(ctx, ui, client, claimed, groups)
+}
+
+func approveBridgePairing(ctx context.Context, ui extensions.UI, client *protocol.Conn, claimed bridge.Invitation, groups map[string]string) error {
 	details := "Verify this fingerprint on the joining device:\n" + claimed.Claimant
 	for _, g := range claimed.Grants {
+		if g.GroupID == "*" && g.IncludeFuture && slices.Equal(g.Permissions, fullBridgeGrant("").Permissions) {
+			details += "\nAllow full control of all current and future conversations."
+			continue
+		}
 		scope := "current instances only"
 		if g.IncludeFuture {
 			scope = "current and future instances"
 		}
 		details += "\n" + groups[g.GroupID] + " · " + scope + "\n" + strings.Join(g.Permissions, ", ")
 	}
-	yes, err := ui.Confirm(ctx, "Approve this device's access?", details, nil)
+	yes, err := ui.Confirm(ctx, "Trust this Orb?", details, nil)
 	if err != nil || !yes {
 		return err
 	}
-	if err = client.Call(ctx, "approve", map[string]string{"invitation_id": inv.ID, "claimant": claimed.Claimant}, nil); err != nil {
+	if err = client.Call(ctx, "approve", map[string]string{"invitation_id": claimed.ID, "claimant": claimed.Claimant}, nil); err != nil {
 		return err
 	}
 	ui.Notify("Device paired. It can now open the conversations you shared.", extensions.NotifyInfo)

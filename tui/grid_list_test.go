@@ -68,6 +68,20 @@ func TestGridListSetRowsKeepsSelectionByValue(t *testing.T) {
 	}
 }
 
+func TestGridListWrapsDetailIntoTwoReservedRows(t *testing.T) {
+	list := NewGridList([]GridRow{{Value: "ssh", Cells: []string{"SSH"}, Detail: []string{"SSH login failed. Check your keys and saved host key."}}}, 1, GridListTheme{})
+	list.DetailHeight, list.WrapDetail = 2, true
+	lines := list.Render(36)
+	if len(lines) != 4 || !strings.Contains(lines[2], "SSH login failed.") || !strings.Contains(lines[3], "saved host key.") {
+		t.Fatalf("error was not wrapped into two lines: %q", lines)
+	}
+	for _, line := range lines {
+		if VisibleWidth(line) > 36 || strings.Contains(line, "…") {
+			t.Fatalf("wrapped error clipped: %q", line)
+		}
+	}
+}
+
 func TestFrameChromeAndPadding(t *testing.T) {
 	frame := NewFrame("Plugins", "esc close", nil, nil, NewText("body", 0, 0, nil))
 	lines := frame.Render(24)

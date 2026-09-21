@@ -654,3 +654,78 @@ func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
 		t.Fatal("stop returned while the old service still accepts connections")
 	}
 }
+
+func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
+	for _, test := range []struct {
+		name, failure string
+		old           bool
+	}{{name: "missing"}, {name: "old", old: true}, {name: "shadowed", old: true}, {name: "unsupported", old: true, failure: "support Bridge"}, {name: "checksum", old: true, failure: "checksum"}, {name: "truncated", old: true, failure: "checksum"}, {name: "ssh", old: true, failure: "SSH login failed"}, {name: "custom-old", old: true, failure: "support Bridge"}} {
+		t.Run(test.name, func(t *testing.T) {
+			bin, dest := t.TempDir(), t.TempDir()
+			ssh := "#!/bin/sh\nfor arg do command=$arg; done\nexec /bin/sh -c \"$command\"\n"
+			if test.name == "ssh" {
+				ssh = "#!/bin/sh\nexit 255\n"
+			}
+			if test.name == "truncated" {
+				ssh = strings.Replace(ssh, "exec /bin/sh", "head -c 12 | /bin/sh", 1)
+			}
+			if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(ssh), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+":/usr/bin:/bin")
+			t.Setenv("ORB_INSTALL_DIR", dest)
+			if test.name == "shadowed" {
+				if err := os.WriteFile(filepath.Join(bin, "orb"), []byte("#!/bin/sh\necho old-orb\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.old {
+				if err := os.WriteFile(filepath.Join(dest, "orb"), []byte("#!/bin/sh\necho old-orb\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			payload := []byte("#!/bin/sh\necho 'orb bridge trust <peer-id>'\n")
+			if test.name == "unsupported" {
+				payload = []byte("#!/bin/sh\necho old-orb\n")
+			}
+			state := &release{archive: buildArchive(t, tarEntry{name: "orb", body: payload})}
+			if test.name == "checksum" {
+				state.checksums = "invalid"
+			}
+			updater := updaterFor(t, "dev", state)
+			remoteOrb := "orb"
+			if test.name == "custom-old" {
+				remoteOrb = filepath.Join(dest, "orb")
+			}
+			path, err := ensureBridgeSSH(t.Context(), "server", remoteOrb, updater)
+			if test.failure != "" {
+				if err == nil || !strings.Contains(err.Error(), test.failure) {
+					t.Fatalf("wrong failure: %v", err)
+				}
+				got, readErr := os.ReadFile(filepath.Join(dest, "orb"))
+				if readErr != nil || string(got) != "#!/bin/sh\necho old-orb\n" {
+					t.Fatal("failed install changed the original Orb")
+				}
+				assertOnlyOrb(t, dest)
+				if test.name == "ssh" && (state.metadataHits != 0 || strings.Count(err.Error(), "\n") != 1) {
+					t.Fatal("login failure downloaded an installer or did not produce two error lines")
+				}
+				if test.name == "custom-old" && state.metadataHits != 0 {
+					t.Fatal("explicit executable was replaced by an automatic install")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != string(payload) || path != filepath.Join(dest, "orb") {
+				t.Fatal("verified Orb was not installed")
+			}
+			path, err = ensureBridgeSSH(t.Context(), "server", "orb", updater)
+			if err != nil || path != filepath.Join(dest, "orb") || state.archiveHits != 1 {
+				t.Fatalf("compatible Orb was not reused: %v", err)
+			}
+		})
+	}
+}

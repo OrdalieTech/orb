@@ -53,6 +53,7 @@ type GridList struct {
 	// height never changes with the selection, so an overlay window neither
 	// grows nor moves while hovering. Zero disables the area.
 	DetailHeight int
+	WrapDetail   bool
 
 	// OnConfirm fires on enter/space/double-click with the selected Value.
 	OnConfirm func(value string)
@@ -364,6 +365,13 @@ func (list *GridList) Render(width int) []string {
 		var detail []string
 		if list.selected >= 0 && list.selected < len(list.view) {
 			detail = list.view[list.selected].Detail
+		}
+		if list.WrapDetail {
+			var wrapped []string
+			for _, line := range detail {
+				wrapped = append(wrapped, WrapTextWithANSI(line, max(1, width-2))...)
+			}
+			detail = wrapped
 		}
 		for index := range list.DetailHeight {
 			text := ""

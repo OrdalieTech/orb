@@ -571,14 +571,14 @@ Final static release builds use `CGO_ENABLED=0`, the release tags, `-trimpath`, 
 
 | Target | Bytes |
 |---|---:|
-| linux-amd64 | 50,552,992 |
+| linux-amd64 | 50,561,184 |
 | linux-arm64 | 47,710,368 |
-| darwin-amd64 | 51,582,576 |
-| darwin-arm64 | 49,096,162 |
+| darwin-amd64 | 51,594,832 |
+| darwin-arm64 | 49,096,130 |
 
-Refreshed after guided pairing and SSH setup: all remain below 55 MB decimal. Forty warm-cache
-Darwin/arm64 `--version` runs after five warmups measured 10.63 ms mean, 10.21 ms median, and
-19.45 ms maximum (50 ms budget).
+Refreshed after full mutual trust and SSH installation: all remain below 55 MB decimal. Forty warm-cache
+Darwin/arm64 `--version` runs after five warmups measured 10.76 ms mean, 10.70 ms median, and
+12.69 ms maximum (50 ms budget).
 Bridge-only protocol schemas are in ARCHITECTURE and tests in `connect`/`bridge`; SDK assembly
 and user commands are documented in `docs/sdk.md`. Unrelated concurrent progress and UI changes
 were preserved. Isolated remote test services and scratch profiles were removed after validation.
@@ -632,6 +632,37 @@ processes were removed; remote process checks confirmed none remained.
 `make check` passes using the documented Node 24 runner, including vet/lint, the full race suite,
 layering checks, and shipped-build Pi/provider conformance. All four static release builds and
 the refreshed measurements above pass. Existing TUI snapshots remain green without regeneration.
+
+## 2026-09-21 — Full conversation trust and SSH installation
+
+The owner simplified new pairings to full mutual access to current and future conversations.
+Share now opens its invitation immediately; each device confirms the other identity once.
+The existing grant layer implements this with a reserved all-groups selector, including future
+groups, while keeping controller subjects, agent-call authority, and local administration separate.
+Existing restricted grants are retained. Empty remote catalogs now confirm successful pairing
+instead of showing an error. Bridge details wrap into their two reserved lines, so SSH diagnostics
+remain readable without increasing modal height or changing other lists' default rendering.
+
+SSH setup checks both PATH and the user install directory. When necessary it reuses the updater's
+HTTPS/checksum-verified platform downloads, uploads over SSH, checks the uploaded checksum and
+Bridge support, and atomically replaces the user-owned Orb executable. Login failure, invalid
+archives/checksums, interrupted uploads, and unsupported candidates leave the old executable
+intact. An explicitly selected remote executable is validated without replacing it. No additional
+dependency, source file, sudo requirement, shell configuration change, or SDK import was added.
+
+The published v0.7.1 release predates Bridge; automatic installation correctly rejects it instead
+of replacing a working binary with an incompatible release. On the owner's requested `lab-3`,
+the tested Linux/amd64 development build was installed at `~/.local/bin/orb`, replacing v0.6.0.
+The installed binary remains there; test profiles, conversations, and processes were removed.
+Live default-path SSH pairing passed before a remote conversation existed, then a newly created
+conversation became accessible and authorized inspection passed in both directions.
+
+Hermetic checks cover missing/old installations, reuse behind an older PATH entry, refused custom executables, checksum
+failure, truncated transfers, login diagnostics, wildcard grants, and blocked peers. Built-binary
+PTY checks passed invitation copy/paste without permission menus, both identity confirmations,
+mutual full grants, remote viewing, Escape restoration, and the complete two-line SSH error.
+The clipboard command was isolated; the user's clipboard was preserved. `make check` and all
+four static release builds pass; release measurements above are refreshed for this change.
 
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
