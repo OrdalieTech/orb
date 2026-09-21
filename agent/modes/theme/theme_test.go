@@ -29,7 +29,7 @@ func TestBuiltinsAndColorModes(t *testing.T) {
 	if ansi, _ := dark.ForegroundANSI("accent"); !strings.HasPrefix(ansi, "\x1b[38;5;") {
 		t.Fatalf("256-color accent = %q", ansi)
 	}
-	if got := indexed.Available(); !reflect.DeepEqual(got, []string{"dark", "light"}) {
+	if got := indexed.Available(); !reflect.DeepEqual(got, []string{"dark", "light", "terminal"}) {
 		t.Fatalf("available = %#v", got)
 	}
 }
@@ -218,8 +218,8 @@ func TestRegistryConcurrentReadsAndMutations(t *testing.T) {
 	close(start)
 	wait.Wait()
 
-	if got := len(registry.Available()); got != len(themes)+2 {
-		t.Fatalf("available themes = %d, want %d", got, len(themes)+2)
+	if got := len(registry.Available()); got != len(themes)+3 {
+		t.Fatalf("available themes = %d, want %d", got, len(themes)+3)
 	}
 }
 
@@ -457,4 +457,29 @@ func ThemeForRGB(r, g, b int) TerminalTheme {
 		return Light
 	}
 	return Dark
+}
+
+func TestTerminalThemeInheritsPalette(t *testing.T) {
+	for _, mode := range []ColorMode{TrueColor, Color256} {
+		native, ok := Load(LoadOptions{NoThemes: true, Mode: mode}).Get("terminal")
+		if !ok {
+			t.Fatal("terminal theme missing")
+		}
+		for _, name := range []string{"text", "accent", "border", "thinkingHigh"} {
+			if got, _ := native.ForegroundANSI(name); got != "\x1b[39m" {
+				t.Fatalf("%s = %q", name, got)
+			}
+		}
+		if got, _ := native.BackgroundANSI("toolPendingBg"); got != "\x1b[49m" {
+			t.Fatalf("panel = %q", got)
+		}
+		if got, _ := native.ForegroundANSI("customMessageLabel"); got != "\x1b[38;5;5m" {
+			t.Fatalf("skill = %q", got)
+		}
+		for _, name := range []string{"selectedBg", "searchMatchBg", "scrollbarThumb"} {
+			if got := native.Background(name, "a\x1b[0mb"); got != "\x1b[7ma\x1b[0m\x1b[7mb\x1b[27m" {
+				t.Fatalf("%s = %q", name, got)
+			}
+		}
+	}
 }

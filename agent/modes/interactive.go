@@ -595,6 +595,9 @@ func (mode *InteractiveMode) themeSettingOr(persisted string) string {
 	if mode.themeSetting != "" {
 		return mode.themeSetting
 	}
+	if persisted == "" {
+		return "terminal"
+	}
 	return persisted
 }
 
