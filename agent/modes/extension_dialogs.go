@@ -12,6 +12,8 @@ import (
 )
 
 type extensionDialogOptions struct {
+	searchable            bool
+	pinnedOptions         int
 	ui                    tui.RenderRequester
 	timeout               *int64
 	onToggleToolsExpanded func()
@@ -25,7 +27,13 @@ type ExtensionSelectorComponent struct {
 	title                 *tui.Text
 	baseTitle             string
 	options               []tui.SelectItem
+	allOptions            []tui.SelectItem
+	searchInput           *tui.Input
+	pinnedOptions         int
 	selected              int
+	scrollTop             int
+	freezeScroll          bool
+	ui                    *tui.TUI
 	onSelect              func(string)
 	onCancel              func()
 	onToggleToolsExpanded func()
@@ -54,10 +62,19 @@ func NewExtensionSelectorItemsComponent(
 	}
 	if config != nil {
 		component.onToggleToolsExpanded = config.onToggleToolsExpanded
+		component.ui, _ = config.ui.(*tui.TUI)
+		component.pinnedOptions = config.pinnedOptions
 	}
 	component.title = tui.NewText(theme.FG("accent", theme.Bold(title)), 1, 0, nil)
 	component.container.AddChild(component.title)
 	component.container.AddChild(tui.NewSpacer(1))
+	if config != nil && config.searchable {
+		component.allOptions = component.options
+		component.searchInput = tui.NewInput()
+		component.container.AddChild(component.searchInput)
+		component.container.AddChild(tui.NewSpacer(1))
+		component.filterOptions()
+	}
 	if config != nil && config.timeout != nil && *config.timeout > 0 && config.ui != nil {
 		component.countdown = NewCountdownTimer(*config.timeout, config.ui, func(seconds int) {
 			component.title.SetText(theme.FG("accent", theme.Bold(fmt.Sprintf("%s (%ds)", component.baseTitle, seconds))))
@@ -75,6 +92,17 @@ func NewExtensionSelectorItemsComponent(
 	))
 	component.updateList()
 	return component
+}
+
+func (component *ExtensionSelectorComponent) filterOptions() {
+	pinned := min(component.pinnedOptions, len(component.allOptions))
+	component.options = append([]tui.SelectItem(nil), component.allOptions[:pinned]...)
+	component.options = append(component.options, tui.FuzzyFilter(component.allOptions[pinned:], component.searchInput.GetValue(), func(item tui.SelectItem) string { return item.Value })...)
+	component.selected = max(0, min(component.selected, len(component.options)-1))
+	if len(component.options) == pinned {
+		component.selected = 0
+	}
+	component.updateList()
 }
 
 func (component *ExtensionSelectorComponent) updateList() {
@@ -98,7 +126,7 @@ func (component *ExtensionSelectorComponent) updateList() {
 func (component *ExtensionSelectorComponent) HandleInput(event tui.KeyEvent) {
 	for _, option := range component.options {
 		label := strings.TrimSpace(option.Value)
-		if len(event.Raw) == 1 && len(label) > 1 && label[1] == ' ' && strings.EqualFold(label[:1], event.Raw) {
+		if component.searchInput == nil && len(event.Raw) == 1 && len(label) > 1 && label[1] == ' ' && strings.EqualFold(label[:1], event.Raw) {
 			if component.onSelect != nil {
 				component.onSelect(option.Value)
 			}
@@ -111,10 +139,12 @@ func (component *ExtensionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		if component.onToggleToolsExpanded != nil {
 			component.onToggleToolsExpanded()
 		}
-	case bindings.Matches(event.Raw, "tui.select.up") || event.Raw == "k":
+	case bindings.Matches(event.Raw, "tui.select.up") || component.searchInput == nil && event.Raw == "k":
+		component.freezeScroll = false
 		component.selected = max(0, component.selected-1)
 		component.updateList()
-	case bindings.Matches(event.Raw, "tui.select.down") || event.Raw == "j":
+	case bindings.Matches(event.Raw, "tui.select.down") || component.searchInput == nil && event.Raw == "j":
+		component.freezeScroll = false
 		component.selected = min(len(component.options)-1, component.selected+1)
 		component.updateList()
 	case bindings.Matches(event.Raw, "tui.select.confirm") || event.Raw == "\n":
@@ -123,6 +153,16 @@ func (component *ExtensionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		}
 	case bindings.Matches(event.Raw, "tui.select.cancel"):
 		component.cancel()
+	default:
+		if component.searchInput != nil {
+			query := component.searchInput.GetValue()
+			component.searchInput.HandleInput(event)
+			if query != component.searchInput.GetValue() {
+				component.freezeScroll = false
+				component.selected, component.scrollTop = component.pinnedOptions, 0
+				component.filterOptions()
+			}
+		}
 	}
 }
 
@@ -138,27 +178,65 @@ func (component *ExtensionSelectorComponent) Dispose() {
 	}
 }
 
+func (component *ExtensionSelectorComponent) SetFocused(focused bool) {
+	if component.searchInput != nil {
+		component.searchInput.SetFocused(focused)
+	}
+}
+
 func (component *ExtensionSelectorComponent) Invalidate() { component.container.Invalidate() }
 
-// Render inlines the container walk so it can record where each option landed
-// for mouse hit-testing; unlike the windowed selectors, the end boundary is
-// recorded right after the last option so the trailing hint lines never
-// hit-test as the last option. The emitted lines are the container's own.
+// Keep wrapped options inside the modal and use the same offsets for hit-testing.
 func (component *ExtensionSelectorComponent) Render(width int) []string {
-	lines, rows := make([]string, 0), make([]int, 0, len(component.options)+1)
+	var before, options, after []string
+	rows := make([]int, 0, len(component.options)+1)
+	seenList := false
 	for _, child := range component.container.Children() {
-		if child != component.list {
-			lines = append(lines, child.Render(width)...)
-			continue
+		if child == component.list {
+			seenList = true
+			for _, option := range component.list.Children() {
+				rows = append(rows, len(options))
+				options = append(options, option.Render(width)...)
+			}
+			rows = append(rows, len(options))
+		} else if seenList {
+			after = append(after, child.Render(width)...)
+		} else {
+			before = append(before, child.Render(width)...)
 		}
-		for _, option := range component.list.Children() {
-			rows = append(rows, len(lines))
-			lines = append(lines, option.Render(width)...)
+	}
+	limit := 10
+	if component.ui != nil {
+		// The modal uses 85% of terminal height; its frame adds two rows.
+		limit = max(1, component.ui.Terminal().Rows()*85/100-len(before)-len(after)-3)
+	}
+	component.scrollTop = max(0, min(component.scrollTop, len(options)-limit))
+	if !component.freezeScroll && component.selected >= 0 && component.selected+1 < len(rows) {
+		start, end := rows[component.selected], rows[component.selected+1]
+		if start < component.scrollTop {
+			component.scrollTop = start
+		} else if end > component.scrollTop+limit {
+			component.scrollTop = min(start, end-limit)
 		}
-		rows = append(rows, len(lines))
+	}
+	end := min(len(options), component.scrollTop+limit)
+	for index := range rows {
+		rows[index] = len(before) + max(0, min(rows[index]-component.scrollTop, end-component.scrollTop))
 	}
 	component.rows.setOffsets(rows)
-	return lines
+	lines := append(before, options[component.scrollTop:end]...)
+	if component.searchInput != nil {
+		if len(lines) < len(before)+limit && len(component.options) == component.pinnedOptions && component.searchInput.GetValue() != "" {
+			lines = append(lines, theme.FG("dim", "  No matches"))
+		}
+		for len(lines) < len(before)+limit {
+			lines = append(lines, "")
+		}
+	}
+	if len(options) > limit || component.searchInput != nil {
+		lines = append(lines, theme.FG("dim", tui.TruncateToWidth(fmt.Sprintf("  %d/%d", component.selected+1, len(component.options)), width, "", false)))
+	}
+	return append(lines, after...)
 }
 
 // WantsMouseMotion turns on hover reports while the dialog holds focus.
@@ -183,9 +261,9 @@ func (component *ExtensionSelectorComponent) ListRowAt(row int) (int, bool) {
 	return index, true
 }
 
-// ListSelectRow moves the highlight; every option is always rendered, so
-// there is no window to preserve.
+// ListSelectRow keeps the current window when the pointed option is visible.
 func (component *ExtensionSelectorComponent) ListSelectRow(index int) {
+	component.freezeScroll = true
 	if component.selected != index {
 		component.selected = index
 		component.updateList()
@@ -194,6 +272,7 @@ func (component *ExtensionSelectorComponent) ListSelectRow(index int) {
 
 // ListScroll moves the selection one row per tick, like keyboard navigation.
 func (component *ExtensionSelectorComponent) ListScroll(direction int) {
+	component.freezeScroll = false
 	component.selected = max(0, min(component.selected+direction, len(component.options)-1))
 	component.updateList()
 }

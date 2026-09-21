@@ -537,6 +537,72 @@ func TestTreeSelectorHoverMovesSelectionInPlace(t *testing.T) {
 	}
 }
 
+func TestExtensionSelectorScrollsWrappedOptions(t *testing.T) {
+	initTestTheme(t)
+	useTreeTestKeybindings(t)
+	items := make([]tui.SelectItem, 40)
+	for index := range items {
+		items[index].Value = fmt.Sprintf("provider/long-model-name-%02d", index)
+	}
+	chosen := ""
+	component := NewExtensionSelectorItemsComponent("Favorite models", items, func(value string) { chosen = value }, nil, &extensionDialogOptions{ui: tui.NewTUI(newFakeTerminal(28, 20))})
+	for range len(items) - 1 {
+		component.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
+		component.Render(24)
+	}
+	lines := component.Render(24)
+	if len(lines)+2 > 20*85/100 || component.scrollTop == 0 {
+		t.Fatalf("list did not scroll within its modal: %d rows, offset %d", len(lines), component.scrollTop)
+	}
+	row := -1
+	for index := range lines {
+		if item, ok := component.ListRowAt(index); ok && item == len(items)-1 {
+			row = index
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatal("last option is not visible or cannot be clicked")
+	}
+	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1})
+	if chosen != items[len(items)-1].Value {
+		t.Fatalf("clicked %q, want last model", chosen)
+	}
+	component.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelUp, Row: row})
+	component.Render(24)
+	if component.selected >= len(items)-1 {
+		t.Fatal("wheel did not scroll back up")
+	}
+	component = NewExtensionSelectorItemsComponent("Favorite models", items, nil, nil, &extensionDialogOptions{searchable: true})
+	component.onSelect = func(value string) {
+		for index := range component.allOptions {
+			if component.allOptions[index].Value == value {
+				component.allOptions[index].Label = "[x] " + value
+			}
+		}
+		component.filterOptions()
+	}
+	component.HandleInput(tui.KeyEvent{Raw: "model-name-39"})
+	before := component.Render(40)
+	if len(component.options) != 1 || component.options[0].Value != items[39].Value {
+		t.Fatalf("search returned %#v", component.options)
+	}
+	row = lineIndexContaining(t, before, "model-name-39")
+	// The query also contains the model name; use the option's recorded row.
+	for index := range before {
+		if _, ok := component.ListRowAt(index); ok {
+			row = index
+			break
+		}
+	}
+	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1})
+	after := component.Render(40)
+	if len(after) != len(before) || component.searchInput.GetValue() != "model-name-39" || !strings.Contains(strings.Join(after, "\n"), "[x]") {
+		t.Fatal("toggling a filtered result changed the query or modal geometry")
+	}
+
+}
+
 func TestExtensionSelectorHoverMovesHighlight(t *testing.T) {
 	initTestTheme(t)
 	useTreeTestKeybindings(t)

@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Add searchable, scrolling favorite models; keep the modal and pointer position stable while toggling choices. Scroll long option dialogs within the terminal height.
+
 - Leave one scrollable blank row below the last conversation message.
 
 - Use double-click word selection, triple-click paragraph selection, and dragging by those units. Add composer selection with Shift and modifier-arrow keys, adaptive highlights, clipboard actions, and undoable replacement.

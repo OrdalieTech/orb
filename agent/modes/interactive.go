@@ -3596,47 +3596,54 @@ func (mode *InteractiveMode) showModelsSelector() {
 	configured := mode.session.EnabledModels()
 	sessionScoped := mode.session.ScopedModels()
 	selected, unavailable := scopedModelsSelectorState(models, configured, sessionScoped)
-	go func() {
-		for {
-			options := []string{"Save and close", "Enable all", "Clear all"}
-			ids := map[string]string{}
-			appendOption := func(id, suffix string) {
-				mark := "[ ] "
-				if selected[id] {
-					mark = "[x] "
-				}
-				label := mark + id + suffix
-				options = append(options, label)
-				ids[label] = id
+	buildOptions := func() []tui.SelectItem {
+		options := []tui.SelectItem{{Value: "Save and close"}, {Value: "Enable all"}, {Value: "Clear all"}}
+		appendOption := func(id, suffix string) {
+			mark := "[ ] "
+			if selected[id] {
+				mark = "[x] "
 			}
-			for _, model := range models {
-				appendOption(fmt.Sprintf("%s/%s", model.Provider, model.ID), "")
-			}
-			for _, id := range unavailable {
-				appendOption(id, " [unavailable]")
-			}
-			choice, ok, err := mode.interactiveUI.Select(context.Background(), "Scoped models", options, nil)
-			if err != nil || !ok {
-				return
-			}
-			switch choice {
-			case "Enable all":
-				for _, model := range models {
-					selected[fmt.Sprintf("%s/%s", model.Provider, model.ID)] = true
-				}
-			case "Clear all":
-				clear(selected)
-			case "Save and close":
-				mode.applyScopedModelSelection(models, unavailable, selected, true)
-				mode.showStatusMessage("Model selection saved to settings")
-				return
-			default:
-				id := ids[choice]
-				selected[id] = !selected[id]
-				mode.applyScopedModelSelection(models, unavailable, selected, false)
-			}
+			options = append(options, tui.SelectItem{Value: id, Label: mark + id + suffix})
 		}
-	}()
+		for _, model := range models {
+			appendOption(fmt.Sprintf("%s/%s", model.Provider, model.ID), "")
+		}
+		for _, id := range unavailable {
+			appendOption(id, " [unavailable]")
+		}
+		return options
+	}
+	var handle tui.OverlayHandle
+	var dialog *ExtensionSelectorComponent
+	closeSelector := func() {
+		if handle != nil {
+			handle.Hide()
+		}
+		mode.ui.RequestRender()
+	}
+	dialog = NewExtensionSelectorItemsComponent("Favorite models", buildOptions(), func(choice string) {
+		switch choice {
+		case "Save and close":
+			mode.applyScopedModelSelection(models, unavailable, selected, true)
+			closeSelector()
+			mode.showStatusMessage("Model selection saved to settings")
+			return
+		case "Enable all":
+			for _, model := range models {
+				selected[fmt.Sprintf("%s/%s", model.Provider, model.ID)] = true
+			}
+		case "Clear all":
+			clear(selected)
+		default:
+			selected[choice] = !selected[choice]
+		}
+		mode.applyScopedModelSelection(models, unavailable, selected, false)
+		dialog.allOptions = buildOptions()
+		dialog.filterOptions()
+		mode.ui.RequestRender()
+	}, closeSelector, &extensionDialogOptions{ui: mode.ui, searchable: true, pinnedOptions: 3})
+	handle = mode.interactiveUI.floatDialog(dialog)
+	mode.ui.RequestRender()
 }
 
 func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavailable []string, selected map[string]bool, persist bool) {
