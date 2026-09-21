@@ -1265,6 +1265,7 @@ func postAnthropicStream(
 			return nil, err
 		}
 		clientOptions := []option.RequestOption{
+			option.WithoutEnvironmentDefaults(),
 			option.WithBaseURL(model.BaseURL),
 			option.WithHTTPClient(httpClient),
 			option.WithAPIKey(""),

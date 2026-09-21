@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Refresh Go dependencies and GoReleaser while retaining the latest stable Go 1.27.1 baseline. Keep go-udiff pinned to preserve compatibility-sensitive edit output.
+
 - Preserve detected terminal colors across resource reloads, including toggling provider usage, so modal backgrounds and contrast do not reset.
 - Copy wrapped selections as logical lines, retain paragraph breaks, and highlight only text with an adaptive background. Keep wide-character selection within the original line width.
 

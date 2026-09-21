@@ -38,7 +38,7 @@ jobs:
       - name: Build release artifacts without publishing
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
-          version: v2.17.0
+          version: v2.18.2
           args: release --clean --skip=publish --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +82,7 @@ jobs:
       - name: Publish verified release artifacts
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
-          version: v2.17.0
+          version: v2.18.2
           args: release --clean --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
