@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"time"
 
@@ -103,7 +104,11 @@ func ProviderUsage(client usage.Client) extensions.Factory {
 						lastKey, lastProvider, lastAt, lastGeneration = key, provider, time.Now(), version
 						usage, fetchErr := client.Fetch(requestCtx, provider, resolved.Auth)
 						if fetchErr == nil {
-							text = label + " " + usage.Summary()
+							remaining := 100.0
+							for _, window := range usage.Windows {
+								remaining = min(remaining, window.Remaining)
+							}
+							text = fmt.Sprintf("%s %.0f%% left", label, remaining)
 						}
 					}
 					mu.Lock()

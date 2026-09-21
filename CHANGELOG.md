@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Simplify the compact footer to model, reasoning level, remaining quota, and context percentage. Keep quota details in the account menu; drop duplicate provider labels, meters, project metadata, capacity, and cost from the bar, and avoid background Git probes for compact rendering.
+
 - Brand browser login callback pages as Orb and confirm menu choices with a single click, matching Enter. Suppress double-click repeats and preserve tree fold controls.
 
 - Add a unified Providers menu with named accounts, per-provider Add account actions, safe credential switching, and an optional Codex/OpenCode Go usage module. Click footer usage to compare accounts and switch. Keep account storage and quota clients independent of the agent engine. Use neutral menu selections and a lighter backdrop.

@@ -297,7 +297,10 @@ Providers. It polls once per minute and cancels on account/model changes and shu
 that footer status opens a native account switcher with cached percentages and at most four
 concurrent refreshes; closing it cancels requests. Switching providers keeps an identical model
 when available, otherwise opens the model picker. Neither accounts nor usage imports agent/TUI
-code, and no quota network request blocks startup or rendering.
+code, and no quota network request blocks startup or rendering. The compact footer keeps the model
+and reasoning level on the left, with the most limited remaining quota and a rounded context
+percentage on the right. Detailed windows and resets stay in the account menu; compact rendering
+does not probe Git metadata.
 
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
 `/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,
