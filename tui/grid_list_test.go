@@ -173,3 +173,66 @@ func TestPlainFrameHasPaddedPanelAndEscapeHint(t *testing.T) {
 		}
 	}
 }
+
+func TestFrameActionStaysVisibleAndSupportsKeyboardAndMouse(t *testing.T) {
+	list := NewGridList([]GridRow{{Value: "account", Cells: []string{"Personal"}}}, 3, GridListTheme{})
+	list.Searchable = true
+	frame := NewFrame("Providers", "", nil, nil, list)
+	frame.Plain = true
+	frame.Action = "+ Connect provider"
+	calls := 0
+	frame.OnAction = func() { calls++ }
+	for _, width := range []int{24, 36, 80} {
+		for _, query := range []string{"", "no matching accounts"} {
+			list.SetQuery(query)
+			lines := frame.Render(width)
+			if !strings.Contains(StripANSI(lines[frame.actionRow]), "[+ Connect provider]") {
+				t.Fatalf("missing action at width %d: %q", width, lines)
+			}
+			for _, line := range lines {
+				if VisibleWidth(line) != width {
+					t.Fatalf("overflow at width %d: %q", width, line)
+				}
+			}
+			before := calls
+			frame.HandleMouse(MouseEvent{Type: MousePress, Row: frame.actionRow, Column: frame.actionColumn, Clicks: 1})
+			frame.HandleMouse(MouseEvent{Type: MousePress, Row: frame.actionRow, Column: frame.actionColumn, Clicks: 2})
+			if calls != before+1 {
+				t.Fatalf("click calls = %d", calls-before)
+			}
+		}
+	}
+	frame.HandleInput(KeyEvent{Raw: "\t"})
+	if !frame.actionFocused {
+		t.Fatal("Tab did not focus header action")
+	}
+	before := calls
+	frame.HandleInput(KeyEvent{Raw: "\r"})
+	if calls != before+1 {
+		t.Fatal("Enter did not activate header action")
+	}
+	frame.HandleInput(KeyEvent{Raw: "\t"})
+	list.SetQuery("")
+	frame.HandleInput(KeyEvent{Raw: "p"})
+	if list.query != "p" {
+		t.Fatal("Tab did not restore search input")
+	}
+}
+
+func TestFrameActionConcurrentRenderAndInput(t *testing.T) {
+	frame := NewFrame("Providers", "", nil, nil, nil)
+	frame.Action, frame.OnAction = "+ Connect provider", func() {}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 100 {
+			frame.Render(40)
+		}
+	}()
+	for range 100 {
+		frame.HandleInput(KeyEvent{Raw: "\t"})
+		frame.SetFocused(true)
+		frame.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Column: 22})
+	}
+	<-done
+}

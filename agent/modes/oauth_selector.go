@@ -541,7 +541,12 @@ func (mode *InteractiveMode) providerMenu(ctx context.Context, title string, row
 		}
 	}
 	palette := newCommandPalette(rows, mode.keybindings, mode.Height, resolve, func() { resolve("") })
-	handle := mode.ui.ShowOverlay(menuFrame(title, palette), dialogOverlayOptions())
+	frame := menuFrame(title, palette)
+	if title == "Providers" {
+		frame.Action = "+ Connect provider"
+		frame.OnAction = func() { resolve("connect") }
+	}
+	handle := mode.ui.ShowOverlay(frame, dialogOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() { handle.Hide(); mode.ui.RequestRender() }()
 	select {
@@ -573,7 +578,6 @@ func providerAccountRows(connected []accounts.Account, enabled bool) []tui.GridR
 			rows = append(rows, tui.GridRow{Value: "add:" + provider, Cells: []string{theme.FG("muted", "+ Add account")}, Search: provider + " add account"})
 		}
 	}
-	rows = append(rows, tui.GridRow{Value: "connect", Cells: []string{"Connect provider"}, Search: "connect add provider account"})
 	toggle := "Show usage in footer"
 	if enabled {
 		toggle = "Hide usage from footer"
