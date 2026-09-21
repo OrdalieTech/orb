@@ -329,18 +329,26 @@ Bridge management is built into Settings, Ctrl+P, and `/bridge`; opening it star
 Its dedicated page owns the service switch, devices and pending approvals, sharing, agent-call
 opt-in, and advanced discovery controls. Bridge has no duplicate toggles in the Plugins page.
 Share and Connect explicitly activate the service when needed. Invitations are bounded,
-versioned copy/paste codes; the UI waits for the claim and presents owner approval of the exact
-identity and grants. Saved pairings survive service restarts; connection badges derive from
+versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings
+grant full controller access to all current and future conversations in both directions, including
+new groups. The owner approved this simpler default on 2026-09-21; existing restricted grants
+are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
+retaining its existing snapshot-versus-future meaning. Trust does not grant remote administration,
+discovery scopes, or agent-subject authority. Saved pairings survive service restarts; connection badges derive from
 live streams, and stopping waits for the admin connection to close.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
 specification governs the protocol; this section supersedes its two-executable packaging.
 Restricted launching, mobile UIs, browser transports, and platform hosting adapters are excluded.
 
 The owner-requested SSH pairing shortcut lives entirely in `cmd/orb`. It invokes the host's
-existing OpenSSH client with strict host-key verification and noninteractive authentication,
-starts an installed remote Orb, and exchanges and approves a one-use invitation through the
-authenticated owner's SSH session. Invitations never enter command-line arguments. SSH ends
-after setup; conversation traffic uses the same pinned Bridge transport and directional grants.
+existing OpenSSH client with strict host-key verification and noninteractive authentication.
+Setup checks PATH and the user's install directory, reuses a compatible Orb, or downloads the
+server's release through the existing checksum-verifying updater. It streams the verified binary
+over SSH, validates Bridge support in a temporary executable, then atomically installs it in
+`~/.local/bin` without elevation or shell edits. An incompatible published release leaves the
+existing binary intact. It then starts Orb and approves a one-use invitation through the owner's
+SSH session. Invitations never enter command-line arguments. SSH ends after setup; conversation
+traffic uses the same pinned Bridge transport and two directional grants.
 No SSH service, helper binary, key copying, or additional Go dependency is shipped.
 
 | Layer | Responsibility |

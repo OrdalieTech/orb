@@ -460,12 +460,19 @@ func managedInstall(canonical string) bool {
 
 // download builds the exact URLs scripts/install.sh builds.
 func (updater selfUpdater) download(ctx context.Context, tag string) ([]byte, error) {
+	return updater.downloadTarget(ctx, tag, runtime.GOOS, runtime.GOARCH)
+}
+
+func (updater selfUpdater) downloadTarget(ctx context.Context, tag, goos, goarch string) ([]byte, error) {
+	if (goos != "linux" && goos != "darwin") || (goarch != "amd64" && goarch != "arm64") {
+		return nil, fmt.Errorf("unsupported Orb platform: %s/%s", goos, goarch)
+	}
 	tag = strings.TrimSpace(tag)
 	// semver.Parse alone would pass build metadata such as "0.5.0+/../evil".
 	if strings.ContainsAny(tag, "/+%?#=") || !semver.Valid(tag) {
 		return nil, fmt.Errorf("release tag %q is not a plain version", tag)
 	}
-	name := fmt.Sprintf("orb_%s_%s_%s.tar.gz", plainVersion(tag), runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("orb_%s_%s_%s.tar.gz", plainVersion(tag), goos, goarch)
 	base := updater.releaseBase + "/" + tag + "/"
 
 	checksums, err := updater.get(ctx, base+"checksums.txt", selfUpdateMaxChecksums)

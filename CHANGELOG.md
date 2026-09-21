@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Simplify Bridge pairing to full mutual conversation access with one trust confirmation, install missing or outdated remote Orb through SSH, and wrap Bridge errors onto two lines.
+
 - Guide Bridge pairing through copy/paste invitations and approval, add automatic pairing through existing SSH access, and distinguish saved devices from active connections. Wait for Bridge shutdown before returning from `orb bridge stop`.
 
 - Unify Bridge, plugins, permissions, and MCP with the command palette’s borderless themed panels and dimmed backdrop.

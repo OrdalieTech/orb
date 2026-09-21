@@ -246,13 +246,13 @@ func (b *Bridge) prepareGrant(g Grant) (Grant, error) {
 		return g, err
 	}
 	if g.GroupID != "" {
-		if b.state.Groups[g.GroupID] == "" {
+		if g.GroupID != "*" && b.state.Groups[g.GroupID] == "" {
 			return g, connect.Fail("not_found")
 		}
 		if !g.IncludeFuture {
 			g.Instances = nil
 			for id, r := range b.state.Instances {
-				if r.Group == g.GroupID {
+				if g.GroupID == "*" || r.Group == g.GroupID {
 					g.Instances = append(g.Instances, id)
 				}
 			}
@@ -295,7 +295,7 @@ func (b *Bridge) allowed(p connect.Principal, id, permission, destination string
 		if g.Principal != p || g.Destination != destination || !slices.Contains(g.Permissions, permission) {
 			continue
 		}
-		if slices.Contains(g.Instances, id) || (destination == "" && g.IncludeFuture && g.GroupID == r.Group) {
+		if slices.Contains(g.Instances, id) || (destination == "" && g.IncludeFuture && (g.GroupID == "*" || g.GroupID == r.Group)) {
 			return true
 		}
 	}

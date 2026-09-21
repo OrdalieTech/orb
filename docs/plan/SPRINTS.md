@@ -139,6 +139,8 @@ Verification and release measurements are recorded in PROGRESS (2026-09-21).
 6. Add signed scoped reconciliation and separately opt-in agent calls with both grants required.
 7. Assemble `orb bridge`, built-in Settings/Ctrl+P management with explicit service activation,
    and the remote conversation view. Agent calls are an option inside Bridge, not a second UI plugin.
+   The owner-requested simplified pairing confirms full mutual conversation trust; SSH setup
+   locates or installs a compatible Orb and uses Bridge after bootstrap.
 
 Each slice starts with failing tests and commits only after `make check`. Closure requires
 20-instance restart/grant tests; local/remote races; persistence fault injection and quotas;
