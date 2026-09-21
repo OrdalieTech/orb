@@ -1074,20 +1074,21 @@ func newSkillAutocompleteProvider(base tui.AutocompleteProvider, skills []tui.Au
 }
 
 func (provider *skillAutocompleteProvider) GetSuggestions(ctx context.Context, lines []string, cursorLine, cursorCol int, force bool) *tui.AutocompleteSuggestions {
-	base := provider.base.GetSuggestions(ctx, lines, cursorLine, cursorCol, force)
 	prefix, query, ok := skillAutocompletePrefix(lines, cursorLine, cursorCol)
 	if !ok || ctx.Err() != nil {
-		return base
+		return provider.base.GetSuggestions(ctx, lines, cursorLine, cursorCol, force)
 	}
 	skills := tui.FuzzyFilter(provider.skills, query, func(item tui.AutocompleteItem) string {
 		return strings.TrimPrefix(item.Value, "@")
 	})
 	if len(skills) == 0 {
-		return base
+		return provider.base.GetSuggestions(ctx, lines, cursorLine, cursorCol, force)
 	}
 	items := append([]tui.AutocompleteItem(nil), skills...)
-	if base != nil {
-		items = append(items, base.Items...)
+	if strings.HasPrefix(prefix, "@") {
+		if base := provider.base.GetSuggestions(ctx, lines, cursorLine, cursorCol, force); base != nil {
+			items = append(items, base.Items...)
+		}
 	}
 	return &tui.AutocompleteSuggestions{Items: items, Prefix: prefix}
 }
@@ -1096,25 +1097,42 @@ func skillAutocompletePrefix(lines []string, cursorLine, cursorCol int) (string,
 	if cursorLine < 0 || cursorLine >= len(lines) {
 		return "", "", false
 	}
-	for _, line := range lines[:cursorLine] {
-		if strings.TrimSpace(line) != "" {
-			return "", "", false
-		}
-	}
 	line := []rune(lines[cursorLine])
 	cursorCol = max(0, min(cursorCol, len(line)))
+	start := cursorCol
+	for start > 0 && line[start-1] != ' ' && line[start-1] != '\t' {
+		start--
+	}
 	end := cursorCol
 	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
 		end++
 	}
-	before := string(line[:cursorCol])
-	prefix := strings.TrimLeft(before, " \t")
-	start := cursorCol - len([]rune(prefix))
+	prefix := string(line[start:cursorCol])
 	token := string(line[start:end])
-	if !strings.HasPrefix(prefix, "@") || strings.HasPrefix(prefix, `@"`) || strings.ContainsAny(token[1:], "/\\ \t") {
+	if prefix == "" || strings.ContainsAny(token[1:], "/\\ \t") {
 		return "", "", false
 	}
-	return prefix, prefix[1:], true
+	if strings.HasPrefix(prefix, "@") {
+		if strings.HasPrefix(prefix, `@"`) || strings.TrimSpace(string(line[:start])) != "" {
+			return "", "", false
+		}
+		for _, previous := range lines[:cursorLine] {
+			if strings.TrimSpace(previous) != "" {
+				return "", "", false
+			}
+		}
+		return prefix, prefix[1:], true
+	}
+	if !strings.HasPrefix(prefix, "/") || cursorLine == 0 && strings.TrimSpace(string(line[:start])) == "" {
+		return "", "", false
+	}
+	query := prefix[1:]
+	if strings.HasPrefix(query, "skill:") {
+		query = strings.TrimPrefix(query, "skill:")
+	} else if strings.HasPrefix("skill", query) {
+		query = ""
+	}
+	return prefix, query, true
 }
 
 func (provider *skillAutocompleteProvider) skillName(item tui.AutocompleteItem) (string, bool) {
@@ -1128,7 +1146,7 @@ func (provider *skillAutocompleteProvider) skillName(item tui.AutocompleteItem) 
 
 func (provider *skillAutocompleteProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item tui.AutocompleteItem, prefix string) tui.CompletionResult {
 	name, skill := provider.skillName(item)
-	if !skill || !strings.HasPrefix(prefix, "@") || cursorLine < 0 || cursorLine >= len(lines) {
+	if !skill || !strings.HasPrefix(prefix, "@") && !strings.HasPrefix(prefix, "/") || cursorLine < 0 || cursorLine >= len(lines) {
 		return provider.base.ApplyCompletion(lines, cursorLine, cursorCol, item, prefix)
 	}
 	line := []rune(lines[cursorLine])
@@ -1166,9 +1184,44 @@ func (provider *skillAutocompleteProvider) ShouldTriggerFileCompletion(lines []s
 
 func (provider *skillAutocompleteProvider) TriggerCharacters() []string {
 	if trigger, ok := provider.base.(tui.TriggerCharacterProvider); ok {
-		return trigger.TriggerCharacters()
+		return append(append([]string(nil), trigger.TriggerCharacters()...), "/")
 	}
-	return nil
+	return []string{"/"}
+}
+
+func (provider *skillAutocompleteProvider) promoteInlineSkill(text string) string {
+	if !strings.Contains(text, "/skill:") || strings.HasPrefix(text, "/skill:") {
+		return text
+	}
+	for from := 0; from < len(text); {
+		at := strings.Index(text[from:], "/skill:")
+		if at < 0 {
+			break
+		}
+		at += from
+		end := at + len("/skill:")
+		for end < len(text) && !strings.ContainsRune(" \t\r\n", rune(text[end])) {
+			end++
+		}
+		if at > 0 && strings.ContainsRune(" \t\r\n", rune(text[at-1])) {
+			name := text[at+len("/skill:") : end]
+			for _, skill := range provider.skills {
+				if skill.Value == "@"+name {
+					after := text[end:]
+					if text[at-1] == ' ' && strings.HasPrefix(after, " ") {
+						after = after[1:]
+					}
+					rest := strings.TrimSpace(text[:at] + after)
+					if rest == "" {
+						return "/skill:" + name
+					}
+					return "/skill:" + name + " " + rest
+				}
+			}
+		}
+		from = end
+	}
+	return text
 }
 
 // setupExtensionShortcuts installs the extension shortcut dispatcher on the
@@ -1601,7 +1654,11 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		mode.pendingImages = nil
 		mode.mu.Unlock()
 
-		mode.inputCh <- inputEntry{text: text, images: images}
+		prompt := text
+		if skills, ok := mode.autocompleteProvider.(*skillAutocompleteProvider); ok {
+			prompt = skills.promoteInlineSkill(text)
+		}
+		mode.inputCh <- inputEntry{text: prompt, images: images}
 		mode.editor.AddToHistory(text)
 	}
 }
