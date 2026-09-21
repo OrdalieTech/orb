@@ -1025,8 +1025,7 @@ func (mode *InteractiveMode) setupAutocomplete() {
 	provider = newSkillAutocompleteProvider(provider, skillItems)
 	mode.autocompleteProvider = provider
 	if mode.editor != nil {
-		// Extension editors retain the pi completion surface; the native
-		// composer discovers built-in actions through the command palette.
+		// Native styling keeps the canonical command and extension surface.
 		mode.editor.SetAutocompleteProvider(&composerAutocompleteProvider{AutocompleteProvider: provider})
 	}
 	mode.setExtensionEditorAutocompleteProvider(provider)
@@ -1486,6 +1485,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	mode.editor.OnAction("app.session.tree", mode.showTreeSelector)
 	mode.editor.OnAction("app.session.fork", mode.showUserMessageSelector)
 	mode.editor.OnAction("app.session.resume", mode.showSessionSelector)
+	mode.editor.OnAction("app.session.rename", func() { mode.runPaletteCommand("name") })
 	mode.editor.OnAction("app.editor.external", mode.handleOpenExternalEditor)
 
 	mode.editor.OnAction("app.message.copy", func() {
@@ -1735,7 +1735,7 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 | %s | Command palette |
 | %s | Models (Ctrl+L works in legacy terminals) |
 | %s | New session |
-| %s | Open session |
+| %s | Rename session |
 | @ | Skills and files |
 
 **Navigation**
@@ -1782,7 +1782,7 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 | %s | Extension commands and prompt templates |
 | %s | Run bash command |
 | %s | Run bash command (excluded from context) |`,
-		markdownKey(display("app.commandPalette")), markdownKey(display("app.model.select")), markdownKey(display("app.session.new")), markdownKey(display("app.session.resume")),
+		markdownKey(display("app.commandPalette")), markdownKey(display("app.model.select")), markdownKey(display("app.session.new")), markdownKey(display("app.session.rename")),
 		markdownKey(display("tui.editor.cursorUp")), markdownKey(display("tui.editor.cursorDown")), markdownKey(display("tui.editor.cursorLeft")), markdownKey(display("tui.editor.cursorRight")),
 		markdownKey(display("tui.editor.cursorWordLeft")), markdownKey(display("tui.editor.cursorWordRight")), markdownKey(display("tui.editor.cursorLineStart")), markdownKey(display("tui.editor.cursorLineEnd")),
 		markdownKey(display("tui.editor.jumpForward")), markdownKey(display("tui.editor.jumpBackward")), markdownKey(display("tui.editor.pageUp")), markdownKey(display("tui.editor.pageDown")),
@@ -4687,24 +4687,8 @@ func userMessageText(message any) string {
 	return strings.Join(parts, "\n")
 }
 
-// The canonical provider stays available to extension editors. Only native
-// composer discovery hides built-ins; skill/template/extension invocations keep
-// their original spelling, completion, precedence, and argument handling.
+// Native skill styling preserves the complete pi completion surface.
 type composerAutocompleteProvider struct{ tui.AutocompleteProvider }
-
-func (provider *composerAutocompleteProvider) GetSuggestions(ctx context.Context, lines []string, line, col int, force bool) *tui.AutocompleteSuggestions {
-	result := provider.AutocompleteProvider.GetSuggestions(ctx, lines, line, col, force)
-	if result == nil || !strings.HasPrefix(result.Prefix, "/") {
-		return result
-	}
-	items := make([]tui.AutocompleteItem, 0, len(result.Items))
-	for _, item := range result.Items {
-		if !isInteractiveCommandName(strings.TrimPrefix(item.Value, "/")) {
-			items = append(items, item)
-		}
-	}
-	return &tui.AutocompleteSuggestions{Prefix: result.Prefix, Items: items}
-}
 
 func (provider *composerAutocompleteProvider) StyleAutocompleteItem(item tui.AutocompleteItem, text string, selected bool) string {
 	if strings.HasPrefix(item.Value, "skill:") || strings.HasPrefix(item.Label, "[skill] ") {
@@ -4742,7 +4726,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		"trust": "Project trust", "reload": "Reload resources", "scoped-models": "Favorite models", "hotkeys": "Keyboard shortcuts",
 		"changelog": "Changelog", "quit": "Quit Orb",
 	}
-	shortcuts := map[string]string{"model": "app.model.select", "resume": "app.session.resume", "new": "app.session.new", "copy": "app.message.copy"}
+	shortcuts := map[string]string{"model": "app.model.select", "name": "app.session.rename", "new": "app.session.new", "copy": "app.message.copy"}
 	rows := make([]tui.GridRow, 0, len(commands))
 	seen := make(map[string]bool, len(commands))
 	for _, command := range commands {
@@ -4769,14 +4753,10 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		if action := shortcuts[command.Name]; action != "" {
 			hint = KeyText(action)
 		}
-		instruction := "Enter to open"
-		if !builtin {
-			instruction = "Enter to insert into your draft · add arguments, then send"
-		}
 		rows = append(rows, tui.GridRow{
-			Value: value, Cells: []string{theme.FG(color, label), theme.FG("dim", kind), theme.FG("muted", hint)},
+			Value: value, Cells: []string{theme.FG(color, label), theme.FG("muted", hint)},
 			Search: label + " " + kind + " " + command.Name + " " + description,
-			Detail: []string{description, instruction},
+			Detail: []string{description},
 		})
 	}
 	for _, action := range []string{"app.tools.expand", "app.thinking.toggle", "app.thinking.cycle", "app.message.dequeue", "app.editor.external", "app.model.cycleForward", "app.model.cycleBackward"} {
@@ -4788,7 +4768,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 			if len(mode.keybindings.Keys(action)) > 0 {
 				hint = KeyText(action)
 			}
-			rows = append(rows, tui.GridRow{Value: "action:" + action, Cells: []string{theme.FG("text", definition.Description), theme.FG("dim", "action"), theme.FG("muted", hint)}, Search: definition.Description})
+			rows = append(rows, tui.GridRow{Value: "action:" + action, Cells: []string{theme.FG("text", definition.Description), theme.FG("muted", hint)}, Search: definition.Description})
 			break
 		}
 	}
@@ -4803,7 +4783,6 @@ func (mode *InteractiveMode) showCommandPalette() {
 		mode.runPaletteCommand(value)
 	}, closePalette)
 	frame := menuFrame("Commands", palette)
-	frame.Footer = "↑↓ navigate · Enter choose · Esc close"
 	options := dialogOverlayOptions()
 	options.MaxHeight = tui.PercentSize(100)
 	handle = mode.ui.ShowOverlay(frame, options)

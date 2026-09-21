@@ -16,6 +16,7 @@ type CustomEditor struct {
 	actionOrder        []string
 	topBorderDecorator func(width int, base string, border tui.StyleFunc) string
 	framed             atomic.Bool
+	popupLayout        atomic.Uint64
 
 	OnEscape            func()
 	OnCtrlD             func()
@@ -66,6 +67,7 @@ func editorContentWidth(width int) int {
 func (ce *CustomEditor) Render(width int) []string {
 	if width < editorFrameMinWidth {
 		ce.framed.Store(false)
+		ce.popupLayout.Store(0)
 		lines := ce.Editor.Render(width)
 		if len(lines) > 0 && ce.topBorderDecorator != nil {
 			lines[0] = ce.topBorderDecorator(width, lines[0], ce.GetBorderColor())
@@ -82,18 +84,20 @@ func (ce *CustomEditor) Render(width int) []string {
 	if ce.topBorderDecorator != nil {
 		top = ce.topBorderDecorator(width, top, border)
 	}
-	// The autocomplete popup hangs below the closed box, so its rows keep the
-	// content's column offset without being framed.
+	// Native suggestions sit above the composer; the reusable editor keeps
+	// its original layout for extension compatibility.
 	bottom := min(1+ce.RenderedContentRows(), len(lines)-1)
 	framed := make([]string, 0, len(lines))
+	popupRows := len(lines) - bottom - 1
+	ce.popupLayout.Store(uint64(popupRows)<<32 | uint64(bottom+1))
+	for _, line := range lines[bottom+1:] {
+		framed = append(framed, " "+line+" ")
+	}
 	framed = append(framed, top)
 	for _, line := range lines[1:bottom] {
 		framed = append(framed, border("│")+line+border("│"))
 	}
 	framed = append(framed, border("╰")+lines[bottom]+border("╯"))
-	for _, line := range lines[bottom+1:] {
-		framed = append(framed, " "+line+" ")
-	}
 	return framed
 }
 
@@ -101,6 +105,13 @@ func (ce *CustomEditor) Render(width int) []string {
 // still lands the cursor on the character under the pointer.
 func (ce *CustomEditor) HandleMouse(event tui.MouseEvent) bool {
 	if ce.framed.Load() {
+		layout := ce.popupLayout.Load()
+		rows, originalTop := int(layout>>32), int(layout&0xffffffff)
+		if event.Row < rows {
+			event.Row += originalTop
+		} else {
+			event.Row -= rows
+		}
 		event.Column = max(0, event.Column-1)
 	}
 	return ce.Editor.HandleMouse(event)

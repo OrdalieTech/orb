@@ -1000,10 +1000,16 @@ func (ui *InteractiveUI) untrackCustomOverlay(handle tui.OverlayHandle) {
 	ui.mu.Unlock()
 }
 
-// backdropStyle is the shared veil behind every floating window: faint + the
-// theme's dim, so the page visibly recedes in both light and dark modes.
 func backdropStyle() tui.StyleFunc {
-	return func(text string) string { return "\x1b[2m" + theme.FGANSI("dim") + text + "\x1b[0m" }
+	background, foreground := 232, 240
+	if current := theme.Current(); current != nil {
+		var red, green, blue int
+		if _, err := fmt.Sscanf(current.ExportColors()["pageBg"], "#%02x%02x%02x", &red, &green, &blue); err == nil && red+green+blue > 384 {
+			background, foreground = 242, 236
+		}
+	}
+	style := fmt.Sprintf("\x1b[48;5;%dm\x1b[38;5;%dm", background, foreground)
+	return func(text string) string { return style + text + "\x1b[0m" }
 }
 
 // dialogOverlayOptions is the shared geometry of floating dialog windows:
@@ -1011,7 +1017,7 @@ func backdropStyle() tui.StyleFunc {
 func dialogOverlayOptions() tui.OverlayOptions {
 	return tui.OverlayOptions{
 		Width:     tui.PercentSize(70),
-		MinWidth:  56,
+		MinWidth:  40,
 		MaxHeight: tui.PercentSize(85),
 		Backdrop:  backdropStyle(),
 	}
@@ -1021,8 +1027,8 @@ func dialogOverlayOptions() tui.OverlayOptions {
 // built-in menus (/model, /settings) so every menu floats identically.
 func configOverlayOptions() tui.OverlayOptions {
 	return tui.OverlayOptions{
-		Width:     tui.PercentSize(88),
-		MinWidth:  70,
+		Width:     tui.PercentSize(80),
+		MinWidth:  40,
 		MaxHeight: tui.PercentSize(85),
 		Backdrop:  backdropStyle(),
 	}
@@ -1031,10 +1037,7 @@ func configOverlayOptions() tui.OverlayOptions {
 // floatDialog wraps a dialog component in the shared window chrome and shows
 // it as a centered floating overlay over the veiled page.
 func (ui *InteractiveUI) floatDialog(component tui.Component) tui.OverlayHandle {
-	frame := tui.NewFrame("", "",
-		func(text string) string { return theme.FG("border", text) },
-		func(text string) string { return theme.FG("dim", text) },
-		component)
+	frame := menuFrame("", component)
 	return ui.mode.ui.ShowOverlay(frame, dialogOverlayOptions())
 }
 

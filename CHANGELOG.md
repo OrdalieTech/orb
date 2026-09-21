@@ -6,7 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
-- Make Ctrl+P the searchable command palette, with direct model (Ctrl+M; Ctrl+L on legacy terminals), new-session (Ctrl+N), and resume (Ctrl+R) shortcuts. Preserve drafts, expose skills in purple, move native built-ins out of slash completion, and dim modal backdrops while retaining pi extension and skill contracts. Bound menu mouse-layout work to visible rows and release dismissed overlay references.
+- Simplify floating menus into padded borderless panels with an Esc hint and a darker full-screen backdrop. Keep model options on one line at narrow widths, with metadata shown for the selected model.
+- Make Ctrl+P the searchable command palette, with direct model (Ctrl+M; Ctrl+L on legacy terminals), new-session (Ctrl+N), and rename (Ctrl+R) shortcuts. Preserve drafts, expose skills in purple, show slash suggestions above the composer, and dim modal backdrops while retaining pi extension and skill contracts. Bound menu mouse-layout work to visible rows and release dismissed overlay references.
 
 ## [0.7.0] - 2026-09-20
 

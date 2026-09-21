@@ -1439,8 +1439,8 @@ func TestF12InteractiveUISelectFloatsWindow(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if lines := renderTopFloatingWindow(mode, 48); len(lines) == 0 || !strings.HasPrefix(tui.StripANSI(lines[0]), "╭") {
-		t.Fatalf("selector window has no frame: %q", lines)
+	if lines := renderTopFloatingWindow(mode, 48); len(lines) == 0 || tui.StripANSI(lines[0]) != strings.Repeat(" ", 48) || !strings.Contains(lines[0], "\x1b[48;") {
+		t.Fatalf("selector window has no padded background: %q", lines)
 	}
 	cancel()
 	<-done
