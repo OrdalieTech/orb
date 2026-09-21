@@ -516,6 +516,72 @@ Raw source-line comparison (non-test Go, excluding assets/testdata; upstream src
 | agent | 69,214 | 70,065 | 0.99 |
 | tui | 13,865 | 18,108 | 0.77 |
 
+## Orb Bridge v1 — 2026-09-21
+
+Implemented the owner-approved one-executable native delivery in separate `connect`,
+`connect/agent`, `bridge`, native IPC/storage, Tailcat transport, and CLI/TUI assemblies.
+The existing runtime remains the execution/session owner. Bridge and agent-call capabilities
+are separately default-off; closing an attachment or bridge never disposes its runtime.
+The active-plan packaging supersedes the Downloads specification's separate executable.
+Restricted launching, mobile applications, browser transport, and other platform adapters
+remain outside this delivery.
+
+The initial stream-only feasibility gate used released Tailcat v0.7.0 at
+`15ab9e68bfc6534a61797d7af28cedd42b54a3a5`, its documented omission tags, and the stream-only
+SSH/C2N/DBus/Android omissions now in `.goreleaser.yml`. The four probe binaries measured
+42,401,952–45,948,064 bytes; the interleaved Darwin/arm64 startup probe measured 20.24 ms baseline
+and 24.46 ms with Tailcat. The probe module graph grew from 89 to 636 modules and the compiled
+CLI graph from 519 to 773 packages, while the SDK graph contained no bridge/Tailcat imports.
+Concurrent dependency maintenance subsequently changed the baseline. The final graph contains
+643 modules, 859 CLI packages, and 483 SDK packages; the SDK still imports neither `connect`,
+`bridge`, nor Tailcat. The reviewed Tailcat release pins its Tailscale dependency exactly.
+
+Verification:
+
+- Hermetic race tests cover pairing claim recovery and claimant binding, fixed versus future
+  grants with twenty instances, separate owner/attachment credentials, duplicate registration,
+  generation fencing, durable grant revocation, pinned TLS, malformed frames/JCS, bounded RPC
+  results, receipt conflicts/quotas, ambiguous storage acknowledgment, and unknown crash outcomes.
+- Runtime tests cover local transition fences, execution identity, reentrant queue callbacks,
+  preserved owner rebind callbacks, durable retry after reconnect, local transcript resets,
+  bounded replay/cursor expiry, and accepted work surviving connection and attachment closure.
+- Three-bridge tests cover scope isolation, same-revision conflict detection, persisted withdrawal
+  floors, and both directional grants for instance-subject calls. Discovery grants no execution
+  authority; routing cannot transparently forward execution through a third bridge.
+- On the explicitly authorized `ordalie@ordalie-lab-3` and `ordalie@ordalie-edge`, isolated
+  profiles paired and approved once, attached twenty faux-provider runtimes, delivered remote
+  prompts/transcripts, retained identical receipts across bridge restart and generation change,
+  and switched sessions. Reopening the runtimes retained their enrolled identities.
+- Native direct traversal and separately forced DERP relay (region 303) passed pinned-TLS stream
+  checks. Live A–B–C reconciliation across three isolated profiles learned C through B, allowed
+  A to authenticate C using the signed locator without granting instance access, and propagated
+  C's withdrawal. A real SSH terminal ran the focused view without provider credentials, rendered
+  status, submitted `/new`, verified the remote session change, and exited with Escape.
+- `make check` passes with the repository's Node 24.18.0 runtime on PATH: CGO-disabled build,
+  vet, zero lint issues, complete race suite, and shipped-build provider/Pi conformance rerun.
+  Node 26's documented lack of TypeScript enum transformation cannot run the F13 dependency;
+  no test, fixture, or budget was weakened. The unmodified upstream RPC suite passes 29/29.
+- Parser fuzzing passed 494,184 executions in the recorded 10-second run. Existing SDK examples
+  and an external module containing the unchanged minimal example build; `go mod verify` passes.
+  `GOOS=js GOARCH=wasm CGO_ENABLED=0 go build ./connect ./connect/protocol ./bridge` passes.
+  Existing Orb TUI snapshots pass without bridge-specific golden edits.
+
+Final static release builds use `CGO_ENABLED=0`, the release tags, `-trimpath`, and
+`-ldflags='-s -w -funcalign=4'`:
+
+| Target | Bytes |
+|---|---:|
+| linux-amd64 | 50,458,784 |
+| linux-arm64 | 47,710,368 |
+| darwin-amd64 | 51,487,072 |
+| darwin-arm64 | 49,012,306 |
+
+All remain below 55 MB decimal. Forty warm-cache Darwin/arm64 `--version` runs measured
+16.87 ms mean, 16.02 ms median, and 32.26 ms maximum (50 ms budget).
+Bridge-only protocol schemas are in ARCHITECTURE and tests in `connect`/`bridge`; SDK assembly
+and user commands are documented in `docs/sdk.md`. Unrelated concurrent progress and UI changes
+were preserved. Isolated remote test services and scratch profiles were removed after validation.
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.

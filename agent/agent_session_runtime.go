@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -23,8 +24,11 @@ type CreateAgentSessionRuntimeFactory func(context.Context, AgentSessionOptions)
 // AgentSessionRuntime owns the active [AgentSession] and replaces it for
 // session lifecycle operations.
 type AgentSessionRuntime struct {
-	opMu sync.Mutex
-	mu   sync.RWMutex
+	sessionObservers map[uint64]func(*AgentSession)
+	nextObserver     uint64
+	control          atomic.Pointer[SessionControl]
+	opMu             sync.Mutex
+	mu               sync.RWMutex
 
 	session          *AgentSession
 	result           *AgentSessionResult
@@ -207,6 +211,11 @@ func (runtime *AgentSessionRuntime) NewSession(
 	if runtime == nil {
 		return extensions.SessionReplacementResult{}, errors.New("agent: nil agent session runtime")
 	}
+	finishControl, controlErr := runtime.control.Load().beginTransition(runtimeContext(ctx))
+	if controlErr != nil {
+		return extensions.SessionReplacementResult{}, controlErr
+	}
+	defer finishControl()
 	runtime.opMu.Lock()
 	locked := true
 	defer func() {
@@ -275,6 +284,7 @@ func (runtime *AgentSessionRuntime) NewSession(
 	if err := runtime.rebindReplacement(created); err != nil {
 		return extensions.SessionReplacementResult{}, err
 	}
+	finishControl()
 	locked = false
 	runtime.opMu.Unlock()
 	if err := runtime.runWithSession(ctx, created, withSession); err != nil {
@@ -292,6 +302,11 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 	if runtime == nil {
 		return extensions.SessionReplacementResult{}, errors.New("agent: nil agent session runtime")
 	}
+	finishControl, controlErr := runtime.control.Load().beginTransition(runtimeContext(ctx))
+	if controlErr != nil {
+		return extensions.SessionReplacementResult{}, controlErr
+	}
+	defer finishControl()
 	runtime.opMu.Lock()
 	locked := true
 	defer func() {
@@ -398,6 +413,7 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 	if err := runtime.rebindReplacement(created); err != nil {
 		return extensions.SessionReplacementResult{}, err
 	}
+	finishControl()
 	locked = false
 	runtime.opMu.Unlock()
 	if err := runtime.runWithSession(ctx, created, withSession); err != nil {
@@ -415,6 +431,11 @@ func (runtime *AgentSessionRuntime) Fork(
 	if runtime == nil {
 		return AgentSessionRuntimeForkResult{}, errors.New("agent: nil agent session runtime")
 	}
+	finishControl, controlErr := runtime.control.Load().beginTransition(runtimeContext(ctx))
+	if controlErr != nil {
+		return AgentSessionRuntimeForkResult{}, controlErr
+	}
+	defer finishControl()
 	runtime.opMu.Lock()
 	locked := true
 	defer func() {
@@ -527,6 +548,7 @@ func (runtime *AgentSessionRuntime) Fork(
 	if err := runtime.rebindReplacement(created); err != nil {
 		return AgentSessionRuntimeForkResult{}, err
 	}
+	finishControl()
 	locked = false
 	runtime.opMu.Unlock()
 	if err := runtime.runWithSession(ctx, created, withSession); err != nil {
@@ -545,6 +567,11 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 	if runtime == nil {
 		return extensions.SessionReplacementResult{}, errors.New("agent: nil agent session runtime")
 	}
+	finishControl, controlErr := runtime.control.Load().beginTransition(runtimeContext(ctx))
+	if controlErr != nil {
+		return extensions.SessionReplacementResult{}, controlErr
+	}
+	defer finishControl()
 	runtime.opMu.Lock()
 	locked := true
 	defer func() {
@@ -747,6 +774,15 @@ func (runtime *AgentSessionRuntime) replace(
 }
 
 func (runtime *AgentSessionRuntime) rebindReplacement(created *AgentSession) error {
+	runtime.mu.RLock()
+	observers := make([]func(*AgentSession), 0, len(runtime.sessionObservers))
+	for _, observe := range runtime.sessionObservers {
+		observers = append(observers, observe)
+	}
+	runtime.mu.RUnlock()
+	for _, observe := range observers {
+		observe(created)
+	}
 	runtime.mu.RLock()
 	rebind := runtime.rebind
 	runtime.mu.RUnlock()

@@ -435,3 +435,43 @@ server embedder:
   the dsh-style "profile" is a `main` package. The `agent/assembly` package
   is the CLI's composition surface; embedders do not need it and must not
   gate tenant behavior on the CLI's settings files.
+
+
+## Optional instance control and Bridge
+
+Existing SDK constructors and subscriptions are unchanged. Importing `agent` does not import
+Bridge or Tailcat and starts no bridge process. `connect/agent.Attach` adapts an existing
+`*agent.AgentSessionRuntime`; the caller supplies the runtime lifetime, durable ledger store,
+persistent InstanceID, and current authorization callback. Its `Close` releases observation
+subscriptions without disposing the runtime. Multiple bridges can attach independently.
+
+For in-process assembly, create `bridge.Open(metadataStore, create)`, enroll through the local
+owner, and construct `connect/agent.Attach(ctx, runtime, Options{InstanceID: instance.ID,
+Store: ledgerStore, Authorize: bridge.Authorize})`. Register
+`connect.NewLocal(attachment.Invoke)` with `bridge.Attach`, then give the returned generation
+to `attachment.SetGeneration` before exposing the bridge. Keep metadata and ledger stores
+separate. `connect.Store` is the host-supplied persistence boundary; a successful `Save` must
+mean durable replacement. The native implementation is `bridge/hosts/native.OpenStore`.
+
+`bridge.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
+negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `connect`,
+`connect/protocol`, and `bridge` packages compile for Wasm without providing a browser transport.
+`bridge/agent.Extension` is an independently opt-in `bridge_call` tool; its caller must use the
+source attachment's authenticated outbound route, which checks source grants before the
+destination checks its own grants. Discovery never authorizes execution.
+
+In Orb, enable Bridge in `/plugins`, then open `/bridge` for pairing, grants, discovery scopes,
+and shared conversations. `orb --bridge personal --instance work` explicitly attaches a named
+runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
+re-enable. `orb bridge view <peer-id> <instance-id>` opens the same focused conversation view
+without constructing a local model or requiring provider credentials. Invitations contain a
+private transport locator and one-use claim secret; exchange them with the intended device,
+verify both displayed PeerIDs, and approve the exact directional grants locally.
+
+Scripted administration uses `orb bridge status|instances|peers|grants|groups|scopes`,
+`orb bridge pair invite [--include-future]`, `orb bridge pair join` (invitation JSON on stdin),
+and `orb bridge pair approve <invitation-id> <claimant-peer-id>`. `grant`, `revoke`, `group`,
+`assign`, `scope`, `publish`, and `takeover` read their local-owner request JSON from stdin;
+`revoke` takes `{ "grant_id": "…" }`. `orb bridge remote <peer-id> <method>` reads bounded
+method parameters from stdin. Wire schemas and limits live in `ARCHITECTURE.md`; their tests
+are independent of Pi fixtures.

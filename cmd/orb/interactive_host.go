@@ -221,6 +221,11 @@ func forkReplacementManager(manager *session.SessionManager, entryID string, pos
 // synchronous UI invalidation, dispose the old runtime, create and apply the
 // replacement, then rebind it before the deferred session_start.
 type interactiveSessionHost struct {
+	bridgeControl      *agent.SessionControl
+	bridgeFinish       func()
+	bridgeObservers    map[uint64]func(*agent.AgentSession)
+	bridgeNextObserver uint64
+
 	usageCache        usage.Cache
 	mu                sync.Mutex
 	args              CLIArgs
@@ -294,7 +299,26 @@ func (host *interactiveSessionHost) bindCommandActions(runtime *agent.SessionRun
 	})
 }
 
-func (host *interactiveSessionHost) beginReplacement() (*agent.SessionRuntime, error) {
+func (host *interactiveSessionHost) beginReplacement(ctx context.Context) (current *agent.SessionRuntime, err error) {
+	var release func()
+	defer func() {
+		if err != nil && release != nil {
+			release()
+		}
+	}()
+	host.mu.Lock()
+	control := host.bridgeControl
+	host.mu.Unlock()
+	if control != nil {
+		finish, err := control.BeginTransition(ctx)
+		if err != nil {
+			return nil, err
+		}
+		host.mu.Lock()
+		release = finish
+		host.bridgeFinish = finish
+		host.mu.Unlock()
+	}
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	if host.disposed || host.session == nil {
@@ -310,7 +334,12 @@ func (host *interactiveSessionHost) beginReplacement() (*agent.SessionRuntime, e
 func (host *interactiveSessionHost) endReplacement() {
 	host.mu.Lock()
 	host.replacing = false
+	finish := host.bridgeFinish
+	host.bridgeFinish = nil
 	host.mu.Unlock()
+	if finish != nil {
+		finish()
+	}
 }
 
 func (host *interactiveSessionHost) currentSession() (*agent.SessionRuntime, error) {
@@ -410,6 +439,15 @@ func (host *interactiveSessionHost) replace(
 		replacement.SyncMessagesFromSession()
 	}
 	host.mu.Lock()
+	observers := make([]func(*agent.AgentSession), 0, len(host.bridgeObservers))
+	for _, f := range host.bridgeObservers {
+		observers = append(observers, f)
+	}
+	host.mu.Unlock()
+	for _, f := range observers {
+		f(replacement)
+	}
+	host.mu.Lock()
 	rebind := host.rebind
 	host.mu.Unlock()
 	if rebind != nil {
@@ -443,7 +481,7 @@ func (host *interactiveSessionHost) finishReplacement(ctx context.Context, repla
 
 func (host *interactiveSessionHost) NewSession(ctx context.Context, options *extensions.NewSessionOptions) (extensions.SessionReplacementResult, error) {
 	replacement, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
-		current, err := host.beginReplacement()
+		current, err := host.beginReplacement(ctx)
 		if err != nil {
 			return nil, false, err
 		}
@@ -475,7 +513,7 @@ func (host *interactiveSessionHost) NewSession(ctx context.Context, options *ext
 
 func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPath, cwdOverride string, options *extensions.SwitchSessionOptions) (extensions.SessionReplacementResult, error) {
 	replacement, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
-		current, err := host.beginReplacement()
+		current, err := host.beginReplacement(ctx)
 		if err != nil {
 			return nil, false, err
 		}
@@ -513,7 +551,7 @@ func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, op
 		position = options.Position
 	}
 	replacement, selectedText, cancelled, err := func() (*agent.SessionRuntime, string, bool, error) {
-		current, err := host.beginReplacement()
+		current, err := host.beginReplacement(ctx)
 		if err != nil {
 			return nil, "", false, err
 		}
@@ -540,7 +578,7 @@ func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, op
 
 func (host *interactiveSessionHost) ImportSession(ctx context.Context, inputPath, cwdOverride string) (extensions.SessionReplacementResult, error) {
 	runtime, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
-		current, err := host.beginReplacement()
+		current, err := host.beginReplacement(ctx)
 		if err != nil {
 			return nil, false, err
 		}
@@ -601,7 +639,7 @@ func (host *interactiveSessionHost) ImportSession(ctx context.Context, inputPath
 // model catalog are re-read (upstream AgentSession.reload).
 func (host *interactiveSessionHost) Reload(ctx context.Context) error {
 	replacement, err := func() (*agent.SessionRuntime, error) {
-		current, err := host.beginReplacement()
+		current, err := host.beginReplacement(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -611,7 +649,10 @@ func (host *interactiveSessionHost) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return host.finishReplacement(ctx, replacement, nil)
+	if err := host.finishReplacement(ctx, replacement, nil); err != nil {
+		return err
+	}
+	return host.args.bridgeLink.configureBridge(host.args.BridgeProfile != "" || host.inputs.Settings.GetPlugins()["bridge"])
 }
 
 func (host *interactiveSessionHost) ListProjectSessions(onProgress session.SessionListProgress) []session.SessionInfo {

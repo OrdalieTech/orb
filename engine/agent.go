@@ -142,7 +142,9 @@ type listenerEntry struct {
 
 // Agent is the stateful wrapper around RunLoop and RunLoopContinue.
 type Agent struct {
-	mu sync.Mutex
+	observers    map[uint64]stateObserver
+	nextObserver uint64
+	mu           sync.Mutex
 
 	state AgentState
 
@@ -472,6 +474,7 @@ func (agent *Agent) Reset() {
 	agent.state.ErrorMessage = nil
 	agent.steering = nil
 	agent.followUps = nil
+	agent.resetObserversLocked()
 	agent.mu.Unlock()
 }
 
@@ -553,12 +556,14 @@ func (agent *Agent) SetTools(tools []AgentTool) {
 func (agent *Agent) SetMessages(messages AgentMessages) {
 	agent.mu.Lock()
 	agent.state.Messages = cloneAgentMessages(messages)
+	agent.resetObserversLocked()
 	agent.mu.Unlock()
 }
 
 func (agent *Agent) AppendMessage(message AgentMessage) {
 	agent.mu.Lock()
 	agent.state.Messages = append(agent.state.Messages, cloneAgentMessage(message))
+	agent.resetObserversLocked()
 	agent.mu.Unlock()
 }
 
@@ -808,6 +813,11 @@ func (agent *Agent) processEvent(ctx context.Context, event AgentEvent) error {
 		}
 	case AgentEndEvent:
 		agent.state.StreamingMessage = nil
+	}
+	for _, observe := range agent.observers {
+		if observe.event != nil {
+			observe.event(event)
+		}
 	}
 	agent.mu.Unlock()
 

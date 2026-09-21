@@ -12,6 +12,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - Use double-click word selection, triple-click paragraph selection, and dragging by those units. Add composer selection with Shift and modifier-arrow keys, adaptive highlights, clipboard actions, and undoable replacement.
 
+- Add optional Orb Bridge: durable instance control, pinned pairing, directional grants, scoped discovery, opt-in agent calls, and CLI/TUI remote conversations in one executable.
+
 - Show copy, model, and other action confirmations briefly beside the composer instead of adding transcript entries, preserving the active loading indicator.
 - Find individual settings directly in the command palette; keep skills in composer completion instead of the command list.
 - Fix crashes and stale modal backdrops when switching between terminal, light, dark, and custom themes.

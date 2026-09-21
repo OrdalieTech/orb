@@ -1,0 +1,130 @@
+// Package native supplies explicit filesystem and IPC adapters for Orb Bridge.
+package native
+
+import (
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/gofrs/flock"
+)
+
+type Store struct {
+	mu             sync.Mutex
+	path           string
+	quota          int
+	lock           *flock.Flock
+	closed, failed bool
+}
+
+func OpenStore(path string, quota int) (*Store, error) {
+	if !filepath.IsAbs(path) || quota < 1 {
+		return nil, errors.New("absolute store path and positive quota required")
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+		return nil, errors.New("bridge directory must be private")
+	}
+	for _, name := range []string{path, path + ".lock"} {
+		if info, err = os.Lstat(name); err == nil {
+			if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+				return nil, errors.New("bridge store must be a private regular file")
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	lock := flock.New(path + ".lock")
+	ok, err := lock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("bridge profile already in use")
+	}
+	return &Store{path: path, quota: quota, lock: lock}, nil
+}
+func (s *Store) Load() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.failed {
+		return nil, errors.New("store unavailable")
+	}
+	f, err := os.Open(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, int64(s.quota)+1))
+	if len(b) > s.quota {
+		return nil, errors.New("store quota exceeded")
+	}
+	return b, err
+}
+func (s *Store) Save(b []byte) (err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.failed {
+		return errors.New("store unavailable")
+	}
+	if len(b) > s.quota {
+		return errors.New("store quota exceeded")
+	}
+	dir := filepath.Dir(s.path)
+	f, err := os.CreateTemp(dir, ".bridge-")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer func() { _ = os.Remove(name) }()
+	defer func() { _ = f.Close() }()
+	if _, err = f.Write(b); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(name, s.path); err != nil {
+		return err
+	}
+	// After rename, a failed barrier has an ambiguous durable outcome. Refuse
+	// all subsequent access until a new owner reopens and reconciles the store.
+	d, err := os.Open(dir)
+	if err != nil {
+		s.failed = true
+		return err
+	}
+	err = d.Sync()
+	closeErr := d.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		s.failed = true
+	}
+	return err
+}
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	return s.lock.Close()
+}

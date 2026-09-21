@@ -1550,6 +1550,17 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	runPreflight bool,
 	preflightResult func(bool),
 ) error {
+	// Slash commands keep their existing replacement behavior. Model work reserves
+	// its session before preflight or input hooks can mutate it.
+	var finish func()
+	if runtime.control.Load() != nil && (!commands || !strings.HasPrefix(text, "/")) && runtime.agent.IsIdle() {
+		var err error
+		ctx, finish, err = runtime.reserveControl(ctx)
+		if err != nil {
+			return err
+		}
+		defer finish()
+	}
 	state := runtime.extensionState
 	if state == nil || state.runner == nil {
 		if runPreflight {

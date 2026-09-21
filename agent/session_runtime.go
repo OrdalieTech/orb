@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -58,6 +59,7 @@ type SessionRuntimeConfig struct {
 }
 
 type SessionRuntime struct {
+	control  atomic.Pointer[SessionControl]
 	agent    *engine.Agent
 	manager  *sessionstore.SessionManager
 	settings *config.SettingsManager
@@ -556,6 +558,11 @@ func (runtime *SessionRuntime) Prompt(ctx context.Context, input any, images ...
 	if text, ok := input.(string); ok && runtime.extensionState != nil {
 		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, true, nil)
 	}
+	ctx, finish, err := runtime.reserveControl(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish()
 	if err := runtime.PromptPreflight(ctx); err != nil {
 		return err
 	}
@@ -816,6 +823,11 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	finishControl, controlErr := runtime.beginControlRun(ctx)
+	if controlErr != nil {
+		return controlErr
+	}
+	defer finishControl()
 	// Every turn — Prompt, Continue, extension and interactive submissions —
 	// funnels through here, so this is the one place a disposed session has to
 	// refuse before the model is called and the turn is persisted.
@@ -1240,6 +1252,16 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 
 //nolint:staticcheck // User-visible compaction errors match upstream capitalization.
 func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions string) (*sessionstore.CompactionResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if control := runtime.control.Load(); control != nil {
+		finish, err := control.BeginTransition(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer finish()
+	}
 	var fromExtension bool
 	// Compaction summarizes through the model and rewrites session history, which
 	// is exactly the "call the model and persist" that disposal exists to stop.
@@ -1452,6 +1474,16 @@ func (runtime *SessionRuntime) GetContextUsage() *harness.ContextUsage {
 
 //nolint:staticcheck // SessionError text matches upstream capitalization.
 func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string, options NavigateTreeOptions) (NavigateTreeResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if control := runtime.control.Load(); control != nil {
+		finish, err := control.BeginTransition(ctx)
+		if err != nil {
+			return NavigateTreeResult{}, err
+		}
+		defer finish()
+	}
 	if !runtime.IsIdle() {
 		return NavigateTreeResult{}, errors.New("Wait for the current response to finish before navigating the session tree.")
 	}
@@ -1873,4 +1905,10 @@ func (runtime *SessionRuntime) emitCompactionEnd(ctx context.Context, event Comp
 			state.runner.Emit(ctx, extensions.SessionCompactFailedEvent{Reason: extensions.CompactionReason(event.Reason), ErrorMessage: event.ErrorMessage, Aborted: event.Aborted, WillRetry: event.WillRetry, FromExtension: fromExtension})
 		}
 	}
+}
+
+// ObserveState provides an atomic initial engine snapshot and bounded event
+// callback. Callbacks have the same restrictions as engine.Agent.Observe.
+func (runtime *SessionRuntime) ObserveState(initialize func(engine.AgentState), event func(engine.AgentEvent)) func() {
+	return runtime.agent.Observe(initialize, event)
 }
