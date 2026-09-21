@@ -40,6 +40,7 @@ type ModelSelectorComponent struct {
 	currentModel   *ai.Model
 	scope          modelSelectorScope
 	onSelect       func(ai.Model)
+	onSaveDefault  func(ai.Model)
 	onCancel       func()
 	rows           listRowOffsets
 }
@@ -73,12 +74,12 @@ func NewModelSelectorComponent(
 		component.scopeText = tui.NewText(component.scopeLabel(), 0, 0, nil)
 		component.container.AddChild(component.scopeText)
 		component.container.AddChild(tui.NewText(
-			KeyHint("tui.input.tab", "scope")+theme.FG("muted", " (all/scoped)"),
+			KeyHint("tui.input.tab", "scope")+theme.FG("muted", " · ctrl+s default"),
 			0, 0, nil,
 		))
 	} else {
 		component.container.AddChild(tui.NewTruncatedText(
-			theme.FG("muted", KeyText("app.commandPalette")+" → Providers"),
+			theme.FG("muted", "enter choose · ctrl+s default"),
 			0, 0,
 		))
 	}
@@ -312,6 +313,10 @@ func (component *ModelSelectorComponent) HandleInput(event tui.KeyEvent) {
 	component.window.Recenter()
 	bindings := tui.GetKeybindings()
 	switch {
+	case tui.MatchesKey(event.Raw, "ctrl+s"):
+		if component.onSaveDefault != nil && component.selectedIndex >= 0 && component.selectedIndex < len(component.filteredModels) {
+			component.onSaveDefault(component.filteredModels[component.selectedIndex].model)
+		}
 	case bindings.Matches(event.Raw, "tui.input.tab"):
 		if len(component.scopedModels) > 0 {
 			if component.scope == modelScopeAll {
@@ -397,10 +402,11 @@ func (mode *InteractiveMode) selectModelSearchable(
 	models []ai.Model,
 	scoped []agent.ScopedModel,
 	initialSearch string,
-) (ai.Model, bool) {
+) (ai.Model, bool, bool) {
 	type selection struct {
-		model ai.Model
-		ok    bool
+		model   ai.Model
+		ok      bool
+		persist bool
 	}
 	result := make(chan selection, 1)
 	resolve := func(value selection) {
@@ -415,6 +421,7 @@ func (mode *InteractiveMode) selectModelSearchable(
 		func() { resolve(selection{}) },
 		initialSearch,
 	)
+	component.onSaveDefault = func(model ai.Model) { resolve(selection{model: model, ok: true, persist: true}) }
 	handle := mode.ui.ShowOverlay(menuFrame("Model", component), configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() {
@@ -426,8 +433,8 @@ func (mode *InteractiveMode) selectModelSearchable(
 	}
 	select {
 	case selected := <-result:
-		return selected.model, selected.ok
+		return selected.model, selected.persist, selected.ok
 	case <-ctx.Done():
-		return ai.Model{}, false
+		return ai.Model{}, false, false
 	}
 }

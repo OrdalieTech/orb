@@ -1076,13 +1076,16 @@ func compactFooterLine(display engine.AgentDisplayState, context *harness.Contex
 		model = "Choose model"
 	}
 	left := model
-	if display.Reasoning && display.ThinkingLevel != "" && display.ThinkingLevel != ai.ModelThinkingOff {
-		left += " · " + string(display.ThinkingLevel)
+	if display.Reasoning && display.ThinkingLevel != "" {
+		left += " · " + thinkingMeter(string(display.ThinkingLevel)) + " " + string(display.ThinkingLevel)
 	}
 	right := strings.Join(statuses, " · ")
 	leftBudget := width
 	if right != "" {
 		leftBudget = max(min(tui.VisibleWidth(model), width*2/3), width-tui.VisibleWidth(right)-2)
+	}
+	if tui.VisibleWidth(left) > leftBudget && display.Reasoning {
+		left = model + " · " + thinkingMeter(string(display.ThinkingLevel))
 	}
 	if tui.VisibleWidth(left) > leftBudget {
 		left = model
@@ -1143,6 +1146,7 @@ func (f *FooterComponent) render(width int) []string {
 	if !f.verbose {
 		line := compactFooterLine(display, stats.ContextUsage, values, width)
 		f.recordStatusHits(line, 0, keys, values)
+		f.recordThinkingHit(line, 0, display)
 		return []string{theme.FG("dim", line)}
 	}
 
@@ -1190,6 +1194,7 @@ func (f *FooterComponent) render(width int) []string {
 		theme.FG("dim", statsLeft) + theme.FG("dim", padding+modelName),
 	}
 
+	f.recordThinkingHit(lines[1], 1, display)
 	if len(keys) > 0 {
 		statusLine := tui.TruncateToWidth(strings.Join(values, " "), width, "…", false)
 		f.recordStatusHits(statusLine, len(lines), keys, values)
@@ -1226,8 +1231,20 @@ func (f *FooterComponent) recordStatusHits(text string, row int, keys, values []
 		hits = append(hits, statusHit{row: row, start: column, end: min(tui.VisibleWidth(text)+1, column+tui.VisibleWidth(value)), action: action})
 	}
 	f.hitMu.Lock()
-	f.hits = hits
+	f.hits = append(f.hits, hits...)
 	f.hitMu.Unlock()
+}
+
+func (f *FooterComponent) recordThinkingHit(text string, row int, display engine.AgentDisplayState) {
+	if !display.Reasoning {
+		return
+	}
+	meter := thinkingMeter(string(display.ThinkingLevel))
+	label := meter + " " + string(display.ThinkingLevel)
+	if !strings.Contains(tui.StripANSI(text), label) {
+		label = meter
+	}
+	f.recordStatusHits(text, row, []string{"orb:thinking"}, []string{label})
 }
 
 func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
@@ -1246,7 +1263,9 @@ func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
 	if action == nil {
 		return false
 	}
-	action()
+	if event.Clicks < 2 {
+		action()
+	}
 	return true
 }
 

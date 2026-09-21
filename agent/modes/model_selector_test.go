@@ -94,3 +94,25 @@ func TestModelRowsRemainSingleLineAtNarrowWidths(t *testing.T) {
 		}
 	}
 }
+
+func TestModelSelectorSaveDefaultUsesHighlightedFilteredModel(t *testing.T) {
+	initTestTheme(t)
+	models := []ai.Model{{Provider: "groq", ID: "first"}, {Provider: "groq", ID: "second"}}
+	chosen, saved := "", ""
+	selector := NewModelSelectorComponent(&models[0], models, nil, func(model ai.Model) { chosen = model.ID }, func() {}, "second")
+	selector.onSaveDefault = func(model ai.Model) { saved = model.ID }
+	selector.HandleInput(tui.KeyEvent{Raw: "\x13"})
+	if saved != "second" || chosen != "" {
+		t.Fatalf("saved=%q selected=%q", saved, chosen)
+	}
+	saved = ""
+	selector.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if chosen != "second" || saved != "" {
+		t.Fatalf("saved=%q selected=%q", saved, chosen)
+	}
+	selector.filterModels("missing")
+	selector.HandleInput(tui.KeyEvent{Raw: "\x13"})
+	if saved != "" {
+		t.Fatal("saved a model with no matching selection")
+	}
+}
