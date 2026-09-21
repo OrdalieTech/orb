@@ -203,3 +203,45 @@ func TestComposerFrameNarrowWidths(t *testing.T) {
 		framePlain(t, editor, width)
 	}
 }
+
+func TestDirectShortcutsPreserveEnterAndDraft(t *testing.T) {
+	editor := newFrameEditor(t, 80, 24)
+	var palette, models, submits int
+	editor.OnAction("app.commandPalette", func() { palette++ })
+	editor.OnAction("app.model.select", func() { models++ })
+	editor.OnSubmit = func(string) { submits++ }
+	editor.SetText("keep this draft")
+	editor.HandleInput(tui.KeyEvent{Raw: "\x10"})
+	if palette != 1 || editor.GetText() != "keep this draft" {
+		t.Fatalf("palette=%d draft=%q", palette, editor.GetText())
+	}
+	for _, key := range []string{"\x1b[109;5u", "\x0c"} {
+		editor.HandleInput(tui.KeyEvent{Raw: key})
+	}
+	if models != 2 || submits != 0 {
+		t.Fatalf("model shortcuts: models=%d submits=%d", models, submits)
+	}
+	editor.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if submits != 1 || models != 2 {
+		t.Fatalf("Enter was intercepted: models=%d submits=%d", models, submits)
+	}
+}
+
+func TestPaletteShortcutRespectsLiveUserOverrides(t *testing.T) {
+	editor := newFrameEditor(t, 80, 24)
+	var palette, cycle int
+	editor.OnAction("app.commandPalette", func() { palette++ })
+	editor.OnAction("app.model.cycleForward", func() { cycle++ })
+	editor.keybindings.SetUserBindings(tui.KeybindingsConfig{"app.model.cycleForward": {"Ctrl+P"}})
+	for range 10 {
+		editor.HandleInput(tui.KeyEvent{Raw: "\x10"})
+	}
+	if cycle != 10 || palette != 0 {
+		t.Fatalf("override: cycle=%d palette=%d", cycle, palette)
+	}
+	editor.keybindings.SetUserBindings(nil)
+	editor.HandleInput(tui.KeyEvent{Raw: "\x10"})
+	if palette != 1 {
+		t.Fatal("removing override did not restore the palette")
+	}
+}

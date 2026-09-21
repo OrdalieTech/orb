@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -36,7 +38,9 @@ type GridList struct {
 	window     ListWindow
 	focused    bool
 	query      string
-	rowLines   []int // screen line of each view row in the last render (mouse)
+	rowLines   []int // screen lines of only the visible rows (mouse)
+	rowStart   int
+	headers    []int
 	widths     []int // column widths, measured once per SetRows
 
 	// Searchable enables type-to-filter: printable keys build a fuzzy query,
@@ -89,6 +93,7 @@ func (list *GridList) SetQuery(query string) {
 }
 
 func (list *GridList) rebuildView(keepValue string) {
+	list.rowLines = list.rowLines[:0]
 	if list.query == "" {
 		list.view = list.rows
 	} else {
@@ -106,6 +111,12 @@ func (list *GridList) rebuildView(keepValue string) {
 			}
 			return StripANSI(strings.Join(row.Cells, " "))
 		})
+	}
+	list.headers = list.headers[:0]
+	for index, row := range list.view {
+		if row.Header {
+			list.headers = append(list.headers, index)
+		}
 	}
 	list.selected = list.nearestSelectable(0, 1)
 	if keepValue != "" {
@@ -127,6 +138,12 @@ func (list *GridList) SelectedValue() string {
 }
 
 func (list *GridList) SetFocused(focused bool) { list.focused = focused }
+
+// SetMaxVisible fits a list to a resized viewport without losing its selection.
+func (list *GridList) SetMaxVisible(rows int) {
+	list.maxVisible = max(1, rows)
+	list.fixedRows = min(list.maxVisible, len(list.rows))
+}
 
 func (list *GridList) nearestSelectable(from, direction int) int {
 	for index := from; index >= 0 && index < len(list.view); index += direction {
@@ -210,8 +227,9 @@ func (list *GridList) HandleMouse(event MouseEvent) bool {
 }
 
 func (list *GridList) ListRowAt(row int) (int, bool) {
-	for index, line := range list.rowLines {
+	for offset, line := range list.rowLines {
 		if line == row {
+			index := list.rowStart + offset
 			if list.view[index].Header {
 				return 0, false
 			}
@@ -286,13 +304,11 @@ func (list *GridList) Render(width int) []string {
 	}
 	start := list.window.Start(list.selected, len(list.view), list.maxVisible)
 	end := min(start+list.maxVisible, len(list.view))
-	list.rowLines = make([]int, len(list.view))
-	for index := range list.rowLines {
-		list.rowLines[index] = -1
-	}
+	list.rowLines = list.rowLines[:0]
+	list.rowStart = start
 	for index := start; index < end; index++ {
 		row := list.view[index]
-		list.rowLines[index] = len(lines)
+		list.rowLines = append(list.rowLines, len(lines))
 		if row.Header {
 			header := ""
 			if len(row.Cells) > 0 {
@@ -380,29 +396,8 @@ func (list *GridList) separator(width int, style func(StyleFunc, string) string)
 }
 
 func (list *GridList) counter() string {
-	position, total := 0, 0
-	for index, row := range list.view {
-		if row.Header {
-			continue
-		}
-		total++
-		if index <= list.selected {
-			position++
-		}
-	}
-	return itoa(position) + "/" + itoa(total)
-}
-
-func itoa(value int) string {
-	if value == 0 {
-		return "0"
-	}
-	digits := []byte{}
-	for value > 0 {
-		digits = append([]byte{byte('0' + value%10)}, digits...)
-		value /= 10
-	}
-	return string(digits)
+	position := list.selected + 1 - sort.SearchInts(list.headers, list.selected+1)
+	return strconv.Itoa(position) + "/" + strconv.Itoa(len(list.view)-len(list.headers))
 }
 
 // Frame wraps a component in the shared configuration-window chrome: an

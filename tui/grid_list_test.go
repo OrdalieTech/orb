@@ -131,3 +131,25 @@ func TestGridListSearchFiltersWithStableGeometry(t *testing.T) {
 		t.Fatal("second escape did not close")
 	}
 }
+
+func TestGridMouseLayoutTracksOnlyVisibleRows(t *testing.T) {
+	rows := make([]GridRow, 10000)
+	for i := range rows {
+		rows[i] = GridRow{Value: "item", Cells: []string{"item"}}
+	}
+	list := NewGridList(rows, 8, GridListTheme{})
+	list.selected = 9000
+	list.Render(80)
+	if len(list.rowLines) > 8 {
+		t.Fatalf("mouse layout retained %d rows", len(list.rowLines))
+	}
+	index, ok := list.ListRowAt(0)
+	if !ok || index < 8993 || index > 9000 {
+		t.Fatalf("visible row maps to %d, %v", index, ok)
+	}
+	list.SetMaxVisible(3)
+	list.Render(24)
+	if len(list.rowLines) > 3 || list.selected != 9000 {
+		t.Fatal("resize lost the selected row or window bound")
+	}
+}

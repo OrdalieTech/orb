@@ -132,6 +132,7 @@ type InteractiveMode struct {
 	lastStatusText             *tui.Text
 	footerStatuses             map[string]string
 	autocompleteProvider       tui.AutocompleteProvider
+	paletteCommands            []tui.SlashCommand
 	cwd                        string
 	outputPad                  int
 	lastEscape                 time.Time
@@ -998,6 +999,9 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		}
 	}
 	commands = append(commands, skillCommands...)
+	mode.mu.Lock()
+	mode.paletteCommands = commands
+	mode.mu.Unlock()
 	skillItems = slices.DeleteFunc(skillItems, func(item tui.AutocompleteItem) bool {
 		_, conflict := extensionNames["skill:"+strings.TrimPrefix(item.Value, "@")]
 		return conflict
@@ -1021,7 +1025,9 @@ func (mode *InteractiveMode) setupAutocomplete() {
 	provider = newSkillAutocompleteProvider(provider, skillItems)
 	mode.autocompleteProvider = provider
 	if mode.editor != nil {
-		mode.editor.SetAutocompleteProvider(provider)
+		// Extension editors retain the pi completion surface; the native
+		// composer discovers built-in actions through the command palette.
+		mode.editor.SetAutocompleteProvider(&composerAutocompleteProvider{AutocompleteProvider: provider})
 	}
 	mode.setExtensionEditorAutocompleteProvider(provider)
 }
@@ -1474,6 +1480,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		mode.restoreToEditor(nil, messages)
 	})
 
+	mode.editor.OnAction("app.commandPalette", mode.showCommandPalette)
 	mode.editor.OnAction("app.model.select", func() { mode.handleModelCommand("") })
 	mode.editor.OnAction("app.session.new", mode.handleClearCommand)
 	mode.editor.OnAction("app.session.tree", mode.showTreeSelector)
@@ -1722,7 +1729,16 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 		}
 		return strings.Join(formatted, "/")
 	}
-	hotkeys := fmt.Sprintf(`**Navigation**
+	hotkeys := fmt.Sprintf(`**Everyday**
+| Key | Action |
+|-----|--------|
+| %s | Command palette |
+| %s | Models (Ctrl+L works in legacy terminals) |
+| %s | New session |
+| %s | Open session |
+| @ | Skills and files |
+
+**Navigation**
 | Key | Action |
 |-----|--------|
 | %s / %s / %s / %s | Move cursor / browse history |
@@ -1755,7 +1771,6 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 | %s | Exit (when editor is empty) |
 | %s | Suspend to background |
 | %s | Cycle thinking level |
-| %s / %s | Cycle models |
 | %s | Open model selector |
 | %s | Toggle tool output expansion |
 | %s | Toggle thinking block visibility |
@@ -1764,16 +1779,17 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 | %s | Queue follow-up message |
 | %s | Restore queued messages |
 | %s | Paste image or text from clipboard |
-| %s | Slash commands |
+| %s | Extension commands and prompt templates |
 | %s | Run bash command |
 | %s | Run bash command (excluded from context) |`,
+		markdownKey(display("app.commandPalette")), markdownKey(display("app.model.select")), markdownKey(display("app.session.new")), markdownKey(display("app.session.resume")),
 		markdownKey(display("tui.editor.cursorUp")), markdownKey(display("tui.editor.cursorDown")), markdownKey(display("tui.editor.cursorLeft")), markdownKey(display("tui.editor.cursorRight")),
 		markdownKey(display("tui.editor.cursorWordLeft")), markdownKey(display("tui.editor.cursorWordRight")), markdownKey(display("tui.editor.cursorLineStart")), markdownKey(display("tui.editor.cursorLineEnd")),
 		markdownKey(display("tui.editor.jumpForward")), markdownKey(display("tui.editor.jumpBackward")), markdownKey(display("tui.editor.pageUp")), markdownKey(display("tui.editor.pageDown")),
 		markdownKey(display("tui.input.submit")), markdownKey(display("tui.input.newLine")), markdownKey(display("tui.editor.deleteWordBackward")), markdownKey(display("tui.editor.deleteWordForward")),
 		markdownKey(display("tui.editor.deleteToLineStart")), markdownKey(display("tui.editor.deleteToLineEnd")), markdownKey(display("tui.editor.yank")), markdownKey(display("tui.editor.yankPop")), markdownKey(display("tui.editor.undo")),
 		markdownKey(display("tui.input.tab")), markdownKey(display("app.interrupt")), markdownKey(display("app.clear")), markdownKey(display("app.exit")), markdownKey(display("app.suspend")),
-		markdownKey(display("app.thinking.cycle")), markdownKey(display("app.model.cycleForward")), markdownKey(display("app.model.cycleBackward")), markdownKey(display("app.model.select")),
+		markdownKey(display("app.thinking.cycle")), markdownKey(display("app.model.select")),
 		markdownKey(display("app.tools.expand")), markdownKey(display("app.thinking.toggle")), markdownKey(display("app.editor.external")), markdownKey(display("app.message.copy")),
 		markdownKey(display("app.message.followUp")), markdownKey(display("app.message.dequeue")), markdownKey(display("app.clipboard.pasteImage")), markdownKey("/"), markdownKey("!"), markdownKey("!!"),
 	)
@@ -4669,4 +4685,160 @@ func userMessageText(message any) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// The canonical provider stays available to extension editors. Only native
+// composer discovery hides built-ins; skill/template/extension invocations keep
+// their original spelling, completion, precedence, and argument handling.
+type composerAutocompleteProvider struct{ tui.AutocompleteProvider }
+
+func (provider *composerAutocompleteProvider) GetSuggestions(ctx context.Context, lines []string, line, col int, force bool) *tui.AutocompleteSuggestions {
+	result := provider.AutocompleteProvider.GetSuggestions(ctx, lines, line, col, force)
+	if result == nil || !strings.HasPrefix(result.Prefix, "/") {
+		return result
+	}
+	items := make([]tui.AutocompleteItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		if !isInteractiveCommandName(strings.TrimPrefix(item.Value, "/")) {
+			items = append(items, item)
+		}
+	}
+	return &tui.AutocompleteSuggestions{Prefix: result.Prefix, Items: items}
+}
+
+func (provider *composerAutocompleteProvider) StyleAutocompleteItem(item tui.AutocompleteItem, text string, selected bool) string {
+	if strings.HasPrefix(item.Value, "skill:") || strings.HasPrefix(item.Label, "[skill] ") {
+		return theme.FG("customMessageLabel", text)
+	}
+	if styler, ok := provider.AutocompleteProvider.(tui.AutocompleteItemStyler); ok {
+		return styler.StyleAutocompleteItem(item, text, selected)
+	}
+	return text
+}
+
+func (provider *composerAutocompleteProvider) ShouldTriggerFileCompletion(lines []string, line, col int) bool {
+	if gate, ok := provider.AutocompleteProvider.(tui.FileCompletionGate); ok {
+		return gate.ShouldTriggerFileCompletion(lines, line, col)
+	}
+	return true
+}
+
+func (provider *composerAutocompleteProvider) TriggerCharacters() []string {
+	if triggers, ok := provider.AutocompleteProvider.(tui.TriggerCharacterProvider); ok {
+		return triggers.TriggerCharacters()
+	}
+	return nil
+}
+
+func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
+	mode.mu.Lock()
+	commands := append([]tui.SlashCommand(nil), mode.paletteCommands...)
+	mode.mu.Unlock()
+	labels := map[string]string{
+		"model": "Choose model", "thinking": "Thinking level", "resume": "Open session", "new": "New session",
+		"settings": "Settings", "tree": "Session branches", "name": "Rename session", "copy": "Copy last response",
+		"fork": "Fork from message", "clone": "Duplicate session", "compact": "Compact context", "session": "Session details",
+		"export": "Export session", "import": "Import session", "login": "Connect provider", "logout": "Disconnect provider",
+		"trust": "Project trust", "reload": "Reload resources", "scoped-models": "Favorite models", "hotkeys": "Keyboard shortcuts",
+		"changelog": "Changelog", "quit": "Quit Orb",
+	}
+	shortcuts := map[string]string{"model": "app.model.select", "resume": "app.session.resume", "new": "app.session.new", "copy": "app.message.copy"}
+	rows := make([]tui.GridRow, 0, len(commands))
+	seen := make(map[string]bool, len(commands))
+	for _, command := range commands {
+		if seen[command.Name] {
+			continue
+		}
+		seen[command.Name] = true
+		if command.Name == "share" {
+			continue
+		} // The same local export is already listed.
+		label, builtin := labels[command.Name]
+		kind, color, value := "action", "text", command.Name
+		description := command.Description
+		if command.Name == "scoped-models" {
+			description = "Choose which models appear in your favorites"
+		}
+		if !builtin {
+			label, kind, value = command.Name, "command", "/"+command.Name
+			if strings.HasPrefix(command.Name, "skill:") {
+				label, kind, color = strings.TrimPrefix(command.Name, "skill:"), "skill", "customMessageLabel"
+			}
+		}
+		hint := ""
+		if action := shortcuts[command.Name]; action != "" {
+			hint = KeyText(action)
+		}
+		instruction := "Enter to open"
+		if !builtin {
+			instruction = "Enter to insert into your draft · add arguments, then send"
+		}
+		rows = append(rows, tui.GridRow{
+			Value: value, Cells: []string{theme.FG(color, label), theme.FG("dim", kind), theme.FG("muted", hint)},
+			Search: label + " " + kind + " " + command.Name + " " + description,
+			Detail: []string{description, instruction},
+		})
+	}
+	for _, action := range []string{"app.tools.expand", "app.thinking.toggle", "app.thinking.cycle", "app.message.dequeue", "app.editor.external", "app.model.cycleForward", "app.model.cycleBackward"} {
+		for _, definition := range AppKeybindingDefinitions {
+			if definition.ID != action {
+				continue
+			}
+			hint := ""
+			if len(mode.keybindings.Keys(action)) > 0 {
+				hint = KeyText(action)
+			}
+			rows = append(rows, tui.GridRow{Value: "action:" + action, Cells: []string{theme.FG("text", definition.Description), theme.FG("dim", "action"), theme.FG("muted", hint)}, Search: definition.Description})
+			break
+		}
+	}
+	return rows
+}
+
+func (mode *InteractiveMode) showCommandPalette() {
+	var handle tui.OverlayHandle
+	closePalette := func() { handle.Hide(); mode.ui.RequestRender() }
+	palette := newCommandPalette(mode.commandPaletteRows(), mode.keybindings, mode.Height, func(value string) {
+		closePalette()
+		mode.runPaletteCommand(value)
+	}, closePalette)
+	frame := menuFrame("Commands", palette)
+	frame.Footer = "↑↓ navigate · Enter choose · Esc close"
+	options := dialogOverlayOptions()
+	options.MaxHeight = tui.PercentSize(100)
+	handle = mode.ui.ShowOverlay(frame, options)
+	mode.ui.RequestRender()
+}
+
+func (mode *InteractiveMode) runPaletteCommand(value string) {
+	if action, ok := strings.CutPrefix(value, "action:"); ok {
+		if handler := mode.editor.actionHandlers[action]; handler != nil {
+			handler()
+		}
+		return
+	}
+	if strings.HasPrefix(value, "/") {
+		mode.setActiveEditorText(value + " " + mode.activeEditorText(true))
+		mode.ui.RequestRender()
+		return
+	}
+	if value == "name" || value == "import" {
+		title := "Rename session"
+		if value == "import" {
+			title = "Import session · JSONL path"
+		}
+		go func() {
+			text, ok, err := mode.interactiveUI.Input(mode.authenticationContext(), title, nil, nil)
+			if err != nil || !ok || strings.TrimSpace(text) == "" {
+				return
+			}
+			if action, exists := mode.resolveSlashCommand(value, text); exists {
+				action.run()
+			}
+		}()
+		return
+	}
+	if action, ok := mode.resolveSlashCommand(value, ""); ok {
+		action.run()
+	}
 }

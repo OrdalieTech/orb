@@ -377,3 +377,17 @@ func TestViewportKeysDeferToFocusedOverlay(t *testing.T) {
 		t.Fatalf("hidden overlay: end=%d (was %d) inputs=%q", ui.viewportEnd, scrolledEnd, overlay.inputs)
 	}
 }
+
+func TestDismissedOverlaysReleaseBackingReferences(t *testing.T) {
+	for _, hide := range []func(*TUI, OverlayHandle){func(_ *TUI, h OverlayHandle) { h.Hide() }, func(ui *TUI, _ OverlayHandle) { ui.HideOverlay() }} {
+		ui := NewTUI(newFakeTerminal(80, 24))
+		handle := ui.ShowOverlay(&overlayLines{lines: []string{"dialog"}})
+		backing := ui.overlayStack[:cap(ui.overlayStack)]
+		hide(ui, handle)
+		for _, entry := range backing {
+			if entry != nil {
+				t.Fatal("dismissed overlay remains retained in stack storage")
+			}
+		}
+	}
+}

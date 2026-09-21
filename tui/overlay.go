@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -340,7 +341,7 @@ func (handle *overlayHandle) Hide() {
 	}
 	ui.clearOverlayFocusRestoreForLocked(entry)
 	ui.retargetOverlayPreFocusLocked(entry)
-	ui.overlayStack = append(ui.overlayStack[:index], ui.overlayStack[index+1:]...)
+	ui.overlayStack = slices.Delete(ui.overlayStack, index, index+1)
 	if ui.focused == entry.component {
 		top := ui.topmostVisibleOverlayLocked()
 		if top != nil {
@@ -467,7 +468,7 @@ func (ui *TUI) HideOverlay() {
 	overlay := ui.overlayStack[len(ui.overlayStack)-1]
 	ui.clearOverlayFocusRestoreForLocked(overlay)
 	ui.retargetOverlayPreFocusLocked(overlay)
-	ui.overlayStack = ui.overlayStack[:len(ui.overlayStack)-1]
+	ui.overlayStack = slices.Delete(ui.overlayStack, len(ui.overlayStack)-1, len(ui.overlayStack))
 	if ui.focused == overlay.component {
 		top := ui.topmostVisibleOverlayLocked()
 		if top != nil {
