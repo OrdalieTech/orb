@@ -6,27 +6,16 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
-- Restore clickable reasoning-level bars in the footer, including the off state, and let Ctrl+S save the highlighted model as the default in the model picker.
+## [0.7.1] - 2026-09-21
 
-- Gently darken and fade the page behind modals; use neutral headings and selections with more restrained accents.
-
-- Adapt terminal-native colors to the reported light/dark background, with readable secondary text, teal and purple accents, soft modal surfaces and tinted selections. Refresh on terminal appearance changes without delaying startup.
-
-- Pin Connect provider in the Providers menu header, with click and Tab/Enter access; keep it visible while scrolling or filtering accounts.
-
-- Dismiss modals when clicking outside, using the same cancellation path as Escape and consuming the click.
-
-- Follow the terminal palette by default, with inherited foreground and background, inverted selections, and faint modal backdrops. Keep explicit custom themes available.
-
-- Make Shift+Enter insert a newline before app or extension shortcuts can queue the draft, including legacy Escape+Return terminal encodings. Explicit Alt+Enter still queues follow-ups.
-
-- Simplify the compact footer to model, reasoning level, remaining quota, and context percentage. Keep quota details in the account menu; drop duplicate provider labels, meters, project metadata, capacity, and cost from the bar, and avoid background Git probes for compact rendering.
-
-- Brand browser login callback pages as Orb and confirm menu choices with a single click, matching Enter. Suppress double-click repeats and preserve tree fold controls.
-
-- Add a unified Providers menu with named accounts, per-provider Add account actions, safe credential switching, and an optional Codex/OpenCode Go usage module. Click footer usage to compare accounts and switch. Keep account storage and quota clients independent of the agent engine. Use neutral menu selections and a lighter backdrop.
-- Simplify floating menus into padded borderless panels with an Esc hint and a darker full-screen backdrop. Keep model options on one line at narrow widths, with metadata shown for the selected model.
-- Make Ctrl+P the searchable command palette, with direct model (Ctrl+M; also available through Ctrl+P), new-session (Ctrl+N), and rename (Ctrl+R) shortcuts. Preserve drafts, expose skills in purple, show slash suggestions above the composer, and dim modal backdrops while retaining pi extension and skill contracts. Bound menu mouse-layout work to visible rows and release dismissed overlay references.
+- Make Ctrl+P the main command palette, with direct Ctrl+M model selection, Ctrl+N new session, and Ctrl+R rename shortcuts. Keep slash and skill suggestions above the composer while preserving extension and skill compatibility.
+- Make menus compact and responsive at narrow widths. A single click confirms an option, and clicking outside a modal cancels it without activating the controls underneath.
+- Follow the terminal's light or dark background with readable text, restrained accents, neutral selections, and a gently darkened modal backdrop. Appearance detection runs asynchronously and existing custom themes remain available.
+- Add a unified Providers menu with multiple named accounts per provider, per-provider Add account actions, and a pinned Connect provider button. Keep account storage independent of the agent engine.
+- Add an optional provider-usage module for Codex and OpenCode Go. Show remaining quota in the footer; click it to compare accounts and switch. Keep usage requests bounded and cached.
+- Simplify the footer while retaining clickable reasoning-level bars and context usage. Ctrl+S in the model picker selects and saves the default model; Enter changes only the current session. Compact rendering no longer probes Git metadata.
+- Give Shift+Enter newline insertion priority over app and extension shortcuts, including legacy Escape+Return encodings. Explicit Alt+Enter remains available for queued follow-ups.
+- Replace the browser login callback's pi branding with Orb branding while preserving compatibility-facing HTML helpers.
 
 ## [0.7.0] - 2026-09-20
 
