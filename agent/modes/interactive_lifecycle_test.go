@@ -279,8 +279,9 @@ func TestConcurrentInfoNotificationsReplaceOneStatusLine(t *testing.T) {
 	close(start)
 	workers.Wait()
 
-	lines := mode.chat.Render(72)
-	if len(lines) != 2 || lines[0] != "" || !strings.Contains(lines[1], "status-") {
+	t.Cleanup(func() { mode.showStatusMessage("") })
+	lines := (compactStatus{Component: &IdleStatus{}, Notice: mode.statusNoticeText}).Render(72)
+	if len(mode.chat.Children()) != 0 || len(lines) != 1 || !strings.Contains(lines[0], "status-") {
 		t.Fatalf("concurrent adjacent statuses rendered %d lines: %#v", len(lines), lines)
 	}
 }

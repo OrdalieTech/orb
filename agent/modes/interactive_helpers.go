@@ -230,15 +230,9 @@ func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, hei
 	palette := &commandPalette{input: newSearchInput(), bindings: bindings, height: height, onCancel: cancel}
 	palette.list = tui.NewGridList(rows, 10, tui.GridListTheme{
 		Cell: func(row tui.GridRow, column int, text string) string {
-			if current := theme.Current(); current == nil || current.Name != "terminal" {
-				return text
-			}
 			color := "text"
 			if column > 0 || strings.HasPrefix(row.Value, "add:") {
 				color = "muted"
-			}
-			if column == 0 && strings.HasPrefix(row.Value, "/skill:") {
-				color = "customMessageLabel"
 			}
 			return theme.FG(color, tui.StripANSI(text))
 		},

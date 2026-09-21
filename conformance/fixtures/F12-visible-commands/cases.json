@@ -78,20 +78,14 @@
         "export:jsonl:<tmp>/session.jsonl"
       ],
       "chat": {
-        "lineCount": 2,
-        "sha256": "13a72a2976c7d5eab55cf522e0c5fa278b7a7f1a5692978a613ad12b7077f6e3",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "afa37bf12625e5d930589d9906dff46c330d13a735f69cdeef377906d396f799",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mSession exported to: <tmp>/session.jsonl\u001b[39m                                                          "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  Session exported to: <tmp>/session.jsonl"
-        ]
+        "lines": []
       }
     },
     {
@@ -109,20 +103,14 @@
         "import:fixture path/session.jsonl"
       ],
       "chat": {
-        "lineCount": 2,
-        "sha256": "a75409fa7f17156b260e64cfc3640cb38816f0bfd9e39a7d152b5c357928e547",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "973c3e651c5b1a2647246264b31599cef5a62a2e648e076d711b6c5db33cf579",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mSession imported from: fixture path/session.jsonl\u001b[39m                                                 "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  Session imported from: fixture path/session.jsonl"
-        ]
+        "lines": []
       }
     },
     {
@@ -138,20 +126,14 @@
         "export:html:<default>"
       ],
       "chat": {
-        "lineCount": 2,
-        "sha256": "9d8d00b0ef78fa093416a2d9dc7b9cf59d2436287ab1adfb084fbc7b774f49f7",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "d58a52a783a2790152684a490656f329f0d3bc8bcf4e78166acde6156c3f5eca",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mSession exported to: <tmp>/session.html\u001b[39m                                                           "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  Session exported to: <tmp>/session.html"
-        ]
+        "lines": []
       }
     },
     {
@@ -194,20 +176,14 @@
         "name:fixture session"
       ],
       "chat": {
-        "lineCount": 2,
-        "sha256": "264459805848cdd58976825df5706e5c9eb52fa54c14262f147faa3fdb7fef7a",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "df3b017edc14f68b99021c7055f1b20c5a11d5de762c53a4b26c6e041f65db0c",
-          "lines": [
-            "",
-            " \u001b[38;5;241mSession name set: fixture session\u001b[39m                                                                  "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          " Session name set: fixture session"
-        ]
+        "lines": []
       }
     },
     {
@@ -493,20 +469,14 @@
       "transition": null,
       "trace": [],
       "chat": {
-        "lineCount": 2,
-        "sha256": "24a3d3e7026186ebb7b8746e59b933740470371380132a1038bce9e9f0556eb5",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "d773fe898cdb094aa1ec1e86e774b5e5f728e503317d3e0efbca3eabce1d6671",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mNo messages to fork from\u001b[39m                                                                          "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  No messages to fork from"
-        ]
+        "lines": []
       }
     },
     {
@@ -520,20 +490,14 @@
       "transition": null,
       "trace": [],
       "chat": {
-        "lineCount": 2,
-        "sha256": "92f5386da987b2399d9f56822f78c8eca86cde06fcdef21baa5a05af05d0ac18",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "874be133a9594941c265cf7b27abf0587968368f1a6c46f6b36d60e51b69ae7b",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mNothing to clone yet\u001b[39m                                                                              "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  Nothing to clone yet"
-        ]
+        "lines": []
       }
     },
     {
@@ -547,20 +511,14 @@
       "transition": null,
       "trace": [],
       "chat": {
-        "lineCount": 2,
-        "sha256": "7d4446e2668eebeb9ef419623be6eda118d03df76b076a6163438895727efb07",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "d359740f08d781be6b767bb1524e9ec4cccba474666131078b6c0782cda8e770",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mNo entries in session\u001b[39m                                                                             "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  No entries in session"
-        ]
+        "lines": []
       }
     },
     {
@@ -595,20 +553,14 @@
       "transition": null,
       "trace": [],
       "chat": {
-        "lineCount": 2,
-        "sha256": "de3e5b4cf4cc30d7676e440019e8c6ead8126fa0705ef042b9754d2ec9c43450",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 2,
-          "sha256": "a10b97f483432f307675e4088296ab55f244d64ed58600cfcc6ba862bbae3880",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mNo login providers available.\u001b[39m                                                                     "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  No login providers available."
-        ]
+        "lines": []
       }
     },
     {
@@ -622,22 +574,14 @@
       "transition": null,
       "trace": [],
       "chat": {
-        "lineCount": 3,
-        "sha256": "6cd1264a4f3cea8a79b43f5c5224a4d758f691e42eaefcd3927203f27dce7ef3",
+        "lineCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "raw": {
-          "lineCount": 3,
-          "sha256": "ab09d10ce5a79cf80aa7f46ff84cacf95f997fd93386d8537351f4ebd7d0a475",
-          "lines": [
-            "",
-            "  \u001b[38;5;241mNo stored credentials to remove. /logout only removes credentials saved by /login; environment    ",
-            "  \u001b_orb:w \u0007\u001b[38;5;241mvariables and models.json config are unchanged.\u001b[39m                                                   "
-          ]
+          "lineCount": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "lines": []
         },
-        "lines": [
-          "",
-          "  No stored credentials to remove. /logout only removes credentials saved by /login; environment",
-          "  \u001b_orb:w \u0007variables and models.json config are unchanged."
-        ]
+        "lines": []
       }
     },
     {

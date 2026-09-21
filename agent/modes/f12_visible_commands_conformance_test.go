@@ -100,7 +100,9 @@ func TestF12VisibleCommandBehaviorMatchesUpstream(t *testing.T) {
 				terminal.Send("\r")
 			}
 			if command.Name == "login" || command.Name == "logout" || command.Name == "new" || command.Name == "import" {
-				waitF12Visible(t, func() bool { return len(host.Trace()) > 0 || len(mode.chat.Render(fixture.Width)) > 0 })
+				waitF12Visible(t, func() bool {
+					return len(host.Trace()) > 0 || len(mode.chat.Render(fixture.Width)) > 0 || mode.statusNoticeText() != ""
+				})
 			}
 			if command.Transition != nil {
 				waitF12Visible(t, func() bool { return f12VisibleSelectorActive(mode, fixture.Width) })

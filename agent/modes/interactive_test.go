@@ -105,14 +105,14 @@ func TestInteractiveUIToolExpansionShowsStatus(t *testing.T) {
 	if component.setExpandedCalls != 1 {
 		t.Fatalf("SetExpanded calls = %d, want one traversal", component.setExpandedCalls)
 	}
-	if rendered := strings.Join(chat.Render(80), "\n"); !strings.Contains(rendered, "Tool output: expanded") {
+	if rendered := mode.statusNoticeText(); !strings.Contains(rendered, "Tool output: expanded") {
 		t.Fatalf("expanded status = %q", rendered)
 	}
 	ui.SetToolsExpanded(false)
 	if component.setExpandedCalls != 2 {
 		t.Fatalf("SetExpanded calls = %d, want one traversal per update", component.setExpandedCalls)
 	}
-	if rendered := strings.Join(chat.Render(80), "\n"); !strings.Contains(rendered, "Tool output: collapsed") {
+	if rendered := mode.statusNoticeText(); !strings.Contains(rendered, "Tool output: collapsed") {
 		t.Fatalf("collapsed status = %q", rendered)
 	}
 }
@@ -673,6 +673,25 @@ func TestCompactStatusRender(t *testing.T) {
 	}
 	if lines := (compactStatus{Component: status, Inline: func(int, string) bool { return true }}).Render(20); len(lines) != 0 {
 		t.Fatalf("inlined compact status = %#v, want no rows", lines)
+	}
+	mode := &InteractiveMode{ui: tui.NewTUI(newFakeTerminal(80, 24)), chat: &tui.Container{}}
+	t.Cleanup(func() { mode.showStatusMessage("") })
+	lane := compactStatus{Component: status, Notice: mode.statusNoticeText}
+	mode.showStatusMessage("Model changed")
+	mode.showStatusMessage("Copied to clipboard")
+	lines := lane.Render(80)
+	if len(mode.chat.Children()) != 0 || len(lines) != 1 || !strings.Contains(tui.StripANSI(lines[0]), "* Working...") || !strings.Contains(lines[0], "Copied to clipboard") || strings.Contains(lines[0], "Model changed") {
+		t.Fatalf("notice changed the transcript or loader: %q", lines)
+	}
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeTimer.Reset(time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	deadline := time.Now().Add(time.Second)
+	for mode.statusNoticeText() != "" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if mode.statusNoticeText() != "" || strings.Contains(strings.Join(lane.Render(80), ""), "Copied") {
+		t.Fatal("notice did not expire")
 	}
 }
 
@@ -1588,7 +1607,7 @@ func TestTreeSelectionChecksCurrentLeafAtCommitTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	selector.onSelect(currentLeaf)
-	if rendered := strings.Join(mode.chat.Render(80), "\n"); !strings.Contains(rendered, "Already at this point") {
+	if rendered := mode.statusNoticeText(); !strings.Contains(rendered, "Already at this point") {
 		t.Fatalf("status = %q, want current-leaf no-op", rendered)
 	}
 }
@@ -1854,7 +1873,7 @@ func (mode *InteractiveMode) handleSlashCommand(name, args string) bool {
 	return ok
 }
 
-func TestPaletteSearchSkillsDraftAndCancellation(t *testing.T) {
+func TestPaletteSearchSettingsDraftAndCancellation(t *testing.T) {
 	initTestTheme(t)
 	mode := newF12AutocompleteMode(t, true)
 	previous := tui.GetKeybindings()
@@ -1865,21 +1884,26 @@ func TestPaletteSearchSkillsDraftAndCancellation(t *testing.T) {
 	cancelled := false
 	palette := newCommandPalette(rows, mode.keybindings, func() int { return 24 }, func(value string) { chosen = value }, func() { cancelled = true })
 	initial := palette.Render(70)
-	palette.HandleInput(tui.KeyEvent{Raw: "\x1b[200~inspect-skill\x1b[201~"})
+	palette.HandleInput(tui.KeyEvent{Raw: "\x1b[200~auto-resize images\x1b[201~"})
 	filtered := strings.Join(palette.Render(70), "\n")
-	if !strings.Contains(filtered, "inspect-skill") || !strings.Contains(filtered, theme.FG("customMessageLabel", "inspect-skill")) {
-		t.Fatalf("skill missing its distinct color: %q", filtered)
+	if !strings.Contains(filtered, "Auto-resize images") {
+		t.Fatalf("setting missing: %q", filtered)
+	}
+	for _, row := range rows {
+		if strings.HasPrefix(row.Value, "/skill:") {
+			t.Fatalf("skill leaked into palette: %q", row.Value)
+		}
 	}
 	if len(palette.Render(70)) != len(initial) {
 		t.Fatal("filtering moved the palette")
 	}
 	palette.HandleInput(tui.KeyEvent{Raw: "\r"})
-	if chosen != "/skill:inspect-skill" {
+	if chosen != "setting:auto-resize-images" {
 		t.Fatalf("selected %q", chosen)
 	}
 	mode.editor.SetText("review this carefully")
-	mode.runPaletteCommand(chosen)
-	if got := mode.editor.GetText(); got != "/skill:inspect-skill review this carefully" {
+	mode.runPaletteCommand("/template")
+	if got := mode.editor.GetText(); got != "/template review this carefully" {
 		t.Fatalf("draft = %q", got)
 	}
 	palette.HandleInput(tui.KeyEvent{Raw: "\x1b"})
@@ -2054,6 +2078,30 @@ func TestTerminalThemeDefaultAndBackdrop(t *testing.T) {
 	if got := backdropStyle()("behind"); got != theme.BG("modalBackdropBg", theme.FG("modalBackdropText", "behind")) {
 		t.Fatalf("backdrop = %q", got)
 	}
+	registry := theme.Load(theme.LoadOptions{NoThemes: true})
+	data, err := os.ReadFile("theme/dark.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom, err := theme.Parse("custom", []byte(strings.Replace(string(data), `"name": "dark"`, `"name": "custom"`, 1)), theme.TrueColor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(custom); err != nil {
+		t.Fatal(err)
+	}
+	for _, initial := range []string{"terminal", "dark", "light", "custom"} {
+		value, _ := registry.Get(initial)
+		theme.SetCurrent(value)
+		backdrop := backdropStyle()
+		for _, next := range []string{"light", "dark", "custom", "terminal", "light"} {
+			value, _ = registry.Get(next)
+			theme.SetCurrent(value)
+			if got, want := backdrop("behind"), backdropStyle()("behind"); got != want {
+				t.Fatalf("open modal %s -> %s: got %q, want %q", initial, next, got, want)
+			}
+		}
+	}
 }
 
 func TestTerminalPaletteSurvivesSessionReload(t *testing.T) {
@@ -2104,7 +2152,7 @@ func TestTerminalPaletteSurvivesSessionReload(t *testing.T) {
 	}
 }
 
-func TestOpenPaletteRecolorsHintsAndSkills(t *testing.T) {
+func TestOpenPaletteRecolorsHints(t *testing.T) {
 	previous := theme.Current()
 	t.Cleanup(func() { theme.SetCurrent(previous) })
 	native, _ := theme.Load(theme.LoadOptions{NoThemes: true, Mode: theme.TrueColor}).Get("terminal")
@@ -2112,11 +2160,10 @@ func TestOpenPaletteRecolorsHintsAndSkills(t *testing.T) {
 	native.SetTerminalBackground(tui.RgbColor{R: 255, G: 252, B: 239})
 	palette := newCommandPalette([]tui.GridRow{
 		{Value: "model", Cells: []string{"Choose model", theme.FG("muted", "ctrl+m")}},
-		{Value: "/skill:review", Cells: []string{theme.FG("customMessageLabel", "Review")}},
 	}, NewAppKeybindings(nil), func() int { return 32 }, func(string) {}, func() {})
 	native.SetTerminalBackground(tui.RgbColor{R: 24, G: 27, B: 32})
 	rendered := strings.Join(palette.Render(60), "\n")
-	if !strings.Contains(rendered, theme.FG("muted", "ctrl+m")) || !strings.Contains(rendered, theme.FG("customMessageLabel", "Review")) {
+	if !strings.Contains(rendered, theme.FG("muted", "ctrl+m")) {
 		t.Fatalf("stale menu colors: %q", rendered)
 	}
 }

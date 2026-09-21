@@ -128,8 +128,8 @@ type InteractiveMode struct {
 	editorChromeWidth          int
 	editorChromeStatus         string
 	editorChromeTitleShown     bool
-	lastStatusSpacer           *tui.Spacer
-	lastStatusText             *tui.Text
+	statusNotice               string
+	statusNoticeTimer          *time.Timer
 	footerStatuses             map[string]string
 	autocompleteProvider       tui.AutocompleteProvider
 	paletteCommands            []tui.SlashCommand
@@ -164,12 +164,22 @@ type InteractiveMode struct {
 type compactStatus struct {
 	tui.Component
 	Inline func(width int, status string) bool
+	Notice func() string
 }
 
 func (status compactStatus) Render(width int) []string {
 	lines := status.Component.Render(width)
 	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
 		lines = lines[1:]
+	}
+	if status.Notice != nil {
+		if notice := status.Notice(); notice != "" {
+			line := theme.FG("dim", notice)
+			if len(lines) > 0 {
+				line = strings.TrimRight(lines[0], " ") + " · " + line
+			}
+			lines = []string{tui.TruncateToWidth(line, width, "…", false)}
+		}
 	}
 	inlineText := ""
 	if len(lines) == 1 {
@@ -465,7 +475,7 @@ func (mode *InteractiveMode) init() error {
 	for _, component := range []*tui.Container{mode.header, mode.loadedResources, mode.chat, mode.pendingMessages} {
 		body.AddChild(component)
 	}
-	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
+	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor, Notice: mode.statusNoticeText}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
 		chrome.AddChild(component)
 	}
 	mode.ui.AddChild(body)
@@ -506,6 +516,7 @@ func (mode *InteractiveMode) init() error {
 }
 
 func (mode *InteractiveMode) detachSession() {
+	mode.showStatusMessage("")
 	mode.cancelModelSelector()
 	if mode.interactiveUI != nil {
 		mode.interactiveUI.resetExtensionUI()
@@ -1513,7 +1524,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		if err != nil {
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 		} else if result != nil {
-			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel)))
+			mode.showStatusMessage(fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel))
 			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
 		}
 		mode.ui.RequestRender()
@@ -1524,7 +1535,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		if err != nil {
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 		} else if result != nil {
-			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel)))
+			mode.showStatusMessage(fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel))
 			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
 		}
 		mode.ui.RequestRender()
@@ -1882,7 +1893,7 @@ func (mode *InteractiveMode) handleCopyCommand() {
 	if err := clipboard.CopyToClipboard(*text); err != nil {
 		mode.chat.AddChild(newStyledText("error", "Copy failed: "+err.Error()))
 	} else {
-		mode.chat.AddChild(newStyledText("dim", "Copied to clipboard"))
+		mode.showStatusMessage("Copied to clipboard")
 	}
 	mode.ui.RequestRender()
 }
@@ -1905,8 +1916,7 @@ func (mode *InteractiveMode) handleNameCommand(text string) {
 		if resolved != name {
 			mode.interactiveUI.Notify(fmt.Sprintf("Session name was normalized from %q to %q", name, resolved), extensions.NotifyWarning)
 		}
-		mode.chat.AddChild(tui.NewSpacer(1))
-		mode.chat.AddChild(tui.NewText(theme.FG("dim", "Session name set: "+resolved), 1, 0, nil))
+		mode.showStatusMessage("Session name set: " + resolved)
 	}
 	mode.ui.RequestRender()
 }
@@ -1989,7 +1999,7 @@ func (mode *InteractiveMode) handleModelCommand(args string) {
 				if err := mode.session.SetModel(context.Background(), model); err != nil {
 					mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 				} else {
-					mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model set to %s/%s", model.Provider, model.ID)))
+					mode.showStatusMessage(fmt.Sprintf("Model set to %s/%s", model.Provider, model.ID))
 					mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &model)
 				}
 				mode.ui.RequestRender()
@@ -2044,7 +2054,7 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 			if persist {
 				prefix = "Default model"
 			}
-			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("%s: %s/%s", prefix, selected.Provider, selected.ID)))
+			mode.showStatusMessage(fmt.Sprintf("%s: %s/%s", prefix, selected.Provider, selected.ID))
 			mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, &selected)
 		}
 		mode.ui.RequestRender()
@@ -2066,7 +2076,7 @@ func (mode *InteractiveMode) cancelModelSelector() {
 	}
 }
 
-func (mode *InteractiveMode) showSettingsSelector() {
+func (mode *InteractiveMode) settingItems() []tui.SettingItem {
 	settings := mode.session.InteractiveModeSettings()
 	boolText := func(value bool) string {
 		if value {
@@ -2114,6 +2124,12 @@ func (mode *InteractiveMode) showSettingsSelector() {
 		themes := mode.themeRegistry.Available()
 		items = append(items, tui.SettingItem{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: mode.themeSettingOr(settings.ThemeSetting), Values: themes})
 	}
+
+	return items
+}
+
+func (mode *InteractiveMode) showSettingsSelector() {
+	items := mode.settingItems()
 
 	var handle tui.OverlayHandle
 	closeSelector := func() {
@@ -2636,20 +2652,33 @@ func pluralMessages(count int) string {
 
 func (mode *InteractiveMode) showStatusMessage(text string) {
 	mode.statusMessageMu.Lock()
-	defer mode.statusMessageMu.Unlock()
-	if mode.lastStatusSpacer != nil && mode.lastStatusText != nil &&
-		mode.chat.EndsWith(mode.lastStatusSpacer, mode.lastStatusText) {
-		mode.lastStatusText.SetText(theme.FG("dim", text))
-		mode.requestChatRender(mode.lastStatusText)
-		return
+	if mode.statusNoticeTimer != nil {
+		mode.statusNoticeTimer.Stop()
+		mode.statusNoticeTimer = nil
 	}
-	spacer := tui.NewSpacer(1)
-	message := tui.NewText(theme.FG("dim", text), mode.outputPad+2, 0, nil)
-	mode.chat.AddChild(spacer)
-	mode.chat.AddChild(message)
-	mode.lastStatusSpacer = spacer
-	mode.lastStatusText = message
-	mode.ui.RequestRender()
+	mode.statusNotice = strings.Join(strings.Fields(text), " ")
+	if mode.statusNotice != "" {
+		var timer *time.Timer
+		timer = time.AfterFunc(3*time.Second, func() {
+			mode.statusMessageMu.Lock()
+			if mode.statusNoticeTimer == timer {
+				mode.statusNotice, mode.statusNoticeTimer = "", nil
+			}
+			mode.statusMessageMu.Unlock()
+			mode.ui.RequestRender()
+		})
+		mode.statusNoticeTimer = timer
+	}
+	mode.statusMessageMu.Unlock()
+	if mode.ui != nil {
+		mode.ui.RequestRender()
+	}
+}
+
+func (mode *InteractiveMode) statusNoticeText() string {
+	mode.statusMessageMu.Lock()
+	defer mode.statusMessageMu.Unlock()
+	return mode.statusNotice
 }
 
 func (mode *InteractiveMode) setToolsExpanded(expanded bool) {
@@ -4612,6 +4641,7 @@ func (mode *InteractiveMode) cleanup() {
 
 func (mode *InteractiveMode) cleanupWithOrder(fromSignal bool) {
 	mode.cleanupOnce.Do(func() {
+		mode.showStatusMessage("")
 		dispose := func() {
 			if mode.options.Host != nil {
 				mode.options.Host.Dispose()
@@ -4786,30 +4816,39 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 			continue
 		}
 		seen[command.Name] = true
-		if command.Name == "share" || command.Name == "logout" {
+		if command.Name == "share" || command.Name == "logout" || strings.HasPrefix(command.Name, "skill:") {
 			continue
 		} // The same local export is already listed.
 		label, builtin := labels[command.Name]
-		kind, color, value := "action", "text", command.Name
+		kind, value := "action", command.Name
 		description := command.Description
 		if command.Name == "scoped-models" {
 			description = "Choose which models appear in your favorites"
 		}
 		if !builtin {
 			label, kind, value = command.Name, "command", "/"+command.Name
-			if strings.HasPrefix(command.Name, "skill:") {
-				label, kind, color = strings.TrimPrefix(command.Name, "skill:"), "skill", "customMessageLabel"
-			}
 		}
 		hint := ""
 		if action := shortcuts[command.Name]; action != "" {
 			hint = KeyText(action)
 		}
 		rows = append(rows, tui.GridRow{
-			Value: value, Cells: []string{theme.FG(color, label), theme.FG("muted", hint)},
+			Value: value, Cells: []string{theme.FG("text", label), theme.FG("muted", hint)},
 			Search: label + " " + kind + " " + command.Name + " " + description,
 			Detail: []string{description},
 		})
+	}
+	if mode.session != nil {
+		for _, item := range mode.settingItems() {
+			if item.ID == "thinking" && seen["thinking"] {
+				continue
+			}
+			rows = append(rows, tui.GridRow{
+				Value: "setting:" + item.ID, Cells: []string{theme.FG("text", item.Label), theme.FG("muted", item.CurrentValue)},
+				Search: item.Label + " setting " + item.Description + " " + strings.Join(item.Values, " "),
+				Detail: []string{item.Description},
+			})
+		}
 	}
 	for _, action := range []string{"app.tools.expand", "app.thinking.toggle", "app.thinking.cycle", "app.message.dequeue", "app.editor.external", "app.model.cycleForward", "app.model.cycleBackward"} {
 		for _, definition := range AppKeybindingDefinitions {
@@ -4843,6 +4882,21 @@ func (mode *InteractiveMode) showCommandPalette() {
 }
 
 func (mode *InteractiveMode) runPaletteCommand(value string) {
+	if id, ok := strings.CutPrefix(value, "setting:"); ok {
+		for _, item := range mode.settingItems() {
+			if item.ID != id {
+				continue
+			}
+			go func() {
+				selected, confirmed, err := mode.interactiveUI.Select(mode.authenticationContext(), item.Label, item.Values, nil)
+				if err == nil && confirmed {
+					mode.applySetting(item.ID, selected)
+				}
+			}()
+			break
+		}
+		return
+	}
 	if action, ok := strings.CutPrefix(value, "action:"); ok {
 		if handler := mode.editor.actionHandlers[action]; handler != nil {
 			handler()
