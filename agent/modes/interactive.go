@@ -121,6 +121,8 @@ type InteractiveMode struct {
 	extensionShutdownRequested bool
 	inputCh                    chan inputEntry
 	pendingImages              []*ai.ImageContent
+	attachingImages            int
+	imageDraftVersion          uint64
 	currentStreaming           *AssistantMessageComponent
 	toolComponents             map[string]*ToolExecutionComponent
 	expandables                []expandableComponent
@@ -1487,25 +1489,36 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	}
 
 	mode.editor.OnPasteImage = func() {
-		go func() {
+		mode.attachImage(func() ([]byte, string, error) {
 			image := clipboard.ReadImage()
 			if image == nil {
-				mode.showStatusMessage("No image found on clipboard")
-				return
+				return nil, "", errors.New("no image found on clipboard")
 			}
-			processed := tools.ProcessImage(image.Bytes, image.MimeType, nil)
-			if !processed.OK {
-				mode.showStatusMessage(processed.Message)
-				return
+			return image.Bytes, image.MimeType, nil
+		})
+	}
+	mode.editor.OnPaste = func(text string) bool {
+		path, mimeType := droppedImagePath(text)
+		if path == "" {
+			return false
+		}
+		mode.attachImage(func() ([]byte, string, error) {
+			file, err := os.Open(path)
+			if err != nil {
+				return nil, "", err
 			}
-			content := &ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType}
-			mode.mu.Lock()
-			mode.pendingImages = append(mode.pendingImages, content)
-			index := len(mode.pendingImages)
-			mode.mu.Unlock()
-			mode.editor.InsertTextAtCursor(fmt.Sprintf("[image #%d]", index))
-			mode.ui.RequestRender()
-		}()
+			defer func() { _ = file.Close() }()
+			info, err := file.Stat()
+			if err != nil {
+				return nil, "", err
+			}
+			if info.Size() > maxImageInputBytes {
+				return nil, "", errors.New("image exceeds 20 MB")
+			}
+			data, err := io.ReadAll(io.LimitReader(file, maxImageInputBytes+1))
+			return data, mimeType, err
+		})
+		return true
 	}
 
 	// App action handlers
@@ -1514,6 +1527,10 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 			go mode.shutdown()
 			return
 		}
+		mode.mu.Lock()
+		mode.pendingImages = nil
+		mode.imageDraftVersion++
+		mode.mu.Unlock()
 		mode.editor.SetText("")
 	})
 
@@ -1607,6 +1624,14 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		if text == "" {
 			return
 		}
+		mode.mu.Lock()
+		attaching := mode.attachingImages > 0
+		mode.mu.Unlock()
+		if attaching {
+			mode.editor.SetText(text)
+			mode.showStatusMessage("Attaching image…")
+			return
+		}
 		// Sending is an explicit request to watch what happens next, so a
 		// transcript scrolled up for reading snaps back to the live tail.
 		mode.ui.ScrollToBottom()
@@ -1652,8 +1677,14 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 
 		// Normal message submission
 		mode.mu.Lock()
-		images := mode.pendingImages
+		images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
+		for index, image := range mode.pendingImages {
+			if strings.Contains(text, fmt.Sprintf("[Image #%d]", index+1)) {
+				images = append(images, image)
+			}
+		}
 		mode.pendingImages = nil
+		mode.imageDraftVersion++
 		mode.mu.Unlock()
 
 		prompt := text
@@ -1663,6 +1694,87 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		mode.inputCh <- inputEntry{text: prompt, images: images}
 		mode.editor.AddToHistory(text)
 	}
+}
+
+const maxImageInputBytes = 20 << 20
+
+// ponytail: Terminal file drops arrive as one shell-escaped path; paste more images one at a time.
+func droppedImagePath(paste string) (string, string) {
+	path := strings.TrimSpace(paste)
+	if path == "" || strings.ContainsAny(path, "\r\n") {
+		return "", ""
+	}
+	if len(path) >= 2 && (path[0] == '\'' && path[len(path)-1] == '\'' || path[0] == '"' && path[len(path)-1] == '"') {
+		path = path[1 : len(path)-1]
+	}
+	if strings.Contains(path, `\`) {
+		var unescaped strings.Builder
+		unescaped.Grow(len(path))
+		for index := 0; index < len(path); index++ {
+			if path[index] == '\\' && index+1 < len(path) {
+				index++
+			}
+			unescaped.WriteByte(path[index])
+		}
+		path = unescaped.String()
+	}
+	if !filepath.IsAbs(path) {
+		return "", ""
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", ""
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return "", ""
+	}
+	var header [32]byte
+	count, _ := io.ReadFull(file, header[:])
+	mimeType := tools.DetectSupportedImageMimeType(header[:count])
+	if mimeType == "" {
+		return "", ""
+	}
+	return path, mimeType
+}
+
+func (mode *InteractiveMode) attachImage(load func() ([]byte, string, error)) {
+	mode.mu.Lock()
+	mode.attachingImages++
+	version := mode.imageDraftVersion
+	mode.mu.Unlock()
+	go func() {
+		defer func() {
+			mode.mu.Lock()
+			mode.attachingImages--
+			mode.mu.Unlock()
+		}()
+		data, mimeType, err := load()
+		if err != nil {
+			mode.showStatusMessage("Image attachment failed: " + err.Error())
+			return
+		}
+		if len(data) > maxImageInputBytes {
+			mode.showStatusMessage("Image exceeds 20 MB")
+			return
+		}
+		processed := tools.ProcessImage(data, mimeType, nil)
+		if !processed.OK {
+			mode.showStatusMessage(processed.Message)
+			return
+		}
+		mode.mu.Lock()
+		if version != mode.imageDraftVersion {
+			mode.mu.Unlock()
+			return
+		}
+		mode.pendingImages = append(mode.pendingImages, &ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType})
+		index := len(mode.pendingImages)
+		mode.mu.Unlock()
+		mode.editor.InsertTextAtCursor(fmt.Sprintf("[Image #%d]", index))
+		mode.ui.RequestRender()
+	}()
 }
 
 func (mode *InteractiveMode) dispatchSlashCommand(name, args string) bool {

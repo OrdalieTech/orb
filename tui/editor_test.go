@@ -868,6 +868,15 @@ func TestEditorPasteDecodesCSIu(t *testing.T) {
 	wantText(t, editor, "ab\ncd")
 }
 
+func TestEditorPasteHookKeepsOrdinaryText(t *testing.T) {
+	editor := newTestEditor()
+	editor.OnPaste = func(text string) bool { return text == "image" }
+	editor.HandleInput(keyEventFor("\x1b[200~image\x1b[201~"))
+	wantText(t, editor, "")
+	editor.HandleInput(keyEventFor("\x1b[200~ordinary text\x1b[201~"))
+	wantText(t, editor, "ordinary text")
+}
+
 type scriptedProvider struct {
 	suggest func(lines []string, cursorLine, cursorCol int, force bool) *AutocompleteSuggestions
 	calls   atomic.Int64
