@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Show the current session directory in the compact footer and remove the ambiguous healthy `Bridge · personal` label; Bridge disconnection still appears as a warning.
+
 - Simplify Bridge to one switch, Add device, and a live device list. Open conversations directly, refresh availability automatically, and recover the conversation picker after reconnects; keep detailed administration in the CLI.
 
 - Show reasoning levels with a one-cell filling circle in the footer; clicking it cycles levels. Brief composer notices open and close a small border gap around their fade without changing the working indicator; replacements keep the gap open.

@@ -1137,6 +1137,24 @@ func (f *FooterComponent) render(width int) []string {
 		values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
 	}
 	if !f.verbose {
+		if cwd := f.cwd(); cwd != "" {
+			path := shortenSessionPath(cwd)
+			model := display.ModelID
+			if !display.HasModel {
+				model = "Choose model"
+			}
+			if display.Reasoning {
+				model += " " + thinkingMeter(string(display.ThinkingLevel))
+			}
+			available := width - tui.VisibleWidth(model) - tui.VisibleWidth(strings.Join(values, " · ")) - 2
+			if len(values) > 0 {
+				available -= 3
+			}
+			if tui.VisibleWidth(path) > available {
+				path = "…/" + filepath.Base(cwd)
+			}
+			values = append(values, path)
+		}
 		line := compactFooterLine(display, stats.ContextUsage, values, width)
 		f.recordStatusHits(line, 0, keys, values)
 		f.recordThinkingHit(line, 0, display)

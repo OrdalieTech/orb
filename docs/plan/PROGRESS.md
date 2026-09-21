@@ -712,6 +712,15 @@ initial F13 background-lifecycle mismatch passed both its isolated rerun and the
 complete gate without fixture changes. All four static release builds and startup measurements
 above remain within their budgets. Concurrent footer changes were preserved.
 
+## 2026-09-21 — Current session directory in the footer
+
+The compact footer now reads the active session directory on each render, abbreviates the home
+prefix, and keeps the final directory visible when space is tight. Healthy Bridge clears its
+old `Bridge · personal` status; startup failures still show a disconnected warning. Targeted
+tests cover directory changes, narrow layouts, and Bridge activation. Orb-owned WP450 footer
+snapshots were regenerated with `make fixtures-tui`; `make check` passes, and all four static
+release builds remain below 55 MB. Concurrent autocomplete work was left out of this commit.
+
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
 - ChatGPT/Codex, Copilot, and xAI OAuth end-to-end runs likewise require subscribed accounts.
