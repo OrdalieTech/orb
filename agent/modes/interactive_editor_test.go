@@ -251,3 +251,40 @@ func TestPaletteShortcutRespectsLiveUserOverrides(t *testing.T) {
 		t.Fatal("removing override did not restore the palette")
 	}
 }
+
+func TestComposerShiftEnterNeverQueuesOrSubmits(t *testing.T) {
+	previous := tui.GetKeybindings()
+	t.Cleanup(func() { tui.SetKeybindings(previous); tui.SetKittyProtocolActive(false) })
+	for _, kitty := range []bool{false, true} {
+		tui.SetKittyProtocolActive(kitty)
+		for _, sequence := range []string{"\x1b\r", "\n", "\x1b[13;2u", "\x1b[13;2~", "\x1b[27;2;13~", "\x1b[13;2:2u"} {
+			editor := newFrameEditor(t, 80, 24)
+			tui.SetKeybindings(editor.keybindings)
+			editor.SetText("draft\\")
+			queued, submitted, extension := 0, 0, 0
+			editor.OnAction("app.message.followUp", func() { queued++ })
+			editor.OnSubmit = func(string) { submitted++ }
+			editor.OnExtensionShortcut = func(string) bool { extension++; return true }
+			editor.HandleInput(tui.KeyEvent{Raw: sequence})
+			if got := editor.GetText(); got != "draft\\\n" || queued != 0 || submitted != 0 || extension != 0 {
+				t.Fatalf("kitty=%v sequence=%q draft=%q queued=%d submitted=%d extension=%d", kitty, sequence, got, queued, submitted, extension)
+			}
+		}
+	}
+}
+
+func TestComposerExplicitAltEnterStillQueuesAndEnterSubmits(t *testing.T) {
+	previous := tui.GetKeybindings()
+	t.Cleanup(func() { tui.SetKeybindings(previous); tui.SetKittyProtocolActive(false) })
+	editor := newFrameEditor(t, 80, 24)
+	tui.SetKeybindings(editor.keybindings)
+	queued, submitted := 0, 0
+	editor.OnAction("app.message.followUp", func() { queued++ })
+	editor.OnSubmit = func(string) { submitted++ }
+	editor.SetText("draft")
+	editor.HandleInput(tui.KeyEvent{Raw: "\x1b[13;3u"})
+	editor.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if queued != 1 || submitted != 1 {
+		t.Fatalf("queued=%d submitted=%d", queued, submitted)
+	}
+}
