@@ -119,7 +119,7 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 func listFullComposition(cwd, agentDir string, settings *config.SettingsManager, streams cliStreams) int {
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
-		Compiled: compiledExtensions, MCP: true,
+		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
 		Bridge: bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
 	for _, warning := range warnings {

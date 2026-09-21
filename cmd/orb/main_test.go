@@ -29,6 +29,11 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 )
 
+func TestMain(m *testing.M) {
+	_ = os.Unsetenv("HERDR_ENV")
+	os.Exit(m.Run())
+}
+
 func TestScrubDisabledMallocStackLogging(t *testing.T) {
 	t.Setenv("MallocStackLogging", "1")
 	t.Setenv("MallocStackLoggingNoCompact", "0")

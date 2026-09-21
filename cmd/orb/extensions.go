@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions/examples/permissiongate"
 	"github.com/OrdalieTech/orb/agent/extensions/examples/pirate"
 	"github.com/OrdalieTech/orb/agent/extensions/examples/statusline"
+	herdrext "github.com/OrdalieTech/orb/agent/extensions/herdr"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
 	bridgeagent "github.com/OrdalieTech/orb/bridge/agent"
@@ -73,6 +74,17 @@ var compiledExtensions = []extensions.CompiledExtension{
 	{Name: "status-line", Factory: statusline.Extension},
 }
 
+func compiledExtensionsForEnvironment(getenv func(string) string) []extensions.CompiledExtension {
+	result := append([]extensions.CompiledExtension(nil), compiledExtensions...)
+	if getenv("HERDR_ENV") != "1" || getenv("HERDR_BIN_PATH") == "" || getenv("HERDR_PANE_ID") == "" {
+		return result
+	}
+	return append(result, extensions.CompiledExtension{
+		Name: "herdr", Hidden: true, DefaultEnabled: true,
+		Factory: herdrext.Extension(getenv("HERDR_BIN_PATH"), getenv("HERDR_PANE_ID")),
+	})
+}
+
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
@@ -85,7 +97,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)
 			return result, err
 		}),
-		Compiled: compiledExtensions,
+		Compiled: compiledExtensionsForEnvironment(os.Getenv),
 		MCP:      !args.NoExtensions && !args.metadataOnly,
 	})
 	diagnostics := otherDiagnostics(warnings)
