@@ -79,6 +79,22 @@ func waitBridgeStopped(ctx context.Context, client *protocol.Conn) error {
 	}
 }
 
+func bridgeServiceReady(ctx context.Context, client *protocol.Conn) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var status bridgeSettingsStatus
+	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
+		return false, err
+	}
+	if status.SupportsFullAccess {
+		return true, nil
+	}
+	if err := client.Call(ctx, "stop", struct{}{}, nil); err != nil {
+		return false, err
+	}
+	return false, waitBridgeStopped(ctx, client)
+}
+
 func startBridge(ctx context.Context, profile string, explicit bool) error {
 	dir, err := bridgeDir(profile)
 	if err != nil {
@@ -94,8 +110,15 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 		}
 	}
 	if c, err := bridgeAdmin(ctx, profile); err == nil {
+		ready, err := bridgeServiceReady(ctx, c)
 		_ = c.Close()
-		return nil
+		if err != nil || ready {
+			return err
+		}
+		// The older daemon writes its deliberate-stop marker during replacement.
+		if err = os.Remove(filepath.Join(dir, "stopped")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -522,6 +545,11 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	if args[0] == "view" && len(args) == 3 {
 		return runBridgeView(ctx, profile, args[1], args[2], streams)
 	}
+	if args[0] == "trust" || len(args) > 1 && args[0] == "pair" && args[1] == "invite" {
+		if err := startBridge(ctx, profile, true); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+	}
 	client, err := bridgeAdmin(ctx, profile)
 	if err != nil {
 		return reportCLIError(streams.Stderr, errors.New("bridge unavailable; run orb bridge start"))
@@ -719,12 +747,18 @@ func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string) er
 	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return err
 	}
+	if !status.SupportsFullAccess {
+		return fmt.Errorf("bridge needs to restart after an update.\nTurn it off and on, then reconnect")
+	}
 	for _, old := range status.Grants {
 		if old.Principal == g.Principal && old.GroupID == "*" && old.IncludeFuture && old.Destination == "" && slices.Equal(old.Permissions, g.Permissions) {
 			return nil
 		}
 	}
-	return client.Call(ctx, "grant", g, nil)
+	if err := client.Call(ctx, "grant", g, nil); err != nil {
+		return fmt.Errorf("could not enable access on this Orb: %w", err)
+	}
+	return nil
 }
 
 func ensureBridgeSSH(ctx context.Context, target, remoteOrb string, updater selfUpdater) (string, error) {

@@ -53,14 +53,15 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 }
 
 type bridgeSettingsStatus struct {
-	PeerStates map[string]string   `json:"peer_states"`
-	PeerID     string              `json:"peer_id"`
-	Groups     map[string]string   `json:"groups"`
-	Scopes     map[string][]string `json:"scopes"`
-	Instances  []bridge.Instance   `json:"instances"`
-	Pending    []bridge.Invitation `json:"pending"`
-	Peers      []string            `json:"peers"`
-	Grants     []bridge.Grant      `json:"grants"`
+	SupportsFullAccess bool                `json:"supports_full_access"`
+	PeerStates         map[string]string   `json:"peer_states"`
+	PeerID             string              `json:"peer_id"`
+	Groups             map[string]string   `json:"groups"`
+	Scopes             map[string][]string `json:"scopes"`
+	Instances          []bridge.Instance   `json:"instances"`
+	Pending            []bridge.Invitation `json:"pending"`
+	Peers              []string            `json:"peers"`
+	Grants             []bridge.Grant      `json:"grants"`
 }
 
 func setBridgeSetting(settings *config.SettingsManager, name string, enabled bool) error {
@@ -143,14 +144,19 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				return nil
 			}
 			if action == "Invite device" || action == "Join device" || action == "SSH" {
-				if !running || args.BridgeProfile == "" && !settings.GetPlugins()["bridge"] {
-					if err := enable(); err != nil {
+				if !running || !status.SupportsFullAccess || args.BridgeProfile == "" && !settings.GetPlugins()["bridge"] {
+					var err error
+					if running && (args.BridgeProfile != "" || settings.GetPlugins()["bridge"]) {
+						err = startBridge(ctx, profile, true)
+					} else {
+						err = enable()
+					}
+					if err != nil {
 						return err
 					}
 					if client != nil {
 						_ = client.Close()
 					}
-					var err error
 					client, err = bridgeAdmin(ctx, profile)
 					if err != nil {
 						return err

@@ -571,14 +571,15 @@ Final static release builds use `CGO_ENABLED=0`, the release tags, `-trimpath`, 
 
 | Target | Bytes |
 |---|---:|
-| linux-amd64 | 50,561,184 |
+| linux-amd64 | 50,565,280 |
 | linux-arm64 | 47,710,368 |
-| darwin-amd64 | 51,594,832 |
-| darwin-arm64 | 49,096,130 |
+| darwin-amd64 | 51,594,864 |
+| darwin-arm64 | 49,112,658 |
 
-Refreshed after full mutual trust and SSH installation: all remain below 55 MB decimal. Forty warm-cache
-Darwin/arm64 `--version` runs after five warmups measured 10.76 ms mean, 10.70 ms median, and
-12.69 ms maximum (50 ms budget).
+Refreshed after stale-daemon replacement: all remain below 55 MB decimal. Forty warm-cache
+Darwin/arm64 `--version` runs after five warmups measured 11.68 ms mean, 11.50 ms median, and
+18.19 ms maximum (50 ms budget). The first batch, immediately after live remote checks, measured
+15.10 ms mean with a 66.59 ms outlier; the repeat used output redirected to `/dev/null`.
 Bridge-only protocol schemas are in ARCHITECTURE and tests in `connect`/`bridge`; SDK assembly
 and user commands are documented in `docs/sdk.md`. Unrelated concurrent progress and UI changes
 were preserved. Isolated remote test services and scratch profiles were removed after validation.
@@ -663,6 +664,27 @@ PTY checks passed invitation copy/paste without permission menus, both identity 
 mutual full grants, remote viewing, Escape restoration, and the complete two-line SSH error.
 The clipboard command was isolated; the user's clipboard was preserved. `make check` and all
 four static release builds pass; release measurements above are refreshed for this change.
+
+## 2026-09-21 — Replace stale Bridge daemons before pairing
+
+Reproduced the owner's `not_found`: a still-running older local daemon rejected the new
+all-groups grant after the remote device had already approved pairing. Local admin status now
+advertises full-access support; startup and pairing replace a daemon lacking it through the
+existing stop/start path. The profile, grants, and non-owning runtime attachment survive, and
+an existing deliberate Stop still requires explicit activation. Enabling pairing on an already
+enabled Bridge does not rewrite project-owned plugin settings.
+
+A regression test first failed without the compatibility helper, then passed for both older
+and current daemons, including waiting for disconnection before replacement. An isolated live
+check with the exact historical executable verified automatic replacement, persistent identity
+and invitations, new full-access invitation acceptance, stop-marker cleanup, and reuse of an
+already compatible daemon. Both personal daemons on this Mac and `ordalie-lab-3` now run the
+updated build; identities and grants survived, the active local conversation reattached with
+its original InstanceID, catalogs succeeded in both directions, and the server inspected the
+local conversation over Bridge. The server currently has no attached conversations.
+
+`make check` passes, including race and Pi conformance checks, and all four static release builds
+remain below 55 MB. No SDK interface, runtime ownership, or peer protocol changed.
 
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.
