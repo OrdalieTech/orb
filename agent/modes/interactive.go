@@ -497,6 +497,8 @@ func (mode *InteractiveMode) init() error {
 		go func() {
 			if err := clipboard.CopyToClipboard(text); err != nil {
 				mode.interactiveUI.Notify("Copy failed: "+err.Error(), extensions.NotifyError)
+			} else {
+				mode.showStatusMessage("Copied to clipboard")
 			}
 		}()
 	})
