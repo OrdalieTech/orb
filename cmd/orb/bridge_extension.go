@@ -102,7 +102,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				}
 			}
 			return newBridgeSettingsPanel(profile, page, selected, rows, th, host.Height, done), nil
-		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "80%", MinWidth: 32, MaxHeight: "90%", Backdrop: true}})
+		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true}})
 		action, _ := result.(string)
 		if menuErr != nil || !ok || action == "" {
 			if client != nil {
@@ -287,8 +287,10 @@ func newBridgeSettingsPanel(profile, page, selected string, rows []tui.GridRow, 
 	if page != "" {
 		footer += " back"
 	}
-	frame := tui.NewFrame(title, footer, func(s string) string { return th.FG("border", s) }, func(s string) string { return th.FG("dim", s) }, list)
-	frame.TitleStyle = func(s string) string { return th.Bold(th.FG("accent", s)) }
+	frame := tui.NewPanel(title, footer,
+		func(s string) string { return th.Bold(th.FG("text", s)) },
+		func(s string) string { return th.FG("dim", s) },
+		func() string { return th.BGANSI("toolPendingBg") }, list)
 	panel.Frame = frame
 	return panel
 }

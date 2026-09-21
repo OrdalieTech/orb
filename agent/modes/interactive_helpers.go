@@ -74,17 +74,11 @@ func newSearchInput() *tui.Input {
 }
 
 func menuFrame(title string, child tui.Component) *tui.Frame {
-	frame := tui.NewFrame(title, "",
-		func(text string) string { return theme.FG("border", text) },
+	frame := tui.NewPanel(title, "",
+		func(text string) string { return theme.Bold(theme.FG("text", text)) },
 		func(text string) string { return theme.FG("dim", text) },
-		child)
-	frame.Plain = true
+		func() string { return theme.BGANSI("toolPendingBg") }, child)
 	frame.ActionSelected = func(text string) string { return menuSelectedBackground(theme.Bold(theme.FG("accent", text))) }
-	frame.TitleStyle = func(text string) string { return theme.Bold(theme.FG("text", text)) }
-	frame.Background = func(text string) string {
-		background := theme.BGANSI("toolPendingBg")
-		return background + strings.ReplaceAll(tui.ReopenAfterReset(background, text), "\x1b[49m", "\x1b[49m"+background) + "\x1b[49m"
-	}
 	return frame
 }
 

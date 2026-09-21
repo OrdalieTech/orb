@@ -44,16 +44,15 @@ func (manager *Manager) statusWindow(ctx context.Context, command extensions.Com
 			return false
 		}
 		panel := &mcpPanel{manager: manager, theme: th, list: list}
-		panel.frame = tui.NewFrame("MCP servers", "r reconnect · R all · esc",
-			func(text string) string { return th.FG("border", text) },
+		panel.frame = tui.NewPanel("MCP servers", "r reconnect · R all · esc",
+			func(text string) string { return th.Bold(th.FG("text", text)) },
 			func(text string) string { return th.FG("dim", text) },
-			panelChild{panel})
-		panel.frame.TitleStyle = func(text string) string { return th.Bold(th.FG("accent", text)) }
+			func() string { return th.BGANSI("toolPendingBg") }, panelChild{panel})
 		return panel, nil
 	}, &extensions.CustomOptions{
 		Overlay: true,
 		StaticOverlayOptions: &extensions.OverlayOptions{
-			Width: "88%", MinWidth: 70, MaxHeight: "85%", Backdrop: true,
+			Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true,
 		},
 	})
 	return err

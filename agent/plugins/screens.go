@@ -13,9 +13,8 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 )
 
-// The configuration windows share one visual language: a framed overlay, an
-// invisible grid of aligned columns, dim detail lines expanded under the
-// selection, and key hints in the bottom border. Styling flows through the
+// Configuration windows use borderless panels, aligned columns, dim details,
+// and footer key hints. Styling flows through the
 // extensions.Theme adapter so the screens follow the active theme.
 
 func gridListTheme(th extensions.Theme) tui.GridListTheme {
@@ -29,19 +28,17 @@ func gridListTheme(th extensions.Theme) tui.GridListTheme {
 }
 
 func configFrame(th extensions.Theme, title, footer string, child tui.Component) *tui.Frame {
-	frame := tui.NewFrame(title, footer,
-		func(text string) string { return th.FG("border", text) },
+	return tui.NewPanel(title, footer,
+		func(text string) string { return th.Bold(th.FG("text", text)) },
 		func(text string) string { return th.FG("dim", text) },
-		child)
-	frame.TitleStyle = func(text string) string { return th.Bold(th.FG("accent", text)) }
-	return frame
+		func() string { return th.BGANSI("toolPendingBg") }, child)
 }
 
 func configWindowOptions() *extensions.CustomOptions {
 	return &extensions.CustomOptions{
 		Overlay: true,
 		StaticOverlayOptions: &extensions.OverlayOptions{
-			Width: "88%", MinWidth: 70, MaxHeight: "85%", Backdrop: true,
+			Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true,
 		},
 	}
 }
