@@ -20,6 +20,7 @@ orb/
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
 │   ├── auth/                 credential store, OAuth flows (PKCE, device-code)
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
+├── storage/                  transactional document seam; sqlite/ is an explicitly opened adapter
 ├── accounts/                 named credential store over ai/auth; explicit sidecar and base store
 ├── usage/                    quota client and bounded cache; ai/auth + stdlib only
 ├── engine/                    port of packages/agent     — loop, Agent, harness
@@ -430,7 +431,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
 | `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
-| `instances.describe` | `instance_id` → current generation, session/revision/execution target, permitted methods |
+| `instances.describe` | `instance_id` → current generation, session/revision/execution target, optional name/workspace, permitted methods |
 | `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
 | `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
 | `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
@@ -444,6 +445,14 @@ is `{}`, switch is `{session_id}`, and fork is `{entry_id}`. Session list accept
 `offset`. Read-only inspection needs no operation ID. An optional `subject` on remote calls
 is restricted to an instance subject and comes from the source bridge's credential-bound
 outbound route; administrative methods never appear in this routing table.
+
+The CLI caches visited remote session summaries and visible message excerpts through
+`storage/sqlite`, separately from owned sessions. Cache keys include the profile, pinned peer,
+namespace and SessionID; legacy services use an instance-scoped namespace. Limits are eight
+completed user/assistant messages, 4 KiB per message / 32 KiB encoded per preview, seven days,
+128 sessions per peer and 1,024 per profile. Offline previews are explicitly stale and read-only;
+reopening revalidates the destination, and revocation fences delayed refreshes and purges content.
+Reasoning, tool payloads and attachments never enter this cache.
 
 Receipts retain the operation ID, target, expected revision/generation, method, acceptance time,
 canonical payload digest, status, and bounded result/error. Terminal deduplication entries are
@@ -528,6 +537,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
+| modernc.org/sqlite v1.59.0 | opt-in `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs and bounded foreign previews; native session cutover remains pending |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object

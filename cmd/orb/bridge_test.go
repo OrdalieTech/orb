@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/connect"
 	attach "github.com/OrdalieTech/orb/connect/agent"
 	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/storage/sqlite"
 	"github.com/OrdalieTech/orb/tui"
 	"net"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -900,5 +902,200 @@ func TestBridgeConversationListFollowsPagesAndUsesStableIDs(t *testing.T) {
 	}
 	if strings.Join(ids, ",") != "first,second" {
 		t.Fatalf("wrong live conversations: %v", ids)
+	}
+}
+
+func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "private", "orb.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	cache := db.Foreign("personal")
+	var phase, commands atomic.Int32
+	x, y := net.Pipe()
+	server := protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
+		if phase.Load() == 1 {
+			return nil, connect.Fail("unavailable")
+		}
+		if phase.Load() == 2 {
+			return nil, &protocol.RPCError{Code: -32000, Message: "unauthorized"}
+		}
+		switch method {
+		case "instances.describe":
+			revision := "1"
+			if phase.Load() == 5 {
+				revision = "2"
+			}
+			id := "remote-session"
+			if phase.Load() == 3 {
+				id = "another-session"
+			}
+			return connect.JSON(remoteDescriptor{Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt"}}), nil
+		case "events.subscribe":
+			if phase.Load() == 4 {
+				phase.Store(5)
+			}
+			return connect.JSON(map[string]any{"snapshot_id": "snapshot", "cursor": "1", "messages": []json.RawMessage{json.RawMessage(`{"role":"user","content":"hello from remote"}`), json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"remote answer"}]}`)}}), nil
+		case "instances.call":
+			commands.Add(1)
+		}
+		return connect.JSON(struct{}{}), nil
+	})
+	client := protocol.NewConn(x, nil)
+	defer func() { _ = client.Close(); _ = server.Close() }()
+	requests := make(chan string, 1)
+	body, status := &remoteTranscript{}, &remoteTranscript{}
+	changed := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runRemoteConversation(ctx, "instance", func(method string, p, result any) error { return client.Call(ctx, method, p, result) }, requests, body, status, func() {
+			select {
+			case changed <- struct{}{}:
+			default:
+			}
+		}, cache, "peer", "remote-session")
+	}()
+	defer func() { cancel(); <-done }()
+	wait := func(contains string) {
+		t.Helper()
+		for {
+			status.mu.Lock()
+			text := status.text
+			status.mu.Unlock()
+			if strings.Contains(text, contains) {
+				return
+			}
+			select {
+			case <-changed:
+			case <-ctx.Done():
+				t.Fatal("status never reached", contains, text)
+			}
+		}
+	}
+	wait("idle")
+	rows, err := cache.List(ctx, "peer")
+	if err != nil || len(rows) != 1 || rows[0].CWD != "/remote/project" {
+		t.Fatalf("cache: %+v %v", rows, err)
+	}
+	if text := cachedTranscript(rows[0]); !strings.Contains(text, "remote answer") || strings.Contains(text, "hidden") {
+		t.Fatal(text)
+	}
+	phase.Store(1)
+	wait("Offline")
+	requests <- "must not execute"
+	wait("Read-only")
+	if commands.Load() != 0 {
+		t.Fatal("offline control was dispatched")
+	}
+	phase.Store(0)
+	wait("idle")
+	phase.Store(4)
+	wait("Session changed")
+	phase.Store(1)
+	wait("Offline")
+	phase.Store(3)
+	wait("no longer active")
+	requests <- "must not retarget"
+	wait("Read-only")
+	if commands.Load() != 0 {
+		t.Fatal("cached session was retargeted")
+	}
+	phase.Store(2)
+	wait("Access revoked")
+	rows, err = cache.List(ctx, "peer")
+	if err != nil || len(rows) != 0 {
+		t.Fatal("revoked cache retained", err)
+	}
+	body.mu.Lock()
+	remaining := body.text
+	body.mu.Unlock()
+	if remaining != "" {
+		t.Fatal("revoked transcript remained visible")
+	}
+}
+
+func TestBridgeLiveForeignPreview(t *testing.T) {
+	if os.Getenv("ORB_BRIDGE_LIVE_CACHE") != "1" {
+		t.Skip("isolated native live fixture")
+	}
+	peer := os.Getenv("ORB_BRIDGE_LIVE_PEER")
+	if peer == "" || !filepath.IsAbs(os.Getenv("ORB_BRIDGE_HOME")) {
+		t.Fatal("isolated Bridge home and peer required")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	client, err := bridgeAdmin(ctx, "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	remote := func(method string, p, result any) error {
+		return client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": method, "params": p}, result)
+	}
+	var catalog struct {
+		Items []bridge.Instance `json:"items"`
+	}
+	if err := remote("instances.list", struct{}{}, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	instance := ""
+	for _, i := range catalog.Items {
+		if i.Available {
+			instance = i.ID
+			break
+		}
+	}
+	if instance == "" {
+		t.Fatal("no live instance")
+	}
+	db, err := openBridgeCache(ctx, "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	cache := db.Foreign("personal")
+	requests := make(chan string, 1)
+	body, status := &remoteTranscript{}, &remoteTranscript{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runRemoteConversation(ctx, instance, remote, requests, body, status, func() {}, cache, peer, "")
+	}()
+	defer func() { cancel(); <-done }()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	sent := false
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("live preview timeout")
+		case <-ticker.C:
+		}
+		status.mu.Lock()
+		state := status.text
+		status.mu.Unlock()
+		if !sent && strings.HasPrefix(state, "idle") {
+			requests <- "Please answer for the isolated preview cache check."
+			sent = true
+		}
+		rows, err := cache.List(ctx, peer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) > 0 && strings.Contains(cachedTranscript(rows[0]), "live bridge answer") {
+			if err := client.Call(ctx, "block", map[string]string{"peer_id": peer}, nil); err != nil {
+				t.Fatal(err)
+			}
+			rows, err = cache.List(ctx, peer)
+			if err != nil || len(rows) != 0 {
+				t.Fatal("local block retained foreign preview", err)
+			}
+			t.Log("native Bridge prompt, completed preview persistence, and block purge verified")
+			return
+		}
 	}
 }

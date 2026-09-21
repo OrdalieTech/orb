@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/storage/sqlite"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -67,6 +71,8 @@ func remoteMessage(raw json.RawMessage) string {
 }
 
 type remoteDescriptor struct {
+	Name       string              `json:"name"`
+	CWD        string              `json:"cwd"`
 	Target     agent.ControlTarget `json:"target"`
 	Generation string              `json:"registration_generation"`
 	Methods    []string            `json:"methods"`
@@ -108,7 +114,7 @@ func (v *remoteConversation) HandleInput(key tui.KeyEvent) {
 func (v *remoteConversation) SetFocused(f bool) { v.input.SetFocused(f) }
 func (v *remoteConversation) Dispose()          { v.cancel() }
 
-func newRemoteConversation(parent context.Context, profile, peer, instance string, invalidate func(), height func() int, done func()) *remoteConversation {
+func newRemoteConversation(parent context.Context, profile, peer, instance string, invalidate func(), height func() int, done func(), initial ...sqlite.ForeignSession) *remoteConversation {
 	ctx, cancel := context.WithCancel(parent)
 	v := &remoteConversation{body: &remoteTranscript{}, status: &remoteTranscript{}, input: tui.NewInput(), cancel: cancel, height: height, invalidate: invalidate}
 	requests := make(chan string, 1)
@@ -149,14 +155,43 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 			}
 			return admin.Call(callCtx, "remote", map[string]any{"peer_id": peer, "method": method, "params": p}, result)
 		}
-		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate)
+		db, cacheErr := openBridgeCache(ctx, profile)
+		var cache *sqlite.Foreign
+		if cacheErr == nil {
+			defer func() { _ = db.Close() }()
+			cache = db.Foreign(profile)
+		}
+		var saved *sqlite.ForeignSession
+		if len(initial) > 0 {
+			saved = &initial[0]
+		} else if cache != nil {
+			rows, err := cache.List(ctx, peer)
+			if err == nil {
+				for _, row := range rows {
+					if row.Instance == instance {
+						saved = &row
+						break
+					}
+				}
+			}
+		}
+		if saved != nil {
+			v.body.set(cachedTranscript(*saved))
+			v.status.set("Cached preview · stale · read-only · reconnecting")
+			invalidate()
+		}
+		expected := ""
+		if len(initial) > 0 {
+			expected = initial[0].ID
+		}
+		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate, cache, peer, expected)
 	}()
 	return v
 }
 
-func openBridgeView(ctx context.Context, ui extensions.UI, profile, peer, instance string) error {
+func openBridgeView(ctx context.Context, ui extensions.UI, profile, peer, instance string, initial ...sqlite.ForeignSession) error {
 	_, _, err := ui.Custom(ctx, func(host extensions.UIHost, _ extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
-		return newRemoteConversation(ctx, profile, peer, instance, host.Invalidate, host.Height, func() { done(nil) }), nil
+		return newRemoteConversation(ctx, profile, peer, instance, host.Invalidate, host.Height, func() { done(nil) }, initial...), nil
 	}, nil)
 	return err
 }
@@ -190,13 +225,42 @@ func runBridgeView(parent context.Context, profile, peer, instance string, strea
 	return 0
 }
 
-func runRemoteConversation(ctx context.Context, instance string, remote func(string, any, any) error, requests <-chan string, body, status *remoteTranscript, invalidate func()) {
+func runRemoteConversation(ctx context.Context, instance string, remote func(string, any, any) error, requests <-chan string, body, status *remoteTranscript, invalidate func(), cache *sqlite.Foreign, peer, expected string) {
 	var info remoteDescriptor
 	var err error
 	cursor := ""
 	partial := ""
 	var transcript strings.Builder
 	pending := ""
+	connected := false
+	revoked := false
+	var preview sqlite.ForeignSession
+	var ticket int64
+	cacheWarning := ""
+	if cache == nil {
+		cacheWarning = " · offline cache unavailable"
+	}
+	deny := func(err error) bool {
+		if connect.Code(err) != "unauthorized" {
+			return false
+		}
+		connected = false
+		body.set("")
+		transcript.Reset()
+		partial = ""
+		cursor = ""
+		message := "Access revoked · cached preview removed"
+		if cache != nil && !revoked {
+			if e := cache.Forget(ctx, peer); e != nil {
+				message = "Access revoked · cache removal failed: " + e.Error()
+			} else {
+				revoked = true
+			}
+		}
+		status.set(message)
+		invalidate()
+		return true
+	}
 	tick := time.NewTicker(400 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -204,6 +268,11 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 		case <-ctx.Done():
 			return
 		case text := <-requests:
+			if !connected {
+				status.set("Read-only · waiting for the remote session")
+				invalidate()
+				continue
+			}
 			if text == "/sessions" {
 				var result json.RawMessage
 				err = remote("instances.call", connect.Call{InstanceID: instance, Service: protocol.Service, Method: "session.list", Args: connect.JSON(struct{}{})}, &result)
@@ -245,7 +314,9 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			call := connect.Call{InstanceID: instance, Service: protocol.Service, Method: method, SessionID: info.Target.SessionID, Expected: connect.Expected{Generation: info.Generation, Revision: info.Target.Revision}, OperationID: protocol.NewID(), Args: connect.JSON(arguments)}
 			var receipt connect.Receipt
 			if err = remote("instances.call", call, &receipt); err != nil {
-				status.set(err.Error() + " · operation " + call.OperationID)
+				if !deny(err) {
+					status.set(err.Error() + " · operation " + call.OperationID)
+				}
 			} else {
 				pending = receipt.OperationID
 				status.set(receipt.Status + " · " + pending)
@@ -254,13 +325,24 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 		case <-tick.C:
 			previous := info.Target.SessionID
 			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &info); err != nil {
-				status.set("Disconnected · reconnecting · Esc closes view")
+				connected = false
+				if !deny(err) {
+					status.set("Offline · cached content is stale · read-only · reconnecting" + cacheWarning)
+				}
 				invalidate()
 				continue
 			}
+			if expected != "" && expected != info.Target.SessionID {
+				connected = false
+				status.set("Cached preview · read-only · this session is no longer active remotely")
+				invalidate()
+				continue
+			}
+			connected = false
 			if previous != info.Target.SessionID {
 				cursor = ""
 				transcript.Reset()
+				partial = ""
 			}
 			if pending != "" {
 				var receipt connect.Receipt
@@ -268,10 +350,22 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 					status.set(receipt.Status + " · " + receipt.Error + " · Esc closes view")
 				}
 			}
+			cacheDirty := cursor == ""
 			if cursor == "" {
+				if cache != nil {
+					ticket, err = cache.Begin(ctx, peer)
+					if err != nil {
+						cacheWarning = " · cache write failed"
+					}
+				}
 				snapshot, offset := "", ""
+				preview = sqlite.ForeignSession{Peer: peer, Namespace: protocol.Service + "/" + instance, ID: info.Target.SessionID, Instance: instance, Name: info.Name, CWD: info.CWD}
 				transcript.Reset()
-				for {
+				for pages := 0; ; pages++ {
+					if pages >= 128 {
+						err = connect.Fail("resource_exhausted")
+						break
+					}
 					var page struct {
 						Partial    json.RawMessage   `json:"partial"`
 						SnapshotID string            `json:"snapshot_id"`
@@ -285,6 +379,11 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 					}
 					for _, m := range page.Messages {
 						transcript.WriteString(remoteMessage(m))
+						preview.AddMessage(m)
+					}
+					if transcript.Len() > 8<<20 || page.Offset != "" && page.Offset == offset {
+						err = connect.Fail("resource_exhausted")
+						break
 					}
 					partial = remoteMessage(page.Partial)
 					snapshot, offset = page.SnapshotID, page.Offset
@@ -315,12 +414,49 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 							case "message_end":
 								partial = ""
 								transcript.WriteString(remoteMessage(event.Message))
+								preview.AddMessage(event.Message)
+								cacheDirty = true
 							case "agent_end":
 								partial = ""
 							}
 						}
 					}
 					cursor = page.Cursor
+				}
+			}
+			if err != nil {
+				cursor = ""
+				if !deny(err) {
+					status.set("Remote data unavailable · read-only · retrying")
+					invalidate()
+				}
+				continue
+			}
+			// A session transition during snapshot paging must never label the
+			// new conversation with the previous session's identity.
+			var current remoteDescriptor
+			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &current); err != nil || current.Target.SessionID != info.Target.SessionID || current.Target.Revision != info.Target.Revision || current.Generation != info.Generation {
+				cursor = ""
+				if !deny(err) {
+					status.set("Session changed or disconnected · refreshing")
+				}
+				invalidate()
+				continue
+			}
+			connected = true
+			revoked = false
+			cacheDirty = cacheDirty || preview.Name != current.Name || preview.CWD != current.CWD
+			preview.Name = current.Name
+			preview.CWD = current.CWD
+			if cache != nil && ticket > 0 && cacheDirty {
+				if err := cache.Put(ctx, ticket, preview); err != nil {
+					if errors.Is(err, sqlite.ErrForeignSuperseded) {
+						cursor = ""
+					} else {
+						cacheWarning = " · cache write failed"
+					}
+				} else {
+					cacheWarning = ""
 				}
 			}
 			if transcript.Len() > 8<<20 {
@@ -333,9 +469,29 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				if info.Target.ExecutionID != "" {
 					state = "running"
 				}
-				status.set(state + " · " + strings.Join(info.Methods, " · ") + " · Esc closes view")
+				status.set(state + cacheWarning + " · " + strings.Join(info.Methods, " · ") + " · Esc closes view")
 			}
 			invalidate()
 		}
 	}
+}
+
+func openBridgeCache(ctx context.Context, profile string) (*sqlite.DB, error) {
+	dir, err := bridgeDir(profile)
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Dir(filepath.Dir(dir))
+	if override := os.Getenv("ORB_BRIDGE_HOME"); override != "" {
+		root = override
+	}
+	return sqlite.Open(ctx, filepath.Join(root, "state", "orb.db"))
+}
+func cachedTranscript(s sqlite.ForeignSession) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Cached preview · %s · %s\nLast refreshed %s\n\n", s.Peer, s.ID, s.RefreshedAt.Format(time.RFC3339))
+	for _, m := range s.Messages {
+		fmt.Fprintf(&b, "%s: %s\n\n", m.Role, m.Text)
+	}
+	return b.String()
 }

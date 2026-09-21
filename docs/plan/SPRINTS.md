@@ -151,6 +151,176 @@ four static builds and final size/startup measurements. Exclude the restricted l
 apps, browser transport, and platform-specific hosting. Record evidence in PROGRESS, SDK and
 architecture docs, and CHANGELOG; no per-change report files.
 
+## Unified conversations and native SQLite — implementation plan (2026-09-21)
+
+Owner requested a single session picker grouped by machine, including creation/resumption on
+remote hosts, and a full native SQLite migration. Owner explicitly accepted SQLite-native storage
+with Pi JSONL import/export instead of live shared Pi files. This is a new delivery after Bridge
+v1: the restricted native launcher, previously excluded, is necessary here. This section is a
+plan, not a claim of implemented behavior. No release budgets or SDK contracts are relaxed.
+
+### Product contract
+
+- One Sessions surface for startup, `/resume`, and the command palette: This computer, then
+  connected machines by human-readable name. Identity uses PeerID, never the display name.
+  Show saved and active conversations with title, workspace, activity, and execution/connection
+  state; current-project/all-project filtering and search work across authorized sources.
+- Local results arrive immediately; remote sources load independently with bounded concurrency,
+  pagination, cancellation, and visible per-machine failures. Keep selection stable by identity.
+  Offline machines remain visible; never claim an unavailable runtime has stopped.
+- Each machine offers New conversation. Select a configured workspace and server-side preset;
+  use the last valid selection as the default. Credentials and tools belong to the destination.
+  An unconfigured host explains what is missing rather than opening an unusable conversation.
+- Opening an active conversation attaches to its existing runtime. Opening a saved conversation
+  acquires exclusive ownership and starts a runtime if needed. Switching the viewed conversation
+  never switches another user's runtime or interrupts background work. Multiple views share the
+  same execution; separate conversations can execute concurrently.
+- Managed workers stay bound to one conversation. New/fork creates another conversation; switch
+  changes the client's view. Keep existing instance-level new/switch/fork semantics for standalone
+  and SDK callers; do not silently change `orb.instance/1`.
+- Closing a view only detaches. Cancel stops the current execution. Idle managed workers may exit
+  after a defined idle period, provided no execution, approval, queued work, or viewer remains.
+  Archive removes a conversation from the default list without deleting history. Deletion is an
+  explicit confirmed action, refused while execution/ownership makes it unsafe.
+- Bridge settings manage devices, pairing and hosting configuration. Conversation navigation
+  leaves that menu. Preserve the focused remote view, destination/path footer, keyboard/mouse
+  navigation, and operation without local provider credentials.
+
+### Layer and storage decisions
+
+| Layer | Responsibility |
+|---|---|
+| Existing `agent/session` and harness | Session tree, compaction, forks, replay, codecs; reuse the runtime |
+| SQLite adapter | Explicit DB handle, schema/migrations, transactional repositories; no networking or daemon startup |
+| Native host capability | Catalog, ownership and managed worker lifecycle; composed beside Bridge, not inside its router |
+| `connect` / `connect/agent` | Versioned conversation service plus existing non-owning runtime control/observations |
+| `bridge` | Authenticate, authorize and route; no session engine, SQL or process construction |
+| CLI/TUI assembly | Open storage, assemble capabilities and select local/remote views |
+
+Use one `orb.db` per explicit local state root (normally one per OS user per machine), with
+profile namespaces. Different security domains use separate roots/OS identities; a namespace
+is not a sandbox. Never share this file across machines or replicate complete remote transcripts. The owner
+approved a separate disposable cache of remote summaries and bounded user/assistant excerpts
+(2026-09-21); origin remains explicit and reopening always revalidates against the destination.
+The picker aggregates catalogs over Bridge; the destination remains authoritative. WAL/SHM files,
+IPC sockets, process locks, logs, and explicit backups are not competing databases.
+
+SQLite owns native mutable state: conversations and entries; names, branches and working
+directories; runtime ownership; operation receipts/tombstones and launch intents; Bridge identities,
+transport keys, peers, grants, contacts and withdrawal floors; attachment state; Orb-managed
+global settings, model overrides, auth, trust and keybindings; memory and enabled chat-gateway
+delivery state. Keep layer ownership through narrow existing store contracts even when their
+data shares a database. Do not replace typed data with one ever-growing serialized state blob.
+
+Source resources stay files: project configuration, AGENTS.md, skills, extensions, themes,
+workspace files, package artifacts and exports. Project overrides keep existing precedence and
+trust behavior. Native global preference writes go to SQLite; project-scoped edits remain in the
+project. Global file interoperability becomes explicit import/export, never silent two-way sync.
+External secret providers remain references rather than copied credentials.
+
+Use indexed session metadata plus canonical JSON entry payloads with explicit order, tree links,
+leaf and revision. Preserve unknown fields and supported v3/v4 behavior. Avoid normalizing every
+provider payload into SQL tables. Reuse existing repository seams; add only the product-session
+persistence seam actually needed by the existing file and SQLite implementations. Preserve public
+constructors, method sets and file-backed SDK defaults; CLI assembly explicitly selects SQLite.
+File-oriented API fields/methods must retain truthful semantics: audit sessionFile/parentSession,
+extension session managers, exports, --session/--session-dir and environment overrides before
+cutover. Never pass a fabricated SQLite URI to a caller expecting a real file. Retained explicit
+file-backed compatibility entry points are adapters, not a mirrored native source of truth.
+
+### Ordered implementation slices and acceptance gates
+
+1. **Record contracts and prove packaging feasibility.** Amend DECISIONS and ARCHITECTURE for the
+   owner-approved storage boundary; inventory every persistent writer and every public file-path
+   assumption. Specify additive service methods for catalog/list, create, open, rename, fork,
+   archive/delete and ownership/status, with identity, paging, authorization and retry vectors.
+   Identify conversations by destination identity + storage namespace + SessionID; keep runtime,
+   generation and execution IDs distinct. Probe a maintained CGo-free SQLite driver (start with
+   modernc.org/sqlite) in the actual Tailcat-enabled binary before choosing/pinning it. Check its
+   embedded SQLite release for known WAL/corruption fixes. Build darwin/linux × amd64/arm64;
+   retain 55 MB and 50 ms release gates. Measure populated-database startup separately from
+   --version. If no supported assembly meets the gates, surface the measured blocker before
+   committing to that driver, without changing the limits.
+2. **Land transactional storage and recovery tests.** Add versioned schema migrations, indexes,
+   foreign keys, WAL, FULL durability for admitted work, bounded busy waits and short transactions.
+   Configure/verify connection pragmas on every connection. No SQL transaction spans a model
+   stream, tool, approval or network wait. Use revision checks and fenced ownership updates rather
+   than last-write-wins. Keep one Bridge service owner per profile while allowing independent
+   runtime processes to use SQLite concurrently. Test two-process contention, stale ownership,
+   quota/disk-full failures, corruption, migration crashes and unsupported schema versions.
+   Checkpoint and backup through SQLite-supported operations; never copy a live DB file alone.
+3. **Migrate the existing native persistence completely.** Import session headers/trees, memory,
+   settings/auth and Bridge/attachment/operation state while preserving IDs, keys, grants,
+   counters and deduplication tombstones. Enumerate configured custom roots, not just defaults.
+   Require old Orb writers to quiesce, lock sources and verify fingerprints so a changing source
+   cannot be declared migrated. Journal source identity/digest and progress for restartable,
+   bounded-batch import; validate counts, payloads and tree references before publishing the
+   cutover marker. Report duplicate IDs/conflicting sources and damaged files without overwriting
+   or silently skipping them. Keep original files as untouched recovery backups; don't delete
+   them automatically. A failed import leaves the previous storage usable; after native writes,
+   rollback requires export of new data, not reopening a stale backup. Old binaries must not be
+   used against the migrated native root. Provide verified backup/restore and JSONL import/export;
+   account for Bridge revision/receipt rollback so restoring stale authority never replays work.
+   Private DB, WAL, backup and parent-directory permissions protect included secrets; redact them
+   from diagnostics. Migrate optional capability state when enabled without resetting it.
+4. **Introduce the native conversation host.** Reuse AgentSessionRuntime in workers of the same
+   Orb executable; no second agent engine or general scheduler. Assemble host management with
+   the existing native service and keep workers independent of Bridge/client lifetimes. The host
+   can start headless without a provider locally on the viewing client. Configure workspace roots,
+   server-side presets, concurrency/resource limits and provider availability locally. Never accept
+   remote shell strings, arbitrary argv/environment or unvalidated filesystem paths. Existing
+   foreground instances register their ownership so opening their active session attaches rather
+   than spawning a second writer. Legacy session switches atomically update ownership/catalog.
+   Persist create/open intent before spawn, correlate authenticated worker registration with a
+   stable launch token, and fence every session mutation. Reconcile an uncertain spawn before
+   retrying; a bare PID or expired heartbeat never authorizes a duplicate active executor. On lost
+   ownership the old worker must stop dispatching work. After a crash mark interrupted effects
+   outcome_unknown; do not replay tools or prompts automatically. Test concurrent opens, crash
+   windows around spawn/registration, worker exit, host restart and Bridge restart during work.
+5. **Expose authorized conversation operations.** Advertise the additive host service through
+   existing negotiation; old peers keep active-instance access and show hosting as unavailable.
+   Catalogs filter before paging; opaque cursors must not leak unauthorized sessions. Resolve all
+   session/workspace IDs on the destination. All mutations carry operation IDs and target
+   preconditions, persist acceptance before dispatch and retain retry protection. Launch/manage
+   permission is separate internally from instance control and agent-call authority. New full-trust
+   pairing can include hosting when locally enabled and disclosed; existing trust needs a local
+   explicit enablement, not a silent grant expansion. Bridge administration remains local. Revoking
+   access immediately terminates visibility/control without killing destination-owned work.
+   Persist approvals against exact execution/action identity; reconnecting must not approve them.
+6. **Unify the session UI.** Extend the existing selector and loaders; don't create a second session
+   browser. Add machine sections, progressive loading/search, stable selection, pagination and
+   per-source errors. Route selection to local attachment or the existing remote view using typed
+   references, not string-encoded paths. Wire create/open/fork/rename/archive/delete through the
+   same destination service and permission checks. The picker remains usable while another
+   conversation streams. Keep drafts/view state per conversation, and resnapshot after cursor
+   expiry or ownership changes. Remove duplicate conversation navigation in Bridge settings.
+   Exercise empty hosts, offline hosts, missing credentials/workspaces, old peers, duplicate names,
+   multiple viewers, narrow terminals, and reconnects; regenerate Orb-owned render snapshots.
+7. **Verify delivery and remove superseded native paths.** Run migration fixtures for all supported
+   session versions and unknown entries; Pi JSONL round-trips, SDK consumer builds, RPC/provider/
+   extension conformance; negative privilege/catalog tests; receipt and launch fault injection;
+   concurrent local/remote create/open races and bounded observation tests. Exercise at least 20
+   active conversations plus a large saved catalog with pagination. On lab-3 and edge use isolated
+   test roots to verify real TUI creation/resume, background execution after disconnect, device
+   revocation, direct/relay transport and restarts without touching personal sessions. Run
+   `make check`, four static release builds, startup/size/memory and WAL-growth measurements;
+   confirm SDK-only builds import no SQLite driver/Bridge/Tailcat unless explicitly selected and
+   portable core still compiles for Wasm. Remove obsolete native JSON writers and scans after
+   cutover; keep only explicit compatibility codecs/backends and migration readers. Update
+   ARCHITECTURE, SDK documentation, CHANGELOG and PROGRESS with verified evidence. Every commit
+   is coherent and green on main; no separate report files, automatic release or deployment.
+
+**Definition of done:** starting with an empty paired server, a user creates and resumes remote
+conversations entirely from Sessions, runs multiple conversations concurrently, reconnects without
+losing ownership/history, and upgrades existing data without re-pairing or losing deduplication.
+Native application state has one SQLite authority per local root; there is no live JSON shadow
+store, mandatory local daemon for offline Orb, or cross-machine database. SDK/file compatibility
+continues through explicit existing entry points and verified import/export.
+
+SQLite design references: https://sqlite.org/wal.html (single local writer, WAL sidecars and
+durability), https://sqlite.org/backup.html (consistent backups), and
+https://pkg.go.dev/modernc.org/sqlite (candidate CGo-free driver; selection remains measurement-gated).
+
 ## Ambition setting
 
 Each working session aims to CLOSE a sprint, and must at minimum leave main green, fixtures green,

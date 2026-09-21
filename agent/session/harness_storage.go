@@ -51,7 +51,7 @@ func FromHarnessStorage(storage harness.SessionStorage, options ...Option) (*Ses
 		}
 		sessionDir = filepath.Dir(sessionFile)
 	}
-	manager := newManager(cwd, sessionDir, persisted && sessionFile != "", resolved)
+	manager := newManager(cwd, sessionDir, persisted, resolved)
 	manager.sessionID = metadata.ID
 	manager.sessionFile = sessionFile
 	manager.harnessStorage = storage
@@ -96,6 +96,40 @@ func (manager *SessionManager) IsHarnessBacked() bool {
 
 func (manager *SessionManager) refreshHarnessLocked() error {
 	if manager.harnessStorage == nil {
+		return nil
+	}
+	// Native journals are append-only. Refresh only their tail; rescanning a
+	// long transcript here made every persisted message O(history).
+	if journal, ok := manager.harnessStorage.(*harness.JSONLSessionStorage); ok &&
+		journal.IsPersistent() && journal.Metadata().Path == "" && len(manager.fileEntries) > 0 {
+		entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
+		for _, entry := range entries {
+			converted := sessionEntryFromHarness(entry)
+			record := newEntryRecord(converted)
+			if converted.object != nil {
+				record = &FileEntry{Type: converted.Type, Entry: &converted, object: converted.object}
+			}
+			manager.fileEntries = append(manager.fileEntries, record)
+			manager.byID[entry.ID] = record.Entry
+			manager.addAggregateEntryLocked(record.Entry)
+			if entry.Type == "label" && entry.TargetID != nil {
+				if label, exists := journal.Label(*entry.TargetID); exists {
+					manager.labelsByID[*entry.TargetID] = label
+					manager.labelTimestampsID[*entry.TargetID] = entry.Timestamp
+				} else {
+					delete(manager.labelsByID, *entry.TargetID)
+					delete(manager.labelTimestampsID, *entry.TargetID)
+				}
+			}
+		}
+		leaf, err := journal.LeafID()
+		if err != nil {
+			return err
+		}
+		manager.leafID = cloneString(leaf)
+		if len(entries) > 0 {
+			manager.revision++
+		}
 		return nil
 	}
 	metadata := manager.harnessStorage.Metadata()

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -216,43 +217,7 @@ func writeGlobalSettings(path string, values settingsObject, nestedField, nested
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		object, err := parseSettingsObject(current)
-		if err != nil {
-			return err
-		}
-		object, err = migrateSettingsObject(object)
-		if err != nil {
-			return err
-		}
-		for _, value := range values {
-			object = object.set(value.name, value.value)
-		}
-		if nestedField != "" {
-			raw, exists := object.get(nestedField)
-			nested := settingsObject{}
-			if exists {
-				if decoded, decodeErr := parseSettingsObject(raw); decodeErr == nil {
-					nested = decoded
-				}
-			}
-			// A nil nestedValue deletes the key; an emptied object drops the
-			// whole field rather than leaving "{}" behind.
-			if nestedValue == nil {
-				nested = nested.delete(nestedKey)
-			} else {
-				nested = nested.set(nestedKey, nestedValue)
-			}
-			if len(nested) == 0 {
-				object = object.delete(nestedField)
-			} else {
-				raw, err = nested.marshalIndented()
-				if err != nil {
-					return err
-				}
-				object = object.set(nestedField, raw)
-			}
-		}
-		encoded, err := object.marshalIndented()
+		encoded, err := updatedSettings(current, values, nestedField, nestedKey, nestedValue)
 		if err != nil {
 			return err
 		}
@@ -262,6 +227,55 @@ func writeGlobalSettings(path string, values settingsObject, nestedField, nested
 		}
 		_, writeErr := file.Write(encoded)
 		return errors.Join(writeErr, file.Close())
+	})
+}
+
+func updatedSettings(current []byte, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) ([]byte, error) {
+	object, err := parseSettingsObject(current)
+	if err != nil {
+		return nil, err
+	}
+	object, err = migrateSettingsObject(object)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range values {
+		object = object.set(value.name, value.value)
+	}
+	if nestedField != "" {
+		raw, exists := object.get(nestedField)
+		nested := settingsObject{}
+		if exists {
+			if decoded, decodeErr := parseSettingsObject(raw); decodeErr == nil {
+				nested = decoded
+			}
+		}
+		// A nil nestedValue deletes the key; an emptied object drops the
+		// whole field rather than leaving "{}" behind.
+		if nestedValue == nil {
+			nested = nested.delete(nestedKey)
+		} else {
+			nested = nested.set(nestedKey, nestedValue)
+		}
+		if len(nested) == 0 {
+			object = object.delete(nestedField)
+		} else {
+			raw, err = nested.marshalIndented()
+			if err != nil {
+				return nil, err
+			}
+			object = object.set(nestedField, raw)
+		}
+	}
+	return object.marshalIndented()
+}
+
+func (manager *SettingsManager) writeGlobalSettings(values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
+	if manager.globalDocument == nil {
+		return writeGlobalSettings(manager.globalPath, values, nestedField, nestedKey, nestedValue)
+	}
+	return manager.globalDocument.Update(context.Background(), func(current []byte) ([]byte, error) {
+		return updatedSettings(current, values, nestedField, nestedKey, nestedValue)
 	})
 }
 
@@ -281,7 +295,7 @@ func (manager *SettingsManager) setGlobalValues(values ...settingsMember) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if !manager.globalLoadError {
-		if err := writeGlobalSettings(manager.globalPath, settingsObject(values), "", "", nil); err != nil {
+		if err := manager.writeGlobalSettings(settingsObject(values), "", "", nil); err != nil {
 			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 			return
 		}
@@ -300,7 +314,7 @@ func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if !manager.globalLoadError {
-		if err := writeGlobalSettings(manager.globalPath, nil, field, key, raw); err != nil {
+		if err := manager.writeGlobalSettings(nil, field, key, raw); err != nil {
 			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 			return
 		}
@@ -320,7 +334,7 @@ func (manager *SettingsManager) removeGlobalNested(field, key string) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if !manager.globalLoadError {
-		if err := writeGlobalSettings(manager.globalPath, nil, field, key, nil); err != nil {
+		if err := manager.writeGlobalSettings(nil, field, key, nil); err != nil {
 			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 			return
 		}

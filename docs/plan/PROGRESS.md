@@ -4,6 +4,66 @@ The active sequence is `SPRINTS.md`; the old work-package numbers are historical
 only. Progress is measured by conformance surfaces moving from red to green and by milestone
 criteria closing.
 
+## Unified conversations and SQLite — planned, 2026-09-21
+
+The owner requested unified local/remote Sessions navigation and native SQLite, explicitly
+accepting Pi JSONL import/export instead of live file sharing. SPRINTS now contains the complete
+sequence: compatibility/driver feasibility, transactional storage, resumable migration, native
+conversation hosting, authorized service contracts, unified selector, and fault/live/release gates.
+DECISIONS records the approved storage direction. Native launching extends the previously
+completed Bridge v1 scope without moving runtime ownership into Bridge.
+
+- [x] Probe actual SQLite use in the Tailcat-enabled CLI. modernc v1.59.0 embeds SQLite 3.53.4.
+      Ordinary darwin/amd64 builds reached 55,370,400 B; ncruces v0.35.5 reached 57,308,464 B.
+      Disabling inlining only for Orb's packages (not dependencies) gives modernc probe sizes
+      darwin/arm64 51,461,842 B, darwin/amd64 53,855,888 B, linux/amd64 52,879,520 B,
+      linux/arm64 50,135,200 B with the existing Tailcat tags and stripped release flags.
+      Local M4 process-start medians: --version 12.22 ms; existing WAL database open/write
+      13.11 ms. These are feasibility probes, not final release measurements or native x86 timings.
+- [x] Add explicit SQLite documents/session repositories, namespace isolation, FULL/WAL connections,
+      schema rejection, consistent backups, durable journals and stale-writer rejection. Settings,
+      auth and trust accept caller-owned transactional documents without changing file defaults.
+      The full `make check` gate passed after concurrent work settled; final cache verification
+      is below. SDK examples build without SQLite/Bridge/Tailcat imports. Portable `connect` and
+      `bridge` build for Wasm; harness retains an existing Unix `Setpgid` portability failure.
+- [x] Measure a 100,000-session catalog on M4: 128-row pages about 0.11–0.12 ms; targeted FTS
+      prefix search 0.16 ms after fixing the query plan (previously 16.37 ms). Immutable keyset
+      pagination avoids OFFSET scans and changes of order while messages stream. A native journal
+      append after 10,000 entries fell from 28.19 ms / 50.4 MB allocations to 0.25 ms / 0.55 MB
+      in the 10-operation probe by refreshing only the new tail; a 1,000-operation run measures
+      0.091 ms / 23.5 KB per append. Unchanged reads no longer advance its revision. Creation,
+      fork and import share one insert transaction. These are storage microbenchmarks, not
+      end-to-end throughput guarantees.
+- [x] Add a separate SQLite cache for visited foreign sessions, keyed by profile, pinned peer,
+      namespace and SessionID. Legacy instance services use instance-scoped namespaces; cached
+      entries never enter owned session repositories. Store only eight visible user/assistant
+      messages, 4 KiB per message / 32 KiB encoded per preview, expiring after seven days, capped
+      at 128 sessions per peer and 1,024 per profile. Streaming fragments, reasoning, tool payloads
+      and attachments are excluded. Idle polling does not rewrite the cache. Old refreshes are
+      fenced after revocation, superseded refreshes resnapshot, and expired previews are hidden.
+      Bridge lists show cached entries immediately and fall back to them offline; cached views
+      stay read-only until the destination confirms the same session. No cached-to-local fallback.
+      This does not yet implement discovery of every saved conversation on remote hosts.
+- [x] Run native SQLite checks on lab-3 and edge using isolated static test binaries: concurrent
+      writer processes, restart/replay protection, backup, corruption/schema checks and namespace
+      isolation pass. 100k-session page/search queries: lab-3 ~0.50–0.60 ms; edge ~0.22–0.28 ms.
+      Durable append after 10k entries: lab-3 ~5.95 ms; edge ~0.26 ms (100-operation microbenchmarks).
+      Preserve FULL durability; storage hardware dominates write latency on lab-3.
+- [x] Pair an isolated local Bridge to lab-3 over SSH, attach 20 faux-model runtimes on lab-3,
+      then verify a real Bridge prompt, completed-message preview persistence and local-block
+      purge. Hermetic stream tests also verify offline command rejection, reconnect, remote
+      revocation and refusal to retarget a cached view after an instance changes sessions.
+- [x] Rebuild all four static release targets with SQLite linked and Orb-only inlining disabled:
+      darwin/amd64 53,986,368 B; darwin/arm64 51,580,882 B; linux/amd64 52,998,304 B;
+      linux/arm64 50,200,736 B. All remain below 55 MB. Local M4 `--version` startup over
+      12 measured processes: median 15.26 ms, maximum 18.35 ms. Live fixtures were stopped and
+      their isolated server/client state removed; installed Orb binaries and user data were untouched.
+      Final `make check` passes: build, vet/lint, full race suite and pure-Go wire/conformance suite.
+- [ ] Finish remaining stores, source inventory and resumable migration/cutover; no user data has
+      been migrated and CLI persistence is still file-backed.
+- [ ] Implement managed hosting, conversation service, unified Sessions UI and native live tests.
+- [ ] Complete crash/quota/multiprocess/load verification, SDK/Pi gates and final release builds.
+
 ## Orb/OpenCode evaluation — 2026-09-20
 
 External runner lives in `../orb-evals/` (Harbor 0.23.0, OpenCode V2.0.11).

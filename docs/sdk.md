@@ -248,6 +248,26 @@ sm, _ := sessionstore.Create(cwd, sessionDir)
 sm, _ := sessionstore.InMemory(".")
 ```
 
+Native persistence is opt-in through `storage/sqlite.Open(ctx, absolutePath)`.
+Use `db.Sessions(namespace)` as a `harness.SessionRepo`, then adapt its storage
+with `sessionstore.FromHarnessStorage(s.Storage(), sessionstore.WithHarnessRepo(repo))`.
+The caller owns the database lifetime. Sessions have IDs, no synthetic file paths;
+`ByteSessionStorage.Bytes()` exports Pi v3 JSONL and `repo.Import` admits it without
+replacing conflicting history. Existing SDK constructors remain file-backed.
+
+Global settings, credentials and trust accept `db.Document(namespace, key)` through
+`WithGlobalDocument`, `NewAuthStorageWithDocument` and
+`NewProjectTrustStoreWithDocument`. These hooks share the existing codecs and do
+not migrate files automatically. Only importing `storage/sqlite` links the driver.
+
+`db.Foreign(profile)` is a disposable remote-session cache, separate from owned session
+repositories. Keys include the peer, namespace and session ID. Previews retain at most eight
+visible user/assistant messages, 4 KiB per message and 32 KiB encoded per session; seven-day
+expiry and 128-per-peer / 1,024-per-profile limits bound retention. Allocate a refresh token
+before network I/O with `Begin`; `Forget` fences older responses as well as deleting content.
+CLI Bridge views use `~/.orb/state/orb.db` (or `$ORB_BRIDGE_HOME/state/orb.db` for isolated roots).
+Only visited conversations are cached; reopening always consults the owning Bridge.
+
 ## Settings
 
 ```go

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/storage"
 )
 
 const (
@@ -65,11 +67,17 @@ func (e SettingsError) Error() string { return fmt.Sprintf("%s settings: %v", e.
 func (e SettingsError) Unwrap() error { return e.Err }
 
 type managerOptions struct {
+	globalDocument storage.Document
 	agentDir       string
 	projectTrusted *bool
 }
 
 type Option func(*managerOptions)
+
+// WithGlobalDocument selects transactional global settings; project files retain their precedence.
+func WithGlobalDocument(document storage.Document) Option {
+	return func(options *managerOptions) { options.globalDocument = document }
+}
 
 func WithAgentDir(path string) Option {
 	return func(options *managerOptions) { options.agentDir = path }
@@ -84,7 +92,8 @@ func WithProjectTrusted(trusted bool) Option {
 // SettingsManager keeps the source documents untyped so unknown keys and
 // invalid known values do not make an otherwise valid settings file unreadable.
 type SettingsManager struct {
-	mu sync.RWMutex
+	globalDocument storage.Document
+	mu             sync.RWMutex
 
 	globalPath  string
 	projectPath string
@@ -134,6 +143,7 @@ func NewSettingsManager(cwd string, options ...Option) (*SettingsManager, error)
 		projectTrusted = *settingsOptions.projectTrusted
 	}
 	manager := &SettingsManager{
+		globalDocument: settingsOptions.globalDocument,
 		globalPath:     filepath.Join(resolvedAgentDir, "settings.json"),
 		projectPath:    filepath.Join(resolvedCWD, ConfigDirName, "settings.json"),
 		global:         Settings{},
@@ -145,7 +155,7 @@ func NewSettingsManager(cwd string, options ...Option) (*SettingsManager, error)
 }
 
 func (manager *SettingsManager) loadInitial() {
-	global, err := loadSettingsFile(manager.globalPath)
+	global, err := manager.loadGlobal()
 	if err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 		manager.globalLoadError = true
@@ -166,6 +176,17 @@ func (manager *SettingsManager) loadInitial() {
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
 
+func (manager *SettingsManager) loadGlobal() (Settings, error) {
+	if manager.globalDocument == nil {
+		return loadSettingsFile(manager.globalPath)
+	}
+	data, err := manager.globalDocument.Read(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return decodeSettings(data)
+}
+
 func loadSettingsFile(path string) (Settings, error) {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -174,6 +195,10 @@ func loadSettingsFile(path string) (Settings, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeSettings(contents)
+}
+
+func decodeSettings(contents []byte) (Settings, error) {
 	if len(contents) == 0 {
 		return Settings{}, nil
 	}
@@ -297,7 +322,7 @@ func (manager *SettingsManager) Reload() {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 
-	if global, err := loadSettingsFile(manager.globalPath); err != nil {
+	if global, err := manager.loadGlobal(); err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 		manager.globalLoadError = true
 	} else {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/skilllocations"
+	"github.com/OrdalieTech/orb/storage"
 )
 
 // Port of packages/coding-agent/src/core/trust-manager.ts.
@@ -117,6 +119,10 @@ func readTrustFile(path string) (trustFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read trust store %s: %s", path, err) //nolint:staticcheck // Upstream error text is observable.
 	}
+	return decodeTrust(contents, path)
+}
+
+func decodeTrust(contents []byte, path string) (trustFile, error) {
 	decoder := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(contents, []byte{0xef, 0xbb, 0xbf})))
 	var parsed any
 	if err := decoder.Decode(&parsed); err != nil {
@@ -263,7 +269,15 @@ func HasTrustRequiringProjectResources(cwd string) bool {
 
 // ProjectTrustStore persists project trust decisions in <agentDir>/trust.json.
 type ProjectTrustStore struct {
+	document  storage.Document
 	trustPath string
+}
+
+func NewProjectTrustStoreWithDocument(document storage.Document) (*ProjectTrustStore, error) {
+	if document == nil {
+		return nil, errors.New("trust document is required")
+	}
+	return &ProjectTrustStore{document: document}, nil
 }
 
 func NewProjectTrustStore(agentDir string) *ProjectTrustStore {
@@ -284,6 +298,20 @@ func (store *ProjectTrustStore) Get(cwd string) (*bool, error) {
 }
 
 func (store *ProjectTrustStore) GetEntry(cwd string) (*ProjectTrustStoreEntry, error) {
+	if store.document != nil {
+		contents, err := store.document.Read(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		if len(contents) == 0 {
+			return nil, nil
+		}
+		data, err := decodeTrust(contents, "database")
+		if err != nil {
+			return nil, err
+		}
+		return findNearestTrustEntry(data, cwd), nil
+	}
 	var entry *ProjectTrustStoreEntry
 	err := withSettingsLock(store.trustPath, func() error {
 		data, err := readTrustFile(store.trustPath)
@@ -304,21 +332,39 @@ func (store *ProjectTrustStore) Set(cwd string, decision *bool) error {
 }
 
 func (store *ProjectTrustStore) SetMany(decisions []ProjectTrustUpdate) error {
+	if store.document != nil {
+		return store.document.Update(context.Background(), func(contents []byte) ([]byte, error) {
+			data := trustFile{}
+			var err error
+			if len(contents) > 0 {
+				data, err = decodeTrust(contents, "database")
+				if err != nil {
+					return nil, err
+				}
+			}
+			applyTrustUpdates(data, decisions)
+			return json.Marshal(data)
+		})
+	}
 	return withSettingsLock(store.trustPath, func() error {
 		data, err := readTrustFile(store.trustPath)
 		if err != nil {
 			return err
 		}
-		for _, update := range decisions {
-			key := normalizeTrustCwd(update.Path)
-			if update.Decision == nil {
-				delete(data, key)
-			} else {
-				data[key] = boolPtr(*update.Decision)
-			}
-		}
+		applyTrustUpdates(data, decisions)
 		return writeTrustFile(store.trustPath, data)
 	})
+}
+
+func applyTrustUpdates(data trustFile, decisions []ProjectTrustUpdate) {
+	for _, update := range decisions {
+		key := normalizeTrustCwd(update.Path)
+		if update.Decision == nil {
+			delete(data, key)
+		} else {
+			data[key] = boolPtr(*update.Decision)
+		}
+	}
 }
 
 // FormatProjectTrustPrompt is the prompt shown when asking for project trust

@@ -383,6 +383,15 @@ func RehydrateJSONLSession(content []byte, filePath string) (*JSONLSessionStorag
 	return rehydrateJSONLSession(content, filePath, nil)
 }
 
+// OpenSessionJournal binds a pathless v3 journal to an explicit durable writer.
+// The writer must commit each line before returning; errors leave memory unchanged.
+func OpenSessionJournal(content []byte, appendLine func([]byte) error) (*JSONLSessionStorage, error) {
+	if appendLine == nil {
+		return nil, fmt.Errorf("harness: session journal requires a writer")
+	}
+	return rehydrateJSONLSession(content, "", appendLine)
+}
+
 func rehydrateJSONLSession(content []byte, filePath string, appendLine func([]byte) error) (*JSONLSessionStorage, error) {
 	return rehydrateJSONLSessionWithHeader(content, filePath, appendLine, parseHarnessHeader, false)
 }
