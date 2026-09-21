@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/connect"
 	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/storage/sqlite"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -565,11 +566,42 @@ func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer str
 }
 
 func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile, peer string) error {
+	db, cacheErr := openBridgeCache(ctx, profile)
+	var cache *sqlite.Foreign
+	if cacheErr == nil {
+		defer func() { _ = db.Close() }()
+		cache = db.Foreign(profile)
+	}
+	cachedRows := func(th extensions.Theme, active map[string]bool) []tui.GridRow {
+		if cache == nil {
+			return nil
+		}
+		entries, err := cache.List(ctx, peer)
+		if err != nil {
+			return nil
+		}
+		rows := []tui.GridRow{}
+		for _, entry := range entries {
+			if active[entry.Instance] {
+				continue
+			}
+			name := entry.Name
+			if name == "" {
+				name = entry.ID
+			}
+			detail := "Cached · " + entry.RefreshedAt.Format(time.RFC822) + " · read-only until connected"
+			rows = append(rows, tui.GridRow{Value: "cached:" + string(connect.JSON([2]string{entry.Namespace, entry.ID})), Cells: []string{th.FG("muted", tui.StripANSI(name))}, Detail: []string{detail}})
+		}
+		return rows
+	}
 	selected := ""
 	for ctx.Err() == nil {
 		result, ok, err := ui.Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
 			panel := newBridgeSettingsPanel(profile, "", "", []tui.GridRow{{Header: true, Cells: []string{"Connecting…"}}}, th, host.Height, done)
 			panel.Title = bridgeDeviceLabel(peer)
+			if rows := cachedRows(th, nil); len(rows) > 0 {
+				panel.list.SetRows(rows)
+			}
 			preferred := selected
 			panel.watch(ctx, host, func(ctx context.Context) []tui.GridRow {
 				probe, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -581,6 +613,9 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 					_ = client.Close()
 				}
 				if err != nil {
+					if connect.Code(err) == "unauthorized" && cache != nil {
+						_ = cache.Forget(ctx, peer)
+					}
 					message, detail := "Reconnecting…", "Keep Bridge on at both devices. Retrying automatically."
 					switch connect.Code(err) {
 					case "unauthorized":
@@ -589,6 +624,16 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 						message, detail = "Too many conversations", "This device's conversation list exceeds the Bridge limit."
 					}
 					rows = []tui.GridRow{{Header: true, Cells: []string{th.FG("warning", message)}}, {Header: true, Cells: []string{th.FG("dim", detail)}}}
+					if connect.Code(err) != "unauthorized" {
+						rows = append(rows, cachedRows(th, nil)...)
+					}
+				}
+				if err == nil {
+					active := map[string]bool{}
+					for _, row := range rows {
+						active[row.Value] = true
+					}
+					rows = append(rows, cachedRows(th, active)...)
 				}
 				rows = append(rows, tui.GridRow{Value: "disconnect", Cells: []string{th.FG("muted", "Block device")}, Detail: []string{"Block this device and revoke its access to your conversations."}})
 				if preferred != "" {
@@ -626,6 +671,23 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 			err = client.Call(ctx, "block", map[string]string{"peer_id": peer}, nil)
 			_ = client.Close()
 			return err
+		}
+		if id, ok := strings.CutPrefix(selected, "cached:"); ok {
+			if cache != nil {
+				entries, err := cache.List(ctx, peer)
+				if err != nil {
+					return err
+				}
+				for _, entry := range entries {
+					if string(connect.JSON([2]string{entry.Namespace, entry.ID})) == id {
+						if err := openBridgeView(ctx, ui, profile, peer, entry.Instance, entry); err != nil {
+							return err
+						}
+						break
+					}
+				}
+			}
+			continue
 		}
 		if selected != "" {
 			if err := openBridgeView(ctx, ui, profile, peer, selected); err != nil {

@@ -240,13 +240,22 @@ func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
+	name, cwd := "", ""
+	if session := a.host.Session(); session != nil {
+		cwd = session.Manager().GetCWD()
+		if title := session.Manager().GetSessionName(); title != nil {
+			name = *title
+		}
+	}
 	return connect.JSON(struct {
+		Name       string                `json:"name,omitempty"`
+		CWD        string                `json:"cwd,omitempty"`
 		InstanceID string                `json:"instance_id"`
 		Service    string                `json:"service"`
 		Generation string                `json:"registration_generation"`
 		Target     runtime.ControlTarget `json:"target"`
 		Methods    []string              `json:"methods"`
-	}{a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork"}})
+	}{name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork"}})
 }
 func (a *Attachment) call(ctx context.Context, r connect.Request) (json.RawMessage, error) {
 	if err := connect.ValidateCall(r.Call); err != nil {

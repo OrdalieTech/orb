@@ -160,11 +160,12 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 }
 
 type bridgeService struct {
-	b     *bridge.Bridge
-	node  *transport.Node
-	mu    sync.Mutex
-	peers map[string]*protocol.Conn
-	ctx   context.Context
+	profile string
+	b       *bridge.Bridge
+	node    *transport.Node
+	mu      sync.Mutex
+	peers   map[string]*protocol.Conn
+	ctx     context.Context
 }
 
 func (s *bridgeService) peer(ctx context.Context, id, locator string) (*protocol.Conn, error) {
@@ -243,6 +244,23 @@ func (s *bridgeService) outbound(ctx context.Context, _ string, params json.RawM
 }
 func (s *bridgeService) admin(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	switch method {
+	case "block":
+		raw, err := s.b.Admin(ctx, method, params)
+		if err != nil {
+			return nil, err
+		}
+		var p struct {
+			PeerID string `json:"peer_id"`
+		}
+		if err = json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		db, err := openBridgeCache(ctx, s.profile)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = db.Close() }()
+		return raw, db.Foreign(s.profile).Forget(ctx, p.PeerID)
 	case "invite":
 		raw, err := s.b.Admin(ctx, method, params)
 		if err != nil {
@@ -347,7 +365,7 @@ func runBridgeService(ctx context.Context, profile string) error {
 	defer func() { _ = listener.Close() }()
 	serviceCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &bridgeService{b: b, node: node, peers: map[string]*protocol.Conn{}, ctx: serviceCtx}
+	service := &bridgeService{profile: profile, b: b, node: node, peers: map[string]*protocol.Conn{}, ctx: serviceCtx}
 	admin := func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		if method == "stop" {
 			var p struct{}

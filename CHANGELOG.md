@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Cache recently viewed Bridge conversations in SQLite with bounded visible-message previews, explicit stale/read-only state, and access-revocation purging.
+
+- Add an explicit SQLite storage adapter for session journals, paginated/searchable catalogs, global settings, credentials and trust; preserve existing file-backed defaults while native migration is implemented.
+
 - Treat composer image tags as one editable unit, including mouse placement and Backspace, and offer skill completion after `@` anywhere in a draft.
 
 - Attach pasted macOS clipboard images and dropped image files as resized model-readable image bytes, with numbered composer markers and bounded input size.

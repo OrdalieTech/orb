@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/storage"
 )
 
 type authDocument struct {
@@ -23,7 +24,8 @@ type authDocument struct {
 }
 
 type AuthStorage struct {
-	path string
+	document storage.Document
+	path     string
 
 	mu   sync.RWMutex
 	data authDocument
@@ -46,6 +48,18 @@ func NewAuthStorage(path string) (*AuthStorage, error) {
 	return storage, nil
 }
 
+// NewAuthStorageWithDocument uses a caller-owned transactional credential document.
+func NewAuthStorageWithDocument(document storage.Document) (*AuthStorage, error) {
+	if document == nil {
+		return nil, errors.New("credential document is required")
+	}
+	result := &AuthStorage{document: document}
+	if _, err := result.readLocked(context.Background()); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func NewDefaultAuthStorage() (*AuthStorage, error) {
 	agentDir, err := GetAgentDir()
 	if err != nil {
@@ -66,24 +80,44 @@ func (storage *AuthStorage) Reload() {
 	storage.mu.Unlock()
 }
 
-func (storage *AuthStorage) Read(_ context.Context, provider string) (*aiauth.Credential, error) {
+func (storage *AuthStorage) Read(ctx context.Context, provider string) (*aiauth.Credential, error) {
+	if storage.document != nil {
+		data, err := storage.readLocked(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return resolveStoredCredential(data.credentials[provider].Clone()), nil
+	}
+
 	storage.mu.RLock()
 	credential := storage.data.credentials[provider].Clone()
 	storage.mu.RUnlock()
 	return resolveStoredCredential(credential), nil
 }
 
-func (storage *AuthStorage) List(_ context.Context) ([]aiauth.CredentialInfo, error) {
+func (storage *AuthStorage) List(ctx context.Context) ([]aiauth.CredentialInfo, error) {
+	if storage.document != nil {
+		document, err := storage.readLocked(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return listCredentials(document), nil
+	}
+
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
-	result := make([]aiauth.CredentialInfo, 0, len(storage.data.order))
-	for _, provider := range storage.data.order {
-		credential := storage.data.credentials[provider]
+	return listCredentials(storage.data), nil
+}
+
+func listCredentials(document authDocument) []aiauth.CredentialInfo {
+	result := make([]aiauth.CredentialInfo, 0, len(document.order))
+	for _, provider := range document.order {
+		credential := document.credentials[provider]
 		if credential != nil {
 			result = append(result, aiauth.CredentialInfo{ProviderID: provider, Type: credential.Type})
 		}
 	}
-	return result, nil
+	return result
 }
 
 func (storage *AuthStorage) Modify(
@@ -193,6 +227,14 @@ func resolveStoredCredential(credential *aiauth.Credential) *aiauth.Credential {
 }
 
 func (storage *AuthStorage) readLocked(ctx context.Context) (authDocument, error) {
+	if storage.document != nil {
+		data, err := storage.document.Read(ctx)
+		if err != nil {
+			return authDocument{}, err
+		}
+		return parseAuthDocument(data)
+	}
+
 	var result authDocument
 	err := storage.withLock(ctx, func(current []byte) ([]byte, bool, error) {
 		document, err := parseAuthDocument(current)
@@ -209,6 +251,18 @@ func (storage *AuthStorage) withLock(
 	ctx context.Context,
 	operation func(current []byte) (next []byte, write bool, err error),
 ) error {
+	if storage.document != nil {
+		return storage.document.Update(ctx, func(current []byte) ([]byte, error) {
+			next, write, err := operation(current)
+			if err != nil {
+				return nil, err
+			}
+			if !write {
+				return current, nil
+			}
+			return next, nil
+		})
+	}
 	if err := storage.ensureFile(); err != nil {
 		return err
 	}
@@ -272,6 +326,9 @@ func (storage *AuthStorage) ensureFile() error {
 }
 
 func (storage *AuthStorage) setSnapshot(document authDocument) {
+	if storage.document != nil {
+		return
+	}
 	storage.mu.Lock()
 	storage.data = cloneAuthDocument(document)
 	storage.mu.Unlock()

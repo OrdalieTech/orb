@@ -337,6 +337,17 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 ## Standing assumptions (owner-confirmed)
 
+- **Native SQLite direction (owner, 2026-09-21; implementation pending).** The owner approved
+  SQLite as Orb's native storage with Pi JSONL import/export and existing SDK APIs retained,
+  accepting that Pi will no longer directly read a native live Orb session file. The planned
+  native CLI cutover replaces the live shared-file storage requirement above; explicit file-backed
+  SDK/compatibility entry points and JSON/wire conformance remain supported. The complete scope,
+  migration and packaging gates are in SPRINTS, "Unified conversations and native SQLite".
+  Existing native sessions remain file-backed until those gates pass. The owner separately
+  approved SQLite caching of foreign summaries and bounded visible message excerpts: separate
+  from owned sessions, read-only offline, no reasoning/tool payloads, remote authority on reopen.
+
+
 - **v0.86 transcript defaults (owner, 2026-09-20).** Adopt Pi's transcript-backed system messages
   and their normal agent events by default, rather than placing them behind a legacy headless
   opt-in. Preserve existing exported Go signatures and legacy session reading. This is an
