@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Preserve detected terminal colors across resource reloads, including toggling provider usage, so modal backgrounds and contrast do not reset.
+
 ## [0.7.1] - 2026-09-21
 
 - Make Ctrl+P the main command palette, with direct Ctrl+M model selection, Ctrl+N new session, and Ctrl+R rename shortcuts. Keep slash and skill suggestions above the composer while preserving extension and skill compatibility.

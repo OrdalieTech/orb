@@ -139,6 +139,8 @@ type InteractiveMode struct {
 	extensionEditor            extensions.EditorComponent
 	themeRegistry              *theme.Registry
 	themeController            *theme.Controller
+	terminalBackgroundMu       sync.Mutex
+	terminalBackground         *tui.RgbColor
 	themeSetting               string // --use-theme override; "" defers to settings
 	authContext                context.Context
 	authCancel                 context.CancelFunc
@@ -583,6 +585,13 @@ func (mode *InteractiveMode) initializeTheme() error {
 	mode.themeRegistry = theme.Load(options)
 	if _, err := mode.installResourceThemes(); err != nil {
 		return err
+	}
+	mode.terminalBackgroundMu.Lock()
+	defer mode.terminalBackgroundMu.Unlock()
+	if mode.terminalBackground != nil {
+		if native, ok := mode.themeRegistry.Get("terminal"); ok && native.SourcePath == "" {
+			native.SetTerminalBackground(*mode.terminalBackground)
+		}
 	}
 	mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
 		if mode.ui != nil {
