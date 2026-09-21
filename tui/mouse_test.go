@@ -218,7 +218,7 @@ func TestTUIScrollbarClickStillBeatsComponents(t *testing.T) {
 	}
 }
 
-func TestSelectListClickSelectsAndDoubleClickConfirms(t *testing.T) {
+func TestSelectListClickConfirmsOnce(t *testing.T) {
 	items := []SelectItem{{Value: "one"}, {Value: "two"}, {Value: "three"}, {Value: "four"}}
 	list := NewSelectList(items, 4, SelectListTheme{}, SelectListLayoutOptions{})
 	confirmed := ""
@@ -227,7 +227,7 @@ func TestSelectListClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 1}) {
 		t.Fatal("click was not consumed")
 	}
-	if item, _ := list.GetSelectedItem(); item.Value != "three" || confirmed != "" {
+	if item, _ := list.GetSelectedItem(); item.Value != "three" || confirmed != "three" {
 		t.Fatalf("single click = %q confirmed %q", item.Value, confirmed)
 	}
 	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 2}) {
@@ -409,7 +409,7 @@ func TestTUIFocusScopesMouseMotionTracking(t *testing.T) {
 	}
 }
 
-func TestSettingsListClickSelectsAndDoubleClickCycles(t *testing.T) {
+func TestSettingsListClickCyclesOnce(t *testing.T) {
 	changed := ""
 	list := NewSettingsList([]SettingItem{
 		{ID: "a", Label: "A", CurrentValue: "on", Values: []string{"on", "off"}},
