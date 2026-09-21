@@ -60,7 +60,8 @@ agent (Claude Code, Codex, or other).
   table. No speculative abstraction, no "for later" scaffolding.
 - **Never weaken a criterion or a golden to pass it.** No softened fixtures, no skipped checks, no
   lowered budgets, no hand-edited goldens. A failing fixture means the code is wrong. If a criterion
-  is genuinely impossible, stop and surface it.
+  is genuinely impossible — including when a required toolchain no longer supports it — stop and
+  surface it; retiring or replacing it is the owner's call.
 - **Scope.** Surprises the plan didn't anticipate: decide slim and boring — and, inside the
   kernel, faithful — note the decision and rationale in the commit body, keep moving. Only genuine
   DECISIONS.md contradictions warrant stopping.

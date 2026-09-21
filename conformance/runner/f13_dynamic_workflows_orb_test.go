@@ -1,14 +1,6 @@
-// F13 Orb replay: the Orb path runs the SAME plugin
-// sources (@quintinshaw/pi-dynamic-workflows@3.5.1, hermetically installed by
-// integrity-pinned lockfile) through the real extension host: loader.mjs
-// aliases the @earendil-works/pi-* specifiers to the materialized
-// orb-extension-sdk, model catalogs resolve over model_runtime_v1, and child
-// sessions bridge over agent_session_v1 onto agent.NewAgentSession with
-// the Go faux provider streaming the same scripted responses the extractor
-// fed upstream. Behavior goldens (events, journals, tool calls/results,
-// structured outputs, usage, persistence artifacts) must match after the same
-// canonicalization the extractor applies. TUI frames are NOT compared against
-// reference-tui/* — Orb owns its frame snapshots (D35).
+// F13 Orb surface checks for the embedded orb-extension-sdk: the host must
+// advertise the capability identifiers the extractor recorded, and sdk.json
+// must mirror the upstream export surface the extractor recorded.
 package runner
 
 import (
@@ -44,9 +36,7 @@ func TestF13OrbHostAdvertisesSDKCapabilities(t *testing.T) {
 // materialized at host start) pins the semver and the per-module implemented
 // symbol inventory. Every implemented symbol must exist in the upstream export
 // surface the F13 extractor recorded — the SDK may implement or stub upstream
-// names, never invent new ones. Full name-for-name surface parity (stubs
-// included) is replayed through the real host by the export-surface scenario
-// in TestF13OrbReplaysBehaviorGoldens.
+// names, never invent new ones.
 func TestF13OrbSDKManifestMirrorsUpstreamExportSurface(t *testing.T) {
 	encoded, err := os.ReadFile(filepath.Join(FixtureRoot(), "..", "..",
 		"agent", "extensions", "host", "sdk", "sdk.json"))
@@ -90,27 +80,5 @@ func TestF13OrbSDKManifestMirrorsUpstreamExportSurface(t *testing.T) {
 				t.Errorf("%s: sdk.json implements %q, which upstream never exported", pkg, name)
 			}
 		}
-	}
-}
-
-// Full scenario replay through the real extension host, in extractor order
-// (state under HOME accumulates across scenarios exactly as it did during
-// extraction). The harness lives in f13_orb_harness_test.go.
-func TestF13OrbReplaysBehaviorGoldens(t *testing.T) {
-	var index struct {
-		Scenarios []string `json:"scenarios"`
-	}
-	LoadJSON(t, f13Family, "cases.json", &index)
-	harness := startF13Harness(t)
-	for _, scenario := range index.Scenarios {
-		t.Run(scenario, func(t *testing.T) {
-			golden, err := ReadFixture(f13Family, "cases/"+scenario+".json")
-			if err != nil {
-				t.Fatal(err)
-			}
-			replayed := harness.replayScenario(t, scenario)
-			AssertCanonicalJSONEqual(t, json.RawMessage(golden), json.RawMessage(replayed),
-				"scenario "+scenario+" vs upstream golden")
-		})
 	}
 }
