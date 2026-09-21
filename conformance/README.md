@@ -111,15 +111,4 @@ regenerate-and-diff holds byte-for-byte. Files under `reference-tui/` are
 reference-only upstream TUI observations (D35): Orb frame goldens are Orb-owned
 snapshots, and the Go consumer enforces the reference-only marking. The
 network-dependent step is the integrity-checked npm install of the plugin
-tarball itself (served from the npm cache when offline). The Orb replay
-(`conformance/runner/f13_dynamic_workflows_orb_test.go` +
-`f13_orb_harness_test.go`) runs in the default test suite: it boots the real
-extension host with the materialized orb-extension-sdk (`sdk_v1`,
-`agent_session_v1`, `model_runtime_v1`), installs the same integrity-pinned
-plugin, replays every scenario through a driver extension
-(`conformance/runner/testdata/f13-driver.mjs`) against the Go faux provider
-with pinned clocks, and diffs the canonicalized observations against these
-goldens. Orb's D30 identity substitutions are mapped back to the upstream
-bytes before faux token accounting (the inverse of the F9 replacer), and it
-skips — like the host e2e tests — when Node, npm, git, or the pinned
-`.upstream` tree are unavailable.
+tarball itself (served from the npm cache when offline).

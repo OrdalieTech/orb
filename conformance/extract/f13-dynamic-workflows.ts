@@ -23,8 +23,7 @@
  *    machine-specific path root is rewritten to the same canonical
  *    placeholders BEFORE the provider estimates usage
  *    (canonicalizeTokenContext). Token counts in goldens therefore never
- *    encode where the extraction ran; the Orb replay harness mirrors the same
- *    rewrite over its own roots (f13_orb_harness_test.go).
+ *    encode where the extraction ran.
  *
  * Scenario coverage (behavior goldens; cases/<name>.json):
  *  - foreground-basic ........ foreground run: phases, logs, journal, usage +

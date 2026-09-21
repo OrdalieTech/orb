@@ -9,10 +9,7 @@ import (
 // F13-dynamic-workflows: hermetic reference behavior of
 // @quintinshaw/pi-dynamic-workflows@3.5.1 on the pinned upstream pi. This test
 // validates the committed golden surface itself (shape, pins, and the D35
-// reference-only marking). Driving the same scenarios through Orb's
-// orb-extension-sdk + agent_session_v1/model_runtime_v1 bridges lives in
-// f13_dynamic_workflows_orb_test.go, which skips when Node, npm, or the
-// pinned .upstream tree are unavailable (the host e2e availability pattern).
+// reference-only marking).
 
 const f13Family = "F13-dynamic-workflows"
 
@@ -175,8 +172,7 @@ func TestF13ExportSurfaceCoversSupportedSymbols(t *testing.T) {
 }
 
 // Golden self-consistency checks on load-bearing behavior contracts, so a
-// regenerated fixture that silently lost a scenario leg fails here rather than
-// in the (later) Orb replay.
+// regenerated fixture that silently lost a scenario leg fails here.
 func TestF13BehaviorGoldensCarryLoadBearingContracts(t *testing.T) {
 	var structured struct {
 		Result struct {
