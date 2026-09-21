@@ -1020,8 +1020,10 @@ func TestF12ApplicationStatusFramesMatchUpstream(t *testing.T) {
 			ui := tui.NewTUI(terminal)
 			chat := &tui.Container{}
 			mode := &InteractiveMode{ui: ui, chat: chat}
+			t.Cleanup(func() { mode.showStatusMessage("") })
+			status := compactStatus{Component: &IdleStatus{}, Notice: mode.statusNoticeText}
 			capture := func(id string) f12ApplicationFrame {
-				return f12ApplicationFrame{ID: id, Width: width, Lines: chat.Render(width)}
+				return f12ApplicationFrame{ID: id, Width: width, Lines: append(chat.Render(width), status.Render(width)...)}
 			}
 
 			got := make([]f12ApplicationFrame, 0, 4)
@@ -1500,9 +1502,11 @@ func TestF12ApplicationNotificationsMatchUpstream(t *testing.T) {
 				footerStatuses: make(map[string]string),
 			}
 			interactiveUI := NewInteractiveUI(mode)
+			t.Cleanup(func() { mode.showStatusMessage("") })
+			status := compactStatus{Component: &IdleStatus{}, Notice: mode.statusNoticeText}
 			got := make([]f12ApplicationFrame, 0, 3)
 			capture := func(id string) {
-				got = append(got, f12ApplicationFrame{ID: id, Width: width, Lines: mode.chat.Render(width)})
+				got = append(got, f12ApplicationFrame{ID: id, Width: width, Lines: append(mode.chat.Render(width), status.Render(width)...)})
 			}
 			interactiveUI.Notify("NOTICE", extensions.NotifyInfo)
 			capture("notify-info")

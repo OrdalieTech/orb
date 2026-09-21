@@ -563,13 +563,13 @@ func TestLOGm2LogoutMessagesMatchUpstream(t *testing.T) {
 	mode := newAuthFlowTestMode(host)
 
 	mode.runLogout(InteractiveAuthProvider{ID: "anthropic", Name: "Anthropic", AuthType: aiauth.AuthTypeOAuth})
-	rendered := selectorANSI.ReplaceAllString(strings.Join(mode.chat.Render(120), "\n"), "")
+	rendered := mode.statusNoticeText()
 	if !strings.Contains(rendered, "Logged out of Anthropic") {
 		t.Fatalf("oauth logout message missing:\n%s", rendered)
 	}
 
 	mode.runLogout(InteractiveAuthProvider{ID: "groq", Name: "Groq", AuthType: aiauth.AuthTypeAPIKey})
-	rendered = selectorANSI.ReplaceAllString(strings.Join(mode.chat.Render(120), "\n"), "")
+	rendered = mode.statusNoticeText()
 	if !strings.Contains(rendered, "Removed stored API key for Groq. Environment variables and models.json config are unchanged.") {
 		t.Fatalf("api-key logout message missing:\n%s", rendered)
 	}
@@ -661,7 +661,7 @@ func TestLOGM4CompletionMessagesAndWarningText(t *testing.T) {
 	mode := newAuthFlowTestMode(&authFlowHost{})
 	mode.completeProviderAuthentication(context.Background(),
 		InteractiveAuthProvider{ID: "groq", Name: "Groq", AuthType: aiauth.AuthTypeAPIKey}, nil)
-	rendered := selectorANSI.ReplaceAllString(strings.Join(mode.chat.Render(160), "\n"), "")
+	rendered := mode.statusNoticeText()
 	if !strings.Contains(rendered, "Saved API key for Groq. Credentials saved to ") {
 		t.Fatalf("api-key completion message missing:\n%s", rendered)
 	}
@@ -669,7 +669,7 @@ func TestLOGM4CompletionMessagesAndWarningText(t *testing.T) {
 	mode = newAuthFlowTestMode(&authFlowHost{})
 	mode.completeProviderAuthentication(context.Background(),
 		InteractiveAuthProvider{ID: "anthropic", Name: "Anthropic", AuthType: aiauth.AuthTypeOAuth}, nil)
-	rendered = selectorANSI.ReplaceAllString(strings.Join(mode.chat.Render(160), "\n"), "")
+	rendered = mode.statusNoticeText()
 	if !strings.Contains(rendered, "Logged in to Anthropic. Credentials saved to ") {
 		t.Fatalf("oauth completion message missing:\n%s", rendered)
 	}

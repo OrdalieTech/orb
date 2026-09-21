@@ -6,8 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Show copy, model, and other action confirmations briefly beside the composer instead of adding transcript entries, preserving the active loading indicator.
+- Find individual settings directly in the command palette; keep skills in composer completion instead of the command list.
+- Fix crashes and stale modal backdrops when switching between terminal, light, dark, and custom themes.
 - Refresh Go dependencies and GoReleaser while retaining the latest stable Go 1.27.1 baseline. Keep go-udiff pinned to preserve compatibility-sensitive edit output.
-
 - Preserve detected terminal colors across resource reloads, including toggling provider usage, so modal backgrounds and contrast do not reset.
 - Copy wrapped selections as logical lines, retain paragraph breaks, and highlight only text with an adaptive background. Keep wide-character selection within the original line width.
 

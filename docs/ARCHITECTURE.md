@@ -271,7 +271,7 @@ rpc (bidirectional JSONL stdin/stdout per `docs/rpc.md`: prompt/steer/follow-up/
 mgmt, get_commands, extension-UI bridging; strict LF framing). RPC is a conformance surface —
 upstream's RPC tests run against our binary (F7).
 
-**Interactive discovery:** Ctrl+P opens a searchable palette of actions, skills, templates, and
+**Interactive discovery:** Ctrl+P opens a searchable palette of actions, individual settings, templates, and
 extension commands. Ctrl+M selects models when the terminal disambiguates it from Enter; the
 palette also exposes model selection on legacy terminals. Ctrl+N starts a session and Ctrl+R renames it. Existing explicit
 keybindings win over these new defaults. Native composer slash suggestions appear above the input with commands, skills, and templates;

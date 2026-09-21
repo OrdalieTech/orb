@@ -5,76 +5,60 @@
       "id": "status-first",
       "width": 48,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_ONE\u001b[39m                                    "
+        "\u001b[38;5;241mSTATUS_ONE\u001b[39m"
       ]
     },
     {
       "id": "status-replaced",
       "width": 48,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_TWO\u001b[39m                                    "
+        "\u001b[38;5;241mSTATUS_TWO\u001b[39m"
       ]
     },
     {
       "id": "status-after-content",
       "width": 48,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_TWO\u001b[39m                                    ",
         " \u001b[38;5;109mOTHER\u001b[39m                                          ",
-        "",
-        "  \u001b[38;5;241mSTATUS_THREE\u001b[39m                                  "
+        "\u001b[38;5;241mSTATUS_THREE\u001b[39m"
       ]
     },
     {
       "id": "status-after-content-replaced",
       "width": 48,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_TWO\u001b[39m                                    ",
         " \u001b[38;5;109mOTHER\u001b[39m                                          ",
-        "",
-        "  \u001b[38;5;241mSTATUS_FOUR\u001b[39m                                   "
+        "\u001b[38;5;241mSTATUS_FOUR\u001b[39m"
       ]
     },
     {
       "id": "status-first",
       "width": 88,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_ONE\u001b[39m                                                                            "
+        "\u001b[38;5;241mSTATUS_ONE\u001b[39m"
       ]
     },
     {
       "id": "status-replaced",
       "width": 88,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_TWO\u001b[39m                                                                            "
+        "\u001b[38;5;241mSTATUS_TWO\u001b[39m"
       ]
     },
     {
       "id": "status-after-content",
       "width": 88,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_TWO\u001b[39m                                                                            ",
         " \u001b[38;5;109mOTHER\u001b[39m                                                                                  ",
-        "",
-        "  \u001b[38;5;241mSTATUS_THREE\u001b[39m                                                                          "
+        "\u001b[38;5;241mSTATUS_THREE\u001b[39m"
       ]
     },
     {
       "id": "status-after-content-replaced",
       "width": 88,
       "lines": [
-        "",
-        "  \u001b[38;5;241mSTATUS_TWO\u001b[39m                                                                            ",
         " \u001b[38;5;109mOTHER\u001b[39m                                                                                  ",
-        "",
-        "  \u001b[38;5;241mSTATUS_FOUR\u001b[39m                                                                           "
+        "\u001b[38;5;241mSTATUS_FOUR\u001b[39m"
       ]
     }
   ],
@@ -83,8 +67,7 @@
       "id": "notify-info",
       "width": 48,
       "lines": [
-        "",
-        "  \u001b[38;5;241mNOTICE\u001b[39m                                        "
+        "\u001b[38;5;241mNOTICE\u001b[39m"
       ]
     },
     {
@@ -92,9 +75,8 @@
       "width": 48,
       "lines": [
         "",
-        "  \u001b[38;5;241mNOTICE\u001b[39m                                        ",
-        "",
-        "  \u001b[38;5;180mWarning: CAUTION\u001b[39m                              "
+        "  \u001b[38;5;180mWarning: CAUTION\u001b[39m                              ",
+        "\u001b[38;5;241mNOTICE\u001b[39m"
       ]
     },
     {
@@ -102,19 +84,17 @@
       "width": 48,
       "lines": [
         "",
-        "  \u001b[38;5;241mNOTICE\u001b[39m                                        ",
-        "",
         "  \u001b[38;5;180mWarning: CAUTION\u001b[39m                              ",
         "",
-        "  \u001b[38;5;167mError: BROKEN\u001b[39m                                 "
+        "  \u001b[38;5;167mError: BROKEN\u001b[39m                                 ",
+        "\u001b[38;5;241mNOTICE\u001b[39m"
       ]
     },
     {
       "id": "notify-info",
       "width": 88,
       "lines": [
-        "",
-        "  \u001b[38;5;241mNOTICE\u001b[39m                                                                                "
+        "\u001b[38;5;241mNOTICE\u001b[39m"
       ]
     },
     {
@@ -122,9 +102,8 @@
       "width": 88,
       "lines": [
         "",
-        "  \u001b[38;5;241mNOTICE\u001b[39m                                                                                ",
-        "",
-        "  \u001b[38;5;180mWarning: CAUTION\u001b[39m                                                                      "
+        "  \u001b[38;5;180mWarning: CAUTION\u001b[39m                                                                      ",
+        "\u001b[38;5;241mNOTICE\u001b[39m"
       ]
     },
     {
@@ -132,11 +111,10 @@
       "width": 88,
       "lines": [
         "",
-        "  \u001b[38;5;241mNOTICE\u001b[39m                                                                                ",
-        "",
         "  \u001b[38;5;180mWarning: CAUTION\u001b[39m                                                                      ",
         "",
-        "  \u001b[38;5;167mError: BROKEN\u001b[39m                                                                         "
+        "  \u001b[38;5;167mError: BROKEN\u001b[39m                                                                         ",
+        "\u001b[38;5;241mNOTICE\u001b[39m"
       ]
     }
   ],

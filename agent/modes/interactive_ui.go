@@ -1001,18 +1001,24 @@ func (ui *InteractiveUI) untrackCustomOverlay(handle tui.OverlayHandle) {
 }
 
 func backdropStyle() tui.StyleFunc {
-	if current := theme.Current(); current != nil && current.Name == "terminal" {
-		return func(text string) string { return theme.BG("modalBackdropBg", theme.FG("modalBackdropText", text)) }
-	}
-	background, foreground := 234, 244
-	if current := theme.Current(); current != nil {
-		var red, green, blue int
-		if _, err := fmt.Sscanf(current.ExportColors()["pageBg"], "#%02x%02x%02x", &red, &green, &blue); err == nil && red+green+blue > 384 {
-			background, foreground = 252, 243
+	return func(text string) string {
+		current := theme.Current()
+		if current != nil {
+			background, bgErr := current.BackgroundANSI("modalBackdropBg")
+			foreground, fgErr := current.ForegroundANSI("modalBackdropText")
+			if bgErr == nil && fgErr == nil {
+				return background + foreground + text + "\x1b[39m\x1b[49m"
+			}
 		}
+		style := "\x1b[48;5;234m\x1b[38;5;244m"
+		if current != nil {
+			var red, green, blue int
+			if _, err := fmt.Sscanf(current.ExportColors()["pageBg"], "#%02x%02x%02x", &red, &green, &blue); err == nil && red+green+blue > 384 {
+				style = "\x1b[48;5;252m\x1b[38;5;243m"
+			}
+		}
+		return style + text + "\x1b[0m"
 	}
-	style := fmt.Sprintf("\x1b[48;5;%dm\x1b[38;5;%dm", background, foreground)
-	return func(text string) string { return style + text + "\x1b[0m" }
 }
 
 // dialogOverlayOptions is the shared geometry of floating dialog windows:
