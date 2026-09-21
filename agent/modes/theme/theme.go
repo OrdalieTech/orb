@@ -215,6 +215,7 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	set("error toolDiffRemoved", readable(red))
 	set("warning syntaxNumber bashMode", readable(amber))
 	set("muted dim border borderMuted thinkingText syntaxComment mdLinkUrl mdCodeBlockBorder mdQuote mdQuoteBorder mdHr toolDiffContext thinkingOff thinkingMinimal thinkingHigh thinkingXhigh thinkingMax", readable(blend(bg, ink, .65)))
+	set("toolTitle toolOutput userMessageText customMessageText", ink)
 	set("toolPendingBg userMessageBg customMessageBg", panel)
 	set("selectedBg searchMatchBg scrollbarThumb", selected)
 	set("toolSuccessBg diffAddedBg", blend(bg, green, .09))
@@ -228,12 +229,25 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 
 func (theme *Theme) ColorMode() ColorMode { return theme.mode }
 
-func (theme *Theme) ForegroundANSI(name string) (string, error) {
-	if theme.terminalPalette != nil {
+// Palette identifies the immutable colors used by cached renderers.
+func (theme *Theme) Palette() *Theme {
+	if theme != nil && theme.terminalPalette != nil {
 		if palette := theme.terminalPalette.Load(); palette != nil {
-			theme = palette
+			return palette
 		}
 	}
+	return theme
+}
+
+// ClearTerminalBackground restores terminal-native colors after a failed query.
+func (theme *Theme) ClearTerminalBackground() {
+	if theme.terminalPalette != nil {
+		theme.terminalPalette.Store(nil)
+	}
+}
+
+func (theme *Theme) ForegroundANSI(name string) (string, error) {
+	theme = theme.Palette()
 	value, ok := theme.foreground[name]
 	if !ok {
 		return "", fmt.Errorf("unknown theme color: %s", name)
@@ -242,11 +256,7 @@ func (theme *Theme) ForegroundANSI(name string) (string, error) {
 }
 
 func (theme *Theme) BackgroundANSI(name string) (string, error) {
-	if theme.terminalPalette != nil {
-		if palette := theme.terminalPalette.Load(); palette != nil {
-			theme = palette
-		}
-	}
+	theme = theme.Palette()
 	value, ok := theme.background[name]
 	if !ok {
 		return "", fmt.Errorf("unknown theme background color: %s", name)
@@ -298,11 +308,7 @@ func (theme *Theme) Markdown(codeBlockIndent string) tui.MarkdownTheme {
 }
 
 func (theme *Theme) ResolvedColors(light bool) map[string]string {
-	if theme.terminalPalette != nil {
-		if palette := theme.terminalPalette.Load(); palette != nil {
-			theme = palette
-		}
-	}
+	theme = theme.Palette()
 	defaultText := "#e5e5e7"
 	if light {
 		defaultText = "#000000"
@@ -473,11 +479,7 @@ func GetTheme(name string) *Theme {
 }
 
 func (theme *Theme) ExportColors() map[string]string {
-	if theme.terminalPalette != nil {
-		if palette := theme.terminalPalette.Load(); palette != nil {
-			theme = palette
-		}
-	}
+	theme = theme.Palette()
 	result := map[string]string{}
 	for name, color := range theme.export {
 		value, err := color.hex("")

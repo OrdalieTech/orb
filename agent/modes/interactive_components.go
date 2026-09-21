@@ -196,6 +196,7 @@ func (c *UserMessageComponent) Render(width int) []string {
 // ─────────────────────────────────────────────────────────────
 
 type AssistantMessageComponent struct {
+	renderTheme       *theme.Theme
 	mu                sync.Mutex
 	contentContainer  *tui.Container
 	hideThinking      bool
@@ -274,6 +275,7 @@ func (c *AssistantMessageComponent) SetHiddenThinkingLabel(label string) {
 }
 
 func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMessage) {
+	c.renderTheme = theme.Current().Palette()
 	c.contentContainer.Clear()
 	c.hasLongReasoning = false
 	c.toggleHint = nil
@@ -415,6 +417,12 @@ func (c *AssistantMessageComponent) HandleMouse(event tui.MouseEvent) bool {
 func (c *AssistantMessageComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.renderTheme != theme.Current().Palette() {
+		c.mdTheme = theme.MarkdownTheme()
+		if c.message != nil {
+			c.updateContentLocked(c.message)
+		}
+	}
 	hasToolCalls := c.hasToolCalls
 	lines := make([]string, 0)
 	c.toggleStart, c.toggleEnd = -1, -1
@@ -437,6 +445,7 @@ func (c *AssistantMessageComponent) Render(width int) []string {
 // ─────────────────────────────────────────────────────────────
 
 type ToolExecutionComponent struct {
+	renderTheme     *theme.Theme
 	mu              sync.Mutex
 	container       *tui.Container
 	contentBox      *tui.Box
@@ -569,6 +578,7 @@ func (c *ToolExecutionComponent) background() tui.StyleFunc {
 }
 
 func (c *ToolExecutionComponent) updateDisplay() {
+	c.renderTheme = theme.Current().Palette()
 	c.contentBox.SetBackground(c.background())
 	c.contentBox.Clear()
 
@@ -721,6 +731,10 @@ func (c *ToolExecutionComponent) Invalidate() { c.container.Invalidate() }
 func (c *ToolExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.renderTheme != theme.Current().Palette() {
+		c.callComponent, c.resultComponent = nil, nil
+		c.updateDisplay()
+	}
 	return c.container.Render(width)
 }
 
@@ -816,18 +830,19 @@ func (preview visualLineTail) Render(width int) []string {
 }
 
 type BashExecutionComponent struct {
-	mu         sync.Mutex
-	container  *tui.Container
-	command    string
-	output     strings.Builder
-	exitCode   *int
-	cancelled  bool
-	complete   bool
-	expanded   bool
-	hovered    bool
-	excludeCtx bool
-	loader     *tui.Loader
-	ui         tui.RenderRequester
+	renderTheme *theme.Theme
+	mu          sync.Mutex
+	container   *tui.Container
+	command     string
+	output      strings.Builder
+	exitCode    *int
+	cancelled   bool
+	complete    bool
+	expanded    bool
+	hovered     bool
+	excludeCtx  bool
+	loader      *tui.Loader
+	ui          tui.RenderRequester
 }
 
 func NewBashExecutionComponent(command string, ui tui.RenderRequester, excludeFromContext bool) *BashExecutionComponent {
@@ -898,6 +913,7 @@ func (c *BashExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
 }
 
 func (c *BashExecutionComponent) rebuild() {
+	c.renderTheme = theme.Current().Palette()
 	c.container.Clear()
 	colorKey := "bashMode"
 	if c.excludeCtx {
@@ -950,6 +966,9 @@ func (c *BashExecutionComponent) Invalidate() { c.container.Invalidate() }
 func (c *BashExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.renderTheme != theme.Current().Palette() {
+		c.rebuild()
+	}
 	lines := c.container.Render(width)
 	if c.hovered {
 		lines = append([]string(nil), lines...)
