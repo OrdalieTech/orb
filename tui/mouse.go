@@ -43,8 +43,7 @@ type MouseHandler interface {
 
 // MouseMotionHandler additionally receives hover (MouseMove) reports.
 // Any-motion tracking floods the input stream, so the TUI enables it only
-// while a component advertising this holds focus and reverts to button-event
-// tracking when focus moves on.
+// while a component advertising this holds focus or the viewport opts in.
 type MouseMotionHandler interface {
 	MouseHandler
 	WantsMouseMotion() bool
@@ -127,6 +126,18 @@ func (container *Container) childAt(index int) Component {
 // component's own render.
 func mouseTargetAt(component Component, width, row int) (MouseHandler, int, bool) {
 	if container, ok := component.(*Container); ok {
+		if container.windowed {
+			container.refreshWindow(width, -1, -1, false)
+			container.mu.RLock()
+			index := fenwickFind(container.windowTree, row)
+			if row < 0 || index >= len(container.children) {
+				container.mu.RUnlock()
+				return nil, 0, false
+			}
+			child, offset := container.children[index], fenwickSum(container.windowTree, index)
+			container.mu.RUnlock()
+			return mouseTargetAt(child, width, row-offset)
+		}
 		offset := 0
 		for index, count := 0, container.childCount(); index < count; index++ {
 			child := container.childAt(index)

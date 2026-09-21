@@ -7,13 +7,10 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
-        "   ... (43 earlier lines, ctrl+o to expand)",
-        "   0123456789",
-        "   stream line 23: abcdefghijklmnopqrstuvwxyz",
         "   0123456789",
         "   stream line 24: abcdefghijklmnopqrstuvwxyz",
-        "   0123456789"
+        "   0123456789",
+        "   … earlier output · click to expand"
       ]
     },
     {
@@ -22,7 +19,6 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
         "   stream line 01: abcdefghijklmnopqrstuvwxyz",
         "   0123456789",
         "   stream line 02: abcdefghijklmnopqrstuvwxyz",
@@ -79,7 +75,6 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
         "   stream line 01: abcdefghijklmnopqrstuvwxyz",
         "   0123456789",
         "   stream line 02: abcdefghijklmnopqrstuvwxyz",
@@ -136,13 +131,10 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
-        "   ... (43 earlier lines, ctrl+o to expand)",
-        "   0123456789",
-        "   stream line 23: abcdefghijklmnopqrstuvwxyz",
         "   0123456789",
         "   stream line 24: abcdefghijklmnopqrstuvwxyz",
-        "   0123456789"
+        "   0123456789",
+        "   … earlier output · click to expand"
       ]
     },
     {
@@ -151,26 +143,10 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        " stream line 15: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 16: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 17: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 18: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 19: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 20: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 21: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 22: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 23: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
+        "… earlier output · click to expand",
         ""
       ]
     },
@@ -180,7 +156,6 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         " stream line 02: abcdefghijklmnopqrstuvwxyz",
@@ -238,7 +213,6 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         " stream line 02: abcdefghijklmnopqrstuvwxyz",
@@ -286,9 +260,7 @@
         " stream line 23: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        "",
-        " (ctrl+o to collapse)"
+        " 0123456789"
       ]
     },
     {
@@ -297,28 +269,10 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        " stream line 15: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 16: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 17: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 18: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 19: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 20: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 21: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 22: abcdefghijklmnopqrstuvwxyz",
-        " 0123456789",
-        " stream line 23: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz",
         " 0123456789",
-        "",
-        " ... 4 more lines (ctrl+o to expand)"
+        "… earlier output · click to expand"
       ]
     },
     {
@@ -327,13 +281,10 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
-        "   ... (19 earlier lines, ctrl+o to expand)",
-        "   stream line 20: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "   stream line 21: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "   stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789"
+        "   stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
+        "   … earlier output · click to expand"
       ]
     },
     {
@@ -342,7 +293,6 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
         "   stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 02: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 03: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -375,7 +325,6 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
         "   stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 02: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 03: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -408,13 +357,10 @@
       "lines": [
         "",
         "   $ printf streaming-output",
-        "",
-        "   ... (19 earlier lines, ctrl+o to expand)",
-        "   stream line 20: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "   stream line 21: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         "   stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "   stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789"
+        "   stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
+        "   … earlier output · click to expand"
       ]
     },
     {
@@ -423,26 +369,10 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        " stream line 05: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 06: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 07: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 08: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 09: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 10: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 11: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 12: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 13: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 14: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 15: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 16: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 17: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 18: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 19: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 20: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 21: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
+        "… earlier output · click to expand",
         ""
       ]
     },
@@ -452,7 +382,6 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 02: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 03: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -486,7 +415,6 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        "",
         " stream line 01: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 02: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 03: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -510,9 +438,7 @@
         " stream line 21: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "",
-        " (ctrl+o to collapse)"
+        " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789"
       ]
     },
     {
@@ -521,28 +447,10 @@
       "lines": [
         "",
         " $ printf streaming-output",
-        " stream line 05: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 06: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 07: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 08: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 09: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 10: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 11: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 12: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 13: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 14: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 15: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 16: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 17: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 18: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 19: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 20: abcdefghijklmnopqrstuvwxyz 0123456789",
-        " stream line 21: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
         " stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "",
-        " ... 4 more lines (ctrl+o to expand)"
+        "… earlier output · click to expand"
       ]
     }
   ]

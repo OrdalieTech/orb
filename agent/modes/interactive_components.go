@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -23,7 +24,9 @@ const (
 	osc133ZoneStart  = "\x1b]133;A\x07"
 	osc133ZoneEnd    = "\x1b]133;B\x07"
 	osc133ZoneFinal  = "\x1b]133;C\x07"
-	toolPreviewLines = 5
+	toolPreviewLines = 3
+	reasoningLimit   = 4096
+	reasoningTail    = 512
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -193,17 +196,22 @@ func (c *UserMessageComponent) Render(width int) []string {
 // ─────────────────────────────────────────────────────────────
 
 type AssistantMessageComponent struct {
-	mu               sync.Mutex
-	container        *tui.Container
-	contentContainer *tui.Container
-	hideThinking     bool
-	mdTheme          tui.MarkdownTheme
-	thinkingLabel    string
-	outputPad        int
-	transformers     []extensions.MarkdownTransformer
-	isStreaming      bool
-	message          *ai.AssistantMessage
-	hasToolCalls     bool
+	mu                sync.Mutex
+	contentContainer  *tui.Container
+	hideThinking      bool
+	mdTheme           tui.MarkdownTheme
+	thinkingLabel     string
+	outputPad         int
+	transformers      []extensions.MarkdownTransformer
+	isStreaming       bool
+	message           *ai.AssistantMessage
+	hasToolCalls      bool
+	hasLongReasoning  bool
+	expandedReasoning bool
+	toggleHint        *tui.Text
+	toggleStart       int
+	toggleEnd         int
+	onChange          func()
 }
 
 func NewAssistantMessageComponent(
@@ -215,7 +223,6 @@ func NewAssistantMessageComponent(
 	transformers []extensions.MarkdownTransformer,
 ) *AssistantMessageComponent {
 	c := &AssistantMessageComponent{
-		container:        &tui.Container{},
 		contentContainer: &tui.Container{},
 		hideThinking:     hideThinking,
 		mdTheme:          mdTheme,
@@ -223,7 +230,6 @@ func NewAssistantMessageComponent(
 		outputPad:        outputPad,
 		transformers:     transformers,
 	}
-	c.container.AddChild(c.contentContainer)
 	if message != nil {
 		c.UpdateContent(message)
 	}
@@ -269,6 +275,8 @@ func (c *AssistantMessageComponent) SetHiddenThinkingLabel(label string) {
 
 func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMessage) {
 	c.contentContainer.Clear()
+	c.hasLongReasoning = false
+	c.toggleHint = nil
 
 	hasVisible := false
 	hasToolCalls := false
@@ -297,6 +305,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 			}
 		case *ai.ThinkingContent:
 			thinkingBlocks := make([]string, 0, 1)
+			thinkingBytes := 0
 			for ; index < len(message.Content); index++ {
 				thinking, ok := message.Content[index].(*ai.ThinkingContent)
 				if !ok {
@@ -304,19 +313,42 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 				}
 				if text := strings.TrimSpace(thinking.Thinking); text != "" {
 					thinkingBlocks = append(thinkingBlocks, text)
+					thinkingBytes += len(text) + 2
 				}
 			}
 			index--
 			if len(thinkingBlocks) == 0 {
 				continue
 			}
+			long := thinkingBytes > reasoningLimit
+			c.hasLongReasoning = c.hasLongReasoning || long
 			if c.hideThinking {
 				label := c.thinkingLabel
 				if label == "" {
 					label = "Thinking..."
 				}
 				c.contentContainer.AddChild(tui.NewText(theme.Italic(theme.FG("thinkingText", label)), c.outputPad+2, 0, nil))
+			} else if long && (c.isStreaming || !c.expandedReasoning) {
+				tail := thinkingBlocks[len(thinkingBlocks)-1]
+				if len(tail) > reasoningTail {
+					start := len(tail) - reasoningTail
+					for start < len(tail) && !utf8.RuneStart(tail[start]) {
+						start++
+					}
+					tail = tail[start:]
+				}
+				c.contentContainer.AddChild(visualLineTail{text: theme.Italic(theme.FG("thinkingText", tail)), maxLines: 3, paddingX: c.outputPad + 2})
+				label := "… earlier reasoning · click to expand"
+				if c.isStreaming {
+					label = "… earlier reasoning · available when done"
+				}
+				c.toggleHint = tui.NewText(theme.FG("muted", label), c.outputPad+2, 0, nil)
+				c.contentContainer.AddChild(c.toggleHint)
 			} else {
+				if long {
+					c.toggleHint = tui.NewText(theme.FG("muted", "… reasoning · click to collapse"), c.outputPad+2, 0, nil)
+					c.contentContainer.AddChild(c.toggleHint)
+				}
 				c.contentContainer.AddChild(tui.NewMarkdown(strings.Join(thinkingBlocks, "\n\n"), c.outputPad+2, 0, c.mdTheme, &tui.DefaultTextStyle{
 					Color:  func(text string) string { return theme.FG("thinkingText", text) },
 					Italic: true,
@@ -361,12 +393,38 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 	}
 }
 
-func (c *AssistantMessageComponent) Invalidate() { c.container.Invalidate() }
+func (c *AssistantMessageComponent) Invalidate() { c.contentContainer.Invalidate() }
+func (c *AssistantMessageComponent) HandleMouse(event tui.MouseEvent) bool {
+	if event.Type != tui.MouseRelease || event.Button != 0 && event.Button != 3 {
+		return false
+	}
+	c.mu.Lock()
+	if c.hideThinking || c.isStreaming || !c.hasLongReasoning || event.Row < c.toggleStart || event.Row >= c.toggleEnd {
+		c.mu.Unlock()
+		return false
+	}
+	c.expandedReasoning = !c.expandedReasoning
+	c.updateContentLocked(c.message)
+	onChange := c.onChange
+	c.mu.Unlock()
+	if onChange != nil {
+		onChange()
+	}
+	return true
+}
 func (c *AssistantMessageComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	hasToolCalls := c.hasToolCalls
-	lines := c.container.Render(width)
+	lines := make([]string, 0)
+	c.toggleStart, c.toggleEnd = -1, -1
+	for _, child := range c.contentContainer.Children() {
+		rendered := child.Render(width)
+		if child == c.toggleHint && c.toggleHint != nil {
+			c.toggleStart, c.toggleEnd = len(lines), len(lines)+len(rendered)
+		}
+		lines = append(lines, rendered...)
+	}
 	if !hasToolCalls && len(lines) > 0 {
 		lines[0] = osc133ZoneStart + lines[0]
 		lines[len(lines)-1] = osc133ZoneEnd + osc133ZoneFinal + lines[len(lines)-1]
@@ -386,6 +444,7 @@ type ToolExecutionComponent struct {
 	toolCallID      string
 	args            any
 	expanded        bool
+	hovered         bool
 	showImages      bool
 	isPartial       bool
 	result          *toolResult
@@ -472,17 +531,45 @@ func (c *ToolExecutionComponent) SetExpanded(expanded bool) {
 	c.updateDisplay()
 }
 
-func (c *ToolExecutionComponent) updateDisplay() {
-	var bgFn func(string) string
-	if c.isPartial {
-		bgFn = func(t string) string { return theme.BG("toolPendingBg", t) }
-	} else if c.result != nil && c.result.IsError {
-		bgFn = func(t string) string { return theme.BG("toolErrorBg", t) }
-	} else {
-		bgFn = func(t string) string { return theme.BG("toolSuccessBg", t) }
+func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
+	c.mu.Lock()
+	changed := false
+	switch event.Type {
+	case tui.MouseMove:
+		hovered := event.Row >= 0 && c.result != nil
+		if hovered != c.hovered {
+			c.hovered = hovered
+			c.contentBox.SetBackground(c.background())
+			changed = true
+		}
+	case tui.MouseRelease:
+		if (event.Button == 0 || event.Button == 3) && c.result != nil {
+			c.expanded = !c.expanded
+			c.updateDisplay()
+			changed = true
+		}
 	}
+	c.mu.Unlock()
+	if changed && c.ui != nil {
+		c.ui.RequestRender()
+	}
+	return changed
+}
 
-	c.contentBox.SetBackground(bgFn)
+func (c *ToolExecutionComponent) background() tui.StyleFunc {
+	key := "toolSuccessBg"
+	if c.hovered {
+		key = "selectedBg"
+	} else if c.isPartial {
+		key = "toolPendingBg"
+	} else if c.result != nil && c.result.IsError {
+		key = "toolErrorBg"
+	}
+	return func(text string) string { return theme.BG(key, text) }
+}
+
+func (c *ToolExecutionComponent) updateDisplay() {
+	c.contentBox.SetBackground(c.background())
 	c.contentBox.Clear()
 
 	// Tool call header
@@ -530,6 +617,9 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			)
 			if rendered != nil {
 				c.resultComponent = rendered
+				if _, ok := rendered.(*toolOutputPreview); !ok {
+					rendered = toolResultClip{inner: rendered, expanded: c.expanded}
+				}
 				c.contentBox.AddChild(rendered)
 			}
 		} else {
@@ -551,30 +641,67 @@ type toolOutputPreview struct {
 	palette extensions.Theme
 }
 
+func lastOutputLines(output string, count int) (string, bool) {
+	cut := len(output)
+	for range count {
+		cut = strings.LastIndexByte(output[:cut], '\n')
+		if cut < 0 {
+			return output, false
+		}
+	}
+	return output[cut+1:], true
+}
+
+type toolResultClip struct {
+	inner    tui.Component
+	expanded bool
+}
+
+func (preview toolResultClip) Render(width int) []string {
+	lines := preview.inner.Render(width)
+	if preview.expanded {
+		return lines
+	}
+	for len(lines) > 0 && strings.TrimSpace(tui.StripANSI(lines[0])) == "" {
+		lines = lines[1:]
+	}
+	if len(lines) <= toolPreviewLines {
+		return lines
+	}
+	return append(append([]string(nil), lines[:toolPreviewLines]...), tui.TruncateToWidth(theme.FG("muted", fmt.Sprintf("… %d more · click to expand", len(lines)-toolPreviewLines)), width, "…", false))
+}
+
 func newToolOutputPreview(output string, options extensions.ToolRenderResultOptions, palette extensions.Theme) *toolOutputPreview {
 	if palette == nil {
 		palette = themeAdapter{}
 	}
-	styledLines := strings.Split(output, "\n")
-	for index := range styledLines {
-		styledLines[index] = palette.FG("toolOutput", styledLines[index])
-	}
-	return &toolOutputPreview{output: strings.Join(styledLines, "\n"), options: options, palette: palette}
+	return &toolOutputPreview{output: output, options: options, palette: palette}
 }
 
 func (preview *toolOutputPreview) Render(width int) []string {
-	if preview.options.Expanded {
-		return tui.NewText("\n"+preview.output, 0, 0, nil).Render(width)
+	output := preview.output
+	if output == "" {
+		return nil
 	}
-	truncated := tui.TruncateToVisualLines(preview.output, toolPreviewLines, width, 0)
-	lines := make([]string, 0, len(truncated.VisualLines)+2)
-	lines = append(lines, "")
-	if truncated.SkippedCount > 0 {
-		hint := preview.palette.FG("muted", fmt.Sprintf("... (%d earlier lines,", truncated.SkippedCount)) +
-			" " + KeyHint("app.tools.expand", "to expand") + preview.palette.FG("muted", ")")
+	if preview.options.Expanded {
+		lines := strings.Split(output, "\n")
+		for index := range lines {
+			lines[index] = preview.palette.FG("toolOutput", lines[index])
+		}
+		return tui.NewText(strings.Join(lines, "\n"), 0, 0, nil).Render(width)
+	}
+	output, earlier := lastOutputLines(output, toolPreviewLines)
+	styled := strings.Split(output, "\n")
+	for index := range styled {
+		styled[index] = preview.palette.FG("toolOutput", styled[index])
+	}
+	truncated := tui.TruncateToVisualLines(strings.Join(styled, "\n"), toolPreviewLines, width, 0)
+	lines := append([]string(nil), truncated.VisualLines...)
+	if earlier || truncated.SkippedCount > 0 {
+		hint := preview.palette.FG("muted", "… earlier output · click to expand")
 		lines = append(lines, tui.TruncateToWidth(hint, width, "...", false))
 	}
-	return append(lines, truncated.VisualLines...)
+	return lines
 }
 
 func (c *ToolExecutionComponent) getTextOutput() string {
@@ -670,16 +797,22 @@ func (adapter themeAdapter) BashModeBorderColor() func(string) string {
 // BashExecutionComponent
 // ─────────────────────────────────────────────────────────────
 
-const bashPreviewLines = 20
+const bashPreviewLines = 3
 
 type visualLineTail struct {
 	text     string
 	maxLines int
 	paddingX int
+	earlier  bool
+	hint     string
 }
 
 func (preview visualLineTail) Render(width int) []string {
-	return tui.TruncateToVisualLines(preview.text, preview.maxLines, width, preview.paddingX).VisualLines
+	truncated := tui.TruncateToVisualLines(preview.text, preview.maxLines, width, preview.paddingX)
+	if preview.hint == "" || truncated.SkippedCount == 0 && !preview.earlier {
+		return truncated.VisualLines
+	}
+	return append(truncated.VisualLines, tui.TruncateToWidth(theme.FG("muted", preview.hint), width, "…", false))
 }
 
 type BashExecutionComponent struct {
@@ -691,6 +824,7 @@ type BashExecutionComponent struct {
 	cancelled  bool
 	complete   bool
 	expanded   bool
+	hovered    bool
 	excludeCtx bool
 	loader     *tui.Loader
 	ui         tui.RenderRequester
@@ -739,6 +873,30 @@ func (c *BashExecutionComponent) SetExpanded(expanded bool) {
 	c.rebuild()
 }
 
+func (c *BashExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
+	c.mu.Lock()
+	changed := false
+	switch event.Type {
+	case tui.MouseMove:
+		hovered := event.Row >= 0 && c.output.Len() > 0
+		if hovered != c.hovered {
+			c.hovered = hovered
+			changed = true
+		}
+	case tui.MouseRelease:
+		if (event.Button == 0 || event.Button == 3) && c.output.Len() > 0 {
+			c.expanded = !c.expanded
+			c.rebuild()
+			changed = true
+		}
+	}
+	c.mu.Unlock()
+	if changed && c.ui != nil {
+		c.ui.RequestRender()
+	}
+	return changed
+}
+
 func (c *BashExecutionComponent) rebuild() {
 	c.container.Clear()
 	colorKey := "bashMode"
@@ -755,28 +913,18 @@ func (c *BashExecutionComponent) rebuild() {
 	c.container.AddChild(tui.NewText(theme.FG(colorKey, theme.Bold(prefix+c.command)), 1, 0, nil))
 
 	// Output
-	output := c.output.String()
+	output := strings.TrimSuffix(c.output.String(), "\n")
 	if output != "" {
-		availableLines := strings.Split(output, "\n")
-		previewLines := availableLines
-		if len(previewLines) > bashPreviewLines {
-			previewLines = previewLines[len(previewLines)-bashPreviewLines:]
-		}
-		styledLines := make([]string, len(previewLines))
-		for index, line := range previewLines {
-			styledLines[index] = theme.FG("muted", line)
-		}
 		if c.expanded {
-			styledLines = make([]string, len(availableLines))
-			for index, line := range availableLines {
-				styledLines[index] = theme.FG("muted", line)
-			}
-			c.container.AddChild(tui.NewText("\n"+strings.Join(styledLines, "\n"), 1, 0, nil))
+			c.container.AddChild(tui.NewText(theme.FG("muted", output), 1, 0, nil))
 		} else {
+			preview, earlier := lastOutputLines(output, bashPreviewLines)
 			c.container.AddChild(visualLineTail{
-				text:     "\n" + strings.Join(styledLines, "\n"),
+				text:     theme.FG("muted", preview),
 				maxLines: bashPreviewLines,
 				paddingX: 1,
+				earlier:  earlier,
+				hint:     "… earlier output · click to expand",
 			})
 		}
 	}
@@ -786,26 +934,13 @@ func (c *BashExecutionComponent) rebuild() {
 		c.container.AddChild(c.loader)
 	} else if c.complete {
 		statusParts := make([]string, 0, 2)
-		hiddenLines := max(0, len(strings.Split(output, "\n"))-bashPreviewLines)
-		if hiddenLines > 0 {
-			if c.expanded {
-				statusParts = append(statusParts,
-					theme.FG("muted", "(")+KeyHint("app.tools.expand", "to collapse")+theme.FG("muted", ")"),
-				)
-			} else {
-				statusParts = append(statusParts,
-					theme.FG("muted", fmt.Sprintf("... %d more lines (", hiddenLines))+
-						KeyHint("app.tools.expand", "to expand")+theme.FG("muted", ")"),
-				)
-			}
-		}
 		if c.cancelled {
 			statusParts = append(statusParts, theme.FG("warning", "(cancelled)"))
 		} else if c.exitCode != nil && *c.exitCode != 0 {
 			statusParts = append(statusParts, theme.FG("error", fmt.Sprintf("(exit %d)", *c.exitCode)))
 		}
 		if len(statusParts) > 0 {
-			c.container.AddChild(tui.NewText("\n"+strings.Join(statusParts, "\n"), 1, 0, nil))
+			c.container.AddChild(tui.NewText(strings.Join(statusParts, "\n"), 1, 0, nil))
 		}
 	}
 
@@ -815,7 +950,14 @@ func (c *BashExecutionComponent) Invalidate() { c.container.Invalidate() }
 func (c *BashExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.container.Render(width)
+	lines := c.container.Render(width)
+	if c.hovered {
+		lines = append([]string(nil), lines...)
+		for index := 1; index < len(lines); index++ {
+			lines[index] = tui.ApplyBackgroundToLine(lines[index], width, func(text string) string { return theme.BG("toolPendingBg", text) })
+		}
+	}
+	return lines
 }
 
 // ─────────────────────────────────────────────────────────────

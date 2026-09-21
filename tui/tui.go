@@ -118,6 +118,7 @@ type TUI struct {
 	mouseClicks         int
 	mouseCapture        MouseHandler
 	mouseCaptureOrigin  mousePoint
+	mouseHover          MouseHandler
 
 	lifecycleMu        sync.RWMutex
 	stopped            bool
@@ -125,12 +126,13 @@ type TUI struct {
 	mouseViewport      bool
 	crashRestoreCancel func()
 
-	focusMu      sync.RWMutex
-	focused      Component
-	mouseMotion  bool
-	listeners    []inputListenerEntry
-	nextListener uint64
-	OnDebug      func()
+	focusMu             sync.RWMutex
+	focused             Component
+	mouseMotion         bool
+	viewportMouseMotion bool
+	listeners           []inputListenerEntry
+	nextListener        uint64
+	OnDebug             func()
 
 	focusOrderCounter   uint64
 	overlayStack        []*overlayStackEntry
@@ -205,6 +207,14 @@ func (ui *TUI) SetViewport(body, chrome Component) {
 	ui.renderMu.Lock()
 	ui.viewportBody, ui.viewportChrome, ui.viewportFollow = body, chrome, true
 	ui.renderMu.Unlock()
+}
+
+// SetViewportMouseMotion lets an interactive transcript receive hover reports.
+func (ui *TUI) SetViewportMouseMotion(enabled bool) {
+	ui.focusMu.Lock()
+	ui.viewportMouseMotion = enabled
+	ui.syncMouseMotionLocked()
+	ui.focusMu.Unlock()
 }
 
 // ViewportBodyHeight is the body height computed for the frame currently being
@@ -571,14 +581,13 @@ func (ui *TUI) handleViewportInput(data string) bool {
 	return consumed
 }
 
-// syncMouseMotionLocked keeps any-motion tracking scoped to the focused
-// component: 1003 floods reports, so it is on only while a selector that can
-// use hover holds focus. Callers hold focusMu; the terminal write is safe
+// syncMouseMotionLocked keeps any-motion tracking scoped to hover-aware UI:
+// 1003 floods reports. Callers hold focusMu; the terminal write is safe
 // there because Write takes only the terminal's own leaf mutex.
 func (ui *TUI) syncMouseMotionLocked() {
-	wants := false
+	wants := ui.viewportMouseMotion
 	if handler, ok := ui.focused.(MouseMotionHandler); ok {
-		wants = handler.WantsMouseMotion()
+		wants = wants || handler.WantsMouseMotion()
 	}
 	if wants == ui.mouseMotion {
 		return
@@ -609,7 +618,7 @@ func (ui *TUI) SyncMouseMotion() {
 
 // handleMouse is the single mouse routing path, strictly position-based:
 // the event goes to the component under the cursor (topmost overlay first,
-// then chrome; transcript rows have no component target), and only if that
+// then chrome and transcript), and only if that
 // component declines does it fall back to the TUI-owned viewport — wheel
 // scroll, scrollbar, and text selection. Focus never receives mouse events;
 // it only gates any-motion (?1003) tracking. So a wheel over the transcript
@@ -642,6 +651,7 @@ func (ui *TUI) handleMouse(data string) bool {
 	dispatch := !ui.selection.active && !ui.selection.scrollbar && !event.Alt && !event.Ctrl
 	local := event
 	var handler MouseHandler
+	var previousHover MouseHandler
 	if dispatch {
 		if event.Type == MousePress {
 			point := mousePoint{row: event.Row, column: event.Column}
@@ -659,7 +669,12 @@ func (ui *TUI) handleMouse(data string) bool {
 			if event.Row >= box.row && event.Row < box.row+box.height && event.Column >= box.col && event.Column < box.col+box.width {
 				break
 			}
+			previousHover := ui.mouseHover
+			ui.mouseHover = nil
 			ui.renderMu.Unlock()
+			if previousHover != nil {
+				previousHover.HandleMouse(MouseEvent{Type: MouseMove, Row: -1})
+			}
 			// Use the dialog's cancellation path so pending results and focus are restored.
 			if event.Type == MousePress && event.Button == 0 && local.Clicks == 1 {
 				if input, ok := box.component.(InputHandler); ok {
@@ -670,7 +685,18 @@ func (ui *TUI) handleMouse(data string) bool {
 		}
 		handler, local, dispatch = ui.mouseTargetLocked(local)
 	}
+	if event.Type == MouseMove {
+		previousHover = ui.mouseHover
+		ui.mouseHover = nil
+		if dispatch {
+			ui.mouseHover = handler
+		}
+	}
 	ui.renderMu.Unlock()
+	changed := false
+	if previousHover != nil && (handler == nil || !componentsEqual(previousHover.(Component), handler.(Component))) {
+		changed = previousHover.HandleMouse(MouseEvent{Type: MouseMove, Row: -1})
+	}
 	if dispatch && handler.HandleMouse(local) {
 		if event.Type == MousePress && event.Button == 0 {
 			ui.renderMu.Lock()
@@ -685,14 +711,11 @@ func (ui *TUI) handleMouse(data string) bool {
 	// The viewport fallback has no MouseMove case, so hover motion no
 	// component consumed left the frame exactly as it was — and with ?1003 on
 	// those reports arrive at pointer speed.
-	return event.Type != MouseMove
+	return changed || event.Type != MouseMove
 }
 
-// mouseTargetLocked resolves the component under the cursor. Transcript rows
-// are excluded: nothing in the body handles mouse today and walking it would
-// re-render every message.
-// ponytail: chrome and overlays only; cache per-child offsets in Container if
-// transcript hit-testing is ever needed.
+// mouseTargetLocked resolves the component under the cursor. Windowed
+// transcript containers use their cached line index for long conversations.
 func (ui *TUI) mouseTargetLocked(event MouseEvent) (MouseHandler, MouseEvent, bool) {
 	// ponytail: only the alternate-screen viewport knows its screen origin, so
 	// inline TUIs stay keyboard-only; query the cursor position on Start to
@@ -710,6 +733,14 @@ func (ui *TUI) mouseTargetLocked(event MouseEvent) (MouseHandler, MouseEvent, bo
 		event.Row, event.Column = row, event.Column-box.col
 		return handler, event, ok
 	}
+	if event.Row >= 0 && event.Row < ui.viewportBodyHeight {
+		start, end := ui.viewportRangeLocked()
+		if event.Row < end-start {
+			handler, row, ok := mouseTargetAt(ui.viewportBody, max(1, ui.viewportBodyWidth), start+event.Row)
+			event.Row = row
+			return handler, event, ok
+		}
+	}
 	if event.Row < ui.chromeTop {
 		return nil, event, false
 	}
@@ -725,6 +756,8 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		return
 	}
 	var selected string
+	var clickHandler MouseHandler
+	var clickEvent MouseEvent
 	switch {
 	case event.Type == MouseRelease && ui.selection.scrollbar:
 		ui.selection.scrollbar = false
@@ -737,6 +770,10 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		}
 		if ui.selection.moved {
 			selected = ui.selectedTextLocked()
+		} else if (event.Button == 0 || event.Button == 3) && !event.Shift && !event.Alt && !event.Ctrl && ui.selection.clicks == 1 {
+			if point, ok := ui.bodyPointLocked(event.Column, event.Row, false); ok && point == ui.selection.anchor {
+				clickHandler, clickEvent, _ = ui.mouseTargetLocked(event)
+			}
 		}
 		ui.selection.active = false
 	case event.Type == MouseDrag && ui.selection.active:
@@ -793,6 +830,9 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 	}
 	handler := ui.selectionHandler
 	ui.renderMu.Unlock()
+	if clickHandler != nil {
+		clickHandler.HandleMouse(clickEvent)
+	}
 	if selected != "" && handler != nil {
 		handler(selected)
 	}

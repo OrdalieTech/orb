@@ -1352,18 +1352,71 @@ func TestRestrainedToolComponentHeights(t *testing.T) {
 				t.Fatalf("pending tool lines = %d, want one separator and one title: %#v", len(lines), lines)
 			}
 			tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "ok"}}, false, nil, false)
-			if lines := tool.Render(width); len(lines) != 4 {
-				t.Fatalf("finished tool lines = %d, want 4: %#v", len(lines), lines)
+			if lines := tool.Render(width); len(lines) != 3 {
+				t.Fatalf("finished tool lines = %d, want 3: %#v", len(lines), lines)
 			}
 
 			bash := NewBashExecutionComponent("printf ok", &fakeRenderRequester{}, false)
 			bash.AppendOutput("ok")
 			exitCode := 0
 			bash.SetComplete(&exitCode, false)
-			if lines := bash.Render(width); len(lines) != 4 {
-				t.Fatalf("finished bash lines = %d, want 4: %#v", len(lines), lines)
+			if lines := bash.Render(width); len(lines) != 3 {
+				t.Fatalf("finished bash lines = %d, want 3: %#v", len(lines), lines)
 			}
 		})
+	}
+}
+
+func TestToolResultsCollapseAndToggleIndividually(t *testing.T) {
+	initTestTheme(t)
+	output := "one\ntwo\nthree\nfour\nfive\nsix"
+	tool := NewToolExecutionComponent("read", "call", nil, false, nil, &fakeRenderRequester{}, "/")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: output}}, false, nil, false)
+	collapsed := strings.Join(tool.Render(60), "\n")
+	if strings.Contains(collapsed, "one") || !strings.Contains(collapsed, "six") || !strings.Contains(collapsed, "click to expand") {
+		t.Fatalf("tool did not render a short tail: %s", collapsed)
+	}
+	if !tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: 1}) || collapsed == strings.Join(tool.Render(60), "\n") {
+		t.Fatal("tool hover did not change the background")
+	}
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1})
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0})
+	if expanded := strings.Join(tool.Render(60), "\n"); !strings.Contains(expanded, "one") || !strings.Contains(expanded, "six") {
+		t.Fatalf("tool click did not expand the result: %s", expanded)
+	}
+
+	bash := NewBashExecutionComponent("printf", &fakeRenderRequester{}, false)
+	bash.AppendOutput(output)
+	if collapsed := strings.Join(bash.Render(60), "\n"); strings.Contains(collapsed, "one") || !strings.Contains(collapsed, "click to expand") {
+		t.Fatalf("shell did not render a short tail: %s", collapsed)
+	}
+	bash.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0})
+	if expanded := strings.Join(bash.Render(60), "\n"); !strings.Contains(expanded, "one") {
+		t.Fatalf("shell click did not expand the result: %s", expanded)
+	}
+}
+
+func TestLongReasoningStreamsAsBoundedPreview(t *testing.T) {
+	initTestTheme(t)
+	message := &ai.AssistantMessage{Content: ai.AssistantContent{
+		&ai.ThinkingContent{Thinking: "start of reasoning\n" + strings.Repeat("long reasoning paragraph.\n", 6_000) + "end of reasoning"},
+		&ai.TextContent{Text: "final answer"},
+	}}
+	component := NewAssistantMessageComponent(nil, false, theme.MarkdownTheme(), "", 0, nil)
+	component.UpdateContentStreaming(message, true)
+	if lines := component.Render(80); len(lines) > 10 || strings.Contains(strings.Join(lines, "\n"), "start of reasoning") {
+		t.Fatalf("streamed reasoning was not bounded: %d rows", len(lines))
+	}
+	component.UpdateContentStreaming(message, false)
+	lines := component.Render(80)
+	if !strings.Contains(strings.Join(lines, "\n"), "click to expand") {
+		t.Fatal("completed reasoning has no expand control")
+	}
+	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: component.toggleStart}) {
+		t.Fatal("reasoning expand control ignored click")
+	}
+	if expanded := strings.Join(component.Render(80), "\n"); !strings.Contains(expanded, "start of reasoning") || !strings.Contains(expanded, "end of reasoning") {
+		t.Fatal("expanded reasoning lost its full content")
 	}
 }
 

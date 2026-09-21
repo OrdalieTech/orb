@@ -127,6 +127,64 @@ func newMouseE2EFixture(t *testing.T) *mouseE2EFixture {
 	return &mouseE2EFixture{terminal: terminal, ui: ui, body: body, editor: editor, editorArea: editorArea}
 }
 
+func TestMouseE2ETranscriptToolClickKeepsTextSelection(t *testing.T) {
+	terminal := newTrackingTerminal(40, 12)
+	ui := NewTUI(terminal)
+	chat := NewWindowedContainer()
+	for range 256 {
+		chat.AddChild(NewText("earlier message", 0, 0, nil))
+	}
+	tool := &clickTarget{lines: []string{"tool", "alpha beta", "gamma delta", "click to expand"}}
+	chat.AddChild(tool)
+	body := &Container{}
+	body.AddChild(chat)
+	ui.SetViewport(body, NewText("input", 0, 0, nil))
+	ui.SetViewportMouseMotion(true)
+	copied := ""
+	ui.SetSelectionHandler(func(text string) { copied = text })
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ui.Stop() })
+	ui.RenderNow()
+	row := ui.viewportBodyHeight - len(tool.lines)
+	if terminal.trackingMode() != "any" || row < 0 {
+		t.Fatalf("transcript hover unavailable: mode=%s row=%d", terminal.trackingMode(), row)
+	}
+
+	terminal.deliver(sgr(35, 3, row+1, false))
+	terminal.deliver(sgr(35, 3, 0, false))
+	if len(tool.events) != 2 || tool.events[0].Type != MouseMove || tool.events[1].Row != -1 {
+		t.Fatalf("hover enter/leave = %+v", tool.events)
+	}
+	terminal.deliver(sgr(0, 3, row+1, false))
+	terminal.deliver(sgr(3, 3, row+1, true))
+	releases := 0
+	for _, event := range tool.events {
+		if event.Type == MouseRelease {
+			releases++
+		}
+	}
+	if releases != 1 {
+		t.Fatalf("single click did not reach tool: %+v", tool.events)
+	}
+
+	terminal.deliver(sgr(0, 1, row+1, false))
+	terminal.deliver(sgr(32, 6, row+2, false))
+	terminal.deliver(sgr(0, 6, row+2, true))
+	if copied == "" {
+		t.Fatal("dragging tool text did not copy the selection")
+	}
+	for _, event := range tool.events {
+		if event.Type == MouseRelease {
+			releases--
+		}
+	}
+	if releases != 0 {
+		t.Fatalf("drag was dispatched as a click: %+v", tool.events)
+	}
+}
+
 func (fixture *mouseE2EFixture) following() bool {
 	fixture.ui.renderMu.Lock()
 	defer fixture.ui.renderMu.Unlock()

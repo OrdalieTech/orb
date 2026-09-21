@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Keep tool results to three preview rows, with per-result click expansion and a subtle theme-aware hover background that preserves text selection.
+
+- Bound live and long reasoning previews while keeping the full text expandable after completion; release rendered offscreen transcript lines so long sessions retain less display memory.
+
 - Cache recently viewed Bridge conversations in SQLite with bounded visible-message previews, explicit stale/read-only state, and access-revocation purging.
 
 - Add an explicit SQLite storage adapter for session journals, paginated/searchable catalogs, global settings, credentials and trust; preserve existing file-backed defaults while native migration is implemented.

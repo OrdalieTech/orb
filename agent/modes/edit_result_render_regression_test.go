@@ -96,7 +96,9 @@ func TestEditToolSuccessRenderSurvivesFileMutation(t *testing.T) {
 		editRegressionResultDetails(t),
 		false,
 	)
-	assertEditSuccessRender(t, editRegressionRender(component), "after success end event")
+	if collapsed := editRegressionRender(component); strings.Contains(collapsed, "Could not find the exact text") || !strings.Contains(collapsed, "click to expand") {
+		t.Fatalf("successful edit did not collapse its recorded diff: %s", collapsed)
+	}
 
 	// Any later re-composition (expand toggle, invalidate) must not
 	// resurrect the preview.
@@ -124,6 +126,7 @@ func TestEditToolReplayRenderDropsStalePreviewError(t *testing.T) {
 		editRegressionResultDetails(t),
 		false,
 	)
+	component.SetExpanded(true)
 	assertEditSuccessRender(t, editRegressionRender(component), "replayed result")
 }
 
