@@ -322,6 +322,8 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 		fmt.Fprintln(os.Stderr, "Error loading themes:", err)
 		return 1
 	}
+	stopTerminalBackground := mode.watchTerminalBackground(ctx)
+	defer stopTerminalBackground()
 	mode.setupAutocomplete()
 	mode.setupExtensionShortcuts()
 	if mode.options.StartupModelRefresh != nil {

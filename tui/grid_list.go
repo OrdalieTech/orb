@@ -22,6 +22,7 @@ type GridRow struct {
 }
 
 type GridListTheme struct {
+	Cell       func(row GridRow, column int, text string) string
 	SelectedBg StyleFunc // background for the selected row
 	Detail     StyleFunc // detail lines (applied on top of any cell styling)
 	ScrollInfo StyleFunc // the (i/n) counter, rules, and search placeholder
@@ -325,6 +326,9 @@ func (list *GridList) Render(width int) []string {
 			builder.WriteString(strings.Repeat(" ", cursorWidth))
 		}
 		for column, cell := range row.Cells {
+			if list.theme.Cell != nil {
+				cell = list.theme.Cell(row, column, cell)
+			}
 			if column == len(row.Cells)-1 {
 				remaining := width - VisibleWidth(builder.String())
 				if remaining > 1 {
@@ -406,6 +410,7 @@ func (list *GridList) counter() string {
 type Frame struct {
 	mu                                   sync.Mutex
 	Action                               string
+	ActionSelected                       StyleFunc
 	OnAction                             func()
 	actionFocused                        bool
 	actionRow, actionColumn, actionWidth int
@@ -464,7 +469,11 @@ func (frame *Frame) Render(width int) []string {
 			frame.actionWidth = VisibleWidth(action)
 			frame.actionRow, frame.actionColumn = 1, width-2-frame.actionWidth
 			if frame.actionFocused {
-				action = "\x1b[7m" + action + "\x1b[27m"
+				if frame.ActionSelected != nil {
+					action = frame.ActionSelected(action)
+				} else {
+					action = "\x1b[7m" + action + "\x1b[27m"
+				}
 			} else {
 				action = frame.style(titleStyle, action)
 			}

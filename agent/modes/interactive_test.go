@@ -2044,10 +2044,27 @@ func TestTerminalThemeDefaultAndBackdrop(t *testing.T) {
 	t.Cleanup(func() { theme.SetCurrent(previous) })
 	native, _ := theme.Load(theme.LoadOptions{NoThemes: true}).Get("terminal")
 	theme.SetCurrent(native)
-	if got := menuSelectedBackground("choice"); got != "\x1b[7mchoice\x1b[27m" {
+	if got := menuSelectedBackground("choice"); got != "\x1b[4mchoice\x1b[24m" {
 		t.Fatalf("selection = %q", got)
 	}
-	if got := backdropStyle()("behind"); got != "\x1b[39;49;2mbehind\x1b[0m" {
+	if got := backdropStyle()("behind"); got != theme.BG("diffGutterBg", theme.FG("dim", "behind")) {
 		t.Fatalf("backdrop = %q", got)
+	}
+}
+
+func TestOpenPaletteRecolorsHintsAndSkills(t *testing.T) {
+	previous := theme.Current()
+	t.Cleanup(func() { theme.SetCurrent(previous) })
+	native, _ := theme.Load(theme.LoadOptions{NoThemes: true, Mode: theme.TrueColor}).Get("terminal")
+	theme.SetCurrent(native)
+	native.SetTerminalBackground(tui.RgbColor{R: 255, G: 252, B: 239})
+	palette := newCommandPalette([]tui.GridRow{
+		{Value: "model", Cells: []string{"Choose model", theme.FG("muted", "ctrl+m")}},
+		{Value: "/skill:review", Cells: []string{theme.FG("customMessageLabel", "Review")}},
+	}, NewAppKeybindings(nil), func() int { return 32 }, func(string) {}, func() {})
+	native.SetTerminalBackground(tui.RgbColor{R: 24, G: 27, B: 32})
+	rendered := strings.Join(palette.Render(60), "\n")
+	if !strings.Contains(rendered, theme.FG("muted", "ctrl+m")) || !strings.Contains(rendered, theme.FG("customMessageLabel", "Review")) {
+		t.Fatalf("stale menu colors: %q", rendered)
 	}
 }

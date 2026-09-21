@@ -465,7 +465,7 @@ func TestTerminalThemeInheritsPalette(t *testing.T) {
 		if !ok {
 			t.Fatal("terminal theme missing")
 		}
-		for _, name := range []string{"text", "accent", "border", "thinkingHigh"} {
+		for _, name := range []string{"text", "border", "muted"} {
 			if got, _ := native.ForegroundANSI(name); got != "\x1b[39m" {
 				t.Fatalf("%s = %q", name, got)
 			}
@@ -477,9 +477,52 @@ func TestTerminalThemeInheritsPalette(t *testing.T) {
 			t.Fatalf("skill = %q", got)
 		}
 		for _, name := range []string{"selectedBg", "searchMatchBg", "scrollbarThumb"} {
-			if got := native.Background(name, "a\x1b[0mb"); got != "\x1b[7ma\x1b[0m\x1b[7mb\x1b[27m" {
+			if got := native.Background(name, "a\x1b[0mb"); got != "\x1b[4ma\x1b[0m\x1b[4mb\x1b[24m" {
 				t.Fatalf("%s = %q", name, got)
 			}
 		}
 	}
+}
+
+func TestTerminalPaletteContrastAndLiveSwitch(t *testing.T) {
+	native := terminalTheme(TrueColor)
+	markdown := native.Markdown("")
+	for _, bg := range []tui.RgbColor{{R: 255, G: 252, B: 239}, {R: 24, G: 27, B: 32}, {R: 255, G: 255, B: 255}, {R: 0, G: 0, B: 0}} {
+		native.SetTerminalBackground(bg)
+		colors := native.ResolvedColors(false)
+		for _, token := range []string{"accent", "muted", "dim", "customMessageLabel", "error", "warning", "success"} {
+			for _, surface := range []string{native.ExportColors()["pageBg"], colors["toolPendingBg"], colors["selectedBg"]} {
+				a, b := luminanceHex(colors[token]), luminanceHex(surface)
+				if a < b {
+					a, b = b, a
+				}
+				if ratio := (a + .05) / (b + .05); ratio < 4.5 {
+					t.Errorf("%s on %s: contrast %.2f", token, surface, ratio)
+				}
+			}
+		}
+		if got, _ := native.ForegroundANSI("text"); got != "\x1b[39m" {
+			t.Fatal("terminal foreground overridden")
+		}
+		if got, _ := native.BackgroundANSI("selectedBg"); !strings.HasPrefix(got, "\x1b[48;2;") {
+			t.Fatal("selection has no tint")
+		}
+		if got := markdown.Heading("heading"); got != native.Foreground("mdHeading", "heading") {
+			t.Fatal("existing Markdown did not adopt new palette")
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 100 {
+			native.SetTerminalBackground(tui.RgbColor{R: 24, G: 27, B: 32})
+		}
+	}()
+	for range 100 {
+		native.Foreground("accent", "text")
+		native.Background("selectedBg", "text")
+		native.ResolvedColors(false)
+		native.ExportColors()
+	}
+	<-done
 }
