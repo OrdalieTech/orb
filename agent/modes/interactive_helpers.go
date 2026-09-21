@@ -322,28 +322,29 @@ func (mode *InteractiveMode) watchTerminalBackground(ctx context.Context) func()
 				return
 			case <-refresh:
 			}
-			query := mode.ui.QueryTerminalBackgroundColor(200 * time.Millisecond)
+			query := mode.ui.QueryTerminalBackgroundColor(time.Second)
 			select {
 			case <-ctx.Done():
 				return
 			case background := <-query:
-				if background == nil {
-					return
-				}
-				mode.setTerminalBackground(*background)
+				mode.setTerminalBackground(background)
 			}
 		}
 	}()
 	return func() { unsubscribe(); cancel(); <-done; mode.ui.SetTerminalColorSchemeNotifications(false) }
 }
 
-func (mode *InteractiveMode) setTerminalBackground(background tui.RgbColor) {
+func (mode *InteractiveMode) setTerminalBackground(background *tui.RgbColor) {
 	mode.terminalBackgroundMu.Lock()
 	defer mode.terminalBackgroundMu.Unlock()
 	// Terminal appearance outlives the session and its reloadable resources.
-	mode.terminalBackground = &background
+	mode.terminalBackground = background
 	if native := theme.GetTheme("terminal"); native != nil && native.SourcePath == "" {
-		native.SetTerminalBackground(background)
+		if background == nil {
+			native.ClearTerminalBackground()
+		} else {
+			native.SetTerminalBackground(*background)
+		}
 		if theme.Current() == native {
 			mode.ui.Invalidate()
 		}

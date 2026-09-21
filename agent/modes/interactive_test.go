@@ -2307,7 +2307,7 @@ func TestTerminalPaletteSurvivesSessionReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, background := range []tui.RgbColor{{R: 255, G: 252, B: 239}, {R: 24, G: 27, B: 32}} {
-		mode.setTerminalBackground(background)
+		mode.setTerminalBackground(&background)
 		palette := func() string {
 			return theme.BG("toolPendingBg", "panel") + menuSelectedBackground("selected") + backdropStyle()("behind") + theme.FG("muted", "hint")
 		}
@@ -2441,5 +2441,49 @@ func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Bridge is missing from Settings")
+	}
+}
+
+func TestTranscriptRecolorsAcrossTerminalAppearanceChanges(t *testing.T) {
+	previous := theme.Current()
+	t.Cleanup(func() { theme.SetCurrent(previous) })
+	registry := theme.Load(theme.LoadOptions{NoThemes: true})
+	native, _ := registry.Get("terminal")
+	theme.SetCurrent(native)
+	makeComponents := func() []tui.Component {
+		tool := NewToolExecutionComponent("read", "call", nil, false, nil, &fakeRenderRequester{}, "/")
+		tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "result"}}, false, nil, false)
+		bash := NewBashExecutionComponent("echo result", &fakeRenderRequester{}, false)
+		bash.AppendOutput("result")
+		bash.SetComplete(nil, false)
+		assistant := NewAssistantMessageComponent(&ai.AssistantMessage{Content: ai.AssistantContent{
+			&ai.ThinkingContent{Thinking: strings.Repeat("reasoning ", 600)},
+			&ai.TextContent{Text: "**Answer** with `code`"},
+		}}, false, theme.MarkdownTheme(), "", 0, nil)
+		return []tui.Component{tool, bash, assistant}
+	}
+	components := makeComponents()
+	for _, step := range []string{"light", "dark", "light", "timeout", "dark", "explicit-light", "explicit-dark"} {
+		switch step {
+		case "light":
+			native.SetTerminalBackground(tui.RgbColor{R: 255, G: 252, B: 239})
+		case "dark":
+			native.SetTerminalBackground(tui.RgbColor{R: 24, G: 27, B: 32})
+		case "timeout":
+			native.ClearTerminalBackground()
+			if got := theme.BGANSI("toolSuccessBg"); got != "\x1b[49m" {
+				t.Fatalf("timeout retained an explicit background: %q", got)
+			}
+		default:
+			value, _ := registry.Get(strings.TrimPrefix(step, "explicit-"))
+			theme.SetCurrent(value)
+		}
+		fresh := makeComponents()
+		for i, component := range components {
+			component.(interface{ Invalidate() }).Invalidate()
+			if got, want := strings.Join(component.Render(70), "\n"), strings.Join(fresh[i].Render(70), "\n"); got != want {
+				t.Fatalf("%s component %d kept stale colors:\n%q\nwant:\n%q", step, i, got, want)
+			}
+		}
 	}
 }

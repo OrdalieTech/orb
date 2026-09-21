@@ -6,6 +6,7 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Recover from missed terminal appearance replies and refresh cached tool, shell, and reasoning colors when switching between light and dark mode.
 - Show context capacity and usage as `210k|35%` in the compact footer, and quota reset times in the account switcher.
 - Keep tool results to three preview rows, with per-result click expansion and a subtle theme-aware hover background that preserves text selection.
 
