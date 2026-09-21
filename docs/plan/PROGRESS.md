@@ -54,9 +54,9 @@ completed Bridge v1 scope without moving runtime ownership into Bridge.
       purge. Hermetic stream tests also verify offline command rejection, reconnect, remote
       revocation and refusal to retarget a cached view after an instance changes sessions.
 - [x] Final native cutover release builds (`CGO_ENABLED=0`, existing Tailcat tags, Orb-only
-      inlining disabled): darwin/amd64 54,248,416 B; darwin/arm64 51,799,554 B;
+      inlining disabled): darwin/amd64 54,252,560 B; darwin/arm64 51,816,130 B;
       linux/amd64 53,256,352 B; linux/arm64 50,397,344 B. All stay below 55 MB.
-      M4 `--version` over 20 warm processes: median 12.76 ms / maximum 21.79 ms.
+      M4 candidate `--version` over 30 warm processes: median 13.34 ms / maximum 15.35 ms.
       Opening a populated 100k-session database and printing CLI help: median 16.86 ms /
       maximum 19.48 ms over 20 warm runs. The full `make check` passes: build, vet/lint,
       race suite and pure-Go wire/conformance gates. All 29 unchanged upstream RPC tests pass
@@ -110,6 +110,24 @@ completed Bridge v1 scope without moving runtime ownership into Bridge.
       The existing viewport benchmark at one million lines uses 2,593 B / 49 allocations per
       complete frame (15.6 microseconds in the 100-iteration M4 run), the same allocation budget
       as 100k lines. This measures rendered frames, not total transcript memory.
+- [x] Package `0.8.0-rc.1` with the pinned GoReleaser 2.18.2 configuration: four platform
+      archives, source archive, checksums and Homebrew cask. Check every SHA-256, exclude generated
+      and private state from the source archive, and build all packages from the extracted source.
+      The actual installer succeeds against candidate archives with local download substitution.
+      Both Darwin binaries, Linux/amd64 on both authorized servers, and Linux/arm64 in the Linux
+      container pass packaged-CLI migration, preserved originals, export, backup/recovery, integrity
+      and migrated-root compatibility refusal. Full `make check` passes on macOS and Linux;
+      Linux canonical fixtures and all 29 upstream RPC tests pass. The packaged Mac/Linux Bridge
+      services pair through SSH and pass remote prompt, preview persistence and revocation with
+      20 attached lab runtimes. Isolated services and server test roots are cleaned up.
+- [x] Final M4 measurements: native `--help` median 16.58 ms / maximum 17.56 ms across 30 warm
+      processes, with 37,076,992 B peak RSS in a separate help process. At 1,000 benchmark iterations,
+      durable append after 10k entries is 0.096 ms / 23,548 B allocated per append; 100k-session
+      page/search are 0.138/0.199 ms. No additional dependency was introduced by the native cutover;
+      lint/unused checks pass. These are bounded measurements on the named hardware, not universal
+      latency, memory or throughput guarantees. Live providers/OAuth, desktop clipboard and real
+      terminal image checks remain the already-recorded owner-deferred coverage, not new claims.
+      Release artifacts are prepared locally; no tag or public release has been published.
 - [ ] Implement managed hosting, conversation service and the unified multi-Bridge Sessions UI;
       the native-storage cutover does not imply completion of those separate plan slices.
 

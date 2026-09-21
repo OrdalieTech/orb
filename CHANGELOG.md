@@ -73,8 +73,22 @@ Native SQLite replaces live Pi/Orb file sharing. Keep the retained originals for
 legacy writers before cutover, and use explicit export when another application needs session files.
 Native imports accept product session formats v1–v3; the separate harness v4 SDK remains unchanged.
 
-Release measurements and verification evidence are recorded in `docs/plan/PROGRESS.md`. Live Bridge
-checks use isolated state and faux models; they do not claim live-provider or real-terminal coverage.
+The release candidate passes the complete macOS and Linux build, vet/lint, race and conformance
+gates, regenerated Linux fixtures, and all 29 upstream RPC tests. Repeated SQLite tests on lab-3
+and edge cover concurrent processes, interrupted migration, corruption, full-storage rollback and
+recovery. Live SSH/Bridge checks exercise 20 instances, restarts, durable receipts and revocation.
+All four packaged binaries pass migration and recovery smokes; archive checksums, extracted source
+builds and installation from the candidate archives are verified.
+
+On an Apple M4, 30 warm launches measured **13.34 ms** median for `--version` and **16.58 ms** for
+native `--help`, with a separate help process peaking at **37.1 MB RSS**. A 100k-session catalog page
+measured **0.138 ms**, title/directory search **0.199 ms**, and a durable append after 10k entries
+**0.096 ms** in 1,000-iteration microbenchmarks. A million-line viewport allocates about **2.6 KB
+per rendered frame**. The largest static-release executable is **54.25 MB**, below the 55 MB cap.
+These measurements describe the tested workload and hardware, not saturation guarantees.
+
+Detailed evidence is in `docs/plan/PROGRESS.md`. Live Bridge checks use isolated state and faux
+models; provider/OAuth and real-terminal coverage remain the previously deferred release checks.
 
 ## [0.7.1] - 2026-09-21
 
