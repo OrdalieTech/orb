@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Leave one scrollable blank row below the last conversation message.
+
 - Use double-click word selection, triple-click paragraph selection, and dragging by those units. Add composer selection with Shift and modifier-arrow keys, adaptive highlights, clipboard actions, and undoable replacement.
 
 - Show copy, model, and other action confirmations briefly beside the composer instead of adding transcript entries, preserving the active loading indicator.

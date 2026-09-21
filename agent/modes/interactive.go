@@ -475,6 +475,7 @@ func (mode *InteractiveMode) init() error {
 	for _, component := range []*tui.Container{mode.header, mode.loadedResources, mode.chat, mode.pendingMessages} {
 		body.AddChild(component)
 	}
+	body.AddChild(tui.NewSpacer(1))
 	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor, Notice: mode.statusNoticeText}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
 		chrome.AddChild(component)
 	}
