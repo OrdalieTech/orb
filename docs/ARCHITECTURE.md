@@ -323,6 +323,35 @@ packages — npm registry tarball fetch + extract (no node at runtime), git clon
 `~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`). Package installation itself
 is native Go; executing package-provided JavaScript requires the D31 Node/Bun runtime.
 
+## Native persistence
+
+`cmd/orb/storage.go` selects one explicitly opened SQLite database for native CLI state.
+`storage/sqlite` supplies transactional documents, Pi v3 journals, memory and chat-spool
+repositories; existing SDK constructors keep file defaults and import no SQLite driver.
+Global settings, credentials/accounts, trust, model catalogs, keybindings, Bridge identity/grants,
+attachment credentials/receipts and foreign previews share the database. Project configuration,
+installed resources, exports, sockets, process locks and diagnostic logs remain ordinary files.
+
+The first native startup inventories legacy roots, refuses active legacy Orb writers, journals
+source hashes and imports each source transactionally before publishing cutover. Interrupted
+imports resume; changed/conflicting sources, unsupported session versions and damaged trees
+fail closed. Source files remain untouched recovery copies, never live shadows. Native sessions
+have real IDs and empty file paths; process locks protect local ownership and journal revisions
+reject stale writes. Session replacement claims the destination before aborting the current turn.
+No database transaction spans a provider request, approval or model stream.
+Initialized databases open without taking a write lock; first opens serialize schema creation.
+WAL readers remain independent of writers. FULL durability is retained with a 30-second SQLite
+busy wait for contention on slower disks; exhaustion returns an error, never replays a transaction.
+
+`orb --pi-files ...` explicitly selects the original file assembly for compatibility consumers;
+it must use a separate legacy root after native cutover. The unchanged upstream RPC tests run
+through this entry point. Native exports use the same Pi JSONL/HTML/Markdown codecs. Backup uses
+SQLite `VACUUM INTO`, with private permissions and durability barriers. `storage restore` merges
+conversation journals from a backup and rejects conflicting histories; it never rolls back
+credentials, Bridge authority, receipts or chat delivery state. Whole-database authority rollback
+is deliberately not exposed. Managed remote hosting and the unified multi-Bridge selector remain
+separate, pending slices of the active plan.
+
 ## Orb Bridge v1 — implementation contract
 
 The owner-approved native delivery is one `orb` executable: `orb bridge` administers an
@@ -537,7 +566,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
-| modernc.org/sqlite v1.59.0 | opt-in `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs and bounded foreign previews; native session cutover remains pending |
+| modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object

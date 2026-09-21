@@ -4,7 +4,7 @@ The active sequence is `SPRINTS.md`; the old work-package numbers are historical
 only. Progress is measured by conformance surfaces moving from red to green and by milestone
 criteria closing.
 
-## Unified conversations and SQLite — planned, 2026-09-21
+## Unified conversations and SQLite — native cutover, 2026-09-21
 
 The owner requested unified local/remote Sessions navigation and native SQLite, explicitly
 accepting Pi JSONL import/export instead of live file sharing. SPRINTS now contains the complete
@@ -53,16 +53,65 @@ completed Bridge v1 scope without moving runtime ownership into Bridge.
       then verify a real Bridge prompt, completed-message preview persistence and local-block
       purge. Hermetic stream tests also verify offline command rejection, reconnect, remote
       revocation and refusal to retarget a cached view after an instance changes sessions.
-- [x] Rebuild all four static release targets with SQLite linked and Orb-only inlining disabled:
-      darwin/amd64 53,986,368 B; darwin/arm64 51,580,882 B; linux/amd64 52,998,304 B;
-      linux/arm64 50,200,736 B. All remain below 55 MB. Local M4 `--version` startup over
-      12 measured processes: median 15.26 ms, maximum 18.35 ms. Live fixtures were stopped and
-      their isolated server/client state removed; installed Orb binaries and user data were untouched.
-      Final `make check` passes: build, vet/lint, full race suite and pure-Go wire/conformance suite.
-- [ ] Finish remaining stores, source inventory and resumable migration/cutover; no user data has
-      been migrated and CLI persistence is still file-backed.
-- [ ] Implement managed hosting, conversation service, unified Sessions UI and native live tests.
-- [ ] Complete crash/quota/multiprocess/load verification, SDK/Pi gates and final release builds.
+- [x] Final native cutover release builds (`CGO_ENABLED=0`, existing Tailcat tags, Orb-only
+      inlining disabled): darwin/amd64 54,248,416 B; darwin/arm64 51,799,554 B;
+      linux/amd64 53,256,352 B; linux/arm64 50,397,344 B. All stay below 55 MB.
+      M4 `--version` over 20 warm processes: median 12.76 ms / maximum 21.79 ms.
+      Opening a populated 100k-session database and printing CLI help: median 16.86 ms /
+      maximum 19.48 ms over 20 warm runs. The full `make check` passes: build, vet/lint,
+      race suite and pure-Go wire/conformance gates. All 29 unchanged upstream RPC tests pass
+      through explicit Pi-file compatibility. All SDK examples and an external consumer build
+      without SQLite/Bridge/Tailcat dependencies; portable `connect`/`bridge` compile for Wasm.
+- [x] Select SQLite explicitly in native CLI assembly for conversations, global configuration,
+      accounts/model catalogs/keybindings, memory, chat spool, Bridge state, attachments and receipts.
+      Migrate configured legacy roots before cutover; preserve original bytes, IDs, tree links and
+      capability state. Imports checkpoint source digests and reject changed inventories, damaged
+      trees, symlinks and unsupported versions. A process exit immediately before cutover resumes
+      correctly; changed sources are rejected. Empty initial database creation is recoverable.
+      Native session ownership is acquired before runtime teardown, and rejects concurrent opens
+      and deletion. Chat reset atomically carries delivery markers into its new native journal.
+- [x] Keep existing SDK defaults and unchanged Pi-file tests through explicit `--pi-files` assembly;
+      refuse that assembly on a migrated root. Native paths stay empty; resume, new/switch/fork,
+      HTML/Markdown/JSONL export and global configuration import/export use database state.
+      `storage backup` creates a private consistent snapshot; `storage restore` recovers conversation
+      journals and rejects conflicts, without rolling back authority, credentials or delivery state.
+      This is deliberately conversation recovery, not unrestricted whole-database rollback.
+      Product v1/v2/v3 imports are covered; the separate harness v4 SDK API remains unchanged and
+      is not a native v3-adapter input. Migration cannot fence arbitrary third-party file writers;
+      they must remain stopped after cutover, and old originals are recovery material only.
+- [x] Run current native migration/capability/chat-reset and SQLite tests on both lab-3 and edge
+      in temporary roots, including four writer processes, full-database write rollback, crash
+      recovery, conflict rejection, backup, foreign preview limits and revocation fencing.
+      Live SSH pairing to lab-3 exercised 20 SQLite sessions, remote faux-model prompting, completed
+      preview caching and local-block purge. That live check found and fixed an IPC-context bug
+      that purged the compatibility cache instead of the native database. Restarting Bridge
+      reconnected all 20 instances with stable identities; restarting the runtime process reopened
+      the same 20 session IDs and preserved operation receipts byte-for-byte. SQLite integrity
+      checks pass. Production installations and personal session roots were not migrated.
+- [x] Recheck 100k-session catalogs: M4 128-row page 0.141 ms / FTS 0.186 ms; lab-3 page
+      0.542 ms / FTS 0.604 ms; edge page 0.311 ms / FTS 0.460 ms. Durable append after 10k
+      entries: M4 0.155 ms, lab-3 6.568 ms, edge 0.216 ms. These are bounded microbenchmarks
+      (100 local / 20 server iterations), not claims about end-to-end saturation throughput.
+      FULL durability remains enabled; the slower lab disk is not hidden by relaxed sync.
+- [x] Repeat the full macOS gate after release hardening. The lab contention run exposed two
+      distinct cases: simultaneous schema creation and normal FULL-durability writer starvation.
+      First opens now serialize schema initialization and recheck it; existing WAL databases open
+      without a write lock. SQLite writer admission waits up to 30 seconds rather than five,
+      without reducing durability or replaying transactions. Three consecutive complete SQLite
+      suites plus native migration/capability/chat-reset suites pass on both lab-3 and edge.
+      A vanished Orb process no longer blocks the legacy-writer check; a deterministic regression
+      retains refusal for a live process that cannot be inspected. RPC subprocess failures now
+      capture stderr and clean up the child; 30 repeated binary transcript runs pass, including
+      20 with concurrent short-lived Orb processes. The full local gate passes again.
+- [x] Regenerate canonical fixtures on an isolated Linux filesystem: TS-to-Go comparisons and
+      reciprocal session/auth reads pass without golden changes. A 20-second protocol fuzz run
+      executed 884,148 inputs without failure. Module checksums verify, all SDK examples build
+      without SQLite/Bridge/Tailcat dependencies, and portable connect/bridge still build for Wasm.
+      The existing viewport benchmark at one million lines uses 2,593 B / 49 allocations per
+      complete frame (15.6 microseconds in the 100-iteration M4 run), the same allocation budget
+      as 100k lines. This measures rendered frames, not total transcript memory.
+- [ ] Implement managed hosting, conversation service and the unified multi-Bridge Sessions UI;
+      the native-storage cutover does not imply completion of those separate plan slices.
 
 ## Orb/OpenCode evaluation — 2026-09-20
 

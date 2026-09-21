@@ -116,7 +116,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 		_, _ = fmt.Fprintln(writer, "Bridge disconnected:", err)
 	}
 	stateDir := filepath.Join(filepath.Dir(filepath.Dir(dir)), "instances", profile, alias)
-	stateStore, err := native.OpenStore(filepath.Join(stateDir, "attachment.json"), 4096)
+	stateStore, err := args.native.bridgeStore(filepath.Join(stateDir, "attachment.json"), 4096)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 			return nil, errors.New("invalid instance attachment state")
 		}
 	}
-	ledger, err := native.OpenStore(filepath.Join(stateDir, "operations.json"), protocol.MaxFrame)
+	ledger, err := args.native.bridgeStore(filepath.Join(stateDir, "operations.json"), protocol.MaxFrame)
 	if err != nil {
 		cleanup()
 		return nil, err

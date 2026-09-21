@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 var errNoSessionSelected = errors.New("no session selected")
@@ -132,6 +134,9 @@ func createCLISessionWithSelectors(
 	selector SessionSelector,
 	contextSelector ContextSessionSelector,
 ) (*session.SessionManager, session.SessionContext, error) {
+	if args.native != nil && !args.NoSession {
+		return createNativeSession(cwd, args, streams, selector, contextSelector)
+	}
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
 		return nil, session.SessionContext{}, err
@@ -243,7 +248,7 @@ func createCLISessionWithSelectors(
 }
 
 func getMissingSessionCWDIssue(manager *session.SessionManager, fallbackCWD string) *MissingSessionCWDError {
-	if manager == nil || manager.GetSessionFile() == "" || manager.GetCWD() == "" {
+	if manager == nil || !manager.IsPersisted() || manager.GetCWD() == "" {
 		return nil
 	}
 	if _, err := os.Stat(manager.GetCWD()); !errors.Is(err, os.ErrNotExist) {
@@ -314,4 +319,94 @@ func confirmGlobalSessionFork(streams cliStreams, sessionCWD string) (bool, erro
 	answer := strings.TrimSuffix(line, "\n")
 	answer = strings.ToLower(strings.TrimSuffix(answer, "\r"))
 	return answer == "y" || answer == "yes", nil
+}
+
+func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector SessionSelector, contextSelector ContextSessionSelector) (*session.SessionManager, session.SessionContext, error) {
+	ctx := context.Background()
+	repo := args.native.sessions()
+	var opened *harness.Session
+	var err error
+	reference := ""
+	switch {
+	case hasCLIValue(args.Fork):
+		reference = *args.Fork
+	case hasCLIValue(args.Session):
+		reference = *args.Session
+	case args.SessionID != nil:
+		reference = *args.SessionID
+	case args.Continue:
+		rows, listErr := repo.List(ctx, harness.SessionListOptions{CWD: cwd})
+		if listErr != nil {
+			return nil, session.SessionContext{}, listErr
+		}
+		if len(rows) > 0 {
+			reference = rows[0].ID
+		}
+	case args.Resume:
+		var selected bool
+		current := func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+			return repo.ListInfo(ctx, cwd, update)
+		}
+		all := func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+			return repo.ListInfo(ctx, "", update)
+		}
+		if contextSelector == nil && selector == nil {
+			contextSelector = startupContextTUISessionSelector(ctx)
+		}
+		if contextSelector != nil {
+			reference, selected, err = contextSelector(current, all)
+		} else {
+			reference, selected, err = selector(func(progress session.SessionListProgress) []session.SessionInfo {
+				rows, _ := current(ctx, nil)
+				return rows
+			}, func(progress session.SessionListProgress) []session.SessionInfo {
+				rows, _ := all(ctx, nil)
+				return rows
+			})
+		}
+		if err != nil {
+			return nil, session.SessionContext{}, err
+		}
+		if !selected {
+			return nil, session.SessionContext{}, errNoSessionSelected
+		}
+	}
+	if reference != "" {
+		opened, err = repo.OpenPath(ctx, reference)
+	}
+	if err != nil && (args.SessionID == nil || hasCLIValue(args.Fork) || hasCLIValue(args.Session) || !errors.Is(err, fs.ErrNotExist)) {
+		return nil, session.SessionContext{}, err
+	}
+	if hasCLIValue(args.Fork) {
+		leaf, leafErr := opened.Storage().LeafID()
+		if leafErr != nil {
+			return nil, session.SessionContext{}, leafErr
+		}
+		entry := ""
+		if leaf != nil {
+			entry = *leaf
+		}
+		options := harness.SessionCreateOptions{CWD: cwd}
+		if args.SessionID != nil {
+			options.ID = *args.SessionID
+		}
+		opened, err = repo.Fork(ctx, opened.Metadata(), harness.SessionForkOptions{SessionCreateOptions: options, EntryID: entry, Position: harness.ForkAt})
+	} else if opened == nil {
+		options := harness.SessionCreateOptions{CWD: cwd}
+		if args.SessionID != nil {
+			options.ID = *args.SessionID
+		}
+		opened, err = repo.Create(ctx, options)
+	}
+	if err != nil {
+		return nil, session.SessionContext{}, err
+	}
+	manager, err := session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir))
+	if err != nil {
+		return nil, session.SessionContext{}, err
+	}
+	if err = args.native.bindSession(manager); err != nil {
+		return nil, session.SessionContext{}, err
+	}
+	return manager, manager.BuildSessionContext(), nil
 }

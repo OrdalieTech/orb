@@ -57,6 +57,8 @@ type ExtensionAgentSessionService struct {
 
 // ExtensionAgentSessionServiceOptions configures the child-session runtime.
 type ExtensionAgentSessionServiceOptions struct {
+	// Configure supplies host-owned defaults before constructing a child runtime.
+	Configure func(*AgentSessionOptions) error
 	// CWD is the fallback working directory when a create request carries none.
 	CWD string
 	// AgentDir is the fallback agent directory (auth.json, models.json,
@@ -392,6 +394,11 @@ func (service *ExtensionAgentSessionService) CreateSession(
 		}
 	}
 
+	if service.options.Configure != nil {
+		if err := service.options.Configure(&sessionOptions); err != nil {
+			return nil, extensionhost.AgentSessionCreateResult{}, err
+		}
+	}
 	result, err := NewAgentSession(sessionOptions)
 	if err != nil {
 		return nil, extensionhost.AgentSessionCreateResult{}, err

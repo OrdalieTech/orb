@@ -284,7 +284,7 @@ func (selector *SessionSelectorComponent) loadScope(scope sessionSelectorScope) 
 func (selector *SessionSelectorComponent) setScopeSessionsLocked(scope sessionSelectorScope, sessions []session.SessionInfo) {
 	selectedPath := ""
 	if selector.selectionTouched && selector.selected >= 0 && selector.selected < len(selector.filtered) {
-		selectedPath = selector.filtered[selector.selected].session.Path
+		selectedPath = selector.filtered[selector.selected].session.Reference()
 	}
 	values := append([]session.SessionInfo(nil), sessions...)
 	if scope == sessionScopeCurrent {
@@ -300,7 +300,7 @@ func (selector *SessionSelectorComponent) setScopeSessionsLocked(scope sessionSe
 		selector.selected = 0
 	} else if selectedPath != "" {
 		for index := range selector.filtered {
-			if selector.filtered[index].session.Path == selectedPath {
+			if selector.filtered[index].session.Reference() == selectedPath {
 				selector.selected = index
 				break
 			}
@@ -374,13 +374,13 @@ func canonicalSessionPath(path string) string {
 func buildSessionTree(sessions []session.SessionInfo) []*sessionTreeNode {
 	byPath := make(map[string]*sessionTreeNode, len(sessions))
 	for _, info := range sessions {
-		byPath[canonicalSessionPath(info.Path)] = &sessionTreeNode{session: info, latestActivity: info.Modified}
+		byPath[canonicalSessionPath(info.Reference())] = &sessionTreeNode{session: info, latestActivity: info.Modified}
 	}
 	roots := make([]*sessionTreeNode, 0, len(sessions))
 	for _, info := range sessions {
-		node := byPath[canonicalSessionPath(info.Path)]
-		parentPath := ""
-		if info.ParentSessionPath != nil {
+		node := byPath[canonicalSessionPath(info.Reference())]
+		parentPath := info.ParentID
+		if parentPath == "" && info.ParentSessionPath != nil {
 			parentPath = canonicalSessionPath(*info.ParentSessionPath)
 		}
 		if parent := byPath[parentPath]; parent != nil {
@@ -719,7 +719,7 @@ func (selector *SessionSelectorComponent) ListConfirm() {
 	var callback func(string)
 	path := ""
 	if selector.selected >= 0 && selector.selected < len(selector.filtered) {
-		callback, path = selector.onSelect, selector.filtered[selector.selected].session.Path
+		callback, path = selector.onSelect, selector.filtered[selector.selected].session.Reference()
 		selector.clearStatusLocked()
 		selector.cancelActiveLoadsLocked()
 	}
@@ -809,8 +809,8 @@ func (selector *SessionSelectorComponent) renderSessionLineLocked(node flatSessi
 	available := width - 2 - tui.VisibleWidth(prefix) - tui.VisibleWidth(right) - 2
 	display = tui.TruncateToWidth(display, max(10, available), "…", false)
 	styledDisplay := display
-	confirming := info.Path == selector.confirmingDelete
-	isCurrent := selector.currentPath != "" && canonicalSessionPath(info.Path) == selector.currentPath
+	confirming := info.Reference() == selector.confirmingDelete
+	isCurrent := selector.currentPath != "" && canonicalSessionPath(info.Reference()) == selector.currentPath
 	switch {
 	case confirming:
 		styledDisplay = theme.FG("error", styledDisplay)
@@ -961,7 +961,7 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		callback := selector.onSelect
 		path := ""
 		if selector.selected >= 0 && selector.selected < len(selector.filtered) {
-			path = selector.filtered[selector.selected].session.Path
+			path = selector.filtered[selector.selected].session.Reference()
 		}
 		if path != "" {
 			selector.clearStatusLocked()
@@ -1009,7 +1009,7 @@ func (selector *SessionSelectorComponent) startDeleteLocked() {
 	if selector.selected < 0 || selector.selected >= len(selector.filtered) {
 		return
 	}
-	path := selector.filtered[selector.selected].session.Path
+	path := selector.filtered[selector.selected].session.Reference()
 	if selector.currentPath != "" && canonicalSessionPath(path) == selector.currentPath {
 		selector.setStatusLocked("error", "Cannot delete the currently active session", 3*time.Second)
 		return
@@ -1062,7 +1062,7 @@ func (selector *SessionSelectorComponent) removeSession(path string) {
 	remove := func(values []session.SessionInfo) []session.SessionInfo {
 		result := values[:0]
 		for _, info := range values {
-			if info.Path != path {
+			if info.Reference() != path {
 				result = append(result, info)
 			}
 		}
@@ -1083,6 +1083,9 @@ func (selector *SessionSelectorComponent) removeSession(path string) {
 }
 
 func deleteSessionFile(path string) (SessionDeleteMethod, error) {
+	if !filepath.IsAbs(path) {
+		return SessionDeleteUnlink, errors.New("native session deletion requires its owning store")
+	}
 	arguments := []string{path}
 	if strings.HasPrefix(path, "-") {
 		arguments = []string{"--", path}
@@ -1124,6 +1127,11 @@ func RunSessionSelectorContextWithTerminal(ctx context.Context, current, all Ses
 	}, terminal)
 }
 
+// RunSessionSelectorWithOptions assembles native loaders and actions explicitly.
+func RunSessionSelectorWithOptions(ctx context.Context, options SessionSelectorOptions) (string, bool, error) {
+	return runSessionSelectorWithTerminal(ctx, options, tui.NewProcessTerminal())
+}
+
 func runSessionSelectorWithTerminal(ctx context.Context, options SessionSelectorOptions, terminal tui.Terminal) (string, bool, error) {
 	if terminal == nil {
 		return "", false, errors.New("session selector requires a terminal")
@@ -1134,9 +1142,12 @@ func runSessionSelectorWithTerminal(ctx context.Context, options SessionSelector
 	if err := ctx.Err(); err != nil {
 		return "", false, err
 	}
-	bindings := NewAppKeybindings(nil)
-	if agentDir, err := config.GetAgentDir(); err == nil {
-		bindings = NewAppKeybindings(tui.LoadKeybindingsFile(filepath.Join(agentDir, "keybindings.json")))
+	bindings := options.Keybindings
+	if bindings == nil {
+		bindings = NewAppKeybindings(nil)
+		if agentDir, err := config.GetAgentDir(); err == nil {
+			bindings = NewAppKeybindings(tui.LoadKeybindingsFile(filepath.Join(agentDir, "keybindings.json")))
+		}
 	}
 	tui.SetKeybindings(bindings)
 	uiApp := tui.NewTUI(terminal)

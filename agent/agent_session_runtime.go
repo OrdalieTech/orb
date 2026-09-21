@@ -36,6 +36,7 @@ type AgentSessionRuntime struct {
 	create           CreateAgentSessionRuntimeFactory
 	rebind           func(*AgentSession) error
 	beforeInvalidate func()
+	claimSession     func(*sessionstore.SessionManager) (func(), error)
 	disposed         bool
 }
 
@@ -180,6 +181,14 @@ func (runtime *AgentSessionRuntime) ModelFallbackMessage() string {
 		return ""
 	}
 	return runtime.result.ModelFallbackMessage
+}
+
+// SetSessionClaim installs host-owned session admission before abort or teardown.
+// The returned release function retires the previous ownership after replacement.
+func (runtime *AgentSessionRuntime) SetSessionClaim(claim func(*sessionstore.SessionManager) (func(), error)) {
+	runtime.mu.Lock()
+	runtime.claimSession = claim
+	runtime.mu.Unlock()
 }
 
 // SetRebindSession sets the callback run after each replacement is installed.
@@ -733,6 +742,18 @@ func (runtime *AgentSessionRuntime) replace(
 	startReason extensions.SessionStartReason,
 	configure func(*AgentSessionOptions),
 ) (*AgentSession, error) {
+	runtime.mu.RLock()
+	claim := runtime.claimSession
+	runtime.mu.RUnlock()
+	if claim != nil {
+		release, err := claim(replacement)
+		if err != nil {
+			return nil, err
+		}
+		if release != nil {
+			defer release()
+		}
+	}
 	previousFile := current.Manager().GetSessionFile()
 	targetFile := replacement.GetSessionFile()
 	// Persist an active turn's aborted tool results before replacing its manager.
@@ -936,7 +957,7 @@ func runtimeForkCancelled(ctx context.Context, current *AgentSession, event exte
 }
 
 func assertRuntimeSessionCWD(manager *sessionstore.SessionManager, fallbackCWD string) error {
-	if manager == nil || manager.GetSessionFile() == "" {
+	if manager == nil || !manager.IsPersisted() {
 		return nil
 	}
 	cwd := manager.GetCWD()

@@ -2,7 +2,9 @@
 package native
 
 import (
+	"context"
 	"errors"
+	"github.com/OrdalieTech/orb/storage"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 )
 
 type Store struct {
+	document       storage.Document
 	mu             sync.Mutex
 	path           string
 	quota          int
@@ -53,11 +56,31 @@ func OpenStore(path string, quota int) (*Store, error) {
 	}
 	return &Store{path: path, quota: quota, lock: lock}, nil
 }
+
+// OpenStoreWithDocument keeps native single-owner locking and quotas while
+// the supplied document owns persistence. Closing it never closes the database.
+func OpenStoreWithDocument(path string, quota int, document storage.Document) (*Store, error) {
+	if document == nil {
+		return nil, errors.New("bridge document required")
+	}
+	store, err := OpenStore(path, quota)
+	if err == nil {
+		store.document = document
+	}
+	return store, err
+}
 func (s *Store) Load() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.failed {
 		return nil, errors.New("store unavailable")
+	}
+	if s.document != nil {
+		data, err := s.document.Read(context.Background())
+		if len(data) > s.quota {
+			return nil, errors.New("store quota exceeded")
+		}
+		return data, err
 	}
 	f, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -81,6 +104,13 @@ func (s *Store) Save(b []byte) (err error) {
 	}
 	if len(b) > s.quota {
 		return errors.New("store quota exceeded")
+	}
+	if s.document != nil {
+		err = s.document.Update(context.Background(), func([]byte) ([]byte, error) { return b, nil })
+		if err != nil {
+			s.failed = true
+		}
+		return err
 	}
 	dir := filepath.Dir(s.path)
 	f, err := os.CreateTemp(dir, ".bridge-")

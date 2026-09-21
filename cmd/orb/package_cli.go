@@ -414,11 +414,14 @@ func reportPackageSettingsErrors(stderr io.Writer, settings *config.SettingsMana
 // saved-trust-only for update, otherwise the full trust flow (headless — no
 // prompt, no project_trust extensions yet).
 func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, projectTrustOverride *bool, useSavedProjectTrustOnly bool) (*config.SettingsManager, []string, error) {
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	settings, err := stateFromContext(ctx).settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return nil, nil, err
 	}
-	trustStore := config.NewProjectTrustStore(agentDir)
+	trustStore, err := stateFromContext(ctx).trust(agentDir)
+	if err != nil {
+		return nil, nil, err
+	}
 	if useSavedProjectTrustOnly {
 		trusted := false
 		if projectTrustOverride != nil {
@@ -499,7 +502,7 @@ func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams,
 		return true, 1
 	}
 
-	globalSettings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	globalSettings, err := stateFromContext(ctx).settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}

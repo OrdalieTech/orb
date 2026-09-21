@@ -16,12 +16,14 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/ai/providers"
+	"github.com/OrdalieTech/orb/storage"
 )
 
 type ModelRegistry struct {
-	reloadMu sync.Mutex
-	opMu     sync.Mutex
-	mu       sync.RWMutex
+	modelDocument, catalogDocument storage.Document
+	reloadMu                       sync.Mutex
+	opMu                           sync.Mutex
+	mu                             sync.RWMutex
 
 	agentDir      string
 	config        *ModelConfig
@@ -58,7 +60,18 @@ func NewOfflineModelRegistry(agentDir string) (*ModelRegistry, error) {
 	return newModelRegistry(agentDir, false)
 }
 
+func NewModelRegistryWithDocuments(agentDir string, credentials aiauth.CredentialStore, models, catalog storage.Document, allowNetwork bool) (*ModelRegistry, error) {
+	return modelRegistryWithStorage(agentDir, allowNetwork, credentials, models, catalog)
+}
+
 func newModelRegistry(agentDir string, allowModelNetwork bool, sources ...aiauth.CredentialStore) (*ModelRegistry, error) {
+	var credentials aiauth.CredentialStore
+	if len(sources) > 0 {
+		credentials = sources[0]
+	}
+	return modelRegistryWithStorage(agentDir, allowModelNetwork, credentials, nil, nil)
+}
+func modelRegistryWithStorage(agentDir string, allowModelNetwork bool, credentials aiauth.CredentialStore, models, catalog storage.Document) (*ModelRegistry, error) {
 	normalized, err := NormalizePath(agentDir)
 	if err != nil {
 		return nil, err
@@ -69,9 +82,8 @@ func newModelRegistry(agentDir string, allowModelNetwork bool, sources ...aiauth
 		providerVersions:  make(map[string]uint64),
 		allowModelNetwork: allowModelNetwork,
 	}
-	if len(sources) > 0 {
-		registry.credentials = sources[0]
-	}
+	registry.credentials = credentials
+	registry.modelDocument, registry.catalogDocument = models, catalog
 	if err := registry.Reload(); err != nil {
 		return nil, err
 	}
@@ -86,11 +98,25 @@ func (registry *ModelRegistry) Reload() error {
 	if err != nil {
 		return err
 	}
-	stored, err := aimodels.LoadStore(filepath.Join(registry.agentDir, "models-store.json"))
+	var stored *aimodels.Catalog
+	if registry.catalogDocument != nil {
+		stored, err = aimodels.LoadStoreDocument(registry.catalogDocument)
+	} else {
+		stored, err = aimodels.LoadStore(filepath.Join(registry.agentDir, "models-store.json"))
+	}
 	if err != nil {
 		return err
 	}
-	config, err := LoadModelConfig(filepath.Join(registry.agentDir, "models.json"))
+	var config *ModelConfig
+	if registry.modelDocument != nil {
+		var data []byte
+		data, err = registry.modelDocument.Read(context.Background())
+		if err == nil {
+			config, err = ParseModelConfig(data, "native models")
+		}
+	} else {
+		config, err = LoadModelConfig(filepath.Join(registry.agentDir, "models.json"))
+	}
 	if err != nil {
 		return err
 	}
@@ -941,7 +967,7 @@ func (registry *ModelRegistry) providerAuthLocked(id string) aiauth.ProviderAuth
 func (registry *ModelRegistry) refreshContext(id string, credential *aiauth.Credential, allowNetwork, force bool) extensions.RefreshModelsContext {
 	return extensions.RefreshModelsContext{
 		Credential: credential.Clone(), AllowNetwork: allowNetwork, Force: force,
-		Signal: context.Background(), Store: newProviderModelStore(filepath.Join(registry.agentDir, "models-store.json"), id),
+		Signal: context.Background(), Store: newProviderModelStore(filepath.Join(registry.agentDir, "models-store.json"), id, registry.catalogDocument),
 	}
 }
 

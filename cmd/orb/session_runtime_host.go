@@ -121,6 +121,9 @@ func newCLISessionRuntimeHost(
 			return nil, fmt.Errorf("orb: replacement runtime requires a session manager")
 		}
 		args := options.BaseArgs
+		if err := args.native.bindSession(manager); err != nil {
+			return nil, err
+		}
 		contextState := manager.BuildSessionContext()
 		if len(manager.GetEntries()) > 0 {
 			applySessionDefaults(&args, contextState, manager.GetBranch())
@@ -205,7 +208,11 @@ func newCLISessionRuntimeHost(
 		}, nil
 	}
 
-	return agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{
+	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{
 		CWD: options.Manager.GetCWD(), SessionManager: options.Manager,
 	}, factory)
+	if err == nil && options.BaseArgs.native != nil {
+		host.SetSessionClaim(options.BaseArgs.native.claimSession)
+	}
+	return host, err
 }

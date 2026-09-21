@@ -23,6 +23,7 @@ type CLIUnknownFlag struct {
 }
 
 type CLIArgs struct {
+	native             *nativeState
 	BridgeProfile      string
 	InstanceAlias      string
 	bridgeLink         *cliBridgeLink

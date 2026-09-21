@@ -3,17 +3,28 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/hosts/native"
+	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/memory"
+	"github.com/OrdalieTech/orb/storage/sqlite"
 )
 
 func TestResolveSessionArgumentPrefersLocalExactThenPrefix(t *testing.T) {
@@ -648,4 +659,351 @@ func runCLIFauxSessionCommand(t *testing.T, argv []string) string {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	return gotCWD
+}
+
+func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_CHAT_DATA_DIR", "")
+	cwd := t.TempDir()
+	legacy, err := session.Create(cwd, "", session.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = legacy.AppendMessage(map[string]any{"role": "user", "content": "before migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = legacy.AppendMessage(map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "saved"}}, "stopReason": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(legacy.GetSessionFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state, err := openNativeState(ctx, agentDir, false); err == nil {
+		_ = state.close()
+		t.Fatal("legacy cutover without quiescence")
+	}
+	state, err := openNativeState(ctx, agentDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := runNativeCLI(ctx, []string{"--pi-files", "--help"}, cliStreams{Stdout: io.Discard, Stderr: io.Discard}); code == 0 {
+		t.Fatal("compatibility mode reused migrated root")
+	}
+	id := legacy.GetSessionID()
+	args := CLIArgs{Session: &id, native: state}
+	manager, _, err := createCLISession(cwd, args, cliStreams{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.GetSessionFile() != "" || !manager.IsPersisted() {
+		t.Fatal("native session has file authority")
+	}
+	if _, err = manager.AppendSessionInfo("After migration"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exporthtml.ExportSession(manager, exporthtml.Options{OutputPath: filepath.Join(root, "session.html")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exporthtml.ExportSessionMarkdown(manager, filepath.Join(root, "session.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	other, err := openNativeState(ctx, agentDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.bindSession(manager); err == nil {
+		t.Fatal("second process owner accepted")
+	}
+	if _, err := other.deleteSession(id); err == nil {
+		t.Fatal("deleted an owned session")
+	}
+	_ = other.close()
+	missing, requested := "missing", "new-id"
+	if _, _, err := createCLISession(cwd, CLIArgs{Fork: &missing, SessionID: &requested, native: state}, cliStreams{}, nil); err == nil {
+		t.Fatal("forked missing session")
+	}
+	backup := filepath.Join(root, "backup.db")
+	if err := state.db.Backup(ctx, backup); err != nil {
+		t.Fatal(err)
+	}
+	forked, err := state.sessions().Fork(ctx, harness.SessionMetadata{ID: id}, harness.SessionForkOptions{SessionCreateOptions: harness.SessionCreateOptions{CWD: cwd}, Position: harness.ForkAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.sessions().Delete(ctx, harness.SessionMetadata{ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := state.db.RestoreSessions(ctx, backup, "personal"); err != nil || count != 1 {
+		t.Fatalf("restore: %d %v", count, err)
+	}
+	if _, err := state.sessions().Open(ctx, forked.Metadata()); err != nil {
+		t.Fatal("restore removed newer conversation", err)
+	}
+	if err = state.close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err = openNativeState(ctx, agentDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.close() }()
+	args.native = state
+	manager, _, err = createCLISession(cwd, args, cliStreams{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.GetSessionName() == nil || *manager.GetSessionName() != "After migration" {
+		t.Fatal("restart lost native write")
+	}
+	after, err := os.ReadFile(legacy.GetSessionFile())
+	if err != nil || !bytes.Equal(original, after) {
+		t.Fatal("migration changed legacy backup", err)
+	}
+}
+
+func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_CHAT_DATA_DIR", "")
+	t.Setenv("PI_OFFLINE", "1")
+	if err := os.MkdirAll(agentDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	settingsBytes := []byte(`{"apiKeys":{"test":"legacy-test-key"},"future":{"preserve":true}}`)
+	if err := os.WriteFile(settingsPath, settingsBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	memoryStore, err := memory.NewFileStore(filepath.Join(agentDir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := memoryStore.Append(ctx, memory.Item{Content: "remembered", Tags: []string{"project"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := memoryStore.Append(ctx, memory.Item{Content: "forgotten"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = memoryStore.Delete(ctx, deleted); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := bridgeDir("personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridgePath := filepath.Join(dir, "state.json")
+	store, err := native.OpenStore(bridgePath, protocol.MaxFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := bridge.Open(store, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := b.PeerID()
+	_ = b.Close()
+	_ = store.Close()
+	originalBridge, err := os.ReadFile(bridgePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataDir := filepath.Join(agentDir, "chat", "telegram")
+	if err = os.MkdirAll(dataDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	message := chat.Message{EventID: "pending", Text: "hello"}
+	raw, _ := json.Marshal(map[string]any{"m": message})
+	spoolPath := filepath.Join(dataDir, "spool.jsonl")
+	originalSpool := append(append(append([]byte{}, raw...), '\n'), append(raw, '\n')...)
+	originalSpool = append(originalSpool, []byte("{\"ack\":\"pending\"}\n")...)
+	if err = os.WriteFile(spoolPath, originalSpool, 0600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := openNativeState(ctx, agentDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := state.auth(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := credentials.Read(ctx, "test")
+	if err != nil || credential == nil || credential.Key == nil || *credential.Key != "legacy-test-key" {
+		t.Fatal("legacy auth missing", err)
+	}
+	bounded, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if _, err = state.accounts(agentDir, credentials).Add(bounded, "test", "default again", credential); err != nil {
+		t.Fatal("nested credential transaction", err)
+	}
+	preferences := filepath.Join(root, "exported-settings.json")
+	streams := cliStreams{Stdout: io.Discard, Stderr: io.Discard}
+	if runNativeCLI(ctx, []string{"storage", "config", "export", "settings.json", preferences}, streams) != 0 {
+		t.Fatal("configuration export failed")
+	}
+	if err := os.WriteFile(preferences, []byte(`{"theme":"light","future":{"preserve":true}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if runNativeCLI(ctx, []string{"storage", "config", "import", "settings.json", preferences}, streams) != 0 {
+		t.Fatal("configuration import failed")
+	}
+	settings, err := state.settings(root, agentDir)
+	if err != nil || settings.GetTheme() != "light" {
+		t.Fatal("configuration import not authoritative", err)
+	}
+	settings.SetPluginEnabled("memory", true)
+	if len(settings.DrainErrors()) != 0 {
+		t.Fatal("native settings failed")
+	}
+	rows, err := state.memory().Query(ctx, memory.Filter{Tags: []string{"project"}})
+	if err != nil || len(rows) != 1 || rows[0].ID != id {
+		t.Fatal("memory migration", rows, err)
+	}
+	queue := state.db.Chat(state.chatNamespace(dataDir))
+	pending, err := queue.Pending(ctx)
+	if err != nil || len(pending) != 1 {
+		t.Fatal("spool migration", pending, err)
+	}
+	if err = queue.Ack(ctx, "pending"); err != nil {
+		t.Fatal(err)
+	}
+	if err = queue.Put(ctx, chat.Message{EventID: "after-migration", Text: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	store, err = state.bridgeStore(bridgePath, protocol.MaxFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err = bridge.Open(store, false)
+	if err != nil || b.PeerID() != peer {
+		t.Fatal("pairing identity changed", err)
+	}
+	remote, err := bridge.Open(&testBridgeStore{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = remote.Close() }()
+	cache := state.db.Foreign("personal")
+	ticket, err := cache.Begin(ctx, remote.PeerID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Put(ctx, ticket, sqlite.ForeignSession{Peer: remote.PeerID(), Namespace: "remote", ID: "session", Instance: "instance"}); err != nil {
+		t.Fatal(err)
+	}
+	service := bridgeService{b: b, profile: "personal", ctx: context.WithValue(ctx, nativeStateKey{}, state)}
+	params, _ := json.Marshal(map[string]string{"peer_id": remote.PeerID()})
+	if _, err := service.admin(context.Background(), "block", params); err != nil {
+		t.Fatal(err)
+	}
+	if previews, err := cache.List(ctx, remote.PeerID()); err != nil || len(previews) != 0 {
+		t.Fatal("admin callback purged wrong database", err)
+	}
+	_ = b.Close()
+	_ = store.Close()
+	if err = state.close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err = openNativeState(ctx, agentDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.close() }()
+	pending, err = state.db.Chat(state.chatNamespace(dataDir)).Pending(ctx)
+	if err != nil || len(pending) != 1 || pending[0].EventID != "after-migration" {
+		t.Fatal("restart replayed old spool", pending, err)
+	}
+	for path, want := range map[string][]byte{settingsPath: settingsBytes, bridgePath: originalBridge, spoolPath: originalSpool} {
+		got, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("original changed: %s, %v", path, err)
+		}
+	}
+}
+
+func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_CHAT_DATA_DIR", "")
+	t.Setenv("PI_OFFLINE", "1")
+	state, err := openNativeState(ctx, agentDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.close() }()
+	settings, err := state.settings(root, agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := state.auth(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := state.models(agentDir, credentials, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fauxProvider := faux.New(faux.Options{})
+	newProvider := func() *chat.LocalProvider {
+		p, err := chat.NewLocalProvider(root, chat.WithAgentDir(agentDir), chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo { return state.db.Sessions("chat/" + key.String()) }, settings, registry), chat.WithSessionOptions(func(_ chat.ConversationKey, o *agent.AgentSessionOptions) {
+			o.Model = fauxProvider.GetModel()
+			o.StreamFn = fauxProvider.StreamSimple
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	key := chat.ConversationKey{Platform: "faux", Account: "test", ChatID: "reset"}
+	conversation, err := newProvider().Acquire(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldID := conversation.Manager.GetSessionID()
+	marker := map[string]any{"eventId": "already-delivered", "phase": "delivered"}
+	if _, err := conversation.Manager.AppendCustomEntry("orb.chat.turn", marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	newID := conversation.Manager.GetSessionID()
+	if newID == oldID {
+		t.Fatal("reset retained old session")
+	}
+	if err := conversation.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err = newProvider().Acquire(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conversation.Close(ctx) }()
+	if conversation.Manager.GetSessionID() != newID {
+		t.Fatal("reopened old session")
+	}
+	data, err := conversation.Manager.JSONL()
+	if err != nil || !bytes.Contains(data, []byte("already-delivered")) {
+		t.Fatal("reset lost delivery tombstone", err)
+	}
 }

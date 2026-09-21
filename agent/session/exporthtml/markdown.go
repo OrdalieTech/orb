@@ -19,14 +19,19 @@ func ExportSessionMarkdown(manager *session.SessionManager, outputPath string) (
 		return "", errors.New("session manager is required")
 	}
 	sessionFile := manager.GetSessionFile()
-	if sessionFile == "" {
+	if !manager.IsPersisted() {
 		return "", errors.New("Cannot export in-memory session to Markdown") //nolint:staticcheck // User-facing compatibility error.
 	}
-	if _, err := os.Stat(sessionFile); err != nil {
-		return "", errors.New("Nothing to export yet - start a conversation first") //nolint:staticcheck // User-facing compatibility error.
+	if sessionFile != "" {
+		if _, err := os.Stat(sessionFile); err != nil {
+			return "", errors.New("Nothing to export yet - start a conversation first") //nolint:staticcheck // User-facing compatibility error.
+		}
 	}
 	if outputPath == "" {
-		base := strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
+		base := manager.GetSessionID()
+		if sessionFile != "" {
+			base = strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
+		}
 		outputPath = "pi-session-" + base + ".md"
 	}
 	outputPath, err := normalizePath(outputPath)

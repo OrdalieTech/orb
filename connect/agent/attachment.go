@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/connect"
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
@@ -416,9 +417,14 @@ func (a *Attachment) dispatch(r connect.Request) {
 		path := ""
 		s := a.host.Session()
 		if s != nil {
-			for _, entry := range session.List(s.Manager().GetCWD(), s.Manager().GetSessionDir(), nil) {
+			entries, listErr := storedSessions(ctx, s.Manager())
+			if listErr != nil {
+				fail(listErr)
+				return
+			}
+			for _, entry := range entries {
 				if entry.ID == p.SessionID {
-					path = entry.Path
+					path = entry.Reference()
 					break
 				}
 			}
@@ -469,7 +475,7 @@ func (a *Attachment) list(ctx context.Context, args json.RawMessage) (json.RawMe
 	if s == nil {
 		return nil, connect.Fail("unavailable")
 	}
-	entries, err := session.ListContext(ctx, s.Manager().GetCWD(), s.Manager().GetSessionDir(), nil)
+	entries, err := storedSessions(ctx, s.Manager())
 	if err != nil {
 		return nil, err
 	}
@@ -581,4 +587,25 @@ func positivePage(n int) int {
 		return protocol.MaxPage
 	}
 	return min(n, protocol.MaxPage)
+}
+
+func storedSessions(ctx context.Context, manager *session.SessionManager) ([]session.SessionInfo, error) {
+	repo := manager.HarnessRepo()
+	if repo == nil {
+		return session.ListContext(ctx, manager.GetCWD(), manager.GetSessionDir(), nil)
+	}
+	if lister, ok := repo.(interface {
+		ListInfo(context.Context, string, session.SessionListUpdateFunc) ([]session.SessionInfo, error)
+	}); ok {
+		return lister.ListInfo(ctx, manager.GetCWD(), nil)
+	}
+	rows, err := repo.List(ctx, harness.SessionListOptions{CWD: manager.GetCWD()})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]session.SessionInfo, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, session.SessionInfo{ID: row.ID, Path: row.Path, CWD: row.CWD})
+	}
+	return result, nil
 }

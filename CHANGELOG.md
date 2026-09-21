@@ -6,58 +6,75 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
-- Recover from missed terminal appearance replies and refresh cached tool, shell, and reasoning colors when switching between light and dark mode.
-- Show context capacity and usage as `210k|35%` in the compact footer, and quota reset times in the account switcher.
-- Keep tool results to three preview rows, with per-result click expansion and a subtle theme-aware hover background that preserves text selection.
+Orb now stores native application state in SQLite and connects conversations across devices through
+an optional, built-in Bridge. This release also reduces long-conversation rendering costs and
+simplifies everyday navigation. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
 
-- Bound live and long reasoning previews while keeping the full text expandable after completion; release rendered offscreen transcript lines so long sessions retain less display memory.
+### Native SQLite and migration
 
-- Cache recently viewed Bridge conversations in SQLite with bounded visible-message previews, explicit stale/read-only state, and access-revocation purging.
+- Use one native database for conversations, global settings, provider accounts and credentials,
+  trust, model catalogs, keybindings, memory, chat delivery state, Bridge identities and receipts.
+  Project configuration, installed extensions, exports and process files remain on disk.
+- Migrate legacy state on first launch with resumable, transactional imports. Preserve original
+  files, session IDs and conversation trees; reject changed sources, damaged trees and unsupported
+  versions before cutover. Close older Orb and Bridge processes before upgrading a state root.
+- Import and export Pi JSONL, HTML and Markdown through the existing codecs. Native sessions have
+  stable IDs rather than live JSONL paths. SDK constructors and file-backed defaults stay compatible;
+  `orb --pi-files ...` requires a separate state root after native migration.
+- Create private, consistent snapshots with `orb storage backup <path>`. Recover conversations with
+  `orb storage restore <backup>` without rolling back current credentials, grants, operation receipts
+  or chat delivery markers. Conflicting conversation histories are rejected.
+- Import or export global configuration explicitly with `orb storage config import|export
+  <name.json> <path>`. Retained legacy files are recovery copies and no longer update native state.
+- Index session catalogs and title/directory search, paginate without OFFSET scans, and append only
+  new journal entries. Keep WAL with FULL durability, reject stale writers, and acquire destination
+  ownership before replacing a live conversation. Concurrent schema initialization is serialized;
+  normal opens take no write lock.
 
-- Add an explicit SQLite storage adapter for session journals, paginated/searchable catalogs, global settings, credentials and trust; preserve existing file-backed defaults while native migration is implemented.
+### Bridge: connect devices and conversations
 
-- Treat composer image tags as one editable unit, including mouse placement and Backspace, and offer skill completion after `@` anywhere in a draft.
+- Enable Bridge directly from Settings or Ctrl+P. One executable includes the service, pairing,
+  local administration and a focused remote conversation view; no separate plugin installation.
+- Add devices through copy/paste invitations or existing SSH access. SSH pairing installs or updates
+  remote Orb when needed, then conversation traffic uses authenticated Bridge over Tailcat.
+- Grant mutual conversation access with one trust confirmation. Pinned identities, durable operation
+  receipts, immediate revocation and execution targeting protect remote control and reconnects.
+- Show paired devices separately from current availability, refresh conversations dynamically, and
+  reconnect attached instances after service restarts. Turning Bridge off stops access while retaining
+  saved pairings. Report connection failures in a readable two-line message.
+- Cache recently visited foreign conversations separately from owned sessions: at most eight visible
+  messages and 32 KiB per preview, with expiry and profile/peer bounds. Offline previews stay read-only;
+  reopening checks remote authority, and blocking a peer purges its cached content.
+- Retain scoped discovery and optional agent calls with explicit grants. Managed remote conversation
+  hosting and a unified multi-Bridge Sessions page are **not included** in this release.
 
-- Report Orb's interactive lifecycle automatically when launched inside Herdr; remain inert elsewhere.
+### A smaller, faster conversation interface
 
-- Attach pasted macOS clipboard images and dropped image files as resized model-readable image bytes, with numbered composer markers and bounded input size.
+- Open Plugins and Bridge pages directly from the command palette. Search individual settings there;
+  keep skill suggestions in the composer, including skill completion after `@` and `/` within drafts.
+- Limit tool previews to three rows with per-result expansion. Bound live reasoning previews, retain
+  full completed text on expansion, and evict offscreen rendered lines from long conversations.
+- Restore evicted lines before selection to prevent the reported slice-bounds crash. Preserve logical
+  lines when copying wrapped text, paragraphs and wide characters; confirm successful copies briefly
+  beside the composer.
+- Support word/paragraph selection and composer selection, modifier-arrow navigation and undoable
+  replacements. Treat image tags as single editable units, and attach pasted clipboard images or
+  dropped files as bounded, resized model-readable content.
+- Show the session directory, compact context usage and account quota reset times. Click the reasoning
+  indicator to change levels. Keep searchable model favorites and option dialogs stable at narrow sizes.
+- Recover missed terminal-appearance replies and refresh cached colors after theme changes. Preserve
+  detected colors across resource reloads and prevent stale modal backdrops.
+- Report interactive lifecycle to Herdr only when launched in its environment. Refresh reviewed Go
+  dependencies and release tooling while retaining compatibility-sensitive edit output.
 
-- Confirm successful text-selection copies in the composer signal zone.
+### Upgrade and verification
 
-- Offer skills from `/` anywhere in a draft; selecting one keeps the message open and invokes the existing skill command when sent.
+Native SQLite replaces live Pi/Orb file sharing. Keep the retained originals for recovery, stop
+legacy writers before cutover, and use explicit export when another application needs session files.
+Native imports accept product session formats v1–v3; the separate harness v4 SDK remains unchanged.
 
-- Show the current session directory in the compact footer and remove the ambiguous healthy `Bridge · personal` label; Bridge disconnection still appears as a warning.
-
-- Simplify Bridge to one switch, Add device, and a live device list. Open conversations directly, refresh availability automatically, and recover the conversation picker after reconnects; keep detailed administration in the CLI.
-
-- Show reasoning levels with a one-cell filling circle in the footer; clicking it cycles levels. Brief composer notices open and close a small border gap around their fade without changing the working indicator; replacements keep the gap open.
-
-- Replace an older running Bridge daemon before pairing after an update, preventing `not_found` when the service lacks full-access grant support. Attached conversations reconnect without being stopped.
-
-- Simplify Bridge pairing to full mutual conversation access with one trust confirmation, install missing or outdated remote Orb through SSH, and wrap Bridge errors onto two lines.
-
-- Guide Bridge pairing through copy/paste invitations and approval, add automatic pairing through existing SSH access, and distinguish saved devices from active connections. Wait for Bridge shutdown before returning from `orb bridge stop`.
-
-- Unify Bridge, plugins, permissions, and MCP with the command palette’s borderless themed panels and dimmed backdrop.
-
-- Make Bridge a built-in Settings and Ctrl+P page with one service switch, paired devices, access controls, and an optional agent-call setting. Plugins opens its page directly from Ctrl+P without changing the draft.
-
-- Show reasoning as a single clickable height glyph in the footer, with a dot for off.
-
-- Add searchable, scrolling favorite models; keep the modal and pointer position stable while toggling choices. Scroll long option dialogs within the terminal height.
-
-- Leave one scrollable blank row below the last conversation message.
-
-- Use double-click word selection, triple-click paragraph selection, and dragging by those units. Add composer selection with Shift and modifier-arrow keys, adaptive highlights, clipboard actions, and undoable replacement.
-
-- Add optional Orb Bridge: durable instance control, pinned pairing, directional grants, scoped discovery, opt-in agent calls, and CLI/TUI remote conversations in one executable.
-
-- Show copy, model, and other action confirmations briefly beside the composer instead of adding transcript entries, preserving the active loading indicator.
-- Find individual settings directly in the command palette; keep skills in composer completion instead of the command list.
-- Fix crashes and stale modal backdrops when switching between terminal, light, dark, and custom themes.
-- Refresh Go dependencies and GoReleaser while retaining the latest stable Go 1.27.1 baseline. Keep go-udiff pinned to preserve compatibility-sensitive edit output.
-- Preserve detected terminal colors across resource reloads, including toggling provider usage, so modal backgrounds and contrast do not reset.
-- Copy wrapped selections as logical lines, retain paragraph breaks, and highlight only text with an adaptive background. Keep wide-character selection within the original line width.
+Release measurements and verification evidence are recorded in `docs/plan/PROGRESS.md`. Live Bridge
+checks use isolated state and faux models; they do not claim live-provider or real-terminal coverage.
 
 ## [0.7.1] - 2026-09-21
 

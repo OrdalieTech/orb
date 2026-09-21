@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/usage"
 )
 
@@ -129,6 +130,17 @@ func createReplacementRuntime(
 // newSessionReplacementManager builds the manager for /new (upstream
 // AgentSessionRuntime.newSession).
 func newSessionReplacementManager(manager *session.SessionManager, parentSession string) (*session.SessionManager, error) {
+	if repo := manager.HarnessRepo(); repo != nil {
+		options := harness.SessionCreateOptions{CWD: manager.GetCWD()}
+		if parentSession != "" {
+			options.ParentSessionPath = &parentSession
+		}
+		created, err := repo.Create(context.Background(), options)
+		if err != nil {
+			return nil, err
+		}
+		return session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(repo))
+	}
 	var replacement *session.SessionManager
 	var err error
 	if manager.IsPersisted() {
@@ -173,6 +185,15 @@ func forkReplacementManager(manager *session.SessionManager, entryID string, pos
 		}
 	}
 
+	if repo := manager.HarnessRepo(); repo != nil {
+		metadata, _ := manager.HarnessMetadata()
+		forked, err := repo.Fork(context.Background(), metadata, harness.SessionForkOptions{SessionCreateOptions: harness.SessionCreateOptions{CWD: manager.GetCWD()}, EntryID: entryID, Position: harness.ForkPosition(position)})
+		if err != nil {
+			return nil, "", err
+		}
+		replacement, err := session.FromHarnessStorage(forked.Storage(), session.WithHarnessRepo(repo))
+		return replacement, selectedText, err
+	}
 	var replacement *session.SessionManager
 	var err error
 	if manager.IsPersisted() {
@@ -402,6 +423,11 @@ func (host *interactiveSessionHost) replace(
 	if file := manager.GetSessionFile(); file != "" && reason != extensions.SessionShutdownReload {
 		targetSessionFile = stringValue(file)
 	}
+	releasePrevious, err := host.args.native.claimSession(manager)
+	if err != nil {
+		return nil, err
+	}
+	defer releasePrevious()
 	host.mu.Lock()
 	beforeInvalidate := host.beforeInvalidate
 	host.mu.Unlock()
@@ -525,7 +551,17 @@ func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPa
 		if cwdOverride != "" {
 			openOptions = append(openOptions, session.WithCwdOverride(cwdOverride))
 		}
-		manager, err := session.Open(sessionPath, "", openOptions...)
+		var manager *session.SessionManager
+		if host.args.native != nil {
+			opened, openErr := host.args.native.sessions().OpenPath(ctx, sessionPath)
+			err = openErr
+			if err == nil {
+				openOptions = append(openOptions, session.WithHarnessRepo(host.args.native.sessions()))
+				manager, err = session.FromHarnessStorage(opened.Storage(), openOptions...)
+			}
+		} else {
+			manager, err = session.Open(sessionPath, "", openOptions...)
+		}
 		if err != nil {
 			return nil, false, err
 		}
@@ -577,6 +613,9 @@ func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, op
 }
 
 func (host *interactiveSessionHost) ImportSession(ctx context.Context, inputPath, cwdOverride string) (extensions.SessionReplacementResult, error) {
+	if host.args.native != nil {
+		return host.SwitchSession(ctx, inputPath, cwdOverride, nil)
+	}
 	runtime, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
 		current, err := host.beginReplacement(ctx)
 		if err != nil {
@@ -661,6 +700,10 @@ func (host *interactiveSessionHost) ListProjectSessions(onProgress session.Sessi
 		return nil
 	}
 	manager := current.Manager()
+	if host.args.native != nil {
+		rows, _ := host.args.native.sessions().ListInfo(context.Background(), manager.GetCWD(), nil)
+		return rows
+	}
 	return session.List(manager.GetCWD(), manager.GetSessionDir(), onProgress, session.WithAgentDir(host.agentDir))
 }
 
@@ -668,6 +711,10 @@ func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionLi
 	current, err := host.currentSession()
 	if err != nil {
 		return nil
+	}
+	if host.args.native != nil {
+		rows, _ := host.args.native.sessions().ListInfo(context.Background(), "", nil)
+		return rows
 	}
 	manager := current.Manager()
 	sessionDir := manager.GetSessionDir()
@@ -682,6 +729,9 @@ func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
+	if host.args.native != nil {
+		return host.args.native.sessions().ListInfo(ctx, current.Manager().GetCWD(), onUpdate)
+	}
 	manager := current.Manager()
 	return session.ListContext(ctx, manager.GetCWD(), manager.GetSessionDir(), onUpdate, session.WithAgentDir(host.agentDir))
 }
@@ -690,6 +740,9 @@ func (host *interactiveSessionHost) ListAllSessionsContext(ctx context.Context, 
 	current, err := host.currentSession()
 	if err != nil {
 		return nil, err
+	}
+	if host.args.native != nil {
+		return host.args.native.sessions().ListInfo(ctx, "", onUpdate)
 	}
 	manager := current.Manager()
 	sessionDir := manager.GetSessionDir()
@@ -705,7 +758,11 @@ func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, e
 		return modes.InteractiveTrustState{}, err
 	}
 	cwd := current.Manager().GetCWD()
-	entry, err := config.NewProjectTrustStore(host.agentDir).GetEntry(cwd)
+	trust, err := host.args.native.trust(host.agentDir)
+	if err != nil {
+		return modes.InteractiveTrustState{}, err
+	}
+	entry, err := trust.GetEntry(cwd)
 	if err != nil {
 		return modes.InteractiveTrustState{}, err
 	}
@@ -725,7 +782,11 @@ func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, e
 }
 
 func (host *interactiveSessionHost) SetProjectTrust(ctx context.Context, updates []config.ProjectTrustUpdate) error {
-	if err := config.NewProjectTrustStore(host.agentDir).SetMany(updates); err != nil {
+	trust, err := host.args.native.trust(host.agentDir)
+	if err != nil {
+		return err
+	}
+	if err := trust.SetMany(updates); err != nil {
 		return err
 	}
 	return host.Reload(ctx)
@@ -738,7 +799,7 @@ func (host *interactiveSessionHost) authStorage() (*config.AuthStorage, error) {
 	if storage != nil {
 		return storage, nil
 	}
-	return config.NewAuthStorage(filepath.Join(host.agentDir, "auth.json"))
+	return host.args.native.auth(host.agentDir)
 }
 
 func (host *interactiveSessionHost) authCredentials() (aiauth.CredentialStore, error) {
@@ -998,7 +1059,7 @@ func (host *interactiveSessionHost) Dispose() {
 
 // assertSessionCwdExists mirrors upstream session-cwd.ts.
 func assertSessionCwdExists(manager *session.SessionManager, fallbackCWD string) error {
-	if manager.GetSessionFile() == "" {
+	if !manager.IsPersisted() {
 		return nil
 	}
 	sessionCWD := manager.GetCWD()
@@ -1039,7 +1100,7 @@ func (host *interactiveSessionHost) accountStore() (*accounts.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return accounts.NewStore(filepath.Join(host.agentDir, "accounts.json"), base), nil
+	return host.args.native.accounts(host.agentDir, base), nil
 }
 
 func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]accounts.Account, error) {
@@ -1213,4 +1274,12 @@ func (host *interactiveSessionHost) SetUsageEnabled(enabled bool) error {
 		return errors[0]
 	}
 	return nil
+}
+
+func (host *interactiveSessionHost) DeleteSession(reference string) (modes.SessionDeleteMethod, error) {
+	if host.args.native == nil {
+		// File-backed SDK hosts retain the selector's ordinary delete path.
+		return modes.SessionDeleteUnlink, os.Remove(reference)
+	}
+	return host.args.native.deleteSession(reference)
 }

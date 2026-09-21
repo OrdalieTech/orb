@@ -32,9 +32,11 @@ import (
 	"github.com/OrdalieTech/orb/chat/telegram"
 	"github.com/OrdalieTech/orb/chat/whatsapp"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/gofrs/flock"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
@@ -99,7 +101,7 @@ func main() {
 	// (upstream cli.ts/rpc-entry.ts; AI_AGENT carries orb's identity per D30).
 	_ = os.Setenv("AI_AGENT", "orb")
 	_ = os.Setenv("PI_CODING_AGENT", "true")
-	os.Exit(runCLI(context.Background(), os.Args[1:], cliStreams{
+	os.Exit(runNativeCLI(context.Background(), os.Args[1:], cliStreams{
 		Stdin:     os.Stdin,
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
@@ -163,8 +165,24 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.selfUpdate == nil {
 		dependencies.selfUpdate = runSelfUpdate
 	}
+	if state := stateFromContext(ctx); state != nil {
+		refresh := dependencies.refreshModels
+		dependencies.refreshModels = func(refreshCtx context.Context, agentDir string) error {
+			return refresh(context.WithValue(refreshCtx, nativeStateKey{}, state), agentDir)
+		}
+	}
 	if dependencies.selectSession == nil && dependencies.selectSessionContext == nil {
-		dependencies.selectSessionContext = startupContextTUISessionSelector(ctx)
+		if state := stateFromContext(ctx); state != nil {
+			dependencies.selectSessionContext = func(current, all ContextSessionListLoader) (string, bool, error) {
+				bindings, err := state.keybindings()
+				if err != nil {
+					return "", false, err
+				}
+				return modes.RunSessionSelectorWithOptions(ctx, modes.SessionSelectorOptions{CurrentSessionsContext: modes.SessionSelectorContextLoader(current), AllSessionsContext: modes.SessionSelectorContextLoader(all), Keybindings: modes.NewAppKeybindings(bindings), DeleteSession: state.deleteSession})
+			}
+		} else {
+			dependencies.selectSessionContext = startupContextTUISessionSelector(ctx)
+		}
 	}
 	if dependencies.selectMissingSessionCWD == nil {
 		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *MissingSessionCWDError) (string, bool, error) {
@@ -200,6 +218,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
+	args.native = stateFromContext(ctx)
 	args.bridgeLink = &cliBridgeLink{}
 	offlineValue, networkDisabled := os.LookupEnv("PI_OFFLINE")
 	offlineValue = strings.ToLower(offlineValue)
@@ -237,7 +256,21 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		var path string
 		var err error
-		if strings.HasSuffix(outputPath, ".md") {
+		if args.native != nil && !strings.ContainsAny(*args.Export, `/\`) && !strings.HasSuffix(*args.Export, ".jsonl") {
+			stored, openErr := args.native.sessions().OpenPath(ctx, *args.Export)
+			if openErr != nil {
+				return reportCLIError(streams.Stderr, openErr)
+			}
+			manager, openErr := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(args.native.sessions()))
+			if openErr != nil {
+				return reportCLIError(streams.Stderr, openErr)
+			}
+			if strings.HasSuffix(outputPath, ".md") {
+				path, err = exporthtml.ExportSessionMarkdown(manager, outputPath)
+			} else {
+				path, err = exporthtml.ExportSession(manager, exporthtml.Options{OutputPath: outputPath})
+			}
+		} else if strings.HasSuffix(outputPath, ".md") {
 			path, err = exporthtml.ExportMarkdownFromFile(*args.Export, outputPath)
 		} else {
 			path, err = exporthtml.ExportFromFile(*args.Export, exporthtml.Options{OutputPath: outputPath})
@@ -257,8 +290,10 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: "+sessionErrors[0]))
 		return 1
 	}
-	if _, err := migrateStartupAuth(); err != nil {
-		return reportCLIError(streams.Stderr, err)
+	if args.native == nil {
+		if _, err := migrateStartupAuth(); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
 	}
 	if args.Help {
 		text := helpText
@@ -384,7 +419,15 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if dirErr != nil {
 			return reportCLIError(streams.Stderr, dirErr)
 		}
-		manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(selectedCWD))
+		if args.native != nil {
+			var opened *harness.Session
+			opened, err = args.native.sessions().OpenPath(ctx, manager.GetSessionID())
+			if err == nil {
+				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.sessions()), session.WithCwdOverride(selectedCWD))
+			}
+		} else {
+			manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(selectedCWD))
+		}
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
@@ -445,7 +488,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			defer detach()
 		}
 
+		bindings, err := args.native.keybindings()
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
 		return dependencies.runInteractive(ctx, host.Session(), modes.InteractiveModeOptions{
+			Keybindings:    bindings,
 			InitialMessage: initial,
 			InitialImages:  initialImages,
 			Messages:       append([]string(nil), args.Messages...),
@@ -582,10 +630,12 @@ func migrateStartupAuth() (string, error) {
 func refreshModelCatalogs(ctx context.Context, agentDir string) error {
 	timeoutContext, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	_, err := aimodels.Refresh(timeoutContext, aimodels.RefreshOptions{
-		StorePath: filepath.Join(agentDir, "models-store.json"),
-		UserAgent: aimodels.OrbUserAgent(version),
-	})
+	options := aimodels.RefreshOptions{StorePath: filepath.Join(agentDir, "models-store.json"), UserAgent: aimodels.OrbUserAgent(version)}
+	if state := stateFromContext(ctx); state != nil {
+		options.StoreDocument = state.document(options.StorePath)
+		options.StorePath = ""
+	}
+	_, err := aimodels.Refresh(timeoutContext, options)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(timeoutContext.Err(), context.DeadlineExceeded) {
 		return errors.New("model catalog refresh timed out")
 	}
@@ -906,7 +956,26 @@ func runLocalChat(
 	authorize func(chat.Message) error,
 	streams cliStreams,
 ) int {
-	provider, err := chat.NewLocalProvider(filepath.Join(dataDir, "sessions"))
+	var providerOptions []chat.LocalProviderOption
+	state := stateFromContext(ctx)
+	if state != nil {
+		settings, err := state.settings(dataDir, state.agentDir)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		auth, err := state.auth(state.agentDir)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		registry, err := state.models(state.agentDir, state.accounts(state.agentDir, auth), false)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		providerOptions = append(providerOptions, chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo {
+			return state.db.Sessions(state.chatNamespace(filepath.Join(dataDir, "sessions", key.String())))
+		}, settings, registry), chat.WithAgentDir(state.agentDir))
+	}
+	provider, err := chat.NewLocalProvider(filepath.Join(dataDir, "sessions"), providerOptions...)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -916,7 +985,19 @@ func runLocalChat(
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	local, err := chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
+	var local *chat.Local
+	if state != nil {
+		lock := flock.New(filepath.Join(dataDir, "gateway.lock"))
+		held, lockErr := lock.TryLock()
+		if lockErr != nil || !held {
+			_ = lock.Close()
+			return reportCLIError(streams.Stderr, errors.New("chat gateway data is already in use"))
+		}
+		defer func() { _ = lock.Close() }()
+		local, err = chat.NewLocalWithSpool(processor, state.db.Chat(state.chatNamespace(dataDir)))
+	} else {
+		local, err = chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
+	}
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -997,6 +1078,7 @@ Commands:
   orb plugins <command>       List, enable, or disable bundled plugins (list --all shows the full composition)
   orb mcp <command>           List, add, remove, or toggle MCP servers (see orb mcp --help)
   orb auth <command>           Print credentials for external clients
+  orb storage <command>        Migrate, import/export, back up, or recover conversations
   orb <command> --help        Show help for chat/install/remove/uninstall/update/list/config/auth
 
   --provider <name>              Provider name
@@ -1015,9 +1097,10 @@ Commands:
   --session-id <id>              Use exact project session ID, creating it if missing
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --name, -n <name>              Set the session display name
-  --session-dir <dir>            Directory for session storage and lookup
+  --pi-files                     Use Pi-compatible files (must be the first argument)
+  --session-dir <dir>            Session directory in --pi-files compatibility mode
   --no-session                   Don't save session (ephemeral)
-  --export <file> [output]       Export session file to HTML and exit
+  --export <path|id> [output]    Export a session to HTML or Markdown and exit
   --tools, -t <names>            Comma-separated tool allowlist
   --exclude-tools, -xt <names>   Comma-separated tool denylist
   --skill <path>                 Load a skill file or directory; repeatable

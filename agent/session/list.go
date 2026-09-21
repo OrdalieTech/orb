@@ -19,6 +19,7 @@ import (
 const maxConcurrentSessionInfoLoads = 10
 
 type SessionInfo struct {
+	ParentID          string
 	Path              string
 	ID                string
 	CWD               string
@@ -29,6 +30,14 @@ type SessionInfo struct {
 	MessageCount      int
 	FirstMessage      string
 	AllMessagesText   string
+}
+
+// Reference is a real file path for file-backed sessions, otherwise a native ID.
+func (info SessionInfo) Reference() string {
+	if info.Path != "" {
+		return info.Path
+	}
+	return info.ID
 }
 
 type SessionListProgress func(loaded, total int)

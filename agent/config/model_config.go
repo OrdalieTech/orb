@@ -84,6 +84,15 @@ func LoadModelConfig(path string) (*ModelConfig, error) {
 	if err != nil {
 		return failedModelConfig(fmt.Sprintf("Failed to load models.json: %v\n\nFile: %s", err, normalized)), nil
 	}
+	return ParseModelConfig(data, normalized)
+}
+
+// ParseModelConfig uses the same codec as file-backed models.json.
+func ParseModelConfig(data []byte, source string) (*ModelConfig, error) {
+	normalized := source
+	if len(data) == 0 {
+		return &ModelConfig{Providers: map[string]ModelProviderConfig{}}, nil
+	}
 	data = stripJSONComments(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var raw json.RawMessage

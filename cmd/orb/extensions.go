@@ -90,7 +90,8 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows, warnings := assembly.Rows(assembly.Options{
-		CWD: cwd, AgentDir: agentDir, Settings: settings,
+		Memory: args.native.memory(),
+		CWD:    cwd, AgentDir: agentDir, Settings: settings,
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
 		BridgeAgentCalls: bridgeagent.Extension(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
 			var result json.RawMessage
@@ -146,7 +147,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
 			// run on the real NewAgentSession-backed runtime.
 			manager.SetAgentSessionService(agent.NewExtensionAgentSessionService(
-				agent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir},
+				agent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir, Configure: args.native.configureChild},
 			))
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)
@@ -230,7 +231,7 @@ func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []mo
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	settings, err := args.native.settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -282,9 +283,13 @@ func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args 
 		resolution.PreTrustRegistry, preTrustDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, untrustedPaths)
 		trustRunner = extensions.NewRunner(resolution.PreTrustRegistry, extensions.RunnerOptions{CWD: cwd})
 	}
+	trustStore, err := args.native.trust(agentDir)
+	if err != nil {
+		return resolution, err
+	}
 	trusted, err := agent.ResolveProjectTrusted(ctx, agent.ResolveProjectTrustedOptions{
 		CWD:                 cwd,
-		TrustStore:          config.NewProjectTrustStore(agentDir),
+		TrustStore:          trustStore,
 		TrustOverride:       args.ProjectTrusted,
 		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
 		Runner:              trustRunner,

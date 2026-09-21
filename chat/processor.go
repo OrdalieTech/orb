@@ -562,6 +562,9 @@ func (p *Processor) runCommand(ctx context.Context, adapter Adapter, conv *Conve
 // ledger markers keep redelivered pre-switch events deduplicated (delivered ⇒
 // no-op, settled ⇒ never re-prompt) across the switch.
 func startNewSession(conv *Conversation) error {
+	if conv.Reset != nil {
+		return conv.Reset()
+	}
 	carried := carryableMarkers(conv.Manager)
 	path, err := conv.Manager.NewSession()
 	if err != nil {

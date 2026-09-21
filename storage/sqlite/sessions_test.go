@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/session"
@@ -213,5 +214,51 @@ func BenchmarkCatalog100K(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestImportLegacySessionsAndRejectDamagedTrees(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "state", "orb.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	repo := db.Sessions("legacy")
+	for _, version := range []int{1, 2, 3} {
+		raw := fmt.Sprintf(`{"type":"session","version":%d,"id":"legacy%d","timestamp":"2026-09-21T00:00:00.000Z","cwd":"/project","unknown":42}`+"\n"+`{"type":"message","id":"entry1","parentId":null,"timestamp":"2026-09-21T00:00:00.000Z","message":{"role":"user","content":"keep me"},"future":true}`+"\n", version, version)
+		metadata, err := repo.Import(ctx, []byte(raw))
+		if err != nil {
+			t.Fatalf("v%d: %v", version, err)
+		}
+		if _, err = repo.Import(ctx, []byte(raw)); err != nil {
+			t.Fatalf("v%d retry: %v", version, err)
+		}
+		opened, err := repo.Open(ctx, metadata)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := opened.Storage().(harness.ByteSessionStorage).Bytes()
+		if err != nil || !bytes.Contains(data, []byte(`"unknown":42`)) || !bytes.Contains(data, []byte(`"future":true`)) {
+			t.Fatalf("payload lost: %s %v", data, err)
+		}
+	}
+	header := `{"type":"session","version":3,"id":"broken","timestamp":"2026-09-21T00:00:00.000Z","cwd":"/project"}` + "\n"
+	for _, entry := range []string{
+		`{`,
+		`{"type":"custom","id":"child","parentId":"missing","timestamp":"2026-09-21T00:00:00.000Z"}`,
+		`{"type":"leaf","id":"leaf","targetId":"missing","timestamp":"2026-09-21T00:00:00.000Z"}`,
+		`{"type":"custom","id":"loop","parentId":"loop","timestamp":"2026-09-21T00:00:00.000Z"}`,
+	} {
+		if _, err := repo.Import(ctx, []byte(header+entry+"\n")); err == nil {
+			t.Fatalf("damaged source accepted: %s", entry)
+		}
+	}
+	rows, err := repo.List(ctx, harness.SessionListOptions{})
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("failed imports left state: %v %v", rows, err)
+	}
+	if _, err := repo.Import(ctx, []byte(strings.ReplaceAll(header, `"version":3`, `"version":99`))); err == nil {
+		t.Fatal("future format accepted")
 	}
 }

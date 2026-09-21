@@ -2,10 +2,12 @@ package chat
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -47,7 +49,15 @@ const (
 //
 // ponytail: single-process spool; swap Publish for a broker in clustered
 // deployments.
+// Spool is a durable pending-message store. The owner supplies its lifetime.
+type Spool interface {
+	Pending(context.Context) ([]Message, error)
+	Put(context.Context, Message) error
+	Ack(context.Context, string) error
+}
+
 type Local struct {
+	spool   Spool
 	handler Handler
 
 	fileMu sync.Mutex
@@ -84,7 +94,23 @@ func NewLocal(handler Handler, spoolPath string) (*Local, error) {
 	if err != nil {
 		return nil, fmt.Errorf("chat: open spool: %w", err)
 	}
+	return startLocal(handler, file, nil, pending), nil
+}
+
+func NewLocalWithSpool(handler Handler, spool Spool) (*Local, error) {
+	if handler == nil || spool == nil {
+		return nil, errors.New("chat: handler and spool required")
+	}
+	pending, err := spool.Pending(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return startLocal(handler, nil, spool, pending), nil
+}
+
+func startLocal(handler Handler, file *os.File, spool Spool, pending []Message) *Local {
 	local := &Local{
+		spool:    spool,
 		handler:  handler,
 		file:     file,
 		queues:   map[string][]Message{},
@@ -104,7 +130,7 @@ func NewLocal(handler Handler, spoolPath string) (*Local, error) {
 	for _, m := range pending {
 		local.enqueue(m)
 	}
-	return local, nil
+	return local
 }
 
 // Publish durably appends the message and hands it to the dispatcher. This is
@@ -151,6 +177,9 @@ func (l *Local) Close(ctx context.Context) error {
 	}
 	l.fileMu.Lock()
 	defer l.fileMu.Unlock()
+	if l.file == nil {
+		return nil
+	}
 	if err := l.file.Close(); err != nil {
 		return fmt.Errorf("chat: close spool: %w", err)
 	}
@@ -158,6 +187,12 @@ func (l *Local) Close(ctx context.Context) error {
 }
 
 func (l *Local) appendLine(line spoolLine) error {
+	if l.spool != nil {
+		if line.M != nil {
+			return l.spool.Put(context.Background(), *line.M)
+		}
+		return l.spool.Ack(context.Background(), line.Ack)
+	}
 	encoded, err := json.Marshal(line)
 	if err != nil {
 		return fmt.Errorf("chat: encode spool line: %w", err)
@@ -292,9 +327,16 @@ func replaySpool(path string) ([]Message, error) {
 		return nil, fmt.Errorf("chat: read spool: %w", err)
 	}
 	defer func() { _ = file.Close() }()
+	return parseSpool(file, false)
+}
+
+// ParseSpool rejects damaged migration sources instead of silently dropping work.
+func ParseSpool(data []byte) ([]Message, error) { return parseSpool(bytes.NewReader(data), true) }
+
+func parseSpool(reader io.Reader, strict bool) ([]Message, error) {
 	acked := map[string]int{}
 	var pending []Message
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
 		raw := scanner.Bytes()
@@ -303,7 +345,13 @@ func replaySpool(path string) ([]Message, error) {
 		}
 		var line spoolLine
 		if err := json.Unmarshal(raw, &line); err != nil {
+			if strict {
+				return nil, errors.New("invalid chat spool record")
+			}
 			continue // torn tail line after a crash: skip
+		}
+		if strict && ((line.Ack == "") == (line.M == nil) || line.M != nil && line.M.EventID == "") {
+			return nil, errors.New("invalid chat spool record")
 		}
 		if line.Ack != "" {
 			acked[line.Ack]++

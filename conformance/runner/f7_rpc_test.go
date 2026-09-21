@@ -176,6 +176,15 @@ func TestF7RPCTranscriptReplaysAgainstBinary(t *testing.T) {
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+		if t.Failed() {
+			t.Logf("RPC stderr: %s", stderr.String())
+		}
+	})
 
 	lines := make(chan []byte)
 	readErrors := make(chan error, 1)

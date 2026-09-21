@@ -341,13 +341,14 @@ text in git history of this file. Cross-references to these numbers elsewhere re
   auto-attach only with `HERDR_ENV=1`, `HERDR_PANE_ID`, and `HERDR_BIN_PATH`; otherwise it is
   absent. This is host-environment adaptation, not default-on feature precedent under P4.
 
-- **Native SQLite direction (owner, 2026-09-21; implementation pending).** The owner approved
+- **Native SQLite direction (owner, 2026-09-21; native cutover implemented).** The owner approved
   SQLite as Orb's native storage with Pi JSONL import/export and existing SDK APIs retained,
-  accepting that Pi will no longer directly read a native live Orb session file. The planned
+  accepting that Pi will no longer directly read a native live Orb session file. The
   native CLI cutover replaces the live shared-file storage requirement above; explicit file-backed
   SDK/compatibility entry points and JSON/wire conformance remain supported. The complete scope,
   migration and packaging gates are in SPRINTS, "Unified conversations and native SQLite".
-  Existing native sessions remain file-backed until those gates pass. The owner separately
+  SDK defaults and the explicit `--pi-files` CLI entry point remain file-backed; native sessions
+  use SQLite with Pi import/export. Managed remote hosting remains a separate plan slice. The owner separately
   approved SQLite caching of foreign summaries and bounded visible message excerpts: separate
   from owned sessions, read-only offline, no reasoning/tool payloads, remote authority on reopen.
 

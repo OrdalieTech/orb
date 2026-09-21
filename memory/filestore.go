@@ -337,3 +337,40 @@ func hasAllTags(itemTags, required []string) bool {
 	}
 	return true
 }
+
+// ParseJournal validates an offline migration source without skipping damaged records.
+func ParseJournal(content []byte) ([]Item, error) {
+	items := map[string]storedItem{}
+	order := 0
+	for index, line := range bytes.Split(content, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var record fileRecord
+		if err := json.Unmarshal(line, &record); err != nil {
+			return nil, fmt.Errorf("invalid memory record at line %d", index+1)
+		}
+		records := record.Batch
+		if len(records) == 0 {
+			records = []fileRecord{record}
+		} else if record.Item != nil || record.Delete != "" {
+			return nil, fmt.Errorf("invalid memory batch at line %d", index+1)
+		}
+		for _, current := range records {
+			if len(current.Batch) != 0 || ((current.Item == nil) == (current.Delete == "")) || current.Item != nil && current.Item.ID == "" {
+				return nil, fmt.Errorf("invalid memory record at line %d", index+1)
+			}
+		}
+		applyFileRecord(items, record, &order)
+	}
+	ordered := make([]storedItem, 0, len(items))
+	for _, item := range items {
+		ordered = append(ordered, item)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].order < ordered[j].order })
+	result := make([]Item, 0, len(items))
+	for _, item := range ordered {
+		result = append(result, item.Item)
+	}
+	return result, nil
+}

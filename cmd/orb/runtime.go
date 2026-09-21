@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -160,14 +160,16 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
-		return runtimeInputs{}, err
+	if args.native == nil {
+		if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
+			return runtimeInputs{}, err
+		}
 	}
-	authStorage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	authStorage, err := args.native.auth(agentDir)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir), config.WithProjectTrusted(false))
+	settings, err := args.native.settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -299,9 +301,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		extensionRegistry = extensions.NewRegistry(cwd)
 	}
 
-	accountStore := accounts.NewStore(filepath.Join(agentDir, "accounts.json"), authStorage)
+	accountStore := args.native.accounts(agentDir, authStorage)
 	runtimeAuth := newRuntimeCredentials(accountStore)
-	registry, err := config.NewModelRegistryWithCredentials(agentDir, runtimeAuth)
+	registry, err := args.native.models(agentDir, runtimeAuth, os.Getenv("PI_OFFLINE") != "")
 	if err != nil {
 		return runtimeInputs{}, err
 	}
