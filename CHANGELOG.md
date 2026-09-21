@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Restore clickable reasoning-level bars in the footer, including the off state, and let Ctrl+S save the highlighted model as the default in the model picker.
+
 - Gently darken and fade the page behind modals; use neutral headings and selections with more restrained accents.
 
 - Adapt terminal-native colors to the reported light/dark background, with readable secondary text, teal and purple accents, soft modal surfaces and tinted selections. Refresh on terminal appearance changes without delaying startup.

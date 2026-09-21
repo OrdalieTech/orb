@@ -1971,10 +1971,14 @@ func BenchmarkCommandPaletteRender(b *testing.B) {
 
 type clickableFooterData struct {
 	fakeFooterDataProvider
-	clicked int
+	clicked         int
+	thinkingClicked int
 }
 
 func (data *clickableFooterData) StatusAction(key string) func() {
+	if key == "orb:thinking" {
+		return func() { data.thinkingClicked++ }
+	}
 	if key == "quota" {
 		return func() { data.clicked++ }
 	}
@@ -2014,7 +2018,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		if tui.VisibleWidth(line) > width {
 			t.Fatalf("overflow at %d: %q", width, line)
 		}
-		for _, noise := range []string{"openai-codex", "272k", "$", "▁"} {
+		for _, noise := range []string{"openai-codex", "272k", "$"} {
 			if strings.Contains(line, noise) {
 				t.Fatalf("footer contains %q", noise)
 			}
@@ -2022,7 +2026,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		if width >= 36 && (!strings.Contains(line, "gpt-5.6-luna") || !strings.Contains(line, "Codex 69% left")) {
 			t.Fatalf("lost model or quota at %d: %q", width, line)
 		}
-		if width >= 80 && (!strings.Contains(line, " · high") || !strings.Contains(line, "ctx 4%")) {
+		if width >= 80 && (!strings.Contains(line, "▁▃▅· high") || !strings.Contains(line, "ctx 4%")) {
 			t.Fatalf("lost useful detail: %q", line)
 		}
 	}
@@ -2066,5 +2070,34 @@ func TestOpenPaletteRecolorsHintsAndSkills(t *testing.T) {
 	rendered := strings.Join(palette.Render(60), "\n")
 	if !strings.Contains(rendered, theme.FG("muted", "ctrl+m")) || !strings.Contains(rendered, theme.FG("customMessageLabel", "Review")) {
 		t.Fatalf("stale menu colors: %q", rendered)
+	}
+}
+
+func TestFooterReasoningBarsClickAtNarrowWidths(t *testing.T) {
+	initTestTheme(t)
+	for _, level := range []ai.ModelThinkingLevel{ai.ModelThinkingOff, ai.ModelThinkingHigh} {
+		for _, width := range []int{36, 80} {
+			data := &clickableFooterData{fakeFooterDataProvider: fakeFooterDataProvider{statuses: map[string]string{"quota": "Codex 69% left"}}}
+			session := wp450FooterSession{state: engine.AgentState{Model: &ai.Model{ID: "model", Reasoning: true}, ThinkingLevel: level}}
+			footer := NewFooterComponent(&session, data, false)
+			line := tui.StripANSI(footer.Render(width)[0])
+			index := strings.Index(line, thinkingMeter(string(level)))
+			if index < 0 {
+				t.Fatalf("reasoning bars missing: %q", line)
+			}
+			col := tui.VisibleWidth(line[:index])
+			footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: col, Clicks: 1})
+			footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: col, Clicks: 2})
+			if data.thinkingClicked != 1 || data.clicked != 0 {
+				t.Fatalf("reasoning=%d quota=%d", data.thinkingClicked, data.clicked)
+			}
+			quota := strings.Index(line, "Codex")
+			if quota >= 0 {
+				footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: tui.VisibleWidth(line[:quota]), Clicks: 1})
+				if data.clicked != 1 {
+					t.Fatal("reasoning target replaced quota target")
+				}
+			}
+		}
 	}
 }

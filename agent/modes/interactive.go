@@ -1924,7 +1924,7 @@ func (mode *InteractiveMode) handleThinkingCommand(args string) {
 			items := make([]tui.SelectItem, len(levels))
 			selected := 0
 			for i, level := range levels {
-				items[i] = tui.SelectItem{Value: string(level), Label: string(level)}
+				items[i] = tui.SelectItem{Value: string(level), Label: thinkingMeter(string(level)) + " " + string(level)}
 				if level == current {
 					selected = i
 				}
@@ -2020,17 +2020,21 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 			}
 			mode.mu.Unlock()
 		}()
-		selected, ok := mode.selectModelSearchable(ctx, current, models, scoped, initialSearch)
+		selected, persist, ok := mode.selectModelSearchable(ctx, current, models, scoped, initialSearch)
 		if !ok {
 			return
 		}
-		if err := mode.session.SetModel(ctx, selected); err != nil {
+		if err := mode.session.SetModelWithOptions(ctx, selected, agent.ModelMutationOptions{Persist: persist}); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 		} else {
-			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("Model: %s/%s", selected.Provider, selected.ID)))
+			prefix := "Model"
+			if persist {
+				prefix = "Default model"
+			}
+			mode.chat.AddChild(newStyledText("dim", fmt.Sprintf("%s: %s/%s", prefix, selected.Provider, selected.ID)))
 			mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, &selected)
 		}
 		mode.ui.RequestRender()
@@ -3669,6 +3673,9 @@ func (mode *InteractiveMode) AvailableProviderCount() int {
 }
 
 func (mode *InteractiveMode) StatusAction(key string) func() {
+	if key == "orb:thinking" {
+		return func() { mode.handleThinkingCommand("") }
+	}
 	if key == "provider-usage" {
 		if host, ok := mode.options.Host.(InteractiveProviderHost); ok {
 			return func() { go mode.showAccountSwitcher(host) }
