@@ -277,7 +277,9 @@ palette also exposes model selection on legacy terminals. Ctrl+N starts a sessio
 keybindings win over these new defaults. Native composer slash suggestions appear above the input with commands, skills, and templates;
 extension editors keep the complete pi completion surface. Selecting a resource
 inserts its canonical invocation into the draft for arguments and explicit submission. Floating
-modals dim the background; non-capturing extension overlays keep their opt-in backdrop.
+modals dim the background; non-capturing extension overlays keep their opt-in backdrop. The native
+composer reserves Shift+Enter for newlines, including ambiguous legacy Escape+Return input;
+explicit protocol Alt+Enter continues to queue follow-ups.
 
 **Provider accounts and usage:** Ctrl+P → Providers groups connected accounts with Add account
 under every provider. `accounts.Store` wraps an explicit `ai/auth.CredentialStore`, keeping the

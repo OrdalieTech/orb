@@ -178,6 +178,13 @@ func truncateEditorSessionTitle(title string, width int) string {
 func (ce *CustomEditor) interceptInput(event tui.KeyEvent) bool {
 	data := event.Raw
 
+	// Legacy Shift+Enter can arrive as Escape+Return, also used by Alt+Enter.
+	// The composer always gives newline precedence over app and extension actions.
+	if data == "\x1b\r" || data == "\n" || data == "\x1b[13;2~" || tui.MatchesKey(data, "shift+enter") {
+		ce.InsertTextAtCursor("\n")
+		return true
+	}
+
 	if ce.OnExtensionShortcut != nil && ce.OnExtensionShortcut(data) {
 		return true
 	}

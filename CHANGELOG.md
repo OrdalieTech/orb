@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Make Shift+Enter insert a newline before app or extension shortcuts can queue the draft, including legacy Escape+Return terminal encodings. Explicit Alt+Enter still queues follow-ups.
+
 - Simplify the compact footer to model, reasoning level, remaining quota, and context percentage. Keep quota details in the account menu; drop duplicate provider labels, meters, project metadata, capacity, and cost from the bar, and avoid background Git probes for compact rendering.
 
 - Brand browser login callback pages as Orb and confirm menu choices with a single click, matching Enter. Suppress double-click repeats and preserve tree fold controls.
