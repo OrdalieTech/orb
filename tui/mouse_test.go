@@ -125,7 +125,7 @@ func TestTUIMouseFallsThroughWhenComponentDeclines(t *testing.T) {
 	}
 }
 
-func TestTUIModifiedMouseSkipsComponentDispatch(t *testing.T) {
+func TestTUIShiftMouseExtendsSelectionAndReachesEditor(t *testing.T) {
 	target := &clickTarget{lines: []string{"one", "two", "three"}, accept: true}
 	ui, _ := viewportWithTarget(t, target)
 	ui.SetSelectionHandler(func(string) {})
@@ -136,11 +136,10 @@ func TestTUIModifiedMouseSkipsComponentDispatch(t *testing.T) {
 	}
 	ui.handleMouse("\x1b[<4;4;1m")
 
-	// Over the chrome the modifier still skips dispatch, and the constrained
-	// selection starts nothing either.
+	// Shift-click reaches the chrome so editors can extend their selection.
 	ui.handleMouse("\x1b[<4;4;5M")
-	if len(target.events) != 0 || ui.selection.active {
-		t.Fatalf("shift-modified chrome press = events %d selection %+v, want neither dispatch nor selection", len(target.events), ui.selection)
+	if len(target.events) != 1 || ui.selection.active {
+		t.Fatalf("shift-modified chrome press = events %d selection %+v, want component dispatch without transcript selection", len(target.events), ui.selection)
 	}
 }
 

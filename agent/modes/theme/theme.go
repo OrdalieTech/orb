@@ -394,6 +394,7 @@ func MarkdownTheme() tui.MarkdownTheme {
 
 func EditorTheme() tui.EditorTheme {
 	return tui.EditorTheme{
+		Selection:   func(s string) string { return BG("selectedBg", FG("text", s)) },
 		BorderColor: func(s string) string { return FG("borderMuted", s) },
 		SelectList: tui.SelectListTheme{
 			SelectedPrefix: func(s string) string { return FG("accent", Bold(s)) },
