@@ -395,6 +395,10 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 func (b *Bridge) Connection(peer string) *protocol.Conn {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.connectionLocked(peer)
+}
+
+func (b *Bridge) connectionLocked(peer string) *protocol.Conn {
 	if b.closed || b.failed || b.state.Blocked[peer] {
 		return nil
 	}

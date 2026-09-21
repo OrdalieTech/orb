@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,9 +16,13 @@ import (
 	attach "github.com/OrdalieTech/orb/connect/agent"
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/tui"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -375,5 +380,277 @@ func TestBridgePanelCompletionCanRestoreFocus(t *testing.T) {
 	case <-completed:
 	case <-time.After(time.Second):
 		t.Fatal("closing Bridge deadlocked while restoring focus")
+	}
+}
+
+func TestBridgeConnectActionsAreAvailableBeforeActivation(t *testing.T) {
+	for _, running := range []bool{false, true} {
+		rows := bridgeSettingsRows("", running, running, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme())
+		for _, action := range []string{"Invite device", "Join device", "SSH"} {
+			found := false
+			for _, row := range rows {
+				if row.Value == action {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("%s missing with service running=%v", action, running)
+			}
+		}
+	}
+}
+
+func TestBridgeInvitationCodeRoundTrip(t *testing.T) {
+	b, err := bridge.Open(&testBridgeStore{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	inv, err := b.Invite([]bridge.Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.inspect"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.Locator = "private-locator"
+	for _, text := range []string{bridgeInvitationCode(inv), string(connect.JSON(inv))} {
+		got, err := parseBridgeInvitation(" " + text + "\n")
+		if err != nil || got.ID != inv.ID || got.Token != inv.Token || got.Locator != inv.Locator {
+			t.Fatalf("round trip: %v", err)
+		}
+	}
+	for _, input := range []string{"", "orb-bridge:v1:bad!", "{}", strings.Repeat("x", protocol.MaxFrame+1)} {
+		if _, err := parseBridgeInvitation(input); err == nil {
+			t.Fatal("invalid invitation accepted")
+		}
+	}
+	inv.Expires = time.Now().Add(-time.Second).Unix()
+	if _, err := parseBridgeInvitation(bridgeInvitationCode(inv)); err == nil {
+		t.Fatal("expired invitation accepted")
+	}
+}
+
+func TestBridgeSSHArgumentsKeepHostVerificationAndQuoteRemoteCommand(t *testing.T) {
+	for _, target := range []string{"", "-oProxyCommand=bad", "host;touch /tmp/bad", "user@host command", "user@$(bad)"} {
+		if _, err := bridgeSSHCommand(target, "orb", "personal"); err == nil {
+			t.Fatalf("unsafe SSH target accepted: %q", target)
+		}
+	}
+	args, err := bridgeSSHCommand("user@server", "/opt/Orb's tools/orb", "personal", "pair", "approve", "invitation", "peer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"-oStrictHostKeyChecking=yes", "-oBatchMode=yes", "-oClearAllForwardings=yes"} {
+		if !strings.Contains(joined, want) {
+			t.Fatal("missing SSH safeguard", want)
+		}
+	}
+	// Let a real shell decode the remote quoting without executing a remote command.
+	command := strings.TrimPrefix(args[len(args)-1], "exec ")
+	output, err := exec.Command("sh", "-c", "set -- "+command+`; printf '%s\n' "$@"`).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "/opt/Orb's tools/orb\nbridge\n--profile\npersonal\npair\napprove\ninvitation\npeer\n"
+	if string(output) != want {
+		t.Fatalf("remote arguments changed: %q", output)
+	}
+}
+
+func TestBridgeDeviceRowsDistinguishPairingAndConnection(t *testing.T) {
+	peers := []string{"orb:ed25519:aaaaaaaaaa", "orb:ed25519:bbbbbbbbbb", "orb:ed25519:cccccccccc"}
+	rows := bridgeSettingsRows("devices", true, true, false, bridgeSettingsStatus{Peers: peers, PeerStates: map[string]string{peers[0]: "connected", peers[1]: "blocked"}}, extensions.NewNoopUI().Theme())
+	states := map[string]string{peers[0]: "Connected", peers[1]: "Blocked", peers[2]: "Not connected"}
+	for _, row := range rows {
+		if peer, ok := strings.CutPrefix(row.Value, "peer:"); ok {
+			if row.Cells[1] != states[peer] {
+				t.Fatalf("wrong peer state: %+v", row)
+			}
+			if strings.Contains(row.Cells[0], "orb:ed25519:") {
+				t.Fatal("device label shows common prefix instead of fingerprint")
+			}
+		}
+	}
+}
+
+type pairingTestUI struct {
+	extensions.NoopUI
+	action       string
+	shown        func(string)
+	approve      bool
+	confirmation string
+}
+
+func (*pairingTestUI) Width() int  { return 80 }
+func (*pairingTestUI) Height() int { return 24 }
+func (*pairingTestUI) Invalidate() {}
+func (ui *pairingTestUI) Custom(ctx context.Context, f extensions.CustomFactory, _ *extensions.CustomOptions) (any, bool, error) {
+	done := make(chan any, 1)
+	var once sync.Once
+	component, err := f(ui, ui.Theme(), nil, func(value any) { once.Do(func() { done <- value }) })
+	if err != nil {
+		return nil, false, err
+	}
+	panel := component.(*bridgeSettingsPanel)
+	defer panel.Dispose()
+	_ = panel.Render(80)
+	action := ui.action
+	ui.action = ""
+	if action == "close" {
+		panel.HandleInput(tui.KeyEvent{Raw: "\x1b"})
+	}
+	if action == "show" {
+		panel.list.ListSelectRow(1)
+		panel.HandleInput(tui.KeyEvent{Raw: "\r"})
+	}
+	if action == "copy" {
+		ui.action = "show"
+		panel.HandleInput(tui.KeyEvent{Raw: "\r"})
+	}
+	select {
+	case value := <-done:
+		return value, true, nil
+	case <-ctx.Done():
+		return nil, false, ctx.Err()
+	}
+}
+func (ui *pairingTestUI) Editor(_ context.Context, _ string, text *string) (string, bool, error) {
+	if ui.shown != nil {
+		ui.shown(*text)
+	}
+	return "", false, nil
+}
+func (ui *pairingTestUI) Confirm(_ context.Context, _ string, text string, _ *extensions.DialogOptions) (bool, error) {
+	ui.confirmation = text
+	return ui.approve, nil
+}
+
+func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
+	bin := t.TempDir()
+	copied := filepath.Join(bin, "copied")
+	command := "xclip"
+	if runtime.GOOS == "darwin" {
+		command = "pbcopy"
+	}
+	if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\ncat > \"$ORB_TEST_CLIPBOARD\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("ORB_TEST_CLIPBOARD", copied)
+	for _, name := range []string{"SSH_CONNECTION", "SSH_CLIENT", "MOSH_CONNECTION", "WAYLAND_DISPLAY", "XDG_SESSION_TYPE", "TERMUX_VERSION"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("DISPLAY", ":test")
+	for _, approve := range []bool{false, true} {
+		t.Run(fmt.Sprint(approve), func(t *testing.T) {
+			b, err := bridge.Open(&testBridgeStore{}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = b.Close() }()
+			other, err := bridge.Open(&testBridgeStore{}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = other.Close() }()
+			inv, err := b.Invite([]bridge.Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.inspect"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			inv.Locator = "private-locator"
+			x, y := net.Pipe()
+			server := protocol.NewConn(y, b.Admin)
+			client := protocol.NewConn(x, nil)
+			defer func() { _ = client.Close(); _ = server.Close() }()
+			ui := &pairingTestUI{action: "copy", approve: approve, shown: func(code string) {
+				clipboard, err := os.ReadFile(copied)
+				if err != nil || string(clipboard) != code {
+					t.Fatal("Copy invitation did not copy the complete invitation shown in the editor")
+				}
+				parsed, err := parseBridgeInvitation(code)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if _, err = b.Claim(other.PeerID(), parsed.ID, parsed.Token); err != nil {
+					t.Error(err)
+				}
+			}}
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			if err := shareBridgeInvitation(ctx, ui, client, inv, map[string]string{b.PersonalGroup(): "personal"}); err != nil {
+				t.Fatal(err)
+			}
+			status, err := b.PairStatus(other.PeerID(), inv.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (status.Status == "approved") != approve {
+				t.Fatal("approval choice ignored")
+			}
+			if !strings.Contains(ui.confirmation, other.PeerID()) || !strings.Contains(ui.confirmation, "current instances only") || !strings.Contains(ui.confirmation, "instance.inspect") {
+				t.Fatal("approval omitted identity or authority")
+			}
+		})
+	}
+}
+
+func TestPairingWaitCancelsWorkAndRejectsDifferentInvitation(t *testing.T) {
+	inv := bridge.Invitation{ID: protocol.NewID(), PeerID: "expected", Expires: time.Now().Add(time.Minute).Unix()}
+	stopped := make(chan struct{})
+	_, err := waitBridgePairing(t.Context(), &pairingTestUI{action: "close"}, "Pair", "Wait", inv, "", func(ctx context.Context) (bridge.Invitation, error) {
+		<-ctx.Done()
+		close(stopped)
+		return inv, ctx.Err()
+	}, func(bridge.Invitation) bool { return false })
+	if err != context.Canceled {
+		t.Fatalf("cancel=%v", err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("cancel left pairing work running")
+	}
+	_, err = waitBridgePairing(t.Context(), &pairingTestUI{}, "Pair", "Wait", inv, "", func(context.Context) (bridge.Invitation, error) {
+		wrong := inv
+		wrong.ID = protocol.NewID()
+		return wrong, nil
+	}, func(bridge.Invitation) bool { return true })
+	if err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("substituted invitation accepted: %v", err)
+	}
+}
+
+func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
+	root, err := os.MkdirTemp("/tmp", "orb-stop-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	t.Setenv("ORB_BRIDGE_HOME", root)
+	dir := filepath.Join(root, "personal")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "admin.token"), []byte("owner"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service, stop := context.WithCancel(t.Context())
+	defer stop()
+	closeServer, err := native.Listen(service, filepath.Join(dir, "admin.sock"), nil, "owner", func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		time.AfterFunc(100*time.Millisecond, stop)
+		return connect.JSON(struct{}{}), nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeServer()
+	var output, errors bytes.Buffer
+	if code := runBridgeCommand(t.Context(), []string{"stop"}, cliStreams{Stdout: &output, Stderr: &errors}); code != 0 {
+		t.Fatalf("stop: %s", errors.String())
+	}
+	select {
+	case <-service.Done():
+	default:
+		t.Fatal("stop returned while the old service still accepts connections")
 	}
 }
