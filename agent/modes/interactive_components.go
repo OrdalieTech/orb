@@ -1007,20 +1007,6 @@ func (f *FooterComponent) cwd() string {
 	return ""
 }
 
-func footerLocation(cwd, branch string) string {
-	location := ""
-	if cwd != "" {
-		location = filepath.Base(filepath.Clean(cwd))
-	}
-	if branch != "" {
-		if location != "" {
-			location += " "
-		}
-		location += "(" + branch + ")"
-	}
-	return location
-}
-
 func footerContextSummary(display engine.AgentDisplayState, usage *harness.ContextUsage) string {
 	contextWindow := int64(display.ContextWindow)
 	percent := "?"
@@ -1084,59 +1070,49 @@ func thinkingMeter(level string) string {
 	return meter + strings.Repeat("·", 4-tui.VisibleWidth(meter))
 }
 
-func compactFooterRight(forms []string, context string, cost float64, width int) string {
-	costText := ""
-	if cost > 0 {
-		costText = fmt.Sprintf(" · $%.3f", cost)
+func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int) string {
+	model := display.ModelID
+	if !display.HasModel {
+		model = "Choose model"
 	}
-	candidates := make([]string, 0, len(forms)*3)
-	for _, form := range forms {
-		candidates = append(candidates, form+" · "+context+costText)
-		if costText != "" {
-			candidates = append(candidates, form+" · "+context)
+	left := model
+	if display.Reasoning && display.ThinkingLevel != "" && display.ThinkingLevel != ai.ModelThinkingOff {
+		left += " · " + string(display.ThinkingLevel)
+	}
+	right := strings.Join(statuses, " · ")
+	leftBudget := width
+	if right != "" {
+		leftBudget = max(min(tui.VisibleWidth(model), width*2/3), width-tui.VisibleWidth(right)-2)
+	}
+	if tui.VisibleWidth(left) > leftBudget {
+		left = model
+	}
+	left = tui.TruncateToWidth(left, max(0, leftBudget), "…", false)
+	rightBudget := max(0, width-tui.VisibleWidth(left)-2)
+	if context != nil && context.Percent != nil {
+		summary := fmt.Sprintf("ctx %.0f%%", *context.Percent)
+		candidate := summary
+		if right != "" {
+			candidate = right + " · " + summary
 		}
-		candidates = append(candidates, form)
-	}
-	for _, candidate := range candidates {
-		if tui.VisibleWidth(candidate) <= width {
-			return candidate
-		}
-	}
-	return tui.TruncateToWidth(candidates[len(candidates)-1], width, "…", false)
-}
-
-func compactFooterLeft(location string, statuses []string, width int) string {
-	status := strings.Join(statuses, " ")
-	forms := []string{}
-	if location != "" && status != "" {
-		forms = append(forms, location+" · "+status)
-	}
-	if status != "" {
-		forms = append(forms, status)
-	} else {
-		forms = append(forms, location)
-	}
-	for _, form := range forms {
-		if form != "" && tui.VisibleWidth(form) <= width {
-			return form
+		if tui.VisibleWidth(candidate) <= rightBudget {
+			right = candidate
 		}
 	}
-	if status != "" {
-		return tui.TruncateToWidth(status, width, "…", false)
-	}
-	return tui.TruncateToWidth(location, width, "…", false)
+	right = tui.TruncateToWidth(right, rightBudget, "…", false)
+	return left + strings.Repeat(" ", max(0, width-tui.VisibleWidth(left)-tui.VisibleWidth(right))) + right
 }
 
 func (f *FooterComponent) render(width int) []string {
 	f.hitMu.Lock()
 	f.hits = nil
 	f.hitMu.Unlock()
-	cwd := f.cwd()
-	branch, providerCount := f.metadata()
-	location := footerLocation(cwd, branch)
+	providerCount := 0
 	pwd := ""
 	if f.verbose {
-		pwd = cwd
+		branch, count := f.metadata()
+		providerCount = count
+		pwd = f.cwd()
 		if branch != "" {
 			pwd += " (" + branch + ")"
 		}
@@ -1154,9 +1130,6 @@ func (f *FooterComponent) render(width int) []string {
 	}
 
 	display, stats, latestCacheHitRate, autoCompactEnabled := f.collect()
-	contextSummary := footerContextSummary(display, stats.ContextUsage)
-	modelForms := modelFooterForms(display, providerCount)
-	modelName := modelForms[0]
 	statuses := f.provider.Statuses()
 	keys := make([]string, 0, len(statuses))
 	for key := range statuses {
@@ -1168,21 +1141,14 @@ func (f *FooterComponent) render(width int) []string {
 		values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
 	}
 	if !f.verbose {
-		leftText := compactFooterLeft(location, values, width)
-		rightBudget := width
-		if leftText != "" {
-			rightBudget = max(1, width*2/3)
-		}
-		right := compactFooterRight(modelForms, contextSummary, stats.Cost, rightBudget)
-		leftWidth := max(0, width-tui.VisibleWidth(right)-1)
-		left := compactFooterLeft(location, values, leftWidth)
-		if left == "" {
-			right = compactFooterRight(modelForms, contextSummary, stats.Cost, width)
-		}
-		f.recordStatusHits(left, 0, keys, values)
-		gap := width - tui.VisibleWidth(left) - tui.VisibleWidth(right)
-		return []string{theme.FG("dim", left+strings.Repeat(" ", max(0, gap))+right)}
+		line := compactFooterLine(display, stats.ContextUsage, values, width)
+		f.recordStatusHits(line, 0, keys, values)
+		return []string{theme.FG("dim", line)}
 	}
+
+	contextSummary := footerContextSummary(display, stats.ContextUsage)
+	modelForms := modelFooterForms(display, providerCount)
+	modelName := modelForms[0]
 	statsParts := make([]string, 0, 7)
 	if stats.Tokens.Input > 0 {
 		statsParts = append(statsParts, "↑"+formatTokens(stats.Tokens.Input))

@@ -1249,7 +1249,7 @@ func TestFooterComponentCompactAndVerboseLayouts(t *testing.T) {
 		}
 		if width == 88 {
 			plain := normalizeWP450Lines(lines)[0]
-			want := " workspace (main)                                                fixture-model · ?/8.2k"
+			want := " fixture-model"
 			if plain != want {
 				t.Fatalf("compact footer = %q, want %q", plain, want)
 			}
@@ -1263,7 +1263,7 @@ func TestFooterComponentCompactAndVerboseLayouts(t *testing.T) {
 	}
 }
 
-func TestCompactFooterKeepsStatusAndLocation(t *testing.T) {
+func TestCompactFooterKeepsStatusAndModel(t *testing.T) {
 	initTestTheme(t)
 	for _, cwd := range []string{"", "/workspace"} {
 		lines := normalizeWP450Lines(NewFooterComponent(
@@ -1272,8 +1272,8 @@ func TestCompactFooterKeepsStatusAndLocation(t *testing.T) {
 		if len(lines) != 1 || !strings.Contains(lines[0], "active") {
 			t.Fatalf("compact status footer for cwd %q = %#v", cwd, lines)
 		}
-		if cwd != "" && !strings.Contains(lines[0], "workspace · active") {
-			t.Fatalf("compact status dropped location for cwd %q: %#v", cwd, lines)
+		if !strings.Contains(lines[0], "fixture-model") || strings.Contains(lines[0], "workspace") {
+			t.Fatalf("compact footer did not keep only model and status for cwd %q: %#v", cwd, lines)
 		}
 	}
 	narrow := normalizeWP450Lines(NewFooterComponent(
@@ -1339,7 +1339,7 @@ func TestCompactFooterSkipsTelemetryCollection(t *testing.T) {
 	if probe.statsCalls != 0 || probe.autoCalls != 0 || probe.contextCalls != 1 {
 		t.Fatalf("compact calls = stats %d, context %d, auto %d", probe.statsCalls, probe.contextCalls, probe.autoCalls)
 	}
-	if len(compact) != 1 || !strings.Contains(compact[0], "25.0%/8.2k") {
+	if len(compact) != 1 || !strings.Contains(compact[0], "ctx 25%") {
 		t.Fatalf("compact footer = %#v", compact)
 	}
 
@@ -1355,6 +1355,13 @@ func TestFooterMetadataDoesNotBlockRender(t *testing.T) {
 		started: make(chan struct{}), release: make(chan struct{}), invalidated: make(chan struct{}, 1),
 	}
 	footer := NewFooterComponent(&fakeFooterSession{}, provider, false)
+	footer.Render(80)
+	select {
+	case <-provider.started:
+		t.Fatal("compact footer started an unused Git probe")
+	default:
+	}
+	footer.verbose = true
 	rendered := make(chan []string, 1)
 	go func() { rendered <- footer.Render(80) }()
 	select {
@@ -1987,7 +1994,7 @@ func TestFooterStatusClickTracksResizeAndIgnoresOtherCells(t *testing.T) {
 		if !footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: column + 1}) || data.clicked != before+1 {
 			t.Fatal("status click did not activate")
 		}
-		if footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: width - 2}) {
+		if footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: 1}) {
 			t.Fatal("model label activated account switcher")
 		}
 	}
@@ -1995,5 +2002,28 @@ func TestFooterStatusClickTracksResizeAndIgnoresOtherCells(t *testing.T) {
 	footer.Render(80)
 	if footer.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Column: 1}) {
 		t.Fatal("removed status kept a click target")
+	}
+}
+
+func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
+	percent := 4.1
+	display := engine.AgentDisplayState{HasModel: true, ModelID: "gpt-5.6-luna", Provider: "openai-codex", Reasoning: true, ThinkingLevel: ai.ModelThinkingHigh}
+	context := &harness.ContextUsage{ContextWindow: 272000, Percent: &percent}
+	for _, width := range []int{20, 36, 48, 80, 140} {
+		line := compactFooterLine(display, context, []string{"Codex 69% left"}, width)
+		if tui.VisibleWidth(line) > width {
+			t.Fatalf("overflow at %d: %q", width, line)
+		}
+		for _, noise := range []string{"openai-codex", "272k", "$", "▁"} {
+			if strings.Contains(line, noise) {
+				t.Fatalf("footer contains %q", noise)
+			}
+		}
+		if width >= 36 && (!strings.Contains(line, "gpt-5.6-luna") || !strings.Contains(line, "Codex 69% left")) {
+			t.Fatalf("lost model or quota at %d: %q", width, line)
+		}
+		if width >= 80 && (!strings.Contains(line, " · high") || !strings.Contains(line, "ctx 4%")) {
+			t.Fatalf("lost useful detail: %q", line)
+		}
 	}
 }
