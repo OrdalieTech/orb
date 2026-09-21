@@ -335,7 +335,11 @@ new groups. The owner approved this simpler default on 2026-09-21; existing rest
 are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
 retaining its existing snapshot-versus-future meaning. Trust does not grant remote administration,
 discovery scopes, or agent-subject authority. Saved pairings survive service restarts; connection badges derive from
-live streams, and stopping waits for the admin connection to close.
+live streams, and stopping waits for the admin connection to close. Local admin status advertises
+`supports_full_access`; start and pairing replace a daemon missing that capability through the
+normal stop/start path before issuing grants. The replacement preserves profile state and lets
+non-owning runtime attachments reconnect. A previously deliberate Stop remains effective until
+explicit activation; an upgrade's temporary stop marker is removed before starting the replacement.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
 specification governs the protocol; this section supersedes its two-executable packaging.
 Restricted launching, mobile UIs, browser transports, and platform hosting adapters are excluded.

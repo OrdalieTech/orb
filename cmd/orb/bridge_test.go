@@ -655,6 +655,40 @@ func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
 	}
 }
 
+func TestBridgeServiceCompatibilityStopsOnlyOlderDaemons(t *testing.T) {
+	for _, current := range []bool{false, true} {
+		t.Run(fmt.Sprint(current), func(t *testing.T) {
+			x, y := net.Pipe()
+			stopped := make(chan struct{}, 1)
+			var server *protocol.Conn
+			server = protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
+				if method == "stop" {
+					stopped <- struct{}{}
+					time.AfterFunc(10*time.Millisecond, func() { _ = server.Close() })
+					return connect.JSON(struct{}{}), nil
+				}
+				if current {
+					return connect.JSON(map[string]bool{"supports_full_access": true}), nil
+				}
+				return connect.JSON(struct{}{}), nil
+			})
+			client := protocol.NewConn(x, nil)
+			defer func() { _ = client.Close(); _ = server.Close() }()
+			ready, err := bridgeServiceReady(t.Context(), client)
+			if err != nil || ready != current || (len(stopped) != 0) == current {
+				t.Fatalf("ready=%v stopped=%d err=%v", ready, len(stopped), err)
+			}
+			if !current {
+				select {
+				case <-client.Done():
+				default:
+					t.Fatal("replacement started before old daemon disconnected")
+				}
+			}
+		})
+	}
+}
+
 func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
 	for _, test := range []struct {
 		name, failure string
