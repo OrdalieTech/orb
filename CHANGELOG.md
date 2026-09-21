@@ -7,6 +7,7 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 ## [Unreleased]
 
 - Preserve detected terminal colors across resource reloads, including toggling provider usage, so modal backgrounds and contrast do not reset.
+- Copy wrapped selections as logical lines, retain paragraph breaks, and highlight only text with an adaptive background. Keep wide-character selection within the original line width.
 
 ## [0.7.1] - 2026-09-21
 

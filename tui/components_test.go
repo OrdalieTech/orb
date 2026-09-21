@@ -8,7 +8,7 @@ import (
 func TestPrimitiveComponents(t *testing.T) {
 	text := NewText("hello world", 1, 1, nil)
 	lines := text.Render(8)
-	if len(lines) != 4 || lines[1] != " hello  " || lines[2] != " world  " {
+	if len(lines) != 4 || lines[1] != " hello  " || lines[2] != " "+softWrapMarker+" \aworld  " {
 		t.Fatalf("Text.Render = %#v", lines)
 	}
 

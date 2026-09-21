@@ -7,6 +7,82 @@ import (
 	"time"
 )
 
+func TestSelectionCopiesLogicalLines(t *testing.T) {
+	for _, test := range []struct {
+		name, text, want string
+		markdown         bool
+	}{
+		{name: "words", text: "alpha beta gamma delta epsilon"},
+		{name: "spacing", text: "alpha   beta gamma    delta"},
+		{name: "long-word", text: "https://example.com/averylongpathwithoutspaces"},
+		{name: "wide", text: "你好世界你好世界 👩‍💻 café"},
+		{name: "newlines", text: "alpha beta gamma\nsecond line\n\nnew paragraph"},
+		{name: "styled", text: "\x1b[31malpha beta gamma delta\x1b[0m", want: "alpha beta gamma delta"},
+		{name: "paragraph", text: "alpha **beta** gamma delta\n\nnext paragraph", want: "alpha beta gamma delta\n\nnext paragraph", markdown: true},
+		{name: "list", text: "- alpha beta gamma delta\n- second item", want: "- alpha beta gamma delta\n- second item", markdown: true},
+		{name: "code", text: "```\n  alpha beta gamma delta\n    indented line\n```", markdown: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			want := test.want
+			if want == "" {
+				want = test.text
+			}
+			for _, width := range []int{12, 20, 80} {
+				var body Component = NewText(test.text, 2, 1, nil)
+				if test.markdown {
+					body = NewMarkdown(test.text, 2, 1, MarkdownTheme{CodeBlockIndent: "\x1b[0m"}, nil, nil)
+				}
+				ui := NewTUI(newFakeTerminal(width, 40))
+				ui.SetViewport(body, &Container{})
+				frame := ui.renderViewport(width, 40)
+				start, end := mousePoint{}, mousePoint{row: ui.viewportBodyLines - 1, column: width - 1}
+				for range 2 {
+					ui.selection = mouseSelection{anchor: start, focus: end, active: true, moved: true}
+					if got := ui.selectedTextLocked(); got != want {
+						t.Fatalf("width %d: got %q, want %q, rows %#v", width, got, want, body.Render(width))
+					}
+					for _, line := range ui.renderSelection(frame) {
+						if _, highlight, ok := strings.Cut(line, "\x1b[7m"); ok {
+							highlight, _, _ = strings.Cut(highlight, segmentReset)
+							if strings.TrimSpace(highlight) != highlight {
+								t.Fatalf("highlight includes padding: %q", highlight)
+							}
+						}
+					}
+					start, end = end, start
+				}
+				for _, line := range applyLineResets(append([]string(nil), frame...)) {
+					if strings.Contains(line, softWrapMarker) {
+						t.Fatal("wrap metadata escaped into terminal output")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSelectionHighlightPreservesWideCellsAndChrome(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(24, 8))
+	zones := "\x1b]133;A\a\x1b]133;B\a\x1b]133;C\a"
+	ui.SetViewport(NewText(zones+"hello 你好 👩‍💻 café\nsecond row", 2, 1, nil), NewText("INPUT DRAFT", 0, 0, nil))
+	ui.SetSelectionStyle(func(text string) string { return "\x1b[48;2;230;228;215m" + text + "\x1b[49m" })
+	frame := ui.renderViewport(24, 8)
+	for anchor := range 24 {
+		for focus := range 24 {
+			ui.selection = mouseSelection{anchor: mousePoint{row: 1, column: anchor}, focus: mousePoint{row: 1, column: focus}, active: true, moved: true}
+			painted := ui.renderSelection(frame)
+			for row, line := range painted {
+				if plainTerminalText(line) != plainTerminalText(frame[row]) || VisibleWidth(line) != VisibleWidth(frame[row]) {
+					t.Fatalf("selection %d..%d altered row %d: %q -> %q", anchor, focus, row, frame[row], line)
+				}
+				if strings.Count(line, zones) != strings.Count(frame[row], zones) {
+					t.Fatal("selection duplicated or dropped user-message terminal controls")
+				}
+			}
+		}
+	}
+}
+
 // Selection e2e tests drive raw SGR bytes through the tracking-mode-faithful
 // terminal emulator from mouse_e2e_test.go. They pin the content-anchored
 // selection model: selection lives in transcript coordinates, is constrained

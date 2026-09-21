@@ -13,7 +13,7 @@
       "expected": [
         "        ",
         " hello  ",
-        " world  ",
+        " \u001b_orb:w \u0007world  ",
         "        "
       ]
     },
@@ -28,7 +28,7 @@
       },
       "expected": [
         "\u001b[31mred  ",
-        "\u001b[31mblue\u001b[0m "
+        "\u001b_orb:w \u0007\u001b[31mblue\u001b[0m "
       ]
     },
     {
@@ -42,7 +42,7 @@
       },
       "expected": [
         "A   界 ",
-        "🙂     "
+        "\u001b_orb:w\u0007🙂     "
       ]
     },
     {
@@ -192,7 +192,7 @@
       },
       "expected": [
         " alpha    ",
-        " beta     ",
+        " \u001b_orb:w \u0007beta     ",
         " tail     "
       ]
     },

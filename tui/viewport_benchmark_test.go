@@ -65,6 +65,27 @@ func BenchmarkViewportHugeHistory(b *testing.B) {
 			}
 		})
 
+		b.Run(fmt.Sprintf("%d-lines/selection-frame", lines), func(b *testing.B) {
+			ui, _, _, _ := setup()
+			frame := ui.renderViewport(120, 40)
+			ui.selection = mouseSelection{anchor: mousePoint{row: lines - 30}, focus: mousePoint{row: lines - 2, column: 10}, active: true, moved: true}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = ui.renderSelection(frame)
+			}
+		})
+
+		b.Run(fmt.Sprintf("%d-lines/selection-copy", lines), func(b *testing.B) {
+			ui, _, _, _ := setup()
+			ui.selection = mouseSelection{anchor: mousePoint{row: lines - 30}, focus: mousePoint{row: lines - 2, column: 10}, active: true, moved: true}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = ui.selectedTextLocked()
+			}
+		})
+
 		b.Run(fmt.Sprintf("%d-lines/tail-update", lines), func(b *testing.B) {
 			ui, body, tail, _ := setup()
 			flip := false

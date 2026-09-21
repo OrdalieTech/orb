@@ -637,6 +637,14 @@ func wrapSingleLine(line string, width int) []string {
 // WrapTextWithANSI word-wraps while reopening active SGR and OSC-8 state on
 // physical lines, matching upstream's line-isolated renderer contract.
 func WrapTextWithANSI(text string, width int) []string {
+	return wrapTextWithANSI(text, width, false)
+}
+
+// Soft-wrap metadata travels with cached rows through padding and containers.
+// Like CursorMarker it is zero-width and removed before terminal output.
+const softWrapMarker = "\x1b_orb:w"
+
+func wrapTextWithANSI(text string, width int, selection bool) []string {
 	if text == "" {
 		return []string{""}
 	}
@@ -650,7 +658,23 @@ func WrapTextWithANSI(text string, width int) []string {
 		if index > 0 {
 			prefix = tracker.active()
 		}
-		result = append(result, wrapSingleLine(prefix+input, width)...)
+		wrapped := wrapSingleLine(prefix+input, width)
+		if selection && len(wrapped) > 1 {
+			remaining := StripANSI(input)
+			for row, line := range wrapped {
+				content := strings.TrimSpace(StripANSI(line))
+				if content == "" {
+					continue
+				}
+				if offset := strings.Index(remaining, content); offset >= 0 {
+					if row > 0 {
+						wrapped[row] = softWrapMarker + remaining[:offset] + "\a" + line
+					}
+					remaining = remaining[offset+len(content):]
+				}
+			}
+		}
+		result = append(result, wrapped...)
 		updateTracker(input, tracker)
 	}
 	if len(result) == 0 {

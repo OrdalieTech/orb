@@ -123,7 +123,7 @@ func (markdown *Markdown) Render(width int) []string {
 
 	wrapped := make([]string, 0, len(rendered))
 	for _, line := range rendered {
-		wrapped = append(wrapped, WrapTextWithANSI(line, contentWidth)...)
+		wrapped = append(wrapped, wrapTextWithANSI(line, contentWidth, true)...)
 	}
 
 	left, right := strings.Repeat(" ", markdown.paddingX), strings.Repeat(" ", markdown.paddingX)

@@ -280,10 +280,10 @@
       "trace": [],
       "chat": {
         "lineCount": 10336,
-        "sha256": "7efe0a8862603cfc91c30f8aa37d4262e2ab497e5e8e62d8ac12620062bb1b76",
+        "sha256": "197987861bf8c3567d87fd6f57c707f873cd5d20a83c7ccc916cc9d66e9199cd",
         "raw": {
           "lineCount": 10336,
-          "sha256": "69a57c5f4576e7e1193d00a5e0f09d1ceb16ce2bf0462b0a75b51859bcac2962",
+          "sha256": "71a1fc5c8caf1e193f43e41f8b3585dc718bc736af54a5c812001c0f1a21d2ee",
           "head": [
             "",
             "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
@@ -307,24 +307,24 @@
             " \u001b[38;5;109m- \u001b[39m\u001b[38;5;109m/model\u001b[39m command for runtime model switching                                                       "
           ],
           "tail": [
-            "   \u001b[38;5;241m(https://github.com/wutongyuonce)\u001b[39m).                                                              ",
+            "   \u001b_orb:w \u0007\u001b[38;5;241m(https://github.com/wutongyuonce)\u001b[39m).                                                              ",
             " \u001b[38;5;109m- \u001b[39mFixed inherited skill slash-command autocomplete ranking the \u001b[38;5;109mskill:\u001b[39m prefix instead of the bare   ",
-            "   skill name (\u001b[38;5;109m\u001b[4m#9120\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/pull/9120)\u001b[39m by \u001b[38;5;109m\u001b[4m@yearth\u001b[24m\u001b[39m\u001b[38;5;241m                    ",
-            "   \u001b[38;5;241m(https://github.com/yearth)\u001b[39m).                                                                    ",
+            "   \u001b_orb:w \u0007skill name (\u001b[38;5;109m\u001b[4m#9120\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/pull/9120)\u001b[39m by \u001b[38;5;109m\u001b[4m@yearth\u001b[24m\u001b[39m\u001b[38;5;241m                    ",
+            "   \u001b_orb:w \u0007\u001b[38;5;241m(https://github.com/yearth)\u001b[39m).                                                                    ",
             " \u001b[38;5;109m- \u001b[39mFixed inherited file autocomplete boundaries and path quoting around CJK punctuation (\u001b[38;5;109m\u001b[4m#9746\u001b[24m\u001b[39m\u001b[38;5;241m      ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/pull/9746)\u001b[39m by \u001b[38;5;109m\u001b[4m@haoqixu\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/haoqixu)\u001b[39m).      ",
+            "   \u001b_orb:w \u0007\u001b[38;5;241m(https://github.com/earendil-works/pi/pull/9746)\u001b[39m by \u001b[38;5;109m\u001b[4m@haoqixu\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/haoqixu)\u001b[39m).      ",
             " \u001b[38;5;109m- \u001b[39mFixed inherited LaTeX legacy font switches falling back to raw source, centered \u001b[38;5;109mcases\u001b[39m layouts    ",
-            "   around surrounding equations, and vertically laid out unsupported and nested display scripts     ",
-            "   (\u001b[38;5;109m\u001b[4m#8827\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/issues/8827)\u001b[39m, \u001b[38;5;109m\u001b[4m#9564\u001b[24m\u001b[39m\u001b[38;5;241m                                 ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/issues/9564)\u001b[39m, \u001b[38;5;109m\u001b[4m#7929\u001b[24m\u001b[39m\u001b[38;5;241m                                        ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/issues/7929)\u001b[39m).                                             ",
+            "   \u001b_orb:w \u0007around surrounding equations, and vertically laid out unsupported and nested display scripts     ",
+            "   \u001b_orb:w \u0007(\u001b[38;5;109m\u001b[4m#8827\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/issues/8827)\u001b[39m, \u001b[38;5;109m\u001b[4m#9564\u001b[24m\u001b[39m\u001b[38;5;241m                                 ",
+            "   \u001b_orb:w \u0007\u001b[38;5;241m(https://github.com/earendil-works/pi/issues/9564)\u001b[39m, \u001b[38;5;109m\u001b[4m#7929\u001b[24m\u001b[39m\u001b[38;5;241m                                        ",
+            "   \u001b_orb:w \u0007\u001b[38;5;241m(https://github.com/earendil-works/pi/issues/7929)\u001b[39m).                                             ",
             " \u001b[38;5;109m- \u001b[39mFixed inherited fullscreen Kitty images being erased by later row clears in WezTerm (\u001b[38;5;109m\u001b[4m#9169\u001b[24m\u001b[39m\u001b[38;5;241m       ",
-            "   \u001b[38;5;241m(https://github.com/earendil-works/pi/issues/9169)\u001b[39m).                                             ",
+            "   \u001b_orb:w \u0007\u001b[38;5;241m(https://github.com/earendil-works/pi/issues/9169)\u001b[39m).                                             ",
             "                                                                                                    ",
             " \u001b[38;5;111m\u001b[1m### \u001b[22m\u001b[39m\u001b[38;5;111m\u001b[1mRemoved\u001b[22m\u001b[39m                                                                                        ",
             "                                                                                                    ",
             " \u001b[38;5;109m- \u001b[39mRemoved unavailable inherited GPT-5.4 and GPT-5.4 mini models from OpenAI Codex selection (\u001b[38;5;109m\u001b[4m#9394\u001b[24m ",
-            "   \u001b[4;38;5;109m\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/issues/9394)\u001b[39m).                                            ",
+            "   \u001b_orb:w \u0007\u001b[4;38;5;109m\u001b[24m\u001b[39m\u001b[38;5;241m (https://github.com/earendil-works/pi/issues/9394)\u001b[39m).                                            ",
             "                                                                                                    ",
             "\u001b[38;5;69m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
           ]
@@ -352,24 +352,24 @@
           " - /model command for runtime model switching"
         ],
         "tail": [
-          "   (https://github.com/wutongyuonce)).",
+          "   \u001b_orb:w \u0007(https://github.com/wutongyuonce)).",
           " - Fixed inherited skill slash-command autocomplete ranking the skill: prefix instead of the bare",
-          "   skill name (#9120 (https://github.com/earendil-works/pi/pull/9120) by @yearth",
-          "   (https://github.com/yearth)).",
+          "   \u001b_orb:w \u0007skill name (#9120 (https://github.com/earendil-works/pi/pull/9120) by @yearth",
+          "   \u001b_orb:w \u0007(https://github.com/yearth)).",
           " - Fixed inherited file autocomplete boundaries and path quoting around CJK punctuation (#9746",
-          "   (https://github.com/earendil-works/pi/pull/9746) by @haoqixu (https://github.com/haoqixu)).",
+          "   \u001b_orb:w \u0007(https://github.com/earendil-works/pi/pull/9746) by @haoqixu (https://github.com/haoqixu)).",
           " - Fixed inherited LaTeX legacy font switches falling back to raw source, centered cases layouts",
-          "   around surrounding equations, and vertically laid out unsupported and nested display scripts",
-          "   (#8827 (https://github.com/earendil-works/pi/issues/8827), #9564",
-          "   (https://github.com/earendil-works/pi/issues/9564), #7929",
-          "   (https://github.com/earendil-works/pi/issues/7929)).",
+          "   \u001b_orb:w \u0007around surrounding equations, and vertically laid out unsupported and nested display scripts",
+          "   \u001b_orb:w \u0007(#8827 (https://github.com/earendil-works/pi/issues/8827), #9564",
+          "   \u001b_orb:w \u0007(https://github.com/earendil-works/pi/issues/9564), #7929",
+          "   \u001b_orb:w \u0007(https://github.com/earendil-works/pi/issues/7929)).",
           " - Fixed inherited fullscreen Kitty images being erased by later row clears in WezTerm (#9169",
-          "   (https://github.com/earendil-works/pi/issues/9169)).",
+          "   \u001b_orb:w \u0007(https://github.com/earendil-works/pi/issues/9169)).",
           "",
           " ### Removed",
           "",
           " - Removed unavailable inherited GPT-5.4 and GPT-5.4 mini models from OpenAI Codex selection (#9394",
-          "    (https://github.com/earendil-works/pi/issues/9394)).",
+          "   \u001b_orb:w \u0007 (https://github.com/earendil-works/pi/issues/9394)).",
           "",
           "────────────────────────────────────────────────────────────────────────────────────────────────────"
         ]
@@ -623,20 +623,20 @@
       "trace": [],
       "chat": {
         "lineCount": 3,
-        "sha256": "0c0bfd71d56096f49028544c0f548bd8de87a249dc4750f2558a13490e36aca0",
+        "sha256": "6cd1264a4f3cea8a79b43f5c5224a4d758f691e42eaefcd3927203f27dce7ef3",
         "raw": {
           "lineCount": 3,
-          "sha256": "7501aa4a820a11052ea013150f6f614c53db990e8c5510ff08a8dcffea872e4b",
+          "sha256": "ab09d10ce5a79cf80aa7f46ff84cacf95f997fd93386d8537351f4ebd7d0a475",
           "lines": [
             "",
             "  \u001b[38;5;241mNo stored credentials to remove. /logout only removes credentials saved by /login; environment    ",
-            "  \u001b[38;5;241mvariables and models.json config are unchanged.\u001b[39m                                                   "
+            "  \u001b_orb:w \u0007\u001b[38;5;241mvariables and models.json config are unchanged.\u001b[39m                                                   "
           ]
         },
         "lines": [
           "",
           "  No stored credentials to remove. /logout only removes credentials saved by /login; environment",
-          "  variables and models.json config are unchanged."
+          "  \u001b_orb:w \u0007variables and models.json config are unchanged."
         ]
       }
     },

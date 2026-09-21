@@ -37,7 +37,7 @@ func (markdown *Markdown) renderList(list *ast.List, source []byte, depth, width
 			}
 			blockLines := markdown.renderBlock(block, source, itemWidth, nil, style)
 			for _, line := range blockLines {
-				for _, wrapped := range WrapTextWithANSI(line, itemWidth) {
+				for _, wrapped := range wrapTextWithANSI(line, itemWidth, true) {
 					prefix := continuation
 					if !rendered {
 						prefix = firstPrefix
@@ -149,7 +149,7 @@ func (markdown *Markdown) renderBlockquote(quote *ast.Blockquote, source []byte,
 	lines := make([]string, 0, len(inner))
 	for _, line := range inner {
 		line = quoteStyle(ReopenAfterReset(prefix, line))
-		for _, wrapped := range WrapTextWithANSI(line, contentWidth) {
+		for _, wrapped := range wrapTextWithANSI(line, contentWidth, true) {
 			lines = append(lines, markdown.theme.QuoteBorder("│ ")+wrapped)
 		}
 	}
