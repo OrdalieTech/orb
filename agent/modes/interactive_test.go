@@ -2056,6 +2056,54 @@ func TestTerminalThemeDefaultAndBackdrop(t *testing.T) {
 	}
 }
 
+func TestTerminalPaletteSurvivesSessionReload(t *testing.T) {
+	previous := theme.Current()
+	t.Cleanup(func() { theme.SetCurrent(previous) })
+	cwd := t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeSession, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+		Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtimeSession.Dispose)
+	mode := &InteractiveMode{session: runtimeSession, ui: tui.NewTUI(newFakeTerminal(80, 24)), cwd: cwd}
+	if err := mode.initializeTheme(); err != nil {
+		t.Fatal(err)
+	}
+	for _, background := range []tui.RgbColor{{R: 255, G: 252, B: 239}, {R: 24, G: 27, B: 32}} {
+		mode.setTerminalBackground(background)
+		palette := func() string {
+			return theme.BG("toolPendingBg", "panel") + menuSelectedBackground("selected") + backdropStyle()("behind") + theme.FG("muted", "hint")
+		}
+		want := palette()
+		for range 2 {
+			// Usage toggles and session replacement both rebuild this registry.
+			if err := mode.initializeTheme(); err != nil {
+				t.Fatal(err)
+			}
+			if got := palette(); got != want {
+				t.Fatalf("reload lost terminal palette for %+v:\ngot %q\nwant %q", background, got, want)
+			}
+		}
+	}
+	settings.SetTheme("light")
+	if err := mode.initializeTheme(); err != nil {
+		t.Fatal(err)
+	}
+	if theme.Current().Name != "light" {
+		t.Fatal("terminal appearance replaced the explicit theme setting")
+	}
+}
+
 func TestOpenPaletteRecolorsHintsAndSkills(t *testing.T) {
 	previous := theme.Current()
 	t.Cleanup(func() { theme.SetCurrent(previous) })

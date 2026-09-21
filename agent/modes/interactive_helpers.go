@@ -342,14 +342,22 @@ func (mode *InteractiveMode) watchTerminalBackground(ctx context.Context) func()
 				if background == nil {
 					return
 				}
-				if native := theme.GetTheme("terminal"); native != nil && native.SourcePath == "" {
-					native.SetTerminalBackground(*background)
-					if theme.Current() == native {
-						mode.ui.Invalidate()
-					}
-				}
+				mode.setTerminalBackground(*background)
 			}
 		}
 	}()
 	return func() { unsubscribe(); cancel(); <-done; mode.ui.SetTerminalColorSchemeNotifications(false) }
+}
+
+func (mode *InteractiveMode) setTerminalBackground(background tui.RgbColor) {
+	mode.terminalBackgroundMu.Lock()
+	defer mode.terminalBackgroundMu.Unlock()
+	// Terminal appearance outlives the session and its reloadable resources.
+	mode.terminalBackground = &background
+	if native := theme.GetTheme("terminal"); native != nil && native.SourcePath == "" {
+		native.SetTerminalBackground(background)
+		if theme.Current() == native {
+			mode.ui.Invalidate()
+		}
+	}
 }
