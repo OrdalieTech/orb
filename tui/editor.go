@@ -346,6 +346,7 @@ type Editor struct {
 
 	OnSubmit      func(string)
 	OnChange      func(string)
+	OnPaste       func(string) bool // Return true to consume a bracketed paste before text insertion.
 	DisableSubmit bool
 
 	// InputInterceptor is called before default key handling. Return true to
@@ -897,7 +898,7 @@ func (editor *Editor) handleData(data string) {
 		editor.pasteBuffer += data
 		if endIndex := strings.Index(editor.pasteBuffer, "\x1b[201~"); endIndex != -1 {
 			pasteContent := editor.pasteBuffer[:endIndex]
-			if pasteContent != "" {
+			if pasteContent != "" && (editor.OnPaste == nil || !editor.OnPaste(pasteContent)) {
 				editor.handlePaste(pasteContent)
 			}
 			editor.isInPaste = false

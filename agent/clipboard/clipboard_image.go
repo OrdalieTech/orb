@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"image"
 	_ "image/gif"
@@ -181,6 +182,33 @@ func readImageViaXclip(deps imageDependencies) *Image {
 	return nil
 }
 
+// ponytail: AppKit through the installed osascript reads macOS image data without cgo or a bundled helper.
+const macOSReadImageScript = `ObjC.import("AppKit");
+var pasteboard = $.NSPasteboard.generalPasteboard;
+var data = pasteboard.dataForType($.NSPasteboardTypePNG);
+if (ObjC.unwrap(data) === undefined) {
+  var image = $.NSImage.alloc.initWithPasteboard(pasteboard);
+  if (ObjC.unwrap(image) !== undefined) {
+    var bitmap = $.NSBitmapImageRep.alloc.initWithData(image.TIFFRepresentation);
+    if (ObjC.unwrap(bitmap) !== undefined) data = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
+  }
+}
+ObjC.unwrap(data) === undefined ? "" : ObjC.unwrap(data.base64EncodedStringWithOptions(0));`
+
+func readImageViaMacOS(deps imageDependencies) *Image {
+	output, ok := deps.runOutput("osascript", []string{"-l", "JavaScript", "-e", macOSReadImageScript}, readTimeout)
+	if !ok {
+		return nil
+	}
+	output = bytes.TrimSpace(output)
+	data := make([]byte, base64.StdEncoding.DecodedLen(len(output)))
+	count, err := base64.StdEncoding.Decode(data, output)
+	if err != nil || count == 0 {
+		return nil
+	}
+	return &Image{Bytes: data[:count], MimeType: "image/png"}
+}
+
 func isWSL(deps imageDependencies) bool {
 	if deps.getenv("WSL_DISTRO_NAME") != "" || deps.getenv("WSLENV") != "" {
 		return true
@@ -242,15 +270,16 @@ func convertToPNG(data []byte) []byte {
 	return buffer.Bytes()
 }
 
-// ReadImage ports upstream readClipboardImage. The native-clipboard addon path
-// (the only source on darwin and win32, and a Linux X11 fallback) has no pure-Go
-// equivalent per D7, so those steps return nil; the Linux command paths are
-// ported in upstream order.
+// ReadImage reads clipboard images without a native addon. Linux command paths
+// retain upstream order; macOS uses AppKit through its installed script runner.
 func ReadImage() *Image { return readImage(defaultImageDependencies()) }
 
 func readImage(deps imageDependencies) *Image {
 	if deps.getenv("TERMUX_VERSION") != "" {
 		return nil
+	}
+	if deps.platform == "darwin" {
+		return readImageViaMacOS(deps)
 	}
 	if deps.platform != "linux" {
 		return nil

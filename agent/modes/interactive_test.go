@@ -1,8 +1,12 @@
 package modes
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,6 +63,53 @@ func TestParseSlashCommand(t *testing.T) {
 		if name != tt.name || args != tt.args {
 			t.Errorf("parseSlashCommand(%q) = (%q, %q), want (%q, %q)", tt.input, name, args, tt.name, tt.args)
 		}
+	}
+}
+
+func TestDroppedImageAttachesBytes(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "a picture.png")
+	if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dropped, mimeType := droppedImagePath(strings.ReplaceAll(path, " ", `\ `))
+	if dropped != path || mimeType != "image/png" {
+		t.Fatalf("dropped image = %q %q", dropped, mimeType)
+	}
+	if plain, mime := droppedImagePath("some ordinary pasted text"); plain != "" || mime != "" {
+		t.Fatalf("ordinary paste became an image: %q %q", plain, mime)
+	}
+	mode := &InteractiveMode{ui: tui.NewTUI(newFakeTerminal(80, 24))}
+	mode.editor = NewCustomEditor(mode.ui, tui.EditorTheme{}, NewAppKeybindings(nil))
+	mode.attachImage(func() ([]byte, string, error) {
+		data, err := os.ReadFile(dropped)
+		return data, mimeType, err
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mode.mu.Lock()
+		busy := mode.attachingImages != 0
+		mode.mu.Unlock()
+		if !busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("image attachment did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := mode.editor.GetText(); got != "[Image #1]" {
+		t.Fatalf("image marker = %q", got)
+	}
+	mode.inputCh = make(chan inputEntry, 1)
+	mode.setupEditorSubmitHandler()
+	mode.editor.OnSubmit(mode.editor.GetText())
+	entry := <-mode.inputCh
+	if entry.text != "[Image #1]" || len(entry.images) != 1 || entry.images[0].MimeType != "image/png" || entry.images[0].Data != base64.StdEncoding.EncodeToString(encoded.Bytes()) {
+		t.Fatal("dropped image bytes were not attached")
 	}
 }
 

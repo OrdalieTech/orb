@@ -2,6 +2,7 @@ package clipboard
 
 import (
 	"bytes"
+	"encoding/base64"
 	"image"
 	"image/color"
 	"image/png"
@@ -200,6 +201,19 @@ func TestReadImageConvertsUnsupportedFormatsToPNG(t *testing.T) {
 	}
 }
 
+func TestReadImageMacOS(t *testing.T) {
+	pngBytes := encodeTestPNG(t)
+	var calls []fakeCall
+	deps := fakeImageDependencies(nil, map[string]fakeResponse{
+		"osascript -l JavaScript -e " + macOSReadImageScript: {output: []byte(base64.StdEncoding.EncodeToString(pngBytes) + "\n"), ok: true},
+	}, &calls)
+	deps.platform = "darwin"
+	result := readImage(deps)
+	if result == nil || result.MimeType != "image/png" || !bytes.Equal(result.Bytes, pngBytes) || len(calls) != 1 || calls[0].timeout != readTimeout {
+		t.Fatalf("macOS clipboard result = %#v, calls = %#v", result, calls)
+	}
+}
+
 func TestReadImageSkipsTermuxAndNonLinux(t *testing.T) {
 	var calls []fakeCall
 	deps := fakeImageDependencies(map[string]string{"TERMUX_VERSION": "0.118"}, nil, &calls)
@@ -207,9 +221,9 @@ func TestReadImageSkipsTermuxAndNonLinux(t *testing.T) {
 		t.Fatalf("termux result = %#v, calls = %#v", result, calls)
 	}
 	deps = fakeImageDependencies(nil, nil, &calls)
-	deps.platform = "darwin"
+	deps.platform = "windows"
 	if result := readImage(deps); result != nil || len(calls) != 0 {
-		t.Fatalf("darwin result = %#v, calls = %#v (native clipboard is a documented gap)", result, calls)
+		t.Fatalf("windows result = %#v, calls = %#v", result, calls)
 	}
 }
 
