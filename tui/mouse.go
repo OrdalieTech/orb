@@ -27,7 +27,7 @@ type MouseEvent struct {
 	Shift  bool
 	Alt    bool
 	Ctrl   bool
-	// Clicks is 2 for a second press on the same cell within
+	// Clicks counts up to three presses on the same cell within
 	// doubleClickInterval. It is only set on MousePress.
 	Clicks int
 }
@@ -158,4 +158,15 @@ func runeIndexAtColumn(text string, column int) int {
 		return true
 	})
 	return index
+}
+
+func wordBounds(text string, cursor int, segments []segment) (int, int) {
+	cursor = min(cursor, max(0, runeLen(text)-1))
+	for _, part := range segments {
+		end := part.index + runeLen(part.text)
+		if cursor < end {
+			return part.index, end
+		}
+	}
+	return cursor, cursor
 }

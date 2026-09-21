@@ -434,8 +434,8 @@ func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 	}
 	ui.handleMouse("\x1b[<0;5;2m")
 	ui.RenderNow()
-	if frame := strings.Join(ui.previousLines, "\n"); strings.Contains(frame, "\x1b[7m") {
-		t.Fatalf("selection highlight remained after release: %q", frame)
+	if frame := strings.Join(ui.previousLines, "\n"); !strings.Contains(frame, "\x1b[7m") {
+		t.Fatalf("selection highlight disappeared after release: %q", frame)
 	}
 
 	select {
@@ -451,7 +451,7 @@ func TestTUIViewportDragCopiesVisibleText(t *testing.T) {
 	}
 }
 
-func TestTUIViewportDoubleClickCopiesVisibleSentence(t *testing.T) {
+func TestTUIViewportWordAndParagraphSelection(t *testing.T) {
 	ui := NewTUI(newFakeTerminal(30, 3))
 	body := &mutableLines{lines: []string{"First. Second", "sentence! Third."}}
 	ui.SetViewport(body, &mutableLines{lines: []string{"chrome"}})
@@ -462,12 +462,40 @@ func TestTUIViewportDoubleClickCopiesVisibleSentence(t *testing.T) {
 	ui.handleMouse("\x1b[<0;8;1M")
 	ui.handleMouse("\x1b[<0;8;1m")
 	ui.handleMouse("\x1b[<0;8;1M")
-	if got := ui.selectedTextLocked(); got != "Second\nsentence!" {
+	if got := ui.selectedTextLocked(); got != "Second" {
 		t.Fatalf("double-click selection = %q", got)
 	}
 	ui.handleMouse("\x1b[<0;8;1m")
-	if got := <-copied; got != "Second\nsentence!" {
-		t.Fatalf("copied sentence = %q", got)
+	if got := <-copied; got != "Second" {
+		t.Fatalf("copied word = %q", got)
+	}
+	ui.handleMouse("\x1b[<0;8;1M")
+	ui.handleMouse("\x1b[<0;8;1m")
+	if got := <-copied; got != "First. Second" {
+		t.Fatalf("triple-click paragraph = %q", got)
+	}
+	paragraph := "alpha " + strings.Repeat("wrapped text ", 30) + "omega"
+	ui = NewTUI(newFakeTerminal(20, 4))
+	ui.SetViewport(NewText(paragraph+"\nnext paragraph", 0, 0, nil), &mutableLines{lines: []string{"chrome"}})
+	ui.renderViewport(20, 4)
+	ui.scrollViewportToLocked(0)
+	ui.renderViewport(20, 4)
+	ui.SetSelectionHandler(func(text string) { copied <- text })
+	for _, want := range []string{"", "alpha", paragraph} {
+		ui.handleMouse("\x1b[<0;2;1M")
+		ui.handleMouse("\x1b[<0;2;1m")
+		if want != "" {
+			if got := <-copied; got != want {
+				t.Fatalf("wrapped selection = %q, want %q", got, want)
+			}
+		}
+	}
+	ui.handleMouse("\x1b[<65;2;2M")
+	if got := ui.selectedTextLocked(); got != paragraph {
+		t.Fatalf("scrolling changed selection: %q", got)
+	}
+	if ui.handleViewportInput("a") || ui.selection.moved {
+		t.Fatal("typing should clear transcript selection and reach the editor")
 	}
 }
 

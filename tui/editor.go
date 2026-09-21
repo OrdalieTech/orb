@@ -237,9 +237,10 @@ func (state editorState) clone() editorState {
 }
 
 type layoutLine struct {
-	text      string
-	hasCursor bool
-	cursorPos int
+	logicalLine, startCol int
+	text                  string
+	hasCursor             bool
+	cursorPos             int
 }
 
 type visualLine struct {
@@ -249,6 +250,7 @@ type visualLine struct {
 }
 
 type EditorTheme struct {
+	Selection   StyleFunc
 	BorderColor StyleFunc
 	SelectList  SelectListTheme
 }
@@ -289,11 +291,13 @@ const (
 // Editor is the multi-line text editor: undo, kill ring, word navigation,
 // paste collapse, prompt history, autocomplete.
 type Editor struct {
-	mu      sync.Mutex
-	state   editorState
-	focused bool
-	ui      *TUI
-	theme   EditorTheme
+	mu    sync.Mutex
+	state editorState
+	// Editor endpoints are half-open rune offsets, unlike inclusive transcript cells.
+	selection mouseSelection
+	focused   bool
+	ui        *TUI
+	theme     EditorTheme
 
 	paddingX     int
 	lastWidth    int
@@ -518,6 +522,7 @@ func (editor *Editor) isOnLastVisualLine() bool {
 }
 
 func (editor *Editor) navigateHistory(direction int) {
+	editor.selection = mouseSelection{}
 	editor.lastAction = ""
 	if len(editor.history) == 0 {
 		return
@@ -561,6 +566,7 @@ func (editor *Editor) exitHistoryBrowsing() {
 // setTextInternal sets text without resetting history state (used by
 // navigateHistory).
 func (editor *Editor) setTextInternal(text, cursorPlacement string) {
+	editor.selection = mouseSelection{}
 	lines := strings.Split(text, "\n")
 	editor.state.lines = lines
 	if cursorPlacement == "start" {
@@ -689,6 +695,22 @@ func (editor *Editor) Render(width int) []string {
 			}
 		}
 
+		if editor.selection.moved {
+			start, end := editor.selection.bounds()
+			if line.logicalLine >= start.row && line.logicalLine <= end.row {
+				from, to := 0, runeLen(line.text)
+				if line.logicalLine == start.row {
+					from = max(0, start.column-line.startCol)
+				}
+				if line.logicalLine == end.row {
+					to = min(to, end.column-line.startCol)
+				}
+				if to > from {
+					displayText = highlightSelection(displayText, VisibleWidth(runeSlice(line.text, 0, from)), VisibleWidth(runeSlice(line.text, 0, to)), editor.theme.Selection)
+				}
+			}
+		}
+
 		padding := strings.Repeat(" ", max(0, contentWidth-lineVisibleWidth))
 		lineRightPadding := rightPadding
 		if cursorInPadding {
@@ -764,13 +786,13 @@ func (editor *Editor) HandleMouse(event MouseEvent) bool {
 		return true
 	}
 	row := event.Row - 1
-	if event.Type != MousePress || event.Button != 0 || row < 0 || row >= editor.renderVisible {
+	if event.Button != 0 || (event.Type != MousePress && event.Type != MouseDrag && event.Type != MouseRelease) || event.Type != MousePress && !editor.selection.active || event.Type == MousePress && (row < 0 || row >= editor.renderVisible) {
 		editor.mu.Unlock()
 		return false
 	}
 	visualLines := editor.buildVisualLineMap(editor.lastWidth)
-	index := editor.scrollOffset + row
-	if index >= len(visualLines) {
+	index := max(0, min(editor.scrollOffset+row, len(visualLines)-1))
+	if len(visualLines) == 0 {
 		editor.mu.Unlock()
 		return false
 	}
@@ -778,9 +800,51 @@ func (editor *Editor) HandleMouse(event MouseEvent) bool {
 	line := editor.line(target.logicalLine)
 	start := runeIndexFromUTF16(line, target.startCol)
 	chunk := runeSlice(line, start, runeIndexFromUTF16(line, target.startCol+target.length))
-	editor.state.cursorLine = target.logicalLine
-	editor.setCursorCol(start + runeIndexAtColumn(chunk, max(0, event.Column-editor.renderPaddingX)))
+	point := mousePoint{row: target.logicalLine, column: start + runeIndexAtColumn(chunk, max(0, event.Column-editor.renderPaddingX))}
+	if event.Type == MousePress {
+		editor.cancelAutocomplete()
+		anchor := point
+		if event.Shift {
+			anchor = mousePoint{row: editor.state.cursorLine, column: editor.state.cursorCol}
+			if editor.selection.moved {
+				anchor = editor.selection.anchor
+			}
+		}
+		editor.selection = mouseSelection{anchor: anchor, active: true, unit: event.Clicks}
+		if event.Shift {
+			editor.selection.unit = 1
+		}
+		if editor.selection.unit > 1 {
+			editor.selection.unitStart, editor.selection.unitEnd = editor.selectionUnitBounds(point)
+		}
+	}
+	if editor.selection.unit > 1 {
+		first, last := editor.selectionUnitBounds(point)
+		if point.row < editor.selection.unitStart.row || point.row == editor.selection.unitStart.row && point.column < editor.selection.unitStart.column {
+			editor.selection.anchor, point = editor.selection.unitEnd, first
+		} else {
+			editor.selection.anchor, point = editor.selection.unitStart, last
+		}
+	}
+	editor.selection.focus = point
+	editor.selection.moved = point != editor.selection.anchor
+	editor.state.cursorLine = point.row
+	editor.setCursorCol(point.column)
+	editor.lastAction = ""
+	copied := ""
+	if event.Type == MouseRelease {
+		editor.selection.active = false
+		copied = editor.selectedText()
+	}
+	pending := editor.pending
+	editor.pending = nil
 	editor.mu.Unlock()
+	for _, callback := range pending {
+		callback()
+	}
+	if copied != "" {
+		editor.ui.copySelection(copied)
+	}
 	return true
 }
 
@@ -843,6 +907,10 @@ func (editor *Editor) handleData(data string) {
 				editor.handleData(remaining)
 			}
 		}
+		return
+	}
+
+	if editor.handleSelectionKey(data) {
 		return
 	}
 
@@ -1082,7 +1150,7 @@ func (editor *Editor) layoutText(contentWidth int) []layoutLine {
 		isCurrentLine := i == editor.state.cursorLine
 
 		if VisibleWidth(line) <= contentWidth {
-			entry := layoutLine{text: line, hasCursor: isCurrentLine}
+			entry := layoutLine{text: line, hasCursor: isCurrentLine, logicalLine: i}
 			if isCurrentLine {
 				entry.cursorPos = editor.state.cursorCol
 			}
@@ -1113,9 +1181,9 @@ func (editor *Editor) layoutText(contentWidth int) []layoutLine {
 				}
 			}
 			if hasCursorInChunk {
-				layoutLines = append(layoutLines, layoutLine{text: chunk.text, hasCursor: true, cursorPos: adjustedCursorPos})
+				layoutLines = append(layoutLines, layoutLine{text: chunk.text, hasCursor: true, cursorPos: adjustedCursorPos, logicalLine: i, startCol: chunk.startIndex})
 			} else {
-				layoutLines = append(layoutLines, layoutLine{text: chunk.text})
+				layoutLines = append(layoutLines, layoutLine{text: chunk.text, logicalLine: i, startCol: chunk.startIndex})
 			}
 		}
 	}
@@ -1170,6 +1238,7 @@ func (editor *Editor) SetText(text string) {
 	editor.cancelAutocomplete()
 	editor.lastAction = ""
 	editor.exitHistoryBrowsing()
+	editor.deleteSelection()
 	normalized := normalizeEditorText(text)
 	if editor.getTextLocked() != normalized {
 		editor.pushUndoSnapshot()
@@ -1249,6 +1318,7 @@ func (editor *Editor) insertCharacter(char string, skipUndoCoalescing bool) {
 		editor.lastAction = "type-word"
 	}
 
+	editor.deleteSelection()
 	line := editor.currentLine()
 	before := runeSlice(line, 0, editor.state.cursorCol)
 	after := runeSliceFrom(line, editor.state.cursorCol)
@@ -1306,6 +1376,7 @@ func (editor *Editor) handlePaste(pastedText string) {
 	editor.exitHistoryBrowsing()
 	editor.lastAction = ""
 	editor.pushUndoSnapshot()
+	editor.deleteSelection()
 
 	// Some terminals re-encode control bytes inside bracketed paste as CSI-u
 	// Ctrl+<letter> sequences; decode them back so newlines survive.
@@ -1377,6 +1448,7 @@ func (editor *Editor) addNewLine() {
 	editor.exitHistoryBrowsing()
 	editor.lastAction = ""
 	editor.pushUndoSnapshot()
+	editor.deleteSelection()
 
 	currentLine := editor.currentLine()
 	before := runeSlice(currentLine, 0, editor.state.cursorCol)
@@ -1414,6 +1486,7 @@ func (editor *Editor) shouldSubmitOnBackslashEnter(data string, kb *KeybindingsM
 }
 
 func (editor *Editor) submitValue() {
+	editor.selection = mouseSelection{}
 	editor.cancelAutocomplete()
 	result := trimWhitespace(editor.expandPasteMarkers(editor.getTextLocked()))
 
@@ -1940,6 +2013,7 @@ func (editor *Editor) yankPop() {
 }
 
 func (editor *Editor) insertYankedText(text string) {
+	editor.deleteSelection()
 	editor.exitHistoryBrowsing()
 	lines := strings.Split(text, "\n")
 
@@ -2004,6 +2078,7 @@ func (editor *Editor) pushUndoSnapshot() {
 }
 
 func (editor *Editor) undo() {
+	editor.selection = mouseSelection{}
 	editor.exitHistoryBrowsing()
 	snapshot, ok := editor.undoStack.pop()
 	if !ok {
@@ -2355,4 +2430,166 @@ func (editor *Editor) emitChange() {
 	}
 	callback, text := editor.OnChange, editor.getTextLocked()
 	editor.pending = append(editor.pending, func() { callback(text) })
+}
+
+func (editor *Editor) HasSelection() bool {
+	editor.mu.Lock()
+	defer editor.mu.Unlock()
+	return editor.selection.moved
+}
+
+func (editor *Editor) selectionUnitBounds(point mousePoint) (mousePoint, mousePoint) {
+	line := editor.line(point.row)
+	start, end := 0, runeLen(line)
+	if editor.selection.unit == 3 && point.row+1 < len(editor.state.lines) {
+		return mousePoint{row: point.row}, mousePoint{row: point.row + 1}
+	}
+	if editor.selection.unit == 2 {
+		start, end = wordBounds(line, point.column, editor.segment(line, segmentModeWord))
+	}
+	return mousePoint{row: point.row, column: start}, mousePoint{row: point.row, column: end}
+}
+
+func (editor *Editor) selectedText() string {
+	if !editor.selection.moved {
+		return ""
+	}
+	start, end := editor.selection.bounds()
+	lines := append([]string(nil), editor.state.lines[start.row:end.row+1]...)
+	lines[len(lines)-1] = runeSlice(lines[len(lines)-1], 0, end.column)
+	lines[0] = runeSliceFrom(lines[0], start.column)
+	return editor.expandPasteMarkers(strings.Join(lines, "\n"))
+}
+
+// The caller owns the undo snapshot and emits one change for the whole edit.
+func (editor *Editor) deleteSelection() bool {
+	if !editor.selection.moved {
+		editor.selection = mouseSelection{}
+		return false
+	}
+	start, end := editor.selection.bounds()
+	editor.state.lines[start.row] = runeSlice(editor.line(start.row), 0, start.column) + runeSliceFrom(editor.line(end.row), end.column)
+	editor.state.lines = append(editor.state.lines[:start.row+1], editor.state.lines[end.row+1:]...)
+	editor.state.cursorLine = start.row
+	editor.setCursorCol(start.column)
+	editor.selection = mouseSelection{}
+	return true
+}
+
+func (editor *Editor) handleSelectionKey(data string) bool {
+	editor.selection.active = false
+	key := ParseKey(data)
+	if key == "super+a" {
+		editor.selection = mouseSelection{anchor: mousePoint{}}
+		editor.state.cursorLine = len(editor.state.lines) - 1
+		editor.setCursorCol(runeLen(editor.currentLine()))
+		editor.selection.focus = mousePoint{row: editor.state.cursorLine, column: editor.state.cursorCol}
+		editor.selection.moved = editor.selection.anchor != editor.selection.focus
+		return true
+	}
+	if editor.selection.moved {
+		switch key {
+		case "escape":
+			editor.selection = mouseSelection{}
+			return true
+		case "ctrl+c", "super+c", "ctrl+x", "super+x":
+			text := editor.selectedText()
+			editor.pending = append(editor.pending, func() { editor.ui.copySelection(text) })
+			if strings.HasSuffix(key, "+x") {
+				editor.pushUndoSnapshot()
+				editor.deleteSelection()
+				editor.lastAction = ""
+				editor.emitChange()
+			}
+			return true
+		}
+		kb := GetKeybindings()
+		for _, action := range []string{"deleteCharBackward", "deleteCharForward", "deleteWordBackward", "deleteWordForward", "deleteToLineStart", "deleteToLineEnd"} {
+			if kb.Matches(data, "tui.editor."+action) {
+				editor.pushUndoSnapshot()
+				editor.deleteSelection()
+				editor.lastAction = ""
+				editor.cancelAutocomplete()
+				editor.emitChange()
+				return true
+			}
+		}
+	}
+	shift := strings.Contains(key, "shift+")
+	navigation := strings.Replace(key, "shift+", "", 1)
+	if !shift && !editor.selection.moved && !strings.Contains(key, "super+") && key != "alt+up" && key != "alt+down" && key != "ctrl+up" && key != "ctrl+down" {
+		return false
+	}
+	before := mousePoint{row: editor.state.cursorLine, column: editor.state.cursorCol}
+	if !shift && editor.selection.moved && (navigation == "left" || navigation == "right") {
+		start, end := editor.selection.bounds()
+		if navigation == "left" {
+			editor.state.cursorLine = start.row
+			editor.setCursorCol(start.column)
+		} else {
+			editor.state.cursorLine = end.row
+			editor.setCursorCol(end.column)
+		}
+	} else {
+		switch navigation {
+		case "left":
+			editor.moveCursor(0, -1)
+		case "right":
+			editor.moveCursor(0, 1)
+		case "up":
+			editor.moveCursor(-1, 0)
+		case "down":
+			editor.moveCursor(1, 0)
+		case "alt+left", "ctrl+left":
+			editor.moveWordBackwards()
+		case "alt+right", "ctrl+right":
+			editor.moveWordForwards()
+		case "home":
+			editor.moveToLineStart()
+		case "end":
+			editor.moveToLineEnd()
+		case "super+left", "super+right":
+			lines := editor.buildVisualLineMap(editor.lastWidth)
+			line := lines[editor.findCurrentVisualLine(lines)]
+			column := line.startCol
+			if navigation == "super+right" {
+				column += line.length
+			}
+			editor.setCursorCol(runeIndexFromUTF16(editor.currentLine(), column))
+		case "super+up", "ctrl+home":
+			editor.state.cursorLine = 0
+			editor.setCursorCol(0)
+		case "super+down", "ctrl+end":
+			editor.state.cursorLine = len(editor.state.lines) - 1
+			editor.setCursorCol(runeLen(editor.currentLine()))
+		case "alt+up", "ctrl+up":
+			if editor.state.cursorCol == 0 && editor.state.cursorLine > 0 {
+				editor.state.cursorLine--
+			}
+			editor.setCursorCol(0)
+		case "alt+down", "ctrl+down":
+			if editor.state.cursorCol == runeLen(editor.currentLine()) && editor.state.cursorLine < len(editor.state.lines)-1 {
+				editor.state.cursorLine++
+			}
+			editor.setCursorCol(runeLen(editor.currentLine()))
+		case "pageUp":
+			editor.pageScroll(-1)
+		case "pageDown":
+			editor.pageScroll(1)
+		default:
+			return false
+		}
+	}
+	editor.cancelAutocomplete()
+	editor.lastAction = ""
+	if shift {
+		if !editor.selection.moved {
+			editor.selection.anchor = before
+		}
+		editor.selection.focus = mousePoint{row: editor.state.cursorLine, column: editor.state.cursorCol}
+		editor.selection.moved = editor.selection.anchor != editor.selection.focus
+	} else {
+		editor.selection = mouseSelection{}
+	}
+	return true
 }

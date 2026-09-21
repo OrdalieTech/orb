@@ -61,7 +61,9 @@ type mousePoint struct{ row, column int }
 // never moves the anchored text.
 type mouseSelection struct {
 	anchor, focus, lastClick mousePoint
-	active, moved, sentence  bool
+	active, moved            bool
+	unit, clicks             int
+	unitStart, unitEnd       mousePoint
 	scrollbar                bool
 	lastClickAt              time.Time
 }
@@ -113,6 +115,9 @@ type TUI struct {
 	mouseOverlays       []mouseOverlayBox
 	mouseClick          mousePoint
 	mouseClickAt        time.Time
+	mouseClicks         int
+	mouseCapture        MouseHandler
+	mouseCaptureOrigin  mousePoint
 
 	lifecycleMu        sync.RWMutex
 	stopped            bool
@@ -210,6 +215,15 @@ func (ui *TUI) SetSelectionHandler(handler func(string)) {
 	ui.renderMu.Lock()
 	ui.selectionHandler = handler
 	ui.renderMu.Unlock()
+}
+
+func (ui *TUI) copySelection(text string) {
+	ui.renderMu.Lock()
+	handler := ui.selectionHandler
+	ui.renderMu.Unlock()
+	if text != "" && handler != nil {
+		handler(text)
+	}
 }
 
 func (ui *TUI) SetSelectionStyle(style StyleFunc) {
@@ -320,6 +334,7 @@ func (ui *TUI) Stop() error {
 	ui.renderDispatchMu.Unlock()
 	ui.renderMu.Lock()
 	ui.stopSelectionScrollLocked()
+	ui.mouseCapture = nil
 	lines, row, viewport := len(ui.previousLines), ui.hardwareCursorRow, ui.viewportBody != nil
 	ui.renderMu.Unlock()
 	if lines > 0 && !viewport {
@@ -524,16 +539,16 @@ func (ui *TUI) handleViewportInput(data string) bool {
 		return false
 	}
 	consumed := true
+	selected := ""
 	step := max(1, ui.viewportBodyHeight)
 	switch {
-	// Escape cancels only a live selection drag (and its auto-scroll timer);
-	// with no selection active it falls through to the focused component, so
-	// keyboard flows are otherwise unchanged. It stays ahead of the overlay
-	// check: a drag behind an overlay would leave its ticker running.
-	case MatchesKey(data, "escape") && ui.selection.active:
+	// Escape clears selection before app-level cancellation, including after release.
+	case MatchesKey(data, "escape") && (ui.selection.active || ui.selection.moved && !deferToOverlay):
 		ui.clearSelectionLocked()
 	case deferToOverlay:
 		consumed = false
+	case ui.selection.moved && (MatchesKey(data, "ctrl+c") || MatchesKey(data, "super+c")):
+		selected = ui.selectedTextLocked()
 	case MatchesKey(data, "ctrl+pageup"):
 		ui.clearSelectionLocked()
 		ui.scrollViewportLocked(-step)
@@ -544,9 +559,15 @@ func (ui *TUI) handleViewportInput(data string) bool {
 		ui.clearSelectionLocked()
 		ui.viewportFollow = true
 	default:
+		if !IsKeyRelease(data) && ui.selection.moved {
+			ui.clearSelectionLocked()
+		}
 		consumed = false
 	}
 	ui.renderMu.Unlock()
+	if selected != "" {
+		ui.copySelection(selected)
+	}
 	return consumed
 }
 
@@ -604,9 +625,21 @@ func (ui *TUI) handleMouse(data string) bool {
 		return true
 	}
 	ui.renderMu.Lock()
-	// A modified click is the escape hatch for terminals that report shift
-	// instead of passing it through: it always reaches text selection.
-	dispatch := !ui.selection.active && !ui.selection.scrollbar && !event.Shift && !event.Alt && !event.Ctrl
+	if ui.mouseCapture != nil && (event.Type == MouseDrag || event.Type == MouseRelease) {
+		handler := ui.mouseCapture
+		event.Row -= ui.mouseCaptureOrigin.row
+		event.Column -= ui.mouseCaptureOrigin.column
+		if event.Type == MouseRelease {
+			ui.mouseCapture = nil
+		}
+		ui.renderMu.Unlock()
+		return handler.HandleMouse(event)
+	}
+	if event.Type == MousePress {
+		ui.mouseCapture = nil
+	}
+	// Shift extends component text selections; Alt/Ctrl bypass clickable chrome.
+	dispatch := !ui.selection.active && !ui.selection.scrollbar && !event.Alt && !event.Ctrl
 	local := event
 	var handler MouseHandler
 	if dispatch {
@@ -614,9 +647,9 @@ func (ui *TUI) handleMouse(data string) bool {
 			point := mousePoint{row: event.Row, column: event.Column}
 			local.Clicks = 1
 			if point == ui.mouseClick && time.Since(ui.mouseClickAt) <= doubleClickInterval {
-				local.Clicks = 2
+				local.Clicks = ui.mouseClicks%3 + 1
 			}
-			ui.mouseClick, ui.mouseClickAt = point, time.Now()
+			ui.mouseClick, ui.mouseClickAt, ui.mouseClicks = point, time.Now(), local.Clicks
 		}
 		for index := len(ui.mouseOverlays) - 1; index >= 0; index-- {
 			box := ui.mouseOverlays[index]
@@ -639,6 +672,13 @@ func (ui *TUI) handleMouse(data string) bool {
 	}
 	ui.renderMu.Unlock()
 	if dispatch && handler.HandleMouse(local) {
+		if event.Type == MousePress && event.Button == 0 {
+			ui.renderMu.Lock()
+			ui.clearSelectionLocked()
+			ui.mouseCapture = handler
+			ui.mouseCaptureOrigin = mousePoint{row: event.Row - local.Row, column: event.Column - local.Column}
+			ui.renderMu.Unlock()
+		}
 		return true
 	}
 	ui.handleViewportMouse(event)
@@ -692,18 +732,16 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		ui.scrollViewportToLocked(event.Row)
 	case event.Type == MouseRelease && ui.selection.active:
 		ui.stopSelectionScrollLocked()
-		if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok && !ui.selection.sentence {
-			ui.selection.focus = point
-			ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
+		if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok {
+			ui.extendSelectionLocked(point)
 		}
 		if ui.selection.moved {
 			selected = ui.selectedTextLocked()
 		}
 		ui.selection.active = false
 	case event.Type == MouseDrag && ui.selection.active:
-		if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok && !ui.selection.sentence {
-			ui.selection.focus = point
-			ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
+		if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok {
+			ui.extendSelectionLocked(point)
 		}
 		ui.updateSelectionScrollLocked(event)
 	case event.Type == MouseWheelUp || event.Type == MouseWheelDown:
@@ -717,12 +755,10 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 			// tracking whatever content flows under the stationary pointer.
 			ui.stopSelectionScrollLocked()
 			ui.scrollViewportLocked(delta)
-			if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok && !ui.selection.sentence {
-				ui.selection.focus = point
-				ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
+			if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok {
+				ui.extendSelectionLocked(point)
 			}
 		} else {
-			ui.clearSelectionLocked()
 			ui.scrollViewportLocked(delta)
 		}
 	case event.Type == MousePress && event.Button == 0 && event.Column == ui.terminal.Columns()-1 && event.Row < ui.viewportBodyHeight && ui.viewportBodyLines > ui.viewportBodyHeight:
@@ -735,12 +771,21 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		// the thread.
 		if point, ok := ui.bodyPointLocked(event.Column, event.Row, false); ok {
 			ui.stopSelectionScrollLocked()
-			lastClick, lastClickAt, now := ui.selection.lastClick, ui.selection.lastClickAt, time.Now()
-			ui.selection = mouseSelection{anchor: point, focus: point, active: true, lastClick: point, lastClickAt: now}
-			if point == lastClick && now.Sub(lastClickAt) <= doubleClickInterval {
-				ui.selection.anchor, ui.selection.focus = ui.sentenceBoundsLocked(point)
-				ui.selection.moved, ui.selection.sentence = true, true
+			previous, now := ui.selection, time.Now()
+			clicks := 1
+			if point == previous.lastClick && now.Sub(previous.lastClickAt) <= doubleClickInterval {
+				clicks = previous.clicks%3 + 1
 			}
+			ui.selection = mouseSelection{anchor: point, focus: point, active: true, lastClick: point, lastClickAt: now, clicks: clicks}
+			if event.Shift && previous.moved {
+				ui.selection.anchor = previous.anchor
+				ui.extendSelectionLocked(point)
+			} else if clicks > 1 {
+				ui.selection.unit = clicks
+				ui.selection.unitStart, ui.selection.unitEnd = ui.selectionUnitBoundsLocked(point)
+				ui.extendSelectionLocked(point)
+			}
+
 			if ui.viewportFollow && ui.viewportBodyLines > ui.viewportBodyHeight {
 				ui.viewportEnd, ui.viewportFollow = ui.viewportBodyLines, false
 			}
@@ -795,7 +840,7 @@ func (ui *TUI) clearSelectionLocked() {
 // report: the top and bottom visible body rows (and anything past them, into
 // the chrome) drive auto-scroll in that direction, anywhere else stops it.
 func (ui *TUI) updateSelectionScrollLocked(event MouseEvent) {
-	if !ui.selection.active || ui.selection.sentence || ui.viewportBodyHeight <= 0 {
+	if !ui.selection.active || ui.viewportBodyHeight <= 0 {
 		ui.stopSelectionScrollLocked()
 		return
 	}
@@ -861,7 +906,7 @@ func (ui *TUI) selectionScrollTick(generation uint64) {
 		ui.renderMu.Unlock()
 		return
 	}
-	if scroll.rows == 0 || !ui.selection.active || ui.selection.sentence {
+	if scroll.rows == 0 || !ui.selection.active {
 		scroll.timer, scroll.rows = nil, 0
 		ui.renderMu.Unlock()
 		return
@@ -874,8 +919,7 @@ func (ui *TUI) selectionScrollTick(generation uint64) {
 			row = end - 1
 		}
 		point := mousePoint{row: row, column: scroll.column}
-		ui.selection.focus = point
-		ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
+		ui.extendSelectionLocked(point)
 	}
 	ui.armSelectionScrollLocked()
 	ui.renderMu.Unlock()
@@ -1054,66 +1098,81 @@ func joinSelectedContent(rows []string, firstFull bool, joins []string) string {
 	return joined.String()
 }
 
-// sentenceBoundsLocked expands a double click to sentence bounds within the
-// visible transcript lines, returning content-anchored points.
-func (ui *TUI) sentenceBoundsLocked(point mousePoint) (mousePoint, mousePoint) {
-	top, bottom := ui.viewportRangeLocked()
-	if point.row < top || point.row >= bottom {
-		return point, point
-	}
-	lines := componentLines(ui.viewportBody, ui.viewportBodyWidth, top, bottom)
-	local := mousePoint{row: point.row - top, column: point.column}
-	start, end := sentenceBounds(lines, local)
-	start.row, end.row = start.row+top, end.row+top
-	return start, end
-}
-
-// ponytail: scan visible text only; add wrap metadata if selection must cross viewport edges.
-func sentenceBounds(lines []string, point mousePoint) (mousePoint, mousePoint) {
-	plain, offset := make([]string, len(lines)), 0
-	for row, line := range lines {
-		plain[row] = plainTerminalText(strings.Replace(line, scrollbarThumb, "", 1))
-		if row < point.row {
-			offset += len(plain[row]) + 1
+func (ui *TUI) extendSelectionLocked(point mousePoint) {
+	if ui.selection.unit > 1 {
+		start, end := ui.selectionUnitBoundsLocked(point)
+		if point.row < ui.selection.unitStart.row || point.row == ui.selection.unitStart.row && point.column < ui.selection.unitStart.column {
+			ui.selection.anchor, ui.selection.focus = ui.selection.unitEnd, start
+		} else {
+			ui.selection.anchor, ui.selection.focus = ui.selection.unitStart, end
 		}
+		ui.selection.moved = true
+		return
 	}
-	column := selectionColumnStart(plain[point.row], point.column)
-	offset += len(SliceByColumn(plain[point.row], 0, column, false))
-	text, start, end := strings.Join(plain, "\n"), 0, 0
-	offset = min(offset, len(text))
-	end = len(text)
-	if index := strings.LastIndexAny(text[:offset], ".!?。！？"); index >= 0 {
-		_, size := utf8.DecodeRuneInString(text[index:])
-		start = index + size
-	}
-	if index := strings.IndexAny(text[offset:], ".!?。！？"); index >= 0 {
-		_, size := utf8.DecodeRuneInString(text[offset+index:])
-		end = offset + index + size
-	}
-	segment := text[start:end]
-	trimmed := strings.TrimSpace(segment)
-	if trimmed == "" {
-		return point, point
-	}
-	start += strings.Index(segment, trimmed)
-	end = start + len(trimmed)
-	return textOffsetPoint(plain, start, false), textOffsetPoint(plain, end, true)
+	ui.selection.focus = point
+	ui.selection.moved = ui.selection.moved || point != ui.selection.anchor
 }
 
-func textOffsetPoint(lines []string, offset int, inclusive bool) mousePoint {
-	cursor := 0
-	for row, line := range lines {
-		if offset <= cursor+len(line) {
-			column := VisibleWidth(line[:max(0, min(len(line), offset-cursor))])
-			if inclusive && column > 0 {
-				column--
+// Only the clicked logical paragraph is read, including its offscreen soft wraps.
+func (ui *TUI) selectionUnitBoundsLocked(point mousePoint) (mousePoint, mousePoint) {
+	lineAt := func(row int) string {
+		lines := componentLines(ui.viewportBody, ui.viewportBodyWidth, row, row+1)
+		if len(lines) == 0 {
+			return ""
+		}
+		return lines[0]
+	}
+	start, end := point.row, point.row+1
+	for start > 0 && strings.Contains(lineAt(start), softWrapMarker) {
+		start--
+	}
+	for end < ui.viewportBodyLines && strings.Contains(lineAt(end), softWrapMarker) {
+		end++
+	}
+	lines := componentLines(ui.viewportBody, ui.viewportBodyWidth, start, end)
+	if len(lines) == 0 {
+		return point, point
+	}
+	if ui.selection.unit == 3 {
+		return mousePoint{row: start}, mousePoint{row: end - 1, column: max(0, VisibleWidth(lines[len(lines)-1])-1)}
+	}
+	var text strings.Builder
+	offsets, margins := make([]int, len(lines)), make([]int, len(lines))
+	cursor, length := 0, 0
+	for index, line := range lines {
+		plain := strings.TrimRight(plainTerminalText(line), " ")
+		margins[index] = selectionMarginWidth(plain)
+		plain = runeSliceFrom(plain, margins[index])
+		if marker := strings.Index(line, softWrapMarker); index > 0 && marker >= 0 {
+			marker += len(softWrapMarker)
+			if stop := strings.IndexByte(line[marker:], '\a'); stop >= 0 {
+				separator := line[marker : marker+stop]
+				text.WriteString(separator)
+				length += runeLen(separator)
 			}
-			return mousePoint{row: row, column: column}
 		}
-		cursor += len(line) + 1
+		offsets[index] = length
+		if start+index == point.row {
+			cursor = offsets[index] + runeIndexAtColumn(plain, max(0, point.column-margins[index]))
+		}
+		text.WriteString(plain)
+		length += runeLen(plain)
 	}
-	row := len(lines) - 1
-	return mousePoint{row: row, column: max(0, VisibleWidth(lines[row])-1)}
+	value := text.String()
+	from, to := wordBounds(value, cursor, wordSegments(value))
+	position := func(offset int, inclusive bool) mousePoint {
+		index := len(lines) - 1
+		for index > 0 && (offset < offsets[index] || inclusive && offset == offsets[index]) {
+			index--
+		}
+		part := runeSlice(value, offsets[index], max(offsets[index], offset))
+		column := margins[index] + VisibleWidth(part)
+		if inclusive {
+			column = max(margins[index], column-1)
+		}
+		return mousePoint{row: start + index, column: column}
+	}
+	return position(from, false), position(to, true)
 }
 
 // ScrollToBottom reattaches live follow so the newest lines are visible again.
@@ -1586,7 +1645,7 @@ func scrollbar(total, height, end int) (top, size int) {
 // mapped from content rows to screen rows, so chrome rows are never touched
 // and scrolling moves the highlight with its text.
 func (ui *TUI) renderSelection(lines []string) []string {
-	if !ui.selection.active || !ui.selection.moved {
+	if !ui.selection.moved {
 		return lines
 	}
 	start, end := ui.selection.bounds()

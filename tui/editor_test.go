@@ -1270,3 +1270,51 @@ func (editor *Editor) flushAutocomplete() {
 	}
 	editor.mu.Unlock()
 }
+
+func TestEditorNativeSelectionEditing(t *testing.T) {
+	editor := newTestEditor()
+	editor.theme.Selection = func(s string) string { return "\x1b[48;2;45;48;52m" + s + "\x1b[49m" }
+	copied := ""
+	editor.ui.SetSelectionHandler(func(s string) { copied = s })
+	editor.SetText("hello café 👩‍💻\nsecond paragraph")
+	editor.Render(24)
+	press(editor, "\x1b[1;10A") // Command+Shift+Up: select to document start.
+	if got := editor.selectedText(); got != editor.GetText() {
+		t.Fatalf("document selection = %q", got)
+	}
+	press(editor, "\x03")
+	if copied != editor.GetText() {
+		t.Fatalf("clipboard = %q", copied)
+	}
+	press(editor, "replacement")
+	if editor.GetText() != "replacement" || editor.HasSelection() {
+		t.Fatal("typing did not replace the selection")
+	}
+	press(editor, "\x1f")
+	if editor.GetText() != "hello café 👩‍💻\nsecond paragraph" {
+		t.Fatal("selection replacement was not one undo step")
+	}
+	press(editor, "\x1b[1;9B", "\x1b[1;6D") // Command+Down, then Ctrl+Shift+Left.
+	if got := editor.selectedText(); got != "paragraph" {
+		t.Fatalf("word selection = %q", got)
+	}
+	if !strings.Contains(strings.Join(editor.Render(24), ""), "\x1b[48;2;45;48;52m") {
+		t.Fatal("selection did not use the adaptive style")
+	}
+	press(editor, "\x7f")
+	if editor.GetText() != "hello café 👩‍💻\nsecond " {
+		t.Fatalf("selection deletion = %q", editor.GetText())
+	}
+	editor.SetText("café 👩‍💻 hello")
+	editor.Render(30)
+	editor.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Column: 2, Clicks: 2})
+	editor.HandleMouse(MouseEvent{Type: MouseDrag, Row: 1, Column: 10})
+	editor.HandleMouse(MouseEvent{Type: MouseRelease, Row: 1, Column: 10})
+	if copied != "café 👩‍💻 hello" {
+		t.Fatalf("word drag clipboard = %q", copied)
+	}
+	press(editor, "\x1b[D")
+	if editor.HasSelection() || editor.state.cursorCol != 0 {
+		t.Fatal("left did not collapse selection to its start")
+	}
+}

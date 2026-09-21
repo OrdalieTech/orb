@@ -177,6 +177,12 @@ func truncateEditorSessionTitle(title string, width int) string {
 
 func (ce *CustomEditor) interceptInput(event tui.KeyEvent) bool {
 	data := event.Raw
+	if ce.HasSelection() {
+		switch tui.ParseKey(data) {
+		case "ctrl+c", "super+c", "ctrl+x", "super+x", "escape":
+			return false
+		}
+	}
 
 	// Legacy Shift+Enter can arrive as Escape+Return, also used by Alt+Enter.
 	// The composer always gives newline precedence over app and extension actions.
