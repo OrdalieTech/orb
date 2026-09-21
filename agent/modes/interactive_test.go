@@ -1537,7 +1537,7 @@ func TestCompactFooterSkipsTelemetryCollection(t *testing.T) {
 	if probe.statsCalls != 0 || probe.autoCalls != 0 || probe.contextCalls != 1 {
 		t.Fatalf("compact calls = stats %d, context %d, auto %d", probe.statsCalls, probe.contextCalls, probe.autoCalls)
 	}
-	if len(compact) != 1 || !strings.Contains(compact[0], "ctx 25%") {
+	if len(compact) != 1 || !strings.Contains(compact[0], "8.2k|25%") {
 		t.Fatalf("compact footer = %#v", compact)
 	}
 
@@ -2221,7 +2221,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		if tui.VisibleWidth(line) > width {
 			t.Fatalf("overflow at %d: %q", width, line)
 		}
-		for _, noise := range []string{"openai-codex", "272k", "$"} {
+		for _, noise := range []string{"openai-codex", "ctx ", "$"} {
 			if strings.Contains(line, noise) {
 				t.Fatalf("footer contains %q", noise)
 			}
@@ -2229,7 +2229,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		if width >= 36 && (!strings.Contains(line, "gpt-5.6-luna") || !strings.Contains(line, "Codex 69% left")) {
 			t.Fatalf("lost model or quota at %d: %q", width, line)
 		}
-		if width >= 80 && (!strings.Contains(line, "gpt-5.6-luna ◕") || !strings.Contains(line, "ctx 4%")) {
+		if width >= 80 && (!strings.Contains(line, "gpt-5.6-luna ◕") || !strings.Contains(line, "272k|4%")) {
 			t.Fatalf("lost useful detail: %q", line)
 		}
 	}

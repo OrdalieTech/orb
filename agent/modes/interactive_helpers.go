@@ -256,7 +256,7 @@ func (palette *commandPalette) SetFocused(focused bool) {
 func (palette *commandPalette) Render(width int) []string {
 	palette.mu.Lock()
 	defer palette.mu.Unlock()
-	palette.list.SetMaxVisible(max(1, min(10, palette.height()-12)))
+	palette.list.SetMaxVisible(max(1, min(10, palette.height()-11-palette.list.DetailHeight)))
 	lines := palette.list.Render(width)
 	if len(lines) > 0 && palette.input.GetValue() != "" {
 		lines[0] = palette.input.Render(width)[0]
