@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Simplify Bridge to one switch, Add device, and a live device list. Open conversations directly, refresh availability automatically, and recover the conversation picker after reconnects; keep detailed administration in the CLI.
+
 - Replace an older running Bridge daemon before pairing after an update, preventing `not_found` when the service lacks full-access grant support. Attached conversations reconnect without being stopped.
 
 - Simplify Bridge pairing to full mutual conversation access with one trust confirmation, install missing or outdated remote Orb through SSH, and wrap Bridge errors onto two lines.

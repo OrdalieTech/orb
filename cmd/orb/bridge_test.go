@@ -179,15 +179,15 @@ func TestBridgeLiveAttach(t *testing.T) {
 
 func TestBridgeSettingsNavigationAndLayout(t *testing.T) {
 	for _, running := range []bool{false, true} {
-		status := bridgeSettingsStatus{Peers: []string{"device-fingerprint"}, Pending: []bridge.Invitation{{Claimant: "pending-device", Status: "claimed"}}}
+		status := bridgeSettingsStatus{Peers: []string{"device-fingerprint"}, Pending: []bridge.Invitation{{Claimant: "pending-device", Status: "claimed", Expires: time.Now().Add(time.Minute).Unix()}}}
 		rows := bridgeSettingsRows("", running, running, false, status, extensions.NewNoopUI().Theme())
 		var foundStart, foundStop, foundDevices bool
 		for _, row := range rows {
 			foundStart = foundStart || row.Value == "Start"
 			foundStop = foundStop || row.Value == "Stop"
-			foundDevices = foundDevices || row.Value == "page:devices"
+			foundDevices = foundDevices || row.Value == "peer:device-fingerprint"
 		}
-		if foundStart == running || foundStop != running || foundDevices != running {
+		if foundStart == running || foundStop != running || !foundDevices {
 			t.Fatalf("wrong actions for running=%v: %+v", running, rows)
 		}
 		panel := newBridgeSettingsPanel("personal", "", "", rows, extensions.NewNoopUI().Theme(), func() int { return 24 }, func(any) {})
@@ -203,7 +203,7 @@ func TestBridgeSettingsNavigationAndLayout(t *testing.T) {
 			}
 		}
 	}
-	rows := bridgeSettingsRows("devices", true, true, false, bridgeSettingsStatus{Peers: []string{"device-fingerprint"}, Pending: []bridge.Invitation{{Claimant: "pending", Status: "claimed"}}}, extensions.NewNoopUI().Theme())
+	rows := bridgeSettingsRows("", true, true, false, bridgeSettingsStatus{Peers: []string{"device-fingerprint"}, Pending: []bridge.Invitation{{Claimant: "pending", Status: "claimed", Expires: time.Now().Add(time.Minute).Unix()}}}, extensions.NewNoopUI().Theme())
 	var paired, pending bool
 	for _, row := range rows {
 		paired = paired || row.Value == "peer:device-fingerprint"
@@ -255,6 +255,7 @@ type bridgeScriptUI struct {
 	t       *testing.T
 	actions []string
 	screens []string
+	observe func(*bridgeSettingsPanel)
 }
 
 func (*bridgeScriptUI) Width() int  { return 80 }
@@ -273,14 +274,21 @@ func (ui *bridgeScriptUI) Custom(_ context.Context, factory extensions.CustomFac
 		return nil, false, err
 	}
 	panel := component.(*bridgeSettingsPanel)
+	defer panel.Dispose()
+	if ui.observe != nil {
+		ui.observe(panel)
+	}
 	ui.screens = append(ui.screens, strings.Join(panel.Render(80), "\n"))
 	if action == "back" || action == "close" {
 		panel.HandleInput(tui.KeyEvent{Raw: "\x1b"})
 		return result, true, nil
 	}
 	for i := 0; i < 30; i++ {
+		panel.mu.Lock()
 		panel.list.ListSelectRow(i)
-		if panel.list.SelectedValue() == action {
+		selected := panel.list.SelectedValue()
+		panel.mu.Unlock()
+		if selected == action {
 			panel.HandleInput(tui.KeyEvent{Raw: "\r"})
 			return result, true, nil
 		}
@@ -357,7 +365,24 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 	if err := registry.Register("bridge", bridgeExtension(CLIArgs{bridgeLink: link}, settings)); err != nil {
 		t.Fatal(err)
 	}
-	ui := &bridgeScriptUI{t: t, actions: []string{"Start", "page:devices", "back", "page:access", "back", "agent-calls", "Stop", "close"}}
+	ui := &bridgeScriptUI{t: t, actions: []string{"Start", "page:add", "back", "page:advanced", "agent-calls", "back", "Stop", "close"}}
+	observed := false
+	ui.observe = func(panel *bridgeSettingsPanel) {
+		if observed {
+			return
+		}
+		observed = true
+		if err := b.SavePeer(b.PeerID(), "test-locator"); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for !strings.Contains(strings.Join(panel.Render(80), "\n"), bridgeDeviceLabel(b.PeerID())) {
+			if time.Now().After(deadline) {
+				t.Fatal("new device did not appear while the home screen stayed open")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	reloads := 0
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: ui, CommandActions: &extensions.CommandActions{Reload: func(context.Context) error { reloads++; return nil }}, ErrorHandler: func(err extensions.ExtensionError) { t.Error(err) }})
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -385,7 +410,7 @@ func TestBridgePanelCompletionCanRestoreFocus(t *testing.T) {
 
 func TestBridgeConnectActionsAreAvailableBeforeActivation(t *testing.T) {
 	for _, running := range []bool{false, true} {
-		rows := bridgeSettingsRows("", running, running, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme())
+		rows := bridgeSettingsRows("add", running, running, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme())
 		for _, action := range []string{"Invite device", "Join device", "SSH"} {
 			found := false
 			for _, row := range rows {
@@ -458,8 +483,8 @@ func TestBridgeSSHArgumentsKeepHostVerificationAndQuoteRemoteCommand(t *testing.
 
 func TestBridgeDeviceRowsDistinguishPairingAndConnection(t *testing.T) {
 	peers := []string{"orb:ed25519:aaaaaaaaaa", "orb:ed25519:bbbbbbbbbb", "orb:ed25519:cccccccccc"}
-	rows := bridgeSettingsRows("devices", true, true, false, bridgeSettingsStatus{Peers: peers, PeerStates: map[string]string{peers[0]: "connected", peers[1]: "blocked"}}, extensions.NewNoopUI().Theme())
-	states := map[string]string{peers[0]: "Connected", peers[1]: "Blocked", peers[2]: "Not connected"}
+	rows := bridgeSettingsRows("", true, true, false, bridgeSettingsStatus{Peers: peers, PeerStates: map[string]string{peers[0]: "connected", peers[1]: "blocked"}}, extensions.NewNoopUI().Theme())
+	states := map[string]string{peers[0]: "Connected", peers[1]: "Blocked", peers[2]: "Offline"}
 	for _, row := range rows {
 		if peer, ok := strings.CutPrefix(row.Value, "peer:"); ok {
 			if row.Cells[1] != states[peer] {
@@ -761,5 +786,110 @@ func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
 				t.Fatalf("compatible Orb was not reused: %v", err)
 			}
 		})
+	}
+}
+
+func TestBridgeHomeKeepsAdministrationOutOfEverydayFlow(t *testing.T) {
+	rows := bridgeSettingsRows("", true, true, true, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme())
+	var actions []string
+	for _, row := range rows {
+		if !row.Header {
+			actions = append(actions, row.Value)
+		}
+	}
+	if strings.Join(actions, ",") != "Stop,page:add,page:advanced" {
+		t.Fatalf("home actions: %v", actions)
+	}
+	for _, page := range []string{"", "add", "advanced"} {
+		for _, row := range bridgeSettingsRows(page, true, true, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme()) {
+			switch row.Value {
+			case "Grant access", "Revoke access", "Groups", "Instances", "Discovery scopes", "Operation status":
+				t.Fatalf("exposed administration: %s", row.Value)
+			}
+		}
+	}
+}
+
+func TestBridgePanelRefreshPreservesSelectionAndCancels(t *testing.T) {
+	ui := &pairingTestUI{}
+	panel := newBridgeSettingsPanel("personal", "", "peer:b", []tui.GridRow{{Value: "peer:a", Cells: []string{"A"}}, {Value: "peer:b", Cells: []string{"B"}}}, ui.Theme(), ui.Height, func(any) {})
+	updated, stopped := make(chan struct{}), make(chan struct{})
+	calls := 0
+	panel.watch(t.Context(), ui, func(ctx context.Context) []tui.GridRow {
+		calls++
+		if calls == 1 {
+			close(updated)
+			return []tui.GridRow{{Value: "peer:c", Cells: []string{"C"}}, {Value: "peer:b", Cells: []string{"B connected"}}}
+		}
+		<-ctx.Done()
+		close(stopped)
+		return nil
+	})
+	defer panel.Dispose()
+	<-updated
+	deadline := time.Now().Add(time.Second)
+	for {
+		panel.mu.Lock()
+		selected := panel.list.SelectedValue()
+		rendered := strings.Join(panel.Frame.Render(80), "\n")
+		panel.mu.Unlock()
+		if selected != "peer:b" {
+			t.Fatalf("selection jumped: %s", selected)
+		}
+		if strings.Contains(rendered, "B connected") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("live update was not rendered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	panel.Dispose()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("closing the panel did not cancel its pending refresh")
+	}
+}
+
+func TestBridgeConversationListFollowsPagesAndUsesStableIDs(t *testing.T) {
+	x, y := net.Pipe()
+	server := protocol.NewConn(y, func(_ context.Context, method string, raw json.RawMessage) (json.RawMessage, error) {
+		var req struct {
+			Peer   string `json:"peer_id"`
+			Method string `json:"method"`
+			Params struct {
+				Cursor string `json:"cursor"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return nil, err
+		}
+		if method != "remote" || req.Method != "instances.list" || req.Peer != "peer" {
+			t.Errorf("wrong catalog request: %s", raw)
+		}
+		if req.Params.Cursor == "" {
+			return connect.JSON(map[string]any{"items": []bridge.Instance{{ID: "first", Alias: "same · alias", Available: true}, {ID: "stale", Alias: "closed", Available: false}}, "cursor": "next"}), nil
+		}
+		if req.Params.Cursor != "next" {
+			t.Errorf("wrong cursor: %s", req.Params.Cursor)
+		}
+		return connect.JSON(map[string]any{"items": []bridge.Instance{{ID: "second", Alias: "same · alias", Available: true}}}), nil
+	})
+	client := protocol.NewConn(x, nil)
+	defer func() { _ = client.Close(); _ = server.Close() }()
+	rows, err := bridgeConversationRows(t.Context(), client, "peer", extensions.NewNoopUI().Theme())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, row := range rows {
+		if !row.Header {
+			ids = append(ids, row.Value)
+		}
+	}
+	if strings.Join(ids, ",") != "first,second" {
+		t.Fatalf("wrong live conversations: %v", ids)
 	}
 }

@@ -326,16 +326,21 @@ is native Go; executing package-provided JavaScript requires the D31 Node/Bun ru
 The owner-approved native delivery is one `orb` executable: `orb bridge` administers an
 explicit profile, while `orb --bridge <profile> --instance <alias>` attaches a runtime.
 Bridge management is built into Settings, Ctrl+P, and `/bridge`; opening it starts no service.
-Its dedicated page owns the service switch, devices and pending approvals, sharing, agent-call
-opt-in, and advanced discovery controls. Bridge has no duplicate toggles in the Plugins page.
-Share and Connect explicitly activate the service when needed. Invitations are bounded,
+Its home page contains the service switch, Add device, pending approvals, and a live device list.
+Add device offers SSH setup or invitation exchange; selecting a device opens its live conversations
+directly. Advanced contains only agent-call opt-in and the local fingerprint. Groups, grants,
+scopes, and receipts remain CLI administration. Bridge has no duplicate toggles in Plugins.
+Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings
 grant full controller access to all current and future conversations in both directions, including
 new groups. The owner approved this simpler default on 2026-09-21; existing restricted grants
 are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
 retaining its existing snapshot-versus-future meaning. Trust does not grant remote administration,
 discovery scopes, or agent-subject authority. Saved pairings survive service restarts; connection badges derive from
-live streams, and stopping waits for the admin connection to close. Local admin status advertises
+live streams, and stopping waits for the admin connection to close. Open panels refresh bounded
+reads once per second, preserve selection by identity, and cancel work on close. The conversation
+picker reads bounded catalog pages, excludes disconnected instances, and reconnects after daemon
+restarts without replaying any commands. Local admin status advertises
 `supports_full_access`; start and pairing replace a daemon missing that capability through the
 normal stop/start path before issuing grants. The replacement preserves profile state and lets
 non-owning runtime attachments reconnect. A previously deliberate Stop remains effective until
