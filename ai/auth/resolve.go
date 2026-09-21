@@ -110,6 +110,11 @@ func ResolveProviderAuth(
 	authContext AuthContext,
 	overrides *ResolutionOverrides,
 ) (*AuthResult, error) {
+	var err error
+	credentials, err = BindCredentialStore(ctx, credentials, providerID)
+	if err != nil {
+		return nil, err
+	}
 	requestContext := authContext
 	if overrides != nil && overrides.Env != nil {
 		requestContext = overlayContext{base: authContext, env: overrides.Env}

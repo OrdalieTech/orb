@@ -10,7 +10,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -19,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
+	"github.com/OrdalieTech/orb/usage"
 )
 
 // sessionRuntimeOptions selects the mode-specific parts of the otherwise
@@ -218,6 +221,7 @@ func forkReplacementManager(manager *session.SessionManager, entryID string, pos
 // synchronous UI invalidation, dispose the old runtime, create and apply the
 // replacement, then rebind it before the deferred session_start.
 type interactiveSessionHost struct {
+	usageCache        usage.Cache
 	mu                sync.Mutex
 	args              CLIArgs
 	dependencies      cliDependencies
@@ -707,6 +711,7 @@ func (host *interactiveSessionHost) authCredentials() (aiauth.CredentialStore, e
 }
 
 func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string) error {
+	host.usageCache.Clear()
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
 	current := host.session
@@ -724,6 +729,12 @@ func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string
 		// projection. RefreshCurrentModelFromRegistry is a no-op for the
 		// unknown-model sentinel.
 		current.RefreshCurrentModelFromRegistry(registry)
+	}
+	host.mu.Lock()
+	extensionsRegistry := host.inputs.Extensions
+	host.mu.Unlock()
+	if extensionsRegistry != nil {
+		extensionsRegistry.Events().Emit(context.Background(), "orb.accounts.changed", nil)
 	}
 	return nil
 }
@@ -847,7 +858,7 @@ func interactiveAuthStatusSource(status extensions.AuthStatus) string {
 	return status.Source
 }
 
-func (host *interactiveSessionHost) Login(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) error {
+func (host *interactiveSessionHost) loginCredential(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
 	host.mu.Unlock()
@@ -861,25 +872,33 @@ func (host *interactiveSessionHost) Login(ctx context.Context, providerID string
 		methods, known = definition.Methods, true
 	}
 	if !known {
-		return fmt.Errorf("provider %q does not support login", providerID)
+		return nil, fmt.Errorf("provider %q does not support login", providerID)
 	}
 	var credential *aiauth.Credential
 	var err error
 	switch authType {
 	case aiauth.AuthTypeOAuth:
 		if methods.OAuth == nil {
-			return fmt.Errorf("provider %q does not support OAuth login", providerID)
+			return nil, fmt.Errorf("provider %q does not support OAuth login", providerID)
 		}
 		credential, err = methods.OAuth.Login(ctx, interaction)
 	case aiauth.AuthTypeAPIKey:
 		login, ok := methods.APIKey.(aiauth.APIKeyLogin)
 		if !ok {
-			return fmt.Errorf("provider %q API-key auth is configured outside orb", providerID)
+			return nil, fmt.Errorf("provider %q API-key auth is configured outside orb", providerID)
 		}
 		credential, err = login.Login(ctx, interaction)
 	default:
-		return fmt.Errorf("provider %q has unknown auth type %q", providerID, authType)
+		return nil, fmt.Errorf("provider %q has unknown auth type %q", providerID, authType)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return credential, nil
+}
+
+func (host *interactiveSessionHost) Login(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) error {
+	credential, err := host.loginCredential(ctx, providerID, authType, interaction)
 	if err != nil {
 		return err
 	}
@@ -966,4 +985,191 @@ func resolveImportPath(path string) (string, error) {
 		path = filepath.Join(home, strings.TrimPrefix(path[1:], "/"))
 	}
 	return filepath.Abs(path)
+}
+
+func (host *interactiveSessionHost) accountStore() (*accounts.Store, error) {
+	host.mu.Lock()
+	store := host.inputs.Accounts
+	host.mu.Unlock()
+	if store != nil {
+		return store, nil
+	}
+	base, err := host.authStorage()
+	if err != nil {
+		return nil, err
+	}
+	return accounts.NewStore(filepath.Join(host.agentDir, "accounts.json"), base), nil
+}
+
+func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]accounts.Account, error) {
+	store, err := host.accountStore()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := store.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	options, err := host.AuthOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		seen[row.Provider] = true
+	}
+	for _, option := range options.Login {
+		if option.Status == nil || seen[option.ID] {
+			continue
+		}
+		seen[option.ID] = true
+		if option.Status.Source == "runtime" {
+			continue
+		}
+		rows = append(rows, accounts.Account{ID: "ambient", Provider: option.ID, Name: option.Status.Source, Type: aiauth.CredentialType(option.Status.Type), Active: true})
+	}
+	host.mu.Lock()
+	runtime := host.inputs.RuntimeAuth
+	host.mu.Unlock()
+	if runtime != nil {
+		for provider := range seen {
+			if runtime.HasRuntimeAPIKey(provider) {
+				for i := range rows {
+					if rows[i].Provider == provider {
+						rows[i].Active = false
+					}
+				}
+				rows = append(rows, accounts.Account{ID: "runtime", Provider: provider, Name: "Command-line API key", Type: aiauth.CredentialAPIKey, Active: true})
+			}
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Provider < rows[j].Provider })
+	return rows, nil
+}
+
+func (host *interactiveSessionHost) accountChangeAllowed() error {
+	host.mu.Lock()
+	session := host.session
+	host.mu.Unlock()
+	if session != nil && session.State().IsStreaming {
+		return errors.New("wait for the current response before changing accounts")
+	}
+	return nil
+}
+
+func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider, id, action, name string) error {
+	if err := host.accountChangeAllowed(); err != nil {
+		return err
+	}
+	store, err := host.accountStore()
+	if err != nil {
+		return err
+	}
+	switch action {
+	case "select":
+		host.mu.Lock()
+		overridden := host.inputs.RuntimeAuth != nil && host.inputs.RuntimeAuth.HasRuntimeAPIKey(provider)
+		host.mu.Unlock()
+		if overridden {
+			return errors.New("restart without --api-key to switch this provider account")
+		}
+		err = store.Select(ctx, provider, id)
+	case "remove":
+		err = store.Remove(ctx, provider, id)
+	case "rename":
+		err = store.Rename(ctx, provider, id, name)
+	default:
+		return errors.New("unknown account action")
+	}
+	if err != nil {
+		return err
+	}
+	return host.refreshAuthState(ctx, provider)
+}
+
+func (host *interactiveSessionHost) LoginAccount(ctx context.Context, provider string, kind aiauth.AuthType, id, name string, interaction aiauth.AuthInteraction) error {
+	if err := host.accountChangeAllowed(); err != nil {
+		return err
+	}
+	credential, err := host.loginCredential(ctx, provider, kind, interaction)
+	if err != nil {
+		return err
+	}
+	if err := host.accountChangeAllowed(); err != nil {
+		return err
+	}
+	store, err := host.accountStore()
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		_, err = store.Add(ctx, provider, name, credential)
+	} else {
+		_, err = store.View(provider, id).Modify(ctx, provider, func(*aiauth.Credential) (*aiauth.Credential, error) { return credential, nil })
+	}
+	if err != nil {
+		return err
+	}
+	return host.refreshAuthState(ctx, provider)
+}
+
+func (host *interactiveSessionHost) CachedAccountUsage(provider, id string) (usage.Snapshot, bool) {
+	return host.usageCache.Peek(provider + "/" + id)
+}
+func (host *interactiveSessionHost) AccountUsage(ctx context.Context, provider, id string) (usage.Snapshot, error) {
+	return host.usageCache.Fetch(ctx, provider+"/"+id, func(ctx context.Context) (usage.Snapshot, error) { return host.fetchAccountUsage(ctx, provider, id) })
+}
+func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provider, id string) (usage.Snapshot, error) {
+	store, err := host.accountStore()
+	if err != nil {
+		return usage.Snapshot{}, err
+	}
+	host.mu.Lock()
+	registry := host.inputs.ModelRegistry
+	runtime := host.inputs.RuntimeAuth
+	host.mu.Unlock()
+	if registry == nil {
+		return usage.Snapshot{}, usage.ErrUnavailable
+	}
+	credentials := store.View(provider, id)
+	if id == "ambient" || id == "runtime" {
+		if runtime != nil {
+			credentials = runtime
+		} else {
+			credentials = aiauth.NewMemoryStore(nil)
+		}
+	}
+	if credentials == nil {
+		return usage.Snapshot{}, usage.ErrUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	result, err := aiauth.ResolveProviderAuth(ctx, provider, registry.ProviderAuth(provider), credentials, aiauth.EnvironmentContext{}, nil)
+	if err != nil {
+		return usage.Snapshot{}, err
+	}
+	if result == nil {
+		return usage.Snapshot{}, usage.ErrUnavailable
+	}
+	return (usage.Client{}).Fetch(ctx, provider, result.Auth)
+}
+
+func (host *interactiveSessionHost) UsageEnabled() bool {
+	host.mu.Lock()
+	settings := host.inputs.Settings
+	host.mu.Unlock()
+	return settings != nil && settings.GetPlugins()["provider-usage"]
+}
+func (host *interactiveSessionHost) SetUsageEnabled(enabled bool) error {
+	host.mu.Lock()
+	settings := host.inputs.Settings
+	host.mu.Unlock()
+	if settings == nil {
+		return errors.New("settings are unavailable")
+	}
+	settings.SetPluginEnabled("provider-usage", enabled)
+	if errors := settings.DrainErrors(); len(errors) > 0 {
+		return errors[0]
+	}
+	return nil
 }

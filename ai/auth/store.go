@@ -68,3 +68,14 @@ func (store *MemoryStore) Delete(_ context.Context, provider string) error {
 	}
 	return nil
 }
+
+// BindCredentialStore freezes a selectable store for one provider resolution.
+// Ordinary stores pass through unchanged.
+func BindCredentialStore(ctx context.Context, store CredentialStore, provider string) (CredentialStore, error) {
+	if selectable, ok := store.(interface {
+		ForProvider(context.Context, string) (CredentialStore, error)
+	}); ok {
+		return selectable.ForProvider(ctx, provider)
+	}
+	return store, nil
+}

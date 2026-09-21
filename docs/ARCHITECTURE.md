@@ -20,6 +20,8 @@ orb/
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
 │   ├── auth/                 credential store, OAuth flows (PKCE, device-code)
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
+├── accounts/                 named credential store over ai/auth; explicit sidecar and base store
+├── usage/                    quota client and bounded cache; ai/auth + stdlib only
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -270,12 +272,32 @@ mgmt, get_commands, extension-UI bridging; strict LF framing). RPC is a conforma
 upstream's RPC tests run against our binary (F7).
 
 **Interactive discovery:** Ctrl+P opens a searchable palette of actions, skills, templates, and
-extension commands. Ctrl+M selects models when the terminal disambiguates it from Enter; Ctrl+L
-is the portable fallback. Ctrl+N starts a session and Ctrl+R renames it. Existing explicit
+extension commands. Ctrl+M selects models when the terminal disambiguates it from Enter; the
+palette also exposes model selection on legacy terminals. Ctrl+N starts a session and Ctrl+R renames it. Existing explicit
 keybindings win over these new defaults. Native composer slash suggestions appear above the input with commands, skills, and templates;
 extension editors keep the complete pi completion surface. Selecting a resource
 inserts its canonical invocation into the draft for arguments and explicit submission. Floating
 modals dim the background; non-capturing extension overlays keep their opt-in backdrop.
+
+**Provider accounts and usage:** Ctrl+P → Providers groups connected accounts with Add account
+under every provider. `accounts.Store` wraps an explicit `ai/auth.CredentialStore`, keeping the
+provider-keyed `auth.json` unchanged when adding accounts and recording extra credentials and
+selection in an atomic, locked, 0600 `accounts.json` sidecar. The CLI attaches it; importing the
+engine or auth package alone does not pull it in. `BindCredentialStore` pins one account through
+OAuth read/refresh/write, and `NewModelRegistryWithCredentials` supplies the same source to model
+availability and request resolution. Explicit CLI keys retain precedence; switching that provider
+requires restarting without the override. No account file is created until an account action.
+
+The independent `usage.Client` reads Codex's `backend-api/wham/usage` and OpenCode Go's
+`zen/go/v1/usage` endpoints with bounded requests and no credential-bearing redirects. It reports
+remaining quota from provider data; missing data stays unavailable. Its cache holds at most 64
+account identities. `plugins.ProviderUsage` attaches through extension lifecycle events and footer
+statuses as the default-off `provider-usage` assembly row, enabled by Show usage in footer in
+Providers. It polls once per minute and cancels on account/model changes and shutdown. Clicking
+that footer status opens a native account switcher with cached percentages and at most four
+concurrent refreshes; closing it cancels requests. Switching providers keeps an identical model
+when available, otherwise opens the model picker. Neither accounts nor usage imports agent/TUI
+code, and no quota network request blocks startup or rendering.
 
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
 `/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,

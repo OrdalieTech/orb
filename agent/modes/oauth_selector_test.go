@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/OrdalieTech/orb/accounts"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -777,5 +778,35 @@ func TestLOGm4AmbientAuthDialogTitleMessageAndClose(t *testing.T) {
 	dialog.HandleInput(tui.KeyEvent{Raw: "\x1b"})
 	if closedCount != 1 {
 		t.Fatalf("cancel input closed the dialog %d times", closedCount)
+	}
+}
+
+func TestProviderMenuAlwaysOffersAddAccountPerProvider(t *testing.T) {
+	initTestTheme(t)
+	connected := []accounts.Account{
+		{ID: accounts.DefaultID, Provider: "openai-codex", Name: "Personal", Type: aiauth.CredentialOAuth, Active: true},
+		{ID: "work", Provider: "openai-codex", Name: "Work", Type: aiauth.CredentialOAuth},
+		{ID: "go", Provider: "opencode-go", Name: "Go", Type: aiauth.CredentialAPIKey, Active: true},
+	}
+	rows := providerAccountRows(connected, false)
+	adds := map[string]int{}
+	for index, row := range rows {
+		if provider, ok := strings.CutPrefix(row.Value, "add:"); ok {
+			adds[provider]++
+			if index == 0 || rows[index-1].Header {
+				t.Fatal("Add account must follow the existing accounts")
+			}
+		}
+	}
+	if adds["openai-codex"] != 1 || adds["opencode-go"] != 1 {
+		t.Fatalf("missing per-provider action: %v", adds)
+	}
+	palette := newCommandPalette(rows, NewAppKeybindings(nil), func() int { return 40 }, func(string) {}, func() {})
+	for _, width := range []int{24, 36, 50, 80} {
+		for _, line := range menuFrame("Providers", palette).Render(width) {
+			if tui.VisibleWidth(line) != width {
+				t.Fatalf("provider menu overflows width %d", width)
+			}
+		}
 	}
 }

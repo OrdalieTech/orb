@@ -35,24 +35,30 @@ func (border *DynamicBorder) Render(width int) []string {
 	return []string{line}
 }
 
+func menuSelectedBackground(text string) string {
+	prefix := strings.Replace(theme.FGANSI("borderMuted"), "[38;", "[48;", 1)
+	prefix = strings.Replace(prefix, "[39m", "[49m", 1)
+	return prefix + text + "\x1b[49m"
+}
+
 func settingsListTheme() tui.SettingsListTheme {
 	return tui.SettingsListTheme{
 		Label: func(text string, selected bool) string {
 			if selected {
-				return theme.FG("accent", text)
+				return theme.FG("text", text)
 			}
 			return text
 		},
 		Value: func(text string, selected bool) string {
 			if selected {
-				return theme.FG("accent", text)
+				return theme.FG("text", text)
 			}
 			return theme.FG("muted", text)
 		},
 		Description: func(text string) string { return theme.FG("dim", text) },
-		Cursor:      theme.FG("accent", "› "),
+		Cursor:      theme.FG("text", "› "),
 		Hint:        func(text string) string { return theme.FG("dim", text) },
-		SelectedBg:  func(text string) string { return theme.BG("selectedBg", text) },
+		SelectedBg:  func(text string) string { return menuSelectedBackground(text) },
 	}
 }
 
@@ -205,23 +211,24 @@ func formatInteger(count int64) string {
 // commandPalette serializes the shared grid with rendering. Actions run after
 // unlocking because closing an overlay synchronously transfers focus.
 type commandPalette struct {
-	mu       sync.Mutex
-	list     *tui.GridList
-	input    *tui.Input
-	bindings *tui.KeybindingsManager
-	height   func() int
-	onCancel func()
-	pending  func()
+	modelShortcut bool
+	mu            sync.Mutex
+	list          *tui.GridList
+	input         *tui.Input
+	bindings      *tui.KeybindingsManager
+	height        func() int
+	onCancel      func()
+	pending       func()
 }
 
 func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, height func() int, selectItem func(string), cancel func()) *commandPalette {
 	palette := &commandPalette{input: newSearchInput(), bindings: bindings, height: height, onCancel: cancel}
 	palette.list = tui.NewGridList(rows, 10, tui.GridListTheme{
-		SelectedBg: func(s string) string { return theme.BG("selectedBg", s) },
+		SelectedBg: func(s string) string { return menuSelectedBackground(s) },
 		Detail:     func(s string) string { return theme.FG("muted", s) },
 		ScrollInfo: func(s string) string { return theme.FG("dim", s) },
 		Query:      func(s string) string { return theme.FG("text", s) },
-		Cursor:     theme.FG("accent", "› "),
+		Cursor:     theme.FG("text", "› "),
 	})
 	palette.list.Searchable = true
 	palette.list.DetailHeight = 1
@@ -267,7 +274,7 @@ func (palette *commandPalette) HandleInput(event tui.KeyEvent) {
 	switch {
 	case bindings.Matches(event.Raw, "tui.select.cancel"), bindings.Matches(event.Raw, "app.commandPalette"):
 		palette.pending = palette.onCancel
-	case event.Raw != "\r" && event.Raw != "\n" && bindings.Matches(event.Raw, "app.model.select"):
+	case palette.modelShortcut && event.Raw != "\r" && event.Raw != "\n" && bindings.Matches(event.Raw, "app.model.select"):
 		palette.list.OnConfirm("model")
 	case bindings.Matches(event.Raw, "tui.select.up"), bindings.Matches(event.Raw, "tui.select.down"),
 		bindings.Matches(event.Raw, "tui.select.pageUp"), bindings.Matches(event.Raw, "tui.select.pageDown"),

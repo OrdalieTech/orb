@@ -930,7 +930,14 @@ func (IdleStatus) Render(width int) []string {
 // FooterComponent
 // ─────────────────────────────────────────────────────────────
 
+type statusHit struct {
+	row, start, end int
+	action          func()
+}
+
 type FooterComponent struct {
+	hitMu              sync.Mutex
+	hits               []statusHit
 	session            footerSession
 	provider           footerDataProvider
 	verbose            bool
@@ -1104,7 +1111,11 @@ func compactFooterLeft(location string, statuses []string, width int) string {
 	if location != "" && status != "" {
 		forms = append(forms, location+" · "+status)
 	}
-	forms = append(forms, status, location)
+	if status != "" {
+		forms = append(forms, status)
+	} else {
+		forms = append(forms, location)
+	}
 	for _, form := range forms {
 		if form != "" && tui.VisibleWidth(form) <= width {
 			return form
@@ -1117,6 +1128,9 @@ func compactFooterLeft(location string, statuses []string, width int) string {
 }
 
 func (f *FooterComponent) render(width int) []string {
+	f.hitMu.Lock()
+	f.hits = nil
+	f.hitMu.Unlock()
 	cwd := f.cwd()
 	branch, providerCount := f.metadata()
 	location := footerLocation(cwd, branch)
@@ -1165,6 +1179,7 @@ func (f *FooterComponent) render(width int) []string {
 		if left == "" {
 			right = compactFooterRight(modelForms, contextSummary, stats.Cost, width)
 		}
+		f.recordStatusHits(left, 0, keys, values)
 		gap := width - tui.VisibleWidth(left) - tui.VisibleWidth(right)
 		return []string{theme.FG("dim", left+strings.Repeat(" ", max(0, gap))+right)}
 	}
@@ -1210,9 +1225,63 @@ func (f *FooterComponent) render(width int) []string {
 	}
 
 	if len(keys) > 0 {
-		lines = append(lines, tui.TruncateToWidth(strings.Join(values, " "), width, theme.FG("dim", "..."), false))
+		statusLine := tui.TruncateToWidth(strings.Join(values, " "), width, "…", false)
+		f.recordStatusHits(statusLine, len(lines), keys, values)
+		lines = append(lines, statusLine)
 	}
 	return lines
+}
+
+func (f *FooterComponent) recordStatusHits(text string, row int, keys, values []string) {
+	provider, ok := f.provider.(interface{ StatusAction(string) func() })
+	if !ok {
+		return
+	}
+	text = tui.StripANSI(text)
+	var hits []statusHit
+	for i, key := range keys {
+		action := provider.StatusAction(key)
+		fields := strings.Fields(values[i])
+		if action == nil || len(fields) == 0 {
+			continue
+		}
+		value := tui.StripANSI(values[i])
+		start := strings.Index(text, value)
+		if start < 0 && strings.HasSuffix(text, "…") {
+			start = strings.LastIndex(text, fields[0])
+			if start >= 0 && !strings.HasPrefix(value, strings.TrimSuffix(text[start:], "…")) {
+				start = -1
+			}
+		}
+		if start < 0 {
+			continue
+		}
+		column := tui.VisibleWidth(text[:start]) + 1
+		hits = append(hits, statusHit{row: row, start: column, end: min(tui.VisibleWidth(text)+1, column+tui.VisibleWidth(value)), action: action})
+	}
+	f.hitMu.Lock()
+	f.hits = hits
+	f.hitMu.Unlock()
+}
+
+func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
+	if event.Type != tui.MousePress || event.Button != 0 {
+		return false
+	}
+	f.hitMu.Lock()
+	var action func()
+	for _, hit := range f.hits {
+		if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
+			action = hit.action
+			break
+		}
+	}
+	f.hitMu.Unlock()
+	if action == nil {
+		return false
+	}
+	action()
+	return true
 }
 
 func (f *FooterComponent) Render(width int) []string {

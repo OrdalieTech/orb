@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/OrdalieTech/orb/accounts"
 	"os"
 	"path/filepath"
 	"testing"
@@ -376,4 +377,73 @@ func TestInteractiveHostMapsConfiguredAuthSources(t *testing.T) {
 	if len(want) != 0 {
 		t.Fatalf("missing configured auth statuses: %#v", want)
 	}
+}
+
+func TestProviderAccountsSwitchWithoutReplacingCompatibilityCredential(t *testing.T) {
+	fixture := newHostFixture(t)
+	path := filepath.Join(fixture.agentDir, "auth.json")
+	base, err := config.NewAuthStorage(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := base.Modify(t.Context(), "groq", func(*aiauth.Credential) (*aiauth.Credential, error) { return aiauth.APIKeyCredential("original"), nil }); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := accounts.NewStore(filepath.Join(fixture.agentDir, "accounts.json"), base)
+	credentials := newRuntimeCredentials(store)
+	registry, err := config.NewModelRegistryWithCredentials(fixture.agentDir, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.host.inputs.Auth = base
+	fixture.host.inputs.Accounts = store
+	fixture.host.inputs.RuntimeAuth = credentials
+	fixture.host.inputs.ModelRegistry = registry
+	for _, key := range []string{"work-key", "personal-key"} {
+		if err := fixture.host.LoginAccount(t.Context(), "groq", aiauth.AuthTypeAPIKey, "", key, fixedPromptInteraction{value: key}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current, err := os.ReadFile(path)
+	if err != nil || string(current) != string(original) {
+		t.Fatal("adding accounts overwrote auth.json")
+	}
+	rows, err := store.Accounts(t.Context())
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("accounts=%v error=%v", rows, err)
+	}
+	resolver := requestAuthResolverWithCredentials(registry, credentials)
+	check := func(want string) {
+		t.Helper()
+		resolved, err := resolver(t.Context(), "groq")
+		if err != nil || resolved == nil || resolved.APIKey == nil || *resolved.APIKey != want {
+			t.Fatalf("wrong account resolution, error=%v", err)
+		}
+	}
+	check("personal-key")
+	if err := fixture.host.ChangeAccount(t.Context(), "groq", rows[1].ID, "select", ""); err != nil {
+		t.Fatal(err)
+	}
+	check("work-key")
+	fresh := accounts.NewStore(filepath.Join(fixture.agentDir, "accounts.json"), base)
+	restored, err := fresh.Read(t.Context(), "groq")
+	if err != nil || restored.Key == nil || *restored.Key != "work-key" {
+		t.Fatal("selection did not survive reopening")
+	}
+	if err := fixture.host.ChangeAccount(t.Context(), "groq", rows[1].ID, "remove", ""); err != nil {
+		t.Fatal(err)
+	}
+	check("original")
+	if err := fixture.host.ChangeAccount(t.Context(), "groq", rows[2].ID, "select", ""); err != nil {
+		t.Fatal(err)
+	}
+	check("personal-key")
+	credentials.SetRuntimeAPIKey("groq", "explicit-key")
+	check("explicit-key")
+	credentials.RemoveRuntimeAPIKey("groq")
+	check("personal-key")
 }

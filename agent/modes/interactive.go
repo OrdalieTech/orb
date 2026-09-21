@@ -142,6 +142,7 @@ type InteractiveMode struct {
 	themeSetting               string // --use-theme override; "" defers to settings
 	authContext                context.Context
 	authCancel                 context.CancelFunc
+	accountSwitcherOpen        bool
 	modelSelectorCancel        context.CancelFunc
 	modelSelectorDone          chan struct{}
 	logoCancel                 context.CancelFunc
@@ -1733,7 +1734,7 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 | Key | Action |
 |-----|--------|
 | %s | Command palette |
-| %s | Models (Ctrl+L works in legacy terminals) |
+| %s | Models |
 | %s | New session |
 | %s | Rename session |
 | @ | Skills and files |
@@ -1994,6 +1995,9 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
 	scoped := mode.session.ScopedModels()
+	if initialSearch != "" {
+		scoped = nil
+	}
 	current := mode.session.State().Model
 	ctx, cancel := context.WithCancel(mode.authenticationContext())
 	done := make(chan struct{})
@@ -2909,6 +2913,12 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 		return
 	}
 	provider := strings.TrimSpace(argument)
+	if provider == "" {
+		if host, ok := mode.options.Host.(InteractiveProviderHost); ok {
+			go mode.showProviders(host)
+			return
+		}
+	}
 	go func() {
 		ctx := mode.authenticationContext()
 		options, err := mode.options.Host.AuthOptions(ctx)
@@ -3152,7 +3162,15 @@ func (mode *InteractiveMode) runLogin(provider InteractiveAuthProvider) {
 		interaction.details = "You can also use an AWS profile, IAM keys, or role-based credentials.\nSee:\n  " + providersDoc
 		dialog.showDetails("You can also use an AWS profile, IAM keys, or role-based credentials.", "See:", "  "+providersDoc)
 	}
-	if err := mode.options.Host.Login(ctx, provider.ID, provider.AuthType, interaction); err != nil {
+	login := func() error {
+		if provider.AccountLogin {
+			if host, ok := mode.options.Host.(InteractiveProviderHost); ok {
+				return host.LoginAccount(ctx, provider.ID, provider.AuthType, provider.AccountID, provider.AccountName, interaction)
+			}
+		}
+		return mode.options.Host.Login(ctx, provider.ID, provider.AuthType, interaction)
+	}
+	if err := login(); err != nil {
 		restoreDialog()
 		if errors.Is(err, context.Canceled) {
 			// Upstream stays silent for "Login cancelled".
@@ -3238,13 +3256,16 @@ func (mode *InteractiveMode) completeProviderAuthentication(ctx context.Context,
 			}
 		}
 	}
-	authPath := filepath.Join(mode.session.InteractiveModeSettings().AgentDir, "auth.json")
+	saved := ". Credentials saved to " + filepath.Join(mode.session.InteractiveModeSettings().AgentDir, "auth.json")
+	if provider.AccountLogin {
+		saved = ". Account ready."
+	}
 	if selectedModel != nil {
-		mode.showStatusMessage(actionLabel + ". Selected " + selectedModel.ID + ". Credentials saved to " + authPath)
+		mode.showStatusMessage(actionLabel + ". Selected " + selectedModel.ID + saved)
 		mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, selectedModel)
 		return
 	}
-	mode.showStatusMessage(actionLabel + ". Credentials saved to " + authPath)
+	mode.showStatusMessage(actionLabel + saved)
 	if selectionError != "" {
 		mode.showError(errors.New(selectionError))
 		return
@@ -3640,6 +3661,15 @@ func (mode *InteractiveMode) AvailableProviderCount() int {
 		seen[model.Provider] = struct{}{}
 	}
 	return len(seen)
+}
+
+func (mode *InteractiveMode) StatusAction(key string) func() {
+	if key == "provider-usage" {
+		if host, ok := mode.options.Host.(InteractiveProviderHost); ok {
+			return func() { go mode.showAccountSwitcher(host) }
+		}
+	}
+	return nil
 }
 
 func (mode *InteractiveMode) Statuses() map[string]string {
@@ -4722,7 +4752,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		"model": "Choose model", "thinking": "Thinking level", "resume": "Open session", "new": "New session",
 		"settings": "Settings", "tree": "Session branches", "name": "Rename session", "copy": "Copy last response",
 		"fork": "Fork from message", "clone": "Duplicate session", "compact": "Compact context", "session": "Session details",
-		"export": "Export session", "import": "Import session", "login": "Connect provider", "logout": "Disconnect provider",
+		"export": "Export session", "import": "Import session", "login": "Providers",
 		"trust": "Project trust", "reload": "Reload resources", "scoped-models": "Favorite models", "hotkeys": "Keyboard shortcuts",
 		"changelog": "Changelog", "quit": "Quit Orb",
 	}
@@ -4734,7 +4764,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 			continue
 		}
 		seen[command.Name] = true
-		if command.Name == "share" {
+		if command.Name == "share" || command.Name == "logout" {
 			continue
 		} // The same local export is already listed.
 		label, builtin := labels[command.Name]
@@ -4782,6 +4812,7 @@ func (mode *InteractiveMode) showCommandPalette() {
 		closePalette()
 		mode.runPaletteCommand(value)
 	}, closePalette)
+	palette.modelShortcut = true
 	frame := menuFrame("Commands", palette)
 	options := dialogOverlayOptions()
 	options.MaxHeight = tui.PercentSize(100)

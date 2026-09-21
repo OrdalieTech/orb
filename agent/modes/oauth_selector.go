@@ -2,13 +2,17 @@ package modes
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/OrdalieTech/orb/accounts"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/tui"
+	"github.com/OrdalieTech/orb/usage"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
 )
@@ -525,4 +529,422 @@ func (mode *InteractiveMode) showAmbientAuthDialog(ctx context.Context, provider
 	case <-closed:
 	case <-ctx.Done():
 	}
+}
+
+// providerMenu uses the same bounded, keyboard/mouse-aware list as Ctrl+P.
+func (mode *InteractiveMode) providerMenu(ctx context.Context, title string, rows []tui.GridRow) (string, bool) {
+	result := make(chan string, 1)
+	resolve := func(value string) {
+		select {
+		case result <- value:
+		default:
+		}
+	}
+	palette := newCommandPalette(rows, mode.keybindings, mode.Height, resolve, func() { resolve("") })
+	handle := mode.ui.ShowOverlay(menuFrame(title, palette), dialogOverlayOptions())
+	mode.ui.RequestRender()
+	defer func() { handle.Hide(); mode.ui.RequestRender() }()
+	select {
+	case value := <-result:
+		return value, value != ""
+	case <-ctx.Done():
+		return "", false
+	}
+}
+
+func providerAccountRows(connected []accounts.Account, enabled bool) []tui.GridRow {
+	rows := make([]tui.GridRow, 0, len(connected)+4)
+	provider := ""
+	for i, account := range connected {
+		if provider != account.Provider {
+			provider = account.Provider
+			rows = append(rows, tui.GridRow{Header: true, Cells: []string{theme.Bold(theme.FG("text", provider))}})
+		}
+		name := account.Name
+		if account.Active {
+			name += " ✓"
+		}
+		kind := "API key"
+		if account.Type == aiauth.CredentialOAuth {
+			kind = "Subscription"
+		}
+		rows = append(rows, tui.GridRow{Value: strconv.Itoa(i), Cells: []string{name, theme.FG("muted", kind)}, Search: account.Provider + " " + account.Name + " " + kind, Detail: []string{"Manage " + account.Provider + " · " + account.Name}})
+		if i+1 == len(connected) || connected[i+1].Provider != provider {
+			rows = append(rows, tui.GridRow{Value: "add:" + provider, Cells: []string{theme.FG("muted", "+ Add account")}, Search: provider + " add account"})
+		}
+	}
+	rows = append(rows, tui.GridRow{Value: "connect", Cells: []string{"Connect provider"}, Search: "connect add provider account"})
+	toggle := "Show usage in footer"
+	if enabled {
+		toggle = "Hide usage from footer"
+	}
+	rows = append(rows, tui.GridRow{Value: "usage", Cells: []string{toggle}, Search: "usage quota limits footer"})
+	return rows
+}
+
+func (mode *InteractiveMode) showProviders(host InteractiveProviderHost) {
+	ctx := mode.authenticationContext()
+	for ctx.Err() == nil {
+		connected, err := host.ProviderAccounts(ctx)
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		selected, ok := mode.providerMenu(ctx, "Providers", providerAccountRows(connected, host.UsageEnabled()))
+		if !ok {
+			return
+		}
+		if provider, add := strings.CutPrefix(selected, "add:"); add {
+			mode.connectProviderAccount(ctx, provider, nil)
+			continue
+		}
+		switch selected {
+		case "connect":
+			mode.connectProviderAccount(ctx, "", nil)
+		case "usage":
+			if err := host.SetUsageEnabled(!host.UsageEnabled()); err != nil {
+				mode.showError(err)
+				continue
+			}
+			// Loading/unloading the optional module uses the normal assembly lifecycle.
+			if err := mode.options.Host.Reload(ctx); err != nil {
+				mode.showError(err)
+			}
+			return
+		default:
+			index, err := strconv.Atoi(selected)
+			if err == nil && index >= 0 && index < len(connected) {
+				mode.manageProviderAccount(ctx, host, connected[index])
+			}
+		}
+	}
+}
+
+func (mode *InteractiveMode) connectProviderAccount(ctx context.Context, provider string, reconnect *accounts.Account) {
+	options, err := mode.options.Host.AuthOptions(ctx)
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	candidates := make([]InteractiveAuthProvider, 0, len(options.Login))
+	rows := make([]tui.GridRow, 0, len(options.Login))
+	for _, candidate := range options.Login {
+		if provider != "" && candidate.ID != provider {
+			continue
+		}
+		if reconnect != nil && aiauth.CredentialType(candidate.AuthType) != reconnect.Type {
+			continue
+		}
+		if !candidate.LoginAvailable {
+			continue
+		}
+		kind := "API key"
+		if candidate.AuthType == aiauth.AuthTypeOAuth {
+			kind = "Subscription"
+		}
+		rows = append(rows, tui.GridRow{Value: strconv.Itoa(len(candidates)), Cells: []string{candidate.Name, kind}, Search: candidate.Name + " " + candidate.ID + " " + kind})
+		candidates = append(candidates, candidate)
+	}
+	if len(candidates) == 0 {
+		mode.showStatusMessage("This provider is configured outside Orb.")
+		return
+	}
+	index := 0
+	if len(candidates) > 1 {
+		chosen, ok := mode.providerMenu(ctx, "Connect provider", rows)
+		if !ok {
+			return
+		}
+		index, err = strconv.Atoi(chosen)
+		if err != nil || index < 0 || index >= len(candidates) {
+			return
+		}
+	}
+	candidate := candidates[index]
+	candidate.AccountLogin = true
+	if reconnect != nil {
+		candidate.AccountID = reconnect.ID
+		candidate.AccountName = reconnect.Name
+	} else {
+		name, ok, err := mode.interactiveUI.Input(ctx, "Account name · Personal, Work…", nil, nil)
+		if err != nil || !ok {
+			return
+		}
+		candidate.AccountName = strings.TrimSpace(name)
+	}
+	mode.runLogin(candidate)
+}
+
+func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host InteractiveProviderHost, account accounts.Account) {
+	mutable := account.ID != "ambient" && account.ID != "runtime"
+	rows := []tui.GridRow{}
+	add := func(value, label string) {
+		rows = append(rows, tui.GridRow{Value: value, Cells: []string{label}, Search: label})
+	}
+	if mutable && !account.Active {
+		add("select", "Use this account")
+	}
+	add("add", "Add another account")
+	if mutable {
+		add("rename", "Rename account")
+		add("reconnect", "Reconnect")
+		add("remove", "Disconnect")
+	}
+	if account.Provider == "openai-codex" || account.Provider == "opencode-go" {
+		add("usage", "Usage and reset times")
+	}
+	action, ok := mode.providerMenu(ctx, account.Provider+" · "+account.Name, rows)
+	if !ok {
+		return
+	}
+	switch action {
+	case "add":
+		mode.connectProviderAccount(ctx, account.Provider, nil)
+		return
+	case "reconnect":
+		mode.connectProviderAccount(ctx, account.Provider, &account)
+		return
+	case "usage":
+		mode.showAccountUsage(ctx, host, account)
+		return
+	case "select":
+		mode.switchProviderAccount(ctx, host, account)
+		return
+	}
+	name := ""
+	if action == "rename" {
+		value, ok, err := mode.interactiveUI.Input(ctx, "Account name", nil, nil)
+		if err != nil || !ok {
+			return
+		}
+		name = value
+	}
+	if action == "remove" {
+		confirmed, err := mode.interactiveUI.Confirm(ctx, "Disconnect account", account.Provider+" · "+account.Name, nil)
+		if err != nil || !confirmed {
+			return
+		}
+	}
+	if err := host.ChangeAccount(ctx, account.Provider, account.ID, action, name); err != nil {
+		mode.showError(err)
+	}
+}
+
+func (mode *InteractiveMode) showAccountUsage(parent context.Context, host InteractiveProviderHost, account accounts.Account) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	closed := make(chan struct{}, 1)
+	closeMenu := func() {
+		select {
+		case closed <- struct{}{}:
+		default:
+		}
+	}
+	palette := newCommandPalette([]tui.GridRow{{Cells: []string{"Checking usage…"}}}, mode.keybindings, mode.Height, func(string) { closeMenu() }, closeMenu)
+	handle := mode.ui.ShowOverlay(menuFrame("Usage · "+account.Name, palette), dialogOverlayOptions())
+	mode.ui.RequestRender()
+	defer func() { handle.Hide(); mode.ui.RequestRender() }()
+	result := make(chan []tui.GridRow, 1)
+	go func() {
+		snapshot, err := host.AccountUsage(ctx, account.Provider, account.ID)
+		rows := []tui.GridRow{{Value: "close", Cells: []string{"Usage unavailable"}, Detail: []string{"Try again later or reconnect this account."}}}
+		if err == nil {
+			rows = nil
+			for _, window := range snapshot.Windows {
+				rows = append(rows, tui.GridRow{Value: "close", Cells: []string{window.Name, fmt.Sprintf("%.0f%% left", window.Remaining)}, Detail: []string{"Resets " + window.ResetsAt.Local().Format("Mon 15:04 · 2 Jan")}})
+			}
+		}
+		result <- rows
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-closed:
+			return
+		case rows := <-result:
+			palette.mu.Lock()
+			palette.list.SetRows(rows)
+			palette.mu.Unlock()
+			mode.ui.RequestRender()
+		}
+	}
+}
+
+func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
+	mode.mu.Lock()
+	if mode.accountSwitcherOpen {
+		mode.mu.Unlock()
+		return
+	}
+	mode.accountSwitcherOpen = true
+	mode.mu.Unlock()
+	defer func() {
+		mode.mu.Lock()
+		mode.accountSwitcherOpen = false
+		mode.mu.Unlock()
+	}()
+	ctx, cancel := context.WithCancel(mode.authenticationContext())
+	defer cancel()
+	connected, err := host.ProviderAccounts(ctx)
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	if len(connected) == 0 {
+		mode.showProviders(host)
+		return
+	}
+	summaries := make([]string, len(connected))
+	details := make([]string, len(connected))
+	applyUsage := func(index int, snapshot usage.Snapshot, ok bool) {
+		summaries[index] = "Unavailable"
+		if !ok || len(snapshot.Windows) == 0 {
+			return
+		}
+		limited := snapshot.Windows[0]
+		for _, window := range snapshot.Windows {
+			if window.Remaining < limited.Remaining {
+				limited = window
+			}
+		}
+		summaries[index] = fmt.Sprintf("%s %.0f%% left", limited.Name, limited.Remaining)
+		details[index] = snapshot.Summary()
+		if time.Since(snapshot.CheckedAt) > time.Minute {
+			summaries[index] += " · stale"
+		}
+	}
+	for i, account := range connected {
+		if account.Provider != "openai-codex" && account.Provider != "opencode-go" {
+			continue
+		}
+		summaries[i] = "Checking…"
+		if cached, ok := host.CachedAccountUsage(account.Provider, account.ID); ok {
+			applyUsage(i, cached, true)
+		}
+	}
+	rows := func() []tui.GridRow {
+		result := providerAccountRows(connected, false)
+		result = result[:len(result)-2]
+		for i := range result {
+			index, err := strconv.Atoi(result[i].Value)
+			if err == nil && index >= 0 && index < len(summaries) && summaries[index] != "" {
+				result[i].Cells[1] = theme.FG("muted", summaries[index])
+				result[i].Detail = []string{details[index]}
+			}
+		}
+		return append(result, tui.GridRow{Value: "manage", Cells: []string{"Manage providers"}, Search: "manage connect disconnect providers"})
+	}
+	selected := make(chan string, 1)
+	choose := func(value string) {
+		select {
+		case selected <- value:
+		default:
+		}
+	}
+	palette := newCommandPalette(rows(), mode.keybindings, mode.Height, choose, func() { choose("") })
+	if mode.session != nil {
+		current := mode.session.State().Model
+		if current != nil {
+			for index, row := range rows() {
+				account, err := strconv.Atoi(row.Value)
+				if err == nil && connected[account].Active && connected[account].Provider == string(current.Provider) {
+					palette.list.ListSelectRow(index)
+					break
+				}
+			}
+		}
+	}
+	handle := mode.ui.ShowOverlay(menuFrame("Switch account", palette), dialogOverlayOptions())
+	mode.ui.RequestRender()
+	defer func() { handle.Hide(); mode.ui.RequestRender() }()
+	type updated struct {
+		index    int
+		snapshot usage.Snapshot
+		err      error
+	}
+	updates := make(chan updated, len(connected))
+	jobs := make(chan int, len(connected))
+	for i, account := range connected {
+		if account.Provider == "openai-codex" || account.Provider == "opencode-go" {
+			jobs <- i
+		}
+	}
+	close(jobs)
+	for range min(4, len(connected)) {
+		go func() {
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				account := connected[index]
+				snapshot, err := host.AccountUsage(ctx, account.Provider, account.ID)
+				updates <- updated{index: index, snapshot: snapshot, err: err}
+			}
+		}()
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case update := <-updates:
+			applyUsage(update.index, update.snapshot, update.err == nil)
+			palette.mu.Lock()
+			palette.list.SetRows(rows())
+			palette.mu.Unlock()
+			mode.ui.RequestRender()
+		case value := <-selected:
+			handle.Hide()
+			cancel()
+			if value == "manage" {
+				mode.showProviders(host)
+				return
+			}
+			if provider, add := strings.CutPrefix(value, "add:"); add {
+				mode.connectProviderAccount(mode.authenticationContext(), provider, nil)
+				return
+			}
+			index, err := strconv.Atoi(value)
+			if err != nil || index < 0 || index >= len(connected) {
+				return
+			}
+			mode.switchProviderAccount(mode.authenticationContext(), host, connected[index])
+			return
+		}
+	}
+}
+
+func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host InteractiveProviderHost, account accounts.Account) {
+	if mode.session != nil && mode.session.State().IsStreaming {
+		mode.showError(fmt.Errorf("wait for the current response before switching providers"))
+		return
+	}
+	if account.ID != "ambient" && account.ID != "runtime" {
+		if err := host.ChangeAccount(ctx, account.Provider, account.ID, "select", ""); err != nil {
+			mode.showError(err)
+			return
+		}
+	}
+	if mode.session == nil {
+		return
+	}
+	current := mode.session.State().Model
+	if current != nil && string(current.Provider) == account.Provider {
+		mode.ui.RequestRender()
+		return
+	}
+	available := mode.session.AvailableModels()
+	if current != nil {
+		for _, model := range available {
+			if string(model.Provider) == account.Provider && model.ID == current.ID {
+				if err := mode.session.SetModel(ctx, model); err != nil {
+					mode.showError(err)
+				}
+				mode.ui.RequestRender()
+				return
+			}
+		}
+	}
+	// Provider changes keep the model choice explicit when no identical model exists.
+	mode.showModelSelector(account.Provider)
 }

@@ -1001,11 +1001,11 @@ func (ui *InteractiveUI) untrackCustomOverlay(handle tui.OverlayHandle) {
 }
 
 func backdropStyle() tui.StyleFunc {
-	background, foreground := 232, 240
+	background, foreground := 234, 244
 	if current := theme.Current(); current != nil {
 		var red, green, blue int
 		if _, err := fmt.Sscanf(current.ExportColors()["pageBg"], "#%02x%02x%02x", &red, &green, &blue); err == nil && red+green+blue > 384 {
-			background, foreground = 242, 236
+			background, foreground = 252, 243
 		}
 	}
 	style := fmt.Sprintf("\x1b[48;5;%dm\x1b[38;5;%dm", background, foreground)
