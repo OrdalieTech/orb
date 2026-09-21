@@ -125,7 +125,7 @@
       "width": 20,
       "expected": [
         "\u001b[36m- \u001b[39malpha beta gamma  ",
-        "  delta epsilon     "
+        "  \u001b_orb:w \u0007delta epsilon     "
       ]
     },
     {
@@ -134,7 +134,7 @@
       "width": 20,
       "expected": [
         "\u001b[36m1. \u001b[39malpha beta gamma ",
-        "   delta epsilon    "
+        "   \u001b_orb:w \u0007delta epsilon    "
       ]
     },
     {
@@ -143,7 +143,7 @@
       "width": 21,
       "expected": [
         "\u001b[36m10. \u001b[39malpha beta gamma ",
-        "    delta epsilon    "
+        "    \u001b_orb:w \u0007delta epsilon    "
       ]
     },
     {
@@ -153,7 +153,7 @@
       "expected": [
         "\u001b[36m- \u001b[39mparent                ",
         "    \u001b[36m- \u001b[39malpha beta gamma  ",
-        "      delta epsilon     "
+        "      \u001b_orb:w \u0007delta epsilon     "
       ]
     },
     {
@@ -163,7 +163,7 @@
       "expected": [
         "\u001b[36m1. \u001b[39mparent               ",
         "    \u001b[36m- \u001b[39malpha beta gamma  ",
-        "      delta epsilon     "
+        "      \u001b_orb:w \u0007delta epsilon     "
       ]
     },
     {
@@ -172,7 +172,7 @@
       "width": 24,
       "expected": [
         "\u001b[36m- \u001b[39m\u001b[2m│ \u001b[22m\u001b[3m\u001b[3malpha beta gamma    ",
-        "  \u001b[2m│ \u001b[22m\u001b[3mdelta epsilon zeta\u001b[23m\u001b[23m  "
+        "  \u001b[2m│ \u001b[22m\u001b_orb:w \u0007\u001b[3mdelta epsilon zeta\u001b[23m\u001b[23m  "
       ]
     },
     {
@@ -182,7 +182,7 @@
       "expected": [
         "\u001b[36m- \u001b[39m\u001b[2m```ts\u001b[22m                 ",
         "    \u001b[32malpha beta gamma    ",
-        "  \u001b[32mdelta epsilon zeta\u001b[39m    ",
+        "  \u001b_orb:w \u0007\u001b[32mdelta epsilon zeta\u001b[39m    ",
         "  \u001b[2m```\u001b[22m                   "
       ]
     },
@@ -570,9 +570,9 @@
       "width": 30,
       "expected": [
         "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mThis is a very long         ",
-        "\u001b[2m│ \u001b[22m\u001b[3mblockquote line that should ",
-        "\u001b[2m│ \u001b[22m\u001b[3mwrap to multiple lines when ",
-        "\u001b[2m│ \u001b[22m\u001b[3mrendered\u001b[23m\u001b[23m                    "
+        "\u001b[2m│ \u001b[22m\u001b_orb:w \u0007\u001b[3mblockquote line that should ",
+        "\u001b[2m│ \u001b[22m\u001b_orb:w \u0007\u001b[3mwrap to multiple lines when ",
+        "\u001b[2m│ \u001b[22m\u001b_orb:w \u0007\u001b[3mrendered\u001b[23m\u001b[23m                    "
       ]
     },
     {
@@ -582,8 +582,8 @@
       "defaultStyle": "yellow-italic",
       "expected": [
         "\u001b[2m│ \u001b[22m\u001b[3m\u001b[3mThis is styled text    ",
-        "\u001b[2m│ \u001b[22m\u001b[3mthat is long enough to ",
-        "\u001b[2m│ \u001b[22m\u001b[3mwrap\u001b[23m\u001b[23m                   "
+        "\u001b[2m│ \u001b[22m\u001b_orb:w \u0007\u001b[3mthat is long enough to ",
+        "\u001b[2m│ \u001b[22m\u001b_orb:w \u0007\u001b[3mwrap\u001b[23m\u001b[23m                   "
       ]
     },
     {

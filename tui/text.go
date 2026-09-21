@@ -53,7 +53,7 @@ func (text *Text) Render(width int) []string {
 	}
 	normalized := strings.ReplaceAll(text.text, "\t", "   ")
 	contentWidth := max(1, width-text.paddingX*2)
-	wrapped := WrapTextWithANSI(normalized, contentWidth)
+	wrapped := wrapTextWithANSI(normalized, contentWidth, true)
 	left, right := strings.Repeat(" ", max(0, text.paddingX)), strings.Repeat(" ", max(0, text.paddingX))
 	content := make([]string, 0, len(wrapped))
 	for _, line := range wrapped {

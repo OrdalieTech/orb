@@ -107,6 +107,7 @@ type TUI struct {
 	selection           mouseSelection
 	selectionScroll     selectionAutoScroll
 	selectionHandler    func(string)
+	selectionStyle      StyleFunc
 	chromeTop           int
 	chromeTrim          int
 	mouseOverlays       []mouseOverlayBox
@@ -208,6 +209,12 @@ func (ui *TUI) ViewportBodyHeight() int { return ui.viewportBodyHeight }
 func (ui *TUI) SetSelectionHandler(handler func(string)) {
 	ui.renderMu.Lock()
 	ui.selectionHandler = handler
+	ui.renderMu.Unlock()
+}
+
+func (ui *TUI) SetSelectionStyle(style StyleFunc) {
+	ui.renderMu.Lock()
+	ui.selectionStyle = style
 	ui.renderMu.Unlock()
 }
 
@@ -955,18 +962,29 @@ func (ui *TUI) selectedTextLocked() string {
 	end.row = max(start.row, min(end.row, ui.viewportBodyLines-1))
 	lines := componentLines(ui.viewportBody, ui.viewportBodyWidth, start.row, end.row+1)
 	rows := make([]string, 0, len(lines))
+	joins := make([]string, len(lines))
 	firstFull := true
 	for index, line := range lines {
+		joins[index] = "\n"
+		marker := strings.Index(line, softWrapMarker)
+		if marker >= 0 {
+			if stop := strings.IndexByte(line[marker+len(softWrapMarker):], '\a'); stop >= 0 {
+				joins[index] = line[marker+len(softWrapMarker) : marker+len(softWrapMarker)+stop]
+			}
+		}
 		row := start.row + index
 		width := VisibleWidth(line)
 		from, to := selectionColumns(row, start, end, width)
+		if index > 0 && marker >= 0 {
+			from = max(from, VisibleWidth(line[:marker]))
+		}
 		from = selectionColumnStart(line, from)
 		if row == start.row {
 			firstFull = from == 0
 		}
 		rows = append(rows, plainTerminalText(SliceByColumn(line, from, max(0, to-from), false)))
 	}
-	return joinSelectedContent(rows, firstFull)
+	return joinSelectedContent(rows, firstFull, joins)
 }
 
 // selectionMarginWidth measures a line's presentation margin: the leading run
@@ -990,10 +1008,14 @@ func selectionMarginWidth(line string) int {
 // padding rows collapse to single blank separators between messages.
 // firstFull reports whether the first row was selected from column zero;
 // a mid-line start contributes no margin and is never dedented.
-func joinSelectedContent(rows []string, firstFull bool) string {
+func joinSelectedContent(rows []string, firstFull bool, joins []string) string {
 	margin := -1
 	for index, row := range rows {
 		rows[index] = strings.TrimRight(row, " \t")
+		if index > 0 && joins[index] != "\n" {
+			rows[index] = strings.TrimLeft(rows[index], " \t")
+			continue
+		}
 		if index == 0 && !firstFull {
 			continue
 		}
@@ -1001,27 +1023,35 @@ func joinSelectedContent(rows []string, firstFull bool) string {
 			margin = width
 		}
 	}
-	joined := rows[:0]
+	var joined strings.Builder
 	blankPending := false
 	for index, row := range rows {
 		if row == "" {
-			blankPending = len(joined) > 0
+			if index+1 < len(rows) && joins[index+1] != "\n" {
+				joins[index+1] = joins[index] + joins[index+1]
+				continue
+			}
+			blankPending = joined.Len() > 0
 			continue
 		}
-		if margin > 0 && (index > 0 || firstFull) {
+		if margin > 0 && (index == 0 && firstFull || index > 0 && joins[index] == "\n") {
 			strip := min(margin, selectionMarginWidth(row))
 			for ; strip > 0; strip-- {
 				_, size := utf8.DecodeRuneInString(row)
 				row = row[size:]
 			}
 		}
-		if blankPending {
-			joined = append(joined, "")
-			blankPending = false
+		if joined.Len() > 0 {
+			if blankPending {
+				joined.WriteString("\n\n")
+			} else {
+				joined.WriteString(joins[index])
+			}
 		}
-		joined = append(joined, row)
+		blankPending = false
+		joined.WriteString(row)
 	}
-	return strings.Join(joined, "\n")
+	return joined.String()
 }
 
 // sentenceBoundsLocked expands a double click to sentence bounds within the
@@ -1130,6 +1160,17 @@ func (ui *TUI) extractCursor(lines []string, height int) (row, column int, found
 func applyLineResets(lines []string) []string {
 	for index, line := range lines {
 		if !IsImageLine(line) {
+			for {
+				start := strings.Index(line, softWrapMarker)
+				if start < 0 {
+					break
+				}
+				stop := strings.IndexByte(line[start:], '\a')
+				if stop < 0 {
+					break
+				}
+				line = line[:start] + line[start+stop+1:]
+			}
 			lines[index] = NormalizeTerminalOutput(line) + segmentReset
 		}
 	}
@@ -1565,12 +1606,11 @@ func (ui *TUI) renderSelection(lines []string) []string {
 		line = strings.Replace(line, scrollbarThumb, "", 1)
 		width := VisibleWidth(line)
 		from, to := selectionColumns(row, start, end, width)
-		from = selectionColumnStart(line, from)
+		plain := plainTerminalText(line)
+		from = max(from, selectionMarginWidth(plain))
+		to = min(to, VisibleWidth(strings.TrimRight(plain, " \t")))
 		if to > from && !IsImageLine(line) {
-			before := SliceByColumn(line, 0, from, false)
-			selected := plainTerminalText(SliceByColumn(line, from, to-from, false))
-			after := SliceByColumn(line, to, width-to, false)
-			line = before + segmentReset + "\x1b[7m" + selected + segmentReset + after
+			line = highlightSelection(line, from, to, ui.selectionStyle)
 		}
 		if hasThumb {
 			line += scrollbarThumb
@@ -1578,6 +1618,63 @@ func (ui *TUI) renderSelection(lines []string) []string {
 		result[screen] = line
 	}
 	return result
+}
+
+// Visit source cells once: slicing each segment independently duplicates wide
+// graphemes and replays user-message OSC 133 controls in the trailing segment.
+func highlightSelection(line string, from, to int, style StyleFunc) string {
+	var output, selected strings.Builder
+	tracker := &ansiTracker{}
+	column, active := 0, false
+	flush := func() {
+		if !active {
+			return
+		}
+		output.WriteString(segmentReset)
+		if style != nil {
+			output.WriteString(style(selected.String()))
+		} else {
+			output.WriteString("\x1b[7m")
+			output.WriteString(selected.String())
+		}
+		output.WriteString(segmentReset)
+		output.WriteString(tracker.active())
+		active = false
+	}
+	for pos := 0; pos < len(line); {
+		if column >= to {
+			flush()
+		}
+		if code, next, ok := extractANSI(line, pos); ok {
+			tracker.process(code)
+			if !active {
+				output.WriteString(code)
+			} else if !strings.HasPrefix(code, "\x1b[") || !strings.HasSuffix(code, "m") {
+				selected.WriteString(code)
+			}
+			pos = next
+			continue
+		}
+		end := pos + 1
+		for end < len(line) && line[end] != '\x1b' {
+			end++
+		}
+		forEachGrapheme(line[pos:end], func(grapheme string) bool {
+			width := graphemeWidth(grapheme)
+			if column < to && column+width > from {
+				active = true
+				selected.WriteString(grapheme)
+			} else {
+				flush()
+				output.WriteString(grapheme)
+			}
+			column += width
+			return true
+		})
+		pos = end
+	}
+	flush()
+	return output.String()
 }
 
 func (ui *TUI) positionCursor(row, column int, found bool, totalLines int) {

@@ -630,7 +630,7 @@
             "",
             " Read the blog post:",
             " https://mariozechner.at/posts/",
-            " 2026-04-08-ive-sold-out/",
+            " \u001b_orb:w\u00072026-04-08-ive-sold-out/",
             "",
             "[Image: clankolas.png [image/...",
             "",
@@ -638,7 +638,7 @@
           ],
           "raw": {
             "lineCount": 11,
-            "sha256": "cfbd1dc89a3471d7c3a5f5940827a5c4f6f7ed91d206808c0015542ff519d8c0",
+            "sha256": "4b4b51b91b27e2df56f3b2a3c9db4cd66c1acab89f1978a102d0e41498dfc171",
             "lines": [
               "",
               "\u001b[38;5;109m────────────────────────────────\u001b[39m",
@@ -646,7 +646,7 @@
               "",
               " \u001b[38;5;244mRead the blog post:\u001b[39m            ",
               " \u001b[38;5;109mhttps://mariozechner.at/posts/ ",
-              " \u001b[38;5;109m2026-04-08-ive-sold-out/\u001b[39m       ",
+              " \u001b_orb:w\u0007\u001b[38;5;109m2026-04-08-ive-sold-out/\u001b[39m       ",
               "",
               "\u001b[38;5;244m[Image: clankolas.png [image/\u001b[0m...\u001b[0m",
               "",

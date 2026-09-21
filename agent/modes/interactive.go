@@ -479,6 +479,7 @@ func (mode *InteractiveMode) init() error {
 	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
 
 	mode.interactiveUI = NewInteractiveUI(mode)
+	mode.ui.SetSelectionStyle(func(text string) string { return theme.BG("selectedBg", theme.FG("text", text)) })
 	mode.ui.SetSelectionHandler(func(text string) {
 		go func() {
 			if err := clipboard.CopyToClipboard(text); err != nil {

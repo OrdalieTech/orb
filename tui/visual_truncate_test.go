@@ -7,7 +7,7 @@ import (
 
 func TestTruncateToVisualLinesKeepsWrappedTail(t *testing.T) {
 	result := TruncateToVisualLines("abcdefgh\nijklmnop\nqrstuvwx", 3, 6, 1)
-	want := []string{" mnop ", " qrst ", " uvwx "}
+	want := []string{" " + softWrapMarker + "\amnop ", " qrst ", " " + softWrapMarker + "\auvwx "}
 	if !reflect.DeepEqual(result.VisualLines, want) {
 		t.Fatalf("visual lines = %#v, want %#v", result.VisualLines, want)
 	}
