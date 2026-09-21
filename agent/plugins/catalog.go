@@ -17,12 +17,14 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
+	memorysdk "github.com/OrdalieTech/orb/memory"
 	"github.com/OrdalieTech/orb/sandbox"
 	"github.com/OrdalieTech/orb/usage"
 )
 
 // Options supplies explicit runtime seams so bundled plugins remain instance-scoped.
 type Options struct {
+	Memory           memorysdk.Store
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
 	StreamFn         engine.StreamFn
@@ -84,7 +86,7 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 		"websearch":      websearchExtension(options.HTTPClient),
 		"subagents":      subagentsExtension(options.StreamFn, inheritPolicy, options.Settings),
 		"permissions":    permissionsExtension(policy, options.Settings, nil),
-		"memory":         memoryExtension(nil, options.AgentDir),
+		"memory":         memoryExtension(options.Memory, options.AgentDir),
 		"provider-usage": ProviderUsage(usage.Client{HTTPClient: options.HTTPClient}),
 	}
 }

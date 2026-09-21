@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/storage"
 )
 
 func normalizeProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
@@ -825,15 +826,35 @@ func extensionCredentials(credential *aiauth.Credential) extensions.OAuthCredent
 var providerStoreMu sync.Mutex
 
 type providerModelStore struct {
-	path string
-	id   string
+	document storage.Document
+	path     string
+	id       string
 }
 
-func newProviderModelStore(path, id string) extensions.ProviderModelStore {
-	return providerModelStore{path: path, id: id}
+func newProviderModelStore(path, id string, documents ...storage.Document) extensions.ProviderModelStore {
+	store := providerModelStore{path: path, id: id}
+	if len(documents) > 0 {
+		store.document = documents[0]
+	}
+	return store
 }
 
-func (store providerModelStore) Read(_ context.Context) (entry *extensions.ProviderModelsStoreEntry, err error) {
+func (store providerModelStore) Read(ctx context.Context) (entry *extensions.ProviderModelsStoreEntry, err error) {
+	if store.document != nil {
+		data, err := store.document.Read(ctx)
+		if err != nil || len(data) == 0 {
+			return nil, err
+		}
+		var values map[string]json.RawMessage
+		if err = json.Unmarshal(data, &values); err != nil {
+			return nil, err
+		}
+		if len(values[store.id]) == 0 {
+			return nil, nil
+		}
+		err = json.Unmarshal(values[store.id], &entry)
+		return entry, err
+	}
 	unlock, err := lockProviderStore(store.path)
 	if err != nil {
 		return nil, err
@@ -850,7 +871,10 @@ func (store providerModelStore) Read(_ context.Context) (entry *extensions.Provi
 	return &stored, nil
 }
 
-func (store providerModelStore) Write(_ context.Context, entry extensions.ProviderModelsStoreEntry) (err error) {
+func (store providerModelStore) Write(ctx context.Context, entry extensions.ProviderModelsStoreEntry) (err error) {
+	if store.document != nil {
+		return store.updateDocument(ctx, &entry)
+	}
 	unlock, err := lockProviderStore(store.path)
 	if err != nil {
 		return err
@@ -864,7 +888,10 @@ func (store providerModelStore) Write(_ context.Context, entry extensions.Provid
 	return writeProviderStore(store.path, values)
 }
 
-func (store providerModelStore) Delete(_ context.Context) (err error) {
+func (store providerModelStore) Delete(ctx context.Context) (err error) {
+	if store.document != nil {
+		return store.updateDocument(ctx, nil)
+	}
 	unlock, err := lockProviderStore(store.path)
 	if err != nil {
 		return err
@@ -936,4 +963,25 @@ func writeProviderStore(path string, values map[string]extensions.ProviderModels
 		return err
 	}
 	return os.Rename(temporaryPath, path)
+}
+
+func (store providerModelStore) updateDocument(ctx context.Context, entry *extensions.ProviderModelsStoreEntry) error {
+	return store.document.Update(ctx, func(data []byte) ([]byte, error) {
+		values := map[string]json.RawMessage{}
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &values); err != nil {
+				return nil, err
+			}
+		}
+		if entry == nil {
+			delete(values, store.id)
+		} else {
+			encoded, err := jsonwire.Marshal(entry)
+			if err != nil {
+				return nil, err
+			}
+			values[store.id] = encoded
+		}
+		return jsonwire.Marshal(values)
+	})
 }

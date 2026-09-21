@@ -18,6 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/storage"
 )
 
 const DefaultID = "default"
@@ -44,8 +45,9 @@ type document struct {
 }
 
 type Store struct {
-	path string
-	base auth.CredentialStore
+	document storage.Document
+	path     string
+	base     auth.CredentialStore
 }
 
 // NewStore performs no I/O; an unused capability creates no files.
@@ -56,7 +58,20 @@ func NewStore(path string, base auth.CredentialStore) *Store {
 	return &Store{path: path, base: base}
 }
 
+func NewStoreWithDocument(document storage.Document, base auth.CredentialStore) *Store {
+	s := NewStore("", base)
+	s.document = document
+	return s
+}
+
 func (s *Store) load() (document, error) {
+	if s.document != nil {
+		data, err := s.document.Read(context.Background())
+		if err != nil {
+			return document{}, err
+		}
+		return decodeDocument(data)
+	}
 	d := document{Version: 1, Active: map[string]string{}}
 	f, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -69,6 +84,14 @@ func (s *Store) load() (document, error) {
 	data, err := io.ReadAll(io.LimitReader(f, maxFileSize+1))
 	if err != nil {
 		return d, err
+	}
+	return decodeDocument(data)
+}
+
+func decodeDocument(data []byte) (document, error) {
+	d := document{Version: 1, Active: map[string]string{}}
+	if len(data) == 0 {
+		return d, nil
 	}
 	if len(data) > maxFileSize || json.Unmarshal(data, &d) != nil || d.Version != 1 || d.Active == nil {
 		return d, errors.New("invalid accounts file")
@@ -89,6 +112,22 @@ func (s *Store) load() (document, error) {
 }
 
 func (s *Store) update(ctx context.Context, change func(*document) error) error {
+	if s.document != nil {
+		return s.document.Update(ctx, func(data []byte) ([]byte, error) {
+			d, err := decodeDocument(data)
+			if err != nil {
+				return nil, err
+			}
+			if err = change(&d); err != nil {
+				return nil, err
+			}
+			data, err = json.Marshal(d)
+			if len(data) > maxFileSize {
+				return nil, errors.New("accounts store exceeds 1 MiB")
+			}
+			return data, err
+		})
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -182,15 +221,25 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 		return Account{}, err
 	}
 	result := Account{ID: hex.EncodeToString(idBytes), Provider: provider, Name: name, Type: credential.Type, Active: true}
-	err := s.update(ctx, func(d *document) error {
-		base, err := s.base.Read(ctx, provider)
-		if err != nil {
-			return err
-		}
-		if base != nil && sameCredential(base, credential) {
-			if _, err := s.base.Modify(ctx, provider, func(*auth.Credential) (*auth.Credential, error) { return credential, nil }); err != nil {
-				return err
+	base, err := s.base.Read(ctx, provider)
+	if err != nil {
+		return Account{}, err
+	}
+	matchedDefault := false
+	if base != nil && sameCredential(base, credential) {
+		_, err = s.base.Modify(ctx, provider, func(current *auth.Credential) (*auth.Credential, error) {
+			matchedDefault = current != nil && sameCredential(current, credential)
+			if matchedDefault {
+				return credential, nil
 			}
+			return current, nil
+		})
+		if err != nil {
+			return Account{}, err
+		}
+	}
+	err = s.update(ctx, func(d *document) error {
+		if matchedDefault {
 			result.ID = DefaultID
 			if d.Names == nil {
 				d.Names = map[string]string{}

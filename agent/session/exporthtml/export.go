@@ -55,11 +55,13 @@ func ExportSession(manager *session.SessionManager, options Options) (string, er
 		return "", errors.New("session manager is required")
 	}
 	sessionFile := manager.GetSessionFile()
-	if sessionFile == "" {
+	if !manager.IsPersisted() {
 		return "", errors.New("Cannot export in-memory session to HTML") //nolint:staticcheck // Upstream error capitalization is observable.
 	}
-	if _, err := os.Stat(sessionFile); err != nil {
-		return "", errors.New("Nothing to export yet - start a conversation first") //nolint:staticcheck // Upstream error capitalization is observable.
+	if sessionFile != "" {
+		if _, err := os.Stat(sessionFile); err != nil {
+			return "", errors.New("Nothing to export yet - start a conversation first") //nolint:staticcheck // Upstream error capitalization is observable.
+		}
 	}
 	entries := manager.GetEntries()
 	data := sessionData{
@@ -78,7 +80,10 @@ func ExportSession(manager *session.SessionManager, options Options) (string, er
 		return "", err
 	}
 	if outputPath == "" {
-		base := strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
+		base := manager.GetSessionID()
+		if sessionFile != "" {
+			base = strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
+		}
 		outputPath = "pi-session-" + base + ".html"
 	}
 	if err := os.WriteFile(outputPath, []byte(contents), 0o666); err != nil {

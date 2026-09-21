@@ -11,10 +11,12 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 // Conversation is exclusive ownership of one hydrated agent session.
 type Conversation struct {
+	Reset   func() error
 	Session *agent.AgentSession
 	// Manager receives ledger writes and serves raw entry reads.
 	Manager *sessionstore.SessionManager
@@ -46,11 +48,17 @@ func WithAgentDir(dir string) LocalProviderOption {
 	return func(p *LocalProvider) { p.agentDir = dir }
 }
 
+// WithPersistence selects explicit native session and configuration repositories.
+func WithPersistence(repo func(ConversationKey) harness.SessionRepo, settings *config.SettingsManager, registry *config.ModelRegistry) LocalProviderOption {
+	return func(p *LocalProvider) { p.repo = repo; p.settings = settings; p.registry = registry }
+}
+
 // LocalProvider maps conversation keys to per-conversation session
 // directories under a root, resuming the most recent session file for a key
 // or creating a new one. One ModelRegistry and one SettingsManager are shared
 // across all sessions.
 type LocalProvider struct {
+	repo     func(ConversationKey) harness.SessionRepo
 	root     string
 	agentDir string
 	hook     func(ConversationKey, *agent.AgentSessionOptions)
@@ -121,11 +129,15 @@ func NewLocalProvider(root string, opts ...LocalProviderOption) (*LocalProvider,
 	for _, opt := range opts {
 		opt(provider)
 	}
-	provider.registry, err = config.NewModelRegistry(provider.agentDir)
+	if provider.registry == nil {
+		provider.registry, err = config.NewModelRegistry(provider.agentDir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("chat: create model registry: %w", err)
 	}
-	provider.settings, err = config.NewSettingsManager(absRoot, config.WithAgentDir(provider.agentDir))
+	if provider.settings == nil {
+		provider.settings, err = config.NewSettingsManager(absRoot, config.WithAgentDir(provider.agentDir))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("chat: create settings manager: %w", err)
 	}
@@ -139,7 +151,7 @@ func (p *LocalProvider) SessionDir(key ConversationKey) string {
 
 // Acquire implements [SessionProvider]. It errors when the conversation is
 // already held; release goes through the returned Conversation's Close.
-func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conversation, error) {
+func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conversation, error) {
 	if key.Platform == "" || key.Account == "" || key.ChatID == "" {
 		return nil, fmt.Errorf("chat: conversation key requires platform, account, and chat id (got %q)", key.String())
 	}
@@ -165,24 +177,46 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 		p.mu.Unlock()
 	}
 
-	sessionDir := filepath.Join(p.root, id)
-	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
-		release(nil)
-		return nil, fmt.Errorf("chat: create session dir: %w", err)
-	}
-	recent := sessionstore.FindMostRecentSession(sessionDir, "")
-	manager := cached.reuse(recent)
-	if manager == nil {
-		var err error
-		if recent != "" {
-			manager, err = sessionstore.Open(recent, sessionDir)
-		} else {
-			manager, err = sessionstore.Create(p.root, sessionDir)
+	var manager *sessionstore.SessionManager
+	if p.repo != nil {
+		repo := p.repo(key)
+		entries, err := repo.List(ctx, harness.SessionListOptions{})
+		var stored *harness.Session
+		if err == nil {
+			if len(entries) > 0 {
+				stored, err = repo.Open(ctx, entries[0])
+			} else {
+				stored, err = repo.Create(ctx, harness.SessionCreateOptions{CWD: p.root})
+			}
+		}
+		if err == nil {
+			manager, err = sessionstore.FromHarnessStorage(stored.Storage(), sessionstore.WithHarnessRepo(repo))
 		}
 		if err != nil {
 			release(nil)
-			return nil, fmt.Errorf("chat: open conversation session: %w", err)
+			return nil, err
 		}
+	} else {
+		sessionDir := filepath.Join(p.root, id)
+		if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+			release(nil)
+			return nil, fmt.Errorf("chat: create session dir: %w", err)
+		}
+		recent := sessionstore.FindMostRecentSession(sessionDir, "")
+		manager = cached.reuse(recent)
+		if manager == nil {
+			var err error
+			if recent != "" {
+				manager, err = sessionstore.Open(recent, sessionDir)
+			} else {
+				manager, err = sessionstore.Create(p.root, sessionDir)
+			}
+			if err != nil {
+				release(nil)
+				return nil, fmt.Errorf("chat: open conversation session: %w", err)
+			}
+		}
+
 	}
 
 	options := agent.AgentSessionOptions{
@@ -203,7 +237,7 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 	}
 
 	var once sync.Once
-	return &Conversation{
+	conversation := &Conversation{
 		Session: result.Session,
 		Manager: manager,
 		Close: func(context.Context) error {
@@ -213,5 +247,51 @@ func (p *LocalProvider) Acquire(_ context.Context, key ConversationKey) (*Conver
 			})
 			return nil
 		},
-	}, nil
+	}
+	if p.repo != nil {
+		conversation.Reset = func() error {
+			staged, err := sessionstore.InMemory(p.root)
+			if err != nil {
+				return err
+			}
+			for _, marker := range carryableMarkers(conversation.Manager) {
+				if _, err = appendTurnMarker(staged, marker); err != nil {
+					return err
+				}
+			}
+			data, err := staged.JSONL()
+			if err != nil {
+				return err
+			}
+			repo := p.repo(key)
+			importer, ok := repo.(interface {
+				Import(context.Context, []byte) (harness.SessionMetadata, error)
+			})
+			if !ok {
+				return fmt.Errorf("chat: native reset requires atomic journal import")
+			}
+			metadata, err := importer.Import(context.Background(), data)
+			if err != nil {
+				return err
+			}
+			stored, err := repo.Open(context.Background(), metadata)
+			if err != nil {
+				return err
+			}
+			replacement, err := sessionstore.FromHarnessStorage(stored.Storage(), sessionstore.WithHarnessRepo(repo))
+			if err != nil {
+				return err
+			}
+			options.SessionManager = replacement
+			next, err := agent.NewAgentSession(options)
+			if err != nil {
+				return err
+			}
+			conversation.Session.Dispose()
+			result, manager = next, replacement
+			conversation.Session, conversation.Manager = next.Session, replacement
+			return nil
+		}
+	}
+	return conversation, nil
 }

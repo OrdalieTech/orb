@@ -2,8 +2,10 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"github.com/OrdalieTech/orb/storage"
 	"io"
 	"os"
 	"path/filepath"
@@ -203,4 +205,57 @@ func parseLegacyOAuth(data []byte) (authDocument, error) {
 	}
 	_, err = decoder.Token()
 	return document, err
+}
+
+// MigrateAuthDocuments upgrades legacy credentials during an offline native
+// migration. Original files are never renamed or rewritten.
+func MigrateAuthDocuments(ctx context.Context, auth, settings, oauth storage.Document) error {
+	return auth.Update(ctx, func(current []byte) ([]byte, error) {
+		if len(current) > 0 {
+			return current, nil
+		}
+		result := emptyAuthDocument()
+		data, err := oauth.Read(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > 0 {
+			legacy, err := parseLegacyOAuth(data)
+			if err != nil {
+				return nil, err
+			}
+			result = legacy
+		}
+		data, err = settings.Read(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > 0 {
+			_, members, err := parseOrderedRawObject(data)
+			if err != nil {
+				return nil, err
+			}
+			if raw := members["apiKeys"]; len(raw) > 0 {
+				order, keys, err := parseOrderedRawObject(raw)
+				if err != nil {
+					return nil, err
+				}
+				for _, provider := range order {
+					if _, exists := result.credentials[provider]; exists {
+						continue
+					}
+					var key string
+					if json.Unmarshal(keys[provider], &key) != nil {
+						continue
+					}
+					result.order = append(result.order, provider)
+					result.credentials[provider] = aiauth.APIKeyCredential(key)
+				}
+			}
+		}
+		if len(result.order) == 0 {
+			return nil, nil
+		}
+		return marshalAuthDocument(result)
+	})
 }

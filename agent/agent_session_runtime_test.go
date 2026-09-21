@@ -915,3 +915,26 @@ func runtimeLifecycleRegistry(
 	}
 	return registry
 }
+
+func TestRuntimeRejectedOwnershipKeepsCurrentSession(t *testing.T) {
+	ctx := context.Background()
+	provider := testFaux(100000)
+	host, err := NewAgentSessionRuntime(ctx, AgentSessionOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Dispose(ctx)
+	current := host.Session()
+	denied := errors.New("already owned")
+	host.SetSessionClaim(func(*sessionstore.SessionManager) (func(), error) { return nil, denied })
+	if _, err := host.NewSession(ctx, nil); !errors.Is(err, denied) {
+		t.Fatal(err)
+	}
+	if host.Session() != current {
+		t.Fatal("replaced rejected session")
+	}
+	host.SetSessionClaim(nil)
+	if err := current.Prompt(ctx, "still usable"); err != nil {
+		t.Fatal("rejection disposed current session", err)
+	}
+}

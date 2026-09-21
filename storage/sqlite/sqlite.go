@@ -5,17 +5,66 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/gofrs/flock"
 
 	_ "modernc.org/sqlite"
 )
 
 const applicationID = 0x4f524231
+
+// MigrationStatus inspects an existing root without upgrading its schema.
+func MigrationStatus(ctx context.Context, path, name string) (bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, errors.New("database must be a regular file")
+	}
+	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
+	handle, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = handle.Close() }()
+	var id, version int
+	if err = handle.QueryRowContext(ctx, "PRAGMA application_id").Scan(&id); err != nil {
+		return false, err
+	}
+	if err = handle.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return false, err
+	}
+	if id == 0 && version == 0 {
+		var count int
+		if err := handle.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").Scan(&count); err != nil {
+			return false, err
+		}
+		if count == 0 {
+			return false, nil
+		}
+	}
+	if id != applicationID || version < 1 || version > 4 {
+		return false, errors.New("unsupported database schema")
+	}
+	return (&DB{handle}).Migrated(ctx, name)
+}
 
 type DB struct{ *sql.DB }
 
@@ -46,7 +95,8 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 		return nil, err
 	}
 	u := url.URL{Scheme: "file", Path: path}
-	q := url.Values{"_pragma": {"foreign_keys(ON)", "synchronous(FULL)", "busy_timeout(5000)"}, "_txlock": {"immediate"}}
+	// FULL commits on slow disks can leave another process waiting beyond five seconds.
+	q := url.Values{"_pragma": {"foreign_keys(ON)", "synchronous(FULL)", "busy_timeout(30000)"}, "_txlock": {"immediate"}}
 	u.RawQuery = q.Encode()
 	handle, err := sql.Open("sqlite", u.String())
 	if err != nil {
@@ -60,19 +110,47 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 			_ = db.Close()
 		}
 	}()
+	// Opening an initialized WAL database must not queue behind application writers.
+	var id, version int
+	var schemaLock *flock.Flock
+	for {
+		if err = db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&id); err != nil {
+			return nil, err
+		}
+		if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+			return nil, err
+		}
+		if id == applicationID && version == 4 {
+			var journal string
+			if err = db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journal); err != nil {
+				return nil, err
+			}
+			if journal == "wal" {
+				return db, nil
+			}
+		}
+		if schemaLock != nil {
+			break
+		}
+		// Serialize first opens, then recheck: another opener may have finished the schema.
+		schemaLock = flock.New(path + ".schema.lock")
+		defer func() { _ = schemaLock.Close() }()
+		if _, err = schemaLock.TryLockContext(ctx, 10*time.Millisecond); err != nil {
+			return nil, err
+		}
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var id, version int
 	if err = tx.QueryRowContext(ctx, "PRAGMA application_id").Scan(&id); err != nil {
 		return nil, err
 	}
 	if err = tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return nil, err
 	}
-	if (id != 0 && id != applicationID) || version > 2 {
+	if (id != 0 && id != applicationID) || version > 4 {
 		return nil, errors.New("unsupported database schema")
 	}
 	if id == 0 {
@@ -130,6 +208,27 @@ CREATE TABLE foreign_sessions(profile TEXT NOT NULL,peer TEXT NOT NULL,namespace
 CREATE INDEX foreign_recent ON foreign_sessions(profile,peer,refreshed DESC,version DESC);
 CREATE INDEX foreign_expiry ON foreign_sessions(profile,refreshed DESC,version DESC);
 PRAGMA user_version=2;`)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if version < 3 {
+		_, err = tx.ExecContext(ctx, `CREATE TABLE memory_items(namespace TEXT NOT NULL,id TEXT NOT NULL,time TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(namespace,id));
+CREATE INDEX memory_recent ON memory_items(namespace,time DESC);
+CREATE TABLE chat_pending(seq INTEGER PRIMARY KEY,namespace TEXT NOT NULL,event_id TEXT NOT NULL,payload BLOB NOT NULL);
+CREATE INDEX chat_pending_events ON chat_pending(namespace,event_id,seq);
+CREATE INDEX chat_pending_order ON chat_pending(namespace,seq);
+PRAGMA user_version=3;`)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if version < 4 {
+		_, err = tx.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN preview TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
+UPDATE sessions SET message_count=(SELECT count(*) FROM entries WHERE namespace=sessions.namespace AND session_id=sessions.id AND json_extract(payload,'$.type')='message'),
+preview=coalesce((SELECT substr(CASE json_type(payload,'$.message.content') WHEN 'text' THEN json_extract(payload,'$.message.content') WHEN 'array' THEN (SELECT group_concat(json_extract(value,'$.text'),'') FROM json_each(entries.payload,'$.message.content') WHERE json_extract(value,'$.type')='text') ELSE '' END,1,4096) FROM entries WHERE namespace=sessions.namespace AND session_id=sessions.id AND json_extract(payload,'$.message.role')='user' ORDER BY seq LIMIT 1),'');
+PRAGMA user_version=4;`)
 		if err != nil {
 			return nil, err
 		}
@@ -196,6 +295,13 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 	if !filepath.IsAbs(path) {
 		return errors.New("backup path must be absolute")
 	}
+	parent, err := os.Lstat(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	if !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
+		return errors.New("backup directory must be private")
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 	if err != nil {
 		return err
@@ -225,4 +331,208 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 		return err
 	}
 	return errors.Join(dir.Sync(), dir.Close())
+}
+
+// MigrationSource names an explicit offline source. Originals are never changed.
+// The caller must quiesce legacy writers and hold its native-root migration lock.
+type MigrationSource struct {
+	Path, Namespace, Key, Kind string
+}
+
+func (db *DB) Migrated(ctx context.Context, name string) (bool, error) {
+	data, err := db.Document("migration/"+name, "@complete").Read(ctx)
+	return len(data) != 0, err
+}
+
+// Migrate checkpoints each source independently, then verifies the complete
+// inventory before publishing cutover. Retrying never overwrites native writes.
+func (db *DB) Migrate(ctx context.Context, name string, sources []MigrationSource, verify ...func() error) error {
+	if name == "" {
+		return errors.New("migration name required")
+	}
+	if done, err := db.Migrated(ctx, name); err != nil || done {
+		return err
+	}
+	sources = slices.Clone(sources)
+	slices.SortFunc(sources, func(a, b MigrationSource) int { return strings.Compare(a.Path, b.Path) })
+	for i, source := range sources {
+		if !filepath.IsAbs(source.Path) || source.Namespace == "" || (i > 0 && sources[i-1].Path == source.Path) || (source.Kind != "session" && source.Kind != "json" && source.Kind != "bytes" && source.Kind != "memory" && source.Kind != "chat") {
+			return errors.New("invalid migration inventory")
+		}
+	}
+	namespace := "migration/" + name
+	manifest, err := json.Marshal(sources)
+	if err != nil {
+		return err
+	}
+	if err := importDocument(ctx, db.Document(namespace, "@manifest"), manifest); err != nil {
+		return fmt.Errorf("migration inventory changed: %w", err)
+	}
+	fingerprints := make([][]byte, len(sources))
+	type parentReference struct{ namespace, id, path string }
+	parents := []parentReference{}
+	sourceIDs := map[string]string{}
+	for i, source := range sources {
+		data, err := readMigrationSource(source.Path)
+		if err != nil {
+			return fmt.Errorf("migration source %s: %w", source.Path, err)
+		}
+		if source.Kind == "session" {
+			var header struct {
+				ID     string `json:"id"`
+				Parent string `json:"parentSession"`
+			}
+			line, _, _ := bytes.Cut(data, []byte{'\n'})
+			if err := json.Unmarshal(line, &header); err != nil {
+				return fmt.Errorf("invalid session header: %s", source.Path)
+			}
+			sourceIDs[source.Namespace+"\x00"+source.Path] = header.ID
+			if header.Parent != "" {
+				parents = append(parents, parentReference{source.Namespace, header.ID, header.Parent})
+			}
+		}
+		digest := sha256.Sum256(data)
+		fingerprints[i] = digest[:]
+		checkpoint := db.Document(namespace, source.Path)
+		previous, err := checkpoint.Read(ctx)
+		if err != nil {
+			return err
+		}
+		if previous != nil {
+			if !bytes.Equal(previous, digest[:]) {
+				return fmt.Errorf("migration source changed: %s", source.Path)
+			}
+			continue
+		}
+		if source.Kind == "json" && !json.Valid(data) {
+			return fmt.Errorf("invalid JSON in migration source %s", source.Path)
+		}
+		// A crash between importing rows and checkpointing cannot accept a changed source.
+		if err = importDocument(ctx, db.Document(namespace, "@pending/"+source.Path), digest[:]); err != nil {
+			return fmt.Errorf("migration source changed: %s", source.Path)
+		}
+		switch source.Kind {
+		case "memory":
+			err = db.Memory(source.Namespace).importJournal(ctx, data)
+		case "chat":
+			err = db.Chat(source.Namespace).importJournal(ctx, data)
+		case "session":
+			_, err = db.Sessions(source.Namespace).Import(ctx, data)
+		case "json", "bytes":
+			if source.Kind == "json" && !json.Valid(data) {
+				return fmt.Errorf("invalid JSON in migration source %s", source.Path)
+			}
+			err = importDocument(ctx, db.Document(source.Namespace, source.Key), data)
+		}
+		if err != nil {
+			return fmt.Errorf("migration source %s: %w", source.Path, err)
+		}
+		if err = importDocument(ctx, checkpoint, digest[:]); err != nil {
+			return err
+		}
+	}
+	for i, source := range sources {
+		data, err := readMigrationSource(source.Path)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(data)
+		if !bytes.Equal(digest[:], fingerprints[i]) {
+			return fmt.Errorf("migration source changed: %s", source.Path)
+		}
+	}
+
+	// File parent references become native IDs; headers remain byte-compatible exports.
+	for _, parent := range parents {
+		id := sourceIDs[parent.namespace+"\x00"+parent.path]
+		if id == "" {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE sessions SET parent_id=? WHERE namespace=? AND id=?", id, parent.namespace, parent.id); err != nil {
+			return err
+		}
+	}
+	for _, check := range verify {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return importDocument(ctx, db.Document(namespace, "@complete"), manifest)
+}
+
+func readMigrationSource(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("migration requires regular source files")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(info, opened) {
+		return nil, errors.New("migration source replaced")
+	}
+	const limit = 256 << 20
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if len(data) > limit {
+		return nil, errors.New("migration source exceeds 256 MiB")
+	}
+	return data, err
+}
+
+func importDocument(ctx context.Context, document *Document, data []byte) error {
+	return document.Update(ctx, func(old []byte) ([]byte, error) {
+		if old != nil && !bytes.Equal(old, data) {
+			return nil, errors.New("conflicting imported document")
+		}
+		return data, nil
+	})
+}
+
+// RestoreSessions recovers missing conversations without rolling back authority,
+// credentials, operation receipts, or chat delivery state. Conflicts fail closed;
+// rerunning after interruption accepts only identical already-restored journals.
+func (db *DB) RestoreSessions(ctx context.Context, path, namespace string) (int, error) {
+	if _, err := MigrationStatus(ctx, path, "native"); err != nil {
+		return 0, err
+	}
+	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
+	source, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = source.Close() }()
+	repo := (&DB{source}).Sessions(namespace)
+	sessions, err := repo.List(ctx, harness.SessionListOptions{})
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, metadata := range sessions {
+		stored, err := repo.Open(ctx, metadata)
+		if err != nil {
+			return count, err
+		}
+		data, err := stored.Storage().(harness.ByteSessionStorage).Bytes()
+		if err != nil {
+			return count, err
+		}
+		var parent string
+		if err = source.QueryRowContext(ctx, "SELECT coalesce(parent_id,'') FROM sessions WHERE namespace=? AND id=?", namespace, metadata.ID).Scan(&parent); err != nil {
+			return count, err
+		}
+		if _, err = db.Sessions(namespace).importJournal(ctx, data, parent, true); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
 }

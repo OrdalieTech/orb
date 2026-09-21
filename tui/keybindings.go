@@ -238,6 +238,11 @@ func LoadKeybindingsFile(path string) KeybindingsConfig {
 	if err != nil {
 		return KeybindingsConfig{}
 	}
+	return ParseKeybindings(contents)
+}
+
+// ParseKeybindings uses the file codec without choosing a persistence backend.
+func ParseKeybindings(contents []byte) KeybindingsConfig {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(contents, &raw) != nil || raw == nil {
 		return KeybindingsConfig{}

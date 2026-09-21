@@ -142,6 +142,21 @@ func TestWindowedContainerReleasesOffscreenRenderCache(t *testing.T) {
 	}
 }
 
+func TestWindowedLayoutRestoresEvictedSelectionLines(t *testing.T) {
+	container := NewWindowedContainer()
+	container.AddChild(NewText(strings.Repeat("selected\n", 9)+"selected", 0, 0, nil))
+	container.AddChild(NewText("tail", 0, 0, nil))
+	layout := buildLineLayout(container, 80)
+	container.RenderLines(80, 10, 11)
+	if container.windowChildLines[0] != nil {
+		t.Fatal("expected first child to be evicted")
+	}
+	lines := layout.appendRange(nil, 80, 5, 7)
+	if len(lines) != 2 || strings.TrimSpace(lines[0]) != "selected" || strings.TrimSpace(lines[1]) != "selected" {
+		t.Fatalf("selection lines after eviction = %q", lines)
+	}
+}
+
 func TestWindowedContainerReflowsOnWidthChange(t *testing.T) {
 	container := NewWindowedContainer()
 	child := &countedLines{lines: []string{"line"}}

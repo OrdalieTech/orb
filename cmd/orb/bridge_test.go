@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/connect"
 	attach "github.com/OrdalieTech/orb/connect/agent"
 	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/storage/sqlite"
 	"github.com/OrdalieTech/orb/tui"
 	"net"
@@ -157,6 +158,16 @@ func TestBridgeLiveAttach(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
+	agentDir := os.Getenv(config.EnvAgentDir)
+	if !filepath.IsAbs(agentDir) {
+		t.Fatal("isolated agent directory required")
+	}
+	state, err := openNativeState(ctx, agentDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.close() }()
+	ctx = context.WithValue(ctx, nativeStateKey{}, state)
 	for n := 0; n < 20; n++ {
 		cwd := filepath.Join(root, "runtime", fmt.Sprint(n))
 		if err := os.MkdirAll(cwd, 0700); err != nil {
@@ -164,12 +175,29 @@ func TestBridgeLiveAttach(t *testing.T) {
 		}
 		provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 		provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("live bridge answer")})
-		host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{CWD: cwd, AgentDir: cwd, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+		saved, err := state.sessions().List(ctx, harness.SessionListOptions{CWD: cwd})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored *harness.Session
+		if len(saved) > 0 {
+			stored, err = state.sessions().Open(ctx, saved[0])
+		} else {
+			stored, err = state.sessions().Create(ctx, harness.SessionCreateOptions{CWD: cwd})
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		manager, err := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(state.sessions()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{SessionManager: manager, CWD: cwd, AgentDir: cwd, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer host.Dispose(context.Background())
-		detach, err := attachEnabledBridge(ctx, host, CLIArgs{BridgeProfile: "personal", InstanceAlias: fmt.Sprintf("live-%02d", n), bridgeLink: &cliBridgeLink{}}, nil, os.Stderr)
+		detach, err := attachEnabledBridge(ctx, host, CLIArgs{native: state, BridgeProfile: "personal", InstanceAlias: fmt.Sprintf("live-%02d", n), bridgeLink: &cliBridgeLink{}}, nil, os.Stderr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1028,6 +1056,16 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
+	agentDir := os.Getenv(config.EnvAgentDir)
+	if !filepath.IsAbs(agentDir) {
+		t.Fatal("isolated agent directory required")
+	}
+	nativeState, err := openNativeState(ctx, agentDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = nativeState.close() }()
+	ctx = context.WithValue(ctx, nativeStateKey{}, nativeState)
 	client, err := bridgeAdmin(ctx, "personal")
 	if err != nil {
 		t.Fatal(err)

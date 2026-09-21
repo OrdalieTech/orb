@@ -53,6 +53,7 @@ type StartupDiagnostic struct {
 
 // InteractiveModeOptions configures the interactive TUI mode.
 type InteractiveModeOptions struct {
+	Keybindings    tui.KeybindingsConfig
 	InitialMessage string
 	InitialImages  []*ai.ImageContent
 	Messages       []string
@@ -314,7 +315,10 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	}
 	mode.ui = tui.NewTUI(terminal)
 	settings := mode.session.InteractiveModeSettings()
-	userBindings := tui.LoadKeybindingsFile(filepath.Join(settings.AgentDir, "keybindings.json"))
+	userBindings := mode.options.Keybindings
+	if userBindings == nil {
+		userBindings = tui.LoadKeybindingsFile(filepath.Join(settings.AgentDir, "keybindings.json"))
+	}
 	mode.keybindings = NewAppKeybindings(userBindings)
 	tui.SetKeybindings(mode.keybindings)
 
@@ -3093,6 +3097,14 @@ func (mode *InteractiveMode) showSessionSelector() {
 		Keybindings:        mode.keybindings,
 		RequestRender:      mode.ui.RequestRender,
 	}
+	if mode.session.Manager().GetSessionFile() == "" && mode.session.Manager().IsPersisted() {
+		options.CurrentSessionPath = mode.session.Manager().GetSessionID()
+	}
+	if deleter, ok := mode.options.Host.(interface {
+		DeleteSession(string) (SessionDeleteMethod, error)
+	}); ok && mode.session.Manager().GetSessionFile() == "" && mode.session.Manager().IsPersisted() {
+		options.DeleteSession = deleter.DeleteSession
+	}
 	type contextSessionLister interface {
 		ListProjectSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
 		ListAllSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
@@ -4966,7 +4978,7 @@ func formatResumeCommand(manager *sessionstore.SessionManager, outputTTY bool) s
 	}
 	sessionFile := manager.GetSessionFile()
 	if sessionFile == "" {
-		return ""
+		return "orb --session " + quoteResumeArgument(manager.GetSessionID())
 	}
 	if _, err := os.Stat(sessionFile); err != nil {
 		return ""

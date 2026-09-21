@@ -82,7 +82,8 @@ func (storage *AuthStorage) Reload() {
 
 func (storage *AuthStorage) Read(ctx context.Context, provider string) (*aiauth.Credential, error) {
 	if storage.document != nil {
-		data, err := storage.readLocked(ctx)
+		// Like the file-backed snapshot, local credential reads survive RPC input closure.
+		data, err := storage.readLocked(context.WithoutCancel(ctx))
 		if err != nil {
 			return nil, err
 		}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -77,14 +76,14 @@ func handleCredentialPrintCommand(ctx context.Context, argv []string, streams cl
 	if err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
-	if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
+	if _, err := migrateAuthForContext(ctx, agentDir); err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
-	storage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	storage, err := stateFromContext(ctx).auth(agentDir)
 	if err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
-	registry, err := config.NewOfflineModelRegistry(agentDir)
+	registry, err := stateFromContext(ctx).models(agentDir, storage, true)
 	if err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
@@ -339,10 +338,10 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	if _, err := config.MigrateAuthToAuthJSON(agentDir); err != nil {
+	if _, err := migrateAuthForContext(ctx, agentDir); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	storage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	storage, err := stateFromContext(ctx).auth(agentDir)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -383,7 +382,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	_, _ = fmt.Fprintf(streams.Stdout, "Logged in to %s. Credentials saved to %s.\n", provider, storage.Path())
+	_, _ = fmt.Fprintf(streams.Stdout, "Logged in to %s. Credentials saved to %s.\n", provider, authStorageLocation(ctx, agentDir, storage))
 	return 0
 }
 

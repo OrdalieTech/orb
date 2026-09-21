@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/OrdalieTech/orb/agent/config"
 	"io"
 	"net"
 	"os"
@@ -50,6 +51,13 @@ func bridgeDir(profile string) (string, error) {
 		}
 		return filepath.Join(root, profile), nil
 	}
+	if os.Getenv(config.EnvAgentDir) != "" {
+		agentDir, err := config.GetAgentDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(agentDir, "bridge", profile), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -61,7 +69,7 @@ func bridgeAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	token, err := os.ReadFile(filepath.Join(dir, "admin.token"))
+	token, err := stateFromContext(ctx).read(ctx, filepath.Join(dir, "admin.token"))
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +109,11 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 		return err
 	}
 	if explicit {
-		if err = os.Remove(filepath.Join(dir, "stopped")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = stateFromContext(ctx).write(ctx, filepath.Join(dir, "stopped"), nil); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	} else {
-		if _, err = os.Stat(filepath.Join(dir, "stopped")); err == nil {
+		if _, err = stateFromContext(ctx).read(ctx, filepath.Join(dir, "stopped")); err == nil {
 			return errors.New("bridge stopped; start it explicitly")
 		}
 	}
@@ -116,7 +124,7 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 			return err
 		}
 		// The older daemon writes its deliberate-stop marker during replacement.
-		if err = os.Remove(filepath.Join(dir, "stopped")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = stateFromContext(ctx).write(ctx, filepath.Join(dir, "stopped"), nil); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
@@ -255,12 +263,12 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 		if err = json.Unmarshal(params, &p); err != nil {
 			return nil, err
 		}
-		db, err := openBridgeCache(ctx, s.profile)
+		db, err := openBridgeCache(s.ctx, s.profile)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = db.Close() }()
-		return raw, db.Foreign(s.profile).Forget(ctx, p.PeerID)
+		return raw, db.Foreign(s.profile).Forget(s.ctx, p.PeerID)
 	case "invite":
 		raw, err := s.b.Admin(ctx, method, params)
 		if err != nil {
@@ -326,24 +334,24 @@ func runBridgeService(ctx context.Context, profile string) error {
 	if err != nil {
 		return err
 	}
-	store, err := native.OpenStore(filepath.Join(dir, "state.json"), protocol.MaxFrame)
+	store, err := stateFromContext(ctx).bridgeStore(filepath.Join(dir, "state.json"), protocol.MaxFrame)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	_, tokenErr := os.Stat(filepath.Join(dir, "admin.token"))
+	_, tokenErr := stateFromContext(ctx).read(ctx, filepath.Join(dir, "admin.token"))
 	b, err := bridge.Open(store, errors.Is(tokenErr, os.ErrNotExist))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = b.Close() }()
 	tokenPath := filepath.Join(dir, "admin.token")
-	token, err := os.ReadFile(tokenPath)
+	token, err := stateFromContext(ctx).read(ctx, tokenPath)
 	if errors.Is(err, os.ErrNotExist) {
 		var v [32]byte
 		_, _ = rand.Read(v[:])
 		token = []byte(base64.RawURLEncoding.EncodeToString(v[:]))
-		err = os.WriteFile(tokenPath, token, 0600)
+		err = stateFromContext(ctx).write(ctx, tokenPath, token)
 	}
 	if err != nil {
 		return err
@@ -372,7 +380,7 @@ func runBridgeService(ctx context.Context, profile string) error {
 			if err := protocol.Decode(params, &p); err != nil {
 				return nil, err
 			}
-			if err := os.WriteFile(filepath.Join(dir, "stopped"), []byte("stopped\n"), 0600); err != nil {
+			if err := stateFromContext(serviceCtx).write(ctx, filepath.Join(dir, "stopped"), []byte("stopped\n")); err != nil {
 				return nil, err
 			}
 			time.AfterFunc(100*time.Millisecond, stop)

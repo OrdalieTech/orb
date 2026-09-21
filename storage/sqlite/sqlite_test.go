@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai/auth"
@@ -16,6 +19,15 @@ import (
 func TestDocumentsCommitRollbackAndConcurrentWriters(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state", "orb.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := MigrationStatus(ctx, path, "native"); done || err != nil {
+		t.Fatalf("empty initial database was not recoverable: %v %v", done, err)
+	}
 	a, err := Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
@@ -26,6 +38,19 @@ func TestDocumentsCommitRollbackAndConcurrentWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = b.Close() }()
+	writer, err := a.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounded, cancel := context.WithTimeout(ctx, time.Second)
+	reader, openErr := Open(bounded, path)
+	cancel()
+	_ = writer.Rollback()
+	if openErr != nil {
+		t.Fatal("database open waited for writer", openErr)
+	}
+	_ = reader.Close()
+
 	var wg sync.WaitGroup
 	for _, db := range []*DB{a, b} {
 		wg.Go(func() {
@@ -82,6 +107,21 @@ func TestDocumentsCommitRollbackAndConcurrentWriters(t *testing.T) {
 	if err := a.Backup(ctx, backup); err == nil {
 		t.Fatal("backup overwrote existing file")
 	}
+	a.SetMaxOpenConns(1)
+	var pages int
+	if err := a.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pages); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ExecContext(ctx, "PRAGMA max_page_count="+strconv.Itoa(pages)); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Update(ctx, func([]byte) ([]byte, error) { return []byte(strings.Repeat("x", 2<<20)), nil }); err == nil {
+		t.Fatal("full database accepted write")
+	}
+	if got, err := doc.Read(ctx); err != nil || string(got) != "60" {
+		t.Fatal("full database lost committed state", err)
+	}
+
 }
 
 func TestNativeSettingsAndCredentialsUseDocuments(t *testing.T) {
@@ -175,7 +215,7 @@ func TestOpenRefusesUnsafeOrUnknownDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("DROP TABLE foreign_sessions; DROP TABLE foreign_sources; PRAGMA user_version=1"); err != nil {
+	if _, err := db.Exec("DROP TABLE foreign_sessions; DROP TABLE foreign_sources; DROP TABLE memory_items; DROP TABLE chat_pending; ALTER TABLE sessions DROP COLUMN preview; ALTER TABLE sessions DROP COLUMN message_count; PRAGMA user_version=1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Document("upgrade", "retained").Update(ctx, func([]byte) ([]byte, error) { return []byte("retained"), nil }); err != nil {
@@ -199,5 +239,120 @@ func TestOpenRefusesUnsafeOrUnknownDatabase(t *testing.T) {
 	if db, err := Open(ctx, path); err == nil {
 		_ = db.Close()
 		t.Fatal("accepted future schema")
+	}
+}
+
+func TestMigrationRestartConflictAndCutover(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	path := filepath.Join(root, "state", "orb.db")
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	source := filepath.Join(root, "settings.json")
+	broken := filepath.Join(root, "auth.json")
+	if err := os.WriteFile(source, []byte(`{"future":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(broken, []byte(`{`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sources := []MigrationSource{{Path: source, Namespace: "config", Key: "settings", Kind: "json"}, {Path: broken, Namespace: "config", Key: "auth", Kind: "json"}}
+	if err := db.Migrate(ctx, "native", sources); err == nil {
+		t.Fatal("damaged source published cutover")
+	}
+	done, err := db.Migrated(ctx, "native")
+	if err != nil || done {
+		t.Fatalf("premature cutover: %v %v", done, err)
+	}
+	// A failed source can be repaired; a successfully imported one cannot change.
+	if err := os.WriteFile(broken, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx, "native", sources); err != nil {
+		t.Fatal(err)
+	}
+	done, err = db.Migrated(ctx, "native")
+	if err != nil || !done {
+		t.Fatalf("no cutover: %v %v", done, err)
+	}
+	if err := db.Document("config", "settings").Update(ctx, func([]byte) ([]byte, error) { return []byte(`{"new":true}`), nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx, "native", sources); err != nil {
+		t.Fatal(err)
+	}
+	data, err := db.Document("config", "settings").Read(ctx)
+	if err != nil || string(data) != `{"new":true}` {
+		t.Fatal("restart reimported stale source", err)
+	}
+	original, err := os.ReadFile(source)
+	if err != nil || string(original) != `{"future":true}` {
+		t.Fatal("source was changed", err)
+	}
+	sources[0].Key = "settings"
+	if err := db.Migrate(ctx, "other", sources); err == nil {
+		t.Fatal("conflicting document overwritten")
+	}
+}
+
+func TestMigrationProcessCrashBeforeCutover(t *testing.T) {
+	ctx := context.Background()
+	if root := os.Getenv("ORB_MIGRATION_CRASH_ROOT"); root != "" {
+		db, err := Open(ctx, filepath.Join(root, "orb.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = db.Migrate(ctx, "crash", []MigrationSource{{Path: filepath.Join(root, "settings.json"), Namespace: "config", Key: "settings", Kind: "json"}}, func() error { os.Exit(23); return nil })
+		t.Fatal("did not interrupt", err)
+	}
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "settings.json")
+	original := []byte(`{"setting":true}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestMigrationProcessCrashBeforeCutover$")
+	command.Env = append(os.Environ(), "ORB_MIGRATION_CRASH_ROOT="+root)
+	output, err := command.CombinedOutput()
+	var failure *exec.ExitError
+	if !errors.As(err, &failure) || failure.ExitCode() != 23 {
+		t.Fatalf("child: %v %s", err, output)
+	}
+	db, err := Open(ctx, filepath.Join(root, "orb.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if done, err := db.Migrated(ctx, "crash"); err != nil || done {
+		t.Fatalf("premature cutover: %v %v", done, err)
+	}
+	sources := []MigrationSource{{Path: path, Namespace: "config", Key: "settings", Kind: "json"}}
+	if err := os.WriteFile(path, []byte(`{"setting":false}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx, "crash", sources); err == nil {
+		t.Fatal("accepted changed source after crash")
+	}
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx, "crash", sources); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := db.Migrated(ctx, "crash"); err != nil || !done {
+		t.Fatalf("restart did not finish: %v %v", done, err)
 	}
 }

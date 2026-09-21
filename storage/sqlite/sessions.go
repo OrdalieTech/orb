@@ -3,16 +3,20 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
@@ -101,7 +105,7 @@ func (r *Sessions) Open(ctx context.Context, metadata harness.SessionMetadata) (
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
-		result, err := tx.Exec(`UPDATE sessions SET revision=revision+1, modified=?, name=CASE WHEN ?='session_info' THEN ? ELSE name END WHERE namespace=? AND id=? AND revision=?`, time.Now().UTC().Format(time.RFC3339Nano), entry.Type, entry.Name, r.namespace, metadata.ID, revision)
+		result, err := tx.Exec(`UPDATE sessions SET revision=revision+1, modified=?, name=CASE WHEN ?='session_info' THEN ? ELSE name END,preview=CASE WHEN preview='' THEN ? ELSE preview END,message_count=message_count+? WHERE namespace=? AND id=? AND revision=?`, time.Now().UTC().Format(time.RFC3339Nano), entry.Type, entry.Name, userPreview(entry.Message), boolInt(entry.Type == "message"), r.namespace, metadata.ID, revision)
 		if err != nil {
 			return err
 		}
@@ -170,8 +174,43 @@ func (r *Sessions) Fork(ctx context.Context, source harness.SessionMetadata, opt
 
 var _ harness.SessionRepo = (*Sessions)(nil)
 
-// Import preserves v3 payloads; callers migrate older Pi formats with its codecs.
+// Import upgrades legacy Pi trees without modifying their source files.
 func (r *Sessions) Import(ctx context.Context, content []byte) (harness.SessionMetadata, error) {
+	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+	for i, line := range lines {
+		if len(bytes.TrimSpace(line)) != 0 && !json.Valid(line) {
+			return harness.SessionMetadata{}, fmt.Errorf("invalid session record at line %d", i+1)
+		}
+	}
+	var header struct {
+		Type    string
+		Version int
+	}
+	if len(lines) == 0 || json.Unmarshal(lines[0], &header) != nil || header.Type != "session" || header.Version > 3 || header.Version < 0 {
+		return harness.SessionMetadata{}, errors.New("unsupported session header")
+	}
+	if header.Version < 3 {
+		records := session.ParseSessionEntries(string(content))
+		digest, sequence := sha256.Sum256(content), 0
+		_, err := session.MigrateSessionEntries(records, func() (string, error) {
+			sequence++
+			id := sha256.Sum256([]byte(fmt.Sprintf("%x:%d", digest, sequence)))
+			return fmt.Sprintf("%x", id[:4]), nil
+		})
+		if err != nil {
+			return harness.SessionMetadata{}, err
+		}
+		var migrated bytes.Buffer
+		for _, record := range records {
+			data, err := record.MarshalJSON()
+			if err != nil {
+				return harness.SessionMetadata{}, err
+			}
+			migrated.Write(data)
+			migrated.WriteByte('\n')
+		}
+		content = migrated.Bytes()
+	}
 	return r.importJournal(ctx, content, "", true)
 }
 
@@ -183,12 +222,30 @@ func (r *Sessions) importJournal(ctx context.Context, content []byte, parent str
 	m := s.Metadata()
 	header := s.HeaderJSON()
 	entries := s.Entries()
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.ID == "" || seen[entry.ID] || (entry.ParentID != nil && !seen[*entry.ParentID]) {
+			return m, fmt.Errorf("invalid session tree at entry %q", entry.ID)
+		}
+		seen[entry.ID] = true
+	}
+	for _, entry := range entries {
+		if (entry.TargetID != nil && !seen[*entry.TargetID]) || (entry.FirstKeptEntryID != "" && !seen[entry.FirstKeptEntryID]) {
+			return m, fmt.Errorf("missing session reference at entry %q", entry.ID)
+		}
+	}
 	var normalized bytes.Buffer
 	normalized.Write(header)
 	normalized.WriteByte('\n')
 	payloads := make([][]byte, len(entries))
-	name := ""
+	name, preview, count := "", "", 0
 	for i, entry := range entries {
+		if entry.Type == "message" {
+			count++
+			if preview == "" {
+				preview = userPreview(entry.Message)
+			}
+		}
 		payloads[i], err = harness.MarshalSessionTreeEntry(entry)
 		if err != nil {
 			return m, err
@@ -233,7 +290,7 @@ func (r *Sessions) importJournal(ctx context.Context, content []byte, parent str
 	if len(entries) > 0 {
 		modified = entries[len(entries)-1].Timestamp
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO sessions(namespace,id,header,cwd,created,modified,name,revision,parent_id) VALUES(?,?,?,?,?,?,?,?,?)`, r.namespace, m.ID, header, m.CWD, m.CreatedAt, modified, name, len(entries), parent)
+	_, err = tx.ExecContext(ctx, `INSERT INTO sessions(namespace,id,header,cwd,created,modified,name,revision,parent_id,preview,message_count) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, r.namespace, m.ID, header, m.CWD, m.CreatedAt, modified, name, len(entries), parent, preview, count)
 	if err != nil {
 		return m, err
 	}
@@ -251,11 +308,14 @@ type CatalogQuery struct {
 	Archived            bool
 }
 type CatalogEntry struct {
-	ID       string `json:"id"`
-	CWD      string `json:"cwd"`
-	Name     string `json:"name"`
-	Created  string `json:"created"`
-	Modified string `json:"modified"`
+	ParentID     string `json:"parent_id,omitempty"`
+	Preview      string `json:"preview,omitempty"`
+	MessageCount int    `json:"message_count"`
+	ID           string `json:"id"`
+	CWD          string `json:"cwd"`
+	Name         string `json:"name"`
+	Created      string `json:"created"`
+	Modified     string `json:"modified"`
 }
 type CatalogPage struct {
 	Sessions []CatalogEntry `json:"sessions"`
@@ -272,7 +332,7 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 	if q.Limit < 1 || q.Limit > 128 || len(q.Cursor) > 4096 || len(q.Search) > 1024 {
 		return result, errors.New("invalid catalog query")
 	}
-	query := "SELECT sessions.id,sessions.cwd,sessions.name,sessions.created,sessions.modified FROM sessions WHERE namespace=? AND archived=?"
+	query := "SELECT sessions.id,sessions.cwd,sessions.name,sessions.created,sessions.modified,sessions.preview,sessions.message_count,coalesce(sessions.parent_id,'') FROM sessions WHERE namespace=? AND archived=?"
 	args := []any{r.namespace, q.Archived}
 	if q.CWD != "" {
 		query += " AND sessions.cwd=?"
@@ -307,7 +367,7 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var entry CatalogEntry
-		if err = rows.Scan(&entry.ID, &entry.CWD, &entry.Name, &entry.Created, &entry.Modified); err != nil {
+		if err = rows.Scan(&entry.ID, &entry.CWD, &entry.Name, &entry.Created, &entry.Modified, &entry.Preview, &entry.MessageCount, &entry.ParentID); err != nil {
 			return result, err
 		}
 		result.Sessions = append(result.Sessions, entry)
@@ -322,4 +382,91 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 		result.Next = base64.RawURLEncoding.EncodeToString(data)
 	}
 	return result, nil
+}
+
+// OpenPath accepts a true JSONL import path or a native session ID.
+func (r *Sessions) OpenPath(ctx context.Context, reference string) (*harness.Session, error) {
+	if strings.ContainsAny(reference, `/\`) || strings.HasSuffix(reference, ".jsonl") {
+		data, err := os.ReadFile(reference)
+		if err != nil {
+			return nil, err
+		}
+		metadata, err := r.Import(ctx, data)
+		if err != nil {
+			return nil, err
+		}
+		return r.Open(ctx, metadata)
+	}
+	rows, err := r.db.QueryContext(ctx, "SELECT id FROM sessions WHERE namespace=? AND id>=? AND id<? ORDER BY id=? DESC,id LIMIT 2", r.namespace, reference, reference+"\uffff", reference)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			break
+		}
+		ids = append(ids, id)
+	}
+	err = errors.Join(err, rows.Err(), rows.Close())
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("session %q: %w", reference, fs.ErrNotExist)
+	}
+	if len(ids) > 1 && ids[0] != reference {
+		return nil, errors.New("ambiguous session ID")
+	}
+	return r.Open(ctx, harness.SessionMetadata{ID: ids[0]})
+}
+
+func (r *Sessions) ListInfo(ctx context.Context, cwd string, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+	var result []session.SessionInfo
+	query := CatalogQuery{CWD: cwd}
+	nextUpdate := 128
+	for {
+		page, err := r.Catalog(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range page.Sessions {
+			created, _ := time.Parse(time.RFC3339Nano, entry.Created)
+			modified, _ := time.Parse(time.RFC3339Nano, entry.Modified)
+			info := session.SessionInfo{ID: entry.ID, ParentID: entry.ParentID, CWD: entry.CWD, Created: created, Modified: modified, FirstMessage: entry.Preview, AllMessagesText: entry.Preview, MessageCount: entry.MessageCount}
+			if entry.Name != "" {
+				name := entry.Name
+				info.Name = &name
+			}
+			result = append(result, info)
+		}
+		if update != nil && (len(result) >= nextUpdate || page.Next == "") {
+			nextUpdate = max(nextUpdate*2, len(result)*2)
+			update(session.SessionListUpdate{Loaded: len(result), Total: len(result), Sessions: append([]session.SessionInfo(nil), result...)})
+		}
+		if page.Next == "" {
+			break
+		}
+		query.Cursor = page.Next
+	}
+	return result, nil
+}
+
+func userPreview(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var preview ForeignSession
+	preview.AddMessage(raw)
+	if len(preview.Messages) == 1 && preview.Messages[0].Role == "user" {
+		return clip(preview.Messages[0].Text, 1024)
+	}
+	return ""
+}
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

@@ -28,6 +28,9 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 			profile = "personal"
 		}
 		api.On(extensions.EventSessionStart, func(ctx context.Context, _ extensions.Event, c extensions.Context) (any, error) {
+			if args.native != nil {
+				ctx = context.WithValue(ctx, nativeStateKey{}, args.native)
+			}
 			if args.BridgeProfile == "" && !settings.GetPlugins()["bridge"] {
 				return nil, nil
 			}
@@ -43,6 +46,9 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 			return nil, nil
 		})
 		api.RegisterCommand("bridge", extensions.Command{Description: "Connect devices and open their conversations", Handler: func(ctx context.Context, _ string, c extensions.CommandContext) error {
+			if args.native != nil {
+				ctx = context.WithValue(ctx, nativeStateKey{}, args.native)
+			}
 			if c.Mode() != extensions.ModeTUI {
 				return fmt.Errorf("bridge administration requires the local TUI")
 			}

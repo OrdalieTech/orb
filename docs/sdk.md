@@ -248,7 +248,7 @@ sm, _ := sessionstore.Create(cwd, sessionDir)
 sm, _ := sessionstore.InMemory(".")
 ```
 
-Native persistence is opt-in through `storage/sqlite.Open(ctx, absolutePath)`.
+For SDK consumers, native persistence is opt-in through `storage/sqlite.Open(ctx, absolutePath)`.
 Use `db.Sessions(namespace)` as a `harness.SessionRepo`, then adapt its storage
 with `sessionstore.FromHarnessStorage(s.Storage(), sessionstore.WithHarnessRepo(repo))`.
 The caller owns the database lifetime. Sessions have IDs, no synthetic file paths;
@@ -265,8 +265,40 @@ repositories. Keys include the peer, namespace and session ID. Previews retain a
 visible user/assistant messages, 4 KiB per message and 32 KiB encoded per session; seven-day
 expiry and 128-per-peer / 1,024-per-profile limits bound retention. Allocate a refresh token
 before network I/O with `Begin`; `Forget` fences older responses as well as deleting content.
-CLI Bridge views use `~/.orb/state/orb.db` (or `$ORB_BRIDGE_HOME/state/orb.db` for isolated roots).
+The CLI uses SQLite by default at `$ORB_STATE_HOME/orb.db`, or `~/.orb/state/orb.db`.
+An explicit `PI_CODING_AGENT_DIR` defaults to `<agentDir>/state/orb.db`; otherwise an explicit
+`ORB_BRIDGE_HOME` defaults to `<bridgeHome>/state/orb.db`. These are assembly choices, never
+implicit SDK configuration.
 Only visited conversations are cached; reopening always consults the owning Bridge.
+
+Native startup automatically migrates existing v1/v2/v3 sessions and global capability state after
+checking that legacy Orb processes have stopped. To include additional session roots before the
+first startup, run `orb storage migrate /absolute/legacy/root ...`. Originals are retained and
+must not be reopened for writing by old binaries. Failed migrations leave them intact; resume
+with the same inventory and source bytes. A changed source after admission is rejected, not
+silently overwritten. Harness v4 remains available through its existing SDK APIs, but v4 journals
+are not admitted by the native v3 adapter.
+
+Use `orb storage import file.jsonl`, `orb storage export <id> file.jsonl`, and
+`orb storage backup /private/directory/backup.db`. `orb storage restore backup.db` recovers
+conversations without overwriting conflicting current history or restoring old authority and
+receipts; it is not an in-place full-state rollback. Export files and backups never overwrite an
+existing destination. `orb --export <id> output.html` also supports `.md` output. Native
+`--session-dir` is replaced by the state-root setting and explicit migration/import commands;
+`orb --pi-files ...` retains the file-based CLI contract for a separate compatibility root.
+
+Global files can be deliberately exchanged with `orb storage config export settings.json file.json`
+and `orb storage config import settings.json file.json`, including `models.json`, `keybindings.json`,
+`auth.json`, `accounts.json`, `trust.json` and `models-store.json`. Import atomically replaces that
+native document; restart to refresh already-loaded configuration. Exports are private
+and refuse to overwrite files. Never edit the retained migration originals to configure native Orb.
+
+Models, account catalogs and chat/memory also accept explicit persistence through
+`NewModelRegistryWithDocuments`, `accounts.NewStoreWithDocument`, `chat.WithPersistence`,
+`chat.NewLocalWithSpool` and `db.Memory(namespace)`. `AgentSessionRuntime.SetSessionClaim`
+lets a host reject destination ownership before tearing down the current runtime; it is unset
+by default and changes no existing interface method set.
+
 
 ## Settings
 
