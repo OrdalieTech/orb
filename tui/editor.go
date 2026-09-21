@@ -946,13 +946,14 @@ func (editor *Editor) handleData(data string) {
 		}
 		if kb.Matches(data, "tui.select.confirm") {
 			beforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
+			submitSlash := strings.HasPrefix(editor.autocompletePrefix, "/") && editor.isInSlashCommandContext(beforeCursor)
 			if !strings.HasSuffix(beforeCursor, editor.autocompletePrefix) {
 				editor.cancelAutocomplete()
 			} else if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
 				editor.pushUndoSnapshot()
 				editor.lastAction = ""
 				editor.applyCompletionResult(item)
-				if strings.HasPrefix(editor.autocompletePrefix, "/") {
+				if submitSlash {
 					editor.cancelAutocomplete()
 					// Fall through to submit.
 				} else {
@@ -2260,7 +2261,7 @@ func (editor *Editor) requestAutocomplete(force, explicitTab bool) {
 func (editor *Editor) setAutocompleteTriggerCharacters(triggerCharacters []string) {
 	next := append([]string(nil), defaultAutocompleteTriggerCharacters...)
 	for _, character := range triggerCharacters {
-		if runeLen(character) != 1 || character == "/" || isWhitespaceChar(character) || containsString(next, character) {
+		if runeLen(character) != 1 || isWhitespaceChar(character) || containsString(next, character) {
 			continue
 		}
 		next = append(next, character)

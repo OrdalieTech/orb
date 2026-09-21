@@ -961,6 +961,33 @@ func TestSkillAtAutocompleteInvokesCanonicalCommand(t *testing.T) {
 	if applied.Lines[0] != "/skill:inspect-skill " {
 		t.Fatalf("mid-token completion = %#v", applied)
 	}
+	if blankFirst := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"", "@inspect"}, 1, 8, false); blankFirst == nil || blankFirst.Items[0].Label != "[skill] inspect-skill" {
+		t.Fatalf("skill after an empty first line = %#v", blankFirst)
+	}
+	if slash := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"Please /"}, 0, len("Please /"), false); slash == nil || len(slash.Items) != 1 || slash.Items[0].Label != "[skill] inspect-skill" {
+		t.Fatalf("inline slash exposed ordinary commands: %#v", slash)
+	}
+	inline := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"Please /insp continue"}, 0, len("Please /insp"), false)
+	if inline == nil || inline.Prefix != "/insp" || len(inline.Items) != 1 || inline.Items[0].Label != "[skill] inspect-skill" {
+		t.Fatalf("inline slash suggestions = %#v", inline)
+	}
+	applied = mode.autocompleteProvider.ApplyCompletion([]string{"Please /insp continue"}, 0, len("Please /insp"), inline.Items[0], inline.Prefix)
+	if applied.Lines[0] != "Please /skill:inspect-skill continue" {
+		t.Fatalf("inline skill completion = %#v", applied)
+	}
+	if got := mode.autocompleteProvider.(*skillAutocompleteProvider).promoteInlineSkill(applied.Lines[0]); got != "/skill:inspect-skill Please continue" {
+		t.Fatalf("inline skill was not promoted to the existing skill resolver: %q", got)
+	}
+	mode.inputCh = make(chan inputEntry, 1)
+	mode.setupEditorSubmitHandler()
+	mode.editor.SetText(applied.Lines[0])
+	mode.editor.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if len(mode.inputCh) != 1 {
+		t.Fatal("inline skill was not submitted")
+	}
+	if entry := <-mode.inputCh; entry.text != "/skill:inspect-skill Please continue" {
+		t.Fatalf("submitted inline skill = %q", entry.text)
+	}
 
 	for _, test := range []struct {
 		name     string

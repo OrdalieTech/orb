@@ -873,6 +873,10 @@ type scriptedProvider struct {
 	calls   atomic.Int64
 }
 
+type slashScriptedProvider struct{ *scriptedProvider }
+
+func (*slashScriptedProvider) TriggerCharacters() []string { return []string{"/"} }
+
 type reentrantProvider struct {
 	*scriptedProvider
 	editor        *Editor
@@ -1156,6 +1160,24 @@ func TestEditorSlashCommandConfirmSubmits(t *testing.T) {
 		t.Fatalf("submitted = %q", submitted)
 	}
 	wantText(t, editor, "")
+}
+
+func TestEditorInlineSlashCompletionKeepsDraft(t *testing.T) {
+	editor := newTestEditor()
+	editor.SetAutocompleteProvider(&slashScriptedProvider{&scriptedProvider{suggest: func([]string, int, int, bool) *AutocompleteSuggestions {
+		return &AutocompleteSuggestions{Items: []AutocompleteItem{{Value: "/skill:inspect", Label: "[skill] inspect"}}, Prefix: "/"}
+	}}})
+	submitted := false
+	editor.OnSubmit = func(string) { submitted = true }
+	press(editor, "a", " ", "/")
+	editor.flushAutocomplete()
+	if !editor.IsShowingAutocomplete() {
+		t.Fatal("inline slash menu did not open")
+	}
+	press(editor, "\r")
+	if submitted || editor.GetText() != "a /skill:inspect" {
+		t.Fatalf("inline skill submitted instead of staying in the draft: %q, submitted=%v", editor.GetText(), submitted)
+	}
 }
 
 func TestEditorStaleSlashAutocompleteDoesNotRewriteSubmit(t *testing.T) {
