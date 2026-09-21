@@ -4,6 +4,22 @@ The active sequence is `SPRINTS.md`; the old work-package numbers are historical
 only. Progress is measured by conformance surfaces moving from red to green and by milestone
 criteria closing.
 
+## Orb/OpenCode evaluation — 2026-09-20
+
+External runner lives in `../orb-evals/` (Harbor 0.23.0, OpenCode V2.0.11).
+All four offline Linux CLI/model checks pass, including a tool round trip and outgoing routing,
+reasoning and token-limit assertions. Harbor installation in the real DeepSWE image passes;
+the unmodified grader passes negative (`nop=0`) and positive (`oracle=1`) controls on
+`abs-module-cache-flags`. The owner stopped the initial DeepSWE pilot after four complete pairs
+because the desired coverage is newer and broader; its provisional Orb 1/4 versus OpenCode 2/4
+result is explicitly non-conclusive. The replacement panel uses Terminal-Bench 4.0 and DocOps at
+their pinned August/July 2026 revisions: 10 seeded CPU terminal tasks plus 16 document tasks
+stratified across L1-L4 and Word/Excel/PowerPoint/PDF. Cost is recomputed from per-request
+persisted tokens and captured provider prices; key-wide usage deltas only enforce the campaign
+budget because the credential may also serve backend traffic. Both official verifiers passed
+negative and positive controls; the 52-attempt Luna campaign is running from
+`../orb-evals/results/recent-20260920-221716/`.
+
 ## Pi v0.86.0 adoption — 2026-09-20
 
 Owner-approved implementation with production headless compatibility required: retain existing
