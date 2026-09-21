@@ -39,16 +39,27 @@ func (b *Bridge) Admin(_ context.Context, method string, params json.RawMessage)
 				peers = append(peers, g.Principal.PeerID)
 			}
 		}
+		slices.Sort(peers)
+		states := make(map[string]string, len(peers))
+		for _, peer := range peers {
+			states[peer] = "disconnected"
+			if b.state.Blocked[peer] {
+				states[peer] = "blocked"
+			} else if b.connectionLocked(peer) != nil {
+				states[peer] = "connected"
+			}
+		}
 		return connect.JSON(struct {
-			PeerID    string              `json:"peer_id"`
-			BootID    string              `json:"bridge_boot_id"`
-			Groups    map[string]string   `json:"groups"`
-			Scopes    map[string][]string `json:"scopes"`
-			Grants    []Grant             `json:"grants"`
-			Instances []Instance          `json:"instances"`
-			Pending   []Invitation        `json:"pending"`
-			Peers     []string            `json:"peers"`
-		}{b.PeerID(), b.boot, b.state.Groups, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
+			PeerStates map[string]string   `json:"peer_states"`
+			PeerID     string              `json:"peer_id"`
+			BootID     string              `json:"bridge_boot_id"`
+			Groups     map[string]string   `json:"groups"`
+			Scopes     map[string][]string `json:"scopes"`
+			Grants     []Grant             `json:"grants"`
+			Instances  []Instance          `json:"instances"`
+			Pending    []Invitation        `json:"pending"`
+			Peers      []string            `json:"peers"`
+		}{states, b.PeerID(), b.boot, b.state.Groups, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
 	case "enroll":
 		var p struct {
 			Alias string `json:"alias"`

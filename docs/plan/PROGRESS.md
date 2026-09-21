@@ -571,13 +571,14 @@ Final static release builds use `CGO_ENABLED=0`, the release tags, `-trimpath`, 
 
 | Target | Bytes |
 |---|---:|
-| linux-amd64 | 50,458,784 |
+| linux-amd64 | 50,552,992 |
 | linux-arm64 | 47,710,368 |
-| darwin-amd64 | 51,487,072 |
-| darwin-arm64 | 49,012,306 |
+| darwin-amd64 | 51,582,576 |
+| darwin-arm64 | 49,096,162 |
 
-All remain below 55 MB decimal. Forty warm-cache Darwin/arm64 `--version` runs measured
-16.87 ms mean, 16.02 ms median, and 32.26 ms maximum (50 ms budget).
+Refreshed after guided pairing and SSH setup: all remain below 55 MB decimal. Forty warm-cache
+Darwin/arm64 `--version` runs after five warmups measured 10.63 ms mean, 10.21 ms median, and
+19.45 ms maximum (50 ms budget).
 Bridge-only protocol schemas are in ARCHITECTURE and tests in `connect`/`bridge`; SDK assembly
 and user commands are documented in `docs/sdk.md`. Unrelated concurrent progress and UI changes
 were preserved. Isolated remote test services and scratch profiles were removed after validation.
@@ -601,6 +602,36 @@ and service enable → attached runtime → persistent stop. Test services and p
 `make check` passes with the documented Node 24 fixture runner: static build, vet, zero lint
 issues, complete race suite, layering checks, and shipped-build Pi/provider conformance.
 Existing Orb-owned snapshots remain green; no golden changes or new dependencies were needed.
+
+## 2026-09-21 — Guided pairing and SSH setup
+
+The Bridge home page exposes Share this Orb, Connect to a device, and Connect using SSH before
+activation. Sharing chooses view/control and current/future access, copies a bounded versioned
+invitation, waits for a claim, and asks the owner to approve the exact device and grants. Joining
+waits for approval and opens the shared conversation picker. The home-page hint says Choose
+access; only the actual clipboard action says Copy invitation. Legacy JSON invitations still work.
+Saved devices show Connected, Not connected, or Blocked from live connection state; pairings
+persist when stopped. CLI stop now waits for disconnection, fixing an immediate stop/start race.
+
+The optional native SSH shortcut uses the existing system client and verified host keys to start
+an installed remote Orb and pair through its local-owner commands. Conversation traffic then uses
+Bridge. The TUI targets the personal profile; `orb bridge connect-ssh` additionally accepts a
+remote profile and executable. Future-instance access remains explicit, and the server receives
+no reciprocal grant. No new source files, dependencies, exported SDK changes, or core imports.
+
+Regression tests cover clipboard payload equality, invitation parsing/expiry/bounds, approval
+binding and refusal, polling cancellation, SSH host validation/shell quoting, live peer states,
+and stop completion. A built-binary PTY exercised Share → access → Copy → paste → fingerprint
+verification → automatic approval → shared picker → idle remote view → Escape. Its clipboard
+command was replaced with an isolated capture, preserving the user's real clipboard. Both
+`ordalie-lab-3` and `ordalie-edge` passed automatic SSH pairing and authorized Bridge conversation
+inspection with isolated test installations. Three immediate stop/start cycles retained pairings,
+changed the boot identity, and cleared live connections. Scratch profiles, installations, and
+processes were removed; remote process checks confirmed none remained.
+
+`make check` passes using the documented Node 24 runner, including vet/lint, the full race suite,
+layering checks, and shipped-build Pi/provider conformance. All four static release builds and
+the refreshed measurements above pass. Existing TUI snapshots remain green without regeneration.
 
 ## Owner-blocked evidence
 - Anthropic Pro/Max end-to-end OAuth requires an interactive subscribed account.

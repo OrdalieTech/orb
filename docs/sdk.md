@@ -469,6 +469,24 @@ without constructing a local model or requiring provider credentials. Invitation
 private transport locator and one-use claim secret; exchange them with the intended device,
 verify both displayed PeerIDs, and approve the exact directional grants locally.
 
+To pair two Orbs, choose **Share this Orb** on the device hosting conversations, select view or
+control access and whether future conversations are included, then copy its invitation. On the
+other Orb choose **Connect to a device**, paste the invitation, and verify the fingerprint.
+The sharing screen automatically shows the incoming request for approval; after approval the
+joining device opens the shared conversation picker. Either action enables Bridge when needed.
+Saved devices remain listed after stopping; **Connected**, **Not connected**, and **Blocked**
+describe actual access/connection state when the page is opened or refreshed.
+
+For a server you already access through SSH, choose **Connect using SSH** or run
+`orb bridge connect-ssh user@host`. Orb must be installed on the server, and your system SSH
+client must already connect without a password or host-key prompt. SSH aliases and configuration
+are supported. The shortcut starts the server's Bridge and approves access to its personal
+group's current conversations using your SSH login; `--include-future` explicitly includes new
+conversations. `--remote-profile` and `--remote-orb` select a different remote profile or executable;
+`--profile` selects the local profile. Conversation traffic then uses Bridge, and the server
+receives no reciprocal access. Enable Bridge in a remote Orb conversation to attach it before
+pairing, or explicitly include future conversations.
+
 Scripted administration uses `orb bridge status|instances|peers|grants|groups|scopes`,
 `orb bridge pair invite [--include-future]`, `orb bridge pair join` (invitation JSON on stdin),
 and `orb bridge pair approve <invitation-id> <claimant-peer-id>`. `grant`, `revoke`, `group`,

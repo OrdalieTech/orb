@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Guide Bridge pairing through copy/paste invitations and approval, add automatic pairing through existing SSH access, and distinguish saved devices from active connections. Wait for Bridge shutdown before returning from `orb bridge stop`.
+
 - Unify Bridge, plugins, permissions, and MCP with the command palette’s borderless themed panels and dimmed backdrop.
 
 - Make Bridge a built-in Settings and Ctrl+P page with one service switch, paired devices, access controls, and an optional agent-call setting. Plugins opens its page directly from Ctrl+P without changing the draft.

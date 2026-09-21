@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -63,6 +64,18 @@ func bridgeAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
 	}
 	return native.Dial(ctx, filepath.Join(dir, "admin.sock"), native.Auth{Credential: string(token)}, nil, nil)
 }
+
+func waitBridgeStopped(ctx context.Context, client *protocol.Conn) error {
+	select {
+	case <-client.Done():
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(2 * time.Second):
+		return fmt.Errorf("bridge is still stopping; refresh its status before restarting")
+	}
+}
+
 func startBridge(ctx context.Context, profile string, explicit bool) error {
 	dir, err := bridgeDir(profile)
 	if err != nil {
@@ -441,7 +454,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes [--profile personal]\norb bridge pair invite [--include-future] | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes [--profile personal]\norb bridge pair invite [--include-future] | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge connect-ssh <user@host> [--include-future] [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
@@ -456,6 +469,52 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		if err := startBridge(ctx, profile, true); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
+		return 0
+	}
+	if args[0] == "connect-ssh" {
+		if len(args) < 2 {
+			return reportCLIError(streams.Stderr, fmt.Errorf("connect-ssh requires user@host or an SSH alias"))
+		}
+		target, remoteProfile, remoteOrb, future := args[1], "personal", "orb", false
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--include-future":
+				future = true
+			case "--remote-profile", "--remote-orb":
+				flag := args[i]
+				i++
+				if i >= len(args) {
+					return reportCLIError(streams.Stderr, fmt.Errorf("%s requires a value", flag))
+				}
+				if flag == "--remote-profile" {
+					remoteProfile = args[i]
+				} else {
+					remoteOrb = args[i]
+				}
+			default:
+				return reportCLIError(streams.Stderr, fmt.Errorf("unknown connect-ssh option"))
+			}
+		}
+		if _, err := bridgeSSHCommand(target, remoteOrb, remoteProfile); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		if err := startBridge(ctx, profile, true); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		client, err := bridgeAdmin(ctx, profile)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		defer func() { _ = client.Close() }()
+		var status bridgeSettingsStatus
+		if err = client.Call(ctx, "status", struct{}{}, &status); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		peer, err := connectBridgeSSH(ctx, client, status.PeerID, target, remoteProfile, remoteOrb, future)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		_, _ = fmt.Fprintln(streams.Stdout, peer)
 		return 0
 	}
 	if args[0] == "view" && len(args) == 3 {
@@ -539,6 +598,87 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	if err = client.Call(ctx, method, params, &result); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
+	if method == "stop" {
+		if err = waitBridgeStopped(ctx, client); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+	}
 	_, _ = fmt.Fprintln(streams.Stdout, string(result))
 	return 0
+}
+
+// OpenSSH is an explicit native host integration, like the system clipboard;
+// SSH keys and host verification stay with the user's existing SSH configuration.
+func bridgeSSHCommand(target, remoteOrb, profile string, args ...string) ([]string, error) {
+	if target == "" || len(target) > 255 || strings.HasPrefix(target, "-") || strings.Trim(target, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-@[]:") != "" {
+		return nil, fmt.Errorf("enter an SSH alias or user@host, without command-line options")
+	}
+	if !validBridgeName(profile) || remoteOrb == "" || strings.ContainsAny(remoteOrb, "\r\n\x00") {
+		return nil, fmt.Errorf("invalid remote Orb path or profile")
+	}
+	command := []string{remoteOrb, "bridge", "--profile", profile}
+	command = append(command, args...)
+	for i, arg := range command {
+		command[i] = "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
+	}
+	return []string{"-T", "-oBatchMode=yes", "-oStrictHostKeyChecking=yes", "-oConnectTimeout=10", "-oClearAllForwardings=yes", "--", target, "exec " + strings.Join(command, " ")}, nil
+}
+
+func runBridgeSSH(ctx context.Context, target, remoteOrb, profile string, args ...string) ([]byte, error) {
+	arguments, err := bridgeSSHCommand(target, remoteOrb, profile, args...)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "ssh", arguments...)
+	command.WaitDelay = time.Second
+	command.Stderr = io.Discard
+	pipe, err := command.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err = command.Start(); err != nil {
+		return nil, fmt.Errorf("SSH unavailable: %w", err)
+	}
+	output, readErr := io.ReadAll(io.LimitReader(pipe, protocol.MaxFrame+1))
+	if len(output) > protocol.MaxFrame {
+		cancel()
+		_ = command.Wait()
+		return nil, fmt.Errorf("SSH response exceeded the Bridge limit")
+	}
+	waitErr := command.Wait()
+	if readErr != nil || waitErr != nil {
+		return nil, fmt.Errorf("could not run Orb through SSH on %s; first verify your SSH login and host key, and install Orb on the server", target)
+	}
+	return output, nil
+}
+
+func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, target, remoteProfile, remoteOrb string, future bool) (string, error) {
+	if _, err := runBridgeSSH(ctx, target, remoteOrb, remoteProfile, "start"); err != nil {
+		return "", err
+	}
+	args := []string{"pair", "invite"}
+	if future {
+		args = append(args, "--include-future")
+	}
+	raw, err := runBridgeSSH(ctx, target, remoteOrb, remoteProfile, args...)
+	if err != nil {
+		return "", err
+	}
+	inv, err := parseBridgeInvitation(string(raw))
+	if err != nil {
+		return "", err
+	}
+	var claimed bridge.Invitation
+	if err = client.Call(ctx, "join", inv, &claimed); err != nil {
+		return "", fmt.Errorf("SSH connected, but Bridge could not reach the server: %w", err)
+	}
+	if claimed.ID != inv.ID || claimed.PeerID != inv.PeerID || claimed.Claimant != localPeer {
+		return "", fmt.Errorf("pairing identity changed")
+	}
+	if _, err = runBridgeSSH(ctx, target, remoteOrb, remoteProfile, "pair", "approve", inv.ID, localPeer); err != nil {
+		return "", err
+	}
+	return inv.PeerID, nil
 }
