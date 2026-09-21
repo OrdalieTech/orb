@@ -768,6 +768,28 @@ func TestEditorPasteMarkers(t *testing.T) {
 	wantText(t, editor, "A"+marker+"B")
 }
 
+func TestEditorImageMarkerIsOneEditingUnit(t *testing.T) {
+	editor := newTestEditor()
+	editor.SetText("A[Image #12]B")
+	press(editor, "\x01", "\x1b[C", "\x1b[C")
+	wantCursor(t, editor, 0, len("A[Image #12]"))
+	press(editor, "\x7f")
+	wantText(t, editor, "AB")
+	wantCursor(t, editor, 0, 1)
+	press(editor, "\x1f")
+	wantText(t, editor, "A[Image #12]B")
+	press(editor, "\x1b[D")
+	wantCursor(t, editor, 0, 1)
+	press(editor, "\x1b[3~")
+	wantText(t, editor, "AB")
+	editor.SetText("A[Image #12]B")
+	editor.Render(40)
+	editor.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Column: 10, Clicks: 1})
+	wantCursor(t, editor, 0, len("A[Image #12]"))
+	press(editor, "\x7f")
+	wantText(t, editor, "AB")
+}
+
 func TestEditorPasteRegistryTracksMarkerDeletion(t *testing.T) {
 	t.Run("undo deletion", func(t *testing.T) {
 		editor := newTestEditor()

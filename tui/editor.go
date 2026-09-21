@@ -18,33 +18,45 @@ import (
 var (
 	pasteMarkerRegex  = regexp.MustCompile(`\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]`)
 	pasteMarkerSingle = regexp.MustCompile(`^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$`)
+	imageMarkerRegex  = regexp.MustCompile(`\[Image #\d+\]`)
+	imageMarkerSingle = regexp.MustCompile(`^\[Image #\d+\]$`)
 )
 
-// isPasteMarker reports whether a segment was merged by segmentWithMarkers.
-func isPasteMarker(value string) bool {
-	return len(value) >= 10 && pasteMarkerSingle.MatchString(value)
+// isAtomicMarker reports whether a segment was merged by segmentWithMarkers.
+func isAtomicMarker(value string) bool {
+	return len(value) >= 10 && (pasteMarkerSingle.MatchString(value) || imageMarkerSingle.MatchString(value))
 }
 
-// segmentWithMarkers merges base segments falling inside paste markers into
-// single atomic segments so cursor movement, deletion, and word-wrap treat
-// markers as units. Only markers whose ID exists in validIDs are merged.
+// segmentWithMarkers makes paste and image markers atomic for editing and wrapping.
+// Paste markers only count while their IDs exist in validIDs.
 func segmentWithMarkers(text string, base func(string) []segment, validIDs map[int]bool) []segment {
-	if len(validIDs) == 0 || !strings.Contains(text, "[paste #") {
+	hasPastes := len(validIDs) > 0 && strings.Contains(text, "[paste #")
+	hasImages := strings.Contains(text, "[Image #")
+	if !hasPastes && !hasImages {
 		return base(text)
 	}
 	type span struct{ start, end int }
 	var markers []span
-	for _, match := range pasteMarkerRegex.FindAllStringSubmatchIndex(text, -1) {
-		id, _ := strconv.Atoi(text[match[2]:match[3]])
-		if !validIDs[id] {
-			continue
+	if hasPastes {
+		for _, match := range pasteMarkerRegex.FindAllStringSubmatchIndex(text, -1) {
+			id, _ := strconv.Atoi(text[match[2]:match[3]])
+			if !validIDs[id] {
+				continue
+			}
+			start := utf8.RuneCountInString(text[:match[0]])
+			markers = append(markers, span{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
 		}
-		start := utf8.RuneCountInString(text[:match[0]])
-		markers = append(markers, span{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
+	}
+	if hasImages {
+		for _, match := range imageMarkerRegex.FindAllStringIndex(text, -1) {
+			start := utf8.RuneCountInString(text[:match[0]])
+			markers = append(markers, span{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
+		}
 	}
 	if len(markers) == 0 {
 		return base(text)
 	}
+	slices.SortFunc(markers, func(a, b span) int { return a.start - b.start })
 
 	baseSegments := base(text)
 	result := make([]segment, 0, len(baseSegments))
@@ -152,7 +164,7 @@ func wordWrapLine(line string, maxWidth int, preSegmented []segment) []textChunk
 		grapheme := seg.text
 		gWidth := VisibleWidth(grapheme)
 		charIndex := seg.index
-		isWs := !isPasteMarker(grapheme) && isWhitespaceChar(grapheme)
+		isWs := !isAtomicMarker(grapheme) && isWhitespaceChar(grapheme)
 
 		if currentWidth+gWidth > maxWidth {
 			if wrapOppIndex >= 0 && currentWidth-wrapOppWidth+gWidth <= maxWidth {
@@ -189,12 +201,12 @@ func wordWrapLine(line string, maxWidth int, preSegmented []segment) []textChunk
 		if i+1 < len(segments) {
 			next = &segments[i+1]
 		}
-		if isWs && next != nil && (isPasteMarker(next.text) || !isWhitespaceChar(next.text)) {
+		if isWs && next != nil && (isAtomicMarker(next.text) || !isWhitespaceChar(next.text)) {
 			wrapOppIndex = next.index
 			wrapOppWidth = currentWidth
 		} else if !isWs && next != nil && !isWhitespaceChar(next.text) {
-			isCJK := !isPasteMarker(grapheme) && isCJKBreakGrapheme(grapheme)
-			nextIsCJK := !isPasteMarker(next.text) && isCJKBreakGrapheme(next.text)
+			isCJK := !isAtomicMarker(grapheme) && isCJKBreakGrapheme(grapheme)
+			nextIsCJK := !isAtomicMarker(next.text) && isCJKBreakGrapheme(next.text)
 			if isCJK || nextIsCJK {
 				wrapOppIndex = next.index
 				wrapOppWidth = currentWidth
@@ -802,6 +814,20 @@ func (editor *Editor) HandleMouse(event MouseEvent) bool {
 	start := runeIndexFromUTF16(line, target.startCol)
 	chunk := runeSlice(line, start, runeIndexFromUTF16(line, target.startCol+target.length))
 	point := mousePoint{row: target.logicalLine, column: start + runeIndexAtColumn(chunk, max(0, event.Column-editor.renderPaddingX))}
+	if (event.Type == MousePress && event.Clicks <= 1 || event.Type != MousePress && editor.selection.unit <= 1) &&
+		(strings.Contains(line, "[Image #") || strings.Contains(line, "[paste #")) {
+		for _, seg := range editor.segment(line, segmentModeGrapheme) {
+			end := seg.index + runeLen(seg.text)
+			if isAtomicMarker(seg.text) && seg.index < point.column && point.column < end {
+				if point.column-seg.index <= (end-seg.index)/2 {
+					point.column = seg.index
+				} else {
+					point.column = end
+				}
+				break
+			}
+		}
+	}
 	if event.Type == MousePress {
 		editor.cancelAutocomplete()
 		anchor := point
@@ -1973,7 +1999,7 @@ func (editor *Editor) moveWordBackwards() {
 	}
 	editor.setCursorCol(findWordBackward(currentLine, editor.state.cursorCol, &wordNavigationOptions{
 		segment:         func(text string) []segment { return editor.segment(text, segmentModeWord) },
-		isAtomicSegment: isPasteMarker,
+		isAtomicSegment: isAtomicMarker,
 	}))
 }
 
@@ -1990,7 +2016,7 @@ func (editor *Editor) moveWordForwards() {
 	}
 	editor.setCursorCol(findWordForward(currentLine, editor.state.cursorCol, &wordNavigationOptions{
 		segment:         func(text string) []segment { return editor.segment(text, segmentModeWord) },
-		isAtomicSegment: isPasteMarker,
+		isAtomicSegment: isAtomicMarker,
 	}))
 }
 

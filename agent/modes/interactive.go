@@ -1117,13 +1117,8 @@ func skillAutocompletePrefix(lines []string, cursorLine, cursorCol int) (string,
 		return "", "", false
 	}
 	if strings.HasPrefix(prefix, "@") {
-		if strings.HasPrefix(prefix, `@"`) || strings.TrimSpace(string(line[:start])) != "" {
+		if strings.HasPrefix(prefix, `@"`) {
 			return "", "", false
-		}
-		for _, previous := range lines[:cursorLine] {
-			if strings.TrimSpace(previous) != "" {
-				return "", "", false
-			}
 		}
 		return prefix, prefix[1:], true
 	}

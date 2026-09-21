@@ -309,7 +309,7 @@ does not probe Git metadata.
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
 `/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,
 Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot; project roots are trust-gated, native roots
-win collisions, and external aliases deduplicate without scanning plugin caches. At the first prompt
+win collisions, and external aliases deduplicate without scanning plugin caches. At any prompt
 token, `@` autocomplete mixes clearly badged skills with files and inserts the canonical
 `/skill:name` path when a skill is accepted. Built-in interactive commands (`/login /logout /model /resume /new /name
 /session /tree /trust /fork /clone /compact /copy /export /import /reload /hotkeys /settings

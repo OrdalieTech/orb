@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Treat composer image tags as one editable unit, including mouse placement and Backspace, and offer skill completion after `@` anywhere in a draft.
+
 - Attach pasted macOS clipboard images and dropped image files as resized model-readable image bytes, with numbered composer markers and bounded input size.
 
 - Confirm successful text-selection copies in the composer signal zone.
