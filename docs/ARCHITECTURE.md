@@ -320,6 +320,119 @@ packages — npm registry tarball fetch + extract (no node at runtime), git clon
 `~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`). Package installation itself
 is native Go; executing package-provided JavaScript requires the D31 Node/Bun runtime.
 
+## Orb Bridge v1 — implementation contract
+
+The owner-approved native delivery is one `orb` executable: `orb bridge` administers an
+explicit profile, while `orb --bridge <profile> --instance <alias>` attaches a runtime.
+Bridge is default-off in the plugin controls, `/bridge`, and the command palette. Its focused
+remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
+specification governs the protocol; this section supersedes its two-executable packaging.
+Restricted launching, mobile UIs, browser transports, and platform hosting adapters are excluded.
+
+| Layer | Responsibility |
+|---|---|
+| `connect` | Versioned calls, receipts, observations, and non-owning attachment contracts |
+| `connect/agent` | Existing `AgentSessionRuntime` adaptation; operation ledger and bounded observations |
+| `bridge` | Identity, pairing, directional grants, registration, routing, scoped contacts |
+| Native/Tailcat adapters | Explicit persistence, profile locks, IPC roles/credentials, network streams |
+| `cmd/orb` and UI assemblies | Lifecycle, management, capability selection, remote conversation view |
+
+Existing SDK constructors, interfaces, subscription semantics, and defaults remain unchanged.
+Neither `ai`, `engine`, nor `agent` imports Bridge, Tailcat, or new UI dependencies. Closing an
+attachment, view, or bridge never disposes a runtime. Stores, credentials, transports,
+and lifetimes are explicit; imports create no files or network activity. Multiple independent
+bridges and runtimes can coexist in one process. Only interchangeable attachment and persistence
+boundaries need interfaces. Native storage stays outside Pi-managed files and keeps bridge
+metadata, instance attachment credentials, and operation ledgers separately owned.
+
+Native IPC separates local-owner administration from scoped instance attachment, checks OS peer
+credentials, fences registrations with persistent generations, and refuses simultaneous writers.
+Bridge loss marks instances unavailable while their local work continues. Pairing pins Ed25519
+PeerIDs and requires a recoverable one-use invitation claim plus local-owner approval of exact
+grants. Group membership is administrative; fixed selectors snapshot InstanceIDs, while future
+membership requires explicit selection. Discovery scopes grant no execution authority. Agent
+calls require source and destination grants, derive subjects from attachment credentials, and
+never transparently forward execution through a third bridge.
+
+The transport is pinned TLS 1.3 with ALPN `orb-bridge/1` over Tailcat streams, without TLS
+resumption or Tailcat shell/file/proxy/exit-node services. Persist transport keys and PSKs.
+JSON-RPC frames use four-byte big-endian lengths, at most 1 MiB each, depth 64, 64 in-flight
+requests, pages of at most 128 items, and 4 MiB queued output. Reject duplicate keys, invalid
+UTF-8, malformed IDs, unknown behavioral arguments, and noncanonical decimal counters.
+Signed contact payloads use JCS and are bounded at 16 KiB; reconciliation preserves conflicting
+revision diagnostics and durable withdrawal floors within explicit scopes.
+
+`orb.instance/1` maps inspection, prompt, steer, follow-up, cancel, and session list/new/switch/fork.
+Session IDs resolve inside the adapter. Local, extension, and remote work share transition
+ordering and execution identity; control locks never span model streams or interactive approvals.
+Durably record acceptance before acknowledgment or dispatch. Retain compact deduplication
+records for the instance identity's lifetime; quota exhaustion refuses new acceptance. Identical
+retries retrieve authorized receipts before stale-generation checks; conflicting payloads fail.
+Recheck authorization and target preconditions at dispatch, never retarget, and reconcile crash
+ambiguity as `outcome_unknown` rather than replaying effects. Accepted work belongs to the runtime.
+Remote prompts cannot invoke bridge administration slash commands.
+
+Snapshot state and its continuation cursor are established atomically. Paginated transcript
+snapshots have stable identities and explicit expiry. Replay and subscriptions are bounded;
+slow consumers receive a resnapshot signal and cannot stall runtimes or other instances.
+Use bounded callbacks, never the existing lossless `SubscribeChan` adapter. No transcript replica,
+hidden command queue, compression, arbitrary file transfer, or general plugin framework.
+
+Explicit enable starts a background `orb bridge run` process that survives TUI exit. Enabled
+launches restore it if needed; deliberate Stop persists until Start or re-enable. No login service
+or implicit SDK startup. Begin with a personal profile/group, with all state profile-scoped.
+Bridge protocol tests are Orb-owned checks, separate from Pi conformance families.
+
+### Native v1 method schemas
+
+Every request is one JSON-RPC 2.0 object with a string ID; batches and notifications are
+unsupported. `bridge.hello` exchanges `peer_id`, `bridge_boot_id`, `protocol`, `max_frame`,
+and `max_page` before application methods. Frame limits are the smaller advertised limit
+(minimum 1 KiB); oversized results fail explicitly, and pages respect the smaller item limit.
+Counters use canonical unsigned decimal strings; operation, instance, group, scope, and boot
+IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain Orb session IDs.
+
+| Method | Parameters and result |
+|---|---|
+| `bridge.ping` | `{}` → `{}` |
+| `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
+| `pair.status` | `invitation_id` → status for its authenticated claimant |
+| `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
+| `instances.describe` | `instance_id` → current generation, session/revision/execution target, permitted methods |
+| `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
+| `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
+| `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
+| `events.unsubscribe` | `instance_id`, `snapshot_id` → release retained snapshot |
+| `peers.list` | `scope_id`, optional `cursor` → scoped signed records |
+| `peers.publish` | bounded `records` array → validated, durably merged revisions |
+
+`expected` contains `registration_generation` and `session_revision`. Prompt arguments are
+`{text}`; steer/follow-up are `{text, execution_id}`; cancel is `{execution_id}`; session new
+is `{}`, switch is `{session_id}`, and fork is `{entry_id}`. Session list accepts an optional
+`offset`. Read-only inspection needs no operation ID. An optional `subject` on remote calls
+is restricted to an instance subject and comes from the source bridge's credential-bound
+outbound route; administrative methods never appear in this routing table.
+
+Receipts retain the operation ID, target, expected revision/generation, method, acceptance time,
+canonical payload digest, status, and bounded result/error. Terminal deduplication entries are
+never evicted. A failed storage barrier makes the writer unavailable until reopened; unfinished
+receipts recover as `outcome_unknown`. Bridge profiles and ledgers each cap storage at 1 MiB.
+Snapshot retention is four snapshots per attachment for one minute, with an 8 MiB/16,384-message
+transcript mirror. Replay retains 2,048 events within 4 MiB. `cursor_expired` explicitly requests
+resnapshotting; oversized individual messages fail with `resource_exhausted`. Catalog/contact
+cursors bind the complete ordered content digest and expire if that content changes. Catalog
+observers return an empty replay while unchanged and explicitly request a fresh snapshot after
+a catalog or visibility change; the bridge retains no per-client catalog history.
+
+The native adapter serves separate `admin.sock` and `attach.sock` endpoints with same-UID checks.
+Its stores use an exclusive file lock, private permissions, atomic replacement, file fsync,
+and directory fsync. `ORB_BRIDGE_HOME` explicitly overrides the profile root for isolated hosts.
+Transport metadata contains the pinned server key, PSK, relay region, and per-peer client keys.
+No remote-supplied relay map or embedded relay definition is accepted. Contact changes trigger
+reconciliation, with a 15-second retry sweep; signed recovery locators must authenticate the
+already-pinned PeerID. Native direct and forced-relay tests are separate from the hermetic gate.
+
+
 ## 6. Conformance architecture
 
 Fixture families (each = extraction script in `conformance/extract/`, goldens in
@@ -381,7 +494,8 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | bmatcuk/doublestar/v4 | tools, skills | `**` globbing (upstream: glob/minimatch) |
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
-| gofrs/flock | memory | file locking for the JSONL memory store (session/config use internal/filelock) |
+| tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
+| gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object

@@ -23,6 +23,9 @@ type CLIUnknownFlag struct {
 }
 
 type CLIArgs struct {
+	BridgeProfile      string
+	InstanceAlias      string
+	bridgeLink         *cliBridgeLink
 	Command            string
 	CommandArgs        []string
 	Provider           *string
@@ -97,6 +100,17 @@ func ParseArgs(argv []string) CLIArgs {
 	for index := 0; index < len(argv); index++ {
 		argument := argv[index]
 		switch {
+		case argument == "--bridge" || argument == "--instance":
+			if index+1 >= len(argv) {
+				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: argument + " requires a value"})
+				continue
+			}
+			index++
+			if argument == "--bridge" {
+				result.BridgeProfile = argv[index]
+			} else {
+				result.InstanceAlias = argv[index]
+			}
 		case argument == "--help" || argument == "-h":
 			result.Help = true
 		case argument == "--version" || argument == "-v":

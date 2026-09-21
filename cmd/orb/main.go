@@ -177,6 +177,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			})
 		}
 	}
+	if len(argv) > 0 && argv[0] == "bridge" {
+		return runBridgeCommand(ctx, argv[1:], streams)
+	}
 	if len(argv) > 0 && argv[0] == "chat" {
 		return runChatCommand(ctx, argv[1:], streams)
 	}
@@ -197,6 +200,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
+	args.bridgeLink = &cliBridgeLink{}
 	offlineValue, networkDisabled := os.LookupEnv("PI_OFFLINE")
 	offlineValue = strings.ToLower(offlineValue)
 	offlineMode := args.Offline || offlineValue == "1" || offlineValue == "true" || offlineValue == "yes"
@@ -434,6 +438,13 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			}
 		}
 		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
+		detach, bridgeErr := attachCLIBridge(ctx, bridgeInteractiveHost{host}, args, inputs.Settings, streams.Stderr)
+		if bridgeErr != nil {
+			_, _ = fmt.Fprintln(streams.Stderr, "Bridge disconnected:", bridgeErr)
+		} else {
+			defer detach()
+		}
+
 		return dependencies.runInteractive(ctx, host.Session(), modes.InteractiveModeOptions{
 			InitialMessage: initial,
 			InitialImages:  initialImages,
@@ -470,6 +481,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	detach, bridgeErr := attachCLIBridge(ctx, sessionHost, args, sessionHost.Services().SettingsManager, streams.Stderr)
+	if bridgeErr != nil {
+		_, _ = fmt.Fprintln(streams.Stderr, "Bridge disconnected:", bridgeErr)
+	} else {
+		defer detach()
 	}
 	if services := sessionHost.Services(); services != nil {
 		startStartupModelRefresh(ctx, args.Mode, offlineMode, !networkDisabled, services.AgentDir, services.ModelRegistry, dependencies.refreshModels)

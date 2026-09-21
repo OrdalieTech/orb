@@ -132,12 +132,17 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 	if runtime == nil {
 		return errors.New("agent: nil session runtime")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, finish, err := runtime.reserveControl(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish()
 	state := runtime.agent.State()
 	if state.Model == nil || (IsUnknownModel(state.Model) && runtime.getRequestAuth == nil && runtime.getAPIKey == nil) {
 		return noModelSelectedError()
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	hasAuth, err := runtime.hasProviderAuth(ctx, state.Model.Provider)
 	if err != nil {

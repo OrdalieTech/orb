@@ -73,10 +73,21 @@ func TestLayerEdges(t *testing.T) {
 		layer, _, _ := strings.Cut(relative, "/")
 		for _, spec := range parsed.Imports {
 			target := strings.Trim(spec.Path.Value, `"`)
+			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "bridge/transports/tailcat/") {
+				violations = append(violations, relative+" imports Tailcat outside its native transport adapter")
+			}
 			if !strings.HasPrefix(target, module) {
 				continue
 			}
 			targetPath := strings.TrimPrefix(target, module)
+			if (layer == "agent" || layer == "ai" || layer == "engine") && (strings.HasPrefix(targetPath, "bridge") || strings.HasPrefix(targetPath, "connect")) {
+				violations = append(violations, relative+" imports optional bridge assembly")
+			}
+			if (strings.HasPrefix(relative, "connect/") && !strings.HasPrefix(relative, "connect/agent/")) || (strings.HasPrefix(relative, "bridge/") && !strings.HasPrefix(relative, "bridge/agent/") && !strings.HasPrefix(relative, "bridge/hosts/") && !strings.HasPrefix(relative, "bridge/transports/")) {
+				if strings.HasPrefix(targetPath, "agent/") || targetPath == "agent" || strings.HasPrefix(targetPath, "bridge/hosts/") || strings.HasPrefix(targetPath, "bridge/transports/") {
+					violations = append(violations, relative+" imports host-specific code into portable core")
+				}
+			}
 			targetLayer, _, _ := strings.Cut(targetPath, "/")
 			if allowed, restricted := allowedImports[layer]; restricted && !slices.Contains(allowed, targetLayer) {
 				violations = append(violations, relative+" imports "+targetPath+" ("+layer+" may only import "+strings.Join(allowed, ", ")+")")

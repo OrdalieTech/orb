@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"encoding/json"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/assembly"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -16,6 +17,8 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions/examples/statusline"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
+	bridgeagent "github.com/OrdalieTech/orb/bridge/agent"
+	"github.com/OrdalieTech/orb/connect"
 )
 
 // otherDiagnostic wraps a plain warning string for the startup diagnostics
@@ -76,6 +79,12 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
+		Bridge: bridgeExtension(args, settings),
+		BridgeAgentCalls: bridgeagent.Extension(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
+			var result json.RawMessage
+			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)
+			return result, err
+		}),
 		Compiled: compiledExtensions,
 		MCP:      !args.NoExtensions && !args.metadataOnly,
 	})

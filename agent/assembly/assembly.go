@@ -36,9 +36,11 @@ type Row struct {
 // Options are the explicit inputs of one assembly; nothing is read from the
 // environment.
 type Options struct {
-	CWD      string
-	AgentDir string
-	Settings *config.SettingsManager
+	Bridge           extensions.Factory
+	BridgeAgentCalls extensions.Factory
+	CWD              string
+	AgentDir         string
+	Settings         *config.SettingsManager
 	// Compiled rows supplied by the assembly owner (cmd/orb's compiled
 	// extensions, or an embedder's own), first in boot order.
 	Compiled []extensions.CompiledExtension
@@ -64,7 +66,7 @@ func Rows(options Options) ([]Row, []string) {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: plugins.Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := plugins.Catalog(plugins.Options{Settings: options.Settings, AgentDir: options.AgentDir})
+	catalog := plugins.Catalog(plugins.Options{Settings: options.Settings, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: plugins.Description(name),

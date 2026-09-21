@@ -23,22 +23,26 @@ import (
 
 // Options supplies explicit runtime seams so bundled plugins remain instance-scoped.
 type Options struct {
-	StreamFn   engine.StreamFn
-	HTTPClient *http.Client
-	Settings   *config.SettingsManager
-	Policy     *Policy
-	AgentDir   string
+	Bridge           extensions.Factory
+	BridgeAgentCalls extensions.Factory
+	StreamFn         engine.StreamFn
+	HTTPClient       *http.Client
+	Settings         *config.SettingsManager
+	Policy           *Policy
+	AgentDir         string
 }
 
-var names = []string{"tasks", "websearch", "subagents", "permissions", "memory", "provider-usage"}
+var names = []string{"tasks", "websearch", "subagents", "permissions", "memory", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
-	"tasks":          "Live session task list and todo tool",
-	"websearch":      "Web search and readable page fetching",
-	"subagents":      "Single or parallel child agents, including configured external CLIs",
-	"permissions":    "Permissive audit and tool-call permission rules (bash is matched by command text only)",
-	"memory":         "Bounded persistent remember, recall, replace, and forget tools",
-	"provider-usage": "Remaining Codex and OpenCode Go quota in the footer",
+	"bridge":             "Pair devices and control explicitly shared Orb instances",
+	"bridge-agent-calls": "Allow granted agent-initiated calls through a Bridge attachment",
+	"tasks":              "Live session task list and todo tool",
+	"websearch":          "Web search and readable page fetching",
+	"subagents":          "Single or parallel child agents, including configured external CLIs",
+	"permissions":        "Permissive audit and tool-call permission rules (bash is matched by command text only)",
+	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
+	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
 }
 
 // Names returns the stable first-party plugin order.
@@ -68,7 +72,14 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 	if policy == nil {
 		policy = &Policy{}
 	}
+	if options.Bridge == nil {
+		options.Bridge = func(extensions.API) error { return fmt.Errorf("bridge requires host assembly") }
+	}
+	if options.BridgeAgentCalls == nil {
+		options.BridgeAgentCalls = func(extensions.API) error { return fmt.Errorf("bridge agent calls require host assembly") }
+	}
 	return map[string]extensions.Factory{
+		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls,
 		"tasks":          tasksExtension(),
 		"websearch":      websearchExtension(options.HTTPClient),
 		"subagents":      subagentsExtension(options.StreamFn, inheritPolicy, options.Settings),

@@ -122,6 +122,32 @@ KakaoTalk/WeChat access-restricted; Signal/iMessage/personal-WhatsApp/E2EE-Matri
 D27/D28.
 Open with: the wire briefs + wsclient protocol tests against the fake server, RED.
 
+## Orb Bridge v1 — native delivery completed
+
+Delivered the full native v1 contract in ARCHITECTURE, including scoped discovery and agent calls,
+with one executable and TUI administration. SDK APIs and unrelated progress entries are preserved.
+Verification and release measurements are recorded in PROGRESS (2026-09-21).
+
+1. Measure the pinned stream-only Tailcat assembly on all four release targets against the
+   55 MB and 50 ms budgets; record dependencies and retain the binding limits. Define versioned
+   method schemas and protocol vectors independently of Pi fixtures.
+2. Add non-owning runtime attachment and shared local/extension/remote control boundaries.
+3. Add durable native storage, separate admin/attachment IPC, in-process registration, fencing,
+   credential isolation, profile locks, and bounded reconnects.
+4. Add strict framed RPC, TLS identity pinning, recoverable pairing, grants, and revocation.
+5. Map safe commands with durable receipts, crash recovery, atomic snapshots, and bounded replay.
+6. Add signed scoped reconciliation and separately opt-in agent calls with both grants required.
+7. Assemble `orb bridge`, default-off plugin/TUI management, and the remote conversation view.
+
+Each slice starts with failing tests and commits only after `make check`. Closure requires
+20-instance restart/grant tests; local/remote races; persistence fault injection and quotas;
+pairing/authority/revocation/parser tests; snapshot/backpressure/fairness tests; A-B-C scoped
+reconciliation and agent-grant tests; real CLI/TUI exercise; native direct/relay transport checks;
+unchanged SDK consumers with no Tailcat imports; portable core Wasm compilation; Pi/RPC gates;
+four static builds and final size/startup measurements. Exclude the restricted launcher, mobile
+apps, browser transport, and platform-specific hosting. Record evidence in PROGRESS, SDK and
+architecture docs, and CHANGELOG; no per-change report files.
+
 ## Ambition setting
 
 Each working session aims to CLOSE a sprint, and must at minimum leave main green, fixtures green,
