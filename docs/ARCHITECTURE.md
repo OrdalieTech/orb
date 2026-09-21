@@ -269,6 +269,14 @@ rpc (bidirectional JSONL stdin/stdout per `docs/rpc.md`: prompt/steer/follow-up/
 mgmt, get_commands, extension-UI bridging; strict LF framing). RPC is a conformance surface —
 upstream's RPC tests run against our binary (F7).
 
+**Interactive discovery:** Ctrl+P opens a searchable palette of actions, skills, templates, and
+extension commands. Ctrl+M selects models when the terminal disambiguates it from Enter; Ctrl+L
+is the portable fallback. Ctrl+N starts a session and Ctrl+R resumes one. Existing explicit
+keybindings win over these new defaults. Native composer slash completion contains resource
+commands only; extension editors keep the complete pi completion surface. Selecting a resource
+inserts its canonical invocation into the draft for arguments and explicit submission. Floating
+modals dim the background; non-capturing extension overlays keep their opt-in backdrop.
+
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
 `/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,
 Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot; project roots are trust-gated, native roots

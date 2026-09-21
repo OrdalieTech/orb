@@ -199,3 +199,90 @@ func formatInteger(count int64) string {
 	}
 	return sign + digits
 }
+
+// commandPalette serializes the shared grid with rendering. Actions run after
+// unlocking because closing an overlay synchronously transfers focus.
+type commandPalette struct {
+	mu       sync.Mutex
+	list     *tui.GridList
+	input    *tui.Input
+	bindings *tui.KeybindingsManager
+	height   func() int
+	onCancel func()
+	pending  func()
+}
+
+func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, height func() int, selectItem func(string), cancel func()) *commandPalette {
+	palette := &commandPalette{input: newSearchInput(), bindings: bindings, height: height, onCancel: cancel}
+	palette.list = tui.NewGridList(rows, 10, tui.GridListTheme{
+		SelectedBg: func(s string) string { return theme.BG("selectedBg", s) },
+		Detail:     func(s string) string { return theme.FG("muted", s) },
+		ScrollInfo: func(s string) string { return theme.FG("dim", s) },
+		Query:      func(s string) string { return theme.FG("text", s) },
+		Cursor:     theme.FG("accent", "› "),
+	})
+	palette.list.Searchable = true
+	palette.list.DetailHeight = 2
+	palette.list.OnConfirm = func(value string) {
+		if value != "" {
+			palette.pending = func() { selectItem(value) }
+		}
+	}
+	return palette
+}
+
+func (palette *commandPalette) SetFocused(focused bool) {
+	palette.mu.Lock()
+	defer palette.mu.Unlock()
+	palette.list.SetFocused(focused)
+	palette.input.SetFocused(focused)
+}
+
+func (palette *commandPalette) Render(width int) []string {
+	palette.mu.Lock()
+	defer palette.mu.Unlock()
+	palette.list.SetMaxVisible(max(1, min(10, palette.height()-12)))
+	lines := palette.list.Render(width)
+	if len(lines) > 0 && palette.input.GetValue() != "" {
+		lines[0] = palette.input.Render(width)[0]
+	}
+	return lines
+}
+
+func (palette *commandPalette) unlockAndDispatch() {
+	action := palette.pending
+	palette.pending = nil
+	palette.mu.Unlock()
+	if action != nil {
+		action()
+	}
+}
+
+func (palette *commandPalette) HandleInput(event tui.KeyEvent) {
+	palette.mu.Lock()
+	defer palette.unlockAndDispatch()
+	bindings := palette.bindings
+	switch {
+	case bindings.Matches(event.Raw, "tui.select.cancel"), bindings.Matches(event.Raw, "app.commandPalette"):
+		palette.pending = palette.onCancel
+	case event.Raw != "\r" && event.Raw != "\n" && bindings.Matches(event.Raw, "app.model.select"):
+		palette.list.OnConfirm("model")
+	case bindings.Matches(event.Raw, "tui.select.up"), bindings.Matches(event.Raw, "tui.select.down"),
+		bindings.Matches(event.Raw, "tui.select.pageUp"), bindings.Matches(event.Raw, "tui.select.pageDown"),
+		bindings.Matches(event.Raw, "tui.select.confirm"):
+		palette.list.HandleInput(event)
+	default:
+		before := palette.input.GetValue()
+		palette.input.HandleInput(event)
+		if query := palette.input.GetValue(); query != before {
+			palette.list.SetQuery(query)
+		}
+	}
+}
+
+func (*commandPalette) WantsMouseMotion() bool { return true }
+func (palette *commandPalette) HandleMouse(event tui.MouseEvent) bool {
+	palette.mu.Lock()
+	defer palette.unlockAndDispatch()
+	return palette.list.HandleMouse(event)
+}

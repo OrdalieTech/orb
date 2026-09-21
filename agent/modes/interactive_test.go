@@ -1846,3 +1846,120 @@ func (mode *InteractiveMode) handleSlashCommand(name, args string) bool {
 	}
 	return ok
 }
+
+func TestPaletteSearchSkillsDraftAndCancellation(t *testing.T) {
+	initTestTheme(t)
+	mode := newF12AutocompleteMode(t, true)
+	previous := tui.GetKeybindings()
+	tui.SetKeybindings(mode.keybindings)
+	t.Cleanup(func() { tui.SetKeybindings(previous) })
+	rows := mode.commandPaletteRows()
+	var chosen string
+	cancelled := false
+	palette := newCommandPalette(rows, mode.keybindings, func() int { return 24 }, func(value string) { chosen = value }, func() { cancelled = true })
+	initial := palette.Render(70)
+	palette.HandleInput(tui.KeyEvent{Raw: "\x1b[200~inspect-skill\x1b[201~"})
+	filtered := strings.Join(palette.Render(70), "\n")
+	if !strings.Contains(filtered, "inspect-skill") || !strings.Contains(filtered, theme.FG("customMessageLabel", "inspect-skill")) {
+		t.Fatalf("skill missing its distinct color: %q", filtered)
+	}
+	if len(palette.Render(70)) != len(initial) {
+		t.Fatal("filtering moved the palette")
+	}
+	palette.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if chosen != "/skill:inspect-skill" {
+		t.Fatalf("selected %q", chosen)
+	}
+	mode.editor.SetText("review this carefully")
+	mode.runPaletteCommand(chosen)
+	if got := mode.editor.GetText(); got != "/skill:inspect-skill review this carefully" {
+		t.Fatalf("draft = %q", got)
+	}
+	palette.HandleInput(tui.KeyEvent{Raw: "\x1b"})
+	if !cancelled {
+		t.Fatal("Escape did not close filtered palette")
+	}
+}
+
+func TestPaletteNoMatchResizeAndConcurrentRender(t *testing.T) {
+	initTestTheme(t)
+	bindings := NewAppKeybindings(nil)
+	previous := tui.GetKeybindings()
+	tui.SetKeybindings(bindings)
+	t.Cleanup(func() { tui.SetKeybindings(previous) })
+	confirmed := false
+	palette := newCommandPalette([]tui.GridRow{{Value: "model", Cells: []string{"Choose model"}}}, bindings, func() int { return 14 }, func(string) { confirmed = true }, func() {})
+	palette.HandleInput(tui.KeyEvent{Raw: "no-such-action"})
+	palette.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if confirmed {
+		t.Fatal("empty search confirmed an action")
+	}
+	if !strings.Contains(strings.Join(palette.Render(24), "\n"), "no matches") {
+		t.Fatal("no empty state")
+	}
+	var workers sync.WaitGroup
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		for range 100 {
+			palette.HandleInput(tui.KeyEvent{Raw: "\x7f"})
+			palette.HandleInput(tui.KeyEvent{Raw: "x"})
+		}
+	}()
+	for range 100 {
+		for _, width := range []int{12, 24, 80} {
+			frame := menuFrame("Commands", palette).Render(width)
+			if len(frame) > 14 {
+				t.Errorf("palette exceeds terminal: %d", len(frame))
+			}
+			for _, line := range frame {
+				if tui.VisibleWidth(line) > width {
+					t.Errorf("row exceeds %d columns", width)
+				}
+			}
+		}
+	}
+	workers.Wait()
+}
+
+func TestComposerMovesBuiltinDiscoveryToPalette(t *testing.T) {
+	mode := newF12AutocompleteMode(t, true)
+	provider := &composerAutocompleteProvider{AutocompleteProvider: mode.autocompleteProvider}
+	result := provider.GetSuggestions(t.Context(), []string{"/"}, 0, 1, false)
+	if result == nil {
+		t.Fatal("lost resource commands")
+	}
+	skill := false
+	for _, item := range result.Items {
+		if isInteractiveCommandName(strings.TrimPrefix(item.Value, "/")) {
+			t.Fatalf("builtin remains in composer: %s", item.Value)
+		}
+		skill = skill || item.Value == "skill:inspect-skill"
+	}
+	if !skill {
+		t.Fatal("lost canonical skill completion")
+	}
+	// Extension editors still receive the complete compatibility surface.
+	canonical := mode.autocompleteProvider.GetSuggestions(t.Context(), []string{"/model"}, 0, 6, false)
+	if canonical == nil || len(canonical.Items) == 0 {
+		t.Fatal("extension completion contract lost model")
+	}
+}
+
+func BenchmarkCommandPaletteRender(b *testing.B) {
+	for _, count := range []int{100, 10000} {
+		b.Run(strconv.Itoa(count)+"-commands", func(b *testing.B) {
+			rows := make([]tui.GridRow, count)
+			for index := range rows {
+				rows[index] = tui.GridRow{Value: strconv.Itoa(index), Cells: []string{"Skill " + strconv.Itoa(index), "skill"}, Detail: []string{"A compatible skill"}}
+			}
+			palette := newCommandPalette(rows, NewAppKeybindings(nil), func() int { return 40 }, func(string) {}, func() {})
+			palette.Render(80)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				palette.Render(80)
+			}
+		})
+	}
+}

@@ -744,7 +744,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 	if overlay {
 		resolved := resolveCustomOverlayOptions(opts, component)
 		if resolved == nil {
-			tuiOverlay = ui.mode.ui.ShowOverlay(component)
+			tuiOverlay = ui.mode.ui.ShowOverlay(component, tui.OverlayOptions{Backdrop: backdropStyle()})
 		} else {
 			tuiOverlay = ui.mode.ui.ShowOverlay(component, toTUIOverlayOptions(*resolved))
 		}
@@ -822,7 +822,7 @@ func resolveCustomOverlayOptions(opts *extensions.CustomOptions, component exten
 
 func toTUIOverlayOptions(value extensions.OverlayOptions) tui.OverlayOptions {
 	var backdrop tui.StyleFunc
-	if value.Backdrop {
+	if value.Backdrop || !value.NonCapturing {
 		backdrop = backdropStyle()
 	}
 	return tui.OverlayOptions{

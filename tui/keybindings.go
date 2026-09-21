@@ -164,6 +164,14 @@ func (manager *KeybindingsManager) Matches(data, id string) bool {
 	return false
 }
 
+// IsUserDefined distinguishes explicit overrides from defaults during dispatch.
+func (manager *KeybindingsManager) IsUserDefined(id string) bool {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	_, exists := manager.user[id]
+	return exists
+}
+
 func (manager *KeybindingsManager) Keys(id string) []KeyID {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()

@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Make Ctrl+P the searchable command palette, with direct model (Ctrl+M; Ctrl+L on legacy terminals), new-session (Ctrl+N), and resume (Ctrl+R) shortcuts. Preserve drafts, expose skills in purple, move native built-ins out of slash completion, and dim modal backdrops while retaining pi extension and skill contracts. Bound menu mouse-layout work to visible rows and release dismissed overlay references.
+
 ## [0.7.0] - 2026-09-20
 
 - Upgrade the Go baseline to 1.27.1 and golangci-lint to 2.13.2; CI and release builds follow `go.mod`, and cached lint tooling rebuilds when its pin or the Go baseline changes.

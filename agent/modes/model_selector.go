@@ -80,7 +80,7 @@ func NewModelSelectorComponent(
 		))
 	} else {
 		component.container.AddChild(tui.NewText(
-			theme.FG("warning", "Only showing models from configured providers. Use /login to add providers."),
+			theme.FG("muted", "Models from connected providers. "+KeyText("app.commandPalette")+" → Connect provider to add more."),
 			0, 0, nil,
 		))
 	}

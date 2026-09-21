@@ -19,6 +19,9 @@ func emptyChatFixture(bodyHeight int) *emptyChatState {
 }
 
 func TestEmptyChatStateAnchorsTheLockupToConversationText(t *testing.T) {
+	previous := tui.GetKeybindings()
+	tui.SetKeybindings(NewAppKeybindings(nil))
+	t.Cleanup(func() { tui.SetKeybindings(previous) })
 	initTestTheme(t)
 	empty := emptyChatFixture(19)
 	lines := empty.Render(79)
@@ -26,7 +29,7 @@ func TestEmptyChatStateAnchorsTheLockupToConversationText(t *testing.T) {
 		t.Fatalf("top-left lockup rows = %#v", lines)
 	}
 	body := selectorANSI.ReplaceAllString(strings.Join(lines, "\n"), "")
-	for _, text := range []string{"Orb", "/  commands"} {
+	for _, text := range []string{"Orb", "Ctrl+P commands"} {
 		if !strings.Contains(strings.ToLower(body), strings.ToLower(text)) {
 			t.Fatalf("top-left lockup omitted %q: %q", text, body)
 		}

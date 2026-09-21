@@ -29,13 +29,11 @@ type emptyChatState struct {
 
 // infoRows places the lockup text on rows 4 and 6: they straddle the mark's
 // centre row, and they are two of the three rows that fill the canvas to its
-// widest ink, so both clear the same edge and read as one gap. The hint is the
-// bare slash because that is the key that opens the command list; there is no
-// /help command to point at.
+// widest ink, so both clear the same edge and read as one gap.
 func (empty *emptyChatState) infoRows() [orbalogo.Height]string {
 	rows := [orbalogo.Height]string{}
 	rows[4] = theme.Bold(theme.FG("accent", "Orb"))
-	rows[6] = theme.FG("dim", "/") + "  " + theme.FG("muted", "commands")
+	rows[6] = KeyHint("app.commandPalette", "commands")
 	return rows
 }
 

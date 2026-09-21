@@ -13,6 +13,7 @@ type CustomEditor struct {
 	*tui.Editor
 	keybindings        *tui.KeybindingsManager
 	actionHandlers     map[string]func()
+	actionOrder        []string
 	topBorderDecorator func(width int, base string, border tui.StyleFunc) string
 	framed             atomic.Bool
 
@@ -34,6 +35,9 @@ func NewCustomEditor(ui *tui.TUI, editorTheme tui.EditorTheme, kb *tui.Keybindin
 }
 
 func (ce *CustomEditor) OnAction(action string, handler func()) {
+	if _, exists := ce.actionHandlers[action]; !exists {
+		ce.actionOrder = append(ce.actionOrder, action)
+	}
 	ce.actionHandlers[action] = handler
 }
 
@@ -202,13 +206,20 @@ func (ce *CustomEditor) interceptInput(event tui.KeyEvent) bool {
 		return false
 	}
 
-	for action, handler := range ce.actionHandlers {
-		if action == "app.interrupt" || action == "app.exit" {
-			continue
-		}
-		if ce.keybindings.Matches(data, action) {
-			handler()
-			return true
+	// User overrides win on every dispatch, including after keybindings reload.
+	for _, explicit := range []bool{true, false} {
+		for _, action := range ce.actionOrder {
+			if action == "app.interrupt" || action == "app.exit" || ce.keybindings.IsUserDefined(action) != explicit {
+				continue
+			}
+			// Legacy terminals send the same byte for Ctrl+M and Enter.
+			if action == "app.model.select" && (data == "\r" || data == "\n") {
+				continue
+			}
+			if ce.keybindings.Matches(data, action) {
+				ce.actionHandlers[action]()
+				return true
+			}
 		}
 	}
 
