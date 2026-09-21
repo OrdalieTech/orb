@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-21
+
 Orb now stores native application state in SQLite and connects conversations across devices through
 an optional, built-in Bridge. This release also reduces long-conversation rendering costs and
 simplifies everyday navigation. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
@@ -18,7 +20,7 @@ simplifies everyday navigation. The compatibility target remains Pi **v0.86.0** 
 - Migrate legacy state on first launch with resumable, transactional imports. Preserve original
   files, session IDs and conversation trees; reject changed sources, damaged trees and unsupported
   versions before cutover. Close older Orb and Bridge processes before upgrading a state root.
-- Import and export Pi JSONL, HTML and Markdown through the existing codecs. Native sessions have
+- Import and export Pi JSONL, and export HTML and Markdown through the existing codecs. Native sessions have
   stable IDs rather than live JSONL paths. SDK constructors and file-backed defaults stay compatible;
   `orb --pi-files ...` requires a separate state root after native migration.
 - Create private, consistent snapshots with `orb storage backup <path>`. Recover conversations with
@@ -87,8 +89,10 @@ measured **0.138 ms**, title/directory search **0.199 ms**, and a durable append
 per rendered frame**. The largest static-release executable is **54.25 MB**, below the 55 MB cap.
 These measurements describe the tested workload and hardware, not saturation guarantees.
 
-Detailed evidence is in `docs/plan/PROGRESS.md`. Live Bridge checks use isolated state and faux
-models; provider/OAuth and real-terminal coverage remain the previously deferred release checks.
+See the [storage and upgrade guide](https://github.com/OrdalieTech/orb/blob/v0.8.0/docs/sdk.md#session-management)
+and [verification record](https://github.com/OrdalieTech/orb/blob/v0.8.0/docs/plan/PROGRESS.md). Live Bridge
+checks use isolated state and faux models; provider/OAuth and real-terminal coverage remain the
+previously deferred release checks.
 
 ## [0.7.1] - 2026-09-21
 

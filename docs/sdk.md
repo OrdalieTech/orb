@@ -1,6 +1,6 @@
 # Go SDK
 
-The `agent` and `agent` packages provide Orb's public embedding APIs.
+The `agent` package provides Orb's public embedding APIs.
 
 ## Quick start
 

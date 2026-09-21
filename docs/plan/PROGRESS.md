@@ -127,7 +127,8 @@ completed Bridge v1 scope without moving runtime ownership into Bridge.
       lint/unused checks pass. These are bounded measurements on the named hardware, not universal
       latency, memory or throughput guarantees. Live providers/OAuth, desktop clipboard and real
       terminal image checks remain the already-recorded owner-deferred coverage, not new claims.
-      Release artifacts are prepared locally; no tag or public release has been published.
+      Candidate artifacts were prepared locally without publication. The owner subsequently authorized
+      promotion to stable v0.8.0, with upgrade documentation and the normal green-CI publication gate.
 - [ ] Implement managed hosting, conversation service and the unified multi-Bridge Sessions UI;
       the native-storage cutover does not imply completion of those separate plan slices.
 
