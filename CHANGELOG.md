@@ -6,6 +6,7 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Show context capacity and usage as `210k|35%` in the compact footer, and quota reset times in the account switcher.
 - Keep tool results to three preview rows, with per-result click expansion and a subtle theme-aware hover background that preserves text selection.
 
 - Bound live and long reasoning previews while keeping the full text expandable after completion; release rendered offscreen transcript lines so long sessions retain less display memory.

@@ -734,6 +734,13 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	}
 }
 
+func usageResetTime(window usage.Window) string {
+	if window.ResetsAt.IsZero() {
+		return "Reset time unavailable"
+	}
+	return "Resets " + window.ResetsAt.Local().Format("Mon 15:04 · 2 Jan MST")
+}
+
 func (mode *InteractiveMode) showAccountUsage(parent context.Context, host InteractiveProviderHost, account accounts.Account) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -755,7 +762,7 @@ func (mode *InteractiveMode) showAccountUsage(parent context.Context, host Inter
 		if err == nil {
 			rows = nil
 			for _, window := range snapshot.Windows {
-				rows = append(rows, tui.GridRow{Value: "close", Cells: []string{window.Name, fmt.Sprintf("%.0f%% left", window.Remaining)}, Detail: []string{"Resets " + window.ResetsAt.Local().Format("Mon 15:04 · 2 Jan")}})
+				rows = append(rows, tui.GridRow{Value: "close", Cells: []string{window.Name, fmt.Sprintf("%.0f%% left", window.Remaining)}, Detail: []string{usageResetTime(window)}})
 			}
 		}
 		result <- rows
@@ -800,9 +807,10 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 		return
 	}
 	summaries := make([]string, len(connected))
-	details := make([]string, len(connected))
+	details := make([][]string, len(connected))
 	applyUsage := func(index int, snapshot usage.Snapshot, ok bool) {
 		summaries[index] = "Unavailable"
+		details[index] = []string{"Usage unavailable · try again later or reconnect this account."}
 		if !ok || len(snapshot.Windows) == 0 {
 			return
 		}
@@ -813,7 +821,10 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 			}
 		}
 		summaries[index] = fmt.Sprintf("%s %.0f%% left", limited.Name, limited.Remaining)
-		details[index] = snapshot.Summary()
+		details[index] = nil
+		for _, window := range snapshot.Windows {
+			details[index] = append(details[index], fmt.Sprintf("%s %.0f%% left · %s", window.Name, window.Remaining, usageResetTime(window)))
+		}
 		if time.Since(snapshot.CheckedAt) > time.Minute {
 			summaries[index] += " · stale"
 		}
@@ -829,12 +840,12 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 	}
 	rows := func() []tui.GridRow {
 		result := providerAccountRows(connected, false)
-		result = result[:len(result)-2]
+		result = result[:len(result)-1]
 		for i := range result {
 			index, err := strconv.Atoi(result[i].Value)
 			if err == nil && index >= 0 && index < len(summaries) && summaries[index] != "" {
 				result[i].Cells[1] = theme.FG("muted", summaries[index])
-				result[i].Detail = []string{details[index]}
+				result[i].Detail = details[index]
 			}
 		}
 		return append(result, tui.GridRow{Value: "manage", Cells: []string{"Manage providers"}, Search: "manage connect disconnect providers"})
@@ -847,6 +858,7 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 		}
 	}
 	palette := newCommandPalette(rows(), mode.keybindings, mode.Height, choose, func() { choose("") })
+	palette.list.DetailHeight = 3
 	if mode.session != nil {
 		current := mode.session.State().Model
 		if current != nil {
