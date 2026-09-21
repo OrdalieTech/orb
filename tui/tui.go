@@ -611,6 +611,23 @@ func (ui *TUI) handleMouse(data string) bool {
 			}
 			ui.mouseClick, ui.mouseClickAt = point, time.Now()
 		}
+		for index := len(ui.mouseOverlays) - 1; index >= 0; index-- {
+			box := ui.mouseOverlays[index]
+			if !box.modal {
+				continue
+			}
+			if event.Row >= box.row && event.Row < box.row+box.height && event.Column >= box.col && event.Column < box.col+box.width {
+				break
+			}
+			ui.renderMu.Unlock()
+			// Use the dialog's cancellation path so pending results and focus are restored.
+			if event.Type == MousePress && event.Button == 0 && local.Clicks == 1 {
+				if input, ok := box.component.(InputHandler); ok {
+					input.HandleInput(KeyEvent{Raw: "\x1b", Key: "escape", Type: KeyPress})
+				}
+			}
+			return event.Type != MouseMove
+		}
 		handler, local, dispatch = ui.mouseTargetLocked(local)
 	}
 	ui.renderMu.Unlock()

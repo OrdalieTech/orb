@@ -688,6 +688,7 @@ type overlayRenderEntry struct {
 
 // mouseOverlayBox is where an overlay was composited, in screen cells.
 type mouseOverlayBox struct {
+	modal         bool
 	component     Component
 	row, col      int
 	width, height int
@@ -753,6 +754,7 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 	for index, overlay := range rendered {
 		ui.mouseOverlays[index] = mouseOverlayBox{
 			component: entries[index].component,
+			modal:     entries[index].options == nil || !entries[index].options.NonCapturing,
 			row:       viewportStart + overlay.row, col: overlay.col,
 			width: overlay.wid, height: len(overlay.lines),
 		}

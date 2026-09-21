@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Dismiss modals when clicking outside, using the same cancellation path as Escape and consuming the click.
+
 - Follow the terminal palette by default, with inherited foreground and background, inverted selections, and faint modal backdrops. Keep explicit custom themes available.
 
 - Make Shift+Enter insert a newline before app or extension shortcuts can queue the draft, including legacy Escape+Return terminal encodings. Explicit Alt+Enter still queues follow-ups.

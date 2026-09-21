@@ -568,3 +568,48 @@ func TestEditorClickAcceptsAutocompleteSuggestion(t *testing.T) {
 		t.Fatal("autocomplete stayed open after a suggestion was clicked")
 	}
 }
+
+type dismissibleMouseOverlay struct {
+	clickTarget
+	cancel func()
+}
+
+func (overlay *dismissibleMouseOverlay) HandleInput(event KeyEvent) {
+	if MatchesKey(event.Raw, "escape") {
+		overlay.cancel()
+	}
+}
+
+func TestModalOutsideClickCancelsWithoutClickThrough(t *testing.T) {
+	base := &clickTarget{lines: []string{"one", "two", "three"}, accept: true}
+	ui, _ := viewportWithTarget(t, base)
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ui.Stop() }()
+	cancellations := 0
+	overlay := &dismissibleMouseOverlay{clickTarget: clickTarget{lines: []string{"dialog"}, accept: true}}
+	var handle OverlayHandle
+	overlay.cancel = func() { cancellations++; handle.Hide() }
+	handle = ui.ShowOverlay(overlay, OverlayOptions{Width: AbsoluteSize(10), Anchor: OverlayTopLeft})
+	ui.RenderNow()
+	ui.handleMouse("\x1b[<0;3;1M")
+	if len(overlay.events) != 1 || cancellations != 0 {
+		t.Fatal("inside click dismissed modal")
+	}
+	for _, data := range []string{"\x1b[<35;15;5M", "\x1b[<64;15;5M", "\x1b[<2;15;5M"} {
+		ui.handleMouse(data)
+	}
+	if cancellations != 0 || len(base.events) != 0 || !ui.viewportFollow {
+		t.Fatal("non-left outside event escaped modal")
+	}
+	ui.handleMouse("\x1b[<0;16;5M")
+	if cancellations != 1 || len(base.events) != 0 {
+		t.Fatalf("cancellations=%d base=%v", cancellations, base.events)
+	}
+	ui.RenderNow()
+	ui.handleMouse("\x1b[<0;17;5M")
+	if len(base.events) != 1 {
+		t.Fatal("base did not regain mouse input")
+	}
+}
