@@ -676,12 +676,33 @@ func TestCompactStatusRender(t *testing.T) {
 	}
 	mode := &InteractiveMode{ui: tui.NewTUI(newFakeTerminal(80, 24)), chat: &tui.Container{}}
 	t.Cleanup(func() { mode.showStatusMessage("") })
-	lane := compactStatus{Component: status, Notice: mode.statusNoticeText}
+	lane := compactStatus{Component: status, Notice: mode.animatedStatusNoticeText}
 	mode.showStatusMessage("Model changed")
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeStarted = time.Now().Add(-45 * time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	opening := lane.Render(80)
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeStarted = time.Now().Add(-300 * time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	full := lane.Render(80)
+	if len(opening) != 1 || tui.VisibleWidth(opening[0]) >= tui.VisibleWidth(full[0]) {
+		t.Fatalf("notice did not open gradually: opening=%q full=%q", opening, full)
+	}
 	mode.showStatusMessage("Copied to clipboard")
+	if got := tui.VisibleWidth(mode.animatedStatusNoticeText()); got != len("Copied to clipboard") {
+		t.Fatalf("replacement closed the notice gap: width=%d", got)
+	}
 	lines := lane.Render(80)
 	if len(mode.chat.Children()) != 0 || len(lines) != 1 || !strings.Contains(tui.StripANSI(lines[0]), "* Working...") || !strings.Contains(lines[0], "Copied to clipboard") || strings.Contains(lines[0], "Model changed") {
 		t.Fatalf("notice changed the transcript or loader: %q", lines)
+	}
+	mode.statusMessageMu.Lock()
+	mode.statusNoticeStarted = time.Now().Add(-2950 * time.Millisecond)
+	mode.statusMessageMu.Unlock()
+	closing := lane.Render(80)
+	if len(closing) != 1 || tui.VisibleWidth(closing[0]) >= tui.VisibleWidth(lines[0]) {
+		t.Fatalf("notice gap did not close gradually: closing=%q full=%q", closing, lines)
 	}
 	mode.statusMessageMu.Lock()
 	mode.statusNoticeTimer.Reset(time.Millisecond)

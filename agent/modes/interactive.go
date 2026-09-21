@@ -131,7 +131,7 @@ type InteractiveMode struct {
 	statusNotice               string
 	statusNoticeTimer          *time.Timer
 	statusNoticeStarted        time.Time
-	statusNoticeAnimated       bool
+	statusNoticeOpening        bool
 	footerStatuses             map[string]string
 	autocompleteProvider       tui.AutocompleteProvider
 	paletteCommands            []tui.SlashCommand
@@ -478,7 +478,7 @@ func (mode *InteractiveMode) init() error {
 		body.AddChild(component)
 	}
 	body.AddChild(tui.NewSpacer(1))
-	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor, Notice: mode.statusNoticeText}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
+	for _, component := range []tui.Component{compactStatus{Component: mode.status, Inline: mode.statusInEditor, Notice: mode.animatedStatusNoticeText}, mode.widgetAbove, mode.editorContainer, mode.widgetBelow, mode.footer, mode.overlay} {
 		chrome.AddChild(component)
 	}
 	mode.ui.AddChild(body)
@@ -1980,7 +1980,7 @@ func (mode *InteractiveMode) cycleThinkingLevel() {
 		return
 	}
 	if level != nil {
-		mode.showStatusMessageWithAnimation("Reasoning: "+string(*level), true)
+		mode.showStatusMessage("Reasoning: " + string(*level))
 	}
 }
 
@@ -2672,26 +2672,24 @@ func pluralMessages(count int) string {
 	return fmt.Sprintf("%d queued messages", count)
 }
 
-func (mode *InteractiveMode) showStatusMessage(text string) {
-	mode.showStatusMessageWithAnimation(text, false)
-}
+const (
+	statusNoticeLifetime = 3 * time.Second
+	statusNoticeEdge     = 100 * time.Millisecond
+	statusNoticeFade     = 160 * time.Millisecond
+)
 
-func (mode *InteractiveMode) showStatusMessageWithAnimation(text string, animated bool) {
+func (mode *InteractiveMode) showStatusMessage(text string) {
 	mode.statusMessageMu.Lock()
+	mode.statusNoticeOpening = mode.statusNotice == ""
 	if mode.statusNoticeTimer != nil {
 		mode.statusNoticeTimer.Stop()
 		mode.statusNoticeTimer = nil
 	}
 	mode.statusNotice = strings.Join(strings.Fields(text), " ")
 	mode.statusNoticeStarted = time.Now()
-	mode.statusNoticeAnimated = animated && mode.statusNotice != ""
 	if mode.statusNotice != "" {
 		var timer *time.Timer
-		duration := 3 * time.Second
-		if mode.statusNoticeAnimated {
-			duration = 2500 * time.Millisecond
-		}
-		timer = time.AfterFunc(duration, func() {
+		timer = time.AfterFunc(statusNoticeLifetime, func() {
 			mode.statusMessageMu.Lock()
 			if mode.statusNoticeTimer == timer {
 				mode.statusNotice, mode.statusNoticeTimer = "", nil
@@ -2700,9 +2698,7 @@ func (mode *InteractiveMode) showStatusMessageWithAnimation(text string, animate
 			mode.ui.RequestRender()
 		})
 		mode.statusNoticeTimer = timer
-		if mode.statusNoticeAnimated {
-			go mode.animateStatusNotice(timer)
-		}
+		go mode.animateStatusNotice(timer)
 	}
 	mode.statusMessageMu.Unlock()
 	if mode.ui != nil {
@@ -2717,11 +2713,16 @@ func (mode *InteractiveMode) animateStatusNotice(timer *time.Timer) {
 		mode.statusMessageMu.Lock()
 		active := mode.statusNoticeTimer == timer
 		elapsed := time.Since(mode.statusNoticeStarted)
+		opening := mode.statusNoticeOpening
 		mode.statusMessageMu.Unlock()
 		if !active {
 			return
 		}
-		if elapsed < 200*time.Millisecond || elapsed > 2200*time.Millisecond {
+		entrance := statusNoticeFade
+		if opening {
+			entrance += statusNoticeEdge
+		}
+		if elapsed < entrance || elapsed > statusNoticeLifetime-statusNoticeEdge-statusNoticeFade {
 			mode.ui.RequestRender()
 		}
 	}
@@ -2729,26 +2730,52 @@ func (mode *InteractiveMode) animateStatusNotice(timer *time.Timer) {
 
 func (mode *InteractiveMode) statusNoticeText() string {
 	mode.statusMessageMu.Lock()
-	text, animated, started := mode.statusNotice, mode.statusNoticeAnimated, mode.statusNoticeStarted
+	defer mode.statusMessageMu.Unlock()
+	return mode.statusNotice
+}
+
+func (mode *InteractiveMode) animatedStatusNoticeText() string {
+	mode.statusMessageMu.Lock()
+	text, started, opening := mode.statusNotice, mode.statusNoticeStarted, mode.statusNoticeOpening
 	mode.statusMessageMu.Unlock()
-	if !animated || text == "" {
+	if text == "" {
 		return text
 	}
 	elapsed := time.Since(started)
 	alpha := 1.0
-	if elapsed < 200*time.Millisecond {
-		progress := float64(elapsed) / float64(200*time.Millisecond)
+	entrance := time.Duration(0)
+	if opening {
+		entrance = statusNoticeEdge
+	}
+	if elapsed < entrance {
+		progress := float64(elapsed) / float64(statusNoticeEdge)
+		width := int(float64(tui.VisibleWidth(text)) * (1 - (1-progress)*(1-progress)))
+		text = tui.TruncateToWidth(text, width, "", false)
+		alpha = 0
+	} else if elapsed < entrance+statusNoticeFade {
+		progress := float64(elapsed-entrance) / float64(statusNoticeFade)
 		alpha = 1 - (1-progress)*(1-progress)*(1-progress)
-	} else if elapsed > 2200*time.Millisecond {
-		progress := float64(2500*time.Millisecond-elapsed) / float64(300*time.Millisecond)
+	} else if elapsed > statusNoticeLifetime-statusNoticeEdge {
+		remaining := max(0, float64(statusNoticeLifetime-elapsed)/float64(statusNoticeEdge))
+		width := int(float64(tui.VisibleWidth(text)) * (1 - (1-remaining)*(1-remaining)))
+		text = tui.TruncateToWidth(text, width, "", false)
+		alpha = 0
+	} else if elapsed > statusNoticeLifetime-statusNoticeEdge-statusNoticeFade {
+		progress := float64(statusNoticeLifetime-statusNoticeEdge-elapsed) / float64(statusNoticeFade)
 		alpha = max(0, progress*progress)
 	}
-	if alpha >= 1 || theme.Current() == nil || theme.Current().ColorMode() != theme.TrueColor {
+	if text == "" {
+		return ""
+	}
+	palette := theme.Current()
+	if alpha >= 1 || palette == nil || palette.ColorMode() != theme.TrueColor {
 		return text
 	}
 	var bgR, bgG, bgB, fgR, fgG, fgB int
-	if _, err := fmt.Sscanf(theme.BGANSI("toolPendingBg"), "\x1b[48;2;%d;%d;%dm", &bgR, &bgG, &bgB); err != nil {
-		return text
+	if _, err := fmt.Sscanf(palette.ExportColors()["pageBg"], "#%02x%02x%02x", &bgR, &bgG, &bgB); err != nil {
+		if _, err = fmt.Sscanf(theme.BGANSI("toolPendingBg"), "\x1b[48;2;%d;%d;%dm", &bgR, &bgG, &bgB); err != nil {
+			return text
+		}
 	}
 	if _, err := fmt.Sscanf(theme.FGANSI("dim"), "\x1b[38;2;%d;%d;%dm", &fgR, &fgG, &fgB); err != nil {
 		return text
