@@ -99,6 +99,10 @@ func UnmarshalString(data []byte) (string, error) {
 	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
 		return "", fmt.Errorf("jsonwire: invalid JSON string")
 	}
+	plain := data[1 : len(data)-1]
+	if utf8.Valid(plain) && bytes.IndexFunc(plain, func(r rune) bool { return r < 0x20 || r == '"' || r == '\\' }) < 0 {
+		return string(plain), nil
+	}
 	var output bytes.Buffer
 	output.Grow(len(data) - 2)
 	for index := 1; index < len(data)-1; {

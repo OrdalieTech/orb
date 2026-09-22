@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Reduce streamed tool-argument parsing and model-catalog allocation costs without changing JSON wire formats.
+
 ### Claude Sessions
 
 - Add an optional plugin using the official Claude Agent SDK. Start from `/claude`; Orb prepares

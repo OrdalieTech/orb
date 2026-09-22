@@ -139,7 +139,18 @@ func (catalog *Catalog) MergedModels(overlay *Catalog) []ai.Model {
 		sortedProviders = append(sortedProviders, providerID)
 	}
 	slices.Sort(sortedProviders)
-	result := make([]ai.Model, 0)
+	count := 0
+	for _, providerID := range sortedProviders {
+		count += len(catalog.providers[providerID])
+		if overlay != nil {
+			for id := range overlay.providers[providerID] {
+				if _, exists := catalog.providers[providerID][id]; !exists {
+					count++
+				}
+			}
+		}
+	}
+	result := make([]ai.Model, 0, count)
 	ids := make([]string, 0)
 	for _, providerID := range sortedProviders {
 		base, over := catalog.providers[providerID], map[string]ai.Model(nil)

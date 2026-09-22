@@ -108,3 +108,14 @@ func TestUnmarshalStringPreservesSurrogates(t *testing.T) {
 		t.Fatalf("re-encoded = %s, want %s", got, want)
 	}
 }
+
+func TestUnmarshalStringPlainAndInvalid(t *testing.T) {
+	for _, input := range []string{`"plain text"`, `"héllo 😀"`, `"escaped\ntext"`, "\"invalid\xff\xfe\"", `"bad"quote"`, "\"control\x01\""} {
+		var want string
+		err := json.Unmarshal([]byte(input), &want)
+		got, gotErr := UnmarshalString([]byte(input))
+		if (err == nil) != (gotErr == nil) || err == nil && got != want {
+			t.Fatalf("%q: got %q (%v), want %q (%v)", input, got, gotErr, want, err)
+		}
+	}
+}

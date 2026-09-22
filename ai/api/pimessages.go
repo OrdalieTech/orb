@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 // PiMessagesOptions contains the gateway-specific options sent through the
@@ -408,8 +407,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		arguments := buffer.append(converter.toolJSON[wire.ContentIndex], wire.Delta)
 		converter.toolJSON[wire.ContentIndex] = arguments
 		if buffer.shouldParse() {
-			encoded, err := partialjson.StringifyStreamingJSON(arguments)
-			if err != nil || ai.SetToolCallArgumentsJSON(call, encoded) != nil {
+			if ai.SetToolCallPartialJSON(call, arguments) != nil {
 				_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
 			}
 		}

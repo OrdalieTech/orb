@@ -3,7 +3,9 @@ package ai_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/OrdalieTech/orb/internal/partialjson"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -438,5 +440,40 @@ func TestToolCallStreamingScratchIsOptional(t *testing.T) {
 	}
 	if bytes.Contains(encoded, []byte("partialArgs")) || bytes.Contains(encoded, []byte("streamIndex")) {
 		t.Fatalf("terminal call retained scratch fields: %s", encoded)
+	}
+}
+
+func TestToolCallPartialJSONMatchesNormalizedArguments(t *testing.T) {
+	for _, input := range []string{
+		`{"2":"two","z":{"b":1,"a":2},"1":"one","z":3,"text":"héllo\n\ud800"}`,
+		`{"numbers":[-0,1e-7,1e20,1e21,9007199254740993,1e400],"tail":"incomplete`,
+		`[true,null,"\ud83d\ude00",{"x":1}]`, `null`, `"text"`, `{"path":"C:\q","control":"line
+next"}`,
+	} {
+		for end := 0; end <= len(input); end++ {
+			prefix := input[:end]
+			encoded, err := partialjson.StringifyStreamingJSON(prefix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, got := &ai.ToolCall{}, &ai.ToolCall{}
+			if err := ai.SetToolCallArgumentsJSON(want, encoded); err != nil {
+				t.Fatal(err)
+			}
+			if err := ai.SetToolCallPartialJSON(got, prefix); err != nil {
+				t.Fatal(err)
+			}
+			a, err := ai.MarshalToolCallArguments(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := ai.MarshalToolCallArguments(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(a, b) || !reflect.DeepEqual(want.Arguments, got.Arguments) {
+				t.Fatalf("prefix %q: got %s (%#v), want %s (%#v)", prefix, b, got.Arguments, a, want.Arguments)
+			}
+		}
 	}
 }

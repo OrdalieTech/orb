@@ -13,7 +13,6 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
-	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 const mistralToolCallIDLength = 9
@@ -887,8 +886,7 @@ func mistralArgumentsText(raw json.RawMessage) string {
 }
 
 func setMistralStreamArguments(block *ai.ToolCall, value string) {
-	arguments, err := partialjson.StringifyStreamingJSON(value)
-	if err != nil || ai.SetToolCallArgumentsJSON(block, arguments) != nil {
+	if ai.SetToolCallPartialJSON(block, value) != nil {
 		_ = ai.SetToolCallArgumentsJSON(block, []byte(`{}`))
 	}
 }
