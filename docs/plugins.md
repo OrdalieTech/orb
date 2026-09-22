@@ -183,7 +183,11 @@ for new sessions. The existing model footer is retained, with a single compact C
 `--session` and the ordinary Sessions picker resume the selected Orb conversation using its explicit
 native Claude session ID. `/tree`, withdrawn prompts and branch summaries work as in any Orb
 session; Claude writes the summary. Native approvals use Orb's choices, and **approve for this
-session** lasts as long as the running Orb session. `/claude` selects the model for explicitly created Claude sessions.
+session** lasts as long as the running Orb session. Messages sent while Claude works join the running
+turn after its next tool result. `/claude` → Permission mode offers default, accept-edits, plan,
+auto and don't-ask. Orb's AGENTS.md and system-prompt additions reach Claude; its own CLAUDE.md
+files load natively. In `-p`/JSON runs, approvals Claude would ask for run as Orb's own tools would,
+unless one of your Claude ask rules forces the prompt. `/claude` selects the model for explicitly created Claude sessions.
 **Switch to Orb** opens a separate regular conversation and keeps the Claude session saved; it also
 works before an Orb provider is configured. Ordinary launches never implicitly choose Claude. `--no-extensions`
 disables this optional capability. There is no fallback to another account or model on errors.

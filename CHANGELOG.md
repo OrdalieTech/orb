@@ -6,6 +6,12 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Claude Sessions: keep one live Claude process per session, so turns after the first start in about
+  a second and messages sent while Claude works join the running turn. Headless runs approve what
+  Orb itself would run, Orb's AGENTS.md and system-prompt additions reach Claude, Edit shows Orb's
+  diff, unknown tools show their main argument, and `/claude` offers every permission mode. A
+  disabled plugin now says how to enable it.
+
 - Run the agent on any platform through `host.Host` ports (files, processes, documents, credentials, sessions): browser Wasm, WASI and native hosts produce identical sessions. The RPC mode moves to the headless `agent/rpc` package (`rpc.Serve`) as the embedding protocol for every host. Provider families register through `api.Registry` (`ai/api/all` for all of them), so light builds link only what they use; `engine.SetDefaultStreamFn` is removed.
 
 - SDK: the `agent` package no longer links the TUI or syntax highlighting (full AgentSession

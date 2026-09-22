@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const pending = new Map();
-let active, cancelled = false, nextID = 0;
+let active, nextID = 0, idle, finished = false;
 async function send(value) {
   const line = JSON.stringify(value) + '\n';
   if (Buffer.byteLength(line) > 8 * 1024 * 1024) throw new Error('Claude SDK event exceeds 8 MiB');
@@ -23,14 +23,14 @@ function request(message, signal) {
     send({ ...message, id }).catch(reject);
   });
 }
-function ask(title, choices, signal) { return request({ type: 'input', title, choices }, signal); }
+function ask(title, choices, signal, ruled = false) { return request({ type: 'input', title, choices, ruled }, signal); }
 async function run(config) {
   const { query, forkSession } = await import(pathToFileURL(config.sdk));
-  let permissionMode = config.permissionMode === 'plan' ? 'plan' : 'default';
+  let permissionMode = config.permissionMode || 'default';
   const options = {
     cwd: config.cwd, pathToClaudeCodeExecutable: config.claude,
     model: config.model === "default" ? undefined : config.model, includePartialMessages: true, agentProgressSummaries: true,
-    systemPrompt: { type: 'preset', preset: 'claude_code' },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: config.append || undefined },
     permissionMode,
     hooks: { PreToolUse: [{ timeout: 86400, hooks: [async (input, toolID, { signal }) => {
       if (input.tool_name === 'AskUserQuestion' || input.tool_name === 'ExitPlanMode') return {};
@@ -66,11 +66,13 @@ async function run(config) {
           : name === 'Write' ? `${relative(input.file_path)}\n\n${quote('', input.content)}`
           : name === 'Edit' ? `${relative(input.file_path)}\n\n${quote('- ', input.old_string)}\n${quote('+ ', input.new_string)}`
           : JSON.stringify(input, null, 2);
-        const title = name === 'ExitPlanMode' ? 'Approve this plan?' : `Permission requested for ${name}`;
+        const title = name === 'ExitPlanMode' ? 'Approve this plan?'
+          : `Permission requested for ${name}${options.agentID ? ' (Claude subagent)' : ''}`;
         // The same choices as Orb's own approvals; "this session" becomes native session rules.
         const session = options.suggestions?.length && !options.suppressAlwaysAllowRule;
         const choices = ['y approve once', ...(session ? ['s approve for this session'] : []), 'n deny', 'r deny with a reason'];
-        const answer = await ask(`${title}\n\n${details}`, choices, signal);
+        // A user's own ask rule always wants a human; other asks may use Orb's headless fallback.
+        const answer = await ask(`${title}\n\n${details}`, choices, signal, Boolean(options.matchedAskRule) || name === 'ExitPlanMode');
         if (answer === 'y approve once') return { behavior: 'allow', updatedInput: input };
         if (answer === 's approve for this session') {
           const updatedPermissions = options.suggestions.map(update => ({ ...update, destination: 'session' }));
@@ -84,7 +86,7 @@ async function run(config) {
       }
     },
   };
-  // Each turn is a new native process, so this Orb session's approvals are re-applied.
+  // A restarted host re-applies this Orb session's approvals.
   for (const update of config.sessionUpdates ?? []) {
     if (update.type === 'addRules' && update.behavior === 'allow') {
       options.allowedTools = [...(options.allowedTools ?? []), ...update.rules.map(rule => rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName)];
@@ -119,56 +121,55 @@ async function run(config) {
   if (config.resume) options.resume = config.fork
     ? (await forkSession(config.resume, { dir: config.cwd, upToMessageId: config.at || undefined })).sessionId
     : config.resume;
-  // Keep permission callbacks available until native foreground and background work completes.
-  let release;
-  const finished = new Promise(resolve => { release = resolve; });
-  async function* input() {
-    yield { type: 'user', uuid: config.uuid, parent_tool_use_id: null, message: { role: 'user', content: config.content } };
-    await finished;
-  }
-  try {
-    active = query({ prompt: input(), options });
-    if (cancelled) { await active.interrupt(); return; }
-    const tasks = new Set();
-    let finishedTurn = false, released = false, levelReported = false;
-    for await (const event of active) {
-      if (event.type === 'system') {
-        if (event.permissionMode) permissionMode = event.permissionMode;
-        if (event.subtype === 'background_tasks_changed') {
-          levelReported = true;
-          tasks.clear();
-          for (const task of event.tasks) if (!task.ambient) tasks.add(task.task_id);
-        } else if (!levelReported && event.subtype === 'task_started' && event.is_backgrounded && !event.ambient && !event.skip_transcript) {
-          tasks.add(event.task_id);
-        } else if (!levelReported && event.subtype === 'task_notification') {
-          tasks.delete(event.task_id);
-        }
-      }
-      if (tasks.size > 1024) throw new Error('Too many native background tasks');
-      if (event.type === 'result') finishedTurn = true;
-      const settled = finishedTurn && tasks.size === 0 && !released;
-      // The reading precedes the result so the final repaint already shows it.
-      if (settled) {
-        let timeout;
-        try {
-          const usage = await Promise.race([
-            active.getContextUsage({ detail: 'summary' }),
-            new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Context timeout')), 2000); }),
-          ]);
-          await send({ type: 'context', event: { maxTokens: usage.maxTokens, totalTokens: usage.totalTokens, percentage: usage.percentage } });
-        } catch { /* Context telemetry must not fail a completed turn. */ }
-        finally { clearTimeout(timeout); }
-      }
-      await send({ type: 'sdk', event });
-      if (settled) {
-        released = true;
-        release();
+  // One live query per Orb session: prompts arrive on stdin, and a turn settles once its
+  // result has no queued sends and no native background task remains.
+  active = query({ prompt: input(), options });
+  const tasks = new Set();
+  let levelReported = false;
+  for await (const event of active) {
+    if (event.type === 'system') {
+      if (event.permissionMode) permissionMode = event.permissionMode;
+      if (event.subtype === 'background_tasks_changed') {
+        levelReported = true;
+        tasks.clear();
+        for (const task of event.tasks) if (!task.ambient) tasks.add(task.task_id);
+      } else if (!levelReported && event.subtype === 'task_started' && event.is_backgrounded && !event.ambient && !event.skip_transcript) {
+        tasks.add(event.task_id);
+      } else if (!levelReported && event.subtype === 'task_notification') {
+        tasks.delete(event.task_id);
       }
     }
-  } finally {
-    release();
-    active?.close();
-    active = undefined;
+    if (tasks.size > 1024) throw new Error('Too many native background tasks');
+    if (event.type === 'result') finished = !(event.queued_turn_count > 0);
+    const settled = finished && tasks.size === 0;
+    // The reading precedes the result so the final repaint already shows it.
+    if (settled) {
+      let timeout;
+      try {
+        const usage = await Promise.race([
+          active.getContextUsage({ detail: 'summary' }),
+          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Context timeout')), 2000); }),
+        ]);
+        await send({ type: 'context', event: { maxTokens: usage.maxTokens, totalTokens: usage.totalTokens, percentage: usage.percentage } });
+      } catch { /* Context telemetry must not fail a completed turn. */ }
+      finally { clearTimeout(timeout); }
+    }
+    await send({ type: 'sdk', event });
+    if (settled) {
+      finished = false;
+      await send({ type: 'settled' });
+      // ponytail: an idle host exits after 10 minutes; the next prompt resumes it.
+      idle = setTimeout(() => lines.close(), 10 * 60 * 1000);
+    }
+  }
+}
+const inbox = [];
+let wake, ended = false;
+async function* input() {
+  for (;;) {
+    while (inbox.length) yield inbox.shift();
+    if (ended) return;
+    await new Promise(resolve => { wake = resolve; });
   }
 }
 let running = false;
@@ -180,14 +181,20 @@ lines.on('line', line => {
       running = true;
       run(message).catch(error => send({ type: 'error', message: String(error.message).slice(0, 4096) }))
         .finally(() => { lines.close(); process.stdin.destroy(); });
+    } else if (message.type === 'prompt') {
+      clearTimeout(idle);
+      finished = false;
+      inbox.push({ type: 'user', uuid: message.uuid, parent_tool_use_id: null, message: { role: 'user', content: message.content } });
+      wake?.();
     } else if (message.type === 'reply') {
       const resolve = pending.get(message.id);
       pending.delete(message.id);
       resolve?.(message.value, message.cancelled);
     } else if (message.type === 'cancel') {
-      cancelled = true;
-      active?.interrupt().catch(() => {}).finally(() => active?.close());
+      active?.interrupt().catch(() => {});
     }
   } catch { active?.close(); process.exitCode = 1; lines.close(); process.stdin.destroy(); }
 });
-lines.on('close', () => { if (!running) process.exitCode = 1; });
+// Orb closing stdin (idle, disposal or exit) ends the prompt stream, so the native
+// session finishes its current turn and exits; Orb kills a host that lingers.
+lines.on('close', () => { if (!running) process.exitCode = 1; clearTimeout(idle); ended = true; wake?.(); });

@@ -148,6 +148,7 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 		result, err := agent.NewAgentSession(opts)
 		if err == nil {
 			runtime = result.Session
+			closeOnDispose(runtime, driver)
 		}
 		return result, err
 	}
@@ -165,6 +166,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 		return nil, err
 	}
 	options.Manager = cfg.SessionManager
+	options.Context = orbContext(cfg.SystemPromptOptions)
 	var runtime *agent.SessionRuntime
 	options.Ask = func(ctx context.Context, title string, choices []string) (string, error) {
 		return runtime.RequestInput(ctx, title, choices)
@@ -190,7 +192,37 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	cfg.RebuildBaseTools = nil
 	cfg.AvailableModels = func() []ai.Model { return models }
 	cfg.ScopedModels = nil
-	return func(s *agent.SessionRuntime) { runtime = s }, nil
+	return func(s *agent.SessionRuntime) { runtime = s; closeOnDispose(s, driver) }, nil
+}
+
+// orbContext is what Orb would add to its own system prompt and Claude does not
+// load itself: context files other than CLAUDE.md, --system-prompt and APPEND_SYSTEM.
+func orbContext(options *agent.SystemPromptOptions) string {
+	if options == nil {
+		return ""
+	}
+	var parts []string
+	for _, prompt := range []*string{options.CustomPrompt, options.AppendSystemPrompt} {
+		if prompt != nil && strings.TrimSpace(*prompt) != "" {
+			parts = append(parts, strings.TrimSpace(*prompt))
+		}
+	}
+	for _, file := range options.ContextFiles {
+		if filepath.Base(file.Path) != "CLAUDE.md" && strings.TrimSpace(file.Content) != "" {
+			parts = append(parts, fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", file.Path, strings.TrimSpace(file.Content)))
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// closeOnDispose ends the driver's live native session with its runtime.
+func closeOnDispose(runtime *agent.SessionRuntime, driver *Driver) {
+	events, _ := runtime.SubscribeChan(1)
+	go func() {
+		for range events {
+		}
+		driver.Close()
+	}()
 }
 
 func configuredOptions(ctx context.Context, settingsManager *config.SettingsManager, agentDir string, env []string) (Options, error) {
@@ -231,7 +263,9 @@ func configuredOptions(ctx context.Context, settingsManager *config.SettingsMana
 			return strings.HasPrefix(item, "ANTHROPIC_API_KEY=") || strings.HasPrefix(item, "ANTHROPIC_AUTH_TOKEN=")
 		})
 	}
-	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode}, nil
+	policy, err := permissions.FromSettings(settingsManager.GetPluginSettings("permissions"))
+	headless := !settingsManager.GetPlugins()["permissions"] || (err == nil && policy.AskFallback == permissions.Allow)
+	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode, Headless: headless}, nil
 }
 
 // Published versions live at immutable paths so upgrades cannot break active sessions.
@@ -346,7 +380,12 @@ func discoverModels(ctx context.Context, options Options, cwd string) ([]ai.Mode
 			levels[ai.ModelThinkingMedium] = ptr("adaptive")
 		}
 		metadata, _ := json.Marshal(info)
-		models = append(models, ai.Model{ID: info.Value, Name: name, API: Name, Provider: Name, Input: ai.InputModalities{"text", "image"}, Reasoning: info.Effort || info.Adaptive, ThinkingLevelMap: &levels, Compat: metadata})
+		// ponytail: the catalog has no window size; Claude's are 200k, and 1M for [1m] variants.
+		window := 200_000.0
+		if strings.Contains(info.Value+info.Resolved, "[1m]") {
+			window = 1_000_000
+		}
+		models = append(models, ai.Model{ID: info.Value, Name: name, API: Name, Provider: Name, Input: ai.InputModalities{"text", "image"}, Reasoning: info.Effort || info.Adaptive, ThinkingLevelMap: &levels, ContextWindow: window, Compat: metadata})
 	}
 	if len(models) == 0 {
 		return nil, errors.New("claude returned no usable models")
@@ -412,7 +451,7 @@ func executable(name string, env []string) (string, error) {
 }
 
 // These tools provide presentation only; the SDK alone executes native calls.
-var nativeToolNames = []string{"AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "Bash", "Read", "Write", "Edit", "Glob", "Grep"}
+var nativeToolNames = []string{"AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Task", "TaskOutput", "TaskStop", "Monitor", "Skill"}
 
 type nativeTool struct{ name, cwd string }
 
@@ -439,10 +478,11 @@ func toolSummary(name string, args any, cwd string) string {
 		return name
 	}
 	var input struct {
-		Questions                                    json.RawMessage `json:"questions"`
-		Plan, Command, Description, Pattern, Subject string
-		FilePath                                     string `json:"file_path"`
-		Todos                                        []struct{ Content, Status string }
+		Questions                                                             json.RawMessage `json:"questions"`
+		Plan, Command, Description, Pattern, Subject, URL, Query, Skill, Path string
+		FilePath                                                              string `json:"file_path"`
+		NotebookPath                                                          string `json:"notebook_path"`
+		Todos                                                                 []struct{ Content, Status string }
 	}
 	if json.Unmarshal(raw, &input) != nil {
 		return name
@@ -469,7 +509,7 @@ func toolSummary(name string, args any, cwd string) string {
 		}
 		return strings.Join(lines, "\n")
 	}
-	for _, detail := range []string{input.FilePath, input.Command, input.Pattern, input.Subject, input.Description} {
+	for _, detail := range []string{input.FilePath, input.NotebookPath, input.Command, input.Pattern, input.URL, input.Query, input.Skill, input.Subject, input.Description, input.Path} {
 		if detail != "" {
 			return name + " · " + detail
 		}
@@ -503,7 +543,7 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 		})
 		shortcuts := []struct{ name, action string }{
 			{"models", "Model"}, {"usage", "Usage"}, {"new", "New Claude session"},
-			{"exit", "Switch to Orb"}, {"plan", "Plan mode"},
+			{"exit", "Switch to Orb"}, {"plan", "Plan mode"}, {"mode", "Permission mode"},
 			{"normal", "Leave plan mode"}, {"compact", "Compact conversation"},
 		}
 		handle := func(ctx context.Context, args string, command extensions.CommandContext) error {
@@ -522,11 +562,7 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 			}
 			actions := []string{"New Claude session", "Model"}
 			if current := command.Model(); current != nil && current.Provider == Name {
-				modeAction := "Plan mode"
-				if nativeMode(command.SessionManager()) == "plan" {
-					modeAction = "Leave plan mode"
-				}
-				actions = append(actions, "Usage", modeAction, "Compact conversation", "Switch to Orb")
+				actions = append(actions, "Usage", "Permission mode", "Compact conversation", "Switch to Orb")
 			}
 			var err error
 			if choice == "" {
@@ -536,7 +572,7 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 					return err
 				}
 			}
-			if choice == "Plan mode" || choice == "Leave plan mode" || choice == "Compact conversation" {
+			if choice == "Plan mode" || choice == "Leave plan mode" || choice == "Permission mode" || choice == "Compact conversation" {
 				if command.Model() == nil || command.Model().Provider != Name {
 					return errors.New("start a Claude session first")
 				}
@@ -546,9 +582,13 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 				if choice == "Compact conversation" {
 					return api.SendUserMessage(ctx, ai.NewUserText("/compact"), nil)
 				}
-				mode := "default"
-				if choice == "Plan mode" {
-					mode = "plan"
+				mode := map[string]string{"Plan mode": "plan", "Leave plan mode": "default"}[choice]
+				if choice == "Permission mode" {
+					selected, ok, err := command.UI().Select(ctx, "Claude permission mode", nativeModes[:], nil)
+					if err != nil || !ok {
+						return err
+					}
+					mode = selected
 				}
 				if err := api.AppendEntry(ctx, Name+".mode", mode); err != nil {
 					return err
@@ -771,8 +811,8 @@ func nativeContextUsage(manager extensions.ReadonlySessionManager) *harness.Cont
 
 func limitsStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
 	text := quotaStatus(manager, now)
-	if nativeMode(manager) == "plan" {
-		text += " · plan"
+	if mode := nativeMode(manager); mode != "default" {
+		text += " · " + mode
 	}
 	return text
 }
@@ -913,10 +953,13 @@ func showUsage(ctx context.Context, command extensions.CommandContext) error {
 	return err
 }
 
+// nativeModes are Claude's permission modes Orb offers; bypassPermissions stays native-only.
+var nativeModes = [...]string{"default", "acceptEdits", "plan", "auto", "dontAsk"}
+
 func nativeMode(manager extensions.ReadonlySessionManager) string {
 	var mode string
-	if entry := onBranch(manager, func(entry *session.SessionEntry) bool { return entry.CustomType == Name+".mode" }); entry != nil && json.Unmarshal(entry.Data, &mode) == nil && mode == "plan" {
-		return "plan"
+	if entry := onBranch(manager, func(entry *session.SessionEntry) bool { return entry.CustomType == Name+".mode" }); entry != nil && json.Unmarshal(entry.Data, &mode) == nil && slices.Contains(nativeModes[:], mode) {
+		return mode
 	}
 	return "default"
 }

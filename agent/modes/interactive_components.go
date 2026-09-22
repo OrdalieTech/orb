@@ -632,7 +632,7 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			c.contentBox.AddChild(rendered)
 		}
 	} else {
-		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(theme.FG("accent", theme.Bold(c.toolName)), 0, 0, nil), expanded: c.expanded})
+		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(fallbackToolTitle(c.toolName, c.args), 0, 0, nil), expanded: c.expanded})
 	}
 
 	// Tool result
@@ -850,6 +850,18 @@ type toolActivityGroup struct {
 type toolActivityRow struct {
 	tool       *ToolExecutionComponent
 	start, end int
+}
+
+// fallbackToolTitle names a tool without a renderer by its most telling argument.
+func fallbackToolTitle(name string, args any) string {
+	title := theme.FG("accent", theme.Bold(name))
+	values, _ := args.(map[string]any)
+	for _, key := range []string{"file_path", "path", "command", "url", "query", "pattern", "description"} {
+		if value, ok := values[key].(string); ok && value != "" {
+			return title + theme.FG("toolTitle", " "+strings.Join(strings.Fields(value), " "))
+		}
+	}
+	return title
 }
 
 func toolActivityKind(name string) string {

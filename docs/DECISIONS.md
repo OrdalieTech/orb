@@ -361,6 +361,14 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 ## Standing assumptions (owner-confirmed)
 
+- **Native session executors (owner, 2026-09-22).** A capability may replace Orb's model/tool loop
+  for its own provider only through generic seams: `SessionLoop` and `ContextUsage` on session
+  options/config, `SessionRuntime.RequestInput`, `NewSessionOptions.Prepare` and Bridge
+  `attach.Options.Status`. Core names no executor; the TUI routes typed `/compact` to an executor as
+  its own `/compact` prompt and renders tools case-insensitively. Claude Sessions is the one
+  implementation: a default-off `claude-sessions` catalog row supplied by the CLI (P4), wired in
+  `cmd/orb`. Under P3 no executor-registration extension API is cut until a second executor exists.
+
 - **Permission hardening (owner, 2026-09-22).** Permission policy remains optional and enforces
   rules when enabled. The owner's follow-up makes `auto` the default approval mode (including the
   workspace-write preset): `ask` resolves to one-call consent without AI, while denials and guards

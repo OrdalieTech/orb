@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,7 +46,11 @@ type Options struct {
 	Node, SDK, Claude string
 	Env               []string
 	Manager           *session.SessionManager
-	Ask               func(context.Context, string, []string) (string, error)
+	// Headless approves native asks that no UI can answer, as Orb runs its own tools.
+	Headless bool
+	// Context is Orb's instructions that Claude does not load itself.
+	Context string
+	Ask     func(context.Context, string, []string) (string, error)
 }
 
 // Native SDK events may omit utilization; absence is never treated as zero use.
@@ -70,6 +75,8 @@ type checkpoint struct {
 }
 type Driver struct {
 	options Options
+	mu      sync.Mutex
+	host    *host
 	// ponytail: approvals "for this session" live as long as this Orb runtime,
 	// like Orb's own session approvals.
 	approved []json.RawMessage
@@ -186,6 +193,93 @@ func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, _ engin
 	return emit(context.WithoutCancel(ctx), engine.AgentEndEvent{Messages: generated})
 }
 
+// host is one live native session. It serves every turn while the start
+// configuration and the branch point stay those it last recorded.
+type host struct {
+	key    string
+	point  checkpoint
+	input  io.WriteCloser
+	mu     sync.Mutex
+	frames chan hostFrame
+	kill   func() error
+}
+
+type hostFrame struct {
+	Type        string          `json:"type"`
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Choices     []string        `json:"choices"`
+	Event       json.RawMessage `json:"event"`
+	Message     string          `json:"message"`
+	Tool        string          `json:"tool"`
+	ToolID      string          `json:"tool_id"`
+	Args        map[string]any  `json:"args"`
+	CWD         string          `json:"cwd"`
+	Ruled       bool            `json:"ruled"`
+	Questions   json.RawMessage `json:"questions"`
+	Elicitation json.RawMessage `json:"elicitation"`
+}
+
+func (h *host) write(value any) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return json.NewEncoder(h.input).Encode(value)
+}
+
+// close lets the host end its native session, and kills it if it lingers.
+func (h *host) close() {
+	_ = h.input.Close()
+	time.AfterFunc(5*time.Second, func() { _ = h.kill() })
+}
+
+func (d *Driver) spawn(start map[string]any) (*host, error) {
+	process := exec.Command(d.options.Node, "--input-type=module", "-e", hostSource)
+	process.Dir, process.Env, process.Stderr = d.options.Manager.GetCWD(), d.options.Env, io.Discard
+	input, err := process.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	output, err := process.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	h := &host{input: input, frames: make(chan hostFrame, 64), kill: isolate(process)}
+	if err = process.Start(); err != nil {
+		return nil, fmt.Errorf("start Claude SDK: %w", err)
+	}
+	go func() {
+		defer close(h.frames)
+		defer func() { _ = h.kill(); _ = process.Wait() }()
+		scanner := bufio.NewScanner(output)
+		scanner.Buffer(make([]byte, 64<<10), 8<<20)
+		for scanner.Scan() {
+			var frame hostFrame
+			if err := json.Unmarshal(scanner.Bytes(), &frame); err != nil {
+				frame = hostFrame{Type: "error", Message: "invalid Claude SDK host frame"}
+			}
+			h.frames <- frame
+		}
+		if scanner.Err() != nil {
+			h.frames <- hostFrame{Type: "error", Message: "read Claude SDK: " + scanner.Err().Error()}
+		}
+	}()
+	if err = h.write(start); err != nil {
+		h.close()
+		return nil, err
+	}
+	return h, nil
+}
+
+// Close ends the live native session, if any.
+func (d *Driver) Close() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.host != nil {
+		d.host.close()
+		d.host = nil
+	}
+}
+
 func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config engine.AgentLoopConfig, emit engine.EventSink) error {
 	model := config.Model
 	saved, err := d.checkpoint()
@@ -197,14 +291,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		return err
 	}
 	id := d.options.Manager.GetSessionID()
-	start := map[string]any{"type": "start", "sdk": d.options.SDK, "claude": d.options.Claude, "cwd": d.options.Manager.GetCWD(), "model": model.ID, "permissionMode": nativeMode(d.options.Manager), "content": content, "sessionUpdates": d.approved, "uuid": newUUID()}
-	// Continuing from the newest native point resumes in place. Any other point
-	// (a /tree move, a withdrawn prompt, a copied session) forks a native session
-	// cut exactly there, which also reaches history before a native compaction.
-	if saved.Session != "" {
-		start["resume"], start["fork"] = saved.Session, saved.Owner != id || saved.At != d.tail(saved.Session)
-		start["at"] = saved.At
-	}
+	start := map[string]any{"type": "start", "sdk": d.options.SDK, "claude": d.options.Claude, "cwd": d.options.Manager.GetCWD(), "model": model.ID, "permissionMode": nativeMode(d.options.Manager), "append": d.options.Context}
 	var info modelInfo
 	_ = json.Unmarshal(model.Compat, &info)
 	level := ai.ModelThinkingOff
@@ -220,131 +307,151 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	if slices.Contains(info.Levels, string(level)) {
 		start["effort"] = level
 	}
+	key, _ := json.Marshal(start)
+	fork := saved.Owner != id || saved.At != d.tail(saved.Session)
+	d.mu.Lock()
+	h := d.host
+	if h != nil && (h.key != string(key) || h.point != saved) {
+		h.close()
+		h = nil
+	}
+	if h == nil {
+		// Continuing from the newest native point resumes in place. Any other point
+		// (a /tree move, a withdrawn prompt, a copied session) forks a native session
+		// cut exactly there, which also reaches history before a native compaction.
+		if saved.Session != "" {
+			start["resume"], start["fork"], start["at"] = saved.Session, fork, saved.At
+		}
+		start["sessionUpdates"] = d.approved
+		if h, err = d.spawn(start); err != nil {
+			d.mu.Unlock()
+			return err
+		}
+		h.key = string(key)
+	}
+	d.host = h
+	d.mu.Unlock()
 
-	process := exec.CommandContext(ctx, d.options.Node, "--input-type=module", "-e", hostSource)
-	process.Dir, process.Env, process.Stderr = d.options.Manager.GetCWD(), d.options.Env, io.Discard
-	input, err := process.StdinPipe()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = input.Close() }()
-	output, err := process.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	var writeMu sync.Mutex
-	write := func(value any) error {
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		return json.NewEncoder(input).Encode(value)
-	}
-	kill := isolate(process)
-	process.Cancel = func() error { _ = write(map[string]string{"type": "cancel"}); return nil }
-	process.WaitDelay = 5 * time.Second
-	if err = process.Start(); err != nil {
-		return fmt.Errorf("start Claude SDK: %w", err)
-	}
-	defer func() { _ = kill() }()
-	if err = write(start); err != nil {
-		_ = kill()
-		_ = process.Wait()
-		return err
-	}
-	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: start["uuid"].(string)}
+	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: newUUID()}
 	if start["fork"] == true {
 		translator.session = ""
 	}
-	scanner := bufio.NewScanner(output)
-	scanner.Buffer(make([]byte, 64<<10), 8<<20)
-	var readErr error
-	for scanner.Scan() {
-		var frame struct {
-			Type        string          `json:"type"`
-			ID          string          `json:"id"`
-			Title       string          `json:"title"`
-			Choices     []string        `json:"choices"`
-			Event       json.RawMessage `json:"event"`
-			Message     string          `json:"message"`
-			Tool        string          `json:"tool"`
-			ToolID      string          `json:"tool_id"`
-			Args        map[string]any  `json:"args"`
-			CWD         string          `json:"cwd"`
-			Questions   json.RawMessage `json:"questions"`
-			Elicitation json.RawMessage `json:"elicitation"`
-		}
-		if readErr = json.Unmarshal(scanner.Bytes(), &frame); readErr != nil {
-			break
-		}
-		switch frame.Type {
-		case "sdk":
-			readErr = translator.event(frame.Event)
-		case "context":
-			_, readErr = d.options.Manager.AppendCustomEntry(Name+".context", frame.Event)
-		case "session":
-			var updates []json.RawMessage
-			if readErr = json.Unmarshal(frame.Event, &updates); readErr == nil {
-				d.approved = append(d.approved, updates...)
+	if err = h.write(map[string]any{"type": "prompt", "uuid": translator.prompt, "content": content}); err != nil {
+		d.Close()
+		return err
+	}
+	done, grace := ctx.Done(), (<-chan time.Time)(nil)
+	for {
+		select {
+		case frame, open := <-h.frames:
+			if !open {
+				d.Close()
+				if ctx.Err() != nil {
+					return translator.abort()
+				}
+				return errors.New("claude SDK exited without a result; execution outcome is unknown")
 			}
-		case "error":
-			readErr = errors.New(frame.Message)
-		case "tool":
-			if readErr = translator.startEarly(frame.ToolID); readErr != nil {
-				break
+			if frame.Type == "settled" {
+				h.point = checkpoint{Owner: id, Session: translator.session, At: translator.at}
+				if ctx.Err() != nil {
+					return translator.abort()
+				}
+				return translator.failure
 			}
-			decision, reason := d.approve(ctx, frame.Tool, frame.ToolID, frame.CWD, frame.Args, prompts, config.BeforeToolCall)
-			readErr = write(map[string]any{"type": "reply", "id": frame.ID, "value": map[string]string{"decision": decision, "reason": reason}})
-		case "elicitation":
-			response := d.elicit(ctx, frame.Elicitation)
-			readErr = write(map[string]any{"type": "reply", "id": frame.ID, "value": response})
-		case "questions":
-			request, err := nativeQuestions(frame.Questions)
-			result := questions.Result{Cancelled: true}
-			if err == nil {
-				result, err = questions.Ask(ctx, request, d.options.Ask)
+			if err = d.handle(ctx, frame, &translator, h, prompts, config); err == nil && translator.answered && ctx.Err() == nil {
+				translator.answered = false
+				err = d.steer(ctx, &translator, h, config)
 			}
 			if err != nil {
-				result = questions.Result{Cancelled: true}
+				d.Close()
+				if ctx.Err() != nil {
+					return translator.abort()
+				}
+				return err
 			}
-			readErr = write(map[string]any{"type": "reply", "id": frame.ID, "value": result})
-		case "input":
-			value, cancelled := "", true
-			if d.options.Ask != nil {
-				var askErr error
-				value, askErr = d.options.Ask(ctx, frame.Title, frame.Choices)
-				cancelled = askErr != nil
-			}
-			if ctx.Err() != nil {
-				readErr = ctx.Err()
-			} else {
-				readErr = write(map[string]any{"type": "reply", "id": frame.ID, "value": value, "cancelled": cancelled})
-			}
-		default:
-			readErr = errors.New("invalid Claude SDK host frame")
-		}
-		if readErr != nil {
-			break
+		case <-done:
+			done, grace = nil, time.After(5*time.Second)
+			translator.cancelled = true
+			_ = h.write(map[string]string{"type": "cancel"})
+		case <-grace:
+			d.Close()
+			return translator.abort()
 		}
 	}
-	if readErr != nil || scanner.Err() != nil {
-		_ = kill()
+}
+
+// steer hands queued steering messages to the running native turn after its tool
+// results, as Orb's own loop does.
+func (d *Driver) steer(ctx context.Context, t *translation, h *host, config engine.AgentLoopConfig) error {
+	if config.GetSteeringMessages == nil {
+		return nil
 	}
-	waitErr := process.Wait()
-	if ctx.Err() != nil {
-		return translator.abort()
+	messages, err := config.GetSteeringMessages(ctx)
+	if err != nil || len(messages) == 0 {
+		return err
 	}
-	if readErr != nil {
-		return readErr
+	content, err := nativeContent(ctx, messages, config.ConvertToLLM)
+	if err != nil {
+		return err
 	}
-	if scanner.Err() != nil {
-		return fmt.Errorf("read Claude SDK: %w", scanner.Err())
+	for _, message := range messages {
+		if err = t.emit(ctx, engine.MessageStartEvent{Message: message}); err != nil {
+			return err
+		}
+		if err = t.emit(ctx, engine.MessageEndEvent{Message: message}); err != nil {
+			return err
+		}
 	}
-	if waitErr != nil {
-		return fmt.Errorf("claude SDK exited: %w", waitErr)
+	t.prompt = newUUID()
+	return h.write(map[string]any{"type": "prompt", "uuid": t.prompt, "content": content})
+}
+
+func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *translation, h *host, prompts engine.AgentMessages, config engine.AgentLoopConfig) error {
+	switch frame.Type {
+	case "sdk":
+		return translator.event(frame.Event)
+	case "context":
+		_, err := d.options.Manager.AppendCustomEntry(Name+".context", frame.Event)
+		return err
+	case "session":
+		var updates []json.RawMessage
+		err := json.Unmarshal(frame.Event, &updates)
+		d.approved = append(d.approved, updates...)
+		return err
+	case "error":
+		return errors.New(frame.Message)
+	case "tool":
+		if err := translator.startEarly(frame.ToolID); err != nil {
+			return err
+		}
+		decision, reason := d.approve(ctx, frame.Tool, frame.ToolID, frame.CWD, frame.Args, prompts, config.BeforeToolCall)
+		return h.write(map[string]any{"type": "reply", "id": frame.ID, "value": map[string]string{"decision": decision, "reason": reason}})
+	case "elicitation":
+		return h.write(map[string]any{"type": "reply", "id": frame.ID, "value": d.elicit(ctx, frame.Elicitation)})
+	case "questions":
+		request, err := nativeQuestions(frame.Questions)
+		result := questions.Result{Cancelled: true}
+		if err == nil {
+			result, err = questions.Ask(ctx, request, d.options.Ask)
+		}
+		if err != nil {
+			result = questions.Result{Cancelled: true}
+		}
+		return h.write(map[string]any{"type": "reply", "id": frame.ID, "value": result})
+	case "input":
+		value, cancelled := "", true
+		if d.options.Ask != nil {
+			var err error
+			value, err = d.options.Ask(ctx, frame.Title, frame.Choices)
+			cancelled = err != nil
+			// ponytail: matches the runtime's no-UI error text; a changed text falls back to deny.
+			if err != nil && d.options.Headless && !frame.Ruled && slices.Contains(frame.Choices, "y approve once") && strings.Contains(err.Error(), "requires an interactive UI") {
+				value, cancelled = "y approve once", false
+			}
+		}
+		return h.write(map[string]any{"type": "reply", "id": frame.ID, "value": value, "cancelled": cancelled})
 	}
-	if !translator.result {
-		return errors.New("claude SDK exited without a result; execution outcome is unknown")
-	}
-	return translator.failure
+	return errors.New("invalid Claude SDK host frame")
 }
 
 func newUUID() string {
@@ -469,6 +576,10 @@ type translation struct {
 	last            *ai.AssistantMessage
 	results         []*ai.ToolResultMessage
 	result, errored bool
+	dirty           bool // a native point awaits its checkpoint entry
+	cancelled       bool // Orb asked to stop; replies still finishing end as aborted
+	stopped         bool // a reply already ended as aborted
+	answered        bool // tool results arrived, so steering can join the turn
 	failure         error
 	progress        map[string]int
 }
@@ -499,10 +610,20 @@ type nativeMessage struct {
 	Stop      string `json:"stop_reason"`
 }
 
-func (t *translation) save(at string) error {
+// mark notes the native point the next Orb message corresponds to; flush writes it
+// just before that message, so a /tree move onto the message includes it.
+func (t *translation) mark(at string) {
 	if at != "" {
 		t.at = at
 	}
+	t.dirty = true
+}
+
+func (t *translation) flush() error {
+	if !t.dirty {
+		return nil
+	}
+	t.dirty = false
 	_, err := t.driver.options.Manager.AppendCustomEntry(Name, checkpoint{Owner: t.driver.options.Manager.GetSessionID(), Session: t.session, At: t.at})
 	return err
 }
@@ -520,6 +641,9 @@ func (t *translation) event(raw json.RawMessage) error {
 		IsError bool            `json:"is_error"`
 		Errors  []string        `json:"errors"`
 		Result  string          `json:"result"`
+		Tool    struct {
+			Patch []patchHunk `json:"structuredPatch"`
+		} `json:"tool_use_result"`
 	}
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return err
@@ -571,9 +695,9 @@ func (t *translation) event(raw json.RawMessage) error {
 			return err
 		}
 		if activity.PermissionMode != "" {
-			mode := "default"
-			if activity.PermissionMode == "plan" {
-				mode = "plan"
+			mode := activity.PermissionMode
+			if !slices.Contains(nativeModes[:], mode) {
+				mode = "default"
 			}
 			if mode != nativeMode(t.driver.options.Manager) {
 				if _, err := t.driver.options.Manager.AppendCustomEntry(Name+".mode", mode); err != nil {
@@ -632,7 +756,8 @@ func (t *translation) event(raw json.RawMessage) error {
 				return err
 			}
 			t.session = e.Session
-			return t.save("")
+			t.mark("")
+			return nil
 		}
 	case "tool_progress":
 		var progress struct {
@@ -650,9 +775,7 @@ func (t *translation) event(raw json.RawMessage) error {
 		if err := json.Unmarshal(e.Message, &m); err != nil {
 			return err
 		}
-		if err := t.save(e.UUID); err != nil {
-			return err
-		}
+		t.mark(e.UUID)
 		if m.ID != "" && m.ID == t.partialID {
 			return nil
 		}
@@ -694,6 +817,12 @@ func (t *translation) event(raw json.RawMessage) error {
 		if json.Unmarshal(e.Message, &m) != nil {
 			return nil
 		}
+		if e.UUID != "" {
+			t.mark(e.UUID)
+			if err := t.flush(); err != nil {
+				return err
+			}
+		}
 		for _, block := range m.Content {
 			if block.Type != "tool_result" {
 				continue
@@ -702,16 +831,21 @@ func (t *translation) event(raw json.RawMessage) error {
 			if err != nil {
 				return err
 			}
-			if err = t.toolResult(block.ID, content, block.IsError); err != nil {
+			var details json.RawMessage
+			if diff := patchDiff(e.Tool.Patch); diff != "" {
+				details, _ = json.Marshal(map[string]string{"diff": diff})
+			}
+			if err = t.toolResult(block.ID, content, block.IsError, details); err != nil {
 				return err
 			}
-		}
-		if e.UUID != "" {
-			return t.save(e.UUID)
+			t.answered = true
 		}
 	case "result":
 		t.result = true
 		if err := t.finish(); err != nil {
+			return err
+		}
+		if err := t.flush(); err != nil {
 			return err
 		}
 		// A reply already rendered as an error is not reported twice.
@@ -754,10 +888,48 @@ func toolResultContent(raw json.RawMessage) (ai.ToolResultContent, error) {
 	return content, nil
 }
 
-func (t *translation) toolResult(id string, content ai.ToolResultContent, isError bool) error {
-	result := &ai.ToolResultMessage{ToolCallID: id, ToolName: t.tools[id], Content: content, IsError: isError, Timestamp: time.Now().UnixMilli()}
+type patchHunk struct {
+	OldStart int `json:"oldStart"`
+	NewStart int `json:"newStart"`
+	Lines    []string
+}
+
+// patchDiff renders a native structured patch in Orb's numbered edit-diff format.
+func patchDiff(hunks []patchHunk) string {
+	width := 1
+	for _, hunk := range hunks {
+		width = max(width, len(strconv.Itoa(max(hunk.OldStart, hunk.NewStart)+len(hunk.Lines))))
+	}
+	var out []string
+	for i, hunk := range hunks {
+		if i > 0 {
+			out = append(out, " "+strings.Repeat(" ", width)+" ...")
+		}
+		before, after := hunk.OldStart, hunk.NewStart
+		for _, line := range hunk.Lines {
+			if line == "" {
+				continue
+			}
+			switch line[0] {
+			case '+':
+				out = append(out, fmt.Sprintf("+%*d %s", width, after, line[1:]))
+				after++
+			case '-':
+				out = append(out, fmt.Sprintf("-%*d %s", width, before, line[1:]))
+				before++
+			default:
+				out = append(out, fmt.Sprintf(" %*d %s", width, before, line[1:]))
+				before, after = before+1, after+1
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func (t *translation) toolResult(id string, content ai.ToolResultContent, isError bool, details json.RawMessage) error {
+	result := &ai.ToolResultMessage{ToolCallID: id, ToolName: t.tools[id], Content: content, Details: details, IsError: isError, Timestamp: time.Now().UnixMilli()}
 	for _, event := range []engine.AgentEvent{
-		engine.ToolExecutionEndEvent{ToolCallID: id, ToolName: result.ToolName, IsError: isError, Result: engine.AgentToolResult{Content: content}},
+		engine.ToolExecutionEndEvent{ToolCallID: id, ToolName: result.ToolName, IsError: isError, Result: engine.AgentToolResult{Content: content, Details: details}},
 		engine.MessageStartEvent{Message: result},
 		engine.MessageEndEvent{Message: result},
 	} {
@@ -787,9 +959,7 @@ func (t *translation) begin(m *ai.AssistantMessage, id string) error {
 		return err
 	}
 	if t.prompt != "" {
-		if err := t.save(t.prompt); err != nil {
-			return err
-		}
+		t.mark(t.prompt)
 		t.prompt = ""
 	}
 	if t.last != nil {
@@ -827,6 +997,14 @@ func (t *translation) finish() error {
 	}
 	if len(calls) > 0 && m.StopReason == ai.StopReasonStop {
 		m.StopReason = ai.StopReasonToolUse
+	}
+	if t.cancelled && m.StopReason != ai.StopReasonError {
+		reason := "Request was aborted"
+		m.StopReason, m.ErrorMessage = ai.StopReasonAborted, &reason
+	}
+	t.stopped = m.StopReason == ai.StopReasonAborted
+	if err := t.flush(); err != nil {
+		return err
 	}
 	if err := t.emit(t.ctx, engine.MessageEndEvent{Message: m}); err != nil {
 		return err
@@ -875,11 +1053,12 @@ func (t *translation) abort() error {
 	t.ctx = context.WithoutCancel(t.ctx)
 	pending := slices.Sorted(maps.Keys(t.tools))
 	for _, id := range pending {
-		if err := t.toolResult(id, ai.ToolResultContent{&ai.TextContent{Text: "Operation aborted"}}, true); err != nil {
+		if err := t.toolResult(id, ai.ToolResultContent{&ai.TextContent{Text: "Operation aborted"}}, true, nil); err != nil {
 			return err
 		}
 	}
-	if t.partial == nil && t.result {
+	t.cancelled = true
+	if t.partial == nil && t.stopped {
 		return cause
 	}
 	if t.partial == nil {
