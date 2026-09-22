@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Reuse encoded streaming messages in Bridge events and snapshots to reduce serialization under the engine lock.
+
 - Preserve completed Markdown render caches and coalesce assistant presentation updates until rendering.
 
 - Reduce streamed tool-argument parsing and model-catalog allocation costs without changing JSON wire formats.

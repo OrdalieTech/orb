@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -129,5 +130,45 @@ func TestAgentToolResultOmitsAbsentOptionalFields(t *testing.T) {
 func TestMarshalAgentEventRejectsNil(t *testing.T) {
 	if _, err := MarshalAgentEvent(nil); err == nil {
 		t.Fatal("expected nil event error")
+	}
+}
+
+func TestMessageUpdateReusesOnlyIdenticalPartial(t *testing.T) {
+	tool := &ai.ToolCall{ID: "call", Name: "test"}
+	if err := ai.SetToolCallArgumentsJSON(tool, []byte(`{"z":-0,"10":1,"2":2,"n":1e30,"s":"\ud800","html":"<>&"}`)); err != nil {
+		t.Fatal(err)
+	}
+	partial := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "<>&\u2028\u2029"}, tool}}
+	events := []ai.AssistantMessageEvent{
+		ai.StartEvent{Partial: partial},
+		ai.TextStartEvent{Partial: partial}, ai.TextDeltaEvent{Partial: partial, Delta: "x"}, ai.TextEndEvent{Partial: partial},
+		ai.ThinkingStartEvent{Partial: partial}, ai.ThinkingDeltaEvent{Partial: partial}, ai.ThinkingEndEvent{Partial: partial},
+		ai.ToolCallStartEvent{Partial: partial}, ai.ToolCallDeltaEvent{Partial: partial}, ai.ToolCallEndEvent{Partial: partial},
+		ai.DoneEvent{Message: partial}, ai.ErrorEvent{Error: partial},
+		ai.RawAssistantMessageEvent{Raw: json.RawMessage(`{"type":"future","partial":null}`), Partial: partial},
+	}
+	for _, event := range events {
+		pointer := reflect.New(reflect.TypeOf(event))
+		pointer.Elem().Set(reflect.ValueOf(event))
+		nilPointer := reflect.Zero(pointer.Type()).Interface().(ai.AssistantMessageEvent)
+		for _, nested := range []ai.AssistantMessageEvent{event, pointer.Interface().(ai.AssistantMessageEvent), nilPointer, nil} {
+			for _, message := range []AgentMessage{partial, &ai.AssistantMessage{}, map[string]any{"role": "custom"}, (*ai.AssistantMessage)(nil), nil} {
+				want, err := ai.Marshal(struct {
+					Type                  AgentEventType           `json:"type"`
+					AssistantMessageEvent ai.AssistantMessageEvent `json:"assistantMessageEvent"`
+					Message               AgentMessage             `json:"message"`
+				}{EventMessageUpdate, nested, message})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := MarshalAgentEvent(MessageUpdateEvent{AssistantMessageEvent: nested, Message: message})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := runner.ByteDiff(want, got); diff != "" {
+					t.Fatalf("%T / %T: %s", nested, message, diff)
+				}
+			}
+		}
 	}
 }

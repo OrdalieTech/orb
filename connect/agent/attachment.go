@@ -124,22 +124,25 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		if a.closed {
 			return
 		}
-		switch e := event.(type) {
-		case engine.MessageStartEvent:
-			a.partial, _ = jsonwire.Marshal(e.Message)
-		case engine.MessageUpdateEvent:
-			a.partial, _ = jsonwire.Marshal(e.Message)
-		case engine.MessageEndEvent, engine.AgentEndEvent:
+		switch event.(type) {
+		case engine.MessageStartEvent, engine.MessageUpdateEvent, engine.MessageEndEvent:
+			var fields struct {
+				Message json.RawMessage `json:"message"`
+			}
+			if err := json.Unmarshal(b, &fields); err != nil {
+				return
+			}
+			if _, end := event.(engine.MessageEndEvent); end {
+				a.partial = nil
+				a.appendMessage(fields.Message)
+			} else {
+				a.partial = fields.Message
+			}
+		case engine.AgentEndEvent:
 			a.partial = nil
 		}
 		if len(a.partial) > protocol.MaxFrame/4 {
 			a.partial = nil
-		}
-		if end, ok := event.(engine.MessageEndEvent); ok {
-			m, e := jsonwire.Marshal(end.Message)
-			if e == nil {
-				a.appendMessage(m)
-			}
 		}
 		a.stream.Publish(b)
 	})
