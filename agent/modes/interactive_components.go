@@ -492,7 +492,6 @@ func (c *AssistantMessageComponent) Render(width int) []string {
 type ToolExecutionComponent struct {
 	renderTheme     *theme.Theme
 	mu              sync.Mutex
-	container       *tui.Container
 	contentBox      *tui.Box
 	toolName        string
 	toolCallID      string
@@ -531,7 +530,6 @@ func NewToolExecutionComponent(
 	box.AddChild(tui.NewText(theme.FG("toolTitle", theme.Bold(toolName)), 0, 0, nil))
 
 	c := &ToolExecutionComponent{
-		container:     &tui.Container{},
 		contentBox:    box,
 		toolName:      toolName,
 		toolCallID:    toolCallID,
@@ -543,8 +541,6 @@ func NewToolExecutionComponent(
 		cwd:           cwd,
 		rendererState: make(map[string]any),
 	}
-	c.container.AddChild(tui.NewSpacer(1))
-	c.container.AddChild(&chatBand{inner: box})
 	c.updateDisplay()
 	return c
 }
@@ -611,13 +607,16 @@ func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
 }
 
 func (c *ToolExecutionComponent) background() tui.StyleFunc {
-	key := "toolSuccessBg"
+	key := ""
 	if c.hovered {
 		key = "selectedBg"
 	} else if c.isPartial {
 		key = "toolPendingBg"
 	} else if c.result != nil && c.result.IsError {
 		key = "toolErrorBg"
+	}
+	if key == "" {
+		return nil
 	}
 	return func(text string) string { return theme.BG(key, text) }
 }
@@ -772,7 +771,7 @@ func (c *ToolExecutionComponent) getTextOutput() string {
 	return strings.Join(parts, "\n")
 }
 
-func (c *ToolExecutionComponent) Invalidate() { c.container.Invalidate() }
+func (c *ToolExecutionComponent) Invalidate() { c.contentBox.Invalidate() }
 func (c *ToolExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -780,7 +779,22 @@ func (c *ToolExecutionComponent) Render(width int) []string {
 		c.callComponent, c.resultComponent = nil, nil
 		c.updateDisplay()
 	}
-	return c.container.Render(width)
+	marker, color := "✓", "muted"
+	if c.isPartial {
+		marker, color = "○", "accent"
+		if c.execStarted || c.argsComplete {
+			marker = "●"
+		}
+	} else if c.result != nil && c.result.IsError {
+		marker, color = "×", "error"
+	}
+	rail := theme.FG("dim", "│")
+	lines := renderBand(c.contentBox, width, rail)
+	if width <= 1 || len(lines) == 0 {
+		return append([]string{""}, lines...)
+	}
+	lines[0] = theme.FG(color, marker) + strings.TrimPrefix(lines[0], rail)
+	return append([]string{rail}, lines...)
 }
 
 // themeAdapter bridges the extension Theme interface to our theme package.
