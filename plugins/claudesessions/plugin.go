@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -18,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 )
@@ -109,6 +111,7 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 		opts.Model = selectedModel(models, id)
 		models = includeSelected(models, opts.Model)
 		opts.SessionLoop = driver.Loop
+		opts.ContextUsage = func() *harness.ContextUsage { return nativeContextUsage(owned.Manager) }
 		opts.NoTools = "all"
 		opts.Tools = []string{}
 		if owned.RenderText != nil {
@@ -167,6 +170,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	state.Tools = nil
 	cfg.Agent = engine.NewAgent(nil, engine.WithInitialState(state), engine.WithSessionLoop(driver.Loop))
 	cfg.GetAPIKey, cfg.GetRequestAuth, cfg.GetModelHeaders = nil, nil, nil
+	cfg.ContextUsage = func() *harness.ContextUsage { return nativeContextUsage(options.Manager) }
 	cfg.BaseTools = make([]engine.AgentTool, 0, len(nativeToolNames))
 	for _, name := range nativeToolNames {
 		cfg.BaseTools = append(cfg.BaseTools, nativeTool(name))
@@ -430,54 +434,25 @@ func toolSummary(name string, args any) string {
 func Management(settings *config.SettingsManager, agentDir string, env []string) extensions.Factory {
 	env = append([]string{}, env...)
 	return func(api extensions.API) error {
-		for _, event := range []extensions.EventType{extensions.EventSessionStart, extensions.EventModelSelect, extensions.EventAgentEnd, extensions.EventSessionShutdown} {
-			api.On(event, func(_ context.Context, event extensions.Event, ctx extensions.Context) (any, error) {
-				if ctx.Mode() != extensions.ModeTUI || ctx.Model() == nil || ctx.Model().Provider != Name {
-					return nil, nil
-				}
-				if _, shutdown := event.(extensions.SessionShutdownEvent); shutdown {
-					ctx.UI().SetStatus(Name, nil)
-					return nil, nil
-				}
-				var status *string
-				if model := ctx.Model(); model != nil && model.Provider == Name {
-					label := strings.TrimPrefix(model.Name, "Claude · ")
-					if _, ended := event.(extensions.AgentEndEvent); ended {
-						for entry := ctx.SessionManager().GetLeafEntry(); entry != nil; {
-							if entry.CustomType == Name+".init" {
-								var native struct {
-									Model string `json:"model"`
-								}
-								if json.Unmarshal(entry.Data, &native) == nil && native.Model != "" {
-									label = native.Model
-								}
-								break
-							}
-							if entry.ParentID == nil {
-								break
-							}
-							entry = ctx.SessionManager().GetEntry(*entry.ParentID)
-						}
-					}
-					status = ptr("Claude session · " + label)
-				}
-				ctx.UI().SetStatus(Name, status)
-				return nil, nil
-			})
-		}
-		api.RegisterCommand("claude", extensions.Command{SettingsLabel: "Claude Sessions", Description: "Claude Sessions · start or configure", Handler: func(ctx context.Context, _ string, command extensions.CommandContext) error {
+		limitFooter(api)
+		api.RegisterCommand("claude", extensions.Command{SettingsLabel: "Claude Sessions", Description: "Claude Sessions · start or configure", Handler: func(ctx context.Context, args string, command extensions.CommandContext) error {
 			if !command.HasUI() {
 				return errors.New("/claude needs interactive mode; use --provider claude-sessions for headless sessions")
 			}
+			if strings.TrimSpace(args) == "usage" {
+				return showUsage(ctx, command)
+			}
 			actions := []string{"New Claude session", "Model"}
 			if current := command.Model(); current != nil && current.Provider == Name {
-				actions = append(actions, "Switch to Orb")
+				actions = append(actions, "Usage", "Switch to Orb")
 			}
 			choice, ok, err := command.UI().Select(ctx, "Claude Sessions", actions, nil)
 			if err != nil || !ok {
 				return err
 			}
 			switch choice {
+			case "Usage":
+				return showUsage(ctx, command)
 			case "Switch to Orb":
 				values := map[string]string{}
 				for _, item := range env {
@@ -558,3 +533,207 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 	}
 }
 func ptr(s string) *string { return &s }
+
+func limitLabel(kind string) string {
+	switch kind {
+	case "five_hour":
+		return "5h"
+	case "seven_day":
+		return "7d"
+	case "seven_day_opus":
+		return "Opus 7d"
+	case "seven_day_sonnet":
+		return "Sonnet 7d"
+	case "seven_day_overage_included":
+		return "Extra 7d"
+	case "overage":
+		return "Extra"
+	}
+	return ""
+}
+
+// LimitsStatus formats the latest native subscription reading for local or remote UI.
+func LimitsStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
+	text := limitsStatus(manager, now)
+	if usage := nativeContextUsage(manager); usage != nil && usage.Tokens != nil {
+		capacity := fmt.Sprintf("%.0fk", float64(*usage.Tokens)/1000)
+		if *usage.Tokens < 1000 {
+			capacity = fmt.Sprintf("%d", *usage.Tokens)
+		} else if *usage.Tokens < 10000 {
+			capacity = fmt.Sprintf("%.1fk", float64(*usage.Tokens)/1000)
+		}
+		if *usage.Tokens >= 1000000 {
+			capacity = fmt.Sprintf("%.1fM", float64(*usage.Tokens)/1000000)
+		}
+		return fmt.Sprintf("%s · %s|%.0f%%", text, capacity, *usage.Percent)
+	}
+	return text
+}
+
+func nativeContextUsage(manager extensions.ReadonlySessionManager) *harness.ContextUsage {
+	for entry := manager.GetLeafEntry(); entry != nil; {
+		if entry.CustomType == Name+".context" {
+			var usage struct {
+				MaxTokens   int64
+				TotalTokens *int64
+				Percentage  *float64
+			}
+			if json.Unmarshal(entry.Data, &usage) == nil && usage.MaxTokens > 0 && usage.Percentage != nil && *usage.Percentage >= 0 && *usage.Percentage <= 100 {
+				if usage.TotalTokens != nil && (*usage.TotalTokens < 0 || *usage.TotalTokens > usage.MaxTokens) {
+					usage.TotalTokens = nil
+				}
+				return &harness.ContextUsage{Tokens: usage.TotalTokens, ContextWindow: float64(usage.MaxTokens), Percent: usage.Percentage}
+			}
+			break
+		}
+		if entry.ParentID == nil {
+			break
+		}
+		entry = manager.GetEntry(*entry.ParentID)
+	}
+	return nil
+}
+
+func limitsStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
+	info := latestLimits(manager)
+	if info != nil {
+		if info.ObservedAt.IsZero() || now.Sub(info.ObservedAt) > 5*time.Minute {
+			return "Claude limits stale"
+		}
+		windows := info.UnifiedWindows
+		remaining := 101.0
+		limiting := ""
+		for _, key := range []string{"five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_overage_included", "overage"} {
+			window, ok := windows[key]
+			if !ok || window.ResetsAt <= now.Unix() || window.Utilization == nil || *window.Utilization < 0 || *window.Utilization > 1 {
+				continue
+			}
+			if left := 100 * (1 - *window.Utilization); left < remaining {
+				remaining, limiting = left, limitLabel(key)
+			}
+		}
+		if remaining <= 100 {
+			text := fmt.Sprintf("Claude %s %.0f%% left", limiting, remaining)
+			if info.Status == "rejected" {
+				text += " · limit reached"
+			}
+			return text
+		}
+		if info.ResetsAt > 0 && info.ResetsAt <= now.Unix() {
+			return "Claude limits pending"
+		}
+		switch info.Status {
+		case "allowed":
+			return "Claude"
+		case "allowed_warning":
+			return "Claude nearing limit"
+		case "rejected":
+			if info.ResetsAt > now.Unix() {
+				return "Claude limit reached · resets " + time.Unix(info.ResetsAt, 0).Local().Format("Mon 15:04")
+			}
+			return "Claude limit reached"
+		}
+	}
+	return "Claude"
+}
+
+func limitFooter(api extensions.API) {
+	var mu sync.Mutex
+	var timer *time.Timer
+	var generation uint64
+	for _, kind := range []extensions.EventType{extensions.EventSessionStart, extensions.EventModelSelect, extensions.EventMessageEnd, extensions.EventAgentEnd, extensions.EventSessionShutdown} {
+		api.On(kind, func(_ context.Context, event extensions.Event, ctx extensions.Context) (any, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			generation++
+			if timer != nil {
+				timer.Stop()
+				timer = nil
+			}
+			_, shutdown := event.(extensions.SessionShutdownEvent)
+			if shutdown || ctx.Mode() != extensions.ModeTUI || !ctx.HasUI() || ctx.Model() == nil || ctx.Model().Provider != Name {
+				if ctx.Mode() == extensions.ModeTUI && ctx.HasUI() {
+					ctx.UI().SetStatus(Name+".limits", nil)
+				}
+				return nil, nil
+			}
+			current := generation
+			var refresh func()
+			refresh = func() {
+				text := limitsStatus(ctx.SessionManager(), time.Now())
+				ctx.UI().SetStatus(Name+".limits", &text)
+				timer = time.AfterFunc(time.Minute, func() {
+					mu.Lock()
+					defer mu.Unlock()
+					if generation == current {
+						refresh()
+					}
+				})
+			}
+			refresh()
+			return nil, nil
+		})
+	}
+}
+
+func latestLimits(manager extensions.ReadonlySessionManager) *subscriptionLimits {
+	for entry := manager.GetLeafEntry(); entry != nil; {
+		if entry.CustomType == Name+".limits" {
+			var info subscriptionLimits
+			if json.Unmarshal(entry.Data, &info) != nil {
+				return nil
+			}
+			if info.UnifiedWindows == nil {
+				info.UnifiedWindows = map[string]limitWindow{}
+			}
+			if _, exists := info.UnifiedWindows[info.RateLimitType]; !exists && limitLabel(info.RateLimitType) != "" {
+				info.UnifiedWindows[info.RateLimitType] = info.limitWindow
+			}
+			return &info
+		}
+		if entry.ParentID == nil {
+			break
+		}
+		entry = manager.GetEntry(*entry.ParentID)
+	}
+	return nil
+}
+
+func usageRows(manager extensions.ReadonlySessionManager, now time.Time) []string {
+	rows := []string{}
+	if usage := nativeContextUsage(manager); usage != nil && usage.Tokens != nil {
+		rows = append(rows, fmt.Sprintf("Context: %d / %.0f tokens · %.1f%% used", *usage.Tokens, usage.ContextWindow, *usage.Percent))
+	}
+	info := latestLimits(manager)
+	if info == nil {
+		return append(rows, "Quota not reported yet · send a message to update")
+	}
+	for _, key := range []string{"five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_overage_included", "overage"} {
+		window, ok := info.UnifiedWindows[key]
+		if !ok && key != "five_hour" && key != "seven_day" {
+			continue
+		}
+		value := "not reported"
+		if ok && window.Utilization != nil && *window.Utilization >= 0 && *window.Utilization <= 1 {
+			value = fmt.Sprintf("%.0f%% used · %.0f%% left", *window.Utilization*100, (1-*window.Utilization)*100)
+		}
+		if window.ResetsAt > 0 {
+			if window.ResetsAt <= now.Unix() {
+				value = "reset passed · awaiting update"
+			} else {
+				value += " · resets " + time.Unix(window.ResetsAt, 0).Local().Format("Mon 15:04")
+			}
+		}
+		rows = append(rows, limitLabel(key)+": "+value)
+	}
+	updated := "Updated " + info.ObservedAt.Local().Format("Mon 15:04")
+	if info.ObservedAt.IsZero() || now.Sub(info.ObservedAt) > 5*time.Minute {
+		updated = "Stale reading · send a message to update"
+	}
+	return append(rows, updated, "Only limits reported by Claude are shown")
+}
+
+func showUsage(ctx context.Context, command extensions.CommandContext) error {
+	_, _, err := command.UI().Select(ctx, "Claude usage", usageRows(command.SessionManager(), time.Now()), nil)
+	return err
+}

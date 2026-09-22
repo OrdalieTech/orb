@@ -27,15 +27,6 @@ func configFrame(th extensions.Theme, title, footer string, child tui.Component)
 		func() string { return th.BGANSI("toolPendingBg") }, child)
 }
 
-func configWindowOptions() *extensions.CustomOptions {
-	return &extensions.CustomOptions{
-		Overlay: true,
-		StaticOverlayOptions: &extensions.OverlayOptions{
-			Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true,
-		},
-	}
-}
-
 // permissionRows lays the whole policy out as sections: the live policy
 // values, the rules, and the recent decisions.
 func permissionRows(policy *Policy, th extensions.Theme) []tui.GridRow {
@@ -115,7 +106,7 @@ func permissionsWindow(ctx context.Context, command extensions.CommandContext, p
 		}
 		list.OnCancel = func() { done(nil) }
 		return configFrame(th, "Permissions", "m mode · esc", list), nil
-	}, configWindowOptions())
+	}, extensions.ModalOptions())
 	if err != nil {
 		return err
 	}

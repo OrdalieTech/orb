@@ -33,6 +33,7 @@ type Host interface {
 }
 
 type Options struct {
+	Status      func(*runtime.AgentSession) string
 	InstanceID  string
 	Store       connect.Store
 	Authorize   func(connect.Request) bool
@@ -246,7 +247,7 @@ func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
-	name, cwd, modelName := "", "", ""
+	name, cwd, modelName, status := "", "", "", ""
 	var models []connect.Model
 	var input *runtime.InputRequest
 	if session := a.host.Session(); session != nil {
@@ -261,12 +262,19 @@ func (a *Attachment) inspect() json.RawMessage {
 			}
 			models = append(models, row)
 		}
+		if a.options.Status != nil {
+			status = a.options.Status(session)
+			if len(status) > 1024 {
+				status = ""
+			}
+		}
 		input = session.PendingInput()
 		if title := session.Manager().GetSessionName(); title != nil {
 			name = *title
 		}
 	}
 	return connect.JSON(struct {
+		Status     string                `json:"status,omitempty"`
 		Model      string                `json:"model,omitempty"`
 		Models     []connect.Model       `json:"models,omitempty"`
 		Name       string                `json:"name,omitempty"`
@@ -277,7 +285,7 @@ func (a *Attachment) inspect() json.RawMessage {
 		Target     runtime.ControlTarget `json:"target"`
 		Methods    []string              `json:"methods"`
 		Input      *runtime.InputRequest `json:"input,omitempty"`
-	}{modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model"}, input})
+	}{status, modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model"}, input})
 }
 func (a *Attachment) call(ctx context.Context, r connect.Request) (json.RawMessage, error) {
 	if err := connect.ValidateCall(r.Call); err != nil {

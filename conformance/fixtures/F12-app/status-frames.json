@@ -747,11 +747,11 @@
         "installed": true,
         "lines": [
           "\u001b[48;5;234m                                \u001b[49m",
-          "\u001b[48;5;234m   \u001b[38;5;109m\u001b[1mEmpty selector\u001b[22m\u001b[39m               \u001b[49m",
+          "\u001b[48;5;234m  \u001b[38;5;109m\u001b[1mEmpty selector\u001b[22m\u001b[39m                \u001b[49m",
           "\u001b[48;5;234m                                \u001b[49m",
           "\u001b[48;5;234m                                \u001b[49m",
-          "\u001b[48;5;234m   \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select    \u001b[49m",
-          "\u001b[48;5;234m   \u001b_orb:w  \u0007\u001b[38;5;244m\u001b[39m  \u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m       \u001b[49m",
+          "\u001b[48;5;234m  \u001b[38;5;241m↑↓\u001b[39m\u001b[38;5;244m navigate\u001b[39m  \u001b[38;5;241menter\u001b[39m\u001b[38;5;244m select\u001b[39m     \u001b[49m",
+          "\u001b[48;5;234m  \u001b_orb:w  \u0007\u001b[38;5;241mescape/ctrl+c\u001b[39m\u001b[38;5;244m cancel\u001b[39m          \u001b[49m",
           "\u001b[48;5;234m                                \u001b[49m"
         ],
         "result": null,

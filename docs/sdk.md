@@ -561,7 +561,10 @@ are independent of Pi fixtures.
 `engine.WithSessionLoop(loop)` and `agent.AgentSessionOptions.SessionLoop` optionally replace
 model/tool iteration while keeping the existing Agent's state, subscriptions, cancellation and
 execution admission. A loop emits the existing `engine.AgentEvent` types and consumes its own
-session context. Normal SDK construction is unchanged. The optional `plugins/claudesessions` package owns
+session context. `AgentSessionOptions.ContextUsage` optionally supplies executor-owned telemetry
+to the existing context/footer APIs; a nil callback preserves Orb’s normal estimate. The callback
+must be concurrency-safe, return an independent snapshot, and return nil when usage is unknown.
+Normal SDK construction is unchanged. The optional `plugins/claudesessions` package owns
 its SDK subprocess and accepts explicit Node/Claude paths, SDK module path, environment, session
 manager and input callback. For hosts that create, switch or fork sessions, pass
 `claudesessions.Factory(options)` to `agent.NewAgentSessionRuntime`; it builds a fresh driver
@@ -590,3 +593,8 @@ adds an opaque presentation, a local renderer and a reply validator without chan
 interface. Invalid replies leave the pending request intact. Bridge forwards the presentation as
 bounded JSON; the CLI selects its renderer. Permission adapters continue using `BeforeToolCall`,
 where a non-nil, non-blocking result explicitly allows and nil leaves native policy in charge.
+
+`plugins/claudesessions.LimitsStatus(manager, now)` formats the latest plugin-owned native quota
+reading. The optional `connect/agent.Options.Status` callback lets an assembly supply a bounded
+informational status in instance descriptions; it changes no execution authority and requires no
+provider knowledge inside Bridge. The CLI wires Claude quota into this callback.

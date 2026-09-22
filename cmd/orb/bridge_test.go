@@ -962,7 +962,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 			if phase.Load() == 3 {
 				id = "another-session"
 			}
-			descriptor := remoteDescriptor{Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt", "input.reply"}}
+			descriptor := remoteDescriptor{Status: "Claude 5h 75% left", Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt", "input.reply"}}
 			if phase.Load() == 6 {
 				descriptor.Input = &agent.InputRequest{ID: "question", Title: "Allow this action?", Choices: []string{"Deny", "Allow once"}}
 				descriptor.Target.ExecutionID = "execution"
@@ -1010,7 +1010,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 			}
 		}
 	}
-	wait("idle")
+	wait("Claude 5h 75% left")
 	rows, err := cache.List(ctx, "peer")
 	if err != nil || len(rows) != 1 || rows[0].CWD != "/remote/project" {
 		t.Fatalf("cache: %+v %v", rows, err)

@@ -6,6 +6,11 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Show native Claude quota locally and through Bridge, with the limiting window, reset times and
+  freshness in `/claude usage`. Display used context tokens after the path in the shared footer.
+
+- Standardize built-in modals at an 80-column maximum with one-cell outer margins; tighten inner padding below 60 columns and keep mouse targets aligned on resize.
+
 - Batch consecutive reads and searches into expandable activity rows, keep running actions and
   failures visible, and use consistent spacing without per-tool rails or background fills.
 

@@ -126,7 +126,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				return rows
 			})
 			return panel, nil
-		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true}})
+		}, extensions.ModalOptions())
 		action, _ := result.(string)
 		if menuErr != nil || !ok || action == "" {
 			if client != nil {
@@ -657,7 +657,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 				return rows
 			})
 			return panel, nil
-		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true}})
+		}, extensions.ModalOptions())
 		if err != nil || !ok || result == nil {
 			return err
 		}
@@ -793,7 +793,7 @@ func waitBridgePairing(ctx context.Context, ui extensions.UI, title, instruction
 				}
 			}()
 			return panel, nil
-		}, &extensions.CustomOptions{Overlay: true, StaticOverlayOptions: &extensions.OverlayOptions{Width: "85%", MinWidth: 32, MaxHeight: "85%", Backdrop: true}})
+		}, extensions.ModalOptions())
 		if err != nil {
 			return bridge.Invitation{}, err
 		}

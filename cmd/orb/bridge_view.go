@@ -72,6 +72,7 @@ func remoteMessage(raw json.RawMessage) string {
 }
 
 type remoteDescriptor struct {
+	Status     string              `json:"status,omitempty"`
 	Model      string              `json:"model,omitempty"`
 	Models     []connect.Model     `json:"models,omitempty"`
 	Input      *agent.InputRequest `json:"input,omitempty"`
@@ -615,6 +616,9 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				}
 				if info.Model != "" {
 					state = info.Model + " · " + state
+				}
+				if info.Status != "" {
+					state += " · " + info.Status
 				}
 				status.set(state + cacheWarning + " · " + strings.Join(info.Methods, " · ") + " · Esc closes view")
 			}

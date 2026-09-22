@@ -1418,7 +1418,11 @@ func compactFooterLine(display engine.AgentDisplayState, context *harness.Contex
 	left = tui.TruncateToWidth(left, max(0, leftBudget), "…", false)
 	rightBudget := max(0, width-tui.VisibleWidth(left)-2)
 	if context != nil && context.Percent != nil {
-		summary := fmt.Sprintf("%s|%.0f%%", formatTokens(int64(context.ContextWindow)), *context.Percent)
+		used := "?"
+		if context.Tokens != nil {
+			used = formatTokens(*context.Tokens)
+		}
+		summary := fmt.Sprintf("%s|%.0f%%", used, *context.Percent)
 		candidate := summary
 		if right != "" {
 			candidate = right + " · " + summary

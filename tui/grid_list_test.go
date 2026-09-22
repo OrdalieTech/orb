@@ -180,7 +180,11 @@ func TestPlainFrameHasPaddedPanelAndEscapeHint(t *testing.T) {
 				t.Fatalf("invalid panel row: %q", line)
 			}
 		}
-		if !strings.HasSuffix(StripANSI(lines[1]), "esc  ") {
+		padding := "  "
+		if width < 60 {
+			padding = " "
+		}
+		if !strings.HasSuffix(StripANSI(lines[1]), "esc"+padding) {
 			t.Fatalf("missing escape hint: %q", lines[1])
 		}
 	}
@@ -247,4 +251,25 @@ func TestFrameActionConcurrentRenderAndInput(t *testing.T) {
 		frame.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Column: 22})
 	}
 	<-done
+}
+
+func TestNarrowPanelPaddingAndMouseStayAligned(t *testing.T) {
+	for _, width := range []int{32, 59, 60, 80} {
+		inset := 2
+		if width < 60 {
+			inset = 1
+		}
+		clicked := false
+		list := NewGridList([]GridRow{{Value: "one", Cells: []string{"Choice"}}}, 3, GridListTheme{})
+		list.OnConfirm = func(string) { clicked = true }
+		frame := NewPanel("", "", nil, nil, nil, list)
+		lines := frame.Render(width)
+		if strings.Index(StripANSI(lines[1]), ">") != inset {
+			t.Fatalf("width %d: %q", width, lines[1])
+		}
+		frame.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Column: inset, Clicks: 1})
+		if !clicked {
+			t.Fatalf("width %d: mouse missed visible choice", width)
+		}
+	}
 }

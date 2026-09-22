@@ -1021,26 +1021,10 @@ func backdropStyle() tui.StyleFunc {
 	}
 }
 
-// dialogOverlayOptions is the shared geometry of floating dialog windows:
-// centered, veiled, narrower than the configuration windows.
-func dialogOverlayOptions() tui.OverlayOptions {
-	return tui.OverlayOptions{
-		Width:     tui.PercentSize(70),
-		MinWidth:  40,
-		MaxHeight: tui.PercentSize(85),
-		Backdrop:  backdropStyle(),
-	}
-}
+func dialogOverlayOptions() tui.OverlayOptions { return configOverlayOptions() }
 
-// configOverlayOptions matches the /plugins-family window geometry for the
-// built-in menus (/model, /settings) so every menu floats identically.
 func configOverlayOptions() tui.OverlayOptions {
-	return tui.OverlayOptions{
-		Width:     tui.PercentSize(80),
-		MinWidth:  40,
-		MaxHeight: tui.PercentSize(85),
-		Backdrop:  backdropStyle(),
-	}
+	return toTUIOverlayOptions(*extensions.ModalOptions().StaticOverlayOptions)
 }
 
 // floatDialog wraps a dialog component in the shared window chrome and shows
