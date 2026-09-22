@@ -1,5 +1,14 @@
 # Implementation progress
 
+## Release 0.10.0 and Windows parity status — 2026-09-22
+
+The first real `windows-latest` run of the whole suite failed 180 tests in 31 packages: Unix-shaped
+test expectations (0600 modes, `/bin/sh`, POSIX paths, `~`) and genuine Windows bugs (drive-letter
+`file://` URLs, home-relative skill discovery, shell-resolved config values, JSONL session
+validation on Windows paths, concurrent settings writes). By owner decision the job is
+informational (`continue-on-error`) so v0.10.0 ships linux/darwin artifacts; turning it green and
+blocking again is the next portability slice, after which Windows artifacts join releases.
+
 ## Portable core, slice 3 (host ports, first half) — 2026-09-22
 
 `host.Host` (AgentDir, FS, Exec, Store, Env, Sessions) drives `NewAgentSession` and

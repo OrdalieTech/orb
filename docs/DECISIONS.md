@@ -120,6 +120,11 @@ both sides, plus upstream's RPC/CLI tests run as-is against the orb binary.
 
 Revisable records of how things currently work; each holds until changed by owner-signed decision.
 
+- **Windows CI is informational until parity (owner, 2026-09-22).** The first real Windows run
+  failed 180 tests in 31 packages (Unix-shaped test assumptions and genuine Windows bugs). The
+  `windows-latest` job runs the whole suite with `continue-on-error` so v0.10.0 (linux/darwin
+  artifacts) can ship; P2 still makes Windows tier-1, so the job returns to blocking, and Windows
+  artifacts join releases, once the parity work turns it green.
 - **D10 — Provider layer: SDK-preferring hybrid.** Use official Go SDKs where they exist and are
   sound (`openai-go/v3`, `anthropic-sdk-go`, `aws-sdk-go-v2` bedrockruntime). G2 rejected
   `google.golang.org/genai` on measured weight, so Gemini and Vertex use hand-rolled JSON/SSE shapes.
