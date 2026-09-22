@@ -280,7 +280,7 @@ type lineLayout struct {
 func buildLineLayout(component Component, width int) lineLayout {
 	if container, ok := component.(*Container); ok {
 		if container.windowed {
-			rangeFresh := container.refreshWindow(width, -1, -1, false)
+			rangeFresh, _ := container.refreshWindow(width, -1, -1, false)
 			container.mu.RLock()
 			total := fenwickSum(container.windowTree, len(container.windowChildCount))
 			container.mu.RUnlock()
@@ -410,11 +410,11 @@ func fenwickFind(tree []int, target int) int {
 	return index
 }
 
-func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDirty bool) bool {
+func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDirty bool) (rebuilt, refreshed bool) {
 	container.mu.Lock()
 	if !container.windowed {
 		container.mu.Unlock()
-		return false
+		return false, false
 	}
 	rebuild := !container.windowValid || container.windowWidth != width
 	var indices []int
@@ -455,7 +455,7 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 		}
 		if len(indices) == 0 {
 			container.mu.Unlock()
-			return false
+			return false, false
 		}
 		sort.Ints(indices)
 	}
@@ -474,8 +474,9 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 	container.mu.Lock()
 	defer container.mu.Unlock()
 	if generation != container.windowGeneration {
-		return rebuild
+		return false, false
 	}
+	container.windowGeneration++
 	if rebuild {
 		container.windowValid = true
 		container.windowWidth = width
@@ -492,7 +493,7 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 			container.addWindowIndexLocked(child, index)
 		}
 		container.windowTree = fenwickBuild(container.windowChildCount)
-		return true
+		return true, true
 	}
 	recomputeDirtyBounds := false
 	for offset, index := range indices {
@@ -521,7 +522,7 @@ func (container *Container) refreshWindow(width, rangeStart, rangeEnd int, allDi
 			}
 		}
 	}
-	return false
+	return false, true
 }
 
 // LineCount returns the rendered height without flattening cached child lines.
@@ -545,13 +546,17 @@ func (container *Container) renderCachedLinesLocked(start, end int) []string {
 	if start >= end {
 		return nil
 	}
-	lines := make([]string, 0, end-start)
+	lines := make([]string, end-start)
 	first := fenwickFind(container.windowTree, start)
 	childStart := fenwickSum(container.windowTree, first)
 	for index := first; index < len(container.windowChildLines) && childStart < end; index++ {
 		from := max(0, start-childStart)
 		to := min(len(container.windowChildLines[index]), end-childStart)
-		lines = append(lines, container.windowChildLines[index][from:to]...)
+		// A concurrent mutation can cancel a refill. Leave uncached rows blank
+		// for this frame, preserving offsets until the next successful refresh.
+		if from < to {
+			copy(lines[max(0, childStart-start):], container.windowChildLines[index][from:to])
+		}
 		childStart += container.windowChildCount[index]
 	}
 	return lines
@@ -576,55 +581,58 @@ func (container *Container) RenderLines(width, start, end int) []string {
 		return lines
 	}
 
-	rangeFresh := container.refreshWindow(width, -1, -1, false)
+	rangeFresh, _ := container.refreshWindow(width, -1, -1, false)
 	if !rangeFresh {
 		container.refreshWindow(width, start, end, false)
 	}
-	container.mu.Lock()
-	total := fenwickSum(container.windowTree, len(container.windowChildCount))
-	start, end = max(0, min(start, total)), max(0, min(end, total))
-	first, last := 0, 0
-	missing := false
-	if start < end {
-		first, last = fenwickFind(container.windowTree, start), fenwickFind(container.windowTree, end-1)+1
-		for index := first; index < last; index++ {
-			if container.windowChildCount[index] > 0 && container.windowChildLines[index] == nil {
-				container.markWindowIndexDirtyLocked(index)
-				missing = true
+	for retry := true; ; {
+		container.mu.Lock()
+		total := fenwickSum(container.windowTree, len(container.windowChildCount))
+		from, to := max(0, min(start, total)), max(0, min(end, total))
+		first, last := 0, 0
+		missing := !container.windowValid || container.windowWidth != width
+		if from < to {
+			first, last = fenwickFind(container.windowTree, from), fenwickFind(container.windowTree, to-1)+1
+			for index := first; index < last; index++ {
+				if container.windowChildCount[index] > 0 && container.windowChildLines[index] == nil {
+					container.markWindowIndexDirtyLocked(index)
+					missing = true
+				}
 			}
 		}
-	}
-	container.mu.Unlock()
-	if missing {
-		container.refreshWindow(width, start, end, false)
-	}
-	container.mu.RLock()
-	lines := container.renderCachedLinesLocked(start, end)
-	container.mu.RUnlock()
-
-	container.mu.Lock()
-	if !container.windowValid || len(container.windowChildLines) != len(container.children) {
-		container.mu.Unlock()
-		return lines
-	}
-	pruneStart, pruneEnd := 0, len(container.children)
-	if container.windowPruned {
-		pruneStart, pruneEnd = container.windowKeepStart, container.windowKeepEnd
-	}
-	evicted := make([]Component, 0)
-	for index := pruneStart; index < pruneEnd; index++ {
-		if index >= first && index < last || container.windowChildLines[index] == nil {
+		if missing && retry {
+			container.mu.Unlock()
+			_, retry = container.refreshWindow(width, start, end, false)
 			continue
 		}
-		container.windowChildLines[index] = nil
-		if _, ok := container.children[index].(Invalidatable); ok {
-			evicted = append(evicted, container.children[index])
+		lines := container.renderCachedLinesLocked(from, to)
+		if container.windowWidth != width {
+			clear(lines)
 		}
+		if !container.windowValid || container.windowWidth != width || len(container.windowChildLines) != len(container.children) {
+			container.mu.Unlock()
+			return lines
+		}
+		pruneStart, pruneEnd := 0, len(container.children)
+		if container.windowPruned {
+			pruneStart, pruneEnd = container.windowKeepStart, container.windowKeepEnd
+		}
+		evicted := make([]Component, 0)
+		for index := pruneStart; index < pruneEnd; index++ {
+			if index >= first && index < last || container.windowChildLines[index] == nil {
+				continue
+			}
+			container.windowChildLines[index] = nil
+			container.windowGeneration++
+			if _, ok := container.children[index].(Invalidatable); ok {
+				evicted = append(evicted, container.children[index])
+			}
+		}
+		container.windowKeepStart, container.windowKeepEnd, container.windowPruned = first, last, true
+		container.mu.Unlock()
+		for _, child := range evicted {
+			invalidate(child)
+		}
+		return lines
 	}
-	container.windowKeepStart, container.windowKeepEnd, container.windowPruned = first, last, true
-	container.mu.Unlock()
-	for _, child := range evicted {
-		invalidate(child)
-	}
-	return lines
 }

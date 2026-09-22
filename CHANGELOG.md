@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Fix viewport crashes when collapsing tool output exposes evicted rows; keep cache refills,
+  resizing and concurrent transcript updates consistent.
+
 - Give tool actions distinct bold colors and compact titles; hide completed output until expanded,
   keep live command output and errors visible, and shorten native Claude paths inside the project.
 

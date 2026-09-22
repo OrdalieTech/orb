@@ -360,3 +360,83 @@ func TestWindowedContainerFencesConcurrentChildInvalidation(t *testing.T) {
 		t.Fatalf("render after concurrent invalidation = %s", got)
 	}
 }
+
+func TestWindowedContainerRefillsAfterCascadingCollapse(t *testing.T) {
+	container := NewWindowedContainer()
+	var children []*countedLines
+	for i := range 8 {
+		child := &countedLines{lines: make([]string, 100)}
+		for row := range child.lines {
+			child.lines[row] = fmt.Sprintf("%d:%d", i, row)
+		}
+		children = append(children, child)
+		container.AddChild(child)
+	}
+	container.RenderLines(59, 0, 10)
+	for _, child := range children[:7] {
+		child.lines = nil
+		container.ChildChanged(child)
+	}
+	want := children[7].lines[72:90]
+	if got := container.RenderLines(59, 72, 90); !equalLines(got, want) {
+		t.Fatalf("refilled range = %q, want %q", got, want)
+	}
+}
+
+func TestWindowedContainerInterruptedRefillPreservesRowOffsets(t *testing.T) {
+	container := NewWindowedContainer()
+	child := &invalidatingLines{container: container, lines: make([]string, 100)}
+	container.AddChild(child)
+	container.AddChild(&countedLines{lines: []string{"tail"}})
+	container.RenderLines(59, 100, 101)
+	child.invalidate = true
+	child.lines[72] = "restored"
+	if got := container.RenderLines(59, 72, 74); len(got) != 2 {
+		t.Fatalf("interrupted refill lost its row positions: %q", got)
+	}
+	if got := container.RenderLines(59, 72, 74); len(got) != 2 || got[0] != "restored" {
+		t.Fatalf("next frame did not restore evicted content: %q", got)
+	}
+}
+
+func TestWindowedContainerConcurrentResizeAndMutation(t *testing.T) {
+	container := NewWindowedContainer()
+	child := NewText("initial", 0, 0, nil)
+	container.AddChild(child)
+	var workers sync.WaitGroup
+	for worker := range 4 {
+		workers.Go(func() {
+			for step := range 200 {
+				width := 1 + (step+worker*17)%80
+				start := (step * 7) % 100
+				if got := container.RenderLines(width, start, start+20); len(got) > 20 {
+					t.Errorf("range returned %d rows", len(got))
+				}
+				container.LineCount(width)
+			}
+		})
+	}
+	workers.Go(func() {
+		for step := range 200 {
+			child.SetText(strings.Repeat("streaming text\n", step%30))
+			container.ChildChanged(child)
+			switch step % 4 {
+			case 0:
+				container.Clear()
+				container.AddChild(child)
+			case 1:
+				container.RemoveChild(child)
+				container.AddChild(child)
+			case 2:
+				container.Invalidate()
+			}
+		}
+	})
+	workers.Wait()
+	child.SetText("restored\ncontent")
+	container.ChildChanged(child)
+	want := child.Render(40)
+	if got := container.RenderLines(40, 0, 100); !equalLines(got, want) {
+		t.Fatalf("settled range = %q, want %q", got, want)
+	}
+}
