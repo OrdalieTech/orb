@@ -1,7 +1,7 @@
 package config
 
 // MCP server entries live under the top-level "mcpServers" object (the
-// Claude Desktop / Cline dialect agent/mcp parses). These setters are the
+// Claude Desktop / Cline dialect plugins/mcp parses). These setters are the
 // write path behind `orb mcp`; like every other setter they persist to the
 // global settings file, while project settings keep overlaying per-server
 // through the one-level merge.

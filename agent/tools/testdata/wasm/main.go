@@ -51,5 +51,6 @@ func main() {
 			panic(fmt.Sprintf("%s: %v", tool.Spec().Name, err))
 		}
 	}
+	checkPlugins()
 	fmt.Println("portable tools OK")
 }

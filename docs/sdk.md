@@ -331,25 +331,26 @@ inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
 ### MemoryStore
 
-`memory.Store` from `github.com/OrdalieTech/orb/memory` is the tenant-scoped durable seam.
-`memory.NewFileStore(dir)` is the append-only JSONL default for one local profile. A plain
+`memory.Store` from `github.com/OrdalieTech/orb/plugins/memory` is the tenant-scoped durable seam.
+`filestore.NewFileStore(dir)` from `plugins/memory/filestore` is the append-only JSONL default for one local profile. A plain
 `engine.Agent` attaches the shared behavior directly:
 
 ```go
 import (
     "github.com/OrdalieTech/orb/engine"
-    "github.com/OrdalieTech/orb/memory"
-    agentmemory "github.com/OrdalieTech/orb/memory/agent"
+    "github.com/OrdalieTech/orb/plugins/memory/filestore"
+    agentmemory "github.com/OrdalieTech/orb/plugins/memory/agent"
 )
 
-store, _ := memory.NewFileStore(dir)
+store, _ := filestore.NewFileStore(dir)
 runtime := engine.NewAgent(stream, engine.WithInitialState(state))
 if err := agentmemory.Attach(ctx, runtime, store); err != nil { panic(err) }
 ```
 
 The bundled coding-agent plugin remains disabled by default. Local users enable
 `"plugins":{"memory":true}`; `agent` embedders register
-`plugins.MemoryWithStore(store)`. Both paths use the same `memory/agent` runtime.
+`memoryextension.Extension(store)` from `plugins/memory/extension`. Both paths use the
+same `plugins/memory/agent` runtime; only native product assembly chooses default file storage.
 
 Enablement is the only mode. At session start the plugin freezes a bounded `USER PROFILE`
 (1,375 Unicode characters) and `MEMORY` (2,200) into the system prompt. `remember` adds a

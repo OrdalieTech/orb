@@ -22,7 +22,6 @@ orb/
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
 ├── storage/                  transactional document seam; sqlite/ is an explicitly opened adapter
 ├── accounts/                 named credential store over ai/auth; explicit sidecar and base store
-├── usage/                    quota client and bounded cache; ai/auth + stdlib only
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -33,11 +32,25 @@ orb/
 │   ├── session/              session manager (JSONL v3 tree, migrations), export-html
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
-│   ├── mcp/                  bundled MCP extension (official go-sdk), built on extensions API
-│   └── plugins/              first-party bundled-but-dormant plugins (D32–D34)
+│   └── assembly/             product catalog, enablement and plugin management UI
 ├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → agent only)
-├── memory/                   MemoryStore seam + JSONL store (D34 addition)
-│   └── agent/                 generic Agent attachment + bounded memory tools
+├── plugins/                  optional capabilities, independently importable Go packages
+│   ├── memory/               storage contract only
+│   │   ├── agent/            engine attachment and bounded memory tools
+│   │   ├── extension/        public extension API adapter; explicit Store
+│   │   └── filestore/        native JSONL storage and migration reader
+│   ├── usage/                quota client + cache; ai/auth and stdlib only
+│   │   └── footer/           optional extension status display
+│   ├── bridge/               portable routing, identity, grants
+│   │   ├── agent/            agent-facing bridge tools
+│   │   ├── hosts/native/     IPC and persistence
+│   │   └── transports/tailcat/ native network transport
+│   ├── tasks/                task tool and its optional TUI rendering
+│   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
+│   ├── subagents/            child agents and native CLI execution
+│   ├── permissions/          policy, hooks and configuration UI
+│   ├── mcp/                  configured MCP integration
+│   └── herdr/                explicitly selected external integration
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
 │   ├── jsonwire/             JSON.stringify-compatible wire encoder
@@ -60,6 +73,33 @@ orb/
 ├── AGENTS.md                 execution contract for implementing agents
 └── UPSTREAM.lock             pinned upstream commit + sync state
 ```
+
+### Capability packaging and host boundaries
+
+Owner-directed regrouping (2026-09-22): `plugins/` is an organizational namespace, not a
+runtime loader or a single Go package. Each capability can be imported independently. The
+product catalog and `/plugins` UI live in `agent/assembly`; custom hosts register only their
+chosen extension factories. Runtime disablement does not remove compiled dependencies.
+
+Memory keeps three concrete boundaries: its Store contract, the `engine.Agent` attachment,
+and the product extension adapter. File storage lives in `plugins/memory/filestore`; only
+product assembly selects the default home-directory backend, lazily when enabled. SDK callers
+pass an explicit Store. `plugins/usage` stays usable without the optional `footer` adapter.
+Bridge keeps native IPC and Tailcat in separate packages; the protocol stays in `connect`.
+Existing plugin IDs, settings keys, tools and persisted formats are unchanged. Go consumers
+must update old `memory`, `usage`, `bridge`, `agent/mcp`, `agent/extensions/herdr` and
+`agent/plugins` imports to the new packages; no duplicate forwarding packages are retained.
+
+`internal/layering` checks both source edges and transitive dependencies: memory and usage
+cannot pull in presentation, memory attachments cannot pull in file/SQLite backends, and
+portable Bridge cannot pull in native hosts/transports. The Wasm probe executes injected
+filesystem/shell tools plus memory, tasks and quota fetching without a host filesystem on
+`js/wasm`; `wasip1/wasm` is compile-checked. This proves selected compositions, not a complete
+browser application. Native subagents, process-backed MCP, Herdr and native transports still
+require a suitable host. Web search retains native credential/DNS defaults; browser networking
+and storage must be explicitly adapted. Tasks and permissions currently include TUI adapters,
+and the product agent still has presentation dependencies. No browser/mobile application,
+Worker lifecycle, universal platform manifest or speculative host framework is introduced.
 
 ### Upstream package correspondence
 
@@ -269,7 +309,7 @@ stable Go wrappers. Unexpected exits use bounded restart/backoff; shutdown cance
 in-flight requests. If neither supported runtime exists, orb emits the D31 diagnostic once and
 continues without JavaScript extensions.
 
-**MCP** (`agent/mcp/`): bundled extension registering MCP servers from settings as tool
+**MCP** (`plugins/mcp/`): bundled extension registering MCP servers from settings as tool
 sources via `modelcontextprotocol/go-sdk` (stdio + streamable HTTP), tools surfaced through the
 normal registration API with dynamic tool loading. Off unless configured.
 
@@ -405,7 +445,7 @@ No SSH service, helper binary, key copying, or additional Go dependency is shipp
 |---|---|
 | `connect` | Versioned calls, receipts, observations, and non-owning attachment contracts |
 | `connect/agent` | Existing `AgentSessionRuntime` adaptation; operation ledger and bounded observations |
-| `bridge` | Identity, pairing, directional grants, registration, routing, scoped contacts |
+| `plugins/bridge` | Identity, pairing, directional grants, registration, routing, scoped contacts |
 | Native/Tailcat adapters | Explicit persistence, profile locks, IPC roles/credentials, network streams |
 | `cmd/orb` and UI assemblies | Lifecycle, management, capability selection, remote conversation view |
 

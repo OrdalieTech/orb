@@ -12,11 +12,11 @@ import (
 	"github.com/OrdalieTech/orb/agent/assembly"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	herdrext "github.com/OrdalieTech/orb/agent/extensions/herdr"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
-	bridgeagent "github.com/OrdalieTech/orb/bridge/agent"
 	"github.com/OrdalieTech/orb/connect"
+	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
+	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
 )
 
 // otherDiagnostic wraps a plain warning string for the startup diagnostics

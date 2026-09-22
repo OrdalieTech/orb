@@ -9,10 +9,9 @@ package assembly
 import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/agent/mcp"
-	"github.com/OrdalieTech/orb/agent/plugins"
-	"github.com/OrdalieTech/orb/memory"
-	"github.com/OrdalieTech/orb/usage"
+	"github.com/OrdalieTech/orb/plugins/mcp"
+	"github.com/OrdalieTech/orb/plugins/memory"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // Source records which mechanism contributes a row.
@@ -59,7 +58,7 @@ type Options struct {
 // plugin-control, the first-party plugin catalog, then MCP when configured.
 // The warnings surface MCP settings problems.
 func Rows(options Options) ([]Row, []string) {
-	names := plugins.Names()
+	names := Names()
 	rows := make([]Row, 0, len(options.Compiled)+len(names)+2)
 	for _, entry := range options.Compiled {
 		rows = append(rows, Row{
@@ -70,12 +69,12 @@ func Rows(options Options) ([]Row, []string) {
 	rows = append(rows, Row{
 		ID: "plugin-control", Description: "Enable or disable bundled plugins (/plugins)",
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
-		Factory: plugins.Control(options.CWD, options.AgentDir, options.Settings),
+		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := plugins.Catalog(plugins.Options{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
+	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
 	for _, name := range names {
 		rows = append(rows, Row{
-			ID: name, Description: plugins.Description(name),
+			ID: name, Description: Description(name),
 			Source: SourcePlugin, Factory: catalog[name],
 			Hidden:         name == "bridge" || name == "bridge-agent-calls" || name == "provider-usage",
 			DefaultEnabled: name == "bridge" && options.BridgeManagement && options.Bridge != nil,

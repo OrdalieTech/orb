@@ -12,7 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
-	firstpartyplugins "github.com/OrdalieTech/orb/agent/plugins"
 )
 
 // Port of packages/coding-agent/src/package-manager-cli.ts (pi
@@ -90,17 +89,17 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 	}
 	if action == "list" {
 		enabled := settings.GetPlugins()
-		for _, name := range firstpartyplugins.Names() {
+		for _, name := range assembly.Names() {
 			state := "off"
 			if enabled[name] {
 				state = "on"
 			}
-			_, _ = fmt.Fprintf(streams.Stdout, "%s\t%s\t%s\n", name, state, firstpartyplugins.Description(name))
+			_, _ = fmt.Fprintf(streams.Stdout, "%s\t%s\t%s\n", name, state, assembly.Description(name))
 		}
 		return true, 0
 	}
 	name := argv[2]
-	if firstpartyplugins.Description(name) == "" {
+	if assembly.Description(name) == "" {
 		_, _ = fmt.Fprintf(streams.Stderr, "Unknown plugin %q.\n", name)
 		return true, 1
 	}
@@ -119,7 +118,7 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 func listFullComposition(cwd, agentDir string, settings *config.SettingsManager, streams cliStreams) int {
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
-		Compiled: compiledExtensionsForRuntime(agentDir, settings), MCP: true,
+		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
 		Bridge: bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
 	for _, warning := range warnings {

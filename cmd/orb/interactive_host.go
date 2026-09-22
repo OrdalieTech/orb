@@ -22,7 +22,7 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine/harness"
-	"github.com/OrdalieTech/orb/usage"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // sessionRuntimeOptions selects the mode-specific parts of the otherwise

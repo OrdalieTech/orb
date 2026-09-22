@@ -13,11 +13,11 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
-	"github.com/OrdalieTech/orb/agent/plugins"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/sandbox"
 )
 
@@ -221,7 +221,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	// system prompt are skipped, and ResourceDiagnostics stays empty.
 	if !args.metadataOnly {
 		if !args.NoExtensions {
-			if toolSandboxMode, err = plugins.SandboxMode(settings); err != nil {
+			if toolSandboxMode, err = permissions.SandboxMode(settings); err != nil {
 				return runtimeInputs{}, err
 			}
 		}
@@ -442,7 +442,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			rebuildSandboxMode := sandbox.ModeDangerFullAccess
 			if !args.NoExtensions {
 				var err error
-				if rebuildSandboxMode, err = plugins.SandboxMode(settings); err != nil {
+				if rebuildSandboxMode, err = permissions.SandboxMode(settings); err != nil {
 					return nil, err
 				}
 			}

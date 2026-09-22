@@ -23,7 +23,7 @@ func TestWasmToolsUseInjectedOperationsWithoutHostFilesystem(t *testing.T) {
 					t.Fatal(err)
 				}
 				run := exec.CommandContext(t.Context(), "node", "testdata/wasm/run.cjs", filepath.Join(strings.TrimSpace(string(goRoot)), "lib/wasm/wasm_exec.js"), binary)
-				if output, err := run.CombinedOutput(); err != nil || !strings.Contains(string(output), "portable tools OK") {
+				if output, err := run.CombinedOutput(); err != nil || (!strings.Contains(string(output), "portable tools OK") || !strings.Contains(string(output), "portable plugins OK")) {
 					t.Fatalf("Wasm tools: %v\n%s", err, output)
 				}
 			}

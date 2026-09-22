@@ -6,7 +6,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
-	"github.com/OrdalieTech/orb/usage"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 var validThinkingLevels = map[string]struct{}{

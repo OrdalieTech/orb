@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
-	"github.com/OrdalieTech/orb/agent/mcp"
+	"github.com/OrdalieTech/orb/plugins/mcp"
 )
 
 const mcpCommandUsage = `orb mcp <command>

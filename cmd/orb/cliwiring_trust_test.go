@@ -15,7 +15,7 @@ import (
 // not spawn on `pi --help` or on unknown-flag invocations. Upstream gates
 // every runtime-creation path behind resolveProjectTrusted, and the MCP
 // contract keeps project entries invisible until the project-trust flow
-// accepts the project (agent/mcp/README.md).
+// accepts the project (plugins/mcp/README.md).
 func TestHelpAndUnknownFlagsDoNotSpawnUntrustedProjectMCPServers(t *testing.T) {
 	for _, test := range []struct {
 		name     string
