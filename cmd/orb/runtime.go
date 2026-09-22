@@ -481,7 +481,7 @@ func hasNonControlExtensions(registry *extensions.Registry) bool {
 		return false
 	}
 	for _, extension := range registry.Extensions() {
-		if extension.Path != "<inline:plugin-control>" && extension.Path != "<inline:bridge>" && extension.Path != "<inline:claude-sessions-control>" {
+		if extension.Path != "<inline:plugin-control>" && extension.Path != "<inline:bridge>" {
 			return true
 		}
 	}
@@ -684,4 +684,22 @@ func createBuiltInTools(cwd string, names []string, settings *config.SettingsMan
 		}
 	}
 	return result, nil
+}
+
+// newSessionRuntime lets an enabled native session executor take over a runtime
+// before anything observes it.
+func newSessionRuntime(cfg agent.SessionRuntimeConfig) (*agent.SessionRuntime, error) {
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return nil, err
+	}
+	bind, err := claudesessions.Configure(&cfg, agentDir, os.Environ())
+	if err != nil {
+		return nil, err
+	}
+	created, err := agent.NewSessionRuntime(cfg)
+	if err == nil {
+		bind(created)
+	}
+	return created, err
 }

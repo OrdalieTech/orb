@@ -57,7 +57,7 @@ func TestRowsEnumerateInBootOrder(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v", warnings)
 	}
-	want := []string{"alpha", "beta", "plugin-control", "tasks", "questions", "websearch", "subagents", "permissions", "memory", "provider-usage", "bridge", "bridge-agent-calls"}
+	want := []string{"alpha", "beta", "plugin-control", "tasks", "questions", "websearch", "subagents", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 	got := rowIDs(rows)
 	if len(got) != len(want) {
 		t.Fatalf("row ids = %v, want %v", got, want)

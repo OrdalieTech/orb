@@ -29,9 +29,11 @@ type CatalogOptions struct {
 	Settings         *config.SettingsManager
 	Policy           *permissions.Policy
 	AgentDir         string
+	// ClaudeSessions is host-supplied: it runs processes the SDK layer never owns.
+	ClaudeSessions extensions.Factory
 }
 
-var names = []string{"tasks", "questions", "websearch", "subagents", "permissions", "memory", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "questions", "websearch", "subagents", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
 	"questions":          "Ask the user questions with choices and custom answers",
@@ -42,6 +44,7 @@ var descriptions = map[string]string{
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
+	"claude-sessions":    "Native Claude Code sessions through the official Agent SDK (/claude)",
 	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
 }
 
@@ -75,11 +78,14 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 	if options.Bridge == nil {
 		options.Bridge = func(extensions.API) error { return fmt.Errorf("bridge requires host assembly") }
 	}
+	if options.ClaudeSessions == nil {
+		options.ClaudeSessions = func(extensions.API) error { return fmt.Errorf("claude sessions require host assembly") }
+	}
 	if options.BridgeAgentCalls == nil {
 		options.BridgeAgentCalls = func(extensions.API) error { return fmt.Errorf("bridge agent calls require host assembly") }
 	}
 	return map[string]extensions.Factory{
-		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls,
+		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions,
 		"questions":      questions.Extension(),
 		"tasks":          tasks.Extension(),
 		"websearch":      websearch.Extension(options.HTTPClient),

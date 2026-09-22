@@ -6,6 +6,16 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Claude Sessions: stream every block of a reply as one message with correct token counts, continue
+  `/tree` branches (including before a compaction) and interrupted or withdrawn prompts from the
+  history Orb shows, write branch summaries natively, end interrupted replies like Orb, clamp
+  unsupported effort levels, route typed `/compact`, show tool rows during approval with Orb's
+  approval choices (session approvals persist across turns), and keep Orb's `ANTHROPIC_API_KEY` out
+  of subscription sessions. The plugin is now a default-off `/plugins` row on SDK 0.3.280, installed
+  without the unused bundled CLI (47 MB instead of 255 MB).
+
+- Add discoverable `/claude:models`, `:usage`, `:new`, `:exit`, `:plan`, `:normal` and `:compact` shortcuts to open Claude actions directly.
+
 - TUI: a "↓ Jump to bottom" pill appears on the last transcript row while scrolled up; click it
   (or press ctrl+end) to reattach live follow.
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +27,7 @@ import (
 
 // Model selects this capability only for an explicit or restored Claude session.
 func Model(provider, model *string, settings *config.SettingsManager) *ai.Model {
-	if provider == nil || *provider != Name {
+	if provider == nil || *provider != Name || !settings.GetPlugins()[Name] {
 		return nil
 	}
 	id, _ := settings.GetPluginSettings(Name)["model"].(string)
@@ -104,10 +105,9 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 		if state := owned.Manager.BuildSessionContext(); state.Model != nil && state.Model.Provider == Name {
 			id = state.Model.ModelID
 		}
-		models, err := discoverModels(ctx, owned, owned.Manager.GetCWD())
-		if err != nil {
-			return nil, err
-		}
+		// ponytail: catalog failures (offline, signed out) still open the
+		// transcript; the next turn reports the native error.
+		models, _ := discoverModels(ctx, owned, owned.Manager.GetCWD())
 		opts.Model = selectedModel(models, id)
 		models = includeSelected(models, opts.Model)
 		opts.SessionLoop = driver.Loop
@@ -116,7 +116,7 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 		opts.Tools = []string{}
 		if owned.RenderText != nil {
 			for _, name := range nativeToolNames {
-				tool := nativeTool(name)
+				tool := nativeTool{name: name}
 				opts.Tools = append(opts.Tools, name)
 				opts.CustomTools = append(opts.CustomTools, extensions.ToolDefinition{
 					Name: name, Label: name, Description: "Native Claude tool",
@@ -173,10 +173,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	if err != nil {
 		return nil, err
 	}
-	models, err := discoverModels(context.Background(), options, options.Manager.GetCWD())
-	if err != nil {
-		return nil, err
-	}
+	models, _ := discoverModels(context.Background(), options, options.Manager.GetCWD())
 	state.Model = selectedModel(models, state.Model.ID)
 	models = includeSelected(models, state.Model)
 	state.Tools = nil
@@ -185,7 +182,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	cfg.ContextUsage = func() *harness.ContextUsage { return nativeContextUsage(options.Manager) }
 	cfg.BaseTools = make([]engine.AgentTool, 0, len(nativeToolNames))
 	for _, name := range nativeToolNames {
-		cfg.BaseTools = append(cfg.BaseTools, nativeTool(name))
+		cfg.BaseTools = append(cfg.BaseTools, nativeTool{name, options.Manager.GetCWD()})
 	}
 	cfg.InitialActiveToolNames = nil
 	names := append([]string{}, nativeToolNames...)
@@ -228,6 +225,12 @@ func configuredOptions(ctx context.Context, settingsManager *config.SettingsMana
 	} else if err = installSDK(ctx, agentDir, env); err != nil {
 		return Options{}, err
 	}
+	// A subscription session must not silently bill a key exported for Orb's own providers.
+	if inherit, _ := settings["inheritApiKey"].(bool); !inherit {
+		env = slices.DeleteFunc(slices.Clone(env), func(item string) bool {
+			return strings.HasPrefix(item, "ANTHROPIC_API_KEY=") || strings.HasPrefix(item, "ANTHROPIC_AUTH_TOKEN=")
+		})
+	}
 	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode}, nil
 }
 
@@ -266,8 +269,9 @@ func installSDK(ctx context.Context, agentDir string, env []string) error {
 	}
 	defer func() { _ = os.RemoveAll(staging) }()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	// The SDK's optional per-platform CLI builds are unused: Orb runs the user's own claude.
 	defer cancel()
-	install := exec.CommandContext(ctx, npm, "install", "--prefix", staging, "--ignore-scripts", "--no-audit", "--no-fund", "@anthropic-ai/claude-agent-sdk@"+SDKVersion)
+	install := exec.CommandContext(ctx, npm, "install", "--prefix", staging, "--ignore-scripts", "--omit=optional", "--no-audit", "--no-fund", "@anthropic-ai/claude-agent-sdk@"+SDKVersion)
 	install.Env = env
 	if err = install.Run(); err != nil {
 		return errors.New("could not finish Claude setup; check your connection and try again")
@@ -290,12 +294,12 @@ type modelInfo struct {
 	Adaptive bool     `json:"supportsAdaptiveThinking"`
 }
 
-func discoverModels(ctx context.Context, options Options, cwd string) ([]ai.Model, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	data, err := json.Marshal(map[string]any{"type": "start", "catalog": true, "sdk": options.SDK, "claude": options.Claude, "cwd": cwd})
+// oneShot runs the host for one request that needs no session, tools or approvals.
+func oneShot(ctx context.Context, options Options, cwd string, request map[string]any, response any) error {
+	request["type"], request["sdk"], request["claude"], request["cwd"] = "start", options.SDK, options.Claude, cwd
+	data, err := json.Marshal(request)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	cmd := exec.CommandContext(ctx, options.Node, "--input-type=module", "-e", hostSource)
 	cmd.Env, cmd.Dir, cmd.Stdin = options.Env, cwd, bytes.NewReader(append(data, '\n'))
@@ -304,14 +308,22 @@ func discoverModels(ctx context.Context, options Options, cwd string) ([]ai.Mode
 	cmd.WaitDelay = time.Second
 	raw, err := cmd.Output()
 	if err != nil {
-		return nil, errors.New("could not load Claude models; check Claude sign-in on this host and retry")
+		return err
 	}
+	if len(raw) > 8<<20 {
+		return errors.New("claude reply exceeds 8 MiB")
+	}
+	return json.Unmarshal(raw, response)
+}
+
+func discoverModels(ctx context.Context, options Options, cwd string) ([]ai.Model, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	var response struct {
-		Type    string
-		Models  []modelInfo
-		Message string
+		Type   string
+		Models []modelInfo
 	}
-	if len(raw) > 8<<20 || json.Unmarshal(raw, &response) != nil || response.Type != "catalog" || len(response.Models) == 0 {
+	if oneShot(ctx, options, cwd, map[string]any{"catalog": true}, &response) != nil || response.Type != "catalog" || len(response.Models) == 0 {
 		return nil, errors.New("claude did not return its model catalog; check Claude sign-in on this host and retry")
 	}
 	models := make([]ai.Model, 0, len(response.Models))
@@ -329,6 +341,9 @@ func discoverModels(ctx context.Context, options Options, cwd string) ([]ai.Mode
 		}
 		for _, level := range info.Levels {
 			levels[ai.ModelThinkingLevel(level)] = ptr(level)
+		}
+		if info.Adaptive && len(info.Levels) == 0 {
+			levels[ai.ModelThinkingMedium] = ptr("adaptive")
 		}
 		metadata, _ := json.Marshal(info)
 		models = append(models, ai.Model{ID: info.Value, Name: name, API: Name, Provider: Name, Input: ai.InputModalities{"text", "image"}, Reasoning: info.Effort || info.Adaptive, ThinkingLevelMap: &levels, Compat: metadata})
@@ -399,15 +414,15 @@ func executable(name string, env []string) (string, error) {
 // These tools provide presentation only; the SDK alone executes native calls.
 var nativeToolNames = []string{"AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 
-type nativeTool string
+type nativeTool struct{ name, cwd string }
 
 func (t nativeTool) Spec() engine.AgentToolSpec {
-	return engine.AgentToolSpec{Name: string(t), Label: string(t), Description: "Native Claude tool"}
+	return engine.AgentToolSpec{Name: t.name, Label: t.name, Description: "Native Claude tool"}
 }
 func (nativeTool) Execute(context.Context, string, any, engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
 	return engine.AgentToolResult{}, errors.New("this tool executes inside the native Claude session")
 }
-func (t nativeTool) RenderCall(args any) string { return toolSummary(string(t), args, "") }
+func (t nativeTool) RenderCall(args any) string { return toolSummary(t.name, args, t.cwd) }
 func (nativeTool) RenderResult(result engine.AgentToolResult) string {
 	var parts []string
 	for _, block := range result.Content {
@@ -468,24 +483,42 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 	env = append([]string{}, env...)
 	return func(api extensions.API) error {
 		limitFooter(api)
-		api.RegisterCommand("claude", extensions.Command{SettingsLabel: "Claude Sessions", Description: "Claude Sessions · start or configure", Handler: func(ctx context.Context, args string, command extensions.CommandContext) error {
+		api.On(extensions.EventSessionBeforeTree, func(_ context.Context, event extensions.Event, command extensions.Context) (any, error) {
+			tree, _ := event.(extensions.SessionBeforeTreeEvent)
+			if command.Model() == nil || command.Model().Provider != Name || !tree.Preparation.UserWantsSummary || len(tree.Preparation.EntriesToSummarize) == 0 {
+				return nil, nil
+			}
+			options, err := configuredOptions(tree.Signal, settings, agentDir, env)
+			if err != nil {
+				return nil, err
+			}
+			summary, err := summarizeBranch(tree.Signal, options, command.CWD(), command.Model().ID, tree.Preparation)
+			if err != nil {
+				return nil, err
+			}
+			return extensions.SessionBeforeTreeResult{Summary: &extensions.TreeSummary{Summary: summary}}, nil
+		})
+		api.RegisterMessageRenderer(Name+".activity", func(message extensions.CustomMessage, _ extensions.MessageRenderOptions, theme extensions.Theme) extensions.Component {
+			return notice{fmt.Sprint(message.Content), theme}
+		})
+		shortcuts := []struct{ name, action string }{
+			{"models", "Model"}, {"usage", "Usage"}, {"new", "New Claude session"},
+			{"exit", "Switch to Orb"}, {"plan", "Plan mode"},
+			{"normal", "Leave plan mode"}, {"compact", "Compact conversation"},
+		}
+		handle := func(ctx context.Context, args string, command extensions.CommandContext) error {
 			if !command.HasUI() {
 				return errors.New("/claude needs interactive mode; use --provider claude-sessions for headless sessions")
 			}
-			if strings.TrimSpace(args) == "usage" {
-				return showUsage(ctx, command)
-			}
 			choice := ""
-			switch strings.TrimSpace(args) {
-			case "plan":
-				choice = "Plan mode"
-			case "normal":
-				choice = "Leave plan mode"
-			case "compact":
-				choice = "Compact conversation"
-			case "":
-			default:
-				return errors.New("use /claude, /claude usage, /claude plan, /claude normal or /claude compact")
+			for _, shortcut := range shortcuts {
+				if strings.TrimSpace(args) == shortcut.name {
+					choice = shortcut.action
+					break
+				}
+			}
+			if strings.TrimSpace(args) != "" && choice == "" {
+				return errors.New("unknown Claude action; type /claude: to see available shortcuts")
 			}
 			actions := []string{"New Claude session", "Model"}
 			if current := command.Model(); current != nil && current.Provider == Name {
@@ -588,9 +621,7 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 				if ok {
 					for i, label := range labels {
 						if label == value {
-							enabled := settings.GetPlugins()[Name]
 							settings.SetPluginSetting(Name, "model", models[i].ID)
-							settings.SetPluginEnabled(Name, enabled)
 							break
 						}
 					}
@@ -603,11 +634,86 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 				return failure
 			}
 			return nil
-		}})
+		}
+		api.RegisterCommand("claude", extensions.Command{SettingsLabel: "Claude Sessions", Description: "Claude Sessions · start or configure", Handler: handle})
+		for _, shortcut := range shortcuts {
+			api.RegisterCommand("claude:"+shortcut.name, extensions.Command{Description: "Claude · " + shortcut.action, Handler: func(ctx context.Context, args string, command extensions.CommandContext) error {
+				if strings.TrimSpace(args) != "" {
+					return errors.New("this shortcut takes no arguments")
+				}
+				return handle(ctx, shortcut.name, command)
+			}})
+		}
 		return nil
 	}
 }
 func ptr(s string) *string { return &s }
+
+// summarizeBranch writes Orb's branch summary with one native Claude call, since
+// the session has no Orb provider to run it.
+func summarizeBranch(ctx context.Context, options Options, cwd, model string, preparation extensions.TreePreparation) (string, error) {
+	var transcript strings.Builder
+	for _, entry := range preparation.EntriesToSummarize {
+		var message struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		}
+		if entry.Type != "message" || json.Unmarshal(entry.Message, &message) != nil {
+			continue
+		}
+		var text string
+		if json.Unmarshal(message.Content, &text) != nil {
+			var blocks []struct {
+				Type, Text, Name string
+				Arguments        json.RawMessage
+			}
+			_ = json.Unmarshal(message.Content, &blocks)
+			var parts []string
+			for _, block := range blocks {
+				switch block.Type {
+				case "text":
+					parts = append(parts, block.Text)
+				case "toolCall":
+					parts = append(parts, fmt.Sprintf("[%s %s]", block.Name, block.Arguments))
+				}
+			}
+			text = strings.Join(parts, "\n")
+		}
+		if text != "" {
+			fmt.Fprintf(&transcript, "[%s]: %s\n\n", message.Role, text)
+		}
+	}
+	instructions := harness.BranchSummaryPrompt
+	if custom := preparation.CustomInstructions; custom != nil && *custom != "" {
+		if preparation.ReplaceInstructions {
+			instructions = *custom
+		} else {
+			instructions += "\n\nAdditional focus: " + *custom
+		}
+	}
+	var response struct {
+		Type, Text, Message string
+	}
+	request := map[string]any{"model": model, "system": harness.SummarizationSystemPrompt, "complete": "<conversation>\n" + transcript.String() + "</conversation>\n\n" + instructions}
+	if err := oneShot(ctx, options, cwd, request, &response); err != nil || response.Type != "complete" || response.Text == "" {
+		return "", fmt.Errorf("claude could not summarize the branch: %s", response.Message)
+	}
+	return response.Text, nil
+}
+
+// notice renders native lifecycle activity as one dim line, like Orb's own status notes.
+type notice struct {
+	text  string
+	theme extensions.Theme
+}
+
+func (n notice) Render(width int) []string {
+	text := []rune(n.text)
+	if budget := width - 3; budget > 1 && len(text) > budget {
+		text = append(text[:budget-1], '…')
+	}
+	return []string{"", "   " + n.theme.FG("dim", string(text))}
+}
 
 func limitLabel(kind string) string {
 	switch kind {
@@ -646,30 +752,21 @@ func LimitsStatus(manager extensions.ReadonlySessionManager, now time.Time) stri
 }
 
 func nativeContextUsage(manager extensions.ReadonlySessionManager) *harness.ContextUsage {
-	for entry := manager.GetLeafEntry(); entry != nil; {
-		if entry.Type == "model_change" {
-			return nil
-		}
-		if entry.CustomType == Name+".context" {
-			var usage struct {
-				MaxTokens   int64
-				TotalTokens *int64
-				Percentage  *float64
-			}
-			if json.Unmarshal(entry.Data, &usage) == nil && usage.MaxTokens > 0 && usage.Percentage != nil && *usage.Percentage >= 0 && *usage.Percentage <= 100 {
-				if usage.TotalTokens != nil && (*usage.TotalTokens < 0 || *usage.TotalTokens > usage.MaxTokens) {
-					usage.TotalTokens = nil
-				}
-				return &harness.ContextUsage{Tokens: usage.TotalTokens, ContextWindow: float64(usage.MaxTokens), Percent: usage.Percentage}
-			}
-			break
-		}
-		if entry.ParentID == nil {
-			break
-		}
-		entry = manager.GetEntry(*entry.ParentID)
+	entry := onBranch(manager, func(entry *session.SessionEntry) bool {
+		return entry.Type == "model_change" || entry.CustomType == Name+".context"
+	})
+	var usage struct {
+		MaxTokens   int64
+		TotalTokens *int64
+		Percentage  *float64
 	}
-	return nil
+	if entry == nil || entry.Type == "model_change" || json.Unmarshal(entry.Data, &usage) != nil || usage.MaxTokens <= 0 || usage.Percentage == nil || *usage.Percentage < 0 || *usage.Percentage > 100 {
+		return nil
+	}
+	if usage.TotalTokens != nil && (*usage.TotalTokens < 0 || *usage.TotalTokens > usage.MaxTokens) {
+		usage.TotalTokens = nil
+	}
+	return &harness.ContextUsage{Tokens: usage.TotalTokens, ContextWindow: float64(usage.MaxTokens), Percent: usage.Percentage}
 }
 
 func limitsStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
@@ -763,26 +860,18 @@ func limitFooter(api extensions.API) {
 }
 
 func latestLimits(manager extensions.ReadonlySessionManager) *subscriptionLimits {
-	for entry := manager.GetLeafEntry(); entry != nil; {
-		if entry.CustomType == Name+".limits" {
-			var info subscriptionLimits
-			if json.Unmarshal(entry.Data, &info) != nil {
-				return nil
-			}
-			if info.UnifiedWindows == nil {
-				info.UnifiedWindows = map[string]limitWindow{}
-			}
-			if _, exists := info.UnifiedWindows[info.RateLimitType]; !exists && limitLabel(info.RateLimitType) != "" {
-				info.UnifiedWindows[info.RateLimitType] = info.limitWindow
-			}
-			return &info
-		}
-		if entry.ParentID == nil {
-			break
-		}
-		entry = manager.GetEntry(*entry.ParentID)
+	entry := onBranch(manager, func(entry *session.SessionEntry) bool { return entry.CustomType == Name+".limits" })
+	var info subscriptionLimits
+	if entry == nil || json.Unmarshal(entry.Data, &info) != nil {
+		return nil
 	}
-	return nil
+	if info.UnifiedWindows == nil {
+		info.UnifiedWindows = map[string]limitWindow{}
+	}
+	if _, exists := info.UnifiedWindows[info.RateLimitType]; !exists && limitLabel(info.RateLimitType) != "" {
+		info.UnifiedWindows[info.RateLimitType] = info.limitWindow
+	}
+	return &info
 }
 
 func usageRows(manager extensions.ReadonlySessionManager, now time.Time) []string {
@@ -825,18 +914,9 @@ func showUsage(ctx context.Context, command extensions.CommandContext) error {
 }
 
 func nativeMode(manager extensions.ReadonlySessionManager) string {
-	for entry := manager.GetLeafEntry(); entry != nil; {
-		if entry.CustomType == Name+".mode" {
-			var mode string
-			if json.Unmarshal(entry.Data, &mode) == nil && mode == "plan" {
-				return "plan"
-			}
-			return "default"
-		}
-		if entry.ParentID == nil {
-			break
-		}
-		entry = manager.GetEntry(*entry.ParentID)
+	var mode string
+	if entry := onBranch(manager, func(entry *session.SessionEntry) bool { return entry.CustomType == Name+".mode" }); entry != nil && json.Unmarshal(entry.Data, &mode) == nil && mode == "plan" {
+		return "plan"
 	}
 	return "default"
 }

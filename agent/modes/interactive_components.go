@@ -836,12 +836,12 @@ type toolActivityRow struct {
 }
 
 func toolActivityKind(name string) string {
-	switch name {
-	case "read", "Read":
+	switch strings.ToLower(name) {
+	case "read":
 		return "read"
-	case "grep", "Grep", "find", "Glob":
+	case "grep", "find", "glob":
 		return "search"
-	case "ls", "LS":
+	case "ls":
 		return "listing"
 	}
 	return ""

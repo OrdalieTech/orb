@@ -44,6 +44,7 @@ type Options struct {
 	BridgeManagement bool
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
+	ClaudeSessions   extensions.Factory
 	CWD              string
 	AgentDir         string
 	Settings         *config.SettingsManager
@@ -73,7 +74,7 @@ func Rows(options Options) ([]Row, []string) {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
+	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: Description(name),

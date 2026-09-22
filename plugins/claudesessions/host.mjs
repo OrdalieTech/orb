@@ -25,11 +25,11 @@ function request(message, signal) {
 }
 function ask(title, choices, signal) { return request({ type: 'input', title, choices }, signal); }
 async function run(config) {
-  const { query } = await import(pathToFileURL(config.sdk));
+  const { query, forkSession } = await import(pathToFileURL(config.sdk));
   let permissionMode = config.permissionMode === 'plan' ? 'plan' : 'default';
   const options = {
     cwd: config.cwd, pathToClaudeCodeExecutable: config.claude,
-    model: config.model === "default" ? undefined : config.model, includePartialMessages: true,
+    model: config.model === "default" ? undefined : config.model, includePartialMessages: true, agentProgressSummaries: true,
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     permissionMode,
     hooks: { PreToolUse: [{ timeout: 86400, hooks: [async (input, toolID, { signal }) => {
@@ -47,7 +47,8 @@ async function run(config) {
       try { return await request({ type: 'elicitation', elicitation: input }, signal); }
       catch { return { action: 'cancel' }; }
     },
-    canUseTool: async (name, input, { signal }) => {
+    canUseTool: async (name, input, options) => {
+      const { signal } = options;
       try {
         if (name === 'AskUserQuestion') {
           const result = await request({ type: 'questions', questions: input.questions }, signal);
@@ -58,20 +59,50 @@ async function run(config) {
           }));
           return { behavior: 'allow', updatedInput: { ...input, answers } };
         }
+        const relative = path => typeof path === 'string' && path.startsWith(config.cwd + '/') ? path.slice(config.cwd.length + 1) : path;
+        const quote = (mark, text) => String(text ?? '').slice(0, 2000).split('\n').map(line => mark + line).join('\n');
         const details = name === 'ExitPlanMode' ? (input.plan ?? 'Claude is ready to leave planning and start implementation.')
           : name === 'Bash' ? [input.description, input.command].filter(Boolean).join('\n\n')
+          : name === 'Write' ? `${relative(input.file_path)}\n\n${quote('', input.content)}`
+          : name === 'Edit' ? `${relative(input.file_path)}\n\n${quote('- ', input.old_string)}\n${quote('+ ', input.new_string)}`
           : JSON.stringify(input, null, 2);
-        const answer = await ask(`${name === 'ExitPlanMode' ? 'Approve this plan?' : name}\n\n${details}`, ['Deny', 'Allow once'], signal);
-        return answer === 'Allow once'
-          ? { behavior: 'allow', updatedInput: input }
-          : { behavior: 'deny', message: 'User denied this action' };
+        const title = name === 'ExitPlanMode' ? 'Approve this plan?' : `Permission requested for ${name}`;
+        // The same choices as Orb's own approvals; "this session" becomes native session rules.
+        const session = options.suggestions?.length && !options.suppressAlwaysAllowRule;
+        const choices = ['y approve once', ...(session ? ['s approve for this session'] : []), 'n deny', 'r deny with a reason'];
+        const answer = await ask(`${title}\n\n${details}`, choices, signal);
+        if (answer === 'y approve once') return { behavior: 'allow', updatedInput: input };
+        if (answer === 's approve for this session') {
+          const updatedPermissions = options.suggestions.map(update => ({ ...update, destination: 'session' }));
+          await send({ type: 'session', event: updatedPermissions });
+          return { behavior: 'allow', updatedInput: input, updatedPermissions };
+        }
+        const reason = answer === 'r deny with a reason' ? await ask('Why deny this tool call?', [], signal) : '';
+        return { behavior: 'deny', message: reason.trim() || 'User denied this action' };
       } catch {
         return { behavior: 'deny', message: 'The user dismissed this request. Do not assume an answer or approval.', interrupt: signal.aborted };
       }
     },
   };
+  // Each turn is a new native process, so this Orb session's approvals are re-applied.
+  for (const update of config.sessionUpdates ?? []) {
+    if (update.type === 'addRules' && update.behavior === 'allow') {
+      options.allowedTools = [...(options.allowedTools ?? []), ...update.rules.map(rule => rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName)];
+    } else if (update.type === 'addDirectories') {
+      options.additionalDirectories = [...(options.additionalDirectories ?? []), ...update.directories];
+    } else if (update.type === 'setMode' && permissionMode !== 'plan') {
+      options.permissionMode = update.mode;
+    }
+  }
   if (config.effort) options.effort = config.effort;
   if (config.thinking) options.thinking = { type: config.thinking };
+  if (config.complete) {
+    Object.assign(options, { persistSession: false, tools: [], maxTurns: 1, systemPrompt: config.system });
+    let text = '';
+    for await (const event of query({ prompt: config.complete, options })) if (event.type === 'result') text = event.result ?? '';
+    await send({ type: 'complete', text });
+    return;
+  }
   if (config.catalog) {
     options.persistSession = false;
     let release;
@@ -83,14 +114,16 @@ async function run(config) {
     } finally { release(); active?.close(); active = undefined; }
     return;
   }
-  if (config.resume) options.resume = config.resume;
-  if (config.fork) { options.forkSession = true; options.sessionId = config.session; options.resumeSessionAt = config.at; }
-  else if (!config.resume) options.sessionId = config.session;
+  // Native session IDs come from the SDK. A fork copies the transcript up to the
+  // branch point into a new native session, so the original is never rewritten.
+  if (config.resume) options.resume = config.fork
+    ? (await forkSession(config.resume, { dir: config.cwd, upToMessageId: config.at || undefined })).sessionId
+    : config.resume;
   // Keep permission callbacks available until native foreground and background work completes.
   let release;
   const finished = new Promise(resolve => { release = resolve; });
   async function* input() {
-    yield { type: 'user', session_id: config.session, parent_tool_use_id: null, message: { role: 'user', content: config.content } };
+    yield { type: 'user', uuid: config.uuid, parent_tool_use_id: null, message: { role: 'user', content: config.content } };
     await finished;
   }
   try {
@@ -112,9 +145,10 @@ async function run(config) {
         }
       }
       if (tasks.size > 1024) throw new Error('Too many native background tasks');
-      await send({ type: 'sdk', event });
       if (event.type === 'result') finishedTurn = true;
-      if (finishedTurn && tasks.size === 0 && !released) {
+      const settled = finishedTurn && tasks.size === 0 && !released;
+      // The reading precedes the result so the final repaint already shows it.
+      if (settled) {
         let timeout;
         try {
           const usage = await Promise.race([
@@ -124,6 +158,9 @@ async function run(config) {
           await send({ type: 'context', event: { maxTokens: usage.maxTokens, totalTokens: usage.totalTokens, percentage: usage.percentage } });
         } catch { /* Context telemetry must not fail a completed turn. */ }
         finally { clearTimeout(timeout); }
+      }
+      await send({ type: 'sdk', event });
+      if (settled) {
         released = true;
         release();
       }

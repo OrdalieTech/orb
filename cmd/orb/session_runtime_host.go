@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -13,7 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
 type cliSessionRuntimeHostOptions struct {
@@ -189,14 +187,7 @@ func newCLISessionRuntimeHost(
 		if err != nil {
 			return nil, err
 		}
-		bind, err := claudesessions.Configure(&sessionConfig, agentDir, os.Environ())
-		if err != nil {
-			return nil, err
-		}
-		created, err := agent.NewSessionRuntime(sessionConfig)
-		if err == nil {
-			bind(created)
-		}
+		created, err := newSessionRuntime(sessionConfig)
 		if err != nil {
 			return nil, err
 		}
