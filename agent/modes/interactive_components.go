@@ -195,7 +195,15 @@ func (c *UserMessageComponent) Render(width int) []string {
 // AssistantMessageComponent
 // ─────────────────────────────────────────────────────────────
 
+type assistantMarkdown struct {
+	text      string
+	thinking  bool
+	component *tui.Markdown
+}
+
 type AssistantMessageComponent struct {
+	dirty             bool
+	markdown          map[int]assistantMarkdown
 	renderTheme       *theme.Theme
 	mu                sync.Mutex
 	contentContainer  *tui.Container
@@ -224,6 +232,7 @@ func NewAssistantMessageComponent(
 	transformers []extensions.MarkdownTransformer,
 ) *AssistantMessageComponent {
 	c := &AssistantMessageComponent{
+		renderTheme:      theme.Current().Palette(),
 		contentContainer: &tui.Container{},
 		hideThinking:     hideThinking,
 		mdTheme:          mdTheme,
@@ -240,9 +249,7 @@ func NewAssistantMessageComponent(
 func (c *AssistantMessageComponent) UpdateContent(message *ai.AssistantMessage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	copy := *message
-	c.message = &copy
-	c.updateContentLocked(message)
+	c.setMessageLocked(message)
 }
 
 // UpdateContentStreaming mirrors upstream updateContent(message, isStreaming):
@@ -250,32 +257,68 @@ func (c *AssistantMessageComponent) UpdateContent(message *ai.AssistantMessage) 
 func (c *AssistantMessageComponent) UpdateContentStreaming(message *ai.AssistantMessage, isStreaming bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.isStreaming != isStreaming && len(c.transformers) > 0 {
+		c.markdown = nil
+	}
 	c.isStreaming = isStreaming
+	c.setMessageLocked(message)
+}
+
+// Only presentation fields are read after the provider resumes mutating its partial.
+func (c *AssistantMessageComponent) setMessageLocked(message *ai.AssistantMessage) {
 	copy := *message
-	c.message = &copy
-	c.updateContentLocked(message)
+	copy.ErrorMessage = cloneStringPointer(message.ErrorMessage)
+	copy.Content = make(ai.AssistantContent, len(message.Content))
+	for i, block := range message.Content {
+		switch block := block.(type) {
+		case *ai.TextContent:
+			value := *block
+			copy.Content[i] = &value
+		case *ai.ThinkingContent:
+			value := *block
+			copy.Content[i] = &value
+		default:
+			copy.Content[i] = block
+		}
+	}
+	c.message, c.dirty = &copy, true
 }
 
 func (c *AssistantMessageComponent) SetHideThinkingBlock(hidden bool, label string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.hideThinking, c.thinkingLabel = hidden, label
-	if c.message != nil {
-		c.updateContentLocked(c.message)
-	}
+	c.dirty = true
 }
 
 func (c *AssistantMessageComponent) SetHiddenThinkingLabel(label string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.thinkingLabel = label
-	if c.message != nil {
-		c.updateContentLocked(c.message)
-	}
+	c.dirty = true
 }
 
 func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMessage) {
 	c.renderTheme = theme.Current().Palette()
+	previous := c.markdown
+	c.markdown = make(map[int]assistantMarkdown)
+	addMarkdown := func(index int, text string, thinking bool) {
+		cached, ok := previous[index]
+		if !ok || cached.thinking != thinking {
+			var style *tui.DefaultTextStyle
+			kind := "assistant"
+			if thinking {
+				kind = "assistant-thinking"
+				style = &tui.DefaultTextStyle{Color: func(text string) string { return theme.FG("thinkingText", text) }, Italic: true}
+			}
+			cached = assistantMarkdown{text: text, thinking: thinking, component: tui.NewMarkdown(text, c.outputPad+2, 0, c.mdTheme, style, &tui.MarkdownOptions{Transform: newMarkdownTransform(kind, c.isStreaming, c.transformers)})}
+		} else if cached.text != text {
+			cached.component.SetText(text)
+			cached.text = text
+		}
+		c.markdown[index] = cached
+		c.contentContainer.AddChild(cached.component)
+	}
 	c.contentContainer.Clear()
 	c.hasLongReasoning = false
 	c.toggleHint = nil
@@ -301,9 +344,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 		switch value := message.Content[index].(type) {
 		case *ai.TextContent:
 			if text := strings.TrimSpace(value.Text); text != "" {
-				c.contentContainer.AddChild(tui.NewMarkdown(text, c.outputPad+2, 0, c.mdTheme, nil, &tui.MarkdownOptions{
-					Transform: newMarkdownTransform("assistant", c.isStreaming, c.transformers),
-				}))
+				addMarkdown(index, text, false)
 			}
 		case *ai.ThinkingContent:
 			thinkingBlocks := make([]string, 0, 1)
@@ -351,12 +392,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 					c.toggleHint = tui.NewText(theme.FG("muted", "… reasoning · click to collapse"), c.outputPad+2, 0, nil)
 					c.contentContainer.AddChild(c.toggleHint)
 				}
-				c.contentContainer.AddChild(tui.NewMarkdown(strings.Join(thinkingBlocks, "\n\n"), c.outputPad+2, 0, c.mdTheme, &tui.DefaultTextStyle{
-					Color:  func(text string) string { return theme.FG("thinkingText", text) },
-					Italic: true,
-				}, &tui.MarkdownOptions{
-					Transform: newMarkdownTransform("assistant-thinking", c.isStreaming, c.transformers),
-				}))
+				addMarkdown(index, strings.Join(thinkingBlocks, "\n\n"), true)
 			}
 			for trailing := index + 1; trailing < len(message.Content); trailing++ {
 				switch next := message.Content[trailing].(type) {
@@ -395,7 +431,13 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 	}
 }
 
-func (c *AssistantMessageComponent) Invalidate() { c.contentContainer.Invalidate() }
+func (c *AssistantMessageComponent) Invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.markdown = nil
+	c.dirty = true
+	c.contentContainer.Invalidate()
+}
 func (c *AssistantMessageComponent) HandleMouse(event tui.MouseEvent) bool {
 	if event.Type != tui.MouseRelease || event.Button != 0 && event.Button != 3 {
 		return false
@@ -406,7 +448,7 @@ func (c *AssistantMessageComponent) HandleMouse(event tui.MouseEvent) bool {
 		return false
 	}
 	c.expandedReasoning = !c.expandedReasoning
-	c.updateContentLocked(c.message)
+	c.dirty = true
 	onChange := c.onChange
 	c.mu.Unlock()
 	if onChange != nil {
@@ -419,9 +461,12 @@ func (c *AssistantMessageComponent) Render(width int) []string {
 	defer c.mu.Unlock()
 	if c.renderTheme != theme.Current().Palette() {
 		c.mdTheme = theme.MarkdownTheme()
-		if c.message != nil {
-			c.updateContentLocked(c.message)
-		}
+		c.markdown = nil
+		c.dirty = true
+	}
+	if c.dirty && c.message != nil {
+		c.updateContentLocked(c.message)
+		c.dirty = false
 	}
 	hasToolCalls := c.hasToolCalls
 	lines := make([]string, 0)

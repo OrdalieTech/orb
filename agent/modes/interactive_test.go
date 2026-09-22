@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -2484,6 +2485,87 @@ func TestTranscriptRecolorsAcrossTerminalAppearanceChanges(t *testing.T) {
 			if got, want := strings.Join(component.Render(70), "\n"), strings.Join(fresh[i].Render(70), "\n"); got != want {
 				t.Fatalf("%s component %d kept stale colors:\n%q\nwant:\n%q", step, i, got, want)
 			}
+		}
+	}
+}
+
+func TestAssistantStreamingOwnsPendingTextAndReusesCompletedMarkdown(t *testing.T) {
+	calls := 0
+	streaming := true
+	transformer := func(text string, ctx extensions.MarkdownTransformContext) string {
+		calls++
+		if ctx.IsStreaming != streaming {
+			t.Fatalf("streaming = %v, want %v", ctx.IsStreaming, streaming)
+		}
+		return text
+	}
+	first, tail := &ai.TextContent{Text: "completed"}, &ai.TextContent{Text: "pending"}
+	thought := &ai.ThinkingContent{Thinking: "reasoning"}
+	message := &ai.AssistantMessage{Content: ai.AssistantContent{first, thought, tail}}
+	c := NewAssistantMessageComponent(nil, false, tui.MarkdownTheme{}, "", 0, []extensions.MarkdownTransformer{transformer})
+	c.UpdateContentStreaming(message, true)
+	tail.Text, thought.Thinking = "mutated", "changed"
+	if calls != 0 {
+		t.Fatal("prepared a frame before rendering")
+	}
+	rendered := strings.Join(c.Render(80), "\n")
+	if !strings.Contains(rendered, "pending") || strings.Contains(rendered, "mutated") || !strings.Contains(rendered, "reasoning") {
+		t.Fatalf("pending message changed: %s", rendered)
+	}
+	thought.Thinking = "reasoning"
+	c.UpdateContentStreaming(message, true)
+	c.Render(80)
+	if calls != 4 {
+		t.Fatalf("completed blocks were re-rendered: %d transformer calls, want 4", calls)
+	}
+	streaming = false
+	c.UpdateContentStreaming(message, false)
+	c.Render(80)
+	if calls != 7 {
+		t.Fatalf("completion did not refresh transformer context: %d", calls)
+	}
+	c.Invalidate()
+	c.Render(80)
+	if calls != 10 {
+		t.Fatalf("explicit invalidation retained stale markdown: %d", calls)
+	}
+}
+
+func BenchmarkAssistantStreaming(b *testing.B) {
+	for _, size := range []int{64 << 10, 256 << 10} {
+		for _, scenario := range []string{"active", "completed", "burst"} {
+			b.Run(fmt.Sprintf("%d/%s", size, scenario), func(b *testing.B) {
+				text := strings.Repeat("A paragraph with **bold** and `code`, followed by words.\n\n", size/56)
+				first, tail := &ai.TextContent{Text: text}, &ai.TextContent{Text: "tail"}
+				message := &ai.AssistantMessage{Content: ai.AssistantContent{first}}
+				if scenario != "active" {
+					message.Content = append(message.Content, tail)
+				} else {
+					tail = first
+				}
+				c := NewAssistantMessageComponent(nil, false, tui.MarkdownTheme{}, "", 0, nil)
+				c.UpdateContentStreaming(message, true)
+				c.Render(120)
+				updates := 1
+				if scenario == "burst" {
+					updates = 16
+				}
+				b.ReportAllocs()
+				n := 0
+				for b.Loop() {
+					for i := 0; i < updates; i++ {
+						n++
+						suffix := strconv.Itoa(n)
+						if scenario == "active" {
+							tail.Text = text + suffix
+						} else {
+							tail.Text = "tail " + suffix
+						}
+						c.UpdateContentStreaming(message, true)
+					}
+					c.Render(120)
+				}
+			})
 		}
 	}
 }
