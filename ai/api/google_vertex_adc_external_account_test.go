@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -171,6 +172,9 @@ func TestGoogleVertexExternalAccountURLClientAuthAndImpersonation(t *testing.T) 
 }
 
 func TestGoogleVertexExternalAccountExecutableSource(t *testing.T) {
+	if runtime.GOARCH == "wasm" {
+		t.Skip("executable credential sources need process execution")
+	}
 	command := strconv.Quote(os.Args[0]) + " -test.run=^TestGoogleVertexExternalAccountExecutableHelper$"
 	raw := googleVertexExternalAccountRaw(t, map[string]any{
 		"type":               "external_account",

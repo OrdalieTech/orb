@@ -373,7 +373,7 @@ func TestSessionRuntimeRejectsWorkAfterDispose(t *testing.T) {
 
 func TestDisposedSessionStillReportsTheSpecificFailure(t *testing.T) {
 	// RPC mode disposes on EOF and then lets in-flight commands unwind and
-	// report (modes/rpc.go), so the sentinel must not mask the reason a
+	// report (agent/rpc/server.go), so the sentinel must not mask the reason a
 	// request was doomed anyway.
 	settings, err := config.NewSettingsManager(t.TempDir(), config.WithAgentDir(t.TempDir()))
 	if err != nil {

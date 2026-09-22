@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,55 +39,6 @@ func TestGrepToolMiniTreeContextLimitAndOutputShape(t *testing.T) {
 	details, ok := result.Details.(GrepToolDetails)
 	if !ok || details.MatchLimitReached == nil || *details.MatchLimitReached != 1 {
 		t.Fatalf("details = %#v", result.Details)
-	}
-}
-
-func TestSearchToolsLiveMiniTree(t *testing.T) {
-	if os.Getenv("ORB_LIVE_TESTS") != "1" {
-		t.Skip("set ORB_LIVE_TESTS=1 to download rg and fd")
-	}
-	requireUnixSearchTest(t)
-	agentDir := t.TempDir()
-	binDir := filepath.Join(agentDir, "bin")
-	manager := &toolManager{
-		binDir: binDir, goos: runtime.GOOS, goarch: runtime.GOARCH,
-		apiBaseURL: "https://api.github.com", client: http.DefaultClient,
-	}
-	for _, managed := range []managedTool{managedRG, managedFD} {
-		if _, err := manager.downloadTool(context.Background(), managed); err != nil {
-			t.Fatalf("download %s: %v", managed, err)
-		}
-	}
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
-	t.Setenv("PI_OFFLINE", "1")
-	root := searchTreeRoot(t)
-	grepResult, err := NewGrepTool(root, nil).Execute(context.Background(), "grep", map[string]any{
-		"pattern": "match", "path": filepath.Join(root, "context.txt"), "context": 1,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grepWant := "context.txt-1- before\ncontext.txt:2: match one\ncontext.txt-3- after\ncontext.txt-4- middle\ncontext.txt:5: match two\ncontext.txt-6- after two"
-	if got := toolResultText(t, grepResult); got != grepWant {
-		t.Fatalf("live grep output = %q, want %q", got, grepWant)
-	}
-
-	findResult, err := NewFindTool(root, nil).Execute(context.Background(), "find", map[string]any{
-		"pattern": "**/*.txt", "path": root,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	paths := strings.Split(toolResultText(t, findResult), "\n")
-	for _, wanted := range []string{".secret/hidden.txt", "a/deep/kept.txt", "a/kept.txt", "b/ignored.txt", "b/kept.txt", "context.txt", "kept.txt", "root.txt", "visible.txt"} {
-		if !slices.Contains(paths, wanted) {
-			t.Fatalf("live find output %q lacks %q", paths, wanted)
-		}
-	}
-	for _, ignored := range []string{"ignored.txt", "a/ignored.txt", "a/deep/ignored.txt", "a/deep/secret.txt"} {
-		if slices.Contains(paths, ignored) {
-			t.Fatalf("live find output %q includes ignored %q", paths, ignored)
-		}
 	}
 }
 

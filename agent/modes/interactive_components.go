@@ -626,7 +626,7 @@ func (c *ToolExecutionComponent) updateDisplay() {
 		})
 		if rendered != nil {
 			c.callComponent = rendered
-			if toolActivityKind(c.toolName) != "" || strings.EqualFold(c.toolName, "bash") {
+			if _, compact := rendered.(toolCallHeader); !compact && (toolActivityKind(c.toolName) != "" || strings.EqualFold(c.toolName, "bash")) {
 				rendered = toolCallHeader{inner: rendered, expanded: c.expanded}
 			}
 			c.contentBox.AddChild(rendered)
@@ -679,8 +679,10 @@ func (c *ToolExecutionComponent) showOutput() bool {
 }
 
 type toolCallHeader struct {
-	inner    tui.Component
-	expanded bool
+	inner        tui.Component
+	expanded     bool
+	title        string
+	keepTailFrom int
 }
 
 func (header toolCallHeader) Invalidate() {
@@ -690,6 +692,21 @@ func (header toolCallHeader) Invalidate() {
 }
 
 func (header toolCallHeader) Render(width int) []string {
+	if !header.expanded && header.title != "" {
+		title, _, multiline := strings.Cut(header.title, "\n")
+		budget := max(0, width-2)
+		clipped := multiline || tui.VisibleWidth(title) > budget
+		if header.keepTailFrom > 0 && header.keepTailFrom+1 < budget && tui.VisibleWidth(title) > budget {
+			prefix := tui.SliceByColumn(title, 0, header.keepTailFrom, true)
+			tailWidth := budget - header.keepTailFrom - 1
+			title = prefix + "…" + tui.SliceByColumn(title, tui.VisibleWidth(title)-tailWidth, tailWidth, true)
+		}
+		suffix := " ›"
+		if clipped {
+			suffix = " …"
+		}
+		return []string{tui.TruncateToWidth(title, budget, "…", false) + theme.FG("accent", tui.TruncateToWidth(suffix, width, "", false))}
+	}
 	lines := header.inner.Render(width)
 	if header.expanded || len(lines) == 0 {
 		return lines

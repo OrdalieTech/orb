@@ -37,22 +37,23 @@ jobs:
         if: runner.os == 'Linux'
         run: make upstream-rpc-tests
 
-  cross-build:
-    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        goos: [linux, darwin]
-        goarch: [amd64, arm64]
+  windows:
+    # Cross builds for every P2 target run inside `make check` (scripts/portability.sh);
+    # this job executes the suite on a real Windows host.
+    name: Test (windows-latest)
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
-      - run: go build ./...
+      - shell: bash
         env:
           CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go install github.com/tetratelabs/wazero/cmd/wazero@v1.12.0
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          go build ./...
+          go vet $(go list ./... | grep -v /internal/chromalexers)
+          go test ./...

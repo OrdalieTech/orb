@@ -17,3 +17,10 @@ func printModeSignalExitCode(received os.Signal) int {
 	}
 	return 143
 }
+
+func (mode *InteractiveMode) suspend() {
+	_ = mode.ui.Stop()
+	p, _ := os.FindProcess(os.Getpid())
+	_ = p.Signal(syscall.SIGTSTP)
+	_ = mode.ui.Start()
+}

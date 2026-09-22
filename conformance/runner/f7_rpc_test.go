@@ -16,7 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/rpc"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -74,8 +74,8 @@ func TestF7RPCTranscriptMatchesUpstream(t *testing.T) {
 	var stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		done <- modes.RunRPCMode(context.Background(), &f7Host{session: runtime}, modes.RPCModeOptions{
-			Stdin: inputReader, Stdout: outputWriter, Stderr: &stderr,
+		done <- rpc.Serve(context.Background(), &f7Host{session: runtime}, rpc.Options{
+			Input: inputReader, Output: outputWriter, Diagnostics: &stderr,
 		})
 		_ = outputWriter.Close()
 	}()

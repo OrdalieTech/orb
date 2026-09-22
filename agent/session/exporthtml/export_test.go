@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/agent/session"
 )
 
@@ -184,11 +183,7 @@ func TestRegisteredCustomThemeExportReloadsSource(t *testing.T) {
 	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	selected, err := modetheme.Parse(path, []byte(custom), modetheme.TrueColor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selected.SourcePath = path
+	selected := &ThemeRef{Name: "custom-reload", SourcePath: path}
 	updated := strings.Replace(custom, `"pageBg": "#18181e"`, `"pageBg": "#123456"`, 1)
 	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
 		t.Fatal(err)
@@ -204,16 +199,7 @@ func TestRegisteredCustomThemeExportReloadsSource(t *testing.T) {
 }
 
 func TestRegisteredCustomThemeExportRequiresSourcePath(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "modes", "theme", "dark.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "memory-only"`, 1)
-	selected, err := modetheme.Parse("memory-only", []byte(custom), modetheme.TrueColor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = resolveExportTheme("memory-only", selected)
+	_, err := resolveExportTheme("memory-only", &ThemeRef{Name: "memory-only"})
 	if want := `Theme "memory-only" does not have a source path for export`; err == nil || err.Error() != want {
 		t.Fatalf("source-path error = %v, want %q", err, want)
 	}

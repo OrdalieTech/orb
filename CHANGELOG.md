@@ -6,6 +6,16 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Run the agent on any platform through `host.Host` ports (files, processes, documents, credentials, sessions): browser Wasm, WASI and native hosts produce identical sessions. The RPC mode moves to the headless `agent/rpc` package (`rpc.Serve`) as the embedding protocol for every host. Provider families register through `api.Registry` (`ai/api/all` for all of them), so light builds link only what they use; `engine.SetDefaultStreamFn` is removed.
+
+- SDK: the `agent` package no longer links the TUI or syntax highlighting (full AgentSession
+  js/wasm build ~12.0 MB → ~9.5 MB gzip). `ResourceThemesResult.Themes` now holds
+  `*agent.ResourceTheme` (parsed theme files); `agent/modes/theme.FromFile` renders them, and
+  `SessionRuntime.ExportHTMLWithThemes` lets a UI driver supply its active theme to HTML export.
+
+- TUI: a "↓ Jump to bottom" pill appears on the last transcript row while scrolled up; click it
+  (or press ctrl+end) to reattach live follow.
+
 - Claude Sessions: stream every block of a reply as one message with correct token counts, continue
   `/tree` branches (including before a compaction) and interrupted or withdrawn prompts from the
   history Orb shows, write branch summaries natively, end interrupted replies like Orb, clamp
@@ -14,10 +24,13 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   of subscription sessions. The plugin is now a default-off `/plugins` row on SDK 0.3.280, installed
   without the unused bundled CLI (47 MB instead of 255 MB).
 
+- Build and test Orb on every portable target: Windows (Git Bash tools, process-tree cleanup, native console input, Bridge peer checks), 32-bit Linux for iSH, Android/Termux, iOS type-checking, and the core suites under browser (`js/wasm`) and WASI runtimes. `make check` now includes `make portability`.
+
 - Add discoverable `/claude:models`, `:usage`, `:new`, `:exit`, `:plan`, `:normal` and `:compact` shortcuts to open Claude actions directly.
 
-- TUI: a "↓ Jump to bottom" pill appears on the last transcript row while scrolled up; click it
-  (or press ctrl+end) to reattach live follow.
+- Keep filenames visible in collapsed Read calls by shortening long paths from the left, and show command/search details without losing them to word wrapping.
+
+- Add outbound-only Bridge clients and an opt-in WebSocket listener, allowing browser Wasm to pair, browse and control remote sessions without starting a local Bridge. Local agent calls require separate remote grants.
 
 - Complete Claude SDK background-task draining and cancellation, recoverable versioned setup,
   MCP questions, native plan/compaction controls and bounded lifecycle progress. Clear stale context
@@ -31,6 +44,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - Show native Claude quota locally and through Bridge, with the limiting window, reset times and
   freshness in `/claude usage`. Display used context tokens after the path in the shared footer.
+
+- Add an opt-in browser Wasm debug screen with a shared headless assembly, isolated virtual files,
+  streamed engine events, cancellation and a responsive chat with direct model API configuration
+  (OpenRouter/GPT-5.6 Luna by default), Enter to send and collapsible debugging controls.
 
 - Standardize built-in modals at an 80-column maximum with one-cell outer margins; tighten inner padding below 60 columns and keep mouse targets aligned on resize.
 

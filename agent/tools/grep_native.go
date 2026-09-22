@@ -246,7 +246,7 @@ func (tool *grepTool) Execute(
 	}
 
 	rawOutput := strings.Join(outputLines, "\n")
-	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(9007199254740991)})
+	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
 	output := truncation.Content
 	details := GrepToolDetails{}
 	notices := make([]string, 0, 3)

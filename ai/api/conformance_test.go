@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -233,76 +231,6 @@ func TestF2AnthropicStreamTraces(t *testing.T) {
 	}
 }
 
-func TestF2BedrockRequestShaping(t *testing.T) {
-	var fixture struct {
-		Cases []f2Case `json:"cases"`
-	}
-	runner.LoadJSON(t, "F2", "bedrock-requests.json", &fixture)
-	for _, fixtureCase := range fixture.Cases {
-		t.Run(fixtureCase.Name, func(t *testing.T) {
-			if fixtureCase.Expected == nil {
-				t.Fatal("request fixture has no expected request")
-			}
-			capturedRequests := make(chan capturedProviderRequest, 1)
-			server := http.Server{Handler: http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-				body, err := io.ReadAll(request.Body)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				captured := capturedProviderRequest{
-					Method: request.Method, URL: request.URL.RequestURI(), Headers: request.Header.Clone(), Body: body,
-				}
-				select {
-				case capturedRequests <- captured:
-				default:
-				}
-				response.Header().Set("content-type", "application/json")
-				response.Header().Set("x-amzn-errortype", "ValidationException")
-				response.WriteHeader(http.StatusBadRequest)
-				_, _ = io.WriteString(response, `{"message":"fixture capture complete"}`)
-			})}
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			serveDone := make(chan error, 1)
-			go func() { serveDone <- server.Serve(listener) }()
-			t.Cleanup(func() {
-				_ = server.Close()
-				if err := <-serveDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
-					t.Error(err)
-				}
-			})
-
-			fixtureCase.Model.BaseURL = "http://" + listener.Addr().String()
-			var options BedrockConverseStreamOptions
-			if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
-				t.Fatal(err)
-			}
-			stream, err := StreamBedrockConverseWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, streamErr := range stream {
-				if streamErr != nil {
-					t.Fatal(streamErr)
-				}
-			}
-			captured := <-capturedRequests
-			if captured.Method != fixtureCase.Expected.Method || captured.URL != fixtureCase.Expected.URL {
-				t.Fatalf("request = %s %s, want %s %s", captured.Method, captured.URL, fixtureCase.Expected.Method, fixtureCase.Expected.URL)
-			}
-			if diff := diffStringMap(fixtureCase.Expected.Headers, selectedBedrockHeaders(captured.Headers)); diff != "" {
-				t.Fatal(diff)
-			}
-			if diff := semanticJSONDiff([]byte(fixtureCase.Expected.Body), captured.Body); diff != "" {
-				t.Fatalf("request body mismatch:\n%s\nwant: %s\n got: %s", diff, fixtureCase.Expected.Body, captured.Body)
-			}
-		})
-	}
-}
-
 func TestF2MistralRequestShaping(t *testing.T) {
 	testF2RequestShaping(t, "mistral-requests.json")
 }
@@ -384,24 +312,20 @@ func TestF2BedrockStreamTraces(t *testing.T) {
 	runner.LoadJSON(t, "F2", "bedrock-streams.json", &fixture)
 	for _, fixtureCase := range fixture.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
-			previousTransport := newBedrockTransport
 			previousNow := openAINowUnixMilli
 			openAINowUnixMilli = func() int64 { return f2FixedTimestamp }
 			items, streamErr := fixtureBedrockItems(fixtureCase.BedrockItems)
-			newBedrockTransport = func(context.Context, *ai.Model, *BedrockConverseStreamOptions) (bedrockTransport, error) {
-				return &fixtureBedrockTransport{response: &fixtureBedrockResponse{
-					items: items, status: fixtureCase.Status, requestID: fixtureCase.RequestID, err: streamErr,
-				}}, nil
-			}
-			t.Cleanup(func() {
-				newBedrockTransport = previousTransport
-				openAINowUnixMilli = previousNow
-			})
+			t.Cleanup(func() { openAINowUnixMilli = previousNow })
 
 			var options BedrockConverseStreamOptions
 			if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
 				t.Fatal(err)
 			}
+			options.Backend = &BedrockBackend{NewTransport: func(context.Context, BedrockTransportConfig) (BedrockTransport, error) {
+				return &fixtureBedrockTransport{response: &fixtureBedrockResponse{
+					items: items, status: fixtureCase.Status, requestID: fixtureCase.RequestID, err: streamErr,
+				}}, nil
+			}}
 			stream, err := StreamBedrockConverseWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 			if err != nil {
 				t.Fatal(err)
@@ -631,7 +555,7 @@ func streamF2Case(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
 			setF2AnthropicPayloadHook(fixtureCase.PayloadHook, &options.StreamOptions)
 			// Route through the production dispatcher so cloudflare endpoint
 			// placeholders resolve exactly as upstream cloudflareStreams does (G1).
-			return StreamSimple(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
+			return testProviders.StreamSimple(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 		}
 		var options AnthropicMessagesOptions
 		if err := json.Unmarshal(fixtureCase.Options, &options); err != nil {
@@ -814,24 +738,14 @@ func f2HeaderValue(headers http.Header, name string) string {
 	return strings.Join(values, ", ")
 }
 
-func selectedBedrockHeaders(headers http.Header) map[string]string {
-	selected := make(map[string]string)
-	for _, name := range []string{"content-type", "x-fixture"} {
-		if value := headers.Get(name); value != "" {
-			selected[name] = value
-		}
-	}
-	return selected
-}
+type fixtureBedrockTransport struct{ response BedrockResponse }
 
-type fixtureBedrockTransport struct{ response bedrockResponse }
-
-func (transport *fixtureBedrockTransport) Send(context.Context, *BedrockConverseStreamPayload) (bedrockResponse, error) {
+func (transport *fixtureBedrockTransport) Send(context.Context, *BedrockConverseStreamPayload) (BedrockResponse, error) {
 	return transport.response, nil
 }
 
 type fixtureBedrockResponse struct {
-	items     []bedrockStreamItem
+	items     []BedrockStreamItem
 	index     int
 	status    int
 	requestID string
@@ -845,35 +759,35 @@ func (response *fixtureBedrockResponse) RequestID() string { return response.req
 func (response *fixtureBedrockResponse) Close() error      { return nil }
 func (response *fixtureBedrockResponse) Err() error        { return response.err }
 
-func (response *fixtureBedrockResponse) Next(context.Context) (bedrockStreamItem, bool) {
+func (response *fixtureBedrockResponse) Next(context.Context) (BedrockStreamItem, bool) {
 	if response.index >= len(response.items) {
-		return bedrockStreamItem{}, false
+		return BedrockStreamItem{}, false
 	}
 	item := response.items[response.index]
 	response.index++
 	return item, true
 }
 
-func fixtureBedrockItems(values []bedrockFixtureItem) ([]bedrockStreamItem, error) {
-	result := make([]bedrockStreamItem, 0, len(values))
+func fixtureBedrockItems(values []bedrockFixtureItem) ([]BedrockStreamItem, error) {
+	result := make([]BedrockStreamItem, 0, len(values))
 	for _, value := range values {
 		if value.ThrottlingException != nil {
 			// The SDK ends the event stream at an exception member and reports
 			// it through Err(); later fixture items are unreachable (G8).
 			return result, &bedrocktypes.ThrottlingException{Message: aws.String(value.ThrottlingException.Message)}
 		}
-		item := bedrockStreamItem{}
+		item := BedrockStreamItem{}
 		switch {
 		case value.MessageStart != nil:
-			item.Kind, item.Role = bedrockItemMessageStart, value.MessageStart.Role
+			item.Kind, item.Role = BedrockItemMessageStart, value.MessageStart.Role
 		case value.ContentBlockStart != nil:
-			item.Kind = bedrockItemContentStart
+			item.Kind = BedrockItemContentStart
 			item.ContentBlockIndex = value.ContentBlockStart.ContentBlockIndex
 			if tool := value.ContentBlockStart.Start.ToolUse; tool != nil {
 				item.ToolUseID, item.ToolName = tool.ToolUseID, tool.Name
 			}
 		case value.ContentBlockDelta != nil:
-			item.Kind = bedrockItemContentDelta
+			item.Kind = BedrockItemContentDelta
 			item.ContentBlockIndex = value.ContentBlockDelta.ContentBlockIndex
 			item.Text = value.ContentBlockDelta.Delta.Text
 			if tool := value.ContentBlockDelta.Delta.ToolUse; tool != nil {
@@ -886,11 +800,11 @@ func fixtureBedrockItems(values []bedrockFixtureItem) ([]bedrockStreamItem, erro
 				}
 			}
 		case value.ContentBlockStop != nil:
-			item.Kind, item.ContentBlockIndex = bedrockItemContentStop, value.ContentBlockStop.ContentBlockIndex
+			item.Kind, item.ContentBlockIndex = BedrockItemContentStop, value.ContentBlockStop.ContentBlockIndex
 		case value.MessageStop != nil:
-			item.Kind, item.StopReason = bedrockItemMessageStop, value.MessageStop.StopReason
+			item.Kind, item.StopReason = BedrockItemMessageStop, value.MessageStop.StopReason
 		case value.Metadata != nil:
-			item.Kind = bedrockItemMetadata
+			item.Kind = BedrockItemMetadata
 			if usage := value.Metadata.Usage; usage != nil {
 				item.InputTokens, item.OutputTokens = usage.InputTokens, usage.OutputTokens
 				item.CacheReadTokens, item.CacheWriteTokens = usage.CacheReadTokens, usage.CacheWriteTokens
@@ -909,19 +823,6 @@ func diffStringMap(want, got map[string]string) string {
 		return ""
 	}
 	return fmt.Sprintf("headers mismatch\nwant: %s\n got: %s", wantJSON, gotJSON)
-}
-
-func semanticJSONDiff(want, got []byte) string {
-	var wantValue, gotValue any
-	if err := json.Unmarshal(want, &wantValue); err != nil {
-		return "invalid expected JSON: " + err.Error()
-	}
-	if err := json.Unmarshal(got, &gotValue); err != nil {
-		return "invalid actual JSON: " + err.Error()
-	}
-	wantCanonical, _ := json.Marshal(wantValue)
-	gotCanonical, _ := json.Marshal(gotValue)
-	return runner.ByteDiff(wantCanonical, gotCanonical)
 }
 
 func compactF2Event(t *testing.T, data []byte) []byte {

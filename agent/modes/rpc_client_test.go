@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 )
@@ -321,22 +322,22 @@ func TestMarshalRPCClientCommandMatchesObjectSpreadOrder(t *testing.T) {
 	empty := ""
 	tests := []struct {
 		name    string
-		command RPCCommand
+		command rpcClientRequest
 		want    string
 	}{
-		{"prompt empty images", RPCCommand{Type: "prompt", Message: "", Images: []*ai.ImageContent{}, ID: "req_1"}, `{"type":"prompt","message":"","images":[],"id":"req_1"}`},
-		{"false bool", RPCCommand{Type: "set_auto_retry", Enabled: &falseValue, ID: "req_2"}, `{"type":"set_auto_retry","enabled":false,"id":"req_2"}`},
-		{"model empty strings", RPCCommand{Type: "set_model", Provider: "", ModelID: "", ID: "req_3"}, `{"type":"set_model","provider":"","modelId":"","id":"req_3"}`},
-		{"bash empty command", RPCCommand{Type: "bash", Command: "", ID: "req_4"}, `{"type":"bash","command":"","id":"req_4"}`},
-		{"switch empty path", RPCCommand{Type: "switch_session", SessionPath: "", ID: "req_5"}, `{"type":"switch_session","sessionPath":"","id":"req_5"}`},
-		{"fork empty id", RPCCommand{Type: "fork", EntryID: "", ID: "req_6"}, `{"type":"fork","entryId":"","id":"req_6"}`},
-		{"name empty", RPCCommand{Type: "set_session_name", Name: "", ID: "req_7"}, `{"type":"set_session_name","name":"","id":"req_7"}`},
-		{"new session nil", RPCCommand{Type: "new_session", ID: "req_8"}, `{"type":"new_session","id":"req_8"}`},
-		{"new session empty", RPCCommand{Type: "new_session", ParentSession: empty, parentSessionSet: true, ID: "req_9"}, `{"type":"new_session","parentSession":"","id":"req_9"}`},
-		{"compact nil", RPCCommand{Type: "compact", ID: "req_10"}, `{"type":"compact","id":"req_10"}`},
-		{"compact empty", RPCCommand{Type: "compact", CustomInstructions: empty, customInstructionsSet: true, ID: "req_11"}, `{"type":"compact","customInstructions":"","id":"req_11"}`},
-		{"export nil", RPCCommand{Type: "export_html", ID: "req_12"}, `{"type":"export_html","id":"req_12"}`},
-		{"export empty", RPCCommand{Type: "export_html", OutputPath: empty, outputPathSet: true, ID: "req_13"}, `{"type":"export_html","outputPath":"","id":"req_13"}`},
+		{"prompt empty images", rpcClientRequest{Command: rpc.Command{Type: "prompt", Message: "", Images: []*ai.ImageContent{}, ID: "req_1"}}, `{"type":"prompt","message":"","images":[],"id":"req_1"}`},
+		{"false bool", rpcClientRequest{Command: rpc.Command{Type: "set_auto_retry", Enabled: &falseValue, ID: "req_2"}}, `{"type":"set_auto_retry","enabled":false,"id":"req_2"}`},
+		{"model empty strings", rpcClientRequest{Command: rpc.Command{Type: "set_model", Provider: "", ModelID: "", ID: "req_3"}}, `{"type":"set_model","provider":"","modelId":"","id":"req_3"}`},
+		{"bash empty command", rpcClientRequest{Command: rpc.Command{Type: "bash", Command: "", ID: "req_4"}}, `{"type":"bash","command":"","id":"req_4"}`},
+		{"switch empty path", rpcClientRequest{Command: rpc.Command{Type: "switch_session", SessionPath: "", ID: "req_5"}}, `{"type":"switch_session","sessionPath":"","id":"req_5"}`},
+		{"fork empty id", rpcClientRequest{Command: rpc.Command{Type: "fork", EntryID: "", ID: "req_6"}}, `{"type":"fork","entryId":"","id":"req_6"}`},
+		{"name empty", rpcClientRequest{Command: rpc.Command{Type: "set_session_name", Name: "", ID: "req_7"}}, `{"type":"set_session_name","name":"","id":"req_7"}`},
+		{"new session nil", rpcClientRequest{Command: rpc.Command{Type: "new_session", ID: "req_8"}}, `{"type":"new_session","id":"req_8"}`},
+		{"new session empty", rpcClientRequest{Command: rpc.Command{Type: "new_session", ParentSession: empty, ID: "req_9"}, parentSessionSet: true}, `{"type":"new_session","parentSession":"","id":"req_9"}`},
+		{"compact nil", rpcClientRequest{Command: rpc.Command{Type: "compact", ID: "req_10"}}, `{"type":"compact","id":"req_10"}`},
+		{"compact empty", rpcClientRequest{Command: rpc.Command{Type: "compact", CustomInstructions: empty, ID: "req_11"}, customInstructionsSet: true}, `{"type":"compact","customInstructions":"","id":"req_11"}`},
+		{"export nil", rpcClientRequest{Command: rpc.Command{Type: "export_html", ID: "req_12"}}, `{"type":"export_html","id":"req_12"}`},
+		{"export empty", rpcClientRequest{Command: rpc.Command{Type: "export_html", OutputPath: empty, ID: "req_13"}, outputPathSet: true}, `{"type":"export_html","outputPath":"","id":"req_13"}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

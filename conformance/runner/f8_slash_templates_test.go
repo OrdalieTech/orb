@@ -782,6 +782,7 @@ func f8FixtureThemes[T any](themes []T, fixtureRoot string) []f8Theme {
 func f8FixtureTheme(value any, fixtureRoot string) f8Theme {
 	result := f8Theme{}
 	if loaded := f8ConcreteTheme(value); loaded != nil {
+		value = loaded
 		result.AccentANSI, _ = loaded.ForegroundANSI("accent")
 	}
 	reflected := reflect.ValueOf(value)
@@ -847,8 +848,15 @@ func f8ReflectSourceInfo(value reflect.Value, fixtureRoot string) *f8SourceInfo 
 	}
 }
 
+// f8ConcreteTheme renders loader theme resources through the interactive
+// driver, as InteractiveMode.installResourceThemes does, so fixture checks
+// see the full theme objects upstream's loader hands to interactive mode.
 func f8ConcreteTheme(value any) *modetheme.Theme {
 	switch theme := value.(type) {
+	case *agent.ResourceTheme:
+		rendered := modetheme.FromFile(&theme.Theme, "")
+		rendered.SourceInfo = theme.SourceInfo
+		return rendered
 	case *modetheme.Theme:
 		return theme
 	case modetheme.Theme:

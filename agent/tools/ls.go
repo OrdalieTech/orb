@@ -192,7 +192,7 @@ func (tool *lsTool) execute(ctx context.Context, input LsToolInput) (engine.Agen
 	}
 
 	rawOutput := strings.Join(results, "\n")
-	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(9007199254740991)})
+	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
 	output := truncation.Content
 	details := LsToolDetails{}
 	var notices []string

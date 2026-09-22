@@ -1,0 +1,140 @@
+# P10 portable-core ratchet: package<TAB>symbol<TAB>count. Counts only shrink.
+agent	import os/exec	5
+agent	import syscall	2
+agent	os.Chmod	2
+agent	os.DirFS	1
+agent	os.Environ	1
+agent	os.Executable	1
+agent	os.Getenv	6
+agent	os.Getwd	2
+agent	os.MkdirAll	10
+agent	os.OpenFile	1
+agent	os.ReadDir	4
+agent	os.ReadFile	12
+agent	os.RemoveAll	7
+agent	os.Rename	1
+agent	os.Stat	21
+agent	os.Stderr	1
+agent	os.Stdout	1
+agent	os.UserHomeDir	4
+agent	os.WriteFile	5
+agent	path/filepath.Abs	13
+agent	path/filepath.EvalSymlinks	1
+agent/config	import github.com/OrdalieTech/orb/internal/filelock	2
+agent/config	import os/exec	1
+agent/config	os.Chmod	1
+agent/config	os.Chtimes	1
+agent/config	os.CreateTemp	1
+agent/config	os.Getenv	11
+agent/config	os.LookupEnv	2
+agent/config	os.Mkdir	1
+agent/config	os.MkdirAll	5
+agent/config	os.OpenFile	2
+agent/config	os.ReadFile	10
+agent/config	os.Remove	4
+agent/config	os.Rename	2
+agent/config	os.SameFile	1
+agent/config	os.Setenv	2
+agent/config	os.Stat	6
+agent/config	os.UserHomeDir	3
+agent/config	os.WriteFile	4
+agent/config	path/filepath.Abs	2
+agent/config	path/filepath.EvalSymlinks	1
+agent/extensions	import os/exec	1
+agent/extensions	import syscall	1
+agent/extensions	path/filepath.Abs	1
+agent/session	import github.com/OrdalieTech/orb/internal/filelock	1
+agent/session	os.Getenv	1
+agent/session	os.Getwd	2
+agent/session	os.MkdirAll	4
+agent/session	os.Open	3
+agent/session	os.OpenFile	5
+agent/session	os.ReadDir	5
+agent/session	os.Stat	2
+agent/session	os.UserHomeDir	2
+agent/session	path/filepath.Abs	1
+agent/session/exporthtml	os.Getenv	1
+agent/session/exporthtml	os.ReadFile	2
+agent/session/exporthtml	os.Stat	4
+agent/session/exporthtml	os.WriteFile	2
+agent/session/exporthtml	path/filepath.Abs	1
+agent/tools	import golang.org/x/sys/windows	2
+agent/tools	import os/exec	6
+agent/tools	import syscall	6
+agent/tools	net/http.DefaultClient	1
+agent/tools	os.Chmod	1
+agent/tools	os.Environ	1
+agent/tools	os.File	6
+agent/tools	os.Getenv	4
+agent/tools	os.LookupEnv	1
+agent/tools	os.Lstat	2
+agent/tools	os.MkdirAll	2
+agent/tools	os.MkdirTemp	1
+agent/tools	os.Open	4
+agent/tools	os.OpenFile	3
+agent/tools	os.Pipe	2
+agent/tools	os.ReadFile	3
+agent/tools	os.Remove	1
+agent/tools	os.RemoveAll	1
+agent/tools	os.Rename	1
+agent/tools	os.Stat	16
+agent/tools	os.TempDir	1
+agent/tools	os.UserHomeDir	2
+agent/tools	os.WriteFile	2
+agent/tools	path/filepath.Abs	2
+agent/tools	path/filepath.EvalSymlinks	1
+ai/api	import net	2
+ai/api	import os/exec	1
+ai/api	import syscall	2
+ai/api	net/http.DefaultClient	8
+ai/api	net/http.DefaultTransport	1
+ai/api	os.Environ	1
+ai/api	os.Getenv	6
+ai/api	os.Lstat	3
+ai/api	os.ReadFile	8
+ai/api	os.Stat	2
+ai/api	os.UserHomeDir	1
+ai/api	path/filepath.EvalSymlinks	2
+ai/auth	os.LookupEnv	1
+ai/auth	os.Stat	1
+ai/auth	os.UserHomeDir	1
+ai/auth/oauth	import net	3
+ai/auth/oauth	import syscall	1
+ai/auth/oauth	net/http.DefaultClient	5
+ai/auth/oauth	os.Getenv	5
+ai/models	import github.com/OrdalieTech/orb/internal/filelock	1
+ai/models	net/http.DefaultClient	1
+ai/models	os.CreateTemp	1
+ai/models	os.MkdirAll	1
+ai/models	os.ReadFile	2
+ai/models	os.Remove	1
+ai/models	os.Rename	1
+engine/harness	import os/exec	4
+engine/harness	import syscall	3
+engine/harness	os.CreateTemp	1
+engine/harness	os.Environ	1
+engine/harness	os.File	1
+engine/harness	os.Getenv	2
+engine/harness	os.Getwd	1
+engine/harness	os.Lstat	4
+engine/harness	os.Mkdir	1
+engine/harness	os.MkdirAll	2
+engine/harness	os.MkdirTemp	1
+engine/harness	os.Open	1
+engine/harness	os.OpenFile	1
+engine/harness	os.Pipe	2
+engine/harness	os.Process	7
+engine/harness	os.ReadDir	1
+engine/harness	os.ReadFile	1
+engine/harness	os.Remove	1
+engine/harness	os.RemoveAll	1
+engine/harness	os.Rename	1
+engine/harness	os.Stat	4
+engine/harness	os.UserHomeDir	2
+engine/harness	path/filepath.Abs	2
+engine/harness	path/filepath.EvalSymlinks	1
+internal/themefile	os.ReadDir	1
+internal/themefile	os.ReadFile	1
+internal/themefile	os.Stat	3
+internal/themefile	os.UserHomeDir	1
+internal/themefile	path/filepath.Abs	1

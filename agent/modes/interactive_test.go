@@ -27,6 +27,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/orbalogo"
+	"github.com/OrdalieTech/orb/internal/themefile"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
@@ -247,8 +248,9 @@ func TestInteractiveModeInstallsExactResourceLoaderThemeObject(t *testing.T) {
 	}
 	t.Cleanup(func() { theme.SetCurrent(nil) })
 	registered, found := mode.themeRegistry.Get("extension-theme")
-	if !found || registered != loaded[0] || mode.themeController.Current() != loaded[0] || theme.Current() != loaded[0] {
-		t.Fatalf("resource theme identity: found=%t registered=%p loaded=%p controller=%p current=%p",
+	if !found || registered.SourcePath != loaded[0].SourcePath || registered.SourceInfo != loaded[0].SourceInfo ||
+		mode.themeController.Current() != registered || theme.Current() != registered {
+		t.Fatalf("resource theme: found=%t registered=%p loaded=%#v controller=%p current=%p",
 			found, registered, loaded[0], mode.themeController.Current(), theme.Current())
 	}
 }
@@ -264,20 +266,20 @@ func TestInteractiveModeResourceThemeRefreshReplacesStaleThemesAndAppliesSetting
 	if err != nil {
 		t.Fatal(err)
 	}
-	parse := func(name string) *theme.Theme {
+	parse := func(name string) *agent.ResourceTheme {
 		t.Helper()
-		parsed, parseErr := theme.Parse(name, []byte(strings.Replace(string(builtin), `"name": "dark"`, `"name": "`+name+`"`, 1)), theme.TrueColor)
+		parsed, parseErr := themefile.Parse(name, []byte(strings.Replace(string(builtin), `"name": "dark"`, `"name": "`+name+`"`, 1)))
 		if parseErr != nil {
 			t.Fatal(parseErr)
 		}
-		return parsed
+		return &agent.ResourceTheme{Theme: *parsed}
 	}
 	themeA, themeB := parse("theme-a"), parse("theme-b")
-	loaded := []*theme.Theme{themeA}
+	loaded := []*agent.ResourceTheme{themeA}
 	loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 		CWD: cwd, AgentDir: agentDir, SettingsManager: settings, NoThemes: true, NoContextFiles: true,
 		ThemesOverride: func(agent.ResourceThemesResult) agent.ResourceThemesResult {
-			return agent.ResourceThemesResult{Themes: append([]*theme.Theme(nil), loaded...)}
+			return agent.ResourceThemesResult{Themes: append([]*agent.ResourceTheme(nil), loaded...)}
 		},
 	})
 	if err != nil {
@@ -304,7 +306,7 @@ func TestInteractiveModeResourceThemeRefreshReplacesStaleThemesAndAppliesSetting
 	}
 	t.Cleanup(func() { theme.SetCurrent(nil) })
 
-	loaded = []*theme.Theme{themeB}
+	loaded = []*agent.ResourceTheme{themeB}
 	if err := loader.Reload(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -315,9 +317,9 @@ func TestInteractiveModeResourceThemeRefreshReplacesStaleThemesAndAppliesSetting
 		t.Error("theme-a remained registered after the loader replaced it")
 	}
 	registered, found := mode.themeRegistry.Get("theme-b")
-	if !found || registered != themeB || mode.themeController.Current() != themeB || theme.Current() != themeB {
-		t.Fatalf("refreshed theme identity: found=%t registered=%p loaded=%p controller=%p current=%p",
-			found, registered, themeB, mode.themeController.Current(), theme.Current())
+	if !found || registered.Name != themeB.Name || mode.themeController.Current() != registered || theme.Current() != registered {
+		t.Fatalf("refreshed theme: found=%t registered=%p controller=%p current=%p",
+			found, registered, mode.themeController.Current(), theme.Current())
 	}
 }
 
@@ -356,7 +358,7 @@ func TestInteractiveModeRebindPropagatesInvalidResourceThemeName(t *testing.T) {
 	loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 		CWD: cwd, AgentDir: agentDir, SettingsManager: settings, NoThemes: true, NoContextFiles: true,
 		ThemesOverride: func(agent.ResourceThemesResult) agent.ResourceThemesResult {
-			return agent.ResourceThemesResult{Themes: []*theme.Theme{{Name: "bad/name"}}}
+			return agent.ResourceThemesResult{Themes: []*agent.ResourceTheme{{Theme: themefile.Theme{Name: "bad/name"}}}}
 		},
 	})
 	if err != nil {

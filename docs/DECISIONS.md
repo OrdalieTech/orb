@@ -24,7 +24,7 @@ specification.
 
 ## Constitution — durable paradigms
 
-Nine paradigms. Everything else in this record is operational memory.
+Ten paradigms. Everything else in this record is operational memory.
 
 - **P1 — SDK-first, layered** *(formerly D1, D3)*. Orb is a Go module first; the `orb` CLI is one
   consumer. Layers compose upward — `ai/` → `engine/` → `agent/` → assemblies (`cmd/orb`,
@@ -34,10 +34,16 @@ Nine paradigms. Everything else in this record is operational memory.
   assemblies, never obligations: the TUI, chat platforms, RPC, a web app, or an embedder's own
   surface are peer drivers of the same runtime, and no layer below an assembly imports one — a
   binary that skips an interface must contain none of its code.
-- **P2 — Pure Go, static, slim** *(formerly D7, D8; evidence in G1/G2)*. `CGO_ENABLED=0`, single
-  static binary, linux + darwin (Windows deferred, not dropped). Stdlib first, internal helper
-  next, dependency last and only via the ARCHITECTURE §8 table. Dev-only exceptions: `-race` test
-  builds, and Node as fixture-extraction tooling.
+- **P2 — Pure Go, portable everywhere, slim** *(formerly D7, D8; evidence in G1/G2; widened by
+  owner direction 2026-09-22, which retires "Windows deferred")*. Orb's code is `CGO_ENABLED=0`
+  on every target. Tier-1 targets are built and tested by the gate, never "deferred": native
+  static binaries for linux, darwin and windows × amd64/arm64, linux/386 and linux/arm (iSH and
+  small hosts), android/arm64 (Termux); `js/wasm` (browser workers, and one Worker host shared by
+  Cloudflare Workers/Durable Objects and self-hosted Celld); `wasip1/wasm`. Standalone iOS and
+  Android apps embed the same core as a library; cgo appears only where the platform linker
+  demands it, in the app shell, never in Orb packages. Stdlib first, internal helper next,
+  dependency last and only via the ARCHITECTURE §8 table. Dev-only exceptions: `-race` test
+  builds, Node as fixture-extraction and `js/wasm` test tooling.
 - **P3 — Everything Orb-original is a capability module** *(promotes D16; D32–D34 are instances)*.
   A capability ships as: a seam package (interfaces, no upward imports), an instance-scoped
   attachment at the lowest applicable layer (the `plugins/memory/` + `plugins/memory/agent/` shape), and a
@@ -68,6 +74,22 @@ Nine paradigms. Everything else in this record is operational memory.
   the implementation (green).
 - **P9 — Never weaken a criterion or a golden to pass it.** A failing fixture means the code is
   wrong. A genuinely impossible criterion stops the work and surfaces to the owner.
+- **P10 — A portable core behind host ports** *(owner direction 2026-09-22)*. Not everything is
+  a plugin; the core is named and closed. It is the agent semantics that are identical on every
+  target: the `ai` message/stream model and provider wire codecs, the `engine` loop, tool
+  pipeline, events and compaction, session/settings/resource formats and their merge rules, the
+  extension API and registry, and one assembly that composes them. Core packages compile on
+  every P2 target and reach the platform only through **ports** supplied by a host:
+  `FS` (files), `Exec` (processes, optional), `Store` (documents, append-only logs, locks),
+  `Net` (outbound HTTP, optional listening) and `Env` (variables, directories, clock,
+  randomness). A core package imports no `os/exec`, `os/signal`, `syscall` or `net` dialing,
+  uses no `http.DefaultClient`, and reads no environment, home, working directory or process
+  state implicitly; `internal/layering` enforces this with a ratchet that only shrinks. A
+  platform is a host (port implementations under `platforms/`) plus an assembly; UIs are
+  drivers, not ports. Capabilities (P3) declare the ports they need, and an assembly on a host
+  lacking a port omits them instead of failing: no `Exec` means no bash, process MCP or JS
+  extension host. Port implementations pass one shared conformance suite, and the same scripted
+  scenarios produce identical kernel output on every host.
 
 ## The compat kernel
 
@@ -178,14 +200,14 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
 | `/bug` (v0.86.0) | excluded | Radius-backed diagnostic uploads are outside the owner-approved adoption; local diagnostic export is deferred. The upstream command remains captured in F8, with this explicit command-surface exclusion applied by the runner. |
 | Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints |
-| Windows support | deferred | later parity wave (D8) |
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
-| win32 console native addon | deferred | Windows wave |
+| win32 console native addon | replaced | pure-Go console-mode calls instead of upstream's native addon (P2) |
 | Bundled llama.cpp extension | excluded | v0.81.1 still ships this optional native Node/llama.cpp integration; it cannot satisfy the pure-Go, single-static-binary rule in D7 |
 | `packages/storage/sqlite-node` | excluded | v0.81.1's optional Node SQLite storage package requires a native runtime; orb retains the session repository interfaces and JSONL/memory implementations under D7 |
 | `orb login` / `orb logout` CLI subcommands | addition | headless Go deployments need auth lifecycle commands; bare `orb logout` deliberately lists stored credential names and requires an explicit provider instead of silently choosing one |
 | NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its current metadata cannot satisfy orb's chat-model contract; keep the Go-only exclusion explicit until the live shape is usable |
 | `CompleteSimple` and common simple tool choice | Go API adaptation | upstream `Models.completeSimple` only collects `streamSimple`, while TypeScript callers can smuggle provider-specific `toolChoice` fields through structural casts. Go exposes the same collection directly and the portable `auto`/`none`/`required` intersection; a named choice is one advertised tool plus `required`, so no provider shape leaks into embedders |
+| No process-wide default stream (`setDefaultStreamFn`) | Go API adaptation | P10 forbids process globals in the core: `engine.NewAgent` takes its stream explicitly, `NewAgentSession` defaults to `ai/api/all`, and light assemblies build an `api.Registry` with only their providers; the build tag `orb_nodefaultproviders` empties the default for embedders that always pass their own stream |
 | Missing default stream error timing | Go API adaptation | upstream throws in the JavaScript `Agent` constructor; Go's fixed `NewAgent` signature cannot return an error, so orb reports the identical error on the first prompt or low-level loop call |
 | Single Ctrl-C exit at an empty prompt | usability adaptation | owner requirement; a nonempty draft still clears without exiting, and focused selectors retain their cancel binding |
 | Interrupting an unanswered turn takes the prompt back | usability adaptation | owner requirement; upstream's escape restores only queued messages, which orb now does too. When the interrupted turn has shown nothing yet, orb additionally rewinds the branch to before its prompt (the existing tree-navigation path) and returns the text to the editor, so an edited resend replaces the prompt instead of stacking after it. Once any text, thinking, or tool call has appeared, escape aborts exactly as upstream does; the abandoned attempt stays reachable in the tree |
@@ -295,9 +317,11 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 - `ai.RetryAssistantCall` is the shared retry policy for normal turns, compaction, and branch
   summaries. Coding-agent retry lifecycle events retain upstream names and payloads across the Go
   SDK, JSON, RPC, and interactive surfaces.
-- The coding-agent package installs the default stream function during initialization, matching
-  upstream extension compatibility. A missing fallback produces upstream's exact error text when
-  execution begins; constructor-time error timing is the Go API adaptation ledgered above.
+- ~~The coding-agent package installs the default stream function during initialization.~~
+  Superseded 2026-09-22 by P10: there is no process-wide default stream. `NewAgentSession`
+  defaults to the full provider registry (`ai/api/all`), and assemblies pass a registry holding
+  only the providers they select. A missing stream still produces upstream's exact error text
+  when execution begins; constructor-time error timing is the Go API adaptation ledgered above.
 - Release source provenance maps upstream's source-archive feature onto GoReleaser. Every source
   archive is checksummed, excludes checkout/build state, and must rebuild with `CGO_ENABLED=0`
   and `-buildvcs=false` before the release is published; source archives intentionally omit the Git

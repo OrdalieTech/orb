@@ -11,7 +11,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
-	aiapi "github.com/OrdalieTech/orb/ai/api"
+	allapi "github.com/OrdalieTech/orb/ai/api/all"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
@@ -41,6 +41,17 @@ type ModelRegistry struct {
 	nextProviderVersion uint64
 	allowModelNetwork   bool
 	revision            uint64
+	// environment supplies ambient provider credentials (the Env port).
+	environment aiauth.AuthContext
+}
+
+// ModelRegistryOption configures a registry at construction.
+type ModelRegistryOption func(*ModelRegistry)
+
+// WithEnvironment replaces the process environment as the source of ambient
+// provider credentials, for hosts whose secrets are not process variables.
+func WithEnvironment(environment aiauth.AuthContext) ModelRegistryOption {
+	return func(registry *ModelRegistry) { registry.environment = environment }
 }
 
 func NewModelRegistry(agentDir string) (*ModelRegistry, error) {
@@ -60,8 +71,8 @@ func NewOfflineModelRegistry(agentDir string) (*ModelRegistry, error) {
 	return newModelRegistry(agentDir, false)
 }
 
-func NewModelRegistryWithDocuments(agentDir string, credentials aiauth.CredentialStore, models, catalog storage.Document, allowNetwork bool) (*ModelRegistry, error) {
-	return modelRegistryWithStorage(agentDir, allowNetwork, credentials, models, catalog)
+func NewModelRegistryWithDocuments(agentDir string, credentials aiauth.CredentialStore, models, catalog storage.Document, allowNetwork bool, options ...ModelRegistryOption) (*ModelRegistry, error) {
+	return modelRegistryWithStorage(agentDir, allowNetwork, credentials, models, catalog, options...)
 }
 
 func newModelRegistry(agentDir string, allowModelNetwork bool, sources ...aiauth.CredentialStore) (*ModelRegistry, error) {
@@ -71,7 +82,7 @@ func newModelRegistry(agentDir string, allowModelNetwork bool, sources ...aiauth
 	}
 	return modelRegistryWithStorage(agentDir, allowModelNetwork, credentials, nil, nil)
 }
-func modelRegistryWithStorage(agentDir string, allowModelNetwork bool, credentials aiauth.CredentialStore, models, catalog storage.Document) (*ModelRegistry, error) {
+func modelRegistryWithStorage(agentDir string, allowModelNetwork bool, credentials aiauth.CredentialStore, models, catalog storage.Document, options ...ModelRegistryOption) (*ModelRegistry, error) {
 	normalized, err := NormalizePath(agentDir)
 	if err != nil {
 		return nil, err
@@ -81,6 +92,10 @@ func modelRegistryWithStorage(agentDir string, allowModelNetwork bool, credentia
 		nativeProviders:   make(map[string]extensions.Provider),
 		providerVersions:  make(map[string]uint64),
 		allowModelNetwork: allowModelNetwork,
+		environment:       aiauth.EnvironmentContext{},
+	}
+	for _, option := range options {
+		option(registry)
 	}
 	registry.credentials = credentials
 	registry.modelDocument, registry.catalogDocument = models, catalog
@@ -381,7 +396,7 @@ func (registry *ModelRegistry) HasConfiguredAuth(provider string, env map[string
 	config := registry.config
 	methods := registry.providerAuthLocked(provider)
 	registry.mu.RUnlock()
-	authContext := registryAuthContext{env: env}
+	authContext := registry.authContext(env)
 	if storedCredential != nil {
 		credential := resolveStoredCredential(storedCredential)
 		if methods.APIKey != nil || methods.OAuth != nil {
@@ -415,7 +430,7 @@ func (registry *ModelRegistry) HasConfiguredAuth(provider string, env map[string
 		return err == nil && result != nil
 	}
 	for _, name := range providerAPIKeyEnvironmentNames(provider) {
-		if env[name] != "" || lookupNonEmptyEnv(name) {
+		if env[name] != "" || registry.getenv(name) != "" {
 			return true
 		}
 	}
@@ -456,7 +471,7 @@ func (registry *ModelRegistry) GetProviderAuthStatus(provider string, env map[st
 		}
 		return extensions.AuthStatus{Configured: true, Source: source}
 	}
-	authContext := registryAuthContext{env: env}
+	authContext := registry.authContext(env)
 	if methods.APIKey == nil {
 		return extensions.AuthStatus{}
 	}
@@ -482,17 +497,24 @@ func (registry *ModelRegistry) IsUsingOAuth(provider string) bool {
 	return credential != nil && credential.Type == aiauth.CredentialOAuth && methods.OAuth != nil
 }
 
-type registryAuthContext struct{ env map[string]string }
+type registryAuthContext struct {
+	env  map[string]string
+	base aiauth.AuthContext
+}
+
+func (registry *ModelRegistry) authContext(env map[string]string) registryAuthContext {
+	return registryAuthContext{env: env, base: registry.environment}
+}
 
 func (authContext registryAuthContext) Env(ctx context.Context, name string) (string, bool) {
 	if value := authContext.env[name]; value != "" {
 		return value, true
 	}
-	return (aiauth.EnvironmentContext{}).Env(ctx, name)
+	return authContext.base.Env(ctx, name)
 }
 
 func (authContext registryAuthContext) FileExists(ctx context.Context, path string) bool {
-	return (aiauth.EnvironmentContext{}).FileExists(ctx, path)
+	return authContext.base.FileExists(ctx, path)
 }
 
 // ResolveConfiguredAPIKey resolves only a models.json provider override. Stored
@@ -565,7 +587,7 @@ func (registry *ModelRegistry) ResolveAPIKey(ctx context.Context, provider strin
 	methods := registry.providerAuthLocked(provider)
 	registry.mu.RUnlock()
 	if methods.APIKey != nil {
-		resolved, err := methods.APIKey.Resolve(ctx, registryAuthContext{env: env}, nil)
+		resolved, err := methods.APIKey.Resolve(ctx, registry.authContext(env), nil)
 		if err != nil || resolved == nil {
 			return nil, err
 		}
@@ -575,7 +597,7 @@ func (registry *ModelRegistry) ResolveAPIKey(ctx context.Context, provider strin
 		if value := env[name]; value != "" {
 			return &value, nil
 		}
-		if value := getenv(name); value != "" {
+		if value := registry.getenv(name); value != "" {
 			return &value, nil
 		}
 	}
@@ -606,7 +628,7 @@ func (registry *ModelRegistry) ResolveProviderAuthWithOverrides(
 			return nil, err
 		}
 	}
-	return aiauth.ResolveProviderAuth(ctx, provider, methods, credentials, registryAuthContext{env: env}, overrides)
+	return aiauth.ResolveProviderAuth(ctx, provider, methods, credentials, registry.authContext(env), overrides)
 }
 
 func (registry *ModelRegistry) ResolveModelHeaders(ctx context.Context, model ai.Model, env map[string]string, apiKeys ...*string) (*map[string]string, error) {
@@ -957,7 +979,7 @@ func (registry *ModelRegistry) StreamSimple(
 	if configOK && config.Stream != nil && config.API == model.API {
 		return config.Stream(ctx, model, request, options)
 	}
-	return aiapi.StreamSimple(ctx, model, request, options)
+	return allapi.StreamSimple(ctx, model, request, options)
 }
 
 func (registry *ModelRegistry) providerAuthLocked(id string) aiauth.ProviderAuth {
@@ -1011,7 +1033,7 @@ func (registry *ModelRegistry) resolveRefreshCredential(
 	if stored != nil && stored.Type == aiauth.CredentialAPIKey {
 		credential = stored.Clone()
 	}
-	resolved, err := methods.APIKey.Resolve(ctx, registryAuthContext{}, credential)
+	resolved, err := methods.APIKey.Resolve(ctx, registry.authContext(nil), credential)
 	if err != nil || resolved == nil {
 		return nil, err
 	}
@@ -1035,11 +1057,10 @@ func removeProviderID(values []string, id string) []string {
 	return slices.DeleteFunc(values, func(value string) bool { return value == id })
 }
 
-var getenv = func(name string) string {
-	return strings.TrimSpace(environmentValue(name))
+func (registry *ModelRegistry) getenv(name string) string {
+	value, _ := registry.environment.Env(context.Background(), name)
+	return strings.TrimSpace(value)
 }
-
-func lookupNonEmptyEnv(name string) bool { return getenv(name) != "" }
 
 // RequestAuth mirrors agent.RequestAuth without importing the agent package.
 type RequestAuth struct {
@@ -1078,7 +1099,7 @@ func (registry *ModelRegistry) DefaultRequestAuthResolver(credentials aiauth.Cre
 		if stored != nil && knownProvider {
 			resolved, err := aiauth.ResolveProviderAuth(
 				ctx, string(providerID), provider.Methods, credentials,
-				aiauth.EnvironmentContext{}, nil,
+				registry.environment, nil,
 			)
 			if err != nil || resolved == nil {
 				return nil, err
@@ -1098,7 +1119,7 @@ func (registry *ModelRegistry) DefaultRequestAuthResolver(credentials aiauth.Cre
 		if knownProvider {
 			resolved, err := aiauth.ResolveProviderAuth(
 				ctx, string(providerID), provider.Methods, credentials,
-				aiauth.EnvironmentContext{}, nil,
+				registry.environment, nil,
 			)
 			if err != nil || resolved == nil {
 				return nil, err

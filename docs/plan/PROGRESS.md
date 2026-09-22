@@ -1,5 +1,43 @@
 # Implementation progress
 
+## Portable core, slice 3 (host ports, first half) — 2026-09-22
+
+`host.Host` (AgentDir, FS, Exec, Store, Env, Sessions) drives `NewAgentSession` and
+`CreateAgentSessionServices`: settings, credentials, model catalogs, session journals and
+read/write/edit/ls/find come from the ports; bash runs over `Exec` or is omitted. The model
+registry reads ambient credentials through an injectable `aiauth.AuthContext` instead of a global
+`os.Getenv`. `platforms/memory` is the in-memory FS; `engine/harness/envtest` is the shared FS
+conformance suite (native and memory backends, natively and under Node and wazero).
+`platforms/scenario` runs a tool-using turn through a Host and requires identical sessions,
+files and journals natively, in `js/wasm` without a host filesystem and under WASI without
+mounts. The product core no longer links the TUI, chroma or CJK tables (`TestProductCoreIsHeadless`):
+a full AgentSession on `js/wasm` dropped from 12.0 to 9.46 MB gzip and is gated at 10 MB. Ratchet:
+389 direct platform accesses, rebaselined only to count `internal/themefile`, which took
+over theme reads from `agent/modes/theme`. `make check` passes. Open: provider registry, project
+settings/resources over FS, grep without ripgrep, Worker assembly, RPC as the embedding protocol.
+
+## Portable core, slices 1–2 — 2026-09-22
+
+Owner direction recorded as P2 (tier-1 targets, "Windows deferred" retired) and P10 (portable
+core behind FS/Exec/Store/Net/Env host ports); plan in SPRINTS "Portable core". `make check` now
+runs `make portability`: native builds + vet for linux/darwin/windows × amd64/arm64, linux/386,
+linux/arm, android/arm64; iOS type-check; vet of 98 packages on `js/wasm` and `wasip1/wasm`;
+browser bundle 6.38 MB gzip against an 8 MB budget; `ai`, `engine` and portable `internal`
+suites executed under Node and wazero. Windows gained Git Bash discovery, taskkill process-tree
+cleanup, libuv-style access/errno mapping, a console terminal, SIGTERM-only signals and a
+token-SID Bridge peer check; 32-bit builds use `truncate.MaxSafeInteger`. The P10 ratchet records
+383 direct platform accesses across 134 package/symbol entries in the core; it only shrinks.
+`make check` passes. Windows code is cross-compiled and linted only: the new CI job is its first
+execution. Next: slice 3 (ports), guided by the Wasm failures in `agent/config` (shell-resolved
+config values, file locks) and `plugins/memory/filestore` (flock).
+
+## Direct Claude commands — 2026-09-22
+
+Added `/claude:models`, `:usage`, `:new`, `:exit`, `:plan`, `:normal` and `:compact` through
+ordinary plugin command registration. Slash completion discovers them automatically; one shared
+handler preserves menu behavior and existing spaced commands. No core or Bridge changes.
+`make check` passes; a built-binary PTY opened the native model and usage screens directly.
+
 ## Claude SDK completeness — 2026-09-22
 
 - [x] Version-aware SDK setup: install into an isolated staging directory, validate the pinned

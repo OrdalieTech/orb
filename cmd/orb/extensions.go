@@ -15,7 +15,7 @@ import (
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/connect"
-	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
+	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/extension"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
 	"github.com/OrdalieTech/orb/plugins/permissions"

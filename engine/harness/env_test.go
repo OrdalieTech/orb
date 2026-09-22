@@ -181,6 +181,7 @@ func TestNodeExecutionEnvSymlinksCancellationAndTemps(t *testing.T) {
 }
 
 func TestNodeExecutionEnvShellParityAndFailures(t *testing.T) {
+	RequireProcesses(t)
 	root := t.TempDir()
 	env := NodeExecutionEnv{CWD: root, ShellEnv: map[string]string{"BASE": "base"}}
 	ctx := context.Background()
@@ -286,6 +287,7 @@ func TestNodeExecutionEnvExpandsHomeRelativePathsAndFileURLs(t *testing.T) {
 }
 
 func TestNodeExecutionEnvCanReplaceInheritedShellEnvironment(t *testing.T) {
+	RequireProcesses(t)
 	root := t.TempDir()
 	t.Setenv("PI_NODE_ENV_INHERITED_TEST", "host")
 	env := NodeExecutionEnv{CWD: root, ShellEnv: map[string]string{"PI_NODE_ENV_CONFIGURED_TEST": "configured"}}
@@ -313,6 +315,7 @@ func TestNodeExecutionEnvReportsMissingWorkingDirectoryBeforeSpawn(t *testing.T)
 }
 
 func TestNodeExecutionEnvSettlesAfterExitWhenDescendantRetainsStdio(t *testing.T) {
+	RequireProcesses(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the drain-grace command is a POSIX script")
 	}
@@ -342,6 +345,7 @@ func TestNodeExecutionEnvSettlesAfterExitWhenDescendantRetainsStdio(t *testing.T
 }
 
 func TestNodeExecutionEnvCleanupTerminatesActiveShellProcesses(t *testing.T) {
+	RequireProcesses(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the cleanup command is a POSIX script")
 	}

@@ -11,16 +11,38 @@ GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/ca
 endif
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: check build test lint nightly-live upstream product-assets product-assets-check fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: check build test lint portability nightly-live upstream product-assets product-assets-check fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
 
 # The canonical gate (upstream's `npm run check` norm): run after any code change.
-check: build lint test
+check: build lint test portability
+
+BROWSER_PORT ?= 8787
+.PHONY: browser-build browser-serve
+browser-build:
+	mkdir -p .tools/browser
+	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -o .tools/browser/orb.wasm ./cmd/orb-wasm
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" .tools/browser/
+	cp platforms/browser/web/* .tools/browser/
+
+browser-serve: browser-build
+	python3 -m http.server $(BROWSER_PORT) --bind 127.0.0.1 --directory .tools/browser
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...
 
-test:
-	$(GO_ENV) CGO_ENABLED=1 go test -race ./...
+WAZERO_VERSION ?= v1.12.0
+WAZERO := $(CURDIR)/.tools/bin/wazero
+
+# P2 tier-1 targets: cross builds, vet, browser bundle budget, Wasm suites.
+portability: $(WAZERO)
+	$(GO_ENV) PATH="$(CURDIR)/.tools/bin:$$PATH" scripts/portability.sh
+
+$(WAZERO): Makefile
+	mkdir -p $(dir $@)
+	$(GO_ENV) GOBIN=$(dir $@) go install github.com/tetratelabs/wazero/cmd/wazero@$(WAZERO_VERSION)
+
+test: $(WAZERO)
+	$(GO_ENV) PATH="$(CURDIR)/.tools/bin:$$PATH" CGO_ENABLED=1 go test -race ./...
 	# Race instrumentation suppresses arm64 FMA contraction, so a -race-only gate
 	# cannot see wire-format drift in the shipped CGO_ENABLED=0 build. Re-run the
 	# byte-compared surfaces in the shape users actually get.

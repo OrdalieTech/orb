@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/tui"
 )
 
 type uiNotification struct {
@@ -202,7 +201,7 @@ func (ui *hostUIStub) Custom(ctx context.Context, factory extensions.CustomFacto
 		}
 	}()
 
-	focusable, ok := component.(tui.Focusable)
+	focusable, ok := component.(extensions.FocusableComponent)
 	if !ok {
 		return nil, false, errors.New("host component is not focusable")
 	}
@@ -211,16 +210,16 @@ func (ui *hostUIStub) Custom(ctx context.Context, factory extensions.CustomFacto
 		return len(lines) == 4 && lines[0] == "count:0" && lines[3] == "focused:true"
 	})
 	ui.recordCustomRender(first)
-	input, ok := component.(tui.InputHandler)
+	input, ok := component.(extensions.InputComponent)
 	if !ok {
 		return nil, false, errors.New("host component does not handle TUI input")
 	}
-	input.HandleInput(tui.KeyEvent{Raw: "+", Key: "+"})
+	input.HandleRawInput("+")
 	second := waitForRender(tContext{ctx}, component, 40, func(lines []string) bool {
 		return len(lines) == 4 && lines[0] == "count:1" && lines[3] == "focused:true"
 	})
 	ui.recordCustomRender(second)
-	input.HandleInput(tui.KeyEvent{Raw: "q", Key: "q"})
+	input.HandleRawInput("q")
 	select {
 	case value := <-done:
 		return value, true, nil

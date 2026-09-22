@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/config"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
@@ -68,14 +68,9 @@ func TestExportHTMLPrefersActiveThemeOverConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	active, err := modetheme.Parse(themePath, []byte(custom), modetheme.TrueColor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	active.SourcePath = themePath
-	previous := modetheme.Current()
-	modetheme.SetCurrent(active)
-	t.Cleanup(func() { modetheme.SetCurrent(previous) })
+	activeTheme := HTMLExportThemes{Active: func() *exporthtml.ThemeRef {
+		return &exporthtml.ThemeRef{Name: "active-custom", SourcePath: themePath}
+	}}
 
 	provider := testFaux(100_000)
 	manager, err := sessionstore.Create(root, filepath.Join(root, "sessions"), sessionstore.WithSessionID("configured-theme-export"))
@@ -99,7 +94,7 @@ func TestExportHTMLPrefersActiveThemeOverConfigured(t *testing.T) {
 	}
 	t.Cleanup(runtime.Dispose)
 	output := filepath.Join(root, "session.html")
-	if _, err := runtime.ExportHTML(output); err != nil {
+	if _, err := runtime.ExportHTMLWithThemes(output, activeTheme); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(output)

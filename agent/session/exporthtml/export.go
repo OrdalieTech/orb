@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 )
@@ -37,7 +36,7 @@ type Options struct {
 	SystemPrompt *string
 	Tools        json.RawMessage
 	ToolRenderer ToolHTMLRenderer
-	Theme        *modetheme.Theme
+	Theme        *ThemeRef
 }
 
 type sessionData struct {
@@ -116,7 +115,7 @@ func ExportFromFile(inputPath string, options Options) (string, error) {
 	return ExportSession(manager, options)
 }
 
-func generateHTML(data sessionData, themeName string, selectedTheme *modetheme.Theme) (string, error) {
+func generateHTML(data sessionData, themeName string, selectedTheme *ThemeRef) (string, error) {
 	theme, err := resolveExportTheme(themeName, selectedTheme)
 	if err != nil {
 		return "", err

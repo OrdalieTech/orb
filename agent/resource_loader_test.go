@@ -13,8 +13,8 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
 func writeSkillFixture(t *testing.T, directory, name, description string) {
@@ -58,7 +58,7 @@ func TestDefaultResourceLoaderOverridesAndSDKReuse(t *testing.T) {
 			return ResourcePromptsResult{Prompts: []PromptTemplate{{Name: "deploy", Content: "deploy now", FilePath: "/virtual/deploy.md"}}}
 		},
 		ThemesOverride: func(ResourceThemesResult) ResourceThemesResult {
-			return ResourceThemesResult{Themes: []*modetheme.Theme{{Name: "sdk"}}}
+			return ResourceThemesResult{Themes: []*ResourceTheme{{Theme: themefile.Theme{Name: "sdk"}}}}
 		},
 		AgentsFilesOverride: func(ResourceAgentsFilesResult) ResourceAgentsFilesResult {
 			return ResourceAgentsFilesResult{AgentsFiles: []ContextFile{{Path: "/virtual/AGENTS.md", Content: "SDK context"}}}

@@ -12,9 +12,8 @@ func TestLoadPromptTemplatesThroughEnvironment(t *testing.T) {
 	writeHarnessSkillFile(t, root, "a/one.md", "---\ndescription: One template\n---\nHello $1")
 	writeHarnessSkillFile(t, root, "a/nested/ignored.md", "Ignored")
 	writeHarnessSkillFile(t, root, "b/two.md", "First line description\nBody")
-	target := filepath.Join(root, "target.md")
 	writeHarnessSkillFile(t, root, "target.md", "---\ndescription: Target\n---\nTarget body")
-	if err := os.Symlink(target, filepath.Join(root, "link.md")); err != nil {
+	if err := os.Symlink("target.md", filepath.Join(root, "link.md")); err != nil {
 		t.Fatal(err)
 	}
 

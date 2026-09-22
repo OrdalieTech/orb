@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai"
@@ -39,7 +40,6 @@ import (
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/sandbox"
 	"github.com/gofrs/flock"
-	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -125,7 +125,7 @@ func runSandboxChild() int {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	if err := unix.Exec(shell, []string{shell, "-c", os.Getenv(sandbox.EnvCommand)}, os.Environ()); err != nil {
+	if err := execReplacingProcess(shell, []string{shell, "-c", os.Getenv(sandbox.EnvCommand)}, os.Environ()); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "sandbox: exec:", err)
 	}
 	return 126
@@ -544,17 +544,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	sessionRuntime := sessionHost.Session()
 	if args.Mode == "rpc" {
-		// Defer the initial extension bind: RunRPCMode binds the RPC extension UI
+		// Defer the initial extension bind: rpc.Serve binds the RPC extension UI
 		// and then the extensions, so session_start fires once with a live ctx.ui.
-		host, hostErr := newRPCSessionHost(ctx, sessionHost, true)
+		host, hostErr := rpc.NewRuntimeHost(ctx, sessionHost, true)
 		if hostErr != nil {
 			sessionHost.Dispose(ctx)
 			return reportCLIError(streams.Stderr, hostErr)
 		}
-		return modes.RunRPCMode(ctx, host, modes.RPCModeOptions{
-			Stdin: streams.Stdin, Stdout: streams.Stdout, Stderr: streams.Stderr,
-			Commands: func() []modes.RPCSlashCommand { return rpcSlashCommands(host.Session()) },
-		})
+		return serveRPC(ctx, host, streams, func() []rpc.SlashCommand { return rpc.SlashCommands(host.Session()) })
 	}
 	printSession := newCLIPrintSession(ctx, sessionHost)
 	sessionHost.SetRebindSession(printSession.Bind)

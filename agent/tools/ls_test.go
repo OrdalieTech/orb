@@ -12,6 +12,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/localecompare"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {
@@ -212,7 +213,7 @@ func TestLsToolDetailsMatchUpstreamOrderAndSafeIntegerLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	details, ok := result.Details.(LsToolDetails)
-	if !ok || details.Truncation == nil || details.Truncation.MaxLines != 9007199254740991 {
+	if !ok || details.Truncation == nil || details.Truncation.MaxLines != truncate.MaxSafeInteger {
 		t.Fatalf("details = %#v", result.Details)
 	}
 	encoded, err := ai.Marshal(result.Details)

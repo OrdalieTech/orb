@@ -9,6 +9,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -50,7 +51,7 @@ func TestRPCSessionHostRebindsNewSessionAndForksUserEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial := runtimeHost.Session()
-	host, err := newRPCSessionHost(context.Background(), runtimeHost)
+	host, err := rpc.NewRuntimeHost(context.Background(), runtimeHost, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestRPCSessionHostPreservesExtensionLifecycleAcrossNewSession(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	host, err := newRPCSessionHost(context.Background(), runtimeHost)
+	host, err := rpc.NewRuntimeHost(context.Background(), runtimeHost, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +217,7 @@ func TestRPCSessionHostRestoresEachTargetModelFromImmutableCLIArgs(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	host, err := newRPCSessionHost(context.Background(), runtimeHost)
+	host, err := rpc.NewRuntimeHost(context.Background(), runtimeHost, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +274,7 @@ func TestRPCSlashCommandsPreserveOptionalWireFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Dispose()
-	encoded, err := ai.Marshal(rpcSlashCommands(runtime))
+	encoded, err := ai.Marshal(rpc.SlashCommands(runtime))
 	if err != nil {
 		t.Fatal(err)
 	}

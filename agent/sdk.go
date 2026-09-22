@@ -25,9 +25,10 @@ import (
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
-	aiapi "github.com/OrdalieTech/orb/ai/api"
+	allapi "github.com/OrdalieTech/orb/ai/api/all"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/host"
 )
 
 // AgentSession is the public embedding type. It wraps the internal
@@ -50,8 +51,12 @@ type AgentSessionOptions struct {
 	CWD string
 
 	// AgentDir is the global config directory (auth.json, models.json, skills,
-	// extensions). Defaults to ~/.pi/agent.
+	// extensions). Defaults to Host.AgentDir, else ~/.pi/agent.
 	AgentDir string
+
+	// Host supplies the platform ports (DECISIONS.md P10). When set, services
+	// left nil are built from it instead of the process environment and disk.
+	Host *host.Host
 
 	// Model selects the initial model. When nil, NewAgentSession restores the
 	// session model, then tries the settings default and available models.
@@ -228,6 +233,9 @@ var DefaultActiveToolNames = []string{"read", "bash", "edit", "write"}
 //	defer result.Session.Dispose()
 //	result.Session.Prompt(ctx, "Hello")
 func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
+	if opts.Host != nil {
+		opts = withHostTools(opts)
+	}
 	cwd := opts.CWD
 	if cwd == "" && opts.SessionManager != nil {
 		cwd = opts.SessionManager.GetCWD()
@@ -245,6 +253,9 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	agentDir := opts.AgentDir
+	if agentDir == "" && opts.Host != nil {
+		agentDir = opts.Host.AgentDir
+	}
 	if agentDir == "" {
 		agentDir = DefaultAgentDir()
 	}
@@ -258,14 +269,22 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	modelRegistry := opts.ModelRegistry
-	if modelRegistry == nil {
+	if modelRegistry == nil && opts.Host != nil {
+		modelRegistry, err = hostModelRegistry(opts.Host, agentDir)
+	} else if modelRegistry == nil {
 		modelRegistry, err = config.NewModelRegistry(agentDir)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	sm := opts.SessionManager
+	if sm == nil && opts.Host != nil {
+		sm, err = hostSessionManager(opts.Host, cwd)
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	sm := opts.SessionManager
 	if sm == nil {
 		sessionDir, err := sessionstore.DefaultSessionDir(cwd, agentDir)
 		if err != nil {
@@ -278,12 +297,13 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	settings := opts.Settings
-	if settings == nil {
-		var err error
+	if settings == nil && opts.Host != nil {
+		settings, err = hostSettings(opts.Host, cwd, agentDir)
+	} else if settings == nil {
 		settings, err = config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-		if err != nil {
-			return nil, err
-		}
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	// Resolve resources and bind extension providers before model selection so
@@ -325,7 +345,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	streamFn := opts.StreamFn
 	if streamFn == nil {
-		streamFn = aiapi.StreamSimple
+		streamFn = allapi.StreamSimple
 	}
 	providerStreamFn := streamFn
 	streamFn = func(

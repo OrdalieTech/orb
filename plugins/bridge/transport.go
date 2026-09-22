@@ -24,6 +24,20 @@ import (
 )
 
 func (b *Bridge) TLSConfig(expected string, server bool) (*tls.Config, error) {
+	b.mu.Lock()
+	key := append(ed25519.PrivateKey(nil), b.state.Key...)
+	b.mu.Unlock()
+	return tlsConfig(key, expected, server, func(id string) bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return !b.closed && !b.failed && !b.state.Blocked[id]
+	})
+}
+
+func tlsConfig(key ed25519.PrivateKey, expected string, server bool, allowed func(string) bool) (*tls.Config, error) {
+	if len(key) != ed25519.PrivateKeySize {
+		return nil, connect.Fail("unauthorized")
+	}
 	if !server {
 		if _, err := ParsePeerID(expected); err != nil {
 			return nil, err
@@ -33,7 +47,6 @@ func (b *Bridge) TLSConfig(expected string, server bool) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := ed25519.PrivateKey(b.state.Key)
 	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: protocol.Version}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
 	if err != nil {
@@ -61,10 +74,7 @@ func (b *Bridge) TLSConfig(expected string, server bool) (*tls.Config, error) {
 		if cert.Subject.CommonName != protocol.Version || time.Now().Before(cert.NotBefore) || time.Now().After(cert.NotAfter) || cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) != nil {
 			return connect.Fail("unauthorized")
 		}
-		b.mu.Lock()
-		denied := b.closed || b.failed || b.state.Blocked[id]
-		b.mu.Unlock()
-		if denied {
+		if allowed != nil && !allowed(id) {
 			return connect.Fail("unauthorized")
 		}
 		return nil
@@ -80,44 +90,11 @@ func (b *Bridge) Connect(ctx context.Context, stream net.Conn, expected string, 
 		_ = stream.Close()
 		return nil, "", err
 	}
-	var secure *tls.Conn
-	if server {
-		secure = tls.Server(stream, config)
-	} else {
-		secure = tls.Client(stream, config)
-	}
-	handshake, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err = secure.HandshakeContext(handshake); err != nil {
-		_ = stream.Close()
+	c, id, err := connectPeer(ctx, stream, config, server, b.Hello(), b.Handle)
+	if err != nil {
 		return nil, "", err
 	}
-	id := PeerID(secure.ConnectionState().PeerCertificates[0].PublicKey.(ed25519.PublicKey))
-	var helloMu sync.Mutex
-	ready := false
-	pageLimit := protocol.MaxPage
-	c := protocol.NewConn(secure, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-		helloMu.Lock()
-		if method == "bridge.hello" {
-			var h Hello
-			if err := protocol.Decode(params, &h); err != nil || h.PeerID != id || h.Protocol != protocol.Version || h.MaxFrame < 1024 || h.MaxPage < 1 || !protocol.ValidID(h.BootID) {
-				helloMu.Unlock()
-				return nil, rpcError(connect.Fail("unsupported_version"))
-			}
-			ready = true
-			pageLimit = min(protocol.MaxPage, h.MaxPage)
-			helloMu.Unlock()
-			return connect.JSON(b.Hello()), nil
-		}
-		ok := ready
-		limit := pageLimit
-		helloMu.Unlock()
-		if !ok {
-			return nil, rpcError(connect.Fail("unauthorized"))
-		}
-		result, err := b.Handle(protocol.WithPageLimit(ctx, limit), id, method, params)
-		return result, rpcError(err)
-	})
+
 	b.mu.Lock()
 	if b.closed || b.failed || b.state.Blocked[id] || len(b.channels) >= 128 {
 		b.mu.Unlock()
@@ -143,8 +120,66 @@ func (b *Bridge) Connect(ctx context.Context, stream net.Conn, expected string, 
 		}
 		b.mu.Unlock()
 	}()
+	return c, id, nil
+}
+
+// ConnectClient opens an outbound-only connection. It starts no listener or Bridge
+// service, and rejects remote calls into the client. The caller owns key storage.
+func ConnectClient(ctx context.Context, stream net.Conn, key ed25519.PrivateKey, expected string) (*protocol.Conn, error) {
+	config, err := tlsConfig(key, expected, false, nil)
+	if err != nil {
+		_ = stream.Close()
+		return nil, err
+	}
+	hello := Hello{PeerID(key.Public().(ed25519.PublicKey)), protocol.NewID(), protocol.Version, protocol.MaxFrame, protocol.MaxPage}
+	c, _, err := connectPeer(ctx, stream, config, false, hello, nil)
+	return c, err
+}
+
+func connectPeer(ctx context.Context, stream net.Conn, config *tls.Config, server bool, local Hello, handle func(context.Context, string, string, json.RawMessage) (json.RawMessage, error)) (*protocol.Conn, string, error) {
+	var secure *tls.Conn
+	if server {
+		secure = tls.Server(stream, config)
+	} else {
+		secure = tls.Client(stream, config)
+	}
+	handshake, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := secure.HandshakeContext(handshake); err != nil {
+		_ = stream.Close()
+		return nil, "", err
+	}
+	id := PeerID(secure.ConnectionState().PeerCertificates[0].PublicKey.(ed25519.PublicKey))
+	var helloMu sync.Mutex
+	ready := false
+	pageLimit := protocol.MaxPage
+	c := protocol.NewConn(secure, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		helloMu.Lock()
+		if method == "bridge.hello" {
+			var h Hello
+			if err := protocol.Decode(params, &h); err != nil || h.PeerID != id || h.Protocol != protocol.Version || h.MaxFrame < 1024 || h.MaxPage < 1 || !protocol.ValidID(h.BootID) {
+				helloMu.Unlock()
+				return nil, rpcError(connect.Fail("unsupported_version"))
+			}
+			ready = true
+			pageLimit = min(protocol.MaxPage, h.MaxPage)
+			helloMu.Unlock()
+			return connect.JSON(local), nil
+		}
+		ok := ready
+		limit := pageLimit
+		helloMu.Unlock()
+		if !ok {
+			return nil, rpcError(connect.Fail("unauthorized"))
+		}
+		if handle == nil {
+			return nil, rpcError(connect.Fail("not_found"))
+		}
+		result, err := handle(protocol.WithPageLimit(ctx, limit), id, method, params)
+		return result, rpcError(err)
+	})
 	var remote Hello
-	if err = c.Call(handshake, "bridge.hello", b.Hello(), &remote); err != nil || remote.PeerID != id || remote.Protocol != protocol.Version || !protocol.ValidID(remote.BootID) || remote.MaxFrame < 1024 || remote.MaxPage < 1 {
+	if err := c.Call(handshake, "bridge.hello", local, &remote); err != nil || remote.PeerID != id || remote.Protocol != protocol.Version || !protocol.ValidID(remote.BootID) || remote.MaxFrame < 1024 || remote.MaxPage < 1 {
 		_ = c.Close()
 		return nil, "", connect.Fail("unsupported_version")
 	}

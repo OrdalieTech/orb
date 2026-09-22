@@ -12,6 +12,7 @@ require (
 	github.com/aws/smithy-go v1.28.2
 	github.com/aymanbagabas/go-udiff v0.2.0
 	github.com/bmatcuk/doublestar/v4 v4.10.2
+	github.com/coder/websocket v1.8.15
 	github.com/dlclark/regexp2/v2 v2.8.0
 	github.com/gofrs/flock v0.13.1
 	github.com/klauspost/compress v1.20.0
@@ -46,7 +47,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/creachadair/msync v0.8.1 // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect

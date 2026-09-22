@@ -13,6 +13,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
@@ -850,7 +851,7 @@ func TestRPCSessionHostReplacementKeepsExtensionsAndSurvivesFailure(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	rpcHost, err := newRPCSessionHost(context.Background(), runtime)
+	rpcHost, err := rpc.NewRuntimeHost(context.Background(), runtime, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -878,7 +879,7 @@ func TestRPCSessionHostReplacementKeepsExtensionsAndSurvivesFailure(t *testing.T
 		t.Fatal("rpc replacement lost the extension registry")
 	}
 	found := false
-	for _, command := range rpcSlashCommands(replacement) {
+	for _, command := range rpc.SlashCommands(replacement) {
 		if command.Name == "host-cmd" {
 			found = true
 		}

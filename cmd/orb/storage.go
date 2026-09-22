@@ -9,13 +9,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
@@ -607,40 +604,6 @@ func (state *nativeState) validateMigration(ctx context.Context, sources []sqlit
 	modelConfig, err := config.ParseModelConfig(data, "native models")
 	if err != nil || modelConfig.Error() != "" {
 		return errors.New("invalid imported model configuration")
-	}
-	return nil
-}
-
-func requireOfflineMigration(ctx context.Context, agentDir string) error {
-	output, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,pid=,comm=").Output()
-	if err != nil {
-		return errors.New("cannot verify that legacy Orb writers are stopped")
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		uid, _ := strconv.Atoi(fields[0])
-		pid, _ := strconv.Atoi(fields[1])
-		name := filepath.Base(strings.Join(fields[2:], " "))
-		if uid == os.Getuid() && pid != os.Getpid() && (name == "orb" || strings.HasPrefix(name, "orb-")) {
-			environment, probeErr := exec.CommandContext(ctx, "ps", "eww", "-p", strconv.Itoa(pid), "-o", "command=").Output()
-			if probeErr != nil {
-				if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
-					continue
-				}
-				return errors.New("cannot inspect a running Orb process before migration")
-			}
-			configured := os.Getenv(config.EnvAgentDir)
-			if configured != "" && !strings.Contains(string(environment), config.EnvAgentDir+"="+configured+" ") && !strings.HasSuffix(strings.TrimSpace(string(environment)), config.EnvAgentDir+"="+configured) {
-				continue
-			}
-			if configured == "" && strings.Contains(string(environment), config.EnvAgentDir+"=") {
-				continue
-			}
-			return fmt.Errorf("close other Orb processes before migration (process %d is still running)", pid)
-		}
 	}
 	return nil
 }

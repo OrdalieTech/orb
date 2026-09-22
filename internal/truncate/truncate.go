@@ -2,6 +2,7 @@ package truncate
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -13,6 +14,8 @@ const (
 	DefaultMaxLines   = 2000
 	DefaultMaxBytes   = 50 * 1024
 	GrepMaxLineLength = 500
+	// MaxSafeInteger is JavaScript's Number.MAX_SAFE_INTEGER, clamped to int on 32-bit targets.
+	MaxSafeInteger = min(1<<53-1, math.MaxInt)
 )
 
 type Reason string

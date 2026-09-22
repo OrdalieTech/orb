@@ -362,7 +362,7 @@ func TestBeforeProviderHeadersPrecedesSessionAffinity(t *testing.T) {
 	defer func() { openAIHTTPClient = previousClient }()
 	model, key, sessionID := responsesTestModel(), "key", "session"
 	seenAffinity := false
-	stream, err := StreamSimple(context.Background(), model, ai.Context{}, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
+	stream, err := testProviders.StreamSimple(context.Background(), model, ai.Context{}, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{
 		APIKey: &key, SessionID: &sessionID, TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
 			for name := range headers {
 				seenAffinity = seenAffinity || strings.EqualFold(name, "session_id") || strings.EqualFold(name, "x-client-request-id")

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orb · Browser</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header><h1>Orb <span>browser</span></h1><div><output id="status" role="status">Loading…</output><button id="reset" type="button">New chat</button></div></header>
+  <main>
+    <div class="toolbar">
+      <details id="settings-panel" name="inspector">
+        <summary>Model <span id="model-label">Configure a provider</span></summary>
+        <form id="settings" class="panel">
+          <fieldset id="configuration" disabled>
+            <label>Provider<select id="provider"><option value="openrouter">OpenRouter</option><option value="anthropic-messages">Claude · Anthropic API</option><option value="openai-completions">OpenAI-compatible API</option></select></label>
+            <div id="api-fields">
+              <label>Model ID<input id="model" placeholder="Your model ID" value="openai/gpt-5.6-luna" autocomplete="off"></label>
+              <label>API key<input id="key" type="password" placeholder="Paste your API key" autocomplete="off"></label>
+              <label class="wide">API base URL<input id="endpoint" type="url" value="https://openrouter.ai/api/v1" required></label>
+            </div>
+          </fieldset>
+          <p id="hint">Enter your model and API key, then send a message. Credentials stay in this tab. Changing model settings starts a new conversation.</p>
+        </form>
+      </details>
+      <details id="bridge-panel" name="inspector">
+        <summary>Bridge <span id="bridge-status">Disconnected</span></summary>
+        <div class="panel">
+          <label>Invitation JSON<textarea id="bridge-invitation" rows="3" placeholder="Paste an invitation from your remote Bridge" spellcheck="false"></textarea></label>
+          <button id="bridge-connect" type="button" disabled>Connect</button>
+          <button id="bridge-disconnect" type="button" disabled>Disconnect</button>
+          <button id="bridge-refresh" type="button">Refresh</button>
+          <p id="bridge-notice" role="status">Connects directly; no local Bridge service starts. This browser keeps its pairing identity across reloads.</p>
+          <pre id="bridge-identity"></pre>
+          <label><input id="bridge-agent" type="checkbox"> Allow the local model to call this Bridge</label>
+          <details><summary>Agent authorization</summary><p>Agent calls need their own grant on the remote Bridge. Controller pairing does not grant model access. Save this JSON and pass it to <code>orb bridge grant</code> on the remote host, adjusting its scope as needed.</p><pre id="bridge-grant"></pre></details>
+        </div>
+      </details>
+      <details id="debug" name="inspector">
+        <summary>Debug <span id="count">0 events</span></summary>
+        <div class="panel">
+        <p>The agent runs locally in Wasm. Tools: read, write, edit. Files and conversation are temporary; no shell or device filesystem access.</p>
+        <h2>Virtual files</h2><div id="files">No files yet.</div>
+        <details id="event-panel"><summary>Engine events</summary><pre id="events">No events yet.</pre></details>
+        <button id="export" type="button" disabled>Export snapshot</button>
+        </div>
+      </details>
+    </div>
+    <div id="remote-controls" hidden>
+      <label>Conversation<select id="location"><option value="">Local · this browser</option></select></label>
+      <label id="remote-sessions-label" hidden>Remote session<select id="remote-sessions"></select></label>
+    </div>
+    <section id="conversation" aria-label="Conversation">
+      <div id="transcript" tabindex="0" aria-label="Messages">
+        <div id="messages"><p class="empty">What would you like to try?</p></div>
+        <pre id="stream" hidden></pre>
+      </div>
+      <pre id="remote-question" hidden></pre>
+      <p id="error" role="alert" hidden></p>
+      <form id="prompt-form">
+        <label class="sr-only" for="prompt">Message</label>
+        <textarea id="prompt" rows="2" maxlength="16384" placeholder="Message Orb…" disabled></textarea>
+        <div class="actions"><small>Enter to send · Shift+Enter for a new line</small><button id="cancel" type="button" hidden>Stop</button><button id="send" disabled>Send</button></div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

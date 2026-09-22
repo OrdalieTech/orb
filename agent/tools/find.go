@@ -149,7 +149,7 @@ func (tool *findTool) executeCustom(
 func formatFindResult(paths []string, effectiveLimit float64, actionable bool) engine.AgentToolResult {
 	resultLimitReached := float64(len(paths)) >= effectiveLimit
 	rawOutput := strings.Join(paths, "\n")
-	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(9007199254740991)})
+	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
 	output := truncation.Content
 	details := FindToolDetails{}
 	notices := make([]string, 0, 2)

@@ -237,7 +237,7 @@ func TestAnthropicRequestErrorClosesResponseBody(t *testing.T) {
 }
 
 type slowBedrockResponse struct {
-	items       []bedrockStreamItem
+	items       []BedrockStreamItem
 	index       int
 	delay       time.Duration
 	sawDeadline *atomic.Bool
@@ -248,12 +248,12 @@ func (response *slowBedrockResponse) RequestID() string { return "" }
 func (response *slowBedrockResponse) Close() error      { return nil }
 func (response *slowBedrockResponse) Err() error        { return nil }
 
-func (response *slowBedrockResponse) Next(ctx context.Context) (bedrockStreamItem, bool) {
+func (response *slowBedrockResponse) Next(ctx context.Context) (BedrockStreamItem, bool) {
 	if _, ok := ctx.Deadline(); ok {
 		response.sawDeadline.Store(true)
 	}
 	if response.index >= len(response.items) {
-		return bedrockStreamItem{}, false
+		return BedrockStreamItem{}, false
 	}
 	time.Sleep(response.delay)
 	item := response.items[response.index]
@@ -262,35 +262,33 @@ func (response *slowBedrockResponse) Next(ctx context.Context) (bedrockStreamIte
 }
 
 func TestBedrockTimeoutMSNeverDeadlinesTheStream(t *testing.T) {
-	previousTransport := newBedrockTransport
-	defer func() { newBedrockTransport = previousTransport }()
 	text := "slow"
 	var sawDeadline atomic.Bool
-	newBedrockTransport = func(ctx context.Context, _ *ai.Model, _ *BedrockConverseStreamOptions) (bedrockTransport, error) {
+	backend := &BedrockBackend{NewTransport: func(ctx context.Context, _ BedrockTransportConfig) (BedrockTransport, error) {
 		if _, ok := ctx.Deadline(); ok {
 			sawDeadline.Store(true)
 		}
-		return bedrockTransportFunc(func(sendCtx context.Context, _ *BedrockConverseStreamPayload) (bedrockResponse, error) {
+		return bedrockTransportFunc(func(sendCtx context.Context, _ *BedrockConverseStreamPayload) (BedrockResponse, error) {
 			if _, ok := sendCtx.Deadline(); ok {
 				sawDeadline.Store(true)
 			}
 			return &slowBedrockResponse{
-				items: []bedrockStreamItem{
-					{Kind: bedrockItemMessageStart, Role: "assistant"},
-					{Kind: bedrockItemContentDelta, ContentBlockIndex: 0, Text: &text},
-					{Kind: bedrockItemContentDelta, ContentBlockIndex: 0, Text: &text},
-					{Kind: bedrockItemMessageStop, StopReason: "end_turn"},
+				items: []BedrockStreamItem{
+					{Kind: BedrockItemMessageStart, Role: "assistant"},
+					{Kind: BedrockItemContentDelta, ContentBlockIndex: 0, Text: &text},
+					{Kind: BedrockItemContentDelta, ContentBlockIndex: 0, Text: &text},
+					{Kind: BedrockItemMessageStop, StopReason: "end_turn"},
 				},
 				delay:       30 * time.Millisecond,
 				sawDeadline: &sawDeadline,
 			}, nil
 		}), nil
-	}
+	}}
 
 	timeout := int64(10)
 	stream, err := StreamBedrockConverseWithOptions(context.Background(), bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude"), ai.Context{
 		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
-	}, &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{TimeoutMS: &timeout}})
+	}, &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{TimeoutMS: &timeout}, Backend: backend})
 	if err != nil {
 		t.Fatal(err)
 	}
