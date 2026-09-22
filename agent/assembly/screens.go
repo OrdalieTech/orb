@@ -133,10 +133,10 @@ func pluginConfigSummary(name string, settings *config.SettingsManager) string {
 		}
 		mode := text("mode")
 		if mode == "" {
-			if text("preset") == "workspace-write" {
-				mode = "enforce"
-			} else {
+			if text("preset") == "danger-full-access" {
 				mode = "log"
+			} else {
+				mode = "auto"
 			}
 		}
 		parts := []string{}

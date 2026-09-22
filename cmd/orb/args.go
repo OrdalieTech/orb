@@ -54,6 +54,7 @@ type CLIArgs struct {
 	NoTools            bool
 	NoBuiltinTools     bool
 	NoExtensions       bool
+	Auto               bool
 	Extensions         []string
 	Print              bool
 	Mode               string
@@ -185,6 +186,8 @@ func ParseArgs(argv []string) CLIArgs {
 			result.Extensions = append(result.Extensions, argv[index])
 		case argument == "--no-extensions" || argument == "-ne":
 			result.NoExtensions = true
+		case argument == "--auto":
+			result.Auto = true
 		case (argument == "--tools" || argument == "-t") && index+1 < len(argv):
 			index++
 			result.Tools = parseToolList(argv[index])
@@ -258,6 +261,9 @@ func ParseArgs(argv []string) CLIArgs {
 		default:
 			result.Messages = append(result.Messages, argument)
 		}
+	}
+	if result.Auto && result.NoExtensions {
+		result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: "--auto requires the permissions plugin; remove --no-extensions"})
 	}
 	return result
 }

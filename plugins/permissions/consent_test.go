@@ -93,7 +93,7 @@ func TestApprovalScopeAndPrompt(t *testing.T) {
 }
 
 func TestGuardsAndAuthorizerErrors(t *testing.T) {
-	for _, mode := range []string{"enforce", "log"} {
+	for _, mode := range []string{"enforce", "auto", "log"} {
 		for _, result := range []Action{Ask, Allow, Deny} {
 			p := &Policy{Mode: mode, Authorizer: func(context.Context, ToolCallInfo) (Action, error) { return result, nil }, Guards: []func(context.Context, ToolCallInfo) string{func(context.Context, ToolCallInfo) string { return "hard limit" }}}
 			if got := emit(permissionRunner(t, p, t.TempDir()), t.Context(), "bash", nil); !blocked(got) {
@@ -104,6 +104,78 @@ func TestGuardsAndAuthorizerErrors(t *testing.T) {
 		if !blocked(emit(permissionRunner(t, p, t.TempDir()), t.Context(), "bash", nil)) {
 			t.Fatalf("authorizer error allowed in %s", mode)
 		}
+	}
+}
+
+func TestAutoPermissions(t *testing.T) {
+	for _, headless := range []bool{false, true} {
+		p, err := FromSettings(map[string]any{"mode": "auto", "rules": []Rule{
+			{Tool: "*", Action: Ask},
+			{Tool: "read", Path: "public/**", Action: Allow},
+			{Tool: "read", Path: "secrets/**", Action: Deny},
+			{Tool: "bash", Command: "git push *", Action: Deny},
+			{Tool: "bash", Command: "echo one && echo two", Action: Allow},
+			{Tool: "remove", Action: Deny},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := permissionRunner(t, p, t.TempDir())
+		ctx := t.Context()
+		if !headless {
+			ctx = extensions.WithInputHandler(ctx, func(context.Context, string, []string) (string, error) {
+				t.Error("auto mode prompted")
+				return "n deny", nil
+			})
+		}
+		for _, tc := range []struct {
+			tool, key, value string
+			deny             bool
+		}{
+			{"write", "path", "file", false},
+			{"read", "path", "public/nested/file", false},
+			{"read", "path", "secrets/key", true},
+			{"bash", "command", "git status", false},
+			{"bash", "command", "git push", true},
+			{"bash", "command", "git push origin main", true},
+			{"bash", "command", "cd /tmp && git push", true},
+			{"bash", "command", "echo $(git push)", true},
+			{"bash", "command", "", true},
+			{"bash", "command", "echo one && echo two", false},
+			{"remove", "path", "file", true},
+		} {
+			got := emit(r, ctx, tc.tool, map[string]any{tc.key: tc.value})
+			if got == nil || got.Block != tc.deny || got.Approved == tc.deny {
+				t.Errorf("%s %q (headless=%v): %#v", tc.tool, tc.value, headless, got)
+			}
+		}
+		if _, hidden := p.staticDeny(ToolCallInfo{Tool: "remove"}); !hidden {
+			t.Error("auto exposed a statically denied tool")
+		}
+		if d := p.recent(0)[0]; d.Action != Ask || d.Resolved != Allow || d.Resolution != "auto approval" || d.Mode != "auto" {
+			t.Fatalf("missing auto audit: %#v", d)
+		}
+		p.SetMode("enforce")
+		if !blocked(emit(r, t.Context(), "write", map[string]any{"path": "file"})) {
+			t.Fatal("auto consent survived switching to enforce")
+		}
+		p.SetMode("auto")
+		if got := emit(r, ctx, "write", nil); got == nil || !got.Approved {
+			t.Fatalf("SetMode did not enable auto: %#v", got)
+		}
+	}
+}
+
+func TestAutoNativeConsentAndCancellation(t *testing.T) {
+	p := &Policy{Mode: "auto"}
+	r := permissionRunner(t, p, t.TempDir())
+	if got := emit(r, t.Context(), "write", nil); got == nil || !got.Approved {
+		t.Fatalf("explicit auto mode did not authorize native tool: %#v", got)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	p.Authorizer = func(context.Context, ToolCallInfo) (Action, error) { cancel(); return Ask, nil }
+	if !blocked(emit(r, ctx, "write", nil)) {
+		t.Fatal("auto approved after cancellation during authorization")
 	}
 }
 
@@ -191,12 +263,32 @@ func TestApprovalNeedsSessionAndCanonicalScope(t *testing.T) {
 	}
 }
 
-func TestEnabledPolicyEnforcesByDefault(t *testing.T) {
+func TestDefaultAutoStillEnforcesDenials(t *testing.T) {
 	p, err := FromSettings(map[string]any{"enabled": true, "rules": []Rule{{Tool: "write", Action: Deny}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !blocked(emit(permissionRunner(t, p, t.TempDir()), t.Context(), "write", nil)) {
 		t.Fatal("enabled rule silently ran in audit mode")
+	}
+	if p.Mode != "auto" {
+		t.Fatalf("default mode = %s", p.Mode)
+	}
+}
+
+func TestDefaultAutoApprovesAsks(t *testing.T) {
+	for _, settings := range []map[string]any{nil, {"preset": "workspace-write"}} {
+		p, err := FromSettings(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Rules = []Rule{{Tool: "*", Action: Ask}}
+		if got := emit(permissionRunner(t, p, t.TempDir()), t.Context(), "write", nil); got == nil || !got.Approved {
+			t.Fatalf("default mode prompted or denied: %#v", got)
+		}
+	}
+	p := &Policy{Rules: []Rule{{Tool: "*", Action: Ask}}}
+	if got := emit(permissionRunner(t, p, t.TempDir()), t.Context(), "write", nil); got == nil || !got.Approved {
+		t.Fatalf("SDK default mode prompted or denied: %#v", got)
 	}
 }

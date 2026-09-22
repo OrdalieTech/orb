@@ -758,51 +758,53 @@ type testText string
 func (t testText) Render(int) []string { return []string{string(t)} }
 
 func TestSDKUsesOrbPermissionPolicy(t *testing.T) {
-	for _, action := range []plugins.Action{plugins.Allow, plugins.Deny, plugins.Ask} {
-		t.Run(string(action), func(t *testing.T) {
-			policy := &plugins.Policy{Mode: "enforce", AskFallback: plugins.Deny, Rules: []plugins.Rule{{Tool: "write", Path: "/fixture", Action: action}}}
-			host, _ := fixture(t, policy)
-			if _, err := host.EnableControl(); err != nil {
-				t.Fatal(err)
-			}
-			s := host.Session()
-			done := make(chan error, 1)
-			go func() { done <- s.Prompt(t.Context(), "native write") }()
-			if action == plugins.Ask {
-				p := awaitInput(t, s)
-				if !strings.Contains(p.Title, "Permission requested for write") {
-					t.Fatal(p.Title)
-				}
-				if err := s.ReplyInput(p.ID, "s approve for this session"); err != nil {
+	for _, mode := range []string{"enforce", "auto"} {
+		for _, action := range []plugins.Action{plugins.Allow, plugins.Deny, plugins.Ask} {
+			t.Run(mode+"/"+string(action), func(t *testing.T) {
+				policy := &plugins.Policy{Mode: mode, AskFallback: plugins.Deny, Rules: []plugins.Rule{{Tool: "write", Path: "/fixture", Action: action}}}
+				host, _ := fixture(t, policy)
+				if _, err := host.EnableControl(); err != nil {
 					t.Fatal(err)
 				}
-			}
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				t.Fatal("policy did not resolve native call")
-			}
-			if denied := s.State().ErrorMessage != nil; denied != (action == plugins.Deny) {
-				t.Fatalf("denied=%v, action=%s", denied, action)
-			}
-			if action == plugins.Ask {
-				go func() { done <- s.Prompt(t.Context(), "same native write") }()
+				s := host.Session()
+				done := make(chan error, 1)
+				go func() { done <- s.Prompt(t.Context(), "native write") }()
+				if action == plugins.Ask && mode == "enforce" {
+					p := awaitInput(t, s)
+					if !strings.Contains(p.Title, "Permission requested for write") {
+						t.Fatal(p.Title)
+					}
+					if err := s.ReplyInput(p.ID, "s approve for this session"); err != nil {
+						t.Fatal(err)
+					}
+				}
 				select {
 				case <-done:
 				case <-time.After(5 * time.Second):
-					t.Fatal("session approval was not reused")
+					t.Fatal("policy did not resolve native call")
 				}
-			}
-			found := false
-			for _, entry := range s.Manager().GetEntries() {
-				if entry.CustomType == "orb.permissions.decision" {
-					found = true
+				if denied := s.State().ErrorMessage != nil; denied != (action == plugins.Deny) {
+					t.Fatalf("denied=%v, action=%s", denied, action)
 				}
-			}
-			if !found {
-				t.Fatal("native decision was not audited")
-			}
-		})
+				if action == plugins.Ask && mode == "enforce" {
+					go func() { done <- s.Prompt(t.Context(), "same native write") }()
+					select {
+					case <-done:
+					case <-time.After(5 * time.Second):
+						t.Fatal("session approval was not reused")
+					}
+				}
+				found := false
+				for _, entry := range s.Manager().GetEntries() {
+					if entry.CustomType == "orb.permissions.decision" {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("native decision was not audited")
+				}
+			})
+		}
 	}
 }
 

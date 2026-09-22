@@ -96,7 +96,7 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 }
 
 func FromSettings(value map[string]any) (*Policy, error) {
-	policy := &Policy{Mode: "enforce"}
+	policy := &Policy{Mode: "auto"}
 	for key, configured := range value {
 		switch key {
 		case "enabled":
@@ -115,7 +115,7 @@ func FromSettings(value map[string]any) (*Policy, error) {
 	switch value["preset"] {
 	case nil:
 	case "workspace-write":
-		policy.Sandbox, policy.Mode = sandbox.ModeWorkspaceWrite, "enforce"
+		policy.Sandbox = sandbox.ModeWorkspaceWrite
 	case "danger-full-access":
 		policy.Sandbox, policy.Mode = sandbox.ModeDangerFullAccess, "log"
 	default:
@@ -150,7 +150,7 @@ func FromSettings(value map[string]any) (*Policy, error) {
 	for _, setting := range []struct {
 		name  string
 		valid bool
-	}{{"sandbox", policy.Sandbox == "" || policy.Sandbox == sandbox.ModeReadOnly || policy.Sandbox == sandbox.ModeWorkspaceWrite || policy.Sandbox == sandbox.ModeDangerFullAccess}, {"mode", policy.Mode == "" || policy.Mode == "log" || policy.Mode == "enforce"}, {"askFallback", policy.AskFallback == "" || policy.AskFallback == Allow || policy.AskFallback == Deny}} {
+	}{{"sandbox", policy.Sandbox == "" || policy.Sandbox == sandbox.ModeReadOnly || policy.Sandbox == sandbox.ModeWorkspaceWrite || policy.Sandbox == sandbox.ModeDangerFullAccess}, {"mode", policy.Mode == "" || policy.Mode == "log" || policy.Mode == "enforce" || policy.Mode == "auto"}, {"askFallback", policy.AskFallback == "" || policy.AskFallback == Allow || policy.AskFallback == Deny}} {
 		if !setting.valid {
 			return nil, fmt.Errorf("plugins: permissions.%s is invalid", setting.name)
 		}
@@ -180,7 +180,10 @@ func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, 
 	policy.mu.Lock()
 	defer policy.mu.Unlock()
 	mode := policy.Mode
-	if mode != "log" {
+	if mode == "" {
+		mode = "auto"
+	}
+	if mode != "log" && mode != "auto" {
 		mode = "enforce"
 	}
 	fallback := policy.AskFallback
@@ -191,7 +194,10 @@ func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, 
 }
 
 func (policy *Policy) SetMode(mode string) {
-	if mode != "log" {
+	if mode == "" {
+		mode = "auto"
+	}
+	if mode != "log" && mode != "auto" {
 		mode = "enforce"
 	}
 	policy.mu.Lock()
@@ -252,7 +258,7 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 		decision.Rule = index + 1
 		decision.Matcher = formatRule(rule)
 	}
-	if info.Tool == "bash" && decision.Action == Allow {
+	if info.Tool == "bash" && decision.Action != Deny {
 		command, _ := commandArgument(info.Args)
 		if strings.ContainsAny(command, ";&|<>$`\\\"'()\n\r") {
 			scoped := false
@@ -261,7 +267,7 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 					scoped = true
 				}
 			}
-			if decision.Rule > 0 {
+			if decision.Rule > 0 && decision.Action == Allow {
 				rule := rules[decision.Rule-1]
 				if rule.Path == "" && (rule.Command == "" || rule.Command == command) {
 					scoped = false
@@ -328,6 +334,9 @@ func commandPaths(command string) []string {
 
 func matchGlob(pattern, value string, command bool) bool {
 	if command {
+		if strings.HasSuffix(pattern, " *") && value == strings.TrimSuffix(pattern, " *") {
+			return true
+		}
 		pattern = strings.ReplaceAll(pattern, "/", "\ue000")
 		value = strings.ReplaceAll(value, "/", "\ue000")
 	}
@@ -445,7 +454,7 @@ func formatRule(rule Rule) string {
 // ponytail: static denies hide tools; the tool_call hook still blocks tools re-added later.
 func (policy *Policy) staticDeny(info ToolCallInfo) (Decision, bool) {
 	mode, _, rules, authorizer, _ := policy.snapshot()
-	if mode != "enforce" || authorizer != nil {
+	if mode == "log" || authorizer != nil {
 		return Decision{}, false
 	}
 	candidate := -1
@@ -587,7 +596,11 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			call := event.(extensions.ToolCallEvent)
 			info := ToolCallInfo{Tool: call.ToolName, Args: call.Input, CWD: extensionContext.CWD(), SessionID: permissionScope(extensionContext, parent)}
 			decision := policy.Evaluate(ctx, info)
-			mode, fallback, _, _, _ := policy.snapshot()
+			if err := ctx.Err(); err != nil {
+				return extensions.ToolCallResult{Block: true, Reason: err.Error()}, nil
+			}
+			_, fallback, _, _, _ := policy.snapshot()
+			mode := decision.Mode
 			// Guard denials are invariants, not approval-policy outcomes:
 			// log mode never downgrades them (this also keeps the deny-all
 			// guard for invalid settings unescapable via /permissions).
@@ -600,7 +613,7 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			case Allow:
 				decision.Resolved = Allow
 				record(ctx, decision)
-				if decision.Rule == 0 && decision.Matcher == "" {
+				if mode != "auto" && decision.Rule == 0 && decision.Matcher == "" {
 					return nil, nil
 				}
 				return extensions.ToolCallResult{Approved: true}, nil
@@ -608,6 +621,17 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 				decision.Resolved = Deny
 				record(ctx, decision)
 				return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, decision.Resolution)}, nil
+			}
+			if mode == "auto" {
+				// Textual rules cannot prove an opaque command respects a scoped restriction.
+				if decision.Matcher == "shell syntax" || decision.Matcher == "restrictive bash rule" {
+					decision.Resolved = Deny
+					record(ctx, decision)
+					return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, "auto cannot resolve shell syntax; use a simple command or an explicit exact-command allow rule")}, nil
+				}
+				decision.Resolved, decision.Resolution = Allow, "auto approval"
+				record(ctx, decision)
+				return extensions.ToolCallResult{Approved: true}, nil
 			}
 			if policy.approvedForSession(info, decision) {
 				decision.Resolved, decision.Resolution = Allow, "session approval"
