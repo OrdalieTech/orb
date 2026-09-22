@@ -6,7 +6,23 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- `orb upgrade` is an alias for `orb update`, same routes and flags.
+
+- Claude questions now open visible dialogs with descriptions, custom answers and multi-selection;
+  native questions, plans, task lists and common tool calls get readable transcript summaries.
+  Dismissing a question returns a denial to Claude without automatically interrupting the session.
+
 - Remove bundled demo extensions, share footer/account quota requests, and keep quota display in Providers. Separate native tool execution from Wasm builds so injected tools can run without a host filesystem.
+
+- Claude Sessions discovers the native model catalog and default, supports model/effort switching
+  locally and through Bridge, and identifies the session and native model in the bottom bar.
+  Switch to Orb leaves the saved Claude conversation; remove launch-default controls.
+
+- Starting Claude Sessions now prepares the SDK automatically, reuses it thereafter, and shows concise setup failures; remove the separate installation action and redundant default toggle.
+
+- Add opt-in Claude Sessions through the official Claude Agent SDK: native tools, streamed replies,
+  explicit session resume/fork, cancellation and local/Bridge permission requests. `/claude` installs
+  the optional SDK and starts or configures sessions; credentials stay with the native Claude CLI.
 
 ## [0.8.0] - 2026-09-21
 

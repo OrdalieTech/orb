@@ -505,6 +505,8 @@ func TestUpdateCommandRouting(t *testing.T) {
 		{argv: []string{"update"}, wantOut: "<upgrade block>\n", wantSelf: 1},
 		{argv: []string{"update", "--self"}, wantOut: "<upgrade block>\n", wantSelf: 1},
 		{argv: []string{"update", "orb"}, wantOut: "<upgrade block>\n", wantSelf: 1},
+		{argv: []string{"upgrade"}, wantOut: "<upgrade block>\n", wantSelf: 1},
+		{argv: []string{"upgrade", "--models"}, wantOut: "Model catalogs refreshed\n"},
 		{argv: []string{"update", "--offline"}, wantOut: "<upgrade block>\n", wantSelf: 1, offline: true},
 		{argv: []string{"update", "--all"}, wantOut: "All packages up to date.\n<upgrade block>\n", wantSelf: 1},
 		// The package and catalog routes never touch the binary.
@@ -536,6 +538,7 @@ func TestUpdateHelpDescribesTheDirectUpgrade(t *testing.T) {
 	setupPackageCLI(t)
 	_, stdout, _ := runPackageCLI(t, []string{"update", "--help"})
 	if !strings.Contains(stdout, "Update orb itself") || !strings.Contains(stdout, "--offline") ||
+		!strings.Contains(stdout, "Alias: orb upgrade [target]") ||
 		!strings.Contains(stdout, "orb update --all        Update packages, then the orb binary") {
 		t.Fatalf("update help = %q", stdout)
 	}
