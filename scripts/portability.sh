@@ -27,9 +27,14 @@ for target in $native_targets; do
 done
 
 # The iOS linker requires cgo, so the app shell links the core as a library;
-# type-checking the module is the Orb-side contract.
-echo "portability: ios/arm64 (type-check)"
-GOOS=ios GOARCH=arm64 CGO_ENABLED=1 go vet $(GOOS=ios GOARCH=arm64 CGO_ENABLED=1 vet_packages)
+# type-checking the module is the Orb-side contract. runtime/cgo needs the iOS
+# SDK, which only macOS hosts have, so CI checks it in the macOS job.
+if [ "$(go env GOHOSTOS)" = darwin ]; then
+	echo "portability: ios/arm64 (type-check)"
+	GOOS=ios GOARCH=arm64 CGO_ENABLED=1 go vet $(GOOS=ios GOARCH=arm64 CGO_ENABLED=1 vet_packages)
+else
+	echo "portability: ios/arm64 skipped: its cgo runtime needs the macOS toolchain"
+fi
 
 for os in js wasip1; do
 	echo "portability: $os/wasm"
