@@ -26,22 +26,27 @@ function request(message, signal) {
 function ask(title, choices, signal) { return request({ type: 'input', title, choices }, signal); }
 async function run(config) {
   const { query } = await import(pathToFileURL(config.sdk));
+  let permissionMode = config.permissionMode === 'plan' ? 'plan' : 'default';
   const options = {
     cwd: config.cwd, pathToClaudeCodeExecutable: config.claude,
     model: config.model === "default" ? undefined : config.model, includePartialMessages: true,
     systemPrompt: { type: 'preset', preset: 'claude_code' },
-    permissionMode: 'default',
+    permissionMode,
     hooks: { PreToolUse: [{ timeout: 86400, hooks: [async (input, toolID, { signal }) => {
       if (input.tool_name === 'AskUserQuestion' || input.tool_name === 'ExitPlanMode') return {};
       try {
         const result = await request({ type: 'tool', tool: input.tool_name, args: input.tool_input,
           tool_id: toolID, cwd: input.cwd }, signal);
-        if (!result.decision) return {};
+        if (!result.decision || (permissionMode === 'plan' && result.decision === 'allow')) return {};
         return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: result.decision,
           permissionDecisionReason: result.reason } };
       } catch { return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
         permissionDecisionReason: 'Orb permission check did not complete' } }; }
     }] }] },
+    onElicitation: async (input, { signal }) => {
+      try { return await request({ type: 'elicitation', elicitation: input }, signal); }
+      catch { return { action: 'cancel' }; }
+    },
     canUseTool: async (name, input, { signal }) => {
       try {
         if (name === 'AskUserQuestion') {
@@ -81,7 +86,7 @@ async function run(config) {
   if (config.resume) options.resume = config.resume;
   if (config.fork) { options.forkSession = true; options.sessionId = config.session; options.resumeSessionAt = config.at; }
   else if (!config.resume) options.sessionId = config.session;
-  // Keep the input stream open for permission callbacks until the native result.
+  // Keep permission callbacks available until native foreground and background work completes.
   let release;
   const finished = new Promise(resolve => { release = resolve; });
   async function* input() {
@@ -91,9 +96,25 @@ async function run(config) {
   try {
     active = query({ prompt: input(), options });
     if (cancelled) { await active.interrupt(); return; }
+    const tasks = new Set();
+    let finishedTurn = false, released = false, levelReported = false;
     for await (const event of active) {
+      if (event.type === 'system') {
+        if (event.permissionMode) permissionMode = event.permissionMode;
+        if (event.subtype === 'background_tasks_changed') {
+          levelReported = true;
+          tasks.clear();
+          for (const task of event.tasks) if (!task.ambient) tasks.add(task.task_id);
+        } else if (!levelReported && event.subtype === 'task_started' && event.is_backgrounded && !event.ambient && !event.skip_transcript) {
+          tasks.add(event.task_id);
+        } else if (!levelReported && event.subtype === 'task_notification') {
+          tasks.delete(event.task_id);
+        }
+      }
+      if (tasks.size > 1024) throw new Error('Too many native background tasks');
       await send({ type: 'sdk', event });
-      if (event.type === 'result') {
+      if (event.type === 'result') finishedTurn = true;
+      if (finishedTurn && tasks.size === 0 && !released) {
         let timeout;
         try {
           const usage = await Promise.race([
@@ -103,7 +124,8 @@ async function run(config) {
           await send({ type: 'context', event: { maxTokens: usage.maxTokens, totalTokens: usage.totalTokens, percentage: usage.percentage } });
         } catch { /* Context telemetry must not fail a completed turn. */ }
         finally { clearTimeout(timeout); }
-        release(); break;
+        released = true;
+        release();
       }
     }
   } finally {

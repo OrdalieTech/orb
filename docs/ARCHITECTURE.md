@@ -289,8 +289,13 @@ projection and plugin-owned `claude-sessions` checkpoint entries in its normal s
 explicit, never directory-wide `continue`. A copied checkpoint forks to the new Orb session UUID
 at the last confirmed native message; it never appends to the original conversation. Native errors
 and list-price accounting remain native metadata, not asserted subscription invoices. Each active
-turn owns one subprocess; idle sessions own none. Independent instances have independent drivers.
-Steer/follow-up queues are delivered between complete native turns. Orb extension tools and context
+turn owns one subprocess until its non-ambient background tasks finish and the SDK stream drains;
+idle sessions own none. Independent instances have independent drivers. Steer/follow-up queues are
+delivered between complete native turns. Native lifecycle/progress events become existing engine
+messages and tool updates; MCP forms and URL confirmations become shared execution-bound questions.
+Clients and transports never parse Claude SDK payloads. Native plan/default mode is plugin-owned
+session metadata; manual compaction is a native prompt. SDK upgrades use validated, staged,
+versioned installations so running sessions retain their module path. Orb extension tools and context
 rewrites are not injected into Claude; Claude's own tools, skills, settings and MCP remain native.
 
 `SessionRuntime.RequestInput` is the small, vendor-neutral approval/input seam. A question has an

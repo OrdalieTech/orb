@@ -187,8 +187,11 @@ disables this optional capability. There is no fallback to another account or mo
 
 Advanced settings use `plugins.claude-sessions`: `model`, `node`, `claude`, and `sdk`
 (the absolute path to the official package's `sdk.mjs`). The standard install goes into
-`<agent-dir>/plugins/claude-sessions`, pinned to SDK 0.3.278. The SDK and native executable are not
-bundled in Orb's static binary. Installation happens when starting a Claude session; opening settings installs nothing.
+`<agent-dir>/plugins/claude-sessions/sdk-0.3.278`, pinned to SDK 0.3.278. Setup validates the
+installed version, stages replacements before publishing them, and preserves older installations
+used by running sessions. A failed download can be retried. Custom SDK paths remain host-owned.
+The SDK and native executable are not bundled in Orb's static binary. Installation happens when
+starting a Claude session; opening settings installs nothing.
 
 The same host can attach with `--bridge <profile> --instance <alias>`. Pairing and routing are
 unchanged; the remote device needs neither Node nor Claude credentials. A pending permission or
@@ -202,7 +205,15 @@ Clarifying questions retain their descriptions and
 previews; choose one answer, write your own, or toggle several choices and confirm them. Multiple
 questions are presented in order. Dismissing a question sends a denial rather than inventing an
 answer. Native plan approvals and readable question/task/tool summaries stay inside the plugin;
-Orb never executes the presentation-only tool definitions.
+Orb never executes the presentation-only tool definitions. MCP form requests use the same shared
+questions, validating each answer against the requested schema. MCP URL requests show the link on
+the controlling client and require explicit confirmation; Orb never opens a browser on the execution
+host. Cancelling a request returns cancellation to the SDK.
+
+`/claude plan` and `/claude normal` select the native permission mode for the current idle session;
+plan mode is marked in the existing footer status. Orb permission rules cannot override native plan
+restrictions. `/claude compact` submits Claude's own compaction command, preserving its native
+session. These actions are also available in the `/claude` menu.
 
 When the **Permissions** plugin is enabled, Claude's native pre-tool hooks use its existing rules,
 approval cache and audit log. Native tool names and paths are normalized only for policy evaluation;
@@ -221,11 +232,15 @@ percentages remain an explicit status rather than a fabricated number. Another C
 consume quota between updates. Orb never reads native credentials. After each reply the plugin requests the SDK context summary
 (without per-category token-count API calls) and displays used tokens and context percentage as `24k|12%`, matching
 Orb’s compact footer after the working directory. The plugin supplies context through the generic
-executor telemetry callback; Orb owns the layout. Context metadata survives session resume;
-telemetry failure never fails a turn.
+executor telemetry callback; Orb owns the layout. Context metadata survives session resume, but
+new work, model changes and compaction invalidate the previous reading. Failed refreshes leave
+context unknown and never fail a turn.
 
 Claude owns native tools, skills, MCP, project settings and compaction. Orb's tool plugins are not
 injected into that agent loop. Queued steer/follow-up messages enter at native turn boundaries.
+A turn stays active until its non-ambient background tasks complete and the SDK stream drains;
+cancellation interrupts that work. Retry, compaction and task notices use ordinary transcript events,
+and tool/task progress uses bounded updates. Subagent transcripts remain separate.
 Orb stores its transcript projection and private checkpoint metadata in SQLite; the native Claude
 transcript remains on the execution host and is required for resume. Pi export does not make native
 Claude context portable. Interrupted operations are never automatically replayed.

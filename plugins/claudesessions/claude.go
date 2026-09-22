@@ -11,8 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +24,8 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/sandbox"
 )
@@ -195,8 +200,11 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	if err != nil {
 		return err
 	}
+	if _, err := d.options.Manager.AppendCustomEntry(Name+".context", nil); err != nil {
+		return err
+	}
 	id := d.options.Manager.GetSessionID()
-	start := map[string]any{"type": "start", "sdk": d.options.SDK, "claude": d.options.Claude, "cwd": d.options.Manager.GetCWD(), "session": id, "model": model.ID}
+	start := map[string]any{"type": "start", "sdk": d.options.SDK, "claude": d.options.Claude, "cwd": d.options.Manager.GetCWD(), "session": id, "model": model.ID, "permissionMode": nativeMode(d.options.Manager)}
 	var info modelInfo
 	_ = json.Unmarshal(model.Compat, &info)
 	if info.Adaptive {
@@ -302,17 +310,18 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	var readErr error
 	for scanner.Scan() {
 		var frame struct {
-			Type      string          `json:"type"`
-			ID        string          `json:"id"`
-			Title     string          `json:"title"`
-			Choices   []string        `json:"choices"`
-			Event     json.RawMessage `json:"event"`
-			Message   string          `json:"message"`
-			Tool      string          `json:"tool"`
-			ToolID    string          `json:"tool_id"`
-			Args      map[string]any  `json:"args"`
-			CWD       string          `json:"cwd"`
-			Questions json.RawMessage `json:"questions"`
+			Type        string          `json:"type"`
+			ID          string          `json:"id"`
+			Title       string          `json:"title"`
+			Choices     []string        `json:"choices"`
+			Event       json.RawMessage `json:"event"`
+			Message     string          `json:"message"`
+			Tool        string          `json:"tool"`
+			ToolID      string          `json:"tool_id"`
+			Args        map[string]any  `json:"args"`
+			CWD         string          `json:"cwd"`
+			Questions   json.RawMessage `json:"questions"`
+			Elicitation json.RawMessage `json:"elicitation"`
 		}
 		if readErr = json.Unmarshal(scanner.Bytes(), &frame); readErr != nil {
 			break
@@ -363,6 +372,9 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				}
 			}
 			readErr = write(map[string]any{"type": "reply", "id": frame.ID, "value": map[string]string{"decision": decision, "reason": reason}})
+		case "elicitation":
+			response := d.elicit(ctx, frame.Elicitation)
+			readErr = write(map[string]any{"type": "reply", "id": frame.ID, "value": response})
 		case "questions":
 			request, err := nativeQuestions(frame.Questions)
 			result := questions.Result{Cancelled: true}
@@ -411,7 +423,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	if !translator.result {
 		return errors.New("claude SDK exited without a result; execution outcome is unknown")
 	}
-	return nil
+	return translator.failure
 }
 
 type translation struct {
@@ -424,6 +436,8 @@ type translation struct {
 	last               *ai.AssistantMessage
 	results            []*ai.ToolResultMessage
 	result             bool
+	failure            error
+	progress           map[string]int
 }
 
 func (t *translation) save(at string) error {
@@ -478,6 +492,68 @@ func (t *translation) event(raw json.RawMessage) error {
 		_, err := t.driver.options.Manager.AppendCustomEntry(Name+".limits", event.Limits)
 		return err
 	case "system":
+		var activity struct {
+			PermissionMode string `json:"permissionMode"`
+			ToolID         string `json:"tool_use_id"`
+			Usage          struct {
+				Duration float64 `json:"duration_ms"`
+			}
+			Status, Description, Summary string
+			Ambient                      bool
+			SkipTranscript               bool `json:"skip_transcript"`
+			Attempt                      int
+			MaxRetries                   int `json:"max_retries"`
+			RetryDelay                   int `json:"retry_delay_ms"`
+			Compact                      struct {
+				Pre  int64  `json:"pre_tokens"`
+				Post *int64 `json:"post_tokens"`
+			} `json:"compact_metadata"`
+		}
+		if err := json.Unmarshal(raw, &activity); err != nil {
+			return err
+		}
+		if activity.PermissionMode != "" {
+			mode := "default"
+			if activity.PermissionMode == "plan" {
+				mode = "plan"
+			}
+			if mode != nativeMode(t.driver.options.Manager) {
+				if _, err := t.driver.options.Manager.AppendCustomEntry(Name+".mode", mode); err != nil {
+					return err
+				}
+			}
+		}
+		switch e.Subtype {
+		case "compact_boundary":
+			if _, err := t.driver.options.Manager.AppendCustomEntry(Name+".context", nil); err != nil {
+				return err
+			}
+			text := fmt.Sprintf("Claude compacted context from %d tokens", activity.Compact.Pre)
+			if activity.Compact.Post != nil {
+				text += fmt.Sprintf(" to %d", *activity.Compact.Post)
+			}
+			return t.notice(text)
+		case "api_retry":
+			return t.notice(fmt.Sprintf("Claude retry %d/%d in %.1fs", activity.Attempt, activity.MaxRetries, float64(activity.RetryDelay)/1000))
+		case "status":
+			if activity.Status == "compacting" {
+				return t.notice("Claude is compacting context…")
+			}
+		case "task_progress":
+			text := activity.Summary
+			if text == "" {
+				text = activity.Description
+			}
+			return t.toolProgress(activity.ToolID, activity.Usage.Duration/1000, text)
+		case "task_started", "task_notification":
+			if activity.Ambient || activity.SkipTranscript {
+				return nil
+			}
+			if e.Subtype == "task_started" {
+				return t.notice("Claude task started: " + activity.Description)
+			}
+			return t.notice("Claude task " + activity.Status + ": " + activity.Summary)
+		}
 		if e.Subtype == "init" {
 			var metadata struct {
 				Session        string   `json:"session_id"`
@@ -495,6 +571,15 @@ func (t *translation) event(raw json.RawMessage) error {
 			}
 			return t.save("")
 		}
+	case "tool_progress":
+		var progress struct {
+			ID      string  `json:"tool_use_id"`
+			Elapsed float64 `json:"elapsed_time_seconds"`
+		}
+		if err := json.Unmarshal(raw, &progress); err != nil {
+			return err
+		}
+		return t.toolProgress(progress.ID, progress.Elapsed, fmt.Sprintf("Running · %.0fs", progress.Elapsed))
 	case "stream_event":
 		return t.stream(e.Event)
 	case "assistant":
@@ -565,6 +650,7 @@ func (t *translation) event(raw json.RawMessage) error {
 				}
 				t.results = append(t.results, result)
 				delete(t.tools, block.ID)
+				delete(t.progress, block.ID)
 			}
 		}
 		if e.UUID != "" {
@@ -577,7 +663,7 @@ func (t *translation) event(raw json.RawMessage) error {
 			return err
 		}
 		if e.IsError || e.Subtype != "success" {
-			return fmt.Errorf("claude %s: %s", e.Subtype, strings.Join(e.Errors, "; "))
+			t.failure = fmt.Errorf("claude %s: %s", e.Subtype, strings.Join(e.Errors, "; "))
 		}
 		return t.endTurn()
 	}
@@ -727,4 +813,154 @@ func checkSandbox(mode sandbox.Mode) error {
 		return errors.New("claude sessions cannot enforce Orb filesystem containment; choose a standard Orb provider or explicitly configure danger-full-access")
 	}
 	return nil
+}
+
+func (t *translation) toolProgress(id string, elapsed float64, text string) error {
+	name, ok := t.tools[id]
+	if !ok {
+		return nil
+	}
+	if t.progress == nil {
+		t.progress = map[string]int{}
+	}
+	bucket := int(elapsed / 5)
+	if bucket <= t.progress[id] {
+		return nil
+	}
+	t.progress[id] = bucket
+	return t.emit(t.ctx, engine.ToolExecutionUpdateEvent{ToolCallID: id, ToolName: name, PartialResult: engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: fmt.Sprintf("%.512s", strings.Join(strings.Fields(text), " "))}}}})
+}
+
+func (t *translation) notice(text string) error {
+	message := &harness.CustomMessage{Role: "custom", CustomType: Name + ".activity", Content: fmt.Sprintf("%.512s", strings.Join(strings.Fields(text), " ")), Display: true, Timestamp: time.Now().UnixMilli()}
+	if err := t.emit(t.ctx, engine.MessageStartEvent{Message: message}); err != nil {
+		return err
+	}
+	return t.emit(t.ctx, engine.MessageEndEvent{Message: message})
+}
+
+// Elicitation answers stay on the request pipe, never in Orb's transcript metadata.
+func (d *Driver) elicit(ctx context.Context, raw json.RawMessage) map[string]any {
+	cancel := map[string]any{"action": "cancel"}
+	var request struct {
+		ServerName, Message, Mode, URL string
+		Schema                         json.RawMessage `json:"requestedSchema"`
+	}
+	if len(raw) > 64<<10 || json.Unmarshal(raw, &request) != nil {
+		return cancel
+	}
+	if request.Mode == "url" {
+		link, err := url.Parse(request.URL)
+		if err != nil || (link.Scheme != "https" && link.Scheme != "http") || link.Host == "" || link.User != nil {
+			return cancel
+		}
+		answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{{ID: "url", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.1500s\n\nOpen this link in your browser, complete the request, then continue:\n%s", request.Message, request.URL), Options: []questions.Option{{Label: "Continue"}, {Label: "Decline"}}}}}, d.options.Ask)
+		if err != nil || answer.Cancelled {
+			return cancel
+		}
+		if slices.Equal(answer.Answers[0].Selected, []string{"Continue"}) {
+			return map[string]any{"action": "accept"}
+		}
+		return map[string]any{"action": "decline"}
+	}
+	if request.Mode != "" && request.Mode != "form" {
+		return cancel
+	}
+	var schema struct {
+		Type       string
+		Properties map[string]json.RawMessage
+		Required   []string
+	}
+	if json.Unmarshal(request.Schema, &schema) != nil || schema.Type != "object" || len(schema.Properties) > 32 {
+		return cancel
+	}
+	if len(schema.Properties) == 0 {
+		answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{{ID: "confirm", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.4000s", request.Message), Options: []questions.Option{{Label: "Continue"}, {Label: "Decline"}}}}}, d.options.Ask)
+		if err != nil || answer.Cancelled {
+			return cancel
+		}
+		if slices.Equal(answer.Answers[0].Selected, []string{"Continue"}) {
+			return map[string]any{"action": "accept", "content": map[string]any{}}
+		}
+		return map[string]any{"action": "decline"}
+	}
+	keys := make([]string, 0, len(schema.Properties))
+	for key := range schema.Properties {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	content := map[string]any{}
+	for _, key := range keys {
+		var field struct {
+			Type, Title, Description string
+			Enum                     []string
+			Items                    struct{ Enum []string }
+		}
+		if json.Unmarshal(schema.Properties[key], &field) != nil {
+			return cancel
+		}
+		label := field.Title
+		if label == "" {
+			label = key
+		}
+		q := questions.Question{ID: "field", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.800s\n\n%.256s\n%.1500s", request.Message, label, field.Description)}
+		enum := field.Enum
+		if field.Type == "boolean" {
+			enum = []string{"true", "false"}
+		}
+		if field.Type == "array" && len(field.Items.Enum) > 0 && len(field.Items.Enum) <= 7 {
+			enum = field.Items.Enum
+			q.MultiSelect = true
+		}
+		if len(enum) <= 7 {
+			for _, option := range enum {
+				q.Options = append(q.Options, questions.Option{Label: option})
+			}
+		}
+		skip := "Skip this field"
+		for slices.Contains(enum, skip) {
+			skip += " ·"
+		}
+		optional := !slices.Contains(schema.Required, key)
+		if optional {
+			q.Options = append(q.Options, questions.Option{Label: skip})
+		}
+		if field.Type == "array" || field.Type == "object" {
+			q.Question += "\nFor a custom answer, enter JSON."
+		}
+		base := q.Question
+		for {
+			if ctx.Err() != nil {
+				return cancel
+			}
+			answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{q}}, d.options.Ask)
+			if err != nil || answer.Cancelled {
+				return cancel
+			}
+			a := answer.Answers[0]
+			if optional && slices.Equal(a.Selected, []string{skip}) {
+				break
+			}
+			var value any = a.Custom
+			if q.MultiSelect && a.Custom == "" {
+				value = a.Selected
+			} else if len(a.Selected) == 1 {
+				value = a.Selected[0]
+			} else if field.Type == "array" || field.Type == "object" {
+				_ = json.Unmarshal([]byte(a.Custom), &value)
+			}
+			validated, err := jsonschema.Validate(jsonschema.Schema(schema.Properties[key]), value)
+			if err != nil {
+				q.Question = base + "\n\nInvalid answer: " + fmt.Sprintf("%.256s", err.Error())
+				continue
+			}
+			content[key] = validated
+			break
+		}
+	}
+	validated, err := jsonschema.Validate(jsonschema.Schema(request.Schema), content)
+	if err != nil {
+		return cancel
+	}
+	return map[string]any{"action": "accept", "content": validated}
 }
