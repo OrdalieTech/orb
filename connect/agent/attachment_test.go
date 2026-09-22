@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/OrdalieTech/orb/ai"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,5 +133,53 @@ func TestSnapshotExpiresWhenLocalTranscriptResets(t *testing.T) {
 	}
 	if _, err = a.observe("", snapshot.ID, ""); connect.Code(err) != "cursor_expired" {
 		t.Fatal(err)
+	}
+}
+
+func BenchmarkBridgeStreaming(b *testing.B) {
+	for _, attached := range []bool{false, true} {
+		name := "detached"
+		if attached {
+			name = "attached"
+		}
+		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
+			cwd := b.TempDir()
+			manager, err := session.InMemory(cwd)
+			if err != nil {
+				b.Fatal(err)
+			}
+			provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(4096)})
+			host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: b.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer host.Dispose(ctx)
+			var attachment *Attachment
+			if attached {
+				attachment, err = Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(connect.Request) bool { return true }})
+				if err != nil {
+					b.Fatal(err)
+				}
+				defer func() { _ = attachment.Close() }()
+			}
+			message := faux.AssistantMessage(strings.Repeat("code with <tags> and Unicode λ\n", 2048))
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				host.Session().Agent().SetMessages(nil)
+				provider.SetResponses([]faux.ResponseStep{message})
+				if attachment != nil {
+					attachment.mu.Lock()
+					attachment.messages = nil
+					attachment.messageBytes = 0
+					attachment.mu.Unlock()
+				}
+				b.StartTimer()
+				if err := host.Session().Agent().Prompt(ctx, "stream"); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

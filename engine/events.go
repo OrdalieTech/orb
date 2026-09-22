@@ -195,15 +195,38 @@ func (event MessageStartEvent) MarshalJSON() ([]byte, error) {
 }
 
 func (event MessageUpdateEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type                  AgentEventType           `json:"type"`
-		AssistantMessageEvent ai.AssistantMessageEvent `json:"assistantMessageEvent"`
-		Message               AgentMessage             `json:"message"`
-	}{
-		Type:                  EventMessageUpdate,
-		AssistantMessageEvent: event.AssistantMessageEvent,
-		Message:               event.Message,
-	})
+	nested, err := ai.Marshal(event.AssistantMessageEvent)
+	if err != nil {
+		return nil, err
+	}
+	var fields struct {
+		Partial json.RawMessage `json:"partial"`
+	}
+	if len(nested) > 0 && nested[0] == '{' {
+		if err := json.Unmarshal(nested, &fields); err != nil {
+			return nil, err
+		}
+	}
+	var message json.RawMessage
+	// The loop repeats the same partial in both positions of the wire event.
+	if fields.Partial != nil {
+		if partial, ok := assistantEventPartial(event.AssistantMessageEvent); ok && event.Message == partial {
+			message = fields.Partial
+		}
+	}
+	if message == nil {
+		message, err = ai.Marshal(event.Message)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// Both values are already encoded with the wire escaping rules.
+	encoded := make([]byte, 0, len(nested)+len(message)+64)
+	encoded = append(encoded, `{"type":"message_update","assistantMessageEvent":`...)
+	encoded = append(encoded, nested...)
+	encoded = append(encoded, `,"message":`...)
+	encoded = append(encoded, message...)
+	return append(encoded, '}'), nil
 }
 
 func (event MessageEndEvent) MarshalJSON() ([]byte, error) {
