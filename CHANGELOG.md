@@ -6,19 +6,11 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
-- Let Anthropic OAuth callback responses finish before shutting down the local login server.
+## [0.9.0] - 2026-09-22
 
-- Default enabled permissions to rule-based auto approval; expose `--auto` and manual mode in `/permissions`, preserving denials and filesystem containment without AI approval.
-
-- Restore compiler inlining in the JSON hot path while keeping release binaries within the 55 MB budget.
-
-- Reuse encoded streaming messages in Bridge events and snapshots to reduce serialization under the engine lock.
-
-- Preserve completed Markdown render caches and coalesce assistant presentation updates until rendering.
-
-- Reduce streamed tool-argument parsing and model-catalog allocation costs without changing JSON wire formats.
-
-- Harden permissions: cancellation and missing UI deny by default, explicit consent stays scoped, native Claude approvals remain intact, and configured filesystem containment covers file tools and child agents even with extensions disabled.
+Orb adds optional native Claude Sessions, a shared question interface and rule-based permission
+auto mode. Streaming now uses fewer JSON passes and retains completed Markdown render caches.
+The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
 
 ### Claude Sessions
 
@@ -55,6 +47,55 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   Providers. Separate native tool execution from Wasm builds so injected tools can run without a
   host filesystem.
 - `orb upgrade` is an alias for `orb update`, with the same routes and flags.
+
+### Permissions and login reliability
+
+- Permissions remains opt-in. When enabled, its default mode is now `auto`: resolve asks through
+  rules without an AI model or approval prompt, while preserving explicit denials, guards,
+  cancellation and configured filesystem containment. Existing explicit mode settings are retained.
+- Use `--auto` for a per-run override, or `/permissions` to choose the saved mode. Set
+  `permissions.mode` to `enforce` for manual approval prompts; `log` remains audit-only.
+  `--auto` refuses `--no-extensions` because the permissions plugin must be available.
+- Refuse unresolved compound or expanding shell syntax under scoped restrictions in auto mode;
+  explicit whole-tool or exact-command allows remain available. Rules match command text and
+  cannot infer everything an invoked program will do.
+- Keep manual consent scoped to the tool, arguments, directory and session. Missing UI,
+  cancellation and dismissal deny; native Claude restrictions remain intact. Configured native
+  filesystem containment covers file tools and child agents even with extensions disabled.
+- Finish the local Anthropic OAuth callback response before shutting down its server, preventing
+  the browser from receiving a truncated success page after a fast token exchange.
+
+### Streaming performance
+
+- Decode ordinary unescaped JSON strings directly and reuse normalized partial tool arguments
+  across Anthropic, Mistral Conversations and Pi Messages. Preserve property order, number spelling
+  and lone surrogates; keep the public arguments map available.
+- Prepare assistant components at the render boundary and retain completed Markdown blocks.
+  Own pending presentation data so later provider updates cannot race with rendering. A single
+  growing Markdown block still needs a full parse.
+- Preallocate merged model catalogs, reuse encoded Bridge partials and restore compiler inlining
+  in three JSON packages while keeping the 55 MB release-binary budget.
+- Local Apple M4 benchmarks measured plain streamed arguments at **6.22 → 2.88 ms**, escaped code
+  at **7.18 → 4.69 ms**, and **40–44% fewer allocated bytes**. Registry allocations fell **42%**.
+  Updating a small tail after a completed 256 KiB Markdown block fell from **9.77 ms to about
+  19 µs** per frame. Attached Bridge workloads used about **10% fewer allocated bytes**, with
+  a **5–15% runtime improvement** across repeated runs. These are workload-specific measurements
+  of runtime and allocation churn, not total process RAM or model-generation speed.
+
+### Upgrade and verification
+
+Go embedders must update moved capability imports: `bridge/`, `memory/`, `agent/mcp/` and
+`agent/extensions/herdr/` now live under `plugins/`; CLI plugin assembly moved from `agent/plugins/`
+to `agent/assembly/`. Plugin IDs and stored data are unchanged. Native SQLite storage remains as
+introduced in 0.8.0; no new state migration is required for this release.
+
+Release gates cover build, vet/lint, race tests, byte conformance, Linux fixture regeneration and
+the upstream RPC suite. Packaging includes four static Linux/macOS binaries, checksums and a
+source archive that rebuilds without Git metadata. The release candidate's largest binary is
+**54.51 MB**; all four remain below **55 MB**. On an Apple M4, 20 measured warm-cache launches
+had medians of **12.04 ms** for `--version` and **15.40 ms** for `--help`. Isolated macOS candidate
+checks cover migration, original-file preservation, export, backup and restore. The inherited
+provider/OAuth and real-terminal coverage deferrals remain documented in the release criteria.
 
 ## [0.8.0] - 2026-09-21
 
