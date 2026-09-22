@@ -11,8 +11,8 @@ import (
 
 	"github.com/OrdalieTech/orb/accounts"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
-	"github.com/OrdalieTech/orb/usage"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
 )

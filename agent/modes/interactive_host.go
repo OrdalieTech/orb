@@ -9,7 +9,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/usage"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // InteractiveSessionHost owns the live SessionRuntime behind the interactive

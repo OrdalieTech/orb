@@ -22,11 +22,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/hosts/native"
-	transport "github.com/OrdalieTech/orb/bridge/transports/tailcat"
 	"github.com/OrdalieTech/orb/connect"
 	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/plugins/bridge"
+	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
+	transport "github.com/OrdalieTech/orb/plugins/bridge/transports/tailcat"
 )
 
 func validBridgeName(s string) bool {

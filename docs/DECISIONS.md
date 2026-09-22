@@ -40,7 +40,7 @@ Nine paradigms. Everything else in this record is operational memory.
   builds, and Node as fixture-extraction tooling.
 - **P3 — Everything Orb-original is a capability module** *(promotes D16; D32–D34 are instances)*.
   A capability ships as: a seam package (interfaces, no upward imports), an instance-scoped
-  attachment at the lowest applicable layer (the `memory/` + `memory/agent/` shape), and a
+  attachment at the lowest applicable layer (the `plugins/memory/` + `plugins/memory/agent/` shape), and a
   default-off assembly row adapting it into the CLI through the public extension API. Capability
   packages hold no package-level mutable state and read no environment or home directory
   implicitly; N instances with N configurations must coexist in one process. The core is never
@@ -155,7 +155,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
   execution history. The durable parts (trunk-based, green commits, fixtures-first, trim passes)
   live in AGENTS.md and RELEASE-CRITERIA.md.
 - **D32, D33, D34 — bundled-but-dormant plugins, permissions, memory** → instances of P3/P4.
-  Shipped behavior unchanged; `memory/` (+ `memory/agent/`) remains the reference
+  Shipped behavior unchanged; `plugins/memory/` (+ `plugins/memory/agent/`) remains the reference
   capability-module shape.
 
 ## Divergence ledger

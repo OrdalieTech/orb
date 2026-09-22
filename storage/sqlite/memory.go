@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/uuidv7"
-	"github.com/OrdalieTech/orb/memory"
+	"github.com/OrdalieTech/orb/plugins/memory"
 )
 
 type sqlConnection interface {
@@ -117,7 +118,7 @@ func (store *Memory) Transact(ctx context.Context, fn func(memory.Store) error) 
 	return tx.Commit()
 }
 func (store *Memory) importJournal(ctx context.Context, data []byte) error {
-	items, err := memory.ParseJournal(data)
+	items, err := filestore.ParseJournal(data)
 	if err != nil {
 		return err
 	}

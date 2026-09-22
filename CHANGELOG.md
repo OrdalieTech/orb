@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Group optional Go capabilities under `plugins/`, split bundled plugins into independent packages, and isolate memory file storage and quota footer adapters. Go import paths change; plugin IDs and stored data remain unchanged.
+
 - `orb upgrade` is an alias for `orb update`, same routes and flags.
 
 - Claude questions now open visible dialogs with descriptions, custom answers and multi-selection;

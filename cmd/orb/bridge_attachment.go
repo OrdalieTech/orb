@@ -14,11 +14,11 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/hosts/native"
 	"github.com/OrdalieTech/orb/connect"
 	attach "github.com/OrdalieTech/orb/connect/agent"
 	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/plugins/bridge"
+	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 )
 
 type bridgeInteractiveHost struct{ *interactiveSessionHost }

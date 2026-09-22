@@ -27,7 +27,6 @@ var allowedImports = map[string][]string{
 	"ai":       {"ai", "internal"},
 	"engine":   {"engine", "ai", "internal"},
 	"tui":      {"tui", "internal"},
-	"memory":   {"memory", "engine", "ai", "internal"},
 	"sandbox":  {"sandbox", "internal"},
 }
 
@@ -36,7 +35,7 @@ var allowedImports = map[string][]string{
 // contract is exactly for them). Everything else must stay headless so a
 // binary that skips the interface contains none of its code (P1).
 var tuiImporters = []string{
-	"tui/", "cmd/", "agent/modes/", "agent/plugins/", "agent/mcp/", "agent/extensions/", "agent/examples/",
+	"tui/", "cmd/", "agent/modes/", "agent/assembly/", "plugins/tasks/", "plugins/questions/", "plugins/permissions/", "plugins/mcp/", "agent/extensions/", "agent/examples/",
 }
 
 var skipDirs = map[string]bool{
@@ -73,20 +72,24 @@ func TestLayerEdges(t *testing.T) {
 		layer, _, _ := strings.Cut(relative, "/")
 		for _, spec := range parsed.Imports {
 			target := strings.Trim(spec.Path.Value, `"`)
-			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "bridge/transports/tailcat/") {
+			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "plugins/bridge/transports/tailcat/") {
 				violations = append(violations, relative+" imports Tailcat outside its native transport adapter")
 			}
 			if !strings.HasPrefix(target, module) {
 				continue
 			}
 			targetPath := strings.TrimPrefix(target, module)
-			if (layer == "agent" || layer == "ai" || layer == "engine") && (strings.HasPrefix(targetPath, "bridge") || strings.HasPrefix(targetPath, "connect")) {
+			if (layer == "agent" || layer == "ai" || layer == "engine") && (strings.HasPrefix(targetPath, "plugins/bridge") || strings.HasPrefix(targetPath, "connect")) {
 				violations = append(violations, relative+" imports optional bridge assembly")
 			}
-			if (strings.HasPrefix(relative, "connect/") && !strings.HasPrefix(relative, "connect/agent/")) || (strings.HasPrefix(relative, "bridge/") && !strings.HasPrefix(relative, "bridge/agent/") && !strings.HasPrefix(relative, "bridge/hosts/") && !strings.HasPrefix(relative, "bridge/transports/")) {
-				if strings.HasPrefix(targetPath, "agent/") || targetPath == "agent" || strings.HasPrefix(targetPath, "bridge/hosts/") || strings.HasPrefix(targetPath, "bridge/transports/") {
+			if (strings.HasPrefix(relative, "connect/") && !strings.HasPrefix(relative, "connect/agent/")) || (strings.HasPrefix(relative, "plugins/bridge/") && !strings.HasPrefix(relative, "plugins/bridge/agent/") && !strings.HasPrefix(relative, "plugins/bridge/hosts/") && !strings.HasPrefix(relative, "plugins/bridge/transports/")) {
+				if strings.HasPrefix(targetPath, "agent/") || targetPath == "agent" || strings.HasPrefix(targetPath, "plugins/bridge/hosts/") || strings.HasPrefix(targetPath, "plugins/bridge/transports/") {
 					violations = append(violations, relative+" imports host-specific code into portable core")
 				}
+			}
+			if (relative == "plugins/memory/memory.go" || strings.HasPrefix(relative, "plugins/memory/agent/")) &&
+				!hasAnyPrefix(targetPath, []string{"plugins/memory", "engine", "ai", "internal"}) {
+				violations = append(violations, relative+" imports "+targetPath+" outside the memory SDK layers")
 			}
 			targetLayer, _, _ := strings.Cut(targetPath, "/")
 			if allowed, restricted := allowedImports[layer]; restricted && !slices.Contains(allowed, targetLayer) {
@@ -149,4 +152,39 @@ func hasAnyPrefix(value string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+// These transitive checks keep optional adapters out of reusable capabilities.
+func TestCapabilityDependencies(t *testing.T) {
+	for _, tc := range []struct {
+		path      string
+		forbidden []string
+	}{
+		{"plugins/memory", []string{"/agent", "/engine", "/tui", "/plugins/memory/filestore", "/storage/sqlite"}},
+		{"plugins/memory/agent", []string{"/agent", "/tui", "/plugins/memory/filestore", "/plugins/memory/extension", "/storage/sqlite"}},
+		{"plugins/memory/extension", []string{"/agent/assembly", "/plugins/memory/filestore", "/storage/sqlite"}},
+		{"plugins/usage", []string{"/agent", "/engine", "/tui", "/plugins/usage/footer", "/storage/sqlite"}},
+		{"plugins/bridge", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/storage/sqlite"}},
+		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "./"+tc.path)
+			cmd.Dir = moduleRoot(t)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("dependencies: %v\n%s", err, output)
+			}
+			for dep := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
+				for _, forbidden := range tc.forbidden {
+					prefix := strings.TrimSuffix(module, "/") + forbidden
+					if dep == prefix || strings.HasPrefix(dep, prefix+"/") {
+						t.Errorf("%s links forbidden dependency %s", tc.path, dep)
+					}
+				}
+				if strings.HasPrefix(dep, "github.com/tailscale/") || strings.HasPrefix(dep, "tailscale.com/") {
+					t.Errorf("%s links native transport dependency %s", tc.path, dep)
+				}
+			}
+		})
+	}
 }
