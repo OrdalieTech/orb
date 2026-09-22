@@ -106,6 +106,7 @@ type TUI struct {
 	viewportBodyHeight  int
 	viewportBodyWidth   int
 	viewportFollow      bool
+	jumpButtonShown     bool
 	selection           mouseSelection
 	selectionScroll     selectionAutoScroll
 	selectionHandler    func(string)
@@ -646,6 +647,13 @@ func (ui *TUI) handleMouse(data string) bool {
 	}
 	if event.Type == MousePress {
 		ui.mouseCapture = nil
+	}
+	// The pill sits over transcript rows, so it must win before component dispatch.
+	if event.Type == MousePress && event.Button == 0 && !ui.selection.active && ui.jumpButtonHitLocked(event) {
+		ui.clearSelectionLocked()
+		ui.viewportFollow = true
+		ui.renderMu.Unlock()
+		return true
 	}
 	// Shift extends component text selections; Alt/Ctrl bypass clickable chrome.
 	dispatch := !ui.selection.active && !ui.selection.scrollbar && !event.Alt && !event.Ctrl
@@ -1659,6 +1667,10 @@ func (ui *TUI) renderViewport(width, height int) []string {
 	lines := make([]string, 0, height)
 	lines = body.appendRange(lines, bodyWidth, start, end)
 	lines = append(lines, make([]string, bodyHeight-len(lines))...)
+	ui.jumpButtonShown = end < bodyLines && bodyHeight > 0 && bodyWidth > jumpButtonWidth+2
+	if ui.jumpButtonShown {
+		lines[bodyHeight-1] = compositeLineAt(lines[bodyHeight-1], "\x1b[7m"+jumpButtonLabel+"\x1b[27m", bodyWidth-jumpButtonWidth-1, jumpButtonWidth, bodyWidth)
+	}
 	if top, size := scrollbar(bodyLines, bodyHeight, end); width > 1 && size > 0 {
 		for row := top; row < top+size; row++ {
 			if IsImageLine(lines[row]) {
@@ -1668,6 +1680,24 @@ func (ui *TUI) renderViewport(width, height int) []string {
 		}
 	}
 	return append(lines, chrome...)
+}
+
+// Reverse video keeps the pill legible under any theme without a new theme color.
+const jumpButtonLabel = " ↓ Jump to bottom "
+
+var jumpButtonWidth = VisibleWidth(jumpButtonLabel)
+
+func (ui *TUI) jumpButtonHitLocked(event MouseEvent) bool {
+	start := ui.viewportBodyWidth - jumpButtonWidth - 1
+	if !ui.jumpButtonShown || event.Row != ui.viewportBodyHeight-1 || event.Column < start || event.Column >= start+jumpButtonWidth {
+		return false
+	}
+	for _, box := range ui.mouseOverlays {
+		if event.Row >= box.row && event.Row < box.row+box.height && event.Column >= box.col && event.Column < box.col+box.width {
+			return false
+		}
+	}
+	return true
 }
 
 func scrollbar(total, height, end int) (top, size int) {

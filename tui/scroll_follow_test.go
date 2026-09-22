@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // A transcript scrolled up for reading stays put while frames stream in, and
 // ScrollToBottom is the explicit reattach the interactive editor calls on
@@ -36,5 +39,27 @@ func TestScrollToBottomReattachesFollow(t *testing.T) {
 	defer ui.renderMu.Unlock()
 	if !ui.viewportFollow {
 		t.Fatal("ScrollToBottom did not reattach live follow")
+	}
+}
+
+// Scrolling up shows a jump-to-bottom pill on the last transcript row; a click
+// on it reattaches follow and the pill disappears.
+func TestJumpToBottomButton(t *testing.T) {
+	body := &mutableLines{lines: []string{"line 0", "line 1", "line 2", "line 3", "line 4", "line 5", "line 6", "line 7"}}
+	ui := NewTUI(newFakeTerminal(30, 6))
+	ui.SetViewport(body, &mutableLines{lines: []string{"editor"}})
+	lastBodyRow := func() string { return plainTerminalText(ui.renderViewport(30, 6)[4]) }
+	if strings.Contains(lastBodyRow(), "Jump to bottom") {
+		t.Fatal("pill shown while following")
+	}
+	ui.renderMu.Lock()
+	ui.scrollViewportLocked(-2)
+	ui.renderMu.Unlock()
+	if row := lastBodyRow(); !strings.Contains(row, "Jump to bottom") {
+		t.Fatalf("pill missing after scrolling up: %q", row)
+	}
+	ui.handleMouse("\x1b[<0;16;5M")
+	if !ui.viewportFollow || strings.Contains(lastBodyRow(), "Jump to bottom") {
+		t.Fatal("clicking the pill did not jump to bottom")
 	}
 }

@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- TUI: a "↓ Jump to bottom" pill appears on the last transcript row while scrolled up; click it
+  (or press ctrl+end) to reattach live follow.
+
 - Complete Claude SDK background-task draining and cancellation, recoverable versioned setup,
   MCP questions, native plan/compaction controls and bounded lifecycle progress. Clear stale context
   readings; keep all adaptation in the plugin and reuse existing client/Bridge contracts.
