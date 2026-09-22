@@ -3052,7 +3052,14 @@ func (mode *InteractiveMode) handleClearCommand() {
 func (mode *InteractiveMode) handleCompactCommand(instructions string) {
 	mode.clearStatusIndicator()
 	go func() {
-		_, _ = mode.session.Compact(context.Background(), instructions)
+		if !mode.session.Agent().UsesSessionLoop() {
+			_, _ = mode.session.Compact(context.Background(), instructions)
+			return
+		}
+		// A session executor owns its context; its own /compact does the work.
+		if err := mode.session.SendUserMessage(context.Background(), ai.NewUserText(strings.TrimSpace("/compact "+instructions)), nil); err != nil {
+			mode.showError(err)
+		}
 	}()
 }
 

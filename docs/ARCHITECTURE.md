@@ -278,16 +278,21 @@ existing context APIs and standard footer. Parsing native metadata remains the p
 
 `plugins/claudesessions/` owns the official SDK host, native session checkpoints, event translation,
 configuration and `/claude` management. Only CLI assembly imports it. Its embedded JavaScript runs
-on user-provided Node with `@anthropic-ai/claude-agent-sdk@0.3.278` and a user-installed, unmodified
+on user-provided Node with `@anthropic-ai/claude-agent-sdk@0.3.280` and a user-installed, unmodified
 Claude executable. No Go dependency, vendor binary, SDK bundle or credential is embedded in Orb.
-Importing the package performs no I/O. The capability defaults off; its management command can be
-available before activation, like Bridge management.
+Importing the package performs no I/O. The CLI supplies it as the default-off `claude-sessions`
+catalog row: `/claude`, its footer and the executor exist only once that plugin is enabled.
 
 Native Claude transcripts are authoritative for resume, tools and compaction. Orb stores its display
 projection and plugin-owned `claude-sessions` checkpoint entries in its normal session journal
-(SQLite in native CLI, unchanged caller-selected storage in the SDK). Native session IDs are
-explicit, never directory-wide `continue`. A copied checkpoint forks to the new Orb session UUID
-at the last confirmed native message; it never appends to the original conversation. Native errors
+(SQLite in native CLI, unchanged caller-selected storage in the SDK). Native session IDs come from
+the SDK and are recorded in checkpoints, never directory-wide `continue`. Continuing from the newest
+recorded point resumes in place; any other point (a tree move, a withdrawn prompt, a copied session)
+forks a new native session cut there with the SDK's `forkSession`, which also reaches history
+before a native compaction, so two Orb branches never append to one native session. Prompts carry
+their own native UUID, so an interrupted turn resumes with the prompt Orb shows. The SDK emits one
+assistant record per content block; the raw stream of the same API message is authoritative, so
+each API message is one Orb message with its final usage. Native errors
 and list-price accounting remain native metadata, not asserted subscription invoices. Each active
 turn owns one subprocess until its non-ambient background tasks finish and the SDK stream drains;
 idle sessions own none. Independent instances have independent drivers. Steer/follow-up queues are
@@ -736,7 +741,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
-| @anthropic-ai/claude-agent-sdk 0.3.278 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
+| @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated

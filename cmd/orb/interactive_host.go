@@ -22,7 +22,6 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine/harness"
-	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -88,18 +87,7 @@ func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, 
 	// Providers key affinity and prompt caches on the session id; upstream
 	// createAgentSession passes sessionId into the Agent at construction.
 	inputs.Agent.SetStreamSessionID(manager.GetSessionID())
-	agentDir, err := config.GetAgentDir()
-	if err != nil {
-		return nil, err
-	}
-	bind, err := claudesessions.Configure(&runtimeConfig, agentDir, os.Environ())
-	if err != nil {
-		return nil, err
-	}
-	created, err := agent.NewSessionRuntime(runtimeConfig)
-	if err == nil {
-		bind(created)
-	}
+	created, err := newSessionRuntime(runtimeConfig)
 	return created, err
 }
 

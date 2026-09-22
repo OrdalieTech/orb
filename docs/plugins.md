@@ -167,27 +167,32 @@ panel and send execution-bound replies; disconnecting never invents an answer.
 
 ## Claude Sessions
 
-Open `/claude` (also available from the command palette) and choose **New Claude session**.
+Enable **claude-sessions** in `/plugins` (or set `"plugins": {"claude-sessions": true}`), then open
+`/claude` (also available from the command palette) and choose **New Claude session**.
 Orb prepares the SDK automatically on first use, then opens the conversation. The executing host needs Node ≥22.6, npm and the official Claude Code executable. Complete
 sign-in in a terminal with `claude auth login`; Orb does not implement a Claude.ai login screen or
 read tokens. Existing native API-key/cloud authentication is also available. Native terms, model
 entitlements and usage limits apply; SDK cost metadata is not your subscription invoice.
 
-For headless use (with the same automatic first-use setup): `orb --provider claude-sessions --model sonnet -p "your task"`.
+For headless use, with the plugin enabled and the same automatic first-use setup: `orb --provider claude-sessions --model sonnet -p "your task"`.
 The model picker uses the executing Claude CLI's `supportedModels()` catalog: native aliases,
 resolved model names and supported effort levels. New sessions use Claude's native default unless
 you select another model. `/model` changes the current session; `/claude` → Model chooses the default
 for new sessions. The existing model footer is retained, with a single compact Claude quota status. Discovery starts no model turn and writes no Claude transcript.
 
 `--session` and the ordinary Sessions picker resume the selected Orb conversation using its explicit
-native Claude session ID. `/claude` selects the model for explicitly created Claude sessions.
+native Claude session ID. `/tree`, withdrawn prompts and branch summaries work as in any Orb
+session; Claude writes the summary. Native approvals use Orb's choices, and **approve for this
+session** lasts as long as the running Orb session. `/claude` selects the model for explicitly created Claude sessions.
 **Switch to Orb** opens a separate regular conversation and keeps the Claude session saved; it also
 works before an Orb provider is configured. Ordinary launches never implicitly choose Claude. `--no-extensions`
 disables this optional capability. There is no fallback to another account or model on errors.
 
 Advanced settings use `plugins.claude-sessions`: `model`, `node`, `claude`, and `sdk`
-(the absolute path to the official package's `sdk.mjs`). The standard install goes into
-`<agent-dir>/plugins/claude-sessions/sdk-0.3.278`, pinned to SDK 0.3.278. Setup validates the
+(the absolute path to the official package's `sdk.mjs`). `ANTHROPIC_API_KEY` and
+`ANTHROPIC_AUTH_TOKEN` are removed from the Claude process so a key exported for Orb's own providers
+never bills a subscription session; set `inheritApiKey: true` to pass them through. The standard install goes into
+`<agent-dir>/plugins/claude-sessions/sdk-0.3.280`, pinned to SDK 0.3.280. Setup validates the
 installed version, stages replacements before publishing them, and preserves older installations
 used by running sessions. A failed download can be retried. Custom SDK paths remain host-owned.
 The SDK and native executable are not bundled in Orb's static binary. Installation happens when
@@ -213,7 +218,10 @@ host. Cancelling a request returns cancellation to the SDK.
 `/claude plan` and `/claude normal` select the native permission mode for the current idle session;
 plan mode is marked in the existing footer status. Orb permission rules cannot override native plan
 restrictions. `/claude compact` submits Claude's own compaction command, preserving its native
-session. These actions are also available in the `/claude` menu.
+session. These actions are also available in the `/claude` menu. Type `/claude:` for direct command
+completion: `/claude:models` opens the model picker for new sessions, `/claude:usage` shows quota,
+`/claude:new` starts a session, `/claude:exit` switches to Orb, and `/claude:plan`, `/claude:normal`,
+`/claude:compact` run their actions directly. `/model` still changes the current session's model.
 
 When the **Permissions** plugin is enabled, Claude's native pre-tool hooks use its existing rules,
 approval cache and audit log. Native tool names and paths are normalized only for policy evaluation;

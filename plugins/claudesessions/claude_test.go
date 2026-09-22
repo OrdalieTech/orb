@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -28,22 +30,29 @@ import (
 )
 
 const fakeSDK = `
+const forks=new Map();
+export async function forkSession(from,{upToMessageId}={}) {
+ const sessionId=crypto.randomUUID();
+ forks.set(sessionId,{from,at:upToMessageId??''});
+ return {sessionId};
+}
 export function query({prompt,options:o}) {
+ if(typeof prompt==='string') return (async function*(){
+  yield {type:'result',subtype:'success',result:'SUMMARY '+(o.tools.length===0&&o.systemPrompt.includes('summarization'))+' '+prompt.includes('[user]: keep this')};
+ })();
  const abort = new AbortController();
  const gen = (async function*(){
   const {value:p}=await prompt[Symbol.asyncIterator]().next();
   if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
-  const id=o.sessionId||o.resume;
+  const id=o.resume??crypto.randomUUID();
+  const fork=forks.get(o.resume);
+  const stream=event=>({type:'stream_event',session_id:id,parent_tool_use_id:null,event});
   yield {type:'system',subtype:'init',session_id:id};
   if(JSON.stringify(p.message.content).includes('elicitation-fixture')) {
    const reply=await o.onElicitation({serverName:'fixture MCP',message:'Choose retries',mode:'form',requestedSchema:{type:'object',properties:{retries:{type:'integer',minimum:1,maximum:5}},required:['retries']}},{signal:abort.signal});
    yield {type:'assistant',uuid:'elicitation-result',session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify(reply)}],usage:{input_tokens:10,output_tokens:4}}};
    yield {type:'result',subtype:'success',session_id:id};return;
   }
-
-  yield {type:'stream_event',event:{type:'message_start',message:{model:o.model,content:[]}}};
-  yield {type:'stream_event',event:{type:'content_block_start',index:0,content_block:{type:'text'}}};
-  yield {type:'stream_event',event:{type:'content_block_delta',index:0,delta:{type:'text_delta',text:'streamed'}}};
   const question = JSON.stringify(p.message.content).includes('question-fixture');
   const tool=question?'AskUserQuestion':'Write';
   const input=question?{questions:[
@@ -54,10 +63,28 @@ export function query({prompt,options:o}) {
   const decision=hook?.hookSpecificOutput?.permissionDecision;
   const reply=decision==='deny'?{behavior:'deny'}:decision==='allow'&&!question?{behavior:'allow',updatedInput:input}:await o.canUseTool(tool,input,{signal:abort.signal});
   if(reply.behavior!=='allow') throw new Error('permission denied');
-  const text=JSON.stringify({resume:o.resume??'',fork:o.forkSession??false,at:o.resumeSessionAt??'',content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
-  yield {type:'assistant',uuid:'assistant-checkpoint',session_id:id,message:{model:o.model,content:[{type:'text',text},{type:'tool_use',id:'tool-1',name:'Write',input:{file_path:'/fixture'}}],usage:{input_tokens:10,output_tokens:4},stop_reason:'tool_use'}};
-  yield {type:'user',uuid:'tool-checkpoint',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool-1',content:'written'}]}};
-  yield {type:'assistant',uuid:'final-checkpoint',session_id:id,message:{model:o.model,content:[{type:'text',text:'done'}],usage:{input_tokens:12,output_tokens:2},stop_reason:'end_turn'}};
+  const text=JSON.stringify({resume:fork?fork.from:o.resume??'',fork:!!fork,at:fork?.at??'',content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
+  // Like the real CLI: one assistant record per content block, beside the raw stream.
+  yield stream({type:'message_start',message:{id:'msg-1',model:o.model,content:[],usage:{input_tokens:10,output_tokens:1}}});
+  yield stream({type:'content_block_start',index:0,content_block:{type:'text',text:''}});
+  yield stream({type:'content_block_delta',index:0,delta:{type:'text_delta',text}});
+  yield stream({type:'content_block_stop',index:0});
+  yield {type:'assistant',uuid:'assistant-text',session_id:id,parent_tool_use_id:null,message:{id:'msg-1',model:o.model,content:[{type:'text',text}],usage:{input_tokens:10,output_tokens:1}}};
+  yield stream({type:'content_block_start',index:1,content_block:{type:'tool_use',id:'tool-1',name:'Write',input:{}}});
+  yield stream({type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'{"file_path":'}});
+  yield stream({type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'"/fixture"}'}});
+  yield stream({type:'content_block_stop',index:1});
+  yield {type:'assistant',uuid:'assistant-checkpoint',session_id:id,parent_tool_use_id:null,message:{id:'msg-1',model:o.model,content:[{type:'tool_use',id:'tool-1',name:'Write',input:{file_path:'/fixture'}}],usage:{input_tokens:10,output_tokens:1}}};
+  yield stream({type:'message_delta',delta:{stop_reason:'tool_use'},usage:{output_tokens:4}});
+  yield stream({type:'message_stop'});
+  yield {type:'user',uuid:'tool-checkpoint',session_id:id,parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'tool-1',content:'written'}]}};
+  yield stream({type:'message_start',message:{id:'msg-2',model:o.model,content:[],usage:{input_tokens:12,output_tokens:1}}});
+  yield stream({type:'content_block_start',index:0,content_block:{type:'text',text:''}});
+  yield stream({type:'content_block_delta',index:0,delta:{type:'text_delta',text:'done'}});
+  yield stream({type:'content_block_stop',index:0});
+  yield {type:'assistant',uuid:'final-checkpoint',session_id:id,parent_tool_use_id:null,message:{id:'msg-2',model:o.model,content:[{type:'text',text:'done'}],usage:{input_tokens:12,output_tokens:1}}};
+  yield stream({type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:2}});
+  yield stream({type:'message_stop'});
   yield {type:'result',subtype:'success',session_id:id,total_cost_usd:0.01};
  })();
  gen.supportedModels=async()=>[
@@ -153,22 +180,22 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { done <- s.Prompt(context.Background(), "hello") }()
 		input := awaitInput(t, s)
-		if s.GetContextUsage() != nil {
-			t.Fatal("prior context survived a new turn")
+		if s.GetContextUsage() == nil {
+			t.Fatal("last native context reading hidden during a turn")
 		}
 		if err := s.SetModel(t.Context(), models[1]); err != agent.ErrControlBusy {
 			t.Fatalf("active model mutation: %v", err)
 		}
-		if err := s.ReplyInput("old", "Allow once"); err == nil {
+		if err := s.ReplyInput("old", "y approve once"); err == nil {
 			t.Fatal("stale approval accepted")
 		}
 		if err := s.ReplyInput(input.ID, "always"); err == nil {
 			t.Fatal("unknown permission choice accepted")
 		}
-		if err := s.ReplyInput(input.ID, "Allow once"); err != nil {
+		if err := s.ReplyInput(input.ID, "y approve once"); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.ReplyInput(input.ID, "Allow once"); err == nil {
+		if err := s.ReplyInput(input.ID, "y approve once"); err == nil {
 			t.Fatal("approval reused")
 		}
 		if err := <-done; err != nil {
@@ -182,10 +209,10 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Session != s.Manager().GetSessionID() || saved.At != "final-checkpoint" {
+	if saved.Session == "" || saved.At != "final-checkpoint" {
 		t.Fatalf("checkpoint %#v", saved)
 	}
-	if updates != 2 || tools != 2 {
+	if updates != 4 || tools != 2 {
 		t.Fatalf("updates %d tools %d", updates, tools)
 	}
 	messages := s.State().Messages
@@ -195,6 +222,111 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `\"resume\":\"`+saved.Session) {
 		t.Fatalf("explicit resume missing: %s", raw)
+	}
+	var replies []*ai.AssistantMessage
+	for _, message := range messages {
+		if reply, ok := message.(*ai.AssistantMessage); ok {
+			replies = append(replies, reply)
+		}
+	}
+	// One Orb message per API message; usage counted once, from the final delta.
+	if len(replies) != 4 || len(replies[0].Content) != 2 || replies[0].Usage.Output != 4 || replies[0].StopReason != ai.StopReasonToolUse {
+		t.Fatalf("native blocks not grouped: %d replies, first %+v", len(replies), replies[0])
+	}
+	if call := replies[0].Content[1].(*ai.ToolCall); call.Arguments["file_path"] != "/fixture" {
+		t.Fatalf("streamed tool arguments lost: %+v", call)
+	}
+
+	// Moving back on the tree resumes the same native session at that point.
+	var earlier string
+	for _, entry := range s.Manager().GetEntries() {
+		var point checkpoint
+		if entry.CustomType == Name && json.Unmarshal(entry.Data, &point) == nil && point.At == "tool-checkpoint" && earlier == "" {
+			earlier = entry.ID
+		}
+	}
+	if err := s.Manager().Branch(earlier); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Prompt(context.Background(), "again") }()
+	if err := s.ReplyInput(awaitInput(t, s).ID, "y approve once"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = json.Marshal(s.State().Messages)
+	if !strings.Contains(string(raw), `\"resume\":\"`+saved.Session+`\",\"fork\":true,\"at\":\"tool-checkpoint\"`) {
+		t.Fatalf("branch did not resume at its native point: %s", raw)
+	}
+}
+
+func TestBranchSummaryRunsNatively(t *testing.T) {
+	_, driver := fixture(t)
+	entry := session.SessionEntry{Type: "message", Message: json.RawMessage(`{"role":"user","content":"keep this"}`)}
+	summary, err := summarizeBranch(t.Context(), driver.options, t.TempDir(), "sonnet", extensions.TreePreparation{EntriesToSummarize: []session.SessionEntry{entry}, UserWantsSummary: true})
+	if err != nil || summary != "SUMMARY true true" {
+		t.Fatalf("summary %q %v", summary, err)
+	}
+}
+
+func TestEarlyToolResultKeepsLaterCalls(t *testing.T) {
+	_, driver := fixture(t)
+	var started []string
+	tr := translation{driver: driver, ctx: t.Context(), tools: map[string]string{}, emit: func(_ context.Context, event engine.AgentEvent) error {
+		if start, ok := event.(engine.ToolExecutionStartEvent); ok {
+			started = append(started, start.ToolCallID)
+		}
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"m"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"a","name":"Read"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop","index":0}}`,
+		`{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"b","name":"Read"}}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a","content":"x"}]}}`,
+		`{"type":"assistant","message":{"id":"m","content":[{"type":"tool_use","id":"b","name":"Read","input":{"file_path":"/b"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b","content":"y"}]}}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Join(started, ",") != "a,b" || len(tr.tools) != 0 {
+		t.Fatalf("started %v, unanswered %v", started, tr.tools)
+	}
+}
+
+func TestInterruptedTurnSettlesLikeOrb(t *testing.T) {
+	_, driver := fixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	var events []engine.AgentEvent
+	tr := translation{driver: driver, ctx: ctx, tools: map[string]string{}, prompt: "prompt-uuid", emit: func(_ context.Context, event engine.AgentEvent) error {
+		events = append(events, event)
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"system","subtype":"init","session_id":"native"}`,
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"m"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancel()
+	if err := tr.abort(); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	end, _ := events[len(events)-2].(engine.MessageEndEvent)
+	reply, _ := end.Message.(*ai.AssistantMessage)
+	if _, turn := events[len(events)-1].(engine.TurnEndEvent); !turn || reply == nil || reply.StopReason != ai.StopReasonAborted || *reply.ErrorMessage != "Request was aborted" || reply.Content[0].(*ai.TextContent).Text != "partial" {
+		t.Fatalf("interrupted reply left open: %#v", events)
+	}
+	if saved, _ := driver.checkpoint(); saved.At != "prompt-uuid" {
+		t.Fatalf("interrupted prompt missing from the resume point: %+v", saved)
 	}
 }
 
@@ -216,7 +348,7 @@ func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
 	target := control.Target()
 	stale := target
 	stale.ExecutionID = protocol.NewID()
-	payload := string(connect.JSON(map[string]string{"id": input.ID, "value": "Allow once"}))
+	payload := string(connect.JSON(map[string]string{"id": input.ID, "value": "y approve once"}))
 	if err = control.Execution(stale, "input.reply", payload); err == nil {
 		t.Fatal("cross-execution reply accepted")
 	}
@@ -370,7 +502,7 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 		if e != nil || !strings.Contains(string(snapshot), input.ID) {
 			t.Fatalf("input missing from descriptor: %s %v", snapshot, e)
 		}
-		reply := call("input.reply", map[string]string{"execution_id": control.Target().ExecutionID, "id": input.ID, "value": "Allow once"})
+		reply := call("input.reply", map[string]string{"execution_id": control.Target().ExecutionID, "id": input.ID, "value": "y approve once"})
 		wait(reply)
 		wait(request)
 		if _, e = a.Invoke(ctx, "call", connect.JSON(request)); e != nil {
@@ -513,7 +645,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	wait := func(id string, allowWrite bool) {
 		for {
 			if p := host.Session().PendingInput(); p != nil {
-				value := "Deny"
+				value := "n deny"
 				if allowWrite && strings.HasPrefix(p.Title, "Permission requested for write") && strings.Contains(p.Title, dir) {
 					value = "s approve for this session"
 					approvals++
@@ -666,10 +798,10 @@ func TestSDKIndependentInstancesCancelSeparately(t *testing.T) {
 	if first.Session().PendingInput() != nil || second.Session().PendingInput() == nil {
 		t.Fatal("cancellation crossed instance boundary")
 	}
-	if err := second.Session().ReplyInput(a.ID, "Allow once"); err == nil {
+	if err := second.Session().ReplyInput(a.ID, "y approve once"); err == nil {
 		t.Fatal("foreign approval accepted")
 	}
-	if err := second.Session().ReplyInput(b.ID, "Allow once"); err != nil {
+	if err := second.Session().ReplyInput(b.ID, "y approve once"); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-doneB; err != nil {
@@ -696,7 +828,7 @@ if [ ! -f "$TRACE_DIR/retry" ]; then touch "$TRACE_DIR/retry"; exit 1; fi
 	if err := os.WriteFile(filepath.Join(bin, "npm"), []byte(strings.ReplaceAll(script, "SDK_VERSION", SDKVersion)), 0700); err != nil {
 		t.Fatal(err)
 	}
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "TRACE_DIR=" + dir}
+	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "TRACE_DIR=" + dir, "ANTHROPIC_API_KEY=orb-provider-key"}
 	old := filepath.Join(dir, "plugins", Name, "node_modules", "@anthropic-ai", "claude-agent-sdk", "sdk.mjs")
 	if err := os.MkdirAll(filepath.Dir(old), 0700); err != nil {
 		t.Fatal(err)
@@ -728,6 +860,13 @@ if [ ! -f "$TRACE_DIR/retry" ]; then touch "$TRACE_DIR/retry"; exit 1; fi
 	options, err := configuredOptions(t.Context(), settings, dir, env)
 	if err != nil || options.SDK == "" {
 		t.Fatalf("automatic startup: %v", err)
+	}
+	if slices.Contains(options.Env, "ANTHROPIC_API_KEY=orb-provider-key") {
+		t.Fatal("Orb's API key would bill the Claude session")
+	}
+	settings.SetPluginSetting(Name, "inheritApiKey", true)
+	if options, err = configuredOptions(t.Context(), settings, dir, env); err != nil || !slices.Contains(options.Env, "ANTHROPIC_API_KEY=orb-provider-key") {
+		t.Fatal("explicit API-key opt-in ignored", err)
 	}
 	settings.SetPluginSetting(Name, "sdk", filepath.Join(dir, "custom-missing.mjs"))
 	if _, err = configuredOptions(t.Context(), settings, dir, env); err == nil {
@@ -871,10 +1010,10 @@ func TestPassiveOrbPolicyPreservesNativeApproval(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- s.Prompt(t.Context(), "native write") }()
 			p := awaitInput(t, s)
-			if !strings.Contains(p.Title, "/fixture") || len(p.Choices) != 2 || p.Choices[0] != "Deny" {
+			if !strings.Contains(p.Title, "/fixture") || strings.Join(p.Choices, ",") != "y approve once,n deny,r deny with a reason" {
 				t.Fatalf("native approval lost: %#v", p)
 			}
-			if err := s.ReplyInput(p.ID, "Deny"); err != nil {
+			if err := s.ReplyInput(p.ID, "n deny"); err != nil {
 				t.Fatal(err)
 			}
 			select {
@@ -1304,7 +1443,16 @@ func TestNativePlanAndCompactCommands(t *testing.T) {
 		}},
 		ErrorHandler: func(extensions.ExtensionError) { failures++ },
 	})
-	if !runner.ExecuteCommand(t.Context(), "claude", "plan") || nativeMode(driver.options.Manager) != "plan" {
+	commands := map[string]bool{}
+	for _, command := range runner.RegisteredCommands() {
+		commands[command.InvocationName] = true
+	}
+	for _, name := range []string{"models", "usage", "new", "exit", "plan", "normal", "compact"} {
+		if !commands["claude:"+name] {
+			t.Fatalf("shortcut missing from completion: %s", name)
+		}
+	}
+	if !runner.ExecuteCommand(t.Context(), "claude:plan", "") || nativeMode(driver.options.Manager) != "plan" {
 		t.Fatal("plan mode not stored")
 	}
 	idle = false
@@ -1314,7 +1462,7 @@ func TestNativePlanAndCompactCommands(t *testing.T) {
 	}
 	idle = true
 	runner.ExecuteCommand(t.Context(), "claude", "normal")
-	runner.ExecuteCommand(t.Context(), "claude", "compact")
+	runner.ExecuteCommand(t.Context(), "claude:compact", "")
 	if nativeMode(driver.options.Manager) != "default" || sent != "/compact" || failures != 1 {
 		t.Fatalf("mode=%s prompt=%s failures=%d", nativeMode(driver.options.Manager), sent, failures)
 	}
@@ -1400,7 +1548,7 @@ func TestSDKLiveBackgroundCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	driver, err := New(Options{Node: node, Claude: cli, SDK: sdk, Env: os.Environ(), Manager: manager, Ask: func(context.Context, string, []string) (string, error) { return "Allow once", nil }})
+	driver, err := New(Options{Node: node, Claude: cli, SDK: sdk, Env: os.Environ(), Manager: manager, Ask: func(context.Context, string, []string) (string, error) { return "y approve once", nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

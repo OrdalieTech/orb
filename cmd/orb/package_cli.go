@@ -12,6 +12,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
 // Port of packages/coding-agent/src/package-manager-cli.ts (pi
@@ -118,8 +119,9 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 func listFullComposition(cwd, agentDir string, settings *config.SettingsManager, streams cliStreams) int {
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
-		Compiled: compiledExtensionsForRuntime(agentDir, settings), MCP: true,
-		Bridge: bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
+		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
+		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
+		Bridge:         bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)

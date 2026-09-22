@@ -80,12 +80,6 @@ func compiledExtensionsForEnvironment(getenv func(string) string) []extensions.C
 	})
 }
 
-func compiledExtensionsForRuntime(agentDir string, settings *config.SettingsManager) []extensions.CompiledExtension {
-	return append(compiledExtensionsForEnvironment(os.Getenv), extensions.CompiledExtension{
-		Name: "claude-sessions-control", Hidden: true, DefaultEnabled: true, Factory: claudesessions.Management(settings, agentDir, os.Environ()),
-	})
-}
-
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
 	var policy *permissions.Policy
 	if args.Auto {
@@ -112,8 +106,9 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)
 			return result, err
 		}),
-		Compiled: compiledExtensionsForRuntime(agentDir, settings),
-		MCP:      !args.NoExtensions && !args.metadataOnly,
+		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
+		Compiled:       compiledExtensionsForEnvironment(os.Getenv),
+		MCP:            !args.NoExtensions && !args.metadataOnly,
 	})
 	diagnostics := otherDiagnostics(warnings)
 	resolved := assembly.Resolve(rows, settings, args.NoExtensions)
