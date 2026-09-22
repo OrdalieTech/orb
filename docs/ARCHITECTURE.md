@@ -822,6 +822,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |
 | rivo/uniseg | tui | grapheme/East-Asian width |
 | golang.org/x/{term,sys,image,text} | cli, tui, tools | terminal detection/raw mode, signals, image decode/resize, encoding |
+| golang.org/x/crypto/x509roots/fallback | cmd/orb (Linux) | Mozilla roots when the host has no CA bundle (minimal containers), matching Node's compiled-in store under pi; the system bundle keeps precedence |
 | bmatcuk/doublestar/v4 | tools, skills | `**` globbing (upstream: glob/minimatch) |
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |

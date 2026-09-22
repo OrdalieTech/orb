@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Orb on Linux reaches HTTPS providers from minimal containers that ship without a CA bundle
+  (for example `oven/bun` images): the CLI falls back to built-in Mozilla roots, as pi does
+  through Node. A system bundle, when present, still wins.
+
 ## [0.10.0] - 2026-09-22
 
 Orb's core now builds for every target behind host ports: Linux, macOS and Windows, 32-bit
