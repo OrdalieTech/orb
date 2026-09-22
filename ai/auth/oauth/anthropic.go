@@ -110,6 +110,10 @@ func (flow *Anthropic) Login(ctx context.Context, interaction auth.AuthInteracti
 		serveDone <- err
 	}()
 	defer func() {
+		// Let the browser receive the callback response before closing its connection.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
 		_ = server.Close()
 		<-serveDone
 	}()

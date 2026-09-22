@@ -555,7 +555,8 @@ func TestSessionSelectorClearsStatusLifetimeOnSelectionCancellationAndExit(t *te
 }
 
 type selectorLifetimeProbe struct {
-	_ byte
+	// Tiny pointer-free allocations can share a live block and never be finalized.
+	_ [32]byte
 }
 
 type selectorCancellationTerminal struct {

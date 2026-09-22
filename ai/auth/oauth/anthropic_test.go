@@ -136,7 +136,11 @@ func TestAnthropicLoginCallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, readErr := io.ReadAll(response.Body)
 	_ = response.Body.Close()
+	if readErr != nil || string(body) != successPage("Anthropic authentication completed. You can close this window.") {
+		t.Fatalf("callback body = %q, error = %v", body, readErr)
+	}
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("callback status = %d", response.StatusCode)
 	}
