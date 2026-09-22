@@ -4,7 +4,7 @@ package sandbox
 
 import "fmt"
 
-func wrap(Mode, string, string, string, env map[string]string) (string, map[string]string) {
+func wrap(_ Mode, _, _, _ string, env map[string]string) (string, map[string]string) {
 	return refuse("unsupported platform"), env
 }
 

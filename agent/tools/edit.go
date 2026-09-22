@@ -6,11 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -59,7 +57,7 @@ func (localEditOperations) WriteFile(_ context.Context, path, content string) er
 }
 
 func (localEditOperations) Access(_ context.Context, path string) error {
-	return syscall.Access(path, accessRead|accessWrite)
+	return accessFile(path, accessRead|accessWrite)
 }
 
 func NewEditTool(cwd string, options *EditToolOptions) engine.AgentTool {
@@ -387,39 +385,7 @@ func filesystemErrorCode(err error) string {
 	if errors.As(err, &coded) && coded.Code() != "" {
 		return coded.Code()
 	}
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return "ENOENT"
-	case errors.Is(err, syscall.EPERM):
-		return "EPERM"
-	case errors.Is(err, syscall.EACCES):
-		return "EACCES"
-	case errors.Is(err, fs.ErrPermission):
-		return "EACCES"
-	case errors.Is(err, syscall.ENOTDIR):
-		return "ENOTDIR"
-	case errors.Is(err, syscall.ELOOP):
-		return "ELOOP"
-	case errors.Is(err, syscall.EROFS):
-		return "EROFS"
-	case errors.Is(err, syscall.ENAMETOOLONG):
-		return "ENAMETOOLONG"
-	case errors.Is(err, syscall.EIO):
-		return "EIO"
-	case errors.Is(err, syscall.ENOMEM):
-		return "ENOMEM"
-	case errors.Is(err, syscall.ETXTBSY):
-		return "ETXTBSY"
-	case errors.Is(err, syscall.EINVAL):
-		return "EINVAL"
-	case errors.Is(err, syscall.ENOSPC):
-		return "ENOSPC"
-	case errors.Is(err, syscall.EISDIR):
-		return "EISDIR"
-	case errors.Is(err, syscall.EEXIST):
-		return "EEXIST"
-	}
-	return ""
+	return nativeFilesystemErrorCode(err)
 }
 
 func ComputeEditsDiff(path string, edits []Edit, cwd string) (DiffResult, error) {
@@ -430,7 +396,7 @@ func ComputeEditsDiff(path string, edits []Edit, cwd string) (DiffResult, error)
 	if err := nodeNullPathError(absolutePath); err != nil {
 		return DiffResult{}, editAccessError(path, err)
 	}
-	if err := syscall.Access(absolutePath, accessRead); err != nil {
+	if err := accessFile(absolutePath, accessRead); err != nil {
 		return DiffResult{}, editAccessError(path, err)
 	}
 	data, err := (localEditOperations{}).ReadFile(context.Background(), absolutePath)

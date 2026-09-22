@@ -24,6 +24,7 @@ import (
 
 // Options supplies explicit runtime seams so bundled plugins remain instance-scoped.
 type Options struct {
+	UsageCache       *usage.Cache
 	Memory           memorysdk.Store
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
@@ -87,7 +88,7 @@ func Catalog(option ...Options) map[string]extensions.Factory {
 		"subagents":      subagentsExtension(options.StreamFn, inheritPolicy, options.Settings),
 		"permissions":    permissionsExtension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
-		"provider-usage": ProviderUsage(usage.Client{HTTPClient: options.HTTPClient}),
+		"provider-usage": ProviderUsage(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}),
 	}
 }
 

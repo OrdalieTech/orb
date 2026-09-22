@@ -361,7 +361,7 @@ func TestNoBuiltinToolsKeepsBuiltinsDiscoverableForExtensions(t *testing.T) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"goExtensions":{"pirate":true}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"plugins":{"tasks":true}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)

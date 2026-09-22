@@ -17,12 +17,12 @@ func TestHerdrExtensionIsAutomaticOnlyInsideHerdr(t *testing.T) {
 	getenv := func(name string) string { return values[name] }
 	got := compiledExtensionsForEnvironment(getenv)
 	entry := got[len(got)-1]
-	if len(got) != len(compiledExtensions)+1 || entry.Name != "herdr" || !entry.Hidden || !entry.DefaultEnabled || entry.Factory == nil {
+	if len(got) != 1 || entry.Name != "herdr" || !entry.Hidden || !entry.DefaultEnabled || entry.Factory == nil {
 		t.Fatalf("compiled extensions = %#v", got)
 	}
 	delete(values, "HERDR_PANE_ID")
-	if got := compiledExtensionsForEnvironment(getenv); len(got) != len(compiledExtensions) {
-		t.Fatalf("incomplete Herdr environment added %d extensions", len(got)-len(compiledExtensions))
+	if got := compiledExtensionsForEnvironment(getenv); len(got) != 0 {
+		t.Fatalf("incomplete Herdr environment added %d extensions", len(got))
 	}
 }
 
@@ -42,7 +42,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 		t.Fatalf("diagnostics = %v", diagnostics)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:pirate>,<inline:status-line>,<inline:plugin-control>,<inline:bridge>" {
+	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:plugin-control>,<inline:bridge>" {
 		t.Fatalf("compiled extension order = %q", got)
 	}
 	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)

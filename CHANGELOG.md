@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Remove bundled demo extensions, share footer/account quota requests, and keep quota display in Providers. Separate native tool execution from Wasm builds so injected tools can run without a host filesystem.
+
 ## [0.8.0] - 2026-09-21
 
 Orb now stores native application state in SQLite and connects conversations across devices through

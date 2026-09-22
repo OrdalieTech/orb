@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -30,11 +31,23 @@ type Snapshot struct {
 // Client reads provider-reported quota only. URLs are injectable for tests
 // and private deployments; credentials never follow redirects.
 type Client struct {
+	Cache                   *Cache
 	HTTPClient              *http.Client
 	CodexURL, OpenCodeGoURL string
 }
 
 func (c Client) Fetch(ctx context.Context, provider string, credential auth.ModelAuth) (Snapshot, error) {
+	if c.Cache != nil && credential.APIKey != nil {
+		// Credentials can change without changing the selected account ID.
+		key := fmt.Sprintf("quota/%s/%s/%s/%x", provider, c.CodexURL, c.OpenCodeGoURL, sha256.Sum256([]byte(*credential.APIKey)))
+		return c.Cache.Fetch(ctx, key, func(ctx context.Context) (Snapshot, error) {
+			return c.fetch(ctx, provider, credential)
+		})
+	}
+	return c.fetch(ctx, provider, credential)
+}
+
+func (c Client) fetch(ctx context.Context, provider string, credential auth.ModelAuth) (Snapshot, error) {
 	endpoint := ""
 	switch provider {
 	case "openai-codex":

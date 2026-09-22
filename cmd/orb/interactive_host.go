@@ -814,6 +814,9 @@ func (host *interactiveSessionHost) authCredentials() (aiauth.CredentialStore, e
 
 func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string) error {
 	host.usageCache.Clear()
+	if host.args.usageCache != nil {
+		host.args.usageCache.Clear()
+	}
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
 	current := host.session
@@ -1253,7 +1256,7 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 	if result == nil {
 		return usage.Snapshot{}, usage.ErrUnavailable
 	}
-	return (usage.Client{}).Fetch(ctx, provider, result.Auth)
+	return (usage.Client{Cache: host.args.usageCache}).Fetch(ctx, provider, result.Auth)
 }
 
 func (host *interactiveSessionHost) UsageEnabled() bool {

@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
@@ -64,7 +63,7 @@ func (localReadOperations) Access(_ context.Context, path string) error {
 	if err := nodeNullPathError(path); err != nil {
 		return err
 	}
-	return asNodeFilesystemError("access", path, syscall.Access(path, accessRead))
+	return asNodeFilesystemError("access", path, accessFile(path, accessRead))
 }
 
 func (localReadOperations) DetectImageMimeType(_ context.Context, path string) (string, error) {

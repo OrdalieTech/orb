@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !wasm
 
 package tools
 
@@ -19,19 +19,6 @@ import (
 )
 
 const exitStdioGrace = 100 * time.Millisecond
-
-type ShellCommandTransport string
-
-const (
-	ShellCommandArgv  ShellCommandTransport = "argv"
-	ShellCommandStdin ShellCommandTransport = "stdin"
-)
-
-type ShellConfig struct {
-	Shell            string
-	Args             []string
-	CommandTransport ShellCommandTransport
-}
 
 func GetShellConfig(customShellPath string) (ShellConfig, error) {
 	if customShellPath != "" {

@@ -203,6 +203,13 @@ else auto-download upstream-style into `~/.pi/agent/bin` (`src/utils/tools-manag
 Operations interface (delegation seam), TUI `RenderCall`/`RenderResult`, file-mutation queue
 serializing writes per realpath (parallel execution default).
 
+Native shell execution, rg/fd discovery/downloads and Unix permission checks are selected by Go
+build constraints. Wasm builds retain the existing tool Operations contracts, refuse unavailable
+native operations explicitly, and use delegated path identities for mutation ordering. The Wasm
+probe runs read/write/edit and injected bash with no host filesystem. This establishes tool and
+agent-package portability, not a complete browser/Worker host or Windows support. Demo extensions
+remain in examples and conformance tests; the CLI no longer imports them.
+
 **Sessions** (`agent/session/`): JSONL v3 in-file tree (header line, 8-hex ids, parentId,
 leaf = position; entry types `message`, `model_change`, `thinking_level_change`, `compaction`,
 `branch_summary`, `custom`, `custom_message`, `label`, `session_info`), v1→v2→v3 auto-migration,
@@ -295,9 +302,12 @@ requires restarting without the override. No account file is created until an ac
 The independent `usage.Client` reads Codex's `backend-api/wham/usage` and OpenCode Go's
 `zen/go/v1/usage` endpoints with bounded requests and no credential-bearing redirects. It reports
 remaining quota from provider data; missing data stays unavailable. Its cache holds at most 64
-account identities. `plugins.ProviderUsage` attaches through extension lifecycle events and footer
+account identities. Footer and account reads share a bounded request cache keyed by provider,
+endpoint and credential digest; the account UI retains its nonblocking snapshot cache.
+`plugins.ProviderUsage` attaches through extension lifecycle events and footer
 statuses as the default-off `provider-usage` assembly row, enabled by Show usage in footer in
-Providers. It polls once per minute and cancels on account/model changes and shutdown. Clicking
+Providers; it is hidden from the general Plugins menu. It polls once per minute and cancels on
+account/model changes and shutdown. Clicking
 that footer status opens a native account switcher with cached percentages and at most four
 concurrent refreshes; closing it cancels requests. Switching providers keeps an identical model
 when available, otherwise opens the model picker. Neither accounts nor usage imports agent/TUI

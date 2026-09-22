@@ -121,3 +121,36 @@ func TestCanceledUsageFetchCanRetryImmediately(t *testing.T) {
 		t.Fatal("cancellation cached as an account failure", err)
 	}
 }
+
+func TestClientsShareQuotaCacheAndSeparateCredentials(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"usage":{"rolling":{"percent":25,"resetsAt":"2030-01-01T00:00:00Z"}}}`))
+	}))
+	defer server.Close()
+	cache := &Cache{}
+	footer := Client{Cache: cache, OpenCodeGoURL: server.URL}
+	accounts := Client{Cache: cache, OpenCodeGoURL: server.URL}
+	key := "first-account"
+	credential := auth.ModelAuth{APIKey: &key}
+	for _, client := range []Client{footer, accounts} {
+		if _, err := client.Fetch(t.Context(), "opencode-go", credential); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("footer and account screen made %d requests", calls.Load())
+	}
+	key = "second-account"
+	if _, err := footer.Fetch(t.Context(), "opencode-go", credential); err != nil {
+		t.Fatal(err)
+	}
+	cache.Clear()
+	if _, err := accounts.Fetch(t.Context(), "opencode-go", credential); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("account changes/invalidation made %d requests, want 3", calls.Load())
+	}
+}

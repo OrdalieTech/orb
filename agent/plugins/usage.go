@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"sync"
 	"time"
@@ -15,6 +14,10 @@ import (
 // status API. It does no work until an interactive session starts.
 func ProviderUsage(client usage.Client) extensions.Factory {
 	return func(api extensions.API) error {
+		client := client
+		if client.Cache == nil {
+			client.Cache = &usage.Cache{}
+		}
 		var mu sync.Mutex
 		var stop context.CancelFunc
 		var requestCancel context.CancelFunc
@@ -67,10 +70,6 @@ func ProviderUsage(client usage.Client) extensions.Factory {
 				defer close(finished)
 				ticker := time.NewTicker(time.Minute)
 				defer ticker.Stop()
-				var lastKey [32]byte
-				var lastProvider string
-				var lastAt time.Time
-				var lastGeneration uint64
 				refresh := func() {
 					mu.Lock()
 					version := generation
@@ -97,11 +96,6 @@ func ProviderUsage(client usage.Client) extensions.Factory {
 					resolved, err := session.ModelRegistry().ResolveProviderAuth(requestCtx, provider, nil)
 					text := label + " usage unavailable"
 					if err == nil && resolved != nil && resolved.Auth.APIKey != nil {
-						key := sha256.Sum256([]byte(*resolved.Auth.APIKey))
-						if key == lastKey && provider == lastProvider && version == lastGeneration && time.Since(lastAt) < time.Minute {
-							return
-						}
-						lastKey, lastProvider, lastAt, lastGeneration = key, provider, time.Now(), version
 						usage, fetchErr := client.Fetch(requestCtx, provider, resolved.Auth)
 						if fetchErr == nil {
 							remaining := 100.0
