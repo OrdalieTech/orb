@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Let Anthropic OAuth callback responses finish before shutting down the local login server.
+
 - Default enabled permissions to rule-based auto approval; expose `--auto` and manual mode in `/permissions`, preserving denials and filesystem containment without AI approval.
 
 - Restore compiler inlining in the JSON hot path while keeping release binaries within the 55 MB budget.
