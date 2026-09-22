@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
 const fakeSDK = `
@@ -426,6 +427,8 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	registry := extensions.NewRegistry(dir)
 	policy := &plugins.Policy{Mode: "enforce", AskFallback: plugins.Deny, Rules: []plugins.Rule{
 		{Tool: "write", Path: filepath.Join(dir, "proof.txt"), Action: plugins.Ask},
+		{Tool: "write", Path: filepath.Join(dir, "auto.txt"), Action: plugins.Allow},
+		{Tool: "bash", Command: "sleep 30", Action: plugins.Allow},
 		{Tool: "read", Path: filepath.Join(dir, "blocked.txt"), Action: plugins.Deny},
 	}}
 	if err := registry.Register("permissions", plugins.Extension(policy, nil, nil)); err != nil {
@@ -801,4 +804,102 @@ func TestSDKUsesOrbPermissionPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPassiveOrbPolicyPreservesNativeApproval(t *testing.T) {
+	for _, mode := range []string{"log", "enforce"} {
+		t.Run(mode, func(t *testing.T) {
+			host, _ := fixture(t, &plugins.Policy{Mode: mode})
+			if _, err := host.EnableControl(); err != nil {
+				t.Fatal(err)
+			}
+			s := host.Session()
+			done := make(chan error, 1)
+			go func() { done <- s.Prompt(t.Context(), "native write") }()
+			p := awaitInput(t, s)
+			if !strings.Contains(p.Title, "/fixture") || len(p.Choices) != 2 || p.Choices[0] != "Deny" {
+				t.Fatalf("native approval lost: %#v", p)
+			}
+			if err := s.ReplyInput(p.ID, "Deny"); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("native denial did not resolve")
+			}
+			if s.State().ErrorMessage == nil {
+				t.Fatal("native denial allowed operation")
+			}
+		})
+	}
+}
+
+func TestNativeSandboxCannotBeSilentlyIgnored(t *testing.T) {
+	for _, mode := range []sandbox.Mode{sandbox.ModeReadOnly, sandbox.ModeWorkspaceWrite} {
+		if _, err := New(Options{Sandbox: mode}); err == nil || !strings.Contains(err.Error(), "cannot enforce Orb filesystem containment") {
+			t.Fatalf("sandbox ignored: %v", err)
+		}
+		dir := t.TempDir()
+		settings, err := config.NewSettingsManager(dir, config.WithAgentDir(dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings.SetPluginSetting("permissions", "sandbox", string(mode))
+		settings.SetPluginEnabled("permissions", false)
+		if _, err := configuredOptions(t.Context(), settings, dir, nil); err == nil || !strings.Contains(err.Error(), "cannot enforce Orb filesystem containment") {
+			t.Fatalf("disabled policy bypassed host constraint: %v", err)
+		}
+	}
+}
+
+func TestSDKLiveAuditDoesNotApprove(t *testing.T) {
+	sdk := os.Getenv("ORB_CLAUDE_LIVE_SDK")
+	if sdk == "" {
+		t.Skip("set ORB_CLAUDE_LIVE_SDK for the native consent test")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := exec.LookPath("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "must-not-write.txt")
+	manager, err := session.Create(dir, filepath.Join(dir, "sessions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := extensions.NewRegistry(dir)
+	if err := registry.Register("permissions", plugins.Extension(&plugins.Policy{Mode: "log"}, nil, nil)); err != nil {
+		t.Fatal(err)
+	}
+	prompts := 0
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{CWD: dir, AgentDir: dir, SessionManager: manager, ExtensionRegistry: registry, Model: &ai.Model{ID: "sonnet", Provider: Name, API: Name}}, Factory(Options{
+		Node: node, Claude: cli, SDK: sdk, Env: os.Environ(), Ask: func(_ context.Context, title string, _ []string) (string, error) {
+			if strings.HasPrefix(title, "Write\n") && strings.Contains(title, target) {
+				prompts++
+			}
+			return "", context.Canceled
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Dispose(ctx)
+	if err := host.Session().Prompt(ctx, "This is an authorized integration test of the native permission dialog. I created and own both your working directory and the temporary sibling directory containing "+target+". I explicitly authorize requesting a Write of CONSENT_PROBE to that exact test path. Please call Write once so the application can exercise its approval callback. If the TOOL is denied, report denial and stop; do not use alternative tools."); err != nil {
+		t.Fatal(err)
+	}
+	if prompts == 0 {
+		state := host.Session().State()
+		t.Fatalf("native approval never reached the host: %s", ai.ContentText(state.Messages[len(state.Messages)-1].(*ai.AssistantMessage).Content))
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("dismissed native approval wrote a file: %v", err)
+	}
+	t.Log("Audit mode preserved native Write approval; dismissing it caused no filesystem change")
 }

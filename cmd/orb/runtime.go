@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/permissions"
+	permissionnative "github.com/OrdalieTech/orb/plugins/permissions/native"
 	"github.com/OrdalieTech/orb/sandbox"
 )
 
@@ -216,15 +217,13 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	var allowedTools *[]string
 	var excludedTools []string
 	var promptOptions agent.SystemPromptOptions
-	toolSandboxMode := sandbox.ModeDangerFullAccess
+	var toolSandboxMode sandbox.Mode
 	// metadataOnly runs (--help, --list-models) need only extension flag and
 	// provider metadata: skill/prompt/theme discovery, tool construction and the
 	// system prompt are skipped, and ResourceDiagnostics stays empty.
 	if !args.metadataOnly {
-		if !args.NoExtensions {
-			if toolSandboxMode, err = permissions.SandboxMode(settings); err != nil {
-				return runtimeInputs{}, err
-			}
+		if toolSandboxMode, err = permissions.SandboxMode(settings); err != nil {
+			return runtimeInputs{}, err
 		}
 		defaultLoader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
@@ -449,12 +448,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		RebuildBaseTools: func() ([]engine.AgentTool, error) {
 			// Re-resolve the sandbox mode so a /plugins reload takes effect
 			// without a restart.
-			rebuildSandboxMode := sandbox.ModeDangerFullAccess
-			if !args.NoExtensions {
-				var err error
-				if rebuildSandboxMode, err = permissions.SandboxMode(settings); err != nil {
-					return nil, err
-				}
+			rebuildSandboxMode, err := permissions.SandboxMode(settings)
+			if err != nil {
+				return nil, err
 			}
 			return createBuiltInTools(cwd, baseToolNames, settings, rebuildSandboxMode)
 		},
@@ -654,6 +650,14 @@ func requestAuthResolverWithCredentials(
 }
 
 func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager, sandboxMode sandbox.Mode) ([]engine.AgentTool, error) {
+	shellPath, err := settings.GetShellPath()
+	if err != nil {
+		return nil, err
+	}
+	options := permissionnative.ToolOptions(sandboxMode, cwd, shellPath)
+	if options == nil {
+		options = &tools.ToolsOptions{}
+	}
 	result := make([]engine.AgentTool, 0, len(names))
 	for _, name := range names {
 		switch name {
@@ -661,26 +665,16 @@ func createBuiltInTools(cwd string, names []string, settings *config.SettingsMan
 			autoResize := settings.GetImageAutoResize()
 			result = append(result, tools.NewReadTool(cwd, &tools.ReadToolOptions{AutoResizeImages: &autoResize}))
 		case "bash":
-			shellPath, err := settings.GetShellPath()
-			if err != nil {
-				return nil, err
+			bash := options.Bash
+			if bash == nil {
+				bash = &tools.BashToolOptions{ShellPath: shellPath}
 			}
-			var spawnHook tools.BashSpawnHook
-			if sandboxMode != sandbox.ModeDangerFullAccess {
-				spawnHook = func(spawn tools.BashSpawnContext) tools.BashSpawnContext {
-					spawn.Command, spawn.Env = sandbox.Wrap(sandboxMode, spawn.Cwd, shellPath, spawn.Command, spawn.Env)
-					return spawn
-				}
-			}
-			result = append(result, tools.NewBashTool(cwd, &tools.BashToolOptions{
-				ShellPath:     shellPath,
-				CommandPrefix: settings.GetShellCommandPrefix(),
-				SpawnHook:     spawnHook,
-			}))
+			bash.CommandPrefix = settings.GetShellCommandPrefix()
+			result = append(result, tools.NewBashTool(cwd, bash))
 		case "edit":
-			result = append(result, tools.NewEditTool(cwd, nil))
+			result = append(result, tools.NewEditTool(cwd, options.Edit))
 		case "write":
-			result = append(result, tools.NewWriteTool(cwd, nil))
+			result = append(result, tools.NewWriteTool(cwd, options.Write))
 		case "grep":
 			result = append(result, tools.NewGrepTool(cwd, nil))
 		case "find":

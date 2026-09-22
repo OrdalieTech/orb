@@ -1016,7 +1016,11 @@ func (runner *Runner) EmitToolCall(ctx context.Context, event ToolCallEvent) *To
 				return &ToolCallResult{Block: true, Reason: err.Error()}
 			}
 			if parsed, ok := toolCallResult(result); ok {
-				current = parsed
+				next := *parsed
+				if current != nil {
+					next.Approved = next.Approved || current.Approved
+				}
+				current = &next
 				if current.Block {
 					return current
 				}

@@ -49,6 +49,7 @@ orb/
 │   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
 │   ├── subagents/            child agents and native CLI execution
 │   ├── permissions/          policy, hooks and configuration UI
+│   │   └── native/           native bash/file containment through tool-operation options
 │   ├── mcp/                  configured MCP integration
 │   └── herdr/                explicitly selected external integration
 ├── internal/
@@ -100,6 +101,34 @@ require a suitable host. Web search retains native credential/DNS defaults; brow
 and storage must be explicitly adapted. Tasks and permissions currently include TUI adapters,
 and the product agent still has presentation dependencies. No browser/mobile application,
 Worker lifecycle, universal platform manifest or speculative host framework is introduced.
+
+### Permission boundaries
+
+`plugins/permissions` enforces rules by default and requests explicit consent through the existing
+runtime input seam. Guards cannot be bypassed by an authorizer asking a question. Headless requests deny
+by default; cancellation always denies. Session approvals bind the session, tool, working directory,
+canonical file targets, arguments and matched rule; the bounded cache resets when mode changes.
+Approval prompts show the arguments and working directory. Audits omit duplicate argument payloads.
+A passive Go hook does not authorize an external executor: the Go-only `Approved` flag carries
+positive consent, while `Block` always wins. Neither flag addition changes pi's JSON contracts.
+
+`plugins/permissions/native.ToolOptions` supplies the existing SDK `ToolOptions` seam with shell
+sandboxing and edit/write operations backed by `sandbox.Files` and `os.Root`. The CLI and built-in
+subagents use it; SDK hosts choose it explicitly instead of expecting a policy object to alter
+injected tools. Browser/VFS hosts keep their own operations. Linux native hosts must implement the
+existing `__sandbox` launcher; unsupported platforms refuse restricted shell execution. File writes
+stay within the configured workspace (when writable) or temporary directory; reads and network
+remain unrestricted. Agent bash also retains its `/dev` write exception. Direct human/RPC shell
+commands and extension code remain trusted host operations. These are filesystem limits, not
+isolation of plugins, credentials or network traffic. External subagent executables inherit
+filesystem containment while retaining their own internal tool policy. Claude Sessions currently
+refuses restricted Orb sandbox modes because it cannot enforce that boundary for its native runtime.
+
+Configured host containment survives `--no-extensions` and disabling the permissions plugin. To
+remove it, explicitly select `danger-full-access`. Command globs remain textual rules, not a shell
+parser or an analysis of programs invoked by a command. Compound/expanding shell syntax with scoped
+rules requires approval unless a matching whole-tool or exact-command allow explicitly authorizes it.
+Path rules support recursive `**`; an allow must cover every target, including canonical destinations.
 
 ### Upstream package correspondence
 

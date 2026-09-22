@@ -40,7 +40,7 @@ var descriptions = map[string]string{
 	"tasks":              "Live session task list and todo tool",
 	"websearch":          "Web search and readable page fetching",
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
-	"permissions":        "Permissive audit and tool-call permission rules (bash is matched by command text only)",
+	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
 	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
 }

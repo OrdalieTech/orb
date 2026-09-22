@@ -8,6 +8,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - Reduce streamed tool-argument parsing and model-catalog allocation costs without changing JSON wire formats.
 
+- Harden permissions: cancellation and missing UI deny by default, explicit consent stays scoped, native Claude approvals remain intact, and configured filesystem containment covers file tools and child agents even with extensions disabled.
+
 ### Claude Sessions
 
 - Add an optional plugin using the official Claude Agent SDK. Start from `/claude`; Orb prepares

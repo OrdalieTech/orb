@@ -1,5 +1,27 @@
 # Implementation progress
 
+## Permission hardening — 2026-09-22
+
+Owner-requested review reproduced cross-tool approval reuse, allow-on-dismissal/headless requests,
+authorizer bypasses of guards, missing operation details, symlink/multi-target rule escapes and
+passive native-hook approval. Regression tests now cover each. Enabled policy defaults to enforce;
+explicit consent is distinct from a nonblocking Go hook without changing extension JSON. Approvals
+are scoped, bounded and cleared on mode changes; audit entries omit duplicate tool payloads.
+
+Native containment uses existing tool-operation injection and stdlib `os.Root`, covers built-in
+write/edit plus integrated and external subagents, and survives disabled extensions. No new dependency
+or host framework. SDK hosts select the native adapter explicitly; VFS hosts retain their own operations.
+Claude Sessions refuses Orb sandbox configurations it cannot enforce. Command rules remain textual;
+reads/network and trusted extension or direct user shell operations are outside these filesystem limits.
+
+Validation: targeted race regressions, live macOS bash/file/external-child containment, static Linux
+CLI and selected JS/Wasm compilation. Real Claude SDK 0.3.278 through paired in-process Bridge passed
+explicit/automatic consent, denied Read, questions, resume, fork and cancellation (606 ms). A separate
+real Claude test confirmed audit mode preserves native Write approval and dismissal creates no file.
+Its initial fixture prompt caused the model to decline before invoking a tool; the final prompt explicitly
+authorizes the owned temporary test path, with approval/no-write assertions unchanged. This is not a
+fresh Linux kernel or Tailcat network test. Full `make check` passes build, vet/lint, race and conformance.
+
 The active sequence is `SPRINTS.md`; the old work-package numbers are historical spec references
 only. Progress is measured by conformance surfaces moving from red to green and by milestone
 criteria closing.

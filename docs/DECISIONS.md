@@ -337,6 +337,15 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 ## Standing assumptions (owner-confirmed)
 
+- **Permission hardening (owner, 2026-09-22).** Permission policy remains optional and enforces
+  rules by default when enabled. An explicitly configured native filesystem sandbox is a host constraint and survives disabling extensions
+  or the policy plugin. Native bash, edit, write and child agents share that constraint;
+  unsupported native executors refuse the configuration. Go-only `Approved` flags on tool hook
+  results distinguish explicit consent from a hook that merely does not block. They are excluded
+  from JSON, leaving the pi/JS extension and RPC contracts unchanged. Missing UI defaults to deny;
+  cancellation and authorization errors never grant consent. Explicit headless `askFallback: allow`
+  remains available. This changes Orb's original permission behavior, not kernel tool defaults.
+
 - **Herdr environment adapter (owner, 2026-09-21).** A hidden compatibility extension may
   auto-attach only with `HERDR_ENV=1`, `HERDR_PANE_ID`, and `HERDR_BIN_PATH`; otherwise it is
   absent. This is host-environment adaptation, not default-on feature precedent under P4.

@@ -777,3 +777,31 @@ type fakeUI struct{ NoopUI }
 func (fakeUI) Select(context.Context, string, []string, *DialogOptions) (string, bool, error) {
 	return "yes", true, nil
 }
+
+func TestToolConsentIsExplicitAndDenialWins(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		results          []ToolCallResult
+		approved, denied bool
+	}{
+		{name: "passive", results: []ToolCallResult{{}}, approved: false},
+		{name: "approval survives passive hook", results: []ToolCallResult{{Approved: true}, {}}, approved: true},
+		{name: "denial wins", results: []ToolCallResult{{Approved: true}, {Block: true}, {Approved: true}}, denied: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := NewRegistry(t.TempDir())
+			if err := registry.Register("consent", func(api API) error {
+				for _, result := range tc.results {
+					api.On(EventToolCall, func(context.Context, Event, Context) (any, error) { return result, nil })
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			got := NewRunner(registry, RunnerOptions{}).EmitToolCall(t.Context(), ToolCallEvent{ToolName: "bash"})
+			if got == nil || got.Block != tc.denied || (!got.Block && got.Approved != tc.approved) {
+				t.Fatalf("result: %#v", got)
+			}
+		})
+	}
+}

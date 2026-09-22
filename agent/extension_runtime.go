@@ -970,7 +970,7 @@ func (runtime *SessionRuntime) beforeExtensionToolCall(ctx context.Context, call
 	if result == nil {
 		return nil, nil
 	}
-	return &engine.BeforeToolCallResult{Block: result.Block, Reason: result.Reason}, nil
+	return &engine.BeforeToolCallResult{Block: result.Block, Reason: result.Reason, Approved: result.Approved}, nil
 }
 
 // toolCallInput exposes the prepared, validated arguments the loop is about to

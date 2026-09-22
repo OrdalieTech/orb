@@ -72,25 +72,34 @@ configured name — never supply a command.
 - `preset`: `workspace-write` (sandbox `workspace-write` + mode `enforce`) or
   `danger-full-access` (no sandbox + mode `log`). Explicit keys override the
   preset.
-- `sandbox`: `read-only` | `workspace-write` | `danger-full-access` — bash
-  filesystem containment (Linux Landlock, macOS `sandbox-exec`). Both
-  restrictive modes keep `/dev` and the temp directory writable so
+- `sandbox`: `read-only` | `workspace-write` | `danger-full-access` — native bash, edit and write
+  filesystem containment (`os.Root` for file tools; Linux Landlock or macOS
+  `sandbox-exec` for bash). Both restrictive modes keep the temp directory writable;
+  bash also keeps `/dev` writable so
   `2>/dev/null` and `mktemp` keep working; `workspace-write` adds the session
   working directory. Enforcement is fail-closed: without Landlock or
   `sandbox-exec` the command refuses to run (exit 126) with the remedy named.
   Coverage is partial by nature (Landlock does not mediate chmod/chown-style
   metadata mutations).
-- `mode`: `enforce` or `log` (audit only). Guard denials contributed through
-  the SDK hold even in log mode.
+- `mode`: `enforce` (default) or `log` (audit only). Guard denials and authorizer
+  failures hold even in log mode. Audit-only decisions never approve external tools.
 - `rules`: last match wins; `tool` / `command` / `path` globs, `action` is
-  `allow` | `deny` | `ask`. Bash is matched by its command text only.
-- `askFallback`: `allow` | `deny` when no UI can prompt.
+  `allow` | `deny` | `ask`. Paths support recursive `**`; an allow must cover all
+  canonical targets. Bash rules match command text, not the effects of an invoked program.
+  Compound/expanding syntax under scoped rules asks unless explicitly allowed as a whole tool
+  or exact command. Use host containment for filesystem limits.
+- `askFallback`: `allow` | `deny` (default) when no UI can prompt. Cancellation,
+  prompt errors and invalid replies always deny. Approval dialogs show the actual arguments
+  and working directory; session approvals cannot cross tools or working directories.
 
 Any unknown or malformed key refuses startup with the key named; SDK embedders
 get a deny-all policy instead.
 
-Note `--no-extensions` disables the permissions plugin — and with it the
-sandbox.
+Configured filesystem containment remains active with `--no-extensions` or a disabled
+permissions plugin. Select `danger-full-access` explicitly to remove it. In-process and external
+subagents inherit containment; external CLIs retain their own internal tool policy. SDK hosts
+use `plugins/permissions/native.ToolOptions` explicitly for local tools; browser/VFS hosts
+supply their own operations. Reads and network access are not restricted.
 
 ### memory, tasks, websearch
 
@@ -192,8 +201,8 @@ Orb never executes the presentation-only tool definitions.
 When the **Permissions** plugin is enabled, Claude's native pre-tool hooks use its existing rules,
 approval cache and audit log. Native tool names and paths are normalized only for policy evaluation;
 Claude still executes its own tools and retains native restrictions. With Permissions disabled,
-Claude's native permission behavior applies. Orb's Bash filesystem sandbox does not sandbox Claude's
-native executable.
+Claude's native permission behavior applies. Claude Sessions refuses restricted Orb filesystem
+sandbox configurations because it cannot enforce them for Claude's native executable.
 
 Claude owns native tools, skills, MCP, project settings and compaction. Orb's tool plugins are not
 injected into that agent loop. Queued steer/follow-up messages enter at native turn boundaries.
