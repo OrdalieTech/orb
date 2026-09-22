@@ -1538,7 +1538,7 @@ func TestCompactFooterSkipsTelemetryCollection(t *testing.T) {
 	if probe.statsCalls != 0 || probe.autoCalls != 0 || probe.contextCalls != 1 {
 		t.Fatalf("compact calls = stats %d, context %d, auto %d", probe.statsCalls, probe.contextCalls, probe.autoCalls)
 	}
-	if len(compact) != 1 || !strings.Contains(compact[0], "8.2k|25%") {
+	if len(compact) != 1 || !strings.Contains(compact[0], "?|25%") {
 		t.Fatalf("compact footer = %#v", compact)
 	}
 
@@ -2216,7 +2216,8 @@ func TestFooterStatusClickTracksResizeAndIgnoresOtherCells(t *testing.T) {
 func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 	percent := 4.1
 	display := engine.AgentDisplayState{HasModel: true, ModelID: "gpt-5.6-luna", Provider: "openai-codex", Reasoning: true, ThinkingLevel: ai.ModelThinkingHigh}
-	context := &harness.ContextUsage{ContextWindow: 272000, Percent: &percent}
+	tokens := int64(11152)
+	context := &harness.ContextUsage{Tokens: &tokens, ContextWindow: 272000, Percent: &percent}
 	for _, width := range []int{20, 36, 48, 80, 140} {
 		line := compactFooterLine(display, context, []string{"Codex 69% left"}, width)
 		if tui.VisibleWidth(line) > width {
@@ -2230,7 +2231,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 		if width >= 36 && (!strings.Contains(line, "gpt-5.6-luna") || !strings.Contains(line, "Codex 69% left")) {
 			t.Fatalf("lost model or quota at %d: %q", width, line)
 		}
-		if width >= 80 && (!strings.Contains(line, "gpt-5.6-luna ◕") || !strings.Contains(line, "272k|4%")) {
+		if width >= 80 && (!strings.Contains(line, "gpt-5.6-luna ◕") || !strings.Contains(line, "11k|4%")) {
 			t.Fatalf("lost useful detail: %q", line)
 		}
 	}

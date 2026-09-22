@@ -213,6 +213,13 @@ type CustomOptions struct {
 	OnHandle              func(OverlayHandle)
 }
 
+// ModalOptions keeps Orb dialogs readable on wide terminals and usable on narrow ones.
+func ModalOptions() *CustomOptions {
+	return &CustomOptions{Overlay: true, StaticOverlayOptions: &OverlayOptions{
+		Width: 80, Margin: 1, MaxHeight: "85%", Backdrop: true,
+	}}
+}
+
 type CustomDone func(any)
 
 type CustomFactory func(UIHost, Theme, Keybindings, CustomDone) (Component, error)

@@ -1,5 +1,44 @@
 # Implementation progress
 
+## Compact Claude footer and native context — 2026-09-22
+
+Removed the duplicate session marker. Claude quota uses the lowest remaining active window,
+labeling the limiting window. `/claude usage` shows all reported windows, reset times and freshness.
+The plugin requests the native SDK’s summary context
+reading after a reply, persists total used tokens in session metadata and renders used tokens/percentage
+notation. The request is bounded to two seconds and cannot fail a completed turn. The optional
+executor `ContextUsage` callback now feeds that reading into Orb’s existing context APIs and footer,
+so local layout follows the normal quota → path → context order. Native parsing stays inside the
+plugin; Bridge is unchanged. A real 80-column Claude PTY verified this order. Tests exercise the
+SDK factory, metadata refresh and rejection of missing/invalid readings through `FooterSnapshot`.
+The live 80-column check reports 31,507 native used tokens and verifies `/claude usage` shows
+separate 5-hour/7-day windows. Orb-owned snapshots were regenerated for used-token display.
+The final `make check` passes: build, vet, lint, race suites and conformance.
+
+## Shared modal sizing — 2026-09-22
+
+Built-in dialogs and plugin screens share an 80-column width cap and one-cell outer margins.
+Plain panels reduce their inner inset below 60 columns, with matching mouse coordinates.
+Renderer checks cover 32–240-column terminals and clicks across the padding breakpoint.
+Orb-owned TUI snapshots were regenerated; `make check` passes, including race and conformance tests.
+
+## Claude subscription limits in the standard footer — 2026-09-22
+
+The Claude plugin consumes the official SDK's `rate_limit_event` stream and stores a sanitized
+subscription reading in its existing session metadata. Native utilization is a fraction; the
+footer shows remaining 5-hour/weekly percentages only when reported. Missing values retain an
+explicit native status, expired windows disappear and readings older than five minutes are marked
+stale. The plugin refreshes its existing status slot locally without extra API calls or credential
+access. The standard model/footer layout is unchanged; the duplicate native model label was removed.
+Bridge receives bounded informational status through an optional attachment callback wired by the
+CLI, with no Claude schema or authentication logic in Bridge or the runtime.
+
+Verified a real native SDK reading with both windows and actual footer rendering in isolated Claude
+PTYs at 140 and 80 columns. Tests cover missing/zero/invalid percentages, expiry, stale samples,
+model switching, shutdown and remote description/view propagation. A full-gate regression caught
+footer-clearing events leaking into ordinary headless RPC; non-TUI output is now excluded and tested.
+The final `make check` passes, including build, vet, lint, race tests and conformance.
+
 ## Release 0.9.0 preparation — 2026-09-22
 
 Minor version for optional Claude Sessions, shared questions, rule-based permission auto mode and

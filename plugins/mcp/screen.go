@@ -49,12 +49,7 @@ func (manager *Manager) statusWindow(ctx context.Context, command extensions.Com
 			func(text string) string { return th.FG("dim", text) },
 			func() string { return th.BGANSI("toolPendingBg") }, panelChild{panel})
 		return panel, nil
-	}, &extensions.CustomOptions{
-		Overlay: true,
-		StaticOverlayOptions: &extensions.OverlayOptions{
-			Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true,
-		},
-	})
+	}, extensions.ModalOptions())
 	return err
 }
 

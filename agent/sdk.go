@@ -27,6 +27,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiapi "github.com/OrdalieTech/orb/ai/api"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 // AgentSession is the public embedding type. It wraps the internal
@@ -39,6 +40,10 @@ type AgentSession = SessionRuntime
 type AgentSessionOptions struct {
 	// SessionLoop optionally delegates complete turns to a session executor.
 	SessionLoop engine.SessionLoop
+
+	// ContextUsage optionally supplies executor-owned context telemetry.
+	// It must be concurrency-safe; nil keeps Orb’s normal token estimate.
+	ContextUsage func() *harness.ContextUsage
 
 	// CWD is the working directory for tool execution and resource discovery.
 	// Defaults to the SessionManager's CWD if set, else ".".
@@ -589,6 +594,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 	runtimeCfg := SessionRuntimeConfig{
 		Agent:                  a,
+		ContextUsage:           opts.ContextUsage,
 		SessionManager:         sm,
 		Settings:               settings,
 		StreamFn:               streamFn,

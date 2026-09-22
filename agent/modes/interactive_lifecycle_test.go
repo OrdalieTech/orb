@@ -432,3 +432,24 @@ func (terminal *lifecycleTerminal) waitFor(value string, timeout time.Duration) 
 	}
 	return false
 }
+
+func TestStandardModalWidths(t *testing.T) {
+	initTestTheme(t)
+	for _, columns := range []int{32, 40, 80, 120, 240} {
+		for _, options := range []tui.OverlayOptions{dialogOverlayOptions(), configOverlayOptions(), toTUIOverlayOptions(*extensions.ModalOptions().StaticOverlayOptions)} {
+			ui := tui.NewTUI(newFakeTerminal(columns, 30))
+			component := &f12UILifecycleOverlayComponent{label: "modal"}
+			if err := ui.Start(); err != nil {
+				t.Fatal(err)
+			}
+			handle := ui.ShowOverlay(component, options)
+			ui.RenderNow()
+			handle.Hide()
+			_ = ui.Stop()
+			_, _, widths := component.state()
+			if !slicesContains(widths, min(80, columns-2)) {
+				t.Fatalf("terminal %d: modal widths %v", columns, widths)
+			}
+		}
+	}
+}

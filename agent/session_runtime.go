@@ -23,6 +23,7 @@ import (
 )
 
 type SessionRuntimeConfig struct {
+	ContextUsage           func() *harness.ContextUsage
 	Agent                  *engine.Agent
 	SessionManager         *sessionstore.SessionManager
 	Settings               *config.SettingsManager
@@ -70,6 +71,8 @@ type SessionRuntime struct {
 	// builtinToolPrompts overrides built-in tools' system-prompt contribution
 	// (see AgentSessionOptions.BuiltinToolPrompts).
 	builtinToolPrompts map[string]ToolPromptContribution
+
+	contextUsage func() *harness.ContextUsage
 
 	footerMu            sync.Mutex
 	footerRevision      uint64
@@ -280,7 +283,8 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	runtime := &SessionRuntime{
 		agent: runtimeConfig.Agent, manager: runtimeConfig.SessionManager,
 		settings: runtimeConfig.Settings, complete: complete, sleep: sleep, clock: clock,
-		listeners: []sessionListener{}, steering: []string{}, followUps: []string{},
+		contextUsage: runtimeConfig.ContextUsage,
+		listeners:    []sessionListener{}, steering: []string{}, followUps: []string{},
 		autoCompaction:  runtimeConfig.Settings.GetCompactionSettings().Enabled,
 		autoRetry:       runtimeConfig.Settings.GetRetrySettings().Enabled,
 		availableModels: runtimeConfig.AvailableModels, modelRegistry: runtimeConfig.ModelRegistry,
@@ -1446,6 +1450,9 @@ func (runtime *SessionRuntime) emitExtensionCompaction(
 }
 
 func (runtime *SessionRuntime) GetContextUsage() *harness.ContextUsage {
+	if runtime.contextUsage != nil {
+		return runtime.contextUsage()
+	}
 	state := runtime.agent.State()
 	if state.Model == nil || state.Model.ContextWindow <= 0 {
 		return nil

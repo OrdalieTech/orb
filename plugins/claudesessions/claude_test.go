@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -904,4 +905,148 @@ func TestSDKLiveAuditDoesNotApprove(t *testing.T) {
 		t.Fatalf("dismissed native approval wrote a file: %v", err)
 	}
 	t.Log("Audit mode preserved native Write approval; dismissing it caused no filesystem change")
+}
+
+func TestSDKSubscriptionLimits(t *testing.T) {
+	host, driver := fixture(t)
+	tr := translation{driver: driver}
+	now := time.Now()
+	event := map[string]any{"type": "rate_limit_event", "rate_limit_info": map[string]any{
+		"status": "allowed", "rateLimitType": "five_hour", "resetsAt": now.Add(time.Hour).Unix(),
+		"unifiedWindows": map[string]any{"five_hour": map[string]any{"utilization": .25, "resetsAt": now.Add(time.Hour).Unix()}, "seven_day": map[string]any{"utilization": .6, "resetsAt": now.Add(24 * time.Hour).Unix()}},
+	}}
+	raw, _ := json.Marshal(event)
+	if err := tr.event(raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := LimitsStatus(driver.options.Manager, now); got != "Claude 7d 40% left" {
+		t.Fatal(got)
+	}
+	rows := strings.Join(usageRows(driver.options.Manager, now), "\n")
+	for _, want := range []string{"5h: 25% used · 75% left · resets", "7d: 60% used · 40% left · resets", "Updated"} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("missing %s in %s", want, rows)
+		}
+	}
+	if !strings.Contains(strings.Join(usageRows(driver.options.Manager, now.Add(6*time.Minute)), "\n"), "Stale") {
+		t.Fatal("stale usage was not labeled")
+	}
+	id := protocol.NewID()
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(connect.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = attachment.Close() }()
+	data, err := attachment.Invoke(t.Context(), "instances.describe", connect.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
+	if err != nil || !strings.Contains(string(data), "Claude 7d 40%") {
+		t.Fatalf("remote quota missing: %s %v", data, err)
+	}
+	if got := LimitsStatus(driver.options.Manager, now.Add(6*time.Minute)); !strings.Contains(got, "stale") {
+		t.Fatal(got)
+	}
+	for _, test := range []struct{ input, want string }{
+		{`{"status":"allowed","rateLimitType":"five_hour"}`, "Claude"},
+		{`{"status":"allowed_warning","rateLimitType":"five_hour","utilization":0.9,"resetsAt":9999999999}`, "Claude 5h 10% left"},
+		{`{"status":"rejected","rateLimitType":"five_hour"}`, "Claude limit reached"},
+		{`{"status":"allowed","rateLimitType":"five_hour","utilization":0,"resetsAt":9999999999}`, "Claude 5h 100% left"},
+		{`{"status":"allowed","rateLimitType":"five_hour","utilization":-1,"resetsAt":9999999999}`, "Claude"},
+		{`{"status":"allowed","rateLimitType":"five_hour","utilization":0.5,"resetsAt":1}`, "Claude limits pending"},
+	} {
+		if err := tr.event([]byte(`{"type":"rate_limit_event","rate_limit_info":` + test.input + `}`)); err != nil {
+			t.Fatal(err)
+		}
+		if got := LimitsStatus(driver.options.Manager, time.Now()); got != test.want {
+			t.Errorf("%s: %s", test.input, got)
+		}
+	}
+}
+
+type limitsUI struct {
+	extensions.NoopUI
+	calls int
+	mu    sync.Mutex
+	text  string
+}
+
+func (ui *limitsUI) SetStatus(key string, value *string) {
+	if key != Name+".limits" {
+		return
+	}
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	ui.calls++
+	ui.text = ""
+	if value != nil {
+		ui.text = *value
+	}
+}
+func TestLimitsFooterClearsOnModelSwitchAndShutdown(t *testing.T) {
+	_, driver := fixture(t)
+	registry := extensions.NewRegistry(t.TempDir())
+	if err := registry.Register("limits", func(api extensions.API) error { limitFooter(api); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ui := &limitsUI{}
+	model := &ai.Model{Provider: Name}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{SessionManager: driver.options.Manager, Mode: extensions.ModeTUI, UI: ui, ContextActions: extensions.ContextActions{GetModel: func() *ai.Model { return model }}})
+	runner.Emit(t.Context(), extensions.SessionStartEvent{})
+	ui.mu.Lock()
+	text := ui.text
+	ui.mu.Unlock()
+	if text != "Claude" {
+		t.Fatal(text)
+	}
+	model = &ai.Model{Provider: "anthropic"}
+	runner.Emit(t.Context(), extensions.ModelSelectEvent{})
+	ui.mu.Lock()
+	text = ui.text
+	ui.mu.Unlock()
+	if text != "" {
+		t.Fatal("Claude quota leaked into another provider")
+	}
+	model = &ai.Model{Provider: Name}
+	runner.Emit(t.Context(), extensions.ModelSelectEvent{})
+	runner.Emit(t.Context(), extensions.SessionShutdownEvent{})
+	ui.mu.Lock()
+	text = ui.text
+	ui.mu.Unlock()
+	if text != "" {
+		t.Fatal("shutdown kept the quota footer")
+	}
+	ui.mu.Lock()
+	calls := ui.calls
+	ui.mu.Unlock()
+	rpc := extensions.NewRunner(registry, extensions.RunnerOptions{SessionManager: driver.options.Manager, Mode: extensions.ModeRPC, UI: ui})
+	rpc.Emit(t.Context(), extensions.SessionStartEvent{})
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	if ui.calls != calls {
+		t.Fatal("footer emitted UI requests into ordinary RPC")
+	}
+}
+
+func TestNativeContextFooter(t *testing.T) {
+	host, driver := fixture(t)
+	for _, test := range []struct{ data, want string }{
+		{`{"maxTokens":200000,"totalTokens":24800,"percentage":12.4}`, "Claude · 25k|12%"},
+		{`{"maxTokens":1000000,"totalTokens":0,"percentage":0}`, "Claude · 0|0%"},
+		{`{"maxTokens":200000}`, "Claude"},
+		{`{"maxTokens":0,"percentage":12}`, "Claude"},
+		{`{"maxTokens":200000,"percentage":101}`, "Claude"},
+	} {
+		if _, err := driver.options.Manager.AppendCustomEntry(Name+".context", json.RawMessage(test.data)); err != nil {
+			t.Fatal(err)
+		}
+		if got := LimitsStatus(driver.options.Manager, time.Now()); got != test.want {
+			t.Fatalf("%s: got %s", test.data, got)
+		}
+		usage := host.Session().FooterSnapshot().ContextUsage
+		if strings.Contains(test.want, "|") {
+			if usage == nil || usage.Percent == nil || usage.ContextWindow <= 0 {
+				t.Fatalf("native context missing from shared footer: %+v", usage)
+			}
+		} else if usage != nil {
+			t.Fatalf("invalid context reached shared footer: %+v", usage)
+		}
+	}
 }

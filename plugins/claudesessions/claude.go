@@ -40,6 +40,20 @@ type Options struct {
 	Manager           *session.SessionManager
 	Ask               func(context.Context, string, []string) (string, error)
 }
+
+// Native SDK events may omit utilization; absence is never treated as zero use.
+type limitWindow struct {
+	Utilization *float64 `json:"utilization,omitempty"`
+	ResetsAt    int64    `json:"resetsAt,omitempty"`
+}
+type subscriptionLimits struct {
+	Status        string `json:"status"`
+	RateLimitType string `json:"rateLimitType,omitempty"`
+	limitWindow
+	UnifiedWindows map[string]limitWindow `json:"unifiedWindows,omitempty"`
+	ObservedAt     time.Time              `json:"observedAt"`
+}
+
 type checkpoint struct {
 	Owner   string `json:"owner"`
 	Session string `json:"session"`
@@ -306,6 +320,8 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		switch frame.Type {
 		case "sdk":
 			readErr = translator.event(frame.Event)
+		case "context":
+			_, readErr = d.options.Manager.AppendCustomEntry(Name+".context", frame.Event)
 		case "error":
 			readErr = errors.New(frame.Message)
 		case "tool":
@@ -443,6 +459,24 @@ func (t *translation) event(raw json.RawMessage) error {
 		t.session = e.Session
 	}
 	switch e.Type {
+	case "rate_limit_event":
+		var event struct {
+			Limits subscriptionLimits `json:"rate_limit_info"`
+		}
+		if err := json.Unmarshal(raw, &event); err != nil {
+			return err
+		}
+		if event.Limits.Status != "allowed" && event.Limits.Status != "allowed_warning" && event.Limits.Status != "rejected" {
+			return nil
+		}
+		event.Limits.ObservedAt = time.Now()
+		for key := range event.Limits.UnifiedWindows {
+			if limitLabel(key) == "" {
+				delete(event.Limits.UnifiedWindows, key)
+			}
+		}
+		_, err := t.driver.options.Manager.AppendCustomEntry(Name+".limits", event.Limits)
+		return err
 	case "system":
 		if e.Subtype == "init" {
 			var metadata struct {

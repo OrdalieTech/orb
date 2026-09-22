@@ -177,8 +177,7 @@ For headless use (with the same automatic first-use setup): `orb --provider clau
 The model picker uses the executing Claude CLI's `supportedModels()` catalog: native aliases,
 resolved model names and supported effort levels. New sessions use Claude's native default unless
 you select another model. `/model` changes the current session; `/claude` → Model chooses the default
-for new sessions. The bottom bar labels Claude sessions and reports the actual native model after
-each turn. Discovery starts no model turn and writes no Claude transcript.
+for new sessions. The existing model footer is retained, with a single compact Claude quota status. Discovery starts no model turn and writes no Claude transcript.
 
 `--session` and the ordinary Sessions picker resume the selected Orb conversation using its explicit
 native Claude session ID. `/claude` selects the model for explicitly created Claude sessions.
@@ -210,6 +209,20 @@ approval cache and audit log. Native tool names and paths are normalized only fo
 Claude still executes its own tools and retains native restrictions. With Permissions disabled,
 Claude's native permission behavior applies. Claude Sessions refuses restricted Orb filesystem
 sandbox configurations because it cannot enforce them for Claude's native executable.
+
+The footer shows subscription quota from native SDK rate-limit events, for example
+`Claude 7d 40% left`, identifying the active window with the least quota remaining.
+Open `/claude usage` (or `/claude` → Usage) for each reported window, percentages and reset times;
+missing readings stay unknown and stale readings are labeled.
+It appears after Claude reports a reading, normally after the first
+reply, and is also shown in Bridge views. These are subscription limits, not session token counts.
+Readings older than five minutes are marked stale; expired windows are omitted, and missing
+percentages remain an explicit status rather than a fabricated number. Another Claude client can
+consume quota between updates. Orb never reads native credentials. After each reply the plugin requests the SDK context summary
+(without per-category token-count API calls) and displays used tokens and context percentage as `24k|12%`, matching
+Orb’s compact footer after the working directory. The plugin supplies context through the generic
+executor telemetry callback; Orb owns the layout. Context metadata survives session resume;
+telemetry failure never fails a turn.
 
 Claude owns native tools, skills, MCP, project settings and compaction. Orb's tool plugins are not
 injected into that agent loop. Queued steer/follow-up messages enter at native turn boundaries.

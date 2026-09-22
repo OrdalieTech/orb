@@ -31,15 +31,6 @@ func configFrame(th extensions.Theme, title, footer string, child tui.Component)
 		func() string { return th.BGANSI("toolPendingBg") }, child)
 }
 
-func configWindowOptions() *extensions.CustomOptions {
-	return &extensions.CustomOptions{
-		Overlay: true,
-		StaticOverlayOptions: &extensions.OverlayOptions{
-			Width: "80%", MinWidth: 40, MaxHeight: "85%", Backdrop: true,
-		},
-	}
-}
-
 func statePill(th extensions.Theme, on bool) string {
 	if on {
 		return th.FG("success", "● on ")
@@ -201,7 +192,7 @@ func pluginsWindow(ctx context.Context, command extensions.CommandContext, cwd, 
 		}
 		list.OnCancel = func() { done(nil) }
 		return panel, nil
-	}, configWindowOptions())
+	}, extensions.ModalOptions())
 	state.mu.Lock()
 	state.closed = true
 	dirty := state.dirty

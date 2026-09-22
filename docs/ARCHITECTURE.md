@@ -273,6 +273,8 @@ callback owns model/tool iteration and emits existing engine events. SessionRunt
 provider-auth preflight, retry and automatic compaction for these sessions; explicit Orb compaction
 refuses rather than rewriting a foreign engine's context. Default constructors and event shapes
 remain unchanged. This seam has two real implementations: Orb's existing loop and Claude Sessions.
+The optional `ContextUsage` callback on session options/config supplies executor telemetry to the
+existing context APIs and standard footer. Parsing native metadata remains the plugin’s job.
 
 `plugins/claudesessions/` owns the official SDK host, native session checkpoints, event translation,
 configuration and `/claude` management. Only CLI assembly imports it. Its embedded JavaScript runs

@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
 type bridgeInteractiveHost struct{ *interactiveSessionHost }
@@ -169,7 +170,12 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 	if link == nil {
 		link = &cliBridgeLink{}
 	}
-	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Authorize: func(r connect.Request) bool {
+	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Status: func(s *agent.AgentSession) string {
+		if model := s.State().Model; model != nil && model.Provider == claudesessions.Name {
+			return claudesessions.LimitsStatus(s.Manager(), time.Now())
+		}
+		return ""
+	}, Authorize: func(r connect.Request) bool {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		var allowed bool

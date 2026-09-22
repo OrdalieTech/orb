@@ -422,6 +422,7 @@ type Frame struct {
 	OnAction                             func()
 	actionFocused                        bool
 	actionRow, actionColumn, actionWidth int
+	innerInset                           int
 	Plain                                bool
 	Background                           StyleFunc
 	Title                                string
@@ -465,13 +466,18 @@ func (frame *Frame) Render(width int) []string {
 	if width < 8 {
 		return nil
 	}
-	interior := width - 4 // border + one padding cell each side
+	frame.innerInset = 2
+	if frame.Plain && width < 60 {
+		frame.innerInset = 1
+	}
+	interior := width - 2*frame.innerInset
+	padding := strings.Repeat(" ", frame.innerInset-1)
 	side := frame.style(frame.Border, "│")
 	if frame.Plain {
 		side = " "
 	}
 	wrap := func(content string) string {
-		return side + " " + TruncateToWidth(content, interior, "…", true) + " " + side
+		return side + padding + TruncateToWidth(content, interior, "…", true) + padding + side
 	}
 	lines := []string{frame.style(frame.Border, "╭"+strings.Repeat("─", width-2)+"╮")}
 	if frame.Plain {
@@ -490,7 +496,7 @@ func (frame *Frame) Render(width int) []string {
 		if frame.Action != "" && frame.OnAction != nil {
 			action := TruncateToWidth("["+frame.Action+"]", interior, "…", false)
 			frame.actionWidth = VisibleWidth(action)
-			frame.actionRow, frame.actionColumn = 1, width-2-frame.actionWidth
+			frame.actionRow, frame.actionColumn = 1, width-frame.innerInset-frame.actionWidth
 			if frame.actionFocused {
 				if frame.ActionSelected != nil {
 					action = frame.ActionSelected(action)
@@ -578,6 +584,10 @@ func (frame *Frame) WantsMouseMotion() bool {
 func (frame *Frame) HandleMouse(event MouseEvent) bool {
 	frame.mu.Lock()
 	hitAction := frame.OnAction != nil && event.Row == frame.actionRow && event.Column >= frame.actionColumn && event.Column < frame.actionColumn+frame.actionWidth
+	inset := frame.innerInset
+	if inset == 0 {
+		inset = 2
+	}
 	restoreFocus := !hitAction && event.Type == MousePress && frame.actionFocused
 	if restoreFocus {
 		frame.actionFocused = false
@@ -600,7 +610,7 @@ func (frame *Frame) HandleMouse(event MouseEvent) bool {
 	if frame.Title != "" {
 		event.Row -= 2 // heading and spacer
 	}
-	event.Column -= 2
+	event.Column -= inset
 	return handler.HandleMouse(event)
 }
 

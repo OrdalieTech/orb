@@ -93,7 +93,18 @@ async function run(config) {
     if (cancelled) { await active.interrupt(); return; }
     for await (const event of active) {
       await send({ type: 'sdk', event });
-      if (event.type === 'result') { release(); break; }
+      if (event.type === 'result') {
+        let timeout;
+        try {
+          const usage = await Promise.race([
+            active.getContextUsage({ detail: 'summary' }),
+            new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Context timeout')), 2000); }),
+          ]);
+          await send({ type: 'context', event: { maxTokens: usage.maxTokens, totalTokens: usage.totalTokens, percentage: usage.percentage } });
+        } catch { /* Context telemetry must not fail a completed turn. */ }
+        finally { clearTimeout(timeout); }
+        release(); break;
+      }
     }
   } finally {
     release();
