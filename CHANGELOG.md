@@ -6,11 +6,7 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
-- Orb on Linux reaches HTTPS providers from minimal containers that ship without a CA bundle
-  (for example `oven/bun` images): the CLI falls back to built-in Mozilla roots, as pi does
-  through Node. A system bundle, when present, still wins.
-
-## [0.10.0] - 2026-09-22
+## [0.10.0] - 2026-09-23
 
 Orb's core now builds for every target behind host ports: Linux, macOS and Windows, 32-bit
 Linux (iSH), Android (Termux), browser and Worker Wasm, and WASI. One scripted session produces
@@ -34,6 +30,10 @@ with mid-turn steering. The compatibility target remains Pi **v0.86.0** on Go **
 - Add an opt-in browser Wasm debug screen with a shared headless assembly, isolated virtual files,
   streamed engine events, cancellation and a responsive chat with direct model API configuration
   (OpenRouter/GPT-5.6 Luna by default), Enter to send and collapsible debugging controls.
+
+- Orb on Linux reaches HTTPS providers from minimal containers that ship without a CA bundle
+  (for example `oven/bun` images): the CLI falls back to built-in Mozilla roots, as pi does
+  through Node. A system bundle, when present, still wins.
 
 ### Claude Sessions
 
