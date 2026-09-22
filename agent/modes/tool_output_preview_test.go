@@ -409,3 +409,13 @@ func (terminal *toolOutputTerminal) resetOutput() {
 	terminal.writes = nil
 	terminal.mu.Unlock()
 }
+
+func TestToolsWithoutRendererShowTheirMainArgument(t *testing.T) {
+	initTestTheme(t)
+	if got := tui.StripANSI(fallbackToolTitle("mcp__docs__fetch", map[string]any{"url": "https://example.com/a  b"})); got != "mcp__docs__fetch https://example.com/a b" {
+		t.Fatalf("title %q", got)
+	}
+	if editArgsPath(map[string]any{"file_path": "/p/main.go", "old_string": "a"}) != "/p/main.go" {
+		t.Fatal("native edit path lost")
+	}
+}

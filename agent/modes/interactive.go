@@ -4535,7 +4535,9 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 			container := &tui.Container{}
 			label, detail, _ := strings.Cut(renderer.RenderCall(args), " ")
 			color := "accent"
-			switch name {
+			// Executors may register the same tools under their own capitalization.
+			kind := strings.ToLower(name)
+			switch kind {
 			case "bash":
 				color = "bashMode"
 			case "edit", "write":
@@ -4553,7 +4555,7 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 				}
 				return header
 			}
-			if name != "edit" || !context.ArgsComplete {
+			if kind != "edit" || !context.ArgsComplete {
 				return container
 			}
 			// A final result makes the preview stale by construction: the edit
@@ -4577,7 +4579,7 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 			return container
 		},
 		RenderResult: func(result engine.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
-			if name == "edit" {
+			if strings.EqualFold(name, "edit") {
 				if options.IsPartial {
 					// The pre-execution preview is still on screen; only render
 					// a partial diff the preview does not already show.
@@ -4606,7 +4608,11 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 // editArgsPath extracts the file path from edit-tool args for highlight
 // language detection; an empty result just renders the diff unhighlighted.
 func editArgsPath(args any) string {
-	path, _, _ := editPreviewInput(args)
+	if path, _, ok := editPreviewInput(args); ok {
+		return path
+	}
+	values, _ := args.(map[string]any)
+	path, _ := values["file_path"].(string)
 	return path
 }
 

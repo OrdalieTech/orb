@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,16 +43,21 @@ export function query({prompt,options:o}) {
  })();
  const abort = new AbortController();
  const gen = (async function*(){
-  const {value:p}=await prompt[Symbol.asyncIterator]().next();
   if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
   const id=o.resume??crypto.randomUUID();
   const fork=forks.get(o.resume);
   const stream=event=>({type:'stream_event',session_id:id,parent_tool_use_id:null,event});
+  const prompts=prompt[Symbol.asyncIterator]();
+  let pending;
+  const next=()=>{const value=pending??prompts.next();pending=undefined;return value};
+  for(let turn=0;;turn++){
+  const {value:p,done}=await next();
+  if(done) return;
   yield {type:'system',subtype:'init',session_id:id};
   if(JSON.stringify(p.message.content).includes('elicitation-fixture')) {
    const reply=await o.onElicitation({serverName:'fixture MCP',message:'Choose retries',mode:'form',requestedSchema:{type:'object',properties:{retries:{type:'integer',minimum:1,maximum:5}},required:['retries']}},{signal:abort.signal});
    yield {type:'assistant',uuid:'elicitation-result',session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify(reply)}],usage:{input_tokens:10,output_tokens:4}}};
-   yield {type:'result',subtype:'success',session_id:id};return;
+   yield {type:'result',subtype:'success',session_id:id};continue;
   }
   const question = JSON.stringify(p.message.content).includes('question-fixture');
   const tool=question?'AskUserQuestion':'Write';
@@ -63,7 +69,7 @@ export function query({prompt,options:o}) {
   const decision=hook?.hookSpecificOutput?.permissionDecision;
   const reply=decision==='deny'?{behavior:'deny'}:decision==='allow'&&!question?{behavior:'allow',updatedInput:input}:await o.canUseTool(tool,input,{signal:abort.signal});
   if(reply.behavior!=='allow') throw new Error('permission denied');
-  const text=JSON.stringify({resume:fork?fork.from:o.resume??'',fork:!!fork,at:fork?.at??'',content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
+  const text=JSON.stringify({resume:fork?fork.from:o.resume??'',fork:!!fork,at:fork?.at??'',turn,content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
   // Like the real CLI: one assistant record per content block, beside the raw stream.
   yield stream({type:'message_start',message:{id:'msg-1',model:o.model,content:[],usage:{input_tokens:10,output_tokens:1}}});
   yield stream({type:'content_block_start',index:0,content_block:{type:'text',text:''}});
@@ -78,14 +84,20 @@ export function query({prompt,options:o}) {
   yield stream({type:'message_delta',delta:{stop_reason:'tool_use'},usage:{output_tokens:4}});
   yield stream({type:'message_stop'});
   yield {type:'user',uuid:'tool-checkpoint',session_id:id,parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'tool-1',content:'written'}]}};
+  // Like the CLI, fold a prompt sent during the turn into it.
+  const race=next();
+  const folded=await Promise.race([race,new Promise(r=>setTimeout(()=>r(null),300))]);
+  if(folded===null) pending=race;
+  const final=folded?'done steered '+JSON.stringify(folded.value.message.content):'done';
   yield stream({type:'message_start',message:{id:'msg-2',model:o.model,content:[],usage:{input_tokens:12,output_tokens:1}}});
   yield stream({type:'content_block_start',index:0,content_block:{type:'text',text:''}});
-  yield stream({type:'content_block_delta',index:0,delta:{type:'text_delta',text:'done'}});
+  yield stream({type:'content_block_delta',index:0,delta:{type:'text_delta',text:final}});
   yield stream({type:'content_block_stop',index:0});
-  yield {type:'assistant',uuid:'final-checkpoint',session_id:id,parent_tool_use_id:null,message:{id:'msg-2',model:o.model,content:[{type:'text',text:'done'}],usage:{input_tokens:12,output_tokens:1}}};
+  yield {type:'assistant',uuid:'final-checkpoint',session_id:id,parent_tool_use_id:null,message:{id:'msg-2',model:o.model,content:[{type:'text',text:final}],usage:{input_tokens:12,output_tokens:1}}};
   yield stream({type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:2}});
   yield stream({type:'message_stop'});
   yield {type:'result',subtype:'success',session_id:id,total_cost_usd:0.01};
+  }
  })();
  gen.supportedModels=async()=>[
  {value:'default',resolvedModel:'claude-native-default',displayName:'Default',supportsEffort:true,supportedEffortLevels:['low','high','max'],supportsAdaptiveThinking:true},
@@ -220,8 +232,9 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 	if !strings.Contains(string(raw), `\"effort\":\"max\"`) || !strings.Contains(string(raw), `\"thinking\":{\"type\":\"adaptive\"}`) {
 		t.Fatalf("native effort settings missing: %s", raw)
 	}
-	if !strings.Contains(string(raw), `\"resume\":\"`+saved.Session) {
-		t.Fatalf("explicit resume missing: %s", raw)
+	// One live native session serves consecutive turns, with no resume in between.
+	if !strings.Contains(string(raw), `\"turn\":1`) {
+		t.Fatalf("second turn did not reuse the live session: %s", raw)
 	}
 	var replies []*ai.AssistantMessage
 	for _, message := range messages {
@@ -259,6 +272,44 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 	raw, _ = json.Marshal(s.State().Messages)
 	if !strings.Contains(string(raw), `\"resume\":\"`+saved.Session+`\",\"fork\":true,\"at\":\"tool-checkpoint\"`) {
 		t.Fatalf("branch did not resume at its native point: %s", raw)
+	}
+}
+
+func TestSteeringJoinsTheRunningTurn(t *testing.T) {
+	host, _ := fixture(t)
+	if _, err := host.EnableControl(); err != nil {
+		t.Fatal(err)
+	}
+	s := host.Session()
+	done := make(chan error, 1)
+	go func() { done <- s.Prompt(context.Background(), "hello") }()
+	approval := awaitInput(t, s)
+	if err := s.Steer("also this"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplyInput(approval.ID, "y approve once"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	var roles []string
+	for _, message := range s.State().Messages {
+		raw, _ := json.Marshal(message)
+		var m struct{ Role string }
+		_ = json.Unmarshal(raw, &m)
+		roles = append(roles, m.Role)
+		if m.Role == "assistant" && strings.Contains(string(raw), "done steered") && !strings.Contains(string(raw), "also this") {
+			t.Fatalf("steering folded without its text: %s", raw)
+		}
+	}
+	// Orb's order: the tool result, then the steering message, then the reply that answers it.
+	if got := strings.Join(roles, ","); !strings.HasSuffix(got, "assistant,toolResult,user,assistant") {
+		t.Fatalf("steering did not join the running turn: %s", got)
+	}
+	raw, _ := json.Marshal(s.State().Messages[len(s.State().Messages)-1])
+	if !strings.Contains(string(raw), "done steered") {
+		t.Fatalf("native turn did not receive the steering message: %s", raw)
 	}
 }
 
@@ -1264,16 +1315,17 @@ func TestSDKHostDrainsBackgroundAndTrailingEvents(t *testing.T) {
 	if err := os.WriteFile(sdk, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
-	start, _ := json.Marshal(map[string]any{"type": "start", "sdk": sdk, "claude": "/unused", "cwd": dir, "session": "test", "content": []any{}})
+	start, _ := json.Marshal(map[string]any{"type": "start", "sdk": sdk, "claude": "/unused", "cwd": dir})
+	prompt, _ := json.Marshal(map[string]any{"type": "prompt", "uuid": "p", "content": []any{}})
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "node", "--input-type=module", "-e", hostSource)
-	cmd.Stdin = strings.NewReader(string(start) + "\n")
+	cmd.Stdin = strings.NewReader(string(start) + "\n" + string(prompt) + "\n")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	for _, want := range []string{`"subtype":"task_notification"`, `"type":"rate_limit_event"`, `"totalTokens":40`} {
+	for _, want := range []string{`"subtype":"task_notification"`, `"type":"rate_limit_event"`, `"totalTokens":40`, `"type":"settled"`} {
 		if !strings.Contains(string(out), want) {
 			t.Fatalf("lost %s: %s", want, out)
 		}
@@ -1570,4 +1622,68 @@ func TestSDKLiveBackgroundCompletion(t *testing.T) {
 		t.Fatalf("background completion missing: %.3000s", raw)
 	}
 	t.Log("Native background task completed before the SDK host closed")
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+func TestHeadlessNativeAsksFollowOrb(t *testing.T) {
+	var out strings.Builder
+	h := &host{input: nopWriteCloser{&out}}
+	d := &Driver{options: Options{Headless: true, Ask: func(context.Context, string, []string) (string, error) {
+		return "", errors.New("input requires an interactive UI or an attached controller")
+	}}}
+	for _, ruled := range []bool{false, true} {
+		out.Reset()
+		if err := d.handle(t.Context(), hostFrame{Type: "input", ID: "1", Choices: []string{"y approve once", "n deny"}, Ruled: ruled}, nil, h, nil, engine.AgentLoopConfig{}); err != nil {
+			t.Fatal(err)
+		}
+		if approved := strings.Contains(out.String(), `"value":"y approve once"`); approved == ruled {
+			t.Fatalf("ruled=%v approved=%v: %s", ruled, approved, out.String())
+		}
+	}
+}
+
+func TestOrbContextSkipsWhatClaudeLoads(t *testing.T) {
+	custom := "Be brief."
+	got := orbContext(&agent.SystemPromptOptions{AppendSystemPrompt: &custom, ContextFiles: []agent.ContextFile{{Path: "/p/AGENTS.md", Content: "use tabs"}, {Path: "/p/CLAUDE.md", Content: "native"}}})
+	if !strings.Contains(got, "Be brief.") || !strings.Contains(got, "use tabs") || strings.Contains(got, "native") {
+		t.Fatalf("context %q", got)
+	}
+}
+
+func TestNativePatchUsesOrbDiffFormat(t *testing.T) {
+	got := patchDiff([]patchHunk{{OldStart: 9, NewStart: 9, Lines: []string{" keep", "-old", "+new"}}})
+	if got != "  9 keep\n-10 old\n+10 new" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestReplyFinishingAfterEscEndsAborted(t *testing.T) {
+	_, driver := fixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	var ends []*ai.AssistantMessage
+	tr := translation{driver: driver, ctx: ctx, tools: map[string]string{}, cancelled: true, emit: func(_ context.Context, event engine.AgentEvent) error {
+		if end, ok := event.(engine.MessageEndEvent); ok {
+			if reply, ok := end.Message.(*ai.AssistantMessage); ok {
+				ends = append(ends, reply)
+			}
+		}
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"m"}}}`,
+		`{"type":"stream_event","event":{"type":"message_stop"}}`,
+		`{"type":"result","subtype":"error_during_execution"}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancel()
+	_ = tr.abort()
+	if len(ends) != 1 || ends[0].StopReason != ai.StopReasonAborted {
+		t.Fatalf("reply after Esc: %+v", ends)
+	}
 }

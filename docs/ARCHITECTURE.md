@@ -373,15 +373,20 @@ before a native compaction, so two Orb branches never append to one native sessi
 their own native UUID, so an interrupted turn resumes with the prompt Orb shows. The SDK emits one
 assistant record per content block; the raw stream of the same API message is authoritative, so
 each API message is one Orb message with its final usage. Native errors
-and list-price accounting remain native metadata, not asserted subscription invoices. Each active
-turn owns one subprocess until its non-ambient background tasks finish and the SDK stream drains;
-idle sessions own none. Independent instances have independent drivers. Steer/follow-up queues are
-delivered between complete native turns. Native lifecycle/progress events become existing engine
+and list-price accounting remain native metadata, not asserted subscription invoices. Each Claude
+session owns one live SDK query that serves consecutive turns; a turn settles once its result has no
+queued sends and no non-ambient background task remains. The host restarts only when the model,
+effort, permission mode or branch point changes, exits after ten idle minutes, and ends with its
+runtime. Independent instances have independent drivers. Steering joins the running native turn
+after its tool results, as in Orb's loop; follow-ups start the next turn. Native lifecycle/progress events become existing engine
 messages and tool updates; MCP forms and URL confirmations become shared execution-bound questions.
-Clients and transports never parse Claude SDK payloads. Native plan/default mode is plugin-owned
+Clients and transports never parse Claude SDK payloads. Native permission mode (default, accept-edits, plan, auto, don't-ask) is plugin-owned
 session metadata; manual compaction is a native prompt. SDK upgrades use validated, staged,
-versioned installations so running sessions retain their module path. Orb extension tools and context
-rewrites are not injected into Claude; Claude's own tools, skills, settings and MCP remain native.
+versioned installations so running sessions retain their module path. Orb context files other than
+CLAUDE.md and the custom/append system prompts are appended to Claude's preset prompt; Orb extension
+tools are not injected, and Claude's own tools, skills, settings and MCP remain native. Headless
+native approvals follow Orb: they run when Orb's permission policy would not prompt, except asks a
+user's own Claude ask rule forces.
 
 `SessionRuntime.RequestInput` is the small, vendor-neutral approval/input seam. A question has an
 unguessable, single-use ID, bounded title and choices, and a cancellation context. The owning TUI

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -322,6 +323,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	var modelDiagnostics []string
 	if !args.NoExtensions {
 		model = claudesessions.Model(args.Provider, args.Model, settings)
+	}
+	if model == nil && args.Provider != nil && *args.Provider == claudesessions.Name {
+		return runtimeInputs{}, errors.New("claude sessions are disabled; run `orb plugins enable claude-sessions` (and drop --no-extensions)")
 	}
 	if model == nil {
 		model, scopedThinking, scopedModels, modelDiagnostics, err = resolveRuntimeModel(args, settings, registry)
