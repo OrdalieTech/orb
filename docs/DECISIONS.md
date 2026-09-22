@@ -338,11 +338,15 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 ## Standing assumptions (owner-confirmed)
 
 - **Permission hardening (owner, 2026-09-22).** Permission policy remains optional and enforces
-  rules by default when enabled. An explicitly configured native filesystem sandbox is a host constraint and survives disabling extensions
+  rules when enabled. The owner's follow-up makes `auto` the default approval mode (including the
+  workspace-write preset): `ask` resolves to one-call consent without AI, while denials and guards
+  remain enforced. Explicit `enforce` retains manual approval, with headless fallback defaulting to
+  deny. `--auto` is a non-persistent opt-in/override; explicit saved modes remain unchanged otherwise.
+  An explicitly configured native filesystem sandbox is a host constraint and survives disabling extensions
   or the policy plugin. Native bash, edit, write and child agents share that constraint;
   unsupported native executors refuse the configuration. Go-only `Approved` flags on tool hook
   results distinguish explicit consent from a hook that merely does not block. They are excluded
-  from JSON, leaving the pi/JS extension and RPC contracts unchanged. Missing UI defaults to deny;
+  from JSON, leaving the pi/JS extension and RPC contracts unchanged. In enforce mode, missing UI defaults to deny;
   cancellation and authorization errors never grant consent. Explicit headless `askFallback: allow`
   remains available. This changes Orb's original permission behavior, not kernel tool defaults.
 

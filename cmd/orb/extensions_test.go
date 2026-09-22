@@ -12,6 +12,43 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 )
 
+func TestAutoLoadsPolicyWithoutPersistingOverride(t *testing.T) {
+	for _, settingsJSON := range []string{
+		`{}`,
+		`{"plugins":{"permissions":{"enabled":false,"mode":"log","rules":[{"tool":"blocked","action":"deny"},{"tool":"write","action":"ask"}]}}}`,
+		`{"plugins":{"permissions":{"mode":"invalid"}}}`,
+	} {
+		cwd, agentDir := t.TempDir(), t.TempDir()
+		settingsPath := filepath.Join(agentDir, "settings.json")
+		if err := os.WriteFile(settingsPath, []byte(settingsJSON), 0600); err != nil {
+			t.Fatal(err)
+		}
+		settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{Auto: true}, settings, nil)
+		if len(diagnostics) != 0 {
+			t.Fatal(diagnostics)
+		}
+		runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
+		if runner.Command("permissions") == nil {
+			t.Fatal("--auto did not enable the permission plugin")
+		}
+		for _, tool := range []string{"write", "blocked"} {
+			got := runner.EmitToolCall(t.Context(), extensions.ToolCallEvent{ToolName: tool})
+			wantDeny := strings.Contains(settingsJSON, "invalid") || tool == "blocked" && strings.Contains(settingsJSON, "rules")
+			if got == nil || got.Block != wantDeny || got.Approved == wantDeny {
+				t.Fatalf("%s, %s: %#v", settingsJSON, tool, got)
+			}
+		}
+		data, err := os.ReadFile(settingsPath)
+		if err != nil || string(data) != settingsJSON {
+			t.Fatalf("--auto persisted settings: %s, %v", data, err)
+		}
+	}
+}
+
 func TestHerdrExtensionIsAutomaticOnlyInsideHerdr(t *testing.T) {
 	values := map[string]string{"HERDR_ENV": "1", "HERDR_BIN_PATH": "/opt/herdr", "HERDR_PANE_ID": "w1:p1"}
 	getenv := func(name string) string { return values[name] }

@@ -11,6 +11,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 	"github.com/OrdalieTech/orb/plugins/memory"
+	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -46,6 +47,7 @@ type Options struct {
 	CWD              string
 	AgentDir         string
 	Settings         *config.SettingsManager
+	Policy           *permissions.Policy
 	// Compiled rows supplied by the assembly owner (cmd/orb's compiled
 	// extensions, or an embedder's own), first in boot order.
 	Compiled []extensions.CompiledExtension
@@ -71,7 +73,7 @@ func Rows(options Options) ([]Row, []string) {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
+	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: Description(name),

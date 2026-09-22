@@ -108,7 +108,8 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 		policy := must(permissions.FromSettings(settings))
 		require(t, policy.Mode == mode && policy.Sandbox == sandboxMode, "policy = %#v", policy)
 	}
-	checkPolicy(map[string]any{"preset": "workspace-write"}, "enforce", sandbox.ModeWorkspaceWrite)
+	checkPolicy(map[string]any{"preset": "workspace-write"}, "auto", sandbox.ModeWorkspaceWrite)
+	checkPolicy(map[string]any{"preset": "workspace-write", "mode": "enforce"}, "enforce", sandbox.ModeWorkspaceWrite)
 	checkPolicy(map[string]any{"preset": "danger-full-access"}, "log", sandbox.ModeDangerFullAccess)
 	checkPolicy(map[string]any{"preset": "workspace-write", "mode": "log", "sandbox": "read-only"}, "log", sandbox.ModeReadOnly)
 	root := t.TempDir()

@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func TestAutoArgs(t *testing.T) {
+	args := ParseArgs([]string{"--auto", "do the work"})
+	if !args.Auto || len(args.UnknownFlags) != 0 || !reflect.DeepEqual(args.Messages, []string{"do the work"}) {
+		t.Fatalf("auto args: %#v", args)
+	}
+	if args := ParseArgs([]string{"--auto", "--no-extensions"}); len(args.Diagnostics) != 1 || args.Diagnostics[0].Type != "error" {
+		t.Fatalf("conflicting auto flags: %#v", args)
+	}
+}
+
 func TestParseArgsCoreSubset(t *testing.T) {
 	args := ParseArgs([]string{
 		"--provider", "openai",

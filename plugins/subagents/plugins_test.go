@@ -212,27 +212,31 @@ func TestSubagentSurfacesChildStreamError(t *testing.T) {
 }
 
 func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
-	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-	childReadAbsent := false
-	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-policy"})),
-		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
-			childReadAbsent = true
-			if request.Tools != nil {
-				for _, tool := range *request.Tools {
-					if tool.Name == "read" {
-						childReadAbsent = false
+	for _, mode := range []string{"enforce", "auto"} {
+		t.Run(mode, func(t *testing.T) {
+			provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+			childReadAbsent := false
+			provider.SetResponses([]faux.ResponseStep{
+				faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "inspect", "agent": "scout"}, faux.ToolCallOptions{ID: "sub-policy"})),
+				faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+					childReadAbsent = true
+					if request.Tools != nil {
+						for _, tool := range *request.Tools {
+							if tool.Name == "read" {
+								childReadAbsent = false
+							}
+						}
 					}
-				}
-			}
-			return faux.AssistantMessage("child obeyed"), nil
-		}),
-		faux.AssistantMessage("parent done"),
-	})
-	policy := &permissions.Policy{Mode: "enforce", Rules: []permissions.Rule{{Tool: "read", Action: permissions.Deny}}}
-	session := newPermissionsSession(t, provider, policy, "subagents")
-	mustOK(session.PromptSync(context.Background(), "delegate"))
-	require(t, childReadAbsent, "read was advertised to the child despite the inherited deny rule")
+					return faux.AssistantMessage("child obeyed"), nil
+				}),
+				faux.AssistantMessage("parent done"),
+			})
+			policy := &permissions.Policy{Mode: mode, Rules: []permissions.Rule{{Tool: "*", Action: permissions.Ask}, {Tool: "subagent", Action: permissions.Allow}, {Tool: "read", Action: permissions.Deny}}}
+			session := newPermissionsSession(t, provider, policy, "subagents")
+			mustOK(session.PromptSync(context.Background(), "delegate"))
+			require(t, childReadAbsent, "read was advertised to the child despite the inherited deny rule")
+		})
+	}
 }
 
 func TestSubagentClearsProgressWidgetAndFailsParallelRuns(t *testing.T) {
@@ -414,29 +418,33 @@ func TestSubagentExternalObjectFormTogglesWithoutLosingCommands(t *testing.T) {
 }
 
 func TestSubagentInheritsFileContainment(t *testing.T) {
-	root := t.TempDir()
-	scratch := filepath.Join(root, "scratch")
-	mustOK(os.Mkdir(scratch, 0700))
-	t.Setenv("TMPDIR", scratch)
-	marker := filepath.Join(root, "outside")
-	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-	var denied bool
-	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "write", "agent": "worker"})),
-		faux.AssistantMessage(faux.ToolCall("write", map[string]any{"path": marker, "content": "blocked"})),
-		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
-			denied = strings.Contains(toolResultText(request, "write"), "sandbox:")
-			return faux.AssistantMessage("child done"), nil
-		}),
-		faux.AssistantMessage("parent done"),
-	})
-	policy := &permissions.Policy{Mode: "log", Sandbox: sandbox.ModeReadOnly}
-	s := newPermissionsSession(t, provider, policy, "subagents")
-	mustOK(s.PromptSync(t.Context(), "delegate"))
-	if !denied {
-		t.Fatal("child did not inherit filesystem containment")
-	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("child wrote outside: %v", err)
+	for _, mode := range []string{"log", "auto"} {
+		t.Run(mode, func(t *testing.T) {
+			root := t.TempDir()
+			scratch := filepath.Join(root, "scratch")
+			mustOK(os.Mkdir(scratch, 0700))
+			t.Setenv("TMPDIR", scratch)
+			marker := filepath.Join(root, "outside")
+			provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+			var denied bool
+			provider.SetResponses([]faux.ResponseStep{
+				faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "write", "agent": "worker"})),
+				faux.AssistantMessage(faux.ToolCall("write", map[string]any{"path": marker, "content": "blocked"})),
+				faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+					denied = strings.Contains(toolResultText(request, "write"), "sandbox:")
+					return faux.AssistantMessage("child done"), nil
+				}),
+				faux.AssistantMessage("parent done"),
+			})
+			policy := &permissions.Policy{Mode: mode, Sandbox: sandbox.ModeReadOnly, Rules: []permissions.Rule{{Tool: "*", Action: permissions.Ask}}}
+			s := newPermissionsSession(t, provider, policy, "subagents")
+			mustOK(s.PromptSync(t.Context(), "delegate"))
+			if !denied {
+				t.Fatal("child did not inherit filesystem containment")
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatalf("child wrote outside: %v", err)
+			}
+		})
 	}
 }

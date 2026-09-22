@@ -104,13 +104,43 @@ Worker lifecycle, universal platform manifest or speculative host framework is i
 
 ### Permission boundaries
 
-`plugins/permissions` enforces rules by default and requests explicit consent through the existing
-runtime input seam. Guards cannot be bypassed by an authorizer asking a question. Headless requests deny
-by default; cancellation always denies. Session approvals bind the session, tool, working directory,
+`plugins/permissions` defaults to `auto` when enabled and enforces rule denials. Mode `enforce`
+requests explicit consent through the existing runtime input seam. Guards cannot be bypassed by an
+authorizer asking a question. In enforce mode, headless requests deny by default; cancellation
+always denies. Session approvals bind the session, tool, working directory,
 canonical file targets, arguments and matched rule; the bounded cache resets when mode changes.
 Approval prompts show the arguments and working directory. Audits omit duplicate argument payloads.
 A passive Go hook does not authorize an external executor: the Go-only `Approved` flag carries
 positive consent, while `Block` always wins. Neither flag addition changes pi's JSON contracts.
+
+Default mode `auto` resolves policy `ask` to an audited, one-call approval without a model or prompt.
+Rules still use last-match-wins `allow`/`ask`/`deny`; resolved denials, guards and host containment
+remain enforced. Native executor requests receive explicit consent even with no matching rule.
+`orb --auto` enables the plugin in this mode for the run without persisting settings; it conflicts
+with `--no-extensions`. `/permissions` cycles `enforce` → `auto` → `log`; choosing a mode there
+persists it. SDK callers use `Policy{Mode: "auto"}` or `SetMode("auto")`; in-process children share
+that policy. External subagent CLIs retain their own approval settings.
+
+For a persistent configuration, set this under `plugins.permissions`:
+
+```json
+{
+  "enabled": true,
+  "mode": "auto",
+  "rules": [
+    { "tool": "*", "action": "ask" },
+    { "tool": "read", "path": "public/**", "action": "allow" },
+    { "tool": "read", "path": "secrets/**", "action": "deny" },
+    { "tool": "bash", "command": "git push *", "action": "deny" }
+  ]
+}
+```
+
+Command patterns ending in ` *` also match the command without arguments. In auto mode, opaque
+or compound/expanding shell commands that scoped rules cannot resolve are denied, not auto-approved;
+use simple commands or an explicit whole-tool/exact-command allow. These textual rules cannot
+detect equivalent operations hidden in scripts or wrappers. Auto approvals never enter the session
+consent cache, and changing back to enforce restores prompts. Auto does not answer question tools.
 
 `plugins/permissions/native.ToolOptions` supplies the existing SDK `ToolOptions` seam with shell
 sandboxing and edit/write operations backed by `sandbox.Files` and `os.Root`. The CLI and built-in

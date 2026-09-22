@@ -1120,6 +1120,7 @@ Commands:
   --no-context-files, -nc        Disable AGENTS.md/CLAUDE.md discovery
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local resources for this run
+  --auto                         Auto-approve tool requests; enforce permission denials
   --no-approve, -na              Ignore project-local resources for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
   --help, -h                     Show help

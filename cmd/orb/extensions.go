@@ -18,6 +18,7 @@ import (
 	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
+	"github.com/OrdalieTech/orb/plugins/permissions"
 )
 
 // otherDiagnostic wraps a plain warning string for the startup diagnostics
@@ -86,12 +87,24 @@ func compiledExtensionsForRuntime(agentDir string, settings *config.SettingsMana
 }
 
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
+	var policy *permissions.Policy
+	if args.Auto {
+		var err error
+		policy, err = permissions.FromSettings(settings.GetPluginSettings("permissions"))
+		if err != nil {
+			policy = &permissions.Policy{Guards: []func(context.Context, permissions.ToolCallInfo) string{
+				func(context.Context, permissions.ToolCallInfo) string { return err.Error() },
+			}}
+		}
+		policy.SetMode("auto")
+	}
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows, warnings := assembly.Rows(assembly.Options{
 		UsageCache: args.usageCache,
 		Memory:     args.native.memory(),
+		Policy:     policy,
 		CWD:        cwd, AgentDir: agentDir, Settings: settings,
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
 		BridgeAgentCalls: bridgeagent.Extension(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
@@ -103,7 +116,13 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		MCP:      !args.NoExtensions && !args.metadataOnly,
 	})
 	diagnostics := otherDiagnostics(warnings)
-	registry, loadErrors := assembly.Load(cwd, assembly.Resolve(rows, settings, args.NoExtensions))
+	resolved := assembly.Resolve(rows, settings, args.NoExtensions)
+	for i := range resolved {
+		if args.Auto && !args.NoExtensions && resolved[i].ID == "permissions" {
+			resolved[i].Enabled, resolved[i].DecidedBy = true, "--auto"
+		}
+	}
+	registry, loadErrors := assembly.Load(cwd, resolved)
 	for _, loadError := range loadErrors {
 		diagnostics = append(diagnostics, otherDiagnostic(loadError.Error()))
 	}

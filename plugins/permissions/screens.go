@@ -88,7 +88,10 @@ func permissionsWindow(ctx context.Context, command extensions.CommandContext, p
 		toggle := func() {
 			mode, _, _, _, _ := policy.snapshot()
 			next := "enforce"
-			if mode == "enforce" {
+			switch mode {
+			case "enforce":
+				next = "auto"
+			case "auto":
 				next = "log"
 			}
 			policy.SetMode(next)
