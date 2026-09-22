@@ -59,6 +59,7 @@ type SessionRuntimeConfig struct {
 }
 
 type SessionRuntime struct {
+	input    *pendingInput
 	control  atomic.Pointer[SessionControl]
 	agent    *engine.Agent
 	manager  *sessionstore.SessionManager
@@ -859,6 +860,9 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 	if err := start(); err != nil {
 		return err
 	}
+	if runtime.agent.UsesSessionLoop() {
+		return nil
+	}
 	for {
 		message := runtime.takeLastAssistant()
 		if message == nil {
@@ -1252,6 +1256,9 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 
 //nolint:staticcheck // User-visible compaction errors match upstream capitalization.
 func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions string) (*sessionstore.CompactionResult, error) {
+	if runtime.agent.UsesSessionLoop() {
+		return nil, errors.New("compaction is managed by the session executor")
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}

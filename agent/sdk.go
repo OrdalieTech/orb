@@ -37,6 +37,9 @@ type AgentSession = SessionRuntime
 // AgentSessionOptions configures [NewAgentSession]. Fields mirror upstream
 // createAgentSession options; zero values select sensible defaults.
 type AgentSessionOptions struct {
+	// SessionLoop optionally delegates complete turns to a session executor.
+	SessionLoop engine.SessionLoop
+
 	// CWD is the working directory for tool execution and resource discovery.
 	// Defaults to the SessionManager's CWD if set, else ".".
 	CWD string
@@ -479,7 +482,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	getRequestAuth := opts.GetRequestAuth
 	getAPIKey := opts.GetAPIKey
 	getModelHeaders := opts.GetModelHeaders
-	if getRequestAuth == nil && getAPIKey == nil && opts.StreamFn == nil {
+	if getRequestAuth == nil && getAPIKey == nil && opts.StreamFn == nil && opts.SessionLoop == nil {
 		registryResolver := modelRegistry.DefaultRequestAuthResolver(nil)
 		getRequestAuth = func(ctx context.Context, provider ai.ProviderID) (*engine.RequestAuth, error) {
 			resolved, err := registryResolver(ctx, provider)
@@ -504,6 +507,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	agentOpts := []engine.AgentOption{
+		engine.WithSessionLoop(opts.SessionLoop),
 		engine.WithInitialState(engine.AgentState{
 			SystemPrompt:  "",
 			Model:         model,

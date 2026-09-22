@@ -10,6 +10,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	memorysdk "github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/permissions"
+	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/plugins/subagents"
 	"github.com/OrdalieTech/orb/plugins/tasks"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -30,9 +31,10 @@ type CatalogOptions struct {
 	AgentDir         string
 }
 
-var names = []string{"tasks", "websearch", "subagents", "permissions", "memory", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "questions", "websearch", "subagents", "permissions", "memory", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
+	"questions":          "Ask the user questions with choices and custom answers",
 	"bridge":             "Pair devices and control explicitly shared Orb instances",
 	"bridge-agent-calls": "Allow granted agent-initiated calls through a Bridge attachment",
 	"tasks":              "Live session task list and todo tool",
@@ -78,6 +80,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 	}
 	return map[string]extensions.Factory{
 		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls,
+		"questions":      questions.Extension(),
 		"tasks":          tasks.Extension(),
 		"websearch":      websearch.Extension(options.HTTPClient),
 		"subagents":      subagents.Extension(options.StreamFn, inheritPolicy, options.Settings),
@@ -93,7 +96,8 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 func Control(cwd, agentDir string, settings *config.SettingsManager) extensions.Factory {
 	return func(api extensions.API) error {
 		api.RegisterCommand("plugins", extensions.Command{
-			Description: "Enable or disable bundled plugins",
+			SettingsLabel: "Plugins",
+			Description:   "Enable or disable bundled plugins",
 			Handler: func(ctx context.Context, _ string, command extensions.CommandContext) error {
 				if !command.HasUI() {
 					return fmt.Errorf("/plugins requires interactive mode")

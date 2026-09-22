@@ -352,7 +352,6 @@ text in git history of this file. Cross-references to these numbers elsewhere re
   approved SQLite caching of foreign summaries and bounded visible message excerpts: separate
   from owned sessions, read-only offline, no reasoning/tool payloads, remote authority on reopen.
 
-
 - **v0.86 transcript defaults (owner, 2026-09-20).** Adopt Pi's transcript-backed system messages
   and their normal agent events by default, rather than placing them behind a legacy headless
   opt-in. Preserve existing exported Go signatures and legacy session reading. This is an

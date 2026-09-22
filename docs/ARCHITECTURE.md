@@ -205,6 +205,58 @@ advertises; its 13 upstream SDK examples get Go ports under `agent/examples/`. D
 dissolves upstream's parallel `AgentHarness` facade into this runtime; the underlying harness
 primitives remain public without duplicating orchestration or making `engine` depend on `agent`.
 
+### Optional native session executors
+
+`engine.SessionLoop` is an optional whole-turn callback, selected at construction through
+`WithSessionLoop` or `AgentSessionOptions.SessionLoop`. The existing Agent still owns admission,
+execution identity, cancellation, queue storage, ordered subscriptions and state snapshots. The
+callback owns model/tool iteration and emits existing engine events. SessionRuntime skips its
+provider-auth preflight, retry and automatic compaction for these sessions; explicit Orb compaction
+refuses rather than rewriting a foreign engine's context. Default constructors and event shapes
+remain unchanged. This seam has two real implementations: Orb's existing loop and Claude Sessions.
+
+`plugins/claudesessions/` owns the official SDK host, native session checkpoints, event translation,
+configuration and `/claude` management. Only CLI assembly imports it. Its embedded JavaScript runs
+on user-provided Node with `@anthropic-ai/claude-agent-sdk@0.3.278` and a user-installed, unmodified
+Claude executable. No Go dependency, vendor binary, SDK bundle or credential is embedded in Orb.
+Importing the package performs no I/O. The capability defaults off; its management command can be
+available before activation, like Bridge management.
+
+Native Claude transcripts are authoritative for resume, tools and compaction. Orb stores its display
+projection and plugin-owned `claude-sessions` checkpoint entries in its normal session journal
+(SQLite in native CLI, unchanged caller-selected storage in the SDK). Native session IDs are
+explicit, never directory-wide `continue`. A copied checkpoint forks to the new Orb session UUID
+at the last confirmed native message; it never appends to the original conversation. Native errors
+and list-price accounting remain native metadata, not asserted subscription invoices. Each active
+turn owns one subprocess; idle sessions own none. Independent instances have independent drivers.
+Steer/follow-up queues are delivered between complete native turns. Orb extension tools and context
+rewrites are not injected into Claude; Claude's own tools, skills, settings and MCP remain native.
+
+`SessionRuntime.RequestInput` is the small, vendor-neutral approval/input seam. A question has an
+unguessable, single-use ID, bounded title and choices, and a cancellation context. The owning TUI
+and authorized controllers race to provide the first valid answer. Bridge describes pending input
+and routes `input.reply` through the existing durable operation ledger and session/execution fences;
+its new `instance.input.reply` grant is explicit. Native model discovery uses the official SDK's
+`supportedModels()` control without a prompt or persisted session. The plugin adapts names, resolved
+IDs and effort capabilities into Orb's existing model picker; no provider registry or token endpoint
+is impersonated. `session.model` uses generic model IDs and optional thinking levels, resolves only
+the runtime's advertised catalog, and requires an idle revision-fenced session-management grant.
+Descriptions include display-only model metadata, never model headers or credentials. No Claude event, tool name, account or session type
+enters Bridge. Disconnect does not answer, cancel or broaden a pending permission request.
+
+Research baseline (2026-09-21): [Hermes DirectSDK](https://hermes-agent.nousresearch.com/docs/plugins/claude-subscription-directsdk),
+source `NousResearch/hermes-plugin-claude-subscription-directsdk@c92c27c9f919178a58974a72333b473c6cb2e71d`,
+uses native stream-json as a *model provider*: replay via `shouldQuery:false`, inert tools, extra-body
+injection, disabled native compaction and a localhost HTTP admission proxy. Those mechanisms are
+not used here. Orb uses the [public SDK session API](https://code.claude.com/docs/en/agent-sdk/sessions)
+and [permission callbacks](https://code.claude.com/docs/en/agent-sdk/user-input).
+[Anthropic's current terms](https://code.claude.com/docs/en/legal-and-compliance) distinguish a product
+offering Claude.ai login or intermediating credentials from an end user authenticating directly in
+an unmodified native binary. Orb offers no custom login or subscription-token provider. Users sign
+in through `claude auth login` on the execution host, under their own agreement; native API-key and
+cloud authentication remain available. The [subscription SDK notice](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+says the June 15 billing change is paused; allowances, entitlements and terms remain Anthropic's.
+
 ## 4. `tui/` — terminal UI
 
 Upstream spec: `packages/tui/docs/tui.md` + `src/`. Differential line-based renderer; components
@@ -510,7 +562,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
 | `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
-| `instances.describe` | `instance_id` → current generation, session/revision/execution target, optional name/workspace, permitted methods |
+| `instances.describe` | `instance_id` → current generation, session/revision/execution target, optional name/workspace/input request, permitted methods |
 | `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
 | `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
 | `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
@@ -519,8 +571,10 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `peers.publish` | bounded `records` array → validated, durably merged revisions |
 
 `expected` contains `registration_generation` and `session_revision`. Prompt arguments are
-`{text}`; steer/follow-up are `{text, execution_id}`; cancel is `{execution_id}`; session new
-is `{}`, switch is `{session_id}`, and fork is `{entry_id}`. Session list accepts an optional
+`{text}`; steer/follow-up are `{text, execution_id}`; cancel is `{execution_id}`; input replies
+are `{execution_id, id, value}` and require `instance.input.reply`; session new
+is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
+`{provider, model, thinking?}`. Session list accepts an optional
 `offset`. Read-only inspection needs no operation ID. An optional `subject` on remote calls
 is restricted to an instance subject and comes from the source bridge's credential-bound
 outbound route; administrative methods never appear in this routing table.
@@ -616,6 +670,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
+| @anthropic-ai/claude-agent-sdk 0.3.278 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
@@ -656,3 +711,10 @@ sessions remain JSONL or memory-backed).
 | Event/serialization drift breaking conformance | F1/F3/F6/F7 fixtures regenerate on every sync; wire-format struct tags reviewed against goldens |
 | Parallel tool execution races | file-mutation queue per realpath (upstream semantics); race detector in CI |
 | Host lifecycle and request races | generation-scoped correlation, bounded restart/backoff, typed UI cancellation, and race tests |
+
+The optional `plugins/questions` module owns the question schema, validation, native tool
+and shared TUI panel. Runtime input carries only bounded opaque presentation data and an optional
+reply validator. Claude maps native questions inside `plugins/claudesessions`; the CLI renders the shared
+panel for remote views, while Bridge remains unaware of Claude and question schemas. Native Claude
+tool permissions adapt through the existing extension `BeforeToolCall` hook, keeping policy in the
+Permissions plugin and execution in the native SDK.

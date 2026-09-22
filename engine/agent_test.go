@@ -34,6 +34,39 @@ func TestAgentRetainsExplicitStreamFunction(t *testing.T) {
 	}
 }
 
+func TestSessionLoopOwnsExecutionAndSharesCancellation(t *testing.T) {
+	entered := make(chan struct{})
+	a := NewAgent(nil, WithSessionLoop(func(ctx context.Context, prompts AgentMessages, _ AgentContext, _ AgentLoopConfig, emit EventSink) error {
+		if len(prompts) != 1 {
+			t.Errorf("prompts = %d", len(prompts))
+		}
+		if err := emit(ctx, MessageEndEvent{Message: prompts[0]}); err != nil {
+			return err
+		}
+		close(entered)
+		<-ctx.Done()
+		return ctx.Err()
+	}))
+	done := make(chan error, 1)
+	go func() { done <- a.Prompt(context.Background(), "native session") }()
+	<-entered
+	if a.IsIdle() {
+		t.Fatal("session loop was not reserved")
+	}
+	if err := a.Prompt(context.Background(), "overlap"); err == nil {
+		t.Fatal("concurrent prompt accepted")
+	}
+	a.Abort()
+	<-done
+	state := a.State()
+	if !a.IsIdle() || len(state.Messages) != 2 {
+		t.Fatalf("settled state: %#v", state)
+	}
+	if state.Messages[1].(*ai.AssistantMessage).StopReason != ai.StopReasonAborted {
+		t.Fatal("cancellation lost")
+	}
+}
+
 func TestAgentStatePreservesRawCustomMessageType(t *testing.T) {
 	original := json.RawMessage(`{"role":"custom","content":"original"}`)
 	created := NewAgent(nil, WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{original}}))

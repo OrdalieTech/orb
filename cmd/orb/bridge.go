@@ -764,7 +764,7 @@ func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, tar
 }
 
 func fullBridgeGrant(peer string) bridge.Grant {
-	return bridge.Grant{Principal: connect.Principal{PeerID: peer, Subject: connect.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.cancel", "instance.session.manage"}}
+	return bridge.Grant{Principal: connect.Principal{PeerID: peer, Subject: connect.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
 }
 
 func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string) error {

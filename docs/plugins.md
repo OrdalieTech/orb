@@ -133,3 +133,74 @@ settings; project entries are edited in `.pi/settings.json` by hand.
 In a session, `/mcp` opens the live status window (state, transport, target,
 registered tools, errors) with in-place reconnection; `/mcp reconnect [server]`
 still works everywhere.
+
+## Questions
+
+Enable **Questions** in `/plugins` to expose `ask_user_question` to Orb's agent. It accepts one to
+four questions with stable IDs, optional described choices, multiple selection and free text.
+Questions temporarily replace the composer, keeping conversation history scrollable and restoring
+the previous draft afterward. Click choices, question tabs and Continue/Submit directly; dragging
+does not submit an answer. The shared panel shows descriptions below numbered options. Use arrows or number keys to choose,
+Enter or Space to toggle multiple choices, and select **Type your own answer** for custom text.
+Tab and Left/Right move between questions and the final review; Enter submits the review. A single
+choice submits immediately. Escape leaves custom editing first, then dismisses without answering.
+Answers remain normal tool results in the session transcript; there is no separate question store.
+Headless hosts need an attached controller to answer. Claude uses this same panel for its native
+`AskUserQuestion`, independently of whether the Orb tool is enabled. Bridge views render the same
+panel and send execution-bound replies; disconnecting never invents an answer.
+
+## Claude Sessions
+
+Open `/claude` (also available from the command palette) and choose **New Claude session**.
+Orb prepares the SDK automatically on first use, then opens the conversation. The executing host needs Node ≥22.6, npm and the official Claude Code executable. Complete
+sign-in in a terminal with `claude auth login`; Orb does not implement a Claude.ai login screen or
+read tokens. Existing native API-key/cloud authentication is also available. Native terms, model
+entitlements and usage limits apply; SDK cost metadata is not your subscription invoice.
+
+For headless use (with the same automatic first-use setup): `orb --provider claude-sessions --model sonnet -p "your task"`.
+The model picker uses the executing Claude CLI's `supportedModels()` catalog: native aliases,
+resolved model names and supported effort levels. New sessions use Claude's native default unless
+you select another model. `/model` changes the current session; `/claude` → Model chooses the default
+for new sessions. The bottom bar labels Claude sessions and reports the actual native model after
+each turn. Discovery starts no model turn and writes no Claude transcript.
+
+`--session` and the ordinary Sessions picker resume the selected Orb conversation using its explicit
+native Claude session ID. `/claude` selects the model for explicitly created Claude sessions.
+**Switch to Orb** opens a separate regular conversation and keeps the Claude session saved; it also
+works before an Orb provider is configured. Ordinary launches never implicitly choose Claude. `--no-extensions`
+disables this optional capability. There is no fallback to another account or model on errors.
+
+Advanced settings use `plugins.claude-sessions`: `model`, `node`, `claude`, and `sdk`
+(the absolute path to the official package's `sdk.mjs`). The standard install goes into
+`<agent-dir>/plugins/claude-sessions`, pinned to SDK 0.3.278. The SDK and native executable are not
+bundled in Orb's static binary. Installation happens when starting a Claude session; opening settings installs nothing.
+
+The same host can attach with `--bridge <profile> --instance <alias>`. Pairing and routing are
+unchanged; the remote device needs neither Node nor Claude credentials. A pending permission or
+question appears in the remote view. Questions use the shared panel; `/reply <choice or text>`
+answers ordinary approvals, and `/cancel` cancels the execution. `/models` lists the executing host's models and effort levels; `/model <provider/id>
+[effort]` changes the model while idle, under the existing session-management grant and revision
+fence. Answers require the explicit `instance.input.reply` grant (included in newly created
+full-access peer grants). Existing grants are not silently expanded. Closing a view leaves execution
+and pending permission decisions on the host. Local TUI approvals use Orb's native dialogs.
+Clarifying questions retain their descriptions and
+previews; choose one answer, write your own, or toggle several choices and confirm them. Multiple
+questions are presented in order. Dismissing a question sends a denial rather than inventing an
+answer. Native plan approvals and readable question/task/tool summaries stay inside the plugin;
+Orb never executes the presentation-only tool definitions.
+
+When the **Permissions** plugin is enabled, Claude's native pre-tool hooks use its existing rules,
+approval cache and audit log. Native tool names and paths are normalized only for policy evaluation;
+Claude still executes its own tools and retains native restrictions. With Permissions disabled,
+Claude's native permission behavior applies. Orb's Bash filesystem sandbox does not sandbox Claude's
+native executable.
+
+Claude owns native tools, skills, MCP, project settings and compaction. Orb's tool plugins are not
+injected into that agent loop. Queued steer/follow-up messages enter at native turn boundaries.
+Orb stores its transcript projection and private checkpoint metadata in SQLite; the native Claude
+transcript remains on the execution host and is required for resume. Pi export does not make native
+Claude context portable. Interrupted operations are never automatically replayed.
+Forks resume from a confirmed native checkpoint. Rewinding an existing Orb branch does not rewind
+Claude's native history: continuing that branch fails explicitly, and requires a new fork.
+Headless runs without a local UI or an attached controller deny interactive permission requests;
+native settings may already authorize individual actions.

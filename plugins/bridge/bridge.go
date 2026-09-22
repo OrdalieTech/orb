@@ -224,7 +224,7 @@ func validateGrant(g Grant) error {
 	}
 	for _, p := range g.Permissions {
 		switch p {
-		case "instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.cancel", "instance.session.manage":
+		case "instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage":
 		default:
 			return connect.Fail("unauthorized")
 		}
@@ -536,7 +536,7 @@ func permission(method string) string {
 	switch method {
 	case "inspect":
 		return "instance.inspect"
-	case "session.list", "session.new", "session.switch", "session.fork":
+	case "session.list", "session.new", "session.switch", "session.fork", "session.model":
 		return "instance.session.manage"
 	default:
 		return "instance." + method

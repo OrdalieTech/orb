@@ -22,6 +22,7 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -87,7 +88,19 @@ func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, 
 	// Providers key affinity and prompt caches on the session id; upstream
 	// createAgentSession passes sessionId into the Agent at construction.
 	inputs.Agent.SetStreamSessionID(manager.GetSessionID())
-	return agent.NewSessionRuntime(runtimeConfig)
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return nil, err
+	}
+	bind, err := claudesessions.Configure(&runtimeConfig, agentDir, os.Environ())
+	if err != nil {
+		return nil, err
+	}
+	created, err := agent.NewSessionRuntime(runtimeConfig)
+	if err == nil {
+		bind(created)
+	}
+	return created, err
 }
 
 // createReplacementRuntime rebuilds the complete runtime for manager from the
@@ -523,6 +536,18 @@ func (host *interactiveSessionHost) NewSession(ctx context.Context, options *ext
 		manager, err := newSessionReplacementManager(current.Manager(), parentSession)
 		if err != nil {
 			return nil, false, err
+		}
+		if current.Agent().UsesSessionLoop() {
+			if model := current.State().Model; model != nil {
+				if _, err := manager.AppendModelChange(string(model.Provider), model.ID); err != nil {
+					return nil, false, err
+				}
+			}
+		}
+		if options != nil && options.Prepare != nil {
+			if err := options.Prepare(manager); err != nil {
+				return nil, false, err
+			}
 		}
 		replacement, err := host.replace(current, extensions.SessionShutdownNew, manager, setup)
 		return replacement, false, err

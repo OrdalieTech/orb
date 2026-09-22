@@ -271,6 +271,18 @@ func (runtime *AgentSessionRuntime) NewSession(
 			return extensions.SessionReplacementResult{}, err
 		}
 	}
+	if current.Agent().UsesSessionLoop() {
+		if model := current.State().Model; model != nil {
+			if _, err := replacement.AppendModelChange(string(model.Provider), model.ID); err != nil {
+				return extensions.SessionReplacementResult{}, err
+			}
+		}
+	}
+	if options != nil && options.Prepare != nil {
+		if err := options.Prepare(replacement); err != nil {
+			return extensions.SessionReplacementResult{}, err
+		}
+	}
 	created, err := runtime.replace(ctx, current, replacement, extensions.SessionShutdownNew, extensions.SessionStartNew, nil)
 	if err != nil {
 		return extensions.SessionReplacementResult{}, err

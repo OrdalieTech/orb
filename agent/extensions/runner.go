@@ -29,6 +29,7 @@ type Diagnostic struct {
 }
 
 type ContextActions struct {
+	RequestInput           InputHandler
 	GetModel               func() *ai.Model
 	GetScopedModels        func() []ScopedModel
 	IsIdle                 func() bool
@@ -992,6 +993,16 @@ func (runner *Runner) EmitToolResult(ctx context.Context, event ToolResultEvent)
 	details := current.Details
 	isError := current.IsError
 	return &ToolResultResult{Content: &content, Details: &details, IsError: &isError, Usage: current.Usage}
+}
+
+func (runner *Runner) inputContext(ctx context.Context) context.Context {
+	runner.mu.RLock()
+	handler := runner.contextActions.RequestInput
+	runner.mu.RUnlock()
+	if handler != nil {
+		return WithInputHandler(ctx, handler)
+	}
+	return ctx
 }
 
 func (runner *Runner) EmitToolCall(ctx context.Context, event ToolCallEvent) *ToolCallResult {

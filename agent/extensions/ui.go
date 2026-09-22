@@ -2,9 +2,31 @@ package extensions
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/OrdalieTech/orb/engine"
 )
+
+// InputPresentation is optional display data; authorization remains with the runtime.
+type InputPresentation struct {
+	Kind string          `json:"kind"`
+	Data json.RawMessage `json:"data"`
+}
+
+type InputOptions struct {
+	Presentation *InputPresentation
+	Render       func(context.Context, UI) (string, error)
+	Validate     func(string) error
+}
+type inputOptionsKey struct{}
+
+func WithInputOptions(ctx context.Context, options InputOptions) context.Context {
+	return context.WithValue(ctx, inputOptionsKey{}, options)
+}
+func InputOptionsFromContext(ctx context.Context) InputOptions {
+	options, _ := ctx.Value(inputOptionsKey{}).(InputOptions)
+	return options
+}
 
 type DialogOptions struct {
 	Signal  context.Context

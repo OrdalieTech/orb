@@ -11,11 +11,17 @@ import (
 
 const alreadyPromptingMessage = "Agent is already processing a prompt. Use Steer() or FollowUp() to queue messages, or wait for completion."
 
+// SessionLoop replaces model/tool iteration while retaining Agent state, events,
+// queue ownership and cancellation. A nil loop uses Orb's native implementation.
+// Implementations consume only new prompts; their own session owns prior context.
+type SessionLoop func(context.Context, AgentMessages, AgentContext, AgentLoopConfig, EventSink) error
+
 type AgentOption func(*agentOptions)
 
 type PrepareNextTurnWithoutContextFunc func(context.Context) (*AgentLoopTurnUpdate, error)
 
 type agentOptions struct {
+	sessionLoop                SessionLoop
 	initialState               *AgentState
 	convertToLLM               ConvertToLLMFunc
 	transformContext           TransformContextFunc
@@ -36,6 +42,13 @@ type agentOptions struct {
 	toolExecution              ToolExecutionMode
 	now                        func() int64
 }
+
+func WithSessionLoop(loop SessionLoop) AgentOption {
+	return func(options *agentOptions) { options.sessionLoop = loop }
+}
+
+// UsesSessionLoop reports whether execution policies belong to an external session.
+func (agent *Agent) UsesSessionLoop() bool { return agent.sessionLoop != nil }
 
 func WithInitialState(state AgentState) AgentOption {
 	return func(options *agentOptions) {
@@ -142,6 +155,7 @@ type listenerEntry struct {
 
 // Agent is the stateful wrapper around RunLoop and RunLoopContinue.
 type Agent struct {
+	sessionLoop  SessionLoop
 	observers    map[uint64]stateObserver
 	nextObserver uint64
 	mu           sync.Mutex
@@ -236,6 +250,7 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 	state.ErrorMessage = nil
 
 	return &Agent{
+		sessionLoop:                options.sessionLoop,
 		state:                      state,
 		convertToLLM:               options.convertToLLM,
 		transformContext:           options.transformContext,
@@ -271,7 +286,7 @@ func firstSystemMessage(messages AgentMessages) *ai.SystemMessage {
 func (agent *Agent) Prompt(ctx context.Context, input any, images ...*ai.ImageContent) error {
 	agent.mu.Lock()
 	busy := agent.active != nil
-	missingStreamFn := agent.streamFn == nil
+	missingStreamFn := agent.streamFn == nil && agent.sessionLoop == nil
 	agent.mu.Unlock()
 	if busy {
 		return upstreamError(alreadyPromptingMessage)
@@ -295,7 +310,7 @@ func (agent *Agent) Continue(ctx context.Context) error {
 		agent.mu.Unlock()
 		return upstreamError("Agent is already processing. Wait for completion before continuing.")
 	}
-	if agent.streamFn == nil {
+	if agent.streamFn == nil && agent.sessionLoop == nil {
 		agent.mu.Unlock()
 		return upstreamError(missingDefaultStreamFnMessage)
 	}
@@ -655,6 +670,9 @@ func (agent *Agent) normalizePromptInput(input any, images []*ai.ImageContent) (
 func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runWithLifecycle(ctx, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
+		if agent.sessionLoop != nil {
+			return agent.sessionLoop(runContext, messages, loopContext, agent.loopConfig(skipInitialSteeringPoll), agent.processEvent)
+		}
 		messages = agent.withInitialSystemPrompt(loopContext, messages)
 		config := agent.loopConfig(skipInitialSteeringPoll)
 		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
@@ -665,6 +683,9 @@ func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessage
 func (agent *Agent) runPromptMessagesReserved(active *activeRun, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
+		if agent.sessionLoop != nil {
+			return agent.sessionLoop(runContext, messages, loopContext, agent.loopConfig(skipInitialSteeringPoll), agent.processEvent)
+		}
 		messages = agent.withInitialSystemPrompt(loopContext, messages)
 		config := agent.loopConfig(skipInitialSteeringPoll)
 		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
@@ -697,6 +718,9 @@ func (agent *Agent) runContinuationReserved(active *activeRun) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
 		config := agent.loopConfig(false)
+		if agent.sessionLoop != nil {
+			return agent.sessionLoop(runContext, nil, loopContext, config, agent.processEvent)
+		}
 		_, err := RunLoopContinue(runContext, &loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
 	})
