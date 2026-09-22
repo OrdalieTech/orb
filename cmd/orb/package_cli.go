@@ -119,7 +119,7 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 func listFullComposition(cwd, agentDir string, settings *config.SettingsManager, streams cliStreams) int {
 	rows, warnings := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
-		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
+		Compiled: compiledExtensionsForRuntime(agentDir, settings), MCP: true,
 		Bridge: bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
 	for _, warning := range warnings {
@@ -202,6 +202,7 @@ Examples:
   %s
 
 Update orb itself, or update installed packages and model catalogs.
+Alias: orb upgrade [target]
 
 The default and --self routes replace the orb binary this process runs from with
 the latest GitHub release for this platform, after verifying its sha256 checksum.
@@ -248,6 +249,8 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 	switch rawCommand {
 	case "uninstall":
 		command = "remove"
+	case "upgrade":
+		command = "update"
 	case "install", "remove", "update", "list":
 		command = rawCommand
 	default:

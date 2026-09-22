@@ -31,6 +31,7 @@ import (
 	"github.com/OrdalieTech/orb/chat/teams"
 	"github.com/OrdalieTech/orb/chat/telegram"
 	"github.com/OrdalieTech/orb/chat/whatsapp"
+	"github.com/OrdalieTech/orb/claudesessions"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
@@ -734,6 +735,7 @@ func refreshStartupModels(ctx context.Context, allowNetwork bool, agentDir strin
 }
 
 func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch []session.SessionEntry) {
+	claudesessions.RestoreSelection(context, &args.Provider, &args.Model, branch...)
 	if len(context.Messages) > 0 && context.Model != nil && (args.Model == nil || *args.Model == "") {
 		// Upstream treats provider/model as one selection. A provider-only CLI
 		// argument does not override the model restored from a session.
@@ -1075,13 +1077,14 @@ Commands:
   orb remove <source> [-l]    Remove a package source from settings
   orb uninstall <source> [-l] Alias for remove
   orb update [target]         Update orb itself, installed packages, or model catalogs
+  orb upgrade [target]        Alias for update
   orb list                    List installed packages from settings
   orb config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
   orb plugins <command>       List, enable, or disable bundled plugins (list --all shows the full composition)
   orb mcp <command>           List, add, remove, or toggle MCP servers (see orb mcp --help)
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
-  orb <command> --help        Show help for chat/install/remove/uninstall/update/list/config/auth
+  orb <command> --help        Show help for chat/install/remove/uninstall/update/upgrade/list/config/auth
 
   --provider <name>              Provider name
   --model <id>                   Model ID
