@@ -6,6 +6,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Restore compiler inlining in the JSON hot path while keeping release binaries within the 55 MB budget.
+
 - Reuse encoded streaming messages in Bridge events and snapshots to reduce serialization under the engine lock.
 
 - Preserve completed Markdown render caches and coalesce assistant presentation updates until rendering.
