@@ -854,9 +854,9 @@ sessions remain JSONL or memory-backed).
   goreleaser (static binaries + checksums; install via curl script + Homebrew tap); Windows joins
   releases once its CI job has run green. `make portability` (in `make check`) builds and vets
   linux/darwin/windows × amd64/arm64, linux/386, linux/arm and android/arm64, type-checks
-  ios/arm64, vets every package that does not link a native-only package on `js/wasm` and
-  `wasip1/wasm`, holds the browser bundle under 8 MB gzip, and runs the `ai`, `engine` and
-  portable `internal` suites under Node and wazero. `internal/layering` counts direct platform
+  ios/arm64 on macOS hosts (its cgo runtime needs the iOS SDK), vets every package that does not
+  link a native-only package on `js/wasm` and `wasip1/wasm`, holds the browser bundle under 8 MB
+  gzip, and runs the `ai`, `engine` and portable `internal` suites under Node and wazero. `internal/layering` counts direct platform
   access in the P10 core against `testdata/core_ratchet.txt`, which only shrinks. Development race-test
   binaries may enable CGo only for the Go race runtime (D7). Version checks use GitHub releases.
 - Budgets: cold start < 50 ms; release binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
