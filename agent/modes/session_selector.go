@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf16"
+	"weak"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/modes/theme"
@@ -1023,7 +1024,13 @@ func (selector *SessionSelectorComponent) setStatusLocked(kind, message string, 
 	if duration <= 0 {
 		return
 	}
+	// Stopped AfterFunc timers can retain their callback until runtime heap cleanup.
+	ref := weak.Make(selector)
 	selector.statusTimer = time.AfterFunc(duration, func() {
+		selector := ref.Value()
+		if selector == nil {
+			return
+		}
 		selector.mu.Lock()
 		selector.status = nil
 		selector.statusTimer = nil

@@ -70,6 +70,8 @@ The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
 - Decode ordinary unescaped JSON strings directly and reuse normalized partial tool arguments
   across Anthropic, Mistral Conversations and Pi Messages. Preserve property order, number spelling
   and lone surrogates; keep the public arguments map available.
+- Release canceled session selectors without waiting for stopped status timers to leave the
+  runtime timer heap, so their loaders and session lists can be collected promptly.
 - Prepare assistant components at the render boundary and retain completed Markdown blocks.
   Own pending presentation data so later provider updates cannot race with rendering. A single
   growing Markdown block still needs a full parse.

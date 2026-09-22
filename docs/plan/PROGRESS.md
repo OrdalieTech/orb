@@ -12,9 +12,13 @@ Linux CI run 35713302768 exposed a callback response/connection-close race and a
 allocation used by the selector finalizer test. OAuth now drains active responses with a bounded
 graceful shutdown; its regression reads the full success page. The lifetime probe exceeds Go's
 tiny allocation size without changing its deadline or upstream expectations. Both regressions pass
-50 race repetitions, and full `make check` passes. No fixtures or budgets were weakened.
+50 race repetitions. The full Linux amd64 suite then reproduced a separate retention path in
+CI run 35719032801: stopped AfterFunc callbacks can remain rooted until runtime timer-heap cleanup.
+A standard-library weak pointer keeps the status callback from owning the selector; the identical
+full Linux amd64 race suite passes with that change. The lifetime assertion and 750 ms deadline
+remain intact. No fixtures or budgets were weakened.
 
-Static versioned candidates: darwin/amd64 54,508,080 B, darwin/arm64 52,052,978 B,
+Static versioned candidates: darwin/amd64 54,508,256 B, darwin/arm64 52,053,154 B,
 linux/amd64 53,510,304 B, linux/arm64 50,725,024 B. All are below 55 MB. On Apple M4,
 20 warm-cache samples give 12.04 ms median `--version` and 15.40 ms `--help`. An isolated macOS
 candidate passes native migration, original preservation, JSONL export, private backup, restore,
