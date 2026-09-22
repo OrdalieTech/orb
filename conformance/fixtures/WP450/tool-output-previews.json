@@ -6,7 +6,7 @@
       "width": 52,
       "lines": [
         "",
-        "○  $ printf streaming-output",
+        "○  $ printf streaming-output ›",
         "",
         "     0123456789",
         "     stream line 24: abcdefghijklmnopqrstuvwxyz",
@@ -133,12 +133,7 @@
       "width": 52,
       "lines": [
         "",
-        "✓  $ printf streaming-output",
-        "",
-        "     0123456789",
-        "     stream line 24: abcdefghijklmnopqrstuvwxyz",
-        "     0123456789",
-        "     … earlier output · click to expand"
+        "✓  $ printf streaming-output ›"
       ]
     },
     {
@@ -288,7 +283,7 @@
       "width": 88,
       "lines": [
         "",
-        "○  $ printf streaming-output",
+        "○  $ printf streaming-output ›",
         "",
         "     stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
         "     stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
@@ -367,12 +362,7 @@
       "width": 88,
       "lines": [
         "",
-        "✓  $ printf streaming-output",
-        "",
-        "     stream line 22: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "     stream line 23: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "     stream line 24: abcdefghijklmnopqrstuvwxyz 0123456789",
-        "     … earlier output · click to expand"
+        "✓  $ printf streaming-output ›"
       ]
     },
     {

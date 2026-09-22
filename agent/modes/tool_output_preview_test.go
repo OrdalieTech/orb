@@ -61,6 +61,34 @@ func TestToolActivityMarkersTrackExecution(t *testing.T) {
 	check("×")
 }
 
+func TestCommandDetailsStayAccessibleWithoutCompletedPreviews(t *testing.T) {
+	initTestTheme(t)
+	command := "printf start; " + strings.Repeat("printf middle; ", 8) + "printf finish"
+	tool := NewToolExecutionComponent("bash", "command", map[string]any{"command": command}, false,
+		nativeToolDefinition("bash", tools.NewBashTool("/", nil)), &toolOutputRenderRequester{}, "/")
+	tool.SetArgsComplete()
+	if lines := tool.Render(40); len(lines) != 2 || !strings.Contains(tui.StripANSI(lines[1]), "…") {
+		t.Fatalf("long command should start as a single action row: %q", lines)
+	}
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "live output"}}, false, nil, true)
+	if got := strings.Join(tool.Render(40), "\n"); !strings.Contains(got, "live output") {
+		t.Fatal("running command lost its live preview")
+	}
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "final output"}}, false, nil, false)
+	if lines := tool.Render(40); len(lines) != 2 || strings.Contains(strings.Join(lines, "\n"), "final output") {
+		t.Fatalf("completed command should collapse to its action: %q", lines)
+	}
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1})
+	if got := strings.Join(tool.Render(40), "\n"); !strings.Contains(got, "finish") || !strings.Contains(got, "final output") {
+		t.Fatalf("expansion lost the full command or output: %q", got)
+	}
+	tool.SetExpanded(false)
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "command failed"}}, true, nil, false)
+	if got := strings.Join(tool.Render(40), "\n"); !strings.Contains(got, "command failed") {
+		t.Fatal("collapsed command hid its failure")
+	}
+}
+
 func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 	initTestTheme(t)
 	for _, live := range []bool{false, true} {
@@ -84,7 +112,7 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			}
 			start := func(name, id string) {
 				call := &ai.ToolCall{Name: name, ID: id}
-				message := &ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: "toolUse"}
+				message := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "\n"}, &ai.ThinkingContent{}, call}, StopReason: "toolUse"}
 				if live {
 					mode.handleEvent(engine.MessageStartEvent{Message: message})
 					mode.handleEvent(engine.MessageEndEvent{Message: message})
@@ -115,8 +143,8 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			if !group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1}) {
 				t.Fatal("batch header did not expand")
 			}
-			if got := render(); !strings.Contains(got, "first file") || !strings.Contains(got, "search result") {
-				t.Fatalf("expansion lost tool output: %q", got)
+			if got := render(); !strings.Contains(got, "✓  read") || !strings.Contains(got, "✓  Grep") || strings.Contains(got, "first file") || strings.Contains(got, "search result") {
+				t.Fatalf("batch expansion should list actions without dumping their output: %q", got)
 			}
 			group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 3})
 			if got := render(); !strings.Contains(got, "beginning") {

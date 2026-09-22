@@ -101,6 +101,7 @@ func TestWindowedChatProductionMutationsRefreshCachedChildren(t *testing.T) {
 
 	t.Run("tool result", func(t *testing.T) {
 		mode := newPendingToolMode(t, nil)
+		mode.toolsExpanded = true
 		mode.handleEvent(engine.ToolExecutionStartEvent{ToolCallID: "tool-window", ToolName: "window_tool"})
 		_ = mode.chat.LineCount(120)
 		mode.handleEvent(engine.ToolExecutionEndEvent{
@@ -131,6 +132,7 @@ func TestWindowedChatProductionMutationsRefreshCachedChildren(t *testing.T) {
 
 func TestRestoredPendingToolCallsReceiveLiveCompletionEvents(t *testing.T) {
 	mode := newPendingToolMode(t, []any{pendingToolCallMessage()})
+	mode.toolsExpanded = true
 
 	mode.renderInitialMessages()
 	if mode.toolComponents[pendingToolCallID] == nil {
@@ -150,6 +152,7 @@ func TestRestoredPendingToolCallsReceiveLiveCompletionEvents(t *testing.T) {
 
 func TestRestoredCompletedToolCallsRenderHistoricalResults(t *testing.T) {
 	mode := newPendingToolMode(t, []any{pendingToolCallMessage(), pendingToolResultMessage("HISTORICAL_RESULT")})
+	mode.toolsExpanded = true
 
 	mode.renderInitialMessages()
 
