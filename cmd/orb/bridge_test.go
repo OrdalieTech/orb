@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
+	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/storage/sqlite"
 	"github.com/OrdalieTech/orb/tui"
 	"net"
@@ -961,7 +962,12 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 			if phase.Load() == 3 {
 				id = "another-session"
 			}
-			return connect.JSON(remoteDescriptor{Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt"}}), nil
+			descriptor := remoteDescriptor{Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt", "input.reply"}}
+			if phase.Load() == 6 {
+				descriptor.Input = &agent.InputRequest{ID: "question", Title: "Allow this action?", Choices: []string{"Deny", "Allow once"}}
+				descriptor.Target.ExecutionID = "execution"
+			}
+			return connect.JSON(descriptor), nil
 		case "events.subscribe":
 			if phase.Load() == 4 {
 				phase.Store(5)
@@ -974,7 +980,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	})
 	client := protocol.NewConn(x, nil)
 	defer func() { _ = client.Close(); _ = server.Close() }()
-	requests := make(chan string, 1)
+	requests := make(chan remoteRequest, 1)
 	body, status := &remoteTranscript{}, &remoteTranscript{}
 	changed := make(chan struct{}, 1)
 	done := make(chan struct{})
@@ -1012,9 +1018,23 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	if text := cachedTranscript(rows[0]); !strings.Contains(text, "remote answer") || strings.Contains(text, "hidden") {
 		t.Fatal(text)
 	}
+	phase.Store(6)
+	wait("Allow this action?")
+	requests <- remoteRequest{text: "/reply Allow once", inputID: "old-question"}
+	wait("No question is waiting")
+	if commands.Load() != 0 {
+		t.Fatal("stale dialog answered a newer question")
+	}
+	phase.Store(0)
+	wait("idle")
+	requests <- remoteRequest{text: "/reply Allow once"}
+	wait("No question is waiting")
+	if commands.Load() != 0 {
+		t.Fatal("late input became a command")
+	}
 	phase.Store(1)
 	wait("Offline")
-	requests <- "must not execute"
+	requests <- remoteRequest{text: "must not execute"}
 	wait("Read-only")
 	if commands.Load() != 0 {
 		t.Fatal("offline control was dispatched")
@@ -1027,7 +1047,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	wait("Offline")
 	phase.Store(3)
 	wait("no longer active")
-	requests <- "must not retarget"
+	requests <- remoteRequest{text: "must not retarget"}
 	wait("Read-only")
 	if commands.Load() != 0 {
 		t.Fatal("cached session was retargeted")
@@ -1096,7 +1116,7 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	cache := db.Foreign("personal")
-	requests := make(chan string, 1)
+	requests := make(chan remoteRequest, 1)
 	body, status := &remoteTranscript{}, &remoteTranscript{}
 	done := make(chan struct{})
 	go func() {
@@ -1117,7 +1137,7 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 		state := status.text
 		status.mu.Unlock()
 		if !sent && strings.HasPrefix(state, "idle") {
-			requests <- "Please answer for the isolated preview cache check."
+			requests <- remoteRequest{text: "Please answer for the isolated preview cache check."}
 			sent = true
 		}
 		rows, err := cache.List(ctx, peer)
@@ -1135,5 +1155,36 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 			t.Log("native Bridge prompt, completed preview persistence, and block purge verified")
 			return
 		}
+	}
+}
+
+func TestRemoteQuestionPanelKeepsControlsVisible(t *testing.T) {
+	var answer questions.Result
+	v := &remoteConversation{body: &remoteTranscript{}, status: &remoteTranscript{}, height: func() int { return 40 }, invalidate: func() {}}
+	v.body.set(strings.Repeat("Transcript line\n", 100))
+	v.prompt = questions.NewPanel(questions.Request{Questions: []questions.Question{{ID: "choice", Question: "Choose a diagram", Options: []questions.Option{{Label: "Architecture", Description: "System structure"}, {Label: "Sequence"}}}}}, extensions.NewNoopUI().Theme(), v.height, func() {}, func(r questions.Result) { answer = r })
+	lines := v.Render(80)
+	if len(lines) > 40 || !strings.Contains(strings.Join(lines, "\n"), "Type your own answer") {
+		t.Fatal("question controls are outside the viewport")
+	}
+	v.HandleInput(tui.KeyEvent{Raw: "\x1b[5~"})
+	if v.offset == 0 {
+		t.Fatal("question blocked history scrolling")
+	}
+	v.Render(80)
+	v.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown, Row: 0})
+	row := -1
+	for i, line := range v.Render(80) {
+		if strings.Contains(line, "1. Architecture") {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatal("question disappeared during scrolling")
+	}
+	v.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: 4})
+	v.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: row, Column: 4})
+	if len(answer.Answers) != 1 || answer.Answers[0].Selected[0] != "Architecture" {
+		t.Fatal("remote selection did not reach the shared panel")
 	}
 }

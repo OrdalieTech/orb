@@ -75,6 +75,8 @@ func pluginGridRows(settings *config.SettingsManager, th extensions.Theme) []tui
 // short enough to sit as a grid column.
 func shortDescription(name string) string {
 	switch name {
+	case "questions":
+		return "choices and custom answers"
 	case "tasks":
 		return "task list and todo tool"
 	case "websearch":

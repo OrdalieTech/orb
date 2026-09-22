@@ -6,25 +6,41 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
-- Group optional Go capabilities under `plugins/`, split bundled plugins into independent packages, and isolate memory file storage and quota footer adapters. Go import paths change; plugin IDs and stored data remain unchanged.
+### Claude Sessions
 
-- `orb upgrade` is an alias for `orb update`, same routes and flags.
+- Add an optional plugin using the official Claude Agent SDK. Start from `/claude`; Orb prepares
+  the SDK on first use, while authentication stays with the native Claude CLI. The executing host
+  needs Node, npm and Claude Code; remote Bridge clients need none of them.
+- Stream native replies and tool activity, resume and fork sessions, and cancel active work locally
+  or through Bridge. Save the transcript projection and native checkpoint metadata in SQLite;
+  resume also requires Claude's native history on the execution host.
+- Discover Claude's native models and supported effort levels, allow model/effort changes, and
+  identify Claude sessions in the bottom bar. **Switch to Orb** preserves the saved conversation;
+  ordinary launches never implicitly start Claude.
+- Apply the enabled Orb Permissions plugin to native Claude tools, sharing rules, approval reuse
+  and audit while retaining Claude's native restrictions. Orb's Bash sandbox does not extend to
+  Claude's native executable.
 
-- Claude questions now open visible dialogs with descriptions, custom answers and multi-selection;
-  native questions, plans, task lists and common tool calls get readable transcript summaries.
-  Dismissing a question returns a denial to Claude without automatically interrupting the session.
+### Shared questions
 
-- Remove bundled demo extensions, share footer/account quota requests, and keep quota display in Providers. Separate native tool execution from Wasm builds so injected tools can run without a host filesystem.
+- Add the optional Questions plugin for native Orb and reuse its interface for Claude's native
+  questions and remote Bridge conversations. Questions replace the composer while conversation
+  history stays scrollable, then restore the editor draft.
+- Offer numbered choices with descriptions, custom answers, multiple selections, question tabs
+  and a final review. Support single clicks and hover feedback without shifting the layout;
+  dragging cannot submit an answer. Dismissal supplies no invented answer.
+- Validate replies before consuming them, reject stale dialogs, and keep tool/question summaries
+  readable in the transcript. All controllers share the existing execution-bound input path.
 
-- Claude Sessions discovers the native model catalog and default, supports model/effort switching
-  locally and through Bridge, and identifies the session and native model in the bottom bar.
-  Switch to Orb leaves the saved Claude conversation; remove launch-default controls.
+### Modularity and maintenance
 
-- Starting Claude Sessions now prepares the SDK automatically, reuses it thereafter, and shows concise setup failures; remove the separate installation action and redundant default toggle.
-
-- Add opt-in Claude Sessions through the official Claude Agent SDK: native tools, streamed replies,
-  explicit session resume/fork, cancellation and local/Bridge permission requests. `/claude` installs
-  the optional SDK and starts or configures sessions; credentials stay with the native Claude CLI.
+- Group optional Go capabilities under `plugins/`, split bundled plugins into independent packages,
+  and isolate memory file storage and quota footer adapters. Go import paths change; plugin IDs
+  and stored data remain unchanged.
+- Remove bundled demo extensions, share footer/account quota requests, and keep quota display in
+  Providers. Separate native tool execution from Wasm builds so injected tools can run without a
+  host filesystem.
+- `orb upgrade` is an alias for `orb update`, with the same routes and flags.
 
 ## [0.8.0] - 2026-09-21
 

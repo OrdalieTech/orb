@@ -140,6 +140,9 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 		return err
 	}
 	defer finish()
+	if runtime.agent.UsesSessionLoop() {
+		return nil
+	}
 	state := runtime.agent.State()
 	if state.Model == nil || (IsUnknownModel(state.Model) && runtime.getRequestAuth == nil && runtime.getAPIKey == nil) {
 		return noModelSelectedError()
@@ -512,6 +515,11 @@ func (runtime *SessionRuntime) SetModel(ctx context.Context, model ai.Model) err
 	return runtime.setModel(ctx, model, nil, true, extensions.ModelSelectSet)
 }
 
+// SetModelAndThinking applies a model and its effort within one control transition.
+func (runtime *SessionRuntime) SetModelAndThinking(ctx context.Context, model ai.Model, thinking *ai.ModelThinkingLevel) error {
+	return runtime.setModel(ctx, model, thinking, true, extensions.ModelSelectSet)
+}
+
 type ModelMutationOptions struct{ Persist bool }
 
 func (runtime *SessionRuntime) SetModelWithOptions(ctx context.Context, model ai.Model, options ModelMutationOptions) error {
@@ -543,6 +551,12 @@ func (runtime *SessionRuntime) setModel(
 	if runtime == nil {
 		return errors.New("agent: nil session runtime")
 	}
+	if runtime.agent.UsesSessionLoop() {
+		current := runtime.agent.State().Model
+		if current == nil || current.Provider != model.Provider {
+			return errors.New("changing session executor requires a new conversation")
+		}
+	}
 	if checkAuth {
 		if ctx == nil {
 			ctx = context.Background()
@@ -555,6 +569,11 @@ func (runtime *SessionRuntime) setModel(
 			return errors.New("No API key for " + string(model.Provider) + "/" + model.ID) //nolint:staticcheck // Upstream RPC error text.
 		}
 	}
+	finish, err := runtime.control.Load().beginTransition(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish()
 	state := runtime.agent.State()
 	previous := state.Model
 	thinkingLevel := runtime.thinkingLevelForModelSwitch(state, &model, explicitThinking)

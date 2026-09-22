@@ -35,5 +35,5 @@ func (tool *registeredAgentTool) Execute(
 	onUpdate engine.AgentToolUpdateCallback,
 ) (engine.AgentToolResult, error) {
 	definition := tool.registered.Definition
-	return definition.Execute(ctx, toolCallID, params, onUpdate, tool.runner.CreateContext())
+	return definition.Execute(tool.runner.inputContext(ctx), toolCallID, params, onUpdate, tool.runner.CreateContext())
 }

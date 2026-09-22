@@ -510,9 +510,7 @@ func (mode *InteractiveMode) init() error {
 			}
 		}()
 	})
-	if runner := mode.session.ExtensionRunner(); runner != nil {
-		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
-	}
+	mode.session.BindExtensionUI(mode.interactiveUI, extensions.ModeTUI)
 	if mode.options.Host != nil {
 		mode.options.Host.SetBeforeSessionInvalidate(mode.detachSession)
 		mode.options.Host.SetRebindSession(mode.rebindHostSession)
@@ -567,9 +565,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *agent.SessionRuntime
 	mode.restoreEditorComponent()
 	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
 	mode.interactiveUI = NewInteractiveUI(mode)
-	if runner := replacement.ExtensionRunner(); runner != nil {
-		runner.SetUI(mode.interactiveUI, extensions.ModeTUI)
-	}
+	replacement.BindExtensionUI(mode.interactiveUI, extensions.ModeTUI)
 	if err := mode.initializeTheme(); err != nil {
 		return err
 	}
@@ -2266,12 +2262,9 @@ func (mode *InteractiveMode) settingItems() []tui.SettingItem {
 	}
 	items := []tui.SettingItem{}
 	if runner := mode.session.ExtensionRunner(); runner != nil {
-		for _, page := range []struct{ name, label, description string }{
-			{"bridge", "Bridge", "Connect devices, share conversations, and manage access"},
-			{"plugins", "Plugins", "Configure bundled plugins and external CLIs"},
-		} {
-			if runner.Command(page.name) != nil {
-				items = append(items, tui.SettingItem{ID: page.name, Label: page.label, Description: page.description, CurrentValue: "Open", Values: []string{"Open"}})
+		for _, command := range runner.RegisteredCommands() {
+			if command.SettingsLabel != "" {
+				items = append(items, tui.SettingItem{ID: command.InvocationName, Label: command.SettingsLabel, Description: command.Description, CurrentValue: "Open", Values: []string{"Open"}})
 			}
 		}
 	}
@@ -2328,7 +2321,7 @@ func (mode *InteractiveMode) showSettingsSelector() {
 		mode.ui.RequestRender()
 	}
 	list := tui.NewSettingsList(items, 10, settingsListTheme(), func(id, value string) {
-		if id == "bridge" || id == "plugins" {
+		if runner := mode.session.ExtensionRunner(); runner != nil && runner.Command(id) != nil && runner.Command(id).SettingsLabel != "" {
 			closeSelector()
 			mode.runPaletteCommand(id)
 			return
@@ -5097,6 +5090,15 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		"trust": "Project trust", "reload": "Reload resources", "scoped-models": "Favorite models", "hotkeys": "Keyboard shortcuts",
 		"changelog": "Changelog", "quit": "Quit Orb", "plugins": "Plugins", "bridge": "Bridge",
 	}
+	if mode.session != nil {
+		if runner := mode.session.ExtensionRunner(); runner != nil {
+			for _, command := range runner.RegisteredCommands() {
+				if command.SettingsLabel != "" {
+					labels[command.InvocationName] = command.SettingsLabel
+				}
+			}
+		}
+	}
 	shortcuts := map[string]string{"model": "app.model.select", "name": "app.session.rename", "new": "app.session.new", "copy": "app.message.copy"}
 	rows := make([]tui.GridRow, 0, len(commands))
 	seen := make(map[string]bool, len(commands))
@@ -5129,7 +5131,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 	}
 	if mode.session != nil {
 		for _, item := range mode.settingItems() {
-			if seen[item.ID] && (item.ID == "thinking" || item.ID == "bridge" || item.ID == "plugins") {
+			if seen[item.ID] && (item.ID == "thinking" || item.CurrentValue == "Open") {
 				continue
 			}
 			rows = append(rows, tui.GridRow{
@@ -5171,11 +5173,13 @@ func (mode *InteractiveMode) showCommandPalette() {
 }
 
 func (mode *InteractiveMode) runPaletteCommand(value string) {
-	if value == "bridge" || value == "plugins" {
+	if mode.session != nil {
 		if runner := mode.session.ExtensionRunner(); runner != nil {
-			go runner.ExecuteCommand(mode.authenticationContext(), value, "")
+			if command := runner.Command(value); command != nil && command.SettingsLabel != "" {
+				go runner.ExecuteCommand(mode.authenticationContext(), value, "")
+				return
+			}
 		}
-		return
 	}
 	if id, ok := strings.CutPrefix(value, "setting:"); ok {
 		for _, item := range mode.settingItems() {

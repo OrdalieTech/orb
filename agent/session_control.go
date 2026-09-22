@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -13,6 +15,143 @@ import (
 
 var ErrControlStale = errors.New("stale_target")
 var ErrControlBusy = errors.New("busy")
+
+// InputRequest is an execution-bound question. Replies are single-use; an empty
+// Choices list accepts free text. Cancellation removes the request immediately.
+type InputRequest struct {
+	Presentation *extensions.InputPresentation `json:"presentation,omitempty"`
+	ID           string                        `json:"id"`
+	Title        string                        `json:"title"`
+	Choices      []string                      `json:"choices,omitempty"`
+}
+
+type pendingInput struct {
+	validate func(string) error
+	ctx      context.Context
+	request  InputRequest
+	reply    chan string
+}
+
+func (s *SessionRuntime) PendingInput() *InputRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.input == nil {
+		return nil
+	}
+	r := s.input.request
+	r.Choices = slices.Clone(r.Choices)
+	if r.Presentation != nil {
+		view := *r.Presentation
+		view.Data = slices.Clone(view.Data)
+		r.Presentation = &view
+	}
+	return &r
+}
+
+func (s *SessionRuntime) ReplyInput(id, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.input == nil || s.input.request.ID != id || s.input.ctx.Err() != nil {
+		return ErrControlStale
+	}
+	if len(value) > 64<<10 || (len(s.input.request.Choices) > 0 && !slices.Contains(s.input.request.Choices, value)) {
+		return errors.New("invalid input choice")
+	}
+	if s.input.validate != nil {
+		if err := s.input.validate(value); err != nil {
+			return err
+		}
+	}
+	s.input.reply <- value
+	s.input = nil
+	return nil
+}
+
+// RequestInput shares one pending question with the owning UI and non-owning
+// controllers. The first valid response wins; neither disconnect grants consent.
+func (s *SessionRuntime) RequestInput(ctx context.Context, title string, choices []string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if len(title) > 64<<10 || len(choices) > 32 {
+		return "", errors.New("input request too large")
+	}
+	choiceBytes := 0
+	for _, choice := range choices {
+		choiceBytes += len(choice)
+	}
+	if choiceBytes > 64<<10 {
+		return "", errors.New("input choices too large")
+	}
+	options := extensions.InputOptionsFromContext(ctx)
+	if options.Presentation != nil {
+		view := *options.Presentation
+		if len(view.Data) > 64<<10 || len(view.Kind) > 64 || !json.Valid(view.Data) {
+			return "", errors.New("invalid input presentation")
+		}
+		view.Data = slices.Clone(view.Data)
+		options.Presentation = &view
+	}
+	var id [16]byte
+	_, _ = rand.Read(id[:])
+	p := &pendingInput{ctx: ctx, validate: options.Validate, request: InputRequest{Presentation: options.Presentation, ID: base64.RawURLEncoding.EncodeToString(id[:]), Title: title, Choices: slices.Clone(choices)}, reply: make(chan string, 1)}
+	s.mu.Lock()
+	if s.disposed || s.input != nil {
+		s.mu.Unlock()
+		return "", ErrControlBusy
+	}
+	s.input = p
+	s.mu.Unlock()
+	choices = p.request.Choices
+	ctx, cancel := context.WithCancel(ctx)
+	defer func() {
+		cancel()
+		s.mu.Lock()
+		if s.input == p {
+			s.input = nil
+		}
+		s.mu.Unlock()
+	}()
+	hasUI := false
+	if state := s.extensionState; state != nil {
+		state.mu.Lock()
+		ui, mode := state.config.ExtensionUI, state.config.ExtensionMode
+		state.mu.Unlock()
+		if ui != nil && (mode == extensions.ModeTUI || mode == extensions.ModeRPC) {
+			hasUI = true
+			go func() {
+				var value string
+				var ok bool
+				var err error
+				if options.Render != nil && mode == extensions.ModeTUI {
+					value, err = options.Render(ctx, ui)
+					ok = err == nil
+				} else if len(choices) == 0 {
+					value, ok, err = ui.Input(ctx, title, nil, nil)
+				} else {
+					value, ok, err = ui.Select(ctx, title, choices, nil)
+				}
+				if err != nil || !ok {
+					cancel()
+					return
+				}
+				_ = s.ReplyInput(p.request.ID, value)
+			}()
+		}
+	}
+	if !hasUI && s.control.Load() == nil {
+		return "", errors.New("input requires an interactive UI or an attached controller")
+	}
+	select {
+	case value := <-p.reply:
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		return value, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
 
 type ControlTarget struct {
 	SessionID   string `json:"session_id"`
@@ -179,6 +318,15 @@ func (c *SessionControl) Execution(target ControlTarget, method, text string) er
 		return s.queueControlled(text, false)
 	case "follow_up":
 		return s.queueControlled(text, true)
+	case "input.reply":
+		var reply struct {
+			ID    string `json:"id"`
+			Value string `json:"value"`
+		}
+		if err := json.Unmarshal([]byte(text), &reply); err != nil {
+			return err
+		}
+		return s.ReplyInput(reply.ID, reply.Value)
 	default:
 		return errors.New("unsupported execution method")
 	}

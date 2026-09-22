@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	runtime "github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/connect"
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
@@ -241,14 +243,29 @@ func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
-	name, cwd := "", ""
+	name, cwd, modelName := "", "", ""
+	var models []connect.Model
+	var input *runtime.InputRequest
 	if session := a.host.Session(); session != nil {
 		cwd = session.Manager().GetCWD()
+		if model := session.State().Model; model != nil {
+			modelName = model.Name
+		}
+		for _, model := range session.AvailableModels() {
+			row := connect.Model{ID: model.ID, Provider: string(model.Provider), Name: model.Name}
+			for _, level := range ai.SupportedThinkingLevels(&model) {
+				row.Thinking = append(row.Thinking, string(level))
+			}
+			models = append(models, row)
+		}
+		input = session.PendingInput()
 		if title := session.Manager().GetSessionName(); title != nil {
 			name = *title
 		}
 	}
 	return connect.JSON(struct {
+		Model      string                `json:"model,omitempty"`
+		Models     []connect.Model       `json:"models,omitempty"`
 		Name       string                `json:"name,omitempty"`
 		CWD        string                `json:"cwd,omitempty"`
 		InstanceID string                `json:"instance_id"`
@@ -256,7 +273,8 @@ func (a *Attachment) inspect() json.RawMessage {
 		Generation string                `json:"registration_generation"`
 		Target     runtime.ControlTarget `json:"target"`
 		Methods    []string              `json:"methods"`
-	}{name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork"}})
+		Input      *runtime.InputRequest `json:"input,omitempty"`
+	}{modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model"}, input})
 }
 func (a *Attachment) call(ctx context.Context, r connect.Request) (json.RawMessage, error) {
 	if err := connect.ValidateCall(r.Call); err != nil {
@@ -309,6 +327,17 @@ type textArgs struct {
 	Text        string `json:"text"`
 	ExecutionID string `json:"execution_id,omitempty"`
 }
+type inputArgs struct {
+	ExecutionID string `json:"execution_id"`
+	ID          string `json:"id"`
+	Value       string `json:"value"`
+}
+
+type modelArgs struct {
+	Model    string                 `json:"model"`
+	Provider string                 `json:"provider"`
+	Thinking *ai.ModelThinkingLevel `json:"thinking,omitempty"`
+}
 type switchArgs struct {
 	SessionID string `json:"session_id"`
 }
@@ -318,6 +347,22 @@ type forkArgs struct {
 
 func (a *Attachment) validateArgs(c connect.Call) error {
 	switch c.Method {
+	case "session.model":
+		var p modelArgs
+		if err := protocol.Decode(c.Args, &p); err != nil {
+			return err
+		}
+		if p.Model == "" || len(p.Model) > 256 || p.Provider == "" || len(p.Provider) > 128 || p.Thinking != nil && len(*p.Thinking) > 16 {
+			return connect.Fail("invalid_params")
+		}
+	case "input.reply":
+		var p inputArgs
+		if err := protocol.Decode(c.Args, &p); err != nil {
+			return err
+		}
+		if !protocol.ValidID(p.ExecutionID) || !protocol.ValidID(p.ID) || len(p.Value) > 64<<10 {
+			return connect.Fail("invalid_params")
+		}
 	case "prompt":
 		var p struct {
 			Text *string `json:"text"`
@@ -395,6 +440,32 @@ func (a *Attachment) dispatch(r connect.Request) {
 	var result any
 	var err error
 	switch r.Call.Method {
+	case "session.model":
+		var p modelArgs
+		_ = json.Unmarshal(r.Call.Args, &p)
+		s := a.host.Session()
+		err = connect.Fail("not_found")
+		if s != nil {
+			for _, model := range s.AvailableModels() {
+				if model.ID != p.Model || string(model.Provider) != p.Provider {
+					continue
+				}
+				if p.Thinking != nil && !slices.Contains(ai.SupportedThinkingLevels(&model), *p.Thinking) {
+					err = connect.Fail("invalid_params")
+					break
+				}
+				err = s.SetModelAndThinking(ctx, model, p.Thinking)
+				break
+			}
+		}
+	case "input.reply":
+		var p inputArgs
+		_ = json.Unmarshal(r.Call.Args, &p)
+		target.ExecutionID = p.ExecutionID
+		err = a.control.Execution(target, "input.reply", string(connect.JSON(struct {
+			ID    string `json:"id"`
+			Value string `json:"value"`
+		}{p.ID, p.Value})))
 	case "prompt":
 		var p textArgs
 		_ = json.Unmarshal(r.Call.Args, &p)

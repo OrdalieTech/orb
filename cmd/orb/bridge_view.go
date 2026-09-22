@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/connect"
 	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -71,6 +72,9 @@ func remoteMessage(raw json.RawMessage) string {
 }
 
 type remoteDescriptor struct {
+	Model      string              `json:"model,omitempty"`
+	Models     []connect.Model     `json:"models,omitempty"`
+	Input      *agent.InputRequest `json:"input,omitempty"`
 	Name       string              `json:"name"`
 	CWD        string              `json:"cwd"`
 	Target     agent.ControlTarget `json:"target"`
@@ -78,25 +82,44 @@ type remoteDescriptor struct {
 	Methods    []string            `json:"methods"`
 }
 
+type remoteRequest struct{ text, inputID string }
+
 type remoteConversation struct {
+	promptMu     sync.Mutex
+	prompt       *questions.Panel
+	promptID     string
 	body, status *remoteTranscript
 	input        *tui.Input
 	cancel       context.CancelFunc
 	height       func() int
 	offset       int
+	controlsTop  int
 	invalidate   func()
 }
 
 func (v *remoteConversation) Render(width int) []string {
 	lines := v.body.Render(width)
-	available := max(1, v.height()-5)
+	controls := remoteControls{v}.Render(width)
+	available := max(1, v.height()-len(controls))
 	if len(lines) > available {
 		v.offset = min(v.offset, len(lines)-available)
 		end := len(lines) - v.offset
 		lines = lines[max(0, end-available):end]
 	}
-	lines = append(lines, v.status.Render(width)...)
-	return append(lines, v.input.Render(width)...)
+	v.controlsTop = len(lines)
+	return append(lines, controls...)
+}
+
+type remoteControls struct{ v *remoteConversation }
+
+func (c remoteControls) Render(width int) []string {
+	c.v.promptMu.Lock()
+	prompt := c.v.prompt
+	c.v.promptMu.Unlock()
+	if prompt != nil {
+		return prompt.Render(width)
+	}
+	return append(c.v.status.Render(width), c.v.input.Render(width)...)
 }
 func (v *remoteConversation) HandleInput(key tui.KeyEvent) {
 	if tui.MatchesKey(key.Raw, "pageup") {
@@ -109,19 +132,62 @@ func (v *remoteConversation) HandleInput(key tui.KeyEvent) {
 		v.invalidate()
 		return
 	}
+	v.promptMu.Lock()
+	prompt := v.prompt
+	v.promptMu.Unlock()
+	if prompt != nil {
+		prompt.HandleInput(key)
+		return
+	}
 	v.input.HandleInput(key)
 }
-func (v *remoteConversation) SetFocused(f bool) { v.input.SetFocused(f) }
-func (v *remoteConversation) Dispose()          { v.cancel() }
+func (c remoteControls) WantsMouseMotion() bool { return true }
+func (c remoteControls) HandleMouse(event tui.MouseEvent) bool {
+	c.v.promptMu.Lock()
+	prompt := c.v.prompt
+	c.v.promptMu.Unlock()
+	if prompt != nil {
+		return prompt.HandleMouse(event)
+	}
+	return false
+}
+func (v *remoteConversation) WantsMouseMotion() bool { return true }
+func (v *remoteConversation) HandleMouse(event tui.MouseEvent) bool {
+	if event.Row >= v.controlsTop {
+		event.Row -= v.controlsTop
+		return (remoteControls{v}).HandleMouse(event)
+	}
+	switch event.Type {
+	case tui.MouseWheelUp:
+		v.offset += 3
+	case tui.MouseWheelDown:
+		v.offset = max(0, v.offset-3)
+	default:
+		return false
+	}
+	v.invalidate()
+	return true
+}
+func (v *remoteConversation) SetFocused(f bool) {
+	v.promptMu.Lock()
+	prompt := v.prompt
+	v.promptMu.Unlock()
+	if prompt != nil {
+		prompt.SetFocused(f)
+	} else {
+		v.input.SetFocused(f)
+	}
+}
+func (v *remoteConversation) Dispose() { v.cancel() }
 
-func newRemoteConversation(parent context.Context, profile, peer, instance string, invalidate func(), height func() int, done func(), initial ...sqlite.ForeignSession) *remoteConversation {
+func newRemoteConversation(parent context.Context, profile, peer, instance string, invalidate func(), height func() int, done func(), theme extensions.Theme, initial ...sqlite.ForeignSession) *remoteConversation {
 	ctx, cancel := context.WithCancel(parent)
 	v := &remoteConversation{body: &remoteTranscript{}, status: &remoteTranscript{}, input: tui.NewInput(), cancel: cancel, height: height, invalidate: invalidate}
-	requests := make(chan string, 1)
+	requests := make(chan remoteRequest, 1)
 	v.status.set("Connecting · Esc closes view")
 	v.input.OnSubmit = func(text string) {
 		select {
-		case requests <- text:
+		case requests <- remoteRequest{text: text}:
 			v.input.SetValue("")
 		default:
 			v.status.set("A command is still pending.")
@@ -184,14 +250,39 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 		if len(initial) > 0 {
 			expected = initial[0].ID
 		}
-		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate, cache, peer, expected)
+		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate, cache, peer, expected, func(input *agent.InputRequest) {
+			v.promptMu.Lock()
+			defer v.promptMu.Unlock()
+			if input == nil || input.Presentation == nil || input.Presentation.Kind != questions.Kind {
+				v.prompt, v.promptID = nil, ""
+				return
+			}
+			if input.ID == v.promptID {
+				return
+			}
+			var request questions.Request
+			if json.Unmarshal(input.Presentation.Data, &request) != nil || request.Validate() != nil {
+				return
+			}
+			v.promptID = input.ID
+			id := input.ID
+			v.prompt = questions.NewPanel(request, theme, height, invalidate, func(result questions.Result) {
+				encoded, _ := json.Marshal(result)
+				go func() {
+					select {
+					case requests <- remoteRequest{text: "/reply " + string(encoded), inputID: id}:
+					case <-ctx.Done():
+					}
+				}()
+			})
+		})
 	}()
 	return v
 }
 
 func openBridgeView(ctx context.Context, ui extensions.UI, profile, peer, instance string, initial ...sqlite.ForeignSession) error {
-	_, _, err := ui.Custom(ctx, func(host extensions.UIHost, _ extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
-		return newRemoteConversation(ctx, profile, peer, instance, host.Invalidate, host.Height, func() { done(nil) }, initial...), nil
+	_, _, err := ui.Custom(ctx, func(host extensions.UIHost, theme extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
+		return newRemoteConversation(ctx, profile, peer, instance, host.Invalidate, host.Height, func() { done(nil) }, theme, initial...), nil
 	}, nil)
 	return err
 }
@@ -203,13 +294,12 @@ func runBridgeView(parent context.Context, profile, peer, instance string, strea
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	ui := tui.NewTUI(tui.NewProcessTerminal())
-	v := newRemoteConversation(ctx, profile, peer, instance, ui.RequestRender, func() int { return 24 }, cancel)
+	v := newRemoteConversation(ctx, profile, peer, instance, ui.RequestRender, func() int { return ui.Terminal().Rows() }, cancel, extensions.NewNoopUI().Theme())
 	defer v.Dispose()
 	chrome := &tui.Container{}
-	chrome.AddChild(v.status)
-	chrome.AddChild(v.input)
+	chrome.AddChild(remoteControls{v})
 	ui.SetViewport(v.body, chrome)
-	ui.SetFocus(v.input)
+	ui.SetFocus(v)
 	ui.AddInputListener(func(data string) tui.InputListenerResult {
 		if data == "\x03" {
 			cancel()
@@ -225,13 +315,19 @@ func runBridgeView(parent context.Context, profile, peer, instance string, strea
 	return 0
 }
 
-func runRemoteConversation(ctx context.Context, instance string, remote func(string, any, any) error, requests <-chan string, body, status *remoteTranscript, invalidate func(), cache *sqlite.Foreign, peer, expected string) {
+func runRemoteConversation(ctx context.Context, instance string, remote func(string, any, any) error, requests <-chan remoteRequest, body, status *remoteTranscript, invalidate func(), cache *sqlite.Foreign, peer, expected string, showInput ...func(*agent.InputRequest)) {
+	updateInput := func(input *agent.InputRequest) {
+		if len(showInput) > 0 {
+			showInput[0](input)
+		}
+	}
 	var info remoteDescriptor
 	var err error
 	cursor := ""
 	partial := ""
 	var transcript strings.Builder
 	pending := ""
+	notice := ""
 	connected := false
 	revoked := false
 	var preview sqlite.ForeignSession
@@ -245,6 +341,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			return false
 		}
 		connected = false
+		updateInput(nil)
 		body.set("")
 		transcript.Reset()
 		partial = ""
@@ -267,9 +364,21 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 		select {
 		case <-ctx.Done():
 			return
-		case text := <-requests:
+		case request := <-requests:
+			text := request.text
+			notice = ""
 			if !connected {
 				status.set("Read-only · waiting for the remote session")
+				invalidate()
+				continue
+			}
+			if text == "/models" {
+				var lines []string
+				for _, model := range info.Models {
+					lines = append(lines, model.Provider+"/"+model.ID+" · "+model.Name+" · effort: "+strings.Join(model.Thinking, ", "))
+				}
+				notice = strings.Join(lines, "\n") + "\n/model <provider/id> [effort]"
+				status.set(notice)
 				invalidate()
 				continue
 			}
@@ -287,6 +396,32 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			method := "prompt"
 			arguments := map[string]string{"text": text}
 			switch {
+			case strings.HasPrefix(text, "/model "):
+				parts := strings.Fields(strings.TrimPrefix(text, "/model "))
+				if len(parts) < 1 || len(parts) > 2 {
+					status.set("Use /model <provider/id> [effort]")
+					invalidate()
+					continue
+				}
+				provider, id, ok := strings.Cut(parts[0], "/")
+				if !ok {
+					status.set("Use /models to choose a model.")
+					invalidate()
+					continue
+				}
+				method = "session.model"
+				arguments = map[string]string{"provider": provider, "model": id}
+				if len(parts) == 2 {
+					arguments["thinking"] = parts[1]
+				}
+			case strings.HasPrefix(text, "/reply "):
+				if info.Input == nil || (request.inputID != "" && request.inputID != info.Input.ID) {
+					status.set("No question is waiting for a reply.")
+					invalidate()
+					continue
+				}
+				method = "input.reply"
+				arguments = map[string]string{"execution_id": info.Target.ExecutionID, "id": info.Input.ID, "value": strings.TrimPrefix(text, "/reply ")}
 			case text == "/new":
 				method = "session.new"
 				arguments = map[string]string{}
@@ -314,6 +449,9 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			call := connect.Call{InstanceID: instance, Service: protocol.Service, Method: method, SessionID: info.Target.SessionID, Expected: connect.Expected{Generation: info.Generation, Revision: info.Target.Revision}, OperationID: protocol.NewID(), Args: connect.JSON(arguments)}
 			var receipt connect.Receipt
 			if err = remote("instances.call", call, &receipt); err != nil {
+				if request.inputID != "" {
+					updateInput(nil)
+				}
 				if !deny(err) {
 					status.set(err.Error() + " · operation " + call.OperationID)
 				}
@@ -324,16 +462,20 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			invalidate()
 		case <-tick.C:
 			previous := info.Target.SessionID
-			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &info); err != nil {
+			var next remoteDescriptor
+			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &next); err != nil {
 				connected = false
+				updateInput(nil)
 				if !deny(err) {
 					status.set("Offline · cached content is stale · read-only · reconnecting" + cacheWarning)
 				}
 				invalidate()
 				continue
 			}
+			info = next
 			if expected != "" && expected != info.Target.SessionID {
 				connected = false
+				updateInput(nil)
 				status.set("Cached preview · read-only · this session is no longer active remotely")
 				invalidate()
 				continue
@@ -425,6 +567,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				}
 			}
 			if err != nil {
+				updateInput(nil)
 				cursor = ""
 				if !deny(err) {
 					status.set("Remote data unavailable · read-only · retrying")
@@ -437,6 +580,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			var current remoteDescriptor
 			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &current); err != nil || current.Target.SessionID != info.Target.SessionID || current.Target.Revision != info.Target.Revision || current.Generation != info.Generation {
 				cursor = ""
+				updateInput(nil)
 				if !deny(err) {
 					status.set("Session changed or disconnected · refreshing")
 				}
@@ -469,7 +613,21 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				if info.Target.ExecutionID != "" {
 					state = "running"
 				}
+				if info.Model != "" {
+					state = info.Model + " · " + state
+				}
 				status.set(state + cacheWarning + " · " + strings.Join(info.Methods, " · ") + " · Esc closes view")
+			}
+			if notice != "" {
+				status.set(notice)
+			}
+			if slices.Contains(info.Methods, "input.reply") {
+				updateInput(info.Input)
+			} else {
+				updateInput(nil)
+			}
+			if info.Input != nil {
+				status.set(info.Input.Title + "\nReply with /reply " + strings.Join(info.Input.Choices, " | ") + " · /cancel stops execution")
 			}
 			invalidate()
 		}

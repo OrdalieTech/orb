@@ -770,6 +770,18 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	if err != nil || !bytes.Equal(original, after) {
 		t.Fatal("migration changed legacy backup", err)
 	}
+	if err := os.WriteFile(legacy.GetSessionFile(), []byte("invalid legacy backup"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, reference := range []string{id, id[:len(id)-1]} {
+		resumed, _, err := createCLISession(cwd, CLIArgs{Session: &reference, native: state}, cliStreams{}, nil)
+		if err != nil {
+			t.Fatal("legacy files interfered with native resume", err)
+		}
+		if resumed.GetSessionID() != id || !resumed.IsHarnessBacked() {
+			t.Fatal("native resume lost SQLite authority")
+		}
+	}
 }
 
 func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {

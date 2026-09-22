@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/connect"
 	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
 )
 
@@ -78,6 +79,12 @@ func compiledExtensionsForEnvironment(getenv func(string) string) []extensions.C
 	})
 }
 
+func compiledExtensionsForRuntime(agentDir string, settings *config.SettingsManager) []extensions.CompiledExtension {
+	return append(compiledExtensionsForEnvironment(os.Getenv), extensions.CompiledExtension{
+		Name: "claude-sessions-control", Hidden: true, DefaultEnabled: true, Factory: claudesessions.Management(settings, agentDir, os.Environ()),
+	})
+}
+
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
@@ -92,7 +99,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)
 			return result, err
 		}),
-		Compiled: compiledExtensionsForEnvironment(os.Getenv),
+		Compiled: compiledExtensionsForRuntime(agentDir, settings),
 		MCP:      !args.NoExtensions && !args.metadataOnly,
 	})
 	diagnostics := otherDiagnostics(warnings)

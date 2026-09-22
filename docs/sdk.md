@@ -555,3 +555,38 @@ access after approval, as the guided flows do automatically. `grant`, `revoke`, 
 `revoke` takes `{ "grant_id": "…" }`. `orb bridge remote <peer-id> <method>` reads bounded
 method parameters from stdin. Wire schemas and limits live in `ARCHITECTURE.md`; their tests
 are independent of Pi fixtures.
+
+## Native session loops
+
+`engine.WithSessionLoop(loop)` and `agent.AgentSessionOptions.SessionLoop` optionally replace
+model/tool iteration while keeping the existing Agent's state, subscriptions, cancellation and
+execution admission. A loop emits the existing `engine.AgentEvent` types and consumes its own
+session context. Normal SDK construction is unchanged. The optional `plugins/claudesessions` package owns
+its SDK subprocess and accepts explicit Node/Claude paths, SDK module path, environment, session
+manager and input callback. For hosts that create, switch or fork sessions, pass
+`claudesessions.Factory(options)` to `agent.NewAgentSessionRuntime`; it builds a fresh driver
+bound to each replacement manager. A single fixed session can compose `driver.Loop` directly
+into `AgentSessionOptions.SessionLoop`. SDK TUI hosts can supply `Options.RenderText` to
+render native tool summaries through their own text component; the CLI uses the existing plain-text
+tool renderer. Neither path gives Orb execution of Claude tools.
+No bridge, Claude SDK or JavaScript runtime enters binaries that import only the ordinary Orb SDK.
+
+Extensions can expose a native Settings/palette page with `Command.SettingsLabel`.
+`NewSessionOptions.Prepare` initializes a new manager before its runtime factory runs; the existing
+`Setup` callback still runs after construction. Native session loops retain their selected model
+on ordinary new-session actions.
+
+For input, `SessionRuntime.RequestInput(ctx, title, choices)` exposes one execution-bound question;
+`PendingInput` returns a copy and `ReplyInput(id, value)` accepts one valid response. Hosts can use the
+native extension UI or authenticated instance-control adapters. Disposing/cancelling the enclosing
+run cancels the request; closing a non-owning attachment does not answer it. A remotely supplied
+answer must use the session control execution fence, as `connect/agent` does, rather than calling
+`ReplyInput` on an untrusted session reference.
+
+The optional `plugins/questions` capability supplies `Extension()` for the native tool and
+`Ask` for executor adapters. Registered tools receive `extensions.InputHandlerFromContext(ctx)`;
+`ContextActions.RequestInput` lets custom hosts supply that callback. `extensions.WithInputOptions`
+adds an opaque presentation, a local renderer and a reply validator without changing the UI
+interface. Invalid replies leave the pending request intact. Bridge forwards the presentation as
+bounded JSON; the CLI selects its renderer. Permission adapters continue using `BeforeToolCall`,
+where a non-nil, non-blocking result explicitly allows and nil leaves native policy in charge.

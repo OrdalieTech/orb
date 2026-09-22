@@ -14,6 +14,19 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
+// InputHandler routes extension questions through an attached runtime controller.
+type InputHandler func(context.Context, string, []string) (string, error)
+type inputHandlerKey struct{}
+
+func WithInputHandler(ctx context.Context, handler InputHandler) context.Context {
+	return context.WithValue(ctx, inputHandlerKey{}, handler)
+}
+
+func InputHandlerFromContext(ctx context.Context) InputHandler {
+	handler, _ := ctx.Value(inputHandlerKey{}).(InputHandler)
+	return handler
+}
+
 type Mode string
 
 const (
@@ -667,6 +680,8 @@ type AutocompleteItem struct {
 }
 
 type Command struct {
+	// SettingsLabel adds this command as a native Settings page when non-empty.
+	SettingsLabel          string
 	Name                   string
 	SourceInfo             SourceInfo
 	Description            string
@@ -857,6 +872,8 @@ type ReplacedSessionContext interface {
 type SessionReplacementResult struct{ Cancelled bool }
 
 type NewSessionOptions struct {
+	// Prepare configures a new journal before the executor factory runs.
+	Prepare       func(*session.SessionManager) error
 	ParentSession string
 	Setup         func(*session.SessionManager) error
 	WithSession   func(context.Context, ReplacedSessionContext) error

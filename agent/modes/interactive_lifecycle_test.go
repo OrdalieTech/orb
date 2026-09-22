@@ -113,6 +113,30 @@ func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t
 		t.Fatalf("startup UI did not survive initialization: %q", terminal.output())
 	}
 
+	inputResult := make(chan string, 1)
+	go func() {
+		value, err := runtime.RequestInput(ctx, "Runtime question", []string{"Keep", "Change"})
+		if err != nil {
+			value = err.Error()
+		}
+		inputResult <- value
+	}()
+	if !terminal.waitFor("Runtime question", 2*time.Second) {
+		t.Fatal("runtime input did not reach the visible UI")
+	}
+	terminal.mu.Lock()
+	send := terminal.onInput
+	terminal.mu.Unlock()
+	send("\r")
+	select {
+	case answer := <-inputResult:
+		if answer != "Keep" {
+			t.Fatalf("runtime reply: %q", answer)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runtime input never completed")
+	}
+
 	mutationsDone := make(chan struct{})
 	go func() {
 		defer close(mutationsDone)

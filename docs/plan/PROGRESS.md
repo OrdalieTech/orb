@@ -4,6 +4,149 @@ The active sequence is `SPRINTS.md`; the old work-package numbers are historical
 only. Progress is measured by conformance surfaces moving from red to green and by milestone
 criteria closing.
 
+## Inline questions and mouse control — 2026-09-22
+
+Hover now highlights choices, tabs and Continue/Submit without changing answers or moving the
+layout. Leaving clears hover; repeated motion over one target avoids redundant invalidations.
+The hover regression and full `make check` pass.
+
+Questions now use the existing non-overlay `UI.Custom` composer replacement, which restores the
+editor and draft on completion or cancellation. The plugin panel keeps space for the transcript;
+choices, tabs and Continue/Submit accept a single click, while drag gestures cannot answer.
+Bridge forwards mouse events and handles history paging before question input. No core API changed.
+Targeted question/native-tool/remote-view race tests pass. A real Claude PTY produced a long
+transcript, displayed the inline question, repainted history on PageUp while it remained pending,
+and resumed after the answer into the saved transcript. The full `make check` passes, including
+lint, race tests and conformance.
+
+## OpenCode-inspired question panel — 2026-09-22
+
+Restyled the shared `plugins/questions` panel with an accent rail, numbered choices, descriptions
+beneath each option, custom input shown on demand, question tabs and a review step for batched or
+multiple-choice answers. Number keys, arrows, Tab, custom-edit Escape and mouse selection remain
+plugin-local. Existing runtime and Bridge contracts are unchanged. Regression checks cover review
+before submission, custom answers, back navigation, narrow layouts and visible remote controls.
+The Questions, Claude Sessions and CLI race suites pass. A real Claude PTY displayed the new panel,
+accepted a selection and resumed into the saved transcript. `make check` built and vetted but was
+blocked by concurrent reorganization lint errors in oauth_selector, bridge imports and unused
+subagents/tasks test helpers; those unrelated edits were preserved.
+
+## Shared Questions and Claude permissions — 2026-09-22
+
+Added the default-off Questions tool and one shared panel for Orb, Claude and remote views, with
+validated structured replies, custom answers, multiple selections and back navigation. Claude's
+former question UI was removed. Core carries opaque presentation data through existing runtime
+input; Bridge transport has no provider-specific behavior. Claude native tool hooks now consult
+the existing optional Permissions plugin, including rules, approval reuse and audit.
+
+Verified the native Orb tool with a faux provider, invalid/stale replies and narrow panel rendering.
+A real Claude SDK 0.3.278 run over paired in-process Bridge covered native Write approval, automatic
+allow, denied Read, question/reply, resume, fork and cancellation (505 ms). An isolated real PTY
+confirmed the shared choices display and selecting one resumes Claude and persists its transcript.
+This is not fresh Tailcat network proof. The final `make check` passes, including race and
+conformance. Remote viewport regression keeps the panel visible below long transcripts; oversized
+answers remain editable. The static Darwin arm64 release-shaped build is 51,952,930 bytes.
+
+## Native resume verification — 2026-09-22
+
+The reported conversation remains in SQLite with 19 messages / 56 entries. The installed 0.8.0
+binary found it during verification but lacked the Claude executor and attempted provider fallback;
+the earlier legacy lookup error was not reproducible with that installed binary. Updated the local
+executable to the checked current build, retaining the previous binary. Actual PTY startup restored
+the conversation as Claude using both its full ID and prefix, without sending a prompt or changing
+any saved entry. Extended the migration/restart regression to verify both forms still use SQLite
+when the corresponding legacy backup is corrupt. `make check` passes; no lookup fallback or new
+storage path was added.
+
+## Claude interactive questions — 2026-09-22
+
+The TUI bound its extension runner directly and left the runtime's stored UI at its placeholder.
+Runtime input therefore canceled without showing a dialog. Both initial and replacement TUI
+binding now use the existing `BindExtensionUI` seam; no Claude condition or schema entered core.
+The plugin preserves question descriptions/previews, sequential questions, custom answers and
+multi-selection, using the same generic input/reply path locally and through Bridge. Dismissal
+returns a native denial; global cancellation still interrupts the SDK. Native question, plan,
+task and file/command summaries use the existing plain-text tool renderer, owned by the plugin.
+The CLI does not modify the extension registry, so presentation cannot leak into ordinary sessions.
+SDK UI hosts can supply their own text component through the plugin options.
+A generic visible-runtime-input regression and a real Node SDK-host question test cover the lost
+UI binding, custom text, selection/deselection, answer mapping and renderer registration.
+
+Verified `make check` (build, vet, lint, race, conformance, layering and pure-Go checks). A real
+Claude Sonnet PTY session displayed the question, accepted a selection, resumed with the expected
+answer, and saved the tool/result projection in SQLite. A live native SDK test also paired two
+in-process bridges, answered `AskUserQuestion` through authenticated `input.reply`, then verified
+native Write approval, model switching, resume/fork and cancellation (706 ms). This exercises
+Bridge authorization/routing and the real SDK, not a fresh Tailcat network traversal.
+
+## Claude model discovery and session identity — 2026-09-22
+
+Replaced the one-model closure and hardcoded Sonnet default with the official SDK `supportedModels()`
+control, queried without a prompt or persistent native session. The executing CLI supplies model
+aliases, resolved IDs and effort capabilities; Orb's normal picker receives their adapted forms.
+Unknown explicit IDs remain explicit, existing session selections are retained, and changing the
+executor in place is rejected. Native effort/thinking options now follow the selected Orb controls.
+The page has New Claude session, Model and (while in Claude) Switch to Orb; launch-default
+toggles are removed. Exit preserves the native conversation and opens a regular session, including
+when no Orb provider is configured. A plugin-owned marker handles explicit executor exit without
+changing Pi metadata-only session restoration. The existing extension status hook labels Claude
+sessions, including the native model reported
+on completion. Generic Bridge descriptions expose safe display metadata; `/models` and
+`/model <provider/id> [effort]` use `session.model` under existing session-management authority,
+serialized admission and durable receipts. No Claude-specific Bridge dependency was added.
+
+The native account probe returned five models with Opus as the default, then exercised a Sonnet
+turn with low effort, a switch to Haiku, resume/fork, explicit Write approval and cancellation.
+Hermetic tests cover catalog adaptation, explicit canonical IDs, switching without Orb credentials,
+effort delivery, executor isolation and remote selection through the operation ledger. The actual
+PTY TUI exposed the native catalog, showed the Claude footer and switched to a saved regular
+session with no Orb provider credentials. The final live model-switch probe verified the returned
+assistant model was Haiku, retained fork context, and cancelled in 608 ms. `make check` passed,
+including normal RPC behavior and unchanged metadata-only session conformance. Four final static
+builds passed the 55 MB cap: darwin/arm64 51,901,186 B, darwin/amd64 54,345,168 B,
+linux/arm64 50,528,416 B and linux/amd64 53,346,464 B.
+
+## Claude first-use setup — 2026-09-22
+
+Starting a Claude session now installs the pinned SDK automatically on the execution host; the
+same preparation path serves TUI, direct CLI and Bridge-hosted runtimes. Setup uses the existing
+cross-process lock, has a two-minute installer deadline, and retries failed installations without
+mistaking a partial SDK entry point for success. Custom SDK paths remain explicit. The management
+page keeps New session, Model and one current default toggle; no separate Install SDK action.
+Node/npm and native Claude sign-in remain host prerequisites. Regression covers failure, retry,
+reuse and a missing custom SDK path. A clean temporary profile also downloaded the official SDK
+and completed two runtime configurations, proving first-use setup and subsequent reuse.
+`make check` passed, including lint, the full race suite and conformance.
+
+## Claude Sessions — isolated optional SDK loop, 2026-09-21
+
+Reviewed Hermes DirectSDK at c92c27c9f919178a58974a72333b473c6cb2e71d and current Anthropic
+SDK, sessions, permission and legal documentation. Hermes adapts model calls with transcript replay
+and an admission proxy; Orb instead delegates complete native sessions to official SDK 0.3.278 and
+the user's unmodified Claude executable. Authentication remains entirely in that executable.
+
+`claudesessions` owns the Node host, native checkpoints, event translation, configuration and
+permission adapter. The optional engine session-loop seam and execution-bound input requests are
+vendor-neutral; Bridge routes ordinary controls and input replies without a Claude dependency.
+The native Settings/palette page is available while execution remains opt-in. SQLite stores the
+Orb projection; native transcripts remain necessary for resume. No new Go dependency was added.
+
+Verification: full `make check` passed (build, vet, lint, race and conformance), ordinary SDK examples
+and an external unchanged SDK consumer built without Claude/Bridge/Tailcat imports, and portable
+connect/protocol/Bridge compiled for Wasm. Tests cover stream/tool translation, native checkpoints,
+new/switch/fork, stale and single-use input, cancellation and independent instance execution.
+Live SDK tests with Claude Code 2.1.273 exercised create/resume, paired in-process Bridge routing,
+an explicitly approved native Write, fork recall and cancellation (612 ms). This proves the plugin
+through Bridge contracts, not a fresh Tailcat network traversal. An actual CLI print run and PTY
+command-palette → new Claude session produced verified assistant messages in isolated SQLite.
+The PTY harness's second cleanup interrupt hit an already-closed terminal; the persisted response
+was checked separately, and a fresh Orb process resumed the SQLite session and recalled its exact
+previous token. No existing user sessions or credentials were copied or modified.
+
+Four static release-target builds remained below 55 MB (50.53–54.33 MB). Warm darwin/arm64
+`--version` startup measured 21.74 ms median over 22 samples; this is local process startup, not
+native Claude cold-start latency. The optional SDK starts no subprocess while disabled or idle.
+
 ## Unified conversations and SQLite — native cutover, 2026-09-21
 
 The owner requested unified local/remote Sessions navigation and native SQLite, explicitly

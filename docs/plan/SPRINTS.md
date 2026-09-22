@@ -327,3 +327,15 @@ Each working session aims to CLOSE a sprint, and must at minimum leave main gree
 and the sprint's RED surface measurably smaller. No schedule estimates anywhere — progress is
 measured only by red-to-green movement and closed milestones. Blockers only the owner can clear
 (credentials, remotes, hosts) are surfaced in PROGRESS.md and worked around, never waited on.
+
+## Claude Sessions — owner-requested isolated executor, 2026-09-21
+
+Implement the native session adapter described in ARCHITECTURE, preserving existing SDK defaults.
+Hermes is a research reference, not a transport/authentication implementation to port. Acceptance:
+
+- Whole-turn executor seam preserves event ordering, cancellation, concurrency and SDK isolation.
+- Official SDK and unmodified Claude executable own login, sessions, tools and native permissions.
+- Explicit native IDs/checkpoints cover create, restart/resume and fork without history replay.
+- Generic input replies use the same execution fences and durable Bridge receipts as other controls.
+- `/claude` management and explicit provider selection work without Orb provider credentials.
+- Hermetic process/Bridge tests, opt-in native account checks, race gate, static builds and docs.

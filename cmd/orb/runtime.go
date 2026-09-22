@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/sandbox"
 )
@@ -316,7 +317,16 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			})
 		})
 	}
-	model, scopedThinking, scopedModels, modelDiagnostics, err := resolveRuntimeModel(args, settings, registry)
+	var model *ai.Model
+	var scopedThinking *ai.ModelThinkingLevel
+	var scopedModels []agent.ScopedModel
+	var modelDiagnostics []string
+	if !args.NoExtensions {
+		model = claudesessions.Model(args.Provider, args.Model, settings)
+	}
+	if model == nil {
+		model, scopedThinking, scopedModels, modelDiagnostics, err = resolveRuntimeModel(args, settings, registry)
+	}
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -475,7 +485,7 @@ func hasNonControlExtensions(registry *extensions.Registry) bool {
 		return false
 	}
 	for _, extension := range registry.Extensions() {
-		if extension.Path != "<inline:plugin-control>" && extension.Path != "<inline:bridge>" {
+		if extension.Path != "<inline:plugin-control>" && extension.Path != "<inline:bridge>" && extension.Path != "<inline:claude-sessions-control>" {
 			return true
 		}
 	}

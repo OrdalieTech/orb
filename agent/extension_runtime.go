@@ -132,7 +132,8 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		UnregisterProvider:     unregisterProvider,
 	}
 	contextActions := extensions.ContextActions{
-		GetModel: func() *ai.Model { return runtime.agent.State().Model },
+		RequestInput: runtime.RequestInput,
+		GetModel:     func() *ai.Model { return runtime.agent.State().Model },
 		GetScopedModels: func() []extensions.ScopedModel {
 			scoped := runtime.ScopedModels()
 			result := make([]extensions.ScopedModel, len(scoped))
@@ -961,6 +962,9 @@ func (runtime *SessionRuntime) beforeExtensionToolCall(ctx context.Context, call
 	state := runtime.extensionState
 	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventToolCall) {
 		return nil, nil
+	}
+	if runtime.control.Load() != nil {
+		ctx = extensions.WithInputHandler(ctx, runtime.RequestInput)
 	}
 	result := state.runner.EmitToolCall(ctx, extensions.ToolCallEvent{ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments)})
 	if result == nil {

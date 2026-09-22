@@ -2388,11 +2388,11 @@ func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opened := make(chan string, 2)
+	opened := make(chan string, 3)
 	registry := extensions.NewRegistry(cwd)
 	err = registry.Register("management", func(api extensions.API) error {
-		for _, name := range []string{"plugins", "bridge"} {
-			api.RegisterCommand(name, extensions.Command{Handler: func(context.Context, string, extensions.CommandContext) error { opened <- name; return nil }})
+		for _, name := range []string{"plugins", "bridge", "external-session"} {
+			api.RegisterCommand(name, extensions.Command{SettingsLabel: name, Handler: func(context.Context, string, extensions.CommandContext) error { opened <- name; return nil }})
 		}
 		return nil
 	})
@@ -2407,7 +2407,7 @@ func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
 	mode.session = runtime
 	mode.setupAutocomplete()
 	mode.editor.SetText("keep my draft")
-	for _, name := range []string{"plugins", "bridge"} {
+	for _, name := range []string{"plugins", "bridge", "external-session"} {
 		found := false
 		for _, row := range mode.commandPaletteRows() {
 			if row.Value == name {

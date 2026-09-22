@@ -16,6 +16,13 @@ import (
 	"github.com/OrdalieTech/orb/connect/protocol"
 )
 
+type Model struct {
+	ID       string   `json:"id"`
+	Provider string   `json:"provider"`
+	Name     string   `json:"name"`
+	Thinking []string `json:"thinking,omitempty"`
+}
+
 type Store interface {
 	Load() ([]byte, error)
 	Save([]byte) error
@@ -315,7 +322,7 @@ func ValidateCall(c Call) error {
 	}
 	switch c.Method {
 	case "inspect", "session.list":
-	case "prompt", "steer", "follow_up", "cancel", "session.new", "session.switch", "session.fork":
+	case "input.reply", "prompt", "steer", "follow_up", "cancel", "session.new", "session.switch", "session.fork", "session.model":
 		if _, err := protocol.Counter(c.Expected.Generation); err != nil {
 			return Fail("stale_target")
 		}

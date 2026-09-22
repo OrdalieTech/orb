@@ -539,13 +539,13 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			if mode == "log" && decision.Matcher != "guard" {
 				decision.Resolved, decision.Resolution = Allow, "would-"+string(decision.Action)
 				record(ctx, decision)
-				return nil, nil
+				return extensions.ToolCallResult{}, nil
 			}
 			switch decision.Action {
 			case Allow:
 				decision.Resolved = Allow
 				record(ctx, decision)
-				return nil, nil
+				return extensions.ToolCallResult{}, nil
 			case Deny:
 				decision.Resolved = Deny
 				record(ctx, decision)
@@ -554,34 +554,51 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			if policy.approvedForSession(info, decision) {
 				decision.Resolved, decision.Resolution = Allow, "session approval"
 				record(ctx, decision)
-				return nil, nil
+				return extensions.ToolCallResult{}, nil
 			}
 			ui, interactive := permissionUI(extensionContext, parent)
-			if !interactive {
+			request := extensions.InputHandlerFromContext(ctx)
+			if !interactive && request == nil {
 				decision.Resolved, decision.Resolution = fallback, "askFallback"
 				record(ctx, decision)
 				if fallback == Deny {
 					return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, "ask resolved by askFallback")}, nil
 				}
-				return nil, nil
+				return extensions.ToolCallResult{}, nil
 			}
 			policy.askMu.Lock()
 			defer policy.askMu.Unlock()
 			if policy.approvedForSession(info, decision) {
 				decision.Resolved, decision.Resolution = Allow, "session approval"
 				record(ctx, decision)
-				return nil, nil
+				return extensions.ToolCallResult{}, nil
 			}
-			selected, ok, err := ui.Select(ctx, permissionPrompt(decision), []string{
+			if request == nil {
+				request = func(ctx context.Context, title string, choices []string) (string, error) {
+					var value string
+					var ok bool
+					var err error
+					if len(choices) == 0 {
+						value, ok, err = ui.Input(ctx, title, nil, nil)
+					} else {
+						value, ok, err = ui.Select(ctx, title, choices, nil)
+					}
+					if err == nil && !ok {
+						err = context.Canceled
+					}
+					return value, err
+				}
+			}
+			selected, err := request(ctx, permissionPrompt(decision), []string{
 				"y approve once", "s approve for this session", "n deny", "r deny with a reason",
-			}, nil)
-			if err != nil || !ok {
+			})
+			if err != nil {
 				decision.Resolved, decision.Resolution = fallback, "askFallback"
 				record(ctx, decision)
 				if fallback == Deny {
 					return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, "ask was cancelled")}, nil
 				}
-				return nil, nil
+				return extensions.ToolCallResult{}, nil
 			}
 			choice := byte('n')
 			if selected != "" {
@@ -594,7 +611,7 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 				policy.approveForSession(info, decision)
 				decision.Resolved, decision.Resolution = Allow, "session approval"
 			case 'r':
-				reason, _, _ := ui.Input(ctx, "Why deny this tool call?", nil, nil)
+				reason, _ := request(ctx, "Why deny this tool call?", nil)
 				decision.Resolved, decision.Resolution = Deny, strings.TrimSpace(reason)
 			default:
 				decision.Resolved, decision.Resolution = Deny, "denied"
@@ -603,7 +620,7 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			if decision.Resolved == Deny {
 				return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, decision.Resolution)}, nil
 			}
-			return nil, nil
+			return extensions.ToolCallResult{}, nil
 		})
 		api.RegisterCommand("permissions", extensions.Command{
 			Description: "Show or toggle the permissions policy",
