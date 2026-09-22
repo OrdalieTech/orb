@@ -23,6 +23,9 @@ func TestMigrationProcessExitsDuringInspection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
+	previous := procfs
+	procfs = filepath.Join(bin, "no-procfs")
+	t.Cleanup(func() { procfs = previous })
 	if err := requireOfflineMigration(context.Background(), bin); err == nil {
 		t.Fatal("allowed migration without inspecting a live process")
 	}
