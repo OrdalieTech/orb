@@ -35,6 +35,10 @@ with mid-turn steering. The compatibility target remains Pi **v0.86.0** on Go **
   (for example `oven/bun` images): the CLI falls back to built-in Mozilla roots, as pi does
   through Node. A system bundle, when present, still wins.
 
+- Orb starts in slim Linux images without `ps` (such as `python:*-slim` and `node:*-slim`): before
+  moving existing settings files into SQLite, it now checks for other running Orb processes through
+  `/proc` instead of refusing to start.
+
 ### Claude Sessions
 
 - Claude Sessions: keep one live Claude process per session, so turns after the first start in about
