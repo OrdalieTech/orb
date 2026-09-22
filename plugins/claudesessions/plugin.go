@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/plugins/permissions"
 )
 
 // Model selects this capability only for an explicit or restored Claude session.
@@ -76,6 +77,13 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 	}
 	return func(ctx context.Context, opts agent.AgentSessionOptions) (*agent.AgentSessionResult, error) {
 		owned := options
+		if owned.Sandbox == "" {
+			mode, err := permissions.SandboxMode(opts.Settings)
+			if err != nil {
+				return nil, err
+			}
+			owned.Sandbox = mode
+		}
 		owned.Manager = opts.SessionManager
 		var runtime *agent.SessionRuntime
 		if owned.Ask == nil {
@@ -173,6 +181,13 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 }
 
 func configuredOptions(ctx context.Context, settingsManager *config.SettingsManager, agentDir string, env []string) (Options, error) {
+	mode, err := permissions.SandboxMode(settingsManager)
+	if err != nil {
+		return Options{}, err
+	}
+	if err := checkSandbox(mode); err != nil {
+		return Options{}, err
+	}
 	settings := settingsManager.GetPluginSettings(Name)
 	option := func(key, fallback string) string {
 		if value, ok := settings[key].(string); ok && value != "" {
@@ -197,7 +212,7 @@ func configuredOptions(ctx context.Context, settingsManager *config.SettingsMana
 	} else if err = installSDK(ctx, agentDir, env); err != nil {
 		return Options{}, err
 	}
-	return Options{Node: node, Claude: claude, SDK: sdk, Env: env}, nil
+	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode}, nil
 }
 
 // Serialize setup across Orb processes; existing sessions never run npm again.

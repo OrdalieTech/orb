@@ -477,8 +477,10 @@ type ToolCallEvent struct {
 func (ToolCallEvent) Type() EventType { return EventToolCall }
 
 type ToolCallResult struct {
-	Block  bool   `json:"block,omitempty"`
-	Reason string `json:"reason,omitempty"`
+	// Approved carries Go host consent without changing the JS extension protocol.
+	Approved bool   `json:"-"`
+	Block    bool   `json:"block,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 type ToolResultEvent struct {

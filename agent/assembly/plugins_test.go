@@ -136,10 +136,9 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 		settings.SetPluginSetting("permissions", key, invalid[2])
 	}
 	settings.SetPluginEnabled("permissions", false)
-	for _, settings := range []*config.SettingsManager{settings, nil} {
-		got, err := permissions.SandboxMode(settings)
-		require(t, err == nil && got == sandbox.ModeDangerFullAccess, "disabled sandbox mode = %q, %v", got, err)
-	}
+	checkMode(sandbox.ModeReadOnly)
+	got, err := permissions.SandboxMode(nil)
+	require(t, err == nil && got == sandbox.ModeDangerFullAccess, "unset sandbox mode = %q, %v", got, err)
 }
 
 func TestPermissionsPolicyRules(t *testing.T) {
@@ -197,7 +196,7 @@ func TestPermissionsPolicyRules(t *testing.T) {
 }
 
 func TestPermissionsEnforceHidesAndBlocksStaticDeny(t *testing.T) {
-	logSession := newPermissionsSession(t, faux.New(), &permissions.Policy{Rules: []permissions.Rule{{Tool: "bash", Action: permissions.Deny}}})
+	logSession := newPermissionsSession(t, faux.New(), &permissions.Policy{Mode: "log", Rules: []permissions.Rule{{Tool: "bash", Action: permissions.Deny}}})
 	require(t, containsName(logSession.GetActiveToolNames(), "bash"), "log mode hid bash")
 	conditionalSession := newPermissionsSession(t, faux.New(), &permissions.Policy{Mode: "enforce", Rules: []permissions.Rule{{Tool: "bash", Command: "rm -rf *", Action: permissions.Deny}}})
 	require(t, containsName(conditionalSession.GetActiveToolNames(), "bash"), "command-scoped deny hid the whole tool")

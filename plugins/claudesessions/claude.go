@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
 const Name = "claude-sessions"
@@ -31,6 +32,7 @@ const SDKVersion = "0.3.278"
 var hostSource string
 
 type Options struct {
+	Sandbox sandbox.Mode
 	// RenderText optionally supplies text components for SDK-hosted tool calls.
 	RenderText        func(string) extensions.Component
 	Node, SDK, Claude string
@@ -49,6 +51,9 @@ type Driver struct {
 }
 
 func New(options Options) (*Driver, error) {
+	if err := checkSandbox(options.Sandbox); err != nil {
+		return nil, err
+	}
 	if options.Manager == nil || options.Node == "" || options.SDK == "" || options.Claude == "" || options.Env == nil {
 		return nil, errors.New("claude sessions require explicit executables, SDK, environment and session storage")
 	}
@@ -333,9 +338,11 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				if err != nil {
 					decision, reason = "deny", err.Error()
 				} else if result != nil {
-					decision, reason = "allow", result.Reason
+					reason = result.Reason
 					if result.Block {
 						decision = "deny"
+					} else if result.Approved {
+						decision = "allow"
 					}
 				}
 			}
@@ -679,4 +686,11 @@ func nativeQuestions(raw json.RawMessage) (questions.Request, error) {
 		request.Questions[i] = questions.Question{ID: fmt.Sprint(i + 1), Question: q.Question, Header: q.Header, Options: q.Options, MultiSelect: q.MultiSelect}
 	}
 	return request, request.Validate()
+}
+
+func checkSandbox(mode sandbox.Mode) error {
+	if mode != "" && mode != sandbox.ModeDangerFullAccess {
+		return errors.New("claude sessions cannot enforce Orb filesystem containment; choose a standard Orb provider or explicitly configure danger-full-access")
+	}
+	return nil
 }

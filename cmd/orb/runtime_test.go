@@ -609,7 +609,7 @@ func TestCreateRuntimeInputsAllowsMissingModelOnlyForInteractiveBootstrap(t *tes
 	}
 }
 
-func TestCreateRuntimeInputsNoExtensionsSkipsPluginSandboxAndSharesLoader(t *testing.T) {
+func TestCreateRuntimeInputsNoExtensionsPreservesSandboxAndSharesLoader(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", filepath.Join(root, "home"))
 	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(`{"plugins":{"permissions":{"sandbox":true}}}`), 0o600); err != nil {
@@ -625,6 +625,12 @@ func TestCreateRuntimeInputsNoExtensionsSkipsPluginSandboxAndSharesLoader(t *tes
 		t.Fatalf("invalid sandbox error = %v", err)
 	}
 
+	if _, err := createRuntimeInputs(root, CLIArgs{allowNoModel: true, NoExtensions: true}, nil); err == nil || !strings.Contains(err.Error(), "permissions.sandbox") {
+		t.Fatalf("disabled extensions bypassed invalid host sandbox: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(`{"plugins":{"permissions":{"enabled":false,"sandbox":"read-only"}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	inputs, err := createRuntimeInputs(root, CLIArgs{allowNoModel: true, NoExtensions: true}, nil)
 	if err != nil {
 		t.Fatal(err)

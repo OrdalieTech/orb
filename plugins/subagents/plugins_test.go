@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/permissions"
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
 type widgetUI struct {
@@ -410,4 +411,32 @@ func TestSubagentExternalObjectFormTogglesWithoutLosingCommands(t *testing.T) {
 	})
 	_, err = ExternalEntries(settings)
 	require(t, err != nil && strings.Contains(err.Error(), "must be a command or {command, enabled}"), "error = %v", err)
+}
+
+func TestSubagentInheritsFileContainment(t *testing.T) {
+	root := t.TempDir()
+	scratch := filepath.Join(root, "scratch")
+	mustOK(os.Mkdir(scratch, 0700))
+	t.Setenv("TMPDIR", scratch)
+	marker := filepath.Join(root, "outside")
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var denied bool
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "write", "agent": "worker"})),
+		faux.AssistantMessage(faux.ToolCall("write", map[string]any{"path": marker, "content": "blocked"})),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			denied = strings.Contains(toolResultText(request, "write"), "sandbox:")
+			return faux.AssistantMessage("child done"), nil
+		}),
+		faux.AssistantMessage("parent done"),
+	})
+	policy := &permissions.Policy{Mode: "log", Sandbox: sandbox.ModeReadOnly}
+	s := newPermissionsSession(t, provider, policy, "subagents")
+	mustOK(s.PromptSync(t.Context(), "delegate"))
+	if !denied {
+		t.Fatal("child did not inherit filesystem containment")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("child wrote outside: %v", err)
+	}
 }

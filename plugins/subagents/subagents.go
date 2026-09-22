@@ -23,6 +23,8 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 	"github.com/OrdalieTech/orb/plugins/permissions"
+	permissionnative "github.com/OrdalieTech/orb/plugins/permissions/native"
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
 const (
@@ -206,6 +208,13 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 		if err != nil {
 			return err
 		}
+		sandboxMode, err := permissions.SandboxMode(settings)
+		if err != nil {
+			return err
+		}
+		if policy != nil && policy.Sandbox != "" {
+			sandboxMode = policy.Sandbox
+		}
 		var progressMu sync.Mutex
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "subagent", Label: "Subagent", Description: "Run a child agent", Parameters: schemaWithExternal(external),
@@ -302,7 +311,7 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 						}
 						defer func() { <-semaphore }()
 						updateProgress(index, "running")
-						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, external, task)
+						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, sandboxMode, external, task)
 						if errorsByChild[index] != nil {
 							updateProgress(index, "error")
 						} else {
@@ -364,7 +373,7 @@ func childOptions(parentRegistry extensions.ModelRegistry, injected engine.Strea
 // ponytail: recover because extensions.Context exposes no way to ask whether it
 // is still live; drop it once the interface can be checked before the call.
 func runChildGuarded(
-	ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, external map[string]string, task subagentTask,
+	ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, mode sandbox.Mode, external map[string]string, task subagentTask,
 ) (result string, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -372,23 +381,31 @@ func runChildGuarded(
 		}
 	}()
 	if command, ok := external[task.Agent]; ok {
-		// Configured external CLIs are trusted host executables. Unlike integrated
-		// children, they do not inherit tool filtering or the permissions policy.
-		return runExternalChild(ctx, parent.CWD(), task.Agent, command, task.Task)
+		// External CLIs keep their own tool policy but inherit host containment.
+		return runExternalChild(ctx, parent.CWD(), task.Agent, command, task.Task, mode)
 	}
-	return runChild(ctx, parent, injected, policy, task)
+	return runChild(ctx, parent, injected, policy, mode, task)
 }
 
-func runExternalChild(ctx context.Context, cwd, name, command, task string) (string, error) {
+func runExternalChild(ctx context.Context, cwd, name, command, task string, mode sandbox.Mode) (string, error) {
 	timeoutCtx, cancelTimeout := context.WithTimeout(ctx, externalTimeout)
 	defer cancelTimeout()
 	processCtx, cancelProcess := context.WithCancel(timeoutCtx)
 	defer cancelProcess()
+	env := map[string]string{}
+	for _, entry := range os.Environ() {
+		name, value, _ := strings.Cut(entry, "=")
+		env[name] = value
+	}
+	command, env = sandbox.Wrap(mode, cwd, "/bin/sh", command, env)
 	process := exec.CommandContext(processCtx, "/bin/sh", "-c", `/bin/sh -c "$1" 3>&-; status=$?; printf '%d\n' "$status" >&3; while :; do sleep 3600; done`, "orb-subagent", command)
 	// WaitDelay only fires when an escaped descendant still holds the pipes
 	// after the group kill; keep it generous so a loaded host never truncates
 	// a successful child's final output burst.
 	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), 5*time.Second
+	for name, value := range env {
+		process.Env = append(process.Env, name+"="+value)
+	}
 	killGroup, err := isolateExternalProcess(process)
 	if err != nil {
 		return "", fmt.Errorf("subagent: external agent %q unavailable: %w", name, err)
@@ -449,7 +466,7 @@ func excerpt(text string) string {
 	return text
 }
 
-func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, task subagentTask) (string, error) {
+func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, mode sandbox.Mode, task subagentTask) (string, error) {
 	role := archetypes[task.Agent]
 	options, err := childOptions(parent.ModelRegistry(), injected, agent.AgentSessionOptions{})
 	if err != nil {
@@ -488,6 +505,7 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 	options.SessionManager, options.Settings = manager, settings
 	options.Resources = &agent.Resources{SystemPrompt: &prompt}
 	options.ExtensionRegistry = extensionRegistry
+	options.ToolOptions = permissionnative.ToolOptions(mode, parent.CWD(), "")
 	result, err := agent.NewAgentSession(options)
 	if err != nil {
 		return "", err

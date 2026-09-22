@@ -2,15 +2,19 @@ package permissions
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -56,9 +60,10 @@ type Decision struct {
 }
 
 // Policy is constructible by SDK embedders and shared with in-process children.
+// Configure fields before attaching; SetMode is the only concurrent mutation API.
 type Policy struct {
-	// Sandbox is consumed by cmd/orb through SandboxMode (settings-driven);
-	// embedders wire sandbox.Wrap into their own bash tool themselves.
+	// Sandbox is selected by native hosts; SDK callers attach native.ToolOptions
+	// explicitly or supply their own contained tool operations.
 	Sandbox     sandbox.Mode `json:"sandbox,omitempty"`
 	Mode        string       `json:"mode,omitempty"`
 	AskFallback Action       `json:"askFallback,omitempty"`
@@ -70,14 +75,14 @@ type Policy struct {
 	Guards []func(context.Context, ToolCallInfo) string `json:"-"`
 
 	mu        sync.Mutex
-	askMu     sync.Mutex
+	ask       chan struct{}
 	approved  map[string]struct{}
 	decisions []Decision
 }
 
-// SandboxMode returns the filesystem sandbox selected by the enabled permissions plugin.
+// SandboxMode is a host constraint, independent of extension enablement.
 func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
-	if settings == nil || !settings.GetPlugins()["permissions"] {
+	if settings == nil {
 		return sandbox.ModeDangerFullAccess, nil
 	}
 	policy, err := FromSettings(settings.GetPluginSettings("permissions"))
@@ -91,7 +96,7 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 }
 
 func FromSettings(value map[string]any) (*Policy, error) {
-	policy := &Policy{}
+	policy := &Policy{Mode: "enforce"}
 	for key, configured := range value {
 		switch key {
 		case "enabled":
@@ -175,22 +180,23 @@ func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, 
 	policy.mu.Lock()
 	defer policy.mu.Unlock()
 	mode := policy.Mode
-	if mode != "enforce" {
-		mode = "log"
+	if mode != "log" {
+		mode = "enforce"
 	}
 	fallback := policy.AskFallback
-	if fallback != Deny {
-		fallback = Allow
+	if fallback != Allow {
+		fallback = Deny
 	}
 	return mode, fallback, append([]Rule(nil), policy.Rules...), policy.Authorizer, append([]func(context.Context, ToolCallInfo) string(nil), policy.Guards...)
 }
 
 func (policy *Policy) SetMode(mode string) {
-	if mode != "enforce" {
-		mode = "log"
+	if mode != "log" {
+		mode = "enforce"
 	}
 	policy.mu.Lock()
 	policy.Mode = mode
+	clear(policy.approved)
 	policy.mu.Unlock()
 }
 
@@ -201,15 +207,16 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 	decision := Decision{Time: time.Now().UnixMilli(), Tool: info.Tool, Action: Allow, Resolved: Allow, Mode: mode, Input: string(input)}
 	if authorizer != nil {
 		action, err := authorizer(ctx, info)
-		if err != nil {
-			decision.Action, decision.Matcher, decision.Resolution = Ask, "authorizer", err.Error()
+		if err != nil || !validAction(action) {
+			decision.Action, decision.Matcher, decision.Resolution = Deny, "guard", "authorizer failed"
+			if err != nil {
+				decision.Resolution = err.Error()
+			}
 			return decision
 		}
-		if validAction(action) {
-			decision.Action, decision.Matcher = action, "authorizer"
-			if action != Allow {
-				return decision
-			}
+		decision.Action, decision.Matcher = action, "authorizer"
+		if action == Deny && mode != "log" {
+			return decision
 		}
 	}
 	for _, guard := range guards {
@@ -245,6 +252,26 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 		decision.Rule = index + 1
 		decision.Matcher = formatRule(rule)
 	}
+	if info.Tool == "bash" && decision.Action == Allow {
+		command, _ := commandArgument(info.Args)
+		if strings.ContainsAny(command, ";&|<>$`\\\"'()\n\r") {
+			scoped := false
+			for _, rule := range rules {
+				if matchGlob(ruleTool(rule), "bash", false) && (rule.Command != "" || rule.Path != "") {
+					scoped = true
+				}
+			}
+			if decision.Rule > 0 {
+				rule := rules[decision.Rule-1]
+				if rule.Path == "" && (rule.Command == "" || rule.Command == command) {
+					scoped = false
+				}
+			}
+			if scoped {
+				decision.Action, decision.Matcher, decision.Resolution = Ask, "shell syntax", "command requires approval because scoped rules cannot resolve shell syntax"
+			}
+		}
+	}
 	return decision
 }
 
@@ -272,12 +299,15 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 		if info.Tool == "bash" && hasCommand && rule.Action != Allow {
 			candidates = append(candidates, commandPaths(command)...)
 		}
+		matched := false
 		for _, candidate := range candidates {
-			if matchesPath(rule.Path, candidate, info.CWD) {
-				return true
+			hit := matchesPath(rule.Path, candidate, info.CWD, rule.Action == Allow)
+			if rule.Action == Allow && !hit {
+				return false
 			}
+			matched = matched || hit
 		}
-		return false
+		return matched
 	}
 	return true
 }
@@ -353,13 +383,13 @@ func appendPathValues(target *[]string, value any) {
 	}
 }
 
-func matchesPath(pattern, raw, cwd string) bool {
-	if matched, err := path.Match(filepath.ToSlash(pattern), filepath.ToSlash(raw)); err == nil && matched {
+func matchesPath(pattern, raw, cwd string, allow bool) bool {
+	if matched, err := doublestar.Match(filepath.ToSlash(pattern), filepath.ToSlash(raw)); err == nil && matched && !allow {
 		return true
 	}
 	canonicalPattern := canonicalPath(cwd, pattern)
 	canonical := canonicalPath(cwd, raw)
-	matched, err := path.Match(filepath.ToSlash(canonicalPattern), filepath.ToSlash(canonical))
+	matched, err := doublestar.Match(filepath.ToSlash(canonicalPattern), filepath.ToSlash(canonical))
 	return err == nil && matched
 }
 
@@ -383,11 +413,14 @@ func canonicalPath(cwd, raw string) string {
 		value = filepath.Join(cwd, value)
 	}
 	value = filepath.Clean(value)
-	if resolved, err := filepath.EvalSymlinks(value); err == nil {
-		return resolved
-	}
-	if parent, err := filepath.EvalSymlinks(filepath.Dir(value)); err == nil {
-		return filepath.Join(parent, filepath.Base(value))
+	for ancestor := value; ; ancestor = filepath.Dir(ancestor) {
+		if resolved, err := filepath.EvalSymlinks(ancestor); err == nil {
+			suffix, _ := filepath.Rel(ancestor, value)
+			return filepath.Join(resolved, suffix)
+		}
+		if filepath.Dir(ancestor) == ancestor {
+			break
+		}
 	}
 	return value
 }
@@ -441,10 +474,20 @@ func (policy *Policy) staticDeny(info ToolCallInfo) (Decision, bool) {
 }
 
 func permissionKey(info ToolCallInfo, decision Decision) string {
-	return info.SessionID + "\x00" + fmt.Sprint(decision.Rule) + "\x00" + decision.Matcher + "\x00" + decision.Input
+	paths := pathArguments(info.Args)
+	for i := range paths {
+		paths[i] = canonicalPath(info.CWD, paths[i])
+	}
+	// Sorting makes map traversal irrelevant to the consent scope.
+	slices.Sort(paths)
+	scope, _ := json.Marshal([]any{info.SessionID, info.Tool, canonicalPath(info.CWD, "."), paths, decision.Rule, decision.Matcher, decision.Input})
+	return fmt.Sprintf("%x", sha256.Sum256(scope))
 }
 
 func (policy *Policy) approvedForSession(info ToolCallInfo, decision Decision) bool {
+	if info.SessionID == "" {
+		return false
+	}
 	policy.mu.Lock()
 	defer policy.mu.Unlock()
 	_, ok := policy.approved[permissionKey(info, decision)]
@@ -452,9 +495,15 @@ func (policy *Policy) approvedForSession(info ToolCallInfo, decision Decision) b
 }
 
 func (policy *Policy) approveForSession(info ToolCallInfo, decision Decision) {
+	if info.SessionID == "" {
+		return
+	}
 	policy.mu.Lock()
 	if policy.approved == nil {
 		policy.approved = make(map[string]struct{})
+	}
+	if len(policy.approved) >= 1024 {
+		clear(policy.approved)
 	}
 	policy.approved[permissionKey(info, decision)] = struct{}{}
 	policy.mu.Unlock()
@@ -488,6 +537,9 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 		var hiddenMu sync.Mutex
 		hidden := make(map[string]struct{})
 		record := func(ctx context.Context, decision Decision) {
+			// Tool arguments already belong to the transcript; do not duplicate
+			// file bodies or credentials into the permission audit.
+			decision.Input = ""
 			policy.record(decision)
 			_ = api.AppendEntry(ctx, "orb.permissions.decision", decision)
 		}
@@ -529,6 +581,9 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			return nil, applyMode(ctx, extensionContext)
 		})
 		api.On(extensions.EventToolCall, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
+			if err := ctx.Err(); err != nil {
+				return extensions.ToolCallResult{Block: true, Reason: err.Error()}, nil
+			}
 			call := event.(extensions.ToolCallEvent)
 			info := ToolCallInfo{Tool: call.ToolName, Args: call.Input, CWD: extensionContext.CWD(), SessionID: permissionScope(extensionContext, parent)}
 			decision := policy.Evaluate(ctx, info)
@@ -539,13 +594,16 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			if mode == "log" && decision.Matcher != "guard" {
 				decision.Resolved, decision.Resolution = Allow, "would-"+string(decision.Action)
 				record(ctx, decision)
-				return extensions.ToolCallResult{}, nil
+				return nil, nil
 			}
 			switch decision.Action {
 			case Allow:
 				decision.Resolved = Allow
 				record(ctx, decision)
-				return extensions.ToolCallResult{}, nil
+				if decision.Rule == 0 && decision.Matcher == "" {
+					return nil, nil
+				}
+				return extensions.ToolCallResult{Approved: true}, nil
 			case Deny:
 				decision.Resolved = Deny
 				record(ctx, decision)
@@ -554,7 +612,7 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			if policy.approvedForSession(info, decision) {
 				decision.Resolved, decision.Resolution = Allow, "session approval"
 				record(ctx, decision)
-				return extensions.ToolCallResult{}, nil
+				return extensions.ToolCallResult{Approved: true}, nil
 			}
 			ui, interactive := permissionUI(extensionContext, parent)
 			request := extensions.InputHandlerFromContext(ctx)
@@ -564,14 +622,17 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 				if fallback == Deny {
 					return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, "ask resolved by askFallback")}, nil
 				}
-				return extensions.ToolCallResult{}, nil
+				return extensions.ToolCallResult{Approved: true}, nil
 			}
-			policy.askMu.Lock()
-			defer policy.askMu.Unlock()
+			release, err := policy.acquirePrompt(ctx)
+			if err != nil {
+				return extensions.ToolCallResult{Block: true, Reason: err.Error()}, nil
+			}
+			defer release()
 			if policy.approvedForSession(info, decision) {
 				decision.Resolved, decision.Resolution = Allow, "session approval"
 				record(ctx, decision)
-				return extensions.ToolCallResult{}, nil
+				return extensions.ToolCallResult{Approved: true}, nil
 			}
 			if request == nil {
 				request = func(ctx context.Context, title string, choices []string) (string, error) {
@@ -589,28 +650,21 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 					return value, err
 				}
 			}
-			selected, err := request(ctx, permissionPrompt(decision), []string{
+			selected, err := request(ctx, permissionPrompt(info, decision), []string{
 				"y approve once", "s approve for this session", "n deny", "r deny with a reason",
 			})
-			if err != nil {
-				decision.Resolved, decision.Resolution = fallback, "askFallback"
+			if err != nil || ctx.Err() != nil {
+				decision.Resolved, decision.Resolution = Deny, "approval cancelled or unavailable"
 				record(ctx, decision)
-				if fallback == Deny {
-					return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, "ask was cancelled")}, nil
-				}
-				return extensions.ToolCallResult{}, nil
+				return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, decision.Resolution)}, nil
 			}
-			choice := byte('n')
-			if selected != "" {
-				choice = selected[0]
-			}
-			switch choice {
-			case 'y':
+			switch selected {
+			case "y approve once":
 				decision.Resolved, decision.Resolution = Allow, "approved once"
-			case 's':
+			case "s approve for this session":
 				policy.approveForSession(info, decision)
 				decision.Resolved, decision.Resolution = Allow, "session approval"
-			case 'r':
+			case "r deny with a reason":
 				reason, _ := request(ctx, "Why deny this tool call?", nil)
 				decision.Resolved, decision.Resolution = Deny, strings.TrimSpace(reason)
 			default:
@@ -620,7 +674,7 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			if decision.Resolved == Deny {
 				return extensions.ToolCallResult{Block: true, Reason: permissionDenied(decision, decision.Resolution)}, nil
 			}
-			return extensions.ToolCallResult{}, nil
+			return extensions.ToolCallResult{Approved: true}, nil
 		})
 		api.RegisterCommand("permissions", extensions.Command{
 			Description: "Show or toggle the permissions policy",
@@ -659,14 +713,14 @@ func permissionUI(current, parent extensions.Context) (extensions.UI, bool) {
 	return current.UI(), current.Mode() == extensions.ModeTUI && current.HasUI()
 }
 
-func permissionPrompt(decision Decision) string {
+func permissionPrompt(info ToolCallInfo, decision Decision) string {
 	matched := "default"
 	if decision.Rule > 0 {
 		matched = fmt.Sprintf("rule %d (%s)", decision.Rule, decision.Matcher)
 	} else if decision.Matcher != "" {
 		matched = decision.Matcher
 	}
-	return fmt.Sprintf("Permission requested for %s\nMatched %s", decision.Tool, matched)
+	return fmt.Sprintf("Permission requested for %s\nWorking directory: %s\nArguments: %s\nMatched %s", decision.Tool, info.CWD, decision.Input, matched)
 }
 
 func permissionDenied(decision Decision, reason string) string {
@@ -694,4 +748,23 @@ func uniquePluginNames(names []string) []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+func (policy *Policy) acquirePrompt(ctx context.Context) (func(), error) {
+	policy.mu.Lock()
+	if policy.ask == nil {
+		policy.ask = make(chan struct{}, 1)
+	}
+	gate := policy.ask
+	policy.mu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			<-gate
+			return nil, err
+		}
+		return func() { <-gate }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

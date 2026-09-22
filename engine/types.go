@@ -162,8 +162,10 @@ type AgentDisplayState struct {
 }
 
 type BeforeToolCallResult struct {
-	Block  bool
-	Reason string
+	// Approved is explicit host consent; a nonblocking hook alone grants nothing.
+	Approved bool `json:"-"`
+	Block    bool
+	Reason   string
 }
 
 type AfterToolCallResult struct {
