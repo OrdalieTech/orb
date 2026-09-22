@@ -8,10 +8,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/OrdalieTech/orb/agent/config"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -27,6 +29,7 @@ import (
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 	transport "github.com/OrdalieTech/orb/plugins/bridge/transports/tailcat"
+	webtransport "github.com/OrdalieTech/orb/plugins/bridge/transports/websocket"
 )
 
 func validBridgeName(s string) bool {
@@ -141,7 +144,7 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 	}
 	defer func() { _ = log.Close() }()
 	cmd := exec.Command(exe, "bridge", "run", "--profile", profile)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detachedDaemonProcAttr()
 	cmd.Stdout = log
 	cmd.Stderr = log
 	if err = cmd.Start(); err != nil {
@@ -169,6 +172,7 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 
 type bridgeService struct {
 	profile string
+	webURL  string
 	b       *bridge.Bridge
 	node    *transport.Node
 	mu      sync.Mutex
@@ -199,7 +203,13 @@ func (s *bridgeService) peer(ctx context.Context, id, locator string) (*protocol
 	}
 	timeout, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	stream, err := s.node.Dial(timeout, id, locator)
+	var stream net.Conn
+	var err error
+	if strings.HasPrefix(locator, "ws://") || strings.HasPrefix(locator, "wss://") {
+		stream, err = webtransport.Dial(timeout, locator)
+	} else {
+		stream, err = s.node.Dial(timeout, id, locator)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +286,11 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 		}
 		var invite bridge.Invitation
 		_ = json.Unmarshal(raw, &invite)
-		invite.Locator, err = s.node.Locator()
+		if s.webURL != "" {
+			invite.Locator = s.webURL
+		} else {
+			invite.Locator, err = s.node.Locator()
+		}
 		return connect.JSON(invite), err
 	case "join":
 		var inv bridge.Invitation
@@ -329,7 +343,14 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 		return s.b.Admin(ctx, method, params)
 	}
 }
-func runBridgeService(ctx context.Context, profile string) error {
+
+type bridgeWebOptions struct {
+	Listen  string
+	URL     string
+	Origins []string
+}
+
+func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions) error {
 	dir, err := bridgeDir(profile)
 	if err != nil {
 		return err
@@ -373,7 +394,20 @@ func runBridgeService(ctx context.Context, profile string) error {
 	defer func() { _ = listener.Close() }()
 	serviceCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &bridgeService{profile: profile, b: b, node: node, peers: map[string]*protocol.Conn{}, ctx: serviceCtx}
+	if web.Listen != "" {
+		handler, err := webtransport.Handler(serviceCtx, b, web.Origins)
+		if err != nil {
+			return err
+		}
+		listener, err := net.Listen("tcp", web.Listen)
+		if err != nil {
+			return err
+		}
+		server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+		defer func() { _ = server.Close() }()
+		go func() { _ = server.Serve(listener); stop() }()
+	}
+	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, ctx: serviceCtx}
 	admin := func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		if method == "stop" {
 			var p struct{}
@@ -506,13 +540,38 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes [--profile personal]\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
+		var web bridgeWebOptions
+		flags := flag.NewFlagSet("orb bridge run", flag.ContinueOnError)
+		flags.SetOutput(streams.Stderr)
+		flags.StringVar(&web.Listen, "web-listen", "", "optional WebSocket bind address")
+		flags.StringVar(&web.URL, "web-url", "", "public wss:// URL included in invitations")
+		flags.Func("web-origin", "allowed browser origin (repeatable)", func(value string) error { web.Origins = append(web.Origins, value); return nil })
+		if err := flags.Parse(args[1:]); err != nil {
+			return 1
+		}
+		if flags.NArg() != 0 {
+			return reportCLIError(streams.Stderr, errors.New("unexpected bridge run arguments"))
+		}
+		if web.Listen != "" {
+			if web.URL == "" {
+				web.URL = "ws://" + web.Listen
+			}
+			if err := webtransport.ValidateURL(web.URL); err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+			if err := webtransport.ValidateOrigins(web.Origins); err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+		} else if web.URL != "" || len(web.Origins) != 0 {
+			return reportCLIError(streams.Stderr, errors.New("web options require --web-listen"))
+		}
 		ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		if err := runBridgeService(ctx, profile); err != nil {
+		if err := runBridgeService(ctx, profile, web); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
 		return 0

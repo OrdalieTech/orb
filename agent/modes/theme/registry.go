@@ -11,24 +11,17 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
 //go:embed dark.json light.json
 var builtins embed.FS
 
-type Diagnostic struct {
-	Type      string
-	Path      string
-	Message   string
-	Collision *Collision
-}
-
-type Collision struct {
-	ResourceType string
-	Name         string
-	WinnerPath   string
-	LoserPath    string
-}
+type (
+	Diagnostic = themefile.Diagnostic
+	Collision  = themefile.Collision
+)
 
 type LoadOptions struct {
 	CWD                  string
@@ -52,7 +45,7 @@ type Registry struct {
 	themeOrder           []string
 	diagnostics          []Diagnostic
 	collisionDiagnostics []Diagnostic
-	loadedRoots          map[string]bool
+	loader               themefile.Loader
 }
 
 func Load(options LoadOptions) *Registry {
@@ -60,10 +53,8 @@ func Load(options LoadOptions) *Registry {
 	if mode == "" {
 		mode = DetectColorMode(nil)
 	}
-	cwd := cleanPath(options.CWD)
-	registry := &Registry{
-		mode: mode, cwd: cwd, builtins: map[string]*Theme{}, themes: map[string]*Theme{}, loadedRoots: map[string]bool{},
-	}
+	cwd := themefile.CleanPath(options.CWD)
+	registry := &Registry{mode: mode, cwd: cwd, builtins: map[string]*Theme{}, themes: map[string]*Theme{}}
 	for _, name := range []string{"dark", "light"} {
 		data, err := builtins.ReadFile(name + ".json")
 		if err != nil {
@@ -79,30 +70,33 @@ func Load(options LoadOptions) *Registry {
 	}
 	registry.builtins["terminal"] = terminalTheme(mode)
 	if options.NoThemes {
-		registry.loadPaths(resolvePaths(options.AdditionalPaths, cwd))
-		registry.loadPaths(resolvePaths(options.ResourceDiscoverPath, cwd))
+		registry.loadPaths(themefile.ResolvePaths(options.AdditionalPaths, cwd))
+		registry.loadPaths(themefile.ResolvePaths(options.ResourceDiscoverPath, cwd))
 		return registry
 	}
-	agentDir := cleanPath(options.AgentDir)
+	agentDir := themefile.CleanPath(options.AgentDir)
 	if options.ProjectTrusted && cwd != "" {
 		projectDir := filepath.Join(cwd, ".pi")
-		registry.loadPaths(resolvePaths(options.ProjectPaths, projectDir))
+		registry.loadPaths(themefile.ResolvePaths(options.ProjectPaths, projectDir))
 		registry.loadDefaultDirectory(filepath.Join(projectDir, "themes"))
 	}
-	registry.loadPaths(resolvePaths(options.GlobalPaths, agentDir))
+	registry.loadPaths(themefile.ResolvePaths(options.GlobalPaths, agentDir))
 	if agentDir != "" {
 		registry.loadDefaultDirectory(filepath.Join(agentDir, "themes"))
 	}
-	registry.loadPaths(resolvePaths(options.PackagePaths, cwd))
-	registry.loadPaths(resolvePaths(options.AdditionalPaths, cwd))
-	registry.loadPaths(resolvePaths(options.ResourceDiscoverPath, cwd))
+	registry.loadPaths(themefile.ResolvePaths(options.PackagePaths, cwd))
+	registry.loadPaths(themefile.ResolvePaths(options.AdditionalPaths, cwd))
+	registry.loadPaths(themefile.ResolvePaths(options.ResourceDiscoverPath, cwd))
 	return registry
 }
+
+// Mode is the color mode the registry renders loaded themes in.
+func (registry *Registry) Mode() ColorMode { return registry.mode }
 
 func (registry *Registry) Extend(paths []string) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	registry.loadPaths(resolvePaths(paths, registry.cwd))
+	registry.loadPaths(themefile.ResolvePaths(paths, registry.cwd))
 }
 
 func (registry *Registry) Register(theme *Theme) error {
@@ -203,117 +197,26 @@ func (registry *Registry) Diagnostics() []Diagnostic {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 	result := append([]Diagnostic(nil), registry.diagnostics...)
+	result = append(result, registry.loader.Warnings()...)
 	return append(result, registry.collisionDiagnostics...)
 }
 
 func (registry *Registry) loadPaths(paths []string) {
-	for _, path := range paths {
-		path = cleanPath(path)
-		if path == "" {
-			continue
-		}
-		if registry.loadedRoots[path] {
-			continue
-		}
-		registry.loadedRoots[path] = true
-		info, err := os.Stat(path)
-		if err != nil {
-			registry.diagnostics = append(registry.diagnostics, Diagnostic{Type: "warning", Path: path, Message: "theme path does not exist"})
-			continue
-		}
-		if info.IsDir() {
-			entries, readErr := os.ReadDir(path)
-			if readErr != nil {
-				registry.diagnostics = append(registry.diagnostics, Diagnostic{Type: "warning", Path: path, Message: readErr.Error()})
-				continue
-			}
-			for _, entry := range entries {
-				if !strings.HasSuffix(entry.Name(), ".json") {
-					continue
-				}
-				isFile := entry.Type().IsRegular()
-				if entry.Type()&os.ModeSymlink != 0 {
-					if target, statErr := os.Stat(filepath.Join(path, entry.Name())); statErr == nil {
-						isFile = target.Mode().IsRegular()
-					}
-				}
-				if isFile {
-					registry.loadFile(filepath.Join(path, entry.Name()))
-				}
-			}
-			continue
-		}
-		if !strings.HasSuffix(path, ".json") {
-			registry.diagnostics = append(registry.diagnostics, Diagnostic{Type: "warning", Path: path, Message: "theme path is not a json file"})
-			continue
-		}
-		registry.loadFile(path)
-	}
+	registry.loader.LoadPaths(paths, registry.addFile)
 }
 
 func (registry *Registry) loadDefaultDirectory(path string) {
-	path = cleanPath(path)
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
-		return
-	}
-	registry.loadPaths([]string{path})
+	registry.loader.LoadDefaultDirectory(path, registry.addFile)
 }
 
-func (registry *Registry) loadFile(path string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		registry.diagnostics = append(registry.diagnostics, Diagnostic{Type: "warning", Path: path, Message: err.Error()})
-		return
-	}
-	theme, err := Parse(path, data, registry.mode)
-	if err != nil {
-		registry.diagnostics = append(registry.diagnostics, Diagnostic{Type: "warning", Path: path, Message: err.Error()})
-		return
-	}
-	theme.SourcePath = path
+func (registry *Registry) addFile(file *themefile.Theme) {
+	theme := FromFile(file, registry.mode)
 	if winner, exists := registry.themes[theme.Name]; exists {
-		registry.collisionDiagnostics = append(registry.collisionDiagnostics, Diagnostic{
-			Type: "collision", Message: fmt.Sprintf("name %q collision", theme.Name), Path: path,
-			Collision: &Collision{ResourceType: "theme", Name: theme.Name, WinnerPath: winner.SourcePath, LoserPath: path},
-		})
+		registry.collisionDiagnostics = append(registry.collisionDiagnostics, themefile.CollisionDiagnostic(theme.Name, winner.SourcePath, theme.SourcePath))
 		return
 	}
 	registry.themes[theme.Name] = theme
 	registry.themeOrder = append(registry.themeOrder, theme.Name)
-}
-
-func cleanPath(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			if path == "~" {
-				path = home
-			} else {
-				path = filepath.Join(home, path[2:])
-			}
-		}
-	}
-	if path == "" {
-		return ""
-	}
-	absolute, err := filepath.Abs(path)
-	if err == nil {
-		return filepath.Clean(absolute)
-	}
-	return filepath.Clean(path)
-}
-
-func resolvePaths(paths []string, base string) []string {
-	result := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path != "" && !filepath.IsAbs(path) && path != "~" && !strings.HasPrefix(path, "~/") {
-			path = filepath.Join(base, path)
-		}
-		result = append(result, path)
-	}
-	return result
 }
 
 func DetectColorMode(environment map[string]string) ColorMode {
@@ -356,7 +259,7 @@ func DetectBackground(environment map[string]string) Detection {
 		color, err := strconv.Atoi(strings.TrimSpace(parts[index]))
 		if err == nil && color >= 0 && color <= 255 {
 			theme := Dark
-			if luminanceHex(ansi256ToHex(color)) >= .5 {
+			if luminanceHex(themefile.ANSI256ToHex(color)) >= .5 {
 				theme = Light
 			}
 			return Detection{Theme: theme, Source: "COLORFGBG", Detail: fmt.Sprintf("background color index %d", color), Confidence: "high"}
@@ -366,7 +269,7 @@ func DetectBackground(environment map[string]string) Detection {
 }
 
 func luminanceHex(value string) float64 {
-	r, g, b, err := parseHex(value)
+	r, g, b, err := themefile.ParseHex(value)
 	if err != nil {
 		return 0
 	}

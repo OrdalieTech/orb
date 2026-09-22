@@ -740,20 +740,21 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		return nil, false, nil
 	}
 	component = created
+	view := tuiInputComponent(component)
 	var overlayHandle *interactiveOverlayHandle
 	if overlay {
 		resolved := resolveCustomOverlayOptions(opts, component)
 		if resolved == nil {
-			tuiOverlay = ui.mode.ui.ShowOverlay(component, tui.OverlayOptions{Backdrop: backdropStyle()})
+			tuiOverlay = ui.mode.ui.ShowOverlay(view, tui.OverlayOptions{Backdrop: backdropStyle()})
 		} else {
-			tuiOverlay = ui.mode.ui.ShowOverlay(component, toTUIOverlayOptions(*resolved))
+			tuiOverlay = ui.mode.ui.ShowOverlay(view, toTUIOverlayOptions(*resolved))
 		}
 		ui.trackCustomOverlay(tuiOverlay)
 		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay}
 	} else {
 		ui.mode.editorContainer.Clear()
-		ui.mode.editorContainer.AddChild(component)
-		focusExtensionComponent(ui.mode, component)
+		ui.mode.editorContainer.AddChild(view)
+		focusExtensionComponent(ui.mode, view)
 	}
 	transactionMu.Unlock()
 	if overlay && opts.OnHandle != nil {
@@ -794,6 +795,34 @@ func disposeExtensionComponent(component extensions.Component) {
 	defer func() { _ = recover() }()
 	disposable.Dispose()
 }
+
+// tuiInputComponent adapts raw-input extension components (the JS host's wire
+// components) to TUI key events; native TUI components pass through.
+func tuiInputComponent(component extensions.Component) extensions.Component {
+	if _, native := component.(tui.InputHandler); native {
+		return component
+	}
+	switch typed := component.(type) {
+	case extensions.FocusableComponent:
+		return &rawFocusableComponent{rawInputComponent{typed}, typed}
+	case extensions.InputComponent:
+		return &rawInputComponent{typed}
+	}
+	return component
+}
+
+type rawInputComponent struct{ extensions.InputComponent }
+
+func (component *rawInputComponent) HandleInput(event tui.KeyEvent) {
+	component.HandleRawInput(event.Raw)
+}
+
+type rawFocusableComponent struct {
+	rawInputComponent
+	focus extensions.FocusableComponent
+}
+
+func (component *rawFocusableComponent) SetFocused(focused bool) { component.focus.SetFocused(focused) }
 
 func focusExtensionComponent(mode *InteractiveMode, component extensions.Component) {
 	if editor, ok := component.(extensions.EditorComponent); ok {

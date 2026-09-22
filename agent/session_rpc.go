@@ -15,7 +15,6 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/agent/tools"
@@ -1081,21 +1080,39 @@ func (runtime *SessionRuntime) SetSessionName(name string) error {
 	return nil
 }
 
+// HTMLExportThemes lets a UI driver that owns a live theme registry take part
+// in export theme selection. Each hook may be nil or return nil.
+type HTMLExportThemes struct {
+	// Active is the displayed theme; it wins over the configured one.
+	Active func() *exporthtml.ThemeRef
+	// Lookup resolves the configured name before the loaded theme resources.
+	Lookup func(name string) *exporthtml.ThemeRef
+}
+
+// ExportHTML exports with the configured theme, as headless modes do.
 func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
+	return runtime.ExportHTMLWithThemes(outputPath, HTMLExportThemes{})
+}
+
+func (runtime *SessionRuntime) ExportHTMLWithThemes(outputPath string, themes HTMLExportThemes) (string, error) {
 	state := runtime.agent.State()
 	systemPrompt := state.SystemPrompt
 	// Upstream takes the first candidate naming a known theme, active before
 	// configured, so a per-run --use-theme selection reaches /export.
+	var active *exporthtml.ThemeRef
+	if themes.Active != nil {
+		active = themes.Active()
+	}
 	var themeName string
-	var exportTheme *modetheme.Theme
+	var exportTheme *exporthtml.ThemeRef
 	switch configured := runtime.settings.GetTheme(); {
-	case modetheme.Current() != nil:
-		exportTheme = modetheme.Current()
+	case active != nil:
+		exportTheme = active
 		themeName = exportTheme.Name
 	case configured == "dark" || configured == "light":
 		themeName = configured
 	case configured != "":
-		if exportTheme = runtime.findTheme(configured); exportTheme != nil {
+		if exportTheme = runtime.findTheme(configured, themes.Lookup); exportTheme != nil {
 			themeName = configured
 		}
 	}
@@ -1120,18 +1137,20 @@ func (runtime *SessionRuntime) ExportHTML(outputPath string) (string, error) {
 	})
 }
 
-// findTheme looks a named theme up in the global registry, then in the
+// findTheme looks a named theme up in the driver's registry, then in the
 // session's loaded resources.
-func (runtime *SessionRuntime) findTheme(name string) *modetheme.Theme {
-	if found := modetheme.GetTheme(name); found != nil {
-		return found
+func (runtime *SessionRuntime) findTheme(name string, lookup func(string) *exporthtml.ThemeRef) *exporthtml.ThemeRef {
+	if lookup != nil {
+		if found := lookup(name); found != nil {
+			return found
+		}
 	}
 	if runtime.resourceLoader == nil {
 		return nil
 	}
 	for _, candidate := range runtime.resourceLoader.GetThemes().Themes {
-		if candidate.Name == name {
-			return candidate
+		if candidate != nil && candidate.Name == name {
+			return &exporthtml.ThemeRef{Name: candidate.Name, SourcePath: candidate.SourcePath}
 		}
 	}
 	return nil

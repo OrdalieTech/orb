@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
+	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
 type exportTheme struct {
@@ -20,7 +20,14 @@ type exportTheme struct {
 	infoBg    string
 }
 
-func resolveExportTheme(name string, selected *modetheme.Theme) (exportTheme, error) {
+// ThemeRef identifies the theme a caller already selected for ThemeName. An
+// empty SourcePath means the theme has no file to export from.
+type ThemeRef struct {
+	Name       string
+	SourcePath string
+}
+
+func resolveExportTheme(name string, selected *ThemeRef) (exportTheme, error) {
 	if name == "" {
 		name = defaultThemeName(os.Getenv("COLORFGBG"))
 	}
@@ -30,10 +37,7 @@ func resolveExportTheme(name string, selected *modetheme.Theme) (exportTheme, er
 	case "light":
 		return exportTheme{lightThemeVariables, "#f8f8f8", "#ffffff", "#fffae6"}, nil
 	}
-	if selected == nil || selected.Name != name {
-		selected = modetheme.GetTheme(name)
-	}
-	if selected != nil {
+	if selected != nil && selected.Name == name {
 		if selected.SourcePath == "" {
 			return exportTheme{}, fmt.Errorf("Theme %q does not have a source path for export", name) //nolint:staticcheck // Upstream error capitalization is observable.
 		}
@@ -41,11 +45,11 @@ func resolveExportTheme(name string, selected *modetheme.Theme) (exportTheme, er
 		if err != nil {
 			return exportTheme{}, err
 		}
-		selected, err = modetheme.Parse(selected.SourcePath, data, modetheme.TrueColor)
+		parsed, err := themefile.Parse(selected.SourcePath, data)
 		if err != nil {
 			return exportTheme{}, err
 		}
-		return exportThemeFrom(selected), nil
+		return exportThemeFrom(parsed), nil
 	}
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
@@ -58,11 +62,11 @@ func resolveExportTheme(name string, selected *modetheme.Theme) (exportTheme, er
 	if err != nil {
 		return exportTheme{}, err
 	}
-	selected, err = modetheme.Parse(name, data, modetheme.TrueColor)
+	parsed, err := themefile.Parse(name, data)
 	if err != nil {
 		return exportTheme{}, err
 	}
-	return exportThemeFrom(selected), nil
+	return exportThemeFrom(parsed), nil
 }
 
 var exportColorOrder = []string{
@@ -73,10 +77,17 @@ var exportColorOrder = []string{
 	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
 }
 
-func exportThemeFrom(selected *modetheme.Theme) exportTheme {
-	colors := selected.ResolvedColors(selected.Name == "light")
+func exportThemeFrom(selected *themefile.Theme) exportTheme {
+	defaultText := "#e5e5e7"
+	if selected.Name == "light" {
+		defaultText = "#000000"
+	}
+	colors := themefile.HexColors(selected.Colors, defaultText)
 	backgrounds := deriveExportColors(colors["userMessageBg"])
-	for name, value := range selected.ExportColors() {
+	for name, value := range themefile.HexColors(selected.Export, "") {
+		if value == "" {
+			continue
+		}
 		switch name {
 		case "pageBg":
 			backgrounds.pageBg = value

@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/tui"
 )
 
 type wireCustomOptions struct {
@@ -116,8 +115,8 @@ type wireInputComponent struct {
 	wantsKeyRelease bool
 }
 
-func (component *wireInputComponent) HandleInput(event tui.KeyEvent) {
-	component.handleInput(event.Raw)
+func (component *wireInputComponent) HandleRawInput(data string) {
+	component.handleInput(data)
 }
 
 func (component *wireInputComponent) WantsKeyRelease() bool {

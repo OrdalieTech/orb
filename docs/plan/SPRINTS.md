@@ -339,3 +339,65 @@ Hermes is a research reference, not a transport/authentication implementation to
 - Generic input replies use the same execution fences and durable Bridge receipts as other controls.
 - `/claude` management and explicit provider selection work without Orb provider credentials.
 - Hermetic process/Bridge tests, opt-in native account checks, race gate, static builds and docs.
+
+## Portable core — plan (owner direction, 2026-09-22)
+
+Constitution: P2 (tier-1 targets) and P10 (portable core behind host ports). Reference study:
+`deepseek-ai/deepseek-harness` validates provider seams for fs/exec and a layered tool-permission
+pipeline, and shows what to avoid: string-keyed services, implicit load order, dynamic loading,
+and emulating Node in the browser instead of supplying native providers. Each slice opens RED on
+its gate and closes GREEN; `make check` stays green between slices because ratchets only shrink.
+
+1. **Gates.** `make portability` (part of `make check`): `go build` + `go vet` for every P2
+   target, test binaries compiled for each, `js/wasm` tests executed under Node and `wasip1`
+   tests under a pure-Go runtime. CI adds a `windows-latest` job running the full suite. A
+   core-purity test in `internal/layering` lists the core packages and forbids `os/exec`,
+   `os/signal`, `syscall`, `net`, `http.DefaultClient`/`DefaultTransport` and implicit
+   `os.Getenv`/`LookupEnv`/`Environ`/`UserHomeDir`/`Getwd`, with today's violations recorded as a
+   ratchet that may only shrink. Size budgets per target, including the Worker bundle.
+2. **Native everywhere.** Windows (Git Bash discovery, process-tree kill, console modes),
+   32-bit linux (iSH), android/arm64 (Termux) build and pass; Windows runs the whole suite in CI.
+3. **Ports.** One `host` seam: `FS` (the upstream-shaped `harness.FileSystem`), `Exec`
+   (`harness.Shell`), `Store` (documents, append-only session logs, locks), `Net` (HTTP client,
+   optional listener), `Env` (variables, agent/session directories, clock, randomness). The
+   per-tool upstream `*Operations` become adapters over `FS`/`Exec`, so a platform implements
+   ports only once. Remove process globals: `http.DefaultClient` package variables, the
+   `init()` default stream, the closed provider `switch` (becomes a registry, which also lets a
+   light assembly link only the providers it selects), the global extension host. Settings,
+   auth, sessions and resource discovery read documents and directories through `Store`/`Env`.
+   `platforms/native` implements every port for unix and windows. A shared port conformance
+   suite (the `fstest.TestFS` pattern) runs against every implementation on its own target.
+   Status 2026-09-22: `host.Host` (AgentDir, FS, Exec, Store, Sessions) is accepted by
+   `NewAgentSession` and `CreateAgentSessionServices`; settings, credentials, model catalogs and
+   session journals then come from it. `platforms/scenario` runs one scripted turn through a Host
+   natively, in `js/wasm` without a host filesystem and under WASI without mounts, and requires
+   identical output. Measured weight: a full `AgentSession` is 12.0 MB gzip on `js/wasm` against
+   6.4 MB for the engine-only browser runtime. The two structural causes are the closed provider
+   switch in `ai/api` (every provider SDK links) and `agent` → `agent/modes/theme` (syntax
+   highlighting and CJK segmentation tables in the core). The theme edge is cut (theme files
+   parse in `internal/themefile`; `TestProductCoreIsHeadless` guards it): a full AgentSession is
+   now 9.46 MB gzip, gated at 10 MB. Providers register through `api.Registry` (`ai/api/all`
+   is the full set; Bedrock's AWS SDK links only when selected; `orb_nodefaultproviders` brings a
+   stream-supplying session to 7.33 MB gzip). RPC mode is the headless `agent/rpc` and runs over
+   in-memory pipes on both Wasm runtimes. Still open: project settings, resources and theme
+   discovery over `FS`, grep without ripgrep, and the Worker assembly with its own budget.
+4. **One assembly.** `agent/assembly` takes a host and resolves rows by the ports each needs;
+   `cmd/orb`, `cmd/orb-wasm`, `chat`, subagents and Claude sessions all compose through it. The
+   Wasm runtime's hand-written model selection disappears in favor of the catalog.
+5. **Hosts.**
+   - Browser (`js/wasm` worker): OPFS files, IndexedDB store, Fetch network, no `Exec`.
+   - Worker (`js/wasm`, one host for Cloudflare Workers, Durable Objects and Celld): a module
+     shim exports a Durable Object class that owns one Orb instance; Durable Object storage is the
+     `Store`, a virtual `FS` lives on it, Fetch is the network, no `Exec`. Light assembly under a
+     measured compressed-size budget.
+   - WASI (`wasip1`): preopened directories as `FS`; outbound HTTP through a host import when the
+     runtime provides one, otherwise no `Net`. Proven under a pure-Go runtime in tests.
+   - Android: the static `android/arm64` CLI under Termux; the standalone app embeds the core as a
+     gomobile library and runs `Exec` natively (binaries shipped in the app's native library
+     directory). Termux itself stays external (GPLv3): interop, not embedding.
+   - iOS: the standalone app embeds the core as a gomobile library; `Exec` is optional and is
+     backed by WASI commands run in-process (a-Shell's model, pure Go), since App Store apps cannot
+     spawn processes. The `linux/386` CLI runs inside iSH today; embedding iSH (GPLv3, x86
+     emulation) is not the app's execution model.
+6. **Cross-host conformance.** Scripted scenarios over the faux provider run on every host and
+   must produce identical event JSON and session JSONL; kernel fixtures are reused, never forked.

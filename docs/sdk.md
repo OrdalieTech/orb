@@ -47,7 +47,7 @@ orchestration for hosts that support new, resume, fork, import, and reload flows
 | `Model` | `*ai.Model` | restored/settings/available | Initial model; nil restores the session model, then tries settings and available authenticated models |
 | `ThinkingLevel` | `ai.ModelThinkingLevel` | medium/off | Clamped to model's supported range |
 | `ScopedModels` | `[]ScopedModel` | `nil` | Restricts CycleModel |
-| `StreamFn` | `agent.StreamFn` | `aiapi.StreamSimple` | LLM streaming backend |
+| `StreamFn` | `agent.StreamFn` | `all.StreamSimple` (`ai/api/all`) | LLM streaming backend |
 | `GetAPIKey` | `agent.GetAPIKeyFunc` | registry-derived for default streaming | API key resolver |
 | `GetRequestAuth` | `agent.GetRequestAuthFunc` | registry-derived for default streaming | Request-time auth (OAuth, Copilot baseURL); takes precedence over GetAPIKey |
 | `GetModelHeaders` | `agent.GetModelHeadersFunc` | registry-derived for default streaming | Per-request headers |
@@ -466,10 +466,11 @@ are transitively TUI-free (enforced by `internal/layering`). The contract for a
 server embedder:
 
 - **Stream function per instance.** Pass the stream function explicitly to
-  every `engine.NewAgent`/loop call. `engine.SetDefaultStreamFn` is a
-  process-wide fallback (a faithful port of upstream `setDefaultStreamFn`):
-  never call it from multi-tenant code — one tenant's default would become
-  every tenant's default.
+  every `engine.NewAgent`/loop call; there is no process-wide default. Build
+  an `api.NewRegistry(...)` with only the provider families an assembly needs
+  (`ai/api/all` holds every family and is `NewAgentSession`'s default; the
+  `orb_nodefaultproviders` build tag empties it for binaries that always pass
+  their own stream).
 - **Credentials per instance.** Inject provider credentials through the
   explicit resolution paths (request auth resolvers, `ai/auth` overrides).
   The environment-variable fallbacks in `ai/` exist for CLI parity; on a

@@ -28,6 +28,7 @@ var allowedImports = map[string][]string{
 	"engine":   {"engine", "ai", "internal"},
 	"tui":      {"tui", "internal"},
 	"sandbox":  {"sandbox", "internal"},
+	"host":     {"host", "engine", "ai", "storage", "internal"},
 }
 
 // tuiImporters are the only places allowed to link the TUI: assemblies, the
@@ -79,10 +80,13 @@ func TestLayerEdges(t *testing.T) {
 				continue
 			}
 			targetPath := strings.TrimPrefix(target, module)
+			if strings.HasPrefix(targetPath, "platforms/") && layer != "platforms" && layer != "cmd" {
+				violations = append(violations, relative+" imports a platform assembly into a reusable layer")
+			}
 			if (layer == "agent" || layer == "ai" || layer == "engine") && (strings.HasPrefix(targetPath, "plugins/bridge") || strings.HasPrefix(targetPath, "connect")) {
 				violations = append(violations, relative+" imports optional bridge assembly")
 			}
-			if (strings.HasPrefix(relative, "connect/") && !strings.HasPrefix(relative, "connect/agent/")) || (strings.HasPrefix(relative, "plugins/bridge/") && !strings.HasPrefix(relative, "plugins/bridge/agent/") && !strings.HasPrefix(relative, "plugins/bridge/hosts/") && !strings.HasPrefix(relative, "plugins/bridge/transports/")) {
+			if (strings.HasPrefix(relative, "connect/") && !strings.HasPrefix(relative, "connect/agent/")) || (strings.HasPrefix(relative, "plugins/bridge/") && !strings.HasPrefix(relative, "plugins/bridge/agent/") && !strings.HasPrefix(relative, "plugins/bridge/extension/") && !strings.HasPrefix(relative, "plugins/bridge/hosts/") && !strings.HasPrefix(relative, "plugins/bridge/transports/")) {
 				if strings.HasPrefix(targetPath, "agent/") || targetPath == "agent" || strings.HasPrefix(targetPath, "plugins/bridge/hosts/") || strings.HasPrefix(targetPath, "plugins/bridge/transports/") {
 					violations = append(violations, relative+" imports host-specific code into portable core")
 				}
@@ -111,9 +115,6 @@ func TestLayerEdges(t *testing.T) {
 
 // TestEngineIsHeadless proves the P1 linkage promise at the layer served at
 // scale: no package under engine/ or ai/ links TUI code, transitively.
-// ponytail: agent (the product root) still links tui through modes/theme's
-// MarkdownTheme/EditorTheme StyleFunc fields; split theme's tui binding when
-// a headless agent-root consumer is real.
 func TestEngineIsHeadless(t *testing.T) {
 	root := moduleRoot(t)
 	command := exec.Command("go", "list", "-deps", "./engine/...", "./ai/...")
@@ -124,6 +125,28 @@ func TestEngineIsHeadless(t *testing.T) {
 	}
 	if strings.Contains(string(output), module+"tui") {
 		t.Errorf("engine or ai transitively links %stui", module)
+	}
+}
+
+// TestProductCoreIsHeadless extends the P1 promise to the product root: an
+// embedder of agent gets the full AgentSession without the interactive
+// driver, the TUI, or syntax highlighting. Themes reach the core as neutral
+// resources (internal/themefile); agent/modes/theme renders them.
+func TestProductCoreIsHeadless(t *testing.T) {
+	packages := []string{"./agent", "./agent/config", "./agent/session", "./agent/extensions", "./agent/tools"}
+	forbidden := []string{module + "agent/modes", module + "tui", module + "internal/chromalexers", module + "internal/cjksegment", "github.com/alecthomas/chroma"}
+	command := exec.Command("go", append([]string{"list", "-deps"}, packages...)...)
+	command.Dir = moduleRoot(t)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list -deps %s: %v\n%s", strings.Join(packages, " "), err, output)
+	}
+	for dep := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
+		for _, prefix := range forbidden {
+			if dep == prefix || strings.HasPrefix(dep, prefix+"/") {
+				t.Errorf("product core transitively links %s", dep)
+			}
+		}
 	}
 }
 
@@ -164,8 +187,11 @@ func TestCapabilityDependencies(t *testing.T) {
 		{"plugins/memory/agent", []string{"/agent", "/tui", "/plugins/memory/filestore", "/plugins/memory/extension", "/storage/sqlite"}},
 		{"plugins/memory/extension", []string{"/agent/assembly", "/plugins/memory/filestore", "/storage/sqlite"}},
 		{"plugins/usage", []string{"/agent", "/engine", "/tui", "/plugins/usage/footer", "/storage/sqlite"}},
+		{"plugins/bridge/agent", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/storage/sqlite"}},
+		{"plugins/bridge/transports/websocket", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports/tailcat", "/storage/sqlite"}},
 		{"plugins/bridge", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/storage/sqlite"}},
 		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
+		{"platforms/wasm", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "./"+tc.path)
@@ -186,5 +212,20 @@ func TestCapabilityDependencies(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBrowserAssemblyDependencies(t *testing.T) {
+	cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "./cmd/orb-wasm")
+	cmd.Dir = moduleRoot(t)
+	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser dependencies: %v\n%s", err, output)
+	}
+	for dep := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
+		if hasAnyPrefix(dep, []string{module + "tui", module + "agent/extensions", module + "agent/modes", module + "storage/sqlite", module + "plugins/bridge/hosts", module + "plugins/bridge/transports/tailcat", "tailscale.com/", "github.com/tailscale/"}) {
+			t.Errorf("browser assembly links %s", dep)
+		}
 	}
 }

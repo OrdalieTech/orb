@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/rpc"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
@@ -99,9 +100,18 @@ type rpcClientProcess struct {
 }
 
 type rpcClientResult struct {
-	response RPCResponse
+	response rpc.Response
 	data     json.RawMessage
 	err      error
+}
+
+// rpcClientRequest is a command plus which optional string members the caller
+// supplied: upstream's client sends them whenever defined, even when empty.
+type rpcClientRequest struct {
+	rpc.Command
+	parentSessionSet      bool
+	customInstructionsSet bool
+	outputPathSet         bool
 }
 
 type rpcClientCommand struct {
@@ -334,158 +344,158 @@ func (client *RPCClient) GetStderr() string {
 }
 
 func (client *RPCClient) Prompt(ctx context.Context, message string, images []*ai.ImageContent) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "prompt", Message: message, Images: images})
+	return client.sendOnly(ctx, rpc.Command{Type: "prompt", Message: message, Images: images})
 }
 
 func (client *RPCClient) Steer(ctx context.Context, message string, images []*ai.ImageContent) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "steer", Message: message, Images: images})
+	return client.sendOnly(ctx, rpc.Command{Type: "steer", Message: message, Images: images})
 }
 
 func (client *RPCClient) FollowUp(ctx context.Context, message string, images []*ai.ImageContent) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "follow_up", Message: message, Images: images})
+	return client.sendOnly(ctx, rpc.Command{Type: "follow_up", Message: message, Images: images})
 }
 
 func (client *RPCClient) Abort(ctx context.Context) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "abort"})
+	return client.sendOnly(ctx, rpc.Command{Type: "abort"})
 }
 
 func (client *RPCClient) NewSession(ctx context.Context, parentSession *string) (RPCSessionReplacementResult, error) {
-	command := RPCCommand{Type: "new_session"}
+	request := rpcClientRequest{Command: rpc.Command{Type: "new_session"}}
 	if parentSession != nil {
-		command.ParentSession, command.parentSessionSet = *parentSession, true
+		request.ParentSession, request.parentSessionSet = *parentSession, true
 	}
-	return rpcClientData[RPCSessionReplacementResult](ctx, client, command)
+	return rpcClientRequestData[RPCSessionReplacementResult](ctx, client, request)
 }
 
-func (client *RPCClient) GetState(ctx context.Context) (RPCSessionState, error) {
-	return rpcClientData[RPCSessionState](ctx, client, RPCCommand{Type: "get_state"})
+func (client *RPCClient) GetState(ctx context.Context) (rpc.SessionState, error) {
+	return rpcClientData[rpc.SessionState](ctx, client, rpc.Command{Type: "get_state"})
 }
 
 func (client *RPCClient) SetModel(ctx context.Context, provider ai.ProviderID, modelID string) (RPCModelSelection, error) {
-	return rpcClientData[RPCModelSelection](ctx, client, RPCCommand{Type: "set_model", Provider: string(provider), ModelID: modelID})
+	return rpcClientData[RPCModelSelection](ctx, client, rpc.Command{Type: "set_model", Provider: string(provider), ModelID: modelID})
 }
 
 func (client *RPCClient) CycleModel(ctx context.Context) (*RPCModelCycleResult, error) {
-	return rpcClientData[*RPCModelCycleResult](ctx, client, RPCCommand{Type: "cycle_model"})
+	return rpcClientData[*RPCModelCycleResult](ctx, client, rpc.Command{Type: "cycle_model"})
 }
 
 func (client *RPCClient) GetAvailableModels(ctx context.Context) ([]RPCModelInfo, error) {
 	response, err := rpcClientData[struct {
 		Models []RPCModelInfo `json:"models"`
-	}](ctx, client, RPCCommand{Type: "get_available_models"})
+	}](ctx, client, rpc.Command{Type: "get_available_models"})
 	return response.Models, err
 }
 
 func (client *RPCClient) SetThinkingLevel(ctx context.Context, level ai.ModelThinkingLevel) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "set_thinking_level", Level: string(level)})
+	return client.sendOnly(ctx, rpc.Command{Type: "set_thinking_level", Level: string(level)})
 }
 
 func (client *RPCClient) CycleThinkingLevel(ctx context.Context) (*RPCThinkingLevelResult, error) {
-	return rpcClientData[*RPCThinkingLevelResult](ctx, client, RPCCommand{Type: "cycle_thinking_level"})
+	return rpcClientData[*RPCThinkingLevelResult](ctx, client, rpc.Command{Type: "cycle_thinking_level"})
 }
 
 func (client *RPCClient) GetAvailableThinkingLevels(ctx context.Context) ([]ai.ModelThinkingLevel, error) {
-	response, err := rpcClientData[RPCThinkingLevels](ctx, client, RPCCommand{Type: "get_available_thinking_levels"})
+	response, err := rpcClientData[rpc.ThinkingLevels](ctx, client, rpc.Command{Type: "get_available_thinking_levels"})
 	return response.Levels, err
 }
 
 func (client *RPCClient) SetSteeringMode(ctx context.Context, mode engine.QueueMode) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "set_steering_mode", Mode: string(mode)})
+	return client.sendOnly(ctx, rpc.Command{Type: "set_steering_mode", Mode: string(mode)})
 }
 
 func (client *RPCClient) SetFollowUpMode(ctx context.Context, mode engine.QueueMode) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "set_follow_up_mode", Mode: string(mode)})
+	return client.sendOnly(ctx, rpc.Command{Type: "set_follow_up_mode", Mode: string(mode)})
 }
 
 func (client *RPCClient) Compact(ctx context.Context, customInstructions *string) (sessionstore.CompactionResult, error) {
-	command := RPCCommand{Type: "compact"}
+	request := rpcClientRequest{Command: rpc.Command{Type: "compact"}}
 	if customInstructions != nil {
-		command.CustomInstructions, command.customInstructionsSet = *customInstructions, true
+		request.CustomInstructions, request.customInstructionsSet = *customInstructions, true
 	}
-	return rpcClientData[sessionstore.CompactionResult](ctx, client, command)
+	return rpcClientRequestData[sessionstore.CompactionResult](ctx, client, request)
 }
 
 func (client *RPCClient) SetAutoCompaction(ctx context.Context, enabled bool) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "set_auto_compaction", Enabled: &enabled})
+	return client.sendOnly(ctx, rpc.Command{Type: "set_auto_compaction", Enabled: &enabled})
 }
 
 func (client *RPCClient) SetAutoRetry(ctx context.Context, enabled bool) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "set_auto_retry", Enabled: &enabled})
+	return client.sendOnly(ctx, rpc.Command{Type: "set_auto_retry", Enabled: &enabled})
 }
 
 func (client *RPCClient) AbortRetry(ctx context.Context) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "abort_retry"})
+	return client.sendOnly(ctx, rpc.Command{Type: "abort_retry"})
 }
 
 func (client *RPCClient) Bash(ctx context.Context, command string) (tools.BashResult, error) {
-	return rpcClientData[tools.BashResult](ctx, client, RPCCommand{Type: "bash", Command: command})
+	return rpcClientData[tools.BashResult](ctx, client, rpc.Command{Type: "bash", Command: command})
 }
 
 func (client *RPCClient) AbortBash(ctx context.Context) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "abort_bash"})
+	return client.sendOnly(ctx, rpc.Command{Type: "abort_bash"})
 }
 
 func (client *RPCClient) GetSessionStats(ctx context.Context) (agent.SessionStats, error) {
-	return rpcClientData[agent.SessionStats](ctx, client, RPCCommand{Type: "get_session_stats"})
+	return rpcClientData[agent.SessionStats](ctx, client, rpc.Command{Type: "get_session_stats"})
 }
 
 func (client *RPCClient) ExportHTML(ctx context.Context, outputPath *string) (RPCExportResult, error) {
-	command := RPCCommand{Type: "export_html"}
+	request := rpcClientRequest{Command: rpc.Command{Type: "export_html"}}
 	if outputPath != nil {
-		command.OutputPath, command.outputPathSet = *outputPath, true
+		request.OutputPath, request.outputPathSet = *outputPath, true
 	}
-	return rpcClientData[RPCExportResult](ctx, client, command)
+	return rpcClientRequestData[RPCExportResult](ctx, client, request)
 }
 
 func (client *RPCClient) SwitchSession(ctx context.Context, sessionPath string) (RPCSessionReplacementResult, error) {
-	return rpcClientData[RPCSessionReplacementResult](ctx, client, RPCCommand{Type: "switch_session", SessionPath: sessionPath})
+	return rpcClientData[RPCSessionReplacementResult](ctx, client, rpc.Command{Type: "switch_session", SessionPath: sessionPath})
 }
 
 func (client *RPCClient) Fork(ctx context.Context, entryID string) (RPCForkResult, error) {
-	return rpcClientData[RPCForkResult](ctx, client, RPCCommand{Type: "fork", EntryID: entryID})
+	return rpcClientData[RPCForkResult](ctx, client, rpc.Command{Type: "fork", EntryID: entryID})
 }
 
 func (client *RPCClient) Clone(ctx context.Context) (RPCSessionReplacementResult, error) {
-	return rpcClientData[RPCSessionReplacementResult](ctx, client, RPCCommand{Type: "clone"})
+	return rpcClientData[RPCSessionReplacementResult](ctx, client, rpc.Command{Type: "clone"})
 }
 
 func (client *RPCClient) GetForkMessages(ctx context.Context) ([]RPCForkMessage, error) {
 	response, err := rpcClientData[struct {
 		Messages []RPCForkMessage `json:"messages"`
-	}](ctx, client, RPCCommand{Type: "get_fork_messages"})
+	}](ctx, client, rpc.Command{Type: "get_fork_messages"})
 	return response.Messages, err
 }
 
 func (client *RPCClient) GetEntries(ctx context.Context, since *string) (RPCEntriesResult, error) {
-	return rpcClientData[RPCEntriesResult](ctx, client, RPCCommand{Type: "get_entries", Since: since})
+	return rpcClientData[RPCEntriesResult](ctx, client, rpc.Command{Type: "get_entries", Since: since})
 }
 
 func (client *RPCClient) GetTree(ctx context.Context) (RPCTreeResult, error) {
-	return rpcClientData[RPCTreeResult](ctx, client, RPCCommand{Type: "get_tree"})
+	return rpcClientData[RPCTreeResult](ctx, client, rpc.Command{Type: "get_tree"})
 }
 
 func (client *RPCClient) GetLastAssistantText(ctx context.Context) (*string, error) {
 	response, err := rpcClientData[struct {
 		Text *string `json:"text"`
-	}](ctx, client, RPCCommand{Type: "get_last_assistant_text"})
+	}](ctx, client, rpc.Command{Type: "get_last_assistant_text"})
 	return response.Text, err
 }
 
 func (client *RPCClient) SetSessionName(ctx context.Context, name string) error {
-	return client.sendOnly(ctx, RPCCommand{Type: "set_session_name", Name: name})
+	return client.sendOnly(ctx, rpc.Command{Type: "set_session_name", Name: name})
 }
 
 func (client *RPCClient) GetMessages(ctx context.Context) (engine.AgentMessages, error) {
 	response, err := rpcClientData[struct {
 		Messages engine.AgentMessages `json:"messages"`
-	}](ctx, client, RPCCommand{Type: "get_messages"})
+	}](ctx, client, rpc.Command{Type: "get_messages"})
 	return response.Messages, err
 }
 
-func (client *RPCClient) GetCommands(ctx context.Context) ([]RPCSlashCommand, error) {
+func (client *RPCClient) GetCommands(ctx context.Context) ([]rpc.SlashCommand, error) {
 	response, err := rpcClientData[struct {
-		Commands []RPCSlashCommand `json:"commands"`
-	}](ctx, client, RPCCommand{Type: "get_commands"})
+		Commands []rpc.SlashCommand `json:"commands"`
+	}](ctx, client, rpc.Command{Type: "get_commands"})
 	return response.Commands, err
 }
 
@@ -557,7 +567,7 @@ func rpcClientEventContext(ctx context.Context) (context.Context, context.Cancel
 	return context.WithTimeout(ctx, time.Minute)
 }
 
-func (client *RPCClient) send(ctx context.Context, command RPCCommand) (rpcClientResult, error) {
+func (client *RPCClient) send(ctx context.Context, command rpcClientRequest) (rpcClientResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -607,7 +617,7 @@ func (client *RPCClient) send(ctx context.Context, command RPCCommand) (rpcClien
 	}
 }
 
-func marshalRPCClientCommand(command RPCCommand) ([]byte, error) { //nolint:cyclop // The wire union is discriminated by type upstream.
+func marshalRPCClientCommand(command rpcClientRequest) ([]byte, error) { //nolint:cyclop // The wire union is discriminated by type upstream.
 	wire := rpcClientCommand{Type: command.Type, ID: command.ID}
 	switch command.Type {
 	case "prompt", "steer", "follow_up":
@@ -635,7 +645,7 @@ func marshalRPCClientCommand(command RPCCommand) ([]byte, error) { //nolint:cycl
 	case "set_auto_compaction", "set_auto_retry":
 		wire.Enabled = command.Enabled
 	case "bash":
-		wire.Command, wire.ExcludeFromContext = &command.Command, command.ExcludeFromContext
+		wire.Command, wire.ExcludeFromContext = &command.Command.Command, command.ExcludeFromContext
 	case "export_html":
 		if command.outputPathSet {
 			wire.OutputPath = &command.OutputPath
@@ -652,12 +662,16 @@ func marshalRPCClientCommand(command RPCCommand) ([]byte, error) { //nolint:cycl
 	return ai.Marshal(wire)
 }
 
-func (client *RPCClient) sendOnly(ctx context.Context, command RPCCommand) error {
-	_, err := client.send(ctx, command)
+func (client *RPCClient) sendOnly(ctx context.Context, command rpc.Command) error {
+	_, err := client.send(ctx, rpcClientRequest{Command: command})
 	return err
 }
 
-func rpcClientData[T any](ctx context.Context, client *RPCClient, command RPCCommand) (T, error) {
+func rpcClientData[T any](ctx context.Context, client *RPCClient, command rpc.Command) (T, error) {
+	return rpcClientRequestData[T](ctx, client, rpcClientRequest{Command: command})
+}
+
+func rpcClientRequestData[T any](ctx context.Context, client *RPCClient, command rpcClientRequest) (T, error) {
 	var value T
 	result, err := client.send(ctx, command)
 	if err != nil {
@@ -676,7 +690,7 @@ func (client *RPCClient) readRPCOutput(process *rpcClientProcess) {
 	defer close(process.stdoutDone)
 	lines := make(chan []byte)
 	readErrors := make(chan error, 1)
-	go readStrictJSONLines(process.stdout, lines, readErrors)
+	go rpc.ReadFrames(process.stdout, lines, readErrors)
 	for line := range lines {
 		client.handleRPCLine(process, line)
 	}
@@ -704,7 +718,7 @@ func (client *RPCClient) handleRPCLine(process *rpcClientProcess, line []byte) {
 		}
 		client.mu.Unlock()
 		if pending != nil {
-			pending <- rpcClientResult{response: RPCResponse{ID: header.ID, Type: header.Type, Command: header.Command, Success: header.Success, Error: header.Error, HasID: true, HasData: header.Data != nil}, data: header.Data}
+			pending <- rpcClientResult{response: rpc.Response{ID: header.ID, Type: header.Type, Command: header.Command, Success: header.Success, Error: header.Error, HasID: true, HasData: header.Data != nil}, data: header.Data}
 			return
 		}
 	}

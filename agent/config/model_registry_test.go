@@ -966,3 +966,58 @@ func TestModelRegistrySerializesExplicitReloadSnapshots(t *testing.T) {
 		t.Fatalf("serialized reload model = %#v, ok=%v", current, ok)
 	}
 }
+
+type hostEnvironment map[string]string
+
+func (environment hostEnvironment) Env(_ context.Context, name string) (string, bool) {
+	value, ok := environment[name]
+	return value, ok && value != ""
+}
+func (hostEnvironment) FileExists(context.Context, string) bool { return false }
+
+func TestModelRegistryResolvesAmbientCredentialsFromInjectedEnvironment(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "process-key")
+	t.Setenv("ANTHROPIC_OAUTH_TOKEN", "")
+	registry, err := NewModelRegistryWithDocuments(t.TempDir(), nil, memoryDocument(), memoryDocument(), false,
+		WithEnvironment(hostEnvironment{"ANTHROPIC_API_KEY": "host-key"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !registry.HasConfiguredAuth("anthropic", nil) {
+		t.Fatal("injected environment credential is not configured")
+	}
+	resolved, err := registry.ResolveProviderAuth(context.Background(), "anthropic", nil)
+	if err != nil || resolved == nil || resolved.Auth.APIKey == nil || *resolved.Auth.APIKey != "host-key" {
+		t.Fatalf("resolved = %#v, %v; want the host credential, never the process one", resolved, err)
+	}
+	empty, err := NewModelRegistryWithDocuments(t.TempDir(), nil, memoryDocument(), memoryDocument(), false, WithEnvironment(hostEnvironment{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.HasConfiguredAuth("anthropic", nil) {
+		t.Fatal("process environment leaked through an injected environment")
+	}
+}
+
+type testDocument struct {
+	mu   sync.Mutex
+	data []byte
+}
+
+func memoryDocument() *testDocument { return &testDocument{} }
+
+func (document *testDocument) Read(context.Context) ([]byte, error) {
+	document.mu.Lock()
+	defer document.mu.Unlock()
+	return document.data, nil
+}
+
+func (document *testDocument) Update(_ context.Context, update func([]byte) ([]byte, error)) error {
+	document.mu.Lock()
+	defer document.mu.Unlock()
+	next, err := update(document.data)
+	if err == nil {
+		document.data = next
+	}
+	return err
+}

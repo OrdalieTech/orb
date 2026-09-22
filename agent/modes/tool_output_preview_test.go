@@ -89,6 +89,51 @@ func TestCommandDetailsStayAccessibleWithoutCompletedPreviews(t *testing.T) {
 	}
 }
 
+type summaryTool struct {
+	engine.AgentTool
+	call string
+}
+
+func (tool summaryTool) RenderCall(any) string                 { return tool.call }
+func (summaryTool) RenderResult(engine.AgentToolResult) string { return "" }
+
+func TestCollapsedToolTitlesKeepUsefulDetails(t *testing.T) {
+	initTestTheme(t)
+	path := "/workspace/" + strings.Repeat("long-directory/", 10) + "session.go"
+	for _, test := range []struct {
+		name, call, want string
+	}{
+		{"Read", "Read · " + path, "session.go"},
+		{"read", "read " + tui.Hyperlink(path, "file://"+path) + ":20-40", "session.go:20-40"},
+		{"Read", "Read · " + path + ".日本語", "session.go.日本語"},
+		{"Bash", "Bash · grep -rn 'session' " + path, "grep -rn 'session'"},
+		{"Grep", "Grep · session_runtime_" + strings.Repeat("x", 100), "session_runtime_"},
+	} {
+		t.Run(test.name+"/"+test.want, func(t *testing.T) {
+			tool := NewToolExecutionComponent(test.name, "call", nil, false,
+				nativeToolDefinition(test.name, summaryTool{call: test.call}), &toolOutputRenderRequester{}, "/workspace")
+			for _, width := range []int{40, 52, 80} {
+				lines := tool.Render(width)
+				if len(lines) != 2 || !strings.Contains(tui.StripANSI(lines[1]), test.want) {
+					t.Fatalf("width %d lost useful detail: %q", width, lines)
+				}
+			}
+			for _, width := range []int{8, 12, 40, 80} {
+				for _, line := range tool.Render(width) {
+					if tui.VisibleWidth(line) > width {
+						t.Fatalf("title overflows width %d: %q", width, line)
+					}
+				}
+			}
+			tool.SetExpanded(true)
+			got := tui.StripANSI(strings.Join(tool.Render(240), "\n"))
+			if !strings.Contains(got, tui.StripANSI(test.call)) {
+				t.Fatalf("expanded title lost full details: %q", got)
+			}
+		})
+	}
+}
+
 func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 	initTestTheme(t)
 	for _, live := range []bool{false, true} {

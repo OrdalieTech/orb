@@ -9,7 +9,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
+	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
 type ResourceSkillsResult struct {
@@ -23,8 +23,15 @@ type ResourcePromptsResult struct {
 }
 
 type ResourceThemesResult struct {
-	Themes      []*modetheme.Theme
+	Themes      []*ResourceTheme
 	Diagnostics []ResourceDiagnostic
+}
+
+// ResourceTheme is a discovered theme file with its parsed colors. The core
+// never renders it; UI drivers (agent/modes/theme.FromFile) do.
+type ResourceTheme struct {
+	themefile.Theme
+	SourceInfo *extensions.SourceInfo
 }
 
 type ResourceAgentsFilesResult struct {
@@ -272,7 +279,7 @@ func (loader *DefaultResourceLoader) GetThemes() ResourceThemesResult {
 	loader.mu.RLock()
 	defer loader.mu.RUnlock()
 	return ResourceThemesResult{
-		Themes:      append([]*modetheme.Theme(nil), loader.themes.Themes...),
+		Themes:      append([]*ResourceTheme(nil), loader.themes.Themes...),
 		Diagnostics: append([]ResourceDiagnostic(nil), loader.themes.Diagnostics...),
 	}
 }
@@ -361,17 +368,12 @@ func (loader *DefaultResourceLoader) ExtendResources(paths ResourceExtensionPath
 
 func loadResourceThemes(options DefaultResourceLoaderOptions, resolved, extended ResourceExtensionPaths) ResourceThemesResult {
 	paths, _ := resourceLoaderPaths(options.CWD, resolved.ThemePaths, options.AdditionalThemePaths, extended.ThemePaths, true)
-	registry := modetheme.Load(modetheme.LoadOptions{
-		CWD: options.CWD, AgentDir: options.AgentDir, NoThemes: true, AdditionalPaths: paths,
-	})
-	result := ResourceThemesResult{Themes: []*modetheme.Theme{}, Diagnostics: []ResourceDiagnostic{}}
-	for _, theme := range registry.Loaded() {
-		if theme == nil || theme.SourcePath == "" {
-			continue
-		}
-		result.Themes = append(result.Themes, theme)
+	themes, diagnostics := themefile.Discover(options.CWD, paths)
+	result := ResourceThemesResult{Themes: make([]*ResourceTheme, 0, len(themes)), Diagnostics: []ResourceDiagnostic{}}
+	for _, theme := range themes {
+		result.Themes = append(result.Themes, &ResourceTheme{Theme: *theme})
 	}
-	for _, diagnostic := range registry.Diagnostics() {
+	for _, diagnostic := range diagnostics {
 		converted := ResourceDiagnostic{Type: diagnostic.Type, Message: diagnostic.Message, Path: diagnostic.Path}
 		if diagnostic.Collision != nil {
 			converted.Collision = &ResourceCollision{

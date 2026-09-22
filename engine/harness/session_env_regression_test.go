@@ -19,6 +19,7 @@ type f6HarnessFixture struct {
 }
 
 func TestExecutionEnvironmentPreservesV0842Behavior(t *testing.T) {
+	agentharness.RequireProcesses(t)
 	fixture := loadF6HarnessFixture(t)
 	root := t.TempDir()
 	env := agentharness.NodeExecutionEnv{CWD: root, ShellEnv: map[string]string{"BASE_VALUE": "base"}}

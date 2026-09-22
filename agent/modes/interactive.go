@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
@@ -713,7 +714,17 @@ func (mode *InteractiveMode) installResourceThemes() (bool, error) {
 	if loader == nil || mode.themeRegistry == nil {
 		return false, nil
 	}
-	if err := mode.themeRegistry.ReplaceLoaded(loader.GetThemes().Themes); err != nil {
+	resources := loader.GetThemes().Themes
+	loaded := make([]*theme.Theme, 0, len(resources))
+	for _, resource := range resources {
+		if resource == nil {
+			continue
+		}
+		rendered := theme.FromFile(&resource.Theme, mode.themeRegistry.Mode())
+		rendered.SourceInfo = resource.SourceInfo
+		loaded = append(loaded, rendered)
+	}
+	if err := mode.themeRegistry.ReplaceLoaded(loaded); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -1655,12 +1666,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		mode.ui.RequestRender()
 	})
 
-	mode.editor.OnAction("app.suspend", func() {
-		_ = mode.ui.Stop()
-		p, _ := os.FindProcess(os.Getpid())
-		_ = p.Signal(syscall.SIGTSTP)
-		_ = mode.ui.Start()
-	})
+	mode.editor.OnAction("app.suspend", mode.suspend)
 }
 
 func (mode *InteractiveMode) setupEditorSubmitHandler() {
@@ -2473,6 +2479,20 @@ func (mode *InteractiveMode) applySetting(id, value string) {
 	mode.ui.RequestRender()
 }
 
+// exportThemes hands /export the displayed theme and the registry's named
+// themes, which only the interactive driver knows.
+var exportThemes = agent.HTMLExportThemes{
+	Active: func() *exporthtml.ThemeRef { return exportThemeRef(theme.Current()) },
+	Lookup: func(name string) *exporthtml.ThemeRef { return exportThemeRef(theme.GetTheme(name)) },
+}
+
+func exportThemeRef(value *theme.Theme) *exporthtml.ThemeRef {
+	if value == nil {
+		return nil
+	}
+	return &exporthtml.ThemeRef{Name: value.Name, SourcePath: value.SourcePath}
+}
+
 func (mode *InteractiveMode) handleExportCommand(text string) {
 	outputPath := pathCommandArgument(text, "/export")
 	var path string
@@ -2482,7 +2502,7 @@ func (mode *InteractiveMode) handleExportCommand(text string) {
 	} else if mode.exportHTML != nil {
 		path, err = mode.exportHTML(outputPath)
 	} else {
-		path, err = mode.session.ExportHTML(outputPath)
+		path, err = mode.session.ExportHTMLWithThemes(outputPath, exportThemes)
 	}
 	if err != nil {
 		mode.showError(errors.New("Failed to export session: " + err.Error()))
@@ -4521,7 +4541,18 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 			case "edit", "write":
 				color = "success"
 			}
-			container.AddChild(tui.NewText(palette.FG(color, palette.Bold(label))+palette.FG("toolTitle", " "+detail), 0, 0, nil))
+			title := palette.FG(color, palette.Bold(label)) + palette.FG("toolTitle", " "+detail)
+			container.AddChild(tui.NewText(title, 0, 0, nil))
+			if toolActivityKind(name) != "" || strings.EqualFold(name, "bash") {
+				header := toolCallHeader{inner: container, expanded: context.Expanded, title: title}
+				if strings.EqualFold(name, "read") {
+					header.keepTailFrom = tui.VisibleWidth(label) + 1
+					if strings.HasPrefix(detail, "· ") {
+						header.keepTailFrom += 2
+					}
+				}
+				return header
+			}
 			if name != "edit" || !context.ArgsComplete {
 				return container
 			}

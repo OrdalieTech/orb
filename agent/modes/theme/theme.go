@@ -1,16 +1,15 @@
 package theme
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
+	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/themefile"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -18,26 +17,6 @@ var backgroundTokens = map[string]bool{
 	"selectedBg": true, "scrollbarThumb": true, "searchMatchBg": true, "userMessageBg": true, "customMessageBg": true,
 	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
 	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true, "modalBackdropBg": true,
-}
-
-var requiredColors = []string{
-	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
-	"selectedBg", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
-	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
-	"toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
-	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "bashMode",
-}
-
-type document struct {
-	Schema string                `json:"$schema"`
-	Name   string                `json:"name"`
-	Vars   map[string]ColorValue `json:"vars"`
-	Colors map[string]ColorValue `json:"colors"`
-	Export struct {
-		PageBG ColorValue `json:"pageBg"`
-		CardBG ColorValue `json:"cardBg"`
-		InfoBG ColorValue `json:"infoBg"`
-	} `json:"export"`
 }
 
 type Theme struct {
@@ -48,92 +27,41 @@ type Theme struct {
 	mode            ColorMode
 	foreground      map[string]string
 	background      map[string]string
-	resolved        map[string]resolvedColor
-	export          map[string]resolvedColor
+	resolved        map[string]themefile.Color
+	export          map[string]themefile.Color
 }
 
 func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	var source document
-	if err := decoder.Decode(&source); err != nil {
-		return nil, fmt.Errorf("failed to parse theme %s: %w", label, err)
+	parsed, err := themefile.Parse(label, data)
+	if err != nil {
+		return nil, err
 	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, fmt.Errorf("failed to parse theme %s: multiple JSON values", label)
-		}
-		return nil, fmt.Errorf("failed to parse theme %s: %w", label, err)
-	}
-	if strings.Contains(source.Name, "/") {
-		return nil, fmt.Errorf("invalid theme name %q: theme names cannot contain / because it is reserved for automatic light/dark theme settings", source.Name)
-	}
-	missing := make([]string, 0)
-	for _, name := range requiredColors {
-		if _, ok := source.Colors[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("invalid theme %q: missing required color tokens: %s", label, strings.Join(missing, ", "))
-	}
-	if _, ok := source.Colors["thinkingMax"]; !ok {
-		source.Colors["thinkingMax"] = source.Colors["thinkingXhigh"]
-	}
-	if _, ok := source.Colors["scrollbarThumb"]; !ok {
-		source.Colors["scrollbarThumb"] = source.Colors["selectedBg"]
-	}
-	if _, ok := source.Colors["searchMatchBg"]; !ok {
-		source.Colors["searchMatchBg"] = source.Colors["selectedBg"]
-	}
-	if _, ok := source.Colors["searchMatchText"]; !ok {
-		source.Colors["searchMatchText"] = source.Colors["text"]
-	}
-	// Diff tint roles are optional so pre-existing user themes keep parsing;
-	// the tool-band backgrounds are the closest semantic stand-ins.
-	if _, ok := source.Colors["diffAddedBg"]; !ok {
-		source.Colors["diffAddedBg"] = source.Colors["toolSuccessBg"]
-	}
-	if _, ok := source.Colors["diffRemovedBg"]; !ok {
-		source.Colors["diffRemovedBg"] = source.Colors["toolErrorBg"]
-	}
-	if _, ok := source.Colors["diffGutterBg"]; !ok {
-		source.Colors["diffGutterBg"] = source.Colors["toolPendingBg"]
-	}
+	return FromFile(parsed, mode), nil
+}
+
+// FromFile renders a parsed theme resource for a terminal color mode.
+func FromFile(source *themefile.Theme, mode ColorMode) *Theme {
 	if mode == "" {
 		mode = DetectColorMode(nil)
 	}
-	theme := &Theme{Name: source.Name, mode: mode, foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]resolvedColor{}, export: map[string]resolvedColor{}}
-	for name, value := range source.Colors {
-		resolved, err := value.resolve(source.Vars, map[string]bool{})
-		if err != nil {
-			return nil, fmt.Errorf("theme %s color %s: %w", label, name, err)
-		}
-		theme.resolved[name] = resolved
+	theme := &Theme{
+		Name: source.Name, SourcePath: source.SourcePath, mode: mode,
+		foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]themefile.Color{}, export: map[string]themefile.Color{},
+	}
+	for name, color := range source.Colors {
+		theme.resolved[name] = color
 		if backgroundTokens[name] {
-			theme.background[name], err = resolved.background(mode)
+			theme.background[name] = ansiBackground(color, mode)
 		} else {
-			theme.foreground[name], err = resolved.foreground(mode)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("theme %s color %s: %w", label, name, err)
+			theme.foreground[name] = ansiForeground(color, mode)
 		}
 	}
-	for name, value := range map[string]ColorValue{"pageBg": source.Export.PageBG, "cardBg": source.Export.CardBG, "infoBg": source.Export.InfoBG} {
-		if value.String == nil && value.Index == nil {
-			continue
-		}
-		resolved, err := value.resolve(source.Vars, map[string]bool{})
-		if err != nil {
-			return nil, fmt.Errorf("theme %s export %s: %w", label, name, err)
-		}
-		theme.export[name] = resolved
-	}
-	return theme, nil
+	maps.Copy(theme.export, source.Export)
+	return theme
 }
 
 func terminalTheme(mode ColorMode) *Theme {
-	theme := &Theme{terminalPalette: &atomic.Pointer[Theme]{}, Name: "terminal", mode: mode, foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]resolvedColor{}}
+	theme := &Theme{terminalPalette: &atomic.Pointer[Theme]{}, Name: "terminal", mode: mode, foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]themefile.Color{}}
 	colors := map[string]int{
 		"accent": 6, "borderAccent": 6, "mdHeading": 6, "mdLink": 6, "mdCode": 6, "syntaxFunction": 6, "thinkingMedium": 6, "thinkingHigh": 5, "thinkingXhigh": 5, "thinkingMax": 5,
 		"success": 2, "toolDiffAdded": 2, "syntaxString": 2,
@@ -141,17 +69,16 @@ func terminalTheme(mode ColorMode) *Theme {
 		"warning": 3, "syntaxNumber": 3,
 		"customMessageLabel": 5, "syntaxKeyword": 5,
 	}
-	for _, name := range append(append([]string{}, requiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg", "modalBackdropBg", "modalBackdropText") {
-		value := ""
-		color := resolvedColor{text: &value}
+	for _, name := range append(append([]string{}, themefile.RequiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg", "modalBackdropBg", "modalBackdropText") {
+		color := themefile.Color{}
 		if index, ok := colors[name]; ok {
-			color = resolvedColor{index: &index}
+			color = themefile.Color{Index: &index}
 		}
 		theme.resolved[name] = color
 		if backgroundTokens[name] {
-			theme.background[name], _ = color.background(mode)
+			theme.background[name] = ansiBackground(color, mode)
 		} else {
-			theme.foreground[name], _ = color.foreground(mode)
+			theme.foreground[name] = ansiForeground(color, mode)
 		}
 	}
 	for _, name := range []string{"selectedBg", "searchMatchBg", "scrollbarThumb"} {
@@ -174,8 +101,8 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 		ink, accent, purple, green, red, amber = "#202428", "#087f83", "#8552a0", "#387348", "#b04040", "#916018"
 	}
 	blend := func(a, b string, amount float64) string {
-		ar, ag, ab, _ := parseHex(a)
-		br, bg, bb, _ := parseHex(b)
+		ar, ag, ab, _ := themefile.ParseHex(a)
+		br, bg, bb, _ := themefile.ParseHex(b)
 		return fmt.Sprintf("#%02x%02x%02x", int(float64(ar)*(1-amount)+float64(br)*amount), int(float64(ag)*(1-amount)+float64(bg)*amount), int(float64(ab)*(1-amount)+float64(bb)*amount))
 	}
 	accent, purple = blend(accent, ink, .4), blend(purple, ink, .3)
@@ -183,12 +110,12 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	backdrop := blend(bg, "#000000", .14)
 	set := func(names, value string) {
 		for _, name := range strings.Fields(names) {
-			color := resolvedColor{text: &value}
+			color := themefile.Color{Text: value}
 			next.resolved[name] = color
 			if backgroundTokens[name] {
-				next.background[name], _ = color.background(theme.mode)
+				next.background[name] = ansiBackground(color, theme.mode)
 			} else {
-				next.foreground[name], _ = color.foreground(theme.mode)
+				next.foreground[name] = ansiForeground(color, theme.mode)
 			}
 		}
 	}
@@ -223,7 +150,7 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	set("diffGutterBg", bg)
 	set("modalBackdropBg", backdrop)
 	set("modalBackdropText", blend(backdrop, ink, .38))
-	next.export = map[string]resolvedColor{"pageBg": {text: &bg}, "cardBg": {text: &panel}, "infoBg": {text: &panel}}
+	next.export = map[string]themefile.Color{"pageBg": {Text: bg}, "cardBg": {Text: panel}, "infoBg": {Text: panel}}
 	theme.terminalPalette.Store(next)
 }
 
@@ -308,19 +235,11 @@ func (theme *Theme) Markdown(codeBlockIndent string) tui.MarkdownTheme {
 }
 
 func (theme *Theme) ResolvedColors(light bool) map[string]string {
-	theme = theme.Palette()
 	defaultText := "#e5e5e7"
 	if light {
 		defaultText = "#000000"
 	}
-	result := make(map[string]string, len(theme.resolved))
-	for name, color := range theme.resolved {
-		value, err := color.hex(defaultText)
-		if err == nil {
-			result[name] = value
-		}
-	}
-	return result
+	return themefile.HexColors(theme.Palette().resolved, defaultText)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -479,13 +398,7 @@ func GetTheme(name string) *Theme {
 }
 
 func (theme *Theme) ExportColors() map[string]string {
-	theme = theme.Palette()
-	result := map[string]string{}
-	for name, color := range theme.export {
-		value, err := color.hex("")
-		if err == nil && value != "" {
-			result[name] = value
-		}
-	}
+	result := themefile.HexColors(theme.Palette().export, "")
+	maps.DeleteFunc(result, func(_, value string) bool { return value == "" })
 	return result
 }

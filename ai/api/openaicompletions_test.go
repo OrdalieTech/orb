@@ -680,7 +680,7 @@ func TestCompleteSimpleCollects(t *testing.T) {
 	t.Cleanup(func() { openAIHTTPClient = previousClient })
 
 	key := "test-key"
-	message, err := CompleteSimple(context.Background(), simpleOpenAICompletionsModel(), ai.Context{}, &ai.SimpleStreamOptions{
+	message, err := testProviders.CompleteSimple(context.Background(), simpleOpenAICompletionsModel(), ai.Context{}, &ai.SimpleStreamOptions{
 		StreamOptions: ai.StreamOptions{APIKey: &key},
 	})
 	if err != nil {

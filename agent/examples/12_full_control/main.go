@@ -10,7 +10,6 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -30,7 +29,7 @@ func (*fixedResourceLoader) GetPrompts() agent.ResourcePromptsResult {
 	return agent.ResourcePromptsResult{Prompts: []agent.PromptTemplate{}, Diagnostics: []agent.ResourceDiagnostic{}}
 }
 func (*fixedResourceLoader) GetThemes() agent.ResourceThemesResult {
-	return agent.ResourceThemesResult{Themes: []*modetheme.Theme{}, Diagnostics: []agent.ResourceDiagnostic{}}
+	return agent.ResourceThemesResult{Themes: []*agent.ResourceTheme{}, Diagnostics: []agent.ResourceDiagnostic{}}
 }
 func (*fixedResourceLoader) GetAgentsFiles() agent.ResourceAgentsFilesResult {
 	return agent.ResourceAgentsFilesResult{AgentsFiles: []agent.ContextFile{}}

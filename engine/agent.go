@@ -211,11 +211,6 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 	if options.now == nil {
 		options.now = func() int64 { return time.Now().UnixMilli() }
 	}
-	if options.streamFn == nil {
-		if streamFn, err := getDefaultStreamFn(); err == nil {
-			options.streamFn = streamFn
-		}
-	}
 
 	state := defaultAgentState()
 	if options.initialState != nil {

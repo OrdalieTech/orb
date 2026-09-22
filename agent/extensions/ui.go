@@ -152,6 +152,21 @@ type DisposableComponent interface {
 	Dispose()
 }
 
+// InputComponent receives raw terminal input while focused. It is how
+// out-of-process components take keys without linking a UI toolkit; UI drivers
+// adapt it to their own key events.
+type InputComponent interface {
+	Component
+	HandleRawInput(data string)
+	WantsKeyRelease() bool
+}
+
+// FocusableComponent is an InputComponent that tracks focus.
+type FocusableComponent interface {
+	InputComponent
+	SetFocused(bool)
+}
+
 type ComponentFactory func(UIHost, Theme) Component
 
 type FooterDataProvider interface {

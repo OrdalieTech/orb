@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"sync"
 
+	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
@@ -84,7 +84,7 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	if mode == "" {
 		mode = PrintOutputText
 	}
-	var jsonOutput *serializedOutput
+	var jsonOutput *rpc.FrameWriter
 	var unsubscribe func()
 	closeJSONOutput := func() error {
 		if unsubscribe != nil {
@@ -94,25 +94,25 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 		if jsonOutput == nil {
 			return nil
 		}
-		return jsonOutput.closeAndWait()
+		return jsonOutput.Close()
 	}
 	defer func() { _ = closeJSONOutput() }()
 	if mode == PrintOutputJSON {
-		jsonOutput = newSerializedOutput(stdout)
+		jsonOutput = rpc.NewFrameWriter(stdout)
 		if options.SessionHeader != nil {
 			encoded, err := ai.Marshal(options.SessionHeader)
 			if err != nil {
 				writeError(stderr, err)
 				return 1
 			}
-			jsonOutput.writeLine(encoded)
+			jsonOutput.WriteFrame(encoded)
 		}
 		subscriber, ok := session.(printSessionSubscriber)
 		if !ok {
 			writeError(stderr, errors.New("print mode: JSON session does not support events"))
 			return 1
 		}
-		unsubscribe = subscriber.Subscribe(jsonOutput.writeSessionEvent)
+		unsubscribe = subscriber.Subscribe(jsonOutput.WriteEvent)
 	}
 
 	shutdown := func(received os.Signal) int {
@@ -215,99 +215,6 @@ func executePrintMode(ctx context.Context, session printSession, options PrintMo
 		}
 	}
 	return result
-}
-
-type serializedOutput struct {
-	mu        sync.Mutex
-	writer    io.Writer
-	lines     chan []byte
-	done      chan struct{}
-	callbacks sync.WaitGroup
-	accepting bool
-	closed    bool
-	err       error
-}
-
-func newSerializedOutput(writer io.Writer) *serializedOutput {
-	output := &serializedOutput{
-		writer: writer, lines: make(chan []byte, 64), done: make(chan struct{}), accepting: true,
-	}
-	go output.run()
-	return output
-}
-
-func (output *serializedOutput) run() {
-	defer close(output.done)
-	for line := range output.lines {
-		output.mu.Lock()
-		failed := output.err != nil
-		output.mu.Unlock()
-		if failed {
-			continue
-		}
-		if err := writeLine(output.writer, line); err != nil {
-			output.fail(err)
-		}
-	}
-}
-
-func (output *serializedOutput) writeLine(value []byte) {
-	output.lines <- bytesClone(value)
-}
-
-func (output *serializedOutput) writeSessionEvent(event any) {
-	output.mu.Lock()
-	if !output.accepting {
-		output.mu.Unlock()
-		return
-	}
-	output.callbacks.Add(1)
-	output.mu.Unlock()
-	defer output.callbacks.Done()
-
-	encoded, err := marshalJSONEvent(event)
-	if err != nil {
-		output.fail(err)
-		return
-	}
-	output.writeLine(encoded)
-}
-
-func (output *serializedOutput) fail(err error) {
-	if err == nil {
-		return
-	}
-	output.mu.Lock()
-	if output.err == nil {
-		output.err = err
-	}
-	output.mu.Unlock()
-}
-
-func (output *serializedOutput) closeAndWait() error {
-	output.mu.Lock()
-	output.accepting = false
-	output.mu.Unlock()
-	output.callbacks.Wait()
-
-	output.mu.Lock()
-	if !output.closed {
-		output.closed = true
-		close(output.lines)
-	}
-	done := output.done
-	output.mu.Unlock()
-	<-done
-
-	output.mu.Lock()
-	defer output.mu.Unlock()
-	return output.err
-}
-
-func bytesClone(value []byte) []byte {
-	cloned := make([]byte, len(value))
-	copy(cloned, value)
-	return cloned
 }
 
 func lastAssistant(state engine.AgentState) *ai.AssistantMessage {

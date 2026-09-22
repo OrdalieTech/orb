@@ -50,8 +50,11 @@ orb/
 │   ├── subagents/            child agents and native CLI execution
 │   ├── permissions/          policy, hooks and configuration UI
 │   │   └── native/           native bash/file containment through tool-operation options
+│   ├── questions/            shared human-question tool and choice panel over RequestInput
+│   ├── claudesessions/       official Claude SDK host behind the engine.SessionLoop seam
 │   ├── mcp/                  configured MCP integration
-│   └── herdr/                explicitly selected external integration
+│   ├── herdr/                explicitly selected external integration
+│   └── internal/toolutil/    argument decoding and text results shared by plugin tools
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)
 │   ├── jsonwire/             JSON.stringify-compatible wire encoder
@@ -99,8 +102,83 @@ filesystem/shell tools plus memory, tasks and quota fetching without a host file
 browser application. Native subagents, process-backed MCP, Herdr and native transports still
 require a suitable host. Web search retains native credential/DNS defaults; browser networking
 and storage must be explicitly adapted. Tasks and permissions currently include TUI adapters,
-and the product agent still has presentation dependencies. No browser/mobile application,
-Worker lifecycle, universal platform manifest or speculative host framework is introduced.
+and the product agent still has presentation dependencies. No mobile application,
+Cloudflare lifecycle, universal platform manifest or speculative host framework is introduced.
+
+### Host ports (P10)
+
+`host.Host` bundles what a platform supplies: `AgentDir`, `FS` (the upstream-shaped
+`harness.FileSystem`), `Exec` (`harness.Shell`, optional), `Store` (kernel documents keyed by
+path, the same keys the native SQLite store uses), `Env` (`aiauth.AuthContext` for ambient
+provider credentials) and `Sessions` (optional; JSONL journals on `FS` under
+`AgentDir/sessions` by default). `NewAgentSession` and `CreateAgentSessionServices` build every
+service left nil from it: settings, credentials and model catalogs from `Store`, the model
+registry's ambient credentials from `Env`, the session journal from `Sessions`/`FS`, and
+read/write/edit/ls/find over `FS` through `tools.FileSystemToolsOptions`. Bash runs over `Exec`
+through `tools.ShellBashOperations`; without `Exec` it is omitted rather than failing at call
+time. Project settings stay untrusted on a Host until they are served through `FS`; grep still
+needs ripgrep and therefore `Exec`.
+
+The product core is headless: `agent`, `agent/config`, `agent/session`, `agent/extensions` and
+`agent/tools` link no `tui`, chroma, CJK segmentation or `agent/modes`
+(`TestProductCoreIsHeadless`). Theme files are parsed and discovered by `internal/themefile`;
+the resource loader returns `ResourceTheme` values and `agent/modes/theme.FromFile` renders them.
+HTML export takes the active theme from its driver through `ExportHTMLWithThemes`, and extension
+components receive raw terminal input through `extensions.InputComponent`.
+
+`platforms/memory` is the in-memory `FS` (root confinement, byte and file limits). Every `FS`
+implementation passes `engine/harness/envtest.TestFileSystem`, run against the native backend
+and the memory backend natively and under both Wasm runtimes. `platforms/scenario` is the
+cross-host gate: one scripted tool-using turn through a Host must produce the same session,
+tool results, files and journal natively, in `js/wasm` without a host filesystem, and under
+WASI without mounts.
+
+### Wasm host and browser debug screen
+
+The opt-in `make browser-serve` target builds and serves a static debug screen at
+`http://127.0.0.1:8787` (`BROWSER_PORT` overrides the port; Python 3 serves static assets only).
+`make browser-build` writes the deployable assets into `.tools/browser`, including the matching
+Go toolchain's `wasm_exec.js`. No agent process or model proxy runs on the server.
+
+The dependency direction is `platforms/browser/web` → `cmd/orb-wasm` → `platforms/wasm`
+→ `engine`, `ai`, and the existing `agent/tools` operations. The Wasm assembly owns one engine
+and a bounded in-memory workspace per session; it contains no JavaScript, DOM, TUI, settings
+discovery or native storage. The entry point alone uses `syscall/js` to translate worker commands
+and forward existing engine events. The browser's worker loads Wasm and the plain DOM UI renders
+messages, virtual files and a bounded event log. Layering tests forbid reverse imports and native
+product dependencies in the shared assembly. A future non-browser host can reuse the assembly,
+but must supply its own transport and lifecycle; the worker entry point is specifically `js/wasm`.
+
+The screen uses real providers only, defaulting to OpenRouter with GPT-5.6 Luna. Existing
+Anthropic Messages and OpenAI Completions providers run directly through browser Fetch; endpoints
+must allow CORS. Enter sends and Shift+Enter inserts a newline. Model IDs and credentials are
+explicit and keys remain in tab memory. New chat clears the conversation and workspace while
+retaining the entered credentials; reload discards all state. The debug
+model descriptor assumes a 32K context window and 4K output limit; it does not discover model
+capabilities. Read/write/edit are attached explicitly to a virtual `/workspace` capped at 128
+files and 1 MiB. No shell, native Claude executor, plugin catalog, durable workspace storage or
+automatic compaction is included. The optional Bridge panel uses an outbound WebSocket connection:
+`bridge.ConnectClient` shares pinned TLS and the protocol handshake, rejects incoming runtime calls,
+and starts no local Bridge, listener, subprocess, or native transport. The remote host explicitly
+runs `orb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787`;
+`--web-url wss://host/bridge` advertises a reverse-proxied endpoint in invitations. Remote browser
+URLs require WSS; loopback WS is allowed. The listener checks exact allowed origins, limits active
+connections, and exposes the existing peer protocol without the owner/admin API.
+
+Browser identity and the remote URL/pin live in origin-scoped localStorage; invitation tokens and
+model credentials are never persisted. Connecting claims an invitation but does not approve it;
+the remote owner approves the displayed browser identity, then Refresh lists authorized instances.
+The UI switches between the local agent and remote conversations, pages snapshots and sessions,
+uses cursor replay, checks session/generation fences, and never automatically replays mutations.
+Disconnect releases observation without cancelling remote execution. Reload retains pairing but
+requires explicit reconnection. Local `bridge_call` is separately opt-in and uses an instance
+subject with its own remote grants, never the human controller's authority.
+
+`plugins/bridge/agent.NewTool` is headless; the product extension adapter moved to
+`plugins/bridge/extension.Extension`. Transport stays in `plugins/bridge/transports/websocket`,
+worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/bridge.js`. Tests execute the built Wasm
+without a host filesystem and cover event forwarding, tool execution, concurrent-prompt rejection,
+cancellation and session replacement, alongside native workspace and dependency checks.
 
 ### Permission boundaries
 
@@ -198,9 +276,11 @@ adapters project the transcript into their native request format.
 type StreamFn func(ctx context.Context, req Request) (iter.Seq2[AssistantMessageEvent, error], error)
 ```
 
-plus a `Collect` helper folding a stream into the final `AssistantMessage`. `ai/api.StreamSimple`
-adapts the common options, including `auto|none|required` tool choice, and `CompleteSimple` is its
-collected form. Tool-call args stream through `internal/partialjson` exactly as upstream uses
+plus a `Collect` helper folding a stream into the final `AssistantMessage`. An `api.Registry`
+maps each `ai.API` to its family (`api.NewRegistry(api.OpenAICompletions(), …)`); `ai/api/all`
+holds every family and its `StreamSimple` adapts the common options, including
+`auto|none|required` tool choice, with `Registry.CompleteSimple` as the collected form. Bedrock's
+AWS client lives in `ai/api/bedrock`, so only assemblies selecting Bedrock link the AWS SDK. Tool-call args stream through `internal/partialjson` exactly as upstream uses
 `partial-json`.
 
 **API shapes** (one file each under `ai/api/`): openai-responses, openai-completions,
@@ -551,7 +631,8 @@ non-owning runtime attachments reconnect. A previously deliberate Stop remains e
 explicit activation; an upgrade's temporary stop marker is removed before starting the replacement.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
 specification governs the protocol; this section supersedes its two-executable packaging.
-Restricted launching, mobile UIs, browser transports, and platform hosting adapters are excluded.
+Restricted launching, mobile UIs, and managed platform hosting remain excluded. The optional
+WebSocket transport accepts outbound browser clients without a local Bridge service.
 
 The owner-requested SSH pairing shortcut lives entirely in `cmd/orb`. It invokes the host's
 existing OpenSSH client with strict host-key verification and noninteractive authentication.
@@ -730,7 +811,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
 | anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
-| aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
+| aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api/bedrock | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
 | yuin/goldmark | tui, chat | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |
@@ -740,6 +821,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
+| coder/websocket v1.8.15 | optional Bridge WebSocket transport | Reuses the installed dependency for native and browser streams; Bridge retains pinned TLS authentication inside the stream |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
 | @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
@@ -763,8 +845,14 @@ sessions remain JSONL or memory-backed).
 
 ## 9. Build, size, release
 
-- `CGO_ENABLED=0` for every product/release target `{linux,darwin} × {amd64,arm64}`; goreleaser for
-  static binaries + checksums; install via curl script + Homebrew tap. Development race-test
+- `CGO_ENABLED=0` for every P2 target. Releases ship `{linux,darwin} × {amd64,arm64}` through
+  goreleaser (static binaries + checksums; install via curl script + Homebrew tap); Windows joins
+  releases once its CI job has run green. `make portability` (in `make check`) builds and vets
+  linux/darwin/windows × amd64/arm64, linux/386, linux/arm and android/arm64, type-checks
+  ios/arm64, vets every package that does not link a native-only package on `js/wasm` and
+  `wasip1/wasm`, holds the browser bundle under 8 MB gzip, and runs the `ai`, `engine` and
+  portable `internal` suites under Node and wazero. `internal/layering` counts direct platform
+  access in the P10 core against `testdata/core_ratchet.txt`, which only shrinks. Development race-test
   binaries may enable CGo only for the Go race runtime (D7). Version checks use GitHub releases.
 - Budgets: cold start < 50 ms; release binary ≤ 55 MB decimal; `go vet` + golangci-lint clean;
   race detector on in CI tests. JavaScript startup belongs to the optional external host, while

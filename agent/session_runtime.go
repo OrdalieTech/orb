@@ -16,7 +16,7 @@ import (
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
-	aiapi "github.com/OrdalieTech/orb/ai/api"
+	allapi "github.com/OrdalieTech/orb/ai/api/all"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -189,7 +189,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		streamFn = runtimeConfig.Agent.StreamFn()
 	}
 	if streamFn == nil {
-		streamFn = aiapi.StreamSimple
+		streamFn = allapi.StreamSimple
 	}
 	runtimeConfig.Agent.SetStreamFn(streamFn)
 	runtimeConfig.Agent.SetRequestResolvers(runtimeConfig.GetAPIKey, runtimeConfig.GetRequestAuth, runtimeConfig.GetModelHeaders)

@@ -63,7 +63,7 @@ func TestGoogleCrossModelToolReplay(t *testing.T) {
 				})}
 				t.Cleanup(func() { googleHTTPClient = previous })
 				key := "test-key"
-				stream, err := StreamSimple(context.Background(), model, request, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
+				stream, err := testProviders.StreamSimple(context.Background(), model, request, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
 				if err != nil {
 					t.Fatal(err)
 				}

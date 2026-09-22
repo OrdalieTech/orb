@@ -2,17 +2,10 @@ package api
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/OrdalieTech/orb/ai"
-	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
 func bedrockTestModel(id, name string) *ai.Model {
@@ -126,8 +119,8 @@ func TestBedrockOneHourCacheWriteUsageAndCost(t *testing.T) {
 	model := bedrockTestModel("anthropic.claude-opus-4-8", "Claude Opus 4.8")
 	output := newAssistantMessage(model)
 	processor := bedrockStreamProcessor{model: model, output: output}
-	if err := processor.handle(bedrockStreamItem{
-		Kind: bedrockItemMetadata, InputTokens: 100, OutputTokens: 5,
+	if err := processor.handle(BedrockStreamItem{
+		Kind: BedrockItemMetadata, InputTokens: 100, OutputTokens: 5,
 		CacheWriteTokens: 1_000_000, CacheWrite1hTokens: 400_000, TotalTokens: 1_000_105,
 	}); err != nil {
 		t.Fatal(err)
@@ -241,28 +234,26 @@ func TestBedrockProxyResolution(t *testing.T) {
 }
 
 func TestBedrockPayloadAndResponseHooks(t *testing.T) {
-	previousTransport := newBedrockTransport
-	defer func() { newBedrockTransport = previousTransport }()
 	response := &fixtureBedrockResponse{
-		status: 202, requestID: "request-hook", items: []bedrockStreamItem{
-			{Kind: bedrockItemMessageStart, Role: "assistant"},
-			{Kind: bedrockItemMessageStop, StopReason: "end_turn"},
+		status: 202, requestID: "request-hook", items: []BedrockStreamItem{
+			{Kind: BedrockItemMessageStart, Role: "assistant"},
+			{Kind: BedrockItemMessageStop, StopReason: "end_turn"},
 		},
 	}
 	var sent *BedrockConverseStreamPayload
-	var sentOptions *BedrockConverseStreamOptions
-	newBedrockTransport = func(_ context.Context, _ *ai.Model, options *BedrockConverseStreamOptions) (bedrockTransport, error) {
-		sentOptions = options
-		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (bedrockResponse, error) {
+	var sentConfig *BedrockTransportConfig
+	backend := &BedrockBackend{NewTransport: func(_ context.Context, config BedrockTransportConfig) (BedrockTransport, error) {
+		sentConfig = &config
+		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (BedrockResponse, error) {
 			sent = payload
 			return response, nil
 		}), nil
-	}
+	}}
 	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
 	modelHeader := "model"
 	model.Headers = &map[string]string{"X-Model": modelHeader}
 	calledResponse := false
-	options := &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{
+	options := &BedrockConverseStreamOptions{Backend: backend, StreamOptions: ai.StreamOptions{
 		OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
 			copy := *(payload.(*BedrockConverseStreamPayload))
 			copy.ModelID = "replacement-model"
@@ -291,29 +282,27 @@ func TestBedrockPayloadAndResponseHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if message.StopReason != ai.StopReasonStop || sent == nil || sent.ModelID != "replacement-model" || !calledResponse || sentOptions == nil || sentOptions.Headers["X-Extension"] == nil || *sentOptions.Headers["X-Extension"] != "yes" {
-		t.Fatalf("hook result: message=%#v sent=%#v options=%#v response=%t", message, sent, sentOptions, calledResponse)
+	if message.StopReason != ai.StopReasonStop || sent == nil || sent.ModelID != "replacement-model" || !calledResponse || sentConfig == nil || sentConfig.Headers["X-Extension"] != "yes" {
+		t.Fatalf("hook result: message=%#v sent=%#v config=%#v response=%t", message, sent, sentConfig, calledResponse)
 	}
 }
 
 func TestStreamSimpleDispatchesAndClampsFixedThinking(t *testing.T) {
-	previousTransport := newBedrockTransport
-	defer func() { newBedrockTransport = previousTransport }()
 	var sent *BedrockConverseStreamPayload
-	newBedrockTransport = func(context.Context, *ai.Model, *BedrockConverseStreamOptions) (bedrockTransport, error) {
-		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (bedrockResponse, error) {
+	registry := NewRegistry(BedrockConverse(BedrockBackend{NewTransport: func(context.Context, BedrockTransportConfig) (BedrockTransport, error) {
+		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (BedrockResponse, error) {
 			sent = payload
-			return &fixtureBedrockResponse{items: []bedrockStreamItem{
-				{Kind: bedrockItemMessageStart, Role: "assistant"},
-				{Kind: bedrockItemMessageStop, StopReason: "end_turn"},
+			return &fixtureBedrockResponse{items: []BedrockStreamItem{
+				{Kind: BedrockItemMessageStart, Role: "assistant"},
+				{Kind: BedrockItemMessageStop, StopReason: "end_turn"},
 			}}, nil
 		}), nil
-	}
+	}}))
 	model := bedrockTestModel("anthropic.claude-sonnet-4-5-20250929-v1:0", "Claude Sonnet 4.5")
 	model.ContextWindow, model.MaxTokens = 20_000, 10_000
 	reasoning := ai.ThinkingHigh
 	requested := float64(5_000)
-	stream, err := StreamSimple(context.Background(), model, ai.Context{
+	stream, err := registry.StreamSimple(context.Background(), model, ai.Context{
 		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
 	}, &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{MaxTokens: &requested}, Reasoning: &reasoning})
 	if err != nil {
@@ -331,166 +320,31 @@ func TestStreamSimpleDispatchesAndClampsFixedThinking(t *testing.T) {
 	}
 }
 
-// TestBedrockPayloadHookPreservesUnmodeledFields_OTM7 pins the upstream hook
-// contract (bedrock-converse-stream.ts:223-239): the onPayload return is used
-// verbatim as the ConverseStreamCommand input, so hook-injected members the
-// typed Go payload does not model (guardrailConfig, performanceConfig, topP,
-// stopSequences, ...) must reach the SDK input instead of being silently
-// dropped. (OT-M7)
-func TestBedrockPayloadHookPreservesUnmodeledFields_OTM7(t *testing.T) {
-	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
-	payload, err := buildBedrockPayload(model, ai.Context{
-		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	options := &ai.StreamOptions{OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
-		encoded, err := ai.Marshal(payload)
-		if err != nil {
-			return nil, false, err
-		}
-		var generic map[string]any
-		if err := json.Unmarshal(encoded, &generic); err != nil {
-			return nil, false, err
-		}
-		generic["guardrailConfig"] = map[string]any{
-			"guardrailIdentifier": "guardrail-1",
-			"guardrailVersion":    "2",
-			"trace":               "enabled",
-		}
-		generic["performanceConfig"] = map[string]any{"latency": "optimized"}
-		generic["serviceTier"] = map[string]any{"type": "priority"}
-		generic["outputConfig"] = map[string]any{"textFormat": map[string]any{
-			"type": "json_schema",
-			"structure": map[string]any{"jsonSchema": map[string]any{
-				"name": "answer", "description": "structured answer", "schema": `{"type":"object"}`,
-			}},
-		}}
-		generic["additionalModelResponseFieldPaths"] = []string{"/stop_sequence"}
-		generic["promptVariables"] = map[string]any{"topic": map[string]any{"text": "space"}}
-		inference, _ := generic["inferenceConfig"].(map[string]any)
-		if inference == nil {
-			inference = map[string]any{}
-		}
-		inference["topP"] = 0.9
-		inference["stopSequences"] = []string{"STOP"}
-		generic["inferenceConfig"] = inference
-		return generic, true, nil
-	}}
-	hooked, err := applyPayloadHook(context.Background(), model, options, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	coerced, err := coerceBedrockPayload(hooked)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := bedrockSDKInput(coerced)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if input.GuardrailConfig == nil ||
-		input.GuardrailConfig.GuardrailIdentifier == nil || *input.GuardrailConfig.GuardrailIdentifier != "guardrail-1" ||
-		input.GuardrailConfig.GuardrailVersion == nil || *input.GuardrailConfig.GuardrailVersion != "2" ||
-		string(input.GuardrailConfig.Trace) != "enabled" {
-		t.Fatalf("hook-injected guardrailConfig did not reach the SDK input: %#v", input.GuardrailConfig)
-	}
-	if input.PerformanceConfig == nil || string(input.PerformanceConfig.Latency) != "optimized" {
-		t.Fatalf("hook-injected performanceConfig did not reach the SDK input: %#v", input.PerformanceConfig)
-	}
-	if input.ServiceTier == nil || string(input.ServiceTier.Type) != "priority" {
-		t.Fatalf("hook-injected serviceTier did not reach the SDK input: %#v", input.ServiceTier)
-	}
-	if input.OutputConfig == nil || input.OutputConfig.TextFormat == nil ||
-		string(input.OutputConfig.TextFormat.Type) != "json_schema" {
-		t.Fatalf("hook-injected outputConfig did not reach the SDK input: %#v", input.OutputConfig)
-	}
-	outputSchema, ok := input.OutputConfig.TextFormat.Structure.(*bedrocktypes.OutputFormatStructureMemberJsonSchema)
-	if !ok || outputSchema.Value.Schema == nil || *outputSchema.Value.Schema != `{"type":"object"}` ||
-		outputSchema.Value.Name == nil || *outputSchema.Value.Name != "answer" ||
-		outputSchema.Value.Description == nil || *outputSchema.Value.Description != "structured answer" {
-		t.Fatalf("hook-injected output schema = %#v", input.OutputConfig.TextFormat.Structure)
-	}
-	if len(input.AdditionalModelResponseFieldPaths) != 1 || input.AdditionalModelResponseFieldPaths[0] != "/stop_sequence" {
-		t.Fatalf("hook-injected response field paths = %#v", input.AdditionalModelResponseFieldPaths)
-	}
-	topic, ok := input.PromptVariables["topic"].(*bedrocktypes.PromptVariableValuesMemberText)
-	if !ok || topic.Value != "space" {
-		t.Fatalf("hook-injected promptVariables = %#v", input.PromptVariables)
-	}
-	if input.InferenceConfig == nil || input.InferenceConfig.TopP == nil || *input.InferenceConfig.TopP != 0.9 {
-		t.Fatalf("hook-injected topP = %#v", input.InferenceConfig)
-	}
-	if len(input.InferenceConfig.StopSequences) != 1 || input.InferenceConfig.StopSequences[0] != "STOP" {
-		t.Fatalf("hook-injected stopSequences = %#v", input.InferenceConfig.StopSequences)
-	}
-}
-
-func TestBedrockPayloadHookPreservesInferenceConfigDeletion_OTM7(t *testing.T) {
-	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
-	payload, err := buildBedrockPayload(model, ai.Context{
-		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	options := &ai.StreamOptions{OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
-		encoded, err := ai.Marshal(payload)
-		if err != nil {
-			return nil, false, err
-		}
-		var replacement map[string]any
-		if err := json.Unmarshal(encoded, &replacement); err != nil {
-			return nil, false, err
-		}
-		delete(replacement, "inferenceConfig")
-		return replacement, true, nil
-	}}
-	hooked, err := applyPayloadHook(context.Background(), model, options, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	coerced, err := coerceBedrockPayload(hooked)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := bedrockSDKInput(coerced)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if input.InferenceConfig != nil {
-		t.Fatalf("deleted inferenceConfig was recreated at the SDK boundary: %#v", input.InferenceConfig)
-	}
-}
-
 // TestBedrockTypeMismatchedDeltaDropped_OTm5 pins upstream
 // handleContentBlockDelta (bedrock-converse-stream.ts:471-518): a delta whose
 // block index resolves to a block of a different type is dropped; a new block
 // is only created when NO block exists at that stream index. (OT-m5)
 func TestBedrockTypeMismatchedDeltaDropped_OTm5(t *testing.T) {
-	previousTransport := newBedrockTransport
-	defer func() { newBedrockTransport = previousTransport }()
 	mismatchedText := "dropped"
 	mismatchedReasoning := "also dropped"
 	freshText := "kept"
-	newBedrockTransport = func(context.Context, *ai.Model, *BedrockConverseStreamOptions) (bedrockTransport, error) {
-		return bedrockTransportFunc(func(context.Context, *BedrockConverseStreamPayload) (bedrockResponse, error) {
-			return &fixtureBedrockResponse{items: []bedrockStreamItem{
-				{Kind: bedrockItemMessageStart, Role: "assistant"},
-				{Kind: bedrockItemContentStart, ContentBlockIndex: 1, ToolUseID: "tool-1", ToolName: "echo"},
-				{Kind: bedrockItemContentDelta, ContentBlockIndex: 1, Text: &mismatchedText},
-				{Kind: bedrockItemContentDelta, ContentBlockIndex: 1, ReasoningText: &mismatchedReasoning},
-				{Kind: bedrockItemContentDelta, ContentBlockIndex: 2, Text: &freshText},
-				{Kind: bedrockItemContentStop, ContentBlockIndex: 1},
-				{Kind: bedrockItemContentStop, ContentBlockIndex: 2},
-				{Kind: bedrockItemMessageStop, StopReason: "tool_use"},
+	backend := &BedrockBackend{NewTransport: func(context.Context, BedrockTransportConfig) (BedrockTransport, error) {
+		return bedrockTransportFunc(func(context.Context, *BedrockConverseStreamPayload) (BedrockResponse, error) {
+			return &fixtureBedrockResponse{items: []BedrockStreamItem{
+				{Kind: BedrockItemMessageStart, Role: "assistant"},
+				{Kind: BedrockItemContentStart, ContentBlockIndex: 1, ToolUseID: "tool-1", ToolName: "echo"},
+				{Kind: BedrockItemContentDelta, ContentBlockIndex: 1, Text: &mismatchedText},
+				{Kind: BedrockItemContentDelta, ContentBlockIndex: 1, ReasoningText: &mismatchedReasoning},
+				{Kind: BedrockItemContentDelta, ContentBlockIndex: 2, Text: &freshText},
+				{Kind: BedrockItemContentStop, ContentBlockIndex: 1},
+				{Kind: BedrockItemContentStop, ContentBlockIndex: 2},
+				{Kind: BedrockItemMessageStop, StopReason: "tool_use"},
 			}}, nil
 		}), nil
-	}
+	}}
 	stream, err := StreamBedrockConverseWithOptions(context.Background(), bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude"), ai.Context{
 		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}},
-	}, nil)
+	}, &BedrockConverseStreamOptions{Backend: backend})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +376,7 @@ func TestOTm5BedrockEmptyReasoningDeltaOnlyStartsBlock(t *testing.T) {
 			return true
 		},
 	}
-	processor.handleDelta(bedrockStreamItem{ContentBlockIndex: 3, ReasoningText: &empty})
+	processor.handleDelta(BedrockStreamItem{ContentBlockIndex: 3, ReasoningText: &empty})
 	if len(events) != 1 {
 		t.Fatalf("empty initial reasoning delta emitted %d events, want one start: %#v", len(events), events)
 	}
@@ -530,7 +384,7 @@ func TestOTm5BedrockEmptyReasoningDeltaOnlyStartsBlock(t *testing.T) {
 		t.Fatalf("empty initial reasoning event = %T, want ThinkingStartEvent", events[0])
 	}
 	events = nil
-	processor.handleDelta(bedrockStreamItem{ContentBlockIndex: 3, ReasoningText: &empty, ReasoningSignature: &empty})
+	processor.handleDelta(BedrockStreamItem{ContentBlockIndex: 3, ReasoningText: &empty, ReasoningSignature: &empty})
 	if len(events) != 0 {
 		t.Fatalf("empty reasoning update emitted events: %#v", events)
 	}
@@ -539,7 +393,7 @@ func TestOTm5BedrockEmptyReasoningDeltaOnlyStartsBlock(t *testing.T) {
 func TestBedrockRawStopReason(t *testing.T) {
 	output := newAssistantMessage(&ai.Model{})
 	processor := &bedrockStreamProcessor{output: output, sink: func(ai.AssistantMessageEvent) bool { return true }}
-	if err := processor.handle(bedrockStreamItem{Kind: bedrockItemMessageStop, StopReason: "guardrail_intervened"}); err != nil {
+	if err := processor.handle(BedrockStreamItem{Kind: BedrockItemMessageStop, StopReason: "guardrail_intervened"}); err != nil {
 		t.Fatal(err)
 	}
 	if output.StopReason != ai.StopReasonError || output.RawStopReason == nil || *output.RawStopReason != "guardrail_intervened" {
@@ -598,89 +452,17 @@ func TestBedrockARNRegionMatchesUpstreamPattern_OTm6(t *testing.T) {
 	}
 }
 
-func TestBedrockSDKInputRequiresIntegerMaxTokens(t *testing.T) {
-	for _, value := range []float64{3.5, 2_147_483_648} {
-		t.Run(fmt.Sprintf("%g", value), func(t *testing.T) {
-			_, err := bedrockSDKInput(&BedrockConverseStreamPayload{
-				ModelID: "fixture", InferenceConfig: BedrockInferenceConfig{MaxTokens: &value},
-			})
-			if err == nil || !strings.Contains(err.Error(), "is not an SDK int32 value") {
-				t.Fatalf("maxTokens %g error = %v", value, err)
-			}
-		})
-	}
-	valid := float64(777)
-	input, err := bedrockSDKInput(&BedrockConverseStreamPayload{
-		ModelID: "fixture", InferenceConfig: BedrockInferenceConfig{MaxTokens: &valid},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if input.InferenceConfig == nil || input.InferenceConfig.MaxTokens == nil || *input.InferenceConfig.MaxTokens != 777 {
-		t.Fatalf("SDK maxTokens = %#v", input.InferenceConfig)
-	}
-}
-
-func TestAWSBedrockTransportAuthenticationHeadersAndErrorBody(t *testing.T) {
-	for _, name := range []string{"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_BEARER_TOKEN_BEDROCK", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"} {
-		t.Setenv(name, "")
-	}
-	cases := []struct {
-		name         string
-		options      *BedrockConverseStreamOptions
-		authContains string
-	}{
-		{
-			name: "skip-auth-dummy-sigv4",
-			options: &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{Env: ai.ProviderEnv{
-				"AWS_BEDROCK_SKIP_AUTH": "1", "AWS_REGION": "us-east-1", "NO_PROXY": "*",
-			}}},
-			authContains: "Credential=dummy-access-key/",
-		},
-		{
-			name: "static-sigv4",
-			options: &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{Env: ai.ProviderEnv{
-				"AWS_ACCESS_KEY_ID": "fixture-access", "AWS_SECRET_ACCESS_KEY": "fixture-secret", "AWS_REGION": "us-east-1", "NO_PROXY": "*",
-			}}},
-			authContains: "Credential=fixture-access/",
-		},
-		{
-			name:         "bearer",
-			options:      &BedrockConverseStreamOptions{Region: "us-east-1", BearerToken: "fixture-bearer", StreamOptions: ai.StreamOptions{Env: ai.ProviderEnv{"NO_PROXY": "*"}}},
-			authContains: "Bearer fixture-bearer",
-		},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			custom, reserved := "custom", "forbidden"
-			testCase.options.Headers = ai.ProviderHeaders{
-				"x-fixture": &custom, "authorization": &reserved, "x-amz-fixture": &reserved,
-			}
-			headers, formatted := runBedrockHTTPFailure(t, testCase.options)
-			if !strings.Contains(headers.Get("authorization"), testCase.authContains) {
-				t.Fatalf("authorization = %q, want substring %q (error: %s)", headers.Get("authorization"), testCase.authContains, formatted)
-			}
-			if headers.Get("x-fixture") != custom || headers.Get("x-amz-fixture") != "" {
-				t.Fatalf("custom/reserved headers = %#v", headers)
-			}
-			if !strings.Contains(formatted, "403: denied by fixture gateway") {
-				t.Fatalf("formatted error = %q", formatted)
-			}
-		})
-	}
-}
-
 func TestFormatBedrockErrorPrefixesAndRetentionHint(t *testing.T) {
 	err := testBedrockAPIError{code: "ThrottlingException", message: "data retention mode 'default' is unavailable"}
-	formatted := formatBedrockError(err)
+	formatted := formatBedrockError(err, BedrockBackend{})
 	if !strings.HasPrefix(formatted, "Throttling error: ") || !strings.Contains(formatted, bedrockDataRetentionDocsURL) {
 		t.Fatalf("formatted error = %q", formatted)
 	}
 }
 
-type bedrockTransportFunc func(context.Context, *BedrockConverseStreamPayload) (bedrockResponse, error)
+type bedrockTransportFunc func(context.Context, *BedrockConverseStreamPayload) (BedrockResponse, error)
 
-func (function bedrockTransportFunc) Send(ctx context.Context, payload *BedrockConverseStreamPayload) (bedrockResponse, error) {
+func (function bedrockTransportFunc) Send(ctx context.Context, payload *BedrockConverseStreamPayload) (BedrockResponse, error) {
 	return function(ctx, payload)
 }
 
@@ -689,82 +471,3 @@ type testBedrockAPIError struct{ code, message string }
 func (err testBedrockAPIError) Error() string        { return err.message }
 func (err testBedrockAPIError) ErrorCode() string    { return err.code }
 func (err testBedrockAPIError) ErrorMessage() string { return err.message }
-
-func runBedrockHTTPFailure(t *testing.T, options *BedrockConverseStreamOptions) (http.Header, string) {
-	t.Helper()
-	requests := make(chan http.Header, 1)
-	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		_, _ = io.Copy(io.Discard, request.Body)
-		select {
-		case requests <- request.Header.Clone():
-		default:
-		}
-		response.Header().Set("content-type", "text/plain")
-		response.WriteHeader(http.StatusForbidden)
-		_, _ = io.WriteString(response, "denied by fixture gateway")
-	})
-	previousClient := bedrockHTTPClientOverride
-	var server *httptest.Server
-	if options.BearerToken != "" {
-		server = httptest.NewTLSServer(handler)
-		bedrockHTTPClientOverride = server.Client()
-	} else {
-		server = httptest.NewServer(handler)
-	}
-	defer func() {
-		server.Close()
-		bedrockHTTPClientOverride = previousClient
-	}()
-	model := bedrockTestModel("amazon.nova-micro-v1:0", "Nova Micro")
-	model.BaseURL = server.URL
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	transport, err := newAWSBedrockTransport(ctx, model, options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, sendErr := transport.Send(ctx, &BedrockConverseStreamPayload{
-		ModelID:         model.ID,
-		Messages:        []BedrockMessage{{Role: "user", Content: []BedrockContentBlock{{Text: bedrockStringPointer("hello")}}}},
-		InferenceConfig: BedrockInferenceConfig{},
-	})
-	if sendErr == nil {
-		t.Fatal("Bedrock request unexpectedly succeeded")
-	}
-	select {
-	case headers := <-requests:
-		return headers, formatBedrockError(sendErr)
-	default:
-		return http.Header{}, formatBedrockError(sendErr)
-	}
-}
-
-func bedrockStringPointer(value string) *string { return &value }
-
-// Bedrock's document encoder rejects empty object keys, so replayed tool
-// arguments drop them without touching the stored session values (#7882).
-func TestBedrockReplayDropsEmptyArgumentKeys(t *testing.T) {
-	arguments := map[string]any{
-		"path": "/workspace/file.js",
-		"edits": []any{
-			map[string]any{"oldText": "second", "newText": "updated second", "": ""},
-		},
-	}
-	blocks, err := convertBedrockAssistantContent(ai.AssistantContent{
-		&ai.ToolCall{ID: "tool-1", Name: "edit", Arguments: arguments},
-	}, &ai.Model{ID: "amazon.nova-lite-v1:0", API: ai.APIBedrockConverse, Provider: "amazon-bedrock"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, ok := blocks[0].ToolUse.Input.(map[string]any)
-	if !ok {
-		t.Fatalf("tool use input = %#v", blocks[0].ToolUse.Input)
-	}
-	edit, ok := input["edits"].([]any)[0].(map[string]any)
-	if !ok || len(edit) != 2 {
-		t.Fatalf("sanitized edit = %#v", input["edits"])
-	}
-	if _, kept := arguments["edits"].([]any)[0].(map[string]any)[""]; !kept {
-		t.Fatal("source arguments were mutated")
-	}
-}

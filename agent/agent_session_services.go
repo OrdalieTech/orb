@@ -12,11 +12,14 @@ import (
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/host"
 )
 
 type CreateAgentSessionServicesOptions struct {
-	CWD                         string
-	AgentDir                    string
+	CWD      string
+	AgentDir string
+	// Host supplies the platform ports for services left nil (DECISIONS.md P10).
+	Host                        *host.Host
 	SettingsManager             *config.SettingsManager
 	ModelRegistry               *config.ModelRegistry
 	ResourceOptions             *ResourceOptions
@@ -54,6 +57,9 @@ func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*Age
 		return nil, err
 	}
 	agentDir := options.AgentDir
+	if agentDir == "" && options.Host != nil {
+		agentDir = options.Host.AgentDir
+	}
 	if agentDir == "" {
 		agentDir = DefaultAgentDir()
 	}
@@ -66,18 +72,22 @@ func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*Age
 		return nil, err
 	}
 	settings := options.SettingsManager
-	if settings == nil {
+	if settings == nil && options.Host != nil {
+		settings, err = hostSettings(options.Host, cwd, agentDir)
+	} else if settings == nil {
 		settings, err = config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-		if err != nil {
-			return nil, err
-		}
+	}
+	if err != nil {
+		return nil, err
 	}
 	modelRegistry := options.ModelRegistry
-	if modelRegistry == nil {
+	if modelRegistry == nil && options.Host != nil {
+		modelRegistry, err = hostModelRegistry(options.Host, agentDir)
+	} else if modelRegistry == nil {
 		modelRegistry, err = config.NewModelRegistry(agentDir)
-		if err != nil {
-			return nil, err
-		}
+	}
+	if err != nil {
+		return nil, err
 	}
 	loaderOptions := DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings}
 	if options.ResourceLoaderOptions != nil {

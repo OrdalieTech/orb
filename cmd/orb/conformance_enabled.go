@@ -15,7 +15,6 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -66,9 +65,7 @@ func runF7RPCFixture(ctx context.Context, _ CLIArgs, streams cliStreams, _ strin
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
-	return true, modes.RunRPCMode(ctx, &f7SessionHost{session: runtime}, modes.RPCModeOptions{
-		Stdin: streams.Stdin, Stdout: streams.Stdout, Stderr: streams.Stderr,
-	})
+	return true, serveRPC(ctx, &f7SessionHost{session: runtime}, streams, nil)
 }
 
 func newF7SessionRuntime(scenario f7Scenario) (*agent.SessionRuntime, error) {
