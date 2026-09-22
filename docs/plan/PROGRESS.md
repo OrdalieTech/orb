@@ -1,5 +1,27 @@
 # Implementation progress
 
+## Release 0.9.0 preparation — 2026-09-22
+
+Minor version for optional Claude Sessions, shared questions, rule-based permission auto mode and
+moved Go capability imports, alongside streaming/allocation optimizations. Pi stays pinned to
+0.86.0; go.dev confirms Go 1.27.1 remains the latest stable toolchain. Release notes explicitly call
+out auto versus manual approval and import-path migration; existing explicit permission modes and
+stored plugin IDs are retained.
+
+Linux CI run 35713302768 exposed a callback response/connection-close race and an unreliable tiny
+allocation used by the selector finalizer test. OAuth now drains active responses with a bounded
+graceful shutdown; its regression reads the full success page. The lifetime probe exceeds Go's
+tiny allocation size without changing its deadline or upstream expectations. Both regressions pass
+50 race repetitions, and full `make check` passes. No fixtures or budgets were weakened.
+
+Static versioned candidates: darwin/amd64 54,508,080 B, darwin/arm64 52,052,978 B,
+linux/amd64 53,510,304 B, linux/arm64 50,725,024 B. All are below 55 MB. On Apple M4,
+20 warm-cache samples give 12.04 ms median `--version` and 15.40 ms `--help`. An isolated macOS
+candidate passes native migration, original preservation, JSONL export, private backup, restore,
+SQLite integrity and legacy-root refusal. Release automation checks all packaged sizes and Linux
+startup, archive checksums, a source rebuild without Git, and successful hosted CI before publishing.
+Provider/OAuth and real-terminal live-test deferrals remain unchanged.
+
 ## Permission hardening — 2026-09-22
 
 Owner-requested review reproduced cross-tool approval reuse, allow-on-dismissal/headless requests,

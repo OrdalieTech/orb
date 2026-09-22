@@ -42,6 +42,29 @@ jobs:
           args: release --clean --skip=publish --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify packaged binaries
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          smoke_root="$(mktemp -d)"
+          trap 'rm -rf "${smoke_root}"' EXIT
+          for target_os in linux darwin; do
+            for target_arch in amd64 arm64; do
+              target="${smoke_root}/${target_os}-${target_arch}"
+              mkdir -p "${target}"
+              tar -xzf "dist/orb_${version}_${target_os}_${target_arch}.tar.gz" -C "${target}"
+              test -s "${target}/orb"
+              size="$(wc -c < "${target}/orb")"
+              echo "${target_os}/${target_arch}: ${size} bytes"
+              test "${size}" -le 55000000
+            done
+          done
+          export PI_CODING_AGENT_DIR="${smoke_root}/agent"
+          export ORB_STATE_HOME="${smoke_root}/state"
+          export ORB_BRIDGE_HOME="${smoke_root}/bridge"
+          export PI_OFFLINE=1
+          test "$("${smoke_root}/linux-amd64/orb" --version | cut -d ' ' -f 2)" = "${version}"
+          "${smoke_root}/linux-amd64/orb" --help > /dev/null
       - name: Verify source archive
         run: |
           set -euo pipefail

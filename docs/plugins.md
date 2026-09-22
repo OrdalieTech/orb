@@ -65,11 +65,12 @@ configured name — never supply a command.
 "permissions": {
   "enabled": true,
   "preset": "workspace-write",
+  "mode": "enforce",
   "rules": [ { "tool": "bash", "command": "git push*", "action": "ask" } ]
 }
 ```
 
-- `preset`: `workspace-write` (sandbox `workspace-write` + mode `enforce`) or
+- `preset`: `workspace-write` (sandbox `workspace-write`, default mode `auto`) or
   `danger-full-access` (no sandbox + mode `log`). Explicit keys override the
   preset.
 - `sandbox`: `read-only` | `workspace-write` | `danger-full-access` — native bash, edit and write
@@ -81,16 +82,22 @@ configured name — never supply a command.
   `sandbox-exec` the command refuses to run (exit 126) with the remedy named.
   Coverage is partial by nature (Landlock does not mediate chmod/chown-style
   metadata mutations).
-- `mode`: `enforce` (default) or `log` (audit only). Guard denials and authorizer
-  failures hold even in log mode. Audit-only decisions never approve external tools.
+- `mode`: `auto` (default), `enforce` (manual prompts), or `log` (audit only). Auto
+  resolves asks without a model or prompt while preserving explicit denials, guards, cancellation
+  and containment. Existing explicit modes remain unchanged. Guard denials and authorizer
+  failures hold even in log mode; audit-only decisions never approve external tools.
 - `rules`: last match wins; `tool` / `command` / `path` globs, `action` is
   `allow` | `deny` | `ask`. Paths support recursive `**`; an allow must cover all
   canonical targets. Bash rules match command text, not the effects of an invoked program.
   Compound/expanding syntax under scoped rules asks unless explicitly allowed as a whole tool
-  or exact command. Use host containment for filesystem limits.
-- `askFallback`: `allow` | `deny` (default) when no UI can prompt. Cancellation,
+  or exact command. Auto mode denies these unresolved asks. Use host containment for filesystem limits.
+- `askFallback`: `allow` | `deny` (default) in manual mode when no UI can prompt. Cancellation,
   prompt errors and invalid replies always deny. Approval dialogs show the actual arguments
   and working directory; session approvals cannot cross tools or working directories.
+
+Use `/permissions` to save the mode, or `--auto` to enable auto mode for one run without
+persisting settings. `--auto` cannot be combined with `--no-extensions`. The example above
+selects manual mode so the `ask` rule prompts before a push.
 
 Any unknown or malformed key refuses startup with the key named; SDK embedders
 get a deny-all policy instead.
