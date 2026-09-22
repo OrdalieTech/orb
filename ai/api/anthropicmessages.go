@@ -1725,8 +1725,7 @@ func (processor *anthropicStreamProcessor) stopBlock(index int) error {
 }
 
 func setAnthropicStreamingArguments(call *ai.ToolCall, partial string) {
-	encoded, err := partialjson.StringifyStreamingJSON(partial)
-	if err != nil || ai.SetToolCallArgumentsJSON(call, encoded) != nil {
+	if ai.SetToolCallPartialJSON(call, partial) != nil {
 		_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
 	}
 }

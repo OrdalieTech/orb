@@ -476,20 +476,26 @@ func TestAnthropicReturnedModelUsesResponseModel(t *testing.T) {
 // 256-byte input_json_delta chunks, the delta split that made accumulation and
 // re-parsing quadratic.
 func BenchmarkAnthropicToolCallStreaming(b *testing.B) {
-	model := anthropicTestModel()
-	stream := anthropicToolCallSSE(64<<10, 256)
-	b.ReportAllocs()
-	for b.Loop() {
-		output := newAssistantMessage(model)
-		processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
-		if err := readAnthropicSSE(strings.NewReader(stream), processor.handleSSE); err != nil {
-			b.Fatal(err)
-		}
+	for _, pattern := range []struct{ name, text string }{
+		{"plain", "abcdefgh"}, {"code", "func main() {\n\tfmt.Println(\"héllo 😀\")\n}\n"},
+	} {
+		b.Run(pattern.name, func(b *testing.B) {
+			model := anthropicTestModel()
+			stream := anthropicToolCallSSE(strings.Repeat(pattern.text, (64<<10)/len(pattern.text)), 256)
+			b.ReportAllocs()
+			for b.Loop() {
+				output := newAssistantMessage(model)
+				processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
+				if err := readAnthropicSSE(strings.NewReader(stream), processor.handleSSE); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
-func anthropicToolCallSSE(size, chunk int) string {
-	arguments, err := json.Marshal(map[string]string{"text": strings.Repeat("abcdefgh", size/8)})
+func anthropicToolCallSSE(text string, chunk int) string {
+	arguments, err := json.Marshal(map[string]string{"text": text})
 	if err != nil {
 		panic(err)
 	}

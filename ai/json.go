@@ -1006,6 +1006,23 @@ func SetToolCallArgumentsJSON(content *ToolCall, data []byte) error {
 	if err != nil {
 		return err
 	}
+	return content.setNormalizedArguments(normalizedArguments)
+}
+
+// SetToolCallPartialJSON parses a streamed argument prefix, retaining the same
+// ordered wire representation as SetToolCallArgumentsJSON without normalizing twice.
+func SetToolCallPartialJSON(content *ToolCall, partial string) error {
+	if content == nil {
+		return errors.New("ai: nil tool call")
+	}
+	encoded, err := partialjson.StringifyStreamingJSON(partial)
+	if err != nil {
+		return err
+	}
+	return content.setNormalizedArguments(encoded)
+}
+
+func (content *ToolCall) setNormalizedArguments(normalizedArguments []byte) error {
 	value, err := decodeJSONValue(normalizedArguments)
 	if err != nil {
 		return err
