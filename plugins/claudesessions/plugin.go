@@ -219,7 +219,7 @@ func configuredOptions(ctx context.Context, settingsManager *config.SettingsMana
 	if err != nil {
 		return Options{}, errors.New("install the official Claude Code CLI on this host, then run claude auth login")
 	}
-	defaultSDK := filepath.Join(agentDir, "plugins", Name, "node_modules", "@anthropic-ai", "claude-agent-sdk", "sdk.mjs")
+	defaultSDK := filepath.Join(agentDir, "plugins", Name, "sdk-"+SDKVersion, "node_modules", "@anthropic-ai", "claude-agent-sdk", "sdk.mjs")
 	sdk := option("sdk", defaultSDK)
 	if sdk != defaultSDK {
 		if _, err = os.Stat(sdk); err != nil {
@@ -231,38 +231,54 @@ func configuredOptions(ctx context.Context, settingsManager *config.SettingsMana
 	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode}, nil
 }
 
-// Serialize setup across Orb processes; existing sessions never run npm again.
+// Published versions live at immutable paths so upgrades cannot break active sessions.
 func installSDK(ctx context.Context, agentDir string, env []string) error {
-	dir := filepath.Join(agentDir, "plugins", Name)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return errors.New("could not prepare Claude; check that Orb's settings directory is writable")
+	root := filepath.Join(agentDir, "plugins", Name)
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return err
 	}
-	unlock, err := filelock.Acquire(dir)
+	unlock, err := filelock.Acquire(root)
 	if err != nil {
 		return errors.New("claude setup is already running; try again shortly")
 	}
 	defer func() { _ = unlock() }()
-	sdk := filepath.Join(dir, "node_modules", "@anthropic-ai", "claude-agent-sdk", "sdk.mjs")
-	if _, err = os.Stat(sdk); err == nil {
+	dir := filepath.Join(root, "sdk-"+SDKVersion)
+	valid := func(dir string) bool {
+		pkg := filepath.Join(dir, "node_modules", "@anthropic-ai", "claude-agent-sdk")
+		data, err := os.ReadFile(filepath.Join(pkg, "package.json"))
+		var info struct{ Version string }
+		if err != nil || json.Unmarshal(data, &info) != nil || info.Version != SDKVersion {
+			return false
+		}
+		stat, err := os.Stat(filepath.Join(pkg, "sdk.mjs"))
+		return err == nil && stat.Mode().IsRegular()
+	}
+	if valid(dir) {
 		return nil
 	}
 	npm, err := executable("npm", env)
 	if err != nil {
 		return errors.New("claude needs Node.js with npm installed on this host")
 	}
+	staging, err := os.MkdirTemp(root, ".sdk-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	install := exec.CommandContext(ctx, npm, "install", "--prefix", dir, "--ignore-scripts", "--no-audit", "--no-fund", "@anthropic-ai/claude-agent-sdk@"+SDKVersion)
+	install := exec.CommandContext(ctx, npm, "install", "--prefix", staging, "--ignore-scripts", "--no-audit", "--no-fund", "@anthropic-ai/claude-agent-sdk@"+SDKVersion)
 	install.Env = env
 	if err = install.Run(); err != nil {
-		// A failed npm run may already have written the entry point.
-		_ = os.RemoveAll(filepath.Dir(sdk))
 		return errors.New("could not finish Claude setup; check your connection and try again")
 	}
-	if _, err = os.Stat(sdk); err != nil {
-		return errors.New("claude setup did not finish; try again")
+	if !valid(staging) {
+		return errors.New("claude setup did not provide the required SDK version; try again")
 	}
-	return nil
+	if err = os.RemoveAll(dir); err != nil {
+		return err
+	}
+	return os.Rename(staging, dir)
 }
 
 type modelInfo struct {
@@ -459,13 +475,55 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 			if strings.TrimSpace(args) == "usage" {
 				return showUsage(ctx, command)
 			}
+			choice := ""
+			switch strings.TrimSpace(args) {
+			case "plan":
+				choice = "Plan mode"
+			case "normal":
+				choice = "Leave plan mode"
+			case "compact":
+				choice = "Compact conversation"
+			case "":
+			default:
+				return errors.New("use /claude, /claude usage, /claude plan, /claude normal or /claude compact")
+			}
 			actions := []string{"New Claude session", "Model"}
 			if current := command.Model(); current != nil && current.Provider == Name {
-				actions = append(actions, "Usage", "Switch to Orb")
+				modeAction := "Plan mode"
+				if nativeMode(command.SessionManager()) == "plan" {
+					modeAction = "Leave plan mode"
+				}
+				actions = append(actions, "Usage", modeAction, "Compact conversation", "Switch to Orb")
 			}
-			choice, ok, err := command.UI().Select(ctx, "Claude Sessions", actions, nil)
-			if err != nil || !ok {
-				return err
+			var err error
+			if choice == "" {
+				var ok bool
+				choice, ok, err = command.UI().Select(ctx, "Claude Sessions", actions, nil)
+				if err != nil || !ok {
+					return err
+				}
+			}
+			if choice == "Plan mode" || choice == "Leave plan mode" || choice == "Compact conversation" {
+				if command.Model() == nil || command.Model().Provider != Name {
+					return errors.New("start a Claude session first")
+				}
+				if !command.IsIdle() {
+					return errors.New("wait for Claude to finish or cancel the current work first")
+				}
+				if choice == "Compact conversation" {
+					return api.SendUserMessage(ctx, ai.NewUserText("/compact"), nil)
+				}
+				mode := "default"
+				if choice == "Plan mode" {
+					mode = "plan"
+				}
+				if err := api.AppendEntry(ctx, Name+".mode", mode); err != nil {
+					return err
+				}
+				command.UI().Notify("Claude mode: "+mode, extensions.NotifyInfo)
+				text := limitsStatus(command.SessionManager(), time.Now())
+				command.UI().SetStatus(Name+".limits", &text)
+				return nil
 			}
 			switch choice {
 			case "Usage":
@@ -589,6 +647,9 @@ func LimitsStatus(manager extensions.ReadonlySessionManager, now time.Time) stri
 
 func nativeContextUsage(manager extensions.ReadonlySessionManager) *harness.ContextUsage {
 	for entry := manager.GetLeafEntry(); entry != nil; {
+		if entry.Type == "model_change" {
+			return nil
+		}
 		if entry.CustomType == Name+".context" {
 			var usage struct {
 				MaxTokens   int64
@@ -612,6 +673,14 @@ func nativeContextUsage(manager extensions.ReadonlySessionManager) *harness.Cont
 }
 
 func limitsStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
+	text := quotaStatus(manager, now)
+	if nativeMode(manager) == "plan" {
+		text += " · plan"
+	}
+	return text
+}
+
+func quotaStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
 	info := latestLimits(manager)
 	if info != nil {
 		if info.ObservedAt.IsZero() || now.Sub(info.ObservedAt) > 5*time.Minute {
@@ -753,4 +822,21 @@ func usageRows(manager extensions.ReadonlySessionManager, now time.Time) []strin
 func showUsage(ctx context.Context, command extensions.CommandContext) error {
 	_, _, err := command.UI().Select(ctx, "Claude usage", usageRows(command.SessionManager(), time.Now()), nil)
 	return err
+}
+
+func nativeMode(manager extensions.ReadonlySessionManager) string {
+	for entry := manager.GetLeafEntry(); entry != nil; {
+		if entry.CustomType == Name+".mode" {
+			var mode string
+			if json.Unmarshal(entry.Data, &mode) == nil && mode == "plan" {
+				return "plan"
+			}
+			return "default"
+		}
+		if entry.ParentID == nil {
+			break
+		}
+		entry = manager.GetEntry(*entry.ParentID)
+	}
+	return "default"
 }

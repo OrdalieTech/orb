@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Complete Claude SDK background-task draining and cancellation, recoverable versioned setup,
+  MCP questions, native plan/compaction controls and bounded lifecycle progress. Clear stale context
+  readings; keep all adaptation in the plugin and reuse existing client/Bridge contracts.
+
 - Fix viewport crashes when collapsing tool output exposes evicted rows; keep cache refills,
   resizing and concurrent transcript updates consistent.
 

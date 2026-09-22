@@ -1,6 +1,7 @@
 package claudesessions
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"os"
@@ -31,9 +32,15 @@ export function query({prompt,options:o}) {
  const abort = new AbortController();
  const gen = (async function*(){
   const {value:p}=await prompt[Symbol.asyncIterator]().next();
-  if(o.permissionMode!=='default'||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
+  if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
   const id=o.sessionId||o.resume;
   yield {type:'system',subtype:'init',session_id:id};
+  if(JSON.stringify(p.message.content).includes('elicitation-fixture')) {
+   const reply=await o.onElicitation({serverName:'fixture MCP',message:'Choose retries',mode:'form',requestedSchema:{type:'object',properties:{retries:{type:'integer',minimum:1,maximum:5}},required:['retries']}},{signal:abort.signal});
+   yield {type:'assistant',uuid:'elicitation-result',session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify(reply)}],usage:{input_tokens:10,output_tokens:4}}};
+   yield {type:'result',subtype:'success',session_id:id};return;
+  }
+
   yield {type:'stream_event',event:{type:'message_start',message:{model:o.model,content:[]}}};
   yield {type:'stream_event',event:{type:'content_block_start',index:0,content_block:{type:'text'}}};
   yield {type:'stream_event',event:{type:'content_block_delta',index:0,delta:{type:'text_delta',text:'streamed'}}};
@@ -140,9 +147,15 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 		}
 	})
 	for i := 0; i < 2; i++ {
+		if _, err := s.Manager().AppendCustomEntry(Name+".context", json.RawMessage(`{"maxTokens":200000,"totalTokens":1000,"percentage":0.5}`)); err != nil {
+			t.Fatal(err)
+		}
 		done := make(chan error, 1)
 		go func() { done <- s.Prompt(context.Background(), "hello") }()
 		input := awaitInput(t, s)
+		if s.GetContextUsage() != nil {
+			t.Fatal("prior context survived a new turn")
+		}
 		if err := s.SetModel(t.Context(), models[1]); err != agent.ErrControlBusy {
 			t.Fatalf("active model mutation: %v", err)
 		}
@@ -674,15 +687,23 @@ func TestAutomaticSDKSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := `#!/bin/sh
-printf 'attempt\n' >> "$3/attempts"
+printf 'attempt\n' >> "$TRACE_DIR/attempts"
 mkdir -p "$3/node_modules/@anthropic-ai/claude-agent-sdk"
 printf 'fixture' > "$3/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs"
-if [ ! -f "$3/retry" ]; then touch "$3/retry"; exit 1; fi
+printf '{"version":"SDK_VERSION"}' > "$3/node_modules/@anthropic-ai/claude-agent-sdk/package.json"
+if [ ! -f "$TRACE_DIR/retry" ]; then touch "$TRACE_DIR/retry"; exit 1; fi
 `
-	if err := os.WriteFile(filepath.Join(bin, "npm"), []byte(script), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "npm"), []byte(strings.ReplaceAll(script, "SDK_VERSION", SDKVersion)), 0700); err != nil {
 		t.Fatal(err)
 	}
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin"}
+	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "TRACE_DIR=" + dir}
+	old := filepath.Join(dir, "plugins", Name, "node_modules", "@anthropic-ai", "claude-agent-sdk", "sdk.mjs")
+	if err := os.MkdirAll(filepath.Dir(old), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, []byte("old installed SDK"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := installSDK(t.Context(), dir, env); err == nil {
 		t.Fatal("failed installation accepted")
 	}
@@ -691,9 +712,12 @@ if [ ! -f "$3/retry" ]; then touch "$3/retry"; exit 1; fi
 			t.Fatal(err)
 		}
 	}
-	attempts, err := os.ReadFile(filepath.Join(dir, "plugins", Name, "attempts"))
+	attempts, err := os.ReadFile(filepath.Join(dir, "attempts"))
 	if err != nil || string(attempts) != "attempt\nattempt\n" {
 		t.Fatalf("setup did not retry once and reuse: %q %v", attempts, err)
+	}
+	if data, err := os.ReadFile(old); err != nil || string(data) != "old installed SDK" {
+		t.Fatal("old installation was replaced", err)
 	}
 	settings, err := config.NewSettingsManager(dir, config.WithAgentDir(dir))
 	if err != nil {
@@ -1076,4 +1100,326 @@ func TestNativeContextFooter(t *testing.T) {
 			t.Fatalf("invalid context reached shared footer: %+v", usage)
 		}
 	}
+}
+
+func TestSDKHostDrainsBackgroundAndTrailingEvents(t *testing.T) {
+	dir := t.TempDir()
+	sdk := filepath.Join(dir, "sdk.mjs")
+	source := `export function query({prompt}) {
+ const input=prompt[Symbol.asyncIterator]();
+ let completed=false;
+ const q=(async function*(){
+  await input.next();
+  yield {type:'system',subtype:'task_started',task_id:'job',is_backgrounded:true};
+  yield {type:'system',subtype:'background_tasks_changed',tasks:[{task_id:'job'}]};
+  yield {type:'result',subtype:'success'};
+  completed=true;
+  yield {type:'system',subtype:'task_notification',task_id:'job',status:'completed',summary:'finished'};
+  yield {type:'system',subtype:'background_tasks_changed',tasks:[]};
+  yield {type:'rate_limit_event',rate_limit_info:{status:'allowed'}};
+  if(!(await input.next()).done) throw Error('input not released');
+ })();
+ q.getContextUsage=async()=>{if(!completed)throw Error('context before background completion');return {maxTokens:200000,totalTokens:40,percentage:.02}};
+ q.close=()=>{};q.interrupt=async()=>{};return q;
+}`
+	if err := os.WriteFile(sdk, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	start, _ := json.Marshal(map[string]any{"type": "start", "sdk": sdk, "claude": "/unused", "cwd": dir, "session": "test", "content": []any{}})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "node", "--input-type=module", "-e", hostSource)
+	cmd.Stdin = strings.NewReader(string(start) + "\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	for _, want := range []string{`"subtype":"task_notification"`, `"type":"rate_limit_event"`, `"totalTokens":40`} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("lost %s: %s", want, out)
+		}
+	}
+}
+
+func TestNativeContextModelAndCompactionInvalidation(t *testing.T) {
+	host, driver := fixture(t)
+	seed := func() {
+		t.Helper()
+		if _, err := driver.options.Manager.AppendCustomEntry(Name+".context", json.RawMessage(`{"maxTokens":200000,"totalTokens":400,"percentage":0.2}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed()
+	if _, err := driver.options.Manager.AppendModelChange(Name, "opus"); err != nil {
+		t.Fatal(err)
+	}
+	if host.Session().GetContextUsage() != nil {
+		t.Fatal("prior model context retained")
+	}
+	seed()
+	tr := translation{driver: driver, ctx: t.Context(), emit: func(context.Context, engine.AgentEvent) error { return nil }}
+	if err := tr.event([]byte(`{"type":"system","subtype":"compact_boundary","compact_metadata":{"pre_tokens":190000,"post_tokens":1000}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if host.Session().GetContextUsage() != nil {
+		t.Fatal("pre-compaction context retained")
+	}
+}
+
+func TestSDKElicitationUsesBridgeQuestionsAndValidation(t *testing.T) {
+	host, _ := fixture(t)
+	id := protocol.NewID()
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(connect.Request) bool { return true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = attachment.Close() }()
+	control, _ := host.EnableControl()
+	done := make(chan error, 1)
+	go func() { done <- host.Session().Prompt(t.Context(), "elicitation-fixture") }()
+	input := awaitInput(t, host.Session())
+	for _, answer := range []string{"9", "3"} {
+		if input.Presentation == nil || input.Presentation.Kind != questions.Kind {
+			t.Fatal("MCP form did not use shared questions")
+		}
+		snapshot, err := attachment.Invoke(t.Context(), "instances.describe", connect.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
+		if err != nil || !strings.Contains(string(snapshot), "fixture MCP") {
+			t.Fatalf("missing remote form: %s %v", snapshot, err)
+		}
+		value, _ := json.Marshal(questions.Result{Answers: []questions.Answer{{ID: "field", Selected: []string{}, Custom: answer}}})
+		if err := control.Execution(control.Target(), "input.reply", string(connect.JSON(map[string]string{"id": input.ID, "value": string(value)}))); err != nil {
+			t.Fatal(err)
+		}
+		if answer == "9" {
+			old := input.ID
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				if p := host.Session().PendingInput(); p != nil && p.ID != old {
+					input = p
+					break
+				}
+				time.Sleep(time.Millisecond * 5)
+			}
+			if input.ID == old || !strings.Contains(string(input.Presentation.Data), "Invalid answer") {
+				t.Fatal("schema violation was not returned to the user")
+			}
+		}
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(host.Session().State().Messages)
+	if !strings.Contains(string(raw), `\"retries\":3`) {
+		t.Fatalf("typed answer missing: %s", raw)
+	}
+}
+
+func TestSDKElicitationURLAndCancellation(t *testing.T) {
+	for _, test := range []struct{ url, answer, want string }{
+		{"https://example.com/authorize", "Continue", "accept"},
+		{"https://example.com/authorize", "Decline", "decline"},
+		{"https://example.com/authorize", "", "cancel"},
+		{"javascript:alert(1)", "Continue", "cancel"},
+	} {
+		called := false
+		d := Driver{options: Options{Ask: func(ctx context.Context, _ string, _ []string) (string, error) {
+			called = true
+			input := extensions.InputOptionsFromContext(ctx)
+			if input.Presentation == nil || !strings.Contains(string(input.Presentation.Data), test.url) {
+				t.Fatal("URL not presented on the client")
+			}
+			result := questions.Result{Cancelled: test.answer == ""}
+			if test.answer != "" {
+				result.Answers = []questions.Answer{{ID: "url", Selected: []string{test.answer}}}
+			}
+			data, _ := json.Marshal(result)
+			return string(data), nil
+		}}}
+		raw, _ := json.Marshal(map[string]any{"mode": "url", "url": test.url, "serverName": "MCP", "message": "Authenticate"})
+		if got := d.elicit(t.Context(), raw)["action"]; got != test.want {
+			t.Fatalf("%s: %v", test.url, got)
+		}
+		if strings.HasPrefix(test.url, "javascript:") && called {
+			t.Fatal("unsafe URL was offered")
+		}
+	}
+}
+
+func TestNativeLifecycleActivitiesAndProgressAreBounded(t *testing.T) {
+	_, driver := fixture(t)
+	var messages []engine.AgentMessage
+	updates := 0
+	tr := translation{driver: driver, ctx: t.Context(), tools: map[string]string{"tool": "Bash"}, emit: func(_ context.Context, event engine.AgentEvent) error {
+		if end, ok := event.(engine.MessageEndEvent); ok {
+			messages = append(messages, end.Message)
+		}
+		if _, ok := event.(engine.ToolExecutionUpdateEvent); ok {
+			updates++
+		}
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"system","subtype":"api_retry","attempt":1,"max_retries":3,"retry_delay_ms":2000}`,
+		`{"type":"system","subtype":"task_started","description":"review"}`,
+		`{"type":"system","subtype":"task_notification","status":"completed","summary":"done"}`,
+		`{"type":"assistant","parent_tool_use_id":"parent","message":{"content":[{"type":"text","text":"private child transcript"}]}}`,
+		`{"type":"system","subtype":"task_started","ambient":true,"description":"watcher"}`,
+		`{"type":"tool_progress","tool_use_id":"tool","elapsed_time_seconds":5}`,
+		`{"type":"tool_progress","tool_use_id":"tool","elapsed_time_seconds":6}`,
+		`{"type":"tool_progress","tool_use_id":"tool","elapsed_time_seconds":10}`,
+		`{"type":"system","subtype":"task_progress","tool_use_id":"tool","summary":"Checking results","usage":{"duration_ms":15000}}`,
+		`{"type":"system","subtype":"task_progress","tool_use_id":"tool","summary":"Checking results","usage":{"duration_ms":16000}}`,
+		`{"type":"system","subtype":"task_progress","tool_use_id":"child","summary":"Private child work","usage":{"duration_ms":20000}}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(messages) != 3 || updates != 3 {
+		t.Fatalf("messages=%d updates=%d", len(messages), updates)
+	}
+	data, _ := json.Marshal(messages)
+	if strings.Contains(string(data), "private child") || strings.Contains(string(data), "watcher") {
+		t.Fatal(string(data))
+	}
+}
+
+func TestNativePlanAndCompactCommands(t *testing.T) {
+	_, driver := fixture(t)
+	registry := extensions.NewRegistry(t.TempDir())
+	if err := registry.Register("claude", Management(nil, "", nil)); err != nil {
+		t.Fatal(err)
+	}
+	idle := true
+	sent := ""
+	failures := 0
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &limitsUI{}, SessionManager: driver.options.Manager,
+		ContextActions: extensions.ContextActions{IsIdle: func() bool { return idle }, GetModel: func() *ai.Model { return &ai.Model{Provider: Name} }},
+		Actions: extensions.Actions{AppendEntry: func(_ context.Context, kind string, value any) error {
+			_, err := driver.options.Manager.AppendCustomEntry(kind, value)
+			return err
+		}, SendUserMessage: func(_ context.Context, content ai.UserContent, _ *extensions.SendUserMessageOptions) error {
+			sent = *content.Text
+			return nil
+		}},
+		ErrorHandler: func(extensions.ExtensionError) { failures++ },
+	})
+	if !runner.ExecuteCommand(t.Context(), "claude", "plan") || nativeMode(driver.options.Manager) != "plan" {
+		t.Fatal("plan mode not stored")
+	}
+	idle = false
+	runner.ExecuteCommand(t.Context(), "claude", "normal")
+	if failures != 1 || nativeMode(driver.options.Manager) != "plan" {
+		t.Fatal("mode changed during active work")
+	}
+	idle = true
+	runner.ExecuteCommand(t.Context(), "claude", "normal")
+	runner.ExecuteCommand(t.Context(), "claude", "compact")
+	if nativeMode(driver.options.Manager) != "default" || sent != "/compact" || failures != 1 {
+		t.Fatalf("mode=%s prompt=%s failures=%d", nativeMode(driver.options.Manager), sent, failures)
+	}
+}
+
+func TestNativePlanDoesNotTurnOrbAllowIntoNativeApproval(t *testing.T) {
+	host, _ := fixture(t, &plugins.Policy{Mode: "enforce", Rules: []plugins.Rule{{Tool: "write", Path: "/fixture", Action: plugins.Allow}}})
+	_, _ = host.EnableControl()
+	if _, err := host.Session().Manager().AppendCustomEntry(Name+".mode", "plan"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- host.Session().Prompt(t.Context(), "plan fixture") }()
+	_ = awaitInput(t, host.Session())
+	host.Session().Abort()
+	select {
+	case <-done:
+	case <-time.After(7 * time.Second):
+		t.Fatal("plan cancellation hung")
+	}
+}
+
+func TestSDKHostCancelsBackgroundWork(t *testing.T) {
+	dir := t.TempDir()
+	sdk := filepath.Join(dir, "sdk.mjs")
+	source := `export function query(){let stop;const done=new Promise(r=>stop=r);const q=(async function*(){yield {type:'system',subtype:'background_tasks_changed',tasks:[{task_id:'job'}]};yield {type:'result',subtype:'success'};await done;})();q.interrupt=async()=>stop();q.close=()=>stop();return q}`
+	if err := os.WriteFile(sdk, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "node", "--input-type=module", "-e", hostSource)
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = input.Close() }()
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	encoder := json.NewEncoder(input)
+	if err := encoder.Encode(map[string]any{"type": "start", "sdk": sdk, "cwd": dir, "claude": "/unused", "content": []any{}}); err != nil {
+		t.Fatal(err)
+	}
+	scanner := bufio.NewScanner(output)
+	result := false
+	for scanner.Scan() {
+		if strings.Contains(scanner.Text(), `"type":"result"`) {
+			result = true
+			break
+		}
+	}
+	if !result {
+		t.Fatal("result not reached")
+	}
+	if err := encoder.Encode(map[string]string{"type": "cancel"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal("background cancellation failed", err)
+	}
+}
+
+func TestSDKLiveBackgroundCompletion(t *testing.T) {
+	sdk := os.Getenv("ORB_CLAUDE_LIVE_SDK")
+	if sdk == "" {
+		t.Skip("set ORB_CLAUDE_LIVE_SDK for native background task verification")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := exec.LookPath("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	manager, err := session.Create(dir, filepath.Join(dir, "sessions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver, err := New(Options{Node: node, Claude: cli, SDK: sdk, Env: os.Environ(), Manager: manager, Ask: func(context.Context, string, []string) (string, error) { return "Allow once", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := agent.NewAgentSession(agent.AgentSessionOptions{CWD: dir, AgentDir: filepath.Join(dir, "config"), SessionManager: manager, Model: &ai.Model{ID: "sonnet", Provider: Name, API: Name}, SessionLoop: driver.Loop, NoTools: "all", Resources: &agent.Resources{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	if err := result.Session.Prompt(ctx, "Use the Agent tool to launch exactly one general-purpose subagent with run_in_background=true. Its entire task is to reply CHILD_OK without using tools. Then report its result. Do not use any other tools or access any files."); err != nil {
+		t.Fatal(err)
+	}
+	if state := result.Session.State(); state.ErrorMessage != nil {
+		t.Fatal(*state.ErrorMessage)
+	}
+	raw, _ := json.Marshal(result.Session.State().Messages)
+	if !strings.Contains(string(raw), "Claude task completed") {
+		t.Fatalf("background completion missing: %.3000s", raw)
+	}
+	t.Log("Native background task completed before the SDK host closed")
 }

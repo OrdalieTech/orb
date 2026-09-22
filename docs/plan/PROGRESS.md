@@ -1,5 +1,38 @@
 # Implementation progress
 
+## Claude SDK completeness — 2026-09-22
+
+- [x] Version-aware SDK setup: install into an isolated staging directory, validate the pinned
+      package, preserve existing installations on failure, and cover reuse/upgrade/retry.
+- [x] Drain the SDK stream through completion; keep foreground-owned background work alive until
+      completion, retain cancellation, and test trailing events and independent instances.
+- [x] Invalidate native context on new work, model changes and compaction; unknown telemetry must
+      not reuse a previous turn's reading, including after restart.
+- [x] Adapt MCP form and URL elicitation to shared execution-bound questions, with schema
+      validation, explicit cancellation and no automatic browser launch on the execution host.
+- [x] Translate compaction, retries, task lifecycle and tool progress into existing Orb events;
+      keep child transcripts separate and bound progress output.
+- [x] Add native plan/default mode and manual compaction through `/claude`; preserve native
+      permission enforcement and store mode per session.
+- [x] Verify hermetic host/adapter tests, Bridge input/cancellation parity, live native SDK/TUI
+      scenarios where available, then `make check`; update existing SDK/plugin documentation.
+
+All Claude adaptation stays in `plugins/claudesessions`; no executor, SDK interface or Bridge
+protocol changes were needed. Progress uses existing message/tool events and MCP elicitation uses
+the shared questions contract. The layer gate rejected a direct TUI dependency; it was removed in
+favor of the host's existing custom-message rendering. Browser/mobile clients consume the same
+contracts; this does not claim native SDK execution inside a browser or mobile runtime.
+
+Verification: `make check` passes (static build, vet/lint, race suites and Pi conformance).
+Hermetic regressions cover stream draining, cancellation, independent instances, versioned setup
+retry/reuse, context invalidation, MCP form validation through Bridge and URL cancellation, bounded
+progress and native plan permission enforcement. Real npm installation and reuse passed (11.39s and
+1.32s including RPC startup/catalog discovery). Live Claude creation/resume and background-task
+completion passed. An 80-column built-binary PTY verified plan/default mode, standard footer context
+(33,303 used tokens) and native compaction rendering. The live Bridge test passed native model
+selection, allow/deny/ask policy, shared questions, resume/fork continuity and cancellation settling
+in 708ms. MCP elicitation is verified through the real host adapter with a deterministic SDK fixture; no external MCP authentication service was exercised.
+
 ## Compact Claude footer and native context — 2026-09-22
 
 Removed the duplicate session marker. Claude quota uses the lowest remaining active window,

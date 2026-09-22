@@ -573,6 +573,11 @@ into `AgentSessionOptions.SessionLoop`. SDK TUI hosts can supply `Options.Render
 render native tool summaries through their own text component; the CLI uses the existing plain-text
 tool renderer. Neither path gives Orb execution of Claude tools.
 No bridge, Claude SDK or JavaScript runtime enters binaries that import only the ordinary Orb SDK.
+Claude background tasks remain within the owning execution lifetime; cancellation and trailing
+SDK events use the same engine contract. The plugin translates MCP elicitation into shared questions
+and native lifecycle events into ordinary messages/tool updates. Browser, mobile and Bridge clients
+consume those existing contracts; no Claude SDK types or platform checks enter the transport layer.
+The native SDK still runs on a host with Node and Claude installed.
 
 Extensions can expose a native Settings/palette page with `Command.SettingsLabel`.
 `NewSessionOptions.Prepare` initializes a new manager before its runtime factory runs; the existing
