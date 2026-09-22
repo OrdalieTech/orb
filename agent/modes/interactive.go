@@ -263,7 +263,17 @@ func toolOnlyAssistant(message *ai.AssistantMessage) bool {
 		return false
 	}
 	for _, block := range message.Content {
-		if _, ok := block.(*ai.ToolCall); !ok {
+		switch block := block.(type) {
+		case *ai.ToolCall:
+		case *ai.TextContent:
+			if strings.TrimSpace(block.Text) != "" {
+				return false
+			}
+		case *ai.ThinkingContent:
+			if strings.TrimSpace(block.Thinking) != "" {
+				return false
+			}
+		default:
 			return false
 		}
 	}
@@ -4496,7 +4506,15 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 		Name: name,
 		RenderCall: func(args any, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
 			container := &tui.Container{}
-			container.AddChild(tui.NewText(palette.FG("toolTitle", renderer.RenderCall(args)), 0, 0, nil))
+			label, detail, _ := strings.Cut(renderer.RenderCall(args), " ")
+			color := "accent"
+			switch name {
+			case "bash":
+				color = "bashMode"
+			case "edit", "write":
+				color = "success"
+			}
+			container.AddChild(tui.NewText(palette.FG(color, palette.Bold(label))+palette.FG("toolTitle", " "+detail), 0, 0, nil))
 			if name != "edit" || !context.ArgsComplete {
 				return container
 			}

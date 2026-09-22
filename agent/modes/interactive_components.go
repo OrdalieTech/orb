@@ -585,13 +585,13 @@ func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
 	changed := false
 	switch event.Type {
 	case tui.MouseMove:
-		hovered := event.Row >= 0 && c.result != nil
+		hovered := event.Row >= 0 && (c.result != nil || c.callComponent != nil)
 		if hovered != c.hovered {
 			c.hovered = hovered
 			changed = true
 		}
 	case tui.MouseRelease:
-		if (event.Button == 0 || event.Button == 3) && c.result != nil {
+		if (event.Button == 0 || event.Button == 3) && (c.result != nil || c.callComponent != nil) {
 			c.expanded = !c.expanded
 			c.updateDisplay()
 			changed = true
@@ -626,10 +626,13 @@ func (c *ToolExecutionComponent) updateDisplay() {
 		})
 		if rendered != nil {
 			c.callComponent = rendered
+			if toolActivityKind(c.toolName) != "" || strings.EqualFold(c.toolName, "bash") {
+				rendered = toolCallHeader{inner: rendered, expanded: c.expanded}
+			}
 			c.contentBox.AddChild(rendered)
 		}
 	} else {
-		c.contentBox.AddChild(tui.NewText(theme.FG("toolTitle", theme.Bold(c.toolName)), 0, 0, nil))
+		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(theme.FG("accent", theme.Bold(c.toolName)), 0, 0, nil), expanded: c.expanded})
 	}
 
 	// Tool result
@@ -653,9 +656,12 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			)
 			if rendered != nil {
 				c.resultComponent = rendered
-				c.contentBox.AddChild(toolResultClip{inner: rendered, expanded: c.expanded})
+				_, plainOutput := rendered.(*toolOutputPreview)
+				if !plainOutput || c.showOutput() {
+					c.contentBox.AddChild(toolResultClip{inner: rendered, expanded: c.expanded})
+				}
 			}
-		} else {
+		} else if c.showOutput() {
 			output := c.getTextOutput()
 			if output != "" {
 				c.contentBox.AddChild(toolResultClip{inner: newToolOutputPreview(
@@ -666,6 +672,33 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			}
 		}
 	}
+}
+
+func (c *ToolExecutionComponent) showOutput() bool {
+	return c.expanded || c.result != nil && c.result.IsError || c.isPartial && toolActivityKind(c.toolName) == ""
+}
+
+type toolCallHeader struct {
+	inner    tui.Component
+	expanded bool
+}
+
+func (header toolCallHeader) Invalidate() {
+	if component, ok := header.inner.(tui.Invalidatable); ok {
+		component.Invalidate()
+	}
+}
+
+func (header toolCallHeader) Render(width int) []string {
+	lines := header.inner.Render(width)
+	if header.expanded || len(lines) == 0 {
+		return lines
+	}
+	suffix := " ›"
+	if len(lines) > 1 {
+		suffix = " …"
+	}
+	return []string{tui.TruncateToWidth(strings.TrimRight(lines[0], " "), max(0, width-2), "…", false) + theme.FG("accent", tui.TruncateToWidth(suffix, width, "", false))}
 }
 
 type toolOutputPreview struct {
@@ -768,7 +801,7 @@ func (c *ToolExecutionComponent) Render(width int) []string {
 		c.callComponent, c.resultComponent = nil, nil
 		c.updateDisplay()
 	}
-	marker, color := "✓", "muted"
+	marker, color := "✓", "success"
 	if c.isPartial {
 		marker, color = "○", "accent"
 		if c.execStarted || c.argsComplete {
@@ -838,8 +871,12 @@ func (group *toolActivityGroup) Render(width int) []string {
 	var lines []string
 	if len(group.tools) > 1 {
 		counts := map[string]int{}
+		active := false
 		for _, tool := range group.tools {
 			counts[toolActivityKind(tool.toolName)]++
+			tool.mu.Lock()
+			active = active || tool.isPartial
+			tool.mu.Unlock()
 		}
 		var labels []string
 		for _, kind := range []string{"read", "search", "listing"} {
@@ -854,14 +891,18 @@ func (group *toolActivityGroup) Render(width int) []string {
 				labels = append(labels, fmt.Sprintf("%d %s", count, label))
 			}
 		}
-		marker, color := "›", "muted"
+		marker, color := "›", "accent"
 		if group.expanded {
 			marker = "⌄"
 		}
 		if group.hovered {
-			color = "accent"
+			color = "toolTitle"
 		}
-		lines = []string{"", tui.TruncateToWidth(theme.FG(color, marker+"  "+strings.Join(labels, " · ")), width, "…", false)}
+		label := "Explored"
+		if active {
+			label = "Exploring"
+		}
+		lines = []string{"", tui.TruncateToWidth(theme.FG(color, marker+"  "+theme.Bold(label))+theme.FG("toolTitle", " · "+strings.Join(labels, " · ")), width, "…", false)}
 	}
 	for _, tool := range group.tools {
 		tool.mu.Lock()

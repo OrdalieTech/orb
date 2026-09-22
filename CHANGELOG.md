@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Give tool actions distinct bold colors and compact titles; hide completed output until expanded,
+  keep live command output and errors visible, and shorten native Claude paths inside the project.
+
 - Show native Claude quota locally and through Bridge, with the limiting window, reset times and
   freshness in `/claude usage`. Display used context tokens after the path in the shared footer.
 

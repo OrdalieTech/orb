@@ -123,8 +123,20 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 					Execute: func(ctx context.Context, id string, args any, update engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
 						return tool.Execute(ctx, id, args, update)
 					},
-					RenderCall: func(args any, theme extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
-						return owned.RenderText(theme.FG("toolTitle", tool.RenderCall(args)))
+					RenderCall: func(args any, theme extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
+						label, detail, split := strings.Cut(toolSummary(name, args, context.CWD), " · ")
+						color := "accent"
+						switch name {
+						case "Bash":
+							color = "bashMode"
+						case "Edit", "Write":
+							color = "success"
+						}
+						text := theme.FG(color, theme.Bold(label))
+						if split {
+							text += theme.FG("toolTitle", " "+detail)
+						}
+						return owned.RenderText(text)
 					},
 				})
 			}
@@ -379,7 +391,7 @@ func (t nativeTool) Spec() engine.AgentToolSpec {
 func (nativeTool) Execute(context.Context, string, any, engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
 	return engine.AgentToolResult{}, errors.New("this tool executes inside the native Claude session")
 }
-func (t nativeTool) RenderCall(args any) string { return toolSummary(string(t), args) }
+func (t nativeTool) RenderCall(args any) string { return toolSummary(string(t), args, "") }
 func (nativeTool) RenderResult(result engine.AgentToolResult) string {
 	var parts []string
 	for _, block := range result.Content {
@@ -390,7 +402,7 @@ func (nativeTool) RenderResult(result engine.AgentToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
-func toolSummary(name string, args any) string {
+func toolSummary(name string, args any, cwd string) string {
 	raw, err := json.Marshal(args)
 	if err != nil {
 		return name
@@ -403,6 +415,11 @@ func toolSummary(name string, args any) string {
 	}
 	if json.Unmarshal(raw, &input) != nil {
 		return name
+	}
+	if input.FilePath != "" && cwd != "" && filepath.IsAbs(input.FilePath) {
+		if relative, err := filepath.Rel(cwd, input.FilePath); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			input.FilePath = relative
+		}
 	}
 
 	switch name {

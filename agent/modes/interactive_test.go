@@ -650,6 +650,7 @@ func TestToolExecutionComponentLifecycle(t *testing.T) {
 	initTestTheme(t)
 	fake := &fakeRenderRequester{}
 	comp := NewToolExecutionComponent("read", "call-1", map[string]any{"path": "/tmp"}, false, nil, fake, "/")
+	comp.SetExpanded(true)
 	lines := comp.Render(60)
 	if len(lines) == 0 {
 		t.Fatal("expected non-empty render")
@@ -1353,8 +1354,8 @@ func TestRestrainedToolComponentHeights(t *testing.T) {
 				t.Fatalf("pending tool lines = %d, want one separator and one title: %#v", len(lines), lines)
 			}
 			tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "ok"}}, false, nil, false)
-			if lines := tool.Render(width); len(lines) != 4 {
-				t.Fatalf("finished tool lines = %d, want a gap above the output: %#v", len(lines), lines)
+			if lines := tool.Render(width); len(lines) != 2 {
+				t.Fatalf("finished tool lines = %d, want a compact action header: %#v", len(lines), lines)
 			}
 
 			bash := NewBashExecutionComponent("printf ok", &fakeRenderRequester{}, false)
@@ -1374,8 +1375,8 @@ func TestToolResultsCollapseAndToggleIndividually(t *testing.T) {
 	tool := NewToolExecutionComponent("read", "call", nil, false, nil, &fakeRenderRequester{}, "/")
 	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: output}}, false, nil, false)
 	collapsed := strings.Join(tool.Render(60), "\n")
-	if strings.Contains(collapsed, "one") || !strings.Contains(collapsed, "six") || !strings.Contains(collapsed, "click to expand") {
-		t.Fatalf("tool did not render a short tail: %s", collapsed)
+	if strings.Contains(collapsed, "one") || strings.Contains(collapsed, "six") || !strings.Contains(collapsed, "›") {
+		t.Fatalf("completed tool did not hide output behind its disclosure: %s", collapsed)
 	}
 	if !tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: 1}) || collapsed == strings.Join(tool.Render(60), "\n") {
 		t.Fatal("tool hover did not highlight the status marker")

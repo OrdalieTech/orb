@@ -748,7 +748,7 @@ func TestSDKQuestionsPreserveCustomAndMultipleAnswers(t *testing.T) {
 	if definition == nil || definition.RenderCall == nil {
 		t.Fatal("native question renderer missing")
 	}
-	summary := toolSummary("AskUserQuestion", map[string]any{"questions": []any{map[string]any{"question": "Question text", "options": []any{map[string]string{"label": "Choice", "description": "Details"}}}}})
+	summary := toolSummary("AskUserQuestion", map[string]any{"questions": []any{map[string]any{"question": "Question text", "options": []any{map[string]string{"label": "Choice", "description": "Details"}}}}}, "")
 	if !strings.Contains(summary, "Question text") || !strings.Contains(summary, "Details") {
 		t.Fatal(summary)
 	}
@@ -757,6 +757,33 @@ func TestSDKQuestionsPreserveCustomAndMultipleAnswers(t *testing.T) {
 type testText string
 
 func (t testText) Render(int) []string { return []string{string(t)} }
+
+type toolTitleTheme struct{ extensions.Theme }
+
+func (toolTitleTheme) FG(color, text string) string { return "<" + color + ">" + text + "</>" }
+func (toolTitleTheme) Bold(text string) string      { return "<b>" + text + "</b>" }
+
+func TestNativeToolTitlesDistinguishActionsAndShortenProjectPaths(t *testing.T) {
+	host, _ := fixture(t)
+	cwd := host.Session().Manager().GetCWD()
+	for _, test := range []struct {
+		name, color, detail string
+		args                map[string]any
+	}{
+		{"Read", "accent", "AGENTS.md", map[string]any{"file_path": filepath.Join(cwd, "AGENTS.md")}},
+		{"Read", "accent", cwd + "-other/README.md", map[string]any{"file_path": cwd + "-other/README.md"}},
+		{"Edit", "success", "src/main.go", map[string]any{"file_path": "src/main.go"}},
+		{"Bash", "bashMode", "go test ./...", map[string]any{"command": "go test ./..."}},
+	} {
+		definition := host.Session().GetToolDefinition(test.name)
+		component := definition.RenderCall(test.args, toolTitleTheme{}, extensions.ToolRenderContext{CWD: cwd})
+		got := strings.Join(component.Render(80), "\n")
+		want := "<" + test.color + "><b>" + test.name + "</b></><toolTitle> " + test.detail + "</>"
+		if got != want {
+			t.Fatalf("%s title = %q, want %q", test.name, got, want)
+		}
+	}
+}
 
 func TestSDKUsesOrbPermissionPolicy(t *testing.T) {
 	for _, mode := range []string{"enforce", "auto"} {
