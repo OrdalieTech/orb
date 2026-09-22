@@ -12,6 +12,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/mcp"
 	"github.com/OrdalieTech/orb/agent/plugins"
 	"github.com/OrdalieTech/orb/memory"
+	"github.com/OrdalieTech/orb/usage"
 )
 
 // Source records which mechanism contributes a row.
@@ -37,7 +38,8 @@ type Row struct {
 // Options are the explicit inputs of one assembly; nothing is read from the
 // environment.
 type Options struct {
-	Memory memory.Store
+	UsageCache *usage.Cache
+	Memory     memory.Store
 	// BridgeManagement exposes the host-supplied settings page before service activation.
 	BridgeManagement bool
 	Bridge           extensions.Factory
@@ -70,12 +72,12 @@ func Rows(options Options) ([]Row, []string) {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: plugins.Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := plugins.Catalog(plugins.Options{Memory: options.Memory, Settings: options.Settings, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
+	catalog := plugins.Catalog(plugins.Options{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: plugins.Description(name),
 			Source: SourcePlugin, Factory: catalog[name],
-			Hidden:         name == "bridge" || name == "bridge-agent-calls",
+			Hidden:         name == "bridge" || name == "bridge-agent-calls" || name == "provider-usage",
 			DefaultEnabled: name == "bridge" && options.BridgeManagement && options.Bridge != nil,
 		})
 	}

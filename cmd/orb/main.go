@@ -36,6 +36,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/usage"
 	"github.com/gofrs/flock"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
@@ -220,6 +221,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
 	args.native = stateFromContext(ctx)
 	args.bridgeLink = &cliBridgeLink{}
+	args.usageCache = &usage.Cache{}
 	offlineValue, networkDisabled := os.LookupEnv("PI_OFFLINE")
 	offlineValue = strings.ToLower(offlineValue)
 	offlineMode := args.Offline || offlineValue == "1" || offlineValue == "true" || offlineValue == "yes"

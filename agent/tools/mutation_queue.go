@@ -2,12 +2,8 @@ package tools
 
 import (
 	"context"
-	"errors"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"syscall"
 )
 
 type mutationQueueEntry struct {
@@ -99,15 +95,5 @@ func mutationQueueKey(filePath string) (string, error) {
 	if err := nodeNullPathError(resolved); err != nil {
 		return "", err
 	}
-	realPath, err := filepath.EvalSymlinks(resolved)
-	if err == nil {
-		return realPath, nil
-	}
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-		return resolved, nil
-	}
-	if errors.Is(err, syscall.ELOOP) || strings.Contains(err.Error(), "too many links") {
-		return "", nodeFilesystemError{code: "ELOOP", operation: "realpath", path: resolved}
-	}
-	return "", asNodeFilesystemErrorAt("realpath", resolved, err)
+	return canonicalMutationPath(resolved)
 }

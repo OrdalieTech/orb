@@ -44,6 +44,18 @@ type BashOperations interface {
 	Exec(context.Context, string, string, BashExecOptions) (BashExecResult, error)
 }
 
+type ShellCommandTransport string
+
+const (
+	ShellCommandArgv  ShellCommandTransport = "argv"
+	ShellCommandStdin ShellCommandTransport = "stdin"
+)
+
+type ShellConfig struct {
+	Shell            string
+	Args             []string
+	CommandTransport ShellCommandTransport
+}
 type LocalBashOperationsOptions struct {
 	ShellPath string
 }

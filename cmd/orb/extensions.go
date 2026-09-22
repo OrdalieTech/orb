@@ -12,9 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/assembly"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/agent/extensions/examples/permissiongate"
-	"github.com/OrdalieTech/orb/agent/extensions/examples/pirate"
-	"github.com/OrdalieTech/orb/agent/extensions/examples/statusline"
 	herdrext "github.com/OrdalieTech/orb/agent/extensions/herdr"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
@@ -68,18 +65,14 @@ var (
 	activeExtensionHost *extensionhost.Manager
 )
 
-var compiledExtensions = []extensions.CompiledExtension{
-	{Name: "permission-gate", Factory: permissiongate.Extension},
-	{Name: "pirate", Factory: pirate.Extension},
-	{Name: "status-line", Factory: statusline.Extension},
-}
+var compiledExtensions []extensions.CompiledExtension
 
 func compiledExtensionsForEnvironment(getenv func(string) string) []extensions.CompiledExtension {
-	result := append([]extensions.CompiledExtension(nil), compiledExtensions...)
+	rows := append([]extensions.CompiledExtension(nil), compiledExtensions...)
 	if getenv("HERDR_ENV") != "1" || getenv("HERDR_BIN_PATH") == "" || getenv("HERDR_PANE_ID") == "" {
-		return result
+		return rows
 	}
-	return append(result, extensions.CompiledExtension{
+	return append(rows, extensions.CompiledExtension{
 		Name: "herdr", Hidden: true, DefaultEnabled: true,
 		Factory: herdrext.Extension(getenv("HERDR_BIN_PATH"), getenv("HERDR_PANE_ID")),
 	})
@@ -90,8 +83,9 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows, warnings := assembly.Rows(assembly.Options{
-		Memory: args.native.memory(),
-		CWD:    cwd, AgentDir: agentDir, Settings: settings,
+		UsageCache: args.usageCache,
+		Memory:     args.native.memory(),
+		CWD:        cwd, AgentDir: agentDir, Settings: settings,
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
 		BridgeAgentCalls: bridgeagent.Extension(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
 			var result json.RawMessage

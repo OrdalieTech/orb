@@ -15,7 +15,7 @@ type cached struct {
 }
 
 // Cache bounds quota history to 64 account keys and coalesces concurrent reads.
-// Keys are caller-owned account identities, never credentials.
+// Keys are caller-owned account identities or credential digests, never raw credentials.
 type Cache struct {
 	mu      sync.Mutex
 	entries map[string]*cached

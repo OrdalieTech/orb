@@ -6,6 +6,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/usage"
 )
 
 var validThinkingLevels = map[string]struct{}{
@@ -23,6 +24,7 @@ type CLIUnknownFlag struct {
 }
 
 type CLIArgs struct {
+	usageCache         *usage.Cache
 	native             *nativeState
 	BridgeProfile      string
 	InstanceAlias      string

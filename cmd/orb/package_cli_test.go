@@ -103,9 +103,6 @@ func TestPluginsCLIListAllPrintsResolvedComposition(t *testing.T) {
 		t.Fatalf("list --all: code=%d stderr=%q", code, stderr)
 	}
 	for _, fragment := range []string{
-		"permission-gate\tcompiled\toff\tdefault\t",
-		"pirate\tcompiled\toff\tdefault\t",
-		"status-line\tcompiled\toff\tdefault\t",
 		"plugin-control\tplugin\ton\talways\t",
 		"bridge\tplugin\ton\talways\t",
 		"tasks\tplugin\toff\tdefault\t",
@@ -115,6 +112,12 @@ func TestPluginsCLIListAllPrintsResolvedComposition(t *testing.T) {
 			t.Errorf("list --all output lacks %q:\n%s", fragment, stdout)
 		}
 	}
+	for _, name := range []string{"pirate", "permission-gate", "status-line"} {
+		if strings.Contains(stdout, name+"\t") {
+			t.Errorf("example %s is bundled in production", name)
+		}
+	}
+
 	if code, _, stderr := runPackageCLI(t, []string{"plugins", "enable", "tasks"}); code != 0 || stderr != "" {
 		t.Fatalf("enable: code=%d stderr=%q", code, stderr)
 	}
