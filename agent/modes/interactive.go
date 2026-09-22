@@ -126,6 +126,8 @@ type InteractiveMode struct {
 	imageDraftVersion          uint64
 	currentStreaming           *AssistantMessageComponent
 	toolComponents             map[string]*ToolExecutionComponent
+	toolActivity               *toolActivityGroup
+	toolActivityTail           tui.Component
 	expandables                []expandableComponent
 	statusIndicator            tui.Component
 	editorChromeWidth          int
@@ -230,6 +232,42 @@ func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any
 	component := NewToolExecutionComponent(name, id, args, mode.showImages(), mode.toolDefinition(name), requester, mode.cwd)
 	requester.Bind(component)
 	return component
+}
+
+func (mode *InteractiveMode) addToolComponent(component *ToolExecutionComponent) {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	mode.toolComponents[component.toolCallID] = component
+	component.SetExpanded(mode.toolsExpanded)
+	mode.expandables = append(mode.expandables, component)
+	if toolActivityKind(component.toolName) == "" {
+		mode.chat.AddChild(component)
+		return
+	}
+	group := mode.toolActivity
+	if group == nil || !mode.chat.EndsWith(mode.toolActivityTail) {
+		group = &toolActivityGroup{expanded: mode.toolsExpanded, ui: component.ui}
+		mode.toolActivity = group
+		mode.toolActivityTail = group
+		mode.chat.AddChild(group)
+	}
+	component.ui.(*chatRenderRequester).Bind(group)
+	group.mu.Lock()
+	group.tools = append(group.tools, component)
+	group.mu.Unlock()
+	mode.chat.ChildChanged(group)
+}
+
+func toolOnlyAssistant(message *ai.AssistantMessage) bool {
+	if len(message.Content) == 0 || message.ErrorMessage != nil || message.StopReason == "error" || message.StopReason == "aborted" {
+		return false
+	}
+	for _, block := range message.Content {
+		if _, ok := block.(*ai.ToolCall); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFromContext bool) *BashExecutionComponent {
@@ -4256,6 +4294,12 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		if comp != nil {
 			comp.UpdateContentStreaming(assistant, false)
+			mode.mu.Lock()
+			// Keep empty assistant children: removing them rebuilds the history's line index.
+			if toolOnlyAssistant(assistant) && mode.toolActivity != nil && mode.chat.EndsWith(mode.toolActivityTail, comp) {
+				mode.toolActivityTail = comp
+			}
+			mode.mu.Unlock()
 			mode.chat.ChildChanged(comp)
 		}
 		mode.maybeShowCacheMiss(assistant)
@@ -4267,12 +4311,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		tc := mode.newToolExecutionComponent(ev.ToolName, ev.ToolCallID, ev.Args)
 		tc.SetArgsComplete()
-		mode.mu.Lock()
-		mode.toolComponents[ev.ToolCallID] = tc
-		tc.SetExpanded(mode.toolsExpanded)
-		mode.expandables = append(mode.expandables, tc)
-		mode.mu.Unlock()
-		mode.chat.AddChild(tc)
+		mode.addToolComponent(tc)
 		mode.ui.RequestRender()
 
 	case engine.ToolExecutionUpdateEvent:
@@ -4284,7 +4323,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 			if ev.PartialResult.Content != nil {
 				tc.UpdateResult(ev.PartialResult.Content, false, ev.PartialResult.Details, true)
 			}
-			mode.requestChatRender(tc)
+			tc.ui.RequestRender()
 		}
 
 	case engine.ToolExecutionEndEvent:
@@ -4293,7 +4332,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Unlock()
 		if tc != nil {
 			tc.UpdateResult(ev.Result.Content, ev.IsError, ev.Result.Details, false)
-			mode.requestChatRender(tc)
+			tc.ui.RequestRender()
 		}
 
 	case agent.AgentSettledEvent:
@@ -4474,12 +4513,11 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 				return container
 			}
 			diff, previewError := editPreview(context.State, path, edits, context.CWD)
-			container.AddChild(tui.NewSpacer(1))
 			if previewError != "" {
-				container.AddChild(tui.NewText(palette.FG("error", previewError), 0, 0, nil))
+				container.AddChild(toolResultClip{inner: tui.NewText(palette.FG("error", previewError), 0, 0, nil), expanded: context.Expanded})
 				return container
 			}
-			container.AddChild(NewEditDiffView(diff, path, "toolPendingBg"))
+			container.AddChild(toolResultClip{inner: NewEditDiffView(diff, path, ""), expanded: true})
 			return container
 		},
 		RenderResult: func(result engine.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
@@ -4491,23 +4529,17 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 						if loadEditPreview(context.State).diff == diff {
 							return &tui.Container{}
 						}
-						return NewEditDiffView(diff, editArgsPath(context.Args), "toolPendingBg")
+						return NewEditDiffView(diff, editArgsPath(context.Args), "")
 					}
 				} else if context.IsError {
 					if message := renderer.RenderResult(result); message != "" {
-						container := &tui.Container{}
-						container.AddChild(tui.NewSpacer(1))
-						container.AddChild(tui.NewText(palette.FG("error", message), 0, 0, nil))
-						return container
+						return tui.NewText(palette.FG("error", message), 0, 0, nil)
 					}
 					return &tui.Container{}
 				} else if diff := editResultDiff(result.Details); diff != "" {
 					// Final success renders the recorded diff from the result
 					// details, never from re-reading the edited file.
-					container := &tui.Container{}
-					container.AddChild(tui.NewSpacer(1))
-					container.AddChild(NewEditDiffView(diff, editArgsPath(context.Args), "toolSuccessBg"))
-					return container
+					return NewEditDiffView(diff, editArgsPath(context.Args), "")
 				}
 			}
 			return newToolOutputPreview(strings.TrimSpace(renderer.RenderResult(result)), options, palette)
@@ -4599,6 +4631,8 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	mode.chat.Clear()
 	mode.mu.Lock()
 	mode.toolComponents = make(map[string]*ToolExecutionComponent)
+	mode.toolActivity = nil
+	mode.toolActivityTail = nil
 	mode.expandables = nil
 	mode.mu.Unlock()
 	entries := mode.session.Manager().BuildContextEntries()
@@ -4652,7 +4686,9 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 		mode.mu.Unlock()
 		component := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
 		component.onChange = func() { mode.requestChatRender(component) }
-		mode.chat.AddChild(component)
+		if !toolOnlyAssistant(assistant) {
+			mode.chat.AddChild(component)
+		}
 		for _, block := range assistant.Content {
 			call, ok := block.(*ai.ToolCall)
 			if !ok || call == nil {
@@ -4660,12 +4696,7 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 			}
 			toolComponent := mode.newToolExecutionComponent(call.Name, call.ID, call.Arguments)
 			toolComponent.SetArgsComplete()
-			mode.mu.Lock()
-			toolComponent.SetExpanded(mode.toolsExpanded)
-			mode.toolComponents[call.ID] = toolComponent
-			mode.expandables = append(mode.expandables, toolComponent)
-			mode.mu.Unlock()
-			mode.chat.AddChild(toolComponent)
+			mode.addToolComponent(toolComponent)
 		}
 		mode.maybeShowCacheMiss(assistant)
 		return
@@ -4772,14 +4803,10 @@ func (mode *InteractiveMode) renderToolResult(message *ai.ToolResultMessage) {
 	mode.mu.Unlock()
 	if component == nil {
 		component = mode.newToolExecutionComponent(message.ToolName, message.ToolCallID, nil)
-		mode.mu.Lock()
-		mode.toolComponents[message.ToolCallID] = component
-		mode.expandables = append(mode.expandables, component)
-		mode.mu.Unlock()
-		mode.chat.AddChild(component)
+		mode.addToolComponent(component)
 	}
 	component.UpdateResult(message.Content, message.IsError, message.Details, false)
-	mode.chat.ChildChanged(component)
+	component.ui.RequestRender()
 }
 
 func (mode *InteractiveMode) renderBashMessage(message harness.BashExecutionMessage) {

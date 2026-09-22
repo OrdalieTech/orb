@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/conformance/runner"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -23,20 +25,23 @@ type toolOutputPreviewFixture struct {
 	Cases         []toolOutputPreviewCase `json:"cases"`
 }
 
-func TestToolActivityGutterTracksExecution(t *testing.T) {
+func TestToolActivityMarkersTrackExecution(t *testing.T) {
 	initTestTheme(t)
 	tool := NewToolExecutionComponent("read", "call", nil, false, nil, &toolOutputRenderRequester{}, "/")
 	check := func(marker string) {
 		t.Helper()
 		for _, width := range []int{12, 52, 88} {
 			lines := tool.Render(width)
-			if tui.StripANSI(lines[0]) != "│" || !strings.HasPrefix(tui.StripANSI(lines[1]), marker+"  read") {
+			if lines[0] != "" || !strings.HasPrefix(tui.StripANSI(lines[1]), marker+"  read") {
 				t.Fatalf("width %d: unexpected activity header: %q", width, lines)
 			}
 			for _, line := range lines[2:] {
-				if !strings.HasPrefix(tui.StripANSI(line), "│") || tui.VisibleWidth(line) > width {
-					t.Fatalf("width %d: output left its activity gutter: %q", width, line)
+				if !strings.HasPrefix(tui.StripANSI(line), "   ") || tui.VisibleWidth(line) > width {
+					t.Fatalf("width %d: output lost its plain indentation: %q", width, line)
 				}
+			}
+			if strings.Contains(strings.Join(lines, "\n"), "\x1b[48;") {
+				t.Fatal("tool activity has a background fill")
 			}
 			if strings.Join(tool.Render(width), "\n") != strings.Join(lines, "\n") {
 				t.Fatal("rendering mutated cached lines")
@@ -54,6 +59,111 @@ func TestToolActivityGutterTracksExecution(t *testing.T) {
 	check("✓")
 	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "permission denied"}}, true, nil, false)
 	check("×")
+}
+
+func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
+	initTestTheme(t)
+	for _, live := range []bool{false, true} {
+		name := "replay"
+		if live {
+			name = "live"
+		}
+		t.Run(name, func(t *testing.T) {
+			manager, err := sessionstore.InMemory(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime := newCacheStatsRuntime(t, manager)
+			t.Cleanup(runtime.Dispose)
+			mode := &InteractiveMode{
+				session: runtime, ui: tui.NewTUI(newFakeTerminal(80, 24)),
+				chat: tui.NewWindowedContainer(), toolComponents: make(map[string]*ToolExecutionComponent),
+			}
+			render := func() string {
+				return tui.StripANSI(strings.Join(mode.chat.RenderLines(80, 0, mode.chat.LineCount(80)), "\n"))
+			}
+			start := func(name, id string) {
+				call := &ai.ToolCall{Name: name, ID: id}
+				message := &ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: "toolUse"}
+				if live {
+					mode.handleEvent(engine.MessageStartEvent{Message: message})
+					mode.handleEvent(engine.MessageEndEvent{Message: message})
+					mode.handleEvent(engine.ToolExecutionStartEvent{ToolName: name, ToolCallID: id})
+				} else {
+					mode.renderAgentMessage(message)
+				}
+			}
+			finish := func(name, id, output string, failed bool) {
+				content := ai.ToolResultContent{&ai.TextContent{Text: output}}
+				if live {
+					mode.handleEvent(engine.ToolExecutionEndEvent{ToolName: name, ToolCallID: id, IsError: failed, Result: engine.AgentToolResult{Content: content}})
+				} else {
+					mode.renderToolResult(&ai.ToolResultMessage{ToolName: name, ToolCallID: id, Content: content, IsError: failed})
+				}
+			}
+			start("read", "a")
+			finish("read", "a", "beginning\none\ntwo\nthree\nfirst file", false)
+			start("Grep", "b")
+			if got := render(); !strings.Contains(got, "1 read · 1 search") || !strings.Contains(got, "●  Grep") || strings.Contains(got, "first file") {
+				t.Fatalf("active search should remain visible beside the batch: %q", got)
+			}
+			finish("Grep", "b", "search result", false)
+			if got := render(); mode.chat.LineCount(80) != 2 || strings.Contains(got, "search result") {
+				t.Fatalf("finished activity did not collapse or invalidate its cached rows: %q", got)
+			}
+			group := mode.toolActivity
+			if !group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1}) {
+				t.Fatal("batch header did not expand")
+			}
+			if got := render(); !strings.Contains(got, "first file") || !strings.Contains(got, "search result") {
+				t.Fatalf("expansion lost tool output: %q", got)
+			}
+			group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 3})
+			if got := render(); !strings.Contains(got, "beginning") {
+				t.Fatalf("clicking a grouped tool did not expand its output: %q", got)
+			}
+			for _, width := range []int{12, 40, 88} {
+				for _, line := range group.Render(width) {
+					if tui.VisibleWidth(line) > width {
+						t.Fatalf("batch overflows width %d: %q", width, line)
+					}
+				}
+			}
+			group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1})
+			mode.setToolsExpanded(true)
+			if got := render(); !strings.Contains(got, "beginning") || !strings.Contains(got, "search result") {
+				t.Fatalf("global expansion omitted grouped tools: %q", got)
+			}
+			mode.setToolsExpanded(false)
+			start("Read", "c")
+			finish("Read", "c", "permission denied", true)
+			if got := render(); !strings.Contains(got, "2 reads · 1 search") || !strings.Contains(got, "×  Read") || !strings.Contains(got, "permission denied") {
+				t.Fatalf("collapsed group hid a failure: %q", got)
+			}
+			for _, boundary := range []string{"bash", "edit", "write", "custom"} {
+				previous := mode.toolActivity
+				start(boundary, boundary)
+				finish(boundary, boundary, "done", false)
+				start("read", boundary+"-read")
+				finish("read", boundary+"-read", "next file", false)
+				if mode.toolActivity == previous {
+					t.Fatalf("batch crossed %s", boundary)
+				}
+			}
+			previous := mode.toolActivity
+			mode.renderAgentMessage(&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "A new step."}}})
+			start("read", "after-text")
+			if mode.toolActivity == previous {
+				t.Fatal("batch crossed assistant prose")
+			}
+			previous = mode.toolActivity
+			mode.renderAgentMessage(&ai.UserMessage{Content: ai.NewUserText("Another request.")})
+			start("read", "after-user")
+			if mode.toolActivity == previous {
+				t.Fatal("batch crossed a user message")
+			}
+		})
+	}
 }
 
 func TestWP450ToolOutputPreviewsMatchUpstream(t *testing.T) {

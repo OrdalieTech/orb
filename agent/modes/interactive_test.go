@@ -1353,16 +1353,16 @@ func TestRestrainedToolComponentHeights(t *testing.T) {
 				t.Fatalf("pending tool lines = %d, want one separator and one title: %#v", len(lines), lines)
 			}
 			tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "ok"}}, false, nil, false)
-			if lines := tool.Render(width); len(lines) != 3 {
-				t.Fatalf("finished tool lines = %d, want 3: %#v", len(lines), lines)
+			if lines := tool.Render(width); len(lines) != 4 {
+				t.Fatalf("finished tool lines = %d, want a gap above the output: %#v", len(lines), lines)
 			}
 
 			bash := NewBashExecutionComponent("printf ok", &fakeRenderRequester{}, false)
 			bash.AppendOutput("ok")
 			exitCode := 0
 			bash.SetComplete(&exitCode, false)
-			if lines := bash.Render(width); len(lines) != 3 {
-				t.Fatalf("finished bash lines = %d, want 3: %#v", len(lines), lines)
+			if lines := bash.Render(width); len(lines) != 4 {
+				t.Fatalf("finished bash lines = %d, want a gap above the output: %#v", len(lines), lines)
 			}
 		})
 	}
@@ -1378,7 +1378,7 @@ func TestToolResultsCollapseAndToggleIndividually(t *testing.T) {
 		t.Fatalf("tool did not render a short tail: %s", collapsed)
 	}
 	if !tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: 1}) || collapsed == strings.Join(tool.Render(60), "\n") {
-		t.Fatal("tool hover did not change the background")
+		t.Fatal("tool hover did not highlight the status marker")
 	}
 	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1})
 	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0})
