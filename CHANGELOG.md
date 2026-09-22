@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Give tool activity a continuous, subtle gutter with pending, running, success and error markers;
+  keep completed steps unfilled so replies stand out, while retaining output previews and expansion.
+
 ## [0.9.0] - 2026-09-22
 
 Orb adds optional native Claude Sessions, a shared question interface and rule-based permission

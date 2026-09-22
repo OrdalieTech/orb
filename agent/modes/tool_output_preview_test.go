@@ -23,6 +23,39 @@ type toolOutputPreviewFixture struct {
 	Cases         []toolOutputPreviewCase `json:"cases"`
 }
 
+func TestToolActivityGutterTracksExecution(t *testing.T) {
+	initTestTheme(t)
+	tool := NewToolExecutionComponent("read", "call", nil, false, nil, &toolOutputRenderRequester{}, "/")
+	check := func(marker string) {
+		t.Helper()
+		for _, width := range []int{12, 52, 88} {
+			lines := tool.Render(width)
+			if tui.StripANSI(lines[0]) != "│" || !strings.HasPrefix(tui.StripANSI(lines[1]), marker+"  read") {
+				t.Fatalf("width %d: unexpected activity header: %q", width, lines)
+			}
+			for _, line := range lines[2:] {
+				if !strings.HasPrefix(tui.StripANSI(line), "│") || tui.VisibleWidth(line) > width {
+					t.Fatalf("width %d: output left its activity gutter: %q", width, line)
+				}
+			}
+			if strings.Join(tool.Render(width), "\n") != strings.Join(lines, "\n") {
+				t.Fatal("rendering mutated cached lines")
+			}
+		}
+	}
+	check("○")
+	tool.MarkExecutionStarted()
+	check("●")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "first\nsecond\nthird\nfourth"}}, false, nil, true)
+	check("●")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "first\nsecond\nthird\nfourth"}}, false, nil, false)
+	check("✓")
+	tool.SetExpanded(true)
+	check("✓")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "permission denied"}}, true, nil, false)
+	check("×")
+}
+
 func TestWP450ToolOutputPreviewsMatchUpstream(t *testing.T) {
 	initTestTheme(t)
 	bindings := NewAppKeybindings(nil)
