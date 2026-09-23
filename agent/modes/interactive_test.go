@@ -1489,14 +1489,14 @@ func TestCompactFooterKeepsStatusAndModel(t *testing.T) {
 	}
 }
 
-func TestCompactFooterCapsPathAndKeepsDimAfterColoredStatus(t *testing.T) {
+func TestCompactFooterCapsPathAndPinsIndicatorsRight(t *testing.T) {
 	initTestTheme(t)
 	dot := theme.FG("success", "●")
 	line := NewFooterComponent(layoutFooterSession{}, &fakeFooterDataProvider{
 		cwd: "/private/tmp/claude-501/a-very-long-generated-directory/scratchpad", statuses: map[string]string{"bridge": dot},
 	}, false).Render(160)[0]
-	if plain := tui.StripANSI(line); !strings.Contains(plain, "● · …/scratchpad") {
-		t.Fatalf("long cwd not capped to its last segment: %q", plain)
+	if plain := tui.StripANSI(line); !strings.Contains(plain, "…/scratchpad") || !strings.HasSuffix(strings.TrimRight(plain, " "), " ●") {
+		t.Fatalf("want a capped cwd and the indicator at the far right: %q", plain)
 	}
 	if !strings.Contains(line, dot[:strings.Index(dot, "\x1b[39m")]+theme.FGANSI("dim")) {
 		t.Fatalf("footer text after a colored status lost dim: %q", line)

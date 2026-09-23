@@ -1460,7 +1460,11 @@ func thinkingMeter(level string) string {
 	}
 }
 
-func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int) string {
+func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int, indicators ...string) string {
+	tail := strings.Join(indicators, " ")
+	if tail != "" && width > tui.VisibleWidth(tail)+1 {
+		return compactFooterLine(display, context, statuses, width-tui.VisibleWidth(tail)-1) + " " + tail
+	}
 	model := display.ModelID
 	if !display.HasModel {
 		model = "Choose model"
@@ -1535,6 +1539,15 @@ func (f *FooterComponent) render(width int) []string {
 		values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
 	}
 	if !f.verbose {
+		// One-glyph statuses are indicators pinned to the far right.
+		var texts, indicators []string
+		for _, value := range values {
+			if tui.VisibleWidth(value) == 1 {
+				indicators = append(indicators, value)
+			} else {
+				texts = append(texts, value)
+			}
+		}
 		if cwd := f.cwd(); cwd != "" {
 			path := shortenSessionPath(cwd)
 			model := display.ModelID
@@ -1544,18 +1557,21 @@ func (f *FooterComponent) render(width int) []string {
 			if display.Reasoning {
 				model += " " + thinkingMeter(string(display.ThinkingLevel))
 			}
-			available := width - tui.VisibleWidth(model) - tui.VisibleWidth(strings.Join(values, " · ")) - 2
-			if len(values) > 0 {
+			available := width - tui.VisibleWidth(model) - tui.VisibleWidth(strings.Join(texts, " · ")) - 2
+			if len(texts) > 0 {
 				available -= 3
+			}
+			if len(indicators) > 0 {
+				available -= tui.VisibleWidth(strings.Join(indicators, " ")) + 1
 			}
 			// The cwd is a reminder, not an address: past 32 cells only its
 			// last segment is shown.
 			if tui.VisibleWidth(path) > min(available, 32) {
 				path = "…/" + filepath.Base(cwd)
 			}
-			values = append(values, path)
+			texts = append(texts, path)
 		}
-		line := compactFooterLine(display, stats.ContextUsage, values, width)
+		line := compactFooterLine(display, stats.ContextUsage, texts, width, indicators...)
 		f.recordStatusHits(line, 0, keys, values)
 		f.recordThinkingHit(line, 0, display)
 		// A colored status ends in a foreground reset; restore dim after it.
@@ -1630,6 +1646,10 @@ func (f *FooterComponent) recordStatusHits(text string, row int, keys, values []
 		}
 		value := tui.StripANSI(values[i])
 		start := strings.Index(text, value)
+		if tui.VisibleWidth(value) == 1 {
+			// Indicators sit at the far right; a same glyph may appear earlier.
+			start = strings.LastIndex(text, value)
+		}
 		if start < 0 && strings.HasSuffix(text, "…") {
 			start = strings.LastIndex(text, fields[0])
 			if start >= 0 && !strings.HasPrefix(value, strings.TrimSuffix(text[start:], "…")) {

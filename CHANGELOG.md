@@ -29,7 +29,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 - Show each model's provider as a right-aligned column in the model picker at every width, so the
   same model offered by several providers is easy to tell apart.
 
-- Show Bridge as one footer dot, green when on and hollow when off; click it to open `/bridge`.
+- Show Bridge as one dot at the far right of the footer, green when on and hollow when off; click it
+  to open `/bridge`.
   The footer's directory now shortens to its last folder past 32 characters.
 
 ## [0.10.0] - 2026-09-23
