@@ -115,8 +115,12 @@ func (s *SessionRuntime) RequestInput(ctx context.Context, title string, choices
 	hasUI := false
 	if state := s.extensionState; state != nil {
 		state.mu.Lock()
-		ui, mode := state.config.ExtensionUI, state.config.ExtensionMode
+		ui, mode, runner := state.config.ExtensionUI, state.config.ExtensionMode, state.runner
 		state.mu.Unlock()
+		if ui != nil && runner != nil {
+			// The runner's UI emits ui_prompt_start/end so observers see the wait.
+			ui = runner.UI()
+		}
 		if ui != nil && (mode == extensions.ModeTUI || mode == extensions.ModeRPC) {
 			hasUI = true
 			go func() {

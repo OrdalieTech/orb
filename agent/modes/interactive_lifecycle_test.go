@@ -77,7 +77,12 @@ func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t
 	}
 	registry := extensions.NewRegistry(cwd)
 	uiReady := make(chan extensions.UI, 1)
+	promptStarted := make(chan struct{}, 1)
 	if err := registry.Register("<lifecycle-test>", func(api extensions.API) error {
+		api.On(extensions.EventUIPromptStart, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			promptStarted <- struct{}{}
+			return nil, nil
+		})
 		api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
 			ui := ctx.UI()
 			ui.SetHeader(func(extensions.UIHost, extensions.Theme) extensions.Component { return lifecycleText("startup header") })
@@ -123,6 +128,11 @@ func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t
 	}()
 	if !terminal.waitFor("Runtime question", 2*time.Second) {
 		t.Fatal("runtime input did not reach the visible UI")
+	}
+	select {
+	case <-promptStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runtime input did not emit ui_prompt_start")
 	}
 	terminal.mu.Lock()
 	send := terminal.onInput

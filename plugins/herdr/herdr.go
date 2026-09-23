@@ -55,9 +55,13 @@ func Extension(binaryPath, paneID string) extensions.Factory {
 			}
 			return nil, nil
 		})
-		api.On(extensions.EventUIPromptStart, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
+		api.On(extensions.EventUIPromptStart, func(_ context.Context, event extensions.Event, session extensions.Context) (any, error) {
 			if interactive(session) {
-				reporter.report("blocked")
+				var message []string
+				if title := event.(extensions.UIPromptStartEvent).Title; title != nil {
+					message = []string{"--message", *title}
+				}
+				reporter.report("blocked", message...)
 			}
 			return nil, nil
 		})
@@ -90,11 +94,11 @@ func currentState(session extensions.Context) string {
 	return "working"
 }
 
-func (reporter *reporter) report(state string) {
+func (reporter *reporter) report(state string, extra ...string) {
 	if !reporter.active.Load() {
 		return
 	}
-	args := reporter.args("report-agent", "--state", state)
+	args := reporter.args("report-agent", append([]string{"--state", state}, extra...)...)
 	go func() {
 		reporter.command.Lock()
 		defer reporter.command.Unlock()
