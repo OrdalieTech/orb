@@ -2216,29 +2216,25 @@ func (data *clickableFooterData) StatusLabel(key string) string {
 	return ""
 }
 
-func TestFooterHoverRevealsIndicatorLabelInPlace(t *testing.T) {
+func TestFooterHoverBrightensAndShowsTooltipWithoutShifting(t *testing.T) {
 	initTestTheme(t)
 	data := &clickableFooterData{fakeFooterDataProvider: fakeFooterDataProvider{cwd: "/workspace", statuses: map[string]string{"bridge": "●"}}}
 	footer := NewFooterComponent(layoutFooterSession{}, data, false)
-	dot := func() (string, int) {
-		line := tui.StripANSI(footer.Render(80)[0])
-		return line, tui.VisibleWidth(line[:strings.LastIndex(line, "●")])
-	}
-	line, column := dot()
-	if strings.Contains(line, "Bridge") {
-		t.Fatalf("label shown without hover: %q", line)
-	}
+	var tips []string
+	footer.tooltip = func(label string, start, end int) { tips = append(tips, fmt.Sprintf("%s@%d-%d", label, start, end)) }
+	before := footer.Render(80)[0]
+	plain := tui.StripANSI(before)
+	column := tui.VisibleWidth(plain[:strings.LastIndex(plain, "●")])
 	if !footer.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Column: column}) {
 		t.Fatal("hovering the dot did not change the frame")
 	}
-	if hovered, hoveredColumn := dot(); !strings.Contains(hovered, "Bridge ●") || hoveredColumn != column {
-		t.Fatalf("hover label missing or dot moved: %q (column %d, was %d)", hovered, hoveredColumn, column)
+	hovered := footer.Render(80)[0]
+	if tui.StripANSI(hovered) != plain || hovered == before {
+		t.Fatalf("hover must restyle in place, not shift:\n%q\n%q", before, hovered)
 	}
-	if !footer.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1}) {
-		t.Fatal("leaving the footer did not clear hover")
-	}
-	if line, _ := dot(); strings.Contains(line, "Bridge") {
-		t.Fatalf("label stayed after the pointer left: %q", line)
+	footer.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1})
+	if want := []string{fmt.Sprintf("Bridge@%d-%d", column, column+1), "@0-0"}; strings.Join(tips, " ") != strings.Join(want, " ") {
+		t.Fatalf("tooltips = %q, want %q", tips, want)
 	}
 }
 func TestFooterStatusClickTracksResizeAndIgnoresOtherCells(t *testing.T) {
@@ -2272,7 +2268,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 	tokens := int64(11152)
 	context := &harness.ContextUsage{Tokens: &tokens, ContextWindow: 272000, Percent: &percent}
 	for _, width := range []int{20, 36, 48, 80, 140} {
-		line := compactFooterLine(display, context, []string{"Codex 69% left"}, width, "")
+		line := compactFooterLine(display, context, []string{"Codex 69% left"}, width)
 		if tui.VisibleWidth(line) > width {
 			t.Fatalf("overflow at %d: %q", width, line)
 		}
