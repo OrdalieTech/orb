@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- List the ChatGPT subscription models your account actually offers, fetched at startup: new
+  releases such as GPT-6 Sol appear without waiting for an Orb update.
+
 ## [0.10.0] - 2026-09-23
 
 Orb's core now builds for every target behind host ports: Linux, macOS and Windows, 32-bit

@@ -134,7 +134,9 @@ Revisable records of how things currently work; each holds until changed by owne
   `models.dev/api.json` for the baseline, intersects NVIDIA's manifest with the live NIM listing,
   and uses the live OpenRouter and Vercel AI Gateway APIs for those two catalogs. Runtime refresh
   remains a direct models.dev fetch into the `~/.pi` cache, never a pi.dev endpoint. `models.json`
-  user overrides behave exactly as upstream (`docs/models.md`).
+  user overrides behave exactly as upstream (`docs/models.md`). Owner amendment (2026-09-23): with
+  a ChatGPT login, startup also stores the account's `openai-codex` models from the ChatGPT
+  backend list Codex CLI reads, where upstream hard-codes them; the models.dev gate is unchanged.
 - **D14 — Tool schemas.** JSON Schema is a first-class value on tools (raw schema type) — required
   anyway for extension/MCP-registered tools — plus a reflection helper deriving schemas from Go
   structs for ergonomic typed tools. JavaScript schema objects cross the extension-host protocol as JSON Schema.
@@ -204,7 +206,7 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | External Agent Skills discovery | compatibility addition | Orb automatically imports standard skill roots from Claude Code, Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot. Pi-native and `.agents` roots keep precedence, project roots require trust, canonical files load once, existing first-name-wins collision diagnostics apply, and plugin/cache directories are never scanned. Interactive `@` completion offers visibly badged skills at any token; accepting one inserts the canonical `/skill:name` path, so ordinary `@file` entries and wire/session semantics stay unchanged. |
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
 | `/bug` (v0.86.0) | excluded | Radius-backed diagnostic uploads are outside the owner-approved adoption; local diagnostic export is deferred. The upstream command remains captured in F8, with this explicit command-surface exclusion applied by the runner. |
-| Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints |
+| Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints; `openai-codex` models come live from the signed-in ChatGPT account (D12) |
 | darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
 | win32 console native addon | replaced | pure-Go console-mode calls instead of upstream's native addon (P2) |
 | Bundled llama.cpp extension | excluded | v0.81.1 still ships this optional native Node/llama.cpp integration; it cannot satisfy the pure-Go, single-static-binary rule in D7 |
