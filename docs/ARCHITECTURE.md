@@ -53,7 +53,7 @@ orb/
 │   ├── questions/            shared human-question tool and choice panel over RequestInput
 │   ├── claudesessions/       official Claude SDK host behind the engine.SessionLoop seam
 │   ├── mcp/                  configured MCP integration
-│   ├── herdr/                explicitly selected external integration
+│   ├── herdr/                Herdr pane reporting, attached only inside Herdr
 │   └── internal/toolutil/    argument decoding and text results shared by plugin tools
 ├── internal/
 │   ├── jsonschema/           Schema type + reflection helper (gate G1)

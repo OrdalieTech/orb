@@ -43,7 +43,8 @@ func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 	idle = false
 	runner.Emit(ctx, extensions.AgentStartEvent{})
 	waitForLines(t, logPath, 2)
-	runner.Emit(ctx, extensions.UIPromptStartEvent{})
+	title := "Allow bash?"
+	runner.Emit(ctx, extensions.UIPromptStartEvent{Title: &title})
 	waitForLines(t, logPath, 3)
 	runner.Emit(ctx, extensions.UIPromptEndEvent{})
 	waitForLines(t, logPath, 4)
@@ -65,6 +66,9 @@ func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 			t.Fatalf("report %d sequence = %d, %v; previous = %d", index, sequence, err, previous)
 		}
 		previous = sequence
+	}
+	if !strings.Contains(lines[2], "--message Allow bash?") {
+		t.Fatalf("blocked report = %q", lines[2])
 	}
 	if !strings.HasPrefix(lines[5], "pane release-agent w1:p1 --source custom:orb --agent orb") {
 		t.Fatalf("release = %q", lines[5])
