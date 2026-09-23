@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/discord"
@@ -627,15 +628,19 @@ func migrateStartupAuth() (string, error) {
 	return agentDir, err
 }
 
-func refreshModelCatalogs(ctx context.Context, agentDir string) error {
-	timeoutContext, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
+func catalogRefreshOptions(ctx context.Context, agentDir string) aimodels.RefreshOptions {
 	options := aimodels.RefreshOptions{StorePath: filepath.Join(agentDir, "models-store.json"), UserAgent: aimodels.OrbUserAgent(version)}
 	if state := stateFromContext(ctx); state != nil {
 		options.StoreDocument = state.document(options.StorePath)
 		options.StorePath = ""
 	}
-	_, err := aimodels.Refresh(timeoutContext, options)
+	return options
+}
+
+func refreshModelCatalogs(ctx context.Context, agentDir string) error {
+	timeoutContext, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err := aimodels.Refresh(timeoutContext, catalogRefreshOptions(ctx, agentDir))
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(timeoutContext.Err(), context.DeadlineExceeded) {
 		return errors.New("model catalog refresh timed out")
 	}
@@ -727,8 +732,23 @@ func refreshStartupModels(ctx context.Context, allowNetwork bool, agentDir strin
 	}
 	if allowNetwork && refresh != nil {
 		_ = refresh(ctx, agentDir)
+		_ = refreshCodexModels(ctx, agentDir, registry)
 	}
 	return registry.Reload()
+}
+
+// refreshCodexModels lists the models the signed-in ChatGPT account offers.
+func refreshCodexModels(ctx context.Context, agentDir string, registry *config.ModelRegistry) error {
+	auth, err := registry.ResolveProviderAuth(ctx, "openai-codex", nil)
+	if err != nil || auth == nil || auth.Auth.APIKey == nil {
+		return err
+	}
+	token := *auth.Auth.APIKey
+	timeoutContext, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	options := catalogRefreshOptions(ctx, agentDir)
+	options.Client = http.DefaultClient
+	return aimodels.RefreshCodex(timeoutContext, options, token, oauth.OpenAICodexAccountID(token))
 }
 
 func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch []session.SessionEntry) {
