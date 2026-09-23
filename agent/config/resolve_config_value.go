@@ -1,12 +1,10 @@
 package config
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -266,15 +264,11 @@ func executeConfigCommand(command string) (string, bool) {
 func executeConfigCommandContext(parent context.Context, command string) (string, bool) {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
-	process := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	process.Stdin = nil
-	var stdout bytes.Buffer
-	process.Stdout = &stdout
-	process.Stderr = nil
-	if err := process.Run(); err != nil {
+	stdout, ok := shellCommandOutput(ctx, command)
+	if !ok {
 		return "", false
 	}
-	value := trimJSWhitespace(stdout.String())
+	value := trimJSWhitespace(stdout)
 	return value, value != ""
 }
 

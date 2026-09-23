@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -15,12 +16,19 @@ import (
 func TestRepoBoundHarnessRuntimeSwitchesToRelativeSessionPath(t *testing.T) {
 	ctx := context.Background()
 	cwd := t.TempDir()
-	runtime, repo := newFidelityHarnessRepoRuntime(t, cwd, nil)
-	target, err := repo.Create(ctx, harness.SessionCreateOptions{ID: "relative-target", CWD: cwd})
+	processCWD, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	processCWD, err := os.Getwd()
+	if volume := filepath.VolumeName(processCWD); !strings.EqualFold(volume, filepath.VolumeName(cwd)) {
+		// A relative path cannot cross win32 drives; t.TempDir and the package can differ.
+		if cwd, err = os.MkdirTemp(volume+string(filepath.Separator), "orb-relative-session-"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(cwd) })
+	}
+	runtime, repo := newFidelityHarnessRepoRuntime(t, cwd, nil)
+	target, err := repo.Create(ctx, harness.SessionCreateOptions{ID: "relative-target", CWD: cwd})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +103,7 @@ func TestRepoBoundHarnessRuntimeImportMatchesUpstreamValidationAndHookTarget(t *
 		runtime, _ := newFidelityHarnessRepoRuntime(t, cwd, registry)
 
 		sourcePath := filepath.Join(t.TempDir(), "external.jsonl")
-		contents := []byte(`{"type":"session","version":3,"id":"import-target","timestamp":"2026-07-18T00:00:00.000Z","cwd":"` + cwd + `"}` + "\n")
+		contents := []byte(`{"type":"session","version":3,"id":"import-target","timestamp":"2026-07-18T00:00:00.000Z","cwd":` + jsonText(cwd) + `}` + "\n")
 		if err := os.WriteFile(sourcePath, contents, 0o600); err != nil {
 			t.Fatal(err)
 		}

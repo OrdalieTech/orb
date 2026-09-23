@@ -1,10 +1,12 @@
 package session
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 const (
@@ -13,7 +15,8 @@ const (
 )
 
 func normalizePath(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
+	path = nodepath.NormalizeShellPath(path)
+	if path == "~" || strings.HasPrefix(path, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(path, `~\`)) {
 		if home, err := os.UserHomeDir(); err == nil {
 			if path == "~" {
 				return home
@@ -22,10 +25,8 @@ func normalizePath(path string) string {
 		}
 	}
 	if strings.HasPrefix(path, "file://") {
-		if parsed, err := url.Parse(path); err == nil && (parsed.Host == "" || parsed.Host == "localhost") {
-			if decoded, err := url.PathUnescape(parsed.EscapedPath()); err == nil {
-				return filepath.FromSlash(decoded)
-			}
+		if converted, err := nodepath.FileURLToPath(path); err == nil {
+			return converted
 		}
 	}
 	return path

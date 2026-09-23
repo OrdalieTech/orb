@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,7 +64,9 @@ func TestProjectTrustStoreFileFormat(t *testing.T) {
 	}
 	realA, realB := canonicalizeTrustPath(pathA), canonicalizeTrustPath(pathB)
 	// JSON.stringify(sorted, null, 2) + "\n": sorted keys, two-space indent.
-	want := "{\n  \"" + realA + "\": true,\n  \"" + realB + "\": false\n}\n"
+	keyA, _ := json.Marshal(realA)
+	keyB, _ := json.Marshal(realB)
+	want := "{\n  " + string(keyA) + ": true,\n  " + string(keyB) + ": false\n}\n"
 	if string(contents) != want {
 		t.Fatalf("trust.json = %q, want %q", contents, want)
 	}

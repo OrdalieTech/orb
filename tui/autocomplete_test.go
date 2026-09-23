@@ -255,10 +255,11 @@ func TestProviderFuzzyFdSuggestions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(baseDir, "src", "main.ts"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	fdPath := filepath.Join(t.TempDir(), "fd")
-	if err := os.WriteFile(fdPath, []byte("#!/bin/sh\nprintf '%s\\n' 'src/' 'src/main.ts'\n"), 0o755); err != nil {
+	fdPath, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv(fakeFDEnv, "src/\nsrc/main.ts\n")
 	provider := NewCombinedAutocompleteProvider(nil, baseDir, fdPath)
 	result := provider.GetSuggestions(context.Background(), []string{"@main"}, 0, 5, false)
 	if result == nil || result.Prefix != "@main" {

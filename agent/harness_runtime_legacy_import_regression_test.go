@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -114,9 +115,21 @@ func TestRepoBoundHarnessRuntimeImportPreservesCopiedFileMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o500 {
-		t.Fatalf("copied import mode = %#o, want source mode %#o", got, os.FileMode(0o500))
+	if got := info.Mode().Perm(); got != wantPerm(0o500) {
+		t.Fatalf("copied import mode = %#o, want source mode %#o", got, wantPerm(0o500))
 	}
+}
+
+// wantPerm is what os.Stat reports for a file created or chmodded with perm:
+// Windows keeps only the read-only attribute, so Go reports 0444 or 0666.
+func wantPerm(perm os.FileMode) os.FileMode {
+	if runtime.GOOS != "windows" {
+		return perm
+	}
+	if perm&0o200 == 0 {
+		return 0o444
+	}
+	return 0o666
 }
 
 func legacyRuntimeSessionJSONL(cwd string, version int) []byte {

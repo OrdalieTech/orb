@@ -75,12 +75,12 @@ func TestVersionNewer(t *testing.T) {
 }
 
 func TestNodeRuntimeArgs(t *testing.T) {
-	accepting := filepath.Join(t.TempDir(), "node")
-	writeExecutable(t, accepting, "#!/bin/sh\nexit 0\n")
+	accepting := writeFakeCommand(t, filepath.Join(t.TempDir(), "node"), "exit 0\n", "exit /b 0\n")
 	// Node 26 removed --experimental-transform-types and aborts on it, taking the
 	// whole host down; 22.6 predates the flag and aborts the same way.
-	rejecting := filepath.Join(t.TempDir(), "node")
-	writeExecutable(t, rejecting, "#!/bin/sh\ncase \"$1\" in --experimental-transform-types) echo 'bad option' >&2; exit 9;; esac\nexit 0\n")
+	rejecting := writeFakeCommand(t, filepath.Join(t.TempDir(), "node"),
+		"case \"$1\" in --experimental-transform-types) echo 'bad option' >&2; exit 9;; esac\nexit 0\n",
+		"if \"%~1\"==\"--experimental-transform-types\" (echo bad option 1>&2& exit /b 9)\nexit /b 0\n")
 
 	if got := strings.Join(nodeRuntimeArgs(t.Context(), accepting, "22.6.0"), " "); strings.Contains(got, "transform-types") {
 		t.Fatalf("22.6 arguments = %q, want no transform-types", got)
@@ -189,16 +189,7 @@ func TestDiscoverRuntimeReportsUnusableOverride(t *testing.T) {
 func TestDiscoverRuntimeFindsVersionManagerInstallWhenPathHasNone(t *testing.T) {
 	empty := isolateRuntimeSearch(t)
 	t.Setenv("PATH", empty)
-	for _, manager := range []struct {
-		env      string
-		relative []string
-	}{
-		{"NVM_DIR", []string{"versions", "node", "v22.14.0", "bin"}},
-		{"FNM_DIR", []string{"node-versions", "v22.14.0", "installation", "bin"}},
-		{"VOLTA_HOME", []string{"tools", "image", "node", "22.14.0", "bin"}},
-		{"ASDF_DATA_DIR", []string{"installs", "nodejs", "22.14.0", "bin"}},
-		{"MISE_DATA_DIR", []string{"installs", "node", "22.14.0", "bin"}},
-	} {
+	for _, manager := range versionManagerFixtures {
 		t.Run(manager.env, func(t *testing.T) {
 			root := t.TempDir()
 			binDir := filepath.Join(append([]string{root}, manager.relative...)...)
@@ -223,12 +214,12 @@ func TestDiscoverRuntimePrefersCapableNodeOverUnderCapablePath(t *testing.T) {
 	writeRuntimeFixture(t, directory, "node", "v22.9.0")
 	t.Setenv("PATH", directory)
 	nvm := t.TempDir()
-	binDir := filepath.Join(nvm, "versions", "node", "v22.13.0", "bin")
+	nvmEnv, binDir := nvmLayout(nvm, "v22.13.0")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeRuntimeFixture(t, binDir, "node", "v22.13.0")
-	t.Setenv("NVM_DIR", nvm)
+	t.Setenv(nvmEnv, nvm)
 	if runtime := mustDiscover(t); runtime.Version != "22.13.0" {
 		t.Fatalf("runtime = %#v, want the capable 22.13.0", runtime)
 	}
@@ -241,12 +232,12 @@ func TestDiscoverRuntimeKeepsCapablePathNode(t *testing.T) {
 	writeRuntimeFixture(t, directory, "node", "v22.13.0")
 	t.Setenv("PATH", directory)
 	nvm := t.TempDir()
-	binDir := filepath.Join(nvm, "versions", "node", "v24.4.0", "bin")
+	nvmEnv, binDir := nvmLayout(nvm, "v24.4.0")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeRuntimeFixture(t, binDir, "node", "v24.4.0")
-	t.Setenv("NVM_DIR", nvm)
+	t.Setenv(nvmEnv, nvm)
 	if runtime := mustDiscover(t); runtime.Version != "22.13.0" {
 		t.Fatalf("runtime = %#v, want the PATH runtime", runtime)
 	}
@@ -257,12 +248,14 @@ func TestDiscoverRuntimeKeepsCapablePathNode(t *testing.T) {
 func TestDiscoverRuntimeSkipsUnusableCandidates(t *testing.T) {
 	directory := isolateRuntimeSearch(t)
 	broken := t.TempDir()
-	if err := os.Symlink(filepath.Join(broken, "missing"), filepath.Join(broken, "node")); err != nil {
+	if err := os.Symlink(filepath.Join(broken, "missing"), filepath.Join(broken, commandFileName("node"))); err != nil {
 		t.Fatal(err)
 	}
 	failing := t.TempDir()
-	writeExecutable(t, filepath.Join(failing, "node"), "#!/bin/sh\necho 'fnm: no default version set' >&2\nexit 1\n")
-	writeExecutable(t, filepath.Join(directory, "node"), "#!/bin/sh\nprintf 'Now using node v22.14.0\\n'\n")
+	writeFakeCommand(t, filepath.Join(failing, "node"),
+		"echo 'fnm: no default version set' >&2\nexit 1\n",
+		"echo fnm: no default version set 1>&2\nexit /b 1\n")
+	writeFakeCommand(t, filepath.Join(directory, "node"), "printf 'Now using node v22.14.0\\n'\n", "echo Now using node v22.14.0\n")
 	t.Setenv("PATH", strings.Join([]string{broken, failing, directory}, string(os.PathListSeparator)))
 	runtime := mustDiscover(t)
 	if runtime.Name != "node" || runtime.Version != "22.14.0" {
@@ -293,8 +286,13 @@ func isolateRuntimeSearch(t *testing.T) string {
 	previous := nodeSystemSearchPatterns
 	nodeSystemSearchPatterns = nil
 	t.Cleanup(func() { nodeSystemSearchPatterns = previous })
-	t.Setenv("HOME", t.TempDir())
-	for _, name := range []string{nodeOverrideEnv, "NVM_DIR", "FNM_DIR", "VOLTA_HOME", "ASDF_DATA_DIR", "ASDF_DIR", "MISE_DATA_DIR", "N_PREFIX"} {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	for _, name := range []string{
+		nodeOverrideEnv, "NVM_DIR", "FNM_DIR", "VOLTA_HOME", "ASDF_DATA_DIR", "ASDF_DIR", "MISE_DATA_DIR", "N_PREFIX",
+		"NVM_HOME", "NVM_SYMLINK", "SCOOP", "APPDATA", "LOCALAPPDATA",
+	} {
 		t.Setenv(name, "")
 	}
 	return t.TempDir()
@@ -318,5 +316,5 @@ func mustOldNode(t *testing.T) string {
 
 func writeRuntimeFixture(t *testing.T, directory, name, version string) {
 	t.Helper()
-	writeExecutable(t, filepath.Join(directory, name), "#!/bin/sh\nprintf '%s\\n' '"+version+"'\n")
+	writeFakeCommand(t, filepath.Join(directory, name), "printf '%s\\n' '"+version+"'\n", "echo "+version+"\n")
 }

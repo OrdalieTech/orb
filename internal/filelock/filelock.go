@@ -38,23 +38,29 @@ func Acquire(path string) (func() error, error) {
 			go lock.beat()
 			return lock.release, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !errors.Is(err, os.ErrExist) && !deletePending(err) {
 			return nil, err
 		}
-		info, statErr := os.Stat(lockPath)
-		switch {
-		case errors.Is(statErr, os.ErrNotExist):
-			continue
-		case statErr != nil:
-			return nil, statErr
-		// A regular file is a lock an older orb took with flock and never
-		// removed; reclaim it so the two runtimes stop deadlocking on it.
-		case !info.IsDir(), time.Since(info.ModTime()) > stale:
-			if removeErr := os.Remove(lockPath); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+		if errors.Is(err, os.ErrExist) {
+			info, statErr := os.Stat(lockPath)
+			switch {
+			case errors.Is(statErr, os.ErrNotExist):
 				continue
+			case deletePending(statErr):
+			case statErr != nil:
+				return nil, statErr
+			// A regular file is a lock an older orb took with flock and never
+			// removed; reclaim it so the two runtimes stop deadlocking on it.
+			case !info.IsDir(), time.Since(info.ModTime()) > stale:
+				if removeErr := os.Remove(lockPath); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+					continue
+				}
 			}
 		}
 		if time.Now().After(deadline) {
+			if !errors.Is(err, os.ErrExist) {
+				return nil, err
+			}
 			return nil, fmt.Errorf("lock is already held: %s", lockPath)
 		}
 		time.Sleep(delay/2 + rand.N(delay/2+1))
@@ -87,8 +93,15 @@ func (lock *lock) beat() {
 func (lock *lock) release() error {
 	close(lock.stop)
 	<-lock.done
-	if err := os.Remove(lock.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	deadline := time.Now().Add(budget)
+	for {
+		err := os.Remove(lock.path)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if !deletePending(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(maxDelay)
 	}
-	return nil
 }

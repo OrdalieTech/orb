@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -38,7 +39,12 @@ func TestStoreLockAndDurability(t *testing.T) {
 		t.Fatal(string(b), err)
 	}
 	info, _ := os.Stat(path)
-	if info.Mode().Perm() != 0600 {
+	want := os.FileMode(0600)
+	if runtime.GOOS == "windows" {
+		// Windows exposes only the read-only attribute through mode bits.
+		want = 0666
+	}
+	if info.Mode().Perm() != want {
 		t.Fatal(info.Mode())
 	}
 	if err = s.Save(make([]byte, 4097)); err == nil {

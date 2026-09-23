@@ -2,7 +2,6 @@ package host
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,14 +10,14 @@ import (
 func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
-	binary := filepath.Join(root, "configured-orb")
-	writeExecutable(t, binary, "#!/bin/sh\nprintf '%s\\n' 'orb configured-version'\n")
+	binary := writeFakeCommand(t, filepath.Join(root, "configured-orb"),
+		"printf '%s\\n' 'orb configured-version'\n", "echo orb configured-version\n")
 
-	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: binary}, []string{"PATH=/usr/bin:/bin", "KEEP=value"}, "")
+	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: binary}, []string{"PATH=" + shellSearchPath, "KEEP=value"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("/bin/sh", "-c", "pi --version")
+	command := shellCommand("pi --version")
 	command.Env = environment
 	output, err := command.Output()
 	if err != nil {
@@ -27,7 +26,7 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	if got := strings.TrimSpace(string(output)); got != "orb configured-version" {
 		t.Fatalf("pi --version = %q", got)
 	}
-	shim := filepath.Join(agentDir, "host", "bin", "pi")
+	shim := filepath.Join(agentDir, "host", "bin", commandFileName("pi"))
 	if got := environmentValue(environment, piSubagentBinaryEnv); got != shim {
 		t.Fatalf("%s = %q, want %q", piSubagentBinaryEnv, got, shim)
 	}

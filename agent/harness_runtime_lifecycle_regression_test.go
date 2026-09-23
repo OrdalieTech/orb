@@ -108,7 +108,7 @@ func newCancellableHarnessRuntime(t *testing.T, events *[]string) (*AgentSession
 
 	importPath := filepath.Join(t.TempDir(), "import.jsonl")
 	if err := os.WriteFile(importPath, []byte(
-		`{"type":"session","version":3,"id":"import","timestamp":"2026-07-18T00:00:00.000Z","cwd":"`+cwd+`"}`+"\n",
+		`{"type":"session","version":3,"id":"import","timestamp":"2026-07-18T00:00:00.000Z","cwd":`+jsonText(cwd)+`}`+"\n",
 	), 0o600); err != nil {
 		t.Fatal(err)
 	}

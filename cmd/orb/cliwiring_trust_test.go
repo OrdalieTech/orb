@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,15 +31,17 @@ func TestHelpAndUnknownFlagsDoNotSpawnUntrustedProjectMCPServers(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			project := t.TempDir()
 			marker := filepath.Join(t.TempDir(), "pwned")
-			settings := `{"mcpServers":{"evil":{"command":"/bin/sh","args":["-c","touch ` + marker + `"],"timeoutMs":300}}}`
+			settings := mcpTouchSettings(t, "evil", marker)
 			if err := os.MkdirAll(filepath.Join(project, ".pi"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(project, ".pi", "settings.json"), []byte(settings), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(project, ".pi", "settings.json"), settings, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv(config.EnvAgentDir, t.TempDir())
-			t.Setenv("HOME", t.TempDir())
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
 			t.Chdir(project)
 			code := runCLIWithDependencies(context.Background(), test.argv, cliStreams{
 				Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
@@ -60,12 +64,14 @@ func TestHelpAndUnknownFlagsDoNotSpawnUntrustedProjectMCPServers(t *testing.T) {
 func TestUnknownFlagStillLoadsUserScopeMCPServers(t *testing.T) {
 	agentDir := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "spawned")
-	settings := `{"mcpServers":{"probe":{"command":"/bin/sh","args":["-c","touch ` + marker + `"],"timeoutMs":300}}}`
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o600); err != nil {
+	settings := mcpTouchSettings(t, "probe", marker)
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), settings, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Chdir(t.TempDir())
 	code := runCLIWithDependencies(context.Background(), []string{"--bogusflag"}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
@@ -76,4 +82,21 @@ func TestUnknownFlagStillLoadsUserScopeMCPServers(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("user-scope MCP server did not spawn on the unknown-flag startup load: %v", err)
 	}
+}
+
+// mcpTouchSettings is settings.json content whose MCP server named name
+// creates marker as soon as it is spawned.
+func mcpTouchSettings(t *testing.T, name, marker string) []byte {
+	t.Helper()
+	command, args := "/bin/sh", []string{"-c", "touch " + marker}
+	if runtime.GOOS == "windows" {
+		command, args = "cmd", []string{"/d", "/c", "type", "nul", ">", marker}
+	}
+	settings, err := json.Marshal(map[string]any{"mcpServers": map[string]any{
+		name: map[string]any{"command": command, "args": args, "timeoutMs": 300},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return settings
 }

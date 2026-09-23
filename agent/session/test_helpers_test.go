@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -29,4 +30,13 @@ func sequenceIDGenerator(ids ...string) IDGenerator {
 
 func failingIDGenerator(message string) IDGenerator {
 	return func() (string, error) { return "", fmt.Errorf("%s", message) }
+}
+
+func jsonString(t *testing.T, value string) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
 }

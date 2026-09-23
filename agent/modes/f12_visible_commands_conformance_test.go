@@ -126,7 +126,7 @@ func TestF12VisibleCommandBehaviorMatchesUpstream(t *testing.T) {
 			if got := f12VisibleTransition(mode, command.Name, fixture.Width); !reflect.DeepEqual(got, command.Transition) {
 				t.Errorf("transition = %v, want %v", stringPointerValue(got), stringPointerValue(command.Transition))
 			}
-			rawLines := replaceF12FramePaths(mode.chat.Render(fixture.Width), temporary, "<tmp>")
+			rawLines := replaceF12FramePaths(mode.chat.Render(fixture.Width), temporary+string(filepath.Separator), "<tmp>/", temporary, "<tmp>")
 			lines := normalizeF12Lines(rawLines)
 			if updateF12RawFrame(t, snap, rawLines, "commands", commandIndex, "chat", "raw") {
 				updateF12VisibleChat(t, snap, lines, "commands", commandIndex, "chat")
@@ -331,7 +331,7 @@ func observeF12VisibleBehaviorTrace(
 func normalizeF12Trace(trace []string, temporary string) []string {
 	normalized := append([]string{}, trace...)
 	for index := range normalized {
-		normalized[index] = strings.ReplaceAll(normalized[index], temporary, "<tmp>")
+		normalized[index] = strings.ReplaceAll(strings.ReplaceAll(normalized[index], temporary+string(filepath.Separator), "<tmp>/"), temporary, "<tmp>")
 	}
 	return normalized
 }
@@ -350,7 +350,11 @@ func assertF12VisibleDispatchTrace(t testing.TB, command f12VisibleCommand, mode
 	if err != nil {
 		t.Fatal(err)
 	}
-	actionTrace := strings.ReplaceAll("action:"+action.name+":"+string(encodedArguments), temporary, "<tmp>")
+	encodedTemporary, err := json.Marshal(temporary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionTrace := strings.ReplaceAll("action:"+action.name+":"+string(encodedArguments), strings.Trim(string(encodedTemporary), `"`), "<tmp>")
 	got := []string{actionTrace, editorTrace[0]}
 	if slashCommandClearsEditorFirst(command.Name) {
 		got[0], got[1] = got[1], got[0]
@@ -495,7 +499,7 @@ func (host *f12VisibleHost) Dispose()                        { host.addTrace("di
 func newF12VisibleMode(t *testing.T, command string) (*InteractiveMode, *f12VisibleHost, *f12VisibleTerminal, string) {
 	t.Helper()
 	initF12RawTheme(t)
-	cwd, err := os.MkdirTemp("/tmp", "f12v-")
+	cwd, err := os.MkdirTemp(shortTempRoot(), "f12v-")
 	if err != nil {
 		t.Fatal(err)
 	}

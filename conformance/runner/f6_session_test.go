@@ -347,7 +347,7 @@ func f6BuildWrittenSession(t testing.TB) ([]byte, bool, bool) {
 	if err != nil {
 		t.Fatalf("marshal manager JSONL: %v", err)
 	}
-	jsonl = bytes.ReplaceAll(jsonl, []byte(filepath.ToSlash(projectDir)), []byte("/fixture/project"))
+	jsonl = []byte(runner.ReplaceJSONPathAliases(string(jsonl), projectDir, "/fixture/project"))
 	return jsonl, preAssistantExists, postAssistantExists
 }
 

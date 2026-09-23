@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/modes/theme"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -1024,19 +1025,18 @@ func isConfigLocalPath(value string) bool {
 }
 
 func resolveConfigPath(value, baseDir string) string {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "file://") {
-		if parsed, err := url.Parse(value); err == nil && (parsed.Host == "" || strings.EqualFold(parsed.Host, "localhost")) {
-			value = filepath.FromSlash(parsed.Path)
-		}
-	}
-	if value == "~" || strings.HasPrefix(value, "~/") {
+	value = nodepath.NormalizeShellPath(strings.TrimSpace(value))
+	if value == "~" || strings.HasPrefix(value, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(value, `~\`)) {
 		if homeDir, err := os.UserHomeDir(); err == nil {
 			if value == "~" {
 				value = homeDir
 			} else {
 				value = filepath.Join(homeDir, value[2:])
 			}
+		}
+	} else if strings.HasPrefix(value, "file://") {
+		if converted, err := nodepath.FileURLToPath(value); err == nil {
+			value = converted
 		}
 	}
 	if !filepath.IsAbs(value) {

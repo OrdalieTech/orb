@@ -13,6 +13,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 const narrowNoBreakSpace = "\u202f"
@@ -31,6 +33,7 @@ func expandPath(filePath string, normalizeSpaces, stripAtPrefix bool) (string, e
 	if stripAtPrefix && strings.HasPrefix(filePath, "@") {
 		filePath = filePath[1:]
 	}
+	filePath = nodepath.NormalizeShellPath(filePath)
 	if filePath == "~" || strings.HasPrefix(filePath, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(filePath, `~\`)) {
 		if home, err := toolUserHomeDir(); err == nil {
 			if filePath == "~" {
@@ -72,6 +75,10 @@ func ResolveToCwd(filePath, cwd string) (string, error) {
 	}
 	if absolute, err := filepath.Abs(cwd); err == nil {
 		cwd = absolute
+	}
+	// Node's win32 path.resolve roots "\x" and "/x" on the cwd's drive.
+	if runtime.GOOS == "windows" && (strings.HasPrefix(filePath, `\`) || strings.HasPrefix(filePath, "/")) {
+		return filepath.Clean(filepath.VolumeName(cwd) + filePath), nil
 	}
 	return filepath.Clean(filepath.Join(cwd, filePath)), nil
 }
@@ -115,6 +122,10 @@ func fileURLPath(value string) (string, error) {
 		hostEnd = len(rest)
 	}
 	rawHost := rest[:hostEnd]
+	// WHATWG parses a drive-letter "host" (file://C:/x) as the first path segment.
+	if len(rawHost) == 2 && isASCIILetter(rawHost[0]) && (rawHost[1] == ':' || rawHost[1] == '|') {
+		rest, rawHost, hostEnd = "/"+rest, "", 0
+	}
 	decodedHost, err := url.PathUnescape(rawHost)
 	if err != nil || !utf8.ValidString(decodedHost) || strings.ContainsAny(decodedHost, "%/\\?#") {
 		return "", upstreamToolError("Invalid URL")
@@ -130,20 +141,32 @@ func fileURLPath(value string) (string, error) {
 	if parsed.User != nil || parsed.Port() != "" {
 		return "", upstreamToolError("Invalid URL")
 	}
-	if parsed.Host != "" && !strings.EqualFold(normalizeFileURLHost(parsed.Host), "localhost") {
-		return "", upstreamToolErrorf("File URL host must be \"localhost\" or empty on %s", runtime.GOOS)
+	host := strings.ToLower(normalizeFileURLHost(parsed.Host))
+	if host == "localhost" {
+		host = ""
 	}
-	if !utf8.ValidString(parsed.Path) {
-		return "", upstreamToolError("URI malformed")
+	// win32 turns the host into a UNC server name; non-ASCII hosts would need
+	// WHATWG's IDNA validation, so they are rejected like the invalid ones.
+	if runtime.GOOS == "windows" && strings.ContainsFunc(host, func(character rune) bool { return character >= utf8.RuneSelf }) {
+		return "", upstreamToolError("Invalid URL")
 	}
-	rawPath := parsed.EscapedPath()
-	if strings.Contains(strings.ToLower(rawPath), "%2f") {
-		return "", upstreamToolError("File URL path must not include encoded / characters")
+	pathname := parsed.EscapedPath()
+	if pathname == "" {
+		pathname = "/"
 	}
-	if parsed.Path == "" {
-		return string(filepath.Separator), nil
+	// WHATWG normalizes a leading "C|" drive segment to "C:".
+	if len(pathname) >= 3 && pathname[0] == '/' && isASCIILetter(pathname[1]) && pathname[2] == '|' && (len(pathname) == 3 || pathname[3] == '/') {
+		pathname = pathname[:2] + ":" + pathname[3:]
 	}
-	return filepath.FromSlash(parsed.Path), nil
+	converted, err := nodepath.HostPathToPath(host, pathname)
+	if err != nil {
+		return "", upstreamToolError(err.Error())
+	}
+	return converted, nil
+}
+
+func isASCIILetter(character byte) bool {
+	return character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z'
 }
 
 func normalizeFileURLHost(host string) string {

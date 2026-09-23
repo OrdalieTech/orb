@@ -1,0 +1,4 @@
+# Fixtures, goldens and embedded assets are compared byte for byte, and some
+# intentionally contain CRLF. Check every file out exactly as committed, whatever
+# core.autocrlf says (Git for Windows defaults it to true).
+* -text

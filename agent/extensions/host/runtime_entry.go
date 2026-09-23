@@ -2,11 +2,12 @@ package host
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 // Bun has no equivalent of Node's resolve hook — its runtime `Bun.plugin`
@@ -72,8 +73,7 @@ func writeRuntimeSDKWrapper(aliasDir, sdkRoot, exposed string, subpaths map[stri
 	exports := make([]string, 0, len(subpaths))
 	for subpath, module := range subpaths {
 		wrapper := runtimeSDKWrapperFile(subpath)
-		target := url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(sdkRoot, module))}
-		source := fmt.Sprintf("export * from %q;\n", target.String())
+		source := fmt.Sprintf("export * from %q;\n", nodepath.PathToFileURL(filepath.Join(sdkRoot, module)))
 		if err := os.WriteFile(filepath.Join(packageDir, wrapper), []byte(source), 0o600); err != nil {
 			return err
 		}

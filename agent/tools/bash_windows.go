@@ -79,14 +79,51 @@ func spawnErrorCode(err error) string {
 	return ""
 }
 
+func systemRoot() string {
+	if root, ok := os.LookupEnv("SystemRoot"); ok {
+		return root
+	}
+	return `C:\Windows`
+}
+
+// ShellCommandOutput ports upstream resolve-config-value's win32 executor: the
+// configured bash when one resolves and spawns, otherwise child_process.execSync's
+// default shell, cmd.exe /d /s /c "command" with the command line passed verbatim.
+// ComSpec is not consulted; its default is the System32 cmd.exe used here.
+func ShellCommandOutput(ctx context.Context, command string) (string, bool) {
+	if shell, err := defaultShellConfig(); err == nil {
+		child := exec.CommandContext(ctx, shell.Shell, shell.Args...)
+		if shell.CommandTransport == ShellCommandStdin {
+			child.Stdin = strings.NewReader(command)
+		} else {
+			child.Args = append(child.Args, command)
+		}
+		configureShellProcess(child)
+		var stdout strings.Builder
+		child.Stdout = &stdout
+		err := child.Start()
+		if err == nil {
+			return stdout.String(), child.Wait() == nil
+		}
+		if spawnErrorCode(err) != "ENOENT" {
+			return "", false
+		}
+	}
+	shell := filepath.Join(systemRoot(), "System32", "cmd.exe")
+	child := exec.CommandContext(ctx, shell)
+	child.SysProcAttr = &syscall.SysProcAttr{CmdLine: shell + ` /d /s /c "` + command + `"`}
+	var stdout strings.Builder
+	child.Stdout = &stdout
+	if err := child.Run(); err != nil {
+		return "", false
+	}
+	return stdout.String(), true
+}
+
 // taskkill comes from System32 so cleanup does not depend on PATH; it runs detached and is
 // not awaited, matching upstream's fire-and-forget spawn.
 func KillProcessTree(pid int) {
-	systemRoot, ok := os.LookupEnv("SystemRoot")
-	if !ok {
-		systemRoot = `C:\Windows`
-	}
-	command := exec.Command(filepath.Join(systemRoot, "System32", "taskkill.exe"), "/F", "/T", "/PID", strconv.Itoa(pid))
+	command := exec.Command(filepath.Join(systemRoot(), "System32", "taskkill.exe"), "/F", "/T", "/PID", strconv.Itoa(pid))
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,

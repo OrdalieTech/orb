@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -38,8 +39,7 @@ func MigrationStatus(ctx context.Context, path, name string) (bool, error) {
 	if !info.Mode().IsRegular() {
 		return false, errors.New("database must be a regular file")
 	}
-	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
-	handle, err := sql.Open("sqlite", u.String())
+	handle, err := sql.Open("sqlite", fileURI(path, "mode=ro&_pragma=busy_timeout(5000)"))
 	if err != nil {
 		return false, err
 	}
@@ -68,6 +68,24 @@ func MigrationStatus(ctx context.Context, path, name string) (bool, error) {
 
 type DB struct{ *sql.DB }
 
+// fileURI names a native path as an SQLite URI. A Windows drive path needs a
+// leading slash so "C:" is not read as the authority; SQLite's win32 VFS drops
+// the slash before "X:".
+func fileURI(path, query string) string {
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: query}
+	if filepath.VolumeName(path) != "" && !strings.HasPrefix(u.Path, "/") {
+		u.Path = "/" + u.Path
+	}
+	return u.String()
+}
+
+// groupOrOtherAccess reports POSIX group or other permission bits. Windows
+// has none (Go reports 0666/0777 there); the profile directory's ACL is what
+// keeps the database private on that platform.
+func groupOrOtherAccess(mode os.FileMode) bool {
+	return runtime.GOOS != "windows" && mode.Perm()&0o077 != 0
+}
+
 func Open(ctx context.Context, path string) (_ *DB, err error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("database path must be absolute")
@@ -83,7 +101,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 		if statErr != nil {
 			return nil, statErr
 		}
-		if info.Mode().Perm()&0077 != 0 || (name == filepath.Dir(path) && !info.IsDir()) || (name != filepath.Dir(path) && !info.Mode().IsRegular()) {
+		if groupOrOtherAccess(info.Mode()) || (name == filepath.Dir(path) && !info.IsDir()) || (name != filepath.Dir(path) && !info.Mode().IsRegular()) {
 			return nil, errors.New("database and directory must be private regular paths")
 		}
 	}
@@ -94,11 +112,9 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 	if err != nil && !errors.Is(err, os.ErrExist) {
 		return nil, err
 	}
-	u := url.URL{Scheme: "file", Path: path}
 	// FULL commits on slow disks can leave another process waiting beyond five seconds.
 	q := url.Values{"_pragma": {"foreign_keys(ON)", "synchronous(FULL)", "busy_timeout(30000)"}, "_txlock": {"immediate"}}
-	u.RawQuery = q.Encode()
-	handle, err := sql.Open("sqlite", u.String())
+	handle, err := sql.Open("sqlite", fileURI(path, q.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +315,7 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 	if err != nil {
 		return err
 	}
-	if !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
+	if !parent.IsDir() || groupOrOtherAccess(parent.Mode()) {
 		return errors.New("backup directory must be private")
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
@@ -318,13 +334,19 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 	if err != nil {
 		return err
 	}
-	f, err = os.Open(path)
+	// Windows flushes only handles with write access.
+	f, err = os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return err
 	}
 	err = errors.Join(f.Sync(), f.Close())
 	if err != nil {
 		return err
+	}
+	// Windows cannot flush a directory opened read-only (FlushFileBuffers needs
+	// GENERIC_WRITE); NTFS journals the new directory entry itself.
+	if runtime.GOOS == "windows" {
+		return nil
 	}
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
@@ -504,8 +526,7 @@ func (db *DB) RestoreSessions(ctx context.Context, path, namespace string) (int,
 	if _, err := MigrationStatus(ctx, path, "native"); err != nil {
 		return 0, err
 	}
-	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
-	source, err := sql.Open("sqlite", u.String())
+	source, err := sql.Open("sqlite", fileURI(path, "mode=ro&_pragma=busy_timeout(5000)"))
 	if err != nil {
 		return 0, err
 	}

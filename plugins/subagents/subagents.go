@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -397,36 +396,16 @@ func runExternalChild(ctx context.Context, cwd, name, command, task string, mode
 		name, value, _ := strings.Cut(entry, "=")
 		env[name] = value
 	}
-	command, env = sandbox.Wrap(mode, cwd, "/bin/sh", command, env)
-	process := exec.CommandContext(processCtx, "/bin/sh", "-c", `/bin/sh -c "$1" 3>&-; status=$?; printf '%d\n' "$status" >&3; while :; do sleep 3600; done`, "orb-subagent", command)
-	// WaitDelay only fires when an escaped descendant still holds the pipes
-	// after the group kill; keep it generous so a loaded host never truncates
-	// a successful child's final output burst.
-	process.Dir, process.Stdin, process.WaitDelay = cwd, strings.NewReader(task), 5*time.Second
-	for name, value := range env {
-		process.Env = append(process.Env, name+"="+value)
-	}
-	killGroup, err := isolateExternalProcess(process)
-	if err != nil {
-		return "", fmt.Errorf("subagent: external agent %q unavailable: %w", name, err)
-	}
 	stdout, stderr := newCappedOutput(cancelProcess), newCappedOutput(cancelProcess)
-	process.Stdout, process.Stderr = stdout, stderr
-	statusReader, statusWriter, err := os.Pipe()
+	run, err := runExternalCommand(processCtx, cwd, command, env, mode, strings.NewReader(task), stdout, stderr)
+	var unavailable unavailableError
+	if errors.As(err, &unavailable) {
+		return "", fmt.Errorf("subagent: external agent %q unavailable: %w", name, unavailable.error)
+	}
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = statusReader.Close() }()
-	process.ExtraFiles = []*os.File{statusWriter}
-	if err = process.Start(); err != nil {
-		_ = statusWriter.Close()
-		return "", err
-	}
-	_ = statusWriter.Close()
-	var status int
-	_, statusErr := fmt.Fscan(statusReader, &status)
-	cleanupErr := killGroup()
-	waitErr := process.Wait()
+	status, statusErr, cleanupErr, waitErr := run.status, run.statusErr, run.cleanupErr, run.waitErr
 	if cleanupErr != nil && !errors.Is(cleanupErr, os.ErrProcessDone) {
 		return "", fmt.Errorf("subagent: external agent %q cleanup failed: %w", name, cleanupErr)
 	}
@@ -455,6 +434,18 @@ func runExternalChild(ctx context.Context, cwd, name, command, task string, mode
 	}
 	return stdout.String(), nil
 }
+
+// externalRun is what running an external CLI reports: the command's own exit
+// status (statusErr when it never reported one), the descendant cleanup, and
+// Wait.
+type externalRun struct {
+	status                         int
+	statusErr, cleanupErr, waitErr error
+}
+
+// unavailableError marks a host that cannot contain an external CLI's
+// descendants, so it is never started.
+type unavailableError struct{ error }
 
 // excerpt bounds a child's stderr so a crashing CLI cannot flood the model
 // context with a megabyte-scale traceback.

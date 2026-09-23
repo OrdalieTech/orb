@@ -7,6 +7,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -51,18 +52,20 @@ func TestToolHeadersShortenHomePaths(t *testing.T) {
 	}
 	dir := t.TempDir()
 	inHome := filepath.Join(home, "project", "a.go")
+	// Upstream shortenPath keeps the native separators after "~".
+	shortFile, shortDir := "~"+filepath.FromSlash("/project/a.go"), "~"+filepath.FromSlash("/project")
 	for _, testCase := range []struct {
 		name string
 		tool engine.AgentTool
 		args any
 		want string
 	}{
-		{name: "read", tool: NewReadTool(dir, nil), args: map[string]any{"path": inHome}, want: "read ~/project/a.go"},
-		{name: "write", tool: NewWriteTool(dir, nil), args: map[string]any{"path": inHome}, want: "write ~/project/a.go"},
-		{name: "edit", tool: NewEditTool(dir, nil), args: map[string]any{"path": inHome}, want: "edit ~/project/a.go"},
-		{name: "ls", tool: NewLsTool(dir, nil), args: map[string]any{"path": filepath.Join(home, "project")}, want: "ls ~/project"},
-		{name: "find", tool: NewFindTool(dir, nil), args: map[string]any{"pattern": "*.go", "path": filepath.Join(home, "project")}, want: "find *.go in ~/project"},
-		{name: "grep", tool: NewGrepTool(dir, nil), args: map[string]any{"pattern": "x", "path": filepath.Join(home, "project")}, want: "grep /x/ in ~/project"},
+		{name: "read", tool: NewReadTool(dir, nil), args: map[string]any{"path": inHome}, want: "read " + shortFile},
+		{name: "write", tool: NewWriteTool(dir, nil), args: map[string]any{"path": inHome}, want: "write " + shortFile},
+		{name: "edit", tool: NewEditTool(dir, nil), args: map[string]any{"path": inHome}, want: "edit " + shortFile},
+		{name: "ls", tool: NewLsTool(dir, nil), args: map[string]any{"path": filepath.Join(home, "project")}, want: "ls " + shortDir},
+		{name: "find", tool: NewFindTool(dir, nil), args: map[string]any{"pattern": "*.go", "path": filepath.Join(home, "project")}, want: "find *.go in " + shortDir},
+		{name: "grep", tool: NewGrepTool(dir, nil), args: map[string]any{"pattern": "x", "path": filepath.Join(home, "project")}, want: "grep /x/ in " + shortDir},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			renderer := testCase.tool.(PlainTextRenderer)
@@ -78,20 +81,20 @@ func TestToolHeadersEmitOSC8HyperlinksWhenSupported(t *testing.T) {
 	dir := t.TempDir()
 	renderer := NewReadTool(dir, nil).(PlainTextRenderer)
 	spaced := filepath.Join(dir, "a b.go")
-	want := "read " + tui.Hyperlink(ShortenPath(spaced), pathToFileURL(spaced))
+	want := "read " + tui.Hyperlink(ShortenPath(spaced), nodepath.PathToFileURL(spaced))
 	if got := renderer.RenderCall(map[string]any{"path": spaced}); got != want {
 		t.Fatalf("RenderCall() = %q, want %q", got, want)
 	}
 	// pathToFileURL percent-encodes the WHATWG path set plus "%", like Node.
-	if encoded := pathToFileURL("/tmp/a b#c%d.go"); encoded != "file:///tmp/a%20b%23c%25d.go" {
+	if encoded := nodepath.PathToFileURL("/tmp/a b#c%d.go"); encoded != "file:///tmp/a%20b%23c%25d.go" {
 		t.Fatalf("pathToFileURL = %q", encoded)
 	}
-	if encoded := pathToFileURL("/tmp/café.go"); encoded != "file:///tmp/caf%C3%A9.go" {
+	if encoded := nodepath.PathToFileURL("/tmp/café.go"); encoded != "file:///tmp/caf%C3%A9.go" {
 		t.Fatalf("pathToFileURL unicode = %q", encoded)
 	}
 	// Relative paths resolve against the tool cwd for the link target only.
 	relative := renderer.RenderCall(map[string]any{"path": "a.go"})
-	if want := "read " + tui.Hyperlink("a.go", pathToFileURL(filepath.Join(dir, "a.go"))); relative != want {
+	if want := "read " + tui.Hyperlink("a.go", nodepath.PathToFileURL(filepath.Join(dir, "a.go"))); relative != want {
 		t.Fatalf("relative RenderCall() = %q, want %q", relative, want)
 	}
 	// find/grep headers shorten but never hyperlink (upstream render-utils usage).

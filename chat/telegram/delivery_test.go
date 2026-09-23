@@ -11,6 +11,15 @@ import (
 	"github.com/OrdalieTech/orb/chat"
 )
 
+// waitForClockTick returns once time.Now has moved on: the 1ns preview
+// interval of the test adapter needs elapsed time, and Windows' monotonic
+// clock advances in timer ticks, so back-to-back calls can read equal instants.
+func waitForClockTick() {
+	for start := time.Now(); !time.Now().After(start); {
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func testKey(chatID string) chat.ConversationKey {
 	return chat.ConversationKey{Platform: "telegram", Account: "42", ChatID: chatID}
 }
@@ -33,6 +42,7 @@ func TestDeliveryFullSequence(t *testing.T) {
 	if delivery.PreviewID() != "100" {
 		t.Fatalf("PreviewID = %q, want 100", delivery.PreviewID())
 	}
+	waitForClockTick()
 	if err := delivery.Preview(ctx, "thinking harder"); err != nil {
 		t.Fatalf("Preview edit: %v", err)
 	}

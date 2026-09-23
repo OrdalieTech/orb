@@ -215,6 +215,7 @@ func TestCreateRuntimeInputsLoadsEnabledPackageThemesWithResolvedSourceInfo(t *t
 func TestCreateRuntimeInputsKeepsExplicitResourcesWhenDiscoveryIsDisabled(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("USERPROFILE", filepath.Join(root, "home"))
 	agentDir := filepath.Join(root, "agent")
 	cwd := filepath.Join(root, "project")
 	if err := os.MkdirAll(filepath.Join(agentDir, "extensions"), 0o755); err != nil {

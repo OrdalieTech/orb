@@ -346,9 +346,15 @@ func joinHarnessPath(base, child string) string {
 	return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(child, "/")
 }
 
+// The environment path helpers accept both separators, like upstream's
+// dirnameEnvPath and relativeEnvPath, so win32 hosts resolve names and ignore
+// rules exactly as POSIX ones do.
 func dirnameHarnessPath(path string) string {
-	normalized := strings.TrimRight(path, "/")
-	index := strings.LastIndex(normalized, "/")
+	normalized := strings.TrimRight(path, `/\`)
+	index := strings.LastIndexAny(normalized, `/\`)
+	if index == 2 && normalized[1] == ':' {
+		return normalized[:3]
+	}
 	if index <= 0 {
 		return "/"
 	}
@@ -356,17 +362,13 @@ func dirnameHarnessPath(path string) string {
 }
 
 func basenameHarnessPath(path string) string {
-	normalized := strings.TrimRight(path, "/")
-	index := strings.LastIndex(normalized, "/")
-	if index < 0 {
-		return normalized
-	}
-	return normalized[index+1:]
+	normalized := strings.TrimRight(path, `/\`)
+	return normalized[strings.LastIndexAny(normalized, `/\`)+1:]
 }
 
 func relativeHarnessPath(root, path string) string {
-	normalizedRoot := strings.TrimRight(root, "/")
-	normalizedPath := strings.TrimRight(path, "/")
+	normalizedRoot := strings.TrimRight(strings.ReplaceAll(root, `\`, "/"), "/")
+	normalizedPath := strings.TrimRight(strings.ReplaceAll(path, `\`, "/"), "/")
 	if normalizedPath == normalizedRoot {
 		return ""
 	}

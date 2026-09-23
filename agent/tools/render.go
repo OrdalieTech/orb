@@ -6,6 +6,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/termcaps"
 )
 
@@ -42,29 +43,7 @@ func linkPath(displayText, rawPath, cwd string) string {
 	if !filepath.IsAbs(absolutePath) {
 		absolutePath = filepath.Join(cwd, absolutePath)
 	}
-	return termcaps.Hyperlink(displayText, pathToFileURL(filepath.Clean(absolutePath)))
-}
-
-// pathToFileURL percent-encodes an absolute path as a file:// URL the way
-// Node's url.pathToFileURL does (WHATWG path percent-encode set plus "%").
-func pathToFileURL(path string) string {
-	var encoded strings.Builder
-	encoded.WriteString("file://")
-	for _, unit := range []byte(filepath.ToSlash(path)) {
-		switch {
-		case unit < 0x20 || unit == 0x7f || unit >= 0x80,
-			unit == ' ', unit == '"', unit == '#', unit == '<', unit == '>',
-			unit == '?', unit == '`', unit == '{', unit == '}', unit == '^',
-			unit == '|', unit == '\\', unit == '%':
-			const hex = "0123456789ABCDEF"
-			encoded.WriteByte('%')
-			encoded.WriteByte(hex[unit>>4])
-			encoded.WriteByte(hex[unit&0x0f])
-		default:
-			encoded.WriteByte(unit)
-		}
-	}
-	return encoded.String()
+	return termcaps.Hyperlink(displayText, nodepath.PathToFileURL(filepath.Clean(absolutePath)))
 }
 
 // renderLinkedPath renders a tool-header path (~-shortened, hyperlinked),

@@ -2,6 +2,7 @@ package runner_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,6 +27,32 @@ func TestReplacePathAliases(t *testing.T) {
 		got := runner.ReplacePathAliases(filepath.Join(root, "file"), alias, "<root>")
 		if got != filepath.Join("<root>", "file") {
 			t.Fatalf("replaced path = %q", got)
+		}
+	}
+}
+
+func TestReplaceJSONPathAliasesMatchesEscapedPaths(t *testing.T) {
+	path := filepath.Join(t.TempDir(), `quote"back\slash<&>`)
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(map[string]string{"cwd": path}); err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.ReplaceJSONPathAliases(encoded.String(), path, "<cwd>"); got != `{"cwd":"<cwd>"}`+"\n" {
+		t.Fatalf("replaced JSON = %s", got)
+	}
+}
+
+func TestNormalizeFixturePathMatchesBothAliasesInSlashForm(t *testing.T) {
+	root := t.TempDir()
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, observed := range []string{root, canonical} {
+		if got := runner.NormalizeFixturePath(filepath.Join(observed, "dir", "file"), root); got != "<fixture>/dir/file" {
+			t.Fatalf("NormalizeFixturePath(%q) = %q", observed, got)
 		}
 	}
 }

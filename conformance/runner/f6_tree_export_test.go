@@ -175,8 +175,8 @@ func TestF6ForkFromMatchesUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	actual = bytes.ReplaceAll(actual, []byte("2025-01-02T03:04:05.006Z"), []byte("2025-01-01T00:00:00.000Z"))
-	actual = bytes.ReplaceAll(actual, []byte(filepath.ToSlash(targetCWD)), []byte("/fixture/target"))
-	actual = bytes.ReplaceAll(actual, []byte(filepath.ToSlash(sourcePath)), []byte("/fixture/source.jsonl"))
+	actual = []byte(runner.ReplaceJSONPathAliases(string(actual), targetCWD, "/fixture/target"))
+	actual = []byte(runner.ReplaceJSONPathAliases(string(actual), sourcePath, "/fixture/source.jsonl"))
 	if diff := runner.ByteDiff([]byte(fixture.Fork.Expected), actual); diff != "" {
 		t.Fatalf("forked JSONL mismatch:\n%s", diff)
 	}

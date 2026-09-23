@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"reflect"
+	"runtime"
 	"slices"
 	"sync"
 	"syscall"
@@ -259,6 +261,16 @@ func TestRunPrintModeSkipsEmptyInitialMessage(t *testing.T) {
 	}
 }
 
+func TestPrintModeSignalsMatchUpstreamPlatformSet(t *testing.T) {
+	want := []os.Signal{syscall.SIGTERM, syscall.SIGHUP}
+	if runtime.GOOS == "windows" {
+		want = []os.Signal{syscall.SIGTERM}
+	}
+	if got := printModeSignals(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("print mode signals = %v, want %v", got, want)
+	}
+}
+
 func TestRunPrintModeSignalShutdown(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -269,6 +281,9 @@ func TestRunPrintModeSignalShutdown(t *testing.T) {
 		{name: "hup", signal: syscall.SIGHUP, wantCode: 129},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.signal == syscall.SIGHUP && runtime.GOOS == "windows" {
+				t.Skip("upstream registers only SIGTERM on win32, so SIGHUP never reaches print mode")
+			}
 			provider := faux.New()
 			provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("unused")})
 			session := newPrintAgent(provider)

@@ -117,7 +117,8 @@ func TestResolveConfigValuesAndHeadersAtRequestTime(t *testing.T) {
 
 	directory := t.TempDir()
 	counter := filepath.Join(directory, "counter")
-	command := "!value=$(cat " + counter + " 2>/dev/null || echo 0); value=$((value+1)); printf %s $value > " + counter + "; printf token-$value"
+	// Quoted so bash keeps Windows backslashes literal.
+	command := "!value=$(cat '" + counter + "' 2>/dev/null || echo 0); value=$((value+1)); printf %s $value > '" + counter + "'; printf token-$value"
 	authHeader := true
 	config := &ModelConfig{Providers: map[string]ModelProviderConfig{"fixture": {
 		APIKey:     &command,

@@ -1,19 +1,19 @@
 package exporthtml
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 func TestMarkdownExportMatchesActiveBranchGolden(t *testing.T) {
 	root := t.TempDir()
 	output := filepath.Join(root, "session.md")
-	outputURL := (&url.URL{Scheme: "file", Path: output}).String()
+	outputURL := nodepath.PathToFileURL(output)
 	path, err := ExportMarkdownFromFile(fixturePath(t), outputURL)
 	if err != nil {
 		t.Fatal(err)

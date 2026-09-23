@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import * as codingAgent from "../sdk/coding-agent.mjs";
@@ -369,8 +369,8 @@ test("SessionManager.create yields a real writable session dir; inMemory does no
 
 test("SettingsManager and DefaultResourceLoader are inert handles", async () => {
 	const settings = codingAgent.SettingsManager.create("/tmp", "/tmp/agent");
-	assert.equal(settings.cwd, "/tmp");
-	assert.equal(settings.agentDir, "/tmp/agent");
+	assert.equal(settings.cwd, resolve("/tmp"));
+	assert.equal(settings.agentDir, resolve("/tmp/agent"));
 	assert.throws(() => settings.getSettings(), /SettingsManager\.getSettings is not implemented/);
 	const loader = new codingAgent.DefaultResourceLoader({
 		cwd: "/tmp",

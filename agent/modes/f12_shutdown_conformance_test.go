@@ -48,7 +48,7 @@ func TestF12ShutdownLifecycleMatchesUpstream(t *testing.T) {
 			if got := host.Trace(); !reflect.DeepEqual(got, wantOrder) {
 				t.Fatalf("shutdown order differs\nwant: %#v\n got: %#v", wantOrder, got)
 			}
-			gotOutput := strings.ReplaceAll(output.String(), temporary, "<tmp>")
+			gotOutput := strings.ReplaceAll(strings.ReplaceAll(output.String(), temporary+string(filepath.Separator), "<tmp>/"), temporary, "<tmp>")
 			// D30 changes only the executable token in this upstream fixture.
 			wantOutput := strings.Replace(test.want.Output, " pi --session", " orb --session", 1)
 			if gotOutput != wantOutput {
@@ -65,6 +65,9 @@ func TestF12ShutdownLifecycleMatchesUpstream(t *testing.T) {
 }
 
 func TestSIGTERMUsesSignalShutdownLifecycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot deliver SIGTERM to a process; Go raises it only for console close, logoff and shutdown events")
+	}
 	fixture := loadF12ShutdownFixture(t)
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -64,7 +65,12 @@ func TestAccountsPreserveDefaultAndPinRefresh(t *testing.T) {
 		t.Fatalf("accounts=%v error=%v", rows, err)
 	}
 	info, err := os.Stat(store.path)
-	if err != nil || info.Mode().Perm() != 0600 {
+	want := os.FileMode(0600)
+	if runtime.GOOS == "windows" {
+		// Windows exposes only the read-only attribute through mode bits.
+		want = 0666
+	}
+	if err != nil || info.Mode().Perm() != want {
 		t.Fatal("credentials are not private")
 	}
 }

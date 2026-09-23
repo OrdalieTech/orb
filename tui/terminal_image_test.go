@@ -114,6 +114,7 @@ func TestImageComponentKittyITermAndFallback(t *testing.T) {
 func TestImageFallbackShortensLinksAndClamps(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	filename := filepath.Join(home, "images", strings.Repeat("long-name-", 8)+"shot.png")
 	dimensions := &ImageDimensions{WidthPx: 1280, HeightPx: 720}
 	t.Cleanup(ResetCapabilitiesCache)

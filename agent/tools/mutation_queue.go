@@ -88,9 +88,14 @@ func (reservation *mutationReservation) finish() {
 }
 
 func mutationQueueKey(filePath string) (string, error) {
-	resolved, err := filepath.Abs(filePath)
-	if err != nil {
-		return "", err
+	// path.resolve is lexical; win32 GetFullPathName (filepath.Abs) would reject a
+	// NUL byte before Node's null-byte check reports it.
+	resolved := filepath.Clean(filePath)
+	if !filepath.IsAbs(filePath) {
+		var err error
+		if resolved, err = filepath.Abs(filePath); err != nil {
+			return "", err
+		}
 	}
 	if err := nodeNullPathError(resolved); err != nil {
 		return "", err

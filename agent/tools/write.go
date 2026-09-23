@@ -44,12 +44,8 @@ func (localWriteOperations) MkdirAll(_ context.Context, path string) error {
 	if info, err := os.Stat(path); err == nil && !info.IsDir() {
 		return nodeFilesystemError{code: "EEXIST", operation: "mkdir", path: path}
 	}
-	if danglingPath, exact := danglingSymlinkComponent(path); danglingPath != "" {
-		code := "ENOTDIR"
-		if exact {
-			code = "ENOENT"
-		}
-		return nodeFilesystemError{code: code, operation: "mkdir", path: danglingPath}
+	if blockedPath, code := mkdirBlockingComponent(path); blockedPath != "" {
+		return nodeFilesystemError{code: code, operation: "mkdir", path: blockedPath}
 	}
 	err := os.MkdirAll(path, 0o777)
 	if err != nil {
@@ -60,17 +56,29 @@ func (localWriteOperations) MkdirAll(_ context.Context, path string) error {
 	return asNodeFilesystemErrorAt("mkdir", path, err)
 }
 
-func danglingSymlinkComponent(path string) (string, bool) {
+// mkdirBlockingComponent finds what makes Node's recursive mkdir fail before
+// it creates anything: a dangling symlink (ENOENT when it is the requested
+// path, ENOTDIR at the link otherwise), or a non-directory ancestor, which
+// Node reports as ENOTDIR at the requested path on every platform even though
+// win32 CreateDirectory itself only says the path was not found.
+func mkdirBlockingComponent(path string) (string, string) {
 	requested := filepath.Clean(path)
 	for current := requested; ; current = filepath.Dir(current) {
-		if info, err := os.Lstat(current); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			if _, statErr := os.Stat(current); errors.Is(statErr, os.ErrNotExist) {
-				return current, current == requested
+		if info, err := os.Lstat(current); err == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				if _, statErr := os.Stat(current); errors.Is(statErr, os.ErrNotExist) {
+					if current == requested {
+						return current, "ENOENT"
+					}
+					return current, "ENOTDIR"
+				}
+			} else if !info.IsDir() && current != requested {
+				return requested, "ENOTDIR"
 			}
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", false
+			return "", ""
 		}
 	}
 }

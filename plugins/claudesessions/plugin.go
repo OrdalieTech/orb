@@ -420,21 +420,20 @@ func includeSelected(models []ai.Model, selected *ai.Model) []ai.Model {
 // Resolve only against the host-supplied environment, never process-global PATH.
 func executable(name string, env []string) (string, error) {
 	if filepath.IsAbs(name) {
-		info, err := os.Stat(name)
-		if err != nil {
+		if resolved, ok := runnable(name); ok {
+			return resolved, nil
+		}
+		if _, err := os.Stat(name); err != nil {
 			return "", err
 		}
-		if info.IsDir() || info.Mode().Perm()&0111 == 0 {
-			return "", fmt.Errorf("%s is not executable", name)
-		}
-		return name, nil
+		return "", fmt.Errorf("%s is not executable", name)
 	}
-	if strings.ContainsRune(name, filepath.Separator) {
+	if hasPathSeparator(name) {
 		return "", errors.New("executable path must be absolute")
 	}
 	search := ""
 	for _, item := range env {
-		if value, ok := strings.CutPrefix(item, "PATH="); ok {
+		if value, ok := searchPath(item); ok {
 			search = value
 		}
 	}
@@ -442,8 +441,7 @@ func executable(name string, env []string) (string, error) {
 		if !filepath.IsAbs(dir) {
 			continue
 		}
-		candidate := filepath.Join(dir, name)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode().Perm()&0111 != 0 {
+		if candidate, ok := runnable(filepath.Join(dir, name)); ok {
 			return candidate, nil
 		}
 	}

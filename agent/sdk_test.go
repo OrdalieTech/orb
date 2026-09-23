@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -562,7 +563,8 @@ func TestNewAgentSessionResolvesCWD(t *testing.T) {
 	if got := result.Session.Manager().GetCWD(); got != project {
 		t.Fatalf("session cwd = %q, want %q", got, project)
 	}
-	if got := result.Session.State().SystemPrompt; !strings.HasSuffix(got, "<cwd>\n"+project+"\n</cwd>") {
+	// Upstream system-prompt.ts writes the cwd with forward slashes on every platform.
+	if got := result.Session.State().SystemPrompt; !strings.HasSuffix(got, "<cwd>\n"+filepath.ToSlash(project)+"\n</cwd>") {
 		t.Fatalf("system prompt uses unresolved cwd: %q", got)
 	}
 }
@@ -1308,10 +1310,19 @@ func TestNewAgentSessionPersistentSessionManagerFailsOnBadPath(t *testing.T) {
 	provider := testFaux(100000)
 
 	// Use a nonexistent path that cannot be created.
+	badDir := "/dev/null/impossible"
+	if runtime.GOOS == "windows" {
+		// Windows has no /dev/null; a regular file blocks the parent the same way.
+		blocker := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		badDir = filepath.Join(blocker, "impossible")
+	}
 	_, err := NewAgentSession(AgentSessionOptions{
 		StreamFn: provider.StreamSimple,
 		Model:    provider.GetModel(),
-		AgentDir: "/dev/null/impossible",
+		AgentDir: badDir,
 	})
 	if err == nil {
 		t.Fatal("expected error for bad session dir, got nil")

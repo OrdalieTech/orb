@@ -264,7 +264,17 @@ func testFileInfo(t *testing.T, fsys harness.FileSystem) {
 	_, err := fsys.FileInfo(t.Context(), "info/missing")
 	requireCodeAt(t, err, harness.FileErrorNotFound, abs(t, fsys, "info/missing"))
 	_, err = fsys.FileInfo(t.Context(), "info/file.txt/child")
-	requireCode(t, err, harness.FileErrorNotDirectory)
+	requireCode(t, err, beneathFileCode(fsys))
+}
+
+// beneathFileCode is the error for a path beneath a regular file. POSIX says
+// ENOTDIR; win32 lstat and a plain mkdir only say the path was not found, and
+// the reference NodeExecutionEnv reports what Node does there.
+func beneathFileCode(fsys harness.FileSystem) harness.FileErrorCode {
+	if _, native := fsys.(*harness.NodeExecutionEnv); native && runtime.GOOS == "windows" {
+		return harness.FileErrorNotFound
+	}
+	return harness.FileErrorNotDirectory
 }
 
 func testListDir(t *testing.T, fsys harness.FileSystem) {
@@ -306,8 +316,14 @@ func testExists(t *testing.T, fsys harness.FileSystem) {
 	if exists(t, fsys, "exists/missing") || exists(t, fsys, "missing/deeper") {
 		t.Fatal("missing path reported present")
 	}
-	_, err := fsys.Exists(t.Context(), "exists/file.txt/child")
-	requireCode(t, err, harness.FileErrorNotDirectory)
+	present, err := fsys.Exists(t.Context(), "exists/file.txt/child")
+	if code := beneathFileCode(fsys); code == harness.FileErrorNotFound {
+		if err != nil || present {
+			t.Fatalf("Exists beneath a file = %t, %v; want false like any missing path", present, err)
+		}
+	} else {
+		requireCode(t, err, code)
+	}
 }
 
 func testCreateDir(t *testing.T, fsys harness.FileSystem) {
@@ -332,7 +348,7 @@ func testCreateDir(t *testing.T, fsys harness.FileSystem) {
 		if runtime.GOOS == "wasip1" {
 			t.Skip("wazero's path_create_directory reports ENOENT instead of ENOTDIR beneath a regular file")
 		}
-		requireCode(t, fsys.CreateDir(ctx, "a/file.txt/child", false), harness.FileErrorNotDirectory)
+		requireCode(t, fsys.CreateDir(ctx, "a/file.txt/child", false), beneathFileCode(fsys))
 	})
 }
 
@@ -444,7 +460,7 @@ func testKindErrors(t *testing.T, fsys harness.FileSystem) {
 	requireCode(t, fsys.WriteFile(ctx, "kind/file.txt/deep/child", []byte("x")), harness.FileErrorNotDirectory)
 	requireCode(t, fsys.AppendFile(ctx, "kind/file.txt/child", []byte("x")), harness.FileErrorNotDirectory)
 	_, err = fsys.ReadTextFile(ctx, "kind/file.txt/child")
-	requireCode(t, err, harness.FileErrorNotDirectory)
+	requireCode(t, err, beneathFileCode(fsys))
 	if got := readText(t, fsys, "kind/file.txt"); got != "x" {
 		t.Fatalf("failed writes changed the file: %q", got)
 	}

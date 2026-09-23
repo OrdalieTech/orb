@@ -247,7 +247,13 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	cwd, err = filepath.Abs(normalizedCWD)
+	// A host FS port owns its path namespace: a virtual POSIX tree must not
+	// pick up the process drive on win32 (DECISIONS.md P10).
+	if opts.Host != nil && opts.Host.FS != nil {
+		cwd, err = opts.Host.FS.AbsolutePath(context.Background(), normalizedCWD)
+	} else {
+		cwd, err = filepath.Abs(normalizedCWD)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +269,11 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	agentDir, err = filepath.Abs(agentDir)
+	if opts.Host != nil && opts.Host.FS != nil {
+		agentDir, err = opts.Host.FS.AbsolutePath(context.Background(), agentDir)
+	} else {
+		agentDir, err = filepath.Abs(agentDir)
+	}
 	if err != nil {
 		return nil, err
 	}

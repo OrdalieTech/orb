@@ -117,8 +117,8 @@ func TestJSONPrintModeMatchesUpstreamRunPrintModeFixtures(t *testing.T) {
 			if exitCode != scenario.ExpectedExitCode || stderr.Len() != 0 {
 				t.Fatalf("exit=%d want=%d stderr=%q", exitCode, scenario.ExpectedExitCode, stderr.String())
 			}
-			if !bytes.Equal(stdout.Bytes(), want) {
-				t.Fatalf("JSON trace mismatch:\n%s", runner.ByteDiff(want, stdout.Bytes()))
+			if got := fixtureProjectCWD(t, stdout.Bytes()); !bytes.Equal(got, want) {
+				t.Fatalf("JSON trace mismatch:\n%s", runner.ByteDiff(want, got))
 			}
 		})
 	}
@@ -132,6 +132,17 @@ func loadF3SessionFixtures(t testing.TB) f3SessionFixtures {
 	var fixtures f3SessionFixtures
 	runner.LoadJSON(t, "F3-session", "scenarios.json", &fixtures)
 	return fixtures
+}
+
+// fixtureProjectCWD maps the session cwd back to the fixture's form: upstream
+// path.resolve roots "/fixture/project" on the current drive on win32.
+func fixtureProjectCWD(t testing.TB, output []byte) []byte {
+	t.Helper()
+	resolved, err := filepath.Abs(filepath.FromSlash("/fixture/project"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []byte(runner.ReplaceJSONPathAliases(string(output), resolved, "/fixture/project"))
 }
 
 func newF3SessionRuntime(t testing.TB, scenario f3SessionScenario, headerTime time.Time) (*agent.SessionRuntime, *session.SessionManager) {
@@ -280,7 +291,7 @@ func TestCLIJSONModeMatchesMultiplePromptFixture(t *testing.T) {
 	if exitCode != scenario.ExpectedExitCode || stderr.Len() != 0 {
 		t.Fatalf("exit=%d want=%d stderr=%q", exitCode, scenario.ExpectedExitCode, stderr.String())
 	}
-	canonical := canonicalizeCLIHeader(t, stdout.Bytes(), filepath.ToSlash(project), expectedHeader)
+	canonical := canonicalizeCLIHeader(t, stdout.Bytes(), project, expectedHeader)
 	if !bytes.Equal(canonical, want) {
 		t.Fatalf("CLI JSON trace mismatch:\n%s", runner.ByteDiff(want, canonical))
 	}
@@ -315,7 +326,7 @@ func TestCLIJSONModeMergesPipedStdinAndRunsRemainingPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decodeStrictSessionHeader(t, lines[0], filepath.ToSlash(project))
+	decodeStrictSessionHeader(t, lines[0], project)
 	if got, want := userPromptsFromJSONEvents(t, lines[1:]), []string{"piped inputcli prompt", "next prompt"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("user prompts = %#v, want %#v", got, want)
 	}
@@ -377,7 +388,7 @@ func TestCLIJSONModeResumeAndForkHeaders(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			header := decodeStrictSessionHeader(t, lines[0], filepath.ToSlash(project))
+			header := decodeStrictSessionHeader(t, lines[0], project)
 			if len(prior) != 2 {
 				t.Fatalf("restored messages = %d, want 2", len(prior))
 			}

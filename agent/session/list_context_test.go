@@ -20,7 +20,7 @@ func TestFindByIDReadsHeadersOnlyAndFiltersCustomDirectoryCWD(t *testing.T) {
 	}
 	write := func(name, id, cwd string) string {
 		path := filepath.Join(root, name)
-		body := `{"type":"session","version":3,"id":"` + id + `","timestamp":"2025-01-01T00:00:00.000Z","cwd":"` + cwd + `"}` + "\n" +
+		body := `{"type":"session","version":3,"id":"` + id + `","timestamp":"2025-01-01T00:00:00.000Z","cwd":` + jsonString(t, cwd) + `}` + "\n" +
 			"this transcript body is deliberately not valid JSON\n"
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -47,7 +47,7 @@ func TestListContextPublishesSortedPartialSessionsAndHonorsCancellation(t *testi
 	for index, id := range []string{"old", "middle", "new"} {
 		path := filepath.Join(root, id+".jsonl")
 		stamp := time.Date(2025, time.January, 1, 0, index, 0, 0, time.UTC)
-		body := `{"type":"session","version":3,"id":"` + id + `","timestamp":"` + stamp.Format(time.RFC3339Nano) + `","cwd":"` + project + `"}` + "\n"
+		body := `{"type":"session","version":3,"id":"` + id + `","timestamp":"` + stamp.Format(time.RFC3339Nano) + `","cwd":` + jsonString(t, project) + `}` + "\n"
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}

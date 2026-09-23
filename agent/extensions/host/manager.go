@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"golang.org/x/term"
 )
 
@@ -398,7 +399,9 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 		if loaderErr != nil {
 			return result, fmt.Errorf("extension host: materialize loader: %w", loaderErr)
 		}
-		commandArgs = append(commandArgs, "--experimental-loader", loaderPath)
+		// The loader is an import specifier, and a win32 drive path parses as a URL
+		// with scheme "c:", so it is passed as a file URL.
+		commandArgs = append(commandArgs, "--experimental-loader", nodepath.PathToFileURL(loaderPath))
 	}
 	hostEnvironment, err := prepareHostEnvironment(manager.options, os.Environ(), runtime.Path)
 	if err != nil {

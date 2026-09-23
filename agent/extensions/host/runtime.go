@@ -126,7 +126,11 @@ func nodeCandidates() []string {
 		for _, path := range paths {
 			// Filters a dangling symlink and a directory named node as well, so a
 			// broken PATH entry costs a stat rather than a failed spawn.
-			if path == "" || !executableFile(path) {
+			if path == "" {
+				continue
+			}
+			path, ok := resolveExecutable(path)
+			if !ok {
 				continue
 			}
 			key := path
@@ -155,47 +159,42 @@ func nodeCandidates() []string {
 	}
 	for _, pattern := range nodeSearchPatterns() {
 		matches, err := filepath.Glob(pattern)
-		if err == nil {
-			add(matches...)
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			add(nodeSearchCandidate(match))
 		}
 	}
 	return candidates
 }
 
-// Every pattern is POSIX and simply matches nothing on Windows, which lands with
-// D8; none of them is wrong there, only inert.
+// nodeInstallLayout locates one version manager's installs: its root is the
+// first of env that is set, else base (an environment variable, or home when
+// empty) joined with fallback; parts is the glob below the root.
+type nodeInstallLayout struct {
+	env      []string
+	base     string
+	fallback []string
+	parts    []string
+}
+
 // ponytail: the newest install wins within a version manager rather than the
 // version the user selected, which orb cannot read without running the manager;
 // upgrade path is honouring `.nvmrc`/`.tool-versions` when one is present.
 func nodeSearchPatterns() []string {
 	home, _ := os.UserHomeDir()
 	patterns := make([]string, 0, 16)
-	add := func(root string, parts ...string) {
-		if root != "" {
-			patterns = append(patterns, filepath.Join(append([]string{root}, parts...)...))
+	for _, layout := range nodeInstallLayouts {
+		base := home
+		if layout.base != "" {
+			base = strings.TrimSpace(os.Getenv(layout.base))
+		}
+		if root := versionManagerRoot(base, layout.env, layout.fallback...); root != "" {
+			patterns = append(patterns, filepath.Join(append([]string{root}, layout.parts...)...))
 		}
 	}
-	add(versionManagerRoot(home, []string{"NVM_DIR"}, ".nvm"), "versions", "node", "*", "bin", "node")
-	add(versionManagerRoot(home, []string{"FNM_DIR"}, ".local", "share", "fnm"), "node-versions", "*", "installation", "bin", "node")
-	add(versionManagerRoot(home, nil, "Library", "Application Support", "fnm"), "node-versions", "*", "installation", "bin", "node")
-	add(versionManagerRoot(home, []string{"VOLTA_HOME"}, ".volta"), "tools", "image", "node", "*", "bin", "node")
-	add(versionManagerRoot(home, []string{"ASDF_DATA_DIR", "ASDF_DIR"}, ".asdf"), "installs", "nodejs", "*", "bin", "node")
-	add(versionManagerRoot(home, []string{"MISE_DATA_DIR"}, ".local", "share", "mise"), "installs", "node", "*", "bin", "node")
-	add(versionManagerRoot(home, nil, ".nodenv", "versions"), "*", "bin", "node")
-	add(versionManagerRoot(home, []string{"N_PREFIX"}), "bin", "node")
 	return append(patterns, nodeSystemSearchPatterns...)
-}
-
-// Overridden in tests, where a Node installed at a system prefix would otherwise
-// decide the outcome.
-var nodeSystemSearchPatterns = []string{
-	"/opt/homebrew/opt/node@*/bin/node",
-	"/usr/local/opt/node@*/bin/node",
-	"/usr/local/n/versions/node/*/bin/node",
-	"/opt/homebrew/bin/node",
-	"/usr/local/bin/node",
-	"/usr/bin/node",
-	"/snap/bin/node",
 }
 
 func versionManagerRoot(home string, names []string, fallback ...string) string {

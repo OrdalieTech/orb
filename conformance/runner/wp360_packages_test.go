@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -149,8 +150,59 @@ func wp360WriteTree(t *testing.T, root string, files []wp360FileSpec, dirs []str
 	}
 }
 
+// wp360Relativize maps a native path under root to the fixture's POSIX form;
+// upstream joins with backslashes on win32.
 func wp360Relativize(value, root string) string {
-	return strings.ReplaceAll(value, root, "<fixture>")
+	return filepath.ToSlash(strings.ReplaceAll(value, root, "<fixture>"))
+}
+
+// wp360RelativizeJSON is wp360Relativize for JSON text, where win32
+// separators appear escaped.
+func wp360RelativizeJSON(value, root string) string {
+	value = runner.ReplaceJSONPathAliases(value, root, "<fixture>")
+	if runtime.GOOS == "windows" {
+		value = strings.ReplaceAll(value, `\\`, "/")
+	}
+	return value
+}
+
+// wp360NativeLocalSources rewrites expected local package sources to the
+// separators upstream's path.relative produces on this platform.
+func wp360NativeLocalSources(t *testing.T, packages []json.RawMessage) []json.RawMessage {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return packages
+	}
+	native := make([]json.RawMessage, len(packages))
+	for index, raw := range packages {
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatal(err)
+		}
+		switch typed := value.(type) {
+		case string:
+			value = wp360NativeLocalSource(typed)
+		case map[string]any:
+			if source, ok := typed["source"].(string); ok {
+				typed["source"] = wp360NativeLocalSource(source)
+			}
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		native[index] = encoded
+	}
+	return native
+}
+
+func wp360NativeLocalSource(source string) string {
+	for _, prefix := range []string{"npm:", "git:", "github:", "http:", "https:", "ssh:"} {
+		if strings.HasPrefix(strings.TrimSpace(source), prefix) {
+			return source
+		}
+	}
+	return filepath.FromSlash(source)
 }
 
 func TestWP360GitURLParsing(t *testing.T) {
@@ -201,6 +253,7 @@ func TestWP360Resolve(t *testing.T) {
 		t.Run(testCase.Name, func(t *testing.T) {
 			root := wp360CaseRoot(t)
 			t.Setenv("HOME", filepath.Join(root, "home"))
+			t.Setenv("USERPROFILE", filepath.Join(root, "home"))
 			if err := os.MkdirAll(filepath.Join(root, "home"), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -281,6 +334,7 @@ func TestWP360SettingsMutations(t *testing.T) {
 		t.Run(testCase.Name, func(t *testing.T) {
 			root := wp360CaseRoot(t)
 			t.Setenv("HOME", filepath.Join(root, "home"))
+			t.Setenv("USERPROFILE", filepath.Join(root, "home"))
 			agentDir := filepath.Join(root, "agent")
 			cwd := filepath.Join(root, "project")
 			if err := os.MkdirAll(cwd, 0o755); err != nil {
@@ -317,8 +371,8 @@ func TestWP360SettingsMutations(t *testing.T) {
 				t.Errorf("changed = %v, want %v", changed, testCase.Expected.Changed)
 			}
 
-			compareRawPackages(t, "global", settings.GetGlobalSettings()["packages"], testCase.Expected.GlobalPackages)
-			compareRawPackages(t, "project", settings.GetProjectSettings()["packages"], testCase.Expected.ProjectPackages)
+			compareRawPackages(t, "global", settings.GetGlobalSettings()["packages"], wp360NativeLocalSources(t, testCase.Expected.GlobalPackages))
+			compareRawPackages(t, "project", settings.GetProjectSettings()["packages"], wp360NativeLocalSources(t, testCase.Expected.ProjectPackages))
 		})
 	}
 }
@@ -419,7 +473,7 @@ func TestWP360TrustStore(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := wp360Relativize(string(contents), root); got != testCase.Expected.File {
+			if got := wp360RelativizeJSON(string(contents), root); got != testCase.Expected.File {
 				t.Errorf("trust.json mismatch:\n%s", runner.ByteDiff([]byte(testCase.Expected.File), []byte(got)))
 			}
 		})
@@ -433,6 +487,7 @@ func TestWP360HasTrustRequiringProjectResources(t *testing.T) {
 		t.Run(testCase.Name, func(t *testing.T) {
 			root := wp360CaseRoot(t)
 			t.Setenv("HOME", filepath.Join(root, "home"))
+			t.Setenv("USERPROFILE", filepath.Join(root, "home"))
 			if err := os.MkdirAll(filepath.Join(root, "home"), 0o755); err != nil {
 				t.Fatal(err)
 			}

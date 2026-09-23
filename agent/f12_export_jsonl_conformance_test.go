@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -61,7 +62,24 @@ func TestF12JSONLExportMatchesUpstreamBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != fixture.Expected {
-		t.Fatalf("JSONL export differs from upstream\nwant: %q\n got: %q", fixture.Expected, got)
+	want := fixture.Expected
+	// Upstream's SessionManager resolves the header cwd, which win32 roots on
+	// the process drive; POSIX leaves the captured absolute path unchanged.
+	var header struct {
+		CWD string `json:"cwd"`
+	}
+	firstLine, _, _ := strings.Cut(fixture.Input, "\n")
+	if err := json.Unmarshal([]byte(firstLine), &header); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.Abs(header.CWD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	captured, _ := json.Marshal(header.CWD)
+	host, _ := json.Marshal(resolved)
+	want = strings.Replace(want, `"cwd":`+string(captured), `"cwd":`+string(host), 1)
+	if string(got) != want {
+		t.Fatalf("JSONL export differs from upstream\nwant: %q\n got: %q", want, got)
 	}
 }

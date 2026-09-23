@@ -308,6 +308,7 @@ func TestLoadResourcesPromptPrecedenceTrustAndNoContext(t *testing.T) {
 func TestDefaultAgentDirNormalizesEnvironmentOverride(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Setenv("USERPROFILE", root)
 	t.Setenv("PI_CODING_AGENT_DIR", "~/custom-agent")
 	if got, want := DefaultAgentDir(), filepath.Join(root, "custom-agent"); got != want {
 		t.Fatalf("tilde agent directory = %q, want %q", got, want)

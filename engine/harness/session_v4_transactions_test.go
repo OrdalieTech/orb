@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -349,11 +351,30 @@ func TestReleasedV4TransactionRepo(t *testing.T) {
 	if err = json.Unmarshal(encoded, &normalized); err != nil {
 		t.Fatal(err)
 	}
+	// The fixture is a POSIX capture; win32 path.resolve roots "/fixture/project"
+	// on the process drive, which also shows in the encoded session directory.
+	hostToFixture := func(value string) string { return value }
+	if runtime.GOOS == "windows" {
+		resolvedCWD, err := fs.AbsolutePath(ctx, cwd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		escapedCWD, _ := json.Marshal(resolvedCWD)
+		hostDir, fixtureDir := sessionV4DirectoryName(resolvedCWD), sessionV4DirectoryName(cwd)
+		hostToFixture = func(value string) string {
+			value = strings.ReplaceAll(value, string(escapedCWD[1:len(escapedCWD)-1]), cwd)
+			value = strings.ReplaceAll(strings.ReplaceAll(value, resolvedCWD, cwd), hostDir, fixtureDir)
+			if strings.Contains(value, "<fixture>") {
+				value = filepath.ToSlash(value)
+			}
+			return value
+		}
+	}
 	var normalize func(any) any
 	normalize = func(value any) any {
 		switch v := value.(type) {
 		case string:
-			return strings.ReplaceAll(v, root, "<fixture>")
+			return hostToFixture(strings.ReplaceAll(v, root, "<fixture>"))
 		case []any:
 			for i := range v {
 				v[i] = normalize(v[i])
