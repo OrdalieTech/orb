@@ -9,7 +9,7 @@ native_targets="linux/amd64 linux/arm64 linux/386 linux/arm darwin/amd64 darwin/
 # Anything that links one of them is excluded from the Wasm targets with it.
 wasm_native_only="cmd/orb storage/sqlite agent/modes plugins/bridge/hosts/native plugins/bridge/transports/tailcat"
 # Suites executed under Node (js/wasm) and wazero (wasip1/wasm).
-wasm_suites="./ai/... ./engine/... ./agent/rpc/... ./platforms/memory/... ./platforms/wasm/... ./internal/jsonschema/... ./internal/jsonwire/... ./internal/partialjson/... ./internal/truncate/..."
+wasm_suites="./ai/... ./engine/... ./agent/rpc/... ./platforms/memory/... ./platforms/wasm/... ./platforms/worker/... ./internal/jsonschema/... ./internal/jsonwire/... ./internal/partialjson/... ./internal/truncate/..."
 wasm_suite_skip="$module/ai/models/cmd/genmodels"
 # Compressed ceilings: the engine-only browser runtime, and a full AgentSession,
 # which must fit Cloudflare's 10 MB compressed Worker limit.
@@ -68,6 +68,8 @@ if [ "$size" -gt "$session_gzip_budget" ]; then
 	echo "portability: full AgentSession exceeds its budget" >&2
 	exit 1
 fi
+GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -trimpath -ldflags=-s -o "$bundle/worker.wasm" ./cmd/orb-worker
+echo "portability: Worker bundle $(gzip -9 -c "$bundle/worker.wasm" | wc -c | tr -d ' ') bytes gzip"
 
 wasm_exec=$(go env GOROOT)/lib/wasm
 suites=$(go list $wasm_suites | grep -v -x -F "$wasm_suite_skip")

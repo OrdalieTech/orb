@@ -52,8 +52,17 @@ conversation traffic uses Bridge over Tailcat. From the shell: `orb bridge conne
 Pairing grants mutual conversation access. Bridge runs in the background until explicitly stopped;
 turning it off retains saved pairings. Recent foreign previews are read-only offline.
 
-The current release controls attached conversations. Managed remote hosting and a unified
-multi-Bridge Sessions page remain planned; see the [release notes](CHANGELOG.md#080---2026-09-21).
+The current release controls attached conversations; a unified multi-Bridge Sessions page remains
+planned.
+
+## Deploy anywhere
+
+Orb is a runtime you deploy, not a thin client of someone else's server: the same core runs on
+macOS and Linux, in containers, inside Go services and in a browser worker, and is being brought
+to Cloudflare Durable Objects, Celld cells, Windows, Android, iOS and WASI. Each deployment
+runs its own model calls, tools and sessions, and deployments reach each other as Bridge peers.
+[docs/deployments.md](docs/deployments.md) lists every target with its status, capabilities,
+deploy command and Bridge role.
 
 ## Embed the SDK
 

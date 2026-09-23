@@ -1,0 +1,21 @@
+// Orb Worker: one Durable Object (OrbAgent) per agent name, reached at
+// /agents/<name>/rpc. `make worker-build` assembles this directory with
+// worker.mjs and orb.wasm in .tools/worker; Cloudflare (`cf deploy`) and Celld
+// (`celld deploy`) deploy the same files. Keep to keys both accept.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orb-agent",
+  "main": "dist/worker.mjs",
+  // dist/worker.mjs is already one module; dist/orb.wasm is found by the
+  // default CompiledWasm rule below dist/, so neither runtime bundles.
+  "no_bundle": true,
+  "compatibility_date": "2026-09-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ORB_AGENT", "class_name": "OrbAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OrbAgent"] }],
+  "vars": {
+    // settings.json for objects that have none of their own (kernel format).
+    "ORB_SETTINGS": "{\"defaultProvider\":\"anthropic\",\"defaultModel\":\"claude-sonnet-5\"}"
+  }
+}

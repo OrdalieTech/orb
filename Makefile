@@ -16,6 +16,8 @@ LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 # The canonical gate (upstream's `npm run check` norm): run after any code change.
 check: build lint test portability
 
+include platforms/worker/worker.mk
+
 BROWSER_PORT ?= 8787
 .PHONY: browser-build browser-serve
 browser-build:

@@ -24,7 +24,7 @@ specification.
 
 ## Constitution — durable paradigms
 
-Ten paradigms. Everything else in this record is operational memory.
+Eleven paradigms. Everything else in this record is operational memory.
 
 - **P1 — SDK-first, layered** *(formerly D1, D3)*. Orb is a Go module first; the `orb` CLI is one
   consumer. Layers compose upward — `ai/` → `engine/` → `agent/` → assemblies (`cmd/orb`,
@@ -90,6 +90,15 @@ Ten paradigms. Everything else in this record is operational memory.
   lacking a port omits them instead of failing: no `Exec` means no bash, process MCP or JS
   extension host. Port implementations pass one shared conformance suite, and the same scripted
   scenarios produce identical kernel output on every host.
+- **P11 — Deployable anywhere, connected as peers** *(owner direction 2026-09-23)*. Orb is a
+  runtime to deploy, not a remote client: every P2 target runs the full core with its own model
+  calls, tools, sessions and state, and hosted targets (Cloudflare Durable Objects, Celld) are in
+  scope. Deployments reach each other as Bridge peers: people control conversations on any Orb
+  that granted them, and an Orb's agent calls another Orb only under its own grants. A target is
+  supported only with evidence: its ports pass the conformance suites, the cross-host scenario
+  matches native, a target end-to-end test runs in CI, one documented command deploys and removes
+  it, and it states its capability profile and Bridge role. `docs/deployments.md` is the
+  catalogue; a target's status there changes only with that evidence.
 
 ## The compat kernel
 
