@@ -2203,10 +2203,43 @@ func (data *clickableFooterData) StatusAction(key string) func() {
 	if key == "orb:thinking" {
 		return func() { data.thinkingClicked++ }
 	}
-	if key == "quota" {
+	if key == "quota" || key == "bridge" {
 		return func() { data.clicked++ }
 	}
 	return nil
+}
+
+func (data *clickableFooterData) StatusLabel(key string) string {
+	if key == "bridge" {
+		return "Bridge"
+	}
+	return ""
+}
+
+func TestFooterHoverRevealsIndicatorLabelInPlace(t *testing.T) {
+	initTestTheme(t)
+	data := &clickableFooterData{fakeFooterDataProvider: fakeFooterDataProvider{cwd: "/workspace", statuses: map[string]string{"bridge": "●"}}}
+	footer := NewFooterComponent(layoutFooterSession{}, data, false)
+	dot := func() (string, int) {
+		line := tui.StripANSI(footer.Render(80)[0])
+		return line, tui.VisibleWidth(line[:strings.LastIndex(line, "●")])
+	}
+	line, column := dot()
+	if strings.Contains(line, "Bridge") {
+		t.Fatalf("label shown without hover: %q", line)
+	}
+	if !footer.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Column: column}) {
+		t.Fatal("hovering the dot did not change the frame")
+	}
+	if hovered, hoveredColumn := dot(); !strings.Contains(hovered, "Bridge ●") || hoveredColumn != column {
+		t.Fatalf("hover label missing or dot moved: %q (column %d, was %d)", hovered, hoveredColumn, column)
+	}
+	if !footer.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1}) {
+		t.Fatal("leaving the footer did not clear hover")
+	}
+	if line, _ := dot(); strings.Contains(line, "Bridge") {
+		t.Fatalf("label stayed after the pointer left: %q", line)
+	}
 }
 func TestFooterStatusClickTracksResizeAndIgnoresOtherCells(t *testing.T) {
 	initTestTheme(t)
@@ -2239,7 +2272,7 @@ func TestCompactFooterQuotaAndContextAtNarrowWidths(t *testing.T) {
 	tokens := int64(11152)
 	context := &harness.ContextUsage{Tokens: &tokens, ContextWindow: 272000, Percent: &percent}
 	for _, width := range []int{20, 36, 48, 80, 140} {
-		line := compactFooterLine(display, context, []string{"Codex 69% left"}, width)
+		line := compactFooterLine(display, context, []string{"Codex 69% left"}, width, "")
 		if tui.VisibleWidth(line) > width {
 			t.Fatalf("overflow at %d: %q", width, line)
 		}

@@ -547,6 +547,8 @@ func (mode *InteractiveMode) init() error {
 	mode.addDefaultHeader()
 	mode.showLoadedResources()
 	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
+	// Footer items react to hover, so pointer motion is tracked from the start.
+	mode.ui.SetViewportMouseMotion(true)
 
 	mode.interactiveUI = NewInteractiveUI(mode)
 	mode.ui.SetSelectionStyle(func(text string) string { return theme.BG("selectedBg", theme.FG("text", text)) })
@@ -4087,6 +4089,19 @@ func (mode *InteractiveMode) StatusAction(key string) func() {
 		}
 	}
 	return nil
+}
+
+// StatusLabel names a footer indicator on hover: an extension command's
+// settings label when the status key names that command.
+func (mode *InteractiveMode) StatusLabel(key string) string {
+	if mode.session != nil {
+		if runner := mode.session.ExtensionRunner(); runner != nil {
+			if command := runner.Command(key); command != nil {
+				return command.SettingsLabel
+			}
+		}
+	}
+	return ""
 }
 
 func (mode *InteractiveMode) Statuses() map[string]string {
