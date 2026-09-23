@@ -1326,12 +1326,14 @@ func (IdleStatus) Render(width int) []string {
 
 type statusHit struct {
 	row, start, end int
+	key             string
 	action          func()
 }
 
 type FooterComponent struct {
 	hitMu              sync.Mutex
 	hits               []statusHit
+	hover              string // key of the hit under the pointer
 	session            footerSession
 	provider           footerDataProvider
 	verbose            bool
@@ -1460,10 +1462,11 @@ func thinkingMeter(level string) string {
 	}
 }
 
-func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int, indicators ...string) string {
+// meterLabel, when set, follows the thinking meter (its hover label).
+func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int, meterLabel string, indicators ...string) string {
 	tail := strings.Join(indicators, " ")
 	if tail != "" && width > tui.VisibleWidth(tail)+1 {
-		return compactFooterLine(display, context, statuses, width-tui.VisibleWidth(tail)-1) + " " + tail
+		return compactFooterLine(display, context, statuses, width-tui.VisibleWidth(tail)-1, meterLabel) + " " + tail
 	}
 	model := display.ModelID
 	if !display.HasModel {
@@ -1472,6 +1475,9 @@ func compactFooterLine(display engine.AgentDisplayState, context *harness.Contex
 	left := model
 	if display.Reasoning {
 		left += " " + thinkingMeter(string(display.ThinkingLevel))
+		if meterLabel != "" {
+			left += " " + meterLabel
+		}
 	}
 	right := strings.Join(statuses, " · ")
 	leftBudget := width
@@ -1539,14 +1545,28 @@ func (f *FooterComponent) render(width int) []string {
 		values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
 	}
 	if !f.verbose {
-		// One-glyph statuses are indicators pinned to the far right.
+		f.hitMu.Lock()
+		hover := f.hover
+		f.hitMu.Unlock()
+		// One-glyph statuses are indicators pinned to the far right. The
+		// hovered item brightens; an indicator also shows its label.
 		var texts, indicators []string
-		for _, value := range values {
+		for index, value := range values {
+			if keys[index] == hover {
+				value = theme.FG("text", value)
+			}
 			if tui.VisibleWidth(value) == 1 {
+				if label := f.statusLabel(keys[index]); keys[index] == hover && label != "" {
+					value = theme.FG("text", label) + " " + value
+				}
 				indicators = append(indicators, value)
 			} else {
 				texts = append(texts, value)
 			}
+		}
+		meterLabel := ""
+		if hover == "orb:thinking" && display.Reasoning {
+			meterLabel = theme.FG("text", string(display.ThinkingLevel))
 		}
 		if cwd := f.cwd(); cwd != "" {
 			path := shortenSessionPath(cwd)
@@ -1556,6 +1576,9 @@ func (f *FooterComponent) render(width int) []string {
 			}
 			if display.Reasoning {
 				model += " " + thinkingMeter(string(display.ThinkingLevel))
+				if meterLabel != "" {
+					model += " " + meterLabel
+				}
 			}
 			available := width - tui.VisibleWidth(model) - tui.VisibleWidth(strings.Join(texts, " · ")) - 2
 			if len(texts) > 0 {
@@ -1571,7 +1594,7 @@ func (f *FooterComponent) render(width int) []string {
 			}
 			texts = append(texts, path)
 		}
-		line := compactFooterLine(display, stats.ContextUsage, texts, width, indicators...)
+		line := compactFooterLine(display, stats.ContextUsage, texts, width, meterLabel, indicators...)
 		f.recordStatusHits(line, 0, keys, values)
 		f.recordThinkingHit(line, 0, display)
 		// A colored status ends in a foreground reset; restore dim after it.
@@ -1660,7 +1683,7 @@ func (f *FooterComponent) recordStatusHits(text string, row int, keys, values []
 			continue
 		}
 		column := tui.VisibleWidth(text[:start]) + 1
-		hits = append(hits, statusHit{row: row, start: column, end: min(tui.VisibleWidth(text)+1, column+tui.VisibleWidth(value)), action: action})
+		hits = append(hits, statusHit{row: row, start: column, end: min(tui.VisibleWidth(text)+1, column+tui.VisibleWidth(value)), key: key, action: action})
 	}
 	f.hitMu.Lock()
 	f.hits = append(f.hits, hits...)
@@ -1681,11 +1704,32 @@ func (f *FooterComponent) recordThinkingHit(text string, row int, display engine
 	}
 	column := tui.VisibleWidth(text[:start]) + tui.VisibleWidth(label)
 	f.hitMu.Lock()
-	f.hits = append(f.hits, statusHit{row: row, start: column, end: column + 1, action: action})
+	f.hits = append(f.hits, statusHit{row: row, start: column, end: column + 1, key: "orb:thinking", action: action})
 	f.hitMu.Unlock()
 }
 
+func (f *FooterComponent) statusLabel(key string) string {
+	if provider, ok := f.provider.(interface{ StatusLabel(string) string }); ok {
+		return provider.StatusLabel(key)
+	}
+	return ""
+}
+
 func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
+	if event.Type == tui.MouseMove {
+		f.hitMu.Lock()
+		defer f.hitMu.Unlock()
+		hover := ""
+		for _, hit := range f.hits {
+			if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
+				hover = hit.key
+				break
+			}
+		}
+		changed := hover != f.hover
+		f.hover = hover
+		return changed
+	}
 	if event.Type != tui.MousePress || event.Button != 0 {
 		return false
 	}
