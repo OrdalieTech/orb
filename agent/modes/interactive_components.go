@@ -1331,9 +1331,11 @@ type statusHit struct {
 }
 
 type FooterComponent struct {
-	hitMu              sync.Mutex
-	hits               []statusHit
-	hover              string // key of the hit under the pointer
+	hitMu sync.Mutex
+	hits  []statusHit
+	hover string // key of the hit under the pointer
+	// tooltip shows label above footer columns [start, end); "" hides it.
+	tooltip            func(label string, start, end int)
 	session            footerSession
 	provider           footerDataProvider
 	verbose            bool
@@ -1462,11 +1464,10 @@ func thinkingMeter(level string) string {
 	}
 }
 
-// meterLabel, when set, follows the thinking meter (its hover label).
-func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int, meterLabel string, indicators ...string) string {
+func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int, indicators ...string) string {
 	tail := strings.Join(indicators, " ")
 	if tail != "" && width > tui.VisibleWidth(tail)+1 {
-		return compactFooterLine(display, context, statuses, width-tui.VisibleWidth(tail)-1, meterLabel) + " " + tail
+		return compactFooterLine(display, context, statuses, width-tui.VisibleWidth(tail)-1) + " " + tail
 	}
 	model := display.ModelID
 	if !display.HasModel {
@@ -1475,9 +1476,6 @@ func compactFooterLine(display engine.AgentDisplayState, context *harness.Contex
 	left := model
 	if display.Reasoning {
 		left += " " + thinkingMeter(string(display.ThinkingLevel))
-		if meterLabel != "" {
-			left += " " + meterLabel
-		}
 	}
 	right := strings.Join(statuses, " · ")
 	leftBudget := width
@@ -1549,24 +1547,17 @@ func (f *FooterComponent) render(width int) []string {
 		hover := f.hover
 		f.hitMu.Unlock()
 		// One-glyph statuses are indicators pinned to the far right. The
-		// hovered item brightens; an indicator also shows its label.
+		// hovered item brightens one step; its label floats above (tooltip).
 		var texts, indicators []string
 		for index, value := range values {
 			if keys[index] == hover {
-				value = theme.FG("text", value)
+				value = theme.FG("muted", value)
 			}
 			if tui.VisibleWidth(value) == 1 {
-				if label := f.statusLabel(keys[index]); keys[index] == hover && label != "" {
-					value = theme.FG("text", label) + " " + value
-				}
 				indicators = append(indicators, value)
 			} else {
 				texts = append(texts, value)
 			}
-		}
-		meterLabel := ""
-		if hover == "orb:thinking" && display.Reasoning {
-			meterLabel = theme.FG("text", string(display.ThinkingLevel))
 		}
 		if cwd := f.cwd(); cwd != "" {
 			path := shortenSessionPath(cwd)
@@ -1576,9 +1567,6 @@ func (f *FooterComponent) render(width int) []string {
 			}
 			if display.Reasoning {
 				model += " " + thinkingMeter(string(display.ThinkingLevel))
-				if meterLabel != "" {
-					model += " " + meterLabel
-				}
 			}
 			available := width - tui.VisibleWidth(model) - tui.VisibleWidth(strings.Join(texts, " · ")) - 2
 			if len(texts) > 0 {
@@ -1594,7 +1582,7 @@ func (f *FooterComponent) render(width int) []string {
 			}
 			texts = append(texts, path)
 		}
-		line := compactFooterLine(display, stats.ContextUsage, texts, width, meterLabel, indicators...)
+		line := compactFooterLine(display, stats.ContextUsage, texts, width, indicators...)
 		f.recordStatusHits(line, 0, keys, values)
 		f.recordThinkingHit(line, 0, display)
 		// A colored status ends in a foreground reset; restore dim after it.
@@ -1718,35 +1706,48 @@ func (f *FooterComponent) statusLabel(key string) string {
 func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
 	if event.Type == tui.MouseMove {
 		f.hitMu.Lock()
-		defer f.hitMu.Unlock()
-		hover := ""
+		var hovered statusHit
 		for _, hit := range f.hits {
 			if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
-				hover = hit.key
+				hovered = hit
 				break
 			}
 		}
-		changed := hover != f.hover
-		f.hover = hover
+		changed := hovered.key != f.hover
+		f.hover = hovered.key
+		tooltip := f.tooltip
+		f.hitMu.Unlock()
+		if changed && tooltip != nil {
+			label := ""
+			if hovered.key != "" {
+				label = f.statusLabel(hovered.key)
+			}
+			tooltip(label, hovered.start, hovered.end)
+		}
 		return changed
 	}
 	if event.Type != tui.MousePress || event.Button != 0 {
 		return false
 	}
 	f.hitMu.Lock()
-	var action func()
+	var clicked statusHit
 	for _, hit := range f.hits {
 		if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
-			action = hit.action
+			clicked = hit
 			break
 		}
 	}
+	tooltip := f.tooltip
 	f.hitMu.Unlock()
-	if action == nil {
+	if clicked.action == nil {
 		return false
 	}
 	if event.Clicks < 2 {
-		action()
+		clicked.action()
+		// A click can change what the label says (the thinking level).
+		if tooltip != nil {
+			tooltip(f.statusLabel(clicked.key), clicked.start, clicked.end)
+		}
 	}
 	return true
 }

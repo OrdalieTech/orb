@@ -139,6 +139,7 @@ type InteractiveMode struct {
 	statusNoticeStarted        time.Time
 	statusNoticeOpening        bool
 	footerStatuses             map[string]string
+	footerTooltip              tui.OverlayHandle
 	autocompleteProvider       tui.AutocompleteProvider
 	paletteCommands            []tui.SlashCommand
 	cwd                        string
@@ -546,7 +547,7 @@ func (mode *InteractiveMode) init() error {
 
 	mode.addDefaultHeader()
 	mode.showLoadedResources()
-	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
+	mode.footer.AddChild(mode.newFooter())
 	// Footer items react to hover, so pointer motion is tracked from the start.
 	mode.ui.SetViewportMouseMotion(true)
 
@@ -614,7 +615,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *agent.SessionRuntime
 	mode.setExtensionEditor(nil)
 	mode.addDefaultHeader()
 	mode.restoreEditorComponent()
-	mode.footer.AddChild(NewFooterComponent(mode.session, mode, mode.options.Verbose))
+	mode.footer.AddChild(mode.newFooter())
 	mode.interactiveUI = NewInteractiveUI(mode)
 	replacement.BindExtensionUI(mode.interactiveUI, extensions.ModeTUI)
 	if err := mode.initializeTheme(); err != nil {
@@ -4091,9 +4092,15 @@ func (mode *InteractiveMode) StatusAction(key string) func() {
 	return nil
 }
 
-// StatusLabel names a footer indicator on hover: an extension command's
+// StatusLabel is a footer item's hover tooltip: an extension command's
 // settings label when the status key names that command.
 func (mode *InteractiveMode) StatusLabel(key string) string {
+	switch key {
+	case "orb:thinking":
+		return "Thinking: " + string(mode.session.State().ThinkingLevel)
+	case "provider-usage":
+		return "Accounts"
+	}
 	if mode.session != nil {
 		if runner := mode.session.ExtensionRunner(); runner != nil {
 			if command := runner.Command(key); command != nil {
@@ -4102,6 +4109,42 @@ func (mode *InteractiveMode) StatusLabel(key string) string {
 		}
 	}
 	return ""
+}
+
+func (mode *InteractiveMode) newFooter() *FooterComponent {
+	footer := NewFooterComponent(mode.session, mode, mode.options.Verbose)
+	footer.tooltip = mode.showFooterTooltip
+	return footer
+}
+
+// showFooterTooltip floats label one row above footer columns [start, end),
+// over the editor's bottom border, so hovering never shifts the footer.
+// ponytail: assumes the footer is the terminal's last row, as the chrome is
+// bottom-pinned; pass the footer's row if a component ever renders below it.
+func (mode *InteractiveMode) showFooterTooltip(label string, start, end int) {
+	mode.mu.Lock()
+	previous := mode.footerTooltip
+	mode.footerTooltip = nil
+	mode.mu.Unlock()
+	if previous != nil {
+		previous.Hide()
+	}
+	if label == "" {
+		return
+	}
+	text := " " + label + " "
+	width := tui.VisibleWidth(text)
+	column := start
+	if columns := mode.ui.Terminal().Columns(); start > columns/2 {
+		column = end - width // right-hand items right-align their tooltip
+	}
+	handle := mode.ui.ShowOverlay(tui.NewText(theme.BG("selectedBg", theme.FG("muted", text)), 0, 0, nil), tui.OverlayOptions{
+		Width: tui.AbsoluteSize(width), Row: tui.AbsoluteSize(max(0, mode.ui.Terminal().Rows()-2)), Col: tui.AbsoluteSize(max(0, column)),
+		NonCapturing: true,
+	})
+	mode.mu.Lock()
+	mode.footerTooltip = handle
+	mode.mu.Unlock()
 }
 
 func (mode *InteractiveMode) Statuses() map[string]string {
