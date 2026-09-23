@@ -89,8 +89,8 @@ func TestModelRowsRemainSingleLineAtNarrowWidths(t *testing.T) {
 		if !strings.Contains(plain, "✓") {
 			t.Fatalf("lost current-model marker at %d: %q", width, plain)
 		}
-		if strings.Contains(plain, "google") != (width >= 64) {
-			t.Fatalf("provider visibility at %d: %q", width, plain)
+		if strings.HasSuffix(plain, "google") != (width >= 32) {
+			t.Fatalf("provider column at %d: %q", width, plain)
 		}
 	}
 }

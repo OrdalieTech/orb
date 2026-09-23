@@ -288,12 +288,21 @@ func (row modelSelectorRow) Render(width int) []string {
 	if row.current {
 		mark = theme.FG("success", " ✓")
 	}
+	// The provider is a right-aligned column so same-id models from different
+	// providers stay distinguishable.
 	provider := ""
-	if width >= 64 {
-		provider = "  " + theme.FG("muted", tui.TruncateToWidth(string(row.model.Provider), 20, "…", false))
+	if width >= 32 {
+		provider = tui.TruncateToWidth(string(row.model.Provider), min(20, width/3), "…", false)
 	}
-	available := max(0, width-2-tui.VisibleWidth(mark)-tui.VisibleWidth(provider))
-	line := prefix + theme.FG("text", tui.TruncateToWidth(row.model.ID, available, "…", true)) + mark + provider
+	gap := 0
+	if provider != "" {
+		gap = 2
+	}
+	available := max(0, width-2-tui.VisibleWidth(mark)-gap-tui.VisibleWidth(provider))
+	line := prefix + theme.FG("text", tui.TruncateToWidth(row.model.ID, available, "…", true)) + mark
+	if provider != "" {
+		line += strings.Repeat(" ", max(gap, width-tui.VisibleWidth(line)-tui.VisibleWidth(provider))) + theme.FG("muted", provider)
+	}
 	line = tui.TruncateToWidth(line, width, "…", true)
 	if row.selected {
 		line = tui.ApplyBackgroundToLine(line, width, func(text string) string { return menuSelectedBackground(text) })
