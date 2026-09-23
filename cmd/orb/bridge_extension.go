@@ -31,18 +31,24 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 			if args.native != nil {
 				ctx = context.WithValue(ctx, nativeStateKey{}, args.native)
 			}
+			// The footer dot is TUI chrome; other modes get no status frames.
+			status := func(on bool) {
+				if c.Mode() == extensions.ModeTUI {
+					setBridgeStatus(c.UI(), on)
+				}
+			}
 			if args.BridgeProfile == "" && !settings.GetPlugins()["bridge"] {
+				status(false)
 				return nil, nil
 			}
 			if err := startBridge(ctx, profile, false); err != nil {
-				message := "Bridge disconnected"
-				c.UI().SetStatus("bridge", &message)
+				status(false)
 				return nil, nil
 			}
 			if err := args.bridgeLink.configureBridge(true); err != nil {
 				return nil, err
 			}
-			c.UI().SetStatus("bridge", nil)
+			status(true)
 			return nil, nil
 		})
 		api.RegisterCommand("bridge", extensions.Command{SettingsLabel: "Bridge", Description: "Connect devices and open their conversations", Handler: func(ctx context.Context, _ string, c extensions.CommandContext) error {
@@ -56,6 +62,16 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 		}})
 		return nil
 	}
+}
+
+// setBridgeStatus shows Bridge as one footer dot. The status key names the
+// command, so clicking the dot opens /bridge.
+func setBridgeStatus(ui extensions.UI, on bool) {
+	dot := "○"
+	if on {
+		dot = ui.Theme().FG("success", "●")
+	}
+	ui.SetStatus("bridge", &dot)
 }
 
 type bridgeSettingsStatus struct {
@@ -167,7 +183,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				if err := args.bridgeLink.configureBridge(true); err != nil {
 					return err
 				}
-				ui.SetStatus("bridge", nil)
+				setBridgeStatus(ui, true)
 				return nil
 			}
 			if action == "Invite device" || action == "Join device" || action == "SSH" {
@@ -215,7 +231,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 				if err := args.bridgeLink.configureBridge(false); err != nil {
 					return err
 				}
-				ui.SetStatus("bridge", nil)
+				setBridgeStatus(ui, false)
 				if err := waitBridgeStopped(ctx, client); err != nil {
 					return err
 				}

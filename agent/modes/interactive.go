@@ -4078,6 +4078,12 @@ func (mode *InteractiveMode) StatusAction(key string) func() {
 			return func() { go mode.showAccountSwitcher(host) }
 		}
 	}
+	// An extension status keyed by its own command opens that command.
+	if mode.session != nil {
+		if runner := mode.session.ExtensionRunner(); runner != nil && runner.Command(key) != nil {
+			return func() { go runner.ExecuteCommand(mode.authenticationContext(), key, "") }
+		}
+	}
 	return nil
 }
 
