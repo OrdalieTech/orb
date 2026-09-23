@@ -1,14 +1,16 @@
 package tools
 
 import (
-	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 func TestExpandPath(t *testing.T) {
@@ -59,41 +61,67 @@ func TestResolveToCwd(t *testing.T) {
 func TestResolveToCwdAcceptsAndRejectsFileURLsLikeNode(t *testing.T) {
 	dir := t.TempDir()
 	want := filepath.Join(dir, "file with spaces.txt")
-	fileURL := (&url.URL{Scheme: "file", Path: want}).String()
+	fileURL := nodepath.PathToFileURL(want)
 	if got, err := ResolveToCwd(fileURL, filepath.Join(dir, "base")); err != nil || got != want {
 		t.Fatalf("ResolveToCwd file URL = %q, %v; want %q", got, err, want)
 	}
-	for _, invalid := range []string{"file:///%E0%A4%A", "file://server/share", "file://[invalid", "file:///tmp/a%2Fb", "file://user@localhost/tmp/x", "file://localhost:80/tmp/x", "file://%25/tmp", "file://local\u200dhost/tmp/x"} {
-		if _, err := ResolveToCwd(invalid, dir); err == nil {
-			t.Fatalf("ResolveToCwd(%q) accepted invalid file URL", invalid)
+	// urlRoot and native give the same absolute path in URL and native form:
+	// win32 fileURLToPath needs a drive letter where POSIX takes "/".
+	urlRoot, native := "", func(path string) string { return path }
+	invalid := []string{"file:///%E0%A4%A", "file://[invalid", "file:///tmp/a%2Fb", "file://user@localhost/tmp/x", "file://localhost:80/tmp/x", "file://%25/tmp", "file://local\u200dhost/tmp/x"}
+	if runtime.GOOS == "windows" {
+		urlRoot, native = "/C:", func(path string) string { return "C:" + filepath.FromSlash(path) }
+		invalid = append(invalid, "file:///tmp/x", "file:///C:/a%5Cb", "file://", "file://localhost")
+		if got, err := ResolveToCwd("file://server/share", dir); err != nil || got != `\\server\share` {
+			t.Fatalf("ResolveToCwd UNC file URL = %q, %v", got, err)
+		}
+		if got, err := ResolveToCwd("file://C:/tmp/x", dir); err != nil || got != `C:\tmp\x` {
+			t.Fatalf("ResolveToCwd drive-letter host = %q, %v", got, err)
+		}
+	} else {
+		invalid = append(invalid, "file://server/share")
+		for _, rootURL := range []string{"file://", "file://localhost"} {
+			if got, err := ResolveToCwd(rootURL, dir); err != nil || got != string(filepath.Separator) {
+				t.Fatalf("ResolveToCwd(%q) = %q, %v; want root", rootURL, got, err)
+			}
 		}
 	}
-	for _, rootURL := range []string{"file://", "file://localhost"} {
-		if got, err := ResolveToCwd(rootURL, dir); err != nil || got != string(filepath.Separator) {
-			t.Fatalf("ResolveToCwd(%q) = %q, %v; want root", rootURL, got, err)
+	for _, input := range invalid {
+		if _, err := ResolveToCwd(input, dir); err == nil {
+			t.Fatalf("ResolveToCwd(%q) accepted invalid file URL", input)
 		}
 	}
 	for _, suffix := range []string{" \t", "\v", "\f", "\x00"} {
-		if got, err := ResolveToCwd("file:///tmp/trailing"+suffix, dir); err != nil || got != "/tmp/trailing" {
+		if got, err := ResolveToCwd("file://"+urlRoot+"/tmp/trailing"+suffix, dir); err != nil || got != native("/tmp/trailing") {
 			t.Fatalf("trailing URL whitespace %q = %q, %v", suffix, got, err)
 		}
 	}
-	if _, err := ResolveToCwd("/absolute", "file:///%E0%A4%A"); err == nil || err.Error() != "URI malformed" {
+	if _, err := ResolveToCwd(native("/absolute"), "file:///%E0%A4%A"); err == nil || err.Error() != "URI malformed" {
 		t.Fatalf("invalid base URL error = %v", err)
 	}
 	for input, want := range map[string]string{
-		"file:///tmp\\foo":               "/tmp/foo",
-		"file://%6cocalhost/tmp/x":       "/tmp/x",
-		"file://local%68ost/tmp/x":       "/tmp/x",
-		"file://%EF%BD%8Cocalhost/tmp/x": "/tmp/x",
-		"file://local\u00adhost/tmp/x":   "/tmp/x",
-		"file://local\u034fhost/tmp/x":   "/tmp/x",
-		"file://local\ufe0fhost/tmp/x":   "/tmp/x",
-		"file:///tmp/a\tb\nc\rd":         "/tmp/abcd",
-		"file:///tmp/a\x7fb":             "/tmp/a\x7fb",
-		"file:///tmp/a\x00b\vc\fd":       "/tmp/a\x00b\vc\fd",
+		"file://" + urlRoot + "/tmp\\foo":               "/tmp/foo",
+		"file://%6cocalhost" + urlRoot + "/tmp/x":       "/tmp/x",
+		"file://local%68ost" + urlRoot + "/tmp/x":       "/tmp/x",
+		"file://%EF%BD%8Cocalhost" + urlRoot + "/tmp/x": "/tmp/x",
+		"file://local\u00adhost" + urlRoot + "/tmp/x":   "/tmp/x",
+		"file://local\u034fhost" + urlRoot + "/tmp/x":   "/tmp/x",
+		"file://local\ufe0fhost" + urlRoot + "/tmp/x":   "/tmp/x",
+		"file://" + urlRoot + "/tmp/a\tb\nc\rd":         "/tmp/abcd",
+		"file://" + urlRoot + "/tmp/a\x7fb":             "/tmp/a\x7fb",
+		"file://" + urlRoot + "/tmp/a\x00b\vc\fd":       "/tmp/a\x00b\vc\fd",
 	} {
-		if got, err := ResolveToCwd(input, dir); err != nil || got != want {
+		if got, err := ResolveToCwd(input, dir); err != nil || got != native(want) {
+			t.Fatalf("ResolveToCwd(%q) = %q, %v; want %q", input, got, err, native(want))
+		}
+	}
+}
+
+func TestResolveToCwdRootsDrivelessAbsolutePathsLikeNode(t *testing.T) {
+	cwd := t.TempDir()
+	want := filepath.Join(filepath.VolumeName(cwd)+string(filepath.Separator), "rooted", "file.txt")
+	for _, input := range []string{"/rooted/file.txt", string(filepath.Separator) + filepath.Join("rooted", "file.txt")} {
+		if got, err := ResolveToCwd(input, cwd); err != nil || got != want {
 			t.Fatalf("ResolveToCwd(%q) = %q, %v; want %q", input, got, err, want)
 		}
 	}

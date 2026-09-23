@@ -58,7 +58,11 @@ func TestToolManagerResolutionAndOfflineMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	systemDir := t.TempDir()
-	writeToolExecutable(t, filepath.Join(systemDir, "fdfind"), "#!/bin/sh\nexit 1\n")
+	if runtime.GOOS == "windows" {
+		writeToolExecutable(t, filepath.Join(systemDir, "fdfind.bat"), "@exit /b 1\r\n")
+	} else {
+		writeToolExecutable(t, filepath.Join(systemDir, "fdfind"), "#!/bin/sh\nexit 1\n")
+	}
 	t.Setenv("PATH", systemDir)
 	manager := &toolManager{binDir: managedDir, goos: "linux", goarch: "amd64"}
 	if got := manager.getToolPath(context.Background(), managedFD); got != managed {
@@ -111,7 +115,7 @@ func TestToolManagerDownloadsReleaseAssetAndExtractsTarGz(t *testing.T) {
 		t.Fatalf("binary = %q, err = %v", data, err)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o755 {
+	if err != nil || info.Mode().Perm() != wantPerm(0o755) {
 		t.Fatalf("mode = %v, err = %v", info.Mode(), err)
 	}
 	if len(requested) != 2 {
@@ -346,6 +350,18 @@ func toolZip(t *testing.T, name, contents string) []byte {
 		t.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+// wantPerm is what os.Stat reports for a file created or chmodded with perm:
+// Windows keeps only the read-only attribute, so Go reports 0444 or 0666.
+func wantPerm(perm os.FileMode) os.FileMode {
+	if runtime.GOOS != "windows" {
+		return perm
+	}
+	if perm&0o200 == 0 {
+		return 0o444
+	}
+	return 0o666
 }
 
 func writeToolExecutable(t *testing.T, path, contents string) {

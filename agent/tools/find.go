@@ -132,18 +132,35 @@ func (tool *findTool) executeCustom(
 	}
 	relativized := make([]string, len(results))
 	for index, path := range results {
-		if strings.HasPrefix(path, searchPath) {
-			start := min(len(path), len(searchPath)+1)
-			relativized[index] = filepath.ToSlash(path[start:])
-			continue
-		}
-		relative, relErr := filepath.Rel(searchPath, path)
-		if relErr != nil {
-			return engine.AgentToolResult{}, relErr
-		}
-		relativized[index] = filepath.ToSlash(relative)
+		relativized[index] = relativizeFindResultPath(path, searchPath)
 	}
 	return formatFindResult(relativized, effectiveLimit, false), nil
+}
+
+// relativizeFindResultPath mirrors upstream relativizeFindResultPath: absolute
+// results become relative to the search root (path.relative keeps a target on
+// another win32 drive absolute), separators become "/", and a trailing
+// separator survives.
+func relativizeFindResultPath(resultPath, searchPath string) string {
+	separator := string(filepath.Separator)
+	hadTrailingSeparator := strings.HasSuffix(resultPath, separator) || (filepath.Separator == '\\' && strings.HasSuffix(resultPath, "/"))
+	relativePath := resultPath
+	if filepath.IsAbs(resultPath) {
+		relative, err := filepath.Rel(searchPath, resultPath)
+		switch {
+		case err != nil:
+			relativePath = filepath.Clean(resultPath)
+		case relative == ".":
+			relativePath = ""
+		default:
+			relativePath = relative
+		}
+	}
+	posixPath := strings.ReplaceAll(relativePath, separator, "/")
+	if hadTrailingSeparator && !strings.HasSuffix(posixPath, "/") {
+		posixPath += "/"
+	}
+	return posixPath
 }
 
 func formatFindResult(paths []string, effectiveLimit float64, actionable bool) engine.AgentToolResult {

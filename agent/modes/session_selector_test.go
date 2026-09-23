@@ -86,10 +86,7 @@ func selectorSession(root, id, first, allText string, modified time.Time, name *
 
 func sessionSelectorSessions(t *testing.T, now time.Time) (string, []session.SessionInfo, []session.SessionInfo) {
 	t.Helper()
-	tempRoot := "/tmp"
-	if info, err := os.Stat(tempRoot); err != nil || !info.IsDir() {
-		tempRoot = os.TempDir()
-	}
+	tempRoot := shortTempRoot()
 	seed, err := os.MkdirTemp(tempRoot, "pi-selector-seed-")
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +95,13 @@ func sessionSelectorSessions(t *testing.T, now time.Time) (string, []session.Ses
 	if err := os.Remove(seed); err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(tempRoot, "pi-session-selector-"+seedName[len(seedName)-6:])
+	// Upstream captured the frames under a 31-byte mkdtemp root
+	// (/tmp/pi-session-selector-XXXXXX); the path-toggle layout depends on it.
+	suffixLength := len("/tmp/pi-session-selector-XXXXXX") - len(filepath.Join(tempRoot, "pi-session-selector-"))
+	if suffixLength < 1 || suffixLength > len(seedName) {
+		suffixLength = 6
+	}
+	root := filepath.Join(tempRoot, "pi-session-selector-"+seedName[len(seedName)-suffixLength:])
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -125,8 +128,10 @@ func normalizeSelectorFrame(lines []string, root string) []string {
 	result := make([]string, len(lines))
 	for index, line := range lines {
 		line = selectorANSI.ReplaceAllString(line, "")
-		line = strings.ReplaceAll(line, root, "<fixture>")
-		line = strings.ReplaceAll(line, selectorDisplayRoot, "<fixture>")
+		for _, prefix := range []string{root, filepath.FromSlash(selectorDisplayRoot)} {
+			line = strings.ReplaceAll(line, prefix+string(filepath.Separator), "<fixture>/")
+			line = strings.ReplaceAll(line, prefix, "<fixture>")
+		}
 		result[index] = strings.TrimRight(line, " \t")
 	}
 	for len(result) > 0 && result[len(result)-1] == "" {
@@ -333,7 +338,7 @@ func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {
 	if len(fixture.Callbacks.Selected) != 1 {
 		t.Fatalf("upstream selected callbacks = %#v, want one path", fixture.Callbacks.Selected)
 	}
-	want := strings.ReplaceAll(fixture.Callbacks.Selected[0], "<fixture>", filepath.Dir(current[0].Path))
+	want := strings.ReplaceAll(filepath.FromSlash(fixture.Callbacks.Selected[0]), "<fixture>", filepath.Dir(current[0].Path))
 	if got != want {
 		t.Fatalf("selected path = %q, want upstream callback %q", got, want)
 	}

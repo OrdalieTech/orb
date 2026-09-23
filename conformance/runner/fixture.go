@@ -42,10 +42,36 @@ func ReplacePathAliases(value, path, replacement string) string {
 	return strings.ReplaceAll(value, path, replacement)
 }
 
+// ReplaceJSONPathAliases is ReplacePathAliases for paths inside JSON string
+// literals, where win32 separators are escaped.
+func ReplaceJSONPathAliases(value, path, replacement string) string {
+	if canonical, err := filepath.EvalSymlinks(path); err == nil {
+		value = strings.ReplaceAll(value, jsonStringBody(canonical), replacement)
+	}
+	return strings.ReplaceAll(value, jsonStringBody(path), replacement)
+}
+
+// jsonStringBody encodes value like JSON.stringify, without the quotes.
+func jsonStringBody(value string) string {
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		panic(err)
+	}
+	quoted := strings.TrimSuffix(encoded.String(), "\n")
+	return quoted[1 : len(quoted)-1]
+}
+
 // NormalizeFixturePath rewrites root (and its symlink alias) to "<fixture>",
-// with forward slashes, so observed paths are host-independent.
+// with forward slashes, so observed paths are host-independent. Both aliases
+// are compared in slash form: win32 EvalSymlinks returns backslashed long names.
 func NormalizeFixturePath(value, root string) string {
-	return ReplacePathAliases(filepath.ToSlash(value), filepath.ToSlash(root), "<fixture>")
+	value = filepath.ToSlash(value)
+	if canonical, err := filepath.EvalSymlinks(root); err == nil {
+		value = strings.ReplaceAll(value, filepath.ToSlash(canonical), "<fixture>")
+	}
+	return strings.ReplaceAll(value, filepath.ToSlash(root), "<fixture>")
 }
 
 // ReadFixture reads one file from a fixture family. name may be a

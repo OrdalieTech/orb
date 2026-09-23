@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -822,7 +823,11 @@ func TestRunCLIPrintPersistsAndContinuesSession(t *testing.T) {
 		t.Fatalf("initial entries = %#v", entries[:2])
 	}
 	firstUser := string(entries[2].Message)
-	fileIndex := strings.Index(firstUser, attachment)
+	encodedAttachment, err := json.Marshal(attachment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileIndex := strings.Index(firstUser, strings.Trim(string(encodedAttachment), `"`))
 	bodyIndex := strings.Index(firstUser, "file body")
 	promptIndex := strings.Index(firstUser, "first prompt")
 	if fileIndex < 0 || bodyIndex <= fileIndex || promptIndex <= bodyIndex {
@@ -1017,8 +1022,16 @@ func TestIsTerminalFileRejectsCharacterDevicesAndPipes(t *testing.T) {
 	}
 }
 
+// builtBinaryPath names a test-built CLI; Windows only executes files with a PATHEXT extension.
+func builtBinaryPath(dir string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(dir, "orb.exe")
+	}
+	return filepath.Join(dir, "orb")
+}
+
 func TestBuiltBinaryDispatchesHelp(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "orb")
+	binary := builtBinaryPath(t.TempDir())
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = "."
 	if output, err := build.CombinedOutput(); err != nil {
@@ -1047,7 +1060,7 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 		_, _ = io.WriteString(writer, "data: {\"id\":\"chatcmpl_rpc\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"faux-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"complete.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n")
 	}))
 	defer server.Close()
-	binary := filepath.Join(temp, "orb")
+	binary := builtBinaryPath(temp)
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = "."
 	if output, err := build.CombinedOutput(); err != nil {

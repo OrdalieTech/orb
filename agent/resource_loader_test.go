@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +13,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
@@ -231,7 +231,9 @@ func TestDefaultResourceLoaderExtendResourcesLoadsImmediately(t *testing.T) {
 }
 
 func TestDefaultResourceLoaderExtendResourcesNormalizesMergesAndRetags(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("CODEX_HOME", t.TempDir())
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	skillDir := filepath.Join(cwd, "extension resources", "skill")
@@ -252,11 +254,11 @@ func TestDefaultResourceLoaderExtendResourcesNormalizesMergesAndRetags(t *testin
 	loader.ExtendResources(ResourceExtensionPaths{
 		SkillPaths: []ResourcePath{
 			{Path: filepath.Join("extension resources", "skill"), Metadata: PathMetadata{Source: "first", Scope: "temporary", Origin: "extension", BaseDir: "first base"}},
-			{Path: (&url.URL{Scheme: "file", Path: skillDir}).String(), Metadata: PathMetadata{Source: "second", Scope: "temporary", Origin: "extension", BaseDir: "second base"}},
+			{Path: nodepath.PathToFileURL(skillDir), Metadata: PathMetadata{Source: "second", Scope: "temporary", Origin: "extension", BaseDir: "second base"}},
 		},
 		PromptPaths: []ResourcePath{
 			{Path: filepath.Join("extension resources", "review.md"), Metadata: PathMetadata{Source: "first", Scope: "temporary", Origin: "extension", BaseDir: "first base"}},
-			{Path: (&url.URL{Scheme: "file", Path: promptPath}).String(), Metadata: PathMetadata{Source: "second", Scope: "temporary", Origin: "extension", BaseDir: "second base"}},
+			{Path: nodepath.PathToFileURL(promptPath), Metadata: PathMetadata{Source: "second", Scope: "temporary", Origin: "extension", BaseDir: "second base"}},
 		},
 	})
 

@@ -151,7 +151,7 @@ export default function (pi: any) {
 }
 
 func TestRealHostResolvesTypeScriptPackageImports(t *testing.T) {
-	root := t.TempDir()
+	root := realTempDir(t)
 	packageDir := filepath.Join(root, "node_modules", "typed-package")
 	dependencyDir := filepath.Join(root, "node_modules", "typed-dependency")
 	transitiveDir := filepath.Join(root, "node_modules", "typed-transitive")

@@ -3,34 +3,16 @@ package modes
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
-// fakeExternalEditor mirrors upstream test/fixtures/fake-external-editor.mjs:
-// it captures the prompt file path, its content, and the directory listing,
-// then rewrites (or fails) according to the flag.
+// fakeExternalEditor runs the test binary as upstream's
+// test/fixtures/fake-external-editor.mjs (see fakeExternalEditorProcess).
 func fakeExternalEditor(t *testing.T, capturePath, flag string) string {
 	t.Helper()
-	script := filepath.Join(t.TempDir(), "fake-editor.sh")
-	content := `#!/bin/sh
-capture="$1"
-file=""
-for arg in "$@"; do file="$arg"; done
-dir=$(dirname "$file")
-{
-  echo "file:$file"
-  echo "content:$(cat "$file")"
-  echo "entries:$(ls "$dir" | tr '\n' ' ')"
-} > "$capture"
-case "$*" in *--fail*) exit 1 ;; esac
-case "$*" in *--empty*) printf '' > "$file" ;; *) printf 'edited\n' > "$file" ;; esac
-`
-	if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	command := "/bin/sh " + script + " " + capturePath
+	t.Setenv(modesTestHelperEnv, "editor")
+	command := os.Args[0] + " " + capturePath
 	if flag != "" {
 		command += " " + flag
 	}
@@ -56,9 +38,6 @@ func captureLine(t *testing.T, capturePath, prefix string) string {
 // (pi-editor-*/prompt.md) instead of a file scanned out of the shared temp
 // dir, and the directory is removed afterwards.
 func TestEditInExternalEditorUsesPrivateTempDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture requires /bin/sh")
-	}
 	capturePath := filepath.Join(t.TempDir(), "capture.txt")
 
 	result := editInExternalEditor(fakeExternalEditor(t, capturePath, ""), "original")
@@ -85,9 +64,6 @@ func TestEditInExternalEditorUsesPrivateTempDirectory(t *testing.T) {
 }
 
 func TestEditInExternalEditorKeepsOriginalOnFailureAndReturnsEmpty(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture requires /bin/sh")
-	}
 	capturePath := filepath.Join(t.TempDir(), "capture.txt")
 
 	result := editInExternalEditor(fakeExternalEditor(t, capturePath, "--fail"), "original")

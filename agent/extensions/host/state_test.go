@@ -19,8 +19,8 @@ import (
 )
 
 func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
-	orbExecutable := filepath.Join(t.TempDir(), "orb")
-	writeExecutable(t, orbExecutable, "#!/bin/sh\nprintf '%s\\n' 'orb fixture-version'\n")
+	orbExecutable := writeFakeCommand(t, filepath.Join(t.TempDir(), "orb"),
+		"printf '%s\\n' 'orb fixture-version'\n", "echo orb fixture-version\n")
 	manager, registry, result, cwd := startStateFixtureManager(t, orbExecutable)
 	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("load result = %#v", result)
@@ -322,8 +322,8 @@ func TestStateModelAuthPreservesExplicitEmptyMaps(t *testing.T) {
 }
 
 func TestStateSnapshotKeepsLargeSessionManagerUsable(t *testing.T) {
-	orbExecutable := filepath.Join(t.TempDir(), "orb")
-	writeExecutable(t, orbExecutable, "#!/bin/sh\nprintf '%s\\n' 'orb fixture-version'\n")
+	orbExecutable := writeFakeCommand(t, filepath.Join(t.TempDir(), "orb"),
+		"printf '%s\\n' 'orb fixture-version'\n", "echo orb fixture-version\n")
 	_, registry, result, cwd := startStateFixtureManager(t, orbExecutable)
 	if len(result.Diagnostics) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("load result = %#v", result)

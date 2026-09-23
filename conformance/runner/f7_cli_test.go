@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -82,7 +83,7 @@ func buildF7CLIBinary(t testing.TB) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(t.TempDir(), "orb")
+	binary := f7BinaryPath(t.TempDir())
 	command := exec.Command("go", "build", "-o", binary, "./cmd/orb")
 	command.Dir = repoRoot
 	command.Env = append(os.Environ(), "CGO_ENABLED=0")
@@ -90,6 +91,14 @@ func buildF7CLIBinary(t testing.TB) string {
 		t.Fatalf("build orb: %v\n%s", buildErr, output)
 	}
 	return binary
+}
+
+// f7BinaryPath names the built CLI; Windows only executes files with a PATHEXT extension.
+func f7BinaryPath(dir string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(dir, "orb.exe")
+	}
+	return filepath.Join(dir, "orb")
 }
 
 func runF7CLICase(t *testing.T, binary string, fixture f7CLIFixture, fixtureCase f7CLICase) {
@@ -160,11 +169,11 @@ func runF7CLICase(t *testing.T, binary string, fixture f7CLIFixture, fixtureCase
 	if fixtureCase.Route == "json" {
 		gotStdout = f7CLICanonicalizeJSONStdout(gotStdout, projectDir)
 	}
-	gotStdout = bytes.ReplaceAll(gotStdout, []byte(f7CLIPackageDir), []byte("<package>"))
+	gotStdout = f7CLINormalizePackageDir(gotStdout, projectDir)
 	if diff := runner.ByteDiff([]byte(fixtureCase.Expected.Stdout), gotStdout); diff != "" {
 		t.Errorf("stdout differs:\n%s", diff)
 	}
-	gotStderr := bytes.ReplaceAll(stderr.Bytes(), []byte(f7CLIPackageDir), []byte("<package>"))
+	gotStderr := f7CLINormalizePackageDir(stderr.Bytes(), projectDir)
 	if diff := runner.ByteDiff([]byte(fixtureCase.Expected.Stderr), gotStderr); diff != "" {
 		t.Errorf("stderr differs:\n%s", diff)
 	}
@@ -232,10 +241,23 @@ func f7CLIEnvironment(homeDir, agentDir string) []string {
 	return environment
 }
 
+// f7CLINormalizePackageDir maps the package docs paths to the fixture's
+// "<package>/docs/..." form. On win32 upstream's getDocsPath resolves the
+// POSIX PI_PACKAGE_DIR onto the cwd's drive and joins with backslashes.
+func f7CLINormalizePackageDir(output []byte, projectDir string) []byte {
+	if runtime.GOOS == "windows" {
+		native := filepath.VolumeName(projectDir) + filepath.FromSlash(f7CLIPackageDir)
+		for _, document := range []string{"providers.md", "models.md"} {
+			output = bytes.ReplaceAll(output, []byte(filepath.Join(native, "docs", document)), []byte(f7CLIPackageDir+"/docs/"+document))
+		}
+	}
+	return bytes.ReplaceAll(output, []byte(f7CLIPackageDir), []byte("<package>"))
+}
+
 var f7CLITimestamp = regexp.MustCompile(`"timestamp":"[^"]+"`)
 
 func f7CLICanonicalizeJSONStdout(encoded []byte, projectDir string) []byte {
-	canonical := []byte(runner.ReplacePathAliases(string(encoded), projectDir, "<cwd>"))
+	canonical := []byte(runner.ReplaceJSONPathAliases(string(encoded), projectDir, "<cwd>"))
 	return f7CLITimestamp.ReplaceAll(canonical, []byte(`"timestamp":"<timestamp>"`))
 }
 

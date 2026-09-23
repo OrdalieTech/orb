@@ -1,3 +1,8 @@
+// win32 has no /bin/sh, so the same child is a Node one-liner there.
+function shellCommand(script, windowsScript) {
+	return process.platform === "win32" ? [process.execPath, ["-e", windowsScript]] : ["/bin/sh", ["-c", script]];
+}
+
 export default function stateExtension(pi) {
 	pi.registerFlag("state-label", { type: "string", default: "handshake-default" });
 	if (pi.getFlag("state-label") !== "handshake-default") {
@@ -17,7 +22,7 @@ export default function stateExtension(pi) {
 			const before = pi.getSessionName() ?? "unset";
 			pi.setSessionName(args);
 			const optimistic = pi.getSessionName() ?? "unset";
-			const result = await pi.exec("/bin/sh", ["-c", "printf exec-ok"], { cwd: ctx.cwd });
+			const result = await pi.exec(...shellCommand("printf exec-ok", "process.stdout.write('exec-ok')"), { cwd: ctx.cwd });
 			pi.sendUserMessage(`probe:${before}:${optimistic}:${result.stdout}:${result.code}`);
 		},
 	});
@@ -39,7 +44,7 @@ export default function stateExtension(pi) {
 		async handler() {
 			const controller = new AbortController();
 			setTimeout(() => controller.abort(), 20);
-			const result = await pi.exec("/bin/sh", ["-c", "exec sleep 5"], { signal: controller.signal });
+			const result = await pi.exec(...shellCommand("exec sleep 5", "setTimeout(() => {}, 5000)"), { signal: controller.signal });
 			pi.sendUserMessage(`exec-abort:${result.killed}:${result.code}`);
 		},
 	});

@@ -39,7 +39,7 @@ export const real = true;
 func startRuntimeManager(t *testing.T, runtime Runtime, entry string) (*extensions.Runner, LoadResult, string) {
 	t.Helper()
 	cwd := t.TempDir()
-	agentDir := t.TempDir()
+	agentDir := realTempDir(t)
 	manager := NewManager(Options{
 		AgentDir: agentDir, CWD: cwd, Version: "test", Runtime: &runtime,
 		RequestTimeout: 60 * time.Second, ShutdownTimeout: time.Second,

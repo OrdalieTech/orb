@@ -77,7 +77,12 @@ func TestDroppedImageAttachesBytes(t *testing.T) {
 	if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	dropped, mimeType := droppedImagePath(strings.ReplaceAll(path, " ", `\ `))
+	pasted := strings.ReplaceAll(path, " ", `\ `)
+	if runtime.GOOS == "windows" {
+		// Windows terminals quote a dropped path containing spaces instead of escaping them.
+		pasted = `"` + path + `"`
+	}
+	dropped, mimeType := droppedImagePath(pasted)
 	if dropped != path || mimeType != "image/png" {
 		t.Fatalf("dropped image = %q %q", dropped, mimeType)
 	}
@@ -1103,12 +1108,10 @@ func TestSkillAtAutocompleteOmitsExtensionCollision(t *testing.T) {
 
 func TestSkillAtAutocompleteKeepsSameNamedFile(t *testing.T) {
 	baseDir := t.TempDir()
-	fdPath := filepath.Join(t.TempDir(), "fd")
-	if err := os.WriteFile(fdPath, []byte("#!/bin/sh\nprintf 'inspect\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(modesTestHelperEnv, "stdout")
+	t.Setenv(modesTestStdoutEnv, "inspect\n")
 	provider := newSkillAutocompleteProvider(
-		tui.NewCombinedAutocompleteProvider(nil, baseDir, fdPath),
+		tui.NewCombinedAutocompleteProvider(nil, baseDir, os.Args[0]),
 		[]tui.AutocompleteItem{{Value: "@inspect", Label: "[skill] inspect", Description: "Inspect things"}},
 	)
 	result := provider.GetSuggestions(t.Context(), []string{"@insp"}, 0, 5, false)

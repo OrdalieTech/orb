@@ -185,10 +185,7 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 
 	t.Run("debug", func(t *testing.T) {
 		initF12RawTheme(t)
-		tempRoot := "/tmp"
-		if info, err := os.Stat(tempRoot); err != nil || !info.IsDir() {
-			tempRoot = os.TempDir()
-		}
+		tempRoot := shortTempRoot()
 		seed, err := os.MkdirTemp(tempRoot, "pi-f12-debug-")
 		if err != nil {
 			t.Fatal(err)
@@ -215,7 +212,7 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 		if content != fixture.Behavior.Debug.Content {
 			t.Fatalf("debug log differs\nwant: %q\n got: %q", fixture.Behavior.Debug.Content, content)
 		}
-		rawFrame := replaceF12FramePaths(mode.chat.Render(52), agentDir, "<agent-dir>")
+		rawFrame := replaceF12FramePaths(mode.chat.Render(52), agentDir+string(filepath.Separator), "<agent-dir>/", agentDir, "<agent-dir>")
 		gotFrame := normalizeF12Lines(rawFrame)
 		if updateF12RawFrame(t, snap, rawFrame, "behavior", "debug", "rawChatFrame") {
 			snap.Set(gotFrame, "behavior", "debug", "chatFrame")
@@ -393,6 +390,24 @@ func normalizeF12Lines(lines []string, replacements ...string) []string {
 		normalized = normalized[:len(normalized)-1]
 	}
 	return normalized
+}
+
+// shortTempRoot returns a writable directory whose path is as short as the
+// "/tmp" upstream's F12 fixtures were captured under, so rendered paths wrap
+// the same: /tmp itself, else the volume root of the temp directory (Windows
+// lets any user create folders there), else the temp directory.
+func shortTempRoot() string {
+	if info, err := os.Stat("/tmp"); err == nil && info.IsDir() && filepath.IsAbs("/tmp") {
+		return "/tmp"
+	}
+	if volume := filepath.VolumeName(os.TempDir()); volume != "" {
+		root := volume + string(filepath.Separator)
+		if probe, err := os.MkdirTemp(root, "orb-f12-"); err == nil {
+			_ = os.Remove(probe)
+			return root
+		}
+	}
+	return os.TempDir()
 }
 
 func replaceF12FramePaths(lines []string, replacements ...string) []string {

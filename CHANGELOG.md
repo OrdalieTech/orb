@@ -6,6 +6,11 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Windows: Node extension runtime discovery (PATHEXT, `node.exe`, version managers), file URLs
+  and drive-rooted paths as Node resolves them on win32, `!command` config values through Git
+  Bash or `cmd.exe`, external CLI subagents in a kill-on-close job object, and file-lock
+  contention on delete-pending directories. Checkouts keep LF line endings (`.gitattributes`).
+
 - Deploy Orb to Cloudflare Durable Objects or self-hosted Celld cells (`platforms/worker`,
   `make worker-deploy`, `make worker-celld-dev`): each object is a full Orb whose workspace,
   settings and session persist in object storage, driven by RPC frames over WebSocket or

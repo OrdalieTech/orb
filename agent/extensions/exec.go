@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -30,6 +31,10 @@ func Exec(ctx context.Context, command string, args []string, options *ExecOptio
 	}
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Cancel = func() error {
+		// libuv delivers SIGTERM on win32 as TerminateProcess.
+		if runtime.GOOS == "windows" {
+			return cmd.Process.Kill()
+		}
 		return cmd.Process.Signal(syscall.SIGTERM)
 	}
 	cmd.WaitDelay = execKillGrace
@@ -49,9 +54,11 @@ func Exec(ctx context.Context, command string, args []string, options *ExecOptio
 	if ctx.Err() != nil {
 		result.Killed = true
 		// Upstream reports the child's own exit code when it exits during the
-		// SIGTERM grace, and 0 when the signal (or forced SIGKILL) ends it.
+		// SIGTERM grace, and 0 when the signal (or forced SIGKILL) ends it. Go
+		// reports every win32 exit as Exited, while libuv reports the kill as
+		// a signal there too.
 		result.Code = 0
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		if runtime.GOOS != "windows" && cmd.ProcessState != nil && cmd.ProcessState.Exited() {
 			result.Code = cmd.ProcessState.ExitCode()
 		}
 		return result, nil

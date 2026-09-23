@@ -35,7 +35,7 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	if err := os.MkdirAll(shimDir, 0o700); err != nil {
 		return nil, fmt.Errorf("extension host: create binary shim directory: %w", err)
 	}
-	shimPath := filepath.Join(shimDir, "pi")
+	shimPath := filepath.Join(shimDir, piShimName(executable))
 	if err := replaceExecutableLink(shimPath, executable); err != nil {
 		return nil, fmt.Errorf("extension host: materialize pi binary shim: %w", err)
 	}
@@ -69,11 +69,16 @@ func replaceExecutableLink(path, target string) error {
 			return nil
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		if info, statErr := os.Lstat(path); statErr != nil || info.IsDir() {
-			if statErr != nil {
-				return statErr
-			}
+		info, statErr := os.Lstat(path)
+		if statErr != nil {
+			return statErr
+		}
+		if info.IsDir() {
 			return fmt.Errorf("refusing to replace directory %s", path)
+		}
+		// A hard-linked shim is already current while it is the target itself.
+		if targetInfo, targetErr := os.Stat(target); targetErr == nil && os.SameFile(info, targetInfo) {
+			return nil
 		}
 	}
 	temporary, err := os.CreateTemp(filepath.Dir(path), ".pi-link-*")
@@ -89,7 +94,7 @@ func replaceExecutableLink(path, target string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(temporaryPath) }()
-	if err := os.Symlink(target, temporaryPath); err != nil {
+	if err := linkExecutable(target, temporaryPath); err != nil {
 		return err
 	}
 	return os.Rename(temporaryPath, path)
@@ -108,22 +113,20 @@ func prependPath(directory, value string) string {
 }
 
 func environmentValue(environment []string, name string) string {
-	prefix := name + "="
 	for index := len(environment) - 1; index >= 0; index-- {
-		if strings.HasPrefix(environment[index], prefix) {
-			return strings.TrimPrefix(environment[index], prefix)
+		if key, value, ok := strings.Cut(environment[index], "="); ok && environmentNameEqual(key, name) {
+			return value
 		}
 	}
 	return ""
 }
 
 func setEnvironmentValue(environment []string, name, value string) []string {
-	prefix := name + "="
 	filtered := environment[:0]
 	for _, entry := range environment {
-		if !strings.HasPrefix(entry, prefix) {
+		if key, _, ok := strings.Cut(entry, "="); !ok || !environmentNameEqual(key, name) {
 			filtered = append(filtered, entry)
 		}
 	}
-	return append(filtered, prefix+value)
+	return append(filtered, name+"="+value)
 }

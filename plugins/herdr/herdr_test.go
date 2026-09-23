@@ -2,8 +2,10 @@ package herdr
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,11 +16,38 @@ import (
 
 type interactiveTestUI struct{ extensions.NoopUI }
 
+// fakeHerdrEnv makes the test binary append its arguments to $HERDR_TEST_LOG,
+// like the shell fake, and exit.
+const fakeHerdrEnv = "ORB_HERDR_TEST_FAKE"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(fakeHerdrEnv) != "" {
+		log, err := os.OpenFile(os.Getenv("HERDR_TEST_LOG"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err == nil {
+			_, err = log.WriteString(strings.Join(os.Args[1:], " ") + "\n")
+			err = errors.Join(err, log.Close())
+		}
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
 func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 	root := t.TempDir()
 	logPath := filepath.Join(root, "calls")
 	binary := filepath.Join(root, "herdr")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\n"), 0o755); err != nil {
+	if runtime.GOOS == "windows" {
+		// No POSIX shell for a script fake: the test binary stands in (TestMain).
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		binary = executable
+		t.Setenv(fakeHerdrEnv, "1")
+	} else if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HERDR_TEST_LOG", logPath)

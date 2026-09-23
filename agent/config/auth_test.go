@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -62,7 +63,7 @@ func TestAuthStorageModifyMatchesUpstreamFormattingAndPreservesExternalEdits(t *
 	if err != nil || string(contents) != want {
 		t.Fatalf("auth.json = %q, want %q (%v)", contents, want, err)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != wantPerm(0o600) {
 		t.Fatalf("auth.json mode = %v, %v", info.Mode().Perm(), err)
 	}
 }
@@ -215,14 +216,26 @@ func TestLOGm9MigrationPreservesSettingsJSONMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if info.Mode().Perm() != wantPerm(0o600) {
 		t.Fatalf("settings.json permissions = %v, want preserved 0600", info.Mode().Perm())
 	}
 	info, err = os.Stat(filepath.Join(agentDir, "auth.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if info.Mode().Perm() != wantPerm(0o600) {
 		t.Fatalf("auth.json permissions = %v, want 0600", info.Mode().Perm())
 	}
+}
+
+// wantPerm is what os.Stat reports for a file created or chmodded with perm:
+// Windows keeps only the read-only attribute, so Go reports 0444 or 0666.
+func wantPerm(perm os.FileMode) os.FileMode {
+	if runtime.GOOS != "windows" {
+		return perm
+	}
+	if perm&0o200 == 0 {
+		return 0o444
+	}
+	return 0o666
 }

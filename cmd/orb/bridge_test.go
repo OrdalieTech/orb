@@ -31,6 +31,15 @@ import (
 	"time"
 )
 
+// socketTempRoot keeps Unix socket paths under the 104-byte sun_path limit of
+// long per-test temp paths; Windows has no /tmp and a short temp directory.
+func socketTempRoot() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
+}
+
 func TestBridgeProfileNames(t *testing.T) {
 	for _, s := range []string{"../work", "", "a/b", "a b"} {
 		if validBridgeName(s) {
@@ -360,7 +369,7 @@ func TestBridgeManagementDoesNotStartServiceWhenOpened(t *testing.T) {
 }
 
 func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
-	root, err := os.MkdirTemp("/tmp", "orb-bridge-ui-")
+	root, err := os.MkdirTemp(socketTempRoot(), "orb-bridge-ui-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,12 +601,21 @@ func (ui *pairingTestUI) Confirm(_ context.Context, _ string, text string, _ *ex
 func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 	bin := t.TempDir()
 	copied := filepath.Join(bin, "copied")
-	command := "xclip"
-	if runtime.GOOS == "darwin" {
-		command = "pbcopy"
-	}
-	if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\ncat > \"$ORB_TEST_CLIPBOARD\"\n"), 0700); err != nil {
-		t.Fatal(err)
+	switch runtime.GOOS {
+	case "windows":
+		// clip.exe cannot be faked with a batch file that preserves stdin bytes.
+		build := exec.CommandContext(t.Context(), "go", "build", "-o", filepath.Join(bin, "clip.exe"), "./testdata/fakeclip")
+		if output, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build fake clip: %v\n%s", err, output)
+		}
+	default:
+		command := "xclip"
+		if runtime.GOOS == "darwin" {
+			command = "pbcopy"
+		}
+		if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\ncat > \"$ORB_TEST_CLIPBOARD\"\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("ORB_TEST_CLIPBOARD", copied)
@@ -686,7 +704,7 @@ func TestPairingWaitCancelsWorkAndRejectsDifferentInvitation(t *testing.T) {
 }
 
 func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
-	root, err := os.MkdirTemp("/tmp", "orb-stop-")
+	root, err := os.MkdirTemp(socketTempRoot(), "orb-stop-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,6 +773,9 @@ func TestBridgeServiceCompatibilityStopsOnlyOlderDaemons(t *testing.T) {
 }
 
 func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake ssh impersonates the remote POSIX server by running its scripts with the local /bin/sh and uname, which Windows does not have")
+	}
 	for _, test := range []struct {
 		name, failure string
 		old           bool

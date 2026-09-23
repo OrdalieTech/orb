@@ -5,14 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 func upstreamExportHashes(t *testing.T) map[string]string {
@@ -233,9 +234,9 @@ func TestExportPathNormalizationAndDefaultNames(t *testing.T) {
 		}
 	}
 
-	inputURL := (&url.URL{Scheme: "file", Path: filepath.Join(root, "lower.jsonl")}).String()
+	inputURL := nodepath.PathToFileURL(filepath.Join(root, "lower.jsonl"))
 	fileOutput := filepath.Join(root, "file url output.html")
-	outputURL := (&url.URL{Scheme: "file", Path: fileOutput}).String()
+	outputURL := nodepath.PathToFileURL(fileOutput)
 	got, err := ExportFromFile(inputURL, Options{OutputPath: outputURL, ThemeName: "dark"})
 	if err != nil {
 		t.Fatal(err)
@@ -279,8 +280,13 @@ func TestExportErrorsMatchUpstream(t *testing.T) {
 		t.Fatalf("invalid theme created output: %v", err)
 	}
 
-	if _, err := ExportFromFile("file://remote/tmp/session.jsonl", Options{}); err == nil || err.Error() != `file URL has unsupported host "remote"` {
-		t.Fatalf("remote file URL error = %v", err)
+	// Node's fileURLToPath rejects a host on POSIX and maps it to a UNC path on win32.
+	remoteError := `File URL host must be "localhost" or empty on ` + runtime.GOOS
+	if runtime.GOOS == "windows" {
+		remoteError = `File not found: \\remote\tmp\session.jsonl`
+	}
+	if _, err := ExportFromFile("file://remote/tmp/session.jsonl", Options{}); err == nil || err.Error() != remoteError {
+		t.Fatalf("remote file URL error = %v, want %q", err, remoteError)
 	}
 	if _, err := ExportFromFile(fixturePath(t), Options{OutputPath: "file://remote/tmp/output.html", ThemeName: "missing"}); err == nil || err.Error() != "Theme not found: missing" {
 		t.Fatalf("theme/path error precedence = %v", err)

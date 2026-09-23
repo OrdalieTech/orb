@@ -134,7 +134,7 @@ func TestF7RPCTranscriptReplaysAgainstBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(t.TempDir(), "orb")
+	binary := f7BinaryPath(t.TempDir())
 	build := exec.Command("go", "build", "-tags", "conformance", "-o", binary, "./cmd/orb")
 	build.Dir = repoRoot
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")

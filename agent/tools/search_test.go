@@ -195,10 +195,10 @@ func TestFindToolSurfacesFDErrorAndProtectsFlagPattern(t *testing.T) {
 }
 
 func TestFindToolCustomOperationsPreserveOutputAndLimitShape(t *testing.T) {
-	root := "/remote"
+	root := hostPath("remote")
 	operations := &recordingFindOperations{
 		exists:  true,
-		results: []string{"/remote/a.txt", "/remote/nested/b.txt"},
+		results: []string{hostPath("remote", "a.txt"), hostPath("remote", "nested", "b.txt")},
 	}
 	result, err := NewFindTool(root, &FindToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{
 		"pattern": "**/*.txt", "limit": 2,
@@ -228,7 +228,7 @@ func TestFindToolCustomGlobAbortWinsWithoutWaiting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := NewFindTool("/remote", &FindToolOptions{Operations: operations}).Execute(ctx, "call", map[string]any{"pattern": "*"}, nil)
+		_, err := NewFindTool(hostPath("remote"), &FindToolOptions{Operations: operations}).Execute(ctx, "call", map[string]any{"pattern": "*"}, nil)
 		done <- err
 	}()
 	<-started
@@ -246,12 +246,12 @@ func TestFindToolCustomGlobAbortWinsWithoutWaiting(t *testing.T) {
 
 func TestFindToolCustomMissingPathAndSchema(t *testing.T) {
 	operations := &recordingFindOperations{}
-	_, err := NewFindTool("/remote", &FindToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"pattern": "*"}, nil)
-	if err == nil || err.Error() != "Path not found: /remote" {
+	_, err := NewFindTool(hostPath("remote"), &FindToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"pattern": "*"}, nil)
+	if err == nil || err.Error() != "Path not found: "+hostPath("remote") {
 		t.Fatalf("error = %v", err)
 	}
 	want := `{"type":"object","required":["pattern"],"properties":{"pattern":{"type":"string","description":"Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"},"path":{"type":"string","description":"Directory to search in (default: current directory)"},"limit":{"type":"number","description":"Maximum number of results (default: 1000)"}}}`
-	if got := string(NewFindTool("/remote", nil).Spec().Parameters); got != want {
+	if got := string(NewFindTool(hostPath("remote"), nil).Spec().Parameters); got != want {
 		t.Fatalf("schema = %s, want %s", got, want)
 	}
 }

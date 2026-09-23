@@ -2,8 +2,10 @@ package runner_test
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/conformance/runner"
 	agentharness "github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 type f8Fixture struct {
@@ -403,6 +406,7 @@ func TestF8ResourceLoaderPrecedenceMatchesUpstream(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.ResourceLoader.Files)
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "home"))
+	t.Setenv("USERPROFILE", filepath.Join(fixtureRoot, "home"))
 	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "home", ".codex"))
 	trusted := true
 	resources := agent.LoadResources(agent.ResourceOptions{
@@ -446,6 +450,7 @@ func TestF8DefaultResourceLoaderAppliesGlobalResourceFilters(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.ResourceFiltering.Files)
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "resource-filtering", "home"))
+	t.Setenv("USERPROFILE", filepath.Join(fixtureRoot, "resource-filtering", "home"))
 	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "resource-filtering", "home", ".codex"))
 	t.Setenv("COLORTERM", "")
 	loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
@@ -492,6 +497,7 @@ func TestF8ResourceLoaderExtensionsMatchUpstreamImmediately(t *testing.T) {
 	fixtureRoot := t.TempDir()
 	writeF8Tree(t, fixtureRoot, fixture.ResourceExtension.Files)
 	t.Setenv("HOME", filepath.Join(fixtureRoot, "loader-extension", "home"))
+	t.Setenv("USERPROFILE", filepath.Join(fixtureRoot, "loader-extension", "home"))
 	t.Setenv("CODEX_HOME", filepath.Join(fixtureRoot, "loader-extension", "home", ".codex"))
 	t.Setenv("COLORTERM", "")
 	loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
@@ -696,7 +702,40 @@ func loadF8Fixture(t testing.TB) f8Fixture {
 	if len(fixture.ResourceExtension.Themes) != 1 || fixture.ResourceExtension.Themes[0].AccentANSI == "" {
 		t.Fatalf("invalid F8 extension-theme observation: %+v", fixture.ResourceExtension.Themes)
 	}
+	if runtime.GOOS == "windows" {
+		f8OmitNTFSUnrepresentableFiles(t, &fixture)
+	}
 	return fixture
+}
+
+// f8OmitNTFSUnrepresentableFiles drops discovery files whose names contain
+// ':' (NTFS reads "a:b.md" as stream "b.md" of file "a", so no such file can
+// exist on win32) together with every observation loaded from them.
+func f8OmitNTFSUnrepresentableFiles(t testing.TB, fixture *f8Fixture) {
+	t.Helper()
+	omittedPaths := map[string]bool{}
+	omittedNames := map[string]bool{}
+	fixture.Discovery.Files = slices.DeleteFunc(fixture.Discovery.Files, func(file f8FixtureFile) bool {
+		name := path.Base(file.Path)
+		if !strings.Contains(name, ":") {
+			return false
+		}
+		omittedPaths["<fixture>/"+file.Path] = true
+		omittedNames[strings.TrimSuffix(name, ".md")] = true
+		return true
+	})
+	if len(omittedPaths) == 0 {
+		t.Fatal("F8 fixture no longer has a colon-named discovery file; drop the win32 omission")
+	}
+	fixture.Discovery.Templates = slices.DeleteFunc(fixture.Discovery.Templates, func(template f8PromptTemplate) bool {
+		return omittedPaths[template.FilePath]
+	})
+	omitCommand := func(command f8Command) bool { return omittedPaths[command.SourceInfo.Path] }
+	fixture.Discovery.Commands = slices.DeleteFunc(fixture.Discovery.Commands, omitCommand)
+	fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled = slices.DeleteFunc(fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled, omitCommand)
+	fixture.HarnessPrompts.PromptTemplates = slices.DeleteFunc(fixture.HarnessPrompts.PromptTemplates, func(prompt f8HarnessPrompt) bool {
+		return omittedNames[prompt.Name]
+	})
 }
 
 func writeF8Tree(t testing.TB, root string, files []f8FixtureFile) {
@@ -867,7 +906,12 @@ func f8ConcreteTheme(value any) *modetheme.Theme {
 	}
 }
 
+// f8MaterializePath expands "<fixture>"; file URLs are rebuilt with
+// pathToFileURL, as the extraction script built them.
 func f8MaterializePath(value, fixtureRoot string) string {
+	if rest, ok := strings.CutPrefix(value, "file://<fixture>"); ok {
+		return nodepath.PathToFileURL(filepath.Join(fixtureRoot, filepath.FromSlash(rest)))
+	}
 	return strings.ReplaceAll(value, "<fixture>", filepath.ToSlash(fixtureRoot))
 }
 

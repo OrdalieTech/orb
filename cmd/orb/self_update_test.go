@@ -305,12 +305,38 @@ func wantUpdateOutput(cells ...string) string {
 	return body.String()
 }
 
+// windowsRefusal is what orb update reports on Windows: releases publish no
+// Windows archive yet (DECISIONS.md, Windows CI decision), so it fails before
+// downloading anything and leaves the binary alone.
+var windowsRefusal = "unsupported Orb platform: windows/" + runtime.GOARCH
+
+// wantPerm is what os.Stat reports for a file created or chmodded with perm:
+// Windows keeps only the read-only attribute, so Go reports 0444 or 0666.
+func wantPerm(perm os.FileMode) os.FileMode {
+	if runtime.GOOS != "windows" {
+		return perm
+	}
+	if perm&0o200 == 0 {
+		return 0o444
+	}
+	return 0o666
+}
+
 func TestSelfUpdateReplacesCanonicalBinary(t *testing.T) {
 	dir, canonical, link := installedOrb(t, 0o700)
 	state := &release{}
 	updater := updaterFor(t, "0.4.15", state)
 	updater.executable = func() (string, error) { return link, nil }
 	var output bytes.Buffer
+	if runtime.GOOS == "windows" {
+		if code := updater.run(context.Background(), &output); code != 1 || !strings.Contains(output.String(), windowsRefusal) {
+			t.Fatalf("code = %d, output = %q, want %q", code, output.String(), windowsRefusal)
+		}
+		if contents, err := os.ReadFile(canonical); err != nil || string(contents) != "original" || state.archiveHits != 0 {
+			t.Fatalf("binary = %q, %v; archive downloads = %d", contents, err, state.archiveHits)
+		}
+		return
+	}
 	if code := updater.run(context.Background(), &output); code != 0 {
 		t.Fatalf("code = %d, output = %q", code, output.String())
 	}
@@ -359,6 +385,9 @@ func TestSelfUpdateRejectsBadReleasesAndRollsBack(t *testing.T) {
 		{name: "install belongs to a package manager", managed: true, wantErr: "managed by its package manager"},
 	}
 	for _, test := range tests {
+		if runtime.GOOS == "windows" && !test.managed {
+			test.wantErr = windowsRefusal
+		}
 		t.Run(test.name, func(t *testing.T) {
 			dir, canonical, link := installedOrb(t, 0o755)
 			updater := updaterFor(t, "0.4.15", &test.state)
@@ -381,7 +410,7 @@ func TestSelfUpdateRejectsBadReleasesAndRollsBack(t *testing.T) {
 			if err != nil || string(contents) != "original" {
 				t.Fatalf("binary = %q, %v", contents, err)
 			}
-			if info, err := os.Stat(canonical); err != nil || info.Mode().Perm() != 0o755 {
+			if info, err := os.Stat(canonical); err != nil || info.Mode().Perm() != wantPerm(0o755) {
 				t.Fatalf("mode = %v, %v", info.Mode(), err)
 			}
 			assertOnlyOrb(t, dir)

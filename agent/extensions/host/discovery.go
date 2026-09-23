@@ -2,12 +2,13 @@ package host
 
 import (
 	"encoding/json"
-	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 const configDirName = ".pi"
@@ -141,15 +142,15 @@ func isExtensionFile(name string) bool {
 }
 
 func resolvePath(input, base string) string {
-	input = normalizeUnicodeSpaces(input)
-	if input == "~" || strings.HasPrefix(input, "~/") {
+	input = nodepath.NormalizeShellPath(normalizeUnicodeSpaces(input))
+	if input == "~" || strings.HasPrefix(input, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(input, `~\`)) {
 		if home, err := os.UserHomeDir(); err == nil {
-			input = filepath.Join(home, strings.TrimPrefix(input, "~/"))
+			input = filepath.Join(home, input[1:])
 		}
 	}
 	if strings.HasPrefix(input, "file://") {
-		if parsed, err := url.Parse(input); err == nil {
-			input = parsed.Path
+		if converted, err := nodepath.FileURLToPath(input); err == nil {
+			input = converted
 		}
 	}
 	if !filepath.IsAbs(input) {

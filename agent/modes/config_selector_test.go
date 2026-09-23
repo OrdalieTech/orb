@@ -2,6 +2,7 @@ package modes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -41,6 +42,19 @@ func selectorSettings(t *testing.T, global, project string, trusted bool) (*conf
 		t.Fatal(err)
 	}
 	return manager, cwd, agentDir
+}
+
+// selectorPattern spells a written resource pattern with the native separator:
+// upstream derives patterns with node:path relative, which yields "\" on win32.
+func selectorPattern(pattern string) string { return filepath.FromSlash(pattern) }
+
+func selectorJSONString(t *testing.T, value string) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
 }
 
 func selectorResource(path string, enabled bool, source, scope, origin, baseDir string) agent.ResolvedResource {
@@ -128,7 +142,7 @@ func TestConfigSelectorGlobalPackageAndTopLevelToggles(t *testing.T) {
 	settings, cwd, agentDir := selectorSettings(t, `{
   "unrelated": {"keep": true},
   "packages": [{"source":"npm:tools","skills":["skills/**"]}],
-  "extensions": ["extensions/top.ts"]
+  "extensions": [`+selectorJSONString(t, selectorPattern("extensions/top.ts"))+`]
 }`, "", false)
 	packageRoot := filepath.Join(agentDir, "npm", "tools")
 	resolved := &agent.ResolvedPaths{
@@ -144,22 +158,22 @@ func TestConfigSelectorGlobalPackageAndTopLevelToggles(t *testing.T) {
 
 	selector.HandleInput(selectorEvent(" "))
 	packages := settings.GetGlobalPackages()
-	if len(packages) != 1 || !reflect.DeepEqual(packages[0].Extensions, []string{"-extensions/pkg.ts"}) ||
+	if len(packages) != 1 || !reflect.DeepEqual(packages[0].Extensions, []string{selectorPattern("-extensions/pkg.ts")}) ||
 		!reflect.DeepEqual(packages[0].Skills, []string{"skills/**"}) {
 		t.Fatalf("package toggle = %#v", packages)
 	}
 	selector.HandleInput(selectorEvent(" "))
-	if packages = settings.GetGlobalPackages(); !reflect.DeepEqual(packages[0].Extensions, []string{"+extensions/pkg.ts"}) {
+	if packages = settings.GetGlobalPackages(); !reflect.DeepEqual(packages[0].Extensions, []string{selectorPattern("+extensions/pkg.ts")}) {
 		t.Fatalf("second package toggle = %#v", packages)
 	}
 
 	selector.HandleInput(selectorEvent("\x1b[B"))
 	selector.HandleInput(selectorEvent(" "))
-	if got := settings.GetGlobalExtensionPaths(); !reflect.DeepEqual(got, []string{"-extensions/top.ts"}) {
+	if got := settings.GetGlobalExtensionPaths(); !reflect.DeepEqual(got, []string{selectorPattern("-extensions/top.ts")}) {
 		t.Fatalf("top-level toggle = %#v", got)
 	}
 	selector.HandleInput(selectorEvent(" "))
-	if got := settings.GetGlobalExtensionPaths(); !reflect.DeepEqual(got, []string{"+extensions/top.ts"}) {
+	if got := settings.GetGlobalExtensionPaths(); !reflect.DeepEqual(got, []string{selectorPattern("+extensions/top.ts")}) {
 		t.Fatalf("second top-level toggle = %#v", got)
 	}
 	global := settings.GetGlobalSettings()
@@ -176,8 +190,8 @@ func TestConfigSelectorProjectPackageOverrideCycles(t *testing.T) {
 		first     string
 		second    string
 	}{
-		{name: "inherited enabled", inherited: true, first: "-extensions/bar.ts", second: "+extensions/bar.ts"},
-		{name: "inherited disabled", inherited: false, first: "+extensions/bar.ts", second: "-extensions/bar.ts"},
+		{name: "inherited enabled", inherited: true, first: selectorPattern("-extensions/bar.ts"), second: selectorPattern("+extensions/bar.ts")},
+		{name: "inherited disabled", inherited: false, first: selectorPattern("+extensions/bar.ts"), second: selectorPattern("-extensions/bar.ts")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -228,7 +242,7 @@ func TestConfigSelectorProjectLocalPackageOverrideUsesProjectRelativeSource(t *t
 	packages := settings.GetProjectPackages()
 	wantSource := relativeConfigPath(filepath.Join(cwd, config.ConfigDirName), packageRoot)
 	if len(packages) != 1 || packages[0].Source != wantSource || packages[0].Autoload == nil || *packages[0].Autoload ||
-		!reflect.DeepEqual(packages[0].Extensions, []string{"-extensions/local.ts"}) {
+		!reflect.DeepEqual(packages[0].Extensions, []string{selectorPattern("-extensions/local.ts")}) {
 		t.Fatalf("local project override = %#v, want source %q", packages, wantSource)
 	}
 }

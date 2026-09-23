@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -92,8 +93,13 @@ func TestRefreshPersistsAndReloadsCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("store mode = %o, want 600", info.Mode().Perm())
+	want := os.FileMode(0o600)
+	if runtime.GOOS == "windows" {
+		// Windows exposes only the read-only attribute through mode bits, as Node's fs.stat does.
+		want = 0o666
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("store mode = %o, want %o", info.Mode().Perm(), want)
 	}
 	loaded, err := LoadStore(storePath)
 	if err != nil {

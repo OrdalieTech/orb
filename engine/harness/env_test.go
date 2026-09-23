@@ -37,6 +37,13 @@ func TestNodeExecutionEnvFileSystemParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if volume := filepath.VolumeName(processCWD); !strings.EqualFold(volume, filepath.VolumeName(root)) {
+		// A relative CWD cannot cross win32 drives; t.TempDir and the package can differ.
+		if root, err = os.MkdirTemp(volume+string(filepath.Separator), "orb-harness-parity-"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(root) })
+	}
 	relativeRoot, err := filepath.Rel(processCWD, root)
 	if err != nil {
 		t.Fatal(err)
@@ -276,13 +283,23 @@ func TestNodeExecutionEnvExpandsHomeRelativePathsAndFileURLs(t *testing.T) {
 	if resolved, resolveErr := env.AbsolutePath(ctx, fileURL); resolveErr != nil || resolved != filePath {
 		t.Fatalf("AbsolutePath(%q) = %q, %v", fileURL, resolved, resolveErr)
 	}
-	// Malformed URLs stay ordinary paths instead of failing.
+	// Malformed URLs stay ordinary paths instead of failing; on win32 Node's
+	// fileURLToPath accepts a host as a UNC server.
 	malformed := "file://remote-host/target.txt"
-	if resolved, resolveErr := env.AbsolutePath(ctx, malformed); resolveErr != nil || resolved != filepath.Clean(filepath.Join(root, malformed)) {
-		t.Fatalf("AbsolutePath(file URL with host) = %q, %v", resolved, resolveErr)
+	wantMalformed := filepath.Clean(filepath.Join(root, malformed))
+	if runtime.GOOS == "windows" {
+		wantMalformed = `\\remote-host\target.txt`
 	}
-	if resolved, resolveErr := env.AbsolutePath(ctx, "/a/../b"); resolveErr != nil || resolved != filepath.Clean("/b") {
-		t.Fatalf("AbsolutePath(/a/../b) = %q, %v", resolved, resolveErr)
+	if resolved, resolveErr := env.AbsolutePath(ctx, malformed); resolveErr != nil || resolved != wantMalformed {
+		t.Fatalf("AbsolutePath(file URL with host) = %q, %v; want %q", resolved, resolveErr, wantMalformed)
+	}
+	// Node's path.resolve roots a drive-less absolute path on the process drive.
+	wantRooted, err := filepath.Abs(filepath.FromSlash("/b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, resolveErr := env.AbsolutePath(ctx, "/a/../b"); resolveErr != nil || resolved != wantRooted {
+		t.Fatalf("AbsolutePath(/a/../b) = %q, %v; want %q", resolved, resolveErr, wantRooted)
 	}
 }
 

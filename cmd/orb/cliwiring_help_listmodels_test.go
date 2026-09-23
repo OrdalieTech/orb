@@ -79,7 +79,9 @@ func TestListModelsIncludesExtensionRegisteredProviders(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := filepath.Join(t.TempDir(), "agent")
 	t.Setenv(config.EnvAgentDir, agentDir)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("FAKE_KEY", "dummy")
 	t.Chdir(cwd)
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/OrdalieTech/orb/engine"
@@ -39,6 +40,10 @@ func (tool *findTool) executeFD(
 		args = append(args, "--full-path")
 		if !strings.HasPrefix(pattern, "/") && !strings.HasPrefix(pattern, "**/") && pattern != "**" {
 			effectivePattern = "**/" + pattern
+		}
+		// fd matches full paths using native separators on Windows.
+		if runtime.GOOS == "windows" {
+			effectivePattern = strings.ReplaceAll(effectivePattern, "/", `[/\\]`)
 		}
 	}
 	args = append(args, "--", effectivePattern, searchPath)
@@ -88,21 +93,7 @@ func (tool *findTool) executeFD(
 		if line == "" {
 			continue
 		}
-		hadTrailingSlash := strings.HasSuffix(line, "/") || strings.HasSuffix(line, "\\")
-		var relativePath string
-		if strings.HasPrefix(line, searchPath) {
-			start := min(len(line), len(searchPath)+1)
-			relativePath = line[start:]
-		} else {
-			relativePath, err = filepath.Rel(searchPath, line)
-			if err != nil {
-				return engine.AgentToolResult{}, err
-			}
-		}
-		if hadTrailingSlash && !strings.HasSuffix(relativePath, "/") {
-			relativePath += "/"
-		}
-		relativized = append(relativized, filepath.ToSlash(relativePath))
+		relativized = append(relativized, relativizeFindResultPath(line, searchPath))
 	}
 	if len(relativized) == 0 {
 		return textToolResult("No files found matching pattern", nil), nil

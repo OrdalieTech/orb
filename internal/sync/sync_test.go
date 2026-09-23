@@ -2,6 +2,7 @@ package upstreamsync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -195,6 +196,8 @@ func newSyncFixture(t *testing.T) syncFixture {
 		t.Fatal(err)
 	}
 	gitTest(t, upstream, "init", "-b", "main")
+	// Git for Windows defaults core.autocrlf to true; fixtures stay byte-exact.
+	gitTest(t, upstream, "config", "core.autocrlf", "false")
 	gitTest(t, upstream, "config", "user.name", "Sync Test")
 	gitTest(t, upstream, "config", "user.email", "sync@example.test")
 	writeTestFile(t, filepath.Join(upstream, "packages", "ai", "src", "types.ts"), "export interface Message { type: string }\n")
@@ -209,9 +212,14 @@ func newSyncFixture(t *testing.T) syncFixture {
 	gitTest(t, upstream, "checkout", "--detach", base)
 
 	writeTestFile(t, filepath.Join(root, ".gitignore"), ".upstream/\n")
-	writeTestFile(t, filepath.Join(root, "UPSTREAM.lock"), "{\n  \"repo\": \""+upstream+"\",\n  \"commit\": \""+base+"\",\n  \"version\": \"1.0.0\",\n  \"syncedAt\": \"2026-07-17\"\n}\n")
+	repo, err := json.Marshal(upstream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "UPSTREAM.lock"), "{\n  \"repo\": "+string(repo)+",\n  \"commit\": \""+base+"\",\n  \"version\": \"1.0.0\",\n  \"syncedAt\": \"2026-07-17\"\n}\n")
 	writeTestFile(t, filepath.Join(root, "conformance", "fixtures", "F1", "cases.json"), "old fixture\n")
 	gitTest(t, root, "init", "-b", "main")
+	gitTest(t, root, "config", "core.autocrlf", "false")
 	gitTest(t, root, "config", "user.name", "Sync Test")
 	gitTest(t, root, "config", "user.email", "sync@example.test")
 	gitTest(t, root, "add", ".")

@@ -100,7 +100,7 @@ func TestRepoBoundHarnessRuntimeSwitchAcceptsFutureSessionVersion(t *testing.T) 
 	t.Cleanup(func() { runtime.Dispose(ctx) })
 
 	invalidPath := filepath.Join(filepath.Dir(current.Metadata().Path), "invalid.jsonl")
-	invalidHeader := `{"type":"session","version":999,"id":"invalid","timestamp":"2026-07-18T00:00:00.000Z","cwd":"` + cwd + `"}` + "\n"
+	invalidHeader := `{"type":"session","version":999,"id":"invalid","timestamp":"2026-07-18T00:00:00.000Z","cwd":` + jsonText(cwd) + `}` + "\n"
 	if err := os.WriteFile(invalidPath, []byte(invalidHeader), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestRepoBoundHarnessRuntimePreservesUnknownFutureMembersAcrossManagerViews(
 	cwd := t.TempDir()
 	runtime, _ := newFidelityHarnessRepoRuntime(t, cwd, nil)
 	path := filepath.Join(filepath.Dir(runtime.Session().Manager().GetSessionFile()), "future-members.jsonl")
-	headerLine := []byte(`{"futureHeader":{"beta":2,"alpha":1},"type":"session","version":999,"id":"future-members","timestamp":"2026-07-18T00:00:00.000Z","cwd":"` + cwd + `","futureTail":[3,2,1]}`)
+	headerLine := []byte(`{"futureHeader":{"beta":2,"alpha":1},"type":"session","version":999,"id":"future-members","timestamp":"2026-07-18T00:00:00.000Z","cwd":` + jsonText(cwd) + `,"futureTail":[3,2,1]}`)
 	entryLine := []byte(`{"futureEntry":{"beta":2,"alpha":1},"type":"message","id":"future-entry","parentId":null,"timestamp":"2026-07-18T00:00:01.000Z","message":{"role":"user","content":"future","timestamp":1},"futureTail":true}`)
 	thinkingLine := []byte(`{"type":"thinking_level_change","id":"future-thinking","parentId":"future-entry","timestamp":"2026-07-18T00:00:02.000Z","thinkingLevel":"off"}`)
 	contents := bytes.Join([][]byte{headerLine, entryLine, thinkingLine, nil}, []byte{'\n'})
@@ -215,7 +215,7 @@ func TestRepoBoundHarnessRuntimeSkipsMalformedJSONLLines(t *testing.T) {
 	runtime, _ := newFidelityHarnessRepoRuntime(t, cwd, nil)
 	path := filepath.Join(filepath.Dir(runtime.Session().Manager().GetSessionFile()), "malformed-line.jsonl")
 	contents := append([]byte(
-		`{"type":"session","version":3,"id":"malformed-line","timestamp":"2026-07-18T00:00:00.000Z","cwd":"`+cwd+`"}`+"\n"+
+		`{"type":"session","version":3,"id":"malformed-line","timestamp":"2026-07-18T00:00:00.000Z","cwd":`+jsonText(cwd)+`}`+"\n"+
 			"not json\n",
 	), []byte(`{"type":"message","id":"valid-user","parentId":null,"timestamp":"2026-07-18T00:00:01.000Z","message":{"role":"user","content":"keep me","timestamp":1}}`+"\n")...)
 	if err := os.WriteFile(path, contents, 0o600); err != nil {
@@ -297,7 +297,7 @@ func TestRepoBoundHarnessRuntimeUnsavedForkMatchesUpstreamError(t *testing.T) {
 
 func futureHarnessSessionJSONL(cwd, id, userID string) []byte {
 	return []byte(
-		`{"type":"session","version":999,"id":"` + id + `","timestamp":"2026-07-18T00:00:00.000Z","cwd":"` + cwd + `"}` + "\n" +
+		`{"type":"session","version":999,"id":"` + id + `","timestamp":"2026-07-18T00:00:00.000Z","cwd":` + jsonText(cwd) + `}` + "\n" +
 			`{"type":"message","id":"` + userID + `","parentId":null,"timestamp":"2026-07-18T00:00:01.000Z","message":{"role":"user","content":"future","timestamp":1}}` + "\n",
 	)
 }
@@ -334,4 +334,14 @@ func assertHarnessBackedRuntime(t *testing.T, runtime *AgentSessionRuntime, oper
 	if manager := runtime.Session().Manager(); manager == nil || !manager.IsHarnessBacked() {
 		t.Fatalf("%s replacement detached the runtime from its harness repository", operation)
 	}
+}
+
+// jsonText encodes value as a JSON string literal; a raw win32 path would put
+// invalid escapes into hand-built session lines.
+func jsonText(value string) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
 }

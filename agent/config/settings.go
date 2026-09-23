@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/storage"
 )
 
@@ -1025,6 +1025,7 @@ func ResolveSessionDir(cliValue string, manager *SettingsManager) (string, error
 }
 
 func NormalizePath(path string) (string, error) {
+	path = nodepath.NormalizeShellPath(path)
 	if path == "~" || strings.HasPrefix(path, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(path, `~\`)) {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -1036,21 +1037,7 @@ func NormalizePath(path string) (string, error) {
 		return filepath.Join(home, path[2:]), nil
 	}
 	if strings.HasPrefix(path, "file://") {
-		parsed, err := url.Parse(path)
-		if err != nil {
-			return "", err
-		}
-		if parsed.Host != "" && parsed.Host != "localhost" {
-			return "", fmt.Errorf("file URL has unsupported host %q", parsed.Host)
-		}
-		decoded, err := url.PathUnescape(parsed.EscapedPath())
-		if err != nil {
-			return "", err
-		}
-		if runtime.GOOS == "windows" && len(decoded) >= 3 && decoded[0] == '/' && decoded[2] == ':' {
-			decoded = decoded[1:]
-		}
-		return filepath.FromSlash(decoded), nil
+		return nodepath.FileURLToPath(path)
 	}
 	return path, nil
 }

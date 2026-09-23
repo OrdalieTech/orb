@@ -1,12 +1,15 @@
-//go:build !linux && !darwin
+//go:build !linux && !darwin && !windows
 
 package subagents
 
 import (
-	"fmt"
-	"os/exec"
+	"context"
+	"errors"
+	"io"
+
+	"github.com/OrdalieTech/orb/sandbox"
 )
 
-func isolateExternalProcess(*exec.Cmd) (func() error, error) {
-	return nil, fmt.Errorf("process-group isolation is supported only on linux and darwin")
+func runExternalCommand(context.Context, string, string, map[string]string, sandbox.Mode, io.Reader, io.Writer, io.Writer) (externalRun, error) {
+	return externalRun{}, unavailableError{errors.New("descendant isolation is supported only on linux, darwin and windows")}
 }

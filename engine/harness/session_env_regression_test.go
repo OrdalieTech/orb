@@ -8,6 +8,7 @@ import (
 	agentharness "github.com/OrdalieTech/orb/engine/harness"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -114,7 +115,7 @@ func TestExecutionEnvironmentPreservesV0842Behavior(t *testing.T) {
 
 	got := map[string]any{
 		"absolutePath":                f6HarnessResult(abs, absErr, root),
-		"absolutePathAlreadyAbsolute": f6HarnessResult(absAlready, absAlreadyErr, root),
+		"absolutePathAlreadyAbsolute": f6HarnessResult(posixRooted(t, absAlready), absAlreadyErr, root),
 		"joinPath":                    f6HarnessResult(joined, joinErr, root),
 		"readTextLines":               f6HarnessResult(lines, linesErr, root),
 		"negativeMaxLines":            f6HarnessResult(negativeLines, negativeLinesErr, root),
@@ -131,7 +132,7 @@ func TestExecutionEnvironmentPreservesV0842Behavior(t *testing.T) {
 		"callbackChunks":              chunks,
 		"preAbortedExec":              f6HarnessResult(nil, abortErr, root),
 		"preAborted": map[string]any{
-			"absolutePath":   f6HarnessResult(preAbs, preAbsErr, root),
+			"absolutePath":   f6HarnessResult(posixRooted(t, preAbs), preAbsErr, root),
 			"joinPath":       f6HarnessResult(preJoin, preJoinErr, root),
 			"readTextFile":   f6HarnessResult(nil, preReadTextErr, root),
 			"readTextLines":  f6HarnessResult(nil, preReadLinesErr, root),
@@ -157,7 +158,40 @@ func TestExecutionEnvironmentPreservesV0842Behavior(t *testing.T) {
 			"fileExists": tempExistsErr == nil && tempExists,
 		},
 	}
+	if runtime.GOOS == "windows" {
+		// win32 has no signals: "kill -9 $$" ends Git Bash with an exit code, not SIGKILL.
+		delete(fixture.Env, "signaledExec")
+		delete(got, "signaledExec")
+		// libuv reports a win32 symlink's lstat size as its target length; Go's
+		// Lstat reports 0, and os.Readlink would add platform access to the P10
+		// core (internal/layering ratchet). Every other field is still checked.
+		for _, observations := range []map[string]any{fixture.Env, got} {
+			if result, ok := observations["symlinkInfo"].(map[string]any); ok {
+				if value, ok := result["value"].(map[string]any); ok {
+					delete(value, "size")
+				}
+			}
+		}
+	}
 	assertF6HarnessMap(t, fixture.Env, got)
+}
+
+// posixRooted maps a drive-rooted result back to the POSIX capture: Node's
+// win32 path.resolve roots "/a/../b" on the process drive.
+func posixRooted(t *testing.T, path string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return path
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.VolumeName(wd) + `\`
+	if !strings.HasPrefix(path, volume) {
+		return path
+	}
+	return "/" + filepath.ToSlash(path[len(volume):])
 }
 func loadF6HarnessFixture(t *testing.T) f6HarnessFixture {
 	t.Helper()

@@ -1758,7 +1758,9 @@ func droppedImagePath(paste string) (string, string) {
 	if len(path) >= 2 && (path[0] == '\'' && path[len(path)-1] == '\'' || path[0] == '"' && path[len(path)-1] == '"') {
 		path = path[1 : len(path)-1]
 	}
-	if strings.Contains(path, `\`) {
+	// Backslash-escaped spaces are the POSIX terminal drop convention; on
+	// Windows the backslash is the path separator and dropped paths are quoted.
+	if runtime.GOOS != "windows" && strings.Contains(path, `\`) {
 		var unescaped strings.Builder
 		unescaped.Grow(len(path))
 		for index := 0; index < len(path); index++ {

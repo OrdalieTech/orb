@@ -75,7 +75,11 @@ func TestFindLocalSessionByExactIDDoesNotRequireValidTranscriptBody(t *testing.T
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "exact.jsonl")
-	body := `{"type":"session","version":3,"id":"exact","timestamp":"2025-01-01T00:00:00.000Z","cwd":"` + project + `"}` + "\nnot-json\n"
+	cwd, err := json.Marshal(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"type":"session","version":3,"id":"exact","timestamp":"2025-01-01T00:00:00.000Z","cwd":` + string(cwd) + `}` + "\nnot-json\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

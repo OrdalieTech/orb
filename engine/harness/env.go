@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"math"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +21,8 @@ import (
 	"time"
 
 	textunicode "golang.org/x/text/encoding/unicode"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 const maxExecutionTimeoutSeconds = 2_147_483_647.0 / 1000.0
@@ -48,11 +49,16 @@ func (env *NodeExecutionEnv) WorkingDirectory() string {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	absolute, err := filepath.Abs(cwd)
-	if err == nil {
-		cwd = absolute
+	return processAbsolute(cwd)
+}
+
+// processAbsolute resolves path against the process working directory, like
+// Node's path.resolve; on win32 that also roots "\x" on the process drive.
+func processAbsolute(path string) string {
+	if absolute, err := filepath.Abs(path); err == nil {
+		return filepath.Clean(absolute)
 	}
-	return filepath.Clean(cwd)
+	return filepath.Clean(path)
 }
 
 func (env *NodeExecutionEnv) resolve(path string) string {
@@ -67,34 +73,18 @@ func (env *NodeExecutionEnv) resolve(path string) string {
 		}
 	} else if strings.HasPrefix(normalized, "file://") {
 		// Malformed URLs stay ordinary paths so filesystem methods preserve their non-throwing contract.
-		if converted, ok := fileURLPath(normalized); ok {
+		if converted, err := nodepath.FileURLToPath(normalized); err == nil {
 			normalized = converted
 		}
 	}
 	if filepath.IsAbs(normalized) {
 		return filepath.Clean(normalized)
 	}
+	// Node's win32 isAbsolute accepts a rooted path without a drive.
+	if runtime.GOOS == "windows" && (strings.HasPrefix(normalized, `\`) || strings.HasPrefix(normalized, "/")) {
+		return processAbsolute(normalized)
+	}
 	return filepath.Clean(filepath.Join(env.WorkingDirectory(), normalized))
-}
-
-// fileURLPath mirrors Node's fileURLToPath for the URLs it accepts: a file
-// scheme, an empty or localhost host, and no percent-encoded separators.
-func fileURLPath(raw string) (string, bool) {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "file" {
-		return "", false
-	}
-	if parsed.Host != "" && parsed.Host != "localhost" {
-		return "", false
-	}
-	if parsed.Path == "" || strings.Contains(strings.ToLower(parsed.RawPath), "%2f") {
-		return "", false
-	}
-	path := parsed.Path
-	if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
-		path = path[1:]
-	}
-	return filepath.FromSlash(path), true
 }
 
 func abortedFileError(ctx context.Context, path string) error {
@@ -126,7 +116,9 @@ func nodeOperationError(operation, path string, err error) error {
 	case errors.Is(err, syscall.ENOTDIR):
 		code = FileErrorNotDirectory
 		message = fmt.Sprintf("ENOTDIR: not a directory, %s '%s'", operation, path)
-	case errors.Is(err, syscall.EISDIR):
+	// win32 reads of a directory handle fail with ERROR_INVALID_FUNCTION (errno 1
+	// there), which libuv reports as EISDIR.
+	case errors.Is(err, syscall.EISDIR), runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1)):
 		code = FileErrorIsDirectory
 		message = "EISDIR: illegal operation on a directory, read"
 	case errors.Is(err, syscall.EINVAL):
@@ -261,6 +253,9 @@ func (env *NodeExecutionEnv) writeFlags(ctx context.Context, path string, conten
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+		if env.fileAncestor(ctx, resolved) {
+			err = syscall.ENOTDIR
+		}
 		return nodeOperationError("mkdir", resolved, err)
 	}
 	if cancellable {
@@ -310,6 +305,13 @@ func (env *NodeExecutionEnv) ListDir(ctx context.Context, path string) ([]FileIn
 	}
 	entries, err := os.ReadDir(resolved)
 	if err != nil {
+		// win32 cannot open a file as a directory and says "not found"; libuv's
+		// scandir reports ENOTDIR there as on POSIX.
+		if errors.Is(err, fs.ErrNotExist) {
+			if info, infoErr := env.FileInfo(ctx, resolved); infoErr == nil && info.Kind == FileKindFile {
+				err = syscall.ENOTDIR
+			}
+		}
 		return nil, nodeOperationError("scandir", resolved, err)
 	}
 	infos := make([]FileInfo, 0, len(entries))
@@ -360,10 +362,27 @@ func (env *NodeExecutionEnv) CreateDir(ctx context.Context, path string, recursi
 	var err error
 	if recursive {
 		err = os.MkdirAll(resolved, 0o755)
+		if err != nil && env.fileAncestor(ctx, resolved) {
+			err = syscall.ENOTDIR
+		}
 	} else {
 		err = os.Mkdir(resolved, 0o755)
 	}
 	return nodeOperationError("mkdir", resolved, err)
+}
+
+// fileAncestor reports a regular file among path's ancestors. Node's recursive
+// mkdir answers ENOTDIR for it on every platform, while win32 CreateDirectory
+// only reports the path as not found.
+func (env *NodeExecutionEnv) fileAncestor(ctx context.Context, path string) bool {
+	for current := filepath.Dir(path); ; current = filepath.Dir(current) {
+		if info, err := env.FileInfo(ctx, current); err == nil {
+			return info.Kind == FileKindFile
+		}
+		if parent := filepath.Dir(current); parent == current {
+			return false
+		}
+	}
 }
 
 func (env *NodeExecutionEnv) Remove(ctx context.Context, path string, recursive, force bool) error {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -28,7 +29,12 @@ func TestSYNC5GeneratedFileReplacementUsesCleanSameDirectoryStage(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
+	want := os.FileMode(0o644)
+	if runtime.GOOS == "windows" {
+		// Windows exposes only the read-only attribute through mode bits.
+		want = 0o666
+	}
+	if info.Mode().Perm() != want {
 		t.Fatalf("generated mode = %o", info.Mode().Perm())
 	}
 	entries, err := os.ReadDir(directory)

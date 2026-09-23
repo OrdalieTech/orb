@@ -448,7 +448,7 @@ func TestAgentSessionRuntimeImportFromJSONL(t *testing.T) {
 	if got := host.Session().Manager().GetSessionFile(); got != wantPath {
 		t.Fatalf("imported path = %q, want %q", got, wantPath)
 	}
-	if info, statErr := os.Stat(wantPath); statErr != nil || info.Mode().Perm() != 0o600 {
+	if info, statErr := os.Stat(wantPath); statErr != nil || info.Mode().Perm() != wantPerm(0o600) {
 		t.Fatalf("imported mode = %v, %v", info, statErr)
 	}
 	if got := host.Session().Manager().BuildSessionContext().Messages; len(got) != 3 {

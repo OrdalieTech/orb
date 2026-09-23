@@ -869,17 +869,8 @@ func TestAutomaticSDKSetup(t *testing.T) {
 	if err := os.MkdirAll(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
-	script := `#!/bin/sh
-printf 'attempt\n' >> "$TRACE_DIR/attempts"
-mkdir -p "$3/node_modules/@anthropic-ai/claude-agent-sdk"
-printf 'fixture' > "$3/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs"
-printf '{"version":"SDK_VERSION"}' > "$3/node_modules/@anthropic-ai/claude-agent-sdk/package.json"
-if [ ! -f "$TRACE_DIR/retry" ]; then touch "$TRACE_DIR/retry"; exit 1; fi
-`
-	if err := os.WriteFile(filepath.Join(bin, "npm"), []byte(strings.ReplaceAll(script, "SDK_VERSION", SDKVersion)), 0700); err != nil {
-		t.Fatal(err)
-	}
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "TRACE_DIR=" + dir, "ANTHROPIC_API_KEY=orb-provider-key"}
+	writeFakeNPM(t, filepath.Join(bin, "npm"))
+	env := []string{"PATH=" + bin + string(os.PathListSeparator) + systemSearchPath, "TRACE_DIR=" + dir, "ANTHROPIC_API_KEY=orb-provider-key"}
 	old := filepath.Join(dir, "plugins", Name, "node_modules", "@anthropic-ai", "claude-agent-sdk", "sdk.mjs")
 	if err := os.MkdirAll(filepath.Dir(old), 0700); err != nil {
 		t.Fatal(err)
@@ -896,7 +887,8 @@ if [ ! -f "$TRACE_DIR/retry" ]; then touch "$TRACE_DIR/retry"; exit 1; fi
 		}
 	}
 	attempts, err := os.ReadFile(filepath.Join(dir, "attempts"))
-	if err != nil || string(attempts) != "attempt\nattempt\n" {
+	// A batch-file npm ends echoed lines with CRLF.
+	if err != nil || strings.ReplaceAll(string(attempts), "\r\n", "\n") != "attempt\nattempt\n" {
 		t.Fatalf("setup did not retry once and reuse: %q %v", attempts, err)
 	}
 	if data, err := os.ReadFile(old); err != nil || string(data) != "old installed SDK" {

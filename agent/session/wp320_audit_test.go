@@ -192,11 +192,11 @@ func TestForkFromReplacesOnlyHeaderAndCreatesExclusively(t *testing.T) {
 	sourcePath := filepath.Join(root, "source.jsonl")
 	messageLine := `{"z":1,"type":"message","future":{"b":2,"a":1},"id":"entry-1","parentId":null,"timestamp":"2025-01-01T00:00:01.000Z","message":{"role":"user","content":"hello","timestamp":1},"a":2}`
 	source := fmt.Sprintf(
-		`{"futureHeader":true,"cwd":%q,"type":"session","id":"source","timestamp":"2025-01-01T00:00:00.000Z","version":3}`+"\n"+
+		`{"futureHeader":true,"cwd":%s,"type":"session","id":"source","timestamp":"2025-01-01T00:00:00.000Z","version":3}`+"\n"+
 			messageLine+"\n"+
 			`{"type":"session","id":"nested-header","timestamp":"2025-01-01T00:00:02.000Z","cwd":"ignored"}`+"\n"+
 			`[1,{"future":true}]`+"\n",
-		filepath.ToSlash(sourceCWD),
+		jsonString(t, sourceCWD),
 	)
 	if err := os.WriteFile(sourcePath, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
@@ -217,8 +217,8 @@ func TestForkFromReplacesOnlyHeaderAndCreatesExclusively(t *testing.T) {
 		t.Fatalf("fork lines = %d, want replacement header plus two non-header values\n%s", len(lines), content)
 	}
 	expectedHeader := fmt.Sprintf(
-		`{"type":"session","version":3,"id":"forked","timestamp":"2025-01-02T03:04:05.000Z","cwd":%q,"parentSession":%q}`,
-		filepath.ToSlash(targetCWD), filepath.ToSlash(sourcePath),
+		`{"type":"session","version":3,"id":"forked","timestamp":"2025-01-02T03:04:05.000Z","cwd":%s,"parentSession":%s}`,
+		jsonString(t, targetCWD), jsonString(t, sourcePath),
 	)
 	if lines[0] != expectedHeader {
 		t.Fatalf("fork header\n got: %s\nwant: %s", lines[0], expectedHeader)

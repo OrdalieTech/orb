@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -111,6 +112,7 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				Skills:             f9CodingSkills(fixtureCase.Input.Skills),
 				PackageDir:         fixture.PackageDir,
 			})
+			got = f9FixturePackagePaths(t, got, fixture.PackageDir)
 			expected := f9ExpectedOrbSystemPrompt(fixtureCase.Expected)
 			f9AssertOrbSystemPromptIdentity(t, fixtureCase.Expected, got)
 			if got != expected {
@@ -191,7 +193,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				SystemPromptSource:        f9FixturePromptSource(resources.SystemPromptSource, fixtureRoot),
 				AppendSystemPrompt:        resources.AppendSystemPrompt,
 				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
-				AssembledPrompt:           runner.NormalizeFixturePath(assembled, fixtureRoot),
+				AssembledPrompt:           runner.NormalizeFixturePath(f9FixturePackagePaths(t, assembled, fixture.PackageDir), fixtureRoot),
 			}
 			expected := fixtureCase.Expected
 			expected.AssembledPrompt = f9ExpectedOrbSystemPrompt(expected.AssembledPrompt)
@@ -204,6 +206,25 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// f9FixturePackagePaths maps the docs pointers back to the fixture's POSIX
+// form. Upstream's getReadmePath/getDocsPath/getExamplesPath path.resolve the
+// POSIX packageDir, which on win32 roots it on the current drive and joins
+// with backslashes.
+func f9FixturePackagePaths(t testing.TB, prompt, packageDir string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return prompt
+	}
+	native, err := filepath.Abs(filepath.FromSlash(packageDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"README.md", "docs", "examples"} {
+		prompt = strings.ReplaceAll(prompt, filepath.Join(native, name), packageDir+"/"+name)
+	}
+	return prompt
 }
 
 func f9ExpectedOrbSystemPrompt(upstream string) string {

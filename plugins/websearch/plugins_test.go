@@ -52,7 +52,7 @@ func TestWebSearchBackendsAndFetchContent(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
+			setHome(t, t.TempDir())
 			for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
 				t.Setenv(key, "")
 			}
@@ -189,7 +189,7 @@ func TestFetchContentDecodesCharsetAndRejectsBinary(t *testing.T) {
 }
 
 func TestWebSearchDropsProviderErrorBody(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	for _, key := range []string{"BRAVE_API_KEY", "TAVILY_API_KEY"} {
 		t.Setenv(key, "")
 	}
@@ -207,7 +207,7 @@ func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
 		t.Setenv(key, "")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	mustOK(os.MkdirAll(filepath.Join(home, ".pi"), 0o755))
 	config := `{"provider":"brave","exaApiKey":"exa-key","braveApiKey":"brave-key"}`
 	mustOK(os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(config), 0o600))
@@ -223,7 +223,7 @@ func TestWebSearchWithoutKeyReturnsActionableError(t *testing.T) {
 	for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
 		t.Setenv(key, "")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	tool := pluginTool(t, "websearch", "web_search", Extension(nil), extensions.RunnerOptions{})
 	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
 	require(t, err != nil && strings.Contains(err.Error(), "EXA_API_KEY") && strings.Contains(err.Error(), "~/.pi/web-search.json"), "error = %v", err)
@@ -234,7 +234,7 @@ func TestWebSearchReadsPiWebSearchConfig(t *testing.T) {
 		t.Setenv(key, "")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	mustOK(os.MkdirAll(filepath.Join(home, ".pi"), 0o755))
 	mustOK(os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(`{"exaApiKey":"stored"}`), 0o600))
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -271,4 +271,12 @@ func response(status int, contentType, body string) *http.Response {
 
 func redirect(location string) *http.Response {
 	return &http.Response{StatusCode: http.StatusFound, Status: http.StatusText(http.StatusFound), Header: http.Header{"Location": []string{location}}, Body: io.NopCloser(strings.NewReader(""))}
+}
+
+// setHome points the home directory at dir on every platform: Go's
+// os.UserHomeDir reads USERPROFILE on Windows and HOME elsewhere.
+func setHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 }

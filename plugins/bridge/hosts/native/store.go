@@ -7,11 +7,19 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/OrdalieTech/orb/storage"
 	"github.com/gofrs/flock"
 )
+
+// groupOrOtherAccess reports POSIX group or other permission bits. Windows
+// has none (Go reports 0666/0777 there); the profile directory's ACL is what
+// keeps the bridge state private on that platform.
+func groupOrOtherAccess(mode os.FileMode) bool {
+	return runtime.GOOS != "windows" && mode.Perm()&0o077 != 0
+}
 
 type Store struct {
 	document       storage.Document
@@ -34,12 +42,12 @@ func OpenStore(path string, quota int) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+	if !info.IsDir() || groupOrOtherAccess(info.Mode()) {
 		return nil, errors.New("bridge directory must be private")
 	}
 	for _, name := range []string{path, path + ".lock"} {
 		if info, err = os.Lstat(name); err == nil {
-			if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+			if !info.Mode().IsRegular() || groupOrOtherAccess(info.Mode()) {
 				return nil, errors.New("bridge store must be a private regular file")
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -131,6 +139,11 @@ func (s *Store) Save(b []byte) (err error) {
 	}
 	if err = os.Rename(name, s.path); err != nil {
 		return err
+	}
+	// Windows cannot flush a directory opened read-only (FlushFileBuffers needs
+	// GENERIC_WRITE); NTFS journals the rename itself.
+	if runtime.GOOS == "windows" {
+		return nil
 	}
 	// After rename, a failed barrier has an ambiguous durable outcome. Refuse
 	// all subsequent access until a new owner reopens and reconciles the store.

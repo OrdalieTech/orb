@@ -3,8 +3,6 @@ package modes
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,13 +14,7 @@ import (
 )
 
 func TestRPCClientLifecycleAndStrictRouting(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-read _
-printf 'not-json\n'
-printf '{"type":"queue_update","steering":["a b c"],"followUp":[]}\r\n'
-printf '{"id":"req_1","type":"response","command":"get_state","success":true,"data":{"thinkingLevel":"off","isStreaming":false,"isCompacting":false,"steeringMode":"all","followUpMode":"all","sessionId":"session","autoCompactionEnabled":true,"messageCount":2,"pendingMessageCount":0}}\n'
-while read _; do :; done
-`)})
+	client := NewRPCClient(rpcClientHelper("lifecycle"))
 	if _, err := client.GetState(context.Background()); err == nil || err.Error() != "Client not started" {
 		t.Fatalf("GetState before Start error = %v", err)
 	}
@@ -66,11 +58,7 @@ while read _; do :; done
 }
 
 func TestRPCClientRejectsPendingRequestOnExitAndCollectsStderr(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-read _
-printf 'child diagnostic' >&2
-exit 43
-`)})
+	client := NewRPCClient(rpcClientHelper("exit"))
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -85,11 +73,7 @@ exit 43
 }
 
 func TestRPCClientRequestTimeoutIncludesStderr(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-read _
-printf 'waiting' >&2
-while read _; do :; done
-`)})
+	client := NewRPCClient(rpcClientHelper("stderr"))
 	client.requestTimeout = 20 * time.Millisecond
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -102,11 +86,7 @@ while read _; do :; done
 }
 
 func TestRPCClientStopDoesNotWaitForDescendantStdout(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-trap '' TERM
-sleep 1 &
-while :; do sleep 1; done
-`)})
+	client := NewRPCClient(rpcClientHelper("descendant"))
 	client.stopTimeout = 20 * time.Millisecond
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -121,22 +101,9 @@ while :; do sleep 1; done
 }
 
 func TestRPCClientTypedCommands(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{
-		CLIPath: rpcClientScript(t, `
-while read line; do
-	case "$line" in
-		*'"type":"prompt"'*'"message":"hello"'*) printf '{"id":"req_1","type":"response","command":"prompt","success":true}\n' ;;
-		*'"type":"set_model"'*'"provider":"openai"'*'"modelId":"gpt-test"'*) printf '{"id":"req_2","type":"response","command":"set_model","success":true,"data":{"id":"gpt-test","name":"Test","api":"openai-responses","provider":"openai","baseUrl":"https://example.test","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}}\n' ;;
-		*'"type":"get_available_thinking_levels"'*) printf '{"id":"req_3","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off","high"]}}\n' ;;
-		*'"type":"clone"'*) printf '{"id":"req_4","type":"response","command":"clone","success":true,"data":{"cancelled":false}}\n' ;;
-		*) printf '{"id":"unknown","type":"response","command":"unknown","success":false,"error":"bad command"}\n' ;;
-	esac
-done
-`),
-		Provider: "openai",
-		Model:    "gpt-test",
-		Args:     []string{"--no-session"},
-	})
+	options := rpcClientHelper("typed")
+	options.Provider, options.Model, options.Args = "openai", "gpt-test", []string{"--no-session"}
+	client := NewRPCClient(options)
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -168,19 +135,7 @@ done
 }
 
 func TestRPCClientListenerCanCallClientInOrder(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-while read line; do
-	case "$line" in
-		*'"type":"prompt"'*)
-			printf '{"type":"queue_update","steering":["one"],"followUp":[]}\n'
-			printf '{"type":"response","command":"prompt","success":true,"id":"req_1"}\n'
-			;;
-		*'"type":"get_state"'*)
-			printf '{"type":"response","command":"get_state","success":true,"data":{"thinkingLevel":"off","isStreaming":false,"isCompacting":false,"steeringMode":"all","followUpMode":"all","sessionId":"reentrant","autoCompactionEnabled":true,"messageCount":0,"pendingMessageCount":0},"id":"req_2"}\n'
-			;;
-	esac
-done
-`)})
+	client := NewRPCClient(rpcClientHelper("reentrant"))
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -229,13 +184,7 @@ done
 }
 
 func TestRPCClientListenerPanicOnlyStopsCurrentEvent(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-read _
-printf '{"type":"queue_update","steering":["one"],"followUp":[]}\n'
-printf '{"type":"response","command":"prompt","success":true,"id":"req_1"}\n'
-printf '{"type":"queue_update","steering":["two"],"followUp":[]}\n'
-while read _; do :; done
-`)})
+	client := NewRPCClient(rpcClientHelper("panic"))
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -286,11 +235,7 @@ while read _; do :; done
 }
 
 func TestRPCClientListenerCanStopClient(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `
-read _
-printf '{"type":"queue_update","steering":[],"followUp":[]}\n'
-while read _; do :; done
-`)})
+	client := NewRPCClient(rpcClientHelper("event"))
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +298,7 @@ func TestMarshalRPCClientCommandMatchesObjectSpreadOrder(t *testing.T) {
 }
 
 func TestRPCClientWaitForIdleAndContextCancellation(t *testing.T) {
-	client := NewRPCClient(RPCClientOptions{CLIPath: rpcClientScript(t, `while read _; do :; done`)})
+	client := NewRPCClient(rpcClientHelper("idle"))
 	if err := client.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -364,13 +309,4 @@ func TestRPCClientWaitForIdleAndContextCancellation(t *testing.T) {
 	if err := client.WaitForIdle(ctx); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "Stderr:") {
 		t.Fatalf("WaitForIdle error = %v", err)
 	}
-}
-
-func rpcClientScript(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "rpc-client-helper")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }

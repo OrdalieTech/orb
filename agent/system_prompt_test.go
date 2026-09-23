@@ -121,6 +121,7 @@ func TestBuiltInBashPromptGuidelineCoversSessionEnvironment(t *testing.T) {
 func TestBuildSystemPromptNormalizesPackageDirectoryEnvironment(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Setenv("USERPROFILE", root)
 	t.Setenv("PI_PACKAGE_DIR", "~/pi-package")
 
 	prompt := BuildSystemPrompt(SystemPromptOptions{CWD: root, SelectedTools: []string{}})

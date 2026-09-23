@@ -3,9 +3,7 @@ package modes
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -32,14 +30,7 @@ func editInExternalEditor(command, content string) externalEditorResult {
 		return externalEditorResult{}
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "Launching external editor: %s\norb will resume when the editor exits.\n", command)
-	// Split by space to support editor arguments (e.g., "code --wait").
-	parts := strings.Split(command, " ")
-	var process *exec.Cmd
-	if runtime.GOOS == "windows" {
-		process = exec.Command("cmd", "/C", command+` "`+filePath+`"`)
-	} else {
-		process = exec.Command(parts[0], append(parts[1:], filePath)...)
-	}
+	process := externalEditorProcess(command, filePath)
 	process.Stdin, process.Stdout, process.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := process.Run(); err != nil {
 		return externalEditorResult{}

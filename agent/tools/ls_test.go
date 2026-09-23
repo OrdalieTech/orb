@@ -132,13 +132,13 @@ func TestLsToolUsesJavaScriptFullLowercaseMapping(t *testing.T) {
 	operations := &fakeLsOperations{
 		exists: true,
 		stats: map[string]LsPathStat{
-			"/remote":   {Directory: true},
-			"/remote/İ": {},
-			"/remote/i": {},
+			hostPath("remote"):      {Directory: true},
+			hostPath("remote", "İ"): {},
+			hostPath("remote", "i"): {},
 		},
 		entries: []string{"İ", "i"},
 	}
-	result, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": "/remote"}, nil)
+	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +151,13 @@ func TestLsToolStableSortPreservesEnumerationOrderForEqualFoldedNames(t *testing
 	operations := &fakeLsOperations{
 		exists: true,
 		stats: map[string]LsPathStat{
-			"/remote":   {Directory: true},
-			"/remote/a": {},
-			"/remote/A": {},
+			hostPath("remote"):      {Directory: true},
+			hostPath("remote", "a"): {},
+			hostPath("remote", "A"): {},
 		},
 		entries: []string{"a", "A"},
 	}
-	result, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": "/remote"}, nil)
+	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,12 +171,12 @@ func TestLsToolUsesProcessDefaultLocale(t *testing.T) {
 	operations := &fakeLsOperations{
 		exists: true,
 		stats: map[string]LsPathStat{
-			"/remote":   {Directory: true},
-			"/remote/z": {}, "/remote/ä": {}, "/remote/å": {}, "/remote/ö": {}, "/remote/a": {},
+			hostPath("remote"):      {Directory: true},
+			hostPath("remote", "z"): {}, hostPath("remote", "ä"): {}, hostPath("remote", "å"): {}, hostPath("remote", "ö"): {}, hostPath("remote", "a"): {},
 		},
 		entries: []string{"z", "ä", "å", "ö", "a"},
 	}
-	result, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": "/remote"}, nil)
+	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +206,8 @@ func TestLsToolUsesLCMessagesBeforeLangLikeNodeIntl(t *testing.T) {
 func TestLsToolDetailsMatchUpstreamOrderAndSafeIntegerLimit(t *testing.T) {
 	long := strings.Repeat("x", 30_000)
 	operations := limitLsOperations{entries: []string{long + "a", long + "b", long + "c"}}
-	result, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{
-		"path": "/remote", "limit": 2,
+	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{
+		"path": hostPath("remote"), "limit": 2,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ type limitLsOperations struct{ entries []string }
 
 func (limitLsOperations) Exists(context.Context, string) (bool, error) { return true, nil }
 func (limitLsOperations) Stat(_ context.Context, path string) (LsPathStat, error) {
-	return LsPathStat{Directory: path == "/remote"}, nil
+	return LsPathStat{Directory: path == hostPath("remote")}, nil
 }
 func (operations limitLsOperations) ReadDir(context.Context, string) ([]string, error) {
 	return append([]string(nil), operations.entries...), nil
@@ -239,12 +239,12 @@ func TestLsToolSkipsEntriesItCannotStat(t *testing.T) {
 	operations := &fakeLsOperations{
 		exists: true,
 		stats: map[string]LsPathStat{
-			"/remote":      {Directory: true},
-			"/remote/good": {},
+			hostPath("remote"):         {Directory: true},
+			hostPath("remote", "good"): {},
 		},
 		entries: []string{"bad", "good"},
 	}
-	result, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": "/remote"}, nil)
+	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,10 +256,10 @@ func TestLsToolSkipsEntriesItCannotStat(t *testing.T) {
 func TestLsToolWrapsReadDirError(t *testing.T) {
 	operations := &fakeLsOperations{
 		exists:  true,
-		stats:   map[string]LsPathStat{"/remote": {Directory: true}},
+		stats:   map[string]LsPathStat{hostPath("remote"): {Directory: true}},
 		readErr: errors.New("disk offline"),
 	}
-	_, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": "/remote"}, nil)
+	_, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
 	if err == nil || err.Error() != "Cannot read directory: disk offline" {
 		t.Fatalf("error = %v", err)
 	}
@@ -299,7 +299,7 @@ func TestLsToolAbortReturnsWhileUpstreamStyleWorkContinues(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	operations := &continuingLsOperations{cancel: cancel, done: done}
-	_, err := NewLsTool("/", &LsToolOptions{Operations: operations}).Execute(ctx, "call", map[string]any{"path": "/remote"}, nil)
+	_, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(ctx, "call", map[string]any{"path": hostPath("remote")}, nil)
 	if !errors.Is(err, errOperationAborted) {
 		t.Fatalf("error = %v", err)
 	}
@@ -330,12 +330,22 @@ func (operations *continuingLsOperations) Exists(context.Context, string) (bool,
 }
 
 func (operations *continuingLsOperations) Stat(_ context.Context, path string) (LsPathStat, error) {
-	if path == "/remote/second" {
+	if path == hostPath("remote", "second") {
 		close(operations.done)
 	}
-	return LsPathStat{Directory: path == "/remote"}, nil
+	return LsPathStat{Directory: path == hostPath("remote")}, nil
 }
 
 func (*continuingLsOperations) ReadDir(context.Context, string) ([]string, error) {
 	return []string{"first", "second"}, nil
+}
+
+// hostPath joins elements under an absolute root of the running platform, for
+// fake operations that never touch the disk.
+func hostPath(elements ...string) string {
+	root := "/"
+	if runtime.GOOS == "windows" {
+		root = `C:\`
+	}
+	return filepath.Join(append([]string{root}, elements...)...)
 }

@@ -671,7 +671,7 @@ func TestGoogleVertexADCExplicitCredentialFileFailures(t *testing.T) {
 		}})
 		adc.client = googleVertexADCTestClient(handler)
 		_, err := adc.headers(context.Background())
-		if err == nil || !strings.Contains(err.Error(), `read Google application default credentials "`+missing+`"`) {
+		if err == nil || !strings.Contains(err.Error(), "read Google application default credentials "+strconv.Quote(missing)) {
 			t.Fatalf("error = %v", err)
 		}
 		if got := metadataRequests.Load(); got != 0 {
@@ -686,7 +686,7 @@ func TestGoogleVertexADCExplicitCredentialFileFailures(t *testing.T) {
 		}
 		adc := newGoogleVertexADC(&ai.StreamOptions{Env: ai.ProviderEnv{"GOOGLE_APPLICATION_CREDENTIALS": path}})
 		_, err := adc.headers(context.Background())
-		if err == nil || !strings.Contains(err.Error(), `decode Google application default credentials "`+path+`"`) {
+		if err == nil || !strings.Contains(err.Error(), "decode Google application default credentials "+strconv.Quote(path)) {
 			t.Fatalf("error = %v", err)
 		}
 	})

@@ -305,7 +305,7 @@ func (client *RPCClient) Stop() error {
 	if process == nil {
 		return nil
 	}
-	_ = process.cmd.Process.Signal(syscall.SIGTERM)
+	terminateRPCClientProcess(process.cmd.Process)
 	if timeout <= 0 {
 		timeout = time.Second
 	}

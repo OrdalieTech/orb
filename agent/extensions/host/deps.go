@@ -133,7 +133,7 @@ func dependencyInstallCommand(runtime Runtime, environment []string) (string, []
 		}
 		return runtime.Path, []string{"install", "--production"}, nil
 	}
-	if sibling := filepath.Join(filepath.Dir(runtime.Path), "npm"); executableFile(sibling) {
+	if sibling, ok := resolveExecutable(filepath.Join(filepath.Dir(runtime.Path), "npm")); ok {
 		return sibling, []string{"install", "--omit=dev", "--no-audit", "--no-fund"}, nil
 	}
 	npm, err := lookPathInEnvironment("npm", environment)
@@ -144,21 +144,16 @@ func dependencyInstallCommand(runtime Runtime, environment []string) (string, []
 }
 
 func lookPathInEnvironment(name string, environment []string) (string, error) {
-	if strings.ContainsRune(name, os.PathSeparator) {
-		if executableFile(name) {
-			return name, nil
+	if hasPathSeparator(name) {
+		if resolved, ok := resolveExecutable(name); ok {
+			return resolved, nil
 		}
 		return "", exec.ErrNotFound
 	}
 	for _, directory := range filepath.SplitList(environmentValue(environment, "PATH")) {
-		if candidate := filepath.Join(directory, name); executableFile(candidate) {
+		if candidate, ok := resolveExecutable(filepath.Join(directory, name)); ok {
 			return candidate, nil
 		}
 	}
 	return "", exec.ErrNotFound
-}
-
-func executableFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0
 }

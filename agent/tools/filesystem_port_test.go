@@ -48,7 +48,9 @@ func summarizeToolRun(root string, result engine.AgentToolResult, err error) str
 	}
 	details, _ := json.Marshal(result.Details)
 	parts = append(parts, "details:"+string(details), fmt.Sprintf("error:%v", err))
-	return strings.ReplaceAll(strings.Join(parts, "\n"), root, "<root>")
+	// Node's inspect() quoting in null-byte errors doubles win32 separators.
+	summary := strings.ReplaceAll(strings.Join(parts, "\n"), strings.ReplaceAll(root, `\`, `\\`), "<root>")
+	return strings.ReplaceAll(summary, root, "<root>")
 }
 
 // The port adapter must be indistinguishable from the native operations.
