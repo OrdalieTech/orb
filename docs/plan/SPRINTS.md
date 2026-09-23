@@ -401,3 +401,23 @@ its gate and closes GREEN; `make check` stays green between slices because ratch
      emulation) is not the app's execution model.
 6. **Cross-host conformance.** Scripted scenarios over the faux provider run on every host and
    must produce identical event JSON and session JSONL; kernel fixtures are reused, never forked.
+
+## Deployments — plan (owner direction P11, 2026-09-23)
+
+Orb deploys anywhere as a full runtime and every deployment is a Bridge peer. The catalogue and
+its evidence rules live in `docs/deployments.md`; a target moves up only with its gate green.
+
+1. **Durable Objects and Celld** (in progress): `platforms/worker` host on Durable Object
+   storage, RPC frames over WebSocket/HTTP, end-to-end under `cf dev` and `celld dev` in CI, one
+   deployed test instance, one-command deploy and removal.
+2. **Durable Object as a full Bridge peer**: accept the WebSocket Bridge transport on `/bridge`,
+   so laptop Orbs pair with a cloud Orb and grants work in both directions.
+3. **Windows parity**: the `windows-latest` job green and blocking again, Windows release
+   artifacts.
+4. **Richer hosted tools**: project settings, skills and context files over `FS`; grep without
+   ripgrep (a pure-Go search over the FS port), so hosts without `Exec` keep search.
+5. **Android (Termux) and iSH**: validate on devices, then add `android/arm64` and `linux/386`
+   release artifacts.
+6. **WASI**: an entry program and an HTTP host import.
+7. **iOS and Android apps**: gomobile library driven by RPC frames; iOS `Exec` through in-process
+   WASI commands.

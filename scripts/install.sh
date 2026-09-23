@@ -14,7 +14,7 @@ case "$arch" in
 esac
 case "$os" in
   linux | darwin) ;;
-  *) echo "unsupported OS: $os (Windows is a later parity wave)" >&2; exit 1 ;;
+  *) echo "unsupported OS: $os (Windows binaries are not released yet; see docs/deployments.md)" >&2; exit 1 ;;
 esac
 
 resolve_tag_api() {

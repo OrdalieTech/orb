@@ -636,7 +636,8 @@ non-owning runtime attachments reconnect. A previously deliberate Stop remains e
 explicit activation; an upgrade's temporary stop marker is removed before starting the replacement.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
 specification governs the protocol; this section supersedes its two-executable packaging.
-Restricted launching, mobile UIs, and managed platform hosting remain excluded. The optional
+Restricted launching remains excluded; mobile apps and hosted deployments follow P11 and
+[deployments.md](deployments.md). The optional
 WebSocket transport accepts outbound browser clients without a local Bridge service.
 
 The owner-requested SSH pairing shortcut lives entirely in `cmd/orb`. It invokes the host's

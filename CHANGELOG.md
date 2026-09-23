@@ -6,6 +6,12 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Deploy Orb to Cloudflare Durable Objects or self-hosted Celld cells (`platforms/worker`,
+  `make worker-deploy`, `make worker-celld-dev`): each object is a full Orb whose workspace,
+  settings and session persist in object storage, driven by RPC frames over WebSocket or
+  streamed HTTP. `docs/deployments.md` catalogues every target with its status, capabilities
+  and Bridge role.
+
 - List the ChatGPT subscription models your account actually offers, fetched at startup: new
   releases such as GPT-6 Sol appear without waiting for an Orb update.
 

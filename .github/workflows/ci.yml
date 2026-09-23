@@ -37,6 +37,22 @@ jobs:
         if: runner.os == 'Linux'
         run: make upstream-rpc-tests
 
+  worker-e2e:
+    # P11 gate for the Durable Object host: one scenario (write, read, restart, verify) in workerd
+    # (wrangler dev) and under Celld (celld dev), both local and without cloud credentials.
+    name: Worker end-to-end (workerd, Celld)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: make worker-e2e-workerd worker-e2e-celld
+
   windows:
     # Cross builds for every P2 target run inside `make check` (scripts/portability.sh);
     # this job executes the suite on a real Windows host.

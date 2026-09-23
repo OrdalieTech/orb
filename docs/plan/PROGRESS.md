@@ -1,5 +1,19 @@
 # Implementation progress
 
+## Deployments: Durable Objects and Celld — 2026-09-23
+
+`platforms/worker` hosts one Orb per Durable Object (`OrbAgent`): Store and a write-through FS on
+object storage (passes `envtest`), Env from Worker secrets, RPC frames over a hibernatable
+WebSocket or streamed HTTP behind `ORB_TOKEN`. The same bundle and `wrangler.jsonc` run on Celld.
+Evidence: the end-to-end scenario (write, read, restart, verify history and file) passes in
+workerd (`make worker-e2e-workerd`) and Celld (`make worker-e2e-celld`), both now a CI job, and on
+Cloudflare against `https://orb-do-e2e.ordalie.workers.dev` (first frame 1.8 s, 36 MB Wasm memory
+of 128 MB; 7 messages and the file survived a redeploy). Bundle 9.66 MB gzip. `cf` 0.4 cannot
+drive the project (it needs the experimental `cloudflare.config.ts`), so the targets use pinned
+Wrangler. Gaps: resources over FS, session fork/clone, a 5-minute post-request idle timer that
+delays hibernation, and the reserved `/bridge` peer endpoint. P11 (owner) and
+`docs/deployments.md` now catalogue every target. `make check` passes on the exact commit.
+
 ## Release 0.10.0 and Windows parity status — 2026-09-22
 
 The first real `windows-latest` run of the whole suite failed 180 tests in 31 packages: Unix-shaped
