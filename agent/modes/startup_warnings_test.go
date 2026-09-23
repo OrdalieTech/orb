@@ -7,7 +7,7 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 )
 
-func TestStartupWarningsCompaction(t *testing.T) {
+func TestStartupWarningsCompactionHidesResolvedCollisions(t *testing.T) {
 	warnings := newStartupWarnings([]StartupDiagnostic{
 		{
 			Kind:    StartupDiagnosticExtension,
@@ -21,7 +21,6 @@ func TestStartupWarningsCompaction(t *testing.T) {
 	want := []string{
 		`extension workflow.ts: Cannot find package 'typebox'`,
 		`some other diagnostic`,
-		`name collisions: "but", "ponytail"`,
 	}
 	if len(warnings.lines) != len(want) {
 		t.Fatalf("lines = %q, want %q", warnings.lines, want)

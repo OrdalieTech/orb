@@ -109,18 +109,17 @@ func (band *chatBand) Render(width int) []string { return renderBand(band.inner,
 
 // startupWarnings renders startup diagnostics as one compact warning band:
 // one line per warning truncated to the viewport width (never wrapped),
-// extension paths reduced to their basename, and same-name collisions merged
-// onto a single line. Full texts stay available where they originate
-// (/reload output and stderr in print modes).
+// and extension paths reduced to their basename. Same-name collisions are
+// already resolved (the first definition wins), so they are not shown. Full
+// texts stay available where they originate (/reload output and stderr in
+// print modes).
 type startupWarnings struct{ lines []string }
 
 func newStartupWarnings(diagnostics []StartupDiagnostic) *startupWarnings {
 	lines := make([]string, 0, len(diagnostics))
-	collisions := make([]string, 0, len(diagnostics))
 	for _, diagnostic := range diagnostics {
 		switch diagnostic.Kind {
 		case StartupDiagnosticCollision:
-			collisions = append(collisions, diagnostic.Message)
 		case StartupDiagnosticExtension:
 			message := strings.TrimPrefix(diagnostic.Message, "Failed to load extension: ")
 			if cut := strings.Index(message, " imported from "); cut > 0 {
@@ -130,13 +129,6 @@ func newStartupWarnings(diagnostics []StartupDiagnostic) *startupWarnings {
 		default:
 			lines = append(lines, diagnostic.Message)
 		}
-	}
-	if len(collisions) > 0 {
-		label := "name collision: "
-		if len(collisions) > 1 {
-			label = "name collisions: "
-		}
-		lines = append(lines, label+strings.Join(collisions, ", "))
 	}
 	return &startupWarnings{lines: lines}
 }
