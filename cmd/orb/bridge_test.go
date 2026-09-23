@@ -431,8 +431,8 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 	if !strings.Contains(ui.screens[len(ui.screens)-1], "Enable Bridge") {
 		t.Fatal("screen did not reflect stopped service")
 	}
-	if len(ui.status) != 0 {
-		t.Fatalf("healthy Bridge wrote a footer label: %v", ui.status)
+	if got := strings.Join(ui.status, " "); got != "● ○" {
+		t.Fatalf("footer dot = %q, want on after start then off after stop", got)
 	}
 }
 

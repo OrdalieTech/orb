@@ -1548,7 +1548,9 @@ func (f *FooterComponent) render(width int) []string {
 			if len(values) > 0 {
 				available -= 3
 			}
-			if tui.VisibleWidth(path) > available {
+			// The cwd is a reminder, not an address: past 32 cells only its
+			// last segment is shown.
+			if tui.VisibleWidth(path) > min(available, 32) {
 				path = "…/" + filepath.Base(cwd)
 			}
 			values = append(values, path)
@@ -1556,7 +1558,8 @@ func (f *FooterComponent) render(width int) []string {
 		line := compactFooterLine(display, stats.ContextUsage, values, width)
 		f.recordStatusHits(line, 0, keys, values)
 		f.recordThinkingHit(line, 0, display)
-		return []string{theme.FG("dim", line)}
+		// A colored status ends in a foreground reset; restore dim after it.
+		return []string{theme.FG("dim", strings.ReplaceAll(line, "\x1b[39m", theme.FGANSI("dim")))}
 	}
 
 	contextSummary := footerContextSummary(display, stats.ContextUsage)
