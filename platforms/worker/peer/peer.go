@@ -15,16 +15,15 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent"
+	attach "github.com/OrdalieTech/orb/agent/bridge"
+	bridgetool "github.com/OrdalieTech/orb/agent/bridge/tool"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/connect"
-	attach "github.com/OrdalieTech/orb/connect/agent"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	orbhost "github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/worker"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
 )
 
 // Documents in the object's Store, beside settings.json and out of the file
@@ -39,7 +38,7 @@ const (
 // the unauthenticated stream route only then.
 var StateKey = worker.DocumentKey(StateDocument)
 
-// DocumentStore is a connect.Store over one Store document.
+// DocumentStore is a bridge.Store over one Store document.
 type DocumentStore struct{ Document orbhost.Document }
 
 func (s DocumentStore) Load() ([]byte, error) { return s.Document.Read(context.Background()) }
@@ -83,7 +82,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 			return nil, err
 		}
 		self = identity{1, registration.ID, credential}
-		if err = enrolled.Save(connect.JSON(self)); err != nil {
+		if err = enrolled.Save(bridge.JSON(self)); err != nil {
 			return nil, err
 		}
 	} else if err = protocol.Decode(raw, &self); err != nil || self.Version != 1 || !protocol.ValidID(self.InstanceID) {
@@ -145,15 +144,15 @@ func (p *Peer) Serve(ctx context.Context, stream net.Conn) error {
 
 // Call is the object's agent-initiated call: it needs this object's own
 // instance grant for the destination, and a channel the destination opened.
-func (p *Peer) Call(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
+func (p *Peer) Call(ctx context.Context, peer string, call bridge.Call) (json.RawMessage, error) {
 	subject, err := p.bridge.Outbound(p.instanceID, peer, call)
 	if err != nil {
 		return nil, err
 	}
 	var result json.RawMessage
 	err = p.remote(ctx, peer, "instances.call", struct {
-		connect.Call
-		Subject connect.Subject `json:"subject"`
+		bridge.Call
+		Subject bridge.Subject `json:"subject"`
 	}{call, subject}, &result)
 	return result, err
 }
@@ -161,7 +160,7 @@ func (p *Peer) Call(ctx context.Context, peer string, call connect.Call) (json.R
 func (p *Peer) remote(ctx context.Context, peer, method string, params, result any) error {
 	channel := p.bridge.Connection(peer)
 	if channel == nil {
-		return fmt.Errorf("peer %s has no open connection to this object: %w", peer, connect.Fail("unavailable"))
+		return fmt.Errorf("peer %s has no open connection to this object: %w", peer, bridge.Fail("unavailable"))
 	}
 	return channel.Call(ctx, method, params, result)
 }
@@ -169,7 +168,7 @@ func (p *Peer) remote(ctx context.Context, peer, method string, params, result a
 // FullGrant is the invitation grant `orb bridge pair invite` proposes: full
 // control of every current and future instance.
 func FullGrant(peer string) bridge.Grant {
-	return bridge.Grant{Principal: connect.Principal{PeerID: peer, Subject: connect.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true,
+	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true,
 		Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
 }
 
@@ -180,13 +179,13 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 	empty := len(params) == 0 || string(params) == "{}" || string(params) == "null"
 	switch method {
 	case "self":
-		return connect.JSON(map[string]string{"peer_id": p.PeerID(), "instance_id": p.instanceID, "locator": locator}), nil
+		return bridge.JSON(map[string]string{"peer_id": p.PeerID(), "instance_id": p.instanceID, "locator": locator}), nil
 	case "invite":
 		if !strings.HasPrefix(locator, "wss://") && !strings.HasPrefix(locator, "ws://") {
 			return nil, errors.New("peer: an invitation needs the object's ws:// or wss:// URL")
 		}
 		if empty {
-			params = connect.JSON(map[string]any{"grants": []bridge.Grant{FullGrant("")}})
+			params = bridge.JSON(map[string]any{"grants": []bridge.Grant{FullGrant("")}})
 		}
 		raw, err := p.bridge.Admin(ctx, method, params)
 		if err != nil {
@@ -197,7 +196,7 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 			return nil, err
 		}
 		invitation.Locator = locator
-		return connect.JSON(invitation), nil
+		return bridge.JSON(invitation), nil
 	case "trust":
 		var request struct {
 			PeerID string `json:"peer_id"`
@@ -209,7 +208,7 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 		var status struct {
 			Grants []bridge.Grant `json:"grants"`
 		}
-		raw, err := p.bridge.Admin(ctx, "status", connect.JSON(struct{}{}))
+		raw, err := p.bridge.Admin(ctx, "status", bridge.JSON(struct{}{}))
 		if err == nil {
 			err = json.Unmarshal(raw, &status)
 		}
@@ -218,10 +217,10 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 		}
 		for _, old := range status.Grants {
 			if old.Principal == grant.Principal && old.GroupID == "*" && old.IncludeFuture && old.Destination == "" && slices.Equal(old.Permissions, grant.Permissions) {
-				return connect.JSON(struct{}{}), nil
+				return bridge.JSON(struct{}{}), nil
 			}
 		}
-		return connect.JSON(struct{}{}), p.bridge.AddGrant(grant)
+		return bridge.JSON(struct{}{}), p.bridge.AddGrant(grant)
 	case "remote":
 		var request struct {
 			PeerID string          `json:"peer_id"`
@@ -280,7 +279,7 @@ func (h host) Fork(context.Context, string, *extensions.ForkOptions) (agent.Agen
 }
 
 func callTool(open func(context.Context) (*Peer, error)) extensions.ToolDefinition {
-	tool, _ := bridgeagent.NewTool(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
+	tool, _ := bridgetool.NewTool(func(ctx context.Context, peer string, call bridge.Call) (json.RawMessage, error) {
 		self, err := open(ctx)
 		if err != nil {
 			return nil, err

@@ -193,7 +193,7 @@ plan, not a claim of implemented behavior. No release budgets or SDK contracts a
 | Existing `agent/session` and harness | Session tree, compaction, forks, replay, codecs; reuse the runtime |
 | SQLite adapter | Explicit DB handle, schema/migrations, transactional repositories; no networking or daemon startup |
 | Native host capability | Catalog, ownership and managed worker lifecycle; composed beside Bridge, not inside its router |
-| `connect` / `connect/agent` | Versioned conversation service plus existing non-owning runtime control/observations |
+| `bridge` / `agent/bridge` | Versioned conversation service plus existing non-owning runtime control/observations |
 | `bridge` | Authenticate, authorize and route; no session engine, SQL or process construction |
 | CLI/TUI assembly | Open storage, assemble capabilities and select local/remote views |
 

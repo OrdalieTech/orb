@@ -11,10 +11,9 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/connect"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/platforms/worker"
-	"github.com/OrdalieTech/orb/plugins/bridge"
 )
 
 // mapKV stands in for Durable Object storage.
@@ -98,7 +97,7 @@ func dial(t *testing.T, self *Peer, laptop *bridge.Bridge) *protocol.Conn {
 
 func admin(t *testing.T, self *Peer, method string, params any) json.RawMessage {
 	t.Helper()
-	raw, err := self.Admin(t.Context(), method, connect.JSON(params), "wss://orb.test/agents/a/bridge")
+	raw, err := self.Admin(t.Context(), method, bridge.JSON(params), "wss://orb.test/agents/a/bridge")
 	if err != nil {
 		t.Fatalf("admin %s: %v", method, err)
 	}
@@ -149,14 +148,14 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 			Revision  string `json:"session_revision"`
 		} `json:"target"`
 	}
-	call := connect.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "inspect", Args: json.RawMessage(`{}`)}
+	call := bridge.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "inspect", Args: json.RawMessage(`{}`)}
 	if err = channel.Call(ctx, "instances.call", call, &described); err != nil || described.Target.SessionID == "" {
 		t.Fatalf("inspect = %+v, %v", described, err)
 	}
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("hello laptop")})
-	call = connect.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "prompt", SessionID: described.Target.SessionID,
-		Expected: connect.Expected{Generation: described.Generation, Revision: described.Target.Revision}, OperationID: protocol.NewID(), Args: json.RawMessage(`{"text":"hi from the laptop"}`)}
-	var receipt connect.Receipt
+	call = bridge.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "prompt", SessionID: described.Target.SessionID,
+		Expected: bridge.Expected{Generation: described.Generation, Revision: described.Target.Revision}, OperationID: protocol.NewID(), Args: json.RawMessage(`{"text":"hi from the laptop"}`)}
+	var receipt bridge.Receipt
 	if err = channel.Call(ctx, "instances.call", call, &receipt); err != nil || receipt.Status != "accepted" {
 		t.Fatalf("prompt receipt = %+v, %v", receipt, err)
 	}
@@ -176,26 +175,26 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	}
 
 	// Object → laptop: bridge_call under the object's own instance grant.
-	var received []connect.Request
+	var received []bridge.Request
 	var mu sync.Mutex
 	registration, credential, err := laptop.Enroll("laptop", laptop.PersonalGroup())
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := connect.NewLocal(func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-		var request connect.Request
+	endpoint := bridge.NewLocal(func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		var request bridge.Request
 		if err := json.Unmarshal(params, &request); err != nil {
 			return nil, err
 		}
 		mu.Lock()
 		received = append(received, request)
 		mu.Unlock()
-		return connect.JSON(map[string]string{"answered_by": "laptop"}), nil
+		return bridge.JSON(map[string]string{"answered_by": "laptop"}), nil
 	})
 	if _, err = laptop.Attach(registration.ID, credential, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	subject := connect.Principal{PeerID: self.PeerID(), Subject: connect.Subject{Kind: "instance", InstanceID: self.InstanceID()}}
+	subject := bridge.Principal{PeerID: self.PeerID(), Subject: bridge.Subject{Kind: "instance", InstanceID: self.InstanceID()}}
 	if err = laptop.AddGrant(bridge.Grant{Principal: subject, Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}}); err != nil {
 		t.Fatal(err)
 	}

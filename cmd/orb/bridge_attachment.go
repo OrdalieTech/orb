@@ -12,13 +12,12 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	attach "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/connect"
-	attach "github.com/OrdalieTech/orb/connect/agent"
-	"github.com/OrdalieTech/orb/connect/protocol"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
@@ -75,13 +74,13 @@ type cliBridgeLink struct {
 
 func (l *cliBridgeLink) invoke(ctx context.Context, method string, p any, result any) error {
 	if l == nil {
-		return connect.Fail("unavailable")
+		return bridge.Fail("unavailable")
 	}
 	l.mu.Lock()
 	c := l.connection
 	l.mu.Unlock()
 	if c == nil {
-		return connect.Fail("unavailable")
+		return bridge.Fail("unavailable")
 	}
 	return c.Call(ctx, method, p, result)
 }
@@ -151,7 +150,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 			return nil, err
 		}
 		identity = attachmentIdentity{1, status.PeerID, enrolled.Instance.ID, enrolled.Credential}
-		if err = stateStore.Save(connect.JSON(identity)); err != nil {
+		if err = stateStore.Save(bridge.JSON(identity)); err != nil {
 			cleanup()
 			return nil, err
 		}
@@ -175,7 +174,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 			return claudesessions.LimitsStatus(s.Manager(), time.Now())
 		}
 		return ""
-	}, Authorize: func(r connect.Request) bool {
+	}, Authorize: func(r bridge.Request) bool {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		var allowed bool
@@ -196,7 +195,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 			if ctx.Err() != nil {
 				return
 			}
-			c, err := native.Dial(ctx, filepath.Join(dir, "attach.sock"), native.Auth{Credential: identity.Credential, InstanceID: identity.InstanceID, BootID: boot}, a.Invoke, a.SetGeneration)
+			c, err := nativebridge.Dial(ctx, filepath.Join(dir, "attach.sock"), nativebridge.Auth{Credential: identity.Credential, InstanceID: identity.InstanceID, BootID: boot}, a.Invoke, a.SetGeneration)
 			if err == nil {
 				link.set(c)
 				delay = 100 * time.Millisecond
@@ -247,7 +246,7 @@ func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, s
 		mu.Lock()
 		defer mu.Unlock()
 		if closed {
-			return connect.Fail("unavailable")
+			return bridge.Fail("unavailable")
 		}
 		explicit := enabled && !desired && !initial
 		initial = false

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/platforms/worker"
-	"github.com/OrdalieTech/orb/plugins/bridge"
 )
 
 // fakeDurable returns a Map-backed async stand-in for ctx.storage and two
@@ -44,7 +44,7 @@ func fakeDurable() (storage, left, right js.Value) {
 }
 
 // TestPeerOverDurableObjectPorts runs Bridge's pinned TLS over the Worker
-// WebSocket net.Conn, with the identity kept by the connect.Store adapter in
+// WebSocket net.Conn, with the identity kept by the bridge.Store adapter in
 // fake Durable Object storage, across an object restart.
 func TestPeerOverDurableObjectPorts(t *testing.T) {
 	ctx := t.Context()

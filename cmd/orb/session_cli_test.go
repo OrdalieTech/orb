@@ -20,13 +20,13 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
 
@@ -833,7 +833,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	bridgePath := filepath.Join(dir, "state.json")
-	store, err := native.OpenStore(bridgePath, protocol.MaxFrame)
+	store, err := nativebridge.OpenStore(bridgePath, protocol.MaxFrame)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,10 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/OrdalieTech/orb/connect"
-	"github.com/OrdalieTech/orb/connect/protocol"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	webtransport "github.com/OrdalieTech/orb/plugins/bridge/transports/websocket"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
+	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -42,13 +41,13 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := connect.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+	endpoint := bridge.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`{"wasm_bridge":true}`), nil
 	})
 	if _, err = b.Attach(instance.ID, token, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	if err = b.AddGrant(bridge.Grant{Principal: connect.Principal{PeerID: bridge.PeerID(pub), Subject: connect.Subject{Kind: "controller"}}, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}); err != nil {
+	if err = b.AddGrant(bridge.Grant{Principal: bridge.Principal{PeerID: bridge.PeerID(pub), Subject: bridge.Subject{Kind: "controller"}}, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}); err != nil {
 		t.Fatal(err)
 	}
 	handler, err := webtransport.Handler(t.Context(), b, nil)
@@ -57,7 +56,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	fixture := connect.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "agentID": protocol.NewID(), "instance": instance.ID})
+	fixture := bridge.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "agentID": protocol.NewID(), "instance": instance.ID})
 	run := exec.CommandContext(t.Context(), "node", "testdata/smoke.cjs", filepath.Join(strings.TrimSpace(string(root)), "lib/wasm/wasm_exec.js"), binary)
 	run.Env = append(os.Environ(), "ORB_TEST_BRIDGE="+string(fixture))
 	if output, err := run.CombinedOutput(); err != nil {

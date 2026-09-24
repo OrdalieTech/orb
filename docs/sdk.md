@@ -494,23 +494,23 @@ server embedder:
 ## Optional instance control and Bridge
 
 Existing SDK constructors and subscriptions are unchanged. Importing `agent` does not import
-Bridge or Tailcat and starts no bridge process. `connect/agent.Attach` adapts an existing
+Bridge or Tailcat and starts no bridge process. `agent/bridge.Attach` adapts an existing
 `*agent.AgentSessionRuntime`; the caller supplies the runtime lifetime, durable ledger store,
 persistent InstanceID, and current authorization callback. Its `Close` releases observation
 subscriptions without disposing the runtime. Multiple bridges can attach independently.
 
 For in-process assembly, create `bridge.Open(metadataStore, create)`, enroll through the local
-owner, and construct `connect/agent.Attach(ctx, runtime, Options{InstanceID: instance.ID,
+owner, and construct `agent/bridge.Attach(ctx, runtime, Options{InstanceID: instance.ID,
 Store: ledgerStore, Authorize: bridge.Authorize})`. Register
-`connect.NewLocal(attachment.Invoke)` with `bridge.Attach`, then give the returned generation
+`bridge.NewLocal(attachment.Invoke)` with `(*bridge.Bridge).Attach`, then give the returned generation
 to `attachment.SetGeneration` before exposing the bridge. Keep metadata and ledger stores
-separate. `connect.Store` is the host-supplied persistence boundary; a successful `Save` must
-mean durable replacement. The native implementation is `bridge/hosts/native.OpenStore`.
+separate. `bridge.Store` is the host-supplied persistence boundary; a successful `Save` must
+mean durable replacement. The native implementation is `platforms/native/bridge.OpenStore`.
 
 `bridge.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
-negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `connect`,
-`connect/protocol`, and `bridge` packages compile for Wasm without providing a browser transport.
-`bridge/agent.Extension` is an independently opt-in `bridge_call` tool; its caller must use the
+negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `bridge` and
+`bridge/protocol` packages compile for Wasm; the browser transport is `platforms/websocket`.
+`agent/bridge.Extension` is an independently opt-in `bridge_call` tool; its caller must use the
 source attachment's authenticated outbound route, which checks source grants before the
 destination checks its own grants. Discovery never authorizes execution.
 
@@ -589,7 +589,7 @@ For input, `SessionRuntime.RequestInput(ctx, title, choices)` exposes one execut
 `PendingInput` returns a copy and `ReplyInput(id, value)` accepts one valid response. Hosts can use the
 native extension UI or authenticated instance-control adapters. Disposing/cancelling the enclosing
 run cancels the request; closing a non-owning attachment does not answer it. A remotely supplied
-answer must use the session control execution fence, as `connect/agent` does, rather than calling
+answer must use the session control execution fence, as `agent/bridge` does, rather than calling
 `ReplyInput` on an untrusted session reference.
 
 The optional `plugins/questions` capability supplies `Extension()` for the native tool and
@@ -601,6 +601,6 @@ bounded JSON; the CLI selects its renderer. Permission adapters continue using `
 where a non-nil, non-blocking result explicitly allows and nil leaves native policy in charge.
 
 `plugins/claudesessions.LimitsStatus(manager, now)` formats the latest plugin-owned native quota
-reading. The optional `connect/agent.Options.Status` callback lets an assembly supply a bounded
+reading. The optional `agent/bridge.Options.Status` callback lets an assembly supply a bounded
 informational status in instance descriptions; it changes no execution authority and requires no
 provider knowledge inside Bridge. The CLI wires Claude quota into this callback.

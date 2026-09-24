@@ -22,8 +22,8 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine/harness"
 	nativeaccounts "github.com/OrdalieTech/orb/platforms/native/accounts"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
-	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/tui"
 	"github.com/gofrs/flock"
@@ -436,11 +436,11 @@ func authStorageLocation(ctx context.Context, agentDir string, auth *config.Auth
 	return path
 }
 
-func (state *nativeState) bridgeStore(path string, quota int) (*native.Store, error) {
+func (state *nativeState) bridgeStore(path string, quota int) (*nativebridge.Store, error) {
 	if state == nil {
-		return native.OpenStore(path, quota)
+		return nativebridge.OpenStore(path, quota)
 	}
-	return native.OpenStoreWithDocument(path, quota, state.document(path))
+	return nativebridge.OpenStoreWithDocument(path, quota, state.document(path))
 }
 func (state *nativeState) read(ctx context.Context, path string) ([]byte, error) {
 	if state == nil {

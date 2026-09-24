@@ -17,17 +17,16 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	attach "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/connect"
-	attach "github.com/OrdalieTech/orb/connect/agent"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine/harness"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
 )
@@ -86,7 +85,7 @@ func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = a.Close() }()
-	gen, err := b.Attach(enrolled.ID, token, protocol.NewID(), connect.NewLocal(a.Invoke))
+	gen, err := b.Attach(enrolled.ID, token, protocol.NewID(), bridge.NewLocal(a.Invoke))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,17 +97,17 @@ func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 	}
 	control, _ := host.EnableControl()
 	target := control.Target()
-	call := connect.Call{InstanceID: enrolled.ID, Service: protocol.Service, Method: "prompt", SessionID: target.SessionID, Expected: connect.Expected{Generation: gen, Revision: target.Revision}, OperationID: protocol.NewID(), Args: connect.JSON(map[string]string{"text": "hello"})}
+	call := bridge.Call{InstanceID: enrolled.ID, Service: protocol.Service, Method: "prompt", SessionID: target.SessionID, Expected: bridge.Expected{Generation: gen, Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(map[string]string{"text": "hello"})}
 	raw, err := b.Call(ctx, phone.Principal(), call)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var receipt connect.Receipt
+	var receipt bridge.Receipt
 	_ = json.Unmarshal(raw, &receipt)
 	if receipt.Status != "accepted" {
 		t.Fatal(string(raw))
 	}
-	get := connect.JSON(map[string]any{"principal": phone.Principal(), "params": map[string]string{"instance_id": enrolled.ID, "operation_id": call.OperationID}})
+	get := bridge.JSON(map[string]any{"principal": phone.Principal(), "params": map[string]string{"instance_id": enrolled.ID, "operation_id": call.OperationID}})
 	for receipt.Status == "accepted" || receipt.Status == "running" {
 		select {
 		case <-ctx.Done():
@@ -125,7 +124,7 @@ func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 		t.Fatal(string(raw))
 	}
 	b.Detach(enrolled.ID, gen)
-	next, err := b.Attach(enrolled.ID, token, protocol.NewID(), connect.NewLocal(a.Invoke))
+	next, err := b.Attach(enrolled.ID, token, protocol.NewID(), bridge.NewLocal(a.Invoke))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +137,12 @@ func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 	if receipt.Status != "succeeded" {
 		t.Fatal(string(raw))
 	}
-	call.Args = connect.JSON(map[string]string{"text": "different"})
-	if _, err = b.Call(ctx, phone.Principal(), call); connect.Code(err) != "operation_conflict" {
+	call.Args = bridge.JSON(map[string]string{"text": "different"})
+	if _, err = b.Call(ctx, phone.Principal(), call); bridge.Code(err) != "operation_conflict" {
 		t.Fatal(err)
 	}
 	call.OperationID = protocol.NewID()
-	if _, err = b.Call(ctx, phone.Principal(), call); connect.Code(err) != "stale_target" {
+	if _, err = b.Call(ctx, phone.Principal(), call); bridge.Code(err) != "stale_target" {
 		t.Fatal(err)
 	}
 	_ = b.Close()
@@ -391,10 +390,10 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 	defer func() { _ = b.Close() }()
 	service, stop := context.WithCancel(t.Context())
 	defer stop()
-	closeServer, err := native.Listen(service, filepath.Join(dir, "admin.sock"), b, token, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	closeServer, err := nativebridge.Listen(service, filepath.Join(dir, "admin.sock"), b, token, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		if method == "stop" {
 			time.AfterFunc(10*time.Millisecond, stop)
-			return connect.JSON(struct{}{}), nil
+			return bridge.JSON(struct{}{}), nil
 		}
 		return b.Admin(ctx, method, params)
 	}, nil)
@@ -486,7 +485,7 @@ func TestBridgeInvitationCodeRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	inv.Locator = "private-locator"
-	for _, text := range []string{bridgeInvitationCode(inv), string(connect.JSON(inv))} {
+	for _, text := range []string{bridgeInvitationCode(inv), string(bridge.JSON(inv))} {
 		got, err := parseBridgeInvitation(" " + text + "\n")
 		if err != nil || got.ID != inv.ID || got.Token != inv.Token || got.Locator != inv.Locator {
 			t.Fatalf("round trip: %v", err)
@@ -727,9 +726,9 @@ func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
 	}
 	service, stop := context.WithCancel(t.Context())
 	defer stop()
-	closeServer, err := native.Listen(service, filepath.Join(dir, "admin.sock"), nil, "owner", func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+	closeServer, err := nativebridge.Listen(service, filepath.Join(dir, "admin.sock"), nil, "owner", func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
 		time.AfterFunc(100*time.Millisecond, stop)
-		return connect.JSON(struct{}{}), nil
+		return bridge.JSON(struct{}{}), nil
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -756,12 +755,12 @@ func TestBridgeServiceCompatibilityStopsOnlyOlderDaemons(t *testing.T) {
 				if method == "stop" {
 					stopped <- struct{}{}
 					time.AfterFunc(10*time.Millisecond, func() { _ = server.Close() })
-					return connect.JSON(struct{}{}), nil
+					return bridge.JSON(struct{}{}), nil
 				}
 				if current {
-					return connect.JSON(map[string]bool{"supports_full_access": true}), nil
+					return bridge.JSON(map[string]bool{"supports_full_access": true}), nil
 				}
-				return connect.JSON(struct{}{}), nil
+				return bridge.JSON(struct{}{}), nil
 			})
 			client := protocol.NewConn(x, nil)
 			defer func() { _ = client.Close(); _ = server.Close() }()
@@ -939,12 +938,12 @@ func TestBridgeConversationListFollowsPagesAndUsesStableIDs(t *testing.T) {
 			t.Errorf("wrong catalog request: %s", raw)
 		}
 		if req.Params.Cursor == "" {
-			return connect.JSON(map[string]any{"items": []bridge.Instance{{ID: "first", Alias: "same · alias", Available: true}, {ID: "stale", Alias: "closed", Available: false}}, "cursor": "next"}), nil
+			return bridge.JSON(map[string]any{"items": []bridge.Instance{{ID: "first", Alias: "same · alias", Available: true}, {ID: "stale", Alias: "closed", Available: false}}, "cursor": "next"}), nil
 		}
 		if req.Params.Cursor != "next" {
 			t.Errorf("wrong cursor: %s", req.Params.Cursor)
 		}
-		return connect.JSON(map[string]any{"items": []bridge.Instance{{ID: "second", Alias: "same · alias", Available: true}}}), nil
+		return bridge.JSON(map[string]any{"items": []bridge.Instance{{ID: "second", Alias: "same · alias", Available: true}}}), nil
 	})
 	client := protocol.NewConn(x, nil)
 	defer func() { _ = client.Close(); _ = server.Close() }()
@@ -977,7 +976,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	x, y := net.Pipe()
 	server := protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
 		if phase.Load() == 1 {
-			return nil, connect.Fail("unavailable")
+			return nil, bridge.Fail("unavailable")
 		}
 		if phase.Load() == 2 {
 			return nil, &protocol.RPCError{Code: -32000, Message: "unauthorized"}
@@ -997,16 +996,16 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 				descriptor.Input = &agent.InputRequest{ID: "question", Title: "Allow this action?", Choices: []string{"Deny", "Allow once"}}
 				descriptor.Target.ExecutionID = "execution"
 			}
-			return connect.JSON(descriptor), nil
+			return bridge.JSON(descriptor), nil
 		case "events.subscribe":
 			if phase.Load() == 4 {
 				phase.Store(5)
 			}
-			return connect.JSON(map[string]any{"snapshot_id": "snapshot", "cursor": "1", "messages": []json.RawMessage{json.RawMessage(`{"role":"user","content":"hello from remote"}`), json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"remote answer"}]}`)}}), nil
+			return bridge.JSON(map[string]any{"snapshot_id": "snapshot", "cursor": "1", "messages": []json.RawMessage{json.RawMessage(`{"role":"user","content":"hello from remote"}`), json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"remote answer"}]}`)}}), nil
 		case "instances.call":
 			commands.Add(1)
 		}
-		return connect.JSON(struct{}{}), nil
+		return bridge.JSON(struct{}{}), nil
 	})
 	client := protocol.NewConn(x, nil)
 	defer func() { _ = client.Close(); _ = server.Close() }()

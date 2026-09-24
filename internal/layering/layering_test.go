@@ -30,6 +30,7 @@ var allowedImports = map[string][]string{
 	"tui":                      {"tui", "internal"},
 	"platforms/native/sandbox": {"platforms/native/sandbox", "internal"},
 	"host":                     {"host", "engine", "ai", "internal"},
+	"bridge":                   {"bridge", "internal"},
 }
 
 // tuiImporters are the only places allowed to link the TUI: assemblies, the
@@ -74,7 +75,7 @@ func TestLayerEdges(t *testing.T) {
 		layer, _, _ := strings.Cut(relative, "/")
 		for _, spec := range parsed.Imports {
 			target := strings.Trim(spec.Path.Value, `"`)
-			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "plugins/bridge/transports/tailcat/") {
+			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "platforms/native/tailcat/") {
 				violations = append(violations, relative+" imports Tailcat outside its native transport adapter")
 			}
 			if !strings.HasPrefix(target, module) {
@@ -86,14 +87,6 @@ func TestLayerEdges(t *testing.T) {
 			if strings.HasPrefix(targetPath, "platforms/") && layer != "platforms" && layer != "cmd" &&
 				(layer != "plugins" || !strings.HasPrefix(targetPath, "platforms/native/")) {
 				violations = append(violations, relative+" imports a platform assembly into a reusable layer")
-			}
-			if (layer == "agent" || layer == "ai" || layer == "engine") && (strings.HasPrefix(targetPath, "plugins/bridge") || strings.HasPrefix(targetPath, "connect")) {
-				violations = append(violations, relative+" imports optional bridge assembly")
-			}
-			if (strings.HasPrefix(relative, "connect/") && !strings.HasPrefix(relative, "connect/agent/")) || (strings.HasPrefix(relative, "plugins/bridge/") && !strings.HasPrefix(relative, "plugins/bridge/agent/") && !strings.HasPrefix(relative, "plugins/bridge/extension/") && !strings.HasPrefix(relative, "plugins/bridge/hosts/") && !strings.HasPrefix(relative, "plugins/bridge/transports/")) {
-				if strings.HasPrefix(targetPath, "agent/") || targetPath == "agent" || strings.HasPrefix(targetPath, "plugins/bridge/hosts/") || strings.HasPrefix(targetPath, "plugins/bridge/transports/") {
-					violations = append(violations, relative+" imports host-specific code into portable core")
-				}
 			}
 			if (relative == "plugins/memory/memory.go" || strings.HasPrefix(relative, "plugins/memory/agent/")) &&
 				!hasAnyPrefix(targetPath, []string{"plugins/memory", "engine", "ai", "internal"}) {
@@ -207,13 +200,13 @@ func TestCapabilityDependencies(t *testing.T) {
 		{"plugins/memory/agent", []string{"/agent", "/tui", "/plugins/memory/filestore", "/plugins/memory/extension", "/platforms/native/sqlite"}},
 		{"plugins/memory/extension", []string{"/agent/assembly", "/plugins/memory/filestore", "/platforms/native/sqlite"}},
 		{"plugins/usage", []string{"/agent", "/engine", "/tui", "/plugins/usage/footer", "/platforms/native/sqlite"}},
-		{"plugins/bridge/agent", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/platforms/native/sqlite"}},
-		{"plugins/bridge/transports/websocket", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports/tailcat", "/platforms/native/sqlite"}},
-		{"plugins/bridge", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/platforms/native/sqlite"}},
+		{"agent/bridge/tool", []string{"/agent/session", "/agent/extensions", "/agent/config", "/agent/modes", "/tui", "/platforms", "/plugins"}},
+		{"platforms/websocket", []string{"/agent", "/tui", "/platforms/native", "/plugins"}},
+		{"bridge", []string{"/agent", "/ai", "/engine", "/tui", "/platforms", "/plugins"}},
 		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
-		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
+		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native", "/platforms/websocket"}},
 		{"platforms/worker", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native/sqlite", "/plugins"}},
-		{"platforms/browser", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/platforms/native/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
+		{"platforms/browser", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/platforms/native", "/platforms/websocket"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "./"+tc.path)
@@ -246,7 +239,7 @@ func TestBrowserAssemblyDependencies(t *testing.T) {
 		t.Fatalf("browser dependencies: %v\n%s", err, output)
 	}
 	for dep := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
-		if hasAnyPrefix(dep, []string{module + "tui", module + "agent/extensions", module + "agent/modes", module + "platforms/native/sqlite", module + "plugins/bridge/hosts", module + "plugins/bridge/transports/tailcat", "tailscale.com/", "github.com/tailscale/"}) {
+		if hasAnyPrefix(dep, []string{module + "tui", module + "agent/extensions", module + "agent/modes", module + "platforms/native/", "tailscale.com/", "github.com/tailscale/"}) {
 			t.Errorf("browser assembly links %s", dep)
 		}
 	}

@@ -16,16 +16,15 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	connectagent "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/connect"
-	connectagent "github.com/OrdalieTech/orb/connect/agent"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
-	"github.com/OrdalieTech/orb/plugins/bridge"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
 )
@@ -383,7 +382,7 @@ func TestInterruptedTurnSettlesLikeOrb(t *testing.T) {
 
 func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
 	host, _ := fixture(t)
-	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &testStore{}, Authorize: func(connect.Request) bool { return true }})
+	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +398,7 @@ func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
 	target := control.Target()
 	stale := target
 	stale.ExecutionID = protocol.NewID()
-	payload := string(connect.JSON(map[string]string{"id": input.ID, "value": "y approve once"}))
+	payload := string(bridge.JSON(map[string]string{"id": input.ID, "value": "y approve once"}))
 	if err = control.Execution(stale, "input.reply", payload); err == nil {
 		t.Fatal("cross-execution reply accepted")
 	}
@@ -505,7 +504,7 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	id := protocol.NewID()
-	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(connect.Request) bool { return true }})
+	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,22 +513,22 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	control, _ := host.EnableControl()
-	principal := connect.Principal{PeerID: "fixture", Subject: connect.Subject{Kind: "controller"}}
-	call := func(method string, args any) connect.Request {
+	principal := bridge.Principal{PeerID: "fixture", Subject: bridge.Subject{Kind: "controller"}}
+	call := func(method string, args any) bridge.Request {
 		target := control.Target()
-		request := connect.Request{Principal: principal, Generation: "1", Call: connect.Call{InstanceID: id, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: connect.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: connect.JSON(args)}}
-		if _, e := a.Invoke(ctx, "call", connect.JSON(request)); e != nil {
+		request := bridge.Request{Principal: principal, Generation: "1", Call: bridge.Call{InstanceID: id, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: bridge.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(args)}}
+		if _, e := a.Invoke(ctx, "call", bridge.JSON(request)); e != nil {
 			t.Fatal(e)
 		}
 		return request
 	}
-	wait := func(request connect.Request) {
+	wait := func(request bridge.Request) {
 		for {
-			raw, e := a.Invoke(ctx, "operations.get", connect.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id, "operation_id": request.Call.OperationID}}))
+			raw, e := a.Invoke(ctx, "operations.get", bridge.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id, "operation_id": request.Call.OperationID}}))
 			if e != nil {
 				t.Fatal(e)
 			}
-			var receipt connect.Receipt
+			var receipt bridge.Receipt
 			if e = json.Unmarshal(raw, &receipt); e != nil {
 				t.Fatal(e)
 			}
@@ -549,18 +548,18 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 	prompt := func() {
 		request := call("prompt", map[string]string{"text": "bridge prompt"})
 		input := awaitInput(t, host.Session())
-		snapshot, e := a.Invoke(ctx, "instances.describe", connect.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id}}))
+		snapshot, e := a.Invoke(ctx, "instances.describe", bridge.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id}}))
 		if e != nil || !strings.Contains(string(snapshot), input.ID) {
 			t.Fatalf("input missing from descriptor: %s %v", snapshot, e)
 		}
 		reply := call("input.reply", map[string]string{"execution_id": control.Target().ExecutionID, "id": input.ID, "value": "y approve once"})
 		wait(reply)
 		wait(request)
-		if _, e = a.Invoke(ctx, "call", connect.JSON(request)); e != nil {
+		if _, e = a.Invoke(ctx, "call", bridge.JSON(request)); e != nil {
 			t.Fatal("identical prompt retry", e)
 		}
-		request.Call.Args = connect.JSON(map[string]string{"text": "conflicting prompt"})
-		if _, e = a.Invoke(ctx, "call", connect.JSON(request)); connect.Code(e) != "operation_conflict" {
+		request.Call.Args = bridge.JSON(map[string]string{"text": "conflicting prompt"})
+		if _, e = a.Invoke(ctx, "call", bridge.JSON(request)); bridge.Code(e) != "operation_conflict" {
 			t.Fatal("conflicting retry accepted", e)
 		}
 	}
@@ -664,7 +663,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: instance.ID, Store: &testStore{}, Authorize: func(r connect.Request) bool {
+	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: instance.ID, Store: &testStore{}, Authorize: func(r bridge.Request) bool {
 		permission := "instance." + r.Call.Method
 		if strings.HasPrefix(r.Call.Method, "session.") {
 			permission = "instance.session.manage"
@@ -686,7 +685,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	invoke := func(method string, args any) string {
 		target := control.Target()
 		id := protocol.NewID()
-		_, e := server.Call(ctx, client.Principal(), connect.Call{InstanceID: instance.ID, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: connect.Expected{Generation: generation, Revision: target.Revision}, OperationID: id, Args: connect.JSON(args)})
+		_, e := server.Call(ctx, client.Principal(), bridge.Call{InstanceID: instance.ID, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: bridge.Expected{Generation: generation, Revision: target.Revision}, OperationID: id, Args: bridge.JSON(args)})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -707,11 +706,11 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 				}
 				invoke("input.reply", map[string]string{"execution_id": control.Target().ExecutionID, "id": p.ID, "value": value})
 			}
-			raw, e := a.Invoke(ctx, "operations.get", connect.JSON(map[string]any{"principal": client.Principal(), "params": map[string]string{"instance_id": instance.ID, "operation_id": id}}))
+			raw, e := a.Invoke(ctx, "operations.get", bridge.JSON(map[string]any{"principal": client.Principal(), "params": map[string]string{"instance_id": instance.ID, "operation_id": id}}))
 			if e != nil {
 				t.Fatal(e)
 			}
-			var receipt connect.Receipt
+			var receipt bridge.Receipt
 			if e = json.Unmarshal(raw, &receipt); e != nil {
 				t.Fatal(e)
 			}
@@ -1165,12 +1164,12 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 		t.Fatal("stale usage was not labeled")
 	}
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(connect.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = attachment.Close() }()
-	data, err := attachment.Invoke(t.Context(), "instances.describe", connect.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
+	data, err := attachment.Invoke(t.Context(), "instances.describe", bridge.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
 	if err != nil || !strings.Contains(string(data), "Claude 7d 40%") {
 		t.Fatalf("remote quota missing: %s %v", data, err)
 	}
@@ -1352,7 +1351,7 @@ func TestNativeContextModelAndCompactionInvalidation(t *testing.T) {
 func TestSDKElicitationUsesBridgeQuestionsAndValidation(t *testing.T) {
 	host, _ := fixture(t)
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(connect.Request) bool { return true }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1365,12 +1364,12 @@ func TestSDKElicitationUsesBridgeQuestionsAndValidation(t *testing.T) {
 		if input.Presentation == nil || input.Presentation.Kind != questions.Kind {
 			t.Fatal("MCP form did not use shared questions")
 		}
-		snapshot, err := attachment.Invoke(t.Context(), "instances.describe", connect.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
+		snapshot, err := attachment.Invoke(t.Context(), "instances.describe", bridge.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
 		if err != nil || !strings.Contains(string(snapshot), "fixture MCP") {
 			t.Fatalf("missing remote form: %s %v", snapshot, err)
 		}
 		value, _ := json.Marshal(questions.Result{Answers: []questions.Answer{{ID: "field", Selected: []string{}, Custom: answer}}})
-		if err := control.Execution(control.Target(), "input.reply", string(connect.JSON(map[string]string{"id": input.ID, "value": string(value)}))); err != nil {
+		if err := control.Execution(control.Target(), "input.reply", string(bridge.JSON(map[string]string{"id": input.ID, "value": string(value)}))); err != nil {
 			t.Fatal(err)
 		}
 		if answer == "9" {
