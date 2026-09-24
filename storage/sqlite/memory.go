@@ -25,7 +25,7 @@ type Memory struct {
 	namespace  string
 }
 
-func (db *DB) Memory(namespace string) *Memory { return &Memory{db, db, namespace} }
+func (db *DB) Memory(namespace string) *Memory { return &Memory{db, autocommit{db}, namespace} }
 
 var _ memory.TransactionalStore = (*Memory)(nil)
 
@@ -107,7 +107,7 @@ func (store *Memory) Transact(ctx context.Context, fn func(memory.Store) error) 
 	if fn == nil {
 		return errors.New("memory transaction callback required")
 	}
-	tx, err := store.db.BeginTx(ctx, nil)
+	tx, err := store.db.begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func (store *Memory) importJournal(ctx context.Context, data []byte) error {
 	if err != nil {
 		return err
 	}
-	tx, err := store.db.BeginTx(ctx, nil)
+	tx, err := store.db.begin(ctx)
 	if err != nil {
 		return err
 	}

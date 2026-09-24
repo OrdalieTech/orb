@@ -63,10 +63,15 @@ func MigrationStatus(ctx context.Context, path, name string) (bool, error) {
 	if id != applicationID || version < 1 || version > 4 {
 		return false, errors.New("unsupported database schema")
 	}
-	return (&DB{handle}).Migrated(ctx, name)
+	return (&DB{DB: handle}).Migrated(ctx, name)
 }
 
-type DB struct{ *sql.DB }
+// DB is an open database. Writes made through the embedded *sql.DB bypass the
+// cross-process writer queue; this package routes every write through begin.
+type DB struct {
+	*sql.DB
+	writeLock *writerLock
+}
 
 // fileURI names a native path as an SQLite URI. A Windows drive path needs a
 // leading slash so "C:" is not read as the authority; SQLite's win32 VFS drops
@@ -118,7 +123,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{handle}
+	db := &DB{handle, newWriterLock(path + ".write.lock")}
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
 	defer func() {
@@ -155,7 +160,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 			return nil, err
 		}
 	}
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := db.begin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -252,8 +257,14 @@ PRAGMA user_version=4;`)
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
+	release, err := db.writeLock.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var journal string
-	if err = db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&journal); err != nil {
+	err = db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&journal)
+	release()
+	if err != nil {
 		return nil, err
 	}
 	if journal != "wal" {
@@ -280,7 +291,7 @@ func (d *Document) Read(ctx context.Context) ([]byte, error) {
 
 // Update serializes read-modify-write across processes; nil deletes the document.
 func (d *Document) Update(ctx context.Context, change func([]byte) ([]byte, error)) error {
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.db.begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -470,7 +481,7 @@ func (db *DB) Migrate(ctx context.Context, name string, sources []MigrationSourc
 		if id == "" {
 			continue
 		}
-		if _, err := db.ExecContext(ctx, "UPDATE sessions SET parent_id=? WHERE namespace=? AND id=?", id, parent.namespace, parent.id); err != nil {
+		if _, err := db.exec(ctx, "UPDATE sessions SET parent_id=? WHERE namespace=? AND id=?", id, parent.namespace, parent.id); err != nil {
 			return err
 		}
 	}
@@ -531,7 +542,7 @@ func (db *DB) RestoreSessions(ctx context.Context, path, namespace string) (int,
 		return 0, err
 	}
 	defer func() { _ = source.Close() }()
-	repo := (&DB{source}).Sessions(namespace)
+	repo := (&DB{DB: source}).Sessions(namespace)
 	sessions, err := repo.List(ctx, harness.SessionListOptions{})
 	if err != nil {
 		return 0, err

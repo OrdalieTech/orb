@@ -598,8 +598,11 @@ have real IDs and empty file paths; process locks protect local ownership and jo
 reject stale writes. Session replacement claims the destination before aborting the current turn.
 No database transaction spans a provider request, approval or model stream.
 Initialized databases open without taking a write lock; first opens serialize schema creation.
-WAL readers remain independent of writers. FULL durability is retained with a 30-second SQLite
-busy wait for contention on slower disks; exhaustion returns an error, never replays a transaction.
+WAL readers remain independent of writers. Write transactions from every process queue on a
+kernel lock beside the database (`<db>.write.lock`: `flock`, `LockFileEx` on Windows), so a writer
+that just committed cannot starve the others the way SQLite's retry loop does; readers never take
+it. FULL durability is retained, and both the queue and SQLite's own busy wait give up after 30
+seconds with an error, never replaying a transaction.
 
 `orb --pi-files ...` explicitly selects the original file assembly for compatibility consumers;
 it must use a separate legacy root after native cutover. The unchanged upstream RPC tests run

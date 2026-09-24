@@ -6,6 +6,9 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Several Orb processes writing to the same state database take turns instead of starving each
+  other on slow disks (notably Windows): writes queue on a kernel lock next to the database.
+
 - Windows: `!command` config values return their output, Bridge IPC accepts the local owner from
   both ends, first-launch migration ignores unrelated `orb-*` processes, and Node-style file URLs,
   Git Bash paths and virtual-host session paths resolve correctly.

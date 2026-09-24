@@ -100,7 +100,7 @@ func (r *Sessions) Open(ctx context.Context, metadata harness.SessionMetadata) (
 		}
 		// SessionStorage serializes callbacks. The SQL revision also fences handles
 		// opened by another process; a rejected commit never advances memory.
-		tx, err := r.db.BeginTx(context.Background(), nil)
+		tx, err := r.db.begin(context.Background())
 		if err != nil {
 			return err
 		}
@@ -153,7 +153,7 @@ func (r *Sessions) List(ctx context.Context, options harness.SessionListOptions)
 }
 
 func (r *Sessions) Delete(ctx context.Context, metadata harness.SessionMetadata) error {
-	_, err := r.db.ExecContext(ctx, "DELETE FROM sessions WHERE namespace=? AND id=?", r.namespace, metadata.ID)
+	_, err := r.db.exec(ctx, "DELETE FROM sessions WHERE namespace=? AND id=?", r.namespace, metadata.ID)
 	return err
 }
 
@@ -256,7 +256,7 @@ func (r *Sessions) importJournal(ctx context.Context, content []byte, parent str
 			name = entry.Name
 		}
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.db.begin(ctx)
 	if err != nil {
 		return m, err
 	}
