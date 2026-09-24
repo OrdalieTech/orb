@@ -96,8 +96,8 @@ func installMiniTreeSearchHelpers(t *testing.T) {
 		script := fmt.Sprintf(
 			"#!/bin/sh\nexport %s=%s\nexec %s -test.run='^TestSearchMiniTreeHelperProcess$' -- \"$@\"\n",
 			miniTreeHelperEnv,
-			miniTreeShellQuote(name),
-			miniTreeShellQuote(executable),
+			shellSingleQuote(name),
+			shellSingleQuote(executable),
 		)
 		if err := os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
@@ -265,8 +265,4 @@ func firstMiniTreeError(errors ...error) error {
 		}
 	}
 	return nil
-}
-
-func miniTreeShellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

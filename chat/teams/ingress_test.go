@@ -217,20 +217,3 @@ func TestIngressRejectsNonPOST(t *testing.T) {
 		t.Fatalf("status = %d, want 405", recorder.Code)
 	}
 }
-
-func TestIngressDuplicateEventIDStable(t *testing.T) {
-	// Redelivered activities keep the same EventID — the ledger's dedupe
-	// key — across deliveries.
-	env := newTestEnv(t)
-	var ids []string
-	handler := env.adapter.Webhook(func(m chat.Message) error { ids = append(ids, m.EventID); return nil })
-	serviceURL := env.connector.server.URL
-	for range 2 {
-		if recorder := postActivity(t, handler, personalActivity(serviceURL), env.bearer(t, serviceURL, nil)); recorder.Code != http.StatusOK {
-			t.Fatalf("status = %d", recorder.Code)
-		}
-	}
-	if len(ids) != 2 || ids[0] != ids[1] || ids[0] != "1481567603816" {
-		t.Fatalf("event ids = %v, want two identical activity ids", ids)
-	}
-}

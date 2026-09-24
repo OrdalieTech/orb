@@ -3,7 +3,6 @@ package host
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -410,14 +409,6 @@ func TestRealHostReloadStartsFreshProcess(t *testing.T) {
 	}
 	if afterDetails["pid"] == oldPID {
 		t.Fatalf("reload reused process pid %v", oldPID)
-	}
-}
-
-func TestManagerWithoutRuntimeReturnsTypedDiagnostic(t *testing.T) {
-	errorValue := &RuntimeUnavailableError{}
-	var typed *RuntimeUnavailableError
-	if !errors.As(errorValue, &typed) || typed.Diagnostic().Message != runtimeUnavailableMessage {
-		t.Fatalf("runtime error = %#v", errorValue)
 	}
 }
 

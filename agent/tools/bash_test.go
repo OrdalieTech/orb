@@ -559,7 +559,7 @@ func TestLocalBashOperationsTimeoutKillsProcessGroup(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	timeout := 0.2
-	command := "sleep 60 & child=$!; printf '%s' \"$child\" > " + shellQuote(pidFile) + "; wait"
+	command := "sleep 60 & child=$!; printf '%s' \"$child\" > " + shellSingleQuote(pidFile) + "; wait"
 	_, executeErr := NewLocalBashOperations().Exec(context.Background(), command, dir, BashExecOptions{
 		Timeout: &timeout,
 		Env:     mustShellEnv(t),
@@ -658,7 +658,7 @@ func TestWaitForProcessPipesRearmsActiveGrace(t *testing.T) {
 func TestLocalBashOperationsReleasesQuietInheritedStdioAfterGrace(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "quiet-child.pid")
-	command := "sleep 60 & child=$!; printf '%s' \"$child\" > " + shellQuote(pidFile) + "; printf parent-exiting"
+	command := "sleep 60 & child=$!; printf '%s' \"$child\" > " + shellSingleQuote(pidFile) + "; printf parent-exiting"
 	var output strings.Builder
 	startedAt := time.Now()
 	result, err := NewLocalBashOperations().Exec(context.Background(), command, dir, BashExecOptions{
@@ -745,10 +745,6 @@ func TestBashToolConcurrentOutputCallbacksAreRaceSafe(t *testing.T) {
 
 func intPointer(value int) *int {
 	return &value
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func processExists(pid int) bool {

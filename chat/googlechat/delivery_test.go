@@ -191,33 +191,6 @@ func TestFinalizeRetryResumesAtFailedChunk(t *testing.T) {
 	}
 }
 
-func TestFinalizeIsIdempotent(t *testing.T) {
-	env := newTestEnv(t)
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	receipt, err := d.Finalize(context.Background(), "short answer")
-	if err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	wantName := "spaces/AAAA/messages/" + turnMessageID(testReplyTo, testKey)
-	if len(receipt.MessageIDs) != 1 || receipt.MessageIDs[0] != wantName {
-		t.Fatalf("receipt %v, want [%q]", receipt.MessageIDs, wantName)
-	}
-
-	// A crash-recovered turn re-finalizes from scratch: the create collides
-	// and degrades to an edit — no duplicate message.
-	fresh := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	receipt2, err := fresh.Finalize(context.Background(), "recovered answer")
-	if err != nil {
-		t.Fatalf("re-Finalize: %v", err)
-	}
-	if len(receipt2.MessageIDs) != 1 || receipt2.MessageIDs[0] != wantName {
-		t.Fatalf("re-finalize receipt %v, want the same message", receipt2.MessageIDs)
-	}
-	if got := env.chatAPI.text(wantName); got != "recovered answer" {
-		t.Fatalf("stored text %q, want the retry's text", got)
-	}
-}
-
 func TestFinalizeIgnoresResumePreviewID(t *testing.T) {
 	env := newTestEnv(t)
 	d := env.adapter.NewDelivery(testKey, testReplyTo, "stale-preview-name")

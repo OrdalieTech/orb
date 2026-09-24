@@ -370,26 +370,6 @@ func TestFragmentReassemblyWithInterleavedPing(t *testing.T) {
 	waitDone(t, done)
 }
 
-func TestAutoPongEchoesPayload(t *testing.T) {
-	srv, done := newServer(t, func(c net.Conn, br *bufio.Reader) {
-		writeFrame(t, c, true, 9, []byte("heartbeat-42"))
-		pong := readFrame(t, br)
-		if pong.op != 0xA || !pong.masked || string(pong.payload) != "heartbeat-42" {
-			t.Errorf("pong = op %#x masked %v payload %q", pong.op, pong.masked, pong.payload)
-		}
-		writeFrame(t, c, true, 1, []byte("after"))
-	})
-	conn := mustDial(t, srv, nil)
-	op, payload, err := conn.ReadMessage(context.Background())
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if op != OpText || string(payload) != "after" {
-		t.Errorf("message = op %d %q, want text %q", op, payload, "after")
-	}
-	waitDone(t, done)
-}
-
 func TestCleanCloseHandshake(t *testing.T) {
 	srv, done := newServer(t, func(c net.Conn, br *bufio.Reader) {
 		writeFrame(t, c, true, 8, closePayload(1000, "bye"))

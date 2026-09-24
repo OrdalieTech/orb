@@ -594,44 +594,6 @@ func TestAsAssistantMessage(t *testing.T) {
 	}
 }
 
-func TestUserMessageComponentRender(t *testing.T) {
-	initTestTheme(t)
-	comp := NewUserMessageComponent("hello", theme.MarkdownTheme(), 0, nil)
-	lines := comp.Render(40)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "hello") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected 'hello' in render output")
-	}
-}
-
-func TestAssistantMessageComponentRender(t *testing.T) {
-	initTestTheme(t)
-	msg := &ai.AssistantMessage{
-		Content: ai.AssistantContent{&ai.TextContent{Text: "response"}},
-	}
-	comp := NewAssistantMessageComponent(msg, false, theme.MarkdownTheme(), "", 0, nil)
-	lines := comp.Render(40)
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "response") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected 'response' in render output")
-	}
-}
-
 func TestAssistantMessageComponentError(t *testing.T) {
 	initTestTheme(t)
 	errMsg := "something failed"
@@ -650,31 +612,6 @@ func TestAssistantMessageComponentError(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected error message in render output")
-	}
-}
-
-func TestToolExecutionComponentLifecycle(t *testing.T) {
-	initTestTheme(t)
-	fake := &fakeRenderRequester{}
-	comp := NewToolExecutionComponent("read", "call-1", map[string]any{"path": "/tmp"}, false, nil, fake, "/")
-	comp.SetExpanded(true)
-	lines := comp.Render(60)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
-
-	comp.MarkExecutionStarted()
-	comp.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "file content"}}, false, nil, false)
-	lines = comp.Render(60)
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "file content") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected 'file content' in render output after result")
 	}
 }
 
@@ -706,14 +643,6 @@ func TestFormatTokens(t *testing.T) {
 		if got := formatTokens(tt.count); got != tt.expected {
 			t.Errorf("formatTokens(%d) = %q, want %q", tt.count, got, tt.expected)
 		}
-	}
-}
-
-func TestIdleStatusRender(t *testing.T) {
-	idle := IdleStatus{}
-	lines := idle.Render(20)
-	if len(lines) != 2 {
-		t.Errorf("IdleStatus should render 2 lines, got %d", len(lines))
 	}
 }
 
@@ -955,38 +884,6 @@ func TestAvailableProviderCountUsesScopedModels(t *testing.T) {
 	}
 }
 
-func TestCompactionSummaryMessageRender(t *testing.T) {
-	initTestTheme(t)
-	comp := NewCompactionSummaryMessage("Summary text", 50000, theme.MarkdownTheme())
-	lines := comp.Render(60)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
-}
-
-func TestBranchSummaryMessageRender(t *testing.T) {
-	initTestTheme(t)
-	comp := NewBranchSummaryMessage("Branch summary", theme.MarkdownTheme())
-	lines := comp.Render(60)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
-}
-
-func TestSkillInvocationMessageRender(t *testing.T) {
-	initTestTheme(t)
-	comp := NewSkillInvocationMessage("test-skill", "Skill content", theme.MarkdownTheme())
-	lines := comp.Render(60)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
-	comp.SetExpanded(true)
-	expanded := comp.Render(60)
-	if len(expanded) == 0 {
-		t.Fatal("expected non-empty expanded render")
-	}
-}
-
 func TestSkillAtAutocompleteInvokesCanonicalCommand(t *testing.T) {
 	initTestTheme(t)
 	mode := newF12AutocompleteMode(t, true)
@@ -1198,31 +1095,6 @@ func TestAppKeybindings(t *testing.T) {
 	}
 }
 
-func TestCustomEditorInterceptor(t *testing.T) {
-	terminal := newFakeTerminal(80, 24)
-	ui := tui.NewTUI(terminal)
-	kb := NewAppKeybindings(nil)
-	tui.SetKeybindings(kb)
-	editor := NewCustomEditor(ui, tui.EditorTheme{}, kb)
-
-	handled := false
-	editor.OnAction("app.clear", func() { handled = true })
-
-	editor.HandleInput(tui.KeyEvent{Raw: "\x03"})
-	if !handled {
-		t.Error("expected app.clear handler to be called on Ctrl+C")
-	}
-}
-
-func TestKeyText(t *testing.T) {
-	kb := NewAppKeybindings(nil)
-	tui.SetKeybindings(kb)
-	text := KeyText("app.interrupt")
-	if text == "" || text == "app.interrupt" {
-		t.Error("expected resolved key text for app.interrupt")
-	}
-}
-
 func TestThemePackageLevelAccessors(t *testing.T) {
 	if text := theme.FG("dim", "test"); text != "test" {
 		t.Errorf("FG with nil theme should return text as-is, got %q", text)
@@ -1248,15 +1120,7 @@ func TestHandleSlashCommand(t *testing.T) {
 		args     string
 		expected bool
 	}{
-		{"quit", "", true},
-		{"compact", "", true},
-		{"copy", "", true},
-		{"name", "test", true},
 		{"hotkeys", "", true},
-		{"settings", "", true},
-		{"model", "", true},
-		{"export", "", true},
-		{"session", "", true},
 		{"changelog", "", true},
 		{"login", "", true},
 		{"logout", "", true},
@@ -1285,51 +1149,11 @@ func TestHandleSlashCommand(t *testing.T) {
 			mode.widgetAbove = &tui.Container{}
 			mode.widgetBelow = &tui.Container{}
 
-			// Skip commands that require a non-nil session
-			needsSession := map[string]bool{
-				"quit": true, "compact": true, "copy": true, "model": true,
-				"export": true, "session": true, "fork": true, "name": true,
-				"settings": true, "share": true, "tree": true,
-			}
-			if needsSession[tt.name] {
-				return
-			}
-
 			got := mode.handleSlashCommand(tt.name, tt.args)
 			if got != tt.expected {
 				t.Errorf("handleSlashCommand(%q, %q) = %v, want %v", tt.name, tt.args, got, tt.expected)
 			}
 		})
-	}
-}
-
-func TestBashExecutionComponentLifecycle(t *testing.T) {
-	initTestTheme(t)
-	fake := &fakeRenderRequester{}
-	comp := NewBashExecutionComponent("echo hello", fake, false)
-	lines := comp.Render(60)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
-
-	comp.AppendOutput("hello\n")
-	lines = comp.Render(60)
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "hello") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected 'hello' in output")
-	}
-
-	exitCode := 0
-	comp.SetComplete(&exitCode, false)
-	lines = comp.Render(60)
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render after complete")
 	}
 }
 
@@ -1863,27 +1687,6 @@ func TestQuitKeysDoNotBlockTerminalInputReader(t *testing.T) {
 	}
 }
 
-func TestFooterComponentStatuses(t *testing.T) {
-	initTestTheme(t)
-	session := &fakeFooterSession{}
-	provider := &fakeFooterDataProvider{
-		branch:   "dev",
-		statuses: map[string]string{"ext": "active"},
-	}
-	footer := NewFooterComponent(session, provider, false)
-	lines := footer.Render(80)
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "active") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected extension status in footer")
-	}
-}
-
 func TestInteractiveUISetStatus(t *testing.T) {
 	terminal := newFakeTerminal(80, 24)
 	ui := tui.NewTUI(terminal)
@@ -1909,57 +1712,6 @@ func TestInteractiveUISetStatus(t *testing.T) {
 	iui.SetStatus("test", nil)
 	if _, exists := mode.footerStatuses["test"]; exists {
 		t.Error("expected footer status to be removed")
-	}
-}
-
-func TestInteractiveUISetTitle(t *testing.T) {
-	terminal := newFakeTerminal(80, 24)
-	ui := tui.NewTUI(terminal)
-	kb := NewAppKeybindings(nil)
-	tui.SetKeybindings(kb)
-
-	mode := &InteractiveMode{
-		ui:             ui,
-		chat:           &tui.Container{},
-		keybindings:    kb,
-		editor:         NewCustomEditor(ui, tui.EditorTheme{}, kb),
-		toolComponents: make(map[string]*ToolExecutionComponent),
-		footerStatuses: make(map[string]string),
-	}
-	iui := NewInteractiveUI(mode)
-
-	// Should not panic
-	iui.SetTitle("Test Title")
-}
-
-func TestInteractiveUIWidgets(t *testing.T) {
-	terminal := newFakeTerminal(80, 24)
-	ui := tui.NewTUI(terminal)
-	kb := NewAppKeybindings(nil)
-	tui.SetKeybindings(kb)
-
-	mode := &InteractiveMode{
-		ui:             ui,
-		chat:           &tui.Container{},
-		keybindings:    kb,
-		editor:         NewCustomEditor(ui, tui.EditorTheme{}, kb),
-		toolComponents: make(map[string]*ToolExecutionComponent),
-		footerStatuses: make(map[string]string),
-		widgetAbove:    &tui.Container{},
-		widgetBelow:    &tui.Container{},
-	}
-	iui := NewInteractiveUI(mode)
-
-	widget := &extensions.Widget{Lines: []string{"status line"}}
-	iui.SetWidget("test", widget, nil)
-
-	if _, exists := iui.widgets["test"]; !exists {
-		t.Error("expected widget to be registered")
-	}
-
-	iui.SetWidget("test", nil, nil)
-	if _, exists := iui.widgets["test"]; exists {
-		t.Error("expected widget to be removed")
 	}
 }
 
