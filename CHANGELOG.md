@@ -6,6 +6,37 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-24
+
+Every Durable Object or Celld Orb is now a full Bridge peer, paired with and called from a native
+Orb in both directions, and the Bridge moves into the core. The Windows suite runs green and blocks
+every commit (binaries are not yet released). The repository takes its final shape: core in `ai`,
+`engine`, `agent`, `bridge` and `host`, platforms under `platforms/`. The compatibility target
+remains Pi **v0.86.0** on Go **1.27.1**.
+
+### Deployments and Bridge
+
+- A Durable Object or Celld Orb is a full Bridge peer at `/agents/<name>/bridge`: pair a native Orb
+  with `orb bridge pair join`, administer it through `/bridge/admin`, and let either side call the
+  other under its own grants.
+
+- Deploy Orb to Cloudflare Durable Objects or self-hosted Celld cells (`platforms/worker`,
+  `make worker-deploy`, `make worker-celld-dev`): each object is a full Orb whose workspace,
+  settings and session persist in object storage, driven by RPC frames over WebSocket or
+  streamed HTTP. `docs/deployments.md` catalogues every target with its status, capabilities
+  and Bridge role.
+
+- SDK: the Bridge is core and the tree is reorganized. `connect` and `plugins/bridge` are now
+  `bridge` (with `bridge/protocol`); `connect/agent` and `plugins/bridge/extension` are
+  `agent/bridge`, and the `bridge_call` tool is `agent/bridge/tool`. `storage.Document` is
+  `host.Document`; `storage/sqlite`, `sandbox` and the Tailcat transport and native Bridge host
+  live under `platforms/native/`, the WebSocket transport under `platforms/websocket`, and the
+  browser runtime under `platforms/browser`. `accounts` splits into `ai/auth/accounts`
+  (document-backed) and `platforms/native/accounts` (file-backed). Update imports; behavior is
+  unchanged.
+
+### Windows
+
 - Windows: the Bridge IPC socket is owned by and restricted to the current user, and both ends
   accept only that user; chat previews on Discord and Telegram throttle from the completed call,
   like Slack.
@@ -17,24 +48,16 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   both ends, first-launch migration ignores unrelated `orb-*` processes, and Node-style file URLs,
   Git Bash paths and virtual-host session paths resolve correctly.
 
-- A Durable Object or Celld Orb is a full Bridge peer at `/agents/<name>/bridge`: pair a native Orb
-  with `orb bridge pair join`, administer it through `/bridge/admin`, and let either side call the
-  other under its own grants.
-
-- Skip Claude Code's `skills/synced` folder, which holds one copy of the claude.ai skills per
-  signed-in account: it made the home screen warn about name collisions (`docx`, `pdf`, …) and gave
-  Orb claude.ai-only skills. Your own `~/.claude/skills` still load.
-
 - Windows: Node extension runtime discovery (PATHEXT, `node.exe`, version managers), file URLs
   and drive-rooted paths as Node resolves them on win32, `!command` config values through Git
   Bash or `cmd.exe`, external CLI subagents in a kill-on-close job object, and file-lock
   contention on delete-pending directories. Checkouts keep LF line endings (`.gitattributes`).
 
-- Deploy Orb to Cloudflare Durable Objects or self-hosted Celld cells (`platforms/worker`,
-  `make worker-deploy`, `make worker-celld-dev`): each object is a full Orb whose workspace,
-  settings and session persist in object storage, driven by RPC frames over WebSocket or
-  streamed HTTP. `docs/deployments.md` catalogues every target with its status, capabilities
-  and Bridge role.
+### Interface
+
+- Skip Claude Code's `skills/synced` folder, which holds one copy of the claude.ai skills per
+  signed-in account: it made the home screen warn about name collisions (`docx`, `pdf`, …) and gave
+  Orb claude.ai-only skills. Your own `~/.claude/skills` still load.
 
 - List the ChatGPT subscription models your account actually offers, fetched at startup: new
   releases such as GPT-6 Sol appear without waiting for an Orb update.

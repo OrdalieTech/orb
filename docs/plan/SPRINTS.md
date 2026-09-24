@@ -410,8 +410,10 @@ its evidence rules live in `docs/deployments.md`; a target moves up only with it
 1. **Durable Objects and Celld** (in progress): `platforms/worker` host on Durable Object
    storage, RPC frames over WebSocket/HTTP, end-to-end under `cf dev` and `celld dev` in CI, one
    deployed test instance, one-command deploy and removal.
-2. **Durable Object as a full Bridge peer**: accept the WebSocket Bridge transport on `/bridge`,
-   so laptop Orbs pair with a cloud Orb and grants work in both directions.
+2. **Durable Object as a full Bridge peer** (done in 0.11.0, verified on Cloudflare), then Bridge
+   fully in the core: host-supplied transport port (`Host.Peers`), every session registered as an
+   instance by default, `bridge_call` built in and visible only under an agent grant (the toggle
+   retires), and a cross-host peers scenario (native, js/wasm, WASI, Durable Object).
 3. **Windows parity**: the `windows-latest` job green and blocking again, Windows release
    artifacts.
 4. **Richer hosted tools**: project settings, skills and context files over `FS`; grep without
