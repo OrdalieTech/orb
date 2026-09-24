@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Windows: the Bridge IPC socket is owned by and restricted to the current user, and both ends
+  accept only that user; chat previews on Discord and Telegram throttle from the completed call,
+  like Slack.
+
 - Several Orb processes writing to the same state database take turns instead of starving each
   other on slow disks (notably Windows): writes queue on a kernel lock next to the database.
 

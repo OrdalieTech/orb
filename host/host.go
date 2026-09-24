@@ -8,6 +8,7 @@ import (
 	"context"
 	"path"
 	"path/filepath"
+	"strings"
 
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine/harness"
@@ -44,8 +45,12 @@ type Host struct {
 }
 
 // Document returns the named kernel document under AgentDir, keyed like the
-// native store so one backend can serve both.
+// native store so one backend can serve both. A rooted POSIX AgentDir that is
+// not native (a virtual host's tree on win32) keeps its slash-separated keys.
 func (h *Host) Document(name string) Document {
+	if strings.HasPrefix(h.AgentDir, "/") && !filepath.IsAbs(h.AgentDir) {
+		return h.Store.Document(path.Join(h.AgentDir, name))
+	}
 	return h.Store.Document(filepath.Join(h.AgentDir, name))
 }
 

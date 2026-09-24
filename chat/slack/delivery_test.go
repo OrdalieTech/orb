@@ -10,6 +10,15 @@ import (
 	"github.com/OrdalieTech/orb/chat"
 )
 
+// waitForClockTick returns once time.Now has moved on: the 1ns preview
+// interval of the test adapter needs elapsed time, and Windows' monotonic
+// clock advances in timer ticks, so back-to-back calls can read equal instants.
+func waitForClockTick() {
+	for start := time.Now(); !time.Now().After(start); {
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func testKey(chatID, threadID string) chat.ConversationKey {
 	return chat.ConversationKey{Platform: "slack", Account: testBotUser, ChatID: chatID, ThreadID: threadID}
 }
@@ -89,6 +98,7 @@ func TestPreviewEditWindowClosedFallsBack(t *testing.T) {
 		t.Fatalf("Preview: %v", err)
 	}
 	f.stub("chat.update", stubResponse{body: `{"ok":false,"error":"edit_window_closed"}`})
+	waitForClockTick()
 	if err := delivery.Preview(ctx, "partial more"); err != nil {
 		t.Fatalf("Preview after edit_window_closed = %v, want nil (edits abandoned)", err)
 	}
