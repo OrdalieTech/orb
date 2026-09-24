@@ -6,6 +6,12 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-24
+
+Claude Sessions behaves like Claude Code in the terminal: no injected context files and an effort
+level that survives restarts. Redundant tests are pruned. The compatibility target remains Pi
+**v0.86.0** on Go **1.27.1**.
+
 ### Claude Sessions
 
 - Claude Sessions: Orb no longer injects its AGENTS.md or other context files into Claude, which loads
@@ -13,6 +19,11 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   the thinking level last chosen for its model instead of the global default, and new sessions of any
   provider honor per-model thinking levels as pi does. Task notices appear only for subagents and
   background work, no longer duplicating a foreground command's tool row.
+
+### Maintenance
+
+- Remove 43 redundant tests and fold 14 repetitive ones into table-driven tests, with coverage
+  unchanged in every touched package.
 
 ## [0.11.0] - 2026-09-24
 
