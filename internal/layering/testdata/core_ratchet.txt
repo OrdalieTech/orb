@@ -83,9 +83,9 @@ agent/tools	os.UserHomeDir	2
 agent/tools	os.WriteFile	2
 agent/tools	path/filepath.Abs	2
 agent/tools	path/filepath.EvalSymlinks	1
-ai/api	import net	2
 ai/api	import os/exec	1
 ai/api	import syscall	2
+ai/api	net.Interfaces	1
 ai/api	net/http.DefaultClient	8
 ai/api	net/http.DefaultTransport	1
 ai/api	os.Environ	1
@@ -98,8 +98,8 @@ ai/api	path/filepath.EvalSymlinks	2
 ai/auth	os.LookupEnv	1
 ai/auth	os.Stat	1
 ai/auth	os.UserHomeDir	1
-ai/auth/oauth	import net	3
 ai/auth/oauth	import syscall	1
+ai/auth/oauth	net.Listen	3
 ai/auth/oauth	net/http.DefaultClient	5
 ai/auth/oauth	os.Getenv	5
 ai/models	import github.com/OrdalieTech/orb/internal/filelock	1

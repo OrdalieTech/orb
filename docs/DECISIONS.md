@@ -51,11 +51,15 @@ Eleven paradigms. Everything else in this record is operational memory.
   packages hold no package-level mutable state and read no environment or home directory
   implicitly; N instances with N configurations must coexist in one process. The core is never
   widened ad hoc: if the extension API cannot express a capability, the API is extended by recorded
-  decision. Seams are cut when a second implementation is real, never speculatively.
+  decision. Seams are cut when a second implementation is real, never speculatively. Bridge is
+  not a capability module: under P10/P11 it is core (owner, 2026-09-24).
 - **P4 — Minimal by default.** New capabilities default off. Stock `orb` stays lean; power is
   opt-in per user (settings, `/plugins`) or per assembly (embedder wiring). Configuration pages
   may be available before activation: the owner requested built-in Bridge management in Settings
-  and Ctrl+P (2026-09-21), with service activation and agent-call opt-in inside that page.
+  and Ctrl+P (2026-09-21), with service activation inside that page. Bridge defaults are inert
+  rather than off (owner, 2026-09-24): every Orb has an identity but no listener, no advertised
+  address, no grants and no visible `bridge_call` until its owner grants one; agent grants replace
+  the former agent-call toggle.
 - **P5 — Pi compatibility is a kernel, not an identity** *(recasts D2, D4, D5, D6, D13)*. Orb
   maintains byte-compatibility on the kernel surfaces listed below, verified by conformance
   fixtures; inside the kernel, upstream quirks are spec. Outside it, Orb evolves freely and
@@ -78,11 +82,13 @@ Eleven paradigms. Everything else in this record is operational memory.
   a plugin; the core is named and closed. It is the agent semantics that are identical on every
   target: the `ai` message/stream model and provider wire codecs, the `engine` loop, tool
   pipeline, events and compaction, session/settings/resource formats and their merge rules, the
-  extension API and registry, and one assembly that composes them. Core packages compile on
+  extension API and registry, the Bridge peer protocol, identity, grants, instance registration
+  and operation ledger, and one assembly that composes them. Core packages compile on
   every P2 target and reach the platform only through **ports** supplied by a host:
   `FS` (files), `Exec` (processes, optional), `Store` (documents, append-only logs, locks),
-  `Net` (outbound HTTP, optional listening) and `Env` (variables, directories, clock,
-  randomness). A core package imports no `os/exec`, `os/signal`, `syscall` or `net` dialing,
+  `Net` (outbound HTTP and Bridge streams: dial, optional listen) and `Env` (variables,
+  directories, clock, randomness). A core package imports no `os/exec`, `os/signal` or `syscall`,
+  never dials, listens or resolves through `net` (its portable types stay usable),
   uses no `http.DefaultClient`, and reads no environment, home, working directory or process
   state implicitly; `internal/layering` enforces this with a ratchet that only shrinks. A
   platform is a host (port implementations under `platforms/`) plus an assembly; UIs are
@@ -98,7 +104,11 @@ Eleven paradigms. Everything else in this record is operational memory.
   supported only with evidence: its ports pass the conformance suites, the cross-host scenario
   matches native, a target end-to-end test runs in CI, one documented command deploys and removes
   it, and it states its capability profile and Bridge role. `docs/deployments.md` is the
-  catalogue; a target's status there changes only with that evidence.
+  catalogue; a target's status there changes only with that evidence. Bridge is core (owner,
+  2026-09-24): every Orb, on every host, has a peer identity, registers its sessions as instances,
+  and dials peers through the transports its host supplies. Listening, advertised addresses and
+  every grant stay explicit and owner-approved; controller and agent-subject authority never
+  merge.
 
 ## The compat kernel
 

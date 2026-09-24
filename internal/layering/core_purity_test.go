@@ -16,7 +16,7 @@ import (
 
 // corePackages is the P10 portable core. Subdirectories are included unless
 // listed in coreExcluded: those are drivers, native capabilities or tooling.
-var corePackages = []string{"ai", "engine", "agent", "internal/themefile"}
+var corePackages = []string{"ai", "engine", "agent", "connect", "internal/themefile"}
 
 var coreExcluded = []string{
 	"ai/models/cmd", "ai/models/internal",
@@ -25,10 +25,11 @@ var coreExcluded = []string{
 }
 
 // Platform access that must reach the core through host ports (P10). Entries
-// cover their subpackages, except "net", whose subpackages (http, url) are
-// portable types.
+// cover their subpackages. Package net stays importable for its portable types
+// (Conn, Addr, Pipe); its dialing, listening and resolution are forbidden
+// selectors below.
 var forbiddenCoreImports = []string{
-	"os/exec", "os/signal", "syscall", "net", "golang.org/x/sys",
+	"os/exec", "os/signal", "syscall", "golang.org/x/sys",
 	"github.com/gofrs/flock", "github.com/creack/pty", module + "internal/filelock",
 }
 
@@ -48,9 +49,15 @@ var allowedOS = map[string]bool{
 	"O_EXCL": true, "O_SYNC": true, "O_TRUNC": true,
 }
 
-// Selectors outside os that consult the process-wide network client or the
-// real filesystem and working directory.
+// Selectors outside os that reach the network stack, the process-wide network
+// client, or the real filesystem and working directory.
 var forbiddenSelectors = map[string]map[string]bool{
+	"net": {"Dial": true, "DialTimeout": true, "DialTCP": true, "DialUDP": true, "DialIP": true, "DialUnix": true, "Dialer": true,
+		"Listen": true, "ListenPacket": true, "ListenTCP": true, "ListenUDP": true, "ListenIP": true, "ListenUnix": true,
+		"ListenUnixgram": true, "ListenMulticastUDP": true, "ListenConfig": true, "FileConn": true, "FileListener": true,
+		"FilePacketConn": true, "LookupHost": true, "LookupIP": true, "LookupAddr": true, "LookupCNAME": true, "LookupMX": true,
+		"LookupNS": true, "LookupPort": true, "LookupSRV": true, "LookupTXT": true, "LookupNetIP": true, "Resolver": true,
+		"DefaultResolver": true, "Interfaces": true, "InterfaceAddrs": true, "InterfaceByName": true, "InterfaceByIndex": true},
 	"net/http":      {"DefaultClient": true, "DefaultTransport": true, "Get": true, "Head": true, "Post": true, "PostForm": true, "ProxyFromEnvironment": true},
 	"path/filepath": {"Abs": true, "EvalSymlinks": true, "Glob": true, "Walk": true, "WalkDir": true},
 }
@@ -124,7 +131,7 @@ func coreViolations(t *testing.T, root string) map[string]int {
 			for _, spec := range file.Imports {
 				importPath, _ := strconv.Unquote(spec.Path.Value)
 				for _, forbidden := range forbiddenCoreImports {
-					if importPath == forbidden || (forbidden != "net" && strings.HasPrefix(importPath, forbidden+"/")) {
+					if importPath == forbidden || strings.HasPrefix(importPath, forbidden+"/") {
 						counts[pkg+"\timport "+importPath]++
 					}
 				}
