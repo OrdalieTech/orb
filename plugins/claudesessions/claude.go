@@ -202,6 +202,14 @@ type host struct {
 	mu     sync.Mutex
 	frames chan hostFrame
 	kill   func() error
+	// tasks outlives a turn: a background task may finish while a later one runs.
+	tasks map[string]*nativeTask
+}
+
+// nativeTask is a native task Orb may announce; shown once it is a subagent or in the background.
+type nativeTask struct {
+	description string
+	shown       bool
 }
 
 type hostFrame struct {
@@ -243,7 +251,7 @@ func (d *Driver) spawn(start map[string]any) (*host, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := &host{input: input, frames: make(chan hostFrame, 64), kill: isolate(process)}
+	h := &host{input: input, frames: make(chan hostFrame, 64), kill: isolate(process), tasks: map[string]*nativeTask{}}
 	if err = process.Start(); err != nil {
 		return nil, fmt.Errorf("start Claude SDK: %w", err)
 	}
@@ -332,7 +340,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	d.host = h
 	d.mu.Unlock()
 
-	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: newUUID()}
+	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: newUUID(), tasks: h.tasks}
 	if start["fork"] == true {
 		translator.session = ""
 	}
@@ -582,6 +590,7 @@ type translation struct {
 	answered        bool // tool results arrived, so steering can join the turn
 	failure         error
 	progress        map[string]int
+	tasks           map[string]*nativeTask
 }
 
 type nativeUsage struct {
@@ -682,7 +691,10 @@ func (t *translation) event(raw json.RawMessage) error {
 			}
 			Status, Description, Summary, Content string
 			Ambient                               bool
-			SkipTranscript                        bool `json:"skip_transcript"`
+			SkipTranscript                        bool   `json:"skip_transcript"`
+			TaskID                                string `json:"task_id"`
+			TaskType                              string `json:"task_type"`
+			Backgrounded                          bool   `json:"is_backgrounded"`
 			Attempt                               int
 			MaxRetries                            int `json:"max_retries"`
 			RetryDelay                            int `json:"retry_delay_ms"`
@@ -690,6 +702,9 @@ func (t *translation) event(raw json.RawMessage) error {
 				Pre  int64  `json:"pre_tokens"`
 				Post *int64 `json:"post_tokens"`
 			} `json:"compact_metadata"`
+			Patch struct {
+				Backgrounded bool `json:"is_backgrounded"`
+			}
 		}
 		if err := json.Unmarshal(raw, &activity); err != nil {
 			return err
@@ -729,14 +744,32 @@ func (t *translation) event(raw json.RawMessage) error {
 				text = activity.Description
 			}
 			return t.toolProgress(activity.ToolID, activity.Usage.Duration/1000, text)
-		case "task_started", "task_notification":
+		// A foreground task already has its tool row; only subagents and background work get notices.
+		case "task_started":
 			if activity.Ambient || activity.SkipTranscript {
 				return nil
 			}
-			if e.Subtype == "task_started" {
+			if t.tasks == nil {
+				t.tasks = map[string]*nativeTask{}
+			}
+			task := &nativeTask{description: activity.Description, shown: activity.TaskType == "local_agent" || activity.Backgrounded}
+			if len(t.tasks) < 1024 {
+				t.tasks[activity.TaskID] = task
+			}
+			if task.shown {
 				return t.notice("Claude task started: " + activity.Description)
 			}
-			return t.notice("Claude task " + activity.Status + ": " + activity.Summary)
+		case "task_updated":
+			if task := t.tasks[activity.TaskID]; task != nil && !task.shown && activity.Patch.Backgrounded {
+				task.shown = true
+				return t.notice("Claude task moved to background: " + task.description)
+			}
+		case "task_notification":
+			task := t.tasks[activity.TaskID]
+			delete(t.tasks, activity.TaskID)
+			if task != nil && task.shown {
+				return t.notice("Claude task " + activity.Status + ": " + activity.Summary)
+			}
 		case "init":
 			if t.session != e.Session {
 				t.at = "" // A new or forked native session has its own UUIDs.

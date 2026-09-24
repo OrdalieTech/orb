@@ -349,6 +349,38 @@ func TestCreateRuntimeInputsScopesCLIAPIKeyToSelectedProvider(t *testing.T) {
 	}
 }
 
+func TestCreateRuntimeInputsNewSessionUsesPerModelThinking(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	models := `{"providers":{"local":{"baseUrl":"http://localhost/v1","api":"openai-completions","apiKey":"dummy","models":[{"id":"one","reasoning":true}]}}}`
+	settings := `{"defaultThinkingLevel":"high","modelThinkingLevels":{"local/one":"low"}}`
+	for name, data := range map[string]string{"models.json": models, "settings.json": settings} {
+		if err := os.WriteFile(filepath.Join(agentDir, name), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+	provider, modelID := "local", "one"
+	for _, test := range []struct {
+		prior engine.AgentMessages
+		want  ai.ModelThinkingLevel
+	}{
+		{nil, ai.ModelThinkingLow},
+		{engine.AgentMessages{ai.NewUserText("hi")}, ai.ModelThinkingHigh},
+	} {
+		inputs, err := createRuntimeInputs(root, CLIArgs{Provider: &provider, Model: &modelID}, test.prior)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := inputs.Agent.State().ThinkingLevel; got != test.want {
+			t.Fatalf("prior=%d thinking = %q, want %q", len(test.prior), got, test.want)
+		}
+	}
+}
+
 func modelListContains(models []ai.Model, provider, id string) bool {
 	for _, model := range models {
 		if string(model.Provider) == provider && model.ID == id {

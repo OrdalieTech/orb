@@ -334,7 +334,14 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		return runtimeInputs{}, err
 	}
 	diagnostics = append(diagnostics, otherDiagnostics(modelDiagnostics)...)
-	thinking := settings.GetDefaultThinkingLevel()
+	var thinking ai.ModelThinkingLevel
+	// Upstream order: a new session takes the per-model level before the global default.
+	if model != nil && len(priorMessages) == 0 {
+		thinking = settings.GetModelThinkingLevel(string(model.Provider), model.ID)
+	}
+	if thinking == "" {
+		thinking = settings.GetDefaultThinkingLevel()
+	}
 	if thinking == "" {
 		thinking = ai.ModelThinkingMedium
 	}

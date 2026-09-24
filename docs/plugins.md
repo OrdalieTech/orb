@@ -178,15 +178,16 @@ For headless use, with the plugin enabled and the same automatic first-use setup
 The model picker uses the executing Claude CLI's `supportedModels()` catalog: native aliases,
 resolved model names and supported effort levels. New sessions use Claude's native default unless
 you select another model. `/model` changes the current session; `/claude` → Model chooses the default
-for new sessions. The existing model footer is retained, with a single compact Claude quota status. Discovery starts no model turn and writes no Claude transcript.
+for new sessions, which open at the thinking level last chosen for that Claude model (kept as its
+`modelThinkingLevels` entry, leaving `defaultThinkingLevel` to Orb's own providers). The existing model footer is retained, with a single compact Claude quota status. Discovery starts no model turn and writes no Claude transcript.
 
 `--session` and the ordinary Sessions picker resume the selected Orb conversation using its explicit
 native Claude session ID. `/tree`, withdrawn prompts and branch summaries work as in any Orb
 session; Claude writes the summary. Native approvals use Orb's choices, and **approve for this
 session** lasts as long as the running Orb session. Messages sent while Claude works join the running
 turn after its next tool result. `/claude` → Permission mode offers default, accept-edits, plan,
-auto and don't-ask. Orb's AGENTS.md and system-prompt additions reach Claude; its own CLAUDE.md
-files load natively. In `-p`/JSON runs, approvals Claude would ask for run as Orb's own tools would,
+auto and don't-ask. Orb's system-prompt additions reach Claude; context files such as CLAUDE.md
+are Claude's own and load natively, and Orb does not inject its AGENTS.md. In `-p`/JSON runs, approvals Claude would ask for run as Orb's own tools would,
 unless one of your Claude ask rules forces the prompt. `/claude` selects the model for explicitly created Claude sessions.
 **Switch to Orb** opens a separate regular conversation and keeps the Claude session saved; it also
 works before an Orb provider is configured. Ordinary launches never implicitly choose Claude. `--no-extensions`
@@ -251,8 +252,9 @@ context unknown and never fail a turn.
 Claude owns native tools, skills, MCP, project settings and compaction. Orb's tool plugins are not
 injected into that agent loop. Queued steer/follow-up messages enter at native turn boundaries.
 A turn stays active until its non-ambient background tasks complete and the SDK stream drains;
-cancellation interrupts that work. Retry, compaction and task notices use ordinary transcript events,
-and tool/task progress uses bounded updates. Subagent transcripts remain separate.
+cancellation interrupts that work. Retry, compaction and task notices use ordinary transcript events;
+task notices cover subagents and background work only, since a foreground command already has its
+tool row. Tool/task progress uses bounded updates. Subagent transcripts remain separate.
 Orb stores its transcript projection and private checkpoint metadata in SQLite; the native Claude
 transcript remains on the execution host and is required for resume. Pi export does not make native
 Claude context portable. Interrupted operations are never automatically replayed.

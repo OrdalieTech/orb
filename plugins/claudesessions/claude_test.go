@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
@@ -1442,8 +1443,8 @@ func TestNativeLifecycleActivitiesAndProgressAreBounded(t *testing.T) {
 	}}
 	for _, raw := range []string{
 		`{"type":"system","subtype":"api_retry","attempt":1,"max_retries":3,"retry_delay_ms":2000}`,
-		`{"type":"system","subtype":"task_started","description":"review"}`,
-		`{"type":"system","subtype":"task_notification","status":"completed","summary":"done"}`,
+		`{"type":"system","subtype":"task_started","task_id":"agent","task_type":"local_agent","is_backgrounded":false,"description":"review"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"agent","status":"completed","summary":"done"}`,
 		`{"type":"assistant","parent_tool_use_id":"parent","message":{"content":[{"type":"text","text":"private child transcript"}]}}`,
 		`{"type":"system","subtype":"task_started","ambient":true,"description":"watcher"}`,
 		`{"type":"tool_progress","tool_use_id":"tool","elapsed_time_seconds":5}`,
@@ -1463,6 +1464,33 @@ func TestNativeLifecycleActivitiesAndProgressAreBounded(t *testing.T) {
 	data, _ := json.Marshal(messages)
 	if strings.Contains(string(data), "private child") || strings.Contains(string(data), "watcher") {
 		t.Fatal(string(data))
+	}
+}
+
+func TestTaskNoticesSkipForegroundTools(t *testing.T) {
+	var notices []string
+	tr := translation{ctx: t.Context(), emit: func(_ context.Context, event engine.AgentEvent) error {
+		if end, ok := event.(engine.MessageEndEvent); ok {
+			notices = append(notices, end.Message.(*harness.CustomMessage).Content.(string))
+		}
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"system","subtype":"task_started","task_id":"fg","task_type":"local_bash","is_backgrounded":false,"description":"List files"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"fg","status":"completed","summary":"List files"}`,
+		`{"type":"system","subtype":"task_started","task_id":"bg","task_type":"local_bash","is_backgrounded":true,"description":"Run tests"}`,
+		`{"type":"system","subtype":"task_started","task_id":"late","task_type":"local_bash","is_backgrounded":false,"description":"Build"}`,
+		`{"type":"system","subtype":"task_updated","task_id":"late","patch":{"is_backgrounded":true}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"late","status":"completed","summary":"Build"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"bg","status":"failed","summary":"Run tests"}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"Claude task started: Run tests", "Claude task moved to background: Build", "Claude task completed: Build", "Claude task failed: Run tests"}
+	if !slices.Equal(notices, want) || len(tr.tasks) != 0 {
+		t.Fatalf("notices %q, tracked %d", notices, len(tr.tasks))
 	}
 }
 
@@ -1636,10 +1664,56 @@ func TestHeadlessNativeAsksFollowOrb(t *testing.T) {
 	}
 }
 
-func TestOrbContextSkipsWhatClaudeLoads(t *testing.T) {
+func TestThinkingLevelSurvivesRestart(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("Node required for SDK host test", err)
+	}
+	dir := t.TempDir()
+	sdk := filepath.Join(dir, "sdk.mjs")
+	if err = os.WriteFile(sdk, []byte(fakeSDK), 0600); err != nil {
+		t.Fatal(err)
+	}
+	options := Options{Node: node, Claude: filepath.Join(dir, "unused-native"), SDK: sdk, Env: []string{"SDK_TEST_KEY=unchanged"}}
+	start := func() (*agent.AgentSessionRuntime, *config.SettingsManager) {
+		settings, err := config.NewSettingsManager(dir, config.WithAgentDir(dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		manager, err := session.Create(dir, filepath.Join(dir, "sessions"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		registry := extensions.NewRegistry(dir)
+		if err := registry.Register("claude", Management(settings, dir, nil)); err != nil {
+			t.Fatal(err)
+		}
+		host, err := agent.NewAgentSessionRuntime(t.Context(), agent.AgentSessionOptions{CWD: dir, AgentDir: dir, Settings: settings, SessionManager: manager, ExtensionRegistry: registry, Model: &ai.Model{ID: "opus", Provider: Name, API: Name}}, Factory(options))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { host.Dispose(context.Background()) })
+		return host, settings
+	}
+	host, settings := start()
+	settings.SetDefaultThinkingLevel(ai.ModelThinkingMax)
+	if err := host.Session().SetThinkingLevel(ai.ModelThinkingLow); err != nil {
+		t.Fatal(err)
+	}
+	host.Dispose(context.Background())
+	host, settings = start()
+	if got := host.Session().State().ThinkingLevel; got != ai.ModelThinkingLow {
+		t.Fatalf("restarted Claude session thinking = %s, want low", got)
+	}
+	if got := settings.GetDefaultThinkingLevel(); got != ai.ModelThinkingMax {
+		t.Fatalf("global default changed to %s", got)
+	}
+}
+
+func TestOrbContextLeavesContextFilesToClaude(t *testing.T) {
 	custom := "Be brief."
 	got := orbContext(&agent.SystemPromptOptions{AppendSystemPrompt: &custom, ContextFiles: []agent.ContextFile{{Path: "/p/AGENTS.md", Content: "use tabs"}, {Path: "/p/CLAUDE.md", Content: "native"}}})
-	if !strings.Contains(got, "Be brief.") || !strings.Contains(got, "use tabs") || strings.Contains(got, "native") {
+	if got != "Be brief." {
 		t.Fatalf("context %q", got)
 	}
 }

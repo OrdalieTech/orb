@@ -6,6 +6,14 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+### Claude Sessions
+
+- Claude Sessions: Orb no longer injects its AGENTS.md or other context files into Claude, which loads
+  its own CLAUDE.md; custom and appended system prompts still reach it. A new Claude session opens at
+  the thinking level last chosen for its model instead of the global default, and new sessions of any
+  provider honor per-model thinking levels as pi does. Task notices appear only for subagents and
+  background work, no longer duplicating a foreground command's tool row.
+
 ## [0.11.0] - 2026-09-24
 
 Every Durable Object or Celld Orb is now a full Bridge peer, paired with and called from a native

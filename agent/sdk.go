@@ -444,7 +444,13 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		if hasExisting && hasThinkingEntry {
 			thinking = ai.ModelThinkingLevel(existing.ThinkingLevel)
 		} else {
-			thinking = settings.GetDefaultThinkingLevel()
+			// Upstream order: a new session takes the per-model level before the global default.
+			if !hasExisting && model != nil {
+				thinking = settings.GetModelThinkingLevel(string(model.Provider), model.ID)
+			}
+			if thinking == "" {
+				thinking = settings.GetDefaultThinkingLevel()
+			}
 			if thinking == "" {
 				thinking = ai.ModelThinkingMedium
 			}
