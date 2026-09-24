@@ -41,7 +41,7 @@ is tested but is not released or is limited. **In progress** is under active dev
 | macOS, Linux (desktop, server) | Stable | all | SQLite (`~/.orb/state`) | full peer | install script |
 | Containers, headless servers | Stable | all | SQLite or files | full peer | same binary |
 | Go SDK embedding | Stable | host-defined | host-defined (`host.Host`) | library | `go get` |
-| Windows | Preview: builds, suite not green | all | SQLite | full peer | not released yet |
+| Windows | Preview: full suite green in CI, not released yet | all | SQLite | full peer | build from source |
 | Browser (Wasm worker) | Preview | FS tools | tab memory | outbound client | static files |
 | Cloudflare Durable Objects | Preview: end-to-end in workerd (CI) and on Cloudflare | FS tools | Durable Object storage | full peer (accepts streams) | `make worker-deploy` |
 | Celld cells | Preview: local end-to-end under `celld dev` (CI) | FS tools | cell SQLite | full peer (accepts streams) | `make worker-celld-dev` |
@@ -84,9 +84,9 @@ providers you need with `api.NewRegistry(...)`. See [sdk.md](sdk.md).
 ### Windows
 
 Windows builds (amd64, arm64) compile in every `make check`. They include Git Bash discovery,
-process-tree cleanup, a native console terminal and Bridge peer checks. The full suite runs on
-`windows-latest` in CI but is not green yet, so Windows binaries are not released. The CI job
-becomes blocking, and releases add Windows, once it passes (DECISIONS.md).
+process-tree cleanup, a native console terminal and a user-only Bridge IPC socket. The full suite
+runs green on `windows-latest` and blocks every commit. Windows binaries join releases once the
+release workflow packages and verifies them; until then, build with `go build ./cmd/orb`.
 
 ### Browser (Wasm worker)
 
