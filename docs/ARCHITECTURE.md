@@ -128,7 +128,7 @@ components receive raw terminal input through `extensions.InputComponent`.
 
 `platforms/memory` is the in-memory `FS` (root confinement, byte and file limits). Every `FS`
 implementation passes `engine/harness/envtest.TestFileSystem`, run against the native backend
-and the memory backend natively and under both Wasm runtimes. `platforms/scenario` is the
+and the memory backend natively and under both Wasm runtimes. `conformance/scenario` is the
 cross-host gate: one scripted tool-using turn through a Host must produce the same session,
 tool results, files and journal natively, in `js/wasm` without a host filesystem, and under
 WASI without mounts.
@@ -140,7 +140,7 @@ The opt-in `make browser-serve` target builds and serves a static debug screen a
 `make browser-build` writes the deployable assets into `.tools/browser`, including the matching
 Go toolchain's `wasm_exec.js`. No agent process or model proxy runs on the server.
 
-The dependency direction is `platforms/browser/web` → `cmd/orb-wasm` → `platforms/wasm`
+The dependency direction is `platforms/browser/web` → `cmd/orb-wasm` → the `platforms/browser` Go assembly
 → `engine`, `ai`, and the existing `agent/tools` operations. The Wasm assembly owns one engine
 and a bounded in-memory workspace per session; it contains no JavaScript, DOM, TUI, settings
 discovery or native storage. The entry point alone uses `syscall/js` to translate worker commands

@@ -19,12 +19,12 @@ func TestScenarioIsIdenticalOnEveryHost(t *testing.T) {
 	dir := t.TempDir()
 	build := func(goos, goarch, output string) string {
 		binary := filepath.Join(dir, output)
-		command(t, root, []string{"GOOS=" + goos, "GOARCH=" + goarch, "CGO_ENABLED=0"}, "go", "build", "-o", binary, "./platforms/scenario/testdata/session")
+		command(t, root, []string{"GOOS=" + goos, "GOARCH=" + goarch, "CGO_ENABLED=0"}, "go", "build", "-o", binary, "./conformance/scenario/testdata/session")
 		return binary
 	}
 	hosts := map[string]string{
 		"native": command(t, root, nil, build(runtime.GOOS, runtime.GOARCH, "session-native"+nativeSuffix())),
-		"js/wasm": command(t, root, nil, "node", "platforms/scenario/testdata/run.cjs",
+		"js/wasm": command(t, root, nil, "node", "conformance/scenario/testdata/run.cjs",
 			filepath.Join(goRoot, "lib/wasm/wasm_exec.js"), build("js", "wasm", "session-js.wasm")),
 		"wasip1/wasm": command(t, root, nil, tool(t, root, "wazero"), "run", build("wasip1", "wasm", "session-wasi.wasm")),
 	}

@@ -1,6 +1,6 @@
-// Package wasm assembles Orb's engine with an isolated, in-memory workspace.
+// Package browser assembles Orb's engine with an isolated, in-memory workspace.
 // It has no JavaScript, DOM, terminal, native storage, or process-host dependency.
-package wasm
+package browser
 
 import (
 	"fmt"
