@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Skip Claude Code's `skills/synced` folder, which holds one copy of the claude.ai skills per
+  signed-in account: it made the home screen warn about name collisions (`docx`, `pdf`, …) and gave
+  Orb claude.ai-only skills. Your own `~/.claude/skills` still load.
+
 - Windows: Node extension runtime discovery (PATHEXT, `node.exe`, version managers), file URLs
   and drive-rooted paths as Node resolves them on win32, `!command` config values through Git
   Bash or `cmd.exe`, external CLI subagents in a kill-on-close job object, and file-lock

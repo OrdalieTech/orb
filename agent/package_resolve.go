@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/internal/skilllocations"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
@@ -1118,7 +1119,8 @@ func (manager *PackageManager) addAutoDiscoveredResources(accumulator *resourceA
 		baseDir := filepath.Dir(skillsDir)
 		metadata := userMetadata
 		metadata.BaseDir = baseDir
-		addResources("skills", collectSkillEntries(skillsDir, "agents", nil, ""),
+		matcher := rootIgnoreMatcher(skilllocations.Managed(homeDir, skillsDir))
+		addResources("skills", collectSkillEntries(skillsDir, "agents", matcher, ""),
 			metadata, userOverrides["skills"], baseDir)
 	}
 

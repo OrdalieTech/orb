@@ -379,11 +379,11 @@ func projectAutomaticSkillDirs(cwd, homeDir string) []string {
 	return filtered
 }
 
-func loadAutomaticSkills(dir, source string, includeRootFiles bool) LoadSkillsResult {
+func loadAutomaticSkills(dir, source string, includeRootFiles bool, ignored ...string) LoadSkillsResult {
 	if _, err := os.Stat(dir); err != nil {
 		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	}
-	return loadSkillsFromDirInternal(dir, source, includeRootFiles, &skillIgnoreMatcher{}, dir, map[string]bool{})
+	return loadSkillsFromDirInternal(dir, source, includeRootFiles, rootIgnoreMatcher(ignored), dir, map[string]bool{})
 }
 
 func resolveConfiguredPaths(paths []string, baseDir string) []string {
@@ -432,7 +432,7 @@ func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 		))
 		for _, dir := range userAutomaticSkillDirs(homeDir) {
 			inputs = append(inputs, retagSkills(
-				loadAutomaticSkills(dir, "user", false), options.metadata.skills,
+				loadAutomaticSkills(dir, "user", false, skilllocations.Managed(homeDir, dir)...), options.metadata.skills,
 				"user", filepath.Dir(dir), "auto", "top-level",
 			))
 		}

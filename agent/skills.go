@@ -276,6 +276,15 @@ func (matcher *skillIgnoreMatcher) ignores(relativePath string, directory bool) 
 	return ignorerules.Ignores(matcher.rules, filepath.ToSlash(relativePath), directory)
 }
 
+// rootIgnoreMatcher ignores the named entries directly below the scan root.
+func rootIgnoreMatcher(names []string) *skillIgnoreMatcher {
+	matcher := &skillIgnoreMatcher{}
+	for _, name := range names {
+		matcher.rules = append(matcher.rules, ignorerules.Rule{Pattern: name})
+	}
+	return matcher
+}
+
 func loadSkillsFromDirInternal(dir, source string, includeRootFiles bool, matcher *skillIgnoreMatcher, root string, stack map[string]bool) LoadSkillsResult {
 	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	entries, err := os.ReadDir(dir)
