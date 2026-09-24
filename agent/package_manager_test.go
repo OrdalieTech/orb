@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -245,8 +246,13 @@ func TestTemporaryInstallPathsLiveUnderAgentTempFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o700 {
-		t.Fatalf("temp folder mode = %v", info.Mode().Perm())
+	// Windows keeps no POSIX permission bits: Go reports 0777 for a writable directory.
+	wantMode := os.FileMode(0o700)
+	if runtime.GOOS == "windows" {
+		wantMode = 0o777
+	}
+	if info.Mode().Perm() != wantMode {
+		t.Fatalf("temp folder mode = %v, want %v", info.Mode().Perm(), wantMode)
 	}
 }
 

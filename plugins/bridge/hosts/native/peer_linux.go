@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func sameUser(c *net.UnixConn) bool {
+func sameUser(c *net.UnixConn, _ string) bool {
 	raw, err := c.SyscallConn()
 	if err != nil {
 		return false

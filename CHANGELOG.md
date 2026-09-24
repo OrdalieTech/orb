@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Windows: `!command` config values return their output, Bridge IPC accepts the local owner from
+  both ends, first-launch migration ignores unrelated `orb-*` processes, and Node-style file URLs,
+  Git Bash paths and virtual-host session paths resolve correctly.
+
 - A Durable Object or Celld Orb is a full Bridge peer at `/agents/<name>/bridge`: pair a native Orb
   with `orb bridge pair join`, administer it through `/bridge/admin`, and let either side call the
   other under its own grants.

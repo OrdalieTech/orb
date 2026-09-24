@@ -423,7 +423,10 @@ func TestSubagentInheritsFileContainment(t *testing.T) {
 			root := t.TempDir()
 			scratch := filepath.Join(root, "scratch")
 			mustOK(os.Mkdir(scratch, 0700))
-			t.Setenv("TMPDIR", scratch)
+			// os.TempDir, the writable root, reads TMPDIR on POSIX and TMP/TEMP on Windows.
+			for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+				t.Setenv(name, scratch)
+			}
 			marker := filepath.Join(root, "outside")
 			provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 			var denied bool

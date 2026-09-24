@@ -84,6 +84,8 @@ func TestListModelsIncludesExtensionRegisteredProviders(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("FAKE_KEY", "dummy")
 	t.Chdir(cwd)
+	// The extension host runs in cwd; win32 cannot remove a directory in use.
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 
 	extDir := filepath.Join(cwd, "ext")
 	if err := os.MkdirAll(extDir, 0o755); err != nil {

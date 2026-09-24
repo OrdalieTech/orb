@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,13 @@ func TestResolveSessionArgumentPrefersLocalExactThenPrefix(t *testing.T) {
 	if path.kind != "path" || path.path != filepath.Join(project, "relative.jsonl") {
 		t.Fatalf("path resolution = %+v", path)
 	}
-	if _, err := resolveSessionArgument("file://remote/tmp/session.jsonl", project, "", agentDir); err == nil {
+	remote, err := resolveSessionArgument("file://remote/tmp/session.jsonl", project, "", agentDir)
+	if runtime.GOOS == "windows" {
+		// Node's win32 fileURLToPath maps a file URL host to a UNC server.
+		if err != nil || remote.kind != "path" || remote.path != `\\remote\tmp\session.jsonl` {
+			t.Fatalf("UNC file URL resolution = %+v, %v", remote, err)
+		}
+	} else if err == nil {
 		t.Fatal("remote file URL was accepted")
 	}
 }

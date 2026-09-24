@@ -245,6 +245,8 @@ func TestCreateRuntimeInputsKeepsExplicitResourcesWhenDiscoveryIsDisabled(t *tes
 		t.Fatal(err)
 	}
 	t.Setenv(config.EnvAgentDir, agentDir)
+	// The extension host runs in cwd; win32 cannot remove a directory in use.
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 
 	inputs, err := createRuntimeInputs(cwd, CLIArgs{
 		allowNoModel: true,

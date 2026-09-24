@@ -103,7 +103,9 @@ func ShellCommandOutput(ctx context.Context, command string) (string, bool) {
 		child.Stdout = &stdout
 		err := child.Start()
 		if err == nil {
-			return stdout.String(), child.Wait() == nil
+			// stdout is complete only once Wait has drained the pipe.
+			waitErr := child.Wait()
+			return stdout.String(), waitErr == nil
 		}
 		if spawnErrorCode(err) != "ENOENT" {
 			return "", false

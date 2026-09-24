@@ -2,9 +2,12 @@ package session
 
 import (
 	"errors"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 // ErrHarnessStorageReplacement prevents lifecycle operations from silently
@@ -35,7 +38,7 @@ func FromHarnessStorage(storage harness.SessionStorage, options ...Option) (*Ses
 	if cwd == "" {
 		return nil, errors.New("session: harness storage metadata is missing cwd")
 	}
-	cwd, err = resolvePath(cwd)
+	cwd, err = resolveHarnessPath(cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -45,11 +48,14 @@ func FromHarnessStorage(storage harness.SessionStorage, options ...Option) (*Ses
 	}
 	sessionFile, sessionDir := "", ""
 	if persisted && metadata.Path != "" {
-		sessionFile, err = resolvePath(metadata.Path)
+		sessionFile, err = resolveHarnessPath(metadata.Path)
 		if err != nil {
 			return nil, err
 		}
 		sessionDir = filepath.Dir(sessionFile)
+		if virtualHarnessPath(sessionFile) {
+			sessionDir = path.Dir(sessionFile)
+		}
 	}
 	manager := newManager(cwd, sessionDir, persisted, resolved)
 	manager.sessionID = metadata.ID
@@ -61,6 +67,21 @@ func FromHarnessStorage(storage harness.SessionStorage, options ...Option) (*Ses
 	}
 	manager.flushed = true
 	return manager, nil
+}
+
+// virtualHarnessPath reports a rooted POSIX path that is not native: on win32 it
+// comes from a host FS port's own namespace, not from a Git Bash drive path.
+func virtualHarnessPath(value string) bool {
+	return strings.HasPrefix(value, "/") && !filepath.IsAbs(nodepath.NormalizeShellPath(value))
+}
+
+// resolveHarnessPath keeps a host FS port's paths in its namespace: a virtual
+// POSIX tree must not pick up the process drive on win32 (DECISIONS.md P10).
+func resolveHarnessPath(value string) (string, error) {
+	if virtualHarnessPath(value) {
+		return path.Clean(value), nil
+	}
+	return resolvePath(value)
 }
 
 func (manager *SessionManager) HarnessRepo() harness.SessionRepo {
