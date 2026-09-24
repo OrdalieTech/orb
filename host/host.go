@@ -5,19 +5,25 @@
 package host
 
 import (
+	"context"
 	"path"
 	"path/filepath"
 
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine/harness"
-	"github.com/OrdalieTech/orb/storage"
 )
+
+// Document updates must commit before returning; nil deletes the document.
+type Document interface {
+	Read(context.Context) ([]byte, error)
+	Update(context.Context, func([]byte) ([]byte, error)) error
+}
 
 // Store is the durable-document port. Paths are the kernel file locations
 // (for example AgentDir/settings.json); backends may map them to files, rows
 // or object keys.
 type Store interface {
-	Document(path string) storage.Document
+	Document(path string) Document
 }
 
 type Host struct {
@@ -39,7 +45,7 @@ type Host struct {
 
 // Document returns the named kernel document under AgentDir, keyed like the
 // native store so one backend can serve both.
-func (h *Host) Document(name string) storage.Document {
+func (h *Host) Document(name string) Document {
 	return h.Store.Document(filepath.Join(h.AgentDir, name))
 }
 

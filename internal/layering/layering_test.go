@@ -18,17 +18,18 @@ import (
 
 const module = "github.com/OrdalieTech/orb/"
 
-// allowedImports maps a top-level layer to the layers it may import from this
-// module. Layers absent from the map (agent, chat, cmd, conformance) are
-// assemblies or the product runtime and may import anything below them; a new
-// top-level capability package should get an entry here (sandbox is the model).
+// allowedImports maps a layer, or a package directory inside one, to the
+// module paths it may import; the most specific entry covering a file applies.
+// Layers absent from the map (agent, chat, cmd, conformance) are assemblies or
+// the product runtime and may import anything below them; a new self-contained
+// package should get an entry here (platforms/native/sandbox is the model).
 var allowedImports = map[string][]string{
-	"internal": {"internal"},
-	"ai":       {"ai", "internal"},
-	"engine":   {"engine", "ai", "internal"},
-	"tui":      {"tui", "internal"},
-	"sandbox":  {"sandbox", "internal"},
-	"host":     {"host", "engine", "ai", "storage", "internal"},
+	"internal":                 {"internal"},
+	"ai":                       {"ai", "internal"},
+	"engine":                   {"engine", "ai", "internal"},
+	"tui":                      {"tui", "internal"},
+	"platforms/native/sandbox": {"platforms/native/sandbox", "internal"},
+	"host":                     {"host", "engine", "ai", "internal"},
 }
 
 // tuiImporters are the only places allowed to link the TUI: assemblies, the
@@ -80,7 +81,10 @@ func TestLayerEdges(t *testing.T) {
 				continue
 			}
 			targetPath := strings.TrimPrefix(target, module)
-			if strings.HasPrefix(targetPath, "platforms/") && layer != "platforms" && layer != "cmd" {
+			// platforms/native holds native port implementations, which native-only
+			// capability plugins may link; every other platform package is an assembly.
+			if strings.HasPrefix(targetPath, "platforms/") && layer != "platforms" && layer != "cmd" &&
+				(layer != "plugins" || !strings.HasPrefix(targetPath, "platforms/native/")) {
 				violations = append(violations, relative+" imports a platform assembly into a reusable layer")
 			}
 			if (layer == "agent" || layer == "ai" || layer == "engine") && (strings.HasPrefix(targetPath, "plugins/bridge") || strings.HasPrefix(targetPath, "connect")) {
@@ -96,8 +100,8 @@ func TestLayerEdges(t *testing.T) {
 				violations = append(violations, relative+" imports "+targetPath+" outside the memory SDK layers")
 			}
 			targetLayer, _, _ := strings.Cut(targetPath, "/")
-			if allowed, restricted := allowedImports[layer]; restricted && !slices.Contains(allowed, targetLayer) {
-				violations = append(violations, relative+" imports "+targetPath+" ("+layer+" may only import "+strings.Join(allowed, ", ")+")")
+			if scope, allowed := restriction(relative); allowed != nil && !hasAnyPath(targetPath, allowed) {
+				violations = append(violations, relative+" imports "+targetPath+" ("+scope+" may only import "+strings.Join(allowed, ", ")+")")
 			}
 			if targetLayer == "tui" && !hasAnyPrefix(relative, tuiImporters) {
 				violations = append(violations, relative+" imports "+targetPath+" (tui is presentation: only "+strings.Join(tuiImporters, " ")+" may link it)")
@@ -168,6 +172,22 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
+// restriction returns the most specific allowedImports entry covering a file.
+func restriction(relative string) (string, []string) {
+	scope := ""
+	for key := range allowedImports {
+		if strings.HasPrefix(relative, key+"/") && len(key) > len(scope) {
+			scope = key
+		}
+	}
+	return scope, allowedImports[scope]
+}
+
+// hasAnyPath reports whether value is one of paths or inside one of them.
+func hasAnyPath(value string, paths []string) bool {
+	return slices.ContainsFunc(paths, func(path string) bool { return value == path || strings.HasPrefix(value, path+"/") })
+}
+
 func hasAnyPrefix(value string, prefixes []string) bool {
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(value, prefix) {
@@ -183,17 +203,17 @@ func TestCapabilityDependencies(t *testing.T) {
 		path      string
 		forbidden []string
 	}{
-		{"plugins/memory", []string{"/agent", "/engine", "/tui", "/plugins/memory/filestore", "/storage/sqlite"}},
-		{"plugins/memory/agent", []string{"/agent", "/tui", "/plugins/memory/filestore", "/plugins/memory/extension", "/storage/sqlite"}},
-		{"plugins/memory/extension", []string{"/agent/assembly", "/plugins/memory/filestore", "/storage/sqlite"}},
-		{"plugins/usage", []string{"/agent", "/engine", "/tui", "/plugins/usage/footer", "/storage/sqlite"}},
-		{"plugins/bridge/agent", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/storage/sqlite"}},
-		{"plugins/bridge/transports/websocket", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports/tailcat", "/storage/sqlite"}},
-		{"plugins/bridge", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/storage/sqlite"}},
+		{"plugins/memory", []string{"/agent", "/engine", "/tui", "/plugins/memory/filestore", "/platforms/native/sqlite"}},
+		{"plugins/memory/agent", []string{"/agent", "/tui", "/plugins/memory/filestore", "/plugins/memory/extension", "/platforms/native/sqlite"}},
+		{"plugins/memory/extension", []string{"/agent/assembly", "/plugins/memory/filestore", "/platforms/native/sqlite"}},
+		{"plugins/usage", []string{"/agent", "/engine", "/tui", "/plugins/usage/footer", "/platforms/native/sqlite"}},
+		{"plugins/bridge/agent", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/platforms/native/sqlite"}},
+		{"plugins/bridge/transports/websocket", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports/tailcat", "/platforms/native/sqlite"}},
+		{"plugins/bridge", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/platforms/native/sqlite"}},
 		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
-		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
-		{"platforms/worker", []string{"/agent/assembly", "/agent/modes", "/tui", "/storage/sqlite", "/plugins"}},
-		{"platforms/browser", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
+		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
+		{"platforms/worker", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native/sqlite", "/plugins"}},
+		{"platforms/browser", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/platforms/native/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "./"+tc.path)
@@ -226,7 +246,7 @@ func TestBrowserAssemblyDependencies(t *testing.T) {
 		t.Fatalf("browser dependencies: %v\n%s", err, output)
 	}
 	for dep := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
-		if hasAnyPrefix(dep, []string{module + "tui", module + "agent/extensions", module + "agent/modes", module + "storage/sqlite", module + "plugins/bridge/hosts", module + "plugins/bridge/transports/tailcat", "tailscale.com/", "github.com/tailscale/"}) {
+		if hasAnyPrefix(dep, []string{module + "tui", module + "agent/extensions", module + "agent/modes", module + "platforms/native/sqlite", module + "plugins/bridge/hosts", module + "plugins/bridge/transports/tailcat", "tailscale.com/", "github.com/tailscale/"}) {
 			t.Errorf("browser assembly links %s", dep)
 		}
 	}

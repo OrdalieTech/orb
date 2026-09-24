@@ -18,7 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
 // Action is the ecosystem-standard three-state permission result.

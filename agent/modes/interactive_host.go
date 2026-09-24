@@ -3,12 +3,12 @@ package modes
 import (
 	"context"
 
-	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 

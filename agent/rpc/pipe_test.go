@@ -18,7 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 )
 
-// memoryDocument is an in-process storage.Document, so the session reads no
+// memoryDocument is an in-process host.Document, so the session reads no
 // settings, credentials or model catalogs from the host filesystem.
 type memoryDocument struct {
 	mu   sync.Mutex

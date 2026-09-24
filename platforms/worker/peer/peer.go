@@ -21,10 +21,10 @@ import (
 	attach "github.com/OrdalieTech/orb/connect/agent"
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
+	orbhost "github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 // Documents in the object's Store, beside settings.json and out of the file
@@ -40,7 +40,7 @@ const (
 var StateKey = worker.DocumentKey(StateDocument)
 
 // DocumentStore is a connect.Store over one Store document.
-type DocumentStore struct{ Document storage.Document }
+type DocumentStore struct{ Document orbhost.Document }
 
 func (s DocumentStore) Load() ([]byte, error) { return s.Document.Read(context.Background()) }
 

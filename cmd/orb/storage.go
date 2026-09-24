@@ -14,16 +14,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine/harness"
+	nativeaccounts "github.com/OrdalieTech/orb/platforms/native/accounts"
+	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 	"github.com/OrdalieTech/orb/plugins/memory"
-	"github.com/OrdalieTech/orb/storage/sqlite"
 	"github.com/OrdalieTech/orb/tui"
 	"github.com/gofrs/flock"
 )
@@ -406,7 +407,7 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 func (state *nativeState) accounts(agentDir string, base auth.CredentialStore) *accounts.Store {
 	path := filepath.Join(agentDir, "accounts.json")
 	if state == nil {
-		return accounts.NewStore(path, base)
+		return nativeaccounts.NewStore(path, base)
 	}
 	return accounts.NewStoreWithDocument(state.document(path), base)
 }

@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"github.com/OrdalieTech/orb/accounts"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/OrdalieTech/orb/platforms/native/accounts"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"

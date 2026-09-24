@@ -18,8 +18,8 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/permissions"
-	"github.com/OrdalieTech/orb/sandbox"
 )
 
 type widgetUI struct {

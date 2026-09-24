@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/OrdalieTech/orb/storage"
+	"github.com/OrdalieTech/orb/host"
 	"github.com/gofrs/flock"
 )
 
@@ -22,7 +22,7 @@ func groupOrOtherAccess(mode os.FileMode) bool {
 }
 
 type Store struct {
-	document       storage.Document
+	document       host.Document
 	mu             sync.Mutex
 	path           string
 	quota          int
@@ -67,7 +67,7 @@ func OpenStore(path string, quota int) (*Store, error) {
 
 // OpenStoreWithDocument keeps native single-owner locking and quotas while
 // the supplied document owns persistence. Closing it never closes the database.
-func OpenStoreWithDocument(path string, quota int, document storage.Document) (*Store, error) {
+func OpenStoreWithDocument(path string, quota int, document host.Document) (*Store, error) {
 	if document == nil {
 		return nil, errors.New("bridge document required")
 	}

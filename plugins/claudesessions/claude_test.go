@@ -24,10 +24,10 @@ import (
 	connectagent "github.com/OrdalieTech/orb/connect/agent"
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
-	"github.com/OrdalieTech/orb/sandbox"
 )
 
 const fakeSDK = `

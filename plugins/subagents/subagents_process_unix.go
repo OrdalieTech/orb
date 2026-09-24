@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
 // runExternalCommand runs command in its own process group. The wrapper

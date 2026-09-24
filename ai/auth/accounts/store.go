@@ -1,5 +1,5 @@
 // Package accounts adds named credentials without changing the provider-keyed
-// compatibility store. Paths and stores are supplied by the embedding assembly.
+// compatibility store. Documents and stores are supplied by the embedding assembly.
 package accounts
 
 import (
@@ -9,20 +9,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/internal/filelock"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 const DefaultID = "default"
-const maxFileSize = 1 << 20
+
+// MaxSize bounds the accounts document in every backend.
+const MaxSize = 1 << 20
+
+// Document is the host.Document port, restated because ai sits below host.
+// Updates must commit before returning.
+type Document interface {
+	Read(context.Context) ([]byte, error)
+	Update(context.Context, func([]byte) ([]byte, error)) error
+}
 
 type Account struct {
 	ID, Provider, Name string
@@ -45,45 +49,22 @@ type document struct {
 }
 
 type Store struct {
-	document storage.Document
-	path     string
+	document Document
 	base     auth.CredentialStore
 }
 
-// NewStore performs no I/O; an unused capability creates no files.
-func NewStore(path string, base auth.CredentialStore) *Store {
+// NewStoreWithDocument performs no I/O; an unused capability creates no documents.
+func NewStoreWithDocument(document Document, base auth.CredentialStore) *Store {
 	if base == nil {
 		base = auth.NewMemoryStore(nil)
 	}
-	return &Store{path: path, base: base}
-}
-
-func NewStoreWithDocument(document storage.Document, base auth.CredentialStore) *Store {
-	s := NewStore("", base)
-	s.document = document
-	return s
+	return &Store{document: document, base: base}
 }
 
 func (s *Store) load() (document, error) {
-	if s.document != nil {
-		data, err := s.document.Read(context.Background())
-		if err != nil {
-			return document{}, err
-		}
-		return decodeDocument(data)
-	}
-	d := document{Version: 1, Active: map[string]string{}}
-	f, err := os.Open(s.path)
-	if errors.Is(err, os.ErrNotExist) {
-		return d, nil
-	}
+	data, err := s.document.Read(context.Background())
 	if err != nil {
-		return d, err
-	}
-	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, maxFileSize+1))
-	if err != nil {
-		return d, err
+		return document{}, err
 	}
 	return decodeDocument(data)
 }
@@ -93,7 +74,7 @@ func decodeDocument(data []byte) (document, error) {
 	if len(data) == 0 {
 		return d, nil
 	}
-	if len(data) > maxFileSize || json.Unmarshal(data, &d) != nil || d.Version != 1 || d.Active == nil {
+	if len(data) > MaxSize || json.Unmarshal(data, &d) != nil || d.Version != 1 || d.Active == nil {
 		return d, errors.New("invalid accounts file")
 	}
 	seen := map[string]string{}
@@ -112,70 +93,20 @@ func decodeDocument(data []byte) (document, error) {
 }
 
 func (s *Store) update(ctx context.Context, change func(*document) error) error {
-	if s.document != nil {
-		return s.document.Update(ctx, func(data []byte) ([]byte, error) {
-			d, err := decodeDocument(data)
-			if err != nil {
-				return nil, err
-			}
-			if err = change(&d); err != nil {
-				return nil, err
-			}
-			data, err = json.Marshal(d)
-			if len(data) > maxFileSize {
-				return nil, errors.New("accounts store exceeds 1 MiB")
-			}
-			return data, err
-		})
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
-		return err
-	}
-	release, err := filelock.Acquire(s.path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = release() }() // The mutation result is authoritative once rename has succeeded.
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	d, err := s.load()
-	if err != nil {
-		return err
-	}
-	if err := change(&d); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(d, "", "  ")
-	if err != nil {
-		return err
-	}
-	if len(data) > maxFileSize {
-		return errors.New("accounts file exceeds 1 MiB")
-	}
-	f, err := os.CreateTemp(filepath.Dir(s.path), ".accounts-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	_, err = f.Write(append(data, '\n'))
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	return os.Rename(f.Name(), s.path)
+	return s.document.Update(ctx, func(data []byte) ([]byte, error) {
+		d, err := decodeDocument(data)
+		if err != nil {
+			return nil, err
+		}
+		if err = change(&d); err != nil {
+			return nil, err
+		}
+		data, err = json.Marshal(d)
+		if len(data) > MaxSize {
+			return nil, errors.New("accounts store exceeds 1 MiB")
+		}
+		return data, err
+	})
 }
 
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {

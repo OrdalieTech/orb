@@ -13,9 +13,9 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/skilllocations"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 // Port of packages/coding-agent/src/core/trust-manager.ts.
@@ -269,11 +269,11 @@ func HasTrustRequiringProjectResources(cwd string) bool {
 
 // ProjectTrustStore persists project trust decisions in <agentDir>/trust.json.
 type ProjectTrustStore struct {
-	document  storage.Document
+	document  host.Document
 	trustPath string
 }
 
-func NewProjectTrustStoreWithDocument(document storage.Document) (*ProjectTrustStore, error) {
+func NewProjectTrustStoreWithDocument(document host.Document) (*ProjectTrustStore, error) {
 	if document == nil {
 		return nil, errors.New("trust document is required")
 	}

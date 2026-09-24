@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/OrdalieTech/orb/storage"
+	"github.com/OrdalieTech/orb/host"
 )
 
 // Store is the Store port over a persisted tree of its own, out of reach of
@@ -25,7 +25,7 @@ func NewStore(files *FileSystem, defaults map[string][]byte) *Store {
 	return &Store{files: files, defaults: defaults}
 }
 
-func (s *Store) Document(name string) storage.Document { return document{s, name} }
+func (s *Store) Document(name string) host.Document { return document{s, name} }
 
 type document struct {
 	store *Store
