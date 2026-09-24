@@ -148,7 +148,7 @@ func TestRPCRealPromptStillFailsPreflightWithoutModel(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	exitCode := Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{
 		Input:  strings.NewReader("{\"id\":\"2\",\"type\":\"prompt\",\"message\":\"hello\"}\n"),
-		Output: &stdout, Diagnostics: io.Discard,
+		Output: &stdout, Diagnostics: &stderr,
 	})
 	if exitCode != 0 || stderr.Len() != 0 {
 		t.Fatalf("exit=%d stderr=%q", exitCode, stderr.String())

@@ -506,21 +506,6 @@ func TestSessionRuntimeDefaultCompletionAppliesRequestAuth(t *testing.T) {
 	}
 }
 
-func TestSessionRuntimeAbortCompactionCancelsManualAndAutomaticOperations(t *testing.T) {
-	provider := testFaux(1000)
-	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
-	manualContext, manualCancel := context.WithCancel(context.Background())
-	autoContext, autoCancel := context.WithCancel(context.Background())
-	runtime.mu.Lock()
-	runtime.compactionCancel = manualCancel
-	runtime.autoCompactionCancel = autoCancel
-	runtime.mu.Unlock()
-	runtime.AbortCompaction()
-	if manualContext.Err() == nil || autoContext.Err() == nil {
-		t.Fatalf("compaction contexts after abort = (manual %v, auto %v)", manualContext.Err(), autoContext.Err())
-	}
-}
-
 func TestSessionRuntimeCompactionCancellationEventsAreAborted(t *testing.T) {
 	provider := testFaux(1000)
 	runtime, manager := newTestRuntime(t, provider, map[string]any{

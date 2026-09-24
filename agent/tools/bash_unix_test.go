@@ -98,7 +98,7 @@ func TestLocalBashOperationsAbortKillsProcessGroup(t *testing.T) {
 	go func() {
 		_, err := operations.Exec(
 			ctx,
-			"(sleep 0.5; printf survived > "+shellQuote(survivalFile)+") & printf ready > "+shellQuote(readyFile)+"; wait",
+			"(sleep 0.5; printf survived > "+shellSingleQuote(survivalFile)+") & printf ready > "+shellSingleQuote(readyFile)+"; wait",
 			dir,
 			BashExecOptions{},
 		)

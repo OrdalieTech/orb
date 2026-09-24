@@ -109,77 +109,51 @@ func TestListModelsIncludesExtensionRegisteredProviders(t *testing.T) {
 }
 
 // Regression: --list-models builds the runtime to enumerate extension providers,
-// but MCP servers contribute tools, not models — model enumeration must not spawn
-// and connect them (a cost/side-effect the pre-fix bare-registry listing lacked).
-func TestListModelsDoesNotSpawnMCPServers(t *testing.T) {
-	cwd := t.TempDir()
-	agentDir := filepath.Join(t.TempDir(), "agent")
-	t.Setenv(config.EnvAgentDir, agentDir)
-	t.Setenv("HOME", t.TempDir())
-	t.Chdir(cwd)
+// and --help renders extension flags from registration metadata only; MCP
+// servers contribute tools, not models or flags, so neither metadata command may
+// spawn and connect them (a cost/side-effect the pre-fix paths lacked).
+func TestMetadataCommandsDoNotSpawnMCPServers(t *testing.T) {
+	for _, test := range []struct {
+		name, flag, wantStdout string
+	}{
+		{name: "ListModelsDoesNotSpawnMCPServers", flag: "--list-models"},
+		{name: "HelpDoesNotSpawnMCPServers", flag: "--help", wantStdout: "Usage: orb"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			agentDir := filepath.Join(t.TempDir(), "agent")
+			t.Setenv(config.EnvAgentDir, agentDir)
+			t.Setenv("HOME", t.TempDir())
+			t.Chdir(cwd)
 
-	marker := filepath.Join(cwd, "SPAWNED")
-	spawn := filepath.Join(cwd, "spawn.sh")
-	if err := os.WriteFile(spawn, []byte("#!/bin/sh\ntouch \""+marker+"\"\ncat\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Global (user-scope) settings need no project trust to load.
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	settings := `{"mcpServers":{"toy":{"command":"` + spawn + `"}}}`
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o644); err != nil {
-		t.Fatal(err)
-	}
+			marker := filepath.Join(cwd, "SPAWNED")
+			spawn := filepath.Join(cwd, "spawn.sh")
+			if err := os.WriteFile(spawn, []byte("#!/bin/sh\ntouch \""+marker+"\"\ncat\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// Global (user-scope) settings need no project trust to load.
+			if err := os.MkdirAll(agentDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			settings := `{"mcpServers":{"toy":{"command":"` + spawn + `"}}}`
+			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-	var stdout bytes.Buffer
-	code := runCLIWithDependencies(context.Background(), []string{"--list-models"}, cliStreams{
-		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &bytes.Buffer{}, StdinTTY: true, StdoutTTY: true,
-	}, cliDependencies{})
-	if code != 0 {
-		t.Fatalf("exit=%d stdout=%q", code, stdout.String())
-	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("--list-models spawned the configured MCP server (marker created)")
-	}
-}
-
-// Regression: --help renders extension flags from registration metadata only;
-// it must not spawn and block on configured MCP servers (which contribute
-// tools, not flags) the way a full runtime load would.
-func TestHelpDoesNotSpawnMCPServers(t *testing.T) {
-	cwd := t.TempDir()
-	agentDir := filepath.Join(t.TempDir(), "agent")
-	t.Setenv(config.EnvAgentDir, agentDir)
-	t.Setenv("HOME", t.TempDir())
-	t.Chdir(cwd)
-
-	marker := filepath.Join(cwd, "SPAWNED")
-	spawn := filepath.Join(cwd, "spawn.sh")
-	if err := os.WriteFile(spawn, []byte("#!/bin/sh\ntouch \""+marker+"\"\ncat\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Global (user-scope) settings need no project trust to load.
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	settings := `{"mcpServers":{"toy":{"command":"` + spawn + `"}}}`
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout bytes.Buffer
-	code := runCLIWithDependencies(context.Background(), []string{"--help"}, cliStreams{
-		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &bytes.Buffer{}, StdinTTY: true, StdoutTTY: true,
-	}, cliDependencies{})
-	if code != 0 {
-		t.Fatalf("exit=%d stdout=%q", code, stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "Usage: orb") {
-		t.Fatalf("help text missing from output:\n%s", stdout.String())
-	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("--help spawned the configured MCP server (marker created)")
+			var stdout bytes.Buffer
+			code := runCLIWithDependencies(context.Background(), []string{test.flag}, cliStreams{
+				Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &bytes.Buffer{}, StdinTTY: true, StdoutTTY: true,
+			}, cliDependencies{})
+			if code != 0 {
+				t.Fatalf("exit=%d stdout=%q", code, stdout.String())
+			}
+			if !strings.Contains(stdout.String(), test.wantStdout) {
+				t.Fatalf("%s output missing %q:\n%s", test.flag, test.wantStdout, stdout.String())
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatalf("%s spawned the configured MCP server (marker created)", test.flag)
+			}
+		})
 	}
 }
 

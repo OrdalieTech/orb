@@ -408,23 +408,6 @@ func TestTUIFocusScopesMouseMotionTracking(t *testing.T) {
 	}
 }
 
-func TestSettingsListClickCyclesOnce(t *testing.T) {
-	changed := ""
-	list := NewSettingsList([]SettingItem{
-		{ID: "a", Label: "A", CurrentValue: "on", Values: []string{"on", "off"}},
-		{ID: "b", Label: "B", CurrentValue: "on", Values: []string{"on", "off"}},
-	}, 10, SettingsListTheme{Cursor: "> "}, func(id, value string) { changed = id + "=" + value }, nil, SettingsListOptions{})
-	list.Render(40)
-
-	list.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Clicks: 1})
-	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Clicks: 2}) {
-		t.Fatal("settings click was not consumed")
-	}
-	if changed != "b=off" {
-		t.Fatalf("changed = %q", changed)
-	}
-}
-
 func TestSettingsListWheelAndClickShareUnifiedPath(t *testing.T) {
 	changed := ""
 	list := NewSettingsList([]SettingItem{

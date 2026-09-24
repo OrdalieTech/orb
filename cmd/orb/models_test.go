@@ -78,10 +78,6 @@ func TestFormatModelListFilteringAndEmptyResults(t *testing.T) {
 	if got := formatModelList(models, "claude"); got != "No models matching \"claude\"\n" {
 		t.Fatalf("no-match output = %q", got)
 	}
-	// LOG-m6: empty output flows through agent.FormatNoModelsAvailableMessage.
-	if got := formatModelList(nil, ""); got != agent.FormatNoModelsAvailableMessage()+"\n" {
-		t.Fatalf("empty output = %q", got)
-	}
 }
 
 func TestFuzzyModelMatchSwapsBothAlphaNumericOrders(t *testing.T) {

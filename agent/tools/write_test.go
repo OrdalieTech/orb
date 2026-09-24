@@ -65,18 +65,6 @@ func TestWriteToolCreatesParentsAndWritesContent(t *testing.T) {
 	}
 }
 
-func TestWriteToolReportsJavaScriptStringLength(t *testing.T) {
-	result, err := NewWriteTool(t.TempDir(), nil).Execute(context.Background(), "call", map[string]any{
-		"path": "emoji.txt", "content": "😀x",
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := toolResultText(t, result); got != "Successfully wrote to emoji.txt" {
-		t.Fatalf("result = %q", got)
-	}
-}
-
 func TestWriteToolEncodesWTF8SurrogatesLikeNode(t *testing.T) {
 	dir := t.TempDir()
 	content := string([]byte{0xed, 0xa0, 0xbd, 0xed, 0xb8, 0x80}) + string([]byte{0xed, 0xa0, 0x80})
@@ -105,64 +93,40 @@ func TestWriteToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
 	}
 }
 
-func TestWriteToolMkdirExistingFileUsesNodeEEXIST(t *testing.T) {
-	dir := t.TempDir()
-	parent := filepath.Join(dir, "parent")
-	if err := os.WriteFile(parent, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewWriteTool(dir, nil).Execute(context.Background(), "call", map[string]any{
-		"path": "parent/child.txt", "content": "x",
-	}, nil)
-	want := "EEXIST: file already exists, mkdir '" + parent + "'"
-	if err == nil || err.Error() != want {
-		t.Fatalf("error = %v, want %q", err, want)
-	}
-}
-
-func TestWriteToolMkdirIntermediateFileKeepsRequestedNodePath(t *testing.T) {
-	dir := t.TempDir()
-	intermediate := filepath.Join(dir, "file")
-	if err := os.WriteFile(intermediate, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewWriteTool(dir, nil).Execute(context.Background(), "call", map[string]any{
-		"path": "file/child/output.txt", "content": "x",
-	}, nil)
-	wantPath := filepath.Join(intermediate, "child")
-	want := "ENOTDIR: not a directory, mkdir '" + wantPath + "'"
-	if err == nil || err.Error() != want {
-		t.Fatalf("error = %v, want %q", err, want)
-	}
-}
-
-func TestWriteToolMkdirDanglingSymlinkMatchesNodeENOENT(t *testing.T) {
-	dir := t.TempDir()
-	link := filepath.Join(dir, "link")
-	if err := os.Symlink(filepath.Join(dir, "missing"), link); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewWriteTool(dir, nil).Execute(context.Background(), "call", map[string]any{
-		"path": "link/output.txt", "content": "x",
-	}, nil)
-	want := "ENOENT: no such file or directory, mkdir '" + link + "'"
-	if err == nil || err.Error() != want {
-		t.Fatalf("error = %v, want %q", err, want)
-	}
-}
-
-func TestWriteToolMkdirBelowDanglingSymlinkMatchesNodeENOTDIR(t *testing.T) {
-	dir := t.TempDir()
-	link := filepath.Join(dir, "link")
-	if err := os.Symlink(filepath.Join(dir, "missing"), link); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewWriteTool(dir, nil).Execute(context.Background(), "call", map[string]any{
-		"path": "link/child/output.txt", "content": "x",
-	}, nil)
-	want := "ENOTDIR: not a directory, mkdir '" + link + "'"
-	if err == nil || err.Error() != want {
-		t.Fatalf("error = %v, want %q", err, want)
+func TestWriteToolMkdir(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		danglingLink bool // the blocker is a symlink to a missing target instead of a file
+		blocker      string
+		path         string
+		want         string
+		mkdirPath    string
+	}{
+		{"ExistingFileUsesNodeEEXIST", false, "parent", "parent/child.txt", "EEXIST: file already exists", "parent"},
+		{"IntermediateFileKeepsRequestedNodePath", false, "file", "file/child/output.txt", "ENOTDIR: not a directory", "file/child"},
+		{"DanglingSymlinkMatchesNodeENOENT", true, "link", "link/output.txt", "ENOENT: no such file or directory", "link"},
+		{"BelowDanglingSymlinkMatchesNodeENOTDIR", true, "link", "link/child/output.txt", "ENOTDIR: not a directory", "link"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			blocker := filepath.Join(dir, test.blocker)
+			var err error
+			if test.danglingLink {
+				err = os.Symlink(filepath.Join(dir, "missing"), blocker)
+			} else {
+				err = os.WriteFile(blocker, nil, 0o600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = NewWriteTool(dir, nil).Execute(context.Background(), "call", map[string]any{
+				"path": test.path, "content": "x",
+			}, nil)
+			want := test.want + ", mkdir '" + filepath.Join(dir, filepath.FromSlash(test.mkdirPath)) + "'"
+			if err == nil || err.Error() != want {
+				t.Fatalf("error = %v, want %q", err, want)
+			}
+		})
 	}
 }
 

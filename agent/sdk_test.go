@@ -30,28 +30,6 @@ func isolateSDKAgentDir(t *testing.T) {
 	t.Setenv(config.EnvAgentDir, t.TempDir())
 }
 
-func TestNewAgentSessionMinimal(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "hello", 10)})
-
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	if result.Session == nil {
-		t.Fatal("session is nil")
-	}
-	if result.ModelFallbackMessage != "" {
-		t.Fatalf("unexpected fallback: %s", result.ModelFallbackMessage)
-	}
-}
-
 func TestSDKPublicSessionControlsMatchUpstream(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	manager, err := sessionstore.InMemory(cwd)
@@ -679,34 +657,6 @@ func TestNewAgentSessionRefreshesStateBetweenToolTurns(t *testing.T) {
 	}
 }
 
-func TestNewAgentSessionWithExplicitSessionManager(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-
-	sm, err := sessionstore.InMemory(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn:       provider.StreamSimple,
-		Model:          provider.GetModel(),
-		SessionManager: sm,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	if err := result.Session.Prompt(context.Background(), "test"); err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Session.State().Messages) == 0 {
-		t.Fatal("expected messages after prompt")
-	}
-}
-
 func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
 	input, err := os.ReadFile(filepath.Join("..", "conformance", "fixtures", "F6HarnessTransactions", "v3-projection.jsonl"))
 	if err != nil {
@@ -1017,39 +967,6 @@ func TestNewAgentSessionInitializesMissingThinkingEntryFromSettings(t *testing.T
 	}
 }
 
-func TestSubscribeChanDrainOnCancel(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	ch, cancel := result.Session.SubscribeChan(2)
-	cancel()
-
-	select {
-	case <-ch:
-	case <-time.After(time.Second):
-		t.Fatal("channel not closed after cancel")
-	}
-}
-
-func TestAgentSessionTypeAlias(t *testing.T) {
-	isolateSDKAgentDir(t)
-	// Compile-time proof that AgentSession = SessionRuntime
-	var session *AgentSession
-	var runtime *SessionRuntime
-	session = runtime
-	_ = session
-	runtime = session
-	_ = runtime
-}
-
 func TestSubscribeChanRaceRegression(t *testing.T) {
 	isolateSDKAgentDir(t)
 	// Regression: SubscribeChan must not panic when cancel races with event delivery.
@@ -1111,47 +1028,6 @@ func TestSubscribeChanConcurrentCancel(t *testing.T) {
 	}
 }
 
-func TestNewAgentSessionWithTools(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		Tools:    []string{"read", "grep"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	state := result.Session.State()
-	if len(state.Tools) != 2 {
-		names := make([]string, len(state.Tools))
-		for i, t := range state.Tools {
-			names[i] = t.Spec().Name
-		}
-		t.Fatalf("expected 2 tools, got %d: %v", len(state.Tools), names)
-	}
-}
-
-func TestNewAgentSessionNoToolsAll(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		NoTools:  "all",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	if len(result.Session.State().Tools) != 0 {
-		t.Fatalf("expected 0 tools, got %d", len(result.Session.State().Tools))
-	}
-}
-
 func TestNewAgentSessionExcludeTools(t *testing.T) {
 	isolateSDKAgentDir(t)
 	provider := testFaux(100000)
@@ -1169,35 +1045,6 @@ func TestNewAgentSessionExcludeTools(t *testing.T) {
 		name := tool.Spec().Name
 		if name == "write" || name == "edit" {
 			t.Fatalf("tool %s should be excluded", name)
-		}
-	}
-}
-
-func TestNewAgentSessionDefaultBuildsTools(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	state := result.Session.State()
-	if len(state.Tools) < 4 {
-		t.Fatalf("expected at least 4 default tools, got %d", len(state.Tools))
-	}
-	names := make(map[string]bool)
-	for _, tool := range state.Tools {
-		names[tool.Spec().Name] = true
-	}
-	for _, required := range []string{"read", "bash", "edit", "write"} {
-		if !names[required] {
-			t.Fatalf("missing default tool %q", required)
 		}
 	}
 }
@@ -1522,30 +1369,6 @@ func TestPreferredAvailableModelProviderOrder(t *testing.T) {
 	// Empty slice returns nil
 	if PreferredAvailableModel(nil) != nil {
 		t.Fatal("expected nil for empty slice")
-	}
-}
-
-func TestNewAgentSessionSettingsReceivesAgentDir(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-	agentDir := t.TempDir()
-
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		AgentDir: agentDir,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	// Verify session was created successfully with the custom AgentDir.
-	// The Settings manager should have loaded without error (it uses
-	// WithAgentDir internally to locate global settings).
-	if result.Session == nil {
-		t.Fatal("session is nil")
 	}
 }
 

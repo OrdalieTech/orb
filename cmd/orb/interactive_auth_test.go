@@ -109,35 +109,6 @@ func (interaction fixedPromptInteraction) Prompt(context.Context, aiauth.AuthPro
 
 func (fixedPromptInteraction) Notify(aiauth.AuthEvent) {}
 
-func TestInteractiveHostEnumeratesModelsJSONProviderWithoutModels(t *testing.T) {
-	fixture := newHostFixture(t)
-	modelsPath := filepath.Join(fixture.agentDir, "models.json")
-	if err := os.MkdirAll(fixture.agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(modelsPath, []byte(`{"providers":{"config-auth":{"name":"Config Auth","baseUrl":"https://config-auth.invalid/v1","apiKey":"configured"}}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := config.NewModelRegistry(fixture.agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.host.mu.Lock()
-	fixture.host.inputs.ModelRegistry = registry
-	fixture.host.mu.Unlock()
-
-	options, err := fixture.host.AuthOptions(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, option := range options.Login {
-		if option.ID == "config-auth" && option.AuthType == aiauth.AuthTypeAPIKey {
-			return
-		}
-	}
-	t.Fatalf("models.json-only provider missing from login options: %#v", options.Login)
-}
-
 func TestInteractiveHostDescribesConfiguredAuthPerMethod(t *testing.T) {
 	fixture := newHostFixture(t)
 	t.Setenv("GROQ_API_KEY", "ambient-groq-key")

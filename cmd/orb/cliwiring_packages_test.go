@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -73,31 +74,6 @@ func closeExtensionHostOnCleanup(t *testing.T) {
 // Finding 2: extensions provided by installed pi packages must load. cmd/orb now
 // forwards resolvedPaths.Extensions into the host's package-path fields; a
 // user-scope package extension therefore reaches the loaded tool set.
-func TestLoadCompiledExtensionsLoadsPackageProvidedExtensions(t *testing.T) {
-	requireExtensionHostRuntime(t)
-	cwd := t.TempDir()
-	agentDir := t.TempDir()
-	closeExtensionHostOnCleanup(t)
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	extPath := writeJSExtension(t, filepath.Join(t.TempDir(), "pkg"), packageToolExtension)
-	packages := &agent.ResolvedPaths{
-		Extensions: []agent.ResolvedResource{{
-			Path: extPath, Enabled: true,
-			Metadata: agent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
-		}},
-	}
-	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
-	if registry == nil {
-		t.Fatalf("no registry; diagnostics=%v", diagnostics)
-	}
-	if names := loadedToolNames(t, registry); !containsString(names, "parse_duration") {
-		t.Fatalf("package tool not loaded: tools=%v diagnostics=%v", names, diagnostics)
-	}
-}
-
 func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
 	requireExtensionHostRuntime(t)
 	cwd := t.TempDir()
@@ -118,7 +94,7 @@ func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
 	if registry == nil || len(diagnostics) != 0 {
 		t.Fatalf("registry = %#v, diagnostics = %v", registry, diagnostics)
 	}
-	if names := loadedToolNames(t, registry); !containsString(names, "parse_duration") {
+	if names := loadedToolNames(t, registry); !slices.Contains(names, "parse_duration") {
 		t.Fatalf("package tool did not load through host: %v", names)
 	}
 	extensionHostMu.Lock()
@@ -173,13 +149,13 @@ func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *test
 		}},
 	}
 	registry, _ := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
-	if registry != nil && containsString(loadedToolNames(t, registry), "parse_duration") {
+	if registry != nil && slices.Contains(loadedToolNames(t, registry), "parse_duration") {
 		t.Fatal("untrusted project-scope package extension was loaded")
 	}
 
 	settings.SetProjectTrusted(true)
 	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
-	if registry == nil || !containsString(loadedToolNames(t, registry), "parse_duration") {
+	if registry == nil || !slices.Contains(loadedToolNames(t, registry), "parse_duration") {
 		t.Fatalf("trusted project-scope package extension did not load: diagnostics=%v", diagnostics)
 	}
 }
@@ -228,18 +204,9 @@ func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {
 			t.Fatalf("npm spec was treated as a literal path: %q", text)
 		}
 	}
-	if reg == nil || !containsString(loadedToolNames(t, reg), "parse_duration") {
+	if reg == nil || !slices.Contains(loadedToolNames(t, reg), "parse_duration") {
 		t.Fatalf("`-e npm:` package tool not loaded: diagnostics=%v", diagnostics)
 	}
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 // inlineNpmRegistry is a compact offline npm registry for cmd/orb package tests.

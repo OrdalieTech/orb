@@ -128,60 +128,36 @@ func TestLsToolPreservesLocaleAndFractionalLimitSemantics(t *testing.T) {
 	}
 }
 
-func TestLsToolUsesJavaScriptFullLowercaseMapping(t *testing.T) {
-	operations := &fakeLsOperations{
-		exists: true,
-		stats: map[string]LsPathStat{
-			hostPath("remote"):      {Directory: true},
-			hostPath("remote", "İ"): {},
-			hostPath("remote", "i"): {},
-		},
-		entries: []string{"İ", "i"},
-	}
-	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := toolResultText(t, result), "i\nİ"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-}
-
-func TestLsToolStableSortPreservesEnumerationOrderForEqualFoldedNames(t *testing.T) {
-	operations := &fakeLsOperations{
-		exists: true,
-		stats: map[string]LsPathStat{
-			hostPath("remote"):      {Directory: true},
-			hostPath("remote", "a"): {},
-			hostPath("remote", "A"): {},
-		},
-		entries: []string{"a", "A"},
-	}
-	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := toolResultText(t, result), "a\nA"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-}
-
-func TestLsToolUsesProcessDefaultLocale(t *testing.T) {
-	t.Setenv("LC_ALL", "sv_SE.UTF-8")
-	operations := &fakeLsOperations{
-		exists: true,
-		stats: map[string]LsPathStat{
-			hostPath("remote"):      {Directory: true},
-			hostPath("remote", "z"): {}, hostPath("remote", "ä"): {}, hostPath("remote", "å"): {}, hostPath("remote", "ö"): {}, hostPath("remote", "a"): {},
-		},
-		entries: []string{"z", "ä", "å", "ö", "a"},
-	}
-	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := toolResultText(t, result), "a\nz\nå\nä\nö"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
+func TestLsToolOrdersAndFiltersEntries(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		locale   string   // LC_ALL override; empty keeps the ambient process locale
+		entries  []string // ReadDir enumeration order
+		statable []string // entries whose Stat succeeds
+		want     string
+	}{
+		{"UsesJavaScriptFullLowercaseMapping", "", []string{"İ", "i"}, []string{"İ", "i"}, "i\nİ"},
+		{"StableSortPreservesEnumerationOrderForEqualFoldedNames", "", []string{"a", "A"}, []string{"a", "A"}, "a\nA"},
+		{"UsesProcessDefaultLocale", "sv_SE.UTF-8", []string{"z", "ä", "å", "ö", "a"}, []string{"z", "ä", "å", "ö", "a"}, "a\nz\nå\nä\nö"},
+		{"SkipsEntriesItCannotStat", "", []string{"bad", "good"}, []string{"good"}, "good"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.locale != "" {
+				t.Setenv("LC_ALL", test.locale)
+			}
+			stats := map[string]LsPathStat{hostPath("remote"): {Directory: true}}
+			for _, name := range test.statable {
+				stats[hostPath("remote", name)] = LsPathStat{}
+			}
+			operations := &fakeLsOperations{exists: true, stats: stats, entries: test.entries}
+			result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := toolResultText(t, result); got != test.want {
+				t.Fatalf("output = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -233,24 +209,6 @@ func (limitLsOperations) Stat(_ context.Context, path string) (LsPathStat, error
 }
 func (operations limitLsOperations) ReadDir(context.Context, string) ([]string, error) {
 	return append([]string(nil), operations.entries...), nil
-}
-
-func TestLsToolSkipsEntriesItCannotStat(t *testing.T) {
-	operations := &fakeLsOperations{
-		exists: true,
-		stats: map[string]LsPathStat{
-			hostPath("remote"):         {Directory: true},
-			hostPath("remote", "good"): {},
-		},
-		entries: []string{"bad", "good"},
-	}
-	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := toolResultText(t, result); got != "good" {
-		t.Fatalf("output = %q", got)
-	}
 }
 
 func TestLsToolWrapsReadDirError(t *testing.T) {

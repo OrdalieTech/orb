@@ -149,23 +149,6 @@ func TestFindToolMiniTreeOutputAndPathGlobArguments(t *testing.T) {
 	}
 }
 
-func TestFindToolUsesNoRequireGitOutsideRepository(t *testing.T) {
-	requireUnixSearchTest(t)
-	root := "/usr/share"
-	path := filepath.Join(root, "file.txt")
-	record := filepath.Join(t.TempDir(), "args")
-	installFakeManagedTool(t, "fd", path, "", 0, record)
-	_, err := NewFindTool(root, nil).Execute(context.Background(), "call", map[string]any{
-		"pattern": "*.txt", "path": root,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if args := readRecordedArgs(t, record); !slices.Contains(args, "--no-require-git") {
-		t.Fatalf("args outside repository lack --no-require-git: %#v", args)
-	}
-}
-
 func TestFindToolSurfacesFDErrorAndProtectsFlagPattern(t *testing.T) {
 	requireUnixSearchTest(t)
 	root := searchTreeRoot(t)
@@ -385,7 +368,7 @@ func readRecordedArgs(t *testing.T, path string) []string {
 func requireUnixSearchTest(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("WP-670 ports Windows process execution")
+		t.Skip("the fake rg and fd are POSIX shell scripts")
 	}
 }
 

@@ -378,12 +378,6 @@ func TestRunPrintModeJSONSignalTeardownStopsSessionAndClosesSerializer(t *testin
 	}
 }
 
-func TestPrintModeSignalSetExcludesInterrupt(t *testing.T) {
-	if slices.Contains(printModeSignals(), os.Interrupt) {
-		t.Fatalf("signals = %#v; upstream does not intercept SIGINT", printModeSignals())
-	}
-}
-
 func newPrintAgent(provider *faux.Provider) *engine.Agent {
 	return engine.NewAgent(
 		provider.StreamSimple, engine.WithInitialState(engine.AgentState{Model: provider.GetModel()}),

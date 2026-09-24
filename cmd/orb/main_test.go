@@ -1176,17 +1176,6 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 	}
 }
 
-func TestRunCLIJSONHelpKeepsEventStdoutClean(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := runCLIWithDependencies(context.Background(), []string{"--mode", "json", "--help"}, cliStreams{
-		Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr,
-		StdinTTY: true, StdoutTTY: true,
-	}, cliDependencies{})
-	if code != 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "Usage: orb") {
-		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
-	}
-}
-
 func TestRunCLIHeadlessModesBindSessionReplacementLifecycle(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -1556,5 +1545,3 @@ func onlySessionFile(t *testing.T, directory string) string {
 type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("stdin was read") }
-
-var _ io.Reader = errorReader{}

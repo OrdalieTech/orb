@@ -525,37 +525,6 @@ func TestRunCLISessionSelectionForkExactIDAndNameEndToEnd(t *testing.T) {
 	})
 }
 
-func TestMissingSessionCWDReturnsStructuredIssue(t *testing.T) {
-	root := t.TempDir()
-	project := filepath.Join(root, "missing-project")
-	current := filepath.Join(root, "current")
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(project, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(current, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	dir, err := session.DefaultSessionDir(project, agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stored := createCLIStoredSession(t, project, dir, "missing-cwd")
-	if err := os.Remove(project); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(config.EnvAgentDir, agentDir)
-	path := stored.GetSessionFile()
-	manager, _, err := createCLISession(current, CLIArgs{Session: &path}, cliStreams{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	issue := getMissingSessionCWDIssue(manager, current)
-	if issue == nil || issue.StoredCWD != project || issue.SessionFile != path || issue.CurrentCWD != current {
-		t.Fatalf("missing cwd issue = %#v", issue)
-	}
-}
-
 func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "missing-project")

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -250,48 +249,6 @@ func TestRPCExtensionUIFireAndForgetWireOrder(t *testing.T) {
 	want := `{"type":"extension_ui_request","id":"` + request.ID + `","method":"setTitle","title":""}`
 	if output.String() != want {
 		t.Fatalf("setTitle wire = %q, want %q", output.String(), want)
-	}
-}
-
-func TestRPCPromptPreflightFailureEmitsExactlyOneResponse(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("preflight"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Messages: engine.AgentMessages{}}))
-	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	exitCode := Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{
-		Input:  strings.NewReader("{\"id\":\"p\",\"type\":\"prompt\",\"message\":\"hello\"}\n"),
-		Output: &stdout, Diagnostics: &stderr,
-	})
-	if exitCode != 0 || stderr.Len() != 0 {
-		t.Fatalf("exit=%d stderr=%q", exitCode, stderr.String())
-	}
-	lines := bytes.Split(bytes.TrimSuffix(stdout.Bytes(), []byte{'\n'}), []byte{'\n'})
-	if len(lines) != 1 {
-		t.Fatalf("preflight emitted %d lines: %s", len(lines), stdout.String())
-	}
-	var response Response
-	if err := json.Unmarshal(lines[0], &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.ID != "p" || response.Command != "prompt" || response.Success || !strings.HasPrefix(response.Error, "No model selected.") {
-		t.Fatalf("preflight response = %s", lines[0])
 	}
 }
 

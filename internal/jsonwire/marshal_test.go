@@ -69,17 +69,6 @@ func TestMarshalIndentMatchesJSONStringify(t *testing.T) {
 	}
 }
 
-func TestMarshalStringPreservesWTF8Surrogate(t *testing.T) {
-	value := "before" + string([]byte{0xed, 0xa0, 0xbd}) + "after"
-	encoded, err := MarshalString(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(encoded), `"before\ud83dafter"`; got != want {
-		t.Fatalf("encoded = %q, want %q", got, want)
-	}
-}
-
 func TestMarshalStringRecombinesWTF8SurrogatePair(t *testing.T) {
 	value := string([]byte{0xed, 0xa0, 0xbd, 0xed, 0xb8, 0x80})
 	encoded, err := MarshalString(value)

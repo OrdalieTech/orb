@@ -72,52 +72,37 @@ func TestLoadProjectContextFilesSkipsDirectoryCandidatesSilently(t *testing.T) {
 	}
 }
 
-func TestLoadProjectContextFilesDedupesNestedLinkedWorktreeRoot(t *testing.T) {
-	root := t.TempDir()
-	mainDir := filepath.Join(root, "main")
-	worktreeDir := filepath.Join(mainDir, "worktrees", "feature")
-	cwd := filepath.Join(worktreeDir, "src")
-	gitDir := filepath.Join(mainDir, ".git", "worktrees", "feature")
-	mustWriteResource(t, filepath.Join(mainDir, ".git", "HEAD"), "ref: refs/heads/main\n")
-	mustWriteResource(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/feature\n")
-	mustWriteResource(t, filepath.Join(gitDir, "commondir"), "../..\n")
-	mustWriteResource(t, filepath.Join(worktreeDir, ".git"), "gitdir: "+gitDir+"\n")
-	if err := os.MkdirAll(cwd, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mustWriteResource(t, filepath.Join(mainDir, "AGENTS.md"), "main")
-	mustWriteResource(t, filepath.Join(worktreeDir, "AGENTS.md"), "worktree")
+func TestLoadProjectContextFilesNestedLinkedWorktree(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		worktreeContext bool
+		want            string
+	}{
+		{name: "DedupesNestedLinkedWorktreeRoot", worktreeContext: true, want: "worktree"},
+		{name: "KeepsNestedWorktreeInheritance", want: "main"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			mainDir := filepath.Join(root, "main")
+			worktreeDir := filepath.Join(mainDir, "worktrees", "feature")
+			cwd := filepath.Join(worktreeDir, "src")
+			mustLinkContextWorktree(t, mainDir, worktreeDir, "feature")
+			if err := os.MkdirAll(cwd, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			mustWriteResource(t, filepath.Join(mainDir, "AGENTS.md"), "main")
+			if test.worktreeContext {
+				mustWriteResource(t, filepath.Join(worktreeDir, "AGENTS.md"), "worktree")
+			}
 
-	files, diagnostics := LoadProjectContextFiles(cwd, filepath.Join(root, "agent"))
-	if len(diagnostics) != 0 {
-		t.Fatalf("diagnostics = %#v", diagnostics)
-	}
-	if len(files) != 1 || files[0].Content != "worktree" {
-		t.Fatalf("files = %#v, want only worktree context", files)
-	}
-}
-
-func TestLoadProjectContextFilesKeepsNestedWorktreeInheritance(t *testing.T) {
-	root := t.TempDir()
-	mainDir := filepath.Join(root, "main")
-	worktreeDir := filepath.Join(mainDir, "worktrees", "feature")
-	cwd := filepath.Join(worktreeDir, "src")
-	gitDir := filepath.Join(mainDir, ".git", "worktrees", "feature")
-	mustWriteResource(t, filepath.Join(mainDir, ".git", "HEAD"), "ref: refs/heads/main\n")
-	mustWriteResource(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/feature\n")
-	mustWriteResource(t, filepath.Join(gitDir, "commondir"), "../..\n")
-	mustWriteResource(t, filepath.Join(worktreeDir, ".git"), "gitdir: "+gitDir+"\n")
-	if err := os.MkdirAll(cwd, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mustWriteResource(t, filepath.Join(mainDir, "AGENTS.md"), "main")
-
-	files, diagnostics := LoadProjectContextFiles(cwd, filepath.Join(root, "agent"))
-	if len(diagnostics) != 0 {
-		t.Fatalf("diagnostics = %#v", diagnostics)
-	}
-	if len(files) != 1 || files[0].Content != "main" {
-		t.Fatalf("files = %#v, want inherited main context", files)
+			files, diagnostics := LoadProjectContextFiles(cwd, filepath.Join(root, "agent"))
+			if len(diagnostics) != 0 {
+				t.Fatalf("diagnostics = %#v", diagnostics)
+			}
+			if len(files) != 1 || files[0].Content != test.want {
+				t.Fatalf("files = %#v, want only %s context", files, test.want)
+			}
+		})
 	}
 }
 

@@ -10,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/OrdalieTech/orb/engine"
 )
 
 type editOperationsFunc struct {
@@ -321,5 +319,3 @@ func TestEditToolDirectoryPassesAccessAndFailsAtRead(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
-
-var _ engine.AgentTool = (*editTool)(nil)

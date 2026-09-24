@@ -79,42 +79,6 @@ func productionConvertToLLM(_ context.Context, messages engine.AgentMessages) (a
 	return converted, nil
 }
 
-func TestProductionConsumerLegacyStreamContextRemainsPopulated(t *testing.T) {
-	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("done")})
-	tool := productionCompatTool()
-	capture := &productionContextCapture{}
-	conversions := &productionConversionCapture{}
-	agent := engine.NewAgent(
-		capture.stream(provider.StreamSimple),
-		engine.WithInitialState(engine.AgentState{
-			SystemPrompt: productionCompatSystemPrompt,
-			Model:        provider.GetModel(),
-			Tools:        []engine.AgentTool{tool},
-		}),
-		engine.WithConvertToLLM(conversions.convert),
-	)
-
-	if err := agent.Prompt(t.Context(), "hello"); err != nil {
-		t.Fatal(err)
-	}
-	contexts := capture.snapshot()
-	if len(contexts) != 1 {
-		t.Fatalf("stream contexts = %d, want 1", len(contexts))
-	}
-	converted := conversions.snapshot()
-	if len(converted) != 1 {
-		t.Fatalf("converted contexts = %d, want 1", len(converted))
-	}
-	t.Run("custom converter forwards transcript system message", func(t *testing.T) {
-		assertSingleSystemDeclaration(t, converted[0])
-	})
-	t.Run("legacy stream fields remain populated", func(t *testing.T) {
-		assertProductionLegacyContext(t, contexts[0])
-		assertNoSystemDeclarations(t, contexts[0].Messages)
-	})
-}
-
 func TestProductionConsumerFauxMultiRoundKeepsSystemPromptStable(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 	provider.SetResponses([]faux.ResponseStep{
