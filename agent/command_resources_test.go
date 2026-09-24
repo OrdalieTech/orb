@@ -145,6 +145,40 @@ func TestCommandResourceDiscoveryImportsExternalAgentSkills(t *testing.T) {
 	}
 }
 
+func TestCommandResourceDiscoverySkipsClaudeSyncedMirror(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	claudeSkills := filepath.Join(root, "claude-home", "skills")
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Dir(claudeSkills))
+	repo := filepath.Join(root, "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkill := func(path, name string) {
+		mustWriteResource(t, path, "---\nname: "+name+"\ndescription: "+name+" skill\n---\nBody for "+name)
+	}
+	writeSkill(filepath.Join(claudeSkills, "mine", "SKILL.md"), "mine")
+	writeSkill(filepath.Join(claudeSkills, "team", "synced", "nested", "SKILL.md"), "nested")
+	// Claude Code keeps one copy of the claude.ai skills per signed-in account.
+	for _, account := range []string{"org-a_account-a", "org-b_account-b"} {
+		writeSkill(filepath.Join(claudeSkills, "synced", account, "docx", "SKILL.md"), "docx")
+	}
+
+	resources := LoadResources(ResourceOptions{CWD: repo, AgentDir: filepath.Join(root, "agent"), NoContextFiles: true})
+	names := map[string]bool{}
+	for _, skill := range resources.Skills {
+		names[skill.Name] = true
+	}
+	if !names["mine"] || !names["nested"] || names["docx"] {
+		t.Fatalf("skills = %#v, want mine and nested without the synced mirror", resources.Skills)
+	}
+	for _, diagnostic := range resources.Diagnostics {
+		if diagnostic.Collision != nil && diagnostic.Collision.Name == "docx" {
+			t.Fatalf("synced mirror reported a collision: %#v", diagnostic)
+		}
+	}
+}
+
 func TestExplicitCommandResourcesRemainAdditiveWhenDiscoveryDisabled(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")

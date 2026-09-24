@@ -490,6 +490,27 @@ func TestResolveAutoDiscoversExternalAgentSkills(t *testing.T) {
 	assertResource(t, resolved.Skills, userSkill, true)
 }
 
+func TestResolveSkipsClaudeSyncedMirror(t *testing.T) {
+	manager, _, _, _ := newTestPackageManager(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	claudeSkills := filepath.Join(os.Getenv("HOME"), ".claude", "skills")
+	userSkill := filepath.Join(claudeSkills, "mine", "SKILL.md")
+	syncedSkill := filepath.Join(claudeSkills, "synced", "org_account", "docx", "SKILL.md")
+	writeTestFile(t, userSkill, "---\nname: mine\ndescription: user skill\n---\nbody")
+	writeTestFile(t, syncedSkill, "---\nname: docx\ndescription: synced skill\n---\nbody")
+
+	resolved, err := manager.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertResource(t, resolved.Skills, userSkill, true)
+	for _, resource := range resolved.Skills {
+		if resource.Path == syncedSkill {
+			t.Fatalf("Claude Code's synced mirror resolved: %+v", resource)
+		}
+	}
+}
+
 func TestResolveSymlinkedResourcesOnce(t *testing.T) {
 	manager, cwd, agentDir, _ := newTestPackageManager(t)
 	shared := filepath.Join(filepath.Dir(cwd), "shared-resources")
