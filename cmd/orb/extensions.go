@@ -10,12 +10,12 @@ import (
 	"encoding/json"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/assembly"
+	agentbridge "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
-	"github.com/OrdalieTech/orb/connect"
-	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/extension"
+	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -101,7 +101,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		Policy:     policy,
 		CWD:        cwd, AgentDir: agentDir, Settings: settings,
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
-		BridgeAgentCalls: bridgeagent.Extension(func(ctx context.Context, peer string, call connect.Call) (json.RawMessage, error) {
+		BridgeAgentCalls: agentbridge.Extension(func(ctx context.Context, peer string, call bridge.Call) (json.RawMessage, error) {
 			var result json.RawMessage
 			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)
 			return result, err

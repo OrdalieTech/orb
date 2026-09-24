@@ -14,10 +14,9 @@ import (
 	"github.com/OrdalieTech/orb/agent/clipboard"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/connect"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
-	"github.com/OrdalieTech/orb/plugins/bridge"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -519,7 +518,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 }
 
 func bridgeInvitationCode(inv bridge.Invitation) string {
-	return "orb-bridge:v1:" + base64.RawURLEncoding.EncodeToString(connect.JSON(inv))
+	return "orb-bridge:v1:" + base64.RawURLEncoding.EncodeToString(bridge.JSON(inv))
 }
 
 func parseBridgeInvitation(text string) (bridge.Invitation, error) {
@@ -561,7 +560,7 @@ func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer str
 		}
 		count += len(catalog.Items)
 		if count > 4096 || len(catalog.Items) == 0 && catalog.Cursor != "" {
-			return nil, connect.Fail("resource_exhausted")
+			return nil, bridge.Fail("resource_exhausted")
 		}
 		for _, instance := range catalog.Items {
 			if !instance.Available {
@@ -584,7 +583,7 @@ func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer str
 		}
 		cursor = catalog.Cursor
 	}
-	return nil, connect.Fail("resource_exhausted")
+	return nil, bridge.Fail("resource_exhausted")
 }
 
 func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile, peer string) error {
@@ -612,7 +611,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 				name = entry.ID
 			}
 			detail := "Cached · " + entry.RefreshedAt.Format(time.RFC822) + " · read-only until connected"
-			rows = append(rows, tui.GridRow{Value: "cached:" + string(connect.JSON([2]string{entry.Namespace, entry.ID})), Cells: []string{th.FG("muted", tui.StripANSI(name))}, Detail: []string{detail}})
+			rows = append(rows, tui.GridRow{Value: "cached:" + string(bridge.JSON([2]string{entry.Namespace, entry.ID})), Cells: []string{th.FG("muted", tui.StripANSI(name))}, Detail: []string{detail}})
 		}
 		return rows
 	}
@@ -635,18 +634,18 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 					_ = client.Close()
 				}
 				if err != nil {
-					if connect.Code(err) == "unauthorized" && cache != nil {
+					if bridge.Code(err) == "unauthorized" && cache != nil {
 						_ = cache.Forget(ctx, peer)
 					}
 					message, detail := "Reconnecting…", "Keep Bridge on at both devices. Retrying automatically."
-					switch connect.Code(err) {
+					switch bridge.Code(err) {
 					case "unauthorized":
 						message, detail = "Access unavailable", "Check that this device has granted access to your Orb."
 					case "resource_exhausted":
 						message, detail = "Too many conversations", "This device's conversation list exceeds the Bridge limit."
 					}
 					rows = []tui.GridRow{{Header: true, Cells: []string{th.FG("warning", message)}}, {Header: true, Cells: []string{th.FG("dim", detail)}}}
-					if connect.Code(err) != "unauthorized" {
+					if bridge.Code(err) != "unauthorized" {
 						rows = append(rows, cachedRows(th, nil)...)
 					}
 				}
@@ -701,7 +700,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 					return err
 				}
 				for _, entry := range entries {
-					if string(connect.JSON([2]string{entry.Namespace, entry.ID})) == id {
+					if string(bridge.JSON([2]string{entry.Namespace, entry.ID})) == id {
 						if err := openBridgeView(ctx, ui, profile, peer, entry.Instance, entry); err != nil {
 							return err
 						}

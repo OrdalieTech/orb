@@ -22,7 +22,11 @@ orb/
 │   │   └── accounts/         named credential store over ai/auth; explicit document and base store
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
 ├── host/                     host ports; Store hands out transactional Documents
-├── platforms/native/         native host: sqlite/ explicitly opened adapter, sandbox/, accounts/ sidecar file
+├── bridge/                   core Bridge: identity, grants, routing, ledger, attachment contracts
+│   └── protocol/             bounded strict JSON-RPC stream
+├── platforms/native/         native host: sqlite/ explicitly opened adapter, sandbox/, accounts/ sidecar file,
+│                             bridge/ IPC and persistence, tailcat/ network transport
+├── platforms/websocket/      Bridge's pinned TLS stream over WebSockets (browser, Worker, native listener)
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -33,6 +37,8 @@ orb/
 │   ├── session/              session manager (JSONL v3 tree, migrations), export-html
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
+│   ├── bridge/               runtime attachment, operation ledger adapter, bridge_call extension
+│   │   └── tool/             headless bridge_call tool
 │   └── assembly/             product catalog, enablement and plugin management UI
 ├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → agent only)
 ├── plugins/                  optional capabilities, independently importable Go packages
@@ -42,10 +48,6 @@ orb/
 │   │   └── filestore/        native JSONL storage and migration reader
 │   ├── usage/                quota client + cache; ai/auth and stdlib only
 │   │   └── footer/           optional extension status display
-│   ├── bridge/               portable routing, identity, grants
-│   │   ├── agent/            agent-facing bridge tools
-│   │   ├── hosts/native/     IPC and persistence
-│   │   └── transports/tailcat/ native network transport
 │   ├── tasks/                task tool and its optional TUI rendering
 │   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
 │   ├── subagents/            child agents and native CLI execution
@@ -90,7 +92,7 @@ Memory keeps three concrete boundaries: its Store contract, the `engine.Agent` a
 and the product extension adapter. File storage lives in `plugins/memory/filestore`; only
 product assembly selects the default home-directory backend, lazily when enabled. SDK callers
 pass an explicit Store. `plugins/usage` stays usable without the optional `footer` adapter.
-Bridge keeps native IPC and Tailcat in separate packages; the protocol stays in `connect`.
+Bridge keeps native IPC and Tailcat in separate packages; the protocol stays in `bridge/protocol`.
 Existing plugin IDs, settings keys, tools and persisted formats are unchanged. Go consumers
 must update old `memory`, `usage`, `bridge`, `agent/mcp`, `agent/extensions/herdr` and
 `agent/plugins` imports to the new packages; no duplicate forwarding packages are retained.
@@ -175,8 +177,8 @@ Disconnect releases observation without cancelling remote execution. Reload reta
 requires explicit reconnection. Local `bridge_call` is separately opt-in and uses an instance
 subject with its own remote grants, never the human controller's authority.
 
-`plugins/bridge/agent.NewTool` is headless; the product extension adapter moved to
-`plugins/bridge/extension.Extension`. Transport stays in `plugins/bridge/transports/websocket`,
+`agent/bridge/tool.NewTool` is headless; the product extension adapter moved to
+`agent/bridge.Extension`. Transport stays in `platforms/websocket`,
 worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/bridge.js`. Tests execute the built Wasm
 without a host filesystem and cover event forwarding, tool execution, concurrent-prompt rejection,
 cancellation and session replacement, alongside native workspace and dependency checks.
@@ -657,14 +659,14 @@ No SSH service, helper binary, key copying, or additional Go dependency is shipp
 
 | Layer | Responsibility |
 |---|---|
-| `connect` | Versioned calls, receipts, observations, and non-owning attachment contracts |
-| `connect/agent` | Existing `AgentSessionRuntime` adaptation; operation ledger and bounded observations |
-| `plugins/bridge` | Identity, pairing, directional grants, registration, routing, scoped contacts |
-| Native/Tailcat adapters | Explicit persistence, profile locks, IPC roles/credentials, network streams |
+| `bridge` | Versioned calls, receipts, observations, non-owning attachment contracts; identity, pairing, directional grants, registration, routing, scoped contacts |
+| `agent/bridge` | Existing `AgentSessionRuntime` adaptation; operation ledger and bounded observations |
+| `platforms/native/bridge`, `platforms/native/tailcat`, `platforms/websocket` | Explicit persistence, profile locks, IPC roles/credentials, network streams |
 | `cmd/orb` and UI assemblies | Lifecycle, management, capability selection, remote conversation view |
 
 Existing SDK constructors, interfaces, subscription semantics, and defaults remain unchanged.
-Neither `ai`, `engine`, nor `agent` imports Bridge, Tailcat, or new UI dependencies. Closing an
+Neither `ai`, `engine`, nor the `agent` root package imports Bridge, Tailcat, or new UI
+dependencies; `agent/bridge` adapts runtimes to Bridge. Closing an
 attachment, view, or bridge never disposes a runtime. Stores, credentials, transports,
 and lifetimes are explicit; imports create no files or network activity. Multiple independent
 bridges and runtimes can coexist in one process. Only interchangeable attachment and persistence

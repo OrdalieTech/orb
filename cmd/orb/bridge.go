@@ -11,6 +11,11 @@ import (
 	"flag"
 	"fmt"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
+	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 	"io"
 	"net"
 	"net/http"
@@ -23,13 +28,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/OrdalieTech/orb/connect"
-	"github.com/OrdalieTech/orb/connect/protocol"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
-	transport "github.com/OrdalieTech/orb/plugins/bridge/transports/tailcat"
-	webtransport "github.com/OrdalieTech/orb/plugins/bridge/transports/websocket"
 )
 
 func validBridgeName(s string) bool {
@@ -76,7 +74,7 @@ func bridgeAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return native.Dial(ctx, filepath.Join(dir, "admin.sock"), native.Auth{Credential: string(token)}, nil, nil)
+	return nativebridge.Dial(ctx, filepath.Join(dir, "admin.sock"), nativebridge.Auth{Credential: string(token)}, nil, nil)
 }
 
 func waitBridgeStopped(ctx context.Context, client *protocol.Conn) error {
@@ -245,19 +243,19 @@ func (s *bridgeService) remote(ctx context.Context, id, method string, p any) (j
 }
 func (s *bridgeService) outbound(ctx context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
 	var p struct {
-		PeerID string       `json:"peer_id"`
-		Call   connect.Call `json:"call"`
+		PeerID string      `json:"peer_id"`
+		Call   bridge.Call `json:"call"`
 	}
 	if err := protocol.Decode(params, &p); err != nil {
 		return nil, err
 	}
-	subject, err := s.b.Outbound(native.InstanceFromContext(ctx), p.PeerID, p.Call)
+	subject, err := s.b.Outbound(nativebridge.InstanceFromContext(ctx), p.PeerID, p.Call)
 	if err != nil {
 		return nil, err
 	}
 	return s.remote(ctx, p.PeerID, "instances.call", struct {
-		connect.Call
-		Subject connect.Subject `json:"subject"`
+		bridge.Call
+		Subject bridge.Subject `json:"subject"`
 	}{p.Call, subject})
 }
 func (s *bridgeService) admin(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -291,7 +289,7 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 		} else {
 			invite.Locator, err = s.node.Locator()
 		}
-		return connect.JSON(invite), err
+		return bridge.JSON(invite), err
 	case "join":
 		var inv bridge.Invitation
 		if err := protocol.Decode(params, &inv); err != nil {
@@ -313,7 +311,7 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 		if err = s.b.SavePeer(inv.PeerID, inv.Locator); err != nil {
 			return nil, err
 		}
-		return connect.JSON(result), nil
+		return bridge.JSON(result), nil
 	case "remote":
 		var p struct {
 			PeerID string          `json:"peer_id"`
@@ -338,7 +336,7 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 			return nil, err
 		}
 		r, err := s.b.PublishContact(p.Scope, p.Name, []bridge.Locator{{Transport: "tailcat/1", Locator: locator}}, p.Withdraw)
-		return connect.JSON(r), err
+		return bridge.JSON(r), err
 	default:
 		return s.b.Admin(ctx, method, params)
 	}
@@ -418,16 +416,16 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 				return nil, err
 			}
 			time.AfterFunc(100*time.Millisecond, stop)
-			return connect.JSON(struct{}{}), nil
+			return bridge.JSON(struct{}{}), nil
 		}
 		return service.admin(ctx, method, params)
 	}
-	closeAdmin, err := native.Listen(serviceCtx, filepath.Join(dir, "admin.sock"), b, string(token), admin, nil)
+	closeAdmin, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "admin.sock"), b, string(token), admin, nil)
 	if err != nil {
 		return err
 	}
 	defer closeAdmin()
-	closeAttach, err := native.Listen(serviceCtx, filepath.Join(dir, "attach.sock"), b, "", nil, service.outbound)
+	closeAttach, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "attach.sock"), b, "", nil, service.outbound)
 	if err != nil {
 		return err
 	}
@@ -472,7 +470,7 @@ func (s *bridgeService) reconcile() {
 		case <-s.b.Changes():
 		}
 		{
-			raw, err := s.b.Admin(s.ctx, "status", connect.JSON(struct{}{}))
+			raw, err := s.b.Admin(s.ctx, "status", bridge.JSON(struct{}{}))
 			if err != nil {
 				continue
 			}
@@ -641,7 +639,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	defer func() { _ = client.Close() }()
 	method := args[0]
-	params := connect.JSON(struct{}{})
+	params := bridge.JSON(struct{}{})
 	read := func() error {
 		var e error
 		params, e = io.ReadAll(io.LimitReader(streams.Stdin, protocol.MaxFrame+1))
@@ -649,7 +647,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 			return e
 		}
 		if len(params) > protocol.MaxFrame {
-			return connect.Fail("resource_exhausted")
+			return bridge.Fail("resource_exhausted")
 		}
 		_, e = protocol.Canonical(params)
 		return e
@@ -662,14 +660,14 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		method = args[1]
 		switch method {
 		case "invite":
-			params = connect.JSON(map[string]any{"grants": []bridge.Grant{fullBridgeGrant("")}})
+			params = bridge.JSON(map[string]any{"grants": []bridge.Grant{fullBridgeGrant("")}})
 		case "join":
 			err = read()
 		case "approve":
 			if len(args) != 4 {
 				err = errors.New("approve requires invitation ID and claimant PeerID")
 			} else {
-				params = connect.JSON(map[string]string{"invitation_id": args[2], "claimant": args[3]})
+				params = bridge.JSON(map[string]string{"invitation_id": args[2], "claimant": args[3]})
 			}
 		default:
 			err = errors.New("unknown pairing command")
@@ -689,14 +687,14 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		if len(args) != 2 {
 			err = errors.New("block requires PeerID")
 		} else {
-			params = connect.JSON(map[string]string{"peer_id": args[1]})
+			params = bridge.JSON(map[string]string{"peer_id": args[1]})
 		}
 	case "remote":
 		if len(args) != 3 {
 			err = errors.New("remote requires PeerID and method")
 		} else {
 			err = read()
-			params = connect.JSON(map[string]any{"peer_id": args[1], "method": args[2], "params": params})
+			params = bridge.JSON(map[string]any{"peer_id": args[1], "method": args[2], "params": params})
 		}
 	case "status", "instances", "peers", "grants", "groups", "scopes", "stop":
 	default:
@@ -823,7 +821,7 @@ func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, tar
 }
 
 func fullBridgeGrant(peer string) bridge.Grant {
-	return bridge.Grant{Principal: connect.Principal{PeerID: peer, Subject: connect.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
+	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
 }
 
 func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string) error {

@@ -17,8 +17,8 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 
 	"github.com/OrdalieTech/orb/agent"
-	"github.com/OrdalieTech/orb/connect"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
 )
@@ -75,7 +75,7 @@ func remoteMessage(raw json.RawMessage) string {
 type remoteDescriptor struct {
 	Status     string              `json:"status,omitempty"`
 	Model      string              `json:"model,omitempty"`
-	Models     []connect.Model     `json:"models,omitempty"`
+	Models     []bridge.Model      `json:"models,omitempty"`
 	Input      *agent.InputRequest `json:"input,omitempty"`
 	Name       string              `json:"name"`
 	CWD        string              `json:"cwd"`
@@ -339,7 +339,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 		cacheWarning = " · offline cache unavailable"
 	}
 	deny := func(err error) bool {
-		if connect.Code(err) != "unauthorized" {
+		if bridge.Code(err) != "unauthorized" {
 			return false
 		}
 		connected = false
@@ -386,7 +386,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			}
 			if text == "/sessions" {
 				var result json.RawMessage
-				err = remote("instances.call", connect.Call{InstanceID: instance, Service: protocol.Service, Method: "session.list", Args: connect.JSON(struct{}{})}, &result)
+				err = remote("instances.call", bridge.Call{InstanceID: instance, Service: protocol.Service, Method: "session.list", Args: bridge.JSON(struct{}{})}, &result)
 				if err != nil {
 					status.set(err.Error())
 				} else {
@@ -448,8 +448,8 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				invalidate()
 				continue
 			}
-			call := connect.Call{InstanceID: instance, Service: protocol.Service, Method: method, SessionID: info.Target.SessionID, Expected: connect.Expected{Generation: info.Generation, Revision: info.Target.Revision}, OperationID: protocol.NewID(), Args: connect.JSON(arguments)}
-			var receipt connect.Receipt
+			call := bridge.Call{InstanceID: instance, Service: protocol.Service, Method: method, SessionID: info.Target.SessionID, Expected: bridge.Expected{Generation: info.Generation, Revision: info.Target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(arguments)}
+			var receipt bridge.Receipt
 			if err = remote("instances.call", call, &receipt); err != nil {
 				if request.inputID != "" {
 					updateInput(nil)
@@ -489,7 +489,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				partial = ""
 			}
 			if pending != "" {
-				var receipt connect.Receipt
+				var receipt bridge.Receipt
 				if remote("operations.get", map[string]string{"instance_id": instance, "operation_id": pending}, &receipt) == nil {
 					status.set(receipt.Status + " · " + receipt.Error + " · Esc closes view")
 				}
@@ -507,7 +507,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				transcript.Reset()
 				for pages := 0; ; pages++ {
 					if pages >= 128 {
-						err = connect.Fail("resource_exhausted")
+						err = bridge.Fail("resource_exhausted")
 						break
 					}
 					var page struct {
@@ -526,7 +526,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 						preview.AddMessage(m)
 					}
 					if transcript.Len() > 8<<20 || page.Offset != "" && page.Offset == offset {
-						err = connect.Fail("resource_exhausted")
+						err = bridge.Fail("resource_exhausted")
 						break
 					}
 					partial = remoteMessage(page.Partial)
@@ -539,8 +539,8 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				}
 			} else {
 				var page struct {
-					Events []connect.Event `json:"events"`
-					Cursor string          `json:"cursor"`
+					Events []bridge.Event `json:"events"`
+					Cursor string         `json:"cursor"`
 				}
 				err = remote("events.subscribe", map[string]string{"instance_id": instance, "cursor": cursor}, &page)
 				if err != nil {

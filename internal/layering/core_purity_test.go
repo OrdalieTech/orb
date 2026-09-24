@@ -16,7 +16,7 @@ import (
 
 // corePackages is the P10 portable core. Subdirectories are included unless
 // listed in coreExcluded: those are drivers, native capabilities or tooling.
-var corePackages = []string{"ai", "engine", "agent", "connect", "internal/themefile"}
+var corePackages = []string{"ai", "engine", "agent", "bridge", "internal/themefile"}
 
 var coreExcluded = []string{
 	"ai/models/cmd", "ai/models/internal",

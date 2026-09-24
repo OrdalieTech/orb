@@ -11,12 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/orb/connect"
-	"github.com/OrdalieTech/orb/connect/protocol"
+	bridgetool "github.com/OrdalieTech/orb/agent/bridge/tool"
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/plugins/bridge"
-	bridgeagent "github.com/OrdalieTech/orb/plugins/bridge/agent"
-	webtransport "github.com/OrdalieTech/orb/plugins/bridge/transports/websocket"
+	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 )
 
 type bridgeRequest struct {
@@ -118,7 +117,7 @@ func (b *browserBridge) execute(r bridgeRequest) (any, error) {
 		b.mu.Lock()
 		if r.Connection != "" && r.Connection != b.connection {
 			b.mu.Unlock()
-			return nil, connect.Fail("stale_target")
+			return nil, bridge.Fail("stale_target")
 		}
 		old := b.conn
 		b.conn = nil
@@ -137,7 +136,7 @@ func (b *browserBridge) execute(r bridgeRequest) (any, error) {
 		c, id := b.conn, b.connection
 		b.mu.Unlock()
 		if c == nil || r.Connection != id {
-			return nil, connect.Fail("unavailable")
+			return nil, bridge.Fail("unavailable")
 		}
 		var result json.RawMessage
 		err := c.Call(ctx, r.Method, r.Params, &result)
@@ -154,17 +153,17 @@ func (b *browserBridge) tool() (engine.AgentTool, error) {
 	if c == nil {
 		return nil, errors.New("connect a Bridge before enabling agent calls")
 	}
-	return bridgeagent.NewTool(func(ctx context.Context, target string, call connect.Call) (json.RawMessage, error) {
+	return bridgetool.NewTool(func(ctx context.Context, target string, call bridge.Call) (json.RawMessage, error) {
 		if target != peer {
-			return nil, connect.Fail("unauthorized")
+			return nil, bridge.Fail("unauthorized")
 		}
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		var result json.RawMessage
 		err := c.Call(ctx, "instances.call", struct {
-			connect.Call
-			Subject connect.Subject `json:"subject"`
-		}{call, connect.Subject{Kind: "instance", InstanceID: agentID}}, &result)
+			bridge.Call
+			Subject bridge.Subject `json:"subject"`
+		}{call, bridge.Subject{Kind: "instance", InstanceID: agentID}}, &result)
 		return result, err
 	})
 }
