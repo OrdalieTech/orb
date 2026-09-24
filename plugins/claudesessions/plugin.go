@@ -195,8 +195,8 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	return func(s *agent.SessionRuntime) { runtime = s; closeOnDispose(s, driver) }, nil
 }
 
-// orbContext is what Orb would add to its own system prompt and Claude does not
-// load itself: context files other than CLAUDE.md, --system-prompt and APPEND_SYSTEM.
+// orbContext is what Orb would add to its own system prompt and Claude does not:
+// --system-prompt and APPEND_SYSTEM. Context files are Claude's own discovery.
 func orbContext(options *agent.SystemPromptOptions) string {
 	if options == nil {
 		return ""
@@ -205,11 +205,6 @@ func orbContext(options *agent.SystemPromptOptions) string {
 	for _, prompt := range []*string{options.CustomPrompt, options.AppendSystemPrompt} {
 		if prompt != nil && strings.TrimSpace(*prompt) != "" {
 			parts = append(parts, strings.TrimSpace(*prompt))
-		}
-	}
-	for _, file := range options.ContextFiles {
-		if filepath.Base(file.Path) != "CLAUDE.md" && strings.TrimSpace(file.Content) != "" {
-			parts = append(parts, fmt.Sprintf("<instructions path=%q>\n%s\n</instructions>", file.Path, strings.TrimSpace(file.Content)))
 		}
 	}
 	return strings.Join(parts, "\n\n")
@@ -521,6 +516,15 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 	env = append([]string{}, env...)
 	return func(api extensions.API) error {
 		limitFooter(api)
+		// A new Claude session opens at the level last chosen for its model, not at the
+		// global default, which belongs to Orb's own providers.
+		api.On(extensions.EventThinkingLevelSelect, func(_ context.Context, event extensions.Event, command extensions.Context) (any, error) {
+			selected, _ := event.(extensions.ThinkingLevelSelectEvent)
+			if model := command.Model(); model != nil && model.Provider == Name && selected.Level != "" {
+				settings.SetModelThinkingLevel(Name, model.ID, selected.Level)
+			}
+			return nil, nil
+		})
 		api.On(extensions.EventSessionBeforeTree, func(_ context.Context, event extensions.Event, command extensions.Context) (any, error) {
 			tree, _ := event.(extensions.SessionBeforeTreeEvent)
 			if command.Model() == nil || command.Model().Provider != Name || !tree.Preparation.UserWantsSummary || len(tree.Preparation.EntriesToSummarize) == 0 {

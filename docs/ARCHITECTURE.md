@@ -385,8 +385,8 @@ after its tool results, as in Orb's loop; follow-ups start the next turn. Native
 messages and tool updates; MCP forms and URL confirmations become shared execution-bound questions.
 Clients and transports never parse Claude SDK payloads. Native permission mode (default, accept-edits, plan, auto, don't-ask) is plugin-owned
 session metadata; manual compaction is a native prompt. SDK upgrades use validated, staged,
-versioned installations so running sessions retain their module path. Orb context files other than
-CLAUDE.md and the custom/append system prompts are appended to Claude's preset prompt; Orb extension
+versioned installations so running sessions retain their module path. Orb's custom/append system
+prompts are appended to Claude's preset prompt; context files are Claude's own discovery, and Orb extension
 tools are not injected, and Claude's own tools, skills, settings and MCP remain native. Headless
 native approvals follow Orb: they run when Orb's permission policy would not prompt, except asks a
 user's own Claude ask rule forces.
