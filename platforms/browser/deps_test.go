@@ -1,6 +1,6 @@
 //go:build !js && !wasip1
 
-package wasm
+package browser
 
 import (
 	"os"
@@ -17,7 +17,7 @@ func TestLightRegistryLinksNoUnselectedProvider(t *testing.T) {
 		"github.com/OrdalieTech/orb/ai/api/all", "github.com/OrdalieTech/orb/ai/api/bedrock",
 		"github.com/aws/aws-sdk-go-v2", "github.com/aws/smithy-go",
 	}
-	command := exec.CommandContext(t.Context(), "go", "list", "-deps", "github.com/OrdalieTech/orb/platforms/wasm", "github.com/OrdalieTech/orb/cmd/orb-wasm")
+	command := exec.CommandContext(t.Context(), "go", "list", "-deps", "github.com/OrdalieTech/orb/platforms/browser", "github.com/OrdalieTech/orb/cmd/orb-wasm")
 	command.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0")
 	output, err := command.CombinedOutput()
 	if err != nil {

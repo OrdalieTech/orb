@@ -193,7 +193,7 @@ func TestCapabilityDependencies(t *testing.T) {
 		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
 		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
 		{"platforms/worker", []string{"/agent/assembly", "/agent/modes", "/tui", "/storage/sqlite", "/plugins"}},
-		{"platforms/wasm", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
+		{"platforms/browser", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", "./"+tc.path)

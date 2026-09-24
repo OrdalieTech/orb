@@ -26,7 +26,7 @@ and how far along it is.
 - **One protocol to drive it.** Every target is controlled with the same RPC frames as
   `orb --mode rpc` (pi-compatible, `agent/rpc`); only the transport changes: stdio, WebSocket,
   a worker's `postMessage`, or native callbacks.
-- **Proven by one test.** `platforms/scenario` runs the same scripted, tool-using session on
+- **Proven by one test.** `conformance/scenario` runs the same scripted, tool-using session on
   every host and requires identical sessions, files and journals. Each target adds its own
   end-to-end test on top. A target is listed as Stable only when both are green.
 
@@ -198,7 +198,7 @@ A target moves up this page only with evidence (DECISIONS.md P11):
 
 1. its host passes the port conformance suites (`engine/harness/envtest` for FS today; Store and
    Env suites join as those ports gain second implementations);
-2. `platforms/scenario` produces the same session on it as natively;
+2. `conformance/scenario` produces the same session on it as natively;
 3. a target end-to-end test runs in CI (for Workers: `cf dev` and `celld dev`);
 4. one documented command deploys it, and one removes it;
 5. it states its capability profile and its Bridge role;

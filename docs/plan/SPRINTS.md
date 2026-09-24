@@ -369,7 +369,7 @@ its gate and closes GREEN; `make check` stays green between slices because ratch
    suite (the `fstest.TestFS` pattern) runs against every implementation on its own target.
    Status 2026-09-22: `host.Host` (AgentDir, FS, Exec, Store, Sessions) is accepted by
    `NewAgentSession` and `CreateAgentSessionServices`; settings, credentials, model catalogs and
-   session journals then come from it. `platforms/scenario` runs one scripted turn through a Host
+   session journals then come from it. `conformance/scenario` runs one scripted turn through a Host
    natively, in `js/wasm` without a host filesystem and under WASI without mounts, and requires
    identical output. Measured weight: a full `AgentSession` is 12.0 MB gzip on `js/wasm` against
    6.4 MB for the engine-only browser runtime. The two structural causes are the closed provider

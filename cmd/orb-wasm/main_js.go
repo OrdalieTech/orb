@@ -11,7 +11,7 @@ import (
 	"syscall/js"
 
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/platforms/wasm"
+	"github.com/OrdalieTech/orb/platforms/browser"
 )
 
 func post(value any) {
@@ -22,7 +22,7 @@ func post(value any) {
 	js.Global().Call("postMessage", string(data))
 }
 
-func snapshot(s *wasm.Session, kind string, err error) {
+func snapshot(s *browser.Session, kind string, err error) {
 	state := s.Agent.State()
 	message := state.ErrorMessage
 	if err != nil {
@@ -33,7 +33,7 @@ func snapshot(s *wasm.Session, kind string, err error) {
 }
 
 func main() {
-	var session *wasm.Session
+	var session *browser.Session
 	var cancel context.CancelFunc
 	running := false
 	remote := &browserBridge{slots: make(chan struct{}, 16)}
@@ -46,10 +46,10 @@ func main() {
 			return "request exceeds 64 KiB"
 		}
 		var request struct {
-			Type       string      `json:"type"`
-			Config     wasm.Config `json:"config"`
-			Text       string      `json:"text"`
-			AgentCalls bool        `json:"agentCalls"`
+			Type       string         `json:"type"`
+			Config     browser.Config `json:"config"`
+			Text       string         `json:"text"`
+			AgentCalls bool           `json:"agentCalls"`
 		}
 		if err := json.Unmarshal([]byte(raw), &request); err != nil {
 			return err.Error()
@@ -62,7 +62,7 @@ func main() {
 			if running {
 				return "cancel the current turn before replacing the session"
 			}
-			next, err := wasm.New(request.Config)
+			next, err := browser.New(request.Config)
 			if err != nil {
 				return err.Error()
 			}

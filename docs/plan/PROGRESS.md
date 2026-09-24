@@ -31,7 +31,7 @@ read/write/edit/ls/find come from the ports; bash runs over `Exec` or is omitted
 registry reads ambient credentials through an injectable `aiauth.AuthContext` instead of a global
 `os.Getenv`. `platforms/memory` is the in-memory FS; `engine/harness/envtest` is the shared FS
 conformance suite (native and memory backends, natively and under Node and wazero).
-`platforms/scenario` runs a tool-using turn through a Host and requires identical sessions,
+`conformance/scenario` runs a tool-using turn through a Host and requires identical sessions,
 files and journals natively, in `js/wasm` without a host filesystem and under WASI without
 mounts. The product core no longer links the TUI, chroma or CJK tables (`TestProductCoreIsHeadless`):
 a full AgentSession on `js/wasm` dropped from 12.0 to 9.46 MB gzip and is gated at 10 MB. Ratchet:
