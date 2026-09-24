@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/OrdalieTech/orb/platforms/worker/peer"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,4 +50,16 @@ func TestDurableObjectBundle(t *testing.T) {
 		t.Fatalf("Durable Object bundle: %v\n%s", err, output)
 	}
 	t.Log(strings.TrimSpace(string(output)))
+}
+
+// TestShimKnowsTheBridgeStateKey keeps the shim's pre-boot check on the key
+// the Go peer writes.
+func TestShimKnowsTheBridgeStateKey(t *testing.T) {
+	shim, err := os.ReadFile("../../platforms/worker/deploy/worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(shim), `const BRIDGE_STATE_KEY = "`+peer.StateKey+`";`) {
+		t.Fatalf("worker.mjs does not check %s", peer.StateKey)
+	}
 }

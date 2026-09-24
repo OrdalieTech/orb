@@ -7,14 +7,15 @@
 //   node e2e.mjs --runtime celld --dir .tools/worker --celld .tools/bin/celld
 //   ORB_TOKEN=... node e2e.mjs --runtime remote --url https://orb-do-e2e.<account>.workers.dev --phase write|verify
 //   node e2e.mjs --configure-deploy .tools/worker-e2e --name orb-do-e2e   (writes its wrangler.json)
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { once } from "node:events";
 import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import http from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  CONTENT, MODELS, PATH, SETTINGS, check, checkRun, fail, freePort, launch, modelStats, overHTTP, overSocket, response, startModel, stats,
+  stop, waitHealthy,
+} from "./harness.mjs";
 import { gzipSync } from "node:zlib";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -34,26 +35,6 @@ const { values: args } = parseArgs({
 if (args.dir) args.dir = resolve(args.dir);
 if (args.celld.includes("/")) args.celld = resolve(args.celld);
 
-const PATH = "notes/hello.txt";
-const CONTENT = "persisted across restarts";
-const MODELS = baseUrl => JSON.stringify({
-  providers: {
-    fake: {
-      baseUrl, api: "openai-completions", apiKey: "FAKE_MODEL_KEY",
-      models: [{ id: "scripted", name: "Scripted", contextWindow: 128000, maxTokens: 4096, input: ["text"] }],
-    },
-  },
-});
-const SETTINGS = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted" });
-
-function fail(message) {
-  throw new Error(message);
-}
-
-function check(condition, message, detail) {
-  if (!condition) fail(`${message}${detail === undefined ? "" : `\n${typeof detail === "string" ? detail : JSON.stringify(detail, null, 2)}`}`);
-}
-
 if (args["configure-deploy"]) {
   // The deployed check runs the model inside the Worker (fake-model.js), so
   // the vars carry no endpoint or key of any real provider.
@@ -68,162 +49,6 @@ if (args["configure-deploy"]) {
   writeFileSync(join(dir, "wrangler.json"), `${JSON.stringify(config, null, 2)}\n`);
   console.log(`wrote ${join(dir, "wrangler.json")} for ${args.name}`);
   process.exit(0);
-}
-
-// --- scripted model over local HTTP ---------------------------------------
-await import(join(here, "fake-model.js"));
-let modelRequests = 0;
-async function startModel() {
-  const server = http.createServer(async (req, res) => {
-    modelRequests++;
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const response = await globalThis.orbFakeModel.handle(
-      new Request(`http://127.0.0.1${req.url}`, { method: req.method, headers: { "Content-Type": "application/json" }, body: Buffer.concat(chunks) }),
-    );
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    for await (const chunk of response.body) res.write(chunk);
-    res.end();
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return server;
-}
-
-// --- dev servers -----------------------------------------------------------
-async function freePort() {
-  const server = http.createServer().listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const { port } = server.address();
-  server.close();
-  return port;
-}
-
-function launch(runtime, port, fresh) {
-  const dir = args.dir;
-  const command =
-    runtime === "celld"
-      ? [args.celld, ["dev", dir, "--port", String(port), "--no-watch", ...(fresh ? ["--clean"] : [])]]
-      : [join(dir, "node_modules", ".bin", "wrangler"), ["dev", "--port", String(port), "--ip", "127.0.0.1", "--persist-to", join(dir, ".e2e-state"), "--show-interactive-dev-session=false"]];
-  const child = spawn(command[0], command[1], { cwd: dir, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
-  child.log = "";
-  const collect = chunk => {
-    child.log += chunk;
-    if (process.env.ORB_E2E_VERBOSE) process.stderr.write(chunk);
-  };
-  child.stdout.on("data", collect);
-  child.stderr.on("data", collect);
-  return child;
-}
-
-async function stop(child) {
-  if (child.exitCode !== null) return;
-  const exited = once(child, "exit");
-  process.kill(-child.pid, "SIGINT");
-  const timer = setTimeout(() => process.kill(-child.pid, "SIGKILL"), 10000);
-  await exited;
-  clearTimeout(timer);
-}
-
-async function waitHealthy(base, child) {
-  const deadline = Date.now() + 180000;
-  while (Date.now() < deadline) {
-    if (child && child.exitCode !== null) fail(`dev server exited early:\n${child.log}`);
-    try {
-      const response = await fetch(`${base}/health`);
-      if (response.ok) return;
-    } catch {}
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-  fail(`dev server did not become healthy:\n${child?.log ?? ""}`);
-}
-
-// --- transports ------------------------------------------------------------
-function headers(token) {
-  return { Authorization: `Bearer ${token}` };
-}
-
-// overSocket sends one command and collects frames until the run settles.
-async function overSocket(base, agent, token, command) {
-  const socket = new WebSocket(`${base.replace(/^http/, "ws")}/agents/${agent}/rpc`, { headers: headers(token) });
-  const frames = [];
-  const started = performance.now();
-  let firstFrameMs;
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`WebSocket run timed out; frames: ${JSON.stringify(frames.slice(-5))}`)), 120000);
-    socket.onopen = () => socket.send(JSON.stringify(command));
-    socket.onerror = event => reject(new Error(`WebSocket error: ${event.message ?? event.type}`));
-    socket.onclose = event => reject(new Error(`WebSocket closed early: ${event.code} ${event.reason}`));
-    socket.onmessage = event => {
-      firstFrameMs ??= performance.now() - started;
-      const frame = JSON.parse(event.data);
-      frames.push(frame);
-      if (frame.type === "worker_error") reject(new Error(frame.error));
-      if (frame.type === "agent_settled" || (frame.type === "response" && frame.id === command.id && !frame.success)) {
-        clearTimeout(timer);
-        resolve();
-      }
-    };
-  });
-  socket.onclose = null;
-  socket.close();
-  return { frames, firstFrameMs, totalMs: performance.now() - started };
-}
-
-// overHTTP posts NDJSON commands and reads frames until the stream ends.
-async function overHTTP(base, agent, token, commands) {
-  const started = performance.now();
-  const response = await fetch(`${base}/agents/${agent}/rpc`, {
-    method: "POST", headers: { ...headers(token), "Content-Type": "application/x-ndjson" },
-    body: commands.map(command => JSON.stringify(command)).join("\n"),
-  });
-  check(response.ok, `POST /rpc answered ${response.status}`, await response.clone().text());
-  check(response.headers.get("content-type")?.startsWith("application/x-ndjson"), "POST /rpc is not NDJSON");
-  let firstFrameMs;
-  let buffer = "";
-  const frames = [];
-  const decoder = new TextDecoder();
-  for await (const chunk of response.body) {
-    firstFrameMs ??= performance.now() - started;
-    buffer += decoder.decode(chunk, { stream: true });
-    let end;
-    while ((end = buffer.indexOf("\n")) >= 0) {
-      frames.push(JSON.parse(buffer.slice(0, end)));
-      buffer = buffer.slice(end + 1);
-    }
-  }
-  check(buffer === "", "stream ended mid-frame", buffer);
-  return { frames, firstFrameMs, totalMs: performance.now() - started };
-}
-
-async function stats(base, agent, token) {
-  const response = await fetch(`${base}/agents/${agent}/stats`, { headers: headers(token) });
-  check(response.ok, `stats answered ${response.status}`, await response.clone().text());
-  return response.json();
-}
-
-// --- assertions ------------------------------------------------------------
-const response = (frames, id) => frames.find(frame => frame.type === "response" && frame.id === id);
-
-function toolResults(frames) {
-  return frames
-    .filter(frame => frame.type === "tool_execution_end")
-    .map(frame => ({ tool: frame.toolName, error: frame.isError, text: (frame.result?.content ?? []).map(part => part.text ?? "").join("") }));
-}
-
-function finalText(frames) {
-  const ends = frames.filter(frame => frame.type === "message_end" && frame.message?.role === "assistant");
-  return (ends.at(-1)?.message?.content ?? []).filter(part => part.type === "text").map(part => part.text).join("");
-}
-
-function checkRun(frames, id, tools) {
-  check(response(frames, id)?.success, `${id} was not accepted`, frames.filter(frame => frame.type === "response"));
-  const results = toolResults(frames);
-  check(JSON.stringify(results.map(result => result.tool)) === JSON.stringify(tools), `tools ran ${results.map(result => result.tool)}`, results);
-  check(results.every(result => !result.error), "a tool failed", results);
-  check(results.at(-1).text.includes(CONTENT), "read did not return the written file", results);
-  check(finalText(frames) === `read back: ${CONTENT}`, `final answer was ${JSON.stringify(finalText(frames))}`);
-  check(frames.at(-1).type === "agent_settled", "the run did not settle last", frames.at(-1));
 }
 
 async function phaseWrite(base, agent, token) {
@@ -290,25 +115,25 @@ if (args.runtime === "remote") {
   let child;
   try {
     let started = performance.now();
-    child = launch(args.runtime, port, true);
+    child = launch(args.runtime, port, true, args);
     await waitHealthy(base, child);
     report.startupMs = Math.round(performance.now() - started);
     const unauthorized = await fetch(`${base}/agents/${agent}/rpc`, { method: "POST", body: "{}" });
     check(unauthorized.status === 401, `an unauthenticated request got ${unauthorized.status}`);
 
     const written = await phaseWrite(base, agent, token);
-    check(modelRequests === 3, `the model was called ${modelRequests} times, want 3`);
+    check(modelStats.requests === 3, `the model was called ${modelStats.requests} times, want 3`);
     report.coldFirstFrameMs = Math.round(written.webSocketRun.firstFrameMs);
     report.writeRunMs = Math.round(written.webSocketRun.totalMs);
     report.statsAfterWrite = await stats(base, agent, token);
 
     await stop(child);
     started = performance.now();
-    child = launch(args.runtime, port, false);
+    child = launch(args.runtime, port, false, args);
     await waitHealthy(base, child);
     report.restartMs = Math.round(performance.now() - started);
     const verified = await phaseVerify(base, agent, token, written);
-    check(modelRequests === 5, `the model was called ${modelRequests} times in total, want 5`);
+    check(modelStats.requests === 5, `the model was called ${modelStats.requests} times in total, want 5`);
     report.afterRestartFirstFrameMs = Math.round(verified.coldHistory.firstFrameMs);
     report.readRunMs = Math.round(verified.httpRun.totalMs);
     report.messagesAfterRestart = verified.messages;

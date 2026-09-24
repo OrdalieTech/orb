@@ -39,8 +39,9 @@ jobs:
 
   worker-e2e:
     # P11 gate for the Durable Object host: one scenario (write, read, restart, verify) in workerd
-    # (wrangler dev) and under Celld (celld dev), both local and without cloud credentials.
-    name: Worker end-to-end (workerd, Celld)
+    # (wrangler dev) and under Celld (celld dev), both local and without cloud credentials, plus
+    # Bridge pairing both ways between a native orb and the object.
+    name: Worker end-to-end (workerd, Celld, Bridge)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,7 +52,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - run: make worker-e2e-workerd worker-e2e-celld
+      - run: make worker-e2e-workerd worker-e2e-celld worker-e2e-bridge-workerd worker-e2e-bridge-celld
 
   windows:
     # Cross builds for every P2 target run inside `make check` (scripts/portability.sh);

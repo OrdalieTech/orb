@@ -15,6 +15,7 @@ import (
 	"syscall/js"
 
 	"github.com/OrdalieTech/orb/platforms/worker"
+	"github.com/OrdalieTech/orb/platforms/worker/peer"
 )
 
 func main() {
@@ -64,16 +65,25 @@ func main() {
 		}
 	}))
 
+	bridge := &bridgePeer{}
+	if name := boot.Get("name"); name.Type() == js.TypeString {
+		bridge.name = name.String()
+	}
+	bridge.register(api)
 	go func() {
 		ctx := context.Background()
 		instance, err := worker.Open(ctx, worker.Options{
 			KV: worker.NewDurableKV(boot.Get("storage")), Env: lookup,
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
+			Tools: peer.AgentCalls(bridge.open),
 		})
 		if err != nil {
 			boot.Call("reject", err.Error())
 			return
 		}
+		bridge.mu.Lock()
+		bridge.instance = instance
+		bridge.mu.Unlock()
 		boot.Call("resolve", api)
 		code := instance.Serve(ctx, &commandReader{commands: commands}, &frameWriter{emit: boot.Get("emit")}, os.Stderr)
 		boot.Call("exit", code)

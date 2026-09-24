@@ -43,8 +43,8 @@ is tested but is not released or is limited. **In progress** is under active dev
 | Go SDK embedding | Stable | host-defined | host-defined (`host.Host`) | library | `go get` |
 | Windows | Preview: builds, suite not green | all | SQLite | full peer | not released yet |
 | Browser (Wasm worker) | Preview | FS tools | tab memory | outbound client | static files |
-| Cloudflare Durable Objects | Preview: end-to-end in workerd (CI) and on Cloudflare | FS tools | Durable Object storage | RPC endpoint (Bridge peer next) | `make worker-deploy` |
-| Celld cells | Preview: local end-to-end under `celld dev` (CI) | FS tools | cell SQLite | RPC endpoint (Bridge peer next) | `make worker-celld-dev` |
+| Cloudflare Durable Objects | Preview: end-to-end in workerd (CI) and on Cloudflare | FS tools | Durable Object storage | full peer (accepts streams) | `make worker-deploy` |
+| Celld cells | Preview: local end-to-end under `celld dev` (CI) | FS tools | cell SQLite | full peer (accepts streams) | `make worker-celld-dev` |
 | Android (Termux) | Preview: builds, not validated on device | all | SQLite | full peer | build from source |
 | iOS via iSH | Preview: builds, not validated on device | all (slow) | SQLite | full peer | build from source |
 | WASI runtimes | Planned (core suites pass under wazero) | FS tools | preopened directories | — | — |
@@ -111,7 +111,7 @@ evictions; its model calls go out through `fetch`, and provider keys come from W
 through the `Env` port. It is driven with RPC frames over a hibernatable WebSocket or a streamed
 HTTP POST (NDJSON), behind a bearer token (`ORB_TOKEN`), so any RPC client can use it. There is no
 shell. One turn leaves about 38 MB of Wasm memory in use, within the 128 MB object limit; the
-bundle is 9.7 MB gzip, inside Cloudflare's 10 MB paid-plan limit. On Cloudflare (2026-09-23), a
+bundle is 9.9 MB gzip, inside Cloudflare's 10 MB paid-plan limit and gated below it. On Cloudflare (2026-09-23), a
 tool-using turn streamed its first frame in 1.8 s, and after a redeploy restarted the object its
 files and history were intact.
 
@@ -119,6 +119,14 @@ files and history were intact.
 make worker-dev           # local workerd
 make worker-deploy        # your Cloudflare account (wrangler login first)
 ```
+
+Each object is also a Bridge peer at `/agents/<name>/bridge`: its identity and grants persist in
+object storage, a native Orb pairs with it through `orb bridge pair join`, and the owner
+administers it through `/agents/<name>/bridge/admin` (behind `ORB_TOKEN`; the stream route itself
+is authenticated by Bridge's pinned TLS). Verified on Cloudflare and in workerd and Celld: a laptop
+Orb lists, prompts and reads the object's conversation, and the object's agent calls the laptop
+through `bridge_call` under its own grant. The object cannot dial out, so it reaches a peer only
+over a connection that peer opened.
 
 Known gaps: context files, skills and prompt templates are not loaded yet (they are read from the
 process filesystem, not the FS port), session fork and clone are unsupported, and an object stays
@@ -171,10 +179,9 @@ explicitly and in two separate kinds:
   access never passes to their agent.
 
 Transports adapt to the target. Native Orbs use Tailcat (WireGuard with NAT traversal) and local
-IPC. Browsers use the WebSocket transport, which keeps Bridge's pinned TLS inside the stream, and
-connect outward. A Durable Object Orb is reachable today through its RPC endpoint; next it will
-accept Bridge peers on `/bridge` (reserved), so a cloud Orb that is always on can pair with your
-laptop both ways.
+IPC. Browsers and Workers use the WebSocket transport, which keeps Bridge's pinned TLS inside the
+stream. Browsers connect outward; a Durable Object accepts peers on `/agents/<name>/bridge`, so an
+always-on cloud Orb pairs with your laptop and both can call each other over that channel.
 
 Typical setups:
 

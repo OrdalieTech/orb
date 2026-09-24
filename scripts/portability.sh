@@ -15,6 +15,8 @@ wasm_suite_skip="$module/ai/models/cmd/genmodels"
 # which must fit Cloudflare's 10 MB compressed Worker limit.
 browser_gzip_budget=8000000
 session_gzip_budget=10000000
+# Cloudflare rejects Worker uploads above 10 MiB compressed.
+worker_gzip_budget=10485760
 
 vet_packages() {
 	go list "$@" ./... | grep -v /internal/chromalexers
@@ -69,7 +71,12 @@ if [ "$size" -gt "$session_gzip_budget" ]; then
 	exit 1
 fi
 GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -trimpath -ldflags=-s -o "$bundle/worker.wasm" ./cmd/orb-worker
-echo "portability: Worker bundle $(gzip -9 -c "$bundle/worker.wasm" | wc -c | tr -d ' ') bytes gzip"
+size=$(gzip -9 -c "$bundle/worker.wasm" | wc -c | tr -d ' ')
+echo "portability: Worker bundle ${size} bytes gzip (budget ${worker_gzip_budget})"
+if [ "$size" -gt "$worker_gzip_budget" ]; then
+	echo "portability: Worker bundle exceeds Cloudflare's upload limit" >&2
+	exit 1
+fi
 
 wasm_exec=$(go env GOROOT)/lib/wasm
 suites=$(go list $wasm_suites | grep -v -x -F "$wasm_suite_skip")
