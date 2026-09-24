@@ -19,9 +19,10 @@ orb/
 │   ├── api/                  one file per API shape (openairesponses.go, anthropicmessages.go, …)
 │   ├── providers/            provider registry + per-provider metadata (generated + hand corrections)
 │   ├── auth/                 credential store, OAuth flows (PKCE, device-code)
+│   │   └── accounts/         named credential store over ai/auth; explicit document and base store
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
-├── storage/                  transactional document seam; sqlite/ is an explicitly opened adapter
-├── accounts/                 named credential store over ai/auth; explicit sidecar and base store
+├── host/                     host ports; Store hands out transactional Documents
+├── platforms/native/         native host: sqlite/ explicitly opened adapter, sandbox/, accounts/ sidecar file
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -539,9 +540,9 @@ composer reserves Shift+Enter for newlines, including ambiguous legacy Escape+Re
 explicit protocol Alt+Enter continues to queue follow-ups.
 
 **Provider accounts and usage:** Ctrl+P → Providers groups connected accounts with Add account
-under every provider. `accounts.Store` wraps an explicit `ai/auth.CredentialStore`, keeping the
+under every provider. `accounts.Store` (`ai/auth/accounts`) wraps an explicit `ai/auth.CredentialStore`, keeping the
 provider-keyed `auth.json` unchanged when adding accounts and recording extra credentials and
-selection in an atomic, locked, 0600 `accounts.json` sidecar. The CLI attaches it; importing the
+selection in an atomic, locked, 0600 `accounts.json` sidecar (`platforms/native/accounts`). The CLI attaches it; importing the
 engine or auth package alone does not pull it in. `BindCredentialStore` pins one account through
 OAuth read/refresh/write, and `NewModelRegistryWithCredentials` supplies the same source to model
 availability and request resolution. Explicit CLI keys retain precedence; switching that provider
@@ -584,7 +585,7 @@ is native Go; executing package-provided JavaScript requires the D31 Node/Bun ru
 ## Native persistence
 
 `cmd/orb/storage.go` selects one explicitly opened SQLite database for native CLI state.
-`storage/sqlite` supplies transactional documents, Pi v3 journals, memory and chat-spool
+`platforms/native/sqlite` supplies transactional documents, Pi v3 journals, memory and chat-spool
 repositories; existing SDK constructors keep file defaults and import no SQLite driver.
 Global settings, credentials/accounts, trust, model catalogs, keybindings, Bridge identity/grants,
 attachment credentials/receipts and foreign previews share the database. Project configuration,
@@ -741,7 +742,7 @@ is restricted to an instance subject and comes from the source bridge's credenti
 outbound route; administrative methods never appear in this routing table.
 
 The CLI caches visited remote session summaries and visible message excerpts through
-`storage/sqlite`, separately from owned sessions. Cache keys include the profile, pinned peer,
+`platforms/native/sqlite`, separately from owned sessions. Cache keys include the profile, pinned peer,
 namespace and SessionID; legacy services use an instance-scoped namespace. Limits are eight
 completed user/assistant messages, 4 KiB per message / 32 KiB encoded per preview, seven days,
 128 sessions per peer and 1,024 per profile. Offline previews are explicitly stale and read-only;
@@ -834,7 +835,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | coder/websocket v1.8.15 | optional Bridge WebSocket transport | Reuses the installed dependency for native and browser streams; Bridge retains pinned TLS authentication inside the stream |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
 | @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
-| modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `storage/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
+| modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `platforms/native/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
 **G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
 `invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object

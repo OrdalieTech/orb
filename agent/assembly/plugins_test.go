@@ -17,11 +17,11 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	memorysdk "github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/subagents"
-	"github.com/OrdalieTech/orb/sandbox"
 	"github.com/OrdalieTech/orb/tui"
 )
 

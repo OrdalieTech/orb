@@ -15,9 +15,9 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
+	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 func normalizeProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
@@ -826,12 +826,12 @@ func extensionCredentials(credential *aiauth.Credential) extensions.OAuthCredent
 var providerStoreMu sync.Mutex
 
 type providerModelStore struct {
-	document storage.Document
+	document host.Document
 	path     string
 	id       string
 }
 
-func newProviderModelStore(path, id string, documents ...storage.Document) extensions.ProviderModelStore {
+func newProviderModelStore(path, id string, documents ...host.Document) extensions.ProviderModelStore {
 	store := providerModelStore{path: path, id: id}
 	if len(documents) > 0 {
 		store.document = documents[0]

@@ -29,8 +29,8 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/questions"
-	"github.com/OrdalieTech/orb/sandbox"
 )
 
 const Name = "claude-sessions"

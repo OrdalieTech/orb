@@ -16,8 +16,8 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/nodepath"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 const (
@@ -67,7 +67,7 @@ func (e SettingsError) Error() string { return fmt.Sprintf("%s settings: %v", e.
 func (e SettingsError) Unwrap() error { return e.Err }
 
 type managerOptions struct {
-	globalDocument storage.Document
+	globalDocument host.Document
 	agentDir       string
 	projectTrusted *bool
 }
@@ -75,7 +75,7 @@ type managerOptions struct {
 type Option func(*managerOptions)
 
 // WithGlobalDocument selects transactional global settings; project files retain their precedence.
-func WithGlobalDocument(document storage.Document) Option {
+func WithGlobalDocument(document host.Document) Option {
 	return func(options *managerOptions) { options.globalDocument = document }
 }
 
@@ -92,7 +92,7 @@ func WithProjectTrusted(trusted bool) Option {
 // SettingsManager keeps the source documents untyped so unknown keys and
 // invalid known values do not make an otherwise valid settings file unreadable.
 type SettingsManager struct {
-	globalDocument storage.Document
+	globalDocument host.Document
 	mu             sync.RWMutex
 
 	globalPath  string

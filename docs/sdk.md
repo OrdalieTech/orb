@@ -248,7 +248,7 @@ sm, _ := sessionstore.Create(cwd, sessionDir)
 sm, _ := sessionstore.InMemory(".")
 ```
 
-For SDK consumers, native persistence is opt-in through `storage/sqlite.Open(ctx, absolutePath)`.
+For SDK consumers, native persistence is opt-in through `platforms/native/sqlite.Open(ctx, absolutePath)`.
 Use `db.Sessions(namespace)` as a `harness.SessionRepo`, then adapt its storage
 with `sessionstore.FromHarnessStorage(s.Storage(), sessionstore.WithHarnessRepo(repo))`.
 The caller owns the database lifetime. Sessions have IDs, no synthetic file paths;
@@ -258,7 +258,7 @@ replacing conflicting history. Existing SDK constructors remain file-backed.
 Global settings, credentials and trust accept `db.Document(namespace, key)` through
 `WithGlobalDocument`, `NewAuthStorageWithDocument` and
 `NewProjectTrustStoreWithDocument`. These hooks share the existing codecs and do
-not migrate files automatically. Only importing `storage/sqlite` links the driver.
+not migrate files automatically. Only importing `platforms/native/sqlite` links the driver.
 
 `db.Foreign(profile)` is a disposable remote-session cache, separate from owned session
 repositories. Keys include the peer, namespace and session ID. Previews retain at most eight

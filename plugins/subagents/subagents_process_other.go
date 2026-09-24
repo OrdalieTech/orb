@@ -7,7 +7,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
 func runExternalCommand(context.Context, string, string, map[string]string, sandbox.Mode, io.Reader, io.Writer, io.Writer) (externalRun, error) {

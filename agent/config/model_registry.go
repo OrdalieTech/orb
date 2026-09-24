@@ -16,11 +16,11 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/ai/providers"
-	"github.com/OrdalieTech/orb/storage"
+	"github.com/OrdalieTech/orb/host"
 )
 
 type ModelRegistry struct {
-	modelDocument, catalogDocument storage.Document
+	modelDocument, catalogDocument host.Document
 	reloadMu                       sync.Mutex
 	opMu                           sync.Mutex
 	mu                             sync.RWMutex
@@ -71,7 +71,7 @@ func NewOfflineModelRegistry(agentDir string) (*ModelRegistry, error) {
 	return newModelRegistry(agentDir, false)
 }
 
-func NewModelRegistryWithDocuments(agentDir string, credentials aiauth.CredentialStore, models, catalog storage.Document, allowNetwork bool, options ...ModelRegistryOption) (*ModelRegistry, error) {
+func NewModelRegistryWithDocuments(agentDir string, credentials aiauth.CredentialStore, models, catalog host.Document, allowNetwork bool, options ...ModelRegistryOption) (*ModelRegistry, error) {
 	return modelRegistryWithStorage(agentDir, allowNetwork, credentials, models, catalog, options...)
 }
 
@@ -82,7 +82,7 @@ func newModelRegistry(agentDir string, allowModelNetwork bool, sources ...aiauth
 	}
 	return modelRegistryWithStorage(agentDir, allowModelNetwork, credentials, nil, nil)
 }
-func modelRegistryWithStorage(agentDir string, allowModelNetwork bool, credentials aiauth.CredentialStore, models, catalog storage.Document, options ...ModelRegistryOption) (*ModelRegistry, error) {
+func modelRegistryWithStorage(agentDir string, allowModelNetwork bool, credentials aiauth.CredentialStore, models, catalog host.Document, options ...ModelRegistryOption) (*ModelRegistry, error) {
 	normalized, err := NormalizePath(agentDir)
 	if err != nil {
 		return nil, err

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/orb/accounts"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
 

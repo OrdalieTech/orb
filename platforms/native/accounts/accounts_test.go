@@ -2,7 +2,6 @@ package accounts
 
 import (
 	"context"
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,7 +14,8 @@ import (
 func TestAccountsPreserveDefaultAndPinRefresh(t *testing.T) {
 	ctx := t.Context()
 	base := auth.NewMemoryStore(map[string]*auth.Credential{"codex": auth.OAuthCredential("default", "original", 0)})
-	store := NewStore(filepath.Join(t.TempDir(), "accounts.json"), base)
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store := NewStore(path, base)
 	first, err := store.Add(ctx, "codex", "Work", auth.OAuthCredential("first", "one", 0))
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestAccountsPreserveDefaultAndPinRefresh(t *testing.T) {
 	if err != nil || len(rows) != 2 || rows[1].ID != second.ID {
 		t.Fatalf("accounts=%v error=%v", rows, err)
 	}
-	info, err := os.Stat(store.path)
+	info, err := os.Stat(path)
 	want := os.FileMode(0600)
 	if runtime.GOOS == "windows" {
 		// Windows exposes only the read-only attribute through mode bits.
@@ -102,28 +102,5 @@ func TestAccountsConcurrentWritersAndCorruptFile(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if string(data) != "{broken" {
 		t.Fatal("overwrote corrupt state")
-	}
-}
-
-func TestOAuthIdentityKeepsAccountsSeparateAndRefreshesExisting(t *testing.T) {
-	token := func(account, plan string) string {
-		return "header." + base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"user","https://api.openai.com/auth":{"chatgpt_account_id":"`+account+`","chatgpt_plan_type":"`+plan+`"}}`)) + ".signature"
-	}
-	store := NewStore(filepath.Join(t.TempDir(), "accounts.json"), nil)
-	first, err := store.Add(t.Context(), "openai-codex", "Work", auth.OAuthCredential("first-refresh", token("work", "plus"), 0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := store.Add(t.Context(), "openai-codex", "Personal", auth.OAuthCredential("second-refresh", token("personal", "plus"), 0))
-	if err != nil || first.ID == second.ID {
-		t.Fatal("merged distinct subscription accounts", err)
-	}
-	renewed, err := store.Add(t.Context(), "openai-codex", "Work", auth.OAuthCredential("renewed-refresh", token("work", "pro"), 0))
-	if err != nil || renewed.ID != first.ID {
-		t.Fatal("duplicated a reconnected account", err)
-	}
-	rows, err := store.Accounts(t.Context())
-	if err != nil || len(rows) != 2 {
-		t.Fatal("unexpected account count", err)
 	}
 }

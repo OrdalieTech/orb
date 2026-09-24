@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/OrdalieTech/orb/agent/tools"
-	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
 // runExternalCommand runs command through the bash upstream's bash tool uses on

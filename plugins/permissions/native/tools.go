@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/OrdalieTech/orb/agent/tools"
-	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
 // ToolOptions applies one native boundary to bash, edit and write. Linux hosts

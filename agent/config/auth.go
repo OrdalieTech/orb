@@ -14,8 +14,8 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 type authDocument struct {
@@ -24,7 +24,7 @@ type authDocument struct {
 }
 
 type AuthStorage struct {
-	document storage.Document
+	document host.Document
 	path     string
 
 	mu   sync.RWMutex
@@ -49,7 +49,7 @@ func NewAuthStorage(path string) (*AuthStorage, error) {
 }
 
 // NewAuthStorageWithDocument uses a caller-owned transactional credential document.
-func NewAuthStorageWithDocument(document storage.Document) (*AuthStorage, error) {
+func NewAuthStorageWithDocument(document host.Document) (*AuthStorage, error) {
 	if document == nil {
 		return nil, errors.New("credential document is required")
 	}

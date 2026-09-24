@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/tools"
-	"github.com/OrdalieTech/orb/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
 func TestNativeFileTools(t *testing.T) {

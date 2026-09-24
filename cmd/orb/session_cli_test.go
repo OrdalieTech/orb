@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -23,10 +24,10 @@ import (
 	"github.com/OrdalieTech/orb/connect/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/bridge"
 	"github.com/OrdalieTech/orb/plugins/bridge/hosts/native"
 	"github.com/OrdalieTech/orb/plugins/memory"
-	"github.com/OrdalieTech/orb/storage/sqlite"
 )
 
 func TestResolveSessionArgumentPrefersLocalExactThenPrefix(t *testing.T) {

@@ -7,7 +7,7 @@ module=github.com/OrdalieTech/orb
 native_targets="linux/amd64 linux/arm64 linux/386 linux/arm darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 android/arm64"
 # Packages that exist only on hosts with processes, terminals or native SQLite.
 # Anything that links one of them is excluded from the Wasm targets with it.
-wasm_native_only="cmd/orb storage/sqlite agent/modes plugins/bridge/hosts/native plugins/bridge/transports/tailcat"
+wasm_native_only="cmd/orb platforms/native/sqlite agent/modes plugins/bridge/hosts/native plugins/bridge/transports/tailcat"
 # Suites executed under Node (js/wasm) and wazero (wasip1/wasm).
 wasm_suites="./ai/... ./engine/... ./agent/rpc/... ./connect/... ./plugins/bridge ./plugins/bridge/agent ./platforms/memory/... ./platforms/browser/... ./platforms/worker/... ./internal/jsonschema/... ./internal/jsonwire/... ./internal/partialjson/... ./internal/truncate/..."
 wasm_suite_skip="$module/ai/models/cmd/genmodels"

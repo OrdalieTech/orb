@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/storage/sqlite"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +12,9 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/connect"

@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/OrdalieTech/orb/storage"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/OrdalieTech/orb/host"
 
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
@@ -209,7 +210,7 @@ func parseLegacyOAuth(data []byte) (authDocument, error) {
 
 // MigrateAuthDocuments upgrades legacy credentials during an offline native
 // migration. Original files are never renamed or rewritten.
-func MigrateAuthDocuments(ctx context.Context, auth, settings, oauth storage.Document) error {
+func MigrateAuthDocuments(ctx context.Context, auth, settings, oauth host.Document) error {
 	return auth.Update(ctx, func(current []byte) ([]byte, error) {
 		if len(current) > 0 {
 			return current, nil

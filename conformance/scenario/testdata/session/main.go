@@ -17,7 +17,6 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/memory"
-	"github.com/OrdalieTech/orb/storage"
 )
 
 type document struct {
@@ -43,7 +42,7 @@ func (d *document) Update(_ context.Context, update func([]byte) ([]byte, error)
 
 type store map[string]*document
 
-func (s store) Document(path string) storage.Document {
+func (s store) Document(path string) host.Document {
 	if s[path] == nil {
 		s[path] = &document{}
 	}

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/orb/accounts"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -17,11 +16,12 @@ import (
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	permissionnative "github.com/OrdalieTech/orb/plugins/permissions/native"
-	"github.com/OrdalieTech/orb/sandbox"
 )
 
 type runtimeInputs struct {

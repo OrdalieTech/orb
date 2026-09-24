@@ -37,9 +37,9 @@ import (
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
-	"github.com/OrdalieTech/orb/sandbox"
 	"github.com/gofrs/flock"
 	"golang.org/x/term"
 )

@@ -20,10 +20,10 @@ import (
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	permissionnative "github.com/OrdalieTech/orb/plugins/permissions/native"
-	"github.com/OrdalieTech/orb/sandbox"
 )
 
 const (
