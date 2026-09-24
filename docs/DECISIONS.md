@@ -59,7 +59,8 @@ Eleven paradigms. Everything else in this record is operational memory.
   and Ctrl+P (2026-09-21), with service activation inside that page. Bridge defaults are inert
   rather than off (owner, 2026-09-24): every Orb has an identity but no listener, no advertised
   address, no grants and no visible `bridge_call` until its owner grants one; agent grants replace
-  the former agent-call toggle.
+  the agent-call toggle. Until that built-in, grant-governed tool lands (SPRINTS "Deployments"),
+  the toggle remains.
 - **P5 — Pi compatibility is a kernel, not an identity** *(recasts D2, D4, D5, D6, D13)*. Orb
   maintains byte-compatibility on the kernel surfaces listed below, verified by conformance
   fixtures; inside the kernel, upstream quirks are spec. Outside it, Orb evolves freely and
@@ -106,7 +107,9 @@ Eleven paradigms. Everything else in this record is operational memory.
   it, and it states its capability profile and Bridge role. `docs/deployments.md` is the
   catalogue; a target's status there changes only with that evidence. Bridge is core (owner,
   2026-09-24): every Orb, on every host, has a peer identity, registers its sessions as instances,
-  and dials peers through the transports its host supplies. Listening, advertised addresses and
+  and dials peers through the transports its host supplies. Shipped in 0.11.0: the core `bridge`
+  package and Durable Object/Celld peers; session auto-registration and host-supplied transports
+  follow in the SPRINTS slices. Listening, advertised addresses and
   every grant stay explicit and owner-approved; controller and agent-subject authority never
   merge.
 
