@@ -608,6 +608,13 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 		if output, err := build.CombinedOutput(); err != nil {
 			t.Fatalf("build fake clip: %v\n%s", err, output)
 		}
+		// Defender can hold a new executable's first run past the clipboard's
+		// 5-second limit; that run must not count against the pairing timeout.
+		warm := exec.CommandContext(t.Context(), filepath.Join(bin, "clip.exe"))
+		warm.Env = append(os.Environ(), "ORB_TEST_CLIPBOARD="+copied)
+		if output, err := warm.CombinedOutput(); err != nil {
+			t.Fatalf("run fake clip: %v\n%s", err, output)
+		}
 	default:
 		command := "xclip"
 		if runtime.GOOS == "darwin" {
@@ -956,13 +963,14 @@ func TestBridgeConversationListFollowsPagesAndUsesStableIDs(t *testing.T) {
 }
 
 func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "private", "orb.db"))
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "private", "orb.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
+	// The deadline bounds the conversation, not creating the database.
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
 	cache := db.Foreign("personal")
 	var phase, commands atomic.Int32
 	x, y := net.Pipe()

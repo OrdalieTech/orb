@@ -100,7 +100,7 @@ func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret stri
 			mu.Unlock()
 			go func() {
 				defer func() { _ = c.Close(); mu.Lock(); delete(connections, c); mu.Unlock(); <-slots }()
-				if !sameUser(c) {
+				if !sameUser(c, "") {
 					return
 				}
 				_ = c.SetDeadline(time.Now().Add(5 * time.Second))
@@ -243,7 +243,7 @@ func Dial(ctx context.Context, path string, auth Auth, handler protocol.Handler,
 		return nil, err
 	}
 	c := raw.(*net.UnixConn)
-	if !sameUser(c) {
+	if !sameUser(c, path) {
 		_ = c.Close()
 		return nil, connect.Fail("unauthorized")
 	}

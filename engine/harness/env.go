@@ -94,6 +94,11 @@ func abortedFileError(ctx context.Context, path string) error {
 	return &FileError{Code: FileErrorAborted, Path: path, Err: errors.New("aborted")}
 }
 
+// errNotDirectory is libuv's ENOTDIR where win32 only reports a missing path.
+// Go's syscall.ENOTDIR there is ERROR_PATH_NOT_FOUND, which also matches
+// fs.ErrNotExist, so it cannot carry the distinction.
+var errNotDirectory = errors.New("not a directory")
+
 func nodeOperationError(operation, path string, err error) error {
 	if err == nil {
 		return nil
@@ -108,14 +113,14 @@ func nodeOperationError(operation, path string, err error) error {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		code = FileErrorAborted
 		message = "aborted"
+	case errors.Is(err, errNotDirectory), runtime.GOOS != "windows" && errors.Is(err, syscall.ENOTDIR):
+		code = FileErrorNotDirectory
+		message = fmt.Sprintf("ENOTDIR: not a directory, %s '%s'", operation, path)
 	case errors.Is(err, fs.ErrNotExist):
 		code = FileErrorNotFound
 		message = fmt.Sprintf("ENOENT: no such file or directory, %s '%s'", operation, path)
 	case errors.Is(err, fs.ErrPermission):
 		code = FileErrorPermissionDenied
-	case errors.Is(err, syscall.ENOTDIR):
-		code = FileErrorNotDirectory
-		message = fmt.Sprintf("ENOTDIR: not a directory, %s '%s'", operation, path)
 	// win32 reads of a directory handle fail with ERROR_INVALID_FUNCTION (errno 1
 	// there), which libuv reports as EISDIR.
 	case errors.Is(err, syscall.EISDIR), runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1)):
@@ -254,7 +259,7 @@ func (env *NodeExecutionEnv) writeFlags(ctx context.Context, path string, conten
 	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 		if env.fileAncestor(ctx, resolved) {
-			err = syscall.ENOTDIR
+			err = errNotDirectory
 		}
 		return nodeOperationError("mkdir", resolved, err)
 	}
@@ -309,7 +314,7 @@ func (env *NodeExecutionEnv) ListDir(ctx context.Context, path string) ([]FileIn
 		// scandir reports ENOTDIR there as on POSIX.
 		if errors.Is(err, fs.ErrNotExist) {
 			if info, infoErr := env.FileInfo(ctx, resolved); infoErr == nil && info.Kind == FileKindFile {
-				err = syscall.ENOTDIR
+				err = errNotDirectory
 			}
 		}
 		return nil, nodeOperationError("scandir", resolved, err)
@@ -363,7 +368,7 @@ func (env *NodeExecutionEnv) CreateDir(ctx context.Context, path string, recursi
 	if recursive {
 		err = os.MkdirAll(resolved, 0o755)
 		if err != nil && env.fileAncestor(ctx, resolved) {
-			err = syscall.ENOTDIR
+			err = errNotDirectory
 		}
 	} else {
 		err = os.Mkdir(resolved, 0o755)

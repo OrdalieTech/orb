@@ -2,13 +2,13 @@ package agent
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/skilllocations"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
@@ -722,6 +722,7 @@ func resolveResourcePath(path string) string {
 }
 
 func normalizeResourcePath(path string) string {
+	path = nodepath.NormalizeShellPath(path)
 	if path == "~" || strings.HasPrefix(path, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(path, `~\`)) {
 		if home, err := os.UserHomeDir(); err == nil {
 			if path == "~" {
@@ -731,8 +732,8 @@ func normalizeResourcePath(path string) string {
 		}
 	}
 	if strings.HasPrefix(path, "file://") {
-		if parsed, err := url.Parse(path); err == nil && (parsed.Host == "" || strings.EqualFold(parsed.Host, "localhost")) {
-			return filepath.FromSlash(parsed.Path)
+		if converted, err := nodepath.FileURLToPath(path); err == nil {
+			return converted
 		}
 	}
 	return path
