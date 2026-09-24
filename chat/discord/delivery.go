@@ -95,8 +95,7 @@ func (d *delivery) Preview(ctx context.Context, text string) error {
 	if text == "" || text == d.previewText {
 		return nil
 	}
-	now := time.Now()
-	if d.previewID != "" && now.Sub(d.lastPreviewAt) < d.adapter.previewMinInterval {
+	if d.previewID != "" && time.Since(d.lastPreviewAt) < d.adapter.previewMinInterval {
 		return errPreviewThrottled
 	}
 	if d.previewID == "" {
@@ -121,7 +120,9 @@ func (d *delivery) Preview(ctx context.Context, text string) error {
 		}
 	}
 	d.previewText = text
-	d.lastPreviewAt = now
+	// The interval runs from the completed call, so a slow round trip cannot
+	// shorten the gap before the next edit.
+	d.lastPreviewAt = time.Now()
 	return nil
 }
 

@@ -47,7 +47,7 @@ func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret stri
 	if err != nil {
 		return nil, err
 	}
-	if err = os.Chmod(path, 0600); err != nil {
+	if err = restrictSocket(path); err != nil {
 		_ = listener.Close()
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret stri
 			mu.Unlock()
 			go func() {
 				defer func() { _ = c.Close(); mu.Lock(); delete(connections, c); mu.Unlock(); <-slots }()
-				if !sameUser(c, "") {
+				if !sameUser(c, path) {
 					return
 				}
 				_ = c.SetDeadline(time.Now().Add(5 * time.Second))

@@ -19,3 +19,5 @@ func sameUser(c *net.UnixConn, _ string) bool {
 	})
 	return err == nil && ok
 }
+
+func restrictSocket(path string) error { return os.Chmod(path, 0600) }
