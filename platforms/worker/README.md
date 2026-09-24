@@ -49,7 +49,51 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
 
 The object does not load context files, skills or prompt templates. The resource
 loader reads the process file system, and that is not yet served through the FS
-port. The `/agents/<name>/bridge` route is reserved for the Bridge peer endpoint.
+port.
+
+## Bridge peer
+
+Each object is a full Bridge peer (`platforms/worker/peer`). Its identity (an
+Ed25519 key), grants, pairings and operation receipts live in Store documents
+under `/bridge/`, so they survive restarts. The object's own Orb is enrolled
+once, under an alias derived from the object name, and is attached as its
+`orb.instance/1` service whenever the peer is open.
+
+- **Inbound streams.** `/agents/<name>/bridge` accepts a WebSocket that carries
+  Bridge's pinned TLS 1.3 stream, as `orb bridge run --web-listen` does. The
+  route needs no `ORB_TOKEN`: a remote Orb never has it, and Bridge
+  authenticates the peer inside the stream. The socket is accepted, not
+  hibernatable. The TLS session lives in the Go runtime, which hibernation
+  would discard while the socket stayed open, and the open socket keeps the
+  object resident. An object without a Bridge identity answers 404 without
+  booting. A browser `Origin` must be listed in `ORB_BRIDGE_ORIGINS`.
+- **Outbound calls.** The object cannot dial (tailcat is native-only, and a
+  Worker has no listener of its own). It reaches another peer over a channel
+  that peer opened: a laptop Orb that joined keeps its channel, and the object's
+  agent calls it with `bridge_call`. That tool is active only when
+  `plugins.bridge-agent-calls` is on in the object's settings. Each call also
+  needs the object's own instance grant for the destination, and a grant on
+  the destination for the object's instance subject.
+- **Admin.** `POST /agents/<name>/bridge/admin` with `{"method", "params"}`,
+  behind `ORB_TOKEN`, runs the owner methods of `orb bridge`: `status`,
+  `instances`, `peers`, `grants`, `invite`, `approve`, `block`, `grant`,
+  `revoke`, `scope`, `group`, `assign`, `takeover`, `trust` (a full controller
+  grant) and `remote`. `self` returns the peer ID, instance ID and stream URL.
+  `invite` advertises `wss://<host>/agents/<name>/bridge`, or the same path on
+  `ORB_PUBLIC_ORIGIN` when a proxy fronts the Worker. `join`, `publish` and the
+  service lifecycle are refused, because the object cannot dial.
+
+Pairing a laptop Orb with an object:
+
+```sh
+curl -s -X POST https://<host>/agents/demo/bridge/admin -H "Authorization: Bearer $ORB_TOKEN" \
+  -d '{"method":"invite"}' > invitation.json
+orb bridge pair join < invitation.json          # prints the claim, with the laptop's peer ID
+curl -s -X POST https://<host>/agents/demo/bridge/admin -H "Authorization: Bearer $ORB_TOKEN" \
+  -d '{"method":"approve","params":{"invitation_id":"<id>","claimant":"<laptop peer ID>"}}'
+orb bridge trust <object peer ID>               # optional: the object may list and call this laptop
+orb bridge remote <object peer ID> instances.list < /dev/null
+```
 
 ## Deploy
 
@@ -95,8 +139,8 @@ RPC `set_model` command.
 
 ## Endpoint contract
 
-Every `/agents/<name>/…` route requires `Authorization: Bearer <ORB_TOKEN>`. A
-missing or wrong token gets 401.
+Every `/agents/<name>/…` route except the Bridge stream requires
+`Authorization: Bearer <ORB_TOKEN>`. A missing or wrong token gets 401.
 
 | Route | Behavior |
 | --- | --- |
@@ -104,7 +148,8 @@ missing or wrong token gets 401.
 | `GET /agents/<name>/rpc` + `Upgrade: websocket` | A hibernatable WebSocket. Each client message carries one or more pi RPC command frames, separated by LF. Each server message is one output frame: `response`, an agent event or `extension_ui_request`. The object sends its frames to every socket it has open. |
 | `POST /agents/<name>/rpc` | The body is NDJSON command frames. The reply is `200 application/x-ndjson` and streams the object's frames while the request is open. It ends once every command has its `response` and any run a command started has sent `agent_settled`. |
 | `GET /agents/<name>/stats` | JSON: `bootId`, `bootMs`, `wasmMemoryBytes`, Go memory statistics, `busy` and `pending`. |
-| `/agents/<name>/bridge` | `501`, reserved for the Bridge peer endpoint. |
+| `GET /agents/<name>/bridge` + `Upgrade: websocket` | A Bridge stream (binary messages, pinned TLS inside). **No bearer token**: Bridge authenticates the peer. 404 until the object has a Bridge identity. |
+| `POST /agents/<name>/bridge/admin` | `{"method": "…", "params": {…}}`: an owner method of `orb bridge` (see [Bridge peer](#bridge-peer)). Returns the method's JSON result, or 400 with `{"error"}`. |
 
 Frames are the kernel RPC frames of `orb --mode rpc` (`agent/rpc`), byte for
 byte. A transport failure, such as a runtime that failed to boot, arrives as
@@ -120,9 +165,10 @@ EOF
 
 ## Limits
 
-- **Size.** `orb.wasm` is 53.6 MB raw and 9.66 MB gzip. Wrangler reports a total
-  upload of 9.61 MB gzip, which is under the 10 MB compressed limit of the paid
-  plan. The free plan allows 3 MB, so it cannot host Orb.
+- **Size.** With the Bridge peer, `orb.wasm` is 54.8 MB raw and 9.93 MB gzip.
+  Wrangler reports a total upload of 9,876 KiB gzip, 1.2% under the 10 MB
+  compressed limit of the paid plan. The free plan allows 3 MB, so it cannot
+  host Orb.
 - **Memory.** Cloudflare gives each isolate 128 MB. After a tool-using turn, one
   object uses 36–38 MB of Wasm linear memory, of which 3–6 MB is Go heap. Linear
   memory only grows, so this figure is also the peak. Several objects can share
@@ -156,4 +202,6 @@ EOF
 | `GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./platforms/worker/...` | The same suites through the syscall/js storage bridge, against an asynchronous fake `ctx.storage`. |
 | `make -f platforms/worker/worker.mk worker-e2e-workerd` | workerd (`wrangler dev`) with a local scripted OpenAI-compatible model: write then read over WebSocket, a dev-server restart, then history and file checks over HTTP NDJSON. |
 | `make -f platforms/worker/worker.mk worker-e2e-celld` | The same scenario under `celld dev`, including a node restart. |
+| `make -f platforms/worker/worker.mk worker-e2e-bridge-workerd` (and `-celld`) | Bridge in both directions with this tree's native `orb`, confined to `.tools/worker-bridge-e2e/laptop` (its own `HOME`, `ORB_STATE_HOME`, `ORB_BRIDGE_HOME` and `PI_CODING_AGENT_DIR`, profile `e2e`). The object invites, the laptop joins over the advertised URL, and the owner approves. The laptop lists, inspects and prompts the object and reads the conversation back with `orb bridge remote`. The object's agent then calls the laptop's Orb with `bridge_call` under its own instance grant. After a restart the laptop reconnects to the same identity. |
+| `make -f platforms/worker/worker.mk worker-e2e-bridge-deployed ORB_WORKER_URL=…` | The same against a deployed `worker-e2e-build` bundle. It redeploys `.tools/worker-e2e` once to restart the object. |
 | `worker-e2e-build`, then `worker-e2e-deployed` | A deployed check. `worker-e2e-build` adds `e2e/fake-model.js`, so the scripted model runs inside the Worker and no provider key is needed. `node platforms/worker/e2e/e2e.mjs --configure-deploy .tools/worker-e2e --name orb-do-e2e` writes its `wrangler.json`. Deploy that directory and set `ORB_TOKEN`. Then run `WORKER_E2E_PHASE=write`, redeploy (a new version restarts every object) and run `WORKER_E2E_PHASE=verify`, with `ORB_WORKER_URL` and `ORB_TOKEN` set. |

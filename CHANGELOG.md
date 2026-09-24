@@ -6,6 +6,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- A Durable Object or Celld Orb is a full Bridge peer at `/agents/<name>/bridge`: pair a native Orb
+  with `orb bridge pair join`, administer it through `/bridge/admin`, and let either side call the
+  other under its own grants.
+
 - Skip Claude Code's `skills/synced` folder, which holds one copy of the claude.ai skills per
   signed-in account: it made the home screen warn about name collisions (`docx`, `pdf`, …) and gave
   Orb claude.ai-only skills. Your own `~/.claude/skills` still load.

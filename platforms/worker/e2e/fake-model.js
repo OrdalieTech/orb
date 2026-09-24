@@ -6,6 +6,9 @@
 //
 // A prompt "orb-e2e write <path> <text...>" makes the model call write, then
 // read, then answer "read back: <file>"; "orb-e2e read <path>" skips the write.
+// "orb-e2e bridge <peer> <instance> <text...>" makes it inspect that Bridge
+// instance with bridge_call, prompt it with <text> at the inspected target,
+// then answer "bridge prompt: <receipt status>".
 (() => {
   const encoder = new TextEncoder();
 
@@ -26,10 +29,33 @@
     const calls = since.flatMap(message => (message.role === "assistant" ? (message.tool_calls ?? []) : []));
     const id = `call_${messages.length}`;
     if (marker !== "orb-e2e") return { text: "unscripted prompt" };
+    if (verb === "bridge") return bridge(path, words, calls, since.filter(message => message.role === "tool").map(message => text(message.content)), id);
     if (verb === "write" && calls.length === 0) return { id, tool: "write", args: { path, content: `${words.join(" ")}\n` } };
     if ((verb === "write" && calls.length === 1) || (verb === "read" && calls.length === 0)) return { id, tool: "read", args: { path } };
     const result = since.findLast(message => message.role === "tool");
     return { text: `read back: ${text(result?.content).trim()}` };
+  }
+
+  function operationID() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  }
+
+  function bridge(peer, [instance, ...words], calls, results, id) {
+    const call = { instance_id: instance, service: "orb.instance/1" };
+    if (calls.length === 0) return { id, tool: "bridge_call", args: { peer_id: peer, call: { ...call, method: "inspect", args: {} } } };
+    let result = {};
+    try {
+      result = JSON.parse(results.at(-1));
+    } catch {
+      return { text: `bridge failed: ${results.at(-1)}` };
+    }
+    if (calls.length === 1) {
+      const expected = { registration_generation: result.registration_generation, session_revision: result.target?.session_revision };
+      const prompt = { ...call, method: "prompt", session_id: result.target?.session_id, expected, operation_id: operationID(), args: { text: words.join(" ") } };
+      return { id, tool: "bridge_call", args: { peer_id: peer, call: prompt } };
+    }
+    return { text: `bridge prompt: ${result.status}` };
   }
 
   async function handle(request) {

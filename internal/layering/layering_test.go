@@ -191,6 +191,7 @@ func TestCapabilityDependencies(t *testing.T) {
 		{"plugins/bridge/transports/websocket", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports/tailcat", "/storage/sqlite"}},
 		{"plugins/bridge", []string{"/agent", "/tui", "/plugins/bridge/hosts", "/plugins/bridge/transports", "/storage/sqlite"}},
 		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
+		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
 		{"platforms/worker", []string{"/agent/assembly", "/agent/modes", "/tui", "/storage/sqlite", "/plugins"}},
 		{"platforms/wasm", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/storage/sqlite", "/plugins/bridge/hosts", "/plugins/bridge/transports"}},
 	} {

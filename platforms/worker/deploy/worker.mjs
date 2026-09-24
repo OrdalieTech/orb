@@ -20,17 +20,24 @@ if (globalThis.process) {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const AGENT_ROUTE = /^\/agents\/([A-Za-z0-9._~-]{1,128})\/(rpc|stats|bridge)$/;
+const AGENT_ROUTE = /^\/agents\/([A-Za-z0-9._~-]{1,128})\/(rpc|stats|bridge|bridge\/admin)$/;
+// Present once the object has a Bridge identity (platforms/worker/peer.StateKey).
+const BRIDGE_STATE_KEY = "doc/m/bridge/state.json";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return new Response("ok\n");
     const route = AGENT_ROUTE.exec(url.pathname);
-    if (!route) return problem(404, "Routes: /agents/<name>/rpc, /agents/<name>/stats, /health");
-    const denied = authorize(request, env);
-    if (denied) return denied;
-    if (route[2] === "bridge") return problem(501, "/agents/<name>/bridge is reserved for the Bridge peer endpoint");
+    if (!route) return problem(404, "Routes: /agents/<name>/rpc, /agents/<name>/stats, /agents/<name>/bridge, /agents/<name>/bridge/admin, /health");
+    // Bridge streams authenticate peers with pinned TLS inside the stream; a
+    // remote Orb has no ORB_TOKEN. Everything else needs the bearer token.
+    if (route[2] !== "bridge") {
+      const denied = authorize(request, env);
+      if (denied) return denied;
+    } else if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return problem(426, "/agents/<name>/bridge carries Bridge streams over WebSocket");
+    }
     return env.ORB_AGENT.get(env.ORB_AGENT.idFromName(route[1])).fetch(request);
   },
 };
@@ -59,12 +66,12 @@ let bootSlots = 0;
 // start instantiates one Go runtime for one object. Go reads its boot slot
 // synchronously at startup, so the slot is free again by the time the next
 // object in this isolate boots.
-async function start(storage, env, emit, exited) {
+async function start(storage, env, name, emit, exited) {
   const began = Date.now();
   const go = new Go();
   const slot = `__orbWorkerBoot${++bootSlots}`;
   const ready = new Promise((resolve, reject) => {
-    globalThis[slot] = { storage, env, emit, resolve, reject: message => reject(new Error(message)), exit: exited };
+    globalThis[slot] = { storage, env, name, emit, resolve, reject: message => reject(new Error(message)), exit: exited };
   });
   go.argv = ["orb-worker", slot];
   go.env = {};
@@ -90,7 +97,7 @@ export class OrbAgent {
   }
 
   boot() {
-    this.orb ??= start(this.ctx.storage, this.env, frame => this.frame(frame), code => this.exited(code)).catch(error => {
+    this.orb ??= start(this.ctx.storage, this.env, this.ctx.id?.name ?? "", frame => this.frame(frame), code => this.exited(code)).catch(error => {
       this.orb = undefined;
       throw error;
     });
@@ -159,8 +166,11 @@ export class OrbAgent {
   }
 
   async fetch(request) {
-    const [, , action] = AGENT_ROUTE.exec(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const [, name, action] = AGENT_ROUTE.exec(url.pathname);
     if (action === "stats") return this.stats();
+    if (action === "bridge") return this.bridgeStream(request);
+    if (action === "bridge/admin") return this.bridgeAdmin(request, url, name);
     if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server);
@@ -191,6 +201,49 @@ export class OrbAgent {
         output.close();
       });
     return new Response(body, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" } });
+  }
+
+  // bridgeStream hands a WebSocket to the Go Bridge peer. It is accepted, not
+  // hibernatable: the TLS session inside it lives in the Go runtime, and the
+  // open socket keeps the object resident. Unknown objects are not booted.
+  async bridgeStream(request) {
+    const origin = request.headers.get("Origin");
+    if (origin && !(this.env.ORB_BRIDGE_ORIGINS ?? "").split(",").map(value => value.trim()).includes(origin)) {
+      return problem(403, "Origin not allowed; list it in ORB_BRIDGE_ORIGINS");
+    }
+    if ((await this.ctx.storage.get(BRIDGE_STATE_KEY)) === undefined) {
+      return problem(404, "This agent has no Bridge identity yet; create an invitation through /bridge/admin");
+    }
+    let api;
+    try {
+      ({ api } = await this.boot());
+    } catch (error) {
+      return problem(500, `Orb failed to start: ${error.message}`);
+    }
+    const [client, server] = Object.values(new WebSocketPair());
+    server.accept();
+    api.bridgeAccept(server);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // bridgeAdmin runs one owner method of `orb bridge` ({"method", "params"}).
+  // Invitations advertise this object's stream URL, from ORB_PUBLIC_ORIGIN
+  // when a proxy fronts the Worker.
+  async bridgeAdmin(request, url, name) {
+    if (request.method !== "POST") return problem(405, 'POST {"method": "...", "params": {...}}', { Allow: "POST" });
+    let body;
+    try {
+      body = await request.json();
+    } catch {}
+    if (typeof body?.method !== "string") return problem(400, 'POST {"method": "...", "params": {...}}');
+    const origin = (this.env.ORB_PUBLIC_ORIGIN ?? url.origin).replace(/^http/, "ws").replace(/\/$/, "");
+    try {
+      const { api } = await this.boot();
+      const result = await api.bridgeAdmin(body.method, JSON.stringify(body.params ?? {}), `${origin}/agents/${name}/bridge`);
+      return new Response(result, { headers: { "Content-Type": "application/json" } });
+    } catch (error) {
+      return problem(400, error.message);
+    }
   }
 
   async stats() {

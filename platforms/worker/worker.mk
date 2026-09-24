@@ -8,6 +8,8 @@
 #   worker-test          Go suites for the Worker host, natively and in js/wasm with a fake DO storage
 #   worker-e2e-workerd   end-to-end in workerd, including a dev-server restart
 #   worker-e2e-celld     end-to-end under Celld, including a node restart
+#   worker-e2e-bridge-workerd|-celld  Bridge pairing both ways with a throwaway native `orb` (isolated under .tools)
+#   worker-e2e-bridge-deployed        the same against ORB_WORKER_URL, redeploying WORKER_E2E_DIR to restart it
 #   worker-e2e-deployed  one phase (WORKER_E2E_PHASE=write|verify) against a deployed Worker (ORB_WORKER_URL, ORB_TOKEN)
 
 WORKER_DIR ?= $(CURDIR)/.tools/worker
@@ -20,6 +22,10 @@ endif
 CELLD ?= $(CURDIR)/.tools/bin/celld
 WORKER_WASM_EXEC = $$($(WORKER_GO_ENV) go env GOROOT)/lib/wasm
 
+WORKER_BRIDGE_DIR ?= $(CURDIR)/.tools/worker-bridge-e2e
+WORKER_BRIDGE_ARGS = --orb $(WORKER_BRIDGE_DIR)/orb --laptop $(WORKER_BRIDGE_DIR)/laptop
+
+.PHONY: worker-bridge-orb worker-e2e-bridge-workerd worker-e2e-bridge-celld worker-e2e-bridge-deployed
 .PHONY: worker-build worker-dev worker-deploy worker-celld-dev worker-test worker-e2e-workerd worker-e2e-celld worker-e2e-deployed worker-e2e-build
 
 # $(1): output directory; $(2): extra scripts prepended after wasm_exec.js.
@@ -67,3 +73,20 @@ worker-e2e-build:
 WORKER_E2E_PHASE ?= write
 worker-e2e-deployed:
 	node platforms/worker/e2e/e2e.mjs --runtime remote --url "$(ORB_WORKER_URL)" --phase $(WORKER_E2E_PHASE)
+
+# The laptop side of the Bridge checks: this tree's `orb`, run with HOME,
+# ORB_STATE_HOME, ORB_BRIDGE_HOME and PI_CODING_AGENT_DIR under $(WORKER_BRIDGE_DIR).
+worker-bridge-orb:
+	mkdir -p $(WORKER_BRIDGE_DIR)
+	$(WORKER_GO_ENV) CGO_ENABLED=0 go build -o $(WORKER_BRIDGE_DIR)/orb ./cmd/orb
+
+worker-e2e-bridge-workerd: worker-build worker-bridge-orb
+	node platforms/worker/e2e/bridge.mjs --runtime workerd --dir $(WORKER_DIR) $(WORKER_BRIDGE_ARGS)
+
+worker-e2e-bridge-celld: worker-build worker-bridge-orb $(CELLD)
+	node platforms/worker/e2e/bridge.mjs --runtime celld --dir $(WORKER_DIR) --celld $(CELLD) $(WORKER_BRIDGE_ARGS)
+
+# Needs the deployed worker-e2e-build bundle in WORKER_E2E_DIR (its .orb-token
+# and Wrangler login); the check redeploys it once to restart the object.
+worker-e2e-bridge-deployed: worker-bridge-orb
+	node platforms/worker/e2e/bridge.mjs --runtime remote --url "$(ORB_WORKER_URL)" --token-file $(WORKER_E2E_DIR)/.orb-token --redeploy $(WORKER_E2E_DIR) $(WORKER_BRIDGE_ARGS)

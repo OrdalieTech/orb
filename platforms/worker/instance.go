@@ -53,6 +53,8 @@ type Options struct {
 	// settings; StreamFn replaces the default provider dispatcher.
 	Model    *ai.Model
 	StreamFn engine.StreamFn
+	// Tools adds tools to every session the object starts.
+	Tools ToolsFunc
 }
 
 // Instance is one Durable Object's Orb: a Host over the object's storage and
@@ -66,9 +68,13 @@ type Instance struct {
 	repo      *harness.JSONLSessionRepo
 	model     *ai.Model
 	streamFn  engine.StreamFn
+	tools     ToolsFunc
 
-	mu      sync.Mutex
-	session *agent.AgentSession
+	mu           sync.Mutex
+	session      *agent.AgentSession
+	control      *agent.SessionControl
+	observers    map[uint64]func(*agent.AgentSession)
+	nextObserver uint64
 }
 
 // Open restores the object's files and documents and resumes its current
@@ -99,7 +105,7 @@ func Open(ctx context.Context, options Options) (*Instance, error) {
 		defaults[path.Join(AgentDir, "models.json")] = options.Models
 	}
 	instance := &Instance{
-		Files: files, documents: documents, model: options.Model, streamFn: options.StreamFn,
+		Files: files, documents: documents, model: options.Model, streamFn: options.StreamFn, tools: options.Tools,
 		repo: harness.NewJSONLSessionRepo(files, path.Join(AgentDir, "sessions")),
 	}
 	instance.Host = &host.Host{AgentDir: AgentDir, FS: files, Store: NewStore(documents, defaults), Env: options.Env, Sessions: instance.repo}
@@ -145,10 +151,17 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 	if err != nil {
 		return nil, err
 	}
-	result, err := agent.NewAgentSession(agent.AgentSessionOptions{
+	options := agent.AgentSessionOptions{
 		CWD: Workspace, Host: instance.Host, SessionManager: manager, Model: instance.model, StreamFn: instance.streamFn,
 		Resources: &agent.Resources{}, DeferExtensionStart: true,
-	})
+	}
+	if instance.tools != nil {
+		if options.Settings, err = instance.settings(); err != nil {
+			return nil, err
+		}
+		options.CustomTools = instance.tools(options.Settings)
+	}
+	result, err := agent.NewAgentSession(options)
 	if err != nil {
 		return nil, err
 	}
@@ -159,11 +172,18 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 	return result.Session, nil
 }
 
-func (instance *Instance) replace(journal *harness.Session, err error) (bool, error) {
+// replaceContext swaps the session inside a control transition, so an attached
+// controller sees a new revision, and tells session observers.
+func (instance *Instance) replaceContext(ctx context.Context, journal *harness.Session, err error) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	next, err := instance.start(context.Background(), journal)
+	finish, err := instance.beginTransition(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer finish()
+	next, err := instance.start(ctx, journal)
 	if err != nil {
 		return false, err
 	}
@@ -171,6 +191,7 @@ func (instance *Instance) replace(journal *harness.Session, err error) (bool, er
 	previous := instance.session
 	instance.session = next
 	instance.mu.Unlock()
+	instance.notify(next)
 	if previous != nil {
 		previous.Dispose()
 	}
@@ -184,18 +205,30 @@ func (instance *Instance) Session() *agent.SessionRuntime {
 }
 
 func (instance *Instance) NewSession(parentSession string) (bool, error) {
+	return instance.NewSessionContext(context.Background(), parentSession)
+}
+
+// NewSessionContext is NewSession under ctx's control target.
+func (instance *Instance) NewSessionContext(ctx context.Context, parentSession string) (bool, error) {
 	options := harness.SessionCreateOptions{CWD: Workspace}
 	if parentSession != "" {
 		options.ParentSessionPath = &parentSession
 	}
-	return instance.replace(instance.repo.Create(context.Background(), options))
+	journal, err := instance.repo.Create(ctx, options)
+	return instance.replaceContext(ctx, journal, err)
 }
 
 func (instance *Instance) SwitchSession(sessionPath string) (bool, error) {
+	return instance.SwitchSessionContext(context.Background(), sessionPath)
+}
+
+// SwitchSessionContext is SwitchSession under ctx's control target.
+func (instance *Instance) SwitchSessionContext(ctx context.Context, sessionPath string) (bool, error) {
 	if !strings.HasPrefix(path.Clean(sessionPath), path.Join(AgentDir, "sessions")+"/") {
 		return false, fmt.Errorf("worker: sessions live under %s/sessions", AgentDir)
 	}
-	return instance.replace(instance.repo.OpenPath(context.Background(), sessionPath))
+	journal, err := instance.repo.OpenPath(ctx, sessionPath)
+	return instance.replaceContext(ctx, journal, err)
 }
 
 func (instance *Instance) Fork(string, bool) (string, bool, error) {

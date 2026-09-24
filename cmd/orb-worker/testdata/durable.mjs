@@ -22,7 +22,8 @@ function storage() {
   const later = value => new Promise(resolve => setTimeout(() => resolve(value), 0));
   return {
     map,
-    get: keys => later(new Map(keys.filter(key => map.has(key)).map(key => [key, structuredClone(map.get(key))]))),
+    // Like ctx.storage.get: one key yields its value, an array a Map.
+    get: keys => later(typeof keys === "string" ? structuredClone(map.get(keys)) : new Map(keys.filter(key => map.has(key)).map(key => [key, structuredClone(map.get(key))]))),
     put: entries => later().then(() => Object.entries(entries).forEach(([key, value]) => map.set(key, structuredClone(value)))),
     delete: keys => later().then(() => keys.filter(key => map.delete(key)).length),
     list: ({ prefix = "" } = {}) => later(new Map([...map.keys()].sort().filter(key => key.startsWith(prefix)).map(key => [key, structuredClone(map.get(key))]))),
@@ -69,7 +70,11 @@ const answer = frames => frames.filter(frame => frame.type === "message_end" && 
 
 check((await worker.fetch(new Request("https://orb.test/health"), env)).status === 200, "health");
 check((await worker.fetch(new Request("https://orb.test/agents/a/rpc", { method: "POST" }), env)).status === 401, "an unauthenticated call was served");
-check((await call("/agents/a/bridge")).status === 501, "the Bridge route is not reserved");
+check((await call("/agents/a/bridge")).status === 426, "the Bridge route served a plain request");
+// A stream request needs no bearer token, but an agent without a Bridge
+// identity is never booted or created for it.
+const stream = await worker.fetch(new Request("https://orb.test/agents/nobody/bridge", { headers: { Upgrade: "websocket" } }), env);
+check(stream.status === 404 && stored.get("nobody").map.size === 0 && !objects.get("nobody").orb, "an unknown agent was booted for a stream", stream.status);
 
 const first = await rpc("a", { id: "p1", type: "prompt", message: "orb-e2e write notes/hello.txt persisted in durable storage" });
 check(reply(first, "p1")?.success, "prompt was refused", first.filter(frame => frame.type === "response"));
@@ -80,6 +85,14 @@ const before = await (await call("/agents/a/stats")).json();
 check(before.wasmMemoryBytes > 0 && before.go.heapAlloc > 0, "stats are missing", before);
 check([...stored.get("a").map.values()].every(value => value instanceof Uint8Array), "stored a non-binary value");
 
+const self = await (await call("/agents/a/bridge/admin", { method: "POST", body: JSON.stringify({ method: "self" }) })).json();
+check(/^orb:ed25519:/.test(self.peer_id) && self.locator === "wss://orb.test/agents/a/bridge", "bridge self", self);
+const invitation = await (await call("/agents/a/bridge/admin", { method: "POST", body: JSON.stringify({ method: "invite" }) })).json();
+check(invitation.peer_id === self.peer_id && invitation.locator === self.locator && invitation.token && invitation.grants.length === 1, "bridge invite", invitation);
+check(stored.get("a").map.has("doc/m/bridge/state.json"), "no Bridge identity in storage");
+const refused = await call("/agents/a/bridge/admin", { method: "POST", body: JSON.stringify({ method: "join", params: {} }) });
+check(refused.status === 400 && /not available/.test((await refused.json()).error), "join was not refused");
+
 objects = new Map();
 const messages = reply(await rpc("a", { id: "m", type: "get_messages" }), "m")?.data.messages ?? [];
 check(messages.length === 7 && messages[1].role === "user", "the restarted object lost its history", messages.map(message => message.role));
@@ -88,6 +101,8 @@ check(JSON.stringify(tools(resumed).map(([name, error]) => [name, error])) === '
 check(answer(resumed) === "read back: persisted in durable storage", "wrong answer after restart", answer(resumed));
 const after = await (await call("/agents/a/stats")).json();
 check(after.bootId !== before.bootId, "the object was not restarted");
+const again = await (await call("/agents/a/bridge/admin", { method: "POST", body: JSON.stringify({ method: "self" }) })).json();
+check(again.peer_id === self.peer_id && again.instance_id === self.instance_id, "the Bridge identity changed across a restart", again);
 const other = await rpc("b", { id: "s", type: "get_state" });
 check(reply(other, "s")?.data.messageCount === 0, "objects share a session", other);
 console.log(`durable harness OK: wasm memory ${after.wasmMemoryBytes} bytes, Go heap ${after.go.heapAlloc} bytes`);
