@@ -88,9 +88,16 @@ func (db *DB) Foreign(profile string) *Foreign { return &Foreign{db, profile} }
 // Begin allocates an ordering token before network I/O. Forget advances the
 // floor, so an in-flight response can never resurrect purged content.
 func (c *Foreign) Begin(ctx context.Context, peer string) (int64, error) {
+	tx, err := c.db.begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	var ticket int64
-	err := c.db.QueryRowContext(ctx, `INSERT INTO foreign_sources VALUES(?,?,1,0) ON CONFLICT(profile,peer) DO UPDATE SET revision=revision+1 RETURNING revision`, c.profile, peer).Scan(&ticket)
-	return ticket, err
+	if err = tx.QueryRowContext(ctx, `INSERT INTO foreign_sources VALUES(?,?,1,0) ON CONFLICT(profile,peer) DO UPDATE SET revision=revision+1 RETURNING revision`, c.profile, peer).Scan(&ticket); err != nil {
+		return 0, err
+	}
+	return ticket, tx.Commit()
 }
 func (c *Foreign) Put(ctx context.Context, ticket int64, s ForeignSession) error {
 	if s.Peer == "" || s.Namespace == "" || s.ID == "" || s.Instance == "" || ticket <= 0 {
@@ -118,7 +125,7 @@ func (c *Foreign) Put(ctx context.Context, ticket int64, s ForeignSession) error
 	if err != nil {
 		return err
 	}
-	tx, err := c.db.BeginTx(ctx, nil)
+	tx, err := c.db.begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -164,7 +171,7 @@ func (c *Foreign) List(ctx context.Context, peer string) ([]ForeignSession, erro
 	return result, rows.Err()
 }
 func (c *Foreign) Forget(ctx context.Context, peer string) error {
-	tx, err := c.db.BeginTx(ctx, nil)
+	tx, err := c.db.begin(ctx)
 	if err != nil {
 		return err
 	}

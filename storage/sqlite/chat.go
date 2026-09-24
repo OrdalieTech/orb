@@ -48,11 +48,11 @@ func (store *Chat) Put(ctx context.Context, message chat.Message) error {
 	if err != nil {
 		return err
 	}
-	_, err = store.db.ExecContext(ctx, "INSERT INTO chat_pending(namespace,event_id,payload) VALUES(?,?,?)", store.namespace, message.EventID, data)
+	_, err = store.db.exec(ctx, "INSERT INTO chat_pending(namespace,event_id,payload) VALUES(?,?,?)", store.namespace, message.EventID, data)
 	return err
 }
 func (store *Chat) Ack(ctx context.Context, id string) error {
-	_, err := store.db.ExecContext(ctx, "DELETE FROM chat_pending WHERE seq=(SELECT seq FROM chat_pending WHERE namespace=? AND event_id=? ORDER BY seq LIMIT 1)", store.namespace, id)
+	_, err := store.db.exec(ctx, "DELETE FROM chat_pending WHERE seq=(SELECT seq FROM chat_pending WHERE namespace=? AND event_id=? ORDER BY seq LIMIT 1)", store.namespace, id)
 	return err
 }
 func (store *Chat) importJournal(ctx context.Context, data []byte) error {
@@ -60,7 +60,7 @@ func (store *Chat) importJournal(ctx context.Context, data []byte) error {
 	if err != nil {
 		return err
 	}
-	tx, err := store.db.BeginTx(ctx, nil)
+	tx, err := store.db.begin(ctx)
 	if err != nil {
 		return err
 	}
