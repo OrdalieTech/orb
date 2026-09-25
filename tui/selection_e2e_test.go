@@ -20,7 +20,7 @@ func TestSelectionCopiesLogicalLines(t *testing.T) {
 		{name: "styled", text: "\x1b[31malpha beta gamma delta\x1b[0m", want: "alpha beta gamma delta"},
 		{name: "paragraph", text: "alpha **beta** gamma delta\n\nnext paragraph", want: "alpha beta gamma delta\n\nnext paragraph", markdown: true},
 		{name: "list", text: "- alpha beta gamma delta\n- second item", want: "- alpha beta gamma delta\n- second item", markdown: true},
-		{name: "code", text: "```\n  alpha beta gamma delta\n    indented line\n```", markdown: true},
+		{name: "code", text: "```\nalpha beta gamma delta\n  indented line\n```", want: "alpha beta gamma delta\n  indented line", markdown: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			want := test.want

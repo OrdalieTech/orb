@@ -6,6 +6,12 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Each turn now ends with a dim footer naming the model and how long the turn took
+  (`claude-opus-5-5 · 1m 12s`), live and when a session is reopened.
+- The terminal theme separates text into clearer levels: replies in full ink, reasoning and tool
+  output muted, hints, times and footers dimmer, rules and rails fainter still.
+- Code blocks render as a subtle panel with the language as a dim label instead of literal
+  ```` ``` ```` fences; long lines wrap inside the panel, and copying a block yields just the code.
 - Claude Sessions no longer ends a turn with "cannot unmarshal string into … tool_use_result" when a
   tool fails: a failed tool reports its result as text, which Orb now accepts.
 - Claude Sessions no longer stops with "write |1: file already closed" on the first prompt after

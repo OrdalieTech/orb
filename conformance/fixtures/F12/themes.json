@@ -65,9 +65,9 @@
         "                                                                        ",
         "\u001b[38;2;128;128;128m│ \u001b[39m\u001b[38;2;128;128;128m\u001b[3mquote with \u001b[1mbold\u001b[22m\u001b[38;2;128;128;128m\u001b[3m and \u001b[38;2;138;190;183mcode\u001b[39m\u001b[23m\u001b[39m                                              ",
         "                                                                        ",
-        "\u001b[38;2;128;128;128m```typescript\u001b[39m                                                           ",
-        ">>\u001b[38;2;86;156;214mconst\u001b[39m answer: \u001b[38;2;78;201;176mnumber\u001b[39m = \u001b[38;2;181;206;168m42\u001b[39m; \u001b[38;2;106;153;85m// value\u001b[39m                                   ",
-        "\u001b[38;2;128;128;128m```\u001b[39m                                                                     "
+        "\u001b[48;2;31;31;34m>>\u001b[38;2;128;128;128mtypescript\u001b[39m                                                            \u001b[49m",
+        "\u001b[48;2;31;31;34m>>\u001b[38;2;86;156;214mconst\u001b[39m answer: \u001b[38;2;78;201;176mnumber\u001b[39m = \u001b[38;2;181;206;168m42\u001b[39m; \u001b[38;2;106;153;85m// value\u001b[39m                                   \u001b[49m",
+        "\u001b[48;2;31;31;34m                                                                        \u001b[49m"
       ],
       "highlighted": [
         "\u001b[38;2;86;156;214mconst\u001b[39m answer: \u001b[38;2;78;201;176mnumber\u001b[39m = \u001b[38;2;181;206;168m42\u001b[39m; \u001b[38;2;106;153;85m// value\u001b[39m"
@@ -151,7 +151,8 @@
         "diffGutterBg": "#26262a",
         "diffRemovedBg": "#382123",
         "searchMatchBg": "#3a3a4a",
-        "searchMatchText": "#d4d4d4"
+        "searchMatchText": "#d4d4d4",
+        "mdCodeBlockBg": "#1f1f22"
       },
       "export": {
         "pageBg": "#18181e",
@@ -223,9 +224,9 @@
         "                                                                        ",
         "\u001b[38;2;108;108;108m│ \u001b[39m\u001b[38;2;108;108;108m\u001b[3mquote with \u001b[1mbold\u001b[22m\u001b[38;2;108;108;108m\u001b[3m and \u001b[38;2;90;128;128mcode\u001b[39m\u001b[23m\u001b[39m                                              ",
         "                                                                        ",
-        "\u001b[38;2;108;108;108m```typescript\u001b[39m                                                           ",
-        ">>\u001b[38;2;0;0;255mconst\u001b[39m answer: \u001b[38;2;38;127;153mnumber\u001b[39m = \u001b[38;2;9;134;88m42\u001b[39m; \u001b[38;2;0;128;0m// value\u001b[39m                                   ",
-        "\u001b[38;2;108;108;108m```\u001b[39m                                                                     "
+        "\u001b[48;2;241;241;241m>>\u001b[38;2;108;108;108mtypescript\u001b[39m                                                            \u001b[49m",
+        "\u001b[48;2;241;241;241m>>\u001b[38;2;0;0;255mconst\u001b[39m answer: \u001b[38;2;38;127;153mnumber\u001b[39m = \u001b[38;2;9;134;88m42\u001b[39m; \u001b[38;2;0;128;0m// value\u001b[39m                                   \u001b[49m",
+        "\u001b[48;2;241;241;241m                                                                        \u001b[49m"
       ],
       "highlighted": [
         "\u001b[38;2;0;0;255mconst\u001b[39m answer: \u001b[38;2;38;127;153mnumber\u001b[39m = \u001b[38;2;9;134;88m42\u001b[39m; \u001b[38;2;0;128;0m// value\u001b[39m"
@@ -309,7 +310,8 @@
         "diffGutterBg": "#e2e2e2",
         "diffRemovedBg": "#f4dcda",
         "searchMatchBg": "#d0d0e0",
-        "searchMatchText": "#1f2328"
+        "searchMatchText": "#1f2328",
+        "mdCodeBlockBg": "#f1f1f1"
       },
       "export": {
         "pageBg": "#f8f8f8",

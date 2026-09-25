@@ -106,15 +106,15 @@
       "expected": [
         "\u001b[36m1. \u001b[39mFirst item                                                                   ",
         "                                                                                ",
-        "\u001b[2m```typescript\u001b[22m                                                                   ",
+        "  \u001b[2mtypescript\u001b[22m                                                                    ",
         "  \u001b[32m// code block\u001b[39m                                                                 ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "                                                                                ",
         "\u001b[36m2. \u001b[39mSecond item                                                                  ",
         "                                                                                ",
-        "\u001b[2m```typescript\u001b[22m                                                                   ",
+        "  \u001b[2mtypescript\u001b[22m                                                                    ",
         "  \u001b[32m// another code block\u001b[39m                                                         ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "                                                                                ",
         "\u001b[36m3. \u001b[39mThird item                                                                   "
       ]
@@ -180,10 +180,10 @@
       "text": "- ```ts\n  alpha beta gamma delta epsilon zeta\n  ```",
       "width": 24,
       "expected": [
-        "\u001b[36m- \u001b[39m\u001b[2m```ts\u001b[22m                 ",
+        "\u001b[36m- \u001b[39m  \u001b[2mts\u001b[22m                  ",
         "    \u001b[32malpha beta gamma    ",
-        "  \u001b_orb:w \u0007\u001b[32mdelta epsilon zeta\u001b[39m    ",
-        "  \u001b[2m```\u001b[22m                   "
+        "    \u001b_orb:w \u0007\u001b[32mdelta epsilon zeta\u001b[39m  ",
+        "                        "
       ]
     },
     {
@@ -430,9 +430,9 @@
       "expected": [
         "hello world                                                                     ",
         "                                                                                ",
-        "\u001b[2m```js\u001b[22m                                                                           ",
+        "  \u001b[2mjs\u001b[22m                                                                            ",
         "  \u001b[32mconst hello = \"world\";\u001b[39m                                                        ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "                                                                                ",
         "again, hello world                                                              "
       ]
@@ -444,9 +444,9 @@
       "expected": [
         "hello this is text                                                              ",
         "                                                                                ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "  \u001b[32mcode block\u001b[39m                                                                    ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "                                                                                ",
         "more text                                                                       "
       ]
@@ -458,9 +458,9 @@
       "expected": [
         "hello this is text                                                              ",
         "                                                                                ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "  \u001b[32mcode block\u001b[39m                                                                    ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "                                                                                ",
         "more text                                                                       "
       ]
@@ -472,9 +472,9 @@
       "expected": [
         "hello world                                                                     ",
         "                                                                                ",
-        "\u001b[2m```js\u001b[22m                                                                           ",
+        "  \u001b[2mjs\u001b[22m                                                                            ",
         "  \u001b[32mconst hello = 'world';\u001b[39m                                                        ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -714,9 +714,9 @@
       "text": "```html\n<div>Some HTML</div>\n```",
       "width": 80,
       "expected": [
-        "\u001b[2m```html\u001b[22m                                                                         ",
+        "  \u001b[2mhtml\u001b[22m                                                                          ",
         "  \u001b[32m<div>Some HTML</div>\u001b[39m                                                          ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -724,9 +724,9 @@
       "text": "```ts\nconst x = 1;\n``",
       "width": 80,
       "expected": [
-        "\u001b[2m```ts\u001b[22m                                                                           ",
+        "  \u001b[2mts\u001b[22m                                                                            ",
         "  \u001b[32mconst x = 1;\u001b[39m                                                                  ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -734,10 +734,10 @@
       "text": "```md\nnot a closing fence:\n``\n```",
       "width": 80,
       "expected": [
-        "\u001b[2m```md\u001b[22m                                                                           ",
+        "  \u001b[2mmd\u001b[22m                                                                            ",
         "  \u001b[32mnot a closing fence:\u001b[39m                                                          ",
         "  \u001b[32m``\u001b[39m                                                                            ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -745,9 +745,9 @@
       "text": "```ts\n``",
       "width": 80,
       "expected": [
-        "\u001b[2m```ts\u001b[22m                                                                           ",
+        "  \u001b[2mts\u001b[22m                                                                            ",
         "  \u001b[32m\u001b[39m                                                                              ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -755,9 +755,9 @@
       "text": "````\n```",
       "width": 80,
       "expected": [
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "  \u001b[32m\u001b[39m                                                                              ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -765,9 +765,9 @@
       "text": "~~~~~\n~~~~",
       "width": 80,
       "expected": [
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "  \u001b[32m\u001b[39m                                                                              ",
-        "\u001b[2m```\u001b[22m                                                                             "
+        "                                                                                "
       ]
     },
     {
@@ -775,10 +775,10 @@
       "text": "```md\nnot a closing fence:\n``\n```\n\nafter",
       "width": 80,
       "expected": [
-        "\u001b[2m```md\u001b[22m                                                                           ",
+        "  \u001b[2mmd\u001b[22m                                                                            ",
         "  \u001b[32mnot a closing fence:\u001b[39m                                                          ",
         "  \u001b[32m``\u001b[39m                                                                            ",
-        "\u001b[2m```\u001b[22m                                                                             ",
+        "                                                                                ",
         "                                                                                ",
         "after                                                                           "
       ]

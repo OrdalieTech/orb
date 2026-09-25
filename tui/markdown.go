@@ -41,6 +41,9 @@ type MarkdownTheme struct {
 	Underline       StyleFunc
 	HighlightCode   func(code, language string) []string
 	CodeBlockIndent string
+	// CodeBlockBackground paints code blocks as a panel; without it they
+	// render on the page background.
+	CodeBlockBackground StyleFunc
 }
 
 type MarkdownOptions struct {
@@ -205,7 +208,7 @@ func normalizeMarkdownTheme(theme MarkdownTheme) MarkdownTheme {
 	for _, target := range []*StyleFunc{
 		&theme.Heading, &theme.Link, &theme.LinkURL, &theme.Code, &theme.CodeBlock,
 		&theme.CodeBlockBorder, &theme.Quote, &theme.QuoteBorder, &theme.HorizontalRule,
-		&theme.ListBullet, &theme.Bold, &theme.Italic, &theme.Strikethrough, &theme.Underline,
+		&theme.ListBullet, &theme.Bold, &theme.Italic, &theme.Strikethrough, &theme.Underline, &theme.CodeBlockBackground,
 	} {
 		if *target == nil {
 			*target = identity
@@ -291,9 +294,9 @@ func (markdown *Markdown) renderBlock(node ast.Node, source []byte, width int, n
 		context := markdown.resolveInlineContext(style)
 		return spacing([]string{markdown.renderInlineChildren(node, source, context)}, true)
 	case *ast.FencedCodeBlock:
-		return spacing(markdown.renderFencedCodeBlock(typed, source), false)
+		return spacing(markdown.renderFencedCodeBlock(typed, source, width), false)
 	case *ast.CodeBlock:
-		return spacing(markdown.renderCodeBlock(blockText(typed, source), ""), false)
+		return spacing(markdown.renderCodeBlock(blockText(typed, source), "", width), false)
 	case *ast.List:
 		return markdown.renderList(typed, source, 0, width, style)
 	case *extast.Table:
@@ -366,22 +369,38 @@ func htmlBlockText(block *ast.HTMLBlock, source []byte) string {
 	return result.String()
 }
 
-func (markdown *Markdown) renderCodeBlock(code []byte, language string) []string {
+// renderCodeBlock draws a code block as a panel: the language as a dim label
+// on its top padding row, then the code, wrapped inside the panel so copying
+// rejoins long lines.
+func (markdown *Markdown) renderCodeBlock(code []byte, language string, width int) []string {
 	value := strings.TrimSuffix(string(code), "\n")
-	lines := []string{markdown.theme.CodeBlockBorder("```" + language)}
+	var codeLines []string
 	if markdown.theme.HighlightCode != nil {
-		for _, line := range markdown.theme.HighlightCode(value, language) {
-			lines = append(lines, markdown.theme.CodeBlockIndent+line)
-		}
+		codeLines = markdown.theme.HighlightCode(value, language)
 	} else {
 		for _, line := range strings.Split(value, "\n") {
-			lines = append(lines, markdown.theme.CodeBlockIndent+markdown.theme.CodeBlock(line))
+			codeLines = append(codeLines, markdown.theme.CodeBlock(line))
 		}
 	}
-	return append(lines, markdown.theme.CodeBlockBorder("```"))
+	indent := markdown.theme.CodeBlockIndent
+	inner := max(1, width-2*VisibleWidth(indent))
+	panel := func(line string) string {
+		return ApplyBackgroundToLine(line, width, markdown.theme.CodeBlockBackground)
+	}
+	label := ""
+	if language != "" {
+		label = indent + markdown.theme.CodeBlockBorder(language)
+	}
+	lines := []string{panel(label)}
+	for _, line := range codeLines {
+		for _, row := range wrapTextWithANSI(line, inner, true) {
+			lines = append(lines, panel(indent+row))
+		}
+	}
+	return append(lines, panel(""))
 }
 
-func (markdown *Markdown) renderFencedCodeBlock(block *ast.FencedCodeBlock, source []byte) []string {
+func (markdown *Markdown) renderFencedCodeBlock(block *ast.FencedCodeBlock, source []byte, width int) []string {
 	value := strings.TrimSuffix(string(blockText(block, source)), "\n")
 	marker, size := fencedMarker(block, source)
 	parts := strings.Split(value, "\n")
@@ -392,7 +411,7 @@ func (markdown *Markdown) renderFencedCodeBlock(block *ast.FencedCodeBlock, sour
 			value = strings.Join(parts, "\n")
 		}
 	}
-	return markdown.renderCodeBlock([]byte(value), string(block.Language(source)))
+	return markdown.renderCodeBlock([]byte(value), string(block.Language(source)), width)
 }
 
 func hasClosingFence(block *ast.FencedCodeBlock, source []byte, marker byte, size int) bool {

@@ -111,7 +111,10 @@ type InteractiveMode struct {
 	streaming       bool
 	// turnAnswered reports whether the running turn has shown anything yet;
 	// until it does, interrupting takes the prompt back (see abortAndRestore).
-	turnAnswered      bool
+	turnAnswered bool
+	// turnStart and turnModel feed the footer that closes each turn.
+	turnStart         time.Time
+	turnModel         string
 	toolsExpanded     bool
 	thinkingHidden    bool
 	thinkingLabel     string
@@ -4340,6 +4343,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		mode.mu.Lock()
 		mode.streaming = true
 		mode.turnAnswered = false
+		mode.turnStart, mode.turnModel = time.Now(), ""
 		mode.mu.Unlock()
 		if mode.interactiveUI != nil {
 			mode.interactiveUI.showWorkingIndicator()
@@ -4396,6 +4400,7 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		}
 		mode.mu.Lock()
 		comp := mode.currentStreaming
+		mode.turnModel = assistant.Model
 		mode.mu.Unlock()
 		if comp != nil {
 			comp.UpdateContentStreaming(assistant, false)
@@ -4443,7 +4448,12 @@ func (mode *InteractiveMode) handleEvent(event any) {
 	case agent.AgentSettledEvent:
 		mode.mu.Lock()
 		mode.streaming = false
+		start, model := mode.turnStart, mode.turnModel
+		mode.turnStart = time.Time{}
 		mode.mu.Unlock()
+		if !start.IsZero() && model != "" {
+			mode.addTurnFooter(model, time.Since(start))
+		}
 		mode.clearStatusIndicatorKind(StatusWorking)
 		mode.ui.Terminal().SetProgress(false)
 		// Upstream checks pending extension shutdown requests on
@@ -4763,10 +4773,28 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	mode.expandables = nil
 	mode.mu.Unlock()
 	entries := mode.session.Manager().BuildContextEntries()
+	// A turn runs from a prompt to the last reply before the next one; its
+	// footer closes it as it did live.
+	var turnStart, turnEnd time.Time
+	turnModel := ""
+	closeTurn := func() {
+		if !turnStart.IsZero() && turnModel != "" {
+			mode.addTurnFooter(turnModel, turnEnd.Sub(turnStart))
+		}
+		turnStart, turnModel = time.Time{}, ""
+	}
 	for _, entry := range entries {
 		switch entry.Type {
 		case "message":
 			message, err := ai.UnmarshalMessage(entry.Message)
+			at, _ := time.Parse(time.RFC3339Nano, entry.Timestamp)
+			switch value := message.(type) {
+			case *ai.UserMessage:
+				closeTurn()
+				turnStart = at
+			case *ai.AssistantMessage:
+				turnEnd, turnModel = at, value.Model
+			}
 			if err == nil {
 				mode.renderAgentMessage(message)
 			} else {
@@ -4788,7 +4816,34 @@ func (mode *InteractiveMode) renderInitialMessages() {
 			mode.chat.AddChild(component)
 		}
 	}
+	mode.mu.Lock()
+	running := mode.streaming
+	mode.mu.Unlock()
+	if !running {
+		closeTurn()
+	}
 	mode.ui.RequestRender()
+}
+
+// addTurnFooter closes a turn with one dim line: the model that answered and
+// how long the turn took.
+func (mode *InteractiveMode) addTurnFooter(model string, elapsed time.Duration) {
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(theme.FG("dim", model+" · "+formatTurnDuration(elapsed)), mode.currentOutputPad()+2, 0, nil))
+	mode.ui.RequestRender()
+}
+
+// formatTurnDuration keeps a turn's length short: 8s, 1m 12s, 1h 4m.
+func formatTurnDuration(elapsed time.Duration) string {
+	seconds := max(1, int(elapsed.Round(time.Second)/time.Second))
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%ds", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dm %ds", seconds/60, seconds%60)
+	default:
+		return fmt.Sprintf("%dh %dm", seconds/3600, seconds%3600/60)
+	}
 }
 
 func (mode *InteractiveMode) currentOutputPad() int {
