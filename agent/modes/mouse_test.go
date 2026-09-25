@@ -44,7 +44,7 @@ func lineIndexContaining(t *testing.T, lines []string, text string) int {
 }
 
 // branchingTreeFixture builds a chain where every level branches, so rows carry
-// rails at increasing depths and CJK labels widen them unevenly.
+// versions on every row and CJK labels widen them unevenly.
 func branchingTreeFixture(levels int) (*sessionstore.SessionTreeNode, string) {
 	root := treeTestMessage("root", "", "user", "根 root")
 	parent, leaf := root, "root"
@@ -114,8 +114,8 @@ func TestTreeSelectorWheelScrollsSelection(t *testing.T) {
 	for range 20 {
 		selector.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown})
 	}
-	if selector.selected != len(selector.view.rows)-1 {
-		t.Fatalf("wheel down clamped at %d, want %d", selector.selected, len(selector.view.rows)-1)
+	if selector.selected != len(selector.rows)-1 {
+		t.Fatalf("wheel down clamped at %d, want %d", selector.selected, len(selector.rows)-1)
 	}
 }
 
@@ -439,12 +439,12 @@ func TestSessionSelectorHoverMovesSelection(t *testing.T) {
 
 func TestTreeSelectorHoverMovesSelectionInPlace(t *testing.T) {
 	selector := newTreeFixtureSelector(t, 2, 40, nil)
-	row := lineIndexContaining(t, selector.Render(60), "側1 side")
+	row := lineIndexContaining(t, selector.Render(60), "主0 main")
 	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row, Column: 10}) {
 		t.Fatal("hover was not consumed")
 	}
-	if got := selector.selectedID(); got != "s1" {
-		t.Fatalf("hover selected %q, want s1", got)
+	if got := selector.selectedID(); got != "m0" {
+		t.Fatalf("hover selected %q, want m0", got)
 	}
 
 	// A window smaller than the tree must not recentre on a hover-driven

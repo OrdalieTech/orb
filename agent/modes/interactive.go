@@ -2629,14 +2629,13 @@ func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 			mode.forkFromTree(entryID, before)
 		}
 	}
-	// The modal takes up to 85% of the rows; its frame, count line, spacers
-	// and hint line use eight of them.
-	selector.Framed = true
-	selector.SetMaxVisible(mode.ui.Terminal().Rows()*85/100 - 8)
+	// The modal takes up to 85% of the rows; its frame, count line, reply
+	// preview, spacers and hint line use the rest.
+	selector.SetMaxVisible(mode.ui.Terminal().Rows()*85/100 - 9 - treePreviewLines)
 	options := configOverlayOptions()
-	// A wide terminal gets a wider modal so the selected turn can be previewed.
-	if columns := mode.ui.Terminal().Columns(); columns >= 124 {
-		options.Width = tui.AbsoluteSize(min(columns-8, 150))
+	// A wide terminal gets a wider modal so long prompts read in full.
+	if columns := mode.ui.Terminal().Columns(); columns >= 100 {
+		options.Width = tui.AbsoluteSize(min(columns-8, 120))
 	}
 	handle = mode.ui.ShowOverlay(menuFrame("Tree", selector), options)
 	mode.ui.RequestRender()
