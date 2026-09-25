@@ -68,13 +68,6 @@ type ListMouseTarget interface {
 	ListConfirm()
 }
 
-// ListRowClicker optionally refines what a single click does beyond
-// selecting the row, for components with click targets inside a row (the
-// tree selector's fold markers).
-type ListRowClicker interface {
-	ListClickRow(index int, event MouseEvent)
-}
-
 // HandleListMouse dispatches one mouse event with the shared list pointer
 // semantic. Rows that miss (borders, scroll-info lines) are not consumed so
 // the event can fall through to the viewport.
@@ -109,11 +102,7 @@ func HandleListMouse(target ListMouseTarget, event MouseEvent) bool {
 		if event.Clicks >= 2 {
 			return true
 		}
-		if clicker, ok := target.(ListRowClicker); ok {
-			clicker.ListClickRow(index, event)
-		} else {
-			target.ListSelectRow(index)
-		}
+		target.ListSelectRow(index)
 		target.ListConfirm()
 		return true
 	}

@@ -2625,10 +2625,46 @@ func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 			mode.showStatusMessage("Copied selected message to clipboard")
 		}()
 	}
+	selector.OnFork = func(entryID string, before bool) {
+		if closeSelector() {
+			mode.forkFromTree(entryID, before)
+		}
+	}
 	mode.editorContainer.Clear()
 	mode.editorContainer.AddChild(selector)
 	mode.ui.SetFocus(selector)
 	mode.ui.RequestRender()
+}
+
+// forkFromTree copies the branch up to the selected entry into a new session;
+// a prompt is forked from just before it and returns to the editor, as /fork.
+func (mode *InteractiveMode) forkFromTree(entryID string, before bool) {
+	if mode.options.Host == nil {
+		mode.showError(errors.New("session host is unavailable"))
+		return
+	}
+	if mode.sessionBusy() {
+		mode.showStatusMessage("Wait for the current operation to finish before forking.")
+		return
+	}
+	position := extensions.ForkAt
+	if before {
+		position = extensions.ForkBefore
+	}
+	go func() {
+		result, err := mode.options.Host.Fork(context.Background(), entryID, &extensions.ForkOptions{Position: position})
+		if err != nil {
+			mode.showError(err)
+			return
+		}
+		if result.Cancelled {
+			return
+		}
+		if before {
+			mode.editor.SetText(result.SelectedText)
+		}
+		mode.showStatusMessage("Forked to new session")
+	}()
 }
 
 func (mode *InteractiveMode) navigateFromTree(selectedID string) {
@@ -2757,29 +2793,6 @@ func (mode *InteractiveMode) showTrustSelector() {
 		}
 		mode.showStatusMessage(selected)
 	}()
-}
-
-func sessionEntryLabel(entry sessionstore.SessionEntry) string {
-	switch entry.Type {
-	case "message":
-		role, text := sessionMessageRoleText(entry.Message)
-		text = strings.ReplaceAll(text, "\n", " ")
-		if len(text) > 50 {
-			text = text[:47] + "..."
-		}
-		if text != "" {
-			return role + ": " + text
-		}
-	case "compaction":
-		return "compaction: " + entry.Summary
-	case "branch_summary":
-		return "branch summary: " + entry.Summary
-	case "custom_message":
-		return "custom: " + entry.CustomType
-	case "custom":
-		return "entry: " + entry.CustomType
-	}
-	return entry.Type
 }
 
 func sessionMessageRoleText(raw json.RawMessage) (string, string) {
