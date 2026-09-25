@@ -27,16 +27,22 @@ func isAtomicMarker(value string) bool {
 	return len(value) >= 10 && (pasteMarkerSingle.MatchString(value) || imageMarkerSingle.MatchString(value))
 }
 
+// atomicSpan is a half-open rune range merged into one editing unit.
+type atomicSpan struct{ start, end int }
+
 // segmentWithMarkers makes paste and image markers atomic for editing and wrapping.
 // Paste markers only count while their IDs exist in validIDs.
 func segmentWithMarkers(text string, base func(string) []segment, validIDs map[int]bool) []segment {
+	return mergeAtomicSpans(text, base, markerSpans(text, validIDs))
+}
+
+func markerSpans(text string, validIDs map[int]bool) []atomicSpan {
 	hasPastes := len(validIDs) > 0 && strings.Contains(text, "[paste #")
 	hasImages := strings.Contains(text, "[Image #")
 	if !hasPastes && !hasImages {
-		return base(text)
+		return nil
 	}
-	type span struct{ start, end int }
-	var markers []span
+	var markers []atomicSpan
 	if hasPastes {
 		for _, match := range pasteMarkerRegex.FindAllStringSubmatchIndex(text, -1) {
 			id, _ := strconv.Atoi(text[match[2]:match[3]])
@@ -44,19 +50,23 @@ func segmentWithMarkers(text string, base func(string) []segment, validIDs map[i
 				continue
 			}
 			start := utf8.RuneCountInString(text[:match[0]])
-			markers = append(markers, span{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
+			markers = append(markers, atomicSpan{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
 		}
 	}
 	if hasImages {
 		for _, match := range imageMarkerRegex.FindAllStringIndex(text, -1) {
 			start := utf8.RuneCountInString(text[:match[0]])
-			markers = append(markers, span{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
+			markers = append(markers, atomicSpan{start: start, end: start + utf8.RuneCountInString(text[match[0]:match[1]])})
 		}
 	}
+	return markers
+}
+
+func mergeAtomicSpans(text string, base func(string) []segment, markers []atomicSpan) []segment {
 	if len(markers) == 0 {
 		return base(text)
 	}
-	slices.SortFunc(markers, func(a, b span) int { return a.start - b.start })
+	slices.SortFunc(markers, func(a, b atomicSpan) int { return a.start - b.start })
 
 	baseSegments := base(text)
 	result := make([]segment, 0, len(baseSegments))
@@ -340,6 +350,8 @@ type Editor struct {
 	pasteBuffer  string
 	isInPaste    bool
 
+	displayTokens func(line string) []DisplayToken
+
 	history      []string
 	historyIndex int // -1 = not browsing
 	historyDraft *editorState
@@ -435,11 +447,66 @@ func createScrollBorder(direction string, hiddenLineCount, width int) string {
 }
 
 func (editor *Editor) segment(text, mode string) []segment {
+	return editor.lineSegments(text, 0, runeLen(text), mode)
+}
+
+// lineSegments segments line[from:to]. Display tokens are found on the whole
+// logical line, so a prefix or suffix cut at the cursor never fakes a token
+// boundary; paste and image markers are self-delimiting and scan the slice.
+func (editor *Editor) lineSegments(line string, from, to int, mode string) []segment {
 	base := graphemeSegments
 	if mode == segmentModeWord {
 		base = wordSegments
 	}
-	return segmentWithMarkers(text, base, editor.validPasteIDs())
+	text := runeSlice(line, from, to)
+	spans := markerSpans(text, editor.validPasteIDs())
+	for _, token := range editor.lineTokens(line, from, to) {
+		spans = append(spans, atomicSpan{start: token.Start, end: token.End})
+	}
+	return mergeAtomicSpans(text, base, spans)
+}
+
+// DisplayToken is a run of editor text drawn as Display. The text keeps the
+// run verbatim (GetText, submit and history see it unchanged); editing,
+// cursor movement and wrapping treat it as one unit.
+type DisplayToken struct {
+	Start, End int // rune offsets into the scanned line
+	Display    string
+}
+
+// SetDisplayTokens installs the scanner that finds display tokens in a logical
+// line. Tokens must not contain whitespace and must not overlap; nil removes it.
+func (editor *Editor) SetDisplayTokens(scan func(line string) []DisplayToken) {
+	editor.mu.Lock()
+	editor.displayTokens = scan
+	editor.mu.Unlock()
+	if editor.ui != nil {
+		editor.ui.RequestRender()
+	}
+}
+
+// lineTokens returns the tokens of line lying wholly inside [from, to),
+// offset to that range.
+func (editor *Editor) lineTokens(line string, from, to int) []DisplayToken {
+	if editor.displayTokens == nil || line == "" {
+		return nil
+	}
+	var tokens []DisplayToken
+	for _, token := range editor.displayTokens(line) {
+		if token.Start >= from && token.End <= to && token.End > token.Start {
+			tokens = append(tokens, DisplayToken{Start: token.Start - from, End: token.End - from, Display: token.Display})
+		}
+	}
+	return tokens
+}
+
+// isAtomicText reports whether a segment is a marker or a whole display token.
+func (editor *Editor) isAtomicText(value string) bool {
+	if isAtomicMarker(value) {
+		return true
+	}
+	tokens := editor.lineTokens(value, 0, runeLen(value))
+	return len(tokens) == 1 && tokens[0].Start == 0 && tokens[0].End == runeLen(value)
 }
 
 func (editor *Editor) GetPaddingX() int {
@@ -683,8 +750,13 @@ func (editor *Editor) Render(width int) []string {
 		displayText := line.text
 		lineVisibleWidth := VisibleWidth(line.text)
 		cursorInPadding := false
+		tokens := editor.visibleTokens(line)
 
-		if line.hasCursor {
+		if len(tokens) > 0 {
+			displayText = editor.renderTokenLine(line, tokens, emitCursorMarker)
+			lineVisibleWidth = VisibleWidth(displayText)
+			cursorInPadding = line.hasCursor && lineVisibleWidth > contentWidth && paddingX > 0
+		} else if line.hasCursor {
 			before := runeSlice(displayText, 0, line.cursorPos)
 			after := runeSliceFrom(displayText, line.cursorPos)
 			marker := ""
@@ -719,7 +791,7 @@ func (editor *Editor) Render(width int) []string {
 					to = min(to, end.column-line.startCol)
 				}
 				if to > from {
-					displayText = highlightSelection(displayText, VisibleWidth(runeSlice(line.text, 0, from)), VisibleWidth(runeSlice(line.text, 0, to)), editor.theme.Selection)
+					displayText = highlightSelection(displayText, tokenDisplayColumn(line.text, tokens, from), tokenDisplayColumn(line.text, tokens, to), editor.theme.Selection)
 				}
 			}
 		}
@@ -747,6 +819,97 @@ func (editor *Editor) Render(width int) []string {
 	}
 
 	return result
+}
+
+// visibleTokens returns the display tokens of a layout chunk, offset to it. A
+// token holding the cursor strictly inside (reachable only by undo) draws raw.
+func (editor *Editor) visibleTokens(line layoutLine) []DisplayToken {
+	tokens := editor.lineTokens(editor.line(line.logicalLine), line.startCol, line.startCol+runeLen(line.text))
+	if line.hasCursor {
+		tokens = slices.DeleteFunc(tokens, func(token DisplayToken) bool {
+			return token.Start < line.cursorPos && line.cursorPos < token.End
+		})
+	}
+	return tokens
+}
+
+// renderTokenLine draws a chunk with its tokens replaced by their display
+// form; a cursor on a token's first rune inverts the whole token.
+func (editor *Editor) renderTokenLine(line layoutLine, tokens []DisplayToken, emitCursorMarker bool) string {
+	marker := ""
+	if emitCursorMarker {
+		marker = CursorMarker
+	}
+	var out strings.Builder
+	cursorDone := !line.hasCursor
+	raw := func(from, to int) {
+		if !cursorDone && line.cursorPos >= from && line.cursorPos < to {
+			out.WriteString(runeSlice(line.text, from, line.cursorPos))
+			graphemes := editor.lineSegments(line.text, line.cursorPos, to, segmentModeGrapheme)
+			first := graphemes[0].text
+			out.WriteString(marker + "\x1b[7m" + first + "\x1b[0m")
+			out.WriteString(runeSlice(line.text, line.cursorPos+runeLen(first), to))
+			cursorDone = true
+			return
+		}
+		out.WriteString(runeSlice(line.text, from, to))
+	}
+	position := 0
+	for _, token := range tokens {
+		raw(position, token.Start)
+		if !cursorDone && line.cursorPos == token.Start {
+			out.WriteString(marker + "\x1b[7m" + token.Display + "\x1b[0m")
+			cursorDone = true
+		} else {
+			out.WriteString(token.Display)
+		}
+		position = token.End
+	}
+	raw(position, runeLen(line.text))
+	if !cursorDone {
+		out.WriteString(marker + "\x1b[7m \x1b[0m")
+	}
+	return out.String()
+}
+
+// tokenDisplayColumn maps a rune offset in a chunk to its drawn column.
+func tokenDisplayColumn(chunk string, tokens []DisplayToken, offset int) int {
+	column, position := 0, 0
+	for _, token := range tokens {
+		if offset <= token.Start {
+			break
+		}
+		column += VisibleWidth(runeSlice(chunk, position, token.Start))
+		column += VisibleWidth(token.Display)
+		position = token.End
+		if offset < token.End {
+			return column
+		}
+	}
+	return column + VisibleWidth(runeSlice(chunk, position, max(position, offset)))
+}
+
+// tokenRuneAtColumn maps a drawn column in a chunk to a rune offset; a column
+// on a token resolves to its nearer edge.
+func tokenRuneAtColumn(chunk string, tokens []DisplayToken, column int) int {
+	current, position := 0, 0
+	for _, token := range tokens {
+		before := runeSlice(chunk, position, token.Start)
+		if column < current+VisibleWidth(before) {
+			return position + runeIndexAtColumn(before, column-current)
+		}
+		current += VisibleWidth(before)
+		width := VisibleWidth(token.Display)
+		if column < current+width {
+			if column-current < (width+1)/2 {
+				return token.Start
+			}
+			return token.End
+		}
+		current += width
+		position = token.End
+	}
+	return position + runeIndexAtColumn(runeSliceFrom(chunk, position), column-current)
 }
 
 // popupOpenLocked reports whether the autocomplete popup is on screen. The
@@ -813,12 +976,16 @@ func (editor *Editor) HandleMouse(event MouseEvent) bool {
 	line := editor.line(target.logicalLine)
 	start := runeIndexFromUTF16(line, target.startCol)
 	chunk := runeSlice(line, start, runeIndexFromUTF16(line, target.startCol+target.length))
-	point := mousePoint{row: target.logicalLine, column: start + runeIndexAtColumn(chunk, max(0, event.Column-editor.renderPaddingX))}
+	column := max(0, event.Column-editor.renderPaddingX)
+	point := mousePoint{row: target.logicalLine, column: start + runeIndexAtColumn(chunk, column)}
+	if tokens := editor.lineTokens(line, start, start+runeLen(chunk)); len(tokens) > 0 {
+		point.column = start + tokenRuneAtColumn(chunk, tokens, column)
+	}
 	if (event.Type == MousePress && event.Clicks <= 1 || event.Type != MousePress && editor.selection.unit <= 1) &&
-		(strings.Contains(line, "[Image #") || strings.Contains(line, "[paste #")) {
+		(strings.Contains(line, "[Image #") || strings.Contains(line, "[paste #") || editor.displayTokens != nil) {
 		for _, seg := range editor.segment(line, segmentModeGrapheme) {
 			end := seg.index + runeLen(seg.text)
-			if isAtomicMarker(seg.text) && seg.index < point.column && point.column < end {
+			if editor.isAtomicText(seg.text) && seg.index < point.column && point.column < end {
 				if point.column-seg.index <= (end-seg.index)/2 {
 					point.column = seg.index
 				} else {
@@ -1544,8 +1711,7 @@ func (editor *Editor) handleBackspace() {
 		editor.pushUndoSnapshot()
 
 		line := editor.currentLine()
-		beforeCursor := runeSlice(line, 0, editor.state.cursorCol)
-		graphemes := editor.segment(beforeCursor, segmentModeGrapheme)
+		graphemes := editor.lineSegments(line, 0, editor.state.cursorCol, segmentModeGrapheme)
 		lastGrapheme := ""
 		if len(graphemes) > 0 {
 			lastGrapheme = graphemes[len(graphemes)-1].text
@@ -1852,8 +2018,7 @@ func (editor *Editor) handleForwardDelete() {
 
 	if editor.state.cursorCol < runeLen(currentLine) {
 		editor.pushUndoSnapshot()
-		afterCursor := runeSliceFrom(currentLine, editor.state.cursorCol)
-		graphemes := editor.segment(afterCursor, segmentModeGrapheme)
+		graphemes := editor.lineSegments(currentLine, editor.state.cursorCol, runeLen(currentLine), segmentModeGrapheme)
 		graphemeLength := 1
 		if len(graphemes) > 0 {
 			graphemeLength = runeLen(graphemes[0].text)
@@ -1937,8 +2102,7 @@ func (editor *Editor) moveCursor(deltaLine, deltaCol int) {
 		currentLine := editor.currentLine()
 		if deltaCol > 0 {
 			if editor.state.cursorCol < runeLen(currentLine) {
-				afterCursor := runeSliceFrom(currentLine, editor.state.cursorCol)
-				graphemes := editor.segment(afterCursor, segmentModeGrapheme)
+				graphemes := editor.lineSegments(currentLine, editor.state.cursorCol, runeLen(currentLine), segmentModeGrapheme)
 				step := 1
 				if len(graphemes) > 0 {
 					step = runeLen(graphemes[0].text)
@@ -1954,8 +2118,7 @@ func (editor *Editor) moveCursor(deltaLine, deltaCol int) {
 			}
 		} else {
 			if editor.state.cursorCol > 0 {
-				beforeCursor := runeSlice(currentLine, 0, editor.state.cursorCol)
-				graphemes := editor.segment(beforeCursor, segmentModeGrapheme)
+				graphemes := editor.lineSegments(currentLine, 0, editor.state.cursorCol, segmentModeGrapheme)
 				step := 1
 				if len(graphemes) > 0 {
 					step = runeLen(graphemes[len(graphemes)-1].text)
@@ -1998,8 +2161,11 @@ func (editor *Editor) moveWordBackwards() {
 		return
 	}
 	editor.setCursorCol(findWordBackward(currentLine, editor.state.cursorCol, &wordNavigationOptions{
-		segment:         func(text string) []segment { return editor.segment(text, segmentModeWord) },
-		isAtomicSegment: isAtomicMarker,
+		// findWordBackward segments the prefix ending at the cursor.
+		segment: func(text string) []segment {
+			return editor.lineSegments(currentLine, 0, runeLen(text), segmentModeWord)
+		},
+		isAtomicSegment: editor.isAtomicText,
 	}))
 }
 
@@ -2015,8 +2181,12 @@ func (editor *Editor) moveWordForwards() {
 		return
 	}
 	editor.setCursorCol(findWordForward(currentLine, editor.state.cursorCol, &wordNavigationOptions{
-		segment:         func(text string) []segment { return editor.segment(text, segmentModeWord) },
-		isAtomicSegment: isAtomicMarker,
+		// findWordForward segments the suffix starting at the cursor.
+		segment: func(text string) []segment {
+			length := runeLen(currentLine)
+			return editor.lineSegments(currentLine, length-runeLen(text), length, segmentModeWord)
+		},
+		isAtomicSegment: editor.isAtomicText,
 	}))
 }
 

@@ -6,11 +6,13 @@
 
 ## User
 
-**Skill: `demo`**
+**◆ demo** Please run it.
+
+<details><summary>◆ demo skill</summary>
 
 Use ``` carefully.
 
-Please run it.
+</details>
 
 ## Assistant
 

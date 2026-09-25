@@ -155,19 +155,53 @@ func (warnings *startupWarnings) Render(width int) []string {
 
 type UserMessageComponent struct {
 	box *tui.Box
+	// skill is set for a skill invocation; onChange re-renders after a click toggle.
+	skill    *skillMessageBody
+	onChange func()
 }
 
 func NewUserMessageComponent(text string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
-	box := tui.NewBox(outputPad+1, 0, func(t string) string { return theme.BG("userMessageBg", t) })
-	md := tui.NewMarkdown(text, 0, 0, mdTheme, &tui.DefaultTextStyle{
+	return newUserMessageBand(newUserMarkdown(text, mdTheme, newMarkdownTransform("user", false, transformers)), outputPad)
+}
+
+func newUserMarkdown(text string, mdTheme tui.MarkdownTheme, transform func(string, int) string) *tui.Markdown {
+	return tui.NewMarkdown(text, 0, 0, mdTheme, &tui.DefaultTextStyle{
 		Color: func(t string) string { return theme.FG("userMessageText", t) },
 	}, &tui.MarkdownOptions{
 		PreserveOrderedListMarkers: true,
 		PreserveBackslashEscapes:   true,
-		Transform:                  newMarkdownTransform("user", false, transformers),
+		Transform:                  transform,
 	})
-	box.AddChild(md)
+}
+
+func newUserMessageBand(body tui.Component, outputPad int) *UserMessageComponent {
+	box := tui.NewBox(outputPad+1, 0, func(t string) string { return theme.BG("userMessageBg", t) })
+	box.AddChild(body)
 	return &UserMessageComponent{box: box}
+}
+
+// SetExpanded shows or hides the skill body; plain messages ignore it.
+func (c *UserMessageComponent) SetExpanded(expanded bool) {
+	if c.skill != nil {
+		c.skill.setExpanded(expanded)
+		c.box.Invalidate()
+	}
+}
+
+// HandleMouse toggles the skill body on a click at or below the footer. Row 0
+// is the leading blank line and the band has no vertical padding.
+func (c *UserMessageComponent) HandleMouse(event tui.MouseEvent) bool {
+	if c.skill == nil || event.Type != tui.MouseRelease || event.Button != 0 && event.Button != 3 {
+		return false
+	}
+	if !c.skill.toggleAt(event.Row - 1) {
+		return false
+	}
+	c.box.Invalidate()
+	if c.onChange != nil {
+		c.onChange()
+	}
+	return true
 }
 
 func (c *UserMessageComponent) Invalidate() { c.box.Invalidate() }
@@ -1937,58 +1971,6 @@ func (c *BranchSummaryMessageComponent) updateDisplay() {
 
 func (c *BranchSummaryMessageComponent) Invalidate() { c.box.Invalidate() }
 func (c *BranchSummaryMessageComponent) Render(width int) []string {
-	return renderBand(c.box, width, "")
-}
-
-// ─────────────────────────────────────────────────────────────
-// SkillInvocationMessageComponent
-// ─────────────────────────────────────────────────────────────
-
-type SkillInvocationMessageComponent struct {
-	box      *tui.Box
-	expanded bool
-	name     string
-	content  string
-	mdTheme  tui.MarkdownTheme
-}
-
-func NewSkillInvocationMessage(name, content string, mdTheme tui.MarkdownTheme) *SkillInvocationMessageComponent {
-	c := &SkillInvocationMessageComponent{
-		box:     tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
-		name:    name,
-		content: content,
-		mdTheme: mdTheme,
-	}
-	c.updateDisplay()
-	return c
-}
-
-func (c *SkillInvocationMessageComponent) SetExpanded(expanded bool) {
-	c.expanded = expanded
-	c.updateDisplay()
-}
-
-func (c *SkillInvocationMessageComponent) updateDisplay() {
-	c.box.Clear()
-	if c.expanded {
-		label := theme.FG("customMessageLabel", theme.Bold("[skill]"))
-		c.box.AddChild(tui.NewText(label, 0, 0, nil))
-		header := fmt.Sprintf("**%s**\n\n", c.name)
-		c.box.AddChild(tui.NewMarkdown(header+c.content, 0, 0, c.mdTheme,
-			&tui.DefaultTextStyle{Color: func(t string) string { return theme.FG("customMessageText", t) }}, nil))
-	} else {
-		line := theme.FG("customMessageLabel", theme.Bold("[skill]")+" ") +
-			theme.FG("customMessageText", c.name) +
-			theme.FG("dim", fmt.Sprintf(" (%s to expand)", KeyText("app.tools.expand")))
-		c.box.AddChild(tui.NewText(line, 0, 0, nil))
-	}
-}
-
-func (c *SkillInvocationMessageComponent) Invalidate() {
-	c.box.Invalidate()
-	c.updateDisplay()
-}
-func (c *SkillInvocationMessageComponent) Render(width int) []string {
 	return renderBand(c.box, width, "")
 }
 

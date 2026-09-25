@@ -6,6 +6,11 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+- Skills show as `◆ name` chips instead of `/skill:name` text, in the composer (deleted whole by
+  backspace) and in the transcript, where the invocation stays inline in your message with one
+  footer line that expands to the skill; an inline invocation now reaches the model in place instead
+  of being moved to the front, and a message naming two different skills is refused with a warning.
+
 ## [0.11.1] - 2026-09-24
 
 Claude Sessions behaves like Claude Code in the terminal: no injected context files and an effort
