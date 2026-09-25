@@ -33,6 +33,8 @@ type treeEntryInfo struct {
 	kind   treeRowKind
 	text   string
 	search string
+	// full is the entry's own text, bounded, for the preview pane.
+	full string
 	// messageBelow reports whether any descendant is a message entry;
 	// a message without one ends a branch.
 	messageBelow bool
@@ -133,6 +135,11 @@ func newTreeEntryInfo(entry sessionstore.SessionEntry) *treeEntryInfo {
 	}
 	info.text += oneLine(full, 400)
 	info.search = strings.ToLower(info.text + " " + full)
+	if runes := []rune(strings.TrimSpace(full)); len(runes) > 4000 {
+		info.full = string(runes[:4000])
+	} else {
+		info.full = string(runes)
+	}
 	return info
 }
 
@@ -173,11 +180,13 @@ type treeRow struct {
 type treeView struct {
 	rows     []treeRow
 	children map[string][]string
+	// path holds the entries from the root to the current leaf.
+	path map[string]bool
 }
 
 func buildTreeView(index *treeIndex, roots []*sessionstore.SessionTreeNode, leafID, filterMode, query string) treeView {
-	view := treeView{children: make(map[string][]string)}
 	onPath := make(map[string]bool)
+	view := treeView{children: make(map[string][]string), path: onPath}
 	for id := leafID; id != ""; {
 		node := index.byID[id]
 		if node == nil {
@@ -398,6 +407,22 @@ type TreeSelectorComponent struct {
 	// OnFork forks the selected entry into a new session; before is set for
 	// a user prompt, which is forked from just before it like /fork.
 	OnFork func(entryID string, before bool)
+	// Framed renders for a titled modal: the frame carries the name, so the
+	// tree opens with a quiet count line instead of its own rule, and a wide
+	// modal previews the selected turn beside the list.
+	Framed bool
+	// listWidth is where the last framed render ended the list, so pointer
+	// input over the preview never selects a row.
+	listWidth int
+	allHints  bool
+}
+
+// SetMaxVisible sizes the list for the space its container offers.
+func (component *TreeSelectorComponent) SetMaxVisible(rows int) {
+	component.mu.Lock()
+	defer component.mu.Unlock()
+	component.maxVisible = max(5, rows)
+	component.height = 0
 }
 
 func NewTreeSelectorComponent(
@@ -519,6 +544,8 @@ func (component *TreeSelectorComponent) HandleInput(event tui.KeyEvent) {
 		if component.onCancel != nil {
 			component.later(component.onCancel)
 		}
+	case key == "?":
+		component.allHints = !component.allHints
 	case key == "/":
 		component.filterInput = tui.NewInput()
 		component.filterInput.Prompt = "/"
@@ -631,6 +658,9 @@ func (component *TreeSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 	component.mu.Lock()
 	defer component.unlockAndRun()
 	if component.labelInput != nil || len(component.view.rows) == 0 {
+		return false
+	}
+	if component.listWidth > 0 && event.Column >= component.listWidth {
 		return false
 	}
 	return tui.HandleListMouse(component, event)
@@ -748,14 +778,62 @@ func (component *TreeSelectorComponent) Render(width int) []string {
 	component.mu.Lock()
 	defer component.mu.Unlock()
 	width = max(1, width)
+	if component.Framed {
+		component.listWidth = 0
+		lines := []string{component.renderCounts(width), ""}
+		if listWidth := treeListWidth(width); listWidth < width {
+			component.listWidth = listWidth
+			rows := component.renderRows(listWidth, len(lines))
+			preview := component.renderPreview(width-listWidth-3, len(rows))
+			for index, row := range rows {
+				pad := strings.Repeat(" ", max(0, listWidth-tui.VisibleWidth(row)))
+				lines = append(lines, row+pad+" "+theme.FG("borderMuted", "│")+" "+preview[index])
+			}
+		} else {
+			lines = append(lines, component.renderRows(width, len(lines))...)
+		}
+		return append(lines, "", component.renderFooter(width))
+	}
 	lines := []string{component.renderTitle(width)}
 	lines = append(lines, component.renderRows(width, len(lines))...)
 	return append(lines, component.renderFooter(width))
 }
 
+// renderCounts is the framed header: the view and honest counts, dim, with
+// the scroll position right-aligned once the list scrolls.
+func (component *TreeSelectorComponent) renderCounts(width int) string {
+	left := "  " + strings.Join(component.titleParts()[1:], " · ")
+	position := ""
+	if count := len(component.view.rows); count > component.maxVisible {
+		position = fmt.Sprintf("%d/%d  ", component.selected+1, count)
+	}
+	gap := width - tui.VisibleWidth(left) - tui.VisibleWidth(position)
+	if gap < 1 {
+		return tui.TruncateToWidth(theme.FG("dim", left), width, "…", false)
+	}
+	return theme.FG("dim", left) + strings.Repeat(" ", gap) + theme.FG("dim", position)
+}
+
 // renderTitle is the one rule that separates the tree from the transcript:
 // the view, honest counts, and the scroll position once the list scrolls.
 func (component *TreeSelectorComponent) renderTitle(width int) string {
+	parts := component.titleParts()
+	title := " " + strings.Join(parts, " · ") + " "
+	position := ""
+	if count := len(component.view.rows); count > component.maxVisible {
+		position = fmt.Sprintf(" %d/%d ", component.selected+1, count)
+	}
+	lead := "──"
+	fill := width - tui.VisibleWidth(lead+title+position) - 2
+	if fill < 1 {
+		return tui.TruncateToWidth(theme.FG("muted", strings.TrimSpace(title)), width, "…", false)
+	}
+	return theme.FG("borderMuted", lead) + theme.FG("muted", title) +
+		theme.FG("borderMuted", strings.Repeat("─", fill)) + theme.FG("dim", position) + theme.FG("borderMuted", "──")
+}
+
+// titleParts names the view and counts turns and branches honestly.
+func (component *TreeSelectorComponent) titleParts() []string {
 	parts := []string{"Tree"}
 	if name := treeFilterNames[component.filterMode]; name != "" {
 		parts = append(parts, name)
@@ -773,18 +851,7 @@ func (component *TreeSelectorComponent) renderTitle(width int) string {
 	} else if component.index.prompts > 1 {
 		parts = append(parts, "no forks")
 	}
-	title := " " + strings.Join(parts, " · ") + " "
-	position := ""
-	if count := len(component.view.rows); count > component.maxVisible {
-		position = fmt.Sprintf(" %d/%d ", component.selected+1, count)
-	}
-	lead := "──"
-	fill := width - tui.VisibleWidth(lead+title+position) - 2
-	if fill < 1 {
-		return tui.TruncateToWidth(theme.FG("muted", strings.TrimSpace(title)), width, "…", false)
-	}
-	return theme.FG("borderMuted", lead) + theme.FG("muted", title) +
-		theme.FG("borderMuted", strings.Repeat("─", fill)) + theme.FG("dim", position) + theme.FG("borderMuted", "──")
+	return parts
 }
 
 func (component *TreeSelectorComponent) setRowLayout(top, start, count int) {
@@ -848,7 +915,7 @@ func (component *TreeSelectorComponent) renderRow(row treeRow, selected bool, wi
 		marker = "● "
 	}
 	lead := 2 + tui.VisibleWidth(rail) + tui.VisibleWidth(marker)
-	meta := component.rowMeta(row, width, now)
+	meta := component.rowMeta(row, selected, width, now)
 	metaWidth := tui.VisibleWidth(meta)
 	if metaWidth > 0 && width-lead-metaWidth-2 < 16 {
 		meta, metaWidth = "", 0
@@ -882,9 +949,9 @@ func (component *TreeSelectorComponent) renderRow(row treeRow, selected bool, wi
 	return line
 }
 
-// rowMeta is the dim right column: the label, the size of a branch where one
-// starts, and when a prompt was sent.
-func (component *TreeSelectorComponent) rowMeta(row treeRow, width int, now time.Time) string {
+// rowMeta is the dim right column: labels always, and on the selected row
+// the size of a branch where one starts and when a prompt was sent.
+func (component *TreeSelectorComponent) rowMeta(row treeRow, selected bool, width int, now time.Time) string {
 	var parts []string
 	if label := row.node.Label; label != nil && *label != "" {
 		text := "#" + *label
@@ -892,6 +959,9 @@ func (component *TreeSelectorComponent) rowMeta(row treeRow, width int, now time
 			text += " " + formatTreeTime(*row.node.LabelTimestamp, now)
 		}
 		parts = append(parts, theme.FG("mdLink", text))
+	}
+	if !selected {
+		return strings.Join(parts, "  ")
 	}
 	if row.forkStart && component.filterMode == "default" && width >= 56 {
 		switch prompts := component.index.info[row.node.Entry.ID].prompts; prompts {
@@ -934,11 +1004,19 @@ func (component *TreeSelectorComponent) renderFooter(width int) string {
 		}
 		return tui.TruncateToWidth("  "+component.filterInput.Render(inputWidth)[0]+status, width, "", false)
 	}
-	hints := []string{RawKeyHint("enter", "go to"), RawKeyHint("f", "fork"), RawKeyHint("/", "filter"), RawKeyHint("tab", "view")}
-	if component.index.branches > 1 {
-		hints = append(hints, RawKeyHint("←→", "forks"))
+	hints := []string{RawKeyHint("enter", "go to"), RawKeyHint("f", "fork"), RawKeyHint("/", "search")}
+	if component.allHints || !component.Framed {
+		hints = append(hints, RawKeyHint("tab", "view"))
+		if component.index.branches > 1 {
+			hints = append(hints, RawKeyHint("←→", "forks"))
+		}
+		hints = append(hints, KeyHint("app.tree.editLabel", "label"))
 	}
-	hints = append(hints, KeyHint("app.tree.editLabel", "label"), RawKeyHint("esc", "close"))
+	if !component.Framed {
+		hints = append(hints, RawKeyHint("esc", "close"))
+	} else if !component.allHints {
+		hints = append(hints, RawKeyHint("?", "keys"))
+	}
 	separator := theme.FG("dim", " · ")
 	line := "  "
 	for index, hint := range hints {
@@ -991,4 +1069,78 @@ func formatTreeTime(value string, now time.Time) string {
 	default:
 		return timestamp.Format("Jan 2006")
 	}
+}
+
+// treeListWidth splits a wide framed tree: the list keeps what it needs to
+// read well and the rest previews the selection; narrow modals stay one column.
+func treeListWidth(width int) int {
+	if width < 110 {
+		return width
+	}
+	return min(max(56, width*5/11), 72)
+}
+
+// renderPreview shows the selected entry in full and, for a prompt, the
+// reply that answered it on the history shown, clipped to the list height.
+func (component *TreeSelectorComponent) renderPreview(width, height int) []string {
+	lines := make([]string, 0, height)
+	node := component.selectedNode()
+	if node != nil && width >= 20 {
+		info := component.index.info[node.Entry.ID]
+		color := "text"
+		if info.kind != treeRowPrompt {
+			color = "muted"
+		}
+		for _, line := range tui.WrapTextWithANSI(info.full, width) {
+			lines = append(lines, theme.FG(color, line))
+		}
+		if info.kind == treeRowPrompt {
+			if reply := component.turnReply(node); reply != "" {
+				lines = append(lines, "")
+				for _, line := range tui.WrapTextWithANSI(reply, width) {
+					lines = append(lines, theme.FG("dim", line))
+				}
+			}
+		}
+		if when := formatTreeTime(node.Entry.Timestamp, component.now()); when != "" && len(lines) < height-1 {
+			for len(lines) < height-1 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, theme.FG("dim", when))
+		}
+	}
+	if len(lines) > height {
+		lines = append(lines[:height-1], theme.FG("dim", "…"))
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+// turnReply is the last assistant text before the next prompt, following the
+// current history where it passes through the turn and the first branch
+// elsewhere.
+func (component *TreeSelectorComponent) turnReply(prompt *sessionstore.SessionTreeNode) string {
+	reply := ""
+	for node := prompt; node != nil; {
+		next := (*sessionstore.SessionTreeNode)(nil)
+		for _, child := range node.Children {
+			if next == nil || component.view.path[child.Entry.ID] {
+				next = child
+			}
+		}
+		if next == nil {
+			break
+		}
+		info := component.index.info[next.Entry.ID]
+		if info.role == "user" {
+			break
+		}
+		if info.role == "assistant" && info.full != "" {
+			reply = info.full
+		}
+		node = next
+	}
+	return reply
 }
