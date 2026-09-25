@@ -3,6 +3,8 @@ package modes
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,10 +15,10 @@ import (
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
 )
 
-// The tree reads as a list of turns: user prompts are the rows, rails appear
-// only where the history forks, and each branch end shows its last reply so
-// an abandoned branch can be resumed where it stopped. The other filter modes
-// list individual entries with the same rails.
+// The tree reads like the conversation: one history at a time, one numbered
+// row per prompt. Where the history forks, the row that differs counts its
+// versions ("2/3") and ←→ shows another one, so every branch is reachable
+// without drawing the tree. The selected turn's reply shows below the list.
 
 type treeRowKind int
 
@@ -27,74 +29,80 @@ const (
 )
 
 // treeEntryInfo is what the tree needs from an entry, parsed once per
-// selector so rebuilding on every filter keystroke stays linear.
+// selector so rebuilding on every keystroke stays linear.
 type treeEntryInfo struct {
 	role   string
 	kind   treeRowKind
 	text   string
 	search string
-	// full is the entry's own text, bounded, for the preview pane.
+	// full is the entry's own text, bounded, for the reply preview.
 	full string
-	// messageBelow reports whether any descendant is a message entry;
-	// a message without one ends a branch.
-	messageBelow bool
-	// prompts counts the user prompts in the subtree, the entry included.
-	prompts int
+	// turn numbers a prompt within its own history.
+	turn int
+	// latest is the newest timestamp in the subtree, which picks the branch
+	// a history continues along below a fork.
+	latest time.Time
+	time   time.Time
 }
 
 type treeIndex struct {
+	roots    []*sessionstore.SessionTreeNode
 	byID     map[string]*sessionstore.SessionTreeNode
 	info     map[string]*treeEntryInfo
+	order    []*sessionstore.SessionTreeNode
 	prompts  int
 	branches int
 }
 
 func newTreeIndex(roots []*sessionstore.SessionTreeNode) *treeIndex {
 	index := &treeIndex{
-		byID: make(map[string]*sessionstore.SessionTreeNode),
-		info: make(map[string]*treeEntryInfo),
+		roots: roots,
+		byID:  make(map[string]*sessionstore.SessionTreeNode),
+		info:  make(map[string]*treeEntryInfo),
 	}
-	var preorder []*sessionstore.SessionTreeNode
 	stack := appendReversedTreeNodes(nil, roots)
 	for len(stack) > 0 {
 		node := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+		info := newTreeEntryInfo(node.Entry)
+		if parent := node.Entry.ParentID; parent != nil && index.info[*parent] != nil {
+			info.turn = index.info[*parent].turn
+		}
+		if info.role == "user" {
+			info.turn++
+			index.prompts++
+		}
 		index.byID[node.Entry.ID] = node
-		index.info[node.Entry.ID] = newTreeEntryInfo(node.Entry)
-		preorder = append(preorder, node)
+		index.info[node.Entry.ID] = info
+		index.order = append(index.order, node)
 		stack = appendReversedTreeNodes(stack, node.Children)
 	}
 	// Reverse pre-order visits children before their parent.
-	for position := len(preorder) - 1; position >= 0; position-- {
-		node := preorder[position]
+	for position := len(index.order) - 1; position >= 0; position-- {
+		node := index.order[position]
 		info := index.info[node.Entry.ID]
-		if info.role == "user" {
-			info.prompts++
-		}
+		info.latest = info.time
 		for _, child := range node.Children {
-			childInfo := index.info[child.Entry.ID]
-			info.prompts += childInfo.prompts
-			info.messageBelow = info.messageBelow || childInfo.messageBelow || child.Entry.Type == "message"
+			if latest := index.info[child.Entry.ID].latest; latest.After(info.latest) {
+				info.latest = latest
+			}
 		}
-		if node.Entry.Type == "message" && !info.messageBelow && info.role != "system" {
+		if len(node.Children) == 0 {
 			index.branches++
 		}
-	}
-	for _, root := range roots {
-		index.prompts += index.info[root.Entry.ID].prompts
 	}
 	return index
 }
 
 func newTreeEntryInfo(entry sessionstore.SessionEntry) *treeEntryInfo {
 	info := &treeEntryInfo{kind: treeRowNote}
+	info.time, _ = time.Parse(time.RFC3339Nano, entry.Timestamp)
 	full := ""
 	switch entry.Type {
 	case "message":
 		var message struct {
-			Role     string          `json:"role"`
-			Content  json.RawMessage `json:"content"`
-			ToolName string          `json:"toolName"`
+			Role     string `json:"role"`
+			ToolName string `json:"toolName"`
 		}
 		_ = json.Unmarshal(entry.Message, &message)
 		_, full = sessionMessageRoleText(entry.Message)
@@ -105,31 +113,15 @@ func newTreeEntryInfo(entry sessionstore.SessionEntry) *treeEntryInfo {
 			full = skillPreview(full)
 		case "assistant":
 			info.kind = treeRowReply
-			if strings.TrimSpace(full) == "" {
-				info.text = "(no text)"
-			}
 		case "toolResult":
-			info.text = "tool " + message.ToolName + ": "
+			info.text = message.ToolName + "  "
 		default:
-			info.text = message.Role + ": "
+			info.text = message.Role + "  "
 		}
 	case "branch_summary":
-		info.text, full = "summary · ", entry.Summary
+		info.text, full = "summary  ", entry.Summary
 	case "compaction":
-		info.text, full = "compacted · ", entry.Summary
-	case "model_change":
-		info.text = "model · " + entry.ModelID
-	case "thinking_level_change":
-		info.text = "thinking · " + entry.ThinkingLevel
-	case "session_info":
-		info.text = "name · " + entry.Name
-	case "custom_message", "custom":
-		info.text = entry.CustomType
-	case "label":
-		info.text = "label"
-		if entry.Label != nil {
-			info.text += " · " + *entry.Label
-		}
+		info.text, full = "compacted  ", entry.Summary
 	default:
 		info.text = entry.Type
 	}
@@ -164,231 +156,102 @@ func oneLine(text string, limit int) string {
 	return string(runes)
 }
 
-type treeRow struct {
-	node *sessionstore.SessionTreeNode
-	// rail holds the branch lanes, two cells per fork depth; "" on a
-	// history that never forked.
-	rail    string
-	kind    treeRowKind
-	text    string
-	onPath  bool
-	current bool
-	// forkStart marks the first row of a branch below a fork.
-	forkStart bool
+// children lists the entries below id; "" stands for the session itself,
+// whose children are the roots.
+func (index *treeIndex) children(id string) []*sessionstore.SessionTreeNode {
+	if id == "" {
+		return index.roots
+	}
+	if node := index.byID[id]; node != nil {
+		return node.Children
+	}
+	return nil
 }
 
-type treeView struct {
-	rows     []treeRow
-	children map[string][]string
-	// path holds the entries from the root to the current leaf.
-	path map[string]bool
-}
-
-func buildTreeView(index *treeIndex, roots []*sessionstore.SessionTreeNode, leafID, filterMode, query string) treeView {
-	onPath := make(map[string]bool)
-	view := treeView{children: make(map[string][]string), path: onPath}
-	for id := leafID; id != ""; {
-		node := index.byID[id]
-		if node == nil {
-			break
-		}
-		onPath[id] = true
+// pathTo lists the entries from the root down to id.
+func (index *treeIndex) pathTo(id string) []*sessionstore.SessionTreeNode {
+	var path []*sessionstore.SessionTreeNode
+	for node := index.byID[id]; node != nil; {
+		path = append(path, node)
 		if node.Entry.ParentID == nil {
 			break
 		}
-		id = *node.Entry.ParentID
+		node = index.byID[*node.Entry.ParentID]
 	}
-
-	tokens := strings.Fields(strings.ToLower(query))
-	inView := make(map[string]bool)
-	visible := make(map[string]bool)
-	ordered := make([]*sessionstore.SessionTreeNode, 0, len(index.byID))
-	stack := appendReversedTreeNodes(nil, prioritizeActiveTreeNodes(roots, onPath))
-	for len(stack) > 0 {
-		node := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		ordered = append(ordered, node)
-		id := node.Entry.ID
-		info := index.info[id]
-		shown := false
-		if filterMode == "default" {
-			shown = treeTurnVisible(node, info, id == leafID)
-		} else {
-			shown = treeEntryVisible(node, id == leafID, filterMode)
-		}
-		inView[id] = shown
-		visible[id] = shown && treeMatchesTokens(node, info, tokens)
-		stack = appendReversedTreeNodes(stack, prioritizeActiveTreeNodes(node.Children, onPath))
-	}
-
-	// The current position is the leaf, or its nearest ancestor when the
-	// leaf itself is bookkeeping the view hides; a search never moves it.
-	current := ""
-	for id := leafID; id != ""; {
-		if inView[id] {
-			if visible[id] {
-				current = id
-			}
-			break
-		}
-		node := index.byID[id]
-		if node == nil || node.Entry.ParentID == nil {
-			break
-		}
-		id = *node.Entry.ParentID
-	}
-
-	visibleChildren := make(map[string][]*sessionstore.SessionTreeNode)
-	for _, node := range ordered {
-		if !visible[node.Entry.ID] {
-			continue
-		}
-		parentID := nearestVisibleTreeParent(node, index.byID, visible)
-		visibleChildren[parentID] = append(visibleChildren[parentID], node)
-		view.children[parentID] = append(view.children[parentID], node.Entry.ID)
-	}
-
-	type frame struct {
-		node      *sessionstore.SessionTreeNode
-		lanes     []bool
-		connector string
-	}
-	var frames []frame
-	pushChildren := func(children []*sessionstore.SessionTreeNode, lanes []bool) {
-		if len(children) == 1 {
-			frames = append(frames, frame{node: children[0], lanes: lanes})
-			return
-		}
-		for position := len(children) - 1; position >= 0; position-- {
-			connector := "├ "
-			if position == len(children)-1 {
-				connector = "└ "
-			}
-			frames = append(frames, frame{node: children[position], lanes: lanes, connector: connector})
-		}
-	}
-	pushChildren(visibleChildren[""], nil)
-	for len(frames) > 0 {
-		item := frames[len(frames)-1]
-		frames = frames[:len(frames)-1]
-		id := item.node.Entry.ID
-		info := index.info[id]
-		var rail strings.Builder
-		for _, lane := range item.lanes {
-			if lane {
-				rail.WriteString("│ ")
-			} else {
-				rail.WriteString("  ")
-			}
-		}
-		rail.WriteString(item.connector)
-		view.rows = append(view.rows, treeRow{
-			node: item.node, rail: rail.String(), kind: info.kind, text: info.text,
-			onPath: onPath[id], current: id == current, forkStart: item.connector != "",
-		})
-		lanes := item.lanes
-		if item.connector != "" {
-			lanes = append(append([]bool(nil), item.lanes...), item.connector == "├ ")
-		}
-		pushChildren(visibleChildren[id], lanes)
-	}
-	return view
+	slices.Reverse(path)
+	return path
 }
 
-// treeTurnVisible is the default view: prompts, summaries, the current entry,
-// and the reply that ends each branch.
-func treeTurnVisible(node *sessionstore.SessionTreeNode, info *treeEntryInfo, current bool) bool {
-	switch node.Entry.Type {
-	case "branch_summary", "compaction":
-		return true
-	case "message":
-		return info.role == "user" || current || !info.messageBelow && info.role != "system"
-	}
-	return false
-}
-
-func treeMatchesTokens(node *sessionstore.SessionTreeNode, info *treeEntryInfo, tokens []string) bool {
-	if len(tokens) == 0 {
-		return true
-	}
-	label := ""
-	if node.Label != nil {
-		label = strings.ToLower(*node.Label)
-	}
-	for _, token := range tokens {
-		if !strings.Contains(info.search, token) && !strings.Contains(label, token) {
-			return false
+// next is the entry a history continues with below id: the current history
+// where it passes, otherwise the most recently active branch.
+func (index *treeIndex) next(id string, current map[string]bool) *sessionstore.SessionTreeNode {
+	var next *sessionstore.SessionTreeNode
+	for _, child := range index.children(id) {
+		switch {
+		case next == nil, current[child.Entry.ID] && !current[next.Entry.ID]:
+			next = child
+		case current[next.Entry.ID] != current[child.Entry.ID]:
+		case index.info[child.Entry.ID].latest.After(index.info[next.Entry.ID].latest):
+			next = child
 		}
 	}
-	return true
+	return next
 }
 
-func nearestVisibleTreeParent(
-	node *sessionstore.SessionTreeNode,
-	byID map[string]*sessionstore.SessionTreeNode,
-	visible map[string]bool,
-) string {
-	parent := node.Entry.ParentID
-	for parent != nil {
-		if visible[*parent] {
-			return *parent
-		}
-		parentNode := byID[*parent]
-		if parentNode == nil {
-			break
-		}
-		parent = parentNode.Entry.ParentID
+// descend follows a history from id to its end.
+func (index *treeIndex) descend(id string, current map[string]bool) string {
+	for next := index.next(id, current); next != nil; next = index.next(id, current) {
+		id = next.Entry.ID
 	}
-	return ""
+	return id
 }
 
-func prioritizeActiveTreeNodes(nodes []*sessionstore.SessionTreeNode, active map[string]bool) []*sessionstore.SessionTreeNode {
-	result := make([]*sessionstore.SessionTreeNode, 0, len(nodes))
-	for _, node := range nodes {
-		if active[node.Entry.ID] {
-			result = append(result, node)
-		}
-	}
-	for _, node := range nodes {
-		if !active[node.Entry.ID] {
-			result = append(result, node)
-		}
-	}
-	return result
+// byTime orders entries oldest first.
+func (index *treeIndex) byTime(a, b *sessionstore.SessionTreeNode) int {
+	return index.info[a.Entry.ID].time.Compare(index.info[b.Entry.ID].time)
 }
 
-func appendReversedTreeNodes(
-	stack, nodes []*sessionstore.SessionTreeNode,
-) []*sessionstore.SessionTreeNode {
-	for index := len(nodes) - 1; index >= 0; index-- {
-		stack = append(stack, nodes[index])
-	}
-	return stack
-}
-
-var treeFilterModes = []string{"default", "no-tools", "user-only", "labeled-only", "all"}
-
-var treeFilterNames = map[string]string{
-	"no-tools": "messages", "user-only": "prompts only", "labeled-only": "labeled", "all": "all entries",
+type treeRow struct {
+	node *sessionstore.SessionTreeNode
+	kind treeRowKind
+	text string
+	// turn numbers a prompt within the history shown; 0 on other rows.
+	turn int
+	// end is the entry going to the row reaches: the end of a turn, so the
+	// conversation continues after its reply.
+	end string
+	// versions are the histories that differ from this row on, oldest first;
+	// version indexes the one shown. Fewer than two means no fork here.
+	versions []*sessionstore.SessionTreeNode
+	version  int
+	// inContext marks rows on the current history; current holds the leaf.
+	inContext bool
+	current   bool
+	reply     string
 }
 
 // TreeSelectorComponent is the session tree opened by /tree and double Escape.
 type TreeSelectorComponent struct {
-	roots               []*sessionstore.SessionTreeNode
-	index               *treeIndex
-	leafID              string
-	filterMode          string
+	index *treeIndex
+	// history is the entries from the root to the leaf: what the model sees.
+	history map[string]bool
+	leafID  string
+	// shown is the end of the history on screen; ←→ at a fork moves it.
+	shown string
+	// entries lists every message instead of one row per prompt.
+	entries             bool
 	showLabelTimestamps bool
-	view                treeView
+	rows                []treeRow
 	selected            int
 	maxVisible          int
 	// height only grows within a view, so typing a search never shrinks
-	// the list under the cursor; switching views sizes it afresh.
+	// the modal under the cursor; switching views sizes it afresh.
 	height        int
 	filterInput   *tui.Input
 	labelInput    *tui.Input
 	labelEntryID  string
 	focused       bool
+	allHints      bool
 	onSelect      func(string)
 	onCancel      func()
 	onLabelChange func(string, *string)
@@ -401,27 +264,26 @@ type TreeSelectorComponent struct {
 	// Where the last render put the rows, so pointer rows resolve to what
 	// the user saw; renders anchor window while pointer input freezes it.
 	window                  tui.ListWindow
-	treeTop, rowStart, rows int
+	treeTop, rowStart, rowN int
+	// textColumn is where the last render started row text, so the preview
+	// lines up with it.
+	textColumn int
 
 	OnCopy func(string)
 	// OnFork forks the selected entry into a new session; before is set for
 	// a user prompt, which is forked from just before it like /fork.
 	OnFork func(entryID string, before bool)
-	// Framed renders for a titled modal: the frame carries the name, so the
-	// tree opens with a quiet count line instead of its own rule, and a wide
-	// modal previews the selected turn beside the list.
-	Framed bool
-	// listWidth is where the last framed render ended the list, so pointer
-	// input over the preview never selects a row.
-	listWidth int
-	allHints  bool
 }
+
+// treePreviewLines is the fixed height of the reply preview, so moving the
+// selection never resizes the modal.
+const treePreviewLines = 4
 
 // SetMaxVisible sizes the list for the space its container offers.
 func (component *TreeSelectorComponent) SetMaxVisible(rows int) {
 	component.mu.Lock()
 	defer component.mu.Unlock()
-	component.maxVisible = max(5, rows)
+	component.maxVisible = max(3, rows)
 	component.height = 0
 }
 
@@ -435,17 +297,19 @@ func NewTreeSelectorComponent(
 	initialSelectedID string,
 	filterMode string,
 ) *TreeSelectorComponent {
-	if filterMode == "" {
-		filterMode = "default"
-	}
 	component := &TreeSelectorComponent{
-		roots: roots, index: newTreeIndex(roots), leafID: leafID, filterMode: filterMode,
-		maxVisible: max(5, terminalHeight/2), onSelect: onSelect, onCancel: onCancel,
+		index: newTreeIndex(roots), leafID: leafID, history: make(map[string]bool),
+		entries:    filterMode == "all" || filterMode == "no-tools",
+		maxVisible: max(3, terminalHeight/2), onSelect: onSelect, onCancel: onCancel,
 		onLabelChange: onLabelChange, now: time.Now,
 	}
-	if initialSelectedID == "" {
+	for _, node := range component.index.pathTo(leafID) {
+		component.history[node.Entry.ID] = true
+	}
+	if initialSelectedID == "" || component.index.byID[initialSelectedID] == nil {
 		initialSelectedID = leafID
 	}
+	component.shown = component.index.descend(initialSelectedID, component.history)
 	component.refresh(initialSelectedID)
 	return component
 }
@@ -458,13 +322,190 @@ func (component *TreeSelectorComponent) query() string {
 }
 
 func (component *TreeSelectorComponent) refresh(preferredID string) {
-	component.view = buildTreeView(component.index, component.roots, component.leafID, component.filterMode, component.query())
+	if tokens := strings.Fields(strings.ToLower(component.query())); len(tokens) > 0 {
+		component.rows = component.searchRows(tokens)
+	} else {
+		component.rows = component.historyRows()
+	}
 	component.selectNearest(preferredID)
 }
 
+// rowEntry reports whether an entry gets its own row.
+func (component *TreeSelectorComponent) rowEntry(node *sessionstore.SessionTreeNode) bool {
+	info := component.index.info[node.Entry.ID]
+	switch {
+	case node.Entry.Type == "branch_summary", node.Entry.Type == "compaction":
+		return true
+	case component.entries:
+		return treeEntryVisible(node, node.Entry.ID == component.leafID, "no-tools") && info.full != ""
+	}
+	return info.role == "user"
+}
+
+// historyRows lays out the history ending at shown.
+func (component *TreeSelectorComponent) historyRows() []treeRow {
+	index := component.index
+	path := index.pathTo(component.shown)
+	var at []int
+	for position, node := range path {
+		if component.rowEntry(node) {
+			at = append(at, position)
+		}
+	}
+	// A history whose last fork lies after its last row, like a reply that
+	// was abandoned for a new prompt, ends on a row of its own so its other
+	// versions stay reachable.
+	last := -1
+	if len(at) > 0 {
+		last = at[len(at)-1]
+	}
+	if last != len(path)-1 && len(component.versions(path, last, len(path)-1)) > 1 {
+		at = append(at, len(path)-1)
+	}
+	leafAt := slices.IndexFunc(path, func(node *sessionstore.SessionTreeNode) bool { return node.Entry.ID == component.leafID })
+	rows := make([]treeRow, 0, len(at))
+	previous, turn := -1, 0
+	for number, position := range at {
+		node := path[position]
+		info := index.info[node.Entry.ID]
+		end := len(path) - 1
+		if number+1 < len(at) {
+			end = at[number+1] - 1
+		}
+		row := treeRow{
+			node: node, kind: info.kind, text: info.text, end: node.Entry.ID,
+			inContext: component.history[node.Entry.ID],
+			current:   leafAt >= position && leafAt <= end,
+		}
+		if info.kind == treeRowPrompt {
+			turn++
+			row.turn = turn
+		}
+		if !component.entries {
+			row.end = path[end].Entry.ID
+		}
+		row.versions = component.versions(path, previous, position)
+		row.version = slices.IndexFunc(row.versions, func(version *sessionstore.SessionTreeNode) bool {
+			return slices.Contains(path, version)
+		})
+		row.reply = component.reply(row, path[position+1:end+1])
+		rows = append(rows, row)
+		previous = position
+	}
+	return rows
+}
+
+// versions lists the histories that part from path between from (the row
+// before, or -1 for the session itself) and to, oldest first: the one shown
+// plus every branch left at a fork on the way.
+func (component *TreeSelectorComponent) versions(path []*sessionstore.SessionTreeNode, from, to int) []*sessionstore.SessionTreeNode {
+	parent := func(position int) string {
+		if position < 0 {
+			return ""
+		}
+		return path[position].Entry.ID
+	}
+	deepest := -2
+	for position := max(-1, from); position < to; position++ {
+		if len(component.index.children(parent(position))) > 1 {
+			deepest = position
+		}
+	}
+	if deepest < -1 {
+		return nil
+	}
+	// The branches a shallower fork kept are the one shown; it stands in
+	// once, at the deepest fork.
+	var versions []*sessionstore.SessionTreeNode
+	for position := max(-1, from); position <= deepest; position++ {
+		for _, child := range component.index.children(parent(position)) {
+			if child != path[position+1] || position == deepest {
+				versions = append(versions, child)
+			}
+		}
+	}
+	slices.SortStableFunc(versions, component.index.byTime)
+	return versions
+}
+
+// reply is the preview for a row: the last reply of a turn, or the row's own
+// text for anything else.
+func (component *TreeSelectorComponent) reply(row treeRow, turn []*sessionstore.SessionTreeNode) string {
+	if row.kind != treeRowPrompt {
+		return component.index.info[row.node.Entry.ID].full
+	}
+	if component.entries {
+		return ""
+	}
+	reply := ""
+	for _, node := range turn {
+		if info := component.index.info[node.Entry.ID]; info.role == "assistant" && info.full != "" {
+			reply = info.full
+		}
+	}
+	return reply
+}
+
+// searchRows lists the matching prompts and summaries of every history,
+// oldest first; going to one continues after its turn.
+func (component *TreeSelectorComponent) searchRows(tokens []string) []treeRow {
+	var rows []treeRow
+	for _, node := range component.index.order {
+		info := component.index.info[node.Entry.ID]
+		if !component.rowEntry(node) || !treeMatchesTokens(node, info, tokens) {
+			continue
+		}
+		row := treeRow{node: node, kind: info.kind, text: info.text, end: node.Entry.ID, inContext: component.history[node.Entry.ID]}
+		// A prompt sent again matches twice; its version tells them apart.
+		parent := ""
+		if node.Entry.ParentID != nil {
+			parent = *node.Entry.ParentID
+		}
+		if siblings := component.index.children(parent); len(siblings) > 1 {
+			row.versions = slices.SortedStableFunc(slices.Values(siblings), component.index.byTime)
+			row.version = slices.Index(row.versions, node)
+		}
+		if info.kind == treeRowPrompt && !component.entries {
+			row.turn = info.turn
+			var turn []*sessionstore.SessionTreeNode
+			for next := component.index.next(node.Entry.ID, component.history); next != nil && component.index.info[next.Entry.ID].role != "user"; next = component.index.next(next.Entry.ID, component.history) {
+				turn = append(turn, next)
+				row.end = next.Entry.ID
+			}
+			row.reply = component.reply(row, turn)
+		}
+		rows = append(rows, row)
+	}
+	slices.SortStableFunc(rows, func(a, b treeRow) int { return component.index.byTime(a.node, b.node) })
+	return rows
+}
+
+func treeMatchesTokens(node *sessionstore.SessionTreeNode, info *treeEntryInfo, tokens []string) bool {
+	label := ""
+	if node.Label != nil {
+		label = strings.ToLower(*node.Label)
+	}
+	for _, token := range tokens {
+		if !strings.Contains(info.search, token) && !strings.Contains(label, token) {
+			return false
+		}
+	}
+	return true
+}
+
+func appendReversedTreeNodes(
+	stack, nodes []*sessionstore.SessionTreeNode,
+) []*sessionstore.SessionTreeNode {
+	for index := len(nodes) - 1; index >= 0; index-- {
+		stack = append(stack, nodes[index])
+	}
+	return stack
+}
+
+// selectNearest selects the row holding id, or the nearest row above it.
 func (component *TreeSelectorComponent) selectNearest(id string) {
 	for id != "" {
-		for index, row := range component.view.rows {
+		for index, row := range component.rows {
 			if row.node.Entry.ID == id {
 				component.selected = index
 				return
@@ -476,19 +517,19 @@ func (component *TreeSelectorComponent) selectNearest(id string) {
 		}
 		id = *node.Entry.ParentID
 	}
-	component.selected = max(0, len(component.view.rows)-1)
+	component.selected = max(0, len(component.rows)-1)
 }
 
-func (component *TreeSelectorComponent) selectedNode() *sessionstore.SessionTreeNode {
-	if component.selected < 0 || component.selected >= len(component.view.rows) {
+func (component *TreeSelectorComponent) selectedRow() *treeRow {
+	if component.selected < 0 || component.selected >= len(component.rows) {
 		return nil
 	}
-	return component.view.rows[component.selected].node
+	return &component.rows[component.selected]
 }
 
 func (component *TreeSelectorComponent) selectedID() string {
-	if node := component.selectedNode(); node != nil {
-		return node.Entry.ID
+	if row := component.selectedRow(); row != nil {
+		return row.node.Entry.ID
 	}
 	return ""
 }
@@ -544,31 +585,40 @@ func (component *TreeSelectorComponent) HandleInput(event tui.KeyEvent) {
 		if component.onCancel != nil {
 			component.later(component.onCancel)
 		}
+	case tui.MatchesKey(raw, "left"):
+		component.switchVersion(-1)
+	case tui.MatchesKey(raw, "right"):
+		component.switchVersion(1)
 	case key == "?":
 		component.allHints = !component.allHints
 	case key == "/":
 		component.filterInput = tui.NewInput()
 		component.filterInput.Prompt = "/"
 		component.filterInput.SetFocused(component.focused)
+	case key == "e":
+		if row := component.selectedRow(); row != nil && row.kind == treeRowPrompt && component.onSelect != nil {
+			id, onSelect := row.node.Entry.ID, component.onSelect
+			component.later(func() { onSelect(id) })
+		}
 	case key == "f":
-		if node := component.selectedNode(); node != nil && component.OnFork != nil {
-			id, before, fork := node.Entry.ID, component.index.info[node.Entry.ID].role == "user", component.OnFork
+		if row := component.selectedRow(); row != nil && component.OnFork != nil {
+			id, before, fork := row.end, row.end == row.node.Entry.ID && row.kind == treeRowPrompt, component.OnFork
 			component.later(func() { fork(id, before) })
 		}
-	case tui.MatchesKey(raw, "tab") || bindings.Matches(raw, "app.tree.filter.cycleForward"):
-		component.cycleFilter(1)
-	case tui.MatchesKey(raw, "shift+tab") || bindings.Matches(raw, "app.tree.filter.cycleBackward"):
-		component.cycleFilter(-1)
-	case bindings.Matches(raw, "app.tree.filter.default"):
-		component.setFilter("default", false)
-	case bindings.Matches(raw, "app.tree.filter.noTools"):
-		component.setFilter("no-tools", true)
-	case bindings.Matches(raw, "app.tree.filter.userOnly"):
-		component.setFilter("user-only", true)
+	case tui.MatchesKey(raw, "tab") || tui.MatchesKey(raw, "shift+tab") ||
+		bindings.Matches(raw, "app.tree.filter.cycleForward") || bindings.Matches(raw, "app.tree.filter.cycleBackward"):
+		component.setEntries(!component.entries)
+	case bindings.Matches(raw, "app.tree.filter.default"), bindings.Matches(raw, "app.tree.filter.userOnly"):
+		component.setEntries(false)
+	case bindings.Matches(raw, "app.tree.filter.noTools"), bindings.Matches(raw, "app.tree.filter.all"):
+		component.setEntries(true)
 	case bindings.Matches(raw, "app.tree.filter.labeledOnly"):
-		component.setFilter("labeled-only", true)
-	case bindings.Matches(raw, "app.tree.filter.all"):
-		component.setFilter("all", true)
+		for step := 1; step <= len(component.rows); step++ {
+			if index := (component.selected + step) % len(component.rows); component.rows[index].node.Label != nil {
+				component.selected = index
+				break
+			}
+		}
 	case bindings.Matches(raw, "app.tree.editLabel"):
 		component.editLabel()
 	case bindings.Matches(raw, "app.tree.toggleLabelTimestamp"):
@@ -580,15 +630,15 @@ func (component *TreeSelectorComponent) HandleInput(event tui.KeyEvent) {
 	case key == "g":
 		component.selected = 0
 	case key == "G":
-		component.selected = max(0, len(component.view.rows)-1)
+		component.selected = max(0, len(component.rows)-1)
 	}
 }
 
-// handleNavigation covers the keys that work the same while filtering:
+// handleNavigation covers the keys that work the same while searching:
 // moving, jumping between forks, confirming and copying.
 func (component *TreeSelectorComponent) handleNavigation(raw string) bool {
 	bindings := tui.GetKeybindings()
-	last := max(0, len(component.view.rows)-1)
+	last := max(0, len(component.rows)-1)
 	switch {
 	case bindings.Matches(raw, "tui.select.up"):
 		component.move(-1)
@@ -602,15 +652,15 @@ func (component *TreeSelectorComponent) handleNavigation(raw string) bool {
 		component.selected = 0
 	case tui.MatchesKey(raw, "end"):
 		component.selected = last
-	case bindings.Matches(raw, "app.tree.foldOrUp") || component.filterInput == nil && tui.MatchesKey(raw, "left"):
+	case bindings.Matches(raw, "app.tree.foldOrUp"):
 		component.jumpFork(-1)
-	case bindings.Matches(raw, "app.tree.unfoldOrDown") || component.filterInput == nil && tui.MatchesKey(raw, "right"):
+	case bindings.Matches(raw, "app.tree.unfoldOrDown"):
 		component.jumpFork(1)
 	case bindings.Matches(raw, "tui.select.confirm"):
 		component.confirm()
 	case bindings.Matches(raw, "app.message.copy"):
-		if copyText := component.OnCopy; copyText != nil {
-			text := treeCopyText(component.selectedNode())
+		if copyText, row := component.OnCopy, component.selectedRow(); copyText != nil && row != nil {
+			text := treeCopyText(row.node)
 			component.later(func() { copyText(text) })
 		}
 	default:
@@ -620,13 +670,16 @@ func (component *TreeSelectorComponent) handleNavigation(raw string) bool {
 }
 
 // handleFilterInput edits the query; Escape or erasing an empty query leaves
-// filtering and restores the whole tree.
+// the search on the history of the match it was on.
 func (component *TreeSelectorComponent) handleFilterInput(event tui.KeyEvent) {
 	bindings := tui.GetKeybindings()
 	selectedID := component.selectedID()
 	if bindings.Matches(event.Raw, "tui.select.cancel") ||
 		bindings.Matches(event.Raw, "tui.editor.deleteCharBackward") && component.query() == "" {
 		component.filterInput = nil
+		if selectedID != "" {
+			component.shown = component.index.descend(selectedID, component.history)
+		}
 		component.refresh(selectedID)
 		return
 	}
@@ -637,12 +690,27 @@ func (component *TreeSelectorComponent) handleFilterInput(event tui.KeyEvent) {
 	}
 }
 
-// jumpFork moves to the previous or next row where the history forks: a row
-// with several branches below it, or the first row of a branch.
+// switchVersion shows the previous or next version of the selected row's
+// history, keeping the selection on that row.
+func (component *TreeSelectorComponent) switchVersion(direction int) {
+	row := component.selectedRow()
+	if row == nil || len(row.versions) < 2 {
+		return
+	}
+	next := row.version + direction
+	if next < 0 || next >= len(row.versions) {
+		return
+	}
+	selected := component.selected
+	component.shown = component.index.descend(row.versions[next].Entry.ID, component.history)
+	component.rows = component.historyRows()
+	component.selected = min(selected, len(component.rows)-1)
+}
+
+// jumpFork moves to the previous or next row that has other versions.
 func (component *TreeSelectorComponent) jumpFork(direction int) {
-	for index := component.selected + direction; index >= 0 && index < len(component.view.rows); index += direction {
-		row := component.view.rows[index]
-		if row.forkStart || len(component.view.children[row.node.Entry.ID]) > 1 {
+	for index := component.selected + direction; index >= 0 && index < len(component.rows); index += direction {
+		if len(component.rows[index].versions) > 1 {
 			component.selected = index
 			return
 		}
@@ -657,10 +725,7 @@ func (component *TreeSelectorComponent) WantsMouseMotion() bool { return true }
 func (component *TreeSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 	component.mu.Lock()
 	defer component.unlockAndRun()
-	if component.labelInput != nil || len(component.view.rows) == 0 {
-		return false
-	}
-	if component.listWidth > 0 && event.Column >= component.listWidth {
+	if component.labelInput != nil || len(component.rows) == 0 {
 		return false
 	}
 	return tui.HandleListMouse(component, event)
@@ -668,9 +733,9 @@ func (component *TreeSelectorComponent) HandleMouse(event tui.MouseEvent) bool {
 
 // The List* methods run under HandleMouse's lock.
 
-// ListRowAt maps a rendered row to its tree-view row index.
+// ListRowAt maps a rendered row to its row index.
 func (component *TreeSelectorComponent) ListRowAt(row int) (int, bool) {
-	return tui.ListRowIndex(row, component.treeTop, component.rowStart, component.rows, len(component.view.rows))
+	return tui.ListRowIndex(row, component.treeTop, component.rowStart, component.rowN, len(component.rows))
 }
 
 // ListSelectRow moves the highlight without re-anchoring the window, so
@@ -684,56 +749,43 @@ func (component *TreeSelectorComponent) ListSelectRow(index int) {
 // keyboard paging does.
 func (component *TreeSelectorComponent) ListScroll(direction int) {
 	component.window.Recenter()
-	component.selected = max(0, min(component.selected+direction*3, len(component.view.rows)-1))
+	component.selected = max(0, min(component.selected+direction*3, len(component.rows)-1))
 }
 
-// ListConfirm jumps to the selected entry, as Enter does.
+// ListConfirm goes to the selected row, as Enter does.
 func (component *TreeSelectorComponent) ListConfirm() { component.confirm() }
 
 func (component *TreeSelectorComponent) confirm() {
-	if id, onSelect := component.selectedID(), component.onSelect; id != "" && onSelect != nil {
+	if row, onSelect := component.selectedRow(), component.onSelect; row != nil && onSelect != nil {
+		id := row.end
 		component.later(func() { onSelect(id) })
 	}
 }
 
 func (component *TreeSelectorComponent) move(delta int) {
-	if len(component.view.rows) == 0 {
+	if len(component.rows) == 0 {
 		return
 	}
-	component.selected = (component.selected + delta + len(component.view.rows)) % len(component.view.rows)
+	component.selected = (component.selected + delta + len(component.rows)) % len(component.rows)
 }
 
-func (component *TreeSelectorComponent) setFilter(filter string, toggle bool) {
+func (component *TreeSelectorComponent) setEntries(entries bool) {
 	selectedID := component.selectedID()
-	if toggle && component.filterMode == filter {
-		filter = "default"
-	}
-	component.filterMode = filter
+	component.entries = entries
 	component.height = 0
 	component.refresh(selectedID)
 }
 
-func (component *TreeSelectorComponent) cycleFilter(delta int) {
-	index := 0
-	for candidate, mode := range treeFilterModes {
-		if mode == component.filterMode {
-			index = candidate
-			break
-		}
-	}
-	component.setFilter(treeFilterModes[(index+delta+len(treeFilterModes))%len(treeFilterModes)], false)
-}
-
 func (component *TreeSelectorComponent) editLabel() {
-	node := component.selectedNode()
-	if node == nil || component.onLabelChange == nil {
+	row := component.selectedRow()
+	if row == nil || component.onLabelChange == nil {
 		return
 	}
-	component.labelEntryID = node.Entry.ID
+	component.labelEntryID = row.node.Entry.ID
 	component.labelInput = tui.NewInput()
 	component.labelInput.Prompt = "label: "
-	if node.Label != nil {
-		component.labelInput.SetValue(*node.Label)
+	if row.node.Label != nil {
+		component.labelInput.SetValue(*row.node.Label)
 		component.labelInput.HandleInput(tui.KeyEvent{Raw: "\x05"})
 	}
 	component.labelInput.SetFocused(component.focused)
@@ -774,37 +826,25 @@ func (component *TreeSelectorComponent) SetFocused(focused bool) {
 
 func (component *TreeSelectorComponent) Invalidate() {}
 
+// Render lays out, top to bottom: the counts, the rows, the selected turn's
+// reply and the key hints.
 func (component *TreeSelectorComponent) Render(width int) []string {
 	component.mu.Lock()
 	defer component.mu.Unlock()
 	width = max(1, width)
-	if component.Framed {
-		component.listWidth = 0
-		lines := []string{component.renderCounts(width), ""}
-		if listWidth := treeListWidth(width); listWidth < width {
-			component.listWidth = listWidth
-			rows := component.renderRows(listWidth, len(lines))
-			preview := component.renderPreview(width-listWidth-3, len(rows))
-			for index, row := range rows {
-				pad := strings.Repeat(" ", max(0, listWidth-tui.VisibleWidth(row)))
-				lines = append(lines, row+pad+" "+theme.FG("borderMuted", "│")+" "+preview[index])
-			}
-		} else {
-			lines = append(lines, component.renderRows(width, len(lines))...)
-		}
-		return append(lines, "", component.renderFooter(width))
-	}
-	lines := []string{component.renderTitle(width)}
+	lines := []string{component.renderCounts(width), ""}
 	lines = append(lines, component.renderRows(width, len(lines))...)
-	return append(lines, component.renderFooter(width))
+	lines = append(lines, "")
+	lines = append(lines, component.renderPreview(width)...)
+	return append(lines, "", component.renderFooter(width))
 }
 
-// renderCounts is the framed header: the view and honest counts, dim, with
-// the scroll position right-aligned once the list scrolls.
+// renderCounts is the dim header: honest counts, and the scroll position
+// once the list scrolls.
 func (component *TreeSelectorComponent) renderCounts(width int) string {
-	left := "  " + strings.Join(component.titleParts()[1:], " · ")
+	left := "  " + strings.Join(component.titleParts(), " · ")
 	position := ""
-	if count := len(component.view.rows); count > component.maxVisible {
+	if count := len(component.rows); count > component.maxVisible {
 		position = fmt.Sprintf("%d/%d  ", component.selected+1, count)
 	}
 	gap := width - tui.VisibleWidth(left) - tui.VisibleWidth(position)
@@ -814,29 +854,11 @@ func (component *TreeSelectorComponent) renderCounts(width int) string {
 	return theme.FG("dim", left) + strings.Repeat(" ", gap) + theme.FG("dim", position)
 }
 
-// renderTitle is the one rule that separates the tree from the transcript:
-// the view, honest counts, and the scroll position once the list scrolls.
-func (component *TreeSelectorComponent) renderTitle(width int) string {
-	parts := component.titleParts()
-	title := " " + strings.Join(parts, " · ") + " "
-	position := ""
-	if count := len(component.view.rows); count > component.maxVisible {
-		position = fmt.Sprintf(" %d/%d ", component.selected+1, count)
-	}
-	lead := "──"
-	fill := width - tui.VisibleWidth(lead+title+position) - 2
-	if fill < 1 {
-		return tui.TruncateToWidth(theme.FG("muted", strings.TrimSpace(title)), width, "…", false)
-	}
-	return theme.FG("borderMuted", lead) + theme.FG("muted", title) +
-		theme.FG("borderMuted", strings.Repeat("─", fill)) + theme.FG("dim", position) + theme.FG("borderMuted", "──")
-}
-
-// titleParts names the view and counts turns and branches honestly.
+// titleParts counts turns and branches across the whole session.
 func (component *TreeSelectorComponent) titleParts() []string {
-	parts := []string{"Tree"}
-	if name := treeFilterNames[component.filterMode]; name != "" {
-		parts = append(parts, name)
+	var parts []string
+	if component.entries {
+		parts = append(parts, "entries")
 	}
 	switch prompts := component.index.prompts; prompts {
 	case 0:
@@ -848,100 +870,89 @@ func (component *TreeSelectorComponent) titleParts() []string {
 	}
 	if branches := component.index.branches; branches > 1 {
 		parts = append(parts, fmt.Sprintf("%d branches", branches))
-	} else if component.index.prompts > 1 {
-		parts = append(parts, "no forks")
 	}
 	return parts
-}
-
-func (component *TreeSelectorComponent) setRowLayout(top, start, count int) {
-	component.treeTop, component.rowStart, component.rows = top, start, count
 }
 
 // rowLayout reports where the last render put the rows.
 func (component *TreeSelectorComponent) rowLayout() (int, int, int) {
 	component.mu.Lock()
 	defer component.mu.Unlock()
-	return component.treeTop, component.rowStart, component.rows
+	return component.treeTop, component.rowStart, component.rowN
 }
 
-func (component *TreeSelectorComponent) renderRows(width, top int) []string {
-	component.height = max(component.height, min(component.maxVisible, max(1, len(component.view.rows))))
-	lines := make([]string, 0, component.height)
-	if len(component.view.rows) == 0 {
-		component.setRowLayout(top, 0, 0)
-		lines = append(lines, tui.TruncateToWidth("  "+theme.FG("muted", component.emptyText()), width, "…", false))
-	} else {
-		start := component.window.Start(component.selected, len(component.view.rows), component.maxVisible)
-		end := min(start+component.maxVisible, len(component.view.rows))
-		component.setRowLayout(top, start, end-start)
-		now := component.now()
-		for index := start; index < end; index++ {
-			lines = append(lines, component.renderRow(component.view.rows[index], index == component.selected, width, now))
+func (component *TreeSelectorComponent) renderRows(width, top int) (lines []string) {
+	component.height = max(component.height, min(component.maxVisible, max(1, len(component.rows))))
+	lines = make([]string, 0, component.height)
+	defer func() {
+		for len(lines) < component.height {
+			lines = append(lines, "")
 		}
+	}()
+	if len(component.rows) == 0 {
+		component.treeTop, component.rowStart, component.rowN = top, 0, 0
+		lines = append(lines, tui.TruncateToWidth("  "+theme.FG("muted", component.emptyText()), width, "…", false))
+		return lines
 	}
-	for len(lines) < component.height {
-		lines = append(lines, "")
+	start := component.window.Start(component.selected, len(component.rows), component.maxVisible)
+	end := min(start+component.maxVisible, len(component.rows))
+	component.treeTop, component.rowStart, component.rowN = top, start, end-start
+	turnWidth := 0
+	for _, row := range component.rows[start:end] {
+		turnWidth = max(turnWidth, len(fmt.Sprint(row.turn)))
+	}
+	component.textColumn = 2
+	if turnWidth > 0 && width >= 40 {
+		component.textColumn += turnWidth + 2
+	}
+	now := component.now()
+	for index := start; index < end; index++ {
+		lines = append(lines, component.renderRow(component.rows[index], index == component.selected, turnWidth, width, now))
 	}
 	return lines
 }
 
 func (component *TreeSelectorComponent) emptyText() string {
-	switch {
-	case component.query() != "":
+	if component.query() != "" {
 		return "Nothing matches “" + component.query() + "”"
-	case component.filterMode == "labeled-only":
-		return "No labels yet"
-	default:
-		return "Nothing to show yet"
 	}
+	return "Nothing to show yet"
 }
 
-// renderRow lays out cursor, rails, text and right-aligned metadata. Rows
-// off the current path are muted; the current position carries the one
-// accent dot.
-func (component *TreeSelectorComponent) renderRow(row treeRow, selected bool, width int, now time.Time) string {
-	cursor := "  "
-	if selected {
-		cursor = theme.FG("accent", "› ")
-	}
-	rail := row.rail
-	if limit := width / 3; tui.VisibleWidth(rail) > limit {
-		runes := []rune(rail)
-		rail = "…" + string(runes[len(runes)-max(0, limit-1):])
-	}
-	marker := ""
+// renderRow lays out a row: the current-position dot, the turn number, the
+// text, and on the right the versions, labels and, when selected, the time.
+// Rows outside the current history are muted.
+func (component *TreeSelectorComponent) renderRow(row treeRow, selected bool, turnWidth, width int, now time.Time) string {
+	marker := "  "
 	if row.current {
-		marker = "● "
+		marker = theme.FG("accent", "●") + " "
 	}
-	lead := 2 + tui.VisibleWidth(rail) + tui.VisibleWidth(marker)
-	meta := component.rowMeta(row, selected, width, now)
+	number := ""
+	if turnWidth > 0 && width >= 40 {
+		number = strings.Repeat(" ", turnWidth) + "  "
+		if row.turn > 0 {
+			number = theme.FG("dim", fmt.Sprintf("%*d", turnWidth, row.turn)) + "  "
+		}
+	}
+	lead := 2 + tui.VisibleWidth(number)
+	meta := component.rowMeta(row, selected, now)
 	metaWidth := tui.VisibleWidth(meta)
-	if metaWidth > 0 && width-lead-metaWidth-2 < 16 {
+	if metaWidth > 0 && width-lead-metaWidth-3 < 16 {
 		meta, metaWidth = "", 0
 	}
-	textWidth := max(0, width-lead-metaWidth-boolInt(metaWidth > 0)*2)
-	text := row.text
-	if row.kind == treeRowReply {
-		text = "↳ " + text
-	}
-	text = tui.TruncateToWidth(text, textWidth, "…", false)
+	textWidth := max(0, width-lead-metaWidth-boolInt(metaWidth > 0)*3-1)
+	text := tui.TruncateToWidth(row.text, textWidth, "…", false)
 
-	textColor := "text"
+	color := "text"
 	switch {
 	case row.kind != treeRowPrompt:
-		textColor = "dim"
-		if row.onPath {
-			textColor = "muted"
-		}
-	case !row.onPath:
-		textColor = "muted"
+		color = "dim"
+	case !row.inContext:
+		color = "muted"
 	}
-	line := cursor + theme.FG("borderMuted", rail) + theme.FG("accent", marker) + theme.FG(textColor, text)
-	if selected || meta != "" {
-		gap := max(0, width-lead-tui.VisibleWidth(text)-metaWidth)
-		line += strings.Repeat(" ", gap) + meta
-	}
+	line := marker + number + theme.FG(color, text)
+	gap := max(0, width-lead-tui.VisibleWidth(text)-metaWidth-1)
+	line += strings.Repeat(" ", gap) + meta + " "
 	line = tui.TruncateToWidth(line, width, "", false)
 	if selected {
 		line = theme.BG("selectedBg", line)
@@ -949,9 +960,9 @@ func (component *TreeSelectorComponent) renderRow(row treeRow, selected bool, wi
 	return line
 }
 
-// rowMeta is the dim right column: labels always, and on the selected row
-// the size of a branch where one starts and when a prompt was sent.
-func (component *TreeSelectorComponent) rowMeta(row treeRow, selected bool, width int, now time.Time) string {
+// rowMeta is the dim right column: the version shown where the history
+// forks, labels, and the time of the selected row.
+func (component *TreeSelectorComponent) rowMeta(row treeRow, selected bool, now time.Time) string {
 	var parts []string
 	if label := row.node.Label; label != nil && *label != "" {
 		text := "#" + *label
@@ -960,24 +971,52 @@ func (component *TreeSelectorComponent) rowMeta(row treeRow, selected bool, widt
 		}
 		parts = append(parts, theme.FG("mdLink", text))
 	}
-	if !selected {
-		return strings.Join(parts, "  ")
-	}
-	if row.forkStart && component.filterMode == "default" && width >= 56 {
-		switch prompts := component.index.info[row.node.Entry.ID].prompts; prompts {
-		case 0:
-		case 1:
-			parts = append(parts, theme.FG("dim", "1 turn"))
-		default:
-			parts = append(parts, theme.FG("dim", fmt.Sprintf("%d turns", prompts)))
-		}
-	}
-	if row.kind == treeRowPrompt && width >= 64 {
+	if selected {
 		if stamp := formatTreeTime(row.node.Entry.Timestamp, now); stamp != "" {
 			parts = append(parts, theme.FG("dim", stamp))
 		}
 	}
+	if len(row.versions) > 1 {
+		color := "dim"
+		if selected {
+			color = "accent"
+		}
+		parts = append(parts, theme.FG(color, fmt.Sprintf("%d/%d", row.version+1, len(row.versions))))
+	}
 	return strings.Join(parts, "  ")
+}
+
+// renderPreview shows the selected turn's reply, dim, aligned with the row
+// text and clipped to a fixed height.
+func (component *TreeSelectorComponent) renderPreview(width int) []string {
+	lines := make([]string, 0, treePreviewLines)
+	if row := component.selectedRow(); row != nil && width >= 24 {
+		indent := strings.Repeat(" ", component.textColumn)
+		wrapped := tui.WrapTextWithANSI(plainPreview(row.reply), width-len(indent)-2)
+		for index, line := range wrapped {
+			if index == treePreviewLines-1 && len(wrapped) > treePreviewLines {
+				line = tui.TruncateToWidth(line, width-len(indent)-3, "", false) + "…"
+			}
+			lines = append(lines, indent+theme.FG("muted", line))
+			if len(lines) == treePreviewLines {
+				break
+			}
+		}
+	}
+	for len(lines) < treePreviewLines {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+var (
+	previewHeading = regexp.MustCompile(`(?m)^\s*#{1,6}\s+`)
+	previewMarks   = strings.NewReplacer("**", "", "__", "", "`", "")
+)
+
+// plainPreview flattens a reply's markdown into one paragraph of plain text.
+func plainPreview(text string) string {
+	return strings.Join(strings.Fields(previewMarks.Replace(previewHeading.ReplaceAllString(text, ""))), " ")
 }
 
 // renderFooter is one dim line: the key hints, or the query or label being
@@ -992,7 +1031,7 @@ func (component *TreeSelectorComponent) renderFooter(width int) string {
 		}
 		return tui.TruncateToWidth("  "+component.labelInput.Render(inputWidth)[0]+hint, width, "", false)
 	case component.filterInput != nil:
-		count := len(component.view.rows)
+		count := len(component.rows)
 		status := fmt.Sprintf("%d matches", count)
 		if count == 1 {
 			status = "1 match"
@@ -1004,18 +1043,23 @@ func (component *TreeSelectorComponent) renderFooter(width int) string {
 		}
 		return tui.TruncateToWidth("  "+component.filterInput.Render(inputWidth)[0]+status, width, "", false)
 	}
-	hints := []string{RawKeyHint("enter", "go to"), RawKeyHint("f", "fork"), RawKeyHint("/", "search")}
-	if component.allHints || !component.Framed {
-		hints = append(hints, RawKeyHint("tab", "view"))
-		if component.index.branches > 1 {
-			hints = append(hints, RawKeyHint("←→", "forks"))
-		}
-		hints = append(hints, KeyHint("app.tree.editLabel", "label"))
+	row := component.selectedRow()
+	hints := []string{RawKeyHint("enter", "go to")}
+	if row != nil && len(row.versions) > 1 {
+		hints = append(hints, RawKeyHint("←→", "versions"))
 	}
-	if !component.Framed {
-		hints = append(hints, RawKeyHint("esc", "close"))
-	} else if !component.allHints {
-		hints = append(hints, RawKeyHint("?", "keys"))
+	if row != nil && row.kind == treeRowPrompt {
+		hints = append(hints, RawKeyHint("e", "edit"))
+	}
+	hints = append(hints, RawKeyHint("/", "search"))
+	if component.allHints {
+		view := "entries"
+		if component.entries {
+			view = "turns"
+		}
+		hints = append(hints, RawKeyHint("f", "fork"), RawKeyHint("tab", view), KeyHint("app.tree.editLabel", "label"))
+	} else {
+		hints = append(hints, RawKeyHint("?", "more"))
 	}
 	separator := theme.FG("dim", " · ")
 	line := "  "
@@ -1069,78 +1113,4 @@ func formatTreeTime(value string, now time.Time) string {
 	default:
 		return timestamp.Format("Jan 2006")
 	}
-}
-
-// treeListWidth splits a wide framed tree: the list keeps what it needs to
-// read well and the rest previews the selection; narrow modals stay one column.
-func treeListWidth(width int) int {
-	if width < 110 {
-		return width
-	}
-	return min(max(56, width*5/11), 72)
-}
-
-// renderPreview shows the selected entry in full and, for a prompt, the
-// reply that answered it on the history shown, clipped to the list height.
-func (component *TreeSelectorComponent) renderPreview(width, height int) []string {
-	lines := make([]string, 0, height)
-	node := component.selectedNode()
-	if node != nil && width >= 20 {
-		info := component.index.info[node.Entry.ID]
-		color := "text"
-		if info.kind != treeRowPrompt {
-			color = "muted"
-		}
-		for _, line := range tui.WrapTextWithANSI(info.full, width) {
-			lines = append(lines, theme.FG(color, line))
-		}
-		if info.kind == treeRowPrompt {
-			if reply := component.turnReply(node); reply != "" {
-				lines = append(lines, "")
-				for _, line := range tui.WrapTextWithANSI(reply, width) {
-					lines = append(lines, theme.FG("dim", line))
-				}
-			}
-		}
-		if when := formatTreeTime(node.Entry.Timestamp, component.now()); when != "" && len(lines) < height-1 {
-			for len(lines) < height-1 {
-				lines = append(lines, "")
-			}
-			lines = append(lines, theme.FG("dim", when))
-		}
-	}
-	if len(lines) > height {
-		lines = append(lines[:height-1], theme.FG("dim", "…"))
-	}
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-	return lines
-}
-
-// turnReply is the last assistant text before the next prompt, following the
-// current history where it passes through the turn and the first branch
-// elsewhere.
-func (component *TreeSelectorComponent) turnReply(prompt *sessionstore.SessionTreeNode) string {
-	reply := ""
-	for node := prompt; node != nil; {
-		next := (*sessionstore.SessionTreeNode)(nil)
-		for _, child := range node.Children {
-			if next == nil || component.view.path[child.Entry.ID] {
-				next = child
-			}
-		}
-		if next == nil {
-			break
-		}
-		info := component.index.info[next.Entry.ID]
-		if info.role == "user" {
-			break
-		}
-		if info.role == "assistant" && info.full != "" {
-			reply = info.full
-		}
-		node = next
-	}
-	return reply
 }

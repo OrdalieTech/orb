@@ -12,138 +12,79 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 )
 
-func TestTreeViewRows(t *testing.T) {
-	linear := func() ([]*sessionstore.SessionTreeNode, string) {
-		root := treeTestMessage("root", "", "user", "one")
-		treeTestChain(root,
-			treeTestMessage("reply", "root", "assistant", "two"),
-			treeTestMessage("next", "reply", "user", "three"),
-			treeTestMessage("leaf", "next", "assistant", "four"),
-		)
-		return []*sessionstore.SessionTreeNode{root}, "leaf"
-	}
-	hiddenFork := func() ([]*sessionstore.SessionTreeNode, string) {
-		root := treeTestMessage("root", "", "user", "root")
-		hidden := &sessionstore.SessionTreeNode{Entry: sessionstore.SessionEntry{
-			Type: "model_change", ID: "hidden", ParentID: treeTestParent("root"), ModelID: "m",
-		}}
-		root.Children = []*sessionstore.SessionTreeNode{hidden}
-		hidden.Children = []*sessionstore.SessionTreeNode{
-			treeTestMessage("left", "hidden", "user", "left"),
-			treeTestMessage("right", "hidden", "user", "right"),
-		}
-		return []*sessionstore.SessionTreeNode{root}, "right"
-	}
-	for _, test := range []struct {
-		name, filter, query string
-		tree                func() ([]*sessionstore.SessionTreeNode, string)
-		want                []string
-	}{
-		{"linear history is a flat list of prompts", "default", "", linear, []string{"one", "three", "● ↳ four"}},
-		{"rails only where history forks, active branch first", "default", "", treeTestForked, []string{
-			"root", "├ summary · tried old", "│ active", "│ ● ↳ done", "└ old", "  ↳ old reply",
-		}},
-		{"branches reattach across hidden entries", "default", "", hiddenFork, []string{"root", "├ ● right", "└ left"}},
-		{"messages view lists every reply", "no-tools", "", linear, []string{"one", "↳ two", "three", "● ↳ four"}},
-		{"prompts view marks the nearest shown position", "user-only", "", linear, []string{"one", "● three"}},
-		{"all view shows bookkeeping", "all", "", hiddenFork, []string{"root", "model · m", "├ ● right", "└ left"}},
-		{"a search never moves the position", "default", "old", treeTestForked, []string{"├ summary · tried old", "└ old", "  ↳ old reply"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			roots, leaf := test.tree()
-			view := buildTreeView(newTreeIndex(roots), roots, leaf, test.filter, test.query)
-			if got := plainTreeRows(view.rows); !slices.Equal(got, test.want) {
-				t.Fatalf("rows =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(test.want, "\n"))
-			}
-		})
-	}
-}
-
-func TestTreeSelectorTitleIsHonest(t *testing.T) {
-	initTestTheme(t)
-	useTreeTestKeybindings(t)
-	root := treeTestMessage("root", "", "user", "only prompt")
-	selector := NewTreeSelectorComponent([]*sessionstore.SessionTreeNode{root}, "root", 24, nil, nil, nil, "", "default")
-	if title := stripTreeANSI(selector.Render(60)[0]); !strings.Contains(title, "Tree · 1 turn ") {
-		t.Fatalf("single-turn title = %q", title)
-	}
-	treeTestChain(root, treeTestMessage("a", "root", "assistant", "a"), treeTestMessage("b", "a", "user", "b"))
-	selector = NewTreeSelectorComponent([]*sessionstore.SessionTreeNode{root}, "b", 24, nil, nil, nil, "", "labeled-only")
-	lines := stripTreeLines(selector.Render(60))
-	if !strings.Contains(lines[0], "Tree · labeled · 2 turns · no forks") || lines[1] != "  No labels yet" {
-		t.Fatalf("linear labeled view = %#v", lines)
-	}
-}
-
-func TestTreeSelectorStartsAtLeafAndCentersIt(t *testing.T) {
-	initTestTheme(t)
-	useTreeTestKeybindings(t)
-	root := treeTestMessage("root", "", "user", "root")
-	parent := root
-	for index := range 8 {
-		child := treeTestMessage(fmt.Sprint(index), parent.Entry.ID, "user", fmt.Sprint("prompt ", index))
-		parent.Children = []*sessionstore.SessionTreeNode{child}
-		parent = child
-	}
-
-	selector := NewTreeSelectorComponent([]*sessionstore.SessionTreeNode{root}, parent.Entry.ID, 10, nil, nil, nil, "", "default")
-	if got := selector.selectedID(); got != parent.Entry.ID {
-		t.Fatalf("selected = %q, want current leaf %q", got, parent.Entry.ID)
-	}
-	lines := stripTreeLines(selector.Render(80))
-	if index := slices.IndexFunc(lines, func(line string) bool { return strings.HasPrefix(line, "› ● prompt 7") }); index < 0 {
-		t.Fatalf("current leaf is not selected in the window:\n%s", strings.Join(lines, "\n"))
-	}
-	if !strings.Contains(lines[0], " 9/9 ") {
-		t.Fatalf("scrolling title lacks the position: %q", lines[0])
-	}
-}
-
-func TestTreeSelectorNavigationForkAndJump(t *testing.T) {
+func TestTreeShowsOneHistoryWithVersions(t *testing.T) {
 	initTestTheme(t)
 	useTreeTestKeybindings(t)
 	roots, leaf := treeTestForked()
-	var selected string
+	selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, nil, "", "default")
+	// The summary opens the active branch, so it is where the history forks.
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 root", "summary  tried old 2/2", "● 2 active"}) {
+		t.Fatalf("rows = %#v", got)
+	}
+	if selector.selectedID() != "active" {
+		t.Fatalf("selected %q, want the current turn", selector.selectedID())
+	}
+	press(selector, "k", "\x1b[D")
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 root", "2 old 1/2"}) || selector.selectedID() != "old" {
+		t.Fatalf("left showed %#v selecting %q", got, selector.selectedID())
+	}
+	if row := selector.rows[1]; row.inContext || row.reply != "old reply" {
+		t.Fatalf("the other version reads as current: %#v", row)
+	}
+	press(selector, "\x1b[D", "\x1b[C")
+	if got := plainTreeRows(selector.rows); got[2] != "● 2 active" {
+		t.Fatalf("right did not come back to the current history: %#v", got)
+	}
+}
+
+// A reply retried for the same prompt forks after the last prompt; the
+// history still ends on a row that carries the versions.
+func TestTreeRetriedReplyKeepsItsVersions(t *testing.T) {
+	initTestTheme(t)
+	useTreeTestKeybindings(t)
+	root := treeTestMessage("q", "", "user", "question")
+	root.Children = []*sessionstore.SessionTreeNode{
+		treeTestMessage("a1", "q", "assistant", "first answer"),
+		treeTestMessage("a2", "q", "assistant", "second answer"),
+	}
+	selector := NewTreeSelectorComponent([]*sessionstore.SessionTreeNode{root}, "a2", 24, nil, nil, nil, "", "default")
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 question", "● second answer 2/2"}) {
+		t.Fatalf("rows = %#v", got)
+	}
+	press(selector, "\x1b[D")
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 question", "first answer 1/2"}) {
+		t.Fatalf("left showed %#v", got)
+	}
+}
+
+func TestTreeSelectorGoesToTurnEnds(t *testing.T) {
+	initTestTheme(t)
+	useTreeTestKeybindings(t)
+	roots, leaf := treeTestForked()
+	var selected []string
 	type fork struct {
 		id     string
 		before bool
 	}
 	var forks []fork
-	selector := NewTreeSelectorComponent(roots, leaf, 24, func(id string) { selected = id }, nil, nil, "", "default")
+	selector := NewTreeSelectorComponent(roots, leaf, 24, func(id string) { selected = append(selected, id) }, nil, nil, "", "default")
 	selector.OnFork = func(id string, before bool) { forks = append(forks, fork{id, before}) }
-
-	press := func(keys ...string) {
-		for _, key := range keys {
-			selector.HandleInput(tui.KeyEvent{Raw: key})
-		}
+	// Enter continues after a turn's reply, e edits its prompt, f forks it.
+	press(selector, "g", "\r", "e", "G", "\r", "f")
+	if want := []string{"answer", "root", "done"}; !slices.Equal(selected, want) {
+		t.Fatalf("selected %#v, want %#v", selected, want)
 	}
-	press("g")
-	if got := selector.selectedID(); got != "root" {
-		t.Fatalf("g selected %q, want root", got)
-	}
-	press("\x1b[C")
-	if got := selector.selectedID(); got != "summary" {
-		t.Fatalf("right jumped to %q, want the first branch", got)
-	}
-	press("\x1b[C")
-	if got := selector.selectedID(); got != "old" {
-		t.Fatalf("right jumped to %q, want the second branch", got)
-	}
-	press("\x1b[D", "j", "j")
-	if got := selector.selectedID(); got != "done" {
-		t.Fatalf("left then j j selected %q, want done", got)
-	}
-	press("f", "k", "f")
-	if want := []fork{{"done", false}, {"active", true}}; !slices.Equal(forks, want) {
+	if want := []fork{{"done", false}}; !slices.Equal(forks, want) {
 		t.Fatalf("forks = %#v, want %#v", forks, want)
 	}
-	press("\r")
-	if selected != "active" {
-		t.Fatalf("enter selected %q, want active", selected)
+	// e only applies to prompts.
+	press(selector, "k", "e")
+	if len(selected) != 3 {
+		t.Fatalf("e on a summary selected %#v", selected)
 	}
 }
 
-func TestTreeSelectorFilterAndViews(t *testing.T) {
+func TestTreeSelectorSearchAndEntries(t *testing.T) {
 	initTestTheme(t)
 	useTreeTestKeybindings(t)
 	roots, leaf := treeTestForked()
@@ -152,53 +93,60 @@ func TestTreeSelectorFilterAndViews(t *testing.T) {
 	selector := NewTreeSelectorComponent(roots, leaf, 24, func(id string) { selected = id }, func() { cancelled++ }, nil, "", "default")
 
 	height := len(selector.Render(80))
-	for _, key := range "/old" {
-		selector.HandleInput(tui.KeyEvent{Raw: string(key)})
-	}
-	if got := visibleTreeIDs(selector); !slices.Equal(got, []string{"summary", "old", "oldReply"}) {
-		t.Fatalf("filter visible IDs = %#v", got)
+	press(selector, "/", "o", "l", "d")
+	// Search covers every history, not only the one shown.
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"2 old 1/2", "summary  tried old 2/2"}) {
+		t.Fatalf("search rows = %#v", got)
 	}
 	lines := stripTreeLines(selector.Render(80))
-	if footer := lines[len(lines)-1]; !strings.HasPrefix(footer, "  /old") || !strings.Contains(footer, "3 matches") {
-		t.Fatalf("filter footer = %q", footer)
+	if footer := lines[len(lines)-1]; !strings.HasPrefix(footer, "  /old") || !strings.Contains(footer, "2 matches") {
+		t.Fatalf("search footer = %q", footer)
 	}
 	if len(lines) != height {
-		t.Fatalf("filtering resized the tree from %d to %d lines", height, len(lines))
+		t.Fatalf("searching resized the tree from %d to %d lines", height, len(lines))
 	}
-	// Command letters type into the query while filtering.
-	selector.HandleInput(tui.KeyEvent{Raw: "f"})
-	if lines := stripTreeLines(selector.Render(80)); selector.query() != "oldf" || lines[1] != "  Nothing matches “oldf”" {
+	// Command letters type into the query while searching.
+	press(selector, "f")
+	if lines := stripTreeLines(selector.Render(80)); selector.query() != "oldf" || lines[2] != "  Nothing matches “oldf”" {
 		t.Fatalf("query %q rendered %#v", selector.query(), lines)
 	}
-	selector.HandleInput(tui.KeyEvent{Raw: "\x1b"})
-	if got := visibleTreeIDs(selector); len(got) != 6 || cancelled != 0 {
-		t.Fatalf("escape left filtering with %#v, cancelled = %d", got, cancelled)
+	press(selector, "\x7f", "\x1b[A", "\x1b")
+	// Leaving the search shows the history of the match it was on.
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 root", "2 old 1/2"}) || cancelled != 0 {
+		t.Fatalf("escape left search with %#v, cancelled = %d", got, cancelled)
 	}
-	for _, key := range []string{"/", "x", "\x7f", "\x7f"} {
-		selector.HandleInput(tui.KeyEvent{Raw: key})
-	}
+	press(selector, "/", "x", "\x7f", "\x7f")
 	if selector.filterInput != nil {
-		t.Fatal("backspace on an empty query kept the filter open")
+		t.Fatal("backspace on an empty query kept the search open")
 	}
-	for _, key := range []string{"/", "a", "c", "t", "\r"} {
-		selector.HandleInput(tui.KeyEvent{Raw: key})
+	press(selector, "/", "a", "c", "t", "\r")
+	if selected != "done" {
+		t.Fatalf("enter while searching selected %q, want the end of that turn", selected)
 	}
-	if selected != "active" {
-		t.Fatalf("enter while filtering selected %q, want active", selected)
+	press(selector, "\x1b", "\t")
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 root", "answer", "summary  tried old 2/2", "2 active", "● done"}) {
+		t.Fatalf("entries rows = %#v", got)
 	}
-
-	selector.HandleInput(tui.KeyEvent{Raw: "\x1b"})
-	selector.HandleInput(tui.KeyEvent{Raw: "\t"})
-	if selector.filterMode != "no-tools" || !slices.Contains(visibleTreeIDs(selector), "answer") {
-		t.Fatalf("tab switched to %q showing %#v", selector.filterMode, visibleTreeIDs(selector))
-	}
-	selector.HandleInput(tui.KeyEvent{Raw: "\x15"})
-	if got := visibleTreeIDs(selector); !slices.Equal(got, []string{"root", "active", "old"}) {
-		t.Fatalf("user-only visible IDs = %#v", got)
-	}
-	selector.HandleInput(tui.KeyEvent{Raw: "\x1b"})
+	press(selector, "\x1b")
 	if cancelled != 1 {
-		t.Fatalf("escape outside the filter cancelled = %d, want 1", cancelled)
+		t.Fatalf("escape outside the search cancelled = %d, want 1", cancelled)
+	}
+}
+
+func TestTreeSelectorRendersCountsReplyAndHints(t *testing.T) {
+	initTestTheme(t)
+	useTreeTestKeybindings(t)
+	roots, leaf := treeTestForked()
+	selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, nil, "", "default")
+	lines := stripTreeLines(selector.Render(80))
+	want := []string{"  3 turns · 2 branches", "", "  1  root", "     summary  tried old", "● 2  active", "", "     done", "", "", "", "",
+		"  enter go to · e edit · / search · ? more"}
+	if lines[3] = strings.TrimSuffix(lines[3], "2/2"); !slices.Equal(trimTreeLines(lines), want) {
+		t.Fatalf("render =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+	press(selector, "k", "?")
+	if footer := stripTreeANSI(selector.Render(80)[len(lines)-1]); footer != "  enter go to · ←→ versions · / search · f fork · tab entries · shift+l label" {
+		t.Fatalf("all hints = %q", footer)
 	}
 }
 
@@ -217,28 +165,28 @@ func TestTreeSelectorCopyAndLabel(t *testing.T) {
 	)
 	selector.now = func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.Local) }
 	selector.OnCopy = func(text string) { copied = text }
-	selector.HandleInput(tui.KeyEvent{Raw: "\x18"})
+	press(selector, "\x18")
 	if copied != "active" {
 		t.Fatalf("copied = %q", copied)
 	}
-	selector.HandleInput(tui.KeyEvent{Raw: "L"})
-	for _, key := range "kept" {
-		selector.HandleInput(tui.KeyEvent{Raw: string(key)})
-	}
+	press(selector, "L", "k", "e", "p", "t")
 	if footer := stripTreeANSI(selector.Render(80)[len(selector.Render(80))-1]); !strings.Contains(footer, "label: kept") {
 		t.Fatalf("label footer = %q", footer)
 	}
-	selector.HandleInput(tui.KeyEvent{Raw: "\r"})
+	press(selector, "\r")
 	if labeled != "kept" {
 		t.Fatalf("label = %q", labeled)
 	}
-	row := stripTreeLines(selector.Render(80))[3]
-	if !strings.HasPrefix(row, "› │ active") || !strings.HasSuffix(row, "#kept") {
+	if row := stripTreeLines(selector.Render(80))[4]; !strings.HasPrefix(row, "● 2  active") || !strings.HasSuffix(row, "#kept") {
 		t.Fatalf("labeled row = %q", row)
 	}
-	selector.HandleInput(tui.KeyEvent{Raw: "\x0c"})
-	if got := visibleTreeIDs(selector); !slices.Equal(got, []string{"active"}) {
-		t.Fatalf("labeled-only visible IDs = %#v", got)
+	press(selector, "g", "\x0c")
+	if selector.selectedID() != "active" {
+		t.Fatalf("ctrl+l jumped to %q, want the labeled row", selector.selectedID())
+	}
+	press(selector, "/", "k", "e", "p", "t")
+	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"2 active"}) {
+		t.Fatalf("label search rows = %#v", got)
 	}
 }
 
@@ -248,12 +196,10 @@ func TestTreeSelectorFitsNarrowWidths(t *testing.T) {
 	initTestTheme(t)
 	useTreeTestKeybindings(t)
 	for _, width := range []int{1, 8, 16, 26, 34, 60, 120} {
-		for _, keys := range [][]string{nil, {"L"}, {"/", "o"}} {
+		for _, keys := range [][]string{nil, {"L"}, {"/", "o"}, {"\t"}, {"?"}} {
 			roots, leaf := treeTestForked()
 			selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, func(string, *string) {}, "", "default")
-			for _, key := range keys {
-				selector.HandleInput(tui.KeyEvent{Raw: key})
-			}
+			press(selector, keys...)
 			for _, line := range selector.Render(width) {
 				if got := tui.VisibleWidth(line); got > width {
 					t.Fatalf("width %d keys %q: line of width %d: %q", width, keys, got, line)
@@ -263,9 +209,9 @@ func TestTreeSelectorFitsNarrowWidths(t *testing.T) {
 	}
 }
 
-// Renders run on the TUI's timer while keys arrive: a filter keystroke must
-// never leave a render indexing rows that are gone.
-func TestTreeSelectorRendersWhileFiltering(t *testing.T) {
+// Renders run on the TUI's timer while keys arrive: a keystroke must never
+// leave a render indexing rows that are gone.
+func TestTreeSelectorRendersWhileTyping(t *testing.T) {
 	initTestTheme(t)
 	useTreeTestKeybindings(t)
 	roots, leaf := treeTestForked()
@@ -278,9 +224,7 @@ func TestTreeSelectorRendersWhileFiltering(t *testing.T) {
 		}
 	}()
 	for range 60 {
-		for _, key := range []string{"/", "o", "l", "d", "\x1b", "\t"} {
-			selector.HandleInput(tui.KeyEvent{Raw: key})
-		}
+		press(selector, "/", "o", "l", "d", "\x1b", "\t", "k", "\x1b[D", "\x1b[C")
 	}
 	<-done
 }
@@ -301,29 +245,53 @@ func TestTreeSelectorLongHistoryStaysWindowed(t *testing.T) {
 		parent = child
 	}
 	selector := NewTreeSelectorComponent([]*sessionstore.SessionTreeNode{root}, parent.Entry.ID, 40, nil, nil, nil, "", "default")
-	if rows := len(selector.view.rows); rows != 10001 {
-		t.Fatalf("rows = %d, want 10000 prompts plus the current reply", rows)
+	if rows := len(selector.rows); rows != 10000 {
+		t.Fatalf("rows = %d, want 10000 prompts", rows)
 	}
-	lines := selector.Render(80)
-	if len(lines) != selector.maxVisible+2 {
-		t.Fatalf("rendered %d lines, want window %d plus title and footer", len(lines), selector.maxVisible)
+	lines := stripTreeLines(selector.Render(80))
+	if len(lines) != selector.maxVisible+5+treePreviewLines {
+		t.Fatalf("rendered %d lines, want window %d plus counts, preview and hints", len(lines), selector.maxVisible)
 	}
-	if !strings.Contains(stripTreeANSI(lines[len(lines)-2]), "› ● ↳ assistant 19999") {
-		t.Fatalf("current reply is not the selected last row: %q", stripTreeANSI(lines[len(lines)-2]))
+	if row := lines[1+selector.maxVisible]; !strings.HasPrefix(row, "● 10000  user 19998") || !strings.HasSuffix(lines[0], "10000/10000") {
+		t.Fatalf("current turn is not the last row: %q / %q", row, lines[0])
+	}
+	press(selector, "/", "u", "s", "e", "r")
+	if rows := len(selector.rows); rows != 9999 {
+		t.Fatalf("search rows = %d", rows)
 	}
 }
 
+func press(selector *TreeSelectorComponent, keys ...string) {
+	for _, key := range keys {
+		selector.HandleInput(tui.KeyEvent{Raw: key})
+	}
+}
+
+// plainTreeRows reads rows as "● 2 text 1/2": the current dot, the turn, the
+// text and the version shown.
 func plainTreeRows(rows []treeRow) []string {
 	result := make([]string, len(rows))
 	for index, row := range rows {
-		text := row.rail
+		var parts []string
 		if row.current {
-			text += "● "
+			parts = append(parts, "●")
 		}
-		if row.kind == treeRowReply {
-			text += "↳ "
+		if row.turn > 0 {
+			parts = append(parts, fmt.Sprint(row.turn))
 		}
-		result[index] = text + row.text
+		parts = append(parts, row.text)
+		if len(row.versions) > 1 {
+			parts = append(parts, fmt.Sprintf("%d/%d", row.version+1, len(row.versions)))
+		}
+		result[index] = strings.Join(parts, " ")
+	}
+	return result
+}
+
+func trimTreeLines(lines []string) []string {
+	result := make([]string, len(lines))
+	for index, line := range lines {
+		result[index] = strings.TrimRight(line, " ")
 	}
 	return result
 }
@@ -362,14 +330,6 @@ func treeTestChain(parent *sessionstore.SessionTreeNode, nodes ...*sessionstore.
 		parent.Children = []*sessionstore.SessionTreeNode{node}
 		parent = node
 	}
-}
-
-func visibleTreeIDs(selector *TreeSelectorComponent) []string {
-	ids := make([]string, len(selector.view.rows))
-	for index, row := range selector.view.rows {
-		ids[index] = row.node.Entry.ID
-	}
-	return ids
 }
 
 func treeTestMessage(id, parent, role, text string) *sessionstore.SessionTreeNode {
