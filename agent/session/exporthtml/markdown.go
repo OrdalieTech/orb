@@ -215,11 +215,11 @@ func renderUserTextMarkdown(text string, images []string) string {
 		parts = append(parts, images...)
 		return strings.Join(parts, "\n\n")
 	}
-	parts := []string{"**Skill: " + inlineCode(skill.Name) + "**", skill.Content}
-	parts = append(parts, images...)
-	if skill.UserMessage != "" {
-		parts = append(parts, skill.UserMessage)
-	}
+	// The message reads as typed, the invocation marked in place; the skill
+	// body folds below it like thinking does.
+	message := ReplaceSkillTokens(skill.InvocationText(), skill.Name, func(name string) string { return "**◆ " + name + "**" })
+	parts := append([]string{message}, images...)
+	parts = append(parts, "<details><summary>◆ "+skill.Name+" skill</summary>\n\n"+skill.Content+"\n\n</details>")
 	return strings.Join(parts, "\n\n")
 }
 
@@ -240,6 +240,69 @@ func ParseSkillBlock(text string) (ParsedSkillBlock, bool) {
 		return ParsedSkillBlock{}, false
 	}
 	return ParsedSkillBlock{Name: match[1], Location: match[2], Content: match[3], UserMessage: strings.TrimSpace(match[4])}, true
+}
+
+// SkillTokenPrefix starts a skill invocation in message text.
+const SkillTokenPrefix = "/skill:"
+
+// SkillToken is a whitespace-delimited `/skill:name` run; offsets are bytes.
+type SkillToken struct {
+	Start, End int
+	Name       string
+}
+
+func isSkillTokenSpace(b byte) bool { return b == ' ' || b == '\t' || b == '\r' || b == '\n' }
+
+// FindSkillTokens returns the skill invocations in text, in order.
+func FindSkillTokens(text string) []SkillToken {
+	var tokens []SkillToken
+	for from := 0; from < len(text); {
+		at := strings.Index(text[from:], SkillTokenPrefix)
+		if at < 0 {
+			break
+		}
+		at += from
+		end := at + len(SkillTokenPrefix)
+		for end < len(text) && !isSkillTokenSpace(text[end]) {
+			end++
+		}
+		if (at == 0 || isSkillTokenSpace(text[at-1])) && end > at+len(SkillTokenPrefix) {
+			tokens = append(tokens, SkillToken{Start: at, End: end, Name: text[at+len(SkillTokenPrefix) : end]})
+		}
+		from = end
+	}
+	return tokens
+}
+
+// ReplaceSkillTokens substitutes every invocation of name.
+func ReplaceSkillTokens(text, name string, chip func(string) string) string {
+	var out strings.Builder
+	position := 0
+	for _, token := range FindSkillTokens(text) {
+		if token.Name != name {
+			continue
+		}
+		out.WriteString(text[position:token.Start])
+		out.WriteString(chip(token.Name))
+		position = token.End
+	}
+	out.WriteString(text[position:])
+	return out.String()
+}
+
+// InvocationText is the user's text with the invocation at its original
+// position. Orb's inline form keeps the token in the text after the block;
+// upstream's `/skill:name args` form moved it out, so it leads.
+func (skill ParsedSkillBlock) InvocationText() string {
+	for _, token := range FindSkillTokens(skill.UserMessage) {
+		if token.Name == skill.Name {
+			return skill.UserMessage
+		}
+	}
+	if skill.UserMessage == "" {
+		return SkillTokenPrefix + skill.Name
+	}
+	return SkillTokenPrefix + skill.Name + " " + skill.UserMessage
 }
 
 func renderAssistantContentMarkdown(raw json.RawMessage) string {

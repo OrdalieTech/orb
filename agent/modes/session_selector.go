@@ -786,7 +786,7 @@ func (selector *SessionSelectorComponent) renderSessionLineLocked(node flatSessi
 		}
 		prefix = builder.String()
 	}
-	display := info.FirstMessage
+	display := skillPreview(info.FirstMessage)
 	if info.Name != nil {
 		display = *info.Name
 	}

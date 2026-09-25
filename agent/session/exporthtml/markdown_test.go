@@ -109,3 +109,17 @@ func TestParseSkillBlockRequiresUpstreamShape(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkdownSkillInvocationReadsInPlace(t *testing.T) {
+	block := "<skill name=\"docx\" location=\"/s/SKILL.md\">\nEdit Word files.\n</skill>"
+	for _, test := range []struct{ text, want string }{
+		{text: block + "\n\nfix it with /skill:docx please", want: "fix it with **◆ docx** please"},
+		{text: block + "\n\nfix it", want: "**◆ docx** fix it"},
+		{text: block, want: "**◆ docx**"},
+	} {
+		want := test.want + "\n\n<details><summary>◆ docx skill</summary>\n\nEdit Word files.\n\n</details>"
+		if got := renderUserTextMarkdown(test.text, nil); got != want {
+			t.Fatalf("markdown = %q, want %q", got, want)
+		}
+	}
+}

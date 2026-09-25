@@ -1123,6 +1123,11 @@ func (mode *InteractiveMode) setupAutocomplete() {
 	provider = newSkillAutocompleteProvider(provider, skillItems)
 	mode.autocompleteProvider = provider
 	if mode.editor != nil {
+		if skills, ok := provider.(*skillAutocompleteProvider); ok {
+			mode.editor.SetDisplayTokens(skillDisplayTokens(skills.known))
+		} else {
+			mode.editor.SetDisplayTokens(nil)
+		}
 		// Native styling keeps the canonical command and extension surface.
 		mode.editor.SetAutocompleteProvider(&composerAutocompleteProvider{AutocompleteProvider: provider})
 	}
@@ -1252,39 +1257,13 @@ func (provider *skillAutocompleteProvider) TriggerCharacters() []string {
 	return []string{"/"}
 }
 
-func (provider *skillAutocompleteProvider) promoteInlineSkill(text string) string {
-	if !strings.Contains(text, "/skill:") || strings.HasPrefix(text, "/skill:") {
-		return text
+func (provider *skillAutocompleteProvider) known(name string) bool {
+	for _, skill := range provider.skills {
+		if skill.Value == "@"+name {
+			return true
+		}
 	}
-	for from := 0; from < len(text); {
-		at := strings.Index(text[from:], "/skill:")
-		if at < 0 {
-			break
-		}
-		at += from
-		end := at + len("/skill:")
-		for end < len(text) && !strings.ContainsRune(" \t\r\n", rune(text[end])) {
-			end++
-		}
-		if at > 0 && strings.ContainsRune(" \t\r\n", rune(text[at-1])) {
-			name := text[at+len("/skill:") : end]
-			for _, skill := range provider.skills {
-				if skill.Value == "@"+name {
-					after := text[end:]
-					if text[at-1] == ' ' && strings.HasPrefix(after, " ") {
-						after = after[1:]
-					}
-					rest := strings.TrimSpace(text[:at] + after)
-					if rest == "" {
-						return "/skill:" + name
-					}
-					return "/skill:" + name + " " + rest
-				}
-			}
-		}
-		from = end
-	}
-	return text
+	return false
 }
 
 // setupExtensionShortcuts installs the extension shortcut dispatcher on the
@@ -1730,6 +1709,15 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		}
 
 		// Normal message submission
+		prompt := text
+		if skills, ok := mode.autocompleteProvider.(*skillAutocompleteProvider); ok {
+			var err error
+			if prompt, err = skillSubmission(text, skills.known); err != nil {
+				mode.editor.SetText(text)
+				mode.showWarning(err.Error())
+				return
+			}
+		}
 		mode.mu.Lock()
 		images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
 		for index, image := range mode.pendingImages {
@@ -1741,10 +1729,6 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		mode.imageDraftVersion++
 		mode.mu.Unlock()
 
-		prompt := text
-		if skills, ok := mode.autocompleteProvider.(*skillAutocompleteProvider); ok {
-			prompt = skills.promoteInlineSkill(text)
-		}
 		mode.inputCh <- inputEntry{text: prompt, images: images}
 		mode.editor.AddToHistory(text)
 	}
@@ -2545,9 +2529,9 @@ func (mode *InteractiveMode) showUserMessageSelector() {
 	options := make([]string, 0, len(messages))
 	ids := make(map[string]string, len(messages))
 	for _, message := range messages {
-		preview := strings.ReplaceAll(message.Text, "\n", " ")
+		preview := strings.ReplaceAll(skillPreview(message.Text), "\n", " ")
 		if len(preview) > 60 {
-			preview = preview[:57] + "..."
+			preview = preview[:runeBoundary(preview, 57)] + "..."
 		}
 		label := preview + "  [" + message.EntryID[:min(8, len(message.EntryID))] + "]"
 		options = append(options, label)
@@ -4501,10 +4485,10 @@ func (mode *InteractiveMode) updatePendingMessagesDisplay(steering, followUp []s
 	}
 	mode.pendingMessages.AddChild(tui.NewSpacer(1))
 	for _, text := range steering {
-		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Steering: "+text), 1, 0))
+		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Steering: "+skillPreview(text)), 1, 0))
 	}
 	for _, text := range followUp {
-		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Follow-up: "+text), 1, 0))
+		mode.pendingMessages.AddChild(tui.NewTruncatedText(theme.FG("dim", "Follow-up: "+skillPreview(text)), 1, 0))
 	}
 	hint := fmt.Sprintf("↳ %d queued", count)
 	if dequeue := mode.appKeyDisplay("app.message.dequeue"); dequeue != "" {
@@ -4554,13 +4538,10 @@ func (mode *InteractiveMode) showError(err error) {
 
 func (mode *InteractiveMode) addUserMessageToChat(text string) {
 	if skill, ok := agent.ParseSkillBlock(text); ok {
-		component := NewSkillInvocationMessage(skill.Name, skill.Content, mode.mdTheme)
+		component := newSkillUserMessageComponent(skill, mode.skillDescription(skill.Name), mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers)
+		component.onChange = func() { mode.requestChatRender(component) }
 		mode.addExpandable(component)
 		mode.chat.AddChild(component)
-		if skill.UserMessage != "" {
-			mode.chat.AddChild(tui.NewSpacer(1))
-			mode.chat.AddChild(NewUserMessageComponent(skill.UserMessage, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
-		}
 	} else {
 		mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
 	}
