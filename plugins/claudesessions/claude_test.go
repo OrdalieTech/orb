@@ -50,9 +50,13 @@ export function query({prompt,options:o}) {
   const prompts=prompt[Symbol.asyncIterator]();
   let pending;
   const next=()=>{const value=pending??prompts.next();pending=undefined;return value};
+  let idle=false;
   for(let turn=0;;turn++){
+  // Like a host past its idle timeout: exit between turns.
+  if(idle){await new Promise(r=>setTimeout(r,100));(await import('node:fs')).writeFileSync(o.cwd+'/idle-exit','');process.exit(0);}
   const {value:p,done}=await next();
   if(done) return;
+  idle=JSON.stringify(p.message.content).includes('idle-fixture');
   yield {type:'system',subtype:'init',session_id:id};
   if(JSON.stringify(p.message.content).includes('elicitation-fixture')) {
    const reply=await o.onElicitation({serverName:'fixture MCP',message:'Choose retries',mode:'form',requestedSchema:{type:'object',properties:{retries:{type:'integer',minimum:1,maximum:5}},required:['retries']}},{signal:abort.signal});
@@ -369,6 +373,34 @@ func TestFailedToolResultStringDoesNotBreakTurn(t *testing.T) {
 	}
 	if len(ended) != 1 || len(tr.tools) != 0 {
 		t.Fatalf("ended %v, unanswered %v", ended, tr.tools)
+	}
+}
+
+// An idle host exits on its own; the next prompt resumes the session in a fresh one.
+func TestPromptAfterIdleHostExitResumes(t *testing.T) {
+	host, _ := fixture(t, &plugins.Policy{Mode: "enforce", Rules: []plugins.Rule{{Tool: "write", Path: "/fixture", Action: plugins.Allow}}})
+	s := host.Session()
+	if err := s.Prompt(t.Context(), "idle-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for _, err := os.Stat(filepath.Join(s.Manager().GetCWD(), "idle-exit")); err != nil; _, err = os.Stat(filepath.Join(s.Manager().GetCWD(), "idle-exit")) {
+		if time.Now().After(deadline) {
+			t.Fatal("host did not exit")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if err := s.Prompt(t.Context(), "again"); err != nil {
+		t.Fatal(err)
+	}
+	if msg := s.State().ErrorMessage; msg != nil {
+		t.Fatal(*msg)
+	}
+	messages := s.State().Messages
+	raw, _ := json.Marshal(messages[len(messages)-3])
+	if !strings.Contains(string(raw), `\"turn\":0`) || strings.Contains(string(raw), `\"resume\":\"\"`) {
+		t.Fatalf("second prompt did not resume in a fresh host: %s", raw)
 	}
 }
 

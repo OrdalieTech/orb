@@ -201,6 +201,7 @@ type host struct {
 	input  io.WriteCloser
 	mu     sync.Mutex
 	frames chan hostFrame
+	exited chan struct{}
 	kill   func() error
 	// tasks outlives a turn: a background task may finish while a later one runs.
 	tasks map[string]*nativeTask
@@ -234,6 +235,16 @@ func (h *host) write(value any) error {
 	return json.NewEncoder(h.input).Encode(value)
 }
 
+// alive reports whether the host process still runs; an idle host exits on its own.
+func (h *host) alive() bool {
+	select {
+	case <-h.exited:
+		return false
+	default:
+		return true
+	}
+}
+
 // close lets the host end its native session, and kills it if it lingers.
 func (h *host) close() {
 	_ = h.input.Close()
@@ -251,13 +262,13 @@ func (d *Driver) spawn(start map[string]any) (*host, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := &host{input: input, frames: make(chan hostFrame, 64), kill: isolate(process), tasks: map[string]*nativeTask{}}
+	h := &host{input: input, frames: make(chan hostFrame, 64), exited: make(chan struct{}), kill: isolate(process), tasks: map[string]*nativeTask{}}
 	if err = process.Start(); err != nil {
 		return nil, fmt.Errorf("start Claude SDK: %w", err)
 	}
 	go func() {
 		defer close(h.frames)
-		defer func() { _ = h.kill(); _ = process.Wait() }()
+		defer func() { _ = h.kill(); _ = process.Wait(); close(h.exited) }()
 		scanner := bufio.NewScanner(output)
 		scanner.Buffer(make([]byte, 64<<10), 8<<20)
 		for scanner.Scan() {
@@ -317,13 +328,18 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	}
 	key, _ := json.Marshal(start)
 	fork := saved.Owner != id || saved.At != d.tail(saved.Session)
-	d.mu.Lock()
-	h := d.host
-	if h != nil && (h.key != string(key) || h.point != saved) {
-		h.close()
-		h = nil
-	}
-	if h == nil {
+	// acquire reuses the live host, or spawns one when none serves this start.
+	acquire := func() (h *host, reused bool, err error) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		h = d.host
+		if h != nil && (h.key != string(key) || h.point != saved || !h.alive()) {
+			h.close()
+			h = nil
+		}
+		if h != nil {
+			return h, true, nil
+		}
 		// Continuing from the newest native point resumes in place. Any other point
 		// (a /tree move, a withdrawn prompt, a copied session) forks a native session
 		// cut exactly there, which also reaches history before a native compaction.
@@ -332,21 +348,32 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		}
 		start["sessionUpdates"] = d.approved
 		if h, err = d.spawn(start); err != nil {
-			d.mu.Unlock()
-			return err
+			return nil, false, err
 		}
 		h.key = string(key)
+		d.host = h
+		return h, false, nil
 	}
-	d.host = h
-	d.mu.Unlock()
-
-	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: newUUID(), tasks: h.tasks}
-	if start["fork"] == true {
-		translator.session = ""
+	prompt := map[string]any{"type": "prompt", "uuid": newUUID(), "content": content}
+	h, reused, err := acquire()
+	if err == nil {
+		err = h.write(prompt)
 	}
-	if err = h.write(map[string]any{"type": "prompt", "uuid": translator.prompt, "content": content}); err != nil {
+	if err != nil && reused {
+		// The idle host exited just as this prompt arrived; a fresh one resumes the session.
+		d.Close()
+		if h, _, err = acquire(); err == nil {
+			err = h.write(prompt)
+		}
+	}
+	if err != nil {
 		d.Close()
 		return err
+	}
+
+	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: prompt["uuid"].(string), tasks: h.tasks}
+	if start["fork"] == true {
+		translator.session = ""
 	}
 	done, grace := ctx.Done(), (<-chan time.Time)(nil)
 	for {

@@ -8,6 +8,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - Claude Sessions no longer ends a turn with "cannot unmarshal string into … tool_use_result" when a
   tool fails: a failed tool reports its result as text, which Orb now accepts.
+- Claude Sessions no longer stops with "write |1: file already closed" on the first prompt after
+  ten idle minutes: the idle native host has exited, and Orb now resumes the session in a new one.
 
 - Skills show as `◆ name` chips instead of `/skill:name` text, in the composer (deleted whole by
   backspace) and in the transcript, where the invocation stays inline in your message with one
