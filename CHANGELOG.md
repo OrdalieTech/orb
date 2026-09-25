@@ -13,11 +13,12 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   backspace) and in the transcript, where the invocation stays inline in your message with one
   footer line that expands to the skill; an inline invocation now reaches the model in place instead
   of being moved to the front, and a message naming two different skills is refused with a warning.
-- The session tree (double Escape, `/tree`) is redesigned as a quiet list of turns: one line per
-  prompt, rails only where the history forks, the last reply of every branch so it can be resumed,
-  a dot on the current position and dim times, labels and branch sizes on the right. `f` forks the
-  selected point into a new session, `/` searches, `tab` switches between turns, messages, prompts,
-  labeled and all entries, `←→` jump between forks and `j`/`k`/`g`/`G` move; folding is gone.
+- The session tree (double Escape, `/tree`) is redesigned as a quiet list of turns in a modal: one
+  line per prompt, rails only where the history forks, the last reply of every branch so it can be
+  resumed, and a dot on the current position. Labels stay on every row; the time and branch size
+  appear only on the selected one. On a wide terminal a preview pane shows the selected prompt in
+  full with its reply. `f` forks the selected point into a new session, `/` searches, and `?`
+  reveals the remaining keys (`tab` views, `←→` forks, labels); folding is gone.
 
 ## [0.11.1] - 2026-09-24
 

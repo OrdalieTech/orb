@@ -2580,14 +2580,13 @@ func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 		leafID = *leaf
 	}
 	var selector *TreeSelectorComponent
+	var handle tui.OverlayHandle
 	closeSelector := func() bool {
-		children := mode.editorContainer.Children()
-		if len(children) != 1 || children[0] != selector {
+		if handle == nil {
 			return false
 		}
-		mode.editorContainer.Clear()
-		mode.restoreEditorComponent()
-		mode.ui.SetFocus(mode.activeEditorFocus())
+		handle.Hide()
+		handle = nil
 		mode.ui.RequestRender()
 		return true
 	}
@@ -2630,9 +2629,16 @@ func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 			mode.forkFromTree(entryID, before)
 		}
 	}
-	mode.editorContainer.Clear()
-	mode.editorContainer.AddChild(selector)
-	mode.ui.SetFocus(selector)
+	// The modal takes up to 85% of the rows; its frame, count line, spacers
+	// and hint line use eight of them.
+	selector.Framed = true
+	selector.SetMaxVisible(mode.ui.Terminal().Rows()*85/100 - 8)
+	options := configOverlayOptions()
+	// A wide terminal gets a wider modal so the selected turn can be previewed.
+	if columns := mode.ui.Terminal().Columns(); columns >= 124 {
+		options.Width = tui.AbsoluteSize(min(columns-8, 150))
+	}
+	handle = mode.ui.ShowOverlay(menuFrame("Tree", selector), options)
 	mode.ui.RequestRender()
 }
 

@@ -1528,13 +1528,22 @@ func TestDoubleEscapeUsesActiveEditorAndResetsAfterOpeningTree(t *testing.T) {
 	if !mode.lastEscape.IsZero() {
 		t.Fatal("completed double-Escape sequence was not reset")
 	}
-	children := mode.editorContainer.Children()
-	if len(children) != 1 {
-		t.Fatalf("tree editor children = %d", len(children))
+	if openTreeSelector(t, mode) == nil {
+		t.Fatal("double-Escape did not open the tree modal")
 	}
-	if _, ok := children[0].(*TreeSelectorComponent); !ok {
-		t.Fatalf("double-Escape installed %T, want tree selector", children[0])
+}
+
+// openTreeSelector returns the tree selector shown in the modal, if any.
+func openTreeSelector(t *testing.T, mode *InteractiveMode) *TreeSelectorComponent {
+	t.Helper()
+	for _, component := range mode.ui.VisibleOverlayComponents() {
+		if frame, ok := component.(*tui.Frame); ok {
+			if selector, ok := frame.Child.(*TreeSelectorComponent); ok {
+				return selector
+			}
+		}
 	}
+	return nil
 }
 
 func TestTreeSelectionChecksCurrentLeafAtCommitTime(t *testing.T) {
@@ -1556,13 +1565,9 @@ func TestTreeSelectionChecksCurrentLeafAtCommitTime(t *testing.T) {
 	}
 	mode.editor = NewCustomEditor(modeUI, tui.EditorTheme{}, bindings)
 	mode.showTreeSelector()
-	children := mode.editorContainer.Children()
-	if len(children) != 1 {
-		t.Fatalf("tree selector children = %#v", children)
-	}
-	selector, ok := children[0].(*TreeSelectorComponent)
-	if !ok {
-		t.Fatalf("tree selector child = %T", children[0])
+	selector := openTreeSelector(t, mode)
+	if selector == nil {
+		t.Fatal("tree modal did not open")
 	}
 
 	currentLeaf, err := manager.AppendMessage(json.RawMessage(`{"role":"user","content":"streamed later"}`))
