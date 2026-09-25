@@ -349,6 +349,29 @@ func TestEarlyToolResultKeepsLaterCalls(t *testing.T) {
 	}
 }
 
+// A failed tool reports tool_use_result as a plain string, not an object.
+func TestFailedToolResultStringDoesNotBreakTurn(t *testing.T) {
+	_, driver := fixture(t)
+	var ended []bool
+	tr := translation{driver: driver, ctx: t.Context(), tools: map[string]string{}, emit: func(_ context.Context, event engine.AgentEvent) error {
+		if end, ok := event.(engine.ToolExecutionEndEvent); ok {
+			ended = append(ended, end.IsError)
+		}
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"assistant","message":{"id":"m","content":[{"type":"tool_use","id":"a","name":"Bash","input":{"command":"ssh host true"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a","is_error":true,"content":"Exit code 255"}]},"tool_use_result":"Error: Exit code 255"}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(ended) != 1 || len(tr.tools) != 0 {
+		t.Fatalf("ended %v, unanswered %v", ended, tr.tools)
+	}
+}
+
 func TestInterruptedTurnSettlesLikeOrb(t *testing.T) {
 	_, driver := fixture(t)
 	ctx, cancel := context.WithCancel(t.Context())

@@ -650,9 +650,9 @@ func (t *translation) event(raw json.RawMessage) error {
 		IsError bool            `json:"is_error"`
 		Errors  []string        `json:"errors"`
 		Result  string          `json:"result"`
-		Tool    struct {
-			Patch []patchHunk `json:"structuredPatch"`
-		} `json:"tool_use_result"`
+		// tool_use_result is an object for most tools but a plain string
+		// when a tool fails, so only an object is read for its patch.
+		Tool json.RawMessage `json:"tool_use_result"`
 	}
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return err
@@ -865,7 +865,7 @@ func (t *translation) event(raw json.RawMessage) error {
 				return err
 			}
 			var details json.RawMessage
-			if diff := patchDiff(e.Tool.Patch); diff != "" {
+			if diff := patchDiff(toolPatch(e.Tool)); diff != "" {
 				details, _ = json.Marshal(map[string]string{"diff": diff})
 			}
 			if err = t.toolResult(block.ID, content, block.IsError, details); err != nil {
@@ -1404,4 +1404,16 @@ func (d *Driver) elicit(ctx context.Context, raw json.RawMessage) map[string]any
 		return cancel
 	}
 	return map[string]any{"action": "accept", "content": validated}
+}
+
+// toolPatch reads an Edit's structuredPatch from tool_use_result, which is a
+// string rather than an object when the tool failed.
+func toolPatch(raw json.RawMessage) []patchHunk {
+	var result struct {
+		Patch []patchHunk `json:"structuredPatch"`
+	}
+	if len(raw) == 0 || raw[0] != '{' || json.Unmarshal(raw, &result) != nil {
+		return nil
+	}
+	return result.Patch
 }
