@@ -18,7 +18,6 @@ var (
 	_ tui.ListMouseTarget = (*OAuthSelectorComponent)(nil)
 	_ tui.ListMouseTarget = (*SessionSelectorComponent)(nil)
 	_ tui.ListMouseTarget = (*TreeSelectorComponent)(nil)
-	_ tui.ListRowClicker  = (*TreeSelectorComponent)(nil)
 	_ tui.ListMouseTarget = (*ExtensionSelectorComponent)(nil)
 )
 
@@ -45,7 +44,7 @@ func lineIndexContaining(t *testing.T, lines []string, text string) int {
 }
 
 // branchingTreeFixture builds a chain where every level branches, so rows carry
-// fold markers at increasing indents and CJK labels widen them unevenly.
+// rails at increasing depths and CJK labels widen them unevenly.
 func branchingTreeFixture(levels int) (*sessionstore.SessionTreeNode, string) {
 	root := treeTestMessage("root", "", "user", "根 root")
 	parent, leaf := root, "root"
@@ -64,7 +63,7 @@ func newTreeFixtureSelector(t *testing.T, levels, terminalHeight int, onSelect f
 	useTreeTestKeybindings(t)
 	root, leaf := branchingTreeFixture(levels)
 	return NewTreeSelectorComponent(
-		[]*sessionstore.SessionTreeNode{root}, leaf, terminalHeight, onSelect, nil, nil, "", "default",
+		[]*sessionstore.SessionTreeNode{root}, leaf, terminalHeight, onSelect, nil, nil, "", "no-tools",
 	)
 }
 
@@ -73,7 +72,7 @@ func TestTreeSelectorClickSelectsRowAndDoubleClickConfirms(t *testing.T) {
 	// A five-row window recentres on every click, so the double click must not
 	// re-resolve the cell it landed on.
 	selector := newTreeFixtureSelector(t, 6, 10, func(id string) { confirmed = id })
-	row := lineIndexContaining(t, selector.Render(60), "assistant: 主3 main")
+	row := lineIndexContaining(t, selector.Render(60), "主3 main")
 
 	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: 20, Clicks: 1}) {
 		t.Fatal("click on a tree row was not consumed")
@@ -92,76 +91,6 @@ func TestTreeSelectorClickSelectsRowAndDoubleClickConfirms(t *testing.T) {
 	selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: 20, Clicks: 2})
 	if confirmed != "m3" {
 		t.Fatalf("double click confirmed %q, want m3", confirmed)
-	}
-}
-
-// treeScreenRow locates a row on screen by entry ID; this test is about the
-// column math, and the row math is covered above.
-func treeScreenRow(t *testing.T, selector *TreeSelectorComponent, id string) int {
-	t.Helper()
-	top, start, count, _ := selector.rowLayout()
-	for index, row := range selector.view.rows {
-		if row.node.Entry.ID != id {
-			continue
-		}
-		if index < start || index >= start+count {
-			t.Fatalf("row %s is off screen", id)
-		}
-		return top + index - start
-	}
-	t.Fatalf("no row for %s", id)
-	return -1
-}
-
-func TestTreeSelectorClickTogglesFoldAcrossHorizontalScroll(t *testing.T) {
-	confirmed := ""
-	selector := newTreeFixtureSelector(t, 6, 40, func(id string) { confirmed = id })
-	// Width 28 scrolls the tree sideways; the marker column must follow it.
-	lines := selector.Render(28)
-	_, _, _, scroll := selector.rowLayout()
-	if scroll == 0 {
-		t.Fatalf("fixture did not scroll horizontally:\n%s", strings.Join(lines, "\n"))
-	}
-	row := treeScreenRow(t, selector, "m4")
-	start, end := treeFoldSpan(selector.view.rows[5])
-	if end <= start || start < scroll {
-		t.Fatalf("fold marker [%d,%d) is not visible at scroll %d", start, end, scroll)
-	}
-
-	selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: start - scroll + 2, Clicks: 1})
-	if !selector.folded["m4"] {
-		t.Fatalf("click on the scrolled fold marker did not fold:\n%s", strings.Join(selector.Render(28), "\n"))
-	}
-	if slices.Contains(visibleTreeIDs(selector), "m5") {
-		t.Fatal("folded branch still lists its descendants")
-	}
-
-	selector.Render(28)
-	_, _, _, scroll = selector.rowLayout()
-	row = treeScreenRow(t, selector, "m4")
-	_, end = treeFoldSpan(selector.view.rows[5])
-	// One column past the marker selects the row without toggling the fold.
-	selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: end - scroll + 2, Clicks: 1})
-	if !selector.folded["m4"] || selector.selectedID() != "m4" {
-		t.Fatalf("click beside the marker = folded %v selected %q", selector.folded["m4"], selector.selectedID())
-	}
-
-	if confirmed != "m4" {
-		t.Fatal("click beside fold marker did not confirm the entry")
-	}
-	confirmed = ""
-	selector.Render(28)
-	_, _, _, scroll = selector.rowLayout()
-	row = treeScreenRow(t, selector, "m4")
-	start, _ = treeFoldSpan(selector.view.rows[5])
-	selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: start - scroll + 2, Clicks: 1})
-	if selector.folded["m4"] {
-		t.Fatal("clicking the marker again did not unfold")
-	}
-	// A double click on the marker folds and stops; it must not navigate.
-	selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: start - scroll + 2, Clicks: 2})
-	if confirmed != "" {
-		t.Fatalf("double click on the fold marker opened %q", confirmed)
 	}
 }
 
@@ -205,7 +134,7 @@ func TestTreeSelectorClickArrivesThroughTerminalBytes(t *testing.T) {
 	defer func() { _ = ui.Stop() }()
 
 	lines := selector.Render(60)
-	row := lineIndexContaining(t, lines, "assistant: 主1 main")
+	row := lineIndexContaining(t, lines, "主1 main")
 	// The chrome is bottom-aligned, so the selector starts below the transcript.
 	screenRow := terminal.Rows() - len(lines) + row
 	terminal.input(fmt.Sprintf("\x1b[<0;%d;%dM", 21, screenRow+1))
@@ -214,8 +143,8 @@ func TestTreeSelectorClickArrivesThroughTerminalBytes(t *testing.T) {
 	}
 	// Unrecognised reports must be swallowed, never typed into the search box.
 	terminal.input("\x1b[<66;10;10M")
-	if selector.query != "" {
-		t.Fatalf("mouse bytes leaked into the tree search: %q", selector.query)
+	if selector.query() != "" {
+		t.Fatalf("mouse bytes leaked into the tree search: %q", selector.query())
 	}
 }
 
@@ -510,7 +439,7 @@ func TestSessionSelectorHoverMovesSelection(t *testing.T) {
 
 func TestTreeSelectorHoverMovesSelectionInPlace(t *testing.T) {
 	selector := newTreeFixtureSelector(t, 2, 40, nil)
-	row := lineIndexContaining(t, selector.Render(60), "user: 側1 side")
+	row := lineIndexContaining(t, selector.Render(60), "側1 side")
 	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: row, Column: 10}) {
 		t.Fatal("hover was not consumed")
 	}
@@ -521,18 +450,18 @@ func TestTreeSelectorHoverMovesSelectionInPlace(t *testing.T) {
 	// A window smaller than the tree must not recentre on a hover-driven
 	// selection change: the visible rows stay put under the cursor.
 	scrolled := newTreeFixtureSelector(t, 6, 10, nil)
-	scrolledRow := lineIndexContaining(t, scrolled.Render(60), "assistant: 主3 main")
-	_, beforeStart, _, _ := scrolled.rowLayout()
+	scrolledRow := lineIndexContaining(t, scrolled.Render(60), "主3 main")
+	_, beforeStart, _ := scrolled.rowLayout()
 	if !scrolled.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: scrolledRow, Column: 10}) {
 		t.Fatal("hover on a scrolling tree was not consumed")
 	}
 	if got := scrolled.selectedID(); got != "m3" {
 		t.Fatalf("hover selected %q, want m3", got)
 	}
-	if index := lineIndexContaining(t, scrolled.Render(60), "assistant: 主3 main"); index != scrolledRow {
+	if index := lineIndexContaining(t, scrolled.Render(60), "主3 main"); index != scrolledRow {
 		t.Fatalf("hovered row moved to %d, want %d", index, scrolledRow)
 	}
-	if _, afterStart, _, _ := scrolled.rowLayout(); afterStart != beforeStart {
+	if _, afterStart, _ := scrolled.rowLayout(); afterStart != beforeStart {
 		t.Fatalf("hover re-anchored the window: start %d, want %d", afterStart, beforeStart)
 	}
 }
