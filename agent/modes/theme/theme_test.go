@@ -502,7 +502,8 @@ func TestTerminalPaletteContrastAndLiveSwitch(t *testing.T) {
 				if a < b {
 					a, b = b, a
 				}
-				if ratio := (a + .05) / (b + .05); ratio < 4.5 {
+				// dim is chrome (hints, times, labels): large-text contrast.
+				if ratio := (a + .05) / (b + .05); ratio < 4.5 && (token != "dim" || ratio < 3) {
 					t.Errorf("%s on %s: contrast %.2f", token, surface, ratio)
 				}
 			}

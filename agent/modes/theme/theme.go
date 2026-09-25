@@ -16,7 +16,7 @@ import (
 var backgroundTokens = map[string]bool{
 	"selectedBg": true, "scrollbarThumb": true, "searchMatchBg": true, "userMessageBg": true, "customMessageBg": true,
 	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
-	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true, "modalBackdropBg": true,
+	"diffAddedBg": true, "diffRemovedBg": true, "diffGutterBg": true, "modalBackdropBg": true, "mdCodeBlockBg": true,
 }
 
 type Theme struct {
@@ -69,7 +69,7 @@ func terminalTheme(mode ColorMode) *Theme {
 		"warning": 3, "syntaxNumber": 3,
 		"customMessageLabel": 5, "syntaxKeyword": 5,
 	}
-	for _, name := range append(append([]string{}, themefile.RequiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg", "modalBackdropBg", "modalBackdropText") {
+	for _, name := range append(append([]string{}, themefile.RequiredColors...), "thinkingMax", "searchMatchText", "scrollbarThumb", "searchMatchBg", "diffAddedBg", "diffRemovedBg", "diffGutterBg", "modalBackdropBg", "modalBackdropText", "mdCodeBlockBg") {
 		color := themefile.Color{}
 		if index, ok := colors[name]; ok {
 			color = themefile.Color{Index: &index}
@@ -119,7 +119,9 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 			}
 		}
 	}
-	readable := func(value string) string {
+	// readable darkens or lightens value toward ink until it reaches ratio
+	// against every surface it sits on.
+	readableAt := func(value string, ratio float64) string {
 		for range 32 {
 			minimum := 21.0
 			for _, surface := range []string{bg, panel, selected} {
@@ -129,21 +131,27 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 				}
 				minimum = min(minimum, (a+.05)/(b+.05))
 			}
-			if minimum >= 4.5 {
+			if minimum >= ratio {
 				break
 			}
 			value = blend(value, ink, .12)
 		}
 		return value
 	}
+	readable := func(value string) string { return readableAt(value, 4.5) }
 	set("accent borderAccent mdHeading mdLink mdCode syntaxFunction syntaxType thinkingLow thinkingMedium", readable(accent))
 	set("customMessageLabel syntaxKeyword", readable(purple))
 	set("success toolDiffAdded syntaxString", readable(green))
 	set("error toolDiffRemoved", readable(red))
 	set("warning syntaxNumber bashMode", readable(amber))
-	set("muted dim border borderMuted thinkingText syntaxComment mdLinkUrl mdCodeBlockBorder mdQuote mdQuoteBorder mdHr toolDiffContext thinkingOff thinkingMinimal thinkingHigh thinkingXhigh thinkingMax", readable(blend(bg, ink, .65)))
-	set("toolTitle toolOutput userMessageText customMessageText", ink)
-	set("toolPendingBg userMessageBg customMessageBg", panel)
+	// Text steps down in three levels: ink for what was said, muted for what
+	// supports it (reasoning, tool output, quotes), dim for chrome (hints,
+	// times, labels); rules and rails fade further, being only structure.
+	set("muted thinkingText syntaxComment mdLinkUrl mdQuote toolOutput toolDiffContext thinkingOff thinkingMinimal thinkingHigh thinkingXhigh thinkingMax", readable(blend(bg, ink, .65)))
+	set("dim border mdCodeBlockBorder", readableAt(blend(bg, ink, .42), 3))
+	set("borderMuted mdQuoteBorder mdHr", blend(bg, ink, .22))
+	set("toolTitle userMessageText customMessageText", ink)
+	set("toolPendingBg userMessageBg customMessageBg mdCodeBlockBg", panel)
 	set("selectedBg searchMatchBg scrollbarThumb", selected)
 	set("toolSuccessBg diffAddedBg", blend(bg, green, .09))
 	set("toolErrorBg diffRemovedBg", blend(bg, red, .09))
@@ -225,7 +233,13 @@ func (theme *Theme) Markdown(codeBlockIndent string) tui.MarkdownTheme {
 		CodeBlock: style("mdCodeBlock"), CodeBlockBorder: style("mdCodeBlockBorder"), Quote: style("mdQuote"),
 		QuoteBorder: style("mdQuoteBorder"), HorizontalRule: style("mdHr"), ListBullet: style("mdListBullet"),
 		Bold: Bold, Italic: Italic, Underline: Underline, Strikethrough: Strikethrough,
-		HighlightCode:   func(code, language string) []string { return Highlight(code, language, theme) },
+		HighlightCode: func(code, language string) []string { return Highlight(code, language, theme) },
+		CodeBlockBackground: func(value string) string {
+			if prefix, err := theme.BackgroundANSI("mdCodeBlockBg"); err == nil && prefix != "" {
+				return prefix + value + "\x1b[49m"
+			}
+			return value
+		},
 		CodeBlockIndent: codeBlockIndent,
 	}
 	if result.CodeBlockIndent == "" {
