@@ -365,6 +365,7 @@ type Editor struct {
 	snappedFromCursorCol int // -1 = unset (pre-snap position on atomic segments)
 
 	undoStack undoStack[editorSnapshot]
+	wraps     map[wrapKey]wrapEntry
 
 	pending []func()
 
@@ -478,7 +479,7 @@ type DisplayToken struct {
 // line. Tokens must not contain whitespace and must not overlap; nil removes it.
 func (editor *Editor) SetDisplayTokens(scan func(line string) []DisplayToken) {
 	editor.mu.Lock()
-	editor.displayTokens = scan
+	editor.displayTokens, editor.wraps = scan, nil
 	editor.mu.Unlock()
 	if editor.ui != nil {
 		editor.ui.RequestRender()
@@ -1334,6 +1335,37 @@ func (editor *Editor) applyCompletionResult(item SelectItem) {
 	editor.setCursorCol(result.CursorCol)
 }
 
+// wrapKey names a logical line's wrap: its text, the width, and the pastes its
+// markers may name.
+type wrapKey struct {
+	line                string
+	width, pastes, next int
+}
+
+type wrapEntry struct {
+	fits   bool
+	chunks []textChunk
+}
+
+// wrapLine wraps a logical line once per text and width: a keystroke changes
+// one line, and wrapping every line on every render made typing into a long
+// buffer quadratic.
+func (editor *Editor) wrapLine(line string, width int) wrapEntry {
+	key := wrapKey{line, width, len(editor.pastes), editor.pasteCounter}
+	if entry, ok := editor.wraps[key]; ok {
+		return entry
+	}
+	entry := wrapEntry{fits: VisibleWidth(line) <= width}
+	if !entry.fits {
+		entry.chunks = wordWrapLine(line, width, editor.segment(line, segmentModeGrapheme))
+	}
+	if editor.wraps == nil || len(editor.wraps) > 2*len(editor.state.lines)+256 {
+		editor.wraps = map[wrapKey]wrapEntry{}
+	}
+	editor.wraps[key] = entry
+	return entry
+}
+
 func (editor *Editor) layoutText(contentWidth int) []layoutLine {
 	if len(editor.state.lines) == 0 || (len(editor.state.lines) == 1 && editor.state.lines[0] == "") {
 		return []layoutLine{{text: "", hasCursor: true, cursorPos: 0}}
@@ -1344,7 +1376,8 @@ func (editor *Editor) layoutText(contentWidth int) []layoutLine {
 		line := editor.line(i)
 		isCurrentLine := i == editor.state.cursorLine
 
-		if VisibleWidth(line) <= contentWidth {
+		wrap := editor.wrapLine(line, contentWidth)
+		if wrap.fits {
 			entry := layoutLine{text: line, hasCursor: isCurrentLine, logicalLine: i}
 			if isCurrentLine {
 				entry.cursorPos = editor.state.cursorCol
@@ -1353,7 +1386,7 @@ func (editor *Editor) layoutText(contentWidth int) []layoutLine {
 			continue
 		}
 
-		chunks := wordWrapLine(line, contentWidth, editor.segment(line, segmentModeGrapheme))
+		chunks := wrap.chunks
 		for chunkIndex, chunk := range chunks {
 			cursorPos := editor.state.cursorCol
 			isLastChunk := chunkIndex == len(chunks)-1
