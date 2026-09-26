@@ -1203,15 +1203,6 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 	if got := LimitsStatus(driver.options.Manager, now); got != "Claude 7d 40% left" {
 		t.Fatal(got)
 	}
-	rows := strings.Join(usageRows(driver.options.Manager, now), "\n")
-	for _, want := range []string{"5h: 25% used · 75% left · resets", "7d: 60% used · 40% left · resets", "Updated"} {
-		if !strings.Contains(rows, want) {
-			t.Fatalf("missing %s in %s", want, rows)
-		}
-	}
-	if !strings.Contains(strings.Join(usageRows(driver.options.Manager, now.Add(6*time.Minute)), "\n"), "Stale") {
-		t.Fatal("stale usage was not labeled")
-	}
 	id := protocol.NewID()
 	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
 	if err != nil {
@@ -1222,7 +1213,7 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), "Claude 7d 40%") {
 		t.Fatalf("remote quota missing: %s %v", data, err)
 	}
-	if got := LimitsStatus(driver.options.Manager, now.Add(6*time.Minute)); !strings.Contains(got, "stale") {
+	if got := LimitsStatus(driver.options.Manager, now.Add(6*time.Minute)); got != "Claude" {
 		t.Fatal(got)
 	}
 	for _, test := range []struct{ input, want string }{

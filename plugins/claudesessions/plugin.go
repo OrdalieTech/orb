@@ -684,11 +684,8 @@ func limitsStatus(manager extensions.ReadonlySessionManager, now time.Time) stri
 }
 
 func quotaStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
-	info := latestLimits(manager)
-	if info != nil {
-		if info.ObservedAt.IsZero() || now.Sub(info.ObservedAt) > 5*time.Minute {
-			return "Claude limits stale"
-		}
+	// An old reading says nothing about the limits now; the account switcher reads them live.
+	if info := latestLimits(manager); info != nil && !info.ObservedAt.IsZero() && now.Sub(info.ObservedAt) <= 5*time.Minute {
 		windows := info.UnifiedWindows
 		remaining := 101.0
 		limiting := ""
@@ -778,40 +775,6 @@ func latestLimits(manager extensions.ReadonlySessionManager) *subscriptionLimits
 		info.UnifiedWindows[info.RateLimitType] = info.limitWindow
 	}
 	return &info
-}
-
-func usageRows(manager extensions.ReadonlySessionManager, now time.Time) []string {
-	rows := []string{}
-	if usage := nativeContextUsage(manager); usage != nil && usage.Tokens != nil {
-		rows = append(rows, fmt.Sprintf("Context: %d / %.0f tokens · %.1f%% used", *usage.Tokens, usage.ContextWindow, *usage.Percent))
-	}
-	info := latestLimits(manager)
-	if info == nil {
-		return append(rows, "Quota not reported yet · send a message to update")
-	}
-	for _, key := range []string{"five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_overage_included", "overage"} {
-		window, ok := info.UnifiedWindows[key]
-		if !ok && key != "five_hour" && key != "seven_day" {
-			continue
-		}
-		value := "not reported"
-		if ok && window.Utilization != nil && *window.Utilization >= 0 && *window.Utilization <= 1 {
-			value = fmt.Sprintf("%.0f%% used · %.0f%% left", *window.Utilization*100, (1-*window.Utilization)*100)
-		}
-		if window.ResetsAt > 0 {
-			if window.ResetsAt <= now.Unix() {
-				value = "reset passed · awaiting update"
-			} else {
-				value += " · resets " + time.Unix(window.ResetsAt, 0).Local().Format("Mon 15:04")
-			}
-		}
-		rows = append(rows, limitLabel(key)+": "+value)
-	}
-	updated := "Updated " + info.ObservedAt.Local().Format("Mon 15:04")
-	if info.ObservedAt.IsZero() || now.Sub(info.ObservedAt) > 5*time.Minute {
-		updated = "Stale reading · send a message to update"
-	}
-	return append(rows, updated, "Only limits reported by Claude are shown")
 }
 
 // nativeModes are Claude's permission modes Orb offers; bypassPermissions stays native-only.
