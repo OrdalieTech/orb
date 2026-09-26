@@ -158,7 +158,7 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		}
 	}
 	entry.Timestamp, _ = stringMember(object, "timestamp")
-	entry.Message, _ = object.get("message")
+	entry.Message, _ = object.view("message")
 	entry.ThinkingLevel, _ = stringMember(object, "thinkingLevel")
 	entry.Provider, _ = stringMember(object, "provider")
 	entry.ModelID, _ = stringMember(object, "modelId")
@@ -170,7 +170,7 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 	if value, ok := object.get("tokensBefore"); ok {
 		entry.TokensBefore, _ = decodeNumber(value)
 	}
-	entry.Details, _ = object.get("details")
+	entry.Details, _ = object.view("details")
 	if value, ok := object.get("usage"); ok {
 		var usage ai.Usage
 		if json.Unmarshal(value, &usage) == nil {
@@ -181,10 +181,10 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		entry.FromHook, _ = decodeBool(value)
 	}
 	entry.FromID, _ = stringMember(object, "fromId")
-	entry.SystemMessage, _ = object.get("systemMessage")
+	entry.SystemMessage, _ = object.view("systemMessage")
 	entry.CustomType, _ = stringMember(object, "customType")
-	entry.Data, _ = object.get("data")
-	entry.Content, _ = object.get("content")
+	entry.Data, _ = object.view("data")
+	entry.Content, _ = object.view("content")
 	if value, ok := object.get("display"); ok {
 		if display, valid := decodeBool(value); valid {
 			entry.Display = *display

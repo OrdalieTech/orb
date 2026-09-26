@@ -92,6 +92,21 @@ func (object *orderedObject) get(name string) (json.RawMessage, bool) {
 	return nil, false
 }
 
+// view returns a member without copying it: the entry parsed from object shares
+// its largest fields (messages, data) instead of holding them twice. Members
+// are replaced, never changed in place, and entries leave the manager cloned.
+func (object *orderedObject) view(name string) (json.RawMessage, bool) {
+	if object == nil {
+		return nil, false
+	}
+	for _, member := range object.members {
+		if member.name == name {
+			return member.value, true
+		}
+	}
+	return nil, false
+}
+
 func (object *orderedObject) set(name string, value json.RawMessage) {
 	object.setOwned(name, cloneRaw(value))
 }
