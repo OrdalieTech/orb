@@ -162,6 +162,20 @@ func (s *Store) Save(b []byte) (err error) {
 	}
 	return err
 }
+
+// Remove deletes the stored document; the store stays locked until Close.
+func (s *Store) Remove() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.document != nil {
+		return s.document.Update(context.Background(), func([]byte) ([]byte, error) { return nil, nil })
+	}
+	if err := os.Remove(s.path); !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

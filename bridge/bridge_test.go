@@ -280,3 +280,49 @@ func TestPairClaimRecoveryBindsApprovalToIdentity(t *testing.T) {
 		t.Fatal(recovered, err)
 	}
 }
+
+// Throwaway instances whose Orb has gone are retired; attached ones, named
+// ones, never-attached ones, and those a grant names stay. Named IDs go regardless.
+func TestRetireRemovesGoneThrowawayInstances(t *testing.T) {
+	b := newBridge(t)
+	group := b.PersonalGroup()
+	enroll := func(alias string, attach, detach bool) Instance {
+		t.Helper()
+		r, token, err := b.Enroll(alias, group)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if attach {
+			generation, err := b.Attach(r.ID, token, protocol.NewID(), &endpoint{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if detach {
+				b.Detach(r.ID, generation)
+			}
+		}
+		return r
+	}
+	gone := enroll("instance-gone0001", true, true)
+	live := enroll("instance-live0001", true, false)
+	fresh := enroll("instance-fresh001", false, false)
+	named := enroll("laptop", true, true)
+	granted := enroll("instance-grant001", true, true)
+	if err := b.AddGrant(Grant{Principal: newBridge(t).Principal(), Instances: []string{granted.ID}, Permissions: []string{"instance.list"}}); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := b.Retire(nil); err != nil || removed != 1 {
+		t.Fatalf("pruned %d, %v", removed, err)
+	}
+	if _, ok := b.state.Instances[gone.ID]; ok {
+		t.Fatal("gone throwaway instance kept")
+	}
+	for _, r := range []Instance{live, fresh, named, granted} {
+		if _, ok := b.state.Instances[r.ID]; !ok {
+			t.Fatalf("%s pruned", r.Alias)
+		}
+	}
+	if removed, err := b.Retire([]string{named.ID}); err != nil || removed != 1 {
+		t.Fatalf("retired %d, %v", removed, err)
+	}
+}

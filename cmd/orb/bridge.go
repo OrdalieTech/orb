@@ -538,7 +538,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
@@ -696,6 +696,8 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 			err = read()
 			params = bridge.JSON(map[string]any{"peer_id": args[1], "method": args[2], "params": params})
 		}
+	case "prune":
+		method = "retire"
 	case "status", "instances", "peers", "grants", "groups", "scopes", "stop":
 	default:
 		err = errors.New("unknown bridge command")
