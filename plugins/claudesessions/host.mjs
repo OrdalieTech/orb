@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const pending = new Map();
-let active, nextID = 0, idle, finished = false;
+let active, nextID = 0, idle, open = false;
 async function send(value) {
   const line = JSON.stringify(value) + '\n';
   if (Buffer.byteLength(line) > 8 * 1024 * 1024) throw new Error('Claude SDK event exceeds 8 MiB');
@@ -125,36 +125,37 @@ async function run(config) {
   // Orb writes the transcript a resumed session starts from, and reads back
   // what Claude wrote once each turn settles.
   if (config.resume) options.resume = config.resume;
-  // One live query per Orb session: prompts arrive on stdin, and a turn settles once the
-  // result answering Orb's prompt has no queued sends and no native background task remains.
+  // One live query per Orb session: prompts arrive on stdin. An Orb turn settles once
+  // Claude answered its prompts, no native turn is due and no background task runs.
   active = query({ prompt: input(), options });
   const tasks = new Set();
-  let levelReported = false, session = config.resume, echoes = false;
+  let session = config.resume, echoes = false, due = false;
   for await (const event of active) {
     if (event.session_id && !event.parent_tool_use_id) session = event.session_id;
     if (event.type === 'system') {
       if (event.permissionMode) permissionMode = event.permissionMode;
       // ponytail: 2.1.280 is the oldest CLI verified to echo prompt uuids; older ones settle on any result.
       if (event.subtype === 'init') echoes = !older(event.claude_code_version, [2, 1, 280]);
+      // A task runs until its notification: Claude reads it in the running turn, or in a
+      // turn of its own when it finished between turns.
       if (event.subtype === 'background_tasks_changed') {
-        levelReported = true;
-        tasks.clear();
         for (const task of event.tasks) if (!task.ambient) tasks.add(task.task_id);
-      } else if (!levelReported && event.subtype === 'task_started' && event.is_backgrounded && !event.ambient && !event.skip_transcript) {
+      } else if (event.subtype === 'task_started' && event.is_backgrounded && !event.ambient && !event.skip_transcript) {
         tasks.add(event.task_id);
-      } else if (!levelReported && event.subtype === 'task_notification') {
-        tasks.delete(event.task_id);
+      } else if (event.subtype === 'task_notification' && tasks.delete(event.task_id)) {
+        due = true;
       }
     }
     if (tasks.size > 1024) throw new Error('Too many native background tasks');
-    // A native turn Orb did not send (a resumed task's notification, an auto-continuation)
-    // ends with a result echoing no prompt; it must not settle Orb's turn.
+    // A result echoing no prompt ends a native turn Orb did not send (a task's
+    // notification, an auto-continuation after resume): it answers none of Orb's.
     if (event.type === 'result') {
       const echo = event.user_message_uuids ?? (event.user_message_uuid ? [event.user_message_uuid] : []);
-      if (echo.some(id => awaited.has(id)) || (!echo.length && (event.is_error || !echoes))) finished = !(event.queued_turn_count > 0);
       for (const id of echo) awaited.delete(id);
+      if (!echoes || (!echo.length && event.is_error)) awaited.clear();
+      due = event.queued_turn_count > 0;
     }
-    const settled = finished && tasks.size === 0;
+    const settled = open && awaited.size === 0 && !due && tasks.size === 0;
     // The reading precedes the result so the final repaint already shows it.
     if (settled) {
       let timeout;
@@ -169,7 +170,7 @@ async function run(config) {
     }
     await send({ type: 'sdk', event });
     if (settled) {
-      finished = false;
+      open = false;
       await send({ type: 'settled', session });
       // ponytail: an idle host exits after 10 minutes; the next prompt resumes it.
       idle = setTimeout(() => lines.close(), 10 * 60 * 1000);
@@ -201,7 +202,7 @@ lines.on('line', line => {
         .finally(() => { lines.close(); process.stdin.destroy(); });
     } else if (message.type === 'prompt') {
       clearTimeout(idle);
-      finished = false;
+      open = true;
       awaited.add(message.uuid);
       inbox.push({ type: 'user', uuid: message.uuid, parent_tool_use_id: null, message: { role: 'user', content: message.content } });
       wake?.();
