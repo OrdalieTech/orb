@@ -76,7 +76,13 @@ func accountFixture(t *testing.T) (*provider, string) {
 	settings.SetPluginSetting(Name, "claude", cli)
 	resetAmbient := func() {
 		ambient.Lock()
-		ambient.checked = time.Time{}
+		pending := ambient.pending
+		ambient.Unlock()
+		if pending != nil {
+			<-pending
+		}
+		ambient.Lock()
+		ambient.checked, ambient.status = time.Time{}, claudeStatus{}
 		ambient.Unlock()
 	}
 	resetAmbient()
@@ -289,5 +295,28 @@ func TestClaudeAccountUsage(t *testing.T) {
 	}
 	if w := snapshot.Windows[0]; w.Name != "5h" || w.Remaining != 93 || w.ResetsAt.IsZero() || snapshot.Windows[1].Remaining != 32 {
 		t.Fatalf("windows = %+v", snapshot.Windows)
+	}
+}
+
+// Listing models never waits on the CLI once Claude's login was read: an old
+// reading answers at once while a fresh one is taken in the background.
+func TestAmbientLoginAnswersWhileRechecking(t *testing.T) {
+	p, _ := accountFixture(t)
+	ambient.Lock()
+	ambient.checked, ambient.status = time.Now().Add(-time.Minute), claudeStatus{LoggedIn: true, Email: "old@example.com"}
+	ambient.Unlock()
+	start := time.Now()
+	if status := p.ambientStatus(t.Context()); status.Email != "old@example.com" || time.Since(start) > 100*time.Millisecond {
+		t.Fatalf("status %+v after %v", status, time.Since(start))
+	}
+	ambient.Lock()
+	pending := ambient.pending
+	ambient.Unlock()
+	if pending == nil {
+		t.Fatal("no fresh reading was started")
+	}
+	<-pending
+	if status := p.ambientStatus(t.Context()); status.Email == "old@example.com" {
+		t.Fatalf("status was not refreshed: %+v", status)
 	}
 }

@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The model picker opens at once with Claude Sessions enabled: it waited up to two seconds for
+  Claude's model catalog and login check, which now refresh in the background while the last
+  reading answers.
+
 ## [0.12.0] - 2026-09-26
 
 Claude becomes a provider like the others: one conversation moves between Claude and any model,

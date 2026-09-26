@@ -260,16 +260,18 @@ type provider struct {
 	agentDir string
 	env      []string
 
-	mu     sync.Mutex
-	models []ai.Model
+	mu         sync.Mutex
+	models     []ai.Model
+	refreshing bool
 }
 
 // ambient caches the user's own Claude Code login: availability is asked on
-// every model listing, and the CLI answers in about a tenth of a second.
+// every model listing, and the CLI takes up to seconds to answer.
 var ambient struct {
 	sync.Mutex
 	status  claudeStatus
 	checked time.Time
+	pending chan struct{} // closed when the check in flight ends
 }
 
 func newProvider(settings *config.SettingsManager, agentDir string, env []string) *provider {
@@ -290,21 +292,39 @@ func (p *provider) claude() (string, error) {
 }
 
 // ambientStatus is the user's own Claude Code login, rechecked at most every
-// half minute.
+// half minute. Only the first reading is waited for: later ones refresh in the
+// background while the last one answers, so listing models never waits on the CLI.
 func (p *provider) ambientStatus(ctx context.Context) claudeStatus {
 	ambient.Lock()
+	if ambient.pending == nil && time.Since(ambient.checked) >= 30*time.Second {
+		done := make(chan struct{})
+		ambient.pending = done
+		go func() {
+			var status claudeStatus
+			if claude, err := p.claude(); err == nil {
+				status, _ = authStatus(context.Background(), claude, p.env)
+			}
+			ambient.Lock()
+			ambient.status, ambient.checked, ambient.pending = status, time.Now(), nil
+			ambient.Unlock()
+			close(done)
+		}()
+	}
+	pending, first := ambient.pending, ambient.checked.IsZero()
+	ambient.Unlock()
+	if first && pending != nil {
+		select {
+		case <-pending:
+		case <-ctx.Done():
+		}
+	}
+	ambient.Lock()
 	defer ambient.Unlock()
-	if time.Since(ambient.checked) < 30*time.Second {
-		return ambient.status
-	}
-	ambient.checked, ambient.status = time.Now(), claudeStatus{}
-	if claude, err := p.claude(); err == nil {
-		ambient.status, _ = authStatus(ctx, claude, p.env)
-	}
 	return ambient.status
 }
 
 func (p *provider) registration() extensions.Provider {
+	go p.ambientStatus(context.Background()) // the first reading is ready before anyone lists models
 	unavailable := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
 		return nil, errors.New("Claude runs in its own conversation; select a Claude model to start one") //nolint:staticcheck // Product text.
 	}
@@ -323,29 +343,40 @@ func (p *provider) catalog() ([]ai.Model, error) {
 	return slices.Clone(p.models), nil
 }
 
-// refresh rediscovers the catalog in the background and keeps it for the next
-// start, so Claude's models are listed at once.
+// refresh rediscovers the catalog in the background, one discovery at a time,
+// and keeps it for the next listing and start: asking Claude takes a CLI start,
+// and a listing (opening the model picker) never waits for it.
 func (p *provider) refresh(refresh extensions.RefreshModelsContext) error {
-	ctx := refresh.Signal
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	options, err := configuredOptions(ctx, p.settings, p.agentDir, p.env)
-	if err != nil {
-		return nil
-	}
-	if dir := accountDir(refresh.Credential); dir != "" {
-		options.Env = withConfigDir(options.Env, dir)
-	}
-	cwd, _ := os.Getwd()
-	models, err := discoverModels(ctx, options, cwd)
-	if err != nil {
-		return nil
-	}
 	p.mu.Lock()
-	p.models = models
-	p.mu.Unlock()
-	p.settings.SetPluginSetting(Name, "catalog", models)
+	defer p.mu.Unlock()
+	if p.refreshing {
+		return nil
+	}
+	p.refreshing = true
+	go func() {
+		defer func() {
+			p.mu.Lock()
+			p.refreshing = false
+			p.mu.Unlock()
+		}()
+		ctx := context.Background()
+		options, err := configuredOptions(ctx, p.settings, p.agentDir, p.env)
+		if err != nil {
+			return
+		}
+		if dir := accountDir(refresh.Credential); dir != "" {
+			options.Env = withConfigDir(options.Env, dir)
+		}
+		cwd, _ := os.Getwd()
+		models, err := discoverModels(ctx, options, cwd)
+		if err != nil {
+			return
+		}
+		p.mu.Lock()
+		p.models = models
+		p.mu.Unlock()
+		p.settings.SetPluginSetting(Name, "catalog", models)
+	}()
 	return nil
 }
 
