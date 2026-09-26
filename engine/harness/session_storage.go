@@ -18,10 +18,11 @@ type sessionStorageState struct {
 	leafID   *string
 }
 
+// newSessionStorageState takes ownership of entries; callers clone what they do not own.
 func newSessionStorageState(metadata SessionMetadata, entries []SessionTreeEntry, validateLeaf bool) (*sessionStorageState, error) {
 	state := &sessionStorageState{
 		metadata: cloneHarnessMetadata(metadata),
-		entries:  cloneHarnessEntries(entries),
+		entries:  entries,
 		byID:     make(map[string]SessionTreeEntry, len(entries)),
 		labels:   make(map[string]string),
 	}
@@ -267,7 +268,7 @@ type InMemorySessionStorage struct {
 }
 
 func NewInMemorySessionStorage(entries []SessionTreeEntry, metadata SessionMetadata) (*InMemorySessionStorage, error) {
-	state, err := newSessionStorageState(metadata, entries, true)
+	state, err := newSessionStorageState(metadata, cloneHarnessEntries(entries), true)
 	if err != nil {
 		return nil, err
 	}

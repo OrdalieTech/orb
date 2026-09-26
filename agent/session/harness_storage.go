@@ -125,10 +125,11 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 		journal.IsPersistent() && journal.Metadata().Path == "" && len(manager.fileEntries) > 0 {
 		entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
 		for _, entry := range entries {
-			converted := *cloneEntry(manager.parsedEntry(entry))
-			record := newEntryRecord(converted)
+			// The index shares the manager's parse: entries are never changed in place.
+			converted := manager.parsedEntry(entry)
+			record := newEntryRecord(*converted)
 			if converted.object != nil {
-				record = &FileEntry{Type: converted.Type, Entry: &converted, object: converted.object}
+				record = &FileEntry{Type: converted.Type, Entry: converted, object: converted.object}
 			}
 			manager.fileEntries = append(manager.fileEntries, record)
 			manager.byID[entry.ID] = record.Entry
@@ -181,14 +182,14 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 	manager.fileEntries = make([]*FileEntry, 1, len(entries)+1)
 	manager.fileEntries[0] = header
 	for _, entry := range entries {
-		converted := *cloneEntry(manager.parsedEntry(entry))
+		converted := manager.parsedEntry(entry)
 		if converted.object != nil {
 			manager.fileEntries = append(manager.fileEntries, &FileEntry{
-				Type: converted.Type, Entry: &converted, object: converted.object,
+				Type: converted.Type, Entry: converted, object: converted.object,
 			})
 			continue
 		}
-		manager.fileEntries = append(manager.fileEntries, newEntryRecord(converted))
+		manager.fileEntries = append(manager.fileEntries, newEntryRecord(*converted))
 	}
 	manager.buildIndexLocked()
 	manager.labelsByID = make(map[string]string)
