@@ -1330,13 +1330,18 @@ func TestSDKHostDrainsBackgroundAndTrailingEvents(t *testing.T) {
  const input=prompt[Symbol.asyncIterator]();
  let completed=false;
  const q=(async function*(){
-  await input.next();
+  const {value:p}=await input.next();
+  yield {type:'system',subtype:'init',claude_code_version:'2.1.280'};
   yield {type:'system',subtype:'task_started',task_id:'job',is_backgrounded:true};
   yield {type:'system',subtype:'background_tasks_changed',tasks:[{task_id:'job'}]};
-  yield {type:'result',subtype:'success'};
+  yield {type:'result',subtype:'success',user_message_uuids:[p.uuid]};
+  // Like the CLI: the task drains, then Claude reads its notification in a turn of its own.
+  yield {type:'system',subtype:'background_tasks_changed',tasks:[]};
   completed=true;
   yield {type:'system',subtype:'task_notification',task_id:'job',status:'completed',summary:'finished'};
-  yield {type:'system',subtype:'background_tasks_changed',tasks:[]};
+  yield {type:'system',subtype:'init',claude_code_version:'2.1.280'};
+  yield {type:'assistant',message:{content:[{type:'text',text:'FINISHED'}]}};
+  yield {type:'result',subtype:'success'};
   yield {type:'rate_limit_event',rate_limit_info:{status:'allowed'}};
   if(!(await input.next()).done) throw Error('input not released');
  })();
@@ -1360,6 +1365,9 @@ func TestSDKHostDrainsBackgroundAndTrailingEvents(t *testing.T) {
 		if !strings.Contains(string(out), want) {
 			t.Fatalf("lost %s: %s", want, out)
 		}
+	}
+	if strings.Index(string(out), `"type":"settled"`) < strings.Index(string(out), "FINISHED") || strings.Count(string(out), `"type":"settled"`) != 1 {
+		t.Fatalf("settled before Claude read the task's notification: %s", out)
 	}
 }
 
