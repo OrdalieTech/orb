@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 )
@@ -168,7 +169,26 @@ func KeyEventTypeOf(data string) KeyEventType {
 	return KeyPress
 }
 
+type parsedKeyID struct {
+	key      string
+	modifier int
+	ok       bool
+}
+
+// parsedKeyIDs memoizes parseKeyID: every keystroke is matched against every binding.
+var parsedKeyIDs sync.Map
+
 func parseKeyID(keyID KeyID) (key string, modifier int, ok bool) {
+	if parsed, found := parsedKeyIDs.Load(keyID); found {
+		p := parsed.(parsedKeyID)
+		return p.key, p.modifier, p.ok
+	}
+	key, modifier, ok = parseKeyIDUncached(keyID)
+	parsedKeyIDs.Store(keyID, parsedKeyID{key, modifier, ok})
+	return key, modifier, ok
+}
+
+func parseKeyIDUncached(keyID KeyID) (key string, modifier int, ok bool) {
 	parts := strings.Split(strings.ToLower(string(keyID)), "+")
 	if len(parts) == 0 || parts[len(parts)-1] == "" {
 		return "", 0, false
