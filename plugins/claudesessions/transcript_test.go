@@ -34,8 +34,8 @@ func TestRebuildRewritesOtherModelsTurns(t *testing.T) {
 	records := rebuild(manager, 1)
 	var got []string
 	for _, record := range records {
-		raw, _ := json.Marshal(record["message"].(map[string]any)["content"])
-		got = append(got, record["type"].(string)+" "+string(raw))
+		raw, _ := json.Marshal(record.orb["message"].(map[string]any)["content"])
+		got = append(got, record.orb["type"].(string)+" "+string(raw))
 	}
 	want := []string{
 		`user [{"text":"list files","type":"text"}]`,
@@ -46,7 +46,7 @@ func TestRebuildRewritesOtherModelsTurns(t *testing.T) {
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("records:\n%s", strings.Join(got, "\n"))
 	}
-	if again := rebuild(manager, 1); again[3]["uuid"] != records[3]["uuid"] || records[3]["parentUuid"] != records[2]["uuid"] {
+	if again := rebuild(manager, 1); again[3].UUID != records[3].UUID || records[3].Parent != records[2].UUID {
 		t.Fatal("rebuilt records are not chained identically")
 	}
 }
@@ -60,11 +60,16 @@ func TestImportClaudeCodeSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := []string{
-		`{"type":"user","uuid":"u1","cwd":"/work","message":{"role":"user","content":"read a.go"}}`,
-		`{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"claude","content":[{"type":"text","text":"Reading."}]}}`,
-		`{"type":"assistant","uuid":"a2","message":{"id":"m1","model":"claude","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.go"}}]}}`,
-		`{"type":"user","uuid":"u2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"package a"}]}}`,
-		`{"type":"assistant","uuid":"a3","message":{"id":"m2","model":"claude","content":[{"type":"text","text":"It is package a."}]}}`,
+		`{"type":"user","uuid":"u1","parentUuid":null,"cwd":"/work","message":{"role":"user","content":"read a.go"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"m1","model":"claude","content":[{"type":"text","text":"Reading."}]}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","message":{"id":"m1","model":"claude","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.go"}}]}}`,
+		`{"type":"user","uuid":"u2","parentUuid":"a2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"package a"}]}}`,
+		`{"type":"assistant","uuid":"a3","parentUuid":"u2","message":{"id":"m2","model":"claude","content":[{"type":"text","text":"It is package a."}]}}`,
+		// A rewind left this branch behind; the conversation goes on from a3 below.
+		`{"type":"user","uuid":"u9","parentUuid":"a3","message":{"role":"user","content":"abandoned question"}}`,
+		`{"type":"assistant","uuid":"a9","parentUuid":"u9","message":{"id":"m9","model":"claude","content":[{"type":"text","text":"abandoned answer"}]}}`,
+		`{"type":"user","uuid":"u4","parentUuid":"a3","message":{"role":"user","content":"and b.go?"}}`,
+		`{"type":"assistant","uuid":"a4","parentUuid":"u4","message":{"id":"m4","model":"claude","content":[{"type":"text","text":"No b.go."}]}}`,
 		`{"type":"file-history-snapshot","messageId":"x"}`,
 	}
 	if err := os.WriteFile(filepath.Join(project, "0b7a4a1e-1111-4222-8333-444455556666.jsonl"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
@@ -86,7 +91,7 @@ func TestImportClaudeCodeSession(t *testing.T) {
 		}
 		messages = append(messages, message)
 	}
-	if cwd != "/work" || len(messages) != 4 {
+	if cwd != "/work" || len(messages) != 6 {
 		t.Fatalf("imported %d messages in %q", len(messages), cwd)
 	}
 	first, _ := messages[1].(*ai.AssistantMessage)
@@ -96,8 +101,11 @@ func TestImportClaudeCodeSession(t *testing.T) {
 	if result, _ := messages[2].(*ai.ToolResultMessage); result == nil || result.ToolName != "Read" {
 		t.Fatalf("tool result = %#v", messages[2])
 	}
-	// Claude resumes from its own five records, not from Orb's rewrite.
-	if records := rebuild(manager, 0); len(records) != 5 || records[4]["uuid"] != "a3" {
+	if raw, _ := json.Marshal(messages); strings.Contains(string(raw), "abandoned") {
+		t.Fatalf("imported a branch the conversation left: %s", raw)
+	}
+	// Claude resumes from its own records, not from Orb's rewrite.
+	if records := rebuild(manager, 0); len(records) != 7 || records[6].UUID != "a4" {
 		t.Fatalf("resume records = %d", len(records))
 	}
 }
@@ -149,7 +157,7 @@ func TestRebuildRepairsMissingParents(t *testing.T) {
 	if _, err := manager.AppendCustomEntry(transcriptEntry, records); err != nil {
 		t.Fatal(err)
 	}
-	if got := rebuild(manager, 0); len(got) != 2 || got[1]["parentUuid"] != "u1" {
+	if got := rebuild(manager, 0); len(got) != 2 || got[1].Parent != "u1" {
 		t.Fatalf("records = %#v", got)
 	}
 }
@@ -201,4 +209,85 @@ func TestMirrorReadsOnlyTheNewTail(t *testing.T) {
 	write(os.O_TRUNC, `{"type":"user","uuid":"u1"}`+"\n")
 	write(os.O_APPEND, `{"type":"user","uuid":"u2"}`+"\n")
 	step("u1 a1 u2")
+}
+
+// Syncing appends only what the session lacks; a record whose parent moved
+// (Orb compacted the branch) comes back as a copy, and records after it follow.
+func TestSyncTranscriptAppendsWhatTheSessionLacks(t *testing.T) {
+	dir := t.TempDir()
+	line := func(id, parent string) *record {
+		return &record{UUID: id, Parent: parent, orb: map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": id}}}
+	}
+	lines := func() []string {
+		data, _ := os.ReadFile(filepath.Join(dir, "s.jsonl"))
+		return strings.Split(strings.TrimSpace(string(data)), "\n")
+	}
+	at, size, err := syncTranscript([]*record{line("r1", ""), line("r2", "r1")}, "s", dir)
+	if err != nil || at != "r2" || len(lines()) != 3 || lines()[2] != `{"leafUuid":"r2","sessionId":"s","type":"last-prompt"}` {
+		t.Fatalf("first sync: %q %v %v", at, err, lines())
+	}
+	if again, same, err := syncTranscript([]*record{line("r1", ""), line("r2", "r1")}, "s", dir); err != nil || again != "r2" || same != size || len(lines()) != 3 {
+		t.Fatalf("second sync appended: %q %d %v", again, same, lines())
+	}
+	at, _, err = syncTranscript([]*record{line("sum", ""), line("r2", "sum"), line("r3", "r2")}, "s", dir)
+	copied := uuidFor("r2 sum")
+	if err != nil || len(lines()) != 7 || !strings.Contains(lines()[4], `"uuid":"`+copied+`"`) || !strings.Contains(lines()[5], `"parentUuid":"`+copied+`"`) || at != "r3" {
+		t.Fatalf("compacted sync: %q %v %v", at, err, lines())
+	}
+}
+
+// A conversation continued in Claude Code gains those turns when Orb opens it
+// again, once; turns on a branch Orb does not hold are left alone.
+func TestCatchUpTakesTurnsAddedInClaudeCode(t *testing.T) {
+	base := t.TempDir()
+	id := "0b7a4a1e-1111-4222-8333-444455556666"
+	project := filepath.Join(base, "projects", "-work")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(project, id+".jsonl")
+	write := func(lines ...string) {
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, err = file.WriteString(strings.Join(lines, "\n") + "\n")
+			_ = file.Close()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"type":"user","uuid":"u1","parentUuid":null,"cwd":"/work","message":{"role":"user","content":"hello"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"m1","model":"claude","content":[{"type":"text","text":"hi"}]}}`)
+	env := []string{"CLAUDE_CONFIG_DIR=" + base}
+	manager, err := ImportClaudeCode(id, env, func(dir string) (*session.SessionManager, error) {
+		return session.InMemory(dir, session.WithSessionID(id))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := func() (got []string) {
+		for _, raw := range manager.BuildSessionContext().Messages {
+			message, _ := ai.UnmarshalMessage(raw)
+			switch m := message.(type) {
+			case *ai.UserMessage:
+				got = append(got, *m.Content.Text)
+			case *ai.AssistantMessage:
+				got = append(got, m.Content[0].(*ai.TextContent).Text)
+			}
+		}
+		return got
+	}
+	write(`{"type":"user","uuid":"u2","parentUuid":"a1","cwd":"/work","message":{"role":"user","content":"from claude code"}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"u2","message":{"id":"m2","model":"claude","content":[{"type":"text","text":"noted"}]}}`)
+	for range 2 {
+		if _, err := catchUp(manager, env); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := strings.Join(texts(), "|"); got != "hello|hi|from claude code|noted" {
+		t.Fatalf("messages = %s", got)
+	}
+	if records := rebuild(manager, 0); records[len(records)-1].UUID != "a2" {
+		t.Fatalf("Claude would resume at %v", records[len(records)-1].UUID)
+	}
 }

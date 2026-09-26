@@ -187,10 +187,12 @@ Claude's models are listed in `/model` beside every other provider's, and one co
 freely between them: Claude runs its turns through the SDK, Orb's own loop runs the others. Orb
 holds the transcript. Claude's records are copied into the Orb conversation after each turn, and
 whenever Claude must start again (another model answered, `/tree` moved, the account changed) Orb
-rewrites the transcript it resumes from: Claude's own records, and other models' turns as plain
+brings the Claude Code session up to date: Claude's own records, and other models' turns as plain
 messages, their tool calls and results as text. Other models read Claude's turns like any other.
-`orb --resume <claude-code-session-id>` (or `--session`) opens a Claude Code session as an Orb
-conversation that Claude, or any model, continues. Native terms, model entitlements and usage
+An Orb conversation and its Claude Code session share one ID and one transcript file: `orb --resume
+<claude-code-session-id>` (or `--session`) opens a Claude Code session as an Orb conversation that
+Claude, or any model, continues, `claude --resume <id>` continues an Orb conversation in Claude
+Code, and turns added there appear in Orb the next time it opens the conversation. Native terms, model entitlements and usage
 limits apply; SDK cost metadata is not your subscription invoice.
 
 For headless use, with the plugin enabled and the same automatic first-use setup: `orb --provider claude-sessions --model sonnet -p "your task"`.

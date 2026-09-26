@@ -13,7 +13,10 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 - One conversation now moves between Claude and any other model: pick one in `/model` and continue.
   Orb holds the transcript, so Claude reads the turns other models answered, other models read
   Claude's, and switching Claude accounts mid-conversation continues it. The `/claude` menu is gone.
-- `orb --resume <claude-code-session-id>` opens a Claude Code session as an Orb conversation.
+- `orb --resume <claude-code-session-id>` opens a Claude Code session as an Orb conversation, and
+  both stay one conversation under one ID: Orb appends to that session instead of copying it, so
+  `claude --resume <id>` continues it in Claude Code, and turns added there appear in Orb when it
+  opens the conversation again. An import follows the session's latest branch, not rewound ones.
 - Accounts stored for a provider an extension registers now resolve at request time.
 - Each turn now ends with a dim footer naming the model and how long the turn took
   (`claude-opus-5-5 · 1m 12s`), live and when a session is reopened.
