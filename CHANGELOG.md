@@ -6,6 +6,13 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-26
+
+Claude becomes a provider like the others: one conversation moves between Claude and any model,
+Claude accounts switch like other accounts, and an Orb conversation and its Claude Code session
+stay one conversation in both directions. The session tree is redesigned, and large conversations
+open faster in less memory. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
+
 - Claude is a provider like the others once Claude Sessions is enabled. `/login` lists **Claude**
   with its accounts: your Claude Code login and any account added with **+ Add account**, which
   runs the official CLI's sign-in. Orb never reads Claude's credentials. Each account shows its
@@ -26,6 +33,18 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   output muted, hints, times and footers dimmer, rules and rails fainter still.
 - Code blocks render as a subtle panel with the language as a dim label instead of literal
   ```` ``` ```` fences; long lines wrap inside the panel, and copying a block yields just the code.
+- A Claude turn now shows everything Claude does: it no longer ended early, with Claude working
+  unseen, when a resumed session first answered a leftover task notification, or when a background
+  task finished after Claude's reply. The turn stays open until Claude has read the task's result,
+  and a message typed while Claude waits on a task reaches it at once.
+- Claude's context meter updates after each step of a long turn, and the footer no longer shows
+  "Claude limits stale" after five idle minutes. The model picker shows a price only when the model
+  has one.
+- `/compact` says why it did nothing ("Nothing to compact", "Already compacted") instead of staying silent.
+- Opening and reading a large conversation is faster and lighter: each stored entry is parsed once
+  (a 128 MB conversation opens with half the CPU and a sixth less memory), Claude Sessions reads
+  only what Claude appended after each turn, and the SQLite log no longer keeps the size of its
+  largest write.
 - Claude Sessions no longer ends a turn with "cannot unmarshal string into … tool_use_result" when a
   tool fails: a failed tool reports its result as text, which Orb now accepts.
 - Claude Sessions no longer stops with "write |1: file already closed" on the first prompt after
