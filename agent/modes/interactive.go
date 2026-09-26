@@ -4469,6 +4469,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 	case agent.CompactionEndEvent:
 		mode.renderInitialMessages()
 		mode.setStatus(&IdleStatus{})
+		if ev.ErrorMessage != nil && !ev.Aborted {
+			mode.showError(errors.New(*ev.ErrorMessage))
+		}
 
 	case agent.AutoRetryStartEvent:
 		mode.setStatus(NewRetryStatusIndicator(mode.ui, ev.Attempt, ev.MaxAttempts, ev.DelayMS))
