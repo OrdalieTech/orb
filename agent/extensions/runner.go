@@ -887,6 +887,14 @@ func (runner *Runner) Emit(ctx context.Context, event Event) any {
 	if event == nil {
 		return nil
 	}
+	// A disposed or replaced runtime's late events (a turn still finishing as the
+	// process exits) reach no extension: every call on their ctx would fail as stale.
+	runner.mu.RLock()
+	stale := runner.staleMessage != ""
+	runner.mu.RUnlock()
+	if stale {
+		return nil
+	}
 	if event.Type() != EventProjectTrust {
 		runner.bindDeferredProviders()
 	}
