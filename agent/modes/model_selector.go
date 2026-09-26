@@ -211,9 +211,6 @@ func modelSelectorTokens(count float64) string {
 }
 
 func modelSelectorCost(cost ai.ModelCost) string {
-	if cost.Input == 0 && cost.Output == 0 {
-		return "—"
-	}
 	format := func(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
 	return "$" + format(cost.Input) + "/" + format(cost.Output)
 }
@@ -266,7 +263,12 @@ func (component *ModelSelectorComponent) updateList() {
 			label = model.ID
 		}
 		name = theme.FG("text", string(model.Provider)+" · "+label)
-		details = theme.FG("muted", modelSelectorTokens(model.ContextWindow)+" context · "+modelSelectorCost(model.Cost)+" /Mtok · "+modelSelectorFlags(model))
+		parts := []string{modelSelectorTokens(model.ContextWindow) + " context"}
+		// A subscription model has no per-token price to show.
+		if model.Cost.Input != 0 || model.Cost.Output != 0 {
+			parts = append(parts, modelSelectorCost(model.Cost)+" /Mtok")
+		}
+		details = theme.FG("muted", strings.Join(append(parts, modelSelectorFlags(model)), " · "))
 	}
 	component.listContainer.AddChild(tui.NewTruncatedText(name, 0, 0))
 	component.listContainer.AddChild(tui.NewTruncatedText(details, 0, 0))
