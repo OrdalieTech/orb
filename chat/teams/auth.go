@@ -163,7 +163,7 @@ func (v *jwtValidator) signingKey(ctx context.Context, kid string) (signingKey, 
 	if key, ok := v.keys[kid]; ok {
 		return key, nil
 	}
-	if v.now().Sub(v.fetched) > v.refetchFloor {
+	if v.now().Sub(v.fetched) >= v.refetchFloor {
 		if err := v.refreshLocked(ctx); err != nil {
 			return signingKey{}, err
 		}
