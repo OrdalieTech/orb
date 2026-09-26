@@ -6,13 +6,19 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // fakeClaudeCLI signs a config directory in by writing its email to "login";
@@ -170,4 +176,83 @@ func credentialLabel(credential *aiauth.Credential) string {
 	var label string
 	_ = json.Unmarshal(credential.Extra["label"], &label)
 	return label
+}
+
+// One conversation moves between an Orb model and Claude: Claude reads the
+// turns another model answered, and the other model continues after Claude.
+func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("Node required for SDK host test", err)
+	}
+	dir := t.TempDir()
+	sdk, cli := filepath.Join(dir, "sdk.mjs"), filepath.Join(dir, "claude")
+	if err := os.WriteFile(sdk, []byte(fakeSDK), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(dir, config.WithAgentDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SetPluginEnabled(Name, true)
+	for key, value := range map[string]string{"sdk": sdk, "claude": cli, "node": node} {
+		settings.SetPluginSetting(Name, key, value)
+	}
+	manager, err := session.InMemory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orb := faux.New()
+	agentState := engine.NewAgent(orb.StreamSimple, engine.WithInitialState(engine.AgentState{Model: orb.GetModel(), Messages: engine.AgentMessages{}}), engine.WithConvertToLLM(agent.ConvertToLLM))
+	cfg := agent.SessionRuntimeConfig{Agent: agentState, SessionManager: manager, Settings: settings, StreamFn: orb.StreamSimple,
+		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) { key := "test"; return &key, nil }}
+	bind, err := Configure(&cfg, dir, []string{"PATH=" + filepath.Dir(node) + ":/usr/bin:/bin", "SDK_TEST_KEY=unchanged", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude-config")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := agent.NewSessionRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bind(runtime)
+	t.Cleanup(runtime.Dispose)
+	reply := func() string {
+		messages := runtime.State().Messages
+		raw, _ := json.Marshal(messages[len(messages)-1])
+		return string(raw)
+	}
+	claude := ai.Model{ID: "default", Provider: Name, API: Name}
+
+	orb.SetResponses([]faux.ResponseStep{faux.AssistantMessage("noted mandarine")})
+	if err := runtime.Prompt(t.Context(), "remember mandarine"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SetModel(t.Context(), claude); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(t.Context(), "plain-fixture which word?"); err != nil {
+		t.Fatal(err)
+	}
+	if got := reply(); !strings.Contains(got, `\"read\":[\"user:remember mandarine\",\"assistant:noted mandarine\"]`) {
+		t.Fatalf("Claude did not read the Orb turn: %s", got)
+	}
+	if err := runtime.SetModel(t.Context(), *orb.GetModel()); err != nil {
+		t.Fatal(err)
+	}
+	orb.SetResponses([]faux.ResponseStep{faux.AssistantMessage("back")})
+	if err := runtime.Prompt(t.Context(), "and now?"); err != nil || !strings.Contains(reply(), "back") {
+		t.Fatalf("Orb model did not continue after Claude: %v %s", err, reply())
+	}
+	if err := runtime.SetModel(t.Context(), claude); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(t.Context(), "plain-fixture still there?"); err != nil {
+		t.Fatal(err)
+	}
+	if got := reply(); !strings.Contains(got, `\"user:plain-fixture which word?\"`) || !strings.Contains(got, `\"assistant:back\"`) {
+		t.Fatalf("Claude lost its own turn or the Orb turn after it: %s", got)
+	}
 }

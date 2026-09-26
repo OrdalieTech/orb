@@ -167,9 +167,9 @@ panel and send execution-bound replies; disconnecting never invents an answer.
 
 ## Claude Sessions
 
-Enable **claude-sessions** in `/plugins` (or set `"plugins": {"claude-sessions": true}`), then open
-`/claude` (also available from the command palette) and choose **New Claude session**.
-Orb prepares the SDK automatically on first use, then opens the conversation. The executing host needs Node ≥22.6, npm and the official Claude Code executable.
+Enable **claude-sessions** in `/plugins` (or set `"plugins": {"claude-sessions": true}`) and pick a
+Claude model in `/model`. Orb prepares the SDK automatically on first use. The executing host needs
+Node ≥22.6, npm and the official Claude Code executable.
 
 Claude is then a provider like the others. `/login` lists it as **Claude** with its accounts: the
 Claude Code login you already have, and any account added with **+ Add account**, which runs the
@@ -177,34 +177,33 @@ official CLI's own sign-in (the first account opens the browser; a further one s
 open where that account is signed in, then takes the code it shows). Each account is a Claude Code
 configuration directory under `<agent-dir>/plugins/claude-sessions/accounts`; the CLI keeps its
 credential and Orb never reads it. Everything but the sign-in (settings, skills, agents, hooks,
-MCP servers, transcripts) is shared with your own Claude configuration, so switching accounts,
-even in the middle of a conversation, continues it. Accounts are named, switched, reconnected
+MCP servers) is shared with your own Claude configuration, and switching accounts, even in the
+middle of a conversation, continues it. Accounts are named, switched, reconnected
 and disconnected like any provider's. Existing native API-key/cloud authentication is also
 available.
 
-Claude's models are listed in `/model` beside every other provider's. Picking one from an Orb
-conversation, or another provider's model from a Claude conversation, starts a new conversation
-on that executor, after confirming when the current one already has prompts; it stays in
-`/resume`. `ctrl+p` cycles within the current executor. Native terms, model
-entitlements and usage limits apply; SDK cost metadata is not your subscription invoice.
+Claude's models are listed in `/model` beside every other provider's, and one conversation moves
+freely between them: Claude runs its turns through the SDK, Orb's own loop runs the others. Orb
+holds the transcript. Claude's records are copied into the Orb conversation after each turn, and
+whenever Claude must start again (another model answered, `/tree` moved, the account changed) Orb
+rewrites the transcript it resumes from: Claude's own records, and other models' turns as plain
+messages, their tool calls and results as text. Other models read Claude's turns like any other.
+`orb --resume <claude-code-session-id>` (or `--session`) opens a Claude Code session as an Orb
+conversation that Claude, or any model, continues. Native terms, model entitlements and usage
+limits apply; SDK cost metadata is not your subscription invoice.
 
 For headless use, with the plugin enabled and the same automatic first-use setup: `orb --provider claude-sessions --model sonnet -p "your task"`.
 The model picker uses the executing Claude CLI's `supportedModels()` catalog: native aliases,
-resolved model names and supported effort levels. New sessions use Claude's native default unless
-you select another model. `/model` changes the current session; `/claude` → Model chooses the default
-for new sessions, which open at the thinking level last chosen for that Claude model (kept as its
+resolved model names and supported effort levels. A Claude model opens at the thinking level last
+chosen for it (kept as its
 `modelThinkingLevels` entry, leaving `defaultThinkingLevel` to Orb's own providers). The existing model footer is retained, with a single compact Claude quota status. Discovery starts no model turn and writes no Claude transcript.
 
-`--session` and the ordinary Sessions picker resume the selected Orb conversation using its explicit
-native Claude session ID. `/tree`, withdrawn prompts and branch summaries work as in any Orb
-session; Claude writes the summary. Native approvals use Orb's choices, and **approve for this
+`/tree`, withdrawn prompts and branch summaries work as in any Orb session; Claude writes the
+summary. Native approvals use Orb's choices, and **approve for this
 session** lasts as long as the running Orb session. Messages sent while Claude works join the running
-turn after its next tool result. `/claude` → Permission mode offers default, accept-edits, plan,
-auto and don't-ask. Orb's system-prompt additions reach Claude; context files such as CLAUDE.md
+turn after its next tool result. Orb's system-prompt additions reach Claude; context files such as CLAUDE.md
 are Claude's own and load natively, and Orb does not inject its AGENTS.md. In `-p`/JSON runs, approvals Claude would ask for run as Orb's own tools would,
-unless one of your Claude ask rules forces the prompt. `/claude` selects the model for explicitly created Claude sessions.
-**Switch to Orb** opens a separate regular conversation and keeps the Claude session saved; it also
-works before an Orb provider is configured. `--no-extensions`
+unless one of your Claude ask rules forces the prompt. `--no-extensions`
 disables this optional capability. There is no fallback to another account or model on errors.
 
 Advanced settings use `plugins.claude-sessions`: `model`, `node`, `claude`, and `sdk`
@@ -234,13 +233,7 @@ questions, validating each answer against the requested schema. MCP URL requests
 the controlling client and require explicit confirmation; Orb never opens a browser on the execution
 host. Cancelling a request returns cancellation to the SDK.
 
-`/claude plan` and `/claude normal` select the native permission mode for the current idle session;
-plan mode is marked in the existing footer status. Orb permission rules cannot override native plan
-restrictions. `/claude compact` submits Claude's own compaction command, preserving its native
-session. These actions are also available in the `/claude` menu. Type `/claude:` for direct command
-completion: `/claude:models` opens the model picker for new sessions, `/claude:usage` shows quota,
-`/claude:new` starts a session, `/claude:exit` switches to Orb, and `/claude:plan`, `/claude:normal`,
-`/claude:compact` run their actions directly. `/model` still changes the current session's model.
+`/compact` in a Claude turn submits Claude's own compaction command.
 
 When the **Permissions** plugin is enabled, Claude's native pre-tool hooks use its existing rules,
 approval cache and audit log. Native tool names and paths are normalized only for policy evaluation;
@@ -250,8 +243,6 @@ sandbox configurations because it cannot enforce them for Claude's native execut
 
 The footer shows subscription quota from native SDK rate-limit events, for example
 `Claude 7d 40% left`, identifying the active window with the least quota remaining.
-Open `/claude usage` (or `/claude` → Usage) for each reported window, percentages and reset times;
-missing readings stay unknown and stale readings are labeled.
 It appears after Claude reports a reading, normally after the first
 reply, and is also shown in Bridge views. These are subscription limits, not session token counts.
 Readings older than five minutes are marked stale; expired windows are omitted, and missing
@@ -269,10 +260,8 @@ A turn stays active until its non-ambient background tasks complete and the SDK 
 cancellation interrupts that work. Retry, compaction and task notices use ordinary transcript events;
 task notices cover subagents and background work only, since a foreground command already has its
 tool row. Tool/task progress uses bounded updates. Subagent transcripts remain separate.
-Orb stores its transcript projection and private checkpoint metadata in SQLite; the native Claude
-transcript remains on the execution host and is required for resume. Pi export does not make native
-Claude context portable. Interrupted operations are never automatically replayed.
-Forks resume from a confirmed native checkpoint. Rewinding an existing Orb branch does not rewind
-Claude's native history: continuing that branch fails explicitly, and requires a new fork.
+Orb stores the conversation and Claude's transcript records in its own journal, so any branch,
+fork or copied session resumes on any host with the plugin. Interrupted operations are never
+automatically replayed.
 Headless runs without a local UI or an attached controller deny interactive permission requests;
 native settings may already authorize individual actions.

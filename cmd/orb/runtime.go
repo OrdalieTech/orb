@@ -704,7 +704,6 @@ func newSessionRuntime(cfg agent.SessionRuntimeConfig) (*agent.SessionRuntime, e
 	if err != nil {
 		return nil, err
 	}
-	cfg.OwnExecutor = func(model ai.Model) bool { return model.Provider == claudesessions.Name }
 	bind, err := claudesessions.Configure(&cfg, agentDir, os.Environ())
 	if err != nil {
 		return nil, err

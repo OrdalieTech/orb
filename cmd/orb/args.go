@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -88,6 +89,8 @@ type CLIArgs struct {
 }
 
 // ParseArgs follows upstream's sequential CLI parsing rules.
+var sessionIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 func ParseArgs(argv []string) CLIArgs {
 	result := CLIArgs{
 		CommandArgs:  []string{},
@@ -122,6 +125,12 @@ func ParseArgs(argv []string) CLIArgs {
 		case argument == "--continue" || argument == "-c":
 			result.Continue = true
 		case argument == "--resume" || argument == "-r":
+			// A session ID after --resume opens it, as --session does.
+			if index+1 < len(argv) && sessionIDPattern.MatchString(argv[index+1]) {
+				index++
+				result.Session = &argv[index]
+				break
+			}
 			result.Resume = true
 		case argument == "--mode" && index+1 < len(argv):
 			index++

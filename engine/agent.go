@@ -47,8 +47,29 @@ func WithSessionLoop(loop SessionLoop) AgentOption {
 	return func(options *agentOptions) { options.sessionLoop = loop }
 }
 
-// UsesSessionLoop reports whether execution policies belong to an external session.
-func (agent *Agent) UsesSessionLoop() bool { return agent.sessionLoop != nil }
+// SetSessionLoop hands the runs of the models claims accepts to loop; other
+// models keep Orb's own loop, so one conversation can move between them.
+func (agent *Agent) SetSessionLoop(claims func(*ai.Model) bool, loop SessionLoop) {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	agent.sessionLoop, agent.claims = loop, claims
+}
+
+// UsesSessionLoop reports whether the current model's runs, and so their
+// execution policies, belong to an external session.
+func (agent *Agent) UsesSessionLoop() bool {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return agent.sessionLoop != nil && (agent.claims == nil || agent.claims(agent.state.Model))
+}
+
+// SessionLoopExclusive reports a session loop that runs every model, which a
+// model on Orb's own loop cannot join.
+func (agent *Agent) SessionLoopExclusive() bool {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return agent.sessionLoop != nil && agent.claims == nil
+}
 
 func WithInitialState(state AgentState) AgentOption {
 	return func(options *agentOptions) {
@@ -156,6 +177,7 @@ type listenerEntry struct {
 // Agent is the stateful wrapper around RunLoop and RunLoopContinue.
 type Agent struct {
 	sessionLoop  SessionLoop
+	claims       func(*ai.Model) bool
 	observers    map[uint64]stateObserver
 	nextObserver uint64
 	mu           sync.Mutex
@@ -665,7 +687,7 @@ func (agent *Agent) normalizePromptInput(input any, images []*ai.ImageContent) (
 func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runWithLifecycle(ctx, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
-		if agent.sessionLoop != nil {
+		if agent.UsesSessionLoop() {
 			return agent.sessionLoop(runContext, messages, loopContext, agent.loopConfig(skipInitialSteeringPoll), agent.processEvent)
 		}
 		messages = agent.withInitialSystemPrompt(loopContext, messages)
@@ -678,7 +700,7 @@ func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessage
 func (agent *Agent) runPromptMessagesReserved(active *activeRun, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
-		if agent.sessionLoop != nil {
+		if agent.UsesSessionLoop() {
 			return agent.sessionLoop(runContext, messages, loopContext, agent.loopConfig(skipInitialSteeringPoll), agent.processEvent)
 		}
 		messages = agent.withInitialSystemPrompt(loopContext, messages)
@@ -713,7 +735,7 @@ func (agent *Agent) runContinuationReserved(active *activeRun) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
 		config := agent.loopConfig(false)
-		if agent.sessionLoop != nil {
+		if agent.UsesSessionLoop() {
 			return agent.sessionLoop(runContext, nil, loopContext, config, agent.processEvent)
 		}
 		_, err := RunLoopContinue(runContext, &loopContext, config, agent.processEvent, agent.StreamFn())

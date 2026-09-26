@@ -8,11 +8,11 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - Claude is a provider like the others once Claude Sessions is enabled. `/login` lists **Claude**
   with its accounts: your Claude Code login and any account added with **+ Add account**, which
-  runs the official CLI's sign-in. Accounts switch like other providers', even mid-conversation:
-  settings, skills, MCP servers and transcripts are shared, so the conversation continues. Orb
-  never reads Claude's credentials.
-- Claude's models are in `/model` beside every other provider's; picking a model on another
-  executor starts a new conversation on it (after confirming if the current one has prompts).
+  runs the official CLI's sign-in. Orb never reads Claude's credentials.
+- One conversation now moves between Claude and any other model: pick one in `/model` and continue.
+  Orb holds the transcript, so Claude reads the turns other models answered, other models read
+  Claude's, and switching Claude accounts mid-conversation continues it. The `/claude` menu is gone.
+- `orb --resume <claude-code-session-id>` opens a Claude Code session as an Orb conversation.
 - Accounts stored for a provider an extension registers now resolve at request time.
 - Each turn now ends with a dim footer naming the model and how long the turn took
   (`claude-opus-5-5 · 1m 12s`), live and when a session is reopened.

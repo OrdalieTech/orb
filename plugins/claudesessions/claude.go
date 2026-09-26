@@ -69,13 +69,6 @@ type subscriptionLimits struct {
 	ObservedAt     time.Time              `json:"observedAt"`
 }
 
-// checkpoint is the native resume point recorded on an Orb branch: At is the
-// native chain entry that branch's latest Orb entry corresponds to.
-type checkpoint struct {
-	Owner   string `json:"owner"`
-	Session string `json:"session"`
-	At      string `json:"at,omitempty"`
-}
 type Driver struct {
 	options Options
 	mu      sync.Mutex
@@ -96,15 +89,7 @@ func New(options Options) (*Driver, error) {
 		return nil, errors.New("claude executable and SDK paths must be absolute")
 	}
 	options.Env = append([]string{}, options.Env...)
-	d := &Driver{options: options}
-	saved, err := d.checkpoint()
-	if err != nil {
-		return nil, err
-	}
-	if saved.Session == "" && onBranch(options.Manager, func(entry *session.SessionEntry) bool { return entry.Type == "message" }) != nil {
-		return nil, errors.New("this transcript has no native Claude session; start a new Claude conversation")
-	}
-	return d, nil
+	return &Driver{options: options}, nil
 }
 
 // onBranch returns the entry nearest the leaf that match accepts.
@@ -119,30 +104,6 @@ func onBranch(manager extensions.ReadonlySessionManager, match func(*session.Ses
 		entry = manager.GetEntry(*entry.ParentID)
 	}
 	return nil
-}
-
-// tail is the newest point this Orb session recorded in a native session.
-func (d *Driver) tail(native string) string {
-	at := ""
-	for _, entry := range d.options.Manager.GetEntries() {
-		var point checkpoint
-		if entry.CustomType == Name && json.Unmarshal(entry.Data, &point) == nil && point.Session == native {
-			at = point.At
-		}
-	}
-	return at
-}
-
-func (d *Driver) checkpoint() (checkpoint, error) {
-	var saved checkpoint
-	entry := onBranch(d.options.Manager, func(entry *session.SessionEntry) bool { return entry.CustomType == Name })
-	if entry == nil {
-		return saved, nil
-	}
-	if err := json.Unmarshal(entry.Data, &saved); err != nil {
-		return saved, fmt.Errorf("invalid Claude checkpoint: %w", err)
-	}
-	return saved, nil
 }
 
 // Loop owns the complete native turn. Orb queues are drained only between native
@@ -197,15 +158,21 @@ func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, _ engin
 }
 
 // host is one live native session. It serves every turn while the start
-// configuration and the branch point stay those it last recorded.
+// configuration stays the same and the conversation still ends where its last
+// turn did; anything else (another model's turn, a /tree move) starts a host
+// that resumes from the transcript Orb rebuilds.
 type host struct {
-	key    string
-	point  checkpoint
-	input  io.WriteCloser
-	mu     sync.Mutex
-	frames chan hostFrame
-	exited chan struct{}
-	kill   func() error
+	key  string
+	last string
+	// projects is where Claude keeps this conversation's transcript; mirrored
+	// holds the records Orb already has.
+	projects string
+	mirrored map[string]bool
+	input    io.WriteCloser
+	mu       sync.Mutex
+	frames   chan hostFrame
+	exited   chan struct{}
+	kill     func() error
 	// tasks outlives a turn: a background task may finish while a later one runs.
 	tasks map[string]*nativeTask
 }
@@ -230,6 +197,8 @@ type hostFrame struct {
 	Ruled       bool            `json:"ruled"`
 	Questions   json.RawMessage `json:"questions"`
 	Elicitation json.RawMessage `json:"elicitation"`
+	// Session is the native session a settled turn wrote to.
+	Session string `json:"session"`
 }
 
 func (h *host) write(value any) error {
@@ -304,15 +273,10 @@ func (d *Driver) Close() {
 
 func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config engine.AgentLoopConfig, emit engine.EventSink) error {
 	model := config.Model
-	saved, err := d.checkpoint()
-	if err != nil {
-		return err
-	}
 	content, err := nativeContent(ctx, prompts, config.ConvertToLLM)
 	if err != nil {
 		return err
 	}
-	id := d.options.Manager.GetSessionID()
 	start := map[string]any{"type": "start", "sdk": d.options.SDK, "claude": d.options.Claude, "cwd": d.options.Manager.GetCWD(), "model": model.ID, "permissionMode": nativeMode(d.options.Manager), "append": d.options.Context}
 	var info modelInfo
 	_ = json.Unmarshal(model.Compat, &info)
@@ -336,35 +300,41 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				return err
 			}
 			env = withConfigDir(env, dir)
-			// An account change restarts the host, which resumes the same native session.
+			// An account change restarts the host, which resumes the same conversation.
 			start["account"] = dir
 		}
 	}
 	key, _ := json.Marshal(start)
-	fork := saved.Owner != id || saved.At != d.tail(saved.Session)
-	// acquire reuses the live host, or spawns one when none serves this start.
+	last := lastMessage(d.options.Manager, len(prompts))
+	// acquire reuses the live host, or starts one on the transcript Orb rebuilds.
 	acquire := func() (h *host, reused bool, err error) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		h = d.host
-		if h != nil && (h.key != string(key) || h.point != saved || !h.alive()) {
+		if h != nil && (h.key != string(key) || h.last != last || !h.alive()) {
 			h.close()
 			h = nil
 		}
 		if h != nil {
 			return h, true, nil
 		}
-		// Continuing from the newest native point resumes in place. Any other point
-		// (a /tree move, a withdrawn prompt, a copied session) forks a native session
-		// cut exactly there, which also reaches history before a native compaction.
-		if saved.Session != "" {
-			start["resume"], start["fork"], start["at"] = saved.Session, fork, saved.At
+		configDir, _ := baseConfig(env)
+		projects := projectDir(configDir, d.options.Manager.GetCWD())
+		mirrored := map[string]bool{}
+		if records := rebuild(d.options.Manager, len(prompts)); len(records) > 0 {
+			start["resume"] = newUUID()
+			if err = writeTranscript(records, start["resume"].(string), projects); err != nil {
+				return nil, false, err
+			}
+			for _, record := range records {
+				mirrored[fmt.Sprint(record["uuid"])] = true
+			}
 		}
 		start["sessionUpdates"] = d.approved
 		if h, err = d.spawn(start, env); err != nil {
 			return nil, false, err
 		}
-		h.key = string(key)
+		h.key, h.projects, h.mirrored = string(key), projects, mirrored
 		d.host = h
 		return h, false, nil
 	}
@@ -374,7 +344,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		err = h.write(prompt)
 	}
 	if err != nil && reused {
-		// The idle host exited just as this prompt arrived; a fresh one resumes the session.
+		// The idle host exited just as this prompt arrived; a fresh one resumes.
 		d.Close()
 		if h, _, err = acquire(); err == nil {
 			err = h.write(prompt)
@@ -385,10 +355,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		return err
 	}
 
-	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, session: saved.Session, at: saved.At, prompt: prompt["uuid"].(string), tasks: h.tasks}
-	if start["fork"] == true {
-		translator.session = ""
-	}
+	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, tasks: h.tasks}
 	done, grace := ctx.Done(), (<-chan time.Time)(nil)
 	for {
 		select {
@@ -401,7 +368,10 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				return errors.New("claude SDK exited without a result; execution outcome is unknown")
 			}
 			if frame.Type == "settled" {
-				h.point = checkpoint{Owner: id, Session: translator.session, At: translator.at}
+				if err := mirror(d.options.Manager, h.projects, frame.Session, h.mirrored); err != nil {
+					return err
+				}
+				h.last = lastMessage(d.options.Manager, 0)
 				if ctx.Err() != nil {
 					return translator.abort()
 				}
@@ -451,8 +421,7 @@ func (d *Driver) steer(ctx context.Context, t *translation, h *host, config engi
 			return err
 		}
 	}
-	t.prompt = newUUID()
-	return h.write(map[string]any{"type": "prompt", "uuid": t.prompt, "content": content})
+	return h.write(map[string]any{"type": "prompt", "uuid": newUUID(), "content": content})
 }
 
 func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *translation, h *host, prompts engine.AgentMessages, config engine.AgentLoopConfig) error {
@@ -608,13 +577,10 @@ func (d *Driver) approve(ctx context.Context, tool, toolID, cwd string, args map
 // assistant record per content block; the raw stream of the same API message
 // is authoritative, so each API message becomes exactly one Orb message.
 type translation struct {
-	driver             *Driver
-	ctx                context.Context
-	emit               engine.EventSink
-	model, session, at string
-	// prompt is this turn's native prompt UUID, recorded once Claude answers it,
-	// so an interrupted turn still resumes with the prompt Orb shows.
-	prompt          string
+	driver          *Driver
+	ctx             context.Context
+	emit            engine.EventSink
+	model           string
 	partial         *ai.AssistantMessage // the API message being streamed
 	partialID       string
 	streamed        string      // the last streamed message.id
@@ -625,7 +591,6 @@ type translation struct {
 	last            *ai.AssistantMessage
 	results         []*ai.ToolResultMessage
 	result, errored bool
-	dirty           bool // a native point awaits its checkpoint entry
 	cancelled       bool // Orb asked to stop; replies still finishing end as aborted
 	stopped         bool // a reply already ended as aborted
 	answered        bool // tool results arrived, so steering can join the turn
@@ -660,24 +625,6 @@ type nativeMessage struct {
 	Stop      string `json:"stop_reason"`
 }
 
-// mark notes the native point the next Orb message corresponds to; flush writes it
-// just before that message, so a /tree move onto the message includes it.
-func (t *translation) mark(at string) {
-	if at != "" {
-		t.at = at
-	}
-	t.dirty = true
-}
-
-func (t *translation) flush() error {
-	if !t.dirty {
-		return nil
-	}
-	t.dirty = false
-	_, err := t.driver.options.Manager.AppendCustomEntry(Name, checkpoint{Owner: t.driver.options.Manager.GetSessionID(), Session: t.session, At: t.at})
-	return err
-}
-
 func (t *translation) event(raw json.RawMessage) error {
 	var e struct {
 		Type    string          `json:"type"`
@@ -701,9 +648,6 @@ func (t *translation) event(raw json.RawMessage) error {
 	if e.Parent != nil {
 		return nil
 	} // Native subagents retain their own transcripts.
-	if e.Session != "" && e.Subtype != "init" {
-		t.session = e.Session
-	}
 	switch e.Type {
 	case "rate_limit_event":
 		var event struct {
@@ -812,9 +756,6 @@ func (t *translation) event(raw json.RawMessage) error {
 				return t.notice("Claude task " + activity.Status + ": " + activity.Summary)
 			}
 		case "init":
-			if t.session != e.Session {
-				t.at = "" // A new or forked native session has its own UUIDs.
-			}
 			var metadata struct {
 				Session        string   `json:"session_id"`
 				Model          string   `json:"model"`
@@ -829,8 +770,6 @@ func (t *translation) event(raw json.RawMessage) error {
 			if _, err := t.driver.options.Manager.AppendCustomEntry(Name+".init", metadata); err != nil {
 				return err
 			}
-			t.session = e.Session
-			t.mark("")
 			return nil
 		}
 	case "tool_progress":
@@ -849,7 +788,6 @@ func (t *translation) event(raw json.RawMessage) error {
 		if err := json.Unmarshal(e.Message, &m); err != nil {
 			return err
 		}
-		t.mark(e.UUID)
 		if m.ID != "" && m.ID == t.partialID {
 			return nil
 		}
@@ -891,12 +829,6 @@ func (t *translation) event(raw json.RawMessage) error {
 		if json.Unmarshal(e.Message, &m) != nil {
 			return nil
 		}
-		if e.UUID != "" {
-			t.mark(e.UUID)
-			if err := t.flush(); err != nil {
-				return err
-			}
-		}
 		for _, block := range m.Content {
 			if block.Type != "tool_result" {
 				continue
@@ -917,9 +849,6 @@ func (t *translation) event(raw json.RawMessage) error {
 	case "result":
 		t.result = true
 		if err := t.finish(); err != nil {
-			return err
-		}
-		if err := t.flush(); err != nil {
 			return err
 		}
 		// A reply already rendered as an error is not reported twice.
@@ -1032,10 +961,6 @@ func (t *translation) begin(m *ai.AssistantMessage, id string) error {
 	if err := t.finish(); err != nil {
 		return err
 	}
-	if t.prompt != "" {
-		t.mark(t.prompt)
-		t.prompt = ""
-	}
 	if t.last != nil {
 		if err := t.endTurn(); err != nil {
 			return err
@@ -1077,9 +1002,6 @@ func (t *translation) finish() error {
 		m.StopReason, m.ErrorMessage = ai.StopReasonAborted, &reason
 	}
 	t.stopped = m.StopReason == ai.StopReasonAborted
-	if err := t.flush(); err != nil {
-		return err
-	}
 	if err := t.emit(t.ctx, engine.MessageEndEvent{Message: m}); err != nil {
 		return err
 	}
@@ -1136,7 +1058,6 @@ func (t *translation) abort() error {
 		return cause
 	}
 	if t.partial == nil {
-		t.prompt = "" // Nothing was answered, so the native prompt may not exist.
 		if err := t.begin(t.message(nativeMessage{}), ""); err != nil {
 			return err
 		}

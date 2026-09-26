@@ -350,7 +350,9 @@ primitives remain public without duplicating orchestration or making `engine` de
 ### Optional native session executors
 
 `engine.SessionLoop` is an optional whole-turn callback, selected at construction through
-`WithSessionLoop` or `AgentSessionOptions.SessionLoop`. The existing Agent still owns admission,
+`WithSessionLoop` or `AgentSessionOptions.SessionLoop`, or installed with `Agent.SetSessionLoop`
+for only the models it claims: other models keep Orb's loop, so one conversation moves between
+executors. The existing Agent still owns admission,
 execution identity, cancellation, queue storage, ordered subscriptions and state snapshots. The
 callback owns model/tool iteration and emits existing engine events. SessionRuntime skips its
 provider-auth preflight, retry and automatic compaction for these sessions; explicit Orb compaction
@@ -359,27 +361,28 @@ remain unchanged. This seam has two real implementations: Orb's existing loop an
 The optional `ContextUsage` callback on session options/config supplies executor telemetry to the
 existing context APIs and standard footer. Parsing native metadata remains the plugin’s job.
 
-`plugins/claudesessions/` owns the official SDK host, native session checkpoints, event translation,
-configuration and `/claude` management. Only CLI assembly imports it. Its embedded JavaScript runs
+`plugins/claudesessions/` owns the official SDK host, the transcript mirror, event translation,
+Claude accounts and configuration. Only CLI assembly imports it. Its embedded JavaScript runs
 on user-provided Node with `@anthropic-ai/claude-agent-sdk@0.3.280` and a user-installed, unmodified
 Claude executable. No Go dependency, vendor binary, SDK bundle or credential is embedded in Orb.
 Importing the package performs no I/O. The CLI supplies it as the default-off `claude-sessions`
-catalog row: `/claude`, its footer and the executor exist only once that plugin is enabled.
+catalog row: the Claude provider, its footer and the executor exist only once that plugin is enabled.
 
-Native Claude transcripts are authoritative for resume, tools and compaction. Orb stores its display
-projection and plugin-owned `claude-sessions` checkpoint entries in its normal session journal
-(SQLite in native CLI, unchanged caller-selected storage in the SDK). Native session IDs come from
-the SDK and are recorded in checkpoints, never directory-wide `continue`. Continuing from the newest
-recorded point resumes in place; any other point (a tree move, a withdrawn prompt, a copied session)
-forks a new native session cut there with the SDK's `forkSession`, which also reaches history
-before a native compaction, so two Orb branches never append to one native session. Prompts carry
-their own native UUID, so an interrupted turn resumes with the prompt Orb shows. The SDK emits one
+Orb holds the transcript. After each Claude turn the plugin copies Claude's conversation records
+from its local transcript into plugin-owned `claude-sessions.transcript` entries of the normal
+session journal. Whenever a native session must start (another model answered, a tree move, a
+withdrawn prompt, an account change, an exited host), it rebuilds the transcript from the branch:
+Claude's own records, and every other turn rewritten as plain messages with UUIDs derived from Orb
+entry IDs, so rebuilds chain identically. It writes that file where the CLI keeps transcripts and
+resumes it under a fresh native session ID, so Claude keeps its configuration and credentials.
+Native compaction lives in Claude's records; Orb's own compaction becomes a summary message. A
+Claude Code session opens in Orb the same way, imported as messages plus its records. The SDK emits one
 assistant record per content block; the raw stream of the same API message is authoritative, so
 each API message is one Orb message with its final usage. Native errors
 and list-price accounting remain native metadata, not asserted subscription invoices. Each Claude
 session owns one live SDK query that serves consecutive turns; a turn settles once its result has no
 queued sends and no non-ambient background task remains. The host restarts only when the model,
-effort, permission mode or branch point changes, exits after ten idle minutes, and ends with its
+effort, permission mode or account changes, or the conversation no longer ends where its last turn did, exits after ten idle minutes, and ends with its
 runtime. Independent instances have independent drivers. Steering joins the running native turn
 after its tool results, as in Orb's loop; follow-ups start the next turn. Native lifecycle/progress events become existing engine
 messages and tool updates; MCP forms and URL confirmations become shared execution-bound questions.
@@ -397,8 +400,9 @@ and authorized controllers race to provide the first valid answer. Bridge descri
 and routes `input.reply` through the existing durable operation ledger and session/execution fences;
 its new `instance.input.reply` grant is explicit. Native model discovery uses the official SDK's
 `supportedModels()` control without a prompt or persisted session. The plugin adapts names, resolved
-IDs and effort capabilities into Orb's existing model picker; no provider registry or token endpoint
-is impersonated. `session.model` uses generic model IDs and optional thinking levels, resolves only
+IDs and effort capabilities into an ordinary extension provider, so Claude's models and accounts sit
+in the existing pickers; an account is a Claude Code configuration directory, resolved through the
+auth pipeline, and no token endpoint is impersonated. `session.model` uses generic model IDs and optional thinking levels, resolves only
 the runtime's advertised catalog, and requires an idle revision-fenced session-management grant.
 Descriptions include display-only model metadata, never model headers or credentials. No Claude event, tool name, account or session type
 enters Bridge. Disconnect does not answer, cancel or broaden a pending permission request.

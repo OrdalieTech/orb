@@ -2218,9 +2218,7 @@ func (mode *InteractiveMode) handleModelCommand(args string) {
 	if args != "" {
 		for _, model := range mode.session.AvailableModels() {
 			if fmt.Sprintf("%s/%s", model.Provider, model.ID) == args {
-				if err := mode.session.SetModel(context.Background(), model); errors.Is(err, agent.ErrNewConversation) {
-					go mode.newConversationWith(context.Background(), model)
-				} else if err != nil {
+				if err := mode.session.SetModel(context.Background(), model); err != nil {
 					mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 				} else {
 					mode.showStatusMessage(fmt.Sprintf("Model set to %s/%s", model.Provider, model.ID))
@@ -2272,11 +2270,6 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 			if ctx.Err() != nil {
 				return
 			}
-			if errors.Is(err, agent.ErrNewConversation) {
-				// Replacing the session waits for this selector to finish.
-				go mode.newConversationWith(context.Background(), selected)
-				return
-			}
 			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
 		} else {
 			prefix := "Model"
@@ -2288,41 +2281,6 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 		}
 		mode.ui.RequestRender()
 	}()
-}
-
-// newConversationWith starts a conversation on a model that runs on another
-// executor, such as Claude from an Orb conversation. Its history cannot carry
-// over, so a conversation that has one asks first; it stays in /resume.
-func (mode *InteractiveMode) newConversationWith(ctx context.Context, model ai.Model) {
-	host, ok := mode.options.Host.(interface {
-		NewConversationWith(context.Context, ai.Model) error
-	})
-	if !ok {
-		mode.showError(agent.ErrNewConversation)
-		return
-	}
-	prompted := slices.ContainsFunc(mode.session.State().Messages, func(message engine.AgentMessage) bool {
-		switch message.(type) {
-		case *ai.UserMessage, ai.UserMessage:
-			return true
-		}
-		return false
-	})
-	if prompted {
-		name := model.Name
-		if name == "" {
-			name = model.ID
-		}
-		confirmed, err := mode.interactiveUI.Confirm(ctx, "Start a new conversation?", name+" runs in its own conversation. This one stays in /resume.", nil)
-		if err != nil || !confirmed {
-			return
-		}
-	}
-	if err := host.NewConversationWith(ctx, model); err != nil {
-		mode.showError(err)
-		return
-	}
-	mode.showStatusMessage(fmt.Sprintf("New conversation · %s/%s", model.Provider, model.ID))
 }
 
 func (mode *InteractiveMode) cancelModelSelector() {

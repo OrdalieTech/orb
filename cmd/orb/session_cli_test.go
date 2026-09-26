@@ -1001,3 +1001,14 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 		t.Fatal("reset lost delivery tombstone", err)
 	}
 }
+
+// A session ID after --resume opens that session; --resume alone still picks one.
+func TestResumeTakesAnOptionalSessionID(t *testing.T) {
+	id := "0b7a4a1e-1111-4222-8333-444455556666"
+	if args := ParseArgs([]string{"--resume", id}); args.Resume || args.Session == nil || *args.Session != id {
+		t.Fatalf("--resume <id> = %+v", args)
+	}
+	if args := ParseArgs([]string{"-r", "fix the bug"}); !args.Resume || args.Session != nil {
+		t.Fatalf("-r with a prompt = %+v", args)
+	}
+}

@@ -2,7 +2,6 @@ package modes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -10,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OrdalieTech/orb/agent"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -970,9 +968,7 @@ func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host Int
 	if current != nil {
 		for _, model := range available {
 			if string(model.Provider) == account.Provider && model.ID == current.ID {
-				if err := mode.session.SetModel(ctx, model); errors.Is(err, agent.ErrNewConversation) {
-					mode.newConversationWith(ctx, model)
-				} else if err != nil {
+				if err := mode.session.SetModel(ctx, model); err != nil {
 					mode.showError(err)
 				}
 				mode.ui.RequestRender()

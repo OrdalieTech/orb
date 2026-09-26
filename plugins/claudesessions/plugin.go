@@ -40,38 +40,6 @@ func Model(provider, model *string, settings *config.SettingsManager) *ai.Model 
 	return &ai.Model{ID: id, Name: "Claude · " + id, API: Name, Provider: Name, Input: ai.InputModalities{"text", "image"}}
 }
 
-// RestoreSelection retains the native executor even when a CLI host carries
-// startup defaults for another provider. An executor change requires a new session.
-func RestoreSelection(state session.SessionContext, provider, model **string, branch ...session.SessionEntry) {
-	if state.Model == nil {
-		return
-	}
-	if state.Model.Provider != Name && (*provider == nil || **provider != Name) {
-		if len(state.Messages) > 0 {
-			return
-		}
-		leaving := false
-		for _, entry := range branch {
-			if entry.CustomType == Name+".exit" {
-				leaving = true
-				break
-			}
-		}
-		if !leaving {
-			return
-		}
-	}
-	if state.Model.Provider == Name && len(state.Messages) > 0 && *provider != nil && **provider == Name && *model != nil {
-		return
-	}
-	if state.Model.Provider == "unknown" && state.Model.ModelID == "unknown" {
-		*provider, *model = nil, nil
-		return
-	}
-	*provider = ptr(state.Model.Provider)
-	*model = ptr(state.Model.ModelID)
-}
-
 // Factory rebuilds the plugin attachment for every SDK session replacement.
 // The caller supplies storage in AgentSessionOptions and owns runtime disposal.
 func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
@@ -155,16 +123,22 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 	}
 }
 
-// Configure composes a driver into the same runtime configuration used by all
-// Orb hosts. bind must run before exposing the created runtime to controllers.
+// Configure lets Claude run the turns of Claude models in the runtime every
+// other model shares: its loop takes those turns, Orb's own loop the rest, and
+// one conversation moves between them. bind must run before the runtime is exposed.
 func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (bind func(*agent.SessionRuntime), err error) {
-	state := cfg.Agent.State()
-	if state.Model == nil || state.Model.Provider != Name {
-		return func(*agent.SessionRuntime) {}, nil
+	none := func(*agent.SessionRuntime) {}
+	if cfg.Settings == nil || !cfg.Settings.GetPlugins()[Name] {
+		return none, nil
 	}
+	claude := func(model *ai.Model) bool { return model != nil && model.Provider == Name }
 	options, err := configuredOptions(context.Background(), cfg.Settings, agentDir, env)
 	if err != nil {
-		return nil, err
+		if claude(cfg.Agent.State().Model) {
+			return nil, err
+		}
+		// ponytail: Orb models keep working; picking Claude reports the setup error.
+		return none, nil
 	}
 	options.Manager = cfg.SessionManager
 	options.Context = orbContext(cfg.SystemPromptOptions)
@@ -177,23 +151,20 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	if err != nil {
 		return nil, err
 	}
-	models, _ := discoverModels(context.Background(), options, options.Manager.GetCWD())
-	state.Model = selectedModel(models, state.Model.ID)
-	models = includeSelected(models, state.Model)
-	state.Tools = nil
-	cfg.Agent = engine.NewAgent(nil, engine.WithInitialState(state), engine.WithSessionLoop(driver.Loop))
-	cfg.GetAPIKey, cfg.GetRequestAuth, cfg.GetModelHeaders = nil, nil, nil
-	cfg.ContextUsage = func() *harness.ContextUsage { return nativeContextUsage(options.Manager) }
-	cfg.BaseTools = make([]engine.AgentTool, 0, len(nativeToolNames))
+	cfg.Agent.SetSessionLoop(claude, driver.Loop)
+	cfg.ContextUsage = func() *harness.ContextUsage {
+		if claude(cfg.Agent.State().Model) {
+			return nativeContextUsage(options.Manager)
+		}
+		if runtime == nil {
+			return nil
+		}
+		return runtime.EstimateContextUsage()
+	}
+	// Claude's tools render in the transcript; they stay inactive, so only Claude calls them.
 	for _, name := range nativeToolNames {
 		cfg.BaseTools = append(cfg.BaseTools, nativeTool{name, options.Manager.GetCWD()})
 	}
-	cfg.InitialActiveToolNames = nil
-	names := append([]string{}, nativeToolNames...)
-	cfg.AllowedToolNames = &names
-	cfg.RebuildBaseTools = nil
-	cfg.AvailableModels = withOtherModels(models, cfg.AvailableModels)
-	cfg.ScopedModels = nil
 	return func(s *agent.SessionRuntime) { runtime = s; closeOnDispose(s, driver) }, nil
 }
 
@@ -579,149 +550,6 @@ func Management(settings *config.SettingsManager, agentDir string, env []string)
 		api.RegisterMessageRenderer(Name+".activity", func(message extensions.CustomMessage, _ extensions.MessageRenderOptions, theme extensions.Theme) extensions.Component {
 			return notice{fmt.Sprint(message.Content), theme}
 		})
-		shortcuts := []struct{ name, action string }{
-			{"models", "Model"}, {"usage", "Usage"}, {"new", "New Claude session"},
-			{"exit", "Switch to Orb"}, {"plan", "Plan mode"}, {"mode", "Permission mode"},
-			{"normal", "Leave plan mode"}, {"compact", "Compact conversation"},
-		}
-		handle := func(ctx context.Context, args string, command extensions.CommandContext) error {
-			if !command.HasUI() {
-				return errors.New("/claude needs interactive mode; use --provider claude-sessions for headless sessions")
-			}
-			choice := ""
-			for _, shortcut := range shortcuts {
-				if strings.TrimSpace(args) == shortcut.name {
-					choice = shortcut.action
-					break
-				}
-			}
-			if strings.TrimSpace(args) != "" && choice == "" {
-				return errors.New("unknown Claude action; type /claude: to see available shortcuts")
-			}
-			actions := []string{"New Claude session", "Model"}
-			if current := command.Model(); current != nil && current.Provider == Name {
-				actions = append(actions, "Usage", "Permission mode", "Compact conversation", "Switch to Orb")
-			}
-			var err error
-			if choice == "" {
-				var ok bool
-				choice, ok, err = command.UI().Select(ctx, "Claude Sessions", actions, nil)
-				if err != nil || !ok {
-					return err
-				}
-			}
-			if choice == "Plan mode" || choice == "Leave plan mode" || choice == "Permission mode" || choice == "Compact conversation" {
-				if command.Model() == nil || command.Model().Provider != Name {
-					return errors.New("start a Claude session first")
-				}
-				if !command.IsIdle() {
-					return errors.New("wait for Claude to finish or cancel the current work first")
-				}
-				if choice == "Compact conversation" {
-					return api.SendUserMessage(ctx, ai.NewUserText("/compact"), nil)
-				}
-				mode := map[string]string{"Plan mode": "plan", "Leave plan mode": "default"}[choice]
-				if choice == "Permission mode" {
-					selected, ok, err := command.UI().Select(ctx, "Claude permission mode", nativeModes[:], nil)
-					if err != nil || !ok {
-						return err
-					}
-					mode = selected
-				}
-				if err := api.AppendEntry(ctx, Name+".mode", mode); err != nil {
-					return err
-				}
-				command.UI().Notify("Claude mode: "+mode, extensions.NotifyInfo)
-				text := limitsStatus(command.SessionManager(), time.Now())
-				command.UI().SetStatus(Name+".limits", &text)
-				return nil
-			}
-			switch choice {
-			case "Usage":
-				return showUsage(ctx, command)
-			case "Switch to Orb":
-				values := map[string]string{}
-				for _, item := range env {
-					if key, value, ok := strings.Cut(item, "="); ok {
-						values[key] = value
-					}
-				}
-				models, e := command.ModelRegistry().AvailableWithError(values)
-				if e != nil {
-					return e
-				}
-				model := agent.PreferredAvailableModel(models)
-				for _, candidate := range models {
-					if string(candidate.Provider) == settings.GetDefaultProvider() && candidate.ID == settings.GetDefaultModel() {
-						copy := candidate
-						model = &copy
-						break
-					}
-				}
-				if model == nil {
-					model = &ai.Model{Provider: "unknown", ID: "unknown"}
-				}
-				_, e = command.NewSession(ctx, &extensions.NewSessionOptions{Prepare: func(sm *session.SessionManager) error {
-					if _, e := sm.AppendCustomEntry(Name+".exit", nil); e != nil {
-						return e
-					}
-					_, e := sm.AppendModelChange(string(model.Provider), model.ID)
-					return e
-				}})
-				if e != nil {
-					return e
-				}
-			case "New Claude session":
-				command.UI().Notify("Preparing Claude…", extensions.NotifyInfo)
-				if _, err := configuredOptions(ctx, settings, agentDir, env); err != nil {
-					return err
-				}
-				model := Model(ptr(Name), nil, settings)
-				_, err = command.NewSession(ctx, &extensions.NewSessionOptions{Prepare: func(sm *session.SessionManager) error { _, e := sm.AppendModelChange(Name, model.ID); return e }})
-			case "Model":
-				command.UI().Notify("Loading Claude models…", extensions.NotifyInfo)
-				options, e := configuredOptions(ctx, settings, agentDir, env)
-				if e != nil {
-					return e
-				}
-				models, e := discoverModels(ctx, options, command.CWD())
-				if e != nil {
-					return e
-				}
-				labels := make([]string, len(models))
-				for i, model := range models {
-					labels[i] = model.Name
-				}
-				value, ok, e := command.UI().Select(ctx, "Claude model for new sessions", labels, nil)
-				if e != nil {
-					return e
-				}
-				if ok {
-					for i, label := range labels {
-						if label == value {
-							settings.SetPluginSetting(Name, "model", models[i].ID)
-							break
-						}
-					}
-				}
-			}
-			if err != nil {
-				return err
-			}
-			for _, failure := range settings.DrainErrors() {
-				return failure
-			}
-			return nil
-		}
-		api.RegisterCommand("claude", extensions.Command{SettingsLabel: "Claude Sessions", Description: "Claude Sessions · start or configure", Handler: handle})
-		for _, shortcut := range shortcuts {
-			api.RegisterCommand("claude:"+shortcut.name, extensions.Command{Description: "Claude · " + shortcut.action, Handler: func(ctx context.Context, args string, command extensions.CommandContext) error {
-				if strings.TrimSpace(args) != "" {
-					return errors.New("this shortcut takes no arguments")
-				}
-				return handle(ctx, shortcut.name, command)
-			}})
-		}
 		return nil
 	}
 }
@@ -984,11 +812,6 @@ func usageRows(manager extensions.ReadonlySessionManager, now time.Time) []strin
 		updated = "Stale reading · send a message to update"
 	}
 	return append(rows, updated, "Only limits reported by Claude are shown")
-}
-
-func showUsage(ctx context.Context, command extensions.CommandContext) error {
-	_, _, err := command.UI().Select(ctx, "Claude usage", usageRows(command.SessionManager(), time.Now()), nil)
-	return err
 }
 
 // nativeModes are Claude's permission modes Orb offers; bypassPermissions stays native-only.
