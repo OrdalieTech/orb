@@ -117,6 +117,8 @@ export function query({prompt,options:o}) {
  {value:'sonnet',resolvedModel:'claude-sonnet-current',displayName:'Sonnet'},
  {value:'opus',resolvedModel:'claude-opus-current',displayName:'Opus',supportsEffort:true,supportedEffortLevels:['low','high','max'],supportsAdaptiveThinking:true}
  ];
+ gen.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET=async()=>({subscription_type:'max',rate_limits_available:true,
+  rate_limits:{five_hour:{utilization:7,resets_at:'2026-09-26T13:00:00.402302+00:00'},seven_day:{utilization:68,resets_at:null},seven_day_opus:null,extra_usage:{is_enabled:false,utilization:null}}});
  gen.close=()=>abort.abort();gen.interrupt=async()=>abort.abort();
  return gen;
 }`

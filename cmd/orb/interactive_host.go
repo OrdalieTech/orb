@@ -1312,6 +1312,18 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 	if err != nil {
 		return usage.Snapshot{}, err
 	}
+	if provider == claudesessions.Name {
+		host.mu.Lock()
+		settings := host.inputs.Settings
+		host.mu.Unlock()
+		var credential *aiauth.Credential
+		if id != "ambient" {
+			if credential, err = store.View(provider, id).Read(ctx, provider); err != nil {
+				return usage.Snapshot{}, err
+			}
+		}
+		return claudesessions.Usage(ctx, settings, host.agentDir, os.Environ(), credential)
+	}
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
 	runtime := host.inputs.RuntimeAuth

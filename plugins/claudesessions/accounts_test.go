@@ -256,3 +256,33 @@ func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
 		t.Fatalf("Claude lost its own turn or the Orb turn after it: %s", got)
 	}
 }
+
+// An account's plan limits read as the other providers' usage windows.
+func TestClaudeAccountUsage(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("Node required for SDK host test", err)
+	}
+	dir := t.TempDir()
+	sdk, cli := filepath.Join(dir, "sdk.mjs"), filepath.Join(dir, "claude")
+	if err := os.WriteFile(sdk, []byte(fakeSDK), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(dir, config.WithAgentDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{"sdk": sdk, "claude": cli, "node": node} {
+		settings.SetPluginSetting(Name, key, value)
+	}
+	snapshot, err := Usage(t.Context(), settings, dir, []string{"PATH=" + filepath.Dir(node) + ":/usr/bin:/bin"}, nil)
+	if err != nil || snapshot.Plan != "max" || len(snapshot.Windows) != 2 {
+		t.Fatalf("usage = %+v, %v", snapshot, err)
+	}
+	if w := snapshot.Windows[0]; w.Name != "5h" || w.Remaining != 93 || w.ResetsAt.IsZero() || snapshot.Windows[1].Remaining != 32 {
+		t.Fatalf("windows = %+v", snapshot.Windows)
+	}
+}

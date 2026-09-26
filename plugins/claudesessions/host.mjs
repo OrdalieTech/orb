@@ -105,17 +105,23 @@ async function run(config) {
     await send({ type: 'complete', text });
     return;
   }
-  if (config.catalog) {
+  // A control request runs no model turn and writes no transcript.
+  async function control(ask) {
     options.persistSession = false;
     let release;
     const done = new Promise(resolve => { release = resolve; });
     async function* empty() { await done; }
     try {
       active = query({ prompt: empty(), options });
-      await send({ type: 'catalog', models: await active.supportedModels() });
+      await send(await ask(active));
     } finally { release(); active?.close(); active = undefined; }
-    return;
   }
+  if (config.catalog) return control(async q => ({ type: 'catalog', models: await q.supportedModels() }));
+  // ponytail: the SDK marks this experimental; the pinned version keeps it, and a failure shows usage as unavailable.
+  if (config.usage) return control(async q => {
+    const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
+    return { type: 'usage', plan: usage.subscription_type, limits: usage.rate_limits_available ? usage.rate_limits : null };
+  });
   // Orb writes the transcript a resumed session starts from, and reads back
   // what Claude wrote once each turn settles.
   if (config.resume) options.resume = config.resume;

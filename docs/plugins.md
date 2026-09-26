@@ -179,7 +179,8 @@ configuration directory under `<agent-dir>/plugins/claude-sessions/accounts`; th
 credential and Orb never reads it. Everything but the sign-in (settings, skills, agents, hooks,
 MCP servers) is shared with your own Claude configuration, and switching accounts, even in the
 middle of a conversation, continues it. Accounts are named, switched, reconnected
-and disconnected like any provider's. Existing native API-key/cloud authentication is also
+and disconnected like any provider's, and each shows its plan limits (5-hour, 7-day, per model)
+under **Usage and reset times** and in the account switcher, as Codex and OpenCode accounts do. Existing native API-key/cloud authentication is also
 available.
 
 Claude's models are listed in `/model` beside every other provider's, and one conversation moves
