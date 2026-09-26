@@ -125,7 +125,7 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 		journal.IsPersistent() && journal.Metadata().Path == "" && len(manager.fileEntries) > 0 {
 		entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
 		for _, entry := range entries {
-			converted := sessionEntryFromHarness(entry)
+			converted := *cloneEntry(manager.parsedEntry(entry))
 			record := newEntryRecord(converted)
 			if converted.object != nil {
 				record = &FileEntry{Type: converted.Type, Entry: &converted, object: converted.object}
@@ -181,7 +181,7 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 	manager.fileEntries = make([]*FileEntry, 1, len(entries)+1)
 	manager.fileEntries[0] = header
 	for _, entry := range entries {
-		converted := sessionEntryFromHarness(entry)
+		converted := *cloneEntry(manager.parsedEntry(entry))
 		if converted.object != nil {
 			manager.fileEntries = append(manager.fileEntries, &FileEntry{
 				Type: converted.Type, Entry: &converted, object: converted.object,

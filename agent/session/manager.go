@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -147,6 +148,8 @@ type SessionManager struct {
 	agentDir           string
 	harnessStorage     harness.SessionStorage
 	harnessRepo        harness.SessionRepo
+	parsedMu           sync.Mutex
+	parsed             map[string]*SessionEntry
 	revision           uint64
 	aggregate          AggregateStats
 }
@@ -972,12 +975,8 @@ func (manager *SessionManager) GetLeafEntry() *SessionEntry {
 		if err != nil || leaf == nil {
 			return nil
 		}
-		entry, ok := manager.harnessStorage.Entry(*leaf)
-		if !ok || entry == nil {
-			return nil
-		}
-		converted := sessionEntryFromHarness(*entry)
-		return &converted
+		entry, _ := manager.harnessEntry(*leaf)
+		return cloneEntry(entry)
 	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
@@ -989,12 +988,8 @@ func (manager *SessionManager) GetLeafEntry() *SessionEntry {
 
 func (manager *SessionManager) GetEntry(id string) *SessionEntry {
 	if manager.harnessStorage != nil {
-		entry, ok := manager.harnessStorage.Entry(id)
-		if !ok || entry == nil {
-			return nil
-		}
-		converted := sessionEntryFromHarness(*entry)
-		return &converted
+		entry, _ := manager.harnessEntry(id)
+		return cloneEntry(entry)
 	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
@@ -1023,7 +1018,7 @@ func (manager *SessionManager) GetEntries() []SessionEntry {
 		entries := manager.harnessStorage.Entries()
 		converted := make([]SessionEntry, len(entries))
 		for index := range entries {
-			converted[index] = sessionEntryFromHarness(entries[index])
+			converted[index] = *cloneEntry(manager.parsedEntry(entries[index]))
 		}
 		return converted
 	}
@@ -1155,39 +1150,55 @@ func (manager *SessionManager) GetBranch(fromID ...string) []SessionEntry {
 				return nil
 			}
 		}
-		entries := harnessPathToRoot(manager.harnessStorage, leaf)
-		converted := make([]SessionEntry, len(entries))
-		for index := range entries {
-			converted[index] = sessionEntryFromHarness(entries[index])
+		path := []SessionEntry{}
+		for id := leaf; id != nil && *id != ""; {
+			entry, ok := manager.harnessEntry(*id)
+			if !ok {
+				return []SessionEntry{}
+			}
+			path = append(path, *cloneEntry(entry))
+			id = entry.ParentID
 		}
-		return converted
+		slices.Reverse(path)
+		return path
 	}
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return manager.getBranchLocked(fromID...)
 }
 
-func harnessPathToRoot(storage harness.SessionStorage, leafID *string) []harness.SessionTreeEntry {
-	if leafID == nil {
-		return []harness.SessionTreeEntry{}
+// harnessEntry parses a stored entry once: harness entries never change after
+// append, and parsing a long transcript again on every read made reads O(history).
+func (manager *SessionManager) harnessEntry(id string) (*SessionEntry, bool) {
+	manager.parsedMu.Lock()
+	cached, ok := manager.parsed[id]
+	manager.parsedMu.Unlock()
+	if ok {
+		return cached, true
 	}
-	path := make([]harness.SessionTreeEntry, 0)
-	currentID := *leafID
-	for {
-		entry, ok := storage.Entry(currentID)
-		if !ok {
-			return nil
-		}
-		path = append(path, *entry)
-		if entry.ParentID == nil || *entry.ParentID == "" {
-			break
-		}
-		currentID = *entry.ParentID
+	entry, ok := manager.harnessStorage.Entry(id)
+	if !ok || entry == nil {
+		return nil, false
 	}
-	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
-		path[left], path[right] = path[right], path[left]
+	return manager.parsedEntry(*entry), true
+}
+
+// parsedEntry returns the shared parse of entry; callers clone it before handing it out.
+func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *SessionEntry {
+	manager.parsedMu.Lock()
+	cached, ok := manager.parsed[entry.ID]
+	manager.parsedMu.Unlock()
+	if ok {
+		return cached
 	}
-	return path
+	converted := sessionEntryFromHarness(entry)
+	manager.parsedMu.Lock()
+	defer manager.parsedMu.Unlock()
+	if manager.parsed == nil {
+		manager.parsed = map[string]*SessionEntry{}
+	}
+	manager.parsed[entry.ID] = &converted
+	return &converted
 }
 
 func (manager *SessionManager) GetLatestCompactionTimestamp() (string, bool) {

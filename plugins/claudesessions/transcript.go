@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -272,12 +273,25 @@ func writeTranscript(records []map[string]any, sessionID, projects string) error
 }
 
 // mirror copies the conversation records Claude wrote to session since the
-// last copy into the Orb journal, so Orb can rebuild them later.
-func mirror(manager *session.SessionManager, projects, sessionID string, mirrored map[string]bool) error {
-	data, err := os.ReadFile(filepath.Join(projects, sessionID+".jsonl"))
+// last copy into the Orb journal, so Orb can rebuild them later. read holds how
+// far each native transcript was read: it only grows, so a turn reads its own tail.
+func mirror(manager *session.SessionManager, projects, sessionID string, mirrored map[string]bool, read map[string]int64) error {
+	file, err := os.Open(filepath.Join(projects, sessionID+".jsonl"))
 	if err != nil || sessionID == "" {
 		return nil //nolint:nilerr // ponytail: a turn Claude did not record has nothing to mirror.
 	}
+	defer func() { _ = file.Close() }()
+	// A rewritten transcript is read again; mirrored keeps records from repeating.
+	if info, err := file.Stat(); err == nil && info.Size() < read[sessionID] {
+		read[sessionID] = 0
+	}
+	data, err := io.ReadAll(io.NewSectionReader(file, read[sessionID], 1<<62))
+	if err != nil {
+		return err
+	}
+	// A line Claude is still writing waits for the next turn.
+	data = data[:bytes.LastIndexByte(data, '\n')+1]
+	read[sessionID] += int64(len(data))
 	var records []json.RawMessage
 	for line := range bytes.SplitSeq(data, []byte("\n")) {
 		var record struct {

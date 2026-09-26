@@ -118,7 +118,8 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 		return nil, err
 	}
 	// FULL commits on slow disks can leave another process waiting beyond five seconds.
-	q := url.Values{"_pragma": {"foreign_keys(ON)", "synchronous(FULL)", "busy_timeout(30000)"}, "_txlock": {"immediate"}}
+	// The WAL otherwise keeps the size of its largest transaction (a large import) for good.
+	q := url.Values{"_pragma": {"foreign_keys(ON)", "synchronous(FULL)", "busy_timeout(30000)", "journal_size_limit(67108864)"}, "_txlock": {"immediate"}}
 	handle, err := sql.Open("sqlite", fileURI(path, q.Encode()))
 	if err != nil {
 		return nil, err
