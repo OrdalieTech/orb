@@ -8,6 +8,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 func TestTurnFooterClosesEveryTurn(t *testing.T) {
@@ -42,5 +43,16 @@ func TestFormatTurnDuration(t *testing.T) {
 		if got := formatTurnDuration(elapsed); got != want {
 			t.Errorf("formatTurnDuration(%s) = %q, want %q", elapsed, got, want)
 		}
+	}
+}
+
+// A failed compaction says why instead of leaving the transcript unchanged in silence.
+func TestCompactionFailureIsShown(t *testing.T) {
+	mode := newPendingToolMode(t, nil)
+	mode.status = &tui.Container{}
+	message := "Compaction failed: Nothing to compact (session too small)"
+	mode.handleEvent(agent.CompactionEndEvent{Reason: "manual", ErrorMessage: &message})
+	if rendered := renderChatText(t, mode); !strings.Contains(rendered, message) {
+		t.Fatalf("compaction failure not shown:\n%s", rendered)
 	}
 }
