@@ -123,6 +123,15 @@ func rebuild(manager extensions.ReadonlySessionManager, skip int) []map[string]a
 		}
 	}
 	flush()
+	// Claude reads the chain back from the last record: a parent missing from
+	// the rebuild (a record an older Orb did not mirror) links to the one before.
+	present := map[any]bool{}
+	for i, record := range t.records {
+		if parent, _ := record["parentUuid"].(string); parent != "" && !present[parent] && i > 0 {
+			record["parentUuid"] = t.records[i-1]["uuid"]
+		}
+		present[record["uuid"]] = true
+	}
 	return t.records
 }
 
