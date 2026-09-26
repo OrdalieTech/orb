@@ -358,8 +358,19 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 
 	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, tasks: h.tasks}
 	done, grace := ctx.Done(), (<-chan time.Time)(nil)
+	// While Claude waits on its background tasks no tool result comes to carry
+	// steering, so messages queued meanwhile are handed over as they arrive.
+	poll := time.NewTicker(500 * time.Millisecond)
+	defer poll.Stop()
 	for {
 		select {
+		case <-poll.C:
+			if translator.idle && ctx.Err() == nil {
+				if err := d.steer(ctx, &translator, h, config); err != nil {
+					d.Close()
+					return err
+				}
+			}
 		case frame, open := <-h.frames:
 			if !open {
 				d.Close()
@@ -595,6 +606,7 @@ type translation struct {
 	cancelled       bool // Orb asked to stop; replies still finishing end as aborted
 	stopped         bool // a reply already ended as aborted
 	answered        bool // tool results arrived, so steering can join the turn
+	idle            bool // Claude's reply ended; the turn waits on native tasks
 	progress        map[string]int
 	tasks           map[string]*nativeTask
 }
@@ -648,6 +660,9 @@ func (t *translation) event(raw json.RawMessage) error {
 	if e.Parent != nil {
 		return nil
 	} // Native subagents retain their own transcripts.
+	if e.Type == "result" || e.Type == "stream_event" || e.Type == "assistant" || e.Type == "user" {
+		t.idle = e.Type == "result"
+	}
 	switch e.Type {
 	case "rate_limit_event":
 		var event struct {

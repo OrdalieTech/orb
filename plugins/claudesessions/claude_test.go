@@ -63,6 +63,19 @@ export function query({prompt,options:o}) {
    yield {type:'assistant',uuid:id+'-stray',session_id:id,message:{model:o.model,content:[{type:'text',text:'No response requested.'}],usage:{input_tokens:1,output_tokens:1}}};
    yield {type:'result',subtype:'success',session_id:id};
   }
+  if(JSON.stringify(p.message.content).includes('task-fixture')) {
+   const say=(u,text)=>({type:'assistant',uuid:id+u+turn,session_id:id,message:{model:o.model,content:[{type:'text',text}],usage:{input_tokens:1,output_tokens:1}}});
+   yield {type:'system',subtype:'task_started',task_id:'job',is_backgrounded:true,session_id:id};
+   yield say('-w','waiting');
+   yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};
+   // Claude idles on its task; a message sent meanwhile starts a turn of its own.
+   const {value:m}=await next();
+   yield say('-s','steered '+JSON.stringify(m.message.content));
+   yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[m.uuid]};
+   yield {type:'system',subtype:'task_notification',task_id:'job',session_id:id};
+   yield say('-n','task done');
+   yield {type:'result',subtype:'success',session_id:id};continue;
+  }
   if(JSON.stringify(p.message.content).includes('plain-fixture')) {
    const text=JSON.stringify({read});
    yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text}],usage:{input_tokens:10,output_tokens:4}}};
@@ -1767,5 +1780,38 @@ func TestNativeTurnBeforePromptDoesNotEndIt(t *testing.T) {
 	raw, _ := json.Marshal(messages[len(messages)-1])
 	if !strings.Contains(string(raw), `\"read\"`) {
 		t.Fatalf("turn ended before Claude answered: %s", raw)
+	}
+}
+
+// A message sent while Claude waits on its background task reaches it at once,
+// and the turn still ends only after Claude read the task's notification.
+func TestSteeringReachesClaudeWaitingOnATask(t *testing.T) {
+	host, _ := fixture(t)
+	s := host.Session()
+	done := make(chan error, 1)
+	go func() { done <- s.Prompt(context.Background(), "task-fixture") }()
+	transcript := func() string {
+		raw, _ := json.Marshal(s.State().Messages)
+		return string(raw)
+	}
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(transcript(), "waiting"); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("Claude never answered")
+		}
+	}
+	if err := s.Steer("meanwhile"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("steering never reached Claude waiting on its task")
+	}
+	got := transcript()
+	if !strings.Contains(got, "steered") || !strings.Contains(got, "meanwhile") || strings.LastIndex(got, "task done") < strings.LastIndex(got, "steered") {
+		t.Fatalf("transcript = %s", got)
 	}
 }
