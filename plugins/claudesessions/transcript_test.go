@@ -134,3 +134,22 @@ func TestFailedResultShowsAsErrorReply(t *testing.T) {
 		t.Fatalf("replies = %#v", replies)
 	}
 }
+
+// A record whose parent is missing from the rebuild links to the record
+// before it, so Claude reads the whole chain back.
+func TestRebuildRepairsMissingParents(t *testing.T) {
+	manager, err := session.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := []map[string]any{
+		{"type": "user", "uuid": "u1", "parentUuid": nil, "message": map[string]any{"role": "user", "content": "one"}},
+		{"type": "assistant", "uuid": "a1", "parentUuid": "attachment-not-mirrored", "message": map[string]any{"role": "assistant", "content": []any{}}},
+	}
+	if _, err := manager.AppendCustomEntry(transcriptEntry, records); err != nil {
+		t.Fatal(err)
+	}
+	if got := rebuild(manager, 0); len(got) != 2 || got[1]["parentUuid"] != "u1" {
+		t.Fatalf("records = %#v", got)
+	}
+}
