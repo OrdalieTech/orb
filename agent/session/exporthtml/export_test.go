@@ -220,9 +220,9 @@ func TestExportPathNormalizationAndDefaultNames(t *testing.T) {
 		}
 	}
 	tests := map[string]string{
-		"lower.jsonl":  "pi-session-lower.html",
-		"upper.JSONL":  "pi-session-upper.JSONL.html",
-		"session.data": "pi-session-session.data.html",
+		"lower.jsonl":  "orb-session-lower.html",
+		"upper.JSONL":  "orb-session-upper.JSONL.html",
+		"session.data": "orb-session-session.data.html",
 	}
 	for input, want := range tests {
 		got, exportErr := ExportFromFile(filepath.Join(root, input), Options{ThemeName: "dark"})
@@ -368,4 +368,14 @@ func fixturePath(t *testing.T) string {
 func sha256Hex(contents []byte) string {
 	sum := sha256.Sum256(contents)
 	return hex.EncodeToString(sum[:])
+}
+
+// The terminal theme has no file of its own; a page takes the palette for the
+// terminal's background instead of failing the export.
+func TestTerminalThemeExportsAsItsBackgroundPalette(t *testing.T) {
+	t.Setenv("COLORFGBG", "0;15")
+	light, err := resolveExportTheme("terminal", &ThemeRef{Name: "terminal"})
+	if err != nil || light.pageBg != "#f8f8f8" {
+		t.Fatalf("light terminal = %+v, %v", light, err)
+	}
 }

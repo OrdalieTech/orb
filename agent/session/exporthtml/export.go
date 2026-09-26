@@ -83,7 +83,7 @@ func ExportSession(manager *session.SessionManager, options Options) (string, er
 		if sessionFile != "" {
 			base = strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
 		}
-		outputPath = "pi-session-" + base + ".html"
+		outputPath = "orb-session-" + base + ".html"
 	}
 	if err := os.WriteFile(outputPath, []byte(contents), 0o666); err != nil {
 		return "", err
@@ -106,7 +106,7 @@ func ExportFromFile(inputPath string, options Options) (string, error) {
 	}
 	if options.OutputPath == "" {
 		base := strings.TrimSuffix(filepath.Base(resolvedInput), ".jsonl")
-		options.OutputPath = "pi-session-" + base + ".html"
+		options.OutputPath = "orb-session-" + base + ".html"
 	}
 	// File exports have no live agent state or registered runtime renderers.
 	options.SystemPrompt = nil

@@ -175,6 +175,9 @@ func (r *Sessions) Fork(ctx context.Context, source harness.SessionMetadata, opt
 var _ harness.SessionRepo = (*Sessions)(nil)
 
 // Import upgrades legacy Pi trees without modifying their source files.
+// ErrImportConflict reports a journal whose session ID is stored with other content.
+var ErrImportConflict = errors.New("conflicting session import")
+
 func (r *Sessions) Import(ctx context.Context, content []byte) (harness.SessionMetadata, error) {
 	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
 	for i, line := range lines {
@@ -282,7 +285,7 @@ func (r *Sessions) importJournal(ctx context.Context, content []byte, parent str
 			return m, err
 		}
 		if !bytes.Equal(data, normalized.Bytes()) {
-			return m, fmt.Errorf("conflicting session import: %s", m.ID)
+			return m, fmt.Errorf("%w: %s", ErrImportConflict, m.ID)
 		}
 		return m, nil
 	}

@@ -28,7 +28,9 @@ type ThemeRef struct {
 }
 
 func resolveExportTheme(name string, selected *ThemeRef) (exportTheme, error) {
-	if name == "" {
+	// The terminal theme takes the terminal's own colors, which a page cannot:
+	// it exports as the palette for the terminal's background.
+	if name == "" || name == "terminal" {
 		name = defaultThemeName(os.Getenv("COLORFGBG"))
 	}
 	switch name {
