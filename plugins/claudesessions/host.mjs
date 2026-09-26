@@ -125,15 +125,17 @@ async function run(config) {
   // Orb writes the transcript a resumed session starts from, and reads back
   // what Claude wrote once each turn settles.
   if (config.resume) options.resume = config.resume;
-  // One live query per Orb session: prompts arrive on stdin, and a turn settles once its
-  // result has no queued sends and no native background task remains.
+  // One live query per Orb session: prompts arrive on stdin, and a turn settles once the
+  // result answering Orb's prompt has no queued sends and no native background task remains.
   active = query({ prompt: input(), options });
   const tasks = new Set();
-  let levelReported = false, session = config.resume;
+  let levelReported = false, session = config.resume, echoes = false;
   for await (const event of active) {
     if (event.session_id && !event.parent_tool_use_id) session = event.session_id;
     if (event.type === 'system') {
       if (event.permissionMode) permissionMode = event.permissionMode;
+      // ponytail: 2.1.280 is the oldest CLI verified to echo prompt uuids; older ones settle on any result.
+      if (event.subtype === 'init') echoes = !older(event.claude_code_version, [2, 1, 280]);
       if (event.subtype === 'background_tasks_changed') {
         levelReported = true;
         tasks.clear();
@@ -145,7 +147,13 @@ async function run(config) {
       }
     }
     if (tasks.size > 1024) throw new Error('Too many native background tasks');
-    if (event.type === 'result') finished = !(event.queued_turn_count > 0);
+    // A native turn Orb did not send (a resumed task's notification, an auto-continuation)
+    // ends with a result echoing no prompt; it must not settle Orb's turn.
+    if (event.type === 'result') {
+      const echo = event.user_message_uuids ?? (event.user_message_uuid ? [event.user_message_uuid] : []);
+      if (echo.some(id => awaited.has(id)) || (!echo.length && (event.is_error || !echoes))) finished = !(event.queued_turn_count > 0);
+      for (const id of echo) awaited.delete(id);
+    }
     const settled = finished && tasks.size === 0;
     // The reading precedes the result so the final repaint already shows it.
     if (settled) {
@@ -168,7 +176,12 @@ async function run(config) {
     }
   }
 }
-const inbox = [];
+const older = (version, floor) => {
+  const parts = String(version ?? '').split('.').map(Number);
+  const i = floor.findIndex((n, i) => parts[i] !== n);
+  return i >= 0 && !(parts[i] > floor[i]);
+};
+const inbox = [], awaited = new Set();
 let wake, ended = false;
 async function* input() {
   for (;;) {
@@ -189,6 +202,7 @@ lines.on('line', line => {
     } else if (message.type === 'prompt') {
       clearTimeout(idle);
       finished = false;
+      awaited.add(message.uuid);
       inbox.push({ type: 'user', uuid: message.uuid, parent_tool_use_id: null, message: { role: 'user', content: message.content } });
       wake?.();
     } else if (message.type === 'reply') {

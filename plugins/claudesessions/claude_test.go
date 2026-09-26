@@ -57,17 +57,22 @@ export function query({prompt,options:o}) {
   const {value:p,done}=await next();
   if(done) return;
   idle=JSON.stringify(p.message.content).includes('idle-fixture');
-  yield {type:'system',subtype:'init',session_id:id};
+  yield {type:'system',subtype:'init',session_id:id,claude_code_version:'2.1.280'};
+  // Like a resumed session's orphaned task: the CLI runs a turn of its own first.
+  if(JSON.stringify(p.message.content).includes('stray-fixture')) {
+   yield {type:'assistant',uuid:id+'-stray',session_id:id,message:{model:o.model,content:[{type:'text',text:'No response requested.'}],usage:{input_tokens:1,output_tokens:1}}};
+   yield {type:'result',subtype:'success',session_id:id};
+  }
   if(JSON.stringify(p.message.content).includes('plain-fixture')) {
    const text=JSON.stringify({read});
    yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text}],usage:{input_tokens:10,output_tokens:4}}};
    record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},{type:'assistant',uuid:id+'-a'+turn,message:{role:'assistant',content:[{type:'text',text:'plain'}]}});
-   yield {type:'result',subtype:'success',session_id:id};continue;
+   yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
   }
   if(JSON.stringify(p.message.content).includes('elicitation-fixture')) {
    const reply=await o.onElicitation({serverName:'fixture MCP',message:'Choose retries',mode:'form',requestedSchema:{type:'object',properties:{retries:{type:'integer',minimum:1,maximum:5}},required:['retries']}},{signal:abort.signal});
    yield {type:'assistant',uuid:'elicitation-result',session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify(reply)}],usage:{input_tokens:10,output_tokens:4}}};
-   yield {type:'result',subtype:'success',session_id:id};continue;
+   yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
   }
   const question = JSON.stringify(p.message.content).includes('question-fixture');
   const tool=question?'AskUserQuestion':'Write';
@@ -109,7 +114,7 @@ export function query({prompt,options:o}) {
   record({type:'user',uuid:id+'-u'+turn,parentUuid:null,message:{role:'user',content:p.message.content}},
    {type:'assistant',uuid:id+'-a'+turn,parentUuid:id+'-u'+turn,message:{role:'assistant',content:[{type:'text',text:final}]}},
    {type:'queue-operation'});
-  yield {type:'result',subtype:'success',session_id:id,total_cost_usd:0.01};
+  yield {type:'result',subtype:'success',session_id:id,total_cost_usd:0.01,user_message_uuids:folded?[p.uuid,folded.value.uuid]:[p.uuid]};
   }
  })();
  gen.supportedModels=async()=>[
@@ -1748,5 +1753,20 @@ func TestReplyFinishingAfterEscEndsAborted(t *testing.T) {
 	_ = tr.abort()
 	if len(ends) != 1 || ends[0].StopReason != ai.StopReasonAborted {
 		t.Fatalf("reply after Esc: %+v", ends)
+	}
+}
+
+// A native turn Orb did not send (a resumed session's orphaned task) ends
+// before Claude answers Orb's prompt; its result must not end Orb's turn.
+func TestNativeTurnBeforePromptDoesNotEndIt(t *testing.T) {
+	host, _ := fixture(t)
+	s := host.Session()
+	if err := s.Prompt(t.Context(), "stray-fixture plain-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	messages := s.State().Messages
+	raw, _ := json.Marshal(messages[len(messages)-1])
+	if !strings.Contains(string(raw), `\"read\"`) {
+		t.Fatalf("turn ended before Claude answered: %s", raw)
 	}
 }
