@@ -1,6 +1,7 @@
 package claudesessions
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // Another model's turn reaches Claude as plain alternating messages, its tool
@@ -111,5 +113,24 @@ func TestProjectDirMatchesClaudeCode(t *testing.T) {
 		if got := filepath.Base(projectDir("/c", cwd)); got != want {
 			t.Errorf("%q: got %q, want %q", cwd, got, want)
 		}
+	}
+}
+
+// A native failure with no reply (a context too long for the model) ends the
+// turn with an error reply the user sees, as Orb's own loop does.
+func TestFailedResultShowsAsErrorReply(t *testing.T) {
+	_, driver := fixture(t)
+	var replies []*ai.AssistantMessage
+	tr := translation{driver: driver, ctx: t.Context(), tools: map[string]string{}, emit: func(_ context.Context, event engine.AgentEvent) error {
+		if end, ok := event.(engine.MessageEndEvent); ok {
+			replies = append(replies, end.Message.(*ai.AssistantMessage))
+		}
+		return nil
+	}}
+	if err := tr.event([]byte(`{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["Prompt is too long"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(replies) != 1 || replies[0].StopReason != ai.StopReasonError || *replies[0].ErrorMessage != "Prompt is too long" {
+		t.Fatalf("replies = %#v", replies)
 	}
 }
