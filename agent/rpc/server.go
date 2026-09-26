@@ -346,6 +346,10 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 
 	switch command.Type {
 	case "prompt":
+		// Upstream's prompt throws without a message; an empty one never reaches the model.
+		if strings.TrimSpace(command.Message) == "" && len(command.Images) == 0 {
+			return failure(errors.New("prompt requires a message"))
+		}
 		mode.promptMu.Lock()
 		state := session.State()
 		if state.IsStreaming || mode.prompting {
