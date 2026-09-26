@@ -17,6 +17,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
   both stay one conversation under one ID: Orb appends to that session instead of copying it, so
   `claude --resume <id>` continues it in Claude Code, and turns added there appear in Orb when it
   opens the conversation again. An import follows the session's latest branch, not rewound ones.
+- `orb -p` with a Claude model no longer waits forever when Claude asks to approve a tool: as with
+  Orb's own approvals, a print or JSON run resolves the ask by the permissions fallback.
 - Accounts stored for a provider an extension registers now resolve at request time.
 - Each turn now ends with a dim footer naming the model and how long the turn took
   (`claude-opus-5-5 · 1m 12s`), live and when a session is reopened.

@@ -506,7 +506,7 @@ func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *transl
 			value, err = d.options.Ask(ctx, frame.Title, frame.Choices)
 			cancelled = err != nil
 			// ponytail: matches the runtime's no-UI error text; a changed text falls back to deny.
-			if err != nil && d.options.Headless && !frame.Ruled && slices.Contains(frame.Choices, "y approve once") && strings.Contains(err.Error(), "requires an interactive UI") {
+			if err != nil && d.options.Headless && !frame.Ruled && slices.Contains(frame.Choices, "y approve once") && strings.Contains(err.Error(), errNoUI.Error()) {
 				value, cancelled = "y approve once", false
 			}
 		}
@@ -514,6 +514,9 @@ func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *transl
 	}
 	return errors.New("invalid Claude SDK host frame")
 }
+
+// errNoUI is the runtime's answer when no one can take a question.
+var errNoUI = errors.New("input requires an interactive UI or an attached controller")
 
 func newUUID() string {
 	var b [16]byte
