@@ -169,9 +169,23 @@ panel and send execution-bound replies; disconnecting never invents an answer.
 
 Enable **claude-sessions** in `/plugins` (or set `"plugins": {"claude-sessions": true}`), then open
 `/claude` (also available from the command palette) and choose **New Claude session**.
-Orb prepares the SDK automatically on first use, then opens the conversation. The executing host needs Node ≥22.6, npm and the official Claude Code executable. Complete
-sign-in in a terminal with `claude auth login`; Orb does not implement a Claude.ai login screen or
-read tokens. Existing native API-key/cloud authentication is also available. Native terms, model
+Orb prepares the SDK automatically on first use, then opens the conversation. The executing host needs Node ≥22.6, npm and the official Claude Code executable.
+
+Claude is then a provider like the others. `/login` lists it as **Claude** with its accounts: the
+Claude Code login you already have, and any account added with **+ Add account**, which runs the
+official CLI's own sign-in (the first account opens the browser; a further one shows the link to
+open where that account is signed in, then takes the code it shows). Each account is a Claude Code
+configuration directory under `<agent-dir>/plugins/claude-sessions/accounts`; the CLI keeps its
+credential and Orb never reads it. Everything but the sign-in (settings, skills, agents, hooks,
+MCP servers, transcripts) is shared with your own Claude configuration, so switching accounts,
+even in the middle of a conversation, continues it. Accounts are named, switched, reconnected
+and disconnected like any provider's. Existing native API-key/cloud authentication is also
+available.
+
+Claude's models are listed in `/model` beside every other provider's. Picking one from an Orb
+conversation, or another provider's model from a Claude conversation, starts a new conversation
+on that executor, after confirming when the current one already has prompts; it stays in
+`/resume`. `ctrl+p` cycles within the current executor. Native terms, model
 entitlements and usage limits apply; SDK cost metadata is not your subscription invoice.
 
 For headless use, with the plugin enabled and the same automatic first-use setup: `orb --provider claude-sessions --model sonnet -p "your task"`.
@@ -190,7 +204,7 @@ auto and don't-ask. Orb's system-prompt additions reach Claude; context files su
 are Claude's own and load natively, and Orb does not inject its AGENTS.md. In `-p`/JSON runs, approvals Claude would ask for run as Orb's own tools would,
 unless one of your Claude ask rules forces the prompt. `/claude` selects the model for explicitly created Claude sessions.
 **Switch to Orb** opens a separate regular conversation and keeps the Claude session saved; it also
-works before an Orb provider is configured. Ordinary launches never implicitly choose Claude. `--no-extensions`
+works before an Orb provider is configured. `--no-extensions`
 disables this optional capability. There is no fallback to another account or model on errors.
 
 Advanced settings use `plugins.claude-sessions`: `model`, `node`, `claude`, and `sdk`

@@ -550,11 +550,8 @@ func (runtime *SessionRuntime) setModel(
 	if runtime == nil {
 		return errors.New("agent: nil session runtime")
 	}
-	if runtime.agent.UsesSessionLoop() {
-		current := runtime.agent.State().Model
-		if current == nil || current.Provider != model.Provider {
-			return errors.New("changing session executor requires a new conversation")
-		}
+	if runtime.crossesExecutor(model) {
+		return ErrNewConversation
 	}
 	if checkAuth {
 		if ctx == nil {
@@ -589,6 +586,20 @@ func (runtime *SessionRuntime) setModel(
 	return nil
 }
 
+// ErrNewConversation reports a model on another session executor: its
+// conversation cannot continue this one's, so a new one must start.
+var ErrNewConversation = errors.New("changing session executor requires a new conversation")
+
+// crossesExecutor reports whether model runs on another executor than the
+// current conversation's.
+func (runtime *SessionRuntime) crossesExecutor(model ai.Model) bool {
+	if runtime.agent.UsesSessionLoop() {
+		current := runtime.agent.State().Model
+		return current == nil || current.Provider != model.Provider
+	}
+	return runtime.ownExecutor != nil && runtime.ownExecutor(model)
+}
+
 func (runtime *SessionRuntime) CycleModel(ctx context.Context) (*ModelCycleResult, error) {
 	return runtime.cycleModel(ctx, 1)
 }
@@ -608,6 +619,10 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 	if len(runtime.scopedModels) > 0 {
 		models := make([]ScopedModel, 0, len(runtime.scopedModels))
 		for _, scoped := range runtime.scopedModels {
+			// Cycling stays within the conversation's executor.
+			if runtime.crossesExecutor(scoped.Model) {
+				continue
+			}
 			hasAuth, err := runtime.hasProviderAuth(ctx, scoped.Model.Provider)
 			if err != nil {
 				return nil, err
@@ -635,7 +650,7 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 			Model: next.Model, ThinkingLevel: runtime.agent.State().ThinkingLevel, IsScoped: true,
 		}, nil
 	}
-	models := runtime.AvailableModels()
+	models := slices.DeleteFunc(slices.Clone(runtime.AvailableModels()), runtime.crossesExecutor)
 	if len(models) <= 1 {
 		return nil, nil
 	}

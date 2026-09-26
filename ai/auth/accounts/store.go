@@ -248,6 +248,15 @@ func (s *Store) Select(ctx context.Context, provider, id string) error {
 	})
 }
 
+// Deselect returns a provider to its default source, the credential it had
+// before any account was chosen, whether or not Orb stores one.
+func (s *Store) Deselect(ctx context.Context, provider string) error {
+	return s.update(ctx, func(d *document) error {
+		delete(d.Active, provider)
+		return nil
+	})
+}
+
 func (s *Store) Remove(ctx context.Context, provider, id string) error {
 	if id == DefaultID {
 		return s.base.Delete(ctx, provider)
@@ -401,6 +410,13 @@ func credentialName(c *auth.Credential) string {
 	if profile, ok := claims["https://api.openai.com/profile"].(map[string]any); ok {
 		if email, ok := profile["email"].(string); ok && email != "" {
 			return email
+		}
+	}
+	// A credential held by another program names itself.
+	if c != nil {
+		var label string
+		if json.Unmarshal(c.Extra["label"], &label) == nil && label != "" {
+			return label
 		}
 	}
 	return "Default"

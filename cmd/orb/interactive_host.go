@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -920,6 +922,14 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 		if runtimeAuth != nil && runtimeAuth.HasRuntimeAPIKey(id) {
 			status = &modes.InteractiveAuthStatus{Type: aiauth.AuthTypeAPIKey, Source: "runtime"}
 		}
+		if id == claudesessions.Name {
+			// Claude signs in only through its subscription; the Claude Code login
+			// it already has is the same kind of account, not an API key.
+			if status != nil {
+				status.Type = aiauth.AuthTypeOAuth
+			}
+			methods.APIKey = nil
+		}
 		if status == nil {
 			// Registry-less fallback only: with a registry, the stored
 			// credential already surfaces as the raw "stored" source above
@@ -1136,8 +1146,9 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 	for _, row := range rows {
 		seen[row.Provider] = true
 	}
+	claudeLogin := host.claudeAmbientAccount(ctx, rows)
 	for _, option := range options.Login {
-		if option.Status == nil || seen[option.ID] {
+		if option.ID == claudesessions.Name || option.Status == nil || seen[option.ID] {
 			continue
 		}
 		seen[option.ID] = true
@@ -1145,6 +1156,9 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 			continue
 		}
 		rows = append(rows, accounts.Account{ID: "ambient", Provider: option.ID, Name: option.Status.Source, Type: aiauth.CredentialType(option.Status.Type), Active: true})
+	}
+	if claudeLogin != nil {
+		rows = append(rows, *claudeLogin)
 	}
 	host.mu.Lock()
 	runtime := host.inputs.RuntimeAuth
@@ -1165,6 +1179,66 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 	return rows, nil
 }
 
+// NewConversationWith starts a conversation on model when it runs on another
+// executor than the current one, as picking a Claude model from an Orb
+// conversation does.
+func (host *interactiveSessionHost) NewConversationWith(ctx context.Context, model ai.Model) error {
+	host.mu.Lock()
+	current := host.session
+	host.mu.Unlock()
+	leaving := current != nil && current.Agent().UsesSessionLoop() && model.Provider != claudesessions.Name
+	_, err := host.NewSession(ctx, &extensions.NewSessionOptions{Prepare: func(manager *session.SessionManager) error {
+		if leaving {
+			if _, err := manager.AppendCustomEntry(claudesessions.Name+".exit", nil); err != nil {
+				return err
+			}
+		}
+		_, err := manager.AppendModelChange(string(model.Provider), model.ID)
+		return err
+	}})
+	return err
+}
+
+// ProviderName is a provider's display name, as /login shows it.
+func (host *interactiveSessionHost) ProviderName(id string) string {
+	host.mu.Lock()
+	registry := host.inputs.ModelRegistry
+	host.mu.Unlock()
+	if registry == nil {
+		return ""
+	}
+	return registry.ProviderDisplayName(id)
+}
+
+// claudeAmbientAccount is the user's own Claude Code login as an account row.
+// Unlike other providers' ambient sources it stays listed beside added
+// accounts, since selecting it is how Claude returns to that login.
+func (host *interactiveSessionHost) claudeAmbientAccount(ctx context.Context, rows []accounts.Account) *accounts.Account {
+	host.mu.Lock()
+	settings := host.inputs.Settings
+	host.mu.Unlock()
+	if settings == nil || !settings.GetPlugins()[claudesessions.Name] {
+		return nil
+	}
+	label, ok := claudesessions.AmbientAccount(ctx, settings, os.Environ())
+	if !ok {
+		return nil
+	}
+	active := !slices.ContainsFunc(rows, func(row accounts.Account) bool { return row.Provider == claudesessions.Name && row.Active })
+	return &accounts.Account{ID: "ambient", Provider: claudesessions.Name, Name: label, Type: aiauth.CredentialOAuth, Active: active}
+}
+
+// forgetClaudeAccount signs out the Claude directory an account ran with once
+// it is removed or replaced; other providers keep nothing outside the store.
+func (host *interactiveSessionHost) forgetClaudeAccount(credential *aiauth.Credential) {
+	host.mu.Lock()
+	settings := host.inputs.Settings
+	host.mu.Unlock()
+	if settings != nil && credential != nil {
+		claudesessions.ForgetAccount(settings, host.agentDir, os.Environ(), credential)
+	}
+}
+
 func (host *interactiveSessionHost) accountChangeAllowed() error {
 	host.mu.Lock()
 	session := host.session
@@ -1183,6 +1257,7 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	if err != nil {
 		return err
 	}
+	var removed *aiauth.Credential
 	switch action {
 	case "select":
 		host.mu.Lock()
@@ -1191,8 +1266,15 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 		if overridden {
 			return errors.New("restart without --api-key to switch this provider account")
 		}
+		if provider == claudesessions.Name && id == "ambient" {
+			err = store.Deselect(ctx, provider)
+			break
+		}
 		err = store.Select(ctx, provider, id)
 	case "remove":
+		if provider == claudesessions.Name {
+			removed, _ = store.View(provider, id).Read(ctx, provider)
+		}
 		err = store.Remove(ctx, provider, id)
 	case "rename":
 		err = store.Rename(ctx, provider, id, name)
@@ -1202,6 +1284,7 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	if err != nil {
 		return err
 	}
+	host.forgetClaudeAccount(removed)
 	return host.refreshAuthState(ctx, provider)
 }
 
@@ -1220,13 +1303,20 @@ func (host *interactiveSessionHost) LoginAccount(ctx context.Context, provider s
 	if err != nil {
 		return err
 	}
+	var replaced *aiauth.Credential
 	if id == "" {
 		_, err = store.Add(ctx, provider, name, credential)
 	} else {
-		_, err = store.View(provider, id).Modify(ctx, provider, func(*aiauth.Credential) (*aiauth.Credential, error) { return credential, nil })
+		_, err = store.View(provider, id).Modify(ctx, provider, func(previous *aiauth.Credential) (*aiauth.Credential, error) {
+			replaced = previous
+			return credential, nil
+		})
 	}
 	if err != nil {
 		return err
+	}
+	if provider == claudesessions.Name {
+		host.forgetClaudeAccount(replaced)
 	}
 	return host.refreshAuthState(ctx, provider)
 }

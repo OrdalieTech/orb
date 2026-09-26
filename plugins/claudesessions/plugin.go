@@ -88,6 +88,7 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 			owned.Sandbox = mode
 		}
 		owned.Manager = opts.SessionManager
+		owned.Account = accountResolver(opts.GetRequestAuth)
 		var runtime *agent.SessionRuntime
 		if owned.Ask == nil {
 			owned.Ask = func(ctx context.Context, title string, choices []string) (string, error) {
@@ -144,7 +145,7 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 		if opts.Resources == nil && opts.ResourceLoader == nil {
 			opts.Resources = &agent.Resources{}
 		}
-		opts.AvailableModels = func() []ai.Model { return models }
+		opts.AvailableModels = withOtherModels(models, opts.AvailableModels)
 		result, err := agent.NewAgentSession(opts)
 		if err == nil {
 			runtime = result.Session
@@ -167,6 +168,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	}
 	options.Manager = cfg.SessionManager
 	options.Context = orbContext(cfg.SystemPromptOptions)
+	options.Account = accountResolver(cfg.GetRequestAuth)
 	var runtime *agent.SessionRuntime
 	options.Ask = func(ctx context.Context, title string, choices []string) (string, error) {
 		return runtime.RequestInput(ctx, title, choices)
@@ -190,9 +192,40 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	names := append([]string{}, nativeToolNames...)
 	cfg.AllowedToolNames = &names
 	cfg.RebuildBaseTools = nil
-	cfg.AvailableModels = func() []ai.Model { return models }
+	cfg.AvailableModels = withOtherModels(models, cfg.AvailableModels)
 	cfg.ScopedModels = nil
 	return func(s *agent.SessionRuntime) { runtime = s; closeOnDispose(s, driver) }, nil
+}
+
+// withOtherModels lists Claude's models first, then every other provider's, so
+// the model picker is the same in a Claude conversation as in an Orb one.
+func withOtherModels(claude []ai.Model, others func() []ai.Model) func() []ai.Model {
+	return func() []ai.Model {
+		result := slices.Clone(claude)
+		if others != nil {
+			for _, model := range others() {
+				if model.Provider != Name {
+					result = append(result, model)
+				}
+			}
+		}
+		return result
+	}
+}
+
+// accountResolver reads the selected account's directory from Orb's auth
+// pipeline, where account selection lives for every provider.
+func accountResolver(resolve engine.GetRequestAuthFunc) func(context.Context) string {
+	if resolve == nil {
+		return nil
+	}
+	return func(ctx context.Context) string {
+		auth, err := resolve(ctx, Name)
+		if err != nil || auth == nil || auth.Headers[accountDirHeader] == nil {
+			return ""
+		}
+		return *auth.Headers[accountDirHeader]
+	}
 }
 
 // orbContext is what Orb would add to its own system prompt and Claude does not:
@@ -515,6 +548,9 @@ func toolSummary(name string, args any, cwd string) string {
 func Management(settings *config.SettingsManager, agentDir string, env []string) extensions.Factory {
 	env = append([]string{}, env...)
 	return func(api extensions.API) error {
+		if settings != nil {
+			api.RegisterProvider(newProvider(settings, agentDir, env).registration())
+		}
 		limitFooter(api)
 		// A new Claude session opens at the level last chosen for its model, not at the
 		// global default, which belongs to Orb's own providers.
