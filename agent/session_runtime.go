@@ -23,15 +23,18 @@ import (
 )
 
 type SessionRuntimeConfig struct {
-	ContextUsage           func() *harness.ContextUsage
-	Agent                  *engine.Agent
-	SessionManager         *sessionstore.SessionManager
-	Settings               *config.SettingsManager
-	StreamFn               engine.StreamFn
-	GetAPIKey              engine.GetAPIKeyFunc
-	GetRequestAuth         engine.GetRequestAuthFunc
-	GetModelHeaders        engine.GetModelHeadersFunc
-	AvailableModels        func() []ai.Model
+	ContextUsage    func() *harness.ContextUsage
+	Agent           *engine.Agent
+	SessionManager  *sessionstore.SessionManager
+	Settings        *config.SettingsManager
+	StreamFn        engine.StreamFn
+	GetAPIKey       engine.GetAPIKeyFunc
+	GetRequestAuth  engine.GetRequestAuthFunc
+	GetModelHeaders engine.GetModelHeadersFunc
+	AvailableModels func() []ai.Model
+	// OwnExecutor reports models that run on their own session executor;
+	// switching to or from one starts a new conversation.
+	OwnExecutor            func(ai.Model) bool
 	ScopedModels           []ScopedModel
 	Complete               harness.CompleteFunc
 	Sleep                  func(context.Context, time.Duration) error
@@ -102,6 +105,7 @@ type SessionRuntime struct {
 	autoCompaction       bool
 	autoRetry            bool
 	availableModels      func() []ai.Model
+	ownExecutor          func(ai.Model) bool
 	modelRegistry        extensions.ModelRegistry
 	scopedModels         []ScopedModel
 	getAPIKey            engine.GetAPIKeyFunc
@@ -287,7 +291,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		listeners:    []sessionListener{}, steering: []string{}, followUps: []string{},
 		autoCompaction:  runtimeConfig.Settings.GetCompactionSettings().Enabled,
 		autoRetry:       runtimeConfig.Settings.GetRetrySettings().Enabled,
-		availableModels: runtimeConfig.AvailableModels, modelRegistry: runtimeConfig.ModelRegistry,
+		availableModels: runtimeConfig.AvailableModels, ownExecutor: runtimeConfig.OwnExecutor, modelRegistry: runtimeConfig.ModelRegistry,
 		getAPIKey:          runtimeConfig.GetAPIKey,
 		getRequestAuth:     runtimeConfig.GetRequestAuth,
 		scopedModels:       append([]ScopedModel(nil), runtimeConfig.ScopedModels...),

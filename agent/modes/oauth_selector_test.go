@@ -789,7 +789,7 @@ func TestProviderMenuAlwaysOffersAddAccountPerProvider(t *testing.T) {
 		{ID: "work", Provider: "openai-codex", Name: "Work", Type: aiauth.CredentialOAuth},
 		{ID: "go", Provider: "opencode-go", Name: "Go", Type: aiauth.CredentialAPIKey, Active: true},
 	}
-	rows := providerAccountRows(connected, false)
+	rows := providerAccountRows(connected, false, func(id string) string { return id })
 	adds := map[string]int{}
 	for index, row := range rows {
 		if provider, ok := strings.CutPrefix(row.Value, "add:"); ok {

@@ -1095,6 +1095,15 @@ func (registry *ModelRegistry) DefaultRequestAuthResolver(credentials aiauth.Cre
 		if err != nil {
 			return nil, err
 		}
+		// A provider an extension registered resolves through its own methods,
+		// stored accounts included.
+		if _, native := registry.RegisteredNativeProvider(string(providerID)); native {
+			resolved, err := aiauth.ResolveProviderAuth(ctx, string(providerID), registry.ProviderAuth(string(providerID)), credentials, registry.environment, nil)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return registryRequestAuth(resolved), nil
+		}
 		provider, knownProvider := providers.Get(providerID)
 		if stored != nil && knownProvider {
 			resolved, err := aiauth.ResolveProviderAuth(

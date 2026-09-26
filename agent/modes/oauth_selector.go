@@ -2,6 +2,7 @@ package modes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -557,13 +559,26 @@ func (mode *InteractiveMode) providerMenu(ctx context.Context, title string, row
 	}
 }
 
-func providerAccountRows(connected []accounts.Account, enabled bool) []tui.GridRow {
+// providerNamer is an optional host capability: provider display names, as
+// /login shows them, for the account list headers.
+type providerNamer interface{ ProviderName(string) string }
+
+func providerLabel(host any, provider string) string {
+	if namer, ok := host.(providerNamer); ok {
+		if name := namer.ProviderName(provider); name != "" {
+			return name
+		}
+	}
+	return provider
+}
+
+func providerAccountRows(connected []accounts.Account, enabled bool, label func(string) string) []tui.GridRow {
 	rows := make([]tui.GridRow, 0, len(connected)+4)
 	provider := ""
 	for i, account := range connected {
 		if provider != account.Provider {
 			provider = account.Provider
-			rows = append(rows, tui.GridRow{Header: true, Cells: []string{theme.Bold(theme.FG("text", provider))}})
+			rows = append(rows, tui.GridRow{Header: true, Cells: []string{theme.Bold(theme.FG("text", label(provider)))}})
 		}
 		name := account.Name
 		if account.Active {
@@ -573,7 +588,7 @@ func providerAccountRows(connected []accounts.Account, enabled bool) []tui.GridR
 		if account.Type == aiauth.CredentialOAuth {
 			kind = "Subscription"
 		}
-		rows = append(rows, tui.GridRow{Value: strconv.Itoa(i), Cells: []string{name, theme.FG("muted", kind)}, Search: account.Provider + " " + account.Name + " " + kind, Detail: []string{"Manage " + account.Provider + " · " + account.Name}})
+		rows = append(rows, tui.GridRow{Value: strconv.Itoa(i), Cells: []string{name, theme.FG("muted", kind)}, Search: account.Provider + " " + account.Name + " " + kind, Detail: []string{"Manage " + label(account.Provider) + " · " + account.Name}})
 		if i+1 == len(connected) || connected[i+1].Provider != provider {
 			rows = append(rows, tui.GridRow{Value: "add:" + provider, Cells: []string{theme.FG("muted", "+ Add account")}, Search: provider + " add account"})
 		}
@@ -594,7 +609,7 @@ func (mode *InteractiveMode) showProviders(host InteractiveProviderHost) {
 			mode.showError(err)
 			return
 		}
-		selected, ok := mode.providerMenu(ctx, "Providers", providerAccountRows(connected, host.UsageEnabled()))
+		selected, ok := mode.providerMenu(ctx, "Providers", providerAccountRows(connected, host.UsageEnabled(), func(id string) string { return providerLabel(host, id) }))
 		if !ok {
 			return
 		}
@@ -685,7 +700,9 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	add := func(value, label string) {
 		rows = append(rows, tui.GridRow{Value: value, Cells: []string{label}, Search: label})
 	}
-	if mutable && !account.Active {
+	// An ambient login is listed inactive only beside added accounts, and
+	// selecting it returns the provider to that login.
+	if account.ID != "runtime" && !account.Active {
 		add("select", "Use this account")
 	}
 	add("add", "Add another account")
@@ -697,7 +714,7 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	if account.Provider == "openai-codex" || account.Provider == "opencode-go" {
 		add("usage", "Usage and reset times")
 	}
-	action, ok := mode.providerMenu(ctx, account.Provider+" · "+account.Name, rows)
+	action, ok := mode.providerMenu(ctx, providerLabel(host, account.Provider)+" · "+account.Name, rows)
 	if !ok {
 		return
 	}
@@ -839,7 +856,7 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 		}
 	}
 	rows := func() []tui.GridRow {
-		result := providerAccountRows(connected, false)
+		result := providerAccountRows(connected, false, func(id string) string { return providerLabel(host, id) })
 		result = result[:len(result)-1]
 		for i := range result {
 			index, err := strconv.Atoi(result[i].Value)
@@ -935,7 +952,7 @@ func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host Int
 		mode.showError(fmt.Errorf("wait for the current response before switching providers"))
 		return
 	}
-	if account.ID != "ambient" && account.ID != "runtime" {
+	if account.ID != "runtime" && (account.ID != "ambient" || !account.Active) {
 		if err := host.ChangeAccount(ctx, account.Provider, account.ID, "select", ""); err != nil {
 			mode.showError(err)
 			return
@@ -953,7 +970,9 @@ func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host Int
 	if current != nil {
 		for _, model := range available {
 			if string(model.Provider) == account.Provider && model.ID == current.ID {
-				if err := mode.session.SetModel(ctx, model); err != nil {
+				if err := mode.session.SetModel(ctx, model); errors.Is(err, agent.ErrNewConversation) {
+					mode.newConversationWith(ctx, model)
+				} else if err != nil {
 					mode.showError(err)
 				}
 				mode.ui.RequestRender()

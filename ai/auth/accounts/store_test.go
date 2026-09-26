@@ -53,3 +53,27 @@ func TestOAuthIdentityKeepsAccountsSeparateAndRefreshesExisting(t *testing.T) {
 		t.Fatal("unexpected account count", err)
 	}
 }
+
+// A credential held by another program (a CLI's own sign-in) has no token to
+// read a name from; it names itself, and deselecting it returns the provider to
+// its default source even when Orb stores no default.
+func TestExternalAccountNamesItselfAndDeselects(t *testing.T) {
+	ctx := context.Background()
+	store := NewStoreWithDocument(&memoryDocument{}, nil)
+	credential := &auth.Credential{Type: auth.CredentialOAuth}
+	credential.SetExtra("label", []byte(`"second@example.com · Max"`))
+	added, err := store.Add(ctx, "external", "", credential)
+	if err != nil || added.Name != "second@example.com · Max" || !added.Active {
+		t.Fatalf("added = %#v, %v", added, err)
+	}
+	if err := store.Deselect(ctx, "external"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.Accounts(ctx)
+	if err != nil || len(rows) != 1 || rows[0].Active {
+		t.Fatalf("after deselect = %#v, %v", rows, err)
+	}
+	if current, err := store.Read(ctx, "external"); err != nil || current != nil {
+		t.Fatalf("deselected provider still reads %#v, %v", current, err)
+	}
+}

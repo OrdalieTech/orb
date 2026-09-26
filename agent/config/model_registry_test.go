@@ -164,6 +164,39 @@ func TestModelRegistryOAuthRefreshUsesTheLiveCredentialStore(t *testing.T) {
 	}
 }
 
+// An account stored for a provider an extension registered resolves through
+// that provider's own methods when a request asks for its auth.
+func TestRequestAuthResolvesExtensionProviderAccount(t *testing.T) {
+	directory := t.TempDir()
+	storage, err := NewAuthStorage(filepath.Join(directory, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.Modify(context.Background(), "native", func(*aiauth.Credential) (*aiauth.Credential, error) {
+		return aiauth.OAuthCredential("refresh", "account-token", time.Now().Add(time.Hour).UnixMilli()), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewOfflineModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		return func(func(ai.AssistantMessageEvent, error) bool) {}, nil
+	}
+	if err := registry.RegisterProvider(extensions.Provider{
+		ID: "native", Name: "Native", Auth: aiauth.ProviderAuth{OAuth: registryOAuth{}},
+		GetModels: func() ([]ai.Model, error) { return nil, nil },
+		Stream:    stream, StreamSimple: stream,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	auth, err := registry.DefaultRequestAuthResolver(storage)(context.Background(), "native")
+	if err != nil || auth == nil || auth.APIKey == nil || *auth.APIKey != "account-token" {
+		t.Fatalf("request auth = %#v, err=%v", auth, err)
+	}
+}
+
 func TestModelRegistryHotReloadMatchesErrorSnapshotSemantics(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "models.json")

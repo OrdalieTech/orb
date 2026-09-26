@@ -51,6 +51,9 @@ type Options struct {
 	// Context is Orb's instructions that Claude does not load itself.
 	Context string
 	Ask     func(context.Context, string, []string) (string, error)
+	// Account resolves the selected Claude account's directory through Orb's
+	// auth pipeline; empty runs with the user's own Claude Code login.
+	Account func(context.Context) string
 }
 
 // Native SDK events may omit utilization; absence is never treated as zero use.
@@ -251,9 +254,9 @@ func (h *host) close() {
 	time.AfterFunc(5*time.Second, func() { _ = h.kill() })
 }
 
-func (d *Driver) spawn(start map[string]any) (*host, error) {
+func (d *Driver) spawn(start map[string]any, env []string) (*host, error) {
 	process := exec.Command(d.options.Node, "--input-type=module", "-e", hostSource)
-	process.Dir, process.Env, process.Stderr = d.options.Manager.GetCWD(), d.options.Env, io.Discard
+	process.Dir, process.Env, process.Stderr = d.options.Manager.GetCWD(), env, io.Discard
 	input, err := process.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -326,6 +329,17 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	if slices.Contains(info.Levels, string(level)) {
 		start["effort"] = level
 	}
+	env := d.options.Env
+	if d.options.Account != nil {
+		if dir := d.options.Account(ctx); dir != "" {
+			if err := prepareAccount(dir, env); err != nil {
+				return err
+			}
+			env = withConfigDir(env, dir)
+			// An account change restarts the host, which resumes the same native session.
+			start["account"] = dir
+		}
+	}
 	key, _ := json.Marshal(start)
 	fork := saved.Owner != id || saved.At != d.tail(saved.Session)
 	// acquire reuses the live host, or spawns one when none serves this start.
@@ -347,7 +361,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 			start["resume"], start["fork"], start["at"] = saved.Session, fork, saved.At
 		}
 		start["sessionUpdates"] = d.approved
-		if h, err = d.spawn(start); err != nil {
+		if h, err = d.spawn(start, env); err != nil {
 			return nil, false, err
 		}
 		h.key = string(key)
