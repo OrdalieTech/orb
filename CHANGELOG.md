@@ -1,8 +1,7 @@
 # Changelog
 
-Orb's own release history (independent 0.x semver; upstream parity target recorded per release).
-The embedded upstream changelog under `agent/modes/assets/` is a product asset driving
-`/changelog` and is not this file.
+Orb's own release history (independent 0.x semver; upstream parity target recorded per release),
+shown by `/changelog`.
 
 ## [Unreleased]
 
@@ -41,6 +40,8 @@ open faster in less memory. The compatibility target remains Pi **v0.86.0** on G
   "Claude limits stale" after five idle minutes. The model picker shows a price only when the model
   has one.
 - `/compact` says why it did nothing ("Nothing to compact", "Already compacted") instead of staying silent.
+- `/changelog` shows Orb's own release notes instead of pi's, and pi's hidden `/arminsayshi` and
+  `/dementedelves` easter eggs are gone, with the 528 KB image the latter shipped.
 - Opening and reading a large conversation is faster and lighter: each stored entry is parsed once
   (a 128 MB conversation opens with half the CPU and a sixth less memory), Claude Sessions reads
   only what Claude appended after each turn, and the SQLite log no longer keeps the size of its

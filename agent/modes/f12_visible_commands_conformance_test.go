@@ -126,6 +126,9 @@ func TestF12VisibleCommandBehaviorMatchesUpstream(t *testing.T) {
 			if got := f12VisibleTransition(mode, command.Name, fixture.Width); !reflect.DeepEqual(got, command.Transition) {
 				t.Errorf("transition = %v, want %v", stringPointerValue(got), stringPointerValue(command.Transition))
 			}
+			if command.Name == "changelog" {
+				return // Divergence ledger: Orb shows its own release notes (TestChangelogShowsOrbReleases).
+			}
 			rawLines := replaceF12FramePaths(mode.chat.Render(fixture.Width), temporary+string(filepath.Separator), "<tmp>/", temporary, "<tmp>")
 			lines := normalizeF12Lines(rawLines)
 			if updateF12RawFrame(t, snap, rawLines, "commands", commandIndex, "chat", "raw") {
