@@ -11,7 +11,7 @@ GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/ca
 endif
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: check build test lint portability nightly-live upstream product-assets product-assets-check fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: check build test lint portability nightly-live upstream fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
 
 # The canonical gate (upstream's `npm run check` norm): run after any code change.
 check: build lint test portability
@@ -72,13 +72,6 @@ upstream:
 	fi
 	@test "$$(git -C "$(UPSTREAM_DIR)" rev-parse HEAD)" = "$(UPSTREAM_COMMIT)"
 
-product-assets: upstream
-	@node conformance/extract/materialize-product-assets.ts "$(UPSTREAM_DIR)" "$(CURDIR)"
-	@gzip -9 -n -c agent/modes/assets/CHANGELOG.md > agent/modes/assets/CHANGELOG.md.gz
-
-product-assets-check: upstream
-	@cmp "$(UPSTREAM_DIR)/packages/coding-agent/CHANGELOG.md" agent/modes/assets/CHANGELOG.md
-
 ensure-upstream-fixture-tools: upstream
 	@if [ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/tsx/package.json").version' 2>/dev/null)" != "4.22.1" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/vitest/package.json").version' 2>/dev/null)" != "4.1.9" ] || \
@@ -118,7 +111,7 @@ ensure-upstream-fixture-tools: upstream
 			proper-lockfile@4.1.2 semver@7.8.5 @silvia-odwyer/photon-node@0.3.4 undici@8.10.2 yaml@2.9.0; \
 	fi
 
-fixtures: ensure-upstream-fixture-tools product-assets
+fixtures: ensure-upstream-fixture-tools
 	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$(CURDIR)/conformance/fixtures" $(UPSTREAM_COMMIT)
 
 # Regenerate the Orb-owned TUI render snapshots (D35): the F12* families and
@@ -137,7 +130,7 @@ fixtures-tui:
 # The Orb-owned render snapshots (D35) are excluded from the upstream
 # extraction diff and guarded by their Go comparison tests instead: snapshot
 # drift fails here, regeneration is the explicit `make fixtures-tui`.
-fixtures-check: ensure-upstream-fixture-tools product-assets-check
+fixtures-check: ensure-upstream-fixture-tools
 	@ORB_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
 	@ORB_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./agent/config -run TestAuthStorageConformance
 	@$(GO_ENV) CGO_ENABLED=0 go test -count=1 ./conformance/runner -run 'TestF12|TestSnapshotCodec'

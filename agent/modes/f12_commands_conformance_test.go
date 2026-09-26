@@ -1,19 +1,17 @@
 package modes
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -224,100 +222,6 @@ func TestF12HiddenCommandBehaviorMatchesUpstream(t *testing.T) {
 		}
 	})
 
-	t.Run("arminsayshi", func(t *testing.T) {
-		initF12RawTheme(t)
-		behavior := fixture.Behavior.ArminSaysHi
-		mode := newF12HiddenCommandMode(40, 24)
-		if !mode.handleSlashCommand("arminsayshi", "") {
-			t.Fatal(`hidden command "arminsayshi" was not handled`)
-		}
-		raw := mode.chat.Render(behavior.Frames[0].Width)
-		got := normalizeF12Lines(raw)
-		if updateF12RawFrame(t, snap, raw, "behavior", "arminSaysHi", "frames", 0, "raw") {
-			snap.Set(got, "behavior", "arminSaysHi", "frames", 0, "lines")
-		} else {
-			assertF12RawFrame(t, behavior.Frames[0].Raw, raw)
-			if !reflect.DeepEqual(got, behavior.Frames[0].Lines) {
-				t.Fatalf("Armin initial frame differs\nwant: %#v\n got: %#v", behavior.Frames[0].Lines, got)
-			}
-		}
-
-		requester := &f12RenderRequester{}
-		var tick func()
-		var delay time.Duration
-		cleared := 0
-		component := newArminComponentWithHooks(
-			requester,
-			func() float64 { return 0.2 },
-			func(interval time.Duration, callback func()) func() {
-				delay, tick = interval, callback
-				return func() { cleared++ }
-			},
-		)
-		t.Cleanup(component.Dispose)
-		if tick == nil {
-			t.Fatal("Armin animation interval was not scheduled")
-		}
-		assertFrame := func(index int) {
-			t.Helper()
-			frame := behavior.Frames[index]
-			raw := append([]string{""}, component.Render(frame.Width)...)
-			got := normalizeF12Lines(raw[1:])
-			if updateF12RawFrame(t, snap, raw, "behavior", "arminSaysHi", "frames", index, "raw") {
-				snap.Set(append([]string{frame.Lines[0]}, got...), "behavior", "arminSaysHi", "frames", index, "lines")
-				return
-			}
-			assertF12RawFrame(t, frame.Raw, raw)
-			if !reflect.DeepEqual(got, frame.Lines[1:]) {
-				t.Fatalf("Armin %s frame differs\nwant: %#v\n got: %#v", frame.ID, frame.Lines[1:], got)
-			}
-		}
-		assertFrame(0)
-		tick()
-		assertFrame(1)
-		for range 8 {
-			tick()
-		}
-		assertFrame(2)
-		for requester.count < behavior.RequestRenders-1 {
-			tick()
-		}
-		assertFrame(3)
-		if got := float64(delay.Microseconds()) / 1000; got != behavior.IntervalDelayMS {
-			t.Fatalf("Armin interval = %.3fms, want %.3fms", got, behavior.IntervalDelayMS)
-		}
-		if requester.count != behavior.RequestRenders-1 || cleared != behavior.ClearedIntervals {
-			t.Fatalf("Armin animation lifecycle = renders %d clears %d, want %d/%d",
-				requester.count, cleared, behavior.RequestRenders-1, behavior.ClearedIntervals)
-		}
-	})
-
-	t.Run("dementedelves", func(t *testing.T) {
-		initF12RawTheme(t)
-		tui.SetCapabilities(tui.TerminalCapabilities{TrueColor: true})
-		t.Cleanup(tui.ResetCapabilitiesCache)
-		behavior := fixture.Behavior.DementedElves
-		image := behavior.BundledImage
-		if got := fmt.Sprintf("%x", sha256.Sum256(earendilImage)); len(earendilImage) != image.ByteLength || got != image.SHA256 {
-			t.Fatalf("Earendil image = %d bytes sha256 %s, want %d/%s", len(earendilImage), got, image.ByteLength, image.SHA256)
-		}
-		mode := newF12HiddenCommandMode(80, 24)
-		if !mode.handleSlashCommand("dementedelves", "") {
-			t.Fatal(`hidden command "dementedelves" was not handled`)
-		}
-		for frameIndex, frame := range behavior.Frames {
-			raw := mode.chat.Render(frame.Width)
-			got := normalizeF12Lines(raw)
-			if updateF12RawFrame(t, snap, raw, "behavior", "dementedElves", "frames", frameIndex, "raw") {
-				snap.Set(got, "behavior", "dementedElves", "frames", frameIndex, "lines")
-				continue
-			}
-			assertF12RawFrame(t, frame.Raw, raw)
-			if !reflect.DeepEqual(got, frame.Lines) {
-				t.Fatalf("Earendil frame at width %d differs\nwant: %#v\n got: %#v", frame.Width, frame.Lines, got)
-			}
-		}
-	})
 }
 
 var (
@@ -330,10 +234,6 @@ type f12LinesComponent []string
 func (component f12LinesComponent) Render(int) []string {
 	return append([]string(nil), component...)
 }
-
-type f12RenderRequester struct{ count int }
-
-func (requester *f12RenderRequester) RequestRender() { requester.count++ }
 
 func newF12DebugMode(t testing.TB, size f12TerminalSize) *InteractiveMode {
 	t.Helper()
@@ -368,12 +268,8 @@ func newF12DebugMode(t testing.TB, size f12TerminalSize) *InteractiveMode {
 
 func newF12HiddenCommandMode(columns, rows int) *InteractiveMode {
 	return &InteractiveMode{
-		ui:          tui.NewTUI(newFakeTerminal(columns, rows)),
-		chat:        &tui.Container{},
-		arminRandom: func() float64 { return 0.2 },
-		arminScheduler: func(time.Duration, func()) func() {
-			return func() {}
-		},
+		ui:   tui.NewTUI(newFakeTerminal(columns, rows)),
+		chat: &tui.Container{},
 	}
 }
 
@@ -429,30 +325,17 @@ func replaceF12FramePaths(lines []string, replacements ...string) []string {
 func assertF12HiddenBehaviorFixture(t testing.TB, fixture f12CommandFixture) {
 	t.Helper()
 	debug := fixture.Behavior.Debug
-	armin := fixture.Behavior.ArminSaysHi
-	elves := fixture.Behavior.DementedElves
 	if debug.Terminal != (f12TerminalSize{Columns: 42, Rows: 17}) || debug.Path != "<agent-dir>/pi-debug.log" || debug.RequestRenders != 1 {
 		t.Fatalf("debug trace metadata = %+v", debug)
-	}
-	if armin.Effect != "scanline" || armin.IntervalDelayMS != 33.333 || armin.Ticks != 19 ||
-		armin.ScheduledIntervals != 1 || armin.ClearedIntervals != 1 || armin.RequestRenders != 20 || len(armin.Frames) != 4 {
-		t.Fatalf("Armin trace metadata = %+v", armin)
-	}
-	if got := []string{armin.Frames[0].ID, armin.Frames[1].ID, armin.Frames[2].ID, armin.Frames[3].ID}; !reflect.DeepEqual(got, []string{"initial", "tick-1", "tick-9", "complete"}) {
-		t.Fatalf("Armin trace frames = %v", got)
-	}
-	image := elves.BundledImage
-	if elves.RequestRenders != 1 || image.Filename != "clankolas.png" || image.MIMEType != "image/png" ||
-		image.ByteLength != 539053 || image.SHA256 != "169acd0dfe6fbb8d8742ed24a3fc654fd0b2e2d4223c733249c5493723f1b72d" ||
-		image.Dimensions != (tui.ImageDimensions{WidthPx: 640, HeightPx: 537}) || image.ImageChildren != 1 ||
-		image.TerminalCapability != nil || len(elves.Frames) != 2 || elves.Frames[0].Width != 32 || elves.Frames[1].Width != 80 {
-		t.Fatalf("Earendil trace metadata = %+v", elves)
 	}
 }
 
 func TestF12InteractiveCommandDispatchMatchesUpstream(t *testing.T) {
 	fixture := loadF12CommandFixture(t)
-	want := append([]string(nil), fixture.Dispatch...)
+	// Divergence ledger: Orb drops pi's hidden easter eggs.
+	want := slices.DeleteFunc(append([]string(nil), fixture.Dispatch...), func(name string) bool {
+		return name == "arminsayshi" || name == "dementedelves"
+	})
 	got := goInteractiveCommandDispatch(t)
 	sort.Strings(want)
 	sort.Strings(got)

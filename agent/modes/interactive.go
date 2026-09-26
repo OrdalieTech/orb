@@ -165,8 +165,6 @@ type InteractiveMode struct {
 	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
 	anthropicSubscriptionWarningShown bool
 	keyDisplayOS                      string
-	arminRandom                       func() float64
-	arminScheduler                    arminScheduler
 	exportHTML                        func(string) (string, error)
 
 	unsubscribe func()
@@ -1848,7 +1846,7 @@ func slashCommandAllowsArguments(name string) bool {
 	}
 }
 
-var hiddenInteractiveCommandNames = []string{"debug", "arminsayshi", "dementedelves"}
+var hiddenInteractiveCommandNames = []string{"debug"}
 
 func interactiveCommandNames() []string {
 	names := make([]string, 0, len(agent.BuiltinSlashCommands)+len(hiddenInteractiveCommandNames))
@@ -1939,10 +1937,6 @@ func (mode *InteractiveMode) resolveSlashCommand(name, args string) (slashComman
 		return slashCommandAction{name: "handleReloadCommand", arguments: noArguments, run: mode.handleReloadCommand}, true
 	case "debug":
 		return slashCommandAction{name: "handleDebugCommand", arguments: noArguments, run: mode.handleDebugCommand}, true
-	case "arminsayshi":
-		return slashCommandAction{name: "handleArminSaysHi", arguments: noArguments, run: mode.handleArminSaysHi}, true
-	case "dementedelves":
-		return slashCommandAction{name: "handleDementedDelves", arguments: noArguments, run: mode.handleDementedDelves}, true
 	}
 	return slashCommandAction{}, false
 }

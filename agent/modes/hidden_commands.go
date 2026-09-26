@@ -60,27 +60,3 @@ func (mode *InteractiveMode) handleDebugCommand() {
 	))
 	mode.ui.RequestRender()
 }
-
-func (mode *InteractiveMode) handleArminSaysHi() {
-	mode.chat.AddChild(tui.NewSpacer(1))
-	var component *ArminComponent
-	requester := &chatRenderRequester{mode: mode}
-	if mode.arminRandom != nil || mode.arminScheduler != nil {
-		scheduler := mode.arminScheduler
-		if scheduler == nil {
-			scheduler = scheduleArminAnimation
-		}
-		component = newArminComponentWithHooks(requester, mode.arminRandom, scheduler)
-	} else {
-		component = NewArminComponent(requester)
-	}
-	requester.Bind(component)
-	mode.chat.AddChild(component)
-	mode.ui.RequestRender()
-}
-
-func (mode *InteractiveMode) handleDementedDelves() {
-	mode.chat.AddChild(tui.NewSpacer(1))
-	mode.chat.AddChild(NewEarendilAnnouncementComponent())
-	mode.ui.RequestRender()
-}
