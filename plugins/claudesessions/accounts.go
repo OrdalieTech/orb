@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // A Claude account is a Claude Code configuration directory. The official CLI
@@ -451,6 +452,45 @@ func AmbientAccount(ctx context.Context, settings *config.SettingsManager, env [
 	p := newProvider(settings, "", env)
 	status := p.ambientStatus(ctx)
 	return status.label(), status.LoggedIn
+}
+
+// Usage reads an account's plan limits as Claude's /usage shows them; a nil
+// credential reads the user's own Claude Code login.
+func Usage(ctx context.Context, settings *config.SettingsManager, agentDir string, env []string, credential *aiauth.Credential) (usage.Snapshot, error) {
+	options, err := configuredOptions(ctx, settings, agentDir, env)
+	if err != nil {
+		return usage.Snapshot{}, err
+	}
+	if dir := accountDir(credential); dir != "" {
+		options.Env = withConfigDir(options.Env, dir)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var response struct {
+		Type, Plan string
+		Limits     map[string]json.RawMessage
+	}
+	cwd, _ := os.Getwd()
+	if oneShot(ctx, options, cwd, map[string]any{"usage": true}, &response) != nil || response.Type != "usage" || response.Limits == nil {
+		return usage.Snapshot{}, usage.ErrUnavailable
+	}
+	snapshot := usage.Snapshot{Plan: response.Plan, CheckedAt: time.Now()}
+	for key, raw := range response.Limits {
+		var window struct {
+			Utilization *float64
+			ResetsAt    *string `json:"resets_at"`
+		}
+		// Limits also carries non-window entries (extra usage, flags); only windows are shown.
+		if label := limitLabel(key); label != "" && json.Unmarshal(raw, &window) == nil && window.Utilization != nil {
+			entry := usage.Window{Name: label, Remaining: 100 - *window.Utilization}
+			if window.ResetsAt != nil {
+				entry.ResetsAt, _ = time.Parse(time.RFC3339, *window.ResetsAt)
+			}
+			snapshot.Windows = append(snapshot.Windows, entry)
+		}
+	}
+	slices.SortFunc(snapshot.Windows, func(a, b usage.Window) int { return strings.Compare(a.Name, b.Name) })
+	return snapshot, nil
 }
 
 // ForgetAccount signs a removed or replaced Claude account out and deletes its

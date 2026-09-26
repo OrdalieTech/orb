@@ -8,7 +8,8 @@ The embedded upstream changelog under `agent/modes/assets/` is a product asset d
 
 - Claude is a provider like the others once Claude Sessions is enabled. `/login` lists **Claude**
   with its accounts: your Claude Code login and any account added with **+ Add account**, which
-  runs the official CLI's sign-in. Orb never reads Claude's credentials.
+  runs the official CLI's sign-in. Orb never reads Claude's credentials. Each account shows its
+  plan limits in the account switcher and under **Usage and reset times**, like other providers.
 - One conversation now moves between Claude and any other model: pick one in `/model` and continue.
   Orb holds the transcript, so Claude reads the turns other models answered, other models read
   Claude's, and switching Claude accounts mid-conversation continues it. The `/claude` menu is gone.

@@ -709,7 +709,7 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 		add("reconnect", "Reconnect")
 		add("remove", "Disconnect")
 	}
-	if account.Provider == "openai-codex" || account.Provider == "opencode-go" {
+	if hasAccountUsage(account.Provider) {
 		add("usage", "Usage and reset times")
 	}
 	action, ok := mode.providerMenu(ctx, providerLabel(host, account.Provider)+" · "+account.Name, rows)
@@ -747,6 +747,11 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	if err := host.ChangeAccount(ctx, account.Provider, account.ID, action, name); err != nil {
 		mode.showError(err)
 	}
+}
+
+// hasAccountUsage names the providers whose accounts report plan limits.
+func hasAccountUsage(provider string) bool {
+	return provider == "openai-codex" || provider == "opencode-go" || provider == "claude-sessions"
 }
 
 func usageResetTime(window usage.Window) string {
@@ -845,7 +850,7 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 		}
 	}
 	for i, account := range connected {
-		if account.Provider != "openai-codex" && account.Provider != "opencode-go" {
+		if !hasAccountUsage(account.Provider) {
 			continue
 		}
 		summaries[i] = "Checking…"
@@ -897,7 +902,7 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 	updates := make(chan updated, len(connected))
 	jobs := make(chan int, len(connected))
 	for i, account := range connected {
-		if account.Provider == "openai-codex" || account.Provider == "opencode-go" {
+		if hasAccountUsage(account.Provider) {
 			jobs <- i
 		}
 	}
