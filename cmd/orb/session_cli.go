@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
 var errNoSessionSelected = errors.New("no session selected")
@@ -181,6 +182,15 @@ func createCLISessionWithSelectors(
 		}
 		switch resolved.kind {
 		case "not_found":
+			// A Claude Code session opens as an Orb conversation, with Claude Sessions enabled.
+			if settings.GetPlugins()[claudesessions.Name] {
+				manager, err = claudesessions.ImportClaudeCode(resolved.arg, os.Environ(), func(dir string) (*session.SessionManager, error) {
+					return session.Create(dir, sessionDir, session.WithAgentDir(agentDir))
+				})
+				if err == nil {
+					break
+				}
+			}
 			return nil, session.SessionContext{}, fmt.Errorf("No session found matching '%s'", resolved.arg) //nolint:staticcheck // Upstream error capitalization is observable.
 		case "global":
 			confirmed, confirmErr := confirmGlobalSessionFork(streams, resolved.cwd)
@@ -373,6 +383,22 @@ func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector 
 	}
 	if reference != "" {
 		opened, err = repo.OpenPath(ctx, reference)
+	}
+	// A Claude Code session opens as an Orb conversation, with Claude Sessions enabled.
+	if settings, settingsErr := args.native.settings(cwd, args.native.agentDir); hasCLIValue(args.Session) && errors.Is(err, fs.ErrNotExist) && settingsErr == nil && settings.GetPlugins()[claudesessions.Name] {
+		manager, importErr := claudesessions.ImportClaudeCode(*args.Session, os.Environ(), func(dir string) (*session.SessionManager, error) {
+			created, err := repo.Create(ctx, harness.SessionCreateOptions{CWD: dir})
+			if err != nil {
+				return nil, err
+			}
+			return session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir))
+		})
+		if importErr == nil {
+			if err = args.native.bindSession(manager); err != nil {
+				return nil, session.SessionContext{}, err
+			}
+			return manager, manager.BuildSessionContext(), nil
+		}
 	}
 	if err != nil && (args.SessionID == nil || hasCLIValue(args.Fork) || hasCLIValue(args.Session) || !errors.Is(err, fs.ErrNotExist)) {
 		return nil, session.SessionContext{}, err

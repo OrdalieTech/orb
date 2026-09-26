@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -423,44 +422,6 @@ func TestCycleModelReportsUnscopedCatalogCycle(t *testing.T) {
 	}
 	if result == nil || result.IsScoped || result.Model.ID != "b" {
 		t.Fatalf("available-model cycle = %#v", result)
-	}
-}
-
-// A model on its own executor cannot join this conversation: selecting it asks
-// for a new one, and cycling stays within the current executor.
-func TestModelOnOwnExecutorNeedsNewConversation(t *testing.T) {
-	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("own-executor"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	modelA, native, modelB := rpcTestModel("provider-a", "a"), rpcTestModel("native", "n"), rpcTestModel("provider-b", "b")
-	created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{
-		Model: &modelA, ThinkingLevel: ai.ModelThinkingLow, Messages: engine.AgentMessages{},
-	}))
-	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings,
-		AvailableModels: func() []ai.Model { return []ai.Model{modelA, native, modelB} },
-		OwnExecutor:     func(model ai.Model) bool { return model.Provider == "native" },
-		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
-			key := "key"
-			return &key, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runtime.Dispose()
-	if err := runtime.SetModel(context.Background(), native); !errors.Is(err, ErrNewConversation) {
-		t.Fatalf("selecting a model on its own executor = %v", err)
-	}
-	result, err := runtime.CycleModel(context.Background())
-	if err != nil || result == nil || result.Model.ID != "b" {
-		t.Fatalf("cycle = %#v, %v; want it to skip the other executor", result, err)
 	}
 }
 

@@ -25,7 +25,7 @@ function request(message, signal) {
 }
 function ask(title, choices, signal, ruled = false) { return request({ type: 'input', title, choices, ruled }, signal); }
 async function run(config) {
-  const { query, forkSession } = await import(pathToFileURL(config.sdk));
+  const { query } = await import(pathToFileURL(config.sdk));
   let permissionMode = config.permissionMode || 'default';
   const options = {
     cwd: config.cwd, pathToClaudeCodeExecutable: config.claude,
@@ -116,17 +116,16 @@ async function run(config) {
     } finally { release(); active?.close(); active = undefined; }
     return;
   }
-  // Native session IDs come from the SDK. A fork copies the transcript up to the
-  // branch point into a new native session, so the original is never rewritten.
-  if (config.resume) options.resume = config.fork
-    ? (await forkSession(config.resume, { dir: config.cwd, upToMessageId: config.at || undefined })).sessionId
-    : config.resume;
+  // Orb writes the transcript a resumed session starts from, and reads back
+  // what Claude wrote once each turn settles.
+  if (config.resume) options.resume = config.resume;
   // One live query per Orb session: prompts arrive on stdin, and a turn settles once its
   // result has no queued sends and no native background task remains.
   active = query({ prompt: input(), options });
   const tasks = new Set();
-  let levelReported = false;
+  let levelReported = false, session = config.resume;
   for await (const event of active) {
+    if (event.session_id && !event.parent_tool_use_id) session = event.session_id;
     if (event.type === 'system') {
       if (event.permissionMode) permissionMode = event.permissionMode;
       if (event.subtype === 'background_tasks_changed') {
@@ -157,7 +156,7 @@ async function run(config) {
     await send({ type: 'sdk', event });
     if (settled) {
       finished = false;
-      await send({ type: 'settled' });
+      await send({ type: 'settled', session });
       // ponytail: an idle host exits after 10 minutes; the next prompt resumes it.
       idle = setTimeout(() => lines.close(), 10 * 60 * 1000);
     }

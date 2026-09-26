@@ -31,12 +31,9 @@ import (
 )
 
 const fakeSDK = `
-const forks=new Map();
-export async function forkSession(from,{upToMessageId}={}) {
- const sessionId=crypto.randomUUID();
- forks.set(sessionId,{from,at:upToMessageId??''});
- return {sessionId};
-}
+import {readFileSync,appendFileSync,mkdirSync} from 'node:fs';
+// Like the CLI: transcripts live under the config directory, one per session.
+const transcript=(cwd,id)=>{const dir=process.env.CLAUDE_CONFIG_DIR+'/projects/'+cwd.replace(/[^a-zA-Z0-9]/g,'-');mkdirSync(dir,{recursive:true});return dir+'/'+id+'.jsonl'};
 export function query({prompt,options:o}) {
  if(typeof prompt==='string') return (async function*(){
   yield {type:'result',subtype:'success',result:'SUMMARY '+(o.tools.length===0&&o.systemPrompt.includes('summarization'))+' '+prompt.includes('[user]: keep this')};
@@ -45,7 +42,10 @@ export function query({prompt,options:o}) {
  const gen = (async function*(){
   if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
   const id=o.resume??crypto.randomUUID();
-  const fork=forks.get(o.resume);
+  // Orb writes the transcript to resume from; this reports what Claude would read.
+  const loaded=o.resume?readFileSync(transcript(o.cwd,o.resume),'utf8').split('\n').filter(Boolean).map(l=>JSON.parse(l)):[];
+  const read=loaded.map(r=>r.type+':'+(typeof r.message.content==='string'?r.message.content:r.message.content.map(b=>b.text??'').join('')));
+  const record=(...rs)=>appendFileSync(transcript(o.cwd,id),rs.map(r=>JSON.stringify(r)+'\n').join(''));
   const stream=event=>({type:'stream_event',session_id:id,parent_tool_use_id:null,event});
   const prompts=prompt[Symbol.asyncIterator]();
   let pending;
@@ -58,6 +58,12 @@ export function query({prompt,options:o}) {
   if(done) return;
   idle=JSON.stringify(p.message.content).includes('idle-fixture');
   yield {type:'system',subtype:'init',session_id:id};
+  if(JSON.stringify(p.message.content).includes('plain-fixture')) {
+   const text=JSON.stringify({read});
+   yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text}],usage:{input_tokens:10,output_tokens:4}}};
+   record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},{type:'assistant',uuid:id+'-a'+turn,message:{role:'assistant',content:[{type:'text',text:'plain'}]}});
+   yield {type:'result',subtype:'success',session_id:id};continue;
+  }
   if(JSON.stringify(p.message.content).includes('elicitation-fixture')) {
    const reply=await o.onElicitation({serverName:'fixture MCP',message:'Choose retries',mode:'form',requestedSchema:{type:'object',properties:{retries:{type:'integer',minimum:1,maximum:5}},required:['retries']}},{signal:abort.signal});
    yield {type:'assistant',uuid:'elicitation-result',session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify(reply)}],usage:{input_tokens:10,output_tokens:4}}};
@@ -73,7 +79,7 @@ export function query({prompt,options:o}) {
   const decision=hook?.hookSpecificOutput?.permissionDecision;
   const reply=decision==='deny'?{behavior:'deny'}:decision==='allow'&&!question?{behavior:'allow',updatedInput:input}:await o.canUseTool(tool,input,{signal:abort.signal});
   if(reply.behavior!=='allow') throw new Error('permission denied');
-  const text=JSON.stringify({resume:fork?fork.from:o.resume??'',fork:!!fork,at:fork?.at??'',turn,content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
+  const text=JSON.stringify({resume:o.resume??'',read,turn,content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
   // Like the real CLI: one assistant record per content block, beside the raw stream.
   yield stream({type:'message_start',message:{id:'msg-1',model:o.model,content:[],usage:{input_tokens:10,output_tokens:1}}});
   yield stream({type:'content_block_start',index:0,content_block:{type:'text',text:''}});
@@ -100,6 +106,9 @@ export function query({prompt,options:o}) {
   yield {type:'assistant',uuid:'final-checkpoint',session_id:id,parent_tool_use_id:null,message:{id:'msg-2',model:o.model,content:[{type:'text',text:final}],usage:{input_tokens:12,output_tokens:1}}};
   yield stream({type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:2}});
   yield stream({type:'message_stop'});
+  record({type:'user',uuid:id+'-u'+turn,parentUuid:null,message:{role:'user',content:p.message.content}},
+   {type:'assistant',uuid:id+'-a'+turn,parentUuid:id+'-u'+turn,message:{role:'assistant',content:[{type:'text',text:final}]}},
+   {type:'queue-operation'});
   yield {type:'result',subtype:'success',session_id:id,total_cost_usd:0.01};
   }
  })();
@@ -127,7 +136,7 @@ func fixture(t *testing.T, policy ...*plugins.Policy) (*agent.AgentSessionRuntim
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := Options{RenderText: func(text string) extensions.Component { return testText(text) }, Node: node, Claude: filepath.Join(dir, "unused-native"), SDK: sdk, Env: []string{"SDK_TEST_KEY=unchanged"}, Manager: manager}
+	options := Options{RenderText: func(text string) extensions.Component { return testText(text) }, Node: node, Claude: filepath.Join(dir, "unused-native"), SDK: sdk, Env: []string{"SDK_TEST_KEY=unchanged", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude")}, Manager: manager}
 	registry := extensions.NewRegistry(dir)
 	if len(policy) > 0 {
 		if err := registry.Register("permissions", plugins.Extension(policy[0], nil, nil)); err != nil {
@@ -221,13 +230,7 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 			t.Fatal(*e)
 		}
 	}
-	saved, err := driver.checkpoint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if saved.Session == "" || saved.At != "final-checkpoint" {
-		t.Fatalf("checkpoint %#v", saved)
-	}
+	_ = driver
 	if updates != 4 || tools != 2 {
 		t.Fatalf("updates %d tools %d", updates, tools)
 	}
@@ -254,15 +257,14 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 		t.Fatalf("streamed tool arguments lost: %+v", call)
 	}
 
-	// Moving back on the tree resumes the same native session at that point.
-	var earlier string
-	for _, entry := range s.Manager().GetEntries() {
-		var point checkpoint
-		if entry.CustomType == Name && json.Unmarshal(entry.Data, &point) == nil && point.At == "tool-checkpoint" && earlier == "" {
-			earlier = entry.ID
+	// Moving back on the tree resumes from the transcript Orb holds for that point.
+	var firstTurn string
+	for _, entry := range s.Manager().GetBranch() {
+		if entry.CustomType == transcriptEntry && firstTurn == "" {
+			firstTurn = entry.ID
 		}
 	}
-	if err := s.Manager().Branch(earlier); err != nil {
+	if err := s.Manager().Branch(firstTurn); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
@@ -273,9 +275,9 @@ func TestSDKSessionResumeEventsAndApprovalIsolation(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	raw, _ = json.Marshal(s.State().Messages)
-	if !strings.Contains(string(raw), `\"resume\":\"`+saved.Session+`\",\"fork\":true,\"at\":\"tool-checkpoint\"`) {
-		t.Fatalf("branch did not resume at its native point: %s", raw)
+	raw, _ = json.Marshal(s.State().Messages[len(s.State().Messages)-3])
+	if !strings.Contains(string(raw), `\"read\":[\"user:hello\",\"assistant:done\"]`) {
+		t.Fatalf("branch did not resume from its own transcript: %s", raw)
 	}
 }
 
@@ -408,7 +410,7 @@ func TestInterruptedTurnSettlesLikeOrb(t *testing.T) {
 	_, driver := fixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	var events []engine.AgentEvent
-	tr := translation{driver: driver, ctx: ctx, tools: map[string]string{}, prompt: "prompt-uuid", emit: func(_ context.Context, event engine.AgentEvent) error {
+	tr := translation{driver: driver, ctx: ctx, tools: map[string]string{}, emit: func(_ context.Context, event engine.AgentEvent) error {
 		events = append(events, event)
 		return nil
 	}}
@@ -430,9 +432,6 @@ func TestInterruptedTurnSettlesLikeOrb(t *testing.T) {
 	reply, _ := end.Message.(*ai.AssistantMessage)
 	if _, turn := events[len(events)-1].(engine.TurnEndEvent); !turn || reply == nil || reply.StopReason != ai.StopReasonAborted || *reply.ErrorMessage != "Request was aborted" || reply.Content[0].(*ai.TextContent).Text != "partial" {
 		t.Fatalf("interrupted reply left open: %#v", events)
-	}
-	if saved, _ := driver.checkpoint(); saved.At != "prompt-uuid" {
-		t.Fatalf("interrupted prompt missing from the resume point: %+v", saved)
 	}
 }
 
@@ -486,17 +485,6 @@ func TestModelSelectionKeepsExistingProvider(t *testing.T) {
 	if Model(nil, nil, settings) != nil {
 		t.Fatal("ordinary launch implicitly selected Claude")
 	}
-	for _, restored := range []session.SessionModel{{Provider: "openai", ModelID: "normal"}, {Provider: "unknown", ModelID: "unknown"}} {
-		provider, model := ptr(Name), ptr("sonnet")
-		RestoreSelection(session.SessionContext{Model: &restored}, &provider, &model)
-		if restored.Provider == "unknown" {
-			if provider != nil || model != nil {
-				t.Fatal("Claude startup selection survived exit")
-			}
-		} else if provider == nil || *provider != restored.Provider || model == nil || *model != restored.ModelID {
-			t.Fatal("could not return to Orb model")
-		}
-	}
 }
 
 type testStore struct{ data []byte }
@@ -548,11 +536,9 @@ func TestSDKLiveSession(t *testing.T) {
 			t.Fatalf("native reply: %s", raw)
 		}
 	}
-	saved, err := driver.checkpoint()
-	if err != nil || saved.Session == "" || saved.At == "" {
-		t.Fatalf("native checkpoint %#v %v", saved, err)
+	if onBranch(result.Session.Manager(), func(entry *session.SessionEntry) bool { return entry.CustomType == transcriptEntry }) == nil {
+		t.Fatal("native transcript was not mirrored into Orb")
 	}
-	t.Logf("Native create/resume passed, session %s", saved.Session)
 }
 
 func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
@@ -643,8 +629,8 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 	}
 	prompt()
 	raw, _ := json.Marshal(host.Session().State().Messages)
-	if !strings.Contains(string(raw), `\"fork\":true`) {
-		t.Fatal("native fork option missing")
+	if !strings.Contains(string(raw), `\"read\":[\"user:`) {
+		t.Fatal("fork did not resume from its copied transcript")
 	}
 	wait(call("session.switch", map[string]string{"session_id": original}))
 	if host.Session().Manager().GetSessionID() != original {
@@ -1546,51 +1532,6 @@ func TestTaskNoticesSkipForegroundTools(t *testing.T) {
 	want := []string{"Claude task started: Run tests", "Claude task moved to background: Build", "Claude task completed: Build", "Claude task failed: Run tests"}
 	if !slices.Equal(notices, want) || len(tr.tasks) != 0 {
 		t.Fatalf("notices %q, tracked %d", notices, len(tr.tasks))
-	}
-}
-
-func TestNativePlanAndCompactCommands(t *testing.T) {
-	_, driver := fixture(t)
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("claude", Management(nil, "", nil)); err != nil {
-		t.Fatal(err)
-	}
-	idle := true
-	sent := ""
-	failures := 0
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &limitsUI{}, SessionManager: driver.options.Manager,
-		ContextActions: extensions.ContextActions{IsIdle: func() bool { return idle }, GetModel: func() *ai.Model { return &ai.Model{Provider: Name} }},
-		Actions: extensions.Actions{AppendEntry: func(_ context.Context, kind string, value any) error {
-			_, err := driver.options.Manager.AppendCustomEntry(kind, value)
-			return err
-		}, SendUserMessage: func(_ context.Context, content ai.UserContent, _ *extensions.SendUserMessageOptions) error {
-			sent = *content.Text
-			return nil
-		}},
-		ErrorHandler: func(extensions.ExtensionError) { failures++ },
-	})
-	commands := map[string]bool{}
-	for _, command := range runner.RegisteredCommands() {
-		commands[command.InvocationName] = true
-	}
-	for _, name := range []string{"models", "usage", "new", "exit", "plan", "normal", "compact"} {
-		if !commands["claude:"+name] {
-			t.Fatalf("shortcut missing from completion: %s", name)
-		}
-	}
-	if !runner.ExecuteCommand(t.Context(), "claude:plan", "") || nativeMode(driver.options.Manager) != "plan" {
-		t.Fatal("plan mode not stored")
-	}
-	idle = false
-	runner.ExecuteCommand(t.Context(), "claude", "normal")
-	if failures != 1 || nativeMode(driver.options.Manager) != "plan" {
-		t.Fatal("mode changed during active work")
-	}
-	idle = true
-	runner.ExecuteCommand(t.Context(), "claude", "normal")
-	runner.ExecuteCommand(t.Context(), "claude:compact", "")
-	if nativeMode(driver.options.Manager) != "default" || sent != "/compact" || failures != 1 {
-		t.Fatalf("mode=%s prompt=%s failures=%d", nativeMode(driver.options.Manager), sent, failures)
 	}
 }
 

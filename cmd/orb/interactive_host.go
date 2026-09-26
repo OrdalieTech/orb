@@ -1179,26 +1179,6 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 	return rows, nil
 }
 
-// NewConversationWith starts a conversation on model when it runs on another
-// executor than the current one, as picking a Claude model from an Orb
-// conversation does.
-func (host *interactiveSessionHost) NewConversationWith(ctx context.Context, model ai.Model) error {
-	host.mu.Lock()
-	current := host.session
-	host.mu.Unlock()
-	leaving := current != nil && current.Agent().UsesSessionLoop() && model.Provider != claudesessions.Name
-	_, err := host.NewSession(ctx, &extensions.NewSessionOptions{Prepare: func(manager *session.SessionManager) error {
-		if leaving {
-			if _, err := manager.AppendCustomEntry(claudesessions.Name+".exit", nil); err != nil {
-				return err
-			}
-		}
-		_, err := manager.AppendModelChange(string(model.Provider), model.ID)
-		return err
-	}})
-	return err
-}
-
 // ProviderName is a provider's display name, as /login shows it.
 func (host *interactiveSessionHost) ProviderName(id string) string {
 	host.mu.Lock()

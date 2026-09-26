@@ -38,7 +38,6 @@ import (
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
-	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/gofrs/flock"
 	"golang.org/x/term"
@@ -752,7 +751,6 @@ func refreshCodexModels(ctx context.Context, agentDir string, registry *config.M
 }
 
 func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch []session.SessionEntry) {
-	claudesessions.RestoreSelection(context, &args.Provider, &args.Model, branch...)
 	if len(context.Messages) > 0 && context.Model != nil && (args.Model == nil || *args.Model == "") {
 		// Upstream treats provider/model as one selection. A provider-only CLI
 		// argument does not override the model restored from a session.
