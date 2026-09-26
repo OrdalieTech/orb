@@ -27,6 +27,9 @@ import (
 
 const transcriptEntry = Name + ".transcript"
 
+// ErrNoClaudeCodeSession reports an ID that names no Claude Code session.
+var ErrNoClaudeCodeSession = errors.New("no Claude Code session")
+
 func messageRole(entry *session.SessionEntry) string {
 	var message struct{ Role string }
 	_ = json.Unmarshal(entry.Message, &message)
@@ -287,19 +290,21 @@ func mirror(manager *session.SessionManager, projects, sessionID string, mirrore
 	return err
 }
 
-// keptRecord is the conversation part of Claude's transcript: what it resumes from.
+// keptRecord is the conversation part of Claude's transcript: what it resumes
+// from. Attachments (files, hook output) are links of the same parentUuid chain.
 func keptRecord(kind string) bool {
-	return kind == "user" || kind == "assistant" || kind == "system" || kind == "summary"
+	return kind == "user" || kind == "assistant" || kind == "system" || kind == "attachment" || kind == "summary"
 }
 
 // ImportClaudeCode opens a Claude Code session in a new Orb conversation: its
 // messages to read and continue with any model, and its records for Claude to
-// resume from. create makes the conversation in the session's directory.
+// resume from. create makes the conversation in the session's directory, under
+// the session's own ID so opening it again finds the Orb conversation.
 func ImportClaudeCode(id string, env []string, create func(cwd string) (*session.SessionManager, error)) (*session.SessionManager, error) {
 	base, _ := baseConfig(env)
 	paths, _ := filepath.Glob(filepath.Join(base, "projects", "*", filepath.Base(id)+".jsonl"))
 	if len(paths) == 0 {
-		return nil, errors.New("no Claude Code session " + id)
+		return nil, ErrNoClaudeCodeSession
 	}
 	data, err := os.ReadFile(paths[0])
 	if err != nil {

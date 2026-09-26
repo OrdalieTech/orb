@@ -375,7 +375,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				if ctx.Err() != nil {
 					return translator.abort()
 				}
-				return translator.failure
+				return nil
 			}
 			if err = d.handle(ctx, frame, &translator, h, prompts, config); err == nil && translator.answered && ctx.Err() == nil {
 				translator.answered = false
@@ -594,7 +594,6 @@ type translation struct {
 	cancelled       bool // Orb asked to stop; replies still finishing end as aborted
 	stopped         bool // a reply already ended as aborted
 	answered        bool // tool results arrived, so steering can join the turn
-	failure         error
 	progress        map[string]int
 	tasks           map[string]*nativeTask
 }
@@ -851,13 +850,23 @@ func (t *translation) event(raw json.RawMessage) error {
 		if err := t.finish(); err != nil {
 			return err
 		}
-		// A reply already rendered as an error is not reported twice.
-		if (e.IsError || e.Subtype != "success") && !t.errored {
+		// A failure shows as an error reply, as Orb's own loop ends a failed turn;
+		// one already rendered as an error, or a turn Orb stopped, is not reported again.
+		if (e.IsError || e.Subtype != "success") && !t.errored && !t.cancelled {
 			reason := strings.Join(e.Errors, "; ")
 			if reason == "" {
 				reason = e.Result
 			}
-			t.failure = fmt.Errorf("claude %s: %s", e.Subtype, reason)
+			if reason == "" {
+				reason = "Claude ended the turn: " + e.Subtype
+			}
+			if err := t.begin(t.message(nativeMessage{}), ""); err != nil {
+				return err
+			}
+			t.partial.StopReason, t.partial.ErrorMessage, t.errored = ai.StopReasonError, &reason, true
+			if err := t.finish(); err != nil {
+				return err
+			}
 		}
 		return t.endTurn()
 	}
