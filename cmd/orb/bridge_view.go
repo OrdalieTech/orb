@@ -491,7 +491,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			if pending != "" {
 				var receipt bridge.Receipt
 				if remote("operations.get", map[string]string{"instance_id": instance, "operation_id": pending}, &receipt) == nil {
-					status.set(receipt.Status + " · " + receipt.Error + " · Esc closes view")
+					status.set(strings.Join(slices.DeleteFunc([]string{receipt.Status, receipt.Error, "Esc closes view"}, func(part string) bool { return part == "" }), " · "))
 				}
 			}
 			cacheDirty := cursor == ""

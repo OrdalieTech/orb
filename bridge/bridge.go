@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -320,9 +321,50 @@ func (b *Bridge) Catalog(p Principal) []Instance {
 	slices.SortFunc(out, func(a, c Instance) int { return strings.Compare(a.ID, c.ID) })
 	return out
 }
+
+// autoAlias is the name of the throwaway instance an Orb enrolls when started
+// without an alias of its own.
+var autoAlias = regexp.MustCompile(`^instance-[a-z0-9_-]{8}$`)
+
+// Retire removes the named instances or, with none named, every throwaway
+// instance whose Orb has gone: one that attached once, is not attached now, and
+// no grant names. It returns how many it removed.
+func (b *Bridge) Retire(ids []string) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.retireLocked(ids)
+}
+
+func (b *Bridge) retireLocked(ids []string) (int, error) {
+	granted := map[string]bool{}
+	for _, g := range b.state.Grants {
+		granted[g.Principal.Subject.InstanceID] = true
+		for _, id := range g.Instances {
+			granted[id] = true
+		}
+	}
+	removed := 0
+	for id, r := range b.state.Instances {
+		_, active := b.active[id]
+		if slices.Contains(ids, id) || len(ids) == 0 && !active && !granted[id] && r.BootID != "" && autoAlias.MatchString(r.Alias) {
+			delete(b.state.Instances, id)
+			removed++
+		}
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	return removed, b.save()
+}
+
 func (b *Bridge) Enroll(alias, group string) (Instance, string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if len(b.state.Instances) >= 4096 {
+		if _, err := b.retireLocked(nil); err != nil {
+			return Instance{}, "", err
+		}
+	}
 	if len(alias) > 128 || len(b.state.Instances) >= 4096 {
 		return Instance{}, "", Fail("resource_exhausted")
 	}

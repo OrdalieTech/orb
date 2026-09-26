@@ -76,6 +76,15 @@ func (b *Bridge) Admin(_ context.Context, method string, params json.RawMessage)
 			Instance   Instance `json:"instance"`
 			Credential string   `json:"credential"`
 		}{r, token}), err
+	case "retire":
+		var p struct {
+			IDs []string `json:"instance_ids,omitempty"`
+		}
+		if err := protocol.Decode(params, &p); err != nil {
+			return nil, err
+		}
+		removed, err := b.Retire(p.IDs)
+		return JSON(map[string]int{"removed": removed}), err
 	case "invite":
 		var p struct {
 			Grants []Grant `json:"grants"`

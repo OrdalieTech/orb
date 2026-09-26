@@ -5,9 +5,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -27,6 +29,15 @@ type Welcome struct {
 func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret string, admin protocol.Handler, outbound protocol.Handler) (func(), error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("absolute IPC path required")
+	}
+	// A socket path fits in sun_path with its final NUL: 104 bytes on macOS
+	// and the BSDs, 108 on Linux and Windows; binding a longer one fails obscurely.
+	limit := 103
+	if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+		limit = 107
+	}
+	if len(path) > limit {
+		return nil, fmt.Errorf("IPC path %s is %d bytes, over the %d the system allows; set ORB_BRIDGE_HOME to a shorter directory", path, len(path), limit)
 	}
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSocket == 0 {

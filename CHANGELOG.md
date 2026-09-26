@@ -5,6 +5,17 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Bridge no longer keeps a registration for every Orb ever started: an Orb started without
+  `--instance-alias` retires its throwaway instance and its state when it exits, and
+  `orb bridge prune` removes those left by earlier versions or crashes. Enrolling also prunes
+  them before refusing at the 4096-instance limit, which such leftovers would have reached.
+- Orb reattaches to a restarted Bridge within a second instead of up to fifteen.
+- A Bridge profile whose socket path exceeds the system limit (a deep `PI_CODING_AGENT_DIR`)
+  says so and suggests `ORB_BRIDGE_HOME`, instead of failing with "bind: invalid argument".
+- `/export` works with the default terminal theme, `/export file.md` writes Markdown, and
+  `/import` of an export whose conversation went on since opens it as a copy.
+- Typing a long text keystroke by keystroke (a paste without bracketed paste) stays fast:
+  430 KB now takes seconds instead of minutes, without growing to a gigabyte.
 - The model picker opens at once with Claude Sessions enabled: it waited up to two seconds for
   Claude's model catalog and login check, which now refresh in the background while the last
   reading answers.

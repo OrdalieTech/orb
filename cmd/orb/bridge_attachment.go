@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -101,8 +102,8 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 		}
 		profile = "personal"
 	}
-	alias := args.InstanceAlias
-	if alias == "" {
+	alias, throwaway := args.InstanceAlias, args.InstanceAlias == ""
+	if throwaway {
 		alias = "instance-" + strings.ToLower(protocol.NewID()[:8])
 	}
 	if !validBridgeName(alias) {
@@ -213,10 +214,32 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 				return
 			case <-timer.C:
 			}
-			delay = min(delay*2, 10*time.Second)
+			// The service is a local socket: a failed dial costs nothing, and a
+			// restarted Bridge should see its instances again within seconds.
+			delay = min(delay*2, 2*time.Second)
 		}
 	}()
-	return func() { cancel(); <-done; _ = a.Close(); _ = ledger.Close(); cleanup() }, nil
+	return func() {
+		cancel()
+		<-done
+		_ = a.Close()
+		// A throwaway instance's alias is never used again: it leaves no registration or state behind.
+		if throwaway {
+			ctx, stop := context.WithTimeout(context.WithoutCancel(lifetime), 2*time.Second)
+			if admin, err := bridgeAdmin(ctx, profile); err == nil {
+				_ = admin.Call(ctx, "retire", map[string][]string{"instance_ids": {identity.InstanceID}}, nil)
+				_ = admin.Close()
+			}
+			stop()
+			_ = ledger.Remove()
+			_ = stateStore.Remove()
+		}
+		_ = ledger.Close()
+		cleanup()
+		if throwaway {
+			_ = os.RemoveAll(stateDir)
+		}
+	}, nil
 }
 
 func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, settings *config.SettingsManager, writer io.Writer) (func(), error) {
