@@ -118,6 +118,10 @@ func listMCPServers(settings *config.SettingsManager, streams cliStreams) int {
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
 	}
+	if len(servers) == 0 {
+		_, _ = fmt.Fprintln(streams.Stderr, "No MCP servers configured. Add one with orb mcp add.")
+		return 0
+	}
 	names := make([]string, 0, len(servers))
 	for name := range servers {
 		names = append(names, name)

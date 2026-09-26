@@ -44,7 +44,7 @@ var descriptions = map[string]string{
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
-	"claude-sessions":    "Native Claude Code sessions through the official Agent SDK (/claude)",
+	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
 	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
 }
 
