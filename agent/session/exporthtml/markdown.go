@@ -32,7 +32,7 @@ func ExportSessionMarkdown(manager *session.SessionManager, outputPath string) (
 		if sessionFile != "" {
 			base = strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
 		}
-		outputPath = "pi-session-" + base + ".md"
+		outputPath = "orb-session-" + base + ".md"
 	}
 	outputPath, err := normalizePath(outputPath)
 	if err != nil {
@@ -62,7 +62,7 @@ func ExportMarkdownFromFile(inputPath, outputPath string) (string, error) {
 	}
 	if outputPath == "" {
 		base := strings.TrimSuffix(filepath.Base(resolvedInput), ".jsonl")
-		outputPath = "pi-session-" + base + ".md"
+		outputPath = "orb-session-" + base + ".md"
 	}
 	return ExportSessionMarkdown(manager, outputPath)
 }

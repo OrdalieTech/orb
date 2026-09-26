@@ -60,7 +60,7 @@ func TestMarkdownDefaultNameStripsOnlyLowercaseJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path != "pi-session-fixture.JSONL.md" {
+	if path != "orb-session-fixture.JSONL.md" {
 		t.Fatalf("default markdown path = %q", path)
 	}
 }

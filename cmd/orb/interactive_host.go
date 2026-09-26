@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +25,8 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
+	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
@@ -627,9 +631,54 @@ func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, op
 	return modes.InteractiveForkResult{SelectedText: selectedText}, host.finishReplacement(ctx, replacement, withSession)
 }
 
+// importCopy writes inputPath's journal under a new session ID, for an import
+// whose ID is already stored with other content.
+func importCopy(inputPath string) (string, error) {
+	path, err := resolveImportPath(inputPath)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	first, rest, _ := bytes.Cut(data, []byte("\n"))
+	var header map[string]json.RawMessage
+	if err := json.Unmarshal(first, &header); err != nil {
+		return "", err
+	}
+	id, err := uuidv7.Generate(time.Now())
+	if err != nil {
+		return "", err
+	}
+	header["id"], _ = json.Marshal(id)
+	if first, err = json.Marshal(header); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp("", "orb-import-*.jsonl")
+	if err != nil {
+		return "", err
+	}
+	_, err = file.Write(append(append(first, '\n'), rest...))
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return file.Name(), err
+}
+
 func (host *interactiveSessionHost) ImportSession(ctx context.Context, inputPath, cwdOverride string) (extensions.SessionReplacementResult, error) {
 	if host.args.native != nil {
-		return host.SwitchSession(ctx, inputPath, cwdOverride, nil)
+		result, err := host.SwitchSession(ctx, inputPath, cwdOverride, nil)
+		if !errors.Is(err, sqlite.ErrImportConflict) {
+			return result, err
+		}
+		// An export of a conversation that went on since opens as a copy of its own.
+		copied, copyErr := importCopy(inputPath)
+		if copyErr != nil {
+			return result, err
+		}
+		defer func() { _ = os.Remove(copied) }()
+		return host.SwitchSession(ctx, copied, cwdOverride, nil)
 	}
 	runtime, cancelled, err := func() (*agent.SessionRuntime, bool, error) {
 		current, err := host.beginReplacement(ctx)

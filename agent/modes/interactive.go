@@ -2485,6 +2485,8 @@ func (mode *InteractiveMode) handleExportCommand(text string) {
 	var err error
 	if strings.HasSuffix(outputPath, ".jsonl") {
 		path, err = mode.session.ExportJSONL(outputPath)
+	} else if strings.HasSuffix(outputPath, ".md") {
+		path, err = exporthtml.ExportSessionMarkdown(mode.session.Manager(), outputPath)
 	} else if mode.exportHTML != nil {
 		path, err = mode.exportHTML(outputPath)
 	} else {
