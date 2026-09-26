@@ -165,9 +165,10 @@ type host struct {
 	key  string
 	last string
 	// projects is where Claude keeps this conversation's transcript; mirrored
-	// holds the records Orb already has.
+	// holds the records Orb already has, read how far each transcript was read.
 	projects string
 	mirrored map[string]bool
+	read     map[string]int64
 	input    io.WriteCloser
 	mu       sync.Mutex
 	frames   chan hostFrame
@@ -334,7 +335,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		if h, err = d.spawn(start, env); err != nil {
 			return nil, false, err
 		}
-		h.key, h.projects, h.mirrored = string(key), projects, mirrored
+		h.key, h.projects, h.mirrored, h.read = string(key), projects, mirrored, map[string]int64{}
 		d.host = h
 		return h, false, nil
 	}
@@ -368,7 +369,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				return errors.New("claude SDK exited without a result; execution outcome is unknown")
 			}
 			if frame.Type == "settled" {
-				if err := mirror(d.options.Manager, h.projects, frame.Session, h.mirrored); err != nil {
+				if err := mirror(d.options.Manager, h.projects, frame.Session, h.mirrored, h.read); err != nil {
 					return err
 				}
 				h.last = lastMessage(d.options.Manager, 0)

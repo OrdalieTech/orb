@@ -153,3 +153,52 @@ func TestRebuildRepairsMissingParents(t *testing.T) {
 		t.Fatalf("records = %#v", got)
 	}
 }
+
+// Each turn mirrors only what Claude appended since the last one; a line still
+// being written waits, and a rewritten transcript is read again without repeats.
+func TestMirrorReadsOnlyTheNewTail(t *testing.T) {
+	manager, err := session.InMemory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.jsonl")
+	write := func(flag int, text string) {
+		file, err := os.OpenFile(path, flag|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, err = file.WriteString(text)
+			_ = file.Close()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	mirrored, read := map[string]bool{}, map[string]int64{}
+	uuids := func() (got []string) {
+		for _, entry := range manager.GetEntries() {
+			var records []struct{ UUID string }
+			if entry.CustomType == transcriptEntry && json.Unmarshal(entry.Data, &records) == nil {
+				for _, record := range records {
+					got = append(got, record.UUID)
+				}
+			}
+		}
+		return got
+	}
+	step := func(want string) {
+		t.Helper()
+		if err := mirror(manager, dir, "s", mirrored, read); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(uuids(), " "); got != want {
+			t.Fatalf("mirrored %q, want %q", got, want)
+		}
+	}
+	write(os.O_TRUNC, `{"type":"user","uuid":"u1"}`+"\n"+`{"type":"assistant","uu`)
+	step("u1")
+	write(os.O_APPEND, `id":"a1"}`+"\n")
+	step("u1 a1")
+	write(os.O_TRUNC, `{"type":"user","uuid":"u1"}`+"\n")
+	write(os.O_APPEND, `{"type":"user","uuid":"u2"}`+"\n")
+	step("u1 a1 u2")
+}
