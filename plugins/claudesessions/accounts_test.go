@@ -255,6 +255,11 @@ func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
 	if got := reply(); !strings.Contains(got, `\"user:plain-fixture which word?\"`) || !strings.Contains(got, `\"assistant:back\"`) {
 		t.Fatalf("Claude lost its own turn or the Orb turn after it: %s", got)
 	}
+	// The conversation stays one Claude Code session, under its own ID.
+	files, _ := filepath.Glob(filepath.Join(dir, "claude-config", "projects", "*", "*.jsonl"))
+	if len(files) != 1 || filepath.Base(files[0]) != nativeSessionID(manager.GetSessionID())+".jsonl" {
+		t.Fatalf("Claude Code sessions = %v", files)
+	}
 }
 
 // An account's plan limits read as the other providers' usage windows.

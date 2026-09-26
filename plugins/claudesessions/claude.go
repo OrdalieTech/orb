@@ -14,6 +14,7 @@ import (
 	"io"
 	"maps"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -262,6 +263,23 @@ func (d *Driver) spawn(start map[string]any, env []string) (*host, error) {
 	return h, nil
 }
 
+// share writes the turns other models answered into the conversation's Claude
+// Code session, when it has one, so claude --resume reads them as well.
+func (d *Driver) share() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	base, _ := baseConfig(d.options.Env)
+	projects, id := projectDir(base, d.options.Manager.GetCWD()), nativeSessionID(d.options.Manager.GetSessionID())
+	if _, err := os.Stat(filepath.Join(projects, id+".jsonl")); err != nil {
+		return nil //nolint:nilerr // A conversation Claude never answered has no session to share with.
+	}
+	_, size, err := syncTranscript(rebuild(d.options.Manager, 0), id, projects)
+	if err != nil {
+		return err
+	}
+	return markSynced(d.options.Manager, size)
+}
+
 // Close ends the live native session, if any.
 func (d *Driver) Close() {
 	d.mu.Lock()
@@ -321,21 +339,34 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		}
 		configDir, _ := baseConfig(env)
 		projects := projectDir(configDir, d.options.Manager.GetCWD())
+		id := nativeSessionID(d.options.Manager.GetSessionID())
+		records := rebuild(d.options.Manager, len(prompts))
+		at, size, err := syncTranscript(records, id, projects)
+		if err != nil {
+			return nil, false, err
+		}
+		delete(start, "resume")
+		delete(start, "at")
+		delete(start, "session")
+		switch {
+		case at != "":
+			start["resume"], start["at"] = id, at
+		case size == 0:
+			start["session"] = id
+		default:
+			// ponytail: a branch back at the root starts a session of its own.
+			id = newUUID()
+			start["session"], size = id, 0
+		}
 		mirrored := map[string]bool{}
-		if records := rebuild(d.options.Manager, len(prompts)); len(records) > 0 {
-			start["resume"] = newUUID()
-			if err = writeTranscript(records, start["resume"].(string), projects); err != nil {
-				return nil, false, err
-			}
-			for _, record := range records {
-				mirrored[fmt.Sprint(record["uuid"])] = true
-			}
+		for _, record := range records {
+			mirrored[record.UUID] = true
 		}
 		start["sessionUpdates"] = d.approved
 		if h, err = d.spawn(start, env); err != nil {
 			return nil, false, err
 		}
-		h.key, h.projects, h.mirrored, h.read = string(key), projects, mirrored, map[string]int64{}
+		h.key, h.projects, h.mirrored, h.read = string(key), projects, mirrored, map[string]int64{id: size}
 		d.host = h
 		return h, false, nil
 	}

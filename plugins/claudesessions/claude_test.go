@@ -41,11 +41,18 @@ export function query({prompt,options:o}) {
  const abort = new AbortController();
  const gen = (async function*(){
   if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
-  const id=o.resume??crypto.randomUUID();
-  // Orb writes the transcript to resume from; this reports what Claude would read.
-  const loaded=o.resume?readFileSync(transcript(o.cwd,o.resume),'utf8').split('\n').filter(Boolean).map(l=>JSON.parse(l)):[];
+  const id=o.resume??o.sessionId??crypto.randomUUID();
+  // Like the CLI: a resumed session is the chain back from its resume point,
+  // and what Claude writes chains on from there. This reports what Claude reads.
+  const all=o.resume?readFileSync(transcript(o.cwd,o.resume),'utf8').split('\n').filter(Boolean).map(l=>JSON.parse(l)):[];
+  const byID=new Map(all.filter(r=>r.uuid).map(r=>[r.uuid,r]));
+  let leaf=o.resumeSessionAt??all.filter(r=>r.uuid).at(-1)?.uuid??null;
+  const loaded=[];for(let r=byID.get(leaf);r;r=byID.get(r.parentUuid))loaded.unshift(r);
   const read=loaded.map(r=>r.type+':'+(typeof r.message.content==='string'?r.message.content:r.message.content.map(b=>b.text??'').join('')));
-  const record=(...rs)=>appendFileSync(transcript(o.cwd,id),rs.map(r=>JSON.stringify(r)+'\n').join(''));
+  const host=crypto.randomUUID().slice(0,8);
+  const record=(...rs)=>appendFileSync(transcript(o.cwd,id),rs.map(r=>{
+   if(r.uuid){r={...r,uuid:r.uuid+'-'+host,parentUuid:leaf,sessionId:id};leaf=r.uuid;}
+   return JSON.stringify(r)+'\n';}).join(''));
   const stream=event=>({type:'stream_event',session_id:id,parent_tool_use_id:null,event});
   const prompts=prompt[Symbol.asyncIterator]();
   let pending;

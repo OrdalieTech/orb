@@ -122,14 +122,16 @@ async function run(config) {
     const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
     return { type: 'usage', plan: usage.subscription_type, limits: usage.rate_limits_available ? usage.rate_limits : null };
   });
-  // Orb writes the transcript a resumed session starts from, and reads back
-  // what Claude wrote once each turn settles.
+  // An Orb conversation is one Claude Code session: Orb brings it up to the
+  // branch it holds, Claude resumes it there, and Orb reads back what Claude wrote.
   if (config.resume) options.resume = config.resume;
+  if (config.at) options.resumeSessionAt = config.at;
+  if (config.session) options.sessionId = config.session;
   // One live query per Orb session: prompts arrive on stdin. An Orb turn settles once
   // Claude answered its prompts, no native turn is due and no background task runs.
   active = query({ prompt: input(), options });
   const tasks = new Set();
-  let session = config.resume, echoes = false, due = false;
+  let session = config.resume ?? config.session, echoes = false, due = false;
   for await (const event of active) {
     if (event.session_id && !event.parent_tool_use_id) session = event.session_id;
     if (event.type === 'system') {

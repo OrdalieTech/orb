@@ -165,7 +165,19 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	for _, name := range nativeToolNames {
 		cfg.BaseTools = append(cfg.BaseTools, nativeTool{name, options.Manager.GetCWD()})
 	}
-	return func(s *agent.SessionRuntime) { runtime = s; closeOnDispose(s, driver) }, nil
+	return func(s *agent.SessionRuntime) {
+		runtime = s
+		closeOnDispose(s, driver)
+		// ponytail: a catch-up that fails leaves the conversation as Orb holds it.
+		if added, _ := catchUp(options.Manager, env); added {
+			s.SyncMessagesFromSession()
+		}
+		s.Subscribe(func(event any) {
+			if _, settled := event.(agent.AgentSettledEvent); settled && !claude(cfg.Agent.State().Model) {
+				_ = driver.share()
+			}
+		})
+	}, nil
 }
 
 // withOtherModels lists Claude's models first, then every other provider's, so

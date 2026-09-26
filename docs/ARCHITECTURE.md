@@ -373,10 +373,14 @@ from its local transcript into plugin-owned `claude-sessions.transcript` entries
 session journal. Whenever a native session must start (another model answered, a tree move, a
 withdrawn prompt, an account change, an exited host), it rebuilds the transcript from the branch:
 Claude's own records, and every other turn rewritten as plain messages with UUIDs derived from Orb
-entry IDs, so rebuilds chain identically. It writes that file where the CLI keeps transcripts and
-resumes it under a fresh native session ID, so Claude keeps its configuration and credentials.
-Native compaction lives in Claude's records; Orb's own compaction becomes a summary message. A
-Claude Code session opens in Orb the same way, imported as messages plus its records. The SDK emits one
+entry IDs, so rebuilds chain identically. Each Orb conversation is one Claude Code session under the
+same ID, in the directory where the CLI keeps transcripts, so Claude keeps its configuration and
+credentials. Orb appends only what that session lacks and resumes it at the branch's last record
+(`resumeSessionAt`); a record whose parent moved (Orb compacted or repaired the branch) is
+appended as a copy under a derived UUID, and branches Orb left stay in the file as Claude Code's
+own rewinds do. Native compaction lives in Claude's records; Orb's own compaction becomes a summary
+message. A Claude Code session opens in Orb under its own ID, imported as the messages and records
+of its latest branch, and opening a conversation takes in the turns its session gained outside Orb. The SDK emits one
 assistant record per content block; the raw stream of the same API message is authoritative, so
 each API message is one Orb message with its final usage. Native errors
 and list-price accounting remain native metadata, not asserted subscription invoices. Each Claude
