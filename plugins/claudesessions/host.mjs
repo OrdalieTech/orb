@@ -156,8 +156,9 @@ async function run(config) {
       due = event.queued_turn_count > 0;
     }
     const settled = open && awaited.size === 0 && !due && tasks.size === 0;
-    // The reading precedes the result so the final repaint already shows it.
-    if (settled) {
+    // The reading precedes the result so the final repaint already shows it; each
+    // native turn's result refreshes it, so a long Orb turn keeps it current.
+    if (settled || (event.type === 'result' && !due)) {
       let timeout;
       try {
         const usage = await Promise.race([
