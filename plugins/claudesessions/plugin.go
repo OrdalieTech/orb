@@ -144,7 +144,13 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	options.Context = orbContext(cfg.SystemPromptOptions)
 	options.Account = accountResolver(cfg.GetRequestAuth)
 	var runtime *agent.SessionRuntime
+	// As Orb's own approvals: a print or JSON run asks no one unless its turn
+	// brings an input handler, and Claude's ask resolves by the headless fallback.
+	askable := cfg.ExtensionMode == extensions.ModeTUI || cfg.ExtensionMode == extensions.ModeRPC
 	options.Ask = func(ctx context.Context, title string, choices []string) (string, error) {
+		if !askable && extensions.InputHandlerFromContext(ctx) == nil {
+			return "", errNoUI
+		}
 		return runtime.RequestInput(ctx, title, choices)
 	}
 	driver, err := New(options)
