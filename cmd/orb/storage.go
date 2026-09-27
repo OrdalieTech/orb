@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -30,6 +31,38 @@ import (
 )
 
 var errLegacyMigration = errors.New("legacy Orb data needs migration; close other Orb processes, then run orb storage migrate")
+
+// runningOrbError names another Orb still writing the data a migration moves.
+type runningOrbError struct{ pid int }
+
+func (e runningOrbError) Error() string {
+	return fmt.Sprintf("close other Orb processes before migration (process %d is still running)", e.pid)
+}
+
+// stopLegacyWriters clears the way for this version's one-time migration. An
+// Orb still running the previous version would keep writing files this one no
+// longer reads, so in a terminal Orb names each and offers to stop it.
+func stopLegacyWriters(ctx context.Context, agentDir string, streams cliStreams) error {
+	for {
+		err := requireOfflineMigration(ctx, agentDir)
+		var running runningOrbError
+		if !errors.As(err, &running) || !streams.StdinTTY || !streams.StderrTTY {
+			return err
+		}
+		described := describeOrbProcess(running.pid)
+		if described != "" {
+			described = " (" + described + ")"
+		}
+		_, _ = fmt.Fprintf(streams.Stderr, "This Orb moves your conversations and settings into its database once. Orb process %d%s still runs the previous version and would keep writing where this one no longer reads.\nStop it and continue? It loses any turn in progress. [y/N] ", running.pid, described)
+		answer, _ := bufio.NewReader(streams.Stdin).ReadString('\n')
+		if !strings.EqualFold(strings.TrimSpace(answer), "y") {
+			return err
+		}
+		if err = stopOrbProcess(running.pid); err != nil {
+			return err
+		}
+	}
+}
 
 type nativeState struct {
 	mu          sync.Mutex
@@ -297,7 +330,7 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 		return runCLI(ctx, argv, streams)
 	}
 	if errors.Is(err, errLegacyMigration) && !migrate {
-		if err = requireOfflineMigration(ctx, agentDir); err == nil {
+		if err = stopLegacyWriters(ctx, agentDir, streams); err == nil {
 			state, err = openNativeState(ctx, agentDir, true, sessionDirs...)
 		}
 	}

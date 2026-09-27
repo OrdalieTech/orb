@@ -60,7 +60,7 @@ func requireOfflineMigration(context.Context, string) error {
 		if configured := os.Getenv(config.EnvAgentDir); (configured != "" && value != configured) || (configured == "" && set) {
 			continue
 		}
-		return fmt.Errorf("close other Orb processes before migration (process %d is still running)", pid)
+		return runningOrbError{int(pid)}
 	}
 	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
 		return errors.New("cannot verify that legacy Orb writers are stopped")
@@ -88,6 +88,27 @@ func processOwnedBy(pid uint32, user *windows.SID) (owned, alive bool, err error
 	}
 	return windows.EqualSid(owner.User.Sid, user), true, nil
 }
+
+// stopOrbProcess ends another Orb and waits for it, up to ten seconds.
+func stopOrbProcess(pid int) error {
+	process, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(pid))
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	if err = windows.TerminateProcess(process, 1); err != nil {
+		return err
+	}
+	if event, err := windows.WaitForSingleObject(process, 10000); err != nil || event != windows.WAIT_OBJECT_0 {
+		return fmt.Errorf("Orb process %d did not exit", pid) //nolint:staticcheck // Product name.
+	}
+	return nil
+}
+
+func describeOrbProcess(int) string { return "" }
 
 func processRunning(pid uint32) (bool, error) {
 	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
