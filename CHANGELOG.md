@@ -5,6 +5,15 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-27
+
+Orb on Android, and Bridge made for servers and phones. The Android app runs the full Orb core on
+the phone and is a Bridge peer: pair it by photographing the QR code `orb bridge pair` prints, see
+every device's threads in one list, open any of them or start one in any folder of a paired
+machine, and update the app and paired machines from inside it. Bridge survives restarts, crashes
+and network cuts in seconds, and runs as a systemd service on Linux servers. The compatibility
+target remains Pi **v0.86.0** on Go **1.27.1**.
+
 - Orb for Android (`platforms/android`, preview): a native app that runs the full Orb core on the
   phone — its own sessions, tools and plugins — and is a full Bridge peer. It drives the
   unmodified `orb` binary over RPC mode and the new Bridge pipe, pairs both ways (invite, join,
