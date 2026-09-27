@@ -913,6 +913,16 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 	if err != nil {
 		return modes.InteractiveAuthOptions{}, err
 	}
+	host.mu.Lock()
+	registry := host.inputs.ModelRegistry
+	runtimeAuth := host.inputs.RuntimeAuth
+	host.mu.Unlock()
+	return authOptions(ctx, credentials, registry, runtimeAuth)
+}
+
+// authOptions lists what /login and /logout offer: every provider's sign-in methods with its
+// current auth status, and the stored credentials. `orb login --json` lists the same.
+func authOptions(ctx context.Context, credentials aiauth.CredentialStore, registry *config.ModelRegistry, runtimeAuth *runtimeCredentials) (modes.InteractiveAuthOptions, error) {
 	stored, err := credentials.List(ctx)
 	if err != nil {
 		return modes.InteractiveAuthOptions{}, err
@@ -921,10 +931,6 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 	for _, credential := range stored {
 		storedTypes[credential.ProviderID] = credential.Type
 	}
-	host.mu.Lock()
-	registry := host.inputs.ModelRegistry
-	runtimeAuth := host.inputs.RuntimeAuth
-	host.mu.Unlock()
 
 	providerIDs := make([]string, 0)
 	seen := make(map[string]struct{})
@@ -1039,6 +1045,11 @@ func (host *interactiveSessionHost) loginCredential(ctx context.Context, provide
 	host.mu.Lock()
 	registry := host.inputs.ModelRegistry
 	host.mu.Unlock()
+	return loginCredential(ctx, registry, providerID, authType, interaction)
+}
+
+// loginCredential runs one provider's sign-in method and returns the credential to store.
+func loginCredential(ctx context.Context, registry *config.ModelRegistry, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
 	methods := aiauth.ProviderAuth{}
 	known := false
 	if registry != nil {

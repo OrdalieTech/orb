@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/qr"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/tui"
 )
@@ -453,7 +455,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
-		ok, e := ui.Confirm(ctx, "Trust this Orb?", inv.PeerID+"\nAllow full control of your current and future conversations.\nVerify this fingerprint on the sharing Orb.", nil)
+		ok, e := ui.Confirm(ctx, "Trust this Orb?", inv.PeerID+"\nAllow full control of your current and future conversations,\nand starting Orb in any folder on this machine.\nVerify this fingerprint on the sharing Orb.", nil)
 		if e != nil || !ok {
 			return e
 		}
@@ -480,7 +482,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
-		ok, e := ui.Confirm(ctx, "Trust "+target+"?", "Share full control of current and future conversations in both directions.\nOrb will be installed or updated on the server if needed.", nil)
+		ok, e := ui.Confirm(ctx, "Trust "+target+"?", "Share full control of current and future conversations, and starting Orb\nin any folder, in both directions. Orb will be installed or updated on the server if needed.", nil)
 		if e != nil || !ok {
 			return e
 		}
@@ -518,6 +520,8 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 }
 
 func bridgeInvitationCode(inv bridge.Invitation) string {
+	// Only what the joiner uses: grants stay with the inviter, which keeps the QR code small.
+	inv = bridge.Invitation{ID: inv.ID, PeerID: inv.PeerID, Token: inv.Token, Locator: inv.Locator, Expires: inv.Expires}
 	return "orb-bridge:v1:" + base64.RawURLEncoding.EncodeToString(bridge.JSON(inv))
 }
 
@@ -656,7 +660,8 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 					}
 					rows = append(rows, cachedRows(th, active)...)
 				}
-				rows = append(rows, tui.GridRow{Value: "disconnect", Cells: []string{th.FG("muted", "Block device")}, Detail: []string{"Block this device and revoke its access to your conversations."}})
+				rows = append(rows, tui.GridRow{Value: "folder", Cells: []string{"Open a folder…"}, Detail: []string{"Start Orb in a folder on this device: a new thread, or one of its past threads."}},
+					tui.GridRow{Value: "disconnect", Cells: []string{th.FG("muted", "Block device")}, Detail: []string{"Block this device and revoke its access to your conversations."}})
 				if preferred != "" {
 					panel.mu.Lock()
 					for i, row := range rows {
@@ -692,6 +697,17 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 			err = client.Call(ctx, "block", map[string]string{"peer_id": peer}, nil)
 			_ = client.Close()
 			return err
+		}
+		if selected == "folder" {
+			instance, err := openBridgeFolder(ctx, ui, profile, peer)
+			if err != nil {
+				ui.Notify(err.Error(), extensions.NotifyError)
+			} else if instance != "" {
+				if err := openBridgeView(ctx, ui, profile, peer, instance); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		if id, ok := strings.CutPrefix(selected, "cached:"); ok {
 			if cache != nil {
@@ -742,7 +758,7 @@ func approveBridgePairing(ctx context.Context, ui extensions.UI, client *protoco
 	details := "Verify this fingerprint on the joining device:\n" + claimed.Claimant
 	for _, g := range claimed.Grants {
 		if g.GroupID == "*" && g.IncludeFuture && slices.Equal(g.Permissions, fullBridgeGrant("").Permissions) {
-			details += "\nAllow full control of all current and future conversations."
+			details += "\nAllow full control of all current and future conversations,\nand starting Orb in any folder on this machine."
 			continue
 		}
 		scope := "current instances only"
@@ -766,11 +782,13 @@ func waitBridgePairing(ctx context.Context, ui extensions.UI, title, instruction
 	ctx, cancel := context.WithDeadline(ctx, time.Unix(inv.Expires, 0))
 	defer cancel()
 	notice := "Invitations expire after 10 minutes. Escape closes this screen."
+	var shown []string // the QR code, once asked for: a phone scans it straight off the terminal
 	for ctx.Err() == nil {
 		result, ok, err := ui.Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
 			rows := []tui.GridRow{}
 			if code != "" {
-				rows = append(rows, tui.GridRow{Value: "copy", Cells: []string{"Copy invitation"}, Detail: []string{instruction, notice}}, tui.GridRow{Value: "show", Cells: []string{"Show invitation"}, Detail: []string{instruction, notice}})
+				rows = append(rows, tui.GridRow{Value: "qr", Cells: []string{map[bool]string{true: "Hide QR code", false: "Show QR code"}[shown != nil]}, Detail: []string{"Scan it with the Orb app.", notice}},
+					tui.GridRow{Value: "copy", Cells: []string{"Copy invitation"}, Detail: []string{instruction, notice}}, tui.GridRow{Value: "show", Cells: []string{"Show invitation"}, Detail: []string{instruction, notice}})
 			} else {
 				rows = append(rows, tui.GridRow{Value: "fingerprint", Cells: []string{"Show this device's fingerprint"}, Detail: []string{instruction, inv.Claimant}})
 			}
@@ -807,6 +825,9 @@ func waitBridgePairing(ctx context.Context, ui extensions.UI, title, instruction
 					}
 				}
 			}()
+			if shown != nil {
+				return &qrPanel{panel, shown}, nil
+			}
 			return panel, nil
 		}, extensions.ModalOptions())
 		if err != nil {
@@ -822,6 +843,12 @@ func waitBridgePairing(ctx context.Context, ui extensions.UI, title, instruction
 			return bridge.Invitation{}, value
 		case string:
 			switch value {
+			case "qr":
+				if shown != nil {
+					shown = nil
+				} else if q, err := qr.Encode([]byte(code)); err == nil {
+					shown = strings.Split(strings.TrimSuffix(q.Terminal(), "\n"), "\n")
+				}
 			case "copy":
 				if err := clipboard.CopyToClipboard(code); err != nil {
 					notice = "Copy unavailable. Choose Show invitation to copy it manually."
@@ -842,4 +869,112 @@ func waitBridgePairing(ctx context.Context, ui extensions.UI, title, instruction
 		}
 	}
 	return bridge.Invitation{}, fmt.Errorf("invitation expired or pairing was cancelled; create a new invitation to retry")
+}
+
+// qrPanel shows a QR code under a panel, or says how wide the terminal needs to be.
+type qrPanel struct {
+	*bridgeSettingsPanel
+	lines []string
+}
+
+func (p *qrPanel) Render(width int) []string {
+	lines := p.bridgeSettingsPanel.Render(width)
+	if need := tui.VisibleWidth(p.lines[0]); need > width {
+		return append(lines, fmt.Sprintf("Widen the terminal to %d columns to show the QR code.", need))
+	}
+	return append(lines, p.lines...)
+}
+
+// openBridgeFolder picks a folder on the peer — one its threads live in, or any other — then a
+// new thread or a past one there, and starts Orb on it (host.launch). It returns that instance.
+func openBridgeFolder(ctx context.Context, ui extensions.UI, profile, peer string) (string, error) {
+	client, err := bridgeAdmin(ctx, profile)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = client.Close() }()
+	remote := func(method string, params, result any) error {
+		err := client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": method, "params": params}, result)
+		if bridge.Code(err) == "unauthorized" {
+			var status bridgeSettingsStatus
+			_ = client.Call(ctx, "status", struct{}{}, &status)
+			return fmt.Errorf("this device has not allowed starting Orb on it.\nOn it, run: orb bridge trust %s", status.PeerID)
+		}
+		return err
+	}
+	type thread struct {
+		ID       string `json:"session_id"`
+		Name     string `json:"name"`
+		CWD      string `json:"cwd"`
+		Modified int64  `json:"modified"`
+		First    string `json:"first"`
+	}
+	var threads []thread
+	cursor := ""
+	for range 32 {
+		var page struct {
+			Items  []thread `json:"items"`
+			Cursor string   `json:"cursor"`
+		}
+		params := map[string]string{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		if err := remote("host.sessions", params, &page); err != nil {
+			return "", err
+		}
+		threads = append(threads, page.Items...)
+		if cursor = page.Cursor; cursor == "" {
+			break
+		}
+	}
+	// Folders in the order they were last worked in.
+	slices.SortFunc(threads, func(a, b thread) int { return cmp.Compare(b.Modified, a.Modified) })
+	folders, count := []string{}, map[string]int{}
+	for _, t := range threads {
+		if count[t.CWD]++; count[t.CWD] == 1 {
+			folders = append(folders, t.CWD)
+		}
+	}
+	choices := []string{}
+	for _, f := range folders {
+		choices = append(choices, fmt.Sprintf("%s · %d thread%s", f, count[f], map[bool]string{true: "", false: "s"}[count[f] == 1]))
+	}
+	choices = append(choices, "Other folder…")
+	choice, ok, err := ui.Select(ctx, "Open a folder on "+bridgeDeviceLabel(peer), choices, nil)
+	if err != nil || !ok {
+		return "", err
+	}
+	folder := ""
+	if i := slices.Index(choices, choice); i < len(folders) {
+		folder = folders[i]
+	} else if folder, ok, err = ui.Input(ctx, "Folder on that device · an absolute path or ~/…", nil, nil); err != nil || !ok || strings.TrimSpace(folder) == "" {
+		return "", err
+	}
+	folder = strings.TrimSpace(folder)
+	options, ids := []string{"New thread"}, []string{""}
+	for _, t := range threads {
+		if t.CWD != folder {
+			continue
+		}
+		title := cmp.Or(t.Name, strings.Join(strings.Fields(t.First), " "), t.ID)
+		options = append(options, tui.TruncateToWidth(title, 70, "…", false)+" · "+time.UnixMilli(t.Modified).Format("Jan 2 15:04"))
+		ids = append(ids, t.ID)
+	}
+	choice, ok, err = ui.Select(ctx, folder, options, nil)
+	if err != nil || !ok {
+		return "", err
+	}
+	params := map[string]string{"cwd": folder}
+	if id := ids[slices.Index(options, choice)]; id != "" {
+		params = map[string]string{"session_id": id}
+	}
+	ui.Notify("Starting Orb in "+folder+"…", extensions.NotifyInfo)
+	var launched struct {
+		InstanceID string `json:"instance_id"`
+	}
+	if err := remote("host.launch", params, &launched); err != nil {
+		return "", err
+	}
+	return launched.InstanceID, nil
 }

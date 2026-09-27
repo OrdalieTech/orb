@@ -45,6 +45,37 @@ func TestPinnedTLSAndWrongIdentity(t *testing.T) {
 	}
 }
 
+func TestReconnectingPeerEvictsItsOldestChannel(t *testing.T) {
+	server, client := newBridge(t), newBridge(t)
+	peer := client.PeerID()
+	var accepted []*protocol.Conn
+	for range 5 {
+		x, y := net.Pipe()
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		done := make(chan *protocol.Conn, 1)
+		go func() {
+			c, _, err := server.Connect(ctx, y, "", true)
+			if err != nil {
+				t.Error(err)
+			}
+			done <- c
+		}()
+		if _, _, err := client.Connect(ctx, x, server.PeerID(), false); err != nil {
+			t.Fatal(err)
+		}
+		accepted = append(accepted, <-done)
+		cancel()
+	}
+	select {
+	case <-accepted[0].Done():
+	case <-time.After(time.Second):
+		t.Fatal("the oldest channel survived a fifth connection")
+	}
+	if got := server.Connection(peer); got != accepted[4] {
+		t.Fatal("calls did not go to the newest channel")
+	}
+}
+
 func TestPeerConnectionStateDoesNotPersistAcrossRestart(t *testing.T) {
 	store := &memStore{}
 	server, err := Open(store, true)
@@ -121,4 +152,34 @@ func TestPeerConnectionStateDoesNotPersistAcrossRestart(t *testing.T) {
 		t.Fatal("blocked peer stayed connected")
 	}
 	state(server, "blocked")
+}
+
+func TestHostCallsNeedAMachineWideLaunchGrant(t *testing.T) {
+	b := newBridge(t)
+	defer func() { _ = b.Close() }()
+	peer := newBridge(t)
+	defer func() { _ = peer.Close() }()
+	called := ""
+	b.SetHost(func(_ context.Context, p Principal, method string, _ json.RawMessage) (json.RawMessage, error) {
+		called = p.PeerID + " " + method
+		return JSON(struct{}{}), nil
+	})
+	controller := Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "controller"}}
+	manage := Grant{Principal: controller, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.prompt"}}
+	if err := b.AddGrant(manage); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Handle(t.Context(), peer.PeerID(), "host.sessions", JSON(struct{}{})); Code(err) != "unauthorized" || called != "" {
+		t.Fatalf("host call without host.launch: %v %q", err, called)
+	}
+	if err := b.AddGrant(Grant{Principal: controller, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"host.launch"}}); Code(err) != "unauthorized" {
+		t.Fatalf("host.launch on one group accepted: %v", err)
+	}
+	manage.Permissions = append(manage.Permissions, "host.launch")
+	if err := b.AddGrant(manage); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Handle(t.Context(), peer.PeerID(), "host.launch", JSON(struct{}{})); err != nil || called != peer.PeerID()+" host.launch" {
+		t.Fatalf("granted host call: %v %q", err, called)
+	}
 }

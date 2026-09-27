@@ -102,8 +102,10 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 		}
 		profile = "personal"
 	}
-	alias, throwaway := args.InstanceAlias, args.InstanceAlias == ""
-	if throwaway {
+	// A Bridge that starts Orb for a peer (host.launch) names it, but it is as ephemeral as an unnamed one.
+	alias, throwaway := args.InstanceAlias, args.InstanceAlias == "" || os.Getenv("ORB_BRIDGE_EPHEMERAL") == "1"
+	_ = os.Unsetenv("ORB_BRIDGE_EPHEMERAL") // not inherited by what this Orb runs
+	if alias == "" {
 		alias = "instance-" + strings.ToLower(protocol.NewID()[:8])
 	}
 	if !validBridgeName(alias) {

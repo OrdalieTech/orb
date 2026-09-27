@@ -319,6 +319,9 @@ func credentialValue(kind credentialPrintKind, result *aiauth.AuthResult) string
 }
 
 func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
+	if args.Command == "login" && len(args.CommandArgs) > 0 && args.CommandArgs[0] == "--json" {
+		return runLoginJSON(ctx, args.CommandArgs[1:], streams)
+	}
 	if len(args.CommandArgs) > 1 || (args.Command != "logout" && len(args.CommandArgs) == 0) {
 		return reportCLIError(streams.Stderr, fmt.Errorf("usage: orb %s <provider>", args.Command))
 	}

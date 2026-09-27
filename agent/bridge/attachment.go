@@ -565,8 +565,11 @@ func (a *Attachment) list(ctx context.Context, args json.RawMessage) (json.RawMe
 		return nil, bridge.Fail("cursor_expired")
 	}
 	type item struct {
-		ID   string  `json:"session_id"`
-		Name *string `json:"name"`
+		ID       string  `json:"session_id"`
+		Name     *string `json:"name"`
+		Modified int64   `json:"modified,omitempty"`
+		Messages int     `json:"messages,omitempty"`
+		First    string  `json:"first,omitempty"`
 	}
 	out := struct {
 		Items  []item `json:"items"`
@@ -574,7 +577,11 @@ func (a *Attachment) list(ctx context.Context, args json.RawMessage) (json.RawMe
 	}{Items: []item{}}
 	end := min(int(offset)+protocol.PageLimit(ctx), len(entries))
 	for _, e := range entries[offset:end] {
-		out.Items = append(out.Items, item{e.ID, e.Name})
+		first, modified := []rune(e.FirstMessage), int64(0)
+		if !e.Modified.IsZero() {
+			modified = e.Modified.UnixMilli()
+		}
+		out.Items = append(out.Items, item{e.ID, e.Name, modified, e.MessageCount, string(first[:min(len(first), 160)])})
 	}
 	if end < len(entries) {
 		out.Offset = strconv.Itoa(end)

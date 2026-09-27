@@ -48,7 +48,8 @@ is tested but is not released or is limited. **In progress** is under active dev
 | Android (Termux) | Preview: builds, not validated on device | all | SQLite | full peer | build from source |
 | iOS via iSH | Preview: builds, not validated on device | all (slow) | SQLite | full peer | build from source |
 | WASI runtimes | Planned (core suites pass under wazero) | FS tools | preopened directories | — | — |
-| iOS and Android apps | Planned | FS tools; Exec via WASI commands on iOS | app sandbox | full peer | app stores |
+| Android app | Preview: standalone and bridged, tested on device | all (Android shell) | app sandbox SQLite | full peer | `./gradlew assembleDebug` |
+| iOS app | Planned | FS tools; Exec via WASI commands | app sandbox | full peer | app store |
 
 ## Targets
 
@@ -158,12 +159,27 @@ The core's `ai` and `engine` suites and the cross-host scenario pass under wazer
 mounts. There is no WASI entry program yet, and `wasip1` has no sockets, so outbound HTTP needs a
 host-provided import.
 
-### iOS and Android apps
+### Android app
 
-Standalone apps embed the same core as a library built with gomobile. The app shell supplies the
-ports and drives the core with RPC frames through callbacks. Android can run processes natively.
-iOS apps cannot spawn processes, so `Exec` would run WASI commands in-process (the a-Shell model).
-Termux and iSH are GPLv3, so the apps interoperate with them rather than embed them.
+`platforms/android` is a native Kotlin app whose core is the unmodified `orb` binary, built
+`CGO_ENABLED=0` for `android/arm64` and shipped as the APK's `liborb.so` (Android executes only
+files installed to `nativeLibraryDir`). The app starts `orb --mode rpc --continue --bridge personal`
+for its own session and `orb bridge pipe` for Bridge, so the phone is a full peer: other Orbs see
+and drive its session, and it drives theirs with the same calls `orb bridge view` makes. A
+foreground service keeps both alive while the screen is off. Tools run in the app sandbox with
+Android's `/system/bin/sh`; provider keys stay in the app and reach Orb as environment variables.
+Build and install with `./gradlew installDebug` in `platforms/android` (Go, JDK 17, Android SDK 37).
+To pair it with a computer, run `orb bridge pair` there and scan the QR code from the app's Bridge
+screen; the computer asks you to approve the phone's fingerprint, and the pair persists. On a Linux
+server, answer yes when `orb bridge pair` offers the Bridge service (or run
+`orb bridge service install`): Bridge then starts with the machine and outlives the SSH session.
+
+### iOS app
+
+iOS apps cannot spawn processes, so an iOS app would embed the same core as a library built with
+gomobile, the shell supplying the ports and driving the core with RPC frames through callbacks;
+`Exec` would run WASI commands in-process (the a-Shell model). Termux and iSH are GPLv3, so the
+apps interoperate with them rather than embed them.
 
 ## Connecting deployments with Bridge
 
@@ -174,6 +190,9 @@ explicitly and in two separate kinds:
 - **Controllers** are people. A controller grant lets you list, watch and drive another Orb's
   conversations: prompt, steer, cancel, switch or fork sessions. The conversation keeps running on
   its own Orb, with that Orb's tools and credentials, and continues when you disconnect.
+- **Launching** is part of full controller access (`host.launch`): the controller sees the threads
+  stored on the machine across folders and starts Orb in a folder there, on a new thread or an old
+  one. That Orb is ephemeral; it retires when it exits or when the machine's Bridge stops.
 - **Agents** are Orbs acting on their own. With the opt-in `bridge_call` tool, one Orb's agent can
   call another Orb, but only under an instance subject with its own grants. A person's controller
   access never passes to their agent.

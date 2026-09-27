@@ -1012,3 +1012,35 @@ func TestResumeTakesAnOptionalSessionID(t *testing.T) {
 		t.Fatalf("-r with a prompt = %+v", args)
 	}
 }
+
+func TestStorageSessionsListsStoredConversationsAsJSONLines(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("PI_OFFLINE", "1")
+	jsonl := filepath.Join(root, "s.jsonl")
+	if err := os.WriteFile(jsonl, []byte(`{"type":"session","version":3,"id":"11111111-2222-4333-8444-555555555555","timestamp":"2026-09-27T10:00:00.000Z","cwd":"/work"}
+{"type":"message","id":"a1b2c3d4","parentId":null,"timestamp":"2026-09-27T10:00:01.000Z","message":{"role":"user","content":"hello phone","timestamp":1790503201000}}
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var errs bytes.Buffer
+	if runNativeCLI(t.Context(), []string{"storage", "import", jsonl}, cliStreams{Stdout: io.Discard, Stderr: &errs}) != 0 {
+		t.Fatal("import:", errs.String())
+	}
+	var out bytes.Buffer
+	if runNativeCLI(t.Context(), []string{"storage", "sessions"}, cliStreams{Stdout: &out, Stderr: &errs}) != 0 {
+		t.Fatal("sessions:", errs.String())
+	}
+	var row struct {
+		ID       string `json:"id"`
+		CWD      string `json:"cwd"`
+		Messages int    `json:"messages"`
+		First    string `json:"first"`
+		Modified int64  `json:"modified"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &row); err != nil || row.CWD != "/work" || row.Messages != 1 || row.First != "hello phone" || row.Modified == 0 || row.ID == "" {
+		t.Fatalf("row %+v from %q: %v", row, out.String(), err)
+	}
+}

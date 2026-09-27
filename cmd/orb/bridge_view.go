@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -330,6 +332,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 	var transcript strings.Builder
 	pending := ""
 	notice := ""
+	var threads []string // the last /sessions list, so /switch can take its numbers
 	connected := false
 	revoked := false
 	var preview sqlite.ForeignSession
@@ -385,12 +388,32 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				continue
 			}
 			if text == "/sessions" {
-				var result json.RawMessage
+				var result struct {
+					Items []struct {
+						ID       string  `json:"session_id"`
+						Name     *string `json:"name"`
+						First    string  `json:"first"`
+						Modified int64   `json:"modified"`
+					} `json:"items"`
+				}
 				err = remote("instances.call", bridge.Call{InstanceID: instance, Service: protocol.Service, Method: "session.list", Args: bridge.JSON(struct{}{})}, &result)
 				if err != nil {
 					status.set(err.Error())
 				} else {
-					status.set(string(result))
+					threads = threads[:0]
+					lines := []string{}
+					for i, item := range result.Items {
+						threads = append(threads, item.ID)
+						title := cmp.Or(strings.Join(strings.Fields(item.First), " "), item.ID)
+						if item.Name != nil && *item.Name != "" {
+							title = *item.Name
+						}
+						if item.Modified > 0 {
+							title += " · " + time.UnixMilli(item.Modified).Format("Jan 2 15:04")
+						}
+						lines = append(lines, fmt.Sprintf("%d. %s", i+1, tui.TruncateToWidth(title, 90, "…", false)))
+					}
+					status.set(strings.Join(lines, "\n") + "\n/switch <number> opens a thread · /new starts one")
 				}
 				invalidate()
 				continue
@@ -438,7 +461,11 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				arguments = map[string]string{"execution_id": info.Target.ExecutionID, "text": strings.TrimPrefix(text, "/follow ")}
 			case strings.HasPrefix(text, "/switch "):
 				method = "session.switch"
-				arguments = map[string]string{"session_id": strings.TrimPrefix(text, "/switch ")}
+				id := strings.TrimSpace(strings.TrimPrefix(text, "/switch "))
+				if n, err := strconv.Atoi(id); err == nil && n >= 1 && n <= len(threads) {
+					id = threads[n-1]
+				}
+				arguments = map[string]string{"session_id": id}
 			case strings.HasPrefix(text, "/fork "):
 				method = "session.fork"
 				arguments = map[string]string{"entry_id": strings.TrimPrefix(text, "/fork ")}

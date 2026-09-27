@@ -44,6 +44,9 @@ var retryableProviderPatterns = compilePatterns([]string{
 	// wording, kept for byte-parity with proxied provider bodies; "no such
 	// host" is what Go's own dialer emits for the same failure.
 	`getaddrinfo`, `ENOTFOUND`, `EAI_AGAIN`, `no such host`,
+	// A device without a network: Node says "fetch failed" (above), Go's dialer says these;
+	// Go's resolver on Android reports EAI_AGAIN through dnsproxyd.
+	`network is unreachable`, `no route to host`, `connection reset by peer`, `dnsproxyd error`,
 	`socket connection was closed`, `timed? out`, `timeout`, `terminated`, `websocket.?closed`,
 	`websocket.?error`, `ended without`, `stream ended before message_stop`,
 	`stream ended before a terminal response event`, `http2 request did not get a response`, `retry delay`,
