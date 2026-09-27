@@ -268,3 +268,18 @@ func TestRegisteredCommandExecAndEventBusUseBoundRuntime(t *testing.T) {
 		t.Fatalf("event bus value = %q", busValue)
 	}
 }
+
+// A Herdr server updated in place names its replaced binary with " (deleted)";
+// Orb reports through the binary now at that path.
+func TestHerdrBinaryAfterAnInPlaceUpdate(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "herdr")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := herdrBinary(bin + " (deleted)"); got != bin {
+		t.Fatalf("herdrBinary = %q, want %q", got, bin)
+	}
+	if got := herdrBinary(bin); got != bin {
+		t.Fatalf("herdrBinary = %q", got)
+	}
+}

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 
 	"encoding/json"
+
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/assembly"
 	agentbridge "github.com/OrdalieTech/orb/agent/bridge"
@@ -76,8 +78,22 @@ func compiledExtensionsForEnvironment(getenv func(string) string) []extensions.C
 	}
 	return append(rows, extensions.CompiledExtension{
 		Name: "herdr", Hidden: true, DefaultEnabled: true,
-		Factory: herdrext.Extension(getenv("HERDR_BIN_PATH"), getenv("HERDR_PANE_ID")),
+		Factory: herdrext.Extension(herdrBinary(getenv("HERDR_BIN_PATH")), getenv("HERDR_PANE_ID")),
 	})
+}
+
+// herdrBinary is the Herdr client to report through. A Herdr server updated
+// in place still names its replaced executable, which Linux reports with a
+// " (deleted)" suffix; the new binary sits at the same path, and failing that
+// the one on PATH answers the same socket.
+func herdrBinary(path string) string {
+	path = strings.TrimSuffix(path, " (deleted)")
+	if _, err := os.Stat(path); err != nil {
+		if found, lookErr := exec.LookPath("herdr"); lookErr == nil {
+			return found
+		}
+	}
+	return path
 }
 
 func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config.SettingsManager, packages *agent.ResolvedPaths) (*extensions.Registry, []modes.StartupDiagnostic) {

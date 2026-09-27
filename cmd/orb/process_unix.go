@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"golang.org/x/sys/unix"
@@ -52,9 +53,29 @@ func requireOfflineMigration(ctx context.Context, agentDir string) error {
 		if configured == "" && strings.Contains(environment, config.EnvAgentDir+"=") {
 			continue
 		}
-		return fmt.Errorf("close other Orb processes before migration (process %d is still running)", pid)
+		return runningOrbError{pid}
 	}
 	return nil
+}
+
+// stopOrbProcess asks another Orb to exit and waits for it, up to ten seconds.
+func stopOrbProcess(pid int) error {
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	for range 100 {
+		if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("Orb process %d did not exit", pid) //nolint:staticcheck // Product name.
+}
+
+// describeOrbProcess is the command line another Orb runs, for the user to recognize it.
+func describeOrbProcess(pid int) string {
+	output, _ := exec.Command("ps", "-o", "args=", "-p", strconv.Itoa(pid)).Output()
+	return strings.TrimSpace(string(output))
 }
 
 func isOrbProcess(uid, pid int, command string) bool {

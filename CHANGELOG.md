@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Orb shows up as an agent in Herdr again after Herdr updates itself in place: the pane then names
+  Herdr's replaced binary (`… (deleted)`), and every state report failed silently. Orb now
+  reports through the binary at that path, or the `herdr` on `PATH`.
+- The first launch after updating from a version that kept conversations in files no longer just
+  refuses while another Orb runs: it names that Orb, offers to stop it, and migrates.
 - Bridge no longer keeps a registration for every Orb ever started: an Orb started without
   `--instance-alias` retires its throwaway instance and its state when it exits, and
   `orb bridge prune` removes those left by earlier versions or crashes. Enrolling also prunes
