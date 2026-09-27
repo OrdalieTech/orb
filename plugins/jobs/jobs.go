@@ -32,7 +32,10 @@ const (
 	maxLines = 20
 )
 
-var stopSchema = ai.JSONSchema(`{"type":"object","required":["job"],"properties":{"job":{"type":"string","description":"ID of a background job started by bash"}}}`)
+// tick paces reports: a job's end or a monitored job's new lines, at most one message per tick.
+var tick = time.Second
+
+var stopSchema = ai.JSONSchema(`{"type":"object","required":["job"],"properties":{"job":{"type":"string","description":"The job ID bash returned when it started the job"}}}`)
 
 type job struct {
 	id, command, log, pid string
@@ -67,20 +70,26 @@ func Extension(bash Bash) extensions.Factory {
 			return err
 		}
 		properties, _ := schema["properties"].(map[string]any)
-		properties["run_in_background"] = map[string]any{"type": "boolean", "description": "Run as a background job: return its ID and log file at once; a message reports when it ends."}
-		properties["monitor"] = map[string]any{"type": "boolean", "description": "Run in the background and report each line the command prints, as it prints it."}
+		properties["run_in_background"] = map[string]any{"type": "boolean", "description": "Run as a background job and return at once with its ID and log file. When it ends, a message gives its exit code and last lines; read the log for the rest. Do not add '&'; timeout does not apply."}
+		properties["monitor"] = map[string]any{"type": "boolean", "description": "Like run_in_background, and also report the lines the command prints, batched as they come. Each report can start a turn, so print only lines worth acting on, e.g. tail -f app.log | grep --line-buffered ERROR."}
 		parameters, _ := json.Marshal(schema)
 		api.RegisterTool(extensions.ToolDefinition{
-			Name: "bash", Label: "bash", Description: base.Description + " With run_in_background or monitor, the command runs as a background job; stop it with stop_job.",
-			PromptSnippet: "Execute bash commands (ls, grep, find, etc.)",
+			Name: "bash", Label: "bash", Description: base.Description + " A long command can run as a background job (run_in_background or monitor): the call returns at once, a message reports when the job ends, and stop_job stops it.",
+			PromptSnippet: "Execute bash commands (ls, grep, find, etc.), in the background too",
 			PromptGuidelines: []string{
 				"You can inspect PI_* environment variables for current model and session details.",
-				"Run long commands (builds, test suites, servers, deploys) with run_in_background instead of waiting or polling with sleep: a message reports when the job ends, and its log file can be read at any time. Use monitor to be told each line a command prints, such as a log to watch.",
+				"Run commands that take long or never end (builds, test suites, dev servers, watchers) with run_in_background and keep working: a message reports when each job ends. Do not wait for a job with sleep or poll its log in a loop.",
+				"Use monitor only for output you must react to while the command runs, filtered to the lines that matter (grep --line-buffered, as pipes buffer): each report can start a turn.",
+				"Background jobs end with the session; stop the ones you no longer need with stop_job.",
 			},
 			Parameters: parameters,
 			Execute:    p.execute,
 		})
-		api.RegisterTool(extensions.ToolDefinition{Name: "stop_job", Label: "Stop job", Description: "Stop a background job started by bash", Parameters: stopSchema, Execute: p.stop})
+		api.RegisterTool(extensions.ToolDefinition{
+			Name: "stop_job", Label: "Stop job", PromptSnippet: "Stop a background job",
+			Description: "Stop a background job started by bash: its whole process group gets TERM, then KILL after two seconds. A stopped job's end is not reported; its log stays readable.",
+			Parameters:  stopSchema, Execute: p.stop,
+		})
 		// A job's report reads as one dim line, like Claude's task notices; expanded, it shows whole.
 		api.RegisterMessageRenderer("job", func(message extensions.CustomMessage, options extensions.MessageRenderOptions, theme extensions.Theme) extensions.Component {
 			text := fmt.Sprint(message.Content)
@@ -158,14 +167,16 @@ func (p *plugin) start(ctx context.Context, tool engine.AgentTool, command strin
 	}
 	// The job runs through the same bash call as any command. set -m gives it a
 	// process group of its own, which stop_job ends whole; "$0" is that shell.
-	wrapper := fmt.Sprintf(`set -m; ( "$0" %s > %s 2>&1 < /dev/null; echo $? > %s ) & echo $!`, quote(script), quote(j.log), quote(j.log+".exit"))
+	// Its PID is marked: a job that ends at once makes bash print a notice too.
+	wrapper := fmt.Sprintf(`set -m; ( "$0" %s; echo $? > %s ) > %s 2>&1 < /dev/null & echo "orb-job $!"`, quote(script), quote(j.log+".exit"), quote(j.log))
 	result, err := tool.Execute(ctx, "", map[string]any{"command": wrapper}, nil)
 	if err != nil {
 		return engine.AgentToolResult{}, err
 	}
-	output := strings.TrimSpace(ai.ContentText(result.Content))
-	if j.pid = output[strings.LastIndexByte(output, '\n')+1:]; !isPID(j.pid) {
-		return engine.AgentToolResult{}, fmt.Errorf("background job did not start: %s", j.pid)
+	output := ai.ContentText(result.Content)
+	_, pid, _ := strings.Cut(output, "orb-job ")
+	if j.pid, _, _ = strings.Cut(pid, "\n"); !isPID(j.pid) {
+		return engine.AgentToolResult{}, fmt.Errorf("background job did not start: %s", strings.TrimSpace(output))
 	}
 	p.mu.Lock()
 	p.jobs[j.id] = j
@@ -175,13 +186,13 @@ func (p *plugin) start(ctx context.Context, tool engine.AgentTool, command strin
 	if monitor {
 		report = "reports each line it prints, and its end"
 	}
-	return toolutil.TextResult(fmt.Sprintf("Started background job %s (pid %s). Output: %s. A message %s; stop it with stop_job.", j.id, j.pid, j.log, report)), nil
+	return toolutil.TextResult(fmt.Sprintf("Started background job %s (pid %s). Output: %s. A message %s, so keep working rather than wait or poll; stop it with stop_job.", j.id, j.pid, j.log, report)), nil
 }
 
-// watch reports a monitored job's new lines and every job's end, at most once a second.
+// watch reports a monitored job's new lines and every job's end, at most once a tick.
 func (p *plugin) watch(j *job) {
-	var offset int64
-	ticker := time.NewTicker(time.Second)
+	var at cursor
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 	for {
 		select {
@@ -192,19 +203,28 @@ func (p *plugin) watch(j *job) {
 		if j.stopped.Load() {
 			return
 		}
-		if j.monitor {
-			if lines := newLines(j.log, &offset); len(lines) > 0 {
-				p.notify(fmt.Sprintf("Job %s printed:\n%s", j.id, clip(lines)))
-			}
-		}
-		code, err := os.ReadFile(j.log + ".exit")
-		if err != nil {
+		code, done := exitCode(j.log)
+		if !done && alive(j.pid) {
+			p.report(j, &at, false)
 			continue
 		}
+		// The group ended without its exit code (killed outside Orb), unless
+		// the code landed between the two reads.
+		if !done {
+			if code, done = exitCode(j.log); !done {
+				code = "none (the job was killed)"
+			}
+		}
+		// stop_job may have taken the job meanwhile; then it is not reported.
 		p.mu.Lock()
+		_, mine := p.jobs[j.id]
 		delete(p.jobs, j.id)
 		p.mu.Unlock()
-		text := fmt.Sprintf("Job %s (%s) exited with code %s after %s. Output: %s", j.id, oneLine(j.command), strings.TrimSpace(string(code)), time.Since(j.started).Round(time.Second), j.log)
+		if !mine {
+			return
+		}
+		p.report(j, &at, true)
+		text := fmt.Sprintf("Job %s (%s) exited with code %s after %s. Output: %s", j.id, oneLine(j.command), code, time.Since(j.started).Round(time.Second), j.log)
 		if !j.monitor {
 			if tail := lastLines(j.log, 10); tail != "" {
 				text += "\nLast lines:\n" + tail
@@ -212,6 +232,24 @@ func (p *plugin) watch(j *job) {
 		}
 		p.notify(text)
 		return
+	}
+}
+
+// exitCode reads the code a job's shell wrote as it ended. The file exists
+// empty for a moment first, as the shell opens it before writing.
+func exitCode(log string) (string, bool) {
+	data, _ := os.ReadFile(log + ".exit")
+	code := strings.TrimSpace(string(data))
+	return code, code != ""
+}
+
+// report sends a monitored job's new lines; other jobs' logs are left unread.
+func (p *plugin) report(j *job, at *cursor, final bool) {
+	if !j.monitor {
+		return
+	}
+	if lines := at.read(j.log, final); len(lines) > 0 {
+		p.notify(fmt.Sprintf("Job %s printed:\n%s", j.id, clip(lines)))
 	}
 }
 
@@ -252,11 +290,14 @@ func (p *plugin) shutdown() {
 	running, dir := p.jobs, p.dir
 	p.jobs = map[string]*job{}
 	p.mu.Unlock()
-	ctx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+	// At once: a job ignoring TERM holds its kill for two seconds.
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
+	var wg sync.WaitGroup
 	for _, j := range running {
-		kill(ctx, j)
+		wg.Go(func() { kill(ctx, j) })
 	}
+	wg.Wait()
 	if dir != "" {
 		_ = os.RemoveAll(dir)
 	}
@@ -265,28 +306,58 @@ func (p *plugin) shutdown() {
 // kill ends the job's process group through the same bash that started it.
 func kill(ctx context.Context, j *job) {
 	j.stopped.Store(true)
-	_, _ = j.tool.Execute(ctx, "", map[string]any{"command": fmt.Sprintf("kill -TERM -%s 2>/dev/null || kill -TERM %s", j.pid, j.pid)}, nil)
+	// TERM first for a clean exit, KILL after two seconds for a job that ignores it.
+	stop := fmt.Sprintf(`kill -TERM -%[1]s 2>/dev/null || kill -TERM %[1]s 2>/dev/null; i=0; while [ $i -lt 20 ] && kill -0 -%[1]s 2>/dev/null; do sleep 0.1; i=$((i+1)); done; kill -KILL -%[1]s 2>/dev/null; true`, j.pid)
+	_, _ = j.tool.Execute(ctx, "", map[string]any{"command": stop}, nil)
 }
 
-// newLines returns the complete lines added to path since offset.
-func newLines(path string, offset *int64) []string {
+// cursor is how far a monitored job's log has been reported.
+type cursor struct {
+	offset int64
+	long   bool // inside a line over the read buffer, already reported
+}
+
+// read returns the lines added to path since the last read: complete ones, and
+// with final the last one even without its newline. A line over 64 KB is
+// reported once, as a placeholder.
+func (c *cursor) read(path string, final bool) []string {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
 	defer func() { _ = file.Close() }()
+	var lines []string
 	buffer := make([]byte, 64<<10)
-	count, _ := file.ReadAt(buffer, *offset)
-	end := strings.LastIndexByte(string(buffer[:count]), '\n')
-	if end < 0 && count == len(buffer) {
-		*offset += int64(count)
-		return []string{"(a line over 64 KB, see the log)"}
+	for {
+		count, _ := file.ReadAt(buffer, c.offset)
+		chunk := string(buffer[:count])
+		end := strings.LastIndexByte(chunk, '\n')
+		if end < 0 {
+			if count == len(buffer) || final && count > 0 {
+				c.offset += int64(count)
+				if !c.long {
+					lines = append(lines, chunk)
+				}
+			}
+			if count < len(buffer) {
+				return lines
+			}
+			if !c.long {
+				lines[len(lines)-1] = "(a line over 64 KB, see the log)"
+			}
+			c.long = true
+			continue
+		}
+		c.offset += int64(end + 1)
+		complete := strings.Split(chunk[:end], "\n")
+		if c.long {
+			complete, c.long = complete[1:], false
+		}
+		lines = append(lines, complete...)
+		if count < len(buffer) && (!final || end == count-1) {
+			return lines
+		}
 	}
-	if end < 0 {
-		return nil
-	}
-	*offset += int64(end + 1)
-	return strings.Split(string(buffer[:end]), "\n")
 }
 
 func clip(lines []string) string {
@@ -307,8 +378,8 @@ func lastLines(path string, n int) string {
 
 func oneLine(command string) string {
 	command, _, cut := strings.Cut(strings.TrimSpace(command), "\n")
-	if cut || len(command) > 80 {
-		return command[:min(len(command), 80)] + "…"
+	if runes := []rune(command); cut || len(runes) > 80 {
+		return string(runes[:min(len(runes), 80)]) + "…"
 	}
 	return command
 }

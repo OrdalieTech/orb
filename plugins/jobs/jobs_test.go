@@ -20,6 +20,7 @@ import (
 
 type harness struct {
 	bash, stop engine.AgentTool
+	shutdown   func()
 	mu         sync.Mutex
 	messages   []string
 }
@@ -51,19 +52,34 @@ func newHarness(t *testing.T) *harness {
 			h.stop = extensions.WrapRegisteredTool(registered, runner)
 		}
 	}
-	t.Cleanup(func() {
+	h.shutdown = func() {
 		extensions.EmitSessionShutdown(context.Background(), runner, extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
-	})
+	}
+	t.Cleanup(h.shutdown)
 	return h
 }
 
 func (h *harness) run(t *testing.T, tool engine.AgentTool, args map[string]any) string {
 	t.Helper()
-	result, err := tool.Execute(context.Background(), "call", args, nil)
+	text, err := call(tool, args)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ai.ContentText(result.Content)
+	return text
+}
+
+func call(tool engine.AgentTool, args map[string]any) (string, error) {
+	result, err := tool.Execute(context.Background(), "call", args, nil)
+	if err != nil {
+		return "", err
+	}
+	return ai.ContentText(result.Content), nil
+}
+
+func (h *harness) snapshot() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.messages...)
 }
 
 // wait returns every message once one contains want.
@@ -77,7 +93,7 @@ func (h *harness) wait(t *testing.T, want string) string {
 			return all
 		}
 	}
-	t.Fatalf("no message with %q", want)
+	t.Fatalf("no message with %q in %q", want, h.snapshot())
 	return ""
 }
 

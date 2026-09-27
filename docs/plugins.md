@@ -65,7 +65,8 @@ Background commands for Orb's own models, as Claude Code runs them. `bash` gains
 `run_in_background`: the call returns a job ID and its log file at once, and a message reports
 the job's end (exit code, duration, last lines), starting a turn if the model is idle.
 `monitor` does the same and also reports each line the command prints, at most once a second.
-`stop_job` ends a job's whole process group; every job ends with the session. Jobs run
+`stop_job` ends a job's whole process group (TERM, then KILL after two seconds); every job
+ends with the session, and its log, in a temporary directory, with it. Jobs run
 through the same bash as foreground commands, so the sandbox, shell, command prefix and
 `permissions` rules for `bash` apply unchanged. At most 8 run at once. Claude models keep
 Claude Code's own background tasks and `Monitor`.
