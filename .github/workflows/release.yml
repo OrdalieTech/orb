@@ -96,7 +96,7 @@ jobs:
           export JAVA_HOME="${JAVA_HOME_17_X64}"
           sdkmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "${sdkmanager}" --licenses < <(yes) > /dev/null # a pipe from yes would fail pipefail on SIGPIPE
-          "${sdkmanager}" "platforms;android-37" "build-tools;36.0.0" > /dev/null
+          "${sdkmanager}" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
           keys="$(mktemp -d)"
           trap 'rm -rf "${keys}"' EXIT
           printf '%s' "${ANDROID_KEYSTORE}" | base64 -d > "${keys}/release.jks"
