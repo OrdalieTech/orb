@@ -4580,7 +4580,12 @@ func (mode *InteractiveMode) showImages() bool {
 }
 
 func (mode *InteractiveMode) toolDefinition(name string) *extensions.ToolDefinition {
-	builtIn := nativeToolDefinition(name, mode.session.RegisteredTool(name))
+	registered := mode.session.RegisteredTool(name)
+	// A plugin extending bash under its name (background jobs) keeps bash's look.
+	if _, native := registered.(tools.PlainTextRenderer); !native && name == "bash" {
+		registered = tools.NewBashTool("", nil)
+	}
+	builtIn := nativeToolDefinition(name, registered)
 	definition := mode.session.GetToolDefinition(name)
 	if definition == nil {
 		return builtIn
