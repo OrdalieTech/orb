@@ -38,6 +38,7 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = state.close() }() // Windows cannot remove the temp dir around an open database
 	b, err := bridge.Open(&testBridgeStore{}, true)
 	if err != nil {
 		t.Fatal(err)
