@@ -552,6 +552,7 @@ type pairingTestUI struct {
 	shown        func(string)
 	approve      bool
 	confirmation string
+	qr           bool // a QR code was drawn under the panel
 }
 
 func (*pairingTestUI) Width() int  { return 80 }
@@ -564,7 +565,10 @@ func (ui *pairingTestUI) Custom(ctx context.Context, f extensions.CustomFactory,
 	if err != nil {
 		return nil, false, err
 	}
-	panel := component.(*bridgeSettingsPanel)
+	panel, _ := component.(*bridgeSettingsPanel)
+	if q, ok := component.(*qrPanel); ok {
+		panel, ui.qr = q.bridgeSettingsPanel, strings.Contains(strings.Join(q.Render(80), "\n"), "▀")
+	}
 	defer panel.Dispose()
 	_ = panel.Render(80)
 	action := ui.action
@@ -572,12 +576,17 @@ func (ui *pairingTestUI) Custom(ctx context.Context, f extensions.CustomFactory,
 	if action == "close" {
 		panel.HandleInput(tui.KeyEvent{Raw: "\x1b"})
 	}
+	if action == "qr" {
+		ui.action = "copy"
+		panel.HandleInput(tui.KeyEvent{Raw: "\r"})
+	}
 	if action == "show" {
-		panel.list.ListSelectRow(1)
+		panel.list.ListSelectRow(2)
 		panel.HandleInput(tui.KeyEvent{Raw: "\r"})
 	}
 	if action == "copy" {
 		ui.action = "show"
+		panel.list.ListSelectRow(1)
 		panel.HandleInput(tui.KeyEvent{Raw: "\r"})
 	}
 	select {
@@ -651,7 +660,7 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 			server := protocol.NewConn(y, b.Admin)
 			client := protocol.NewConn(x, nil)
 			defer func() { _ = client.Close(); _ = server.Close() }()
-			ui := &pairingTestUI{action: "copy", approve: approve, shown: func(code string) {
+			ui := &pairingTestUI{action: "qr", approve: approve, shown: func(code string) {
 				clipboard, err := os.ReadFile(copied)
 				if err != nil || string(clipboard) != code {
 					t.Fatal("Copy invitation did not copy the complete invitation shown in the editor")
@@ -676,6 +685,9 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 			}
 			if (status.Status == "approved") != approve {
 				t.Fatal("approval choice ignored")
+			}
+			if !ui.qr {
+				t.Fatal("Show QR code drew no QR code")
 			}
 			if !strings.Contains(ui.confirmation, other.PeerID()) || !strings.Contains(ui.confirmation, "current instances only") || !strings.Contains(ui.confirmation, "instance.inspect") {
 				t.Fatal("approval omitted identity or authority")
@@ -742,6 +754,141 @@ func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
 	case <-service.Done():
 	default:
 		t.Fatal("stop returned while the old service still accepts connections")
+	}
+}
+
+// fakeBridgeOwner serves the owner API of profile "personal" from handle.
+func fakeBridgeOwner(t *testing.T, handle func(method string, params json.RawMessage) (json.RawMessage, error)) {
+	t.Helper()
+	root, err := os.MkdirTemp(socketTempRoot(), "orb-pipe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	t.Setenv("ORB_BRIDGE_HOME", root)
+	dir := filepath.Join(root, "personal")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "admin.token"), []byte("owner"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	closeServer, err := nativebridge.Listen(t.Context(), filepath.Join(dir, "admin.sock"), nil, "owner", func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		return handle(method, params)
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(closeServer)
+}
+
+func TestAStopMarkerNeverKeepsOrbFromARunningBridge(t *testing.T) {
+	fakeBridgeOwner(t, func(method string, _ json.RawMessage) (json.RawMessage, error) {
+		return bridge.JSON(map[string]any{"supports_full_access": true}), nil
+	})
+	if err := os.WriteFile(filepath.Join(os.Getenv("ORB_BRIDGE_HOME"), "personal", "stopped"), []byte("stopped\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A systemd service runs the Bridge while an earlier `orb bridge stop` left its marker.
+	if err := startBridge(t.Context(), "personal", false); err != nil {
+		t.Fatalf("an Orb could not attach to the running Bridge: %v", err)
+	}
+}
+
+func TestBridgePairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
+	inv := bridge.Invitation{ID: protocol.NewID(), PeerID: "orb:ed25519:me", Token: "secret", Locator: "here", Expires: time.Now().Add(time.Minute).Unix()}
+	for _, answer := range []string{"y\n", "\n"} {
+		approved := ""
+		fakeBridgeOwner(t, func(method string, params json.RawMessage) (json.RawMessage, error) {
+			switch method {
+			case "status":
+				claimed := inv
+				claimed.Claimant = "orb:ed25519:phone"
+				return bridge.JSON(map[string]any{"supports_full_access": true, "pending": []bridge.Invitation{claimed}}), nil
+			case "invite":
+				return bridge.JSON(inv), nil
+			case "approve":
+				approved = string(params)
+				return bridge.JSON(struct{}{}), nil
+			}
+			return nil, bridge.Fail("not_found")
+		})
+		var out, errs bytes.Buffer
+		code := runBridgeCommand(t.Context(), []string{"pair"}, cliStreams{Stdin: strings.NewReader(answer), Stdout: &out, Stderr: &errs})
+		if !strings.Contains(out.String(), "▀") || !strings.Contains(out.String(), bridgeInvitationCode(inv)) || !strings.Contains(out.String(), "orb:ed25519:phone") {
+			t.Fatalf("output lacks the QR, code or claimant: %s %s", out.String(), errs.String())
+		}
+		if yes := answer == "y\n"; (code == 0) != yes || (approved != "") != yes || yes && !strings.Contains(approved, `"claimant":"orb:ed25519:phone"`) {
+			t.Fatalf("answer %q: code %d approved %q", answer, code, approved)
+		}
+	}
+}
+
+func TestBridgeJoinTrustsTheInviterOnceItApproves(t *testing.T) {
+	b, err := bridge.Open(&testBridgeStore{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	inv, err := b.Invite(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.Locator = "there"
+	polls, granted := 0, ""
+	fakeBridgeOwner(t, func(method string, params json.RawMessage) (json.RawMessage, error) {
+		switch method {
+		case "status":
+			return bridge.JSON(map[string]any{"supports_full_access": true, "peer_id": "orb:ed25519:me"}), nil
+		case "join":
+			return bridge.JSON(inv), nil
+		case "remote":
+			polls++
+			status := inv
+			if polls > 1 {
+				status.Status = "approved"
+			}
+			return bridge.JSON(status), nil
+		case "grant":
+			granted = string(params)
+			return bridge.JSON(struct{}{}), nil
+		}
+		return nil, bridge.Fail("not_found")
+	})
+	var out, errs bytes.Buffer
+	if code := runBridgeCommand(t.Context(), []string{"join", bridgeInvitationCode(inv)}, cliStreams{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errs}); code != 0 {
+		t.Fatalf("join: %s", errs.String())
+	}
+	if polls != 2 || !strings.Contains(granted, inv.PeerID) || !strings.Contains(out.String(), "Paired with "+inv.PeerID) {
+		t.Fatalf("polls %d granted %q output %s", polls, granted, out.String())
+	}
+}
+
+func TestBridgePipeServesOwnerCallsAsJSONLines(t *testing.T) {
+	fakeBridgeOwner(t, func(method string, params json.RawMessage) (json.RawMessage, error) {
+		switch method {
+		case "status":
+			return bridge.JSON(map[string]any{"supports_full_access": true, "peer_id": "me"}), nil
+		case "echo":
+			return params, nil
+		}
+		return nil, bridge.Fail("not_found")
+	})
+	input := strings.NewReader(`{"id":1,"method":"status"}` + "\n" + `{"id":"b","method":"echo","params":{"x":2}}` + "\n" + "not json\n" + `{"id":3,"method":"nope"}` + "\n")
+	var output, errors bytes.Buffer
+	if code := runBridgeCommand(t.Context(), []string{"pipe"}, cliStreams{Stdin: input, Stdout: &output, Stderr: &errors}); code != 0 {
+		t.Fatalf("pipe: %s", errors.String())
+	}
+	replies := map[string]map[string]json.RawMessage{}
+	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
+		var reply map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			t.Fatalf("line %q: %v", line, err)
+		}
+		replies[string(reply["id"])] = reply
+	}
+	if len(replies) != 3 || !strings.Contains(string(replies["1"]["result"]), `"peer_id":"me"`) || string(replies[`"b"`]["result"]) != `{"x":2}` || !strings.Contains(string(replies["3"]["error"]), `"code":"not_found"`) {
+		t.Fatalf("replies = %s", output.String())
 	}
 }
 
@@ -1215,5 +1362,33 @@ func TestRemoteQuestionPanelKeepsControlsVisible(t *testing.T) {
 	v.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: row, Column: 4})
 	if len(answer.Answers) != 1 || answer.Answers[0].Selected[0] != "Architecture" {
 		t.Fatal("remote selection did not reach the shared panel")
+	}
+}
+
+func TestKeepaliveClosesAPeerThatStoppedAnswering(t *testing.T) {
+	gone := make(chan struct{})
+	defer close(gone)
+	for _, answers := range []bool{true, false} {
+		x, y := net.Pipe()
+		server := protocol.NewConn(y, func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+			if !answers {
+				<-gone // half-open: the peer is gone but nothing says so
+			}
+			return bridge.JSON(struct{}{}), nil
+		})
+		client := protocol.NewConn(x, nil)
+		go keepalive(t.Context(), client, 50*time.Millisecond)
+		select {
+		case <-client.Done():
+			if answers {
+				t.Fatal("a live peer was dropped")
+			}
+		case <-time.After(400 * time.Millisecond):
+			if !answers {
+				t.Fatal("a silent peer was kept")
+			}
+		}
+		_ = client.Close()
+		_ = server.Close()
 	}
 }

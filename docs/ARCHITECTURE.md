@@ -105,7 +105,8 @@ filesystem/shell tools plus memory, tasks and quota fetching without a host file
 browser application. Native subagents, process-backed MCP, Herdr and native transports still
 require a suitable host. Web search retains native credential/DNS defaults; browser networking
 and storage must be explicitly adapted. Tasks and permissions currently include TUI adapters,
-and the product agent still has presentation dependencies. No mobile application,
+and the product agent still has presentation dependencies. The Android app (`platforms/android`)
+ships the unmodified CLI rather than a new host; no
 Cloudflare lifecycle, universal platform manifest or speculative host framework is introduced.
 
 ### Host ports (P10)

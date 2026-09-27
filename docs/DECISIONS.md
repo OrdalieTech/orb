@@ -142,6 +142,12 @@ both sides, plus upstream's RPC/CLI tests run as-is against the orb binary.
 
 Revisable records of how things currently work; each holds until changed by owner-signed decision.
 
+- **The Android app runs the orb binary, not a gomobile library (shipped with v0.13.0 at the
+  owner's request, 2026-09-27; owner to confirm against P2).** The app executes the unmodified
+  `CGO_ENABLED=0` CLI (`liborb.so`) over RPC mode and `orb bridge pipe`: no API to bind, the phone
+  runs exactly what desktops run, and updates arrive as signed release APKs. P2's "embed the core as
+  a library" remains the path for iOS, which cannot spawn processes.
+
 - **Windows CI is blocking again (owner decision of 2026-09-22, resolved 2026-09-24).** The first
   real Windows run failed 179 tests in 31 packages; it ran informationally while v0.10.0 shipped
   linux/darwin artifacts. Three parity rounds turned it green on 04a430a, so the job blocks every

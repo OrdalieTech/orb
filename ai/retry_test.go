@@ -14,6 +14,9 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		"EAI_AGAIN api.example.com",
 		"getaddrinfo failed for api.example.com",
 		"dial tcp: lookup api.example.com: no such host",
+		`Post "https://chatgpt.com/backend-api/codex/responses": dial tcp [2a06:98c1::1]:443: connect: network is unreachable`,
+		"read tcp 10.0.0.2:51234->1.2.3.4:443: read: connection reset by peer",
+		"dial tcp: lookup chatgpt.com on [::1]:53: androiddns: dnsproxyd error -3 (no such process)",
 		// Upstream gateway buffer exhaustion while retrying (fe10558eb).
 		"Exceeded request buffer limit while retrying upstream",
 	} {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -109,15 +110,14 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 	if err != nil {
 		return err
 	}
+	stopped := filepath.Join(dir, "stopped")
 	if explicit {
-		if err = stateFromContext(ctx).write(ctx, filepath.Join(dir, "stopped"), nil); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = stateFromContext(ctx).write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-	} else {
-		if _, err = stateFromContext(ctx).read(ctx, filepath.Join(dir, "stopped")); err == nil {
-			return errors.New("bridge stopped; start it explicitly")
-		}
 	}
+	// A running Bridge is used whatever the stop marker says: the marker keeps Orb from starting
+	// one by itself, never from reaching one that runs (a systemd service, say).
 	if c, err := bridgeAdmin(ctx, profile); err == nil {
 		ready, err := bridgeServiceReady(ctx, c)
 		_ = c.Close()
@@ -125,9 +125,11 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 			return err
 		}
 		// The older daemon writes its deliberate-stop marker during replacement.
-		if err = stateFromContext(ctx).write(ctx, filepath.Join(dir, "stopped"), nil); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = stateFromContext(ctx).write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+	} else if _, err = stateFromContext(ctx).read(ctx, stopped); err == nil && !explicit {
+		return errors.New("bridge stopped; start it explicitly")
 	}
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -148,7 +150,9 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 	if err = cmd.Start(); err != nil {
 		return err
 	}
-	_ = cmd.Process.Release()
+	// Reaped when it exits: a service that loses the race to an already-running one exits at
+	// once, and a long-lived parent (a TUI, an app's core) would otherwise keep it as a zombie.
+	go func() { _ = cmd.Wait() }()
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -175,6 +179,10 @@ type bridgeService struct {
 	node    *transport.Node
 	mu      sync.Mutex
 	peers   map[string]*protocol.Conn
+	// launched: Orbs this Bridge started in a folder for a peer (host.launch).
+	launched map[string]*launched
+	// restart ends the service so its process can exec the binary at path (host.update).
+	restart func(path string)
 	ctx     context.Context
 }
 
@@ -201,45 +209,127 @@ func (s *bridgeService) peer(ctx context.Context, id, locator string) (*protocol
 	}
 	timeout, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	// Dial, unless the peer gets here first: one back from a network cut dials in by itself,
+	// often long before a dial toward it would get through.
+	dialed := make(chan error, 1)
+	go func() { dialed <- s.dial(timeout, id, locator) }()
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-dialed:
+			if err != nil {
+				return nil, err
+			}
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.peers[id], nil
+		case <-tick.C:
+			if c := s.b.Connection(id); c != nil {
+				return c, nil
+			}
+		case <-timeout.Done():
+			return nil, bridge.Fail("unavailable")
+		}
+	}
+}
+
+func (s *bridgeService) dial(ctx context.Context, id, locator string) error {
 	var stream net.Conn
 	var err error
 	if strings.HasPrefix(locator, "ws://") || strings.HasPrefix(locator, "wss://") {
-		stream, err = webtransport.Dial(timeout, locator)
+		stream, err = webtransport.Dial(ctx, locator)
 	} else {
-		stream, err = s.node.Dial(timeout, id, locator)
+		stream, err = s.node.Dial(ctx, id, locator)
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	c, _, err = s.b.Connect(timeout, stream, id, false)
+	c, _, err := s.b.Connect(ctx, stream, id, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	s.mu.Lock()
 	old := s.peers[id]
 	s.peers[id] = c
 	s.mu.Unlock()
+	go keepalive(s.ctx, c, 4*time.Second)
 	if old != nil {
 		_ = old.Close()
 	}
-	return c, nil
+	return nil
 }
 func (s *bridgeService) remote(ctx context.Context, id, method string, p any) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	c, err := s.peer(ctx, id, "")
-	if err != nil {
-		return nil, err
+	// A dead connection fails, or is superseded by the channel a restarted peer opens to greet
+	// this one; one retry reaches the peer's fresh channel or redials. Only calls safe to repeat
+	// are retried: reads, and instances.call, which the peer deduplicates by operation id.
+	retries := 1
+	if method == "host.launch" {
+		retries = 0
 	}
-	var result json.RawMessage
-	err = c.Call(ctx, method, p, &result)
-	if err != nil {
+	for attempt := 0; ; attempt++ {
+		c, err := s.peer(ctx, id, "")
+		if err != nil {
+			return nil, err
+		}
+		result, err := s.call(ctx, id, c, method, p)
 		var rpc *protocol.RPCError
-		if !errors.As(err, &rpc) {
-			_ = c.Close()
+		if err == nil || errors.As(err, &rpc) {
+			return result, err
+		}
+		_ = c.Close()
+		if ctx.Err() != nil || attempt == retries {
+			return nil, err
 		}
 	}
-	return result, err
+}
+
+var errSuperseded = errors.New("superseded by a newer channel")
+
+// call waits for one call on c, giving up early once a newer channel from the same peer arrives.
+func (s *bridgeService) call(ctx context.Context, id string, c *protocol.Conn, method string, p any) (json.RawMessage, error) {
+	done := make(chan error, 1)
+	var result json.RawMessage
+	go func() { done <- c.Call(ctx, method, p, &result) }()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-done:
+			return result, err
+		case <-tick.C:
+			if n := s.b.Connection(id); n != nil && n != c {
+				return nil, errSuperseded
+			}
+		}
+	}
+}
+
+// keepalive pings a peer connection until the connection or the service ends, and closes it when
+// the peer stops answering. A peer that restarted or lost its network leaves a half-open connection
+// behind; without this, the next call on it would wait out its timeout before anything redialled.
+func keepalive(ctx context.Context, c *protocol.Conn, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.Done():
+			return
+		case <-t.C:
+		}
+		ping, cancel := context.WithTimeout(ctx, every)
+		err := c.Call(ping, "bridge.ping", struct{}{}, nil)
+		cancel()
+		var rpc *protocol.RPCError
+		if err != nil && !errors.As(err, &rpc) && ctx.Err() == nil {
+			_ = c.Close()
+			return
+		}
+	}
 }
 func (s *bridgeService) outbound(ctx context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
 	var p struct {
@@ -405,7 +495,11 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		defer func() { _ = server.Close() }()
 		go func() { _ = server.Serve(listener); stop() }()
 	}
-	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, ctx: serviceCtx}
+	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, launched: map[string]*launched{}, ctx: serviceCtx}
+	b.SetHost(service.host)
+	defer service.stopLaunched()
+	reexec := ""
+	service.restart = func(path string) { reexec = path; time.AfterFunc(300*time.Millisecond, stop) }
 	admin := func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		if method == "stop" {
 			var p struct{}
@@ -443,11 +537,10 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 					defer func() { <-slots }()
 					peer, _, err := b.Connect(serviceCtx, c, "", true)
 					if err == nil {
-						select {
-						case <-serviceCtx.Done():
-							_ = peer.Close()
-						case <-peer.Done():
-						}
+						// A peer that dialled here can vanish without a word (its network changed):
+						// pinging finds out in seconds, where a call would wait out its timeout.
+						keepalive(serviceCtx, peer, 4*time.Second)
+						_ = peer.Close()
 					}
 				}(stream)
 			default:
@@ -456,9 +549,56 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		}
 	}()
 	go service.reconcile()
+	go service.greet()
 	<-serviceCtx.Done()
+	if reexec != "" {
+		return restartInto(reexec)
+	}
 	return nil
 }
+
+// restartInto asks the process that ran the service to become the binary at this path, once
+// every listener and store is closed: an update keeps the process, so a supervisor keeps it too.
+type restartInto string
+
+func (r restartInto) Error() string { return "restarting into " + string(r) }
+
+// greet runs once at startup: it clears what the previous run left, then dials every known peer.
+// Their connections to that run are half-open; a fresh channel from this side becomes their
+// newest, so their next call lands at once instead of waiting out a timeout on the dead one.
+func (s *bridgeService) greet() {
+	raw, err := s.b.Admin(s.ctx, "status", bridge.JSON(struct{}{}))
+	if err != nil {
+		return
+	}
+	var status struct {
+		Peers     []string          `json:"peers"`
+		States    map[string]string `json:"peer_states"`
+		Instances []bridge.Instance `json:"instances"`
+	}
+	_ = json.Unmarshal(raw, &status)
+	// Orbs a previous run started for peers ended with it (a crash left no one to retire them).
+	stale := []string{}
+	for _, i := range status.Instances {
+		if strings.HasPrefix(i.Alias, "launch-") && !i.Available {
+			stale = append(stale, i.ID)
+		}
+	}
+	if len(stale) > 0 {
+		_, _ = s.b.Admin(s.ctx, "retire", bridge.JSON(map[string][]string{"instance_ids": stale}))
+	}
+	for _, peer := range status.Peers {
+		if status.States[peer] == "blocked" || peer == s.b.PeerID() {
+			continue
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(s.ctx, 20*time.Second)
+			defer cancel()
+			_, _ = s.peer(ctx, peer, "")
+		}()
+	}
+}
+
 func (s *bridgeService) reconcile() {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -538,7 +678,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair   (show a QR code, then approve the device that scans it)\norb bridge join <code>   (pair with an Orb that ran orb bridge pair)\norb bridge service install|remove   (Linux: keep Bridge running across logouts and reboots)\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge pipe   (owner API as JSON lines on stdin/stdout)\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
@@ -569,12 +709,26 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		}
 		ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		if err := runBridgeService(ctx, profile, web); err != nil {
+		err := runBridgeService(ctx, profile, web)
+		var next restartInto
+		if errors.As(err, &next) {
+			err = execReplacingProcess(string(next), os.Args, os.Environ())
+		}
+		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
 		return 0
 	}
+	if args[0] == "service" {
+		return runBridgeServiceCommand(ctx, profile, args[1:], streams)
+	}
 	if args[0] == "start" {
+		if bridgeServiceInstalled(profile) {
+			if err := systemctlUser(ctx, "start", bridgeUnitName(profile)); err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+			return 0
+		}
 		if err := startBridge(ctx, profile, true); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
@@ -627,6 +781,15 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	if args[0] == "view" && len(args) == 3 {
 		return runBridgeView(ctx, profile, args[1], args[2], streams)
+	}
+	if args[0] == "pair" && len(args) == 1 {
+		return runBridgePair(ctx, profile, streams)
+	}
+	if args[0] == "join" {
+		return runBridgeJoin(ctx, profile, args[1:], streams)
+	}
+	if args[0] == "pipe" {
+		return runBridgePipe(ctx, profile, streams)
 	}
 	if args[0] == "trust" || len(args) > 1 && args[0] == "pair" && args[1] == "invite" {
 		if err := startBridge(ctx, profile, true); err != nil {
@@ -715,6 +878,78 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		}
 	}
 	_, _ = fmt.Fprintln(streams.Stdout, string(result))
+	return 0
+}
+
+// runBridgePipe serves the owner admin API as JSON lines for GUI shells, over
+// one long-lived connection instead of a process per call:
+// {"id":1,"method":"status"} -> {"id":1,"result":…} or {"id":1,"error":{"code":…,"message":…}}.
+func runBridgePipe(ctx context.Context, profile string, streams cliStreams) int {
+	if err := startBridge(ctx, profile, true); err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	var mu sync.Mutex // guards client and output
+	var client *protocol.Conn
+	connect := func() (*protocol.Conn, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if client != nil {
+			select {
+			case <-client.Done():
+				client = nil
+			default:
+				return client, nil
+			}
+		}
+		c, err := bridgeAdmin(ctx, profile)
+		if err != nil {
+			// A restarted service keeps its state; bring it back once before failing the call.
+			if err = startBridge(ctx, profile, false); err == nil {
+				c, err = bridgeAdmin(ctx, profile)
+			}
+		}
+		client = c
+		return c, err
+	}
+	out := json.NewEncoder(streams.Stdout)
+	lines := bufio.NewScanner(streams.Stdin)
+	lines.Buffer(make([]byte, 64<<10), protocol.MaxFrame+1024)
+	var calls sync.WaitGroup
+	for lines.Scan() {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(lines.Bytes(), &req) != nil || req.Method == "" {
+			continue
+		}
+		if len(req.Params) == 0 {
+			req.Params = json.RawMessage("{}")
+		}
+		calls.Add(1)
+		go func() {
+			defer calls.Done()
+			reply := map[string]any{"id": req.ID}
+			var result json.RawMessage
+			c, err := connect()
+			if err == nil {
+				err = c.Call(ctx, req.Method, req.Params, &result)
+			}
+			if err != nil {
+				reply["error"] = map[string]string{"code": bridge.Code(err), "message": err.Error()}
+			} else {
+				reply["result"] = result
+			}
+			mu.Lock()
+			_ = out.Encode(reply)
+			mu.Unlock()
+		}()
+	}
+	calls.Wait()
+	if client != nil {
+		_ = client.Close()
+	}
 	return 0
 }
 
@@ -823,7 +1058,7 @@ func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, tar
 }
 
 func fullBridgeGrant(peer string) bridge.Grant {
-	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
+	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage", "host.launch"}}
 }
 
 func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string) error {

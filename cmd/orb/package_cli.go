@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -53,7 +54,7 @@ func getPackageCommandUsage(command string) string {
 
 const configCommandUsage = "orb config [-l] [--approve|--no-approve]"
 
-const pluginsCommandUsage = "orb plugins list [--all]|enable|disable [name]"
+const pluginsCommandUsage = "orb plugins list [--all]|enable|disable [name]|set <name> <key> <json>"
 
 func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
 	if len(argv) == 0 || argv[0] != "plugins" {
@@ -63,13 +64,13 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 		_, _ = fmt.Fprintln(streams.Stdout, "Usage: "+pluginsCommandUsage)
 		return true, 0
 	}
-	if len(argv) < 2 || argv[1] != "list" && argv[1] != "enable" && argv[1] != "disable" {
+	if len(argv) < 2 || argv[1] != "list" && argv[1] != "enable" && argv[1] != "disable" && argv[1] != "set" {
 		_, _ = fmt.Fprintln(streams.Stderr, "Usage: "+pluginsCommandUsage)
 		return true, 1
 	}
 	action := argv[1]
 	listAll := action == "list" && len(argv) == 3 && argv[2] == "--all"
-	if action == "list" && len(argv) != 2 && !listAll || action != "list" && len(argv) != 3 {
+	if action == "list" && len(argv) != 2 && !listAll || (action == "enable" || action == "disable") && len(argv) != 3 || action == "set" && len(argv) != 5 {
 		_, _ = fmt.Fprintln(streams.Stderr, "Usage: "+pluginsCommandUsage)
 		return true, 1
 	}
@@ -103,6 +104,19 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 	if assembly.Description(name) == "" {
 		_, _ = fmt.Fprintf(streams.Stderr, "Unknown plugin %q.\n", name)
 		return true, 1
+	}
+	if action == "set" {
+		// Headless hosts configure plugins the way /plugins screens do: one key, one JSON value.
+		var value any
+		if err := json.Unmarshal([]byte(argv[4]), &value); err != nil {
+			return true, reportCLIError(streams.Stderr, fmt.Errorf("value must be JSON: %w", err))
+		}
+		settings.SetPluginSetting(name, argv[3], value)
+		if errors := settings.DrainErrors(); len(errors) > 0 {
+			return true, reportCLIError(streams.Stderr, errors[0])
+		}
+		_, _ = fmt.Fprintf(streams.Stdout, "Set %s.%s\n", name, argv[3])
+		return true, 0
 	}
 	enabled := action == "enable"
 	settings.SetPluginEnabled(name, enabled)

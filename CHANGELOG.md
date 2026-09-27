@@ -5,6 +5,66 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Orb for Android (`platforms/android`, preview): a native app that runs the full Orb core on the
+  phone — its own sessions, tools and plugins — and is a full Bridge peer. It drives the
+  unmodified `orb` binary over RPC mode and the new Bridge pipe, pairs both ways (invite, join,
+  approve), shows peers' live sessions, and raises approvals, questions and pairing as
+  interrupts. It pairs with a computer by photographing the QR code `orb bridge pair` prints,
+  lists this phone's past sessions first on Home, sets reasoning per session (local or on a
+  peer), and offers the TUI's commands through a `/` palette next to the core's own extension
+  commands, prompt templates and skills. Tested standalone and bridged on a physical device.
+  Releases now carry it (`orb_<version>_android_arm64.apk` and its `.sha256`), and it updates
+  itself: Home offers a newer release and installs it through Android's installer.
+- A paired machine updates from another device: `host.update` makes its Orb replace itself with
+  the latest release, as `orb update` does, and restart its Bridge on the new binary, so peers see
+  it back within seconds. The Android app's Bridge screen shows each device's version and updates
+  the ones behind.
+- `orb bridge pair` pairs a device in one command: it prints a QR code and a
+  `orb bridge join <code>` line, waits for the claim, and approves only after you answer `y` for
+  the exact fingerprint that claimed it. `orb bridge join <code>` is the other side: it claims,
+  waits for that approval, then trusts the inviter back. Bridge → Create an invitation in the TUI
+  can show the same QR code. Invitation codes no longer carry grants, which the joiner never
+  used, so they fit a QR code a phone reads off an 80-column terminal.
+- Bridge opens any thread on a paired machine, not only the Orbs already running there. With the
+  new `host.launch` grant, a peer lists the machine's stored threads across folders
+  (`host.sessions`) and starts Orb in a folder, on a new thread or resuming one (`host.launch`).
+  Such an Orb is ephemeral: it ends after thirty minutes without activity or with its Bridge,
+  and its thread reopens with the next message (the Android app does this by itself). The TUI's device
+  panel gains "Open a folder…", and the Android app lists every device's threads in one list, newest
+  first. Pairings made from now on include the grant; for an existing pair, run
+  `orb bridge trust <peer>` on the machine to add it. `orb bridge view` lists a session's threads
+  readably with `/sessions` and opens one with `/switch <number>`.
+- `orb bridge service install|remove` keeps a Linux server's Bridge running across logouts and
+  reboots as a systemd user service (restarted if it crashes, not after `orb bridge stop`), and
+  `orb bridge pair` offers it right after pairing. `orb bridge start` starts the service when one
+  is installed.
+- An Orb could not attach to a running Bridge after an earlier `orb bridge stop`: the stop marker,
+  meant only to keep Orb from starting a Bridge by itself, also kept it from reaching one that ran
+  (a systemd service, for one).
+- Bridge recovers from restarts and network cuts in seconds. Every peer connection is pinged
+  every four seconds and dropped when the peer stops answering; a restarted Bridge dials its
+  peers at once and calls move to the fresh channel; a dial toward a peer gives way to the peer
+  dialling back. Measured on a phone: under a second after the other machine's Bridge restarts,
+  five to nine seconds after a thirty-second network cut (it was twenty to thirty). Calls that are
+  unsafe to repeat (`host.launch`) are not retried. A Bridge service started by a long-lived
+  process is reaped when it exits instead of lingering as a zombie.
+- Provider calls retry when the device has no network at all: Go's own wording for it ("network is
+  unreachable", "no route to host", "connection reset by peer", and Android's resolver failure)
+  now counts as transient, like Node's "fetch failed" does upstream.
+- `orb login --json` is `/login` for apps that draw their own screens: it lists every sign-in
+  method with its status and model count, and `orb login --json <provider> [oauth|api_key]` runs
+  that method as the TUI does (browser callback, device code, menu, pasted code or API key), its
+  events and prompts as JSON lines with one answer line per prompt. The Android app now signs in
+  to every provider this way, with the browser redirect landing on Orb's own listener on the phone.
+- `orb storage sessions` lists this project's stored sessions as JSON lines (id, name, working
+  directory, times, message count, first message) for apps that show session history.
+- Bridge reconnects a peer that restarted: a new connection now replaces its oldest channel
+  instead of being refused once four stale ones had piled up, and calls use the newest channel.
+  A phone restarting its app was locked out of a paired Mac after a few restarts.
+- `orb bridge pipe` serves Bridge's owner API as JSON lines on stdin/stdout over one long-lived
+  connection, for apps and scripts that would otherwise start a process per call.
+- `orb plugins set <plugin> <key> <json>` writes one plugin setting (for example
+  `orb plugins set permissions mode '"enforce"'`) without the interactive `/plugins` screen.
 - New `jobs` plugin: Orb's own models run commands in the background as Claude Code does. `bash`
   gains `run_in_background` (the call returns at once and a message reports the job's end,
   waking the model) and `monitor` (each line the command prints is reported as it comes);

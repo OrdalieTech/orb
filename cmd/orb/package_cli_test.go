@@ -96,6 +96,33 @@ func TestPluginsCLIListsAndTogglesUserSettings(t *testing.T) {
 	}
 }
 
+func TestPluginsCLISetWritesOneJSONSetting(t *testing.T) {
+	env := setupPackageCLI(t)
+	if code, _, stderr := runPackageCLI(t, []string{"plugins", "disable", "permissions"}); code != 0 {
+		t.Fatalf("disable: %s", stderr)
+	}
+	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "set", "permissions", "mode", `"enforce"`})
+	if code != 0 || stderr != "" || strings.TrimSpace(stdout) != "Set permissions.mode" {
+		t.Fatalf("set: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	contents, err := os.ReadFile(filepath.Join(env.agentDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Plugins map[string]map[string]any `json:"plugins"`
+	}
+	// The gate stays off: writing a setting never enables a plugin as a side effect.
+	if err := json.Unmarshal(contents, &stored); err != nil || stored.Plugins["permissions"]["mode"] != "enforce" || stored.Plugins["permissions"]["enabled"] != false {
+		t.Fatalf("settings = %s, error = %v", contents, err)
+	}
+	for _, args := range [][]string{{"plugins", "set", "permissions", "mode", "enforce"}, {"plugins", "set", "nope", "mode", `"auto"`}, {"plugins", "set", "permissions", "mode"}} {
+		if code, _, _ := runPackageCLI(t, args); code == 0 {
+			t.Fatalf("%v succeeded", args)
+		}
+	}
+}
+
 func TestPluginsCLIListAllPrintsResolvedComposition(t *testing.T) {
 	env := setupPackageCLI(t)
 	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "list", "--all"})

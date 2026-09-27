@@ -409,6 +409,26 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 			_, _ = fmt.Fprintf(streams.Stdout, "Recovered %d conversations. Current credentials, Bridge authority and delivery state are unchanged.\n", count)
 			return 0
 		}
+		if len(argv) == 2 && argv[1] == "sessions" {
+			// One JSON line per conversation, newest first: the list /resume shows, for apps and scripts.
+			rows, err := state.sessions().ListInfo(ctx, "", nil)
+			if err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+			out := json.NewEncoder(streams.Stdout)
+			for _, row := range rows {
+				_ = out.Encode(struct {
+					ID       string  `json:"id"`
+					Name     *string `json:"name,omitempty"`
+					CWD      string  `json:"cwd"`
+					Created  int64   `json:"created"`
+					Modified int64   `json:"modified"`
+					Messages int     `json:"messages"`
+					First    string  `json:"first"`
+				}{row.ID, row.Name, row.CWD, row.Created.UnixMilli(), row.Modified.UnixMilli(), row.MessageCount, row.FirstMessage})
+			}
+			return 0
+		}
 		if len(argv) == 3 && argv[1] == "import" {
 			stored, err := state.sessions().OpenPath(ctx, argv[2])
 			if err != nil {
@@ -432,7 +452,7 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 			_, _ = fmt.Fprintln(streams.Stdout, "Exported to "+argv[3])
 			return 0
 		}
-		return reportCLIError(streams.Stderr, errors.New("usage: orb storage migrate [legacy-session-dir...] | import <jsonl> | export <session> <jsonl> | backup <path> | restore <backup> | config import|export <name.json> <path>"))
+		return reportCLIError(streams.Stderr, errors.New("usage: orb storage migrate [legacy-session-dir...] | sessions | import <jsonl> | export <session> <jsonl> | backup <path> | restore <backup> | config import|export <name.json> <path>"))
 	}
 	return runCLI(context.WithValue(ctx, nativeStateKey{}, state), argv, streams)
 }

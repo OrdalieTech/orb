@@ -101,15 +101,25 @@ func (b *Bridge) Connect(ctx context.Context, stream net.Conn, expected string, 
 		return nil, "", Fail("resource_exhausted")
 	}
 	if b.channels[id] == nil {
-		b.channels[id] = map[*protocol.Conn]bool{}
+		b.channels[id] = map[*protocol.Conn]uint64{}
 	}
+	// A peer that restarts leaves channels whose loss was never observed. The channel it just
+	// authenticated proves which one is current, so at the limit the oldest gives way.
+	var evicted *protocol.Conn
 	if len(b.channels[id]) >= 4 {
-		b.mu.Unlock()
-		_ = c.Close()
-		return nil, "", Fail("resource_exhausted")
+		for old, at := range b.channels[id] {
+			if evicted == nil || at < b.channels[id][evicted] {
+				evicted = old
+			}
+		}
+		delete(b.channels[id], evicted)
 	}
-	b.channels[id][c] = true
+	b.arrivals++
+	b.channels[id][c] = b.arrivals
 	b.mu.Unlock()
+	if evicted != nil {
+		_ = evicted.Close()
+	}
 	go func() {
 		<-c.Done()
 		b.mu.Lock()
@@ -295,6 +305,17 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 		}
 		r, err := b.Claim(peer, p.ID, p.Token, p.Locator)
 		return JSON(r), err
+	case "host.sessions", "host.launch", "host.update":
+		b.mu.Lock()
+		allowed, host := b.hostAllowed(principal), b.host
+		b.mu.Unlock()
+		if !allowed {
+			return nil, Fail("unauthorized")
+		}
+		if host == nil {
+			return nil, Fail("unavailable")
+		}
+		return host(ctx, principal, method, params)
 	case "pair.status":
 		var p struct {
 			ID string `json:"invitation_id"`
@@ -436,12 +457,15 @@ func (b *Bridge) connectionLocked(peer string) *protocol.Conn {
 	if b.closed || b.failed || b.state.Blocked[peer] {
 		return nil
 	}
-	for c := range b.channels[peer] {
+	var newest *protocol.Conn
+	for c, at := range b.channels[peer] {
 		select {
 		case <-c.Done():
 		default:
-			return c
+			if newest == nil || at > b.channels[peer][newest] {
+				newest = c
+			}
 		}
 	}
-	return nil
+	return newest
 }

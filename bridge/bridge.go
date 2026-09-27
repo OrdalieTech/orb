@@ -77,10 +77,35 @@ type Bridge struct {
 	store          Store
 	state          state
 	active         map[string]registration
-	channels       map[string]map[*protocol.Conn]bool
+	channels       map[string]map[*protocol.Conn]uint64 // value: arrival order, newest highest
+	arrivals       uint64
 	failed, closed bool
 	boot           string
 	changes        chan struct{}
+	host           Host
+}
+
+// Host serves a peer's machine-level calls — the threads stored on this machine, and starting
+// Orb in a folder — for principals whose grant includes host.launch.
+type Host func(ctx context.Context, p Principal, method string, params json.RawMessage) (json.RawMessage, error)
+
+func (b *Bridge) SetHost(h Host) {
+	b.mu.Lock()
+	b.host = h
+	b.mu.Unlock()
+}
+
+// hostAllowed: only a controller grant over every instance, current and future, reaches the machine.
+func (b *Bridge) hostAllowed(p Principal) bool {
+	if b.failed || b.closed || b.state.Blocked[p.PeerID] || p.Subject.Kind != "controller" {
+		return false
+	}
+	for _, g := range b.state.Grants {
+		if g.Principal == p && g.Destination == "" && g.GroupID == "*" && g.IncludeFuture && slices.Contains(g.Permissions, "host.launch") {
+			return true
+		}
+	}
+	return false
 }
 
 func PeerID(key ed25519.PublicKey) string {
@@ -101,7 +126,7 @@ func Open(store Store, create bool) (*Bridge, error) {
 	if store == nil {
 		return nil, errors.New("bridge requires explicit storage")
 	}
-	b := &Bridge{changes: make(chan struct{}, 1), store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]bool{}, boot: protocol.NewID()}
+	b := &Bridge{changes: make(chan struct{}, 1), store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, boot: protocol.NewID()}
 	raw, err := store.Load()
 	if err != nil {
 		return nil, err
@@ -226,6 +251,11 @@ func validateGrant(g Grant) error {
 	for _, p := range g.Permissions {
 		switch p {
 		case "instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage":
+		case "host.launch":
+			// Starting Orb on the machine is machine-wide: it only comes with access to every instance.
+			if g.GroupID != "*" || !g.IncludeFuture || g.Principal.Subject.Kind != "controller" {
+				return Fail("unauthorized")
+			}
 		default:
 			return Fail("unauthorized")
 		}
@@ -561,7 +591,7 @@ func (b *Bridge) Close() error {
 	active := b.active
 	b.active = map[string]registration{}
 	channels := b.channels
-	b.channels = map[string]map[*protocol.Conn]bool{}
+	b.channels = map[string]map[*protocol.Conn]uint64{}
 	b.mu.Unlock()
 	for _, r := range active {
 		_ = r.endpoint.Close()
