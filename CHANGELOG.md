@@ -5,6 +5,13 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-27
+
+Fixes from a round of hands-on testing: Orb shows up in Herdr again after Herdr updates itself,
+the first launch after an update offers to stop old Orbs instead of refusing, Bridge stops
+accumulating dead instances, and typing, exports and the model picker get faster or fixed. The
+compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
+
 - Orb shows up as an agent in Herdr again after Herdr updates itself in place: the pane then names
   Herdr's replaced binary (`… (deleted)`), and every state report failed silently. Orb now
   reports through the binary at that path, or the `herdr` on `PATH`.
@@ -24,6 +31,11 @@ shown by `/changelog`.
 - The model picker opens at once with Claude Sessions enabled: it waited up to two seconds for
   Claude's model catalog and login check, which now refresh in the background while the last
   reading answers.
+- A print or RPC run that ends mid-turn no longer prints "Extension error … ctx is stale" for each
+  extension, and an RPC `prompt` without a message is refused instead of starting an empty turn.
+- `orb mcp list` says when no server is configured instead of printing nothing.
+- Teams accepts a token signed by a freshly rotated key on Windows, where the forced key refetch
+  could be skipped.
 
 ## [0.12.0] - 2026-09-26
 
