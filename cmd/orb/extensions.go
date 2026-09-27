@@ -18,6 +18,7 @@ import (
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -123,8 +124,20 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			return result, err
 		}),
 		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
-		Compiled:       compiledExtensionsForEnvironment(os.Getenv),
-		MCP:            !args.NoExtensions && !args.metadataOnly,
+		// Background jobs run through the same bash as the built-in: sandbox, shell and prefix.
+		Bash: func(cwd string) (engine.AgentTool, error) {
+			mode, err := permissions.SandboxMode(settings)
+			if err != nil {
+				return nil, err
+			}
+			built, err := createBuiltInTools(cwd, []string{"bash"}, settings, mode)
+			if err != nil {
+				return nil, err
+			}
+			return built[0], nil
+		},
+		Compiled: compiledExtensionsForEnvironment(os.Getenv),
+		MCP:      !args.NoExtensions && !args.metadataOnly,
 	})
 	diagnostics := otherDiagnostics(warnings)
 	resolved := assembly.Resolve(rows, settings, args.NoExtensions)

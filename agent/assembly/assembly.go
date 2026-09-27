@@ -9,6 +9,7 @@ package assembly
 import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/plugins/jobs"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -45,6 +46,7 @@ type Options struct {
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
 	ClaudeSessions   extensions.Factory
+	Bash             jobs.Bash
 	CWD              string
 	AgentDir         string
 	Settings         *config.SettingsManager
@@ -74,7 +76,7 @@ func Rows(options Options) ([]Row, []string) {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions})
+	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions, Bash: options.Bash})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: Description(name),

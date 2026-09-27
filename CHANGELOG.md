@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- New `jobs` plugin: Orb's own models run commands in the background as Claude Code does. `bash`
+  gains `run_in_background` (the call returns at once and a message reports the job's end,
+  waking the model) and `monitor` (each line the command prints is reported as it comes);
+  `stop_job` ends a job. Jobs go through the same bash, sandbox and permission rules.
 ## [0.12.1] - 2026-09-27
 
 Fixes from a round of hands-on testing: Orb shows up in Herdr again after Herdr updates itself,

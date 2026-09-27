@@ -8,6 +8,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/jobs"
 	memorysdk "github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
@@ -31,9 +32,11 @@ type CatalogOptions struct {
 	AgentDir         string
 	// ClaudeSessions is host-supplied: it runs processes the SDK layer never owns.
 	ClaudeSessions extensions.Factory
+	// Bash builds the host's bash tool, which background jobs run through.
+	Bash jobs.Bash
 }
 
-var names = []string{"tasks", "questions", "websearch", "subagents", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
 	"questions":          "Ask the user questions with choices and custom answers",
@@ -42,6 +45,7 @@ var descriptions = map[string]string{
 	"tasks":              "Live session task list and todo tool",
 	"websearch":          "Web search and readable page fetching",
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
+	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
@@ -90,6 +94,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 		"tasks":          tasks.Extension(),
 		"websearch":      websearch.Extension(options.HTTPClient),
 		"subagents":      subagents.Extension(options.StreamFn, inheritPolicy, options.Settings),
+		"jobs":           jobs.Extension(options.Bash),
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
 		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}),
