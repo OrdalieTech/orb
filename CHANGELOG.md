@@ -17,6 +17,14 @@ line. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
   agent's commands run there, with `pkg`/`apt` to install what it needs, and the menu opens a
   terminal on the same system. Nothing of Termux shows, and the Termux app is not needed. Once
   allowed from Home, the phone's files are `~/storage/shared`.
+- A new `titles` plugin names each session after its first exchange: a few words chosen by the
+  session's own model, set once and never over a name the owner gave. It is on by default in the
+  Android app and one toggle away in `/plugins` elsewhere.
+- Sessions on a paired machine can be renamed: the Bridge gains `session.name`, under the same
+  grant as switching sessions. In the Android app, a long press on any session, on the phone or
+  another device, renames it; `/name` works in remote conversations too.
+- The Android app's conversations run `!command` in the phone's Linux, as the TUI does, and open
+  the terminal from their header.
 - The Android app's Home is reduced to the wordmark, one line per session (its title, then where
   it lives and how long ago) and the prompt box: the readouts, the sessions header, the device
   pills' borders, the rules between rows and inside the prompt box are gone, and status notices

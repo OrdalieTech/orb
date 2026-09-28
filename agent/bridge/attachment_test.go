@@ -183,3 +183,50 @@ func BenchmarkBridgeStreaming(b *testing.B) {
 		})
 	}
 }
+
+func TestAPeerRenamesTheSession(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cwd := t.TempDir()
+	manager, _ := session.InMemory(cwd)
+	provider := faux.New(faux.Options{})
+	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Dispose(ctx)
+	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(bridge.Request) bool { return true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = a.Close() }()
+	if err = a.SetGeneration("1"); err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string) bridge.Receipt {
+		target := a.control.Target()
+		request := bridge.Request{Principal: bridge.Principal{PeerID: "peer", Subject: bridge.Subject{Kind: "controller"}}, Generation: "1", Call: bridge.Call{InstanceID: a.options.InstanceID, Service: protocol.Service, Method: "session.name", SessionID: target.SessionID, Expected: bridge.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(map[string]string{"name": name})}}
+		raw, err := a.Invoke(ctx, "call", bridge.JSON(request))
+		var receipt bridge.Receipt
+		if err == nil {
+			err = json.Unmarshal(raw, &receipt)
+		}
+		for err == nil && receipt.Status != "succeeded" && receipt.Status != "failed" && receipt.Status != "rejected" {
+			time.Sleep(time.Millisecond)
+			receipt, err = a.ledger.Get(request.Principal, request.Call.InstanceID, request.Call.OperationID)
+		}
+		if err != nil && bridge.Code(err) != "invalid_params" {
+			t.Fatal(err)
+		}
+		return receipt
+	}
+	if receipt := call("  Pairing race  "); receipt.Status != "succeeded" {
+		t.Fatal(receipt)
+	}
+	if name := host.Session().Manager().GetSessionName(); name == nil || *name != "Pairing race" {
+		t.Fatalf("name = %v", name)
+	}
+	if receipt := call("   "); receipt.Status == "succeeded" {
+		t.Fatal("blank name accepted")
+	}
+}

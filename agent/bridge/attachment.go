@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -285,7 +286,7 @@ func (a *Attachment) inspect() json.RawMessage {
 		Target     runtime.ControlTarget `json:"target"`
 		Methods    []string              `json:"methods"`
 		Input      *runtime.InputRequest `json:"input,omitempty"`
-	}{status, modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model"}, input})
+	}{status, modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name"}, input})
 }
 func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessage, error) {
 	if err := bridge.ValidateCall(r.Call); err != nil {
@@ -355,6 +356,9 @@ type switchArgs struct {
 type forkArgs struct {
 	EntryID string `json:"entry_id"`
 }
+type nameArgs struct {
+	Name string `json:"name"`
+}
 
 func (a *Attachment) validateArgs(c bridge.Call) error {
 	switch c.Method {
@@ -420,6 +424,14 @@ func (a *Attachment) validateArgs(c bridge.Call) error {
 			return err
 		}
 		if p.EntryID == "" || len(p.EntryID) > 128 {
+			return bridge.Fail("invalid_params")
+		}
+	case "session.name":
+		var p nameArgs
+		if err := protocol.Decode(c.Args, &p); err != nil {
+			return err
+		}
+		if strings.TrimSpace(p.Name) == "" || len(p.Name) > 512 {
 			return bridge.Fail("invalid_params")
 		}
 	}
@@ -515,6 +527,14 @@ func (a *Attachment) dispatch(r bridge.Request) {
 			err = bridge.Fail("not_found")
 		} else {
 			result, err = a.host.SwitchSession(ctx, path, nil)
+		}
+	case "session.name":
+		var p nameArgs
+		_ = json.Unmarshal(r.Call.Args, &p)
+		if s := a.host.Session(); s == nil {
+			err = runtime.ErrSessionDisposed
+		} else {
+			err = s.SetSessionName(strings.TrimSpace(p.Name))
 		}
 	case "session.fork":
 		var p forkArgs
