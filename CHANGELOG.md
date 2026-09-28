@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Conversations left without a message are not kept: quitting, `/new` or switching away from
+  one removes it, those earlier versions left behind are cleared at start, and the session
+  pickers list no empty rows. A session started with a skill shows the skill's name.
+
 ## [0.13.1] - 2026-09-28
 
 A small follow-up to 0.13.0 that also exercises the new update paths: the Android app updates
