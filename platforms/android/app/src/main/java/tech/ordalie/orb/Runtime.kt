@@ -62,6 +62,14 @@ class Runtime(context: Context) {
     /** This phone's stored conversations, refreshed when Home shows and after each turn. */
     var history by mutableStateOf(emptyList<tech.ordalie.orb.core.Past>())
         private set
+    /** Deletes one of this phone's stored conversations; the open one is left for a new one first, or its core would write it back. */
+    fun forget(id: String) = scope.launch {
+        local?.takeIf { it.id == id }?.let { l -> l.newSession(); var n = 0; while (l.id == id && n++ < 50) kotlinx.coroutines.delay(100) }
+        if (id == local?.id) return@launch
+        withContext(Dispatchers.IO) { orb.run("storage", "delete", id) }
+        reload()
+    }
+
     fun reload() {
         scope.launch { history = withContext(Dispatchers.IO) { orb.sessions() } }
         bridge.peers.forEach { peer -> scope.launch { runCatching { bridge.loadThreads(peer.id) } } }

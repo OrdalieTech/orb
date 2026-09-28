@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb storage delete <session>` deletes a stored conversation by the ID `orb storage sessions`
+  lists. In the Android app, the long-press sheet of a phone session deletes it; the open one is
+  left for a new session first.
+
 ## [0.13.2] - 2026-09-28
 
 The phone's agent gets a real Linux: the Android app installs Termux's base system on first start
