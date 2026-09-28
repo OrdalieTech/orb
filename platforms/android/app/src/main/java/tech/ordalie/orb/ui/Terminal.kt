@@ -44,7 +44,7 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
     var view: TerminalView? = null
     var ctrl by mutableStateOf(false)
     var alt by mutableStateOf(false)
-    var size = 26
+    var size = 0 // pixels; 13sp until pinched
 
     fun session(linux: Linux): TerminalSession = session?.takeIf { it.isRunning } ?: run {
         val env = System.getenv() + linux.env() + mapOf("TERM" to "xterm-256color")
@@ -79,7 +79,7 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
     // TerminalViewClient: touch and keys; Ctrl and Alt also come from the row of keys, once each.
     override fun onScale(scale: Float): Float {
         if (scale in 0.9f..1.1f) return scale
-        size = (size + if (scale > 1f) 2 else -2).coerceIn(14, 56)
+        size = (size + if (scale > 1f) 2 else -2).coerceIn(16, 96)
         view?.setTextSize(size)
         return 1f
     }
@@ -124,6 +124,7 @@ fun ColumnScope.TerminalScreen(c: Ctx) {
             TerminalView(context, null).apply {
                 setBackgroundColor(bg)
                 setTerminalViewClient(Shell)
+                if (Shell.size == 0) Shell.size = (13 * resources.displayMetrics.scaledDensity).toInt()
                 setTextSize(Shell.size)
                 ResourcesCompat.getFont(context, R.font.ubuntu_mono_regular)?.let(::setTypeface)
                 isFocusable = true; isFocusableInTouchMode = true
