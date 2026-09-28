@@ -104,20 +104,6 @@ class Orb(private val context: Context) {
         return run("storage", "config", "import", name, file.path).let { (code, out) -> file.delete(); if (code == 0) null else out.trim() }
     }
 
-    /** Tells the agent where it is (global AGENTS.md), unless the owner wrote their own there. */
-    private fun brief() {
-        val file = File(home, ".pi/agent/AGENTS.md")
-        if (file.exists() && !file.readText().startsWith(BRIEF_MARK)) return
-        file.parentFile?.mkdirs()
-        file.writeText(BRIEF_MARK + "\n" + """
-            You run on an Android phone, inside a Linux of your own: Termux's packages under proot.
-            - Install what a task needs with `pkg install <name>` (apt underneath); `pkg search` finds names.
-            - The phone's shared storage (Downloads, Documents, DCIM…) is `~/storage/shared` once the owner allowed it.
-            - `/data/data/com.termux/files/usr` (also `/usr`) exists only inside bash; your file tools see it at ${linux.root.path}/files/usr.
-            - The network can drop for minutes at a time; retry downloads instead of giving up.
-        """.trimIndent() + "\n")
-    }
-
     /** A phone starts with the plugins that make a conversation interactive; the owner changes them in Plugins. */
     fun seed() {
         if (!prefs.getBoolean("seeded", false)) {
@@ -128,7 +114,7 @@ class Orb(private val context: Context) {
         // It moves with every app update (the lib directory does), so it is written again then.
         if (linux.ready && prefs.getString("seeded:shell", "") != linux.launcher &&
             config("settings.json") { it.put("shellPath", linux.launcher) } == null) prefs.edit().putString("seeded:shell", linux.launcher).apply()
-        if (linux.ready) brief()
+        if (linux.ready) linux.brief(File(home, ".pi/agent"))
         // A phone loses its network for minutes at a time (tunnels, lifts): provider calls keep
         // retrying for about four minutes instead of the desktop's fourteen seconds.
         if (!prefs.getBoolean("seeded:retry", false) && config("settings.json") { it.put("retry", org.json.JSONObject().put("enabled", true).put("maxRetries", 8).put("baseDelayMs", 2000)) } == null)
@@ -136,7 +122,6 @@ class Orb(private val context: Context) {
     }
 
     companion object {
-        private const val BRIEF_MARK = "<!-- written by the Orb app; replace it to write your own -->"
         val PROVIDERS = listOf(
             "ANTHROPIC_API_KEY" to "anthropic", "OPENAI_API_KEY" to "openai", "GEMINI_API_KEY" to "google",
             "OPENROUTER_API_KEY" to "openrouter", "XAI_API_KEY" to "xai", "MISTRAL_API_KEY" to "mistral",
