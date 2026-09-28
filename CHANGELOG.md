@@ -5,6 +5,13 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-09-28
+
+The phone's agent gets a real Linux: the Android app installs Termux's base system on first start
+and runs every command there, with a terminal on the same system and the phone's files within
+reach. Pairing is hardened after a security audit, and the TUI folds quiet tool calls into one
+line. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
+
 - The Android app carries its own Linux: on first start it installs Termux's base system (checked
   against the sha256 GitHub publishes) and runs it through proot, which ships in the APK. The
   agent's commands run there, with `pkg`/`apt` to install what it needs, and the menu opens a
