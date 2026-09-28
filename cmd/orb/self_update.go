@@ -464,7 +464,7 @@ func (updater selfUpdater) download(ctx context.Context, tag string) ([]byte, er
 }
 
 func (updater selfUpdater) downloadTarget(ctx context.Context, tag, goos, goarch string) ([]byte, error) {
-	if (goos != "linux" && goos != "darwin" && goos != "android") || (goarch != "amd64" && goarch != "arm64") || goos == "android" && goarch != "arm64" {
+	if (goos != "linux" && goos != "darwin") || (goarch != "amd64" && goarch != "arm64") {
 		return nil, fmt.Errorf("unsupported Orb platform: %s/%s", goos, goarch)
 	}
 	tag = strings.TrimSpace(tag)

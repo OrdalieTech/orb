@@ -28,8 +28,6 @@ shown by `/changelog`.
   this Orb's conversations, not starting or updating Orb here. Joining now grants conversations
   only; starting Orb on a machine stays with `orb bridge trust` on that machine. A code on stdin
   needs `--yes`.
-- Releases include an `android/arm64` build for running Orb inside Termux, and `install.sh`
-  detects Termux and installs there.
 - Pairing refuses a code that two devices presented: someone else saw it, so neither is approved
   and the owner is told to pair again out of sight. A joining Orb keeps an inviter as a peer
   only once it trusts it, so one that never approves is not dialled at every start.
