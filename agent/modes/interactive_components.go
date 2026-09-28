@@ -3,6 +3,7 @@ package modes
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -535,6 +536,22 @@ type ToolExecutionComponent struct {
 	rendererState   map[string]any
 	callComponent   extensions.Component
 	resultComponent extensions.Component
+	// faded caches the resting look of the last rendered lines.
+	fadedFrom, faded []string
+}
+
+// restingOpacity is how a settled tool block sits behind the conversation;
+// hovering, expanding, running or failing brings it to full opacity.
+const restingOpacity = .55
+
+// fade returns lines at resting opacity, reusing the last result while the
+// lines are unchanged.
+func fade(lines []string, from, faded *[]string) []string {
+	if slices.Equal(lines, *from) {
+		return *faded
+	}
+	*from, *faded = lines, theme.Current().Fade(lines, restingOpacity)
+	return *faded
 }
 
 type toolResult struct {
@@ -860,6 +877,9 @@ func (c *ToolExecutionComponent) Render(width int) []string {
 	if width > 1 && len(lines) > 0 {
 		lines[0] = theme.FG(color, marker) + strings.TrimPrefix(lines[0], " ")
 	}
+	if !c.hovered && !c.expanded && !c.isPartial && (c.result == nil || !c.result.IsError) {
+		lines = fade(lines, &c.fadedFrom, &c.faded)
+	}
 	return append([]string{""}, lines...)
 }
 
@@ -871,6 +891,8 @@ type toolActivityGroup struct {
 	hover    *ToolExecutionComponent
 	rows     []toolActivityRow
 	ui       tui.RenderRequester
+	// faded caches the header's resting look.
+	fadedFrom, faded []string
 }
 
 type toolActivityRow struct {
@@ -957,7 +979,11 @@ func (group *toolActivityGroup) Render(width int) []string {
 		if active {
 			label = "Exploring"
 		}
-		lines = []string{"", tui.TruncateToWidth(theme.FG(color, marker+"  "+theme.Bold(label))+theme.FG("toolTitle", " · "+strings.Join(labels, " · ")), width, "…", false)}
+		header := []string{tui.TruncateToWidth(theme.FG(color, marker+"  "+theme.Bold(label))+theme.FG("toolTitle", " · "+strings.Join(labels, " · ")), width, "…", false)}
+		if !group.hovered && !group.expanded && !active {
+			header = fade(header, &group.fadedFrom, &group.faded)
+		}
+		lines = append([]string{""}, header...)
 	}
 	for _, tool := range group.tools {
 		tool.mu.Lock()
