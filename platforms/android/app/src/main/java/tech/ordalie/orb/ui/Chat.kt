@@ -84,6 +84,8 @@ private fun blocks(items: List<Item>): List<List<Item>> = buildList {
 fun ColumnScope.Chat(c: Ctx, s: Session) {
     Header(s.title.ifEmpty { "New session" }, sub = listOf(s.where, s.model.substringAfter('/')).filter(String::isNotEmpty).joinToString(" · "), back = c.nav::back) {
         if (s.remote) Chip(s.where, ChipKind.Blue)
+        // The phone's Linux, where this conversation's commands run: one tap from the talk about them.
+        else Box(Modifier.press { c.nav.go(Screen.Terminal) }.padding(horizontal = 8.dp, vertical = 6.dp)) { T(">_", size = 17.sp, bold = true) }
         AnimatedContent(if (s.busy) "live" else if (!s.online) "offline" else "", transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) }, label = "state") { st ->
             when (st) {
                 "live" -> Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) { Dot(pulse = true); Spacer(Modifier.width(6.dp)); T("live", label = true) }

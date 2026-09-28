@@ -74,6 +74,10 @@ abstract class Session(val where: String, val remote: Boolean) {
     var commands by mutableStateOf(emptyList<Command>())
     open fun compact(instructions: String) {}
     open fun rename(name: String) {}
+    /** Renames a stored session of this device; a session other than the open one is opened first. */
+    open fun rename(id: String, name: String) { if (id == this.id) rename(name) }
+    /** `!command`: runs in this device's shell and joins the conversation's context, as in the TUI. */
+    open fun shell(command: String) {}
     open suspend fun lastText(): String? = transcript.items.lastOrNull { it is Said }?.let { (it as Said).text }
     /** Starts a fresh conversation, then sends [first] into it once it exists. */
     open fun newSession(first: String? = null) { first?.let(::prompt) }
@@ -95,6 +99,8 @@ class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Se
                     "agent_start" -> busy = true
                     "agent_end" -> { busy = false; refresh() }
                     "extension_ui_request" -> interrupt(e)
+                    // Named by the owner elsewhere, or by the titles plugin after the first exchange.
+                    "session_info_changed" -> e.optString("name").takeIf { it.isNotEmpty() && it != "null" }?.let { title = it }
                     "tool_execution_start" -> if (e.optString("toolName") == "ask_user_question") pendingQuestions = e.optJSONObject("args")?.optJSONArray("questions")
                     // The core is supervised: it comes back by itself, on the same conversation.
                     "exit" -> { cut = busy; online = false; busy = false; status = "core stopped · restarting" }
@@ -215,11 +221,28 @@ class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Se
     override suspend fun lastText() = cmd("get_last_assistant_text")?.optString("text")?.takeIf { it.isNotEmpty() && it != "null" }
     override fun switchTo(id: String) {
         if (id == this.id) return
+        scope.launch { open(id) }
+    }
+
+    private suspend fun open(id: String): Boolean {
+        cmd("switch_session") { put("sessionPath", id) } ?: return false
+        transcript.clear(); title = ""
+        cmd("get_messages")?.optJSONArray("messages")?.let(transcript::load)
+        refresh()
+        return true
+    }
+
+    override fun rename(id: String, name: String) {
+        if (id == this.id) return rename(name)
+        scope.launch { if (open(id)) cmd("set_session_name") { put("name", name) }?.let { title = name } }
+    }
+
+    override fun shell(command: String) {
+        val line = transcript.shell(command)
         scope.launch {
-            cmd("switch_session") { put("sessionPath", id) } ?: return@launch
-            transcript.clear(); title = ""
-            cmd("get_messages")?.optJSONArray("messages")?.let(transcript::load)
-            refresh()
+            val r = rpc.call(JSONObject().put("type", "bash").put("command", command), timeoutMs = 30 * 60_000L)
+            val d = r.optJSONObject("data")
+            transcript.settle(line, d?.optString("output") ?: r.optString("error"), if (d == null) 1 else d.optInt("exitCode"))
         }
     }
 
@@ -362,6 +385,11 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
         bridge.prefer(peer, id, thinking)
         val (p, m) = id.split("/", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
         call("session.model", JSONObject().put("provider", p).put("model", m).apply { if (thinking.isNotEmpty()) put("thinking", thinking) })
+    }
+    // A peer's instance takes calls once it has described its session: a rename right after a launch waits for that.
+    override fun rename(name: String) {
+        title = name
+        scope.launch { repeat(40) { if (info.has("target")) return@launch call("session.name", JSONObject().put("name", name)); delay(250) } }
     }
     // A peer's level is not described on the wire: it is set with the model, and remembered here.
     override fun useThinking(level: String) { thinking = level; model.takeIf { it.contains('/') }?.let(::useModel) }

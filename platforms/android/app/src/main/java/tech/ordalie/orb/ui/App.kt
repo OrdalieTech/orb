@@ -4,51 +4,37 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import tech.ordalie.orb.core.Command
-import tech.ordalie.orb.core.Release
 import androidx.activity.compose.BackHandler
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.runtime.saveable.rememberSaveable
-import tech.ordalie.orb.core.Thread
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.runtime.rememberCoroutineScope
-import tech.ordalie.orb.core.Peer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -58,8 +44,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -67,17 +57,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import tech.ordalie.orb.Runtime
+import tech.ordalie.orb.core.Command
+import tech.ordalie.orb.core.Peer
+import tech.ordalie.orb.core.Release
 import tech.ordalie.orb.core.Session
+import tech.ordalie.orb.core.Thread
 import tech.ordalie.orb.core.Tool
 
 sealed interface Screen {
@@ -102,6 +109,9 @@ class Nav {
     fun back() { if (stack.size > 1) { forward = false; stack.removeAt(stack.lastIndex) } }
 }
 
+/** A name to change, rising from the bottom with the current one ready to edit. */
+class Rename(val title: String, val apply: (String) -> Unit)
+
 /** A choice list rising from the bottom — models, instances, the menu all use it. */
 class Picker(val title: String, val options: List<String>, val selected: String = "", val pick: (String) -> Unit)
 
@@ -110,6 +120,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     val nav = remember { Nav() }
     var picker by remember { mutableStateOf<Picker?>(null) }
     var deck by remember { mutableStateOf<Session?>(null) }
+    var renaming by remember { mutableStateOf<Rename?>(null) }
     // Shared text is either a Bridge invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
@@ -117,8 +128,10 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         if (text.contains("invitation_id") || text.contains(tech.ordalie.orb.core.Bridge.PREFIX)) nav.go(Screen.Join(text))
         else java.io.File(rt.orb.cwd, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
     }
-    BackHandler(nav.stack.size > 1 || picker != null || deck != null) { if (picker != null) picker = null else if (deck != null) deck = null else nav.back() }
-    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }) { picker = it }
+    BackHandler(nav.stack.size > 1 || picker != null || deck != null || renaming != null) {
+        if (renaming != null) renaming = null else if (picker != null) picker = null else if (deck != null) deck = null else nav.back()
+    }
+    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }) { picker = it }
     Box(Modifier.fillMaxSize().background(p.bg)) {
         AnimatedContent(nav.stack.last(), transitionSpec = {
             val d = if (nav.forward) 1 else -1
@@ -149,16 +162,22 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         Rising(rt.bridge.claim) { PairRequest(it, ctx) }
         Sheet(picker) { pk -> PickerSheet(pk) { picker = null } }
         Sheet(deck) { s -> ModelSheet(s, ctx) { deck = null } }
+        Sheet(renaming) { r -> RenameSheet(r) { renaming = null } }
     }
 }
 
 /** What every screen needs, passed as one value. */
-class Ctx(val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context, val deck: (Session) -> Unit, val pick: (Picker) -> Unit) {
+class Ctx(
+    val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context,
+    val deck: (Session) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit,
+) {
     /** The slash palette: the app's own commands, then whatever the core offers (extensions, templates, skills). */
     fun palette(s: Session?): List<Command> = BUILTINS.filter { s?.remote != true || it.name in REMOTE } + s?.commands.orEmpty()
 
     /** Runs a built-in command; false when the text is a prompt for the core. */
     fun command(s: Session?, text: String): Boolean {
+        // `!command` runs in the phone's Linux and joins the conversation, as in the TUI.
+        if (text.startsWith("!") && s != null && !s.remote && text.length > 1) { s.shell(text.drop(1).trim()); return true }
         if (!text.startsWith("/")) return false
         val name = text.drop(1).substringBefore(' ')
         val arg = text.substringAfter(' ', "").trim()
@@ -207,6 +226,15 @@ class Ctx(val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, v
         val models = s?.models().orEmpty()
         if (models.isEmpty()) nav.go(Screen.Providers) else deck(s!!)
     }
+    /** Renames a thread of a paired device through the Orb that has it open, starting one if none does. */
+    fun renameThread(peer: Peer, t: Thread) = rename(Rename(t.title) { name ->
+        rt.scope.launch {
+            val i = peer.instances.firstOrNull { it.session == t.id } ?: rt.bridge.launch(peer.id, session = t.id).getOrNull() ?: return@launch
+            rt.open(i).rename(name)
+            kotlinx.coroutines.delay(1500); rt.reload()
+        }
+    })
+
     /** Opens a thread where it lives: its running Orb, or Orb started on it again. */
     fun openThread(peer: Peer, t: Thread) {
         peer.instances.firstOrNull { it.session == t.id }?.let { nav.go(Screen.Chat(rt.open(it))) } ?: start(peer, session = t.id)
@@ -264,6 +292,24 @@ fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Box(M
     }
 }
 
+/** A long-pressed row's name, in a field over the list; done saves it, outside or back leaves it. */
+@Composable
+fun AnimatedVisibilityScope.RenameSheet(r: Rename, dismiss: () -> Unit) = Box(Modifier.fillMaxSize().background(Color(0x66000000)).press(onClick = dismiss), contentAlignment = Alignment.BottomCenter) {
+    var value by remember { mutableStateOf(TextFieldValue(r.title, TextRange(0, r.title.length))) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    fun done() { value.text.trim().takeIf { it.isNotEmpty() && it != r.title }?.let(r.apply); dismiss() }
+    Column(Modifier.animateEnterExit(enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 420f)) { it }, exit = slideOutVertically(tween(220)) { it }).fillMaxWidth().imePadding().padding(10.dp)
+        .clip(RoundedCornerShape(Radius.Card)).background(p.bg).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).press {}.padding(Margin)) {
+        T("rename", label = true, color = p.meta)
+        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicTextField(value, { value = it }, Modifier.weight(1f).focusRequester(focus), textStyle = mono(18.sp, p.fg), singleLine = true, cursorBrush = SolidColor(p.fg),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { done() }))
+            Spacer(Modifier.width(12.dp)); Btn("save", inverted = true) { done() }
+        }
+    }
+}
+
 @Composable
 fun ColumnScope.Home(c: Ctx) {
     val rt = c.rt
@@ -280,10 +326,11 @@ fun ColumnScope.Home(c: Ctx) {
     val now = System.currentTimeMillis()
     val entries = buildList {
         if (local != null && rt.history.none { it.id == local.id } && local.transcript.items.isNotEmpty())
-            add(Entry("current", local.title.ifEmpty { "this conversation" }, "", now, local.busy, local.ask != null, current = true) { c.nav.go(Screen.Chat(local)) })
+            add(Entry("current", local.title.ifEmpty { "this conversation" }, "", now, local.busy, local.ask != null, current = true, rename = { c.rename(Rename(local.title) { local.rename(it) }) }) { c.nav.go(Screen.Chat(local)) })
         rt.history.forEach { past ->
             val on = local != null && past.id == local.id
-            add(Entry("p:" + past.id, past.title, "", past.modified, on && local!!.busy, on && local!!.ask != null, current = on) {
+            add(Entry("p:" + past.id, past.title, "", past.modified, on && local!!.busy, on && local!!.ask != null, current = on,
+                rename = { c.rename(Rename(past.title) { name -> local?.rename(past.id, name); rt.scope.launch { kotlinx.coroutines.delay(800); rt.reload() } }) }) {
                 local?.let { l -> l.switchTo(past.id); c.nav.go(Screen.Chat(l)) }
             })
         }
@@ -293,7 +340,7 @@ fun ColumnScope.Home(c: Ctx) {
                 val i = peer.instances.firstOrNull { it.session == t.id }
                 val s = i?.let { rt.opened(it.id) }
                 add(Entry("t:${peer.id}:${t.id}", t.title, peer.name,
-                    if (i != null && (s?.busy ?: i.busy)) now else t.modified, s?.busy ?: i?.busy == true, s?.ask != null, remote = true, device = peer.id) { c.openThread(peer, t) })
+                    if (i != null && (s?.busy ?: i.busy)) now else t.modified, s?.busy ?: i?.busy == true, s?.ask != null, remote = true, device = peer.id, rename = { c.renameThread(peer, t) }) { c.openThread(peer, t) })
             }
             // Open instances whose thread is not listed: unsaved yet, or a device that lists no threads.
             peer.instances.filter { i -> threads.none { it.id == i.session } }.forEach { i ->
@@ -330,7 +377,7 @@ fun ColumnScope.Home(c: Ctx) {
             }
         }
         items(shown, key = { it.key }) { e ->
-            SessionRow(e.title, e.meta, e.age ?: ago(e.modified), e.live, e.asks, e.current, Modifier.animateItem(), e.remote, e.open)
+            SessionRow(e.title, e.meta, e.age ?: ago(e.modified), e.live, e.asks, e.current, Modifier.animateItem(), e.remote, e.rename, e.open)
         }
         if (peers.isEmpty()) item(key = "pair") {
             Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("no paired devices", Modifier.weight(1f), color = p.mute); T("pair ›") }
@@ -353,7 +400,7 @@ fun ago(ms: Long): String {
 /** One row of the merged list: a thread on some device, however it opens. */
 private class Entry(
     val key: String, val title: String, val meta: String, val modified: Long, val live: Boolean, val asks: Boolean,
-    val current: Boolean = false, val remote: Boolean = false, val age: String? = null, val device: String = "phone", val open: () -> Unit,
+    val current: Boolean = false, val remote: Boolean = false, val age: String? = null, val device: String = "phone", val rename: (() -> Unit)? = null, val open: () -> Unit,
 )
 
 /** At most one line above the list: the Linux setting up, a newer Orb, or the phone's files to allow. */
@@ -387,8 +434,8 @@ private fun Notice(c: Ctx) {
 /** One line per session: its title, then where it lives and its condition in words — live, asking,
  *  or how long ago. No rules between rows: the space and the bold of the open one are enough. */
 @Composable
-fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, open: () -> Unit) = Column(modifier) {
-    Row(Modifier.fillMaxWidth().press(onClick = open).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, rename: (() -> Unit)? = null, open: () -> Unit) = Column(modifier) {
+    Row(Modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         T(title, Modifier.weight(1f), size = 16.sp, bold = current || live, lines = 1)
         if (live) Dot(if (remote) Ink.Blue else Ink.Rupture, pulse = true)
         T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = Size.Label, color = if (asks) Ink.Rupture else p.meta, lines = 1)

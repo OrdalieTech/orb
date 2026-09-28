@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -80,13 +81,15 @@ fun Chip(label: String, kind: ChipKind = ChipKind.Outline, modifier: Modifier = 
 
 /** Taps give way under the finger and confirm with a tick. */
 @Composable
-fun Modifier.press(enabled: Boolean = true, onClick: () -> Unit): Modifier {
+fun Modifier.press(enabled: Boolean = true, onLong: (() -> Unit)? = null, onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val haptic = LocalHapticFeedback.current
     val s by animateFloatAsState(if (pressed) 0.97f else 1f, spring(stiffness = 900f), label = "press")
-    return this.scale(s).alpha(if (pressed) 0.75f else 1f)
-        .clickable(source, indication = null, enabled = enabled) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onClick() }
+    return this.scale(s).alpha(if (pressed) 0.75f else 1f).combinedClickable(
+        source, indication = null, enabled = enabled,
+        onLongClick = onLong?.let { { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it() } },
+    ) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onClick() }
 }
 
 @Composable

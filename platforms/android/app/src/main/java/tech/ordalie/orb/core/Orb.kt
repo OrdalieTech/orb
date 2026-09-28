@@ -110,6 +110,8 @@ class Orb(private val context: Context) {
             listOf("questions", "tasks", "permissions").forEach { plugin(it, true) }
             prefs.edit().putBoolean("seeded", true).apply()
         }
+        // Sessions name themselves after their first exchange (added after the first seed; asked once too).
+        if (!prefs.getBoolean("seeded:titles", false)) { plugin("titles", true); prefs.edit().putBoolean("seeded:titles", true).apply() }
         // The agent's bash tool runs in the Linux: its launcher is the shell Orb starts for commands.
         // It moves with every app update (the lib directory does), so it is written again then.
         if (linux.ready && prefs.getString("seeded:shell", "") != linux.launcher &&

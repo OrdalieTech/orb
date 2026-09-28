@@ -86,7 +86,7 @@ fun ColumnScope.FolderScreen(c: Ctx, peerId: String, cwd: String) {
         items(threads, key = { it.id }) { t ->
             val running = peer.instances.firstOrNull { it.session == t.id }
             val s = running?.let { c.rt.opened(it.id) }
-            SessionRow(t.title, if (running != null) "open" else "", ago(t.modified), s?.busy ?: running?.busy == true, s?.ask != null, remote = true) { c.openThread(peer, t) }
+            SessionRow(t.title, if (running != null) "open" else "", ago(t.modified), s?.busy ?: running?.busy == true, s?.ask != null, remote = true, rename = { c.renameThread(peer, t) }) { c.openThread(peer, t) }
         }
     }
 }
