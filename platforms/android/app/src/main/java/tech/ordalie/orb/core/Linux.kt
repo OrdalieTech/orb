@@ -36,6 +36,20 @@ class Linux(private val context: Context) {
     /** The environment every process that starts the launcher needs. */
     fun env(): Map<String, String> = if (ready) mapOf("ORB_LINUX" to root.path) else emptyMap()
 
+    /** Tells the agent where it is, in Orb's global AGENTS.md, unless the owner wrote their own there. */
+    fun brief(agentDir: File) {
+        val file = File(agentDir, "AGENTS.md")
+        if (file.exists() && !file.readText().startsWith(BRIEF_MARK)) return
+        file.parentFile?.mkdirs()
+        file.writeText(BRIEF_MARK + "\n" + """
+            You run on an Android phone, inside a Linux of your own: Termux's packages under proot.
+            - Install what a task needs with `pkg install <name>` (apt underneath); `pkg search` finds names.
+            - The phone's shared storage (Downloads, Documents, DCIM…) is `~/storage/shared` once the owner allowed it.
+            - `/data/data/com.termux/files/usr` (also `/usr`) exists only inside bash; your file tools see it at ${root.path}/files/usr.
+            - The network can drop for minutes at a time; retry downloads instead of giving up.
+        """.trimIndent() + "\n")
+    }
+
     /** Installs Termux's latest base system, checked against the sha256 GitHub publishes for it. */
     suspend fun install(): Boolean = withContext(Dispatchers.IO) {
         if (!installing.compareAndSet(false, true)) return@withContext false
@@ -120,6 +134,7 @@ class Linux(private val context: Context) {
     }
 
     companion object {
+        private const val BRIEF_MARK = "<!-- written by the Orb app; replace it to write your own -->"
         private const val LATEST = "https://api.github.com/repos/termux/termux-packages/releases/latest"
         /** What Termux itself makes executable after unpacking its bootstrap. */
         private val EXECUTABLE = listOf("bin/", "libexec/", "lib/apt/apt-helper", "lib/apt/methods/")

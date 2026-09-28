@@ -17,10 +17,10 @@ data class Peer(val id: String, val state: String, val instances: List<Instance>
     val short get() = id.substringAfterLast(":").take(6)
     /** Peers have no names on the wire; the home directory of their sessions says whose machine it is. */
     val named: String? get() = instances.firstNotNullOfOrNull { i ->
-        if (i.cwd.startsWith("/data/data/com.termux/")) "termux" else Regex("^/(Users|home)/([^/]+)").find(i.cwd)?.let { m -> m.groupValues[2] + if (m.groupValues[1] == "Users") "'s mac" else "'s linux" }
+        Regex("^/(Users|home)/([^/]+)").find(i.cwd)?.let { m -> m.groupValues[2] + if (m.groupValues[1] == "Users") "'s mac" else "'s linux" }
             ?: i.cwd.takeIf { it.startsWith("/data/") }?.let { "android · " + i.alias }
     }
-    /** The machine's own name once it said it (host.sessions), else a guess from its sessions. Termux calls itself localhost. */
+    /** The machine's own name once it said it (host.sessions), else a guess from its sessions. */
     val name: String get() = known.takeUnless { it.isEmpty() || it == "localhost" } ?: named ?: short
     val connected get() = state == "connected"
 }
