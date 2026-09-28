@@ -85,13 +85,14 @@ sealed interface Screen {
     data class Chat(val session: Session) : Screen
     data object Bridge : Screen
     data object Invite : Screen
-    data class Join(val text: String = "", val auto: Boolean = false) : Screen
+    data class Join(val text: String = "") : Screen
     data object Providers : Screen
     data class Vendor(val id: String) : Screen
     data object Plugins : Screen
     data object Provider : Screen
     data class Device(val peer: String) : Screen
     data class Folder(val peer: String, val cwd: String) : Screen
+    data object Terminal : Screen
 }
 
 class Nav {
@@ -114,7 +115,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         val text = shared.value ?: return@LaunchedEffect
         shared.value = null
         if (text.contains("invitation_id") || text.contains(tech.ordalie.orb.core.Bridge.PREFIX)) nav.go(Screen.Join(text))
-        else java.io.File(rt.orb.workspace, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
+        else java.io.File(rt.orb.cwd, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
     }
     BackHandler(nav.stack.size > 1 || picker != null || deck != null) { if (picker != null) picker = null else if (deck != null) deck = null else nav.back() }
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }) { picker = it }
@@ -131,22 +132,23 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                     is Screen.Chat -> Chat(ctx, s.session)
                     Screen.Bridge -> BridgeScreen(ctx)
                     Screen.Invite -> InviteScreen(ctx)
-                    is Screen.Join -> JoinScreen(ctx, s.text, s.auto)
+                    is Screen.Join -> JoinScreen(ctx, s.text)
                     Screen.Providers -> ProvidersScreen(ctx)
                     is Screen.Vendor -> VendorScreen(ctx, s.id)
                     Screen.Plugins -> PluginsScreen(ctx)
                     Screen.Provider -> ProviderScreen(ctx)
                     is Screen.Device -> DeviceScreen(ctx, s.peer)
                     is Screen.Folder -> FolderScreen(ctx, s.peer, s.cwd)
+                    Screen.Terminal -> TerminalScreen(ctx)
                 }
             }
         }
         // Interrupts belong to their owner and stop the world wherever you are.
         val asking = (nav.stack.last() as? Screen.Chat)?.session ?: rt.local?.takeIf { it.ask != null }
         Rising(asking?.ask) { Interrupt(it) { v -> asking?.answer(v) } }
-        Rising(rt.bridge.claim) { PairRequest(it.optString("claimant"), ctx) }
+        Rising(rt.bridge.claim) { PairRequest(it, ctx) }
         Sheet(picker) { pk -> PickerSheet(pk) { picker = null } }
-        Sheet(deck) { s -> ModelDeck(s, ctx) { deck = null } }
+        Sheet(deck) { s -> ModelSheet(s, ctx) { deck = null } }
     }
 }
 
@@ -213,10 +215,13 @@ class Ctx(val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, v
     /** Starts Orb on a device, in a folder or on a thread, and opens it; [Runtime.launching] says how it goes. */
     fun start(peer: Peer, cwd: String? = null, session: String? = null) = rt.scope.launch {
         rt.launching = "starting Orb on ${peer.name}…"
-        rt.bridge.launch(peer.id, cwd, session).onSuccess { rt.launching = ""; nav.go(Screen.Chat(rt.open(it))) }.onFailure { rt.launching = it.message.orEmpty() }
+        rt.bridge.launch(peer.id, cwd, session).onSuccess {
+            rt.launching = ""
+            nav.go(Screen.Chat(rt.open(it).also { s -> if (session == null) s.takePreferred() }))
+        }.onFailure { rt.launching = it.message.orEmpty() }
     }
 
-    fun menu() = pick(Picker("orb", listOf("providers", "bridge", "plugins")) { nav.go(when (it) { "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers }) })
+    fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) { nav.go(when (it) { "terminal" -> Screen.Terminal; "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers }) })
 }
 
 /** Keeps the last value on screen while it animates away. */
@@ -269,6 +274,19 @@ fun ColumnScope.Home(c: Ctx) {
     // Other devices work too: their threads refresh while Home is on screen.
     LaunchedEffect(Unit) { while (true) { delay(20_000); rt.reload() } }
     Header("Orb", sub = rt.orb.device + " · " + if (rt.bridge.up) "bridge on" else "bridge starting") { MenuMark(c::menu) }
+    // The Linux sets itself up on first start; its one line says how far along it is.
+    rt.orb.linux.state.takeIf { it.isNotEmpty() }?.let { state ->
+        Row(Modifier.fillMaxWidth().press(enabled = state.contains("failed")) { rt.setupLinux() }.padding(start = Margin, end = Margin, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Dot(if (state.contains("failed")) Ink.Rupture else p.mute, pulse = !state.contains("failed")); Spacer(Modifier.width(10.dp))
+            T(state, Modifier.weight(1f), size = 13.sp, color = if (state.contains("failed")) Ink.Rupture else p.mute, lines = 2)
+        }
+    }
+    // Asked once: the phone's files become ~/storage/shared in the Linux.
+    if (rt.orb.linux.ready && !rt.orb.linux.storage && android.os.Build.VERSION.SDK_INT >= 30) Row(Modifier.fillMaxWidth().press {
+        c.context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, android.net.Uri.parse("package:" + c.context.packageName)))
+    }.padding(start = Margin, end = Margin, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Dot(p.fg); Spacer(Modifier.width(10.dp)); T("Let Orb use the phone's files · allow", Modifier.weight(1f), size = 13.sp)
+    }
     // A newer Orb is one tap away: the app downloads its release and hands it to Android's installer.
     rt.latest?.takeIf { Release.newer(it, rt.version) }?.let { next ->
         val scope = rememberCoroutineScope()

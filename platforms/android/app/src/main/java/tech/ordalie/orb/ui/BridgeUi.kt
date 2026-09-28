@@ -62,21 +62,21 @@ fun Context.scan(found: (String) -> Unit) {
 fun ColumnScope.BridgeScreen(c: Ctx) {
     val b = c.rt.bridge
     val context = LocalContext.current
-    Header("bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back, big = true)
+    Header("bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back)
     // Each device's thread list carries its name and Orb version, which its row and update show.
     LaunchedEffect(b.peers.size) { c.rt.reload() }
     if (c.rt.acting) PatternBlue { c.rt.local?.abort() }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         item {
             // One gesture pairs a computer: it shows a QR code, this phone photographs it, the computer says yes.
-            Column(Modifier.fillMaxWidth().padding(bottom = 18.dp).press { context.scan { c.nav.go(Screen.Join(it, auto = true)) } }
+            Column(Modifier.fillMaxWidth().padding(bottom = 18.dp).press { context.scan { c.nav.go(Screen.Join(it)) } }
                 .border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
-                Stretch("SCAN", 110.dp, squeeze = 0.62f)
-                T("On the computer, run", Modifier.padding(top = 14.dp), color = p.mute)
+                T("Pair a computer", size = 22.sp, bold = true)
+                T("On the computer, run", Modifier.padding(top = 10.dp), color = p.mute)
                 Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", bold = true) }
                 T("then photograph its QR code. It asks you to approve this phone there.", size = 13.sp, color = p.meta)
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Btn("scan", inverted = true) { context.scan { c.nav.go(Screen.Join(it, auto = true)) } }
+                    Btn("scan", inverted = true) { context.scan { c.nav.go(Screen.Join(it)) } }
                     Btn("paste code") { c.nav.go(Screen.Join(context.paste())) }
                 }
             }
@@ -142,7 +142,7 @@ fun ColumnScope.InviteScreen(c: Ctx) {
 }
 
 @Composable
-fun ColumnScope.JoinScreen(c: Ctx, text: String, auto: Boolean) {
+fun ColumnScope.JoinScreen(c: Ctx, text: String) {
     val b = c.rt.bridge
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -150,7 +150,6 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String, auto: Boolean) {
     var error by remember { mutableStateOf("") }
     val inviter = Bridge.parse(value)?.optString("peer_id").orEmpty()
     fun pair() { error = ""; scope.launch { b.join(value)?.let { error = it } } }
-    LaunchedEffect(Unit) { if (auto && b.joining.isEmpty()) pair() }
     LaunchedEffect(b.joining) { if (b.joining == "paired") { delay(1100); b.cancelJoin(); while (c.nav.stack.size > 1) c.nav.back() } }
     Header("pair", back = { b.cancelJoin(); c.nav.back() })
     AnimatedContent(b.joining, Modifier.weight(1f), transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(160)) }, label = "join") { state ->
@@ -162,14 +161,14 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String, auto: Boolean) {
                     val left = ((Bridge.parse(value)?.optLong("expires") ?: 0) - System.currentTimeMillis() / 1000).coerceAtLeast(0)
                     Column(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
                         T("invitation from", label = true, color = p.meta)
-                        Stretch(inviter.substringAfterLast(':').take(8), 72.dp, squeeze = 0.7f, modifier = Modifier.padding(vertical = 10.dp))
+                        T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, bold = true)
                         T(inviter, size = Size.Label, color = p.meta)
                         Row(Modifier.padding(top = 12.dp)) {
                             T(if (left > 0) "valid %d:%02d · single use".format(left / 60, left % 60) else "expired", Modifier.weight(1f), size = 13.sp, color = if (left > 0) p.mute else Ink.Rupture)
                             Box(Modifier.press { editing = true }) { T("edit", size = 13.sp, color = p.meta) }
                         }
                     }
-                    T("Pairing lets each side read and drive the other's sessions, and start Orb in its folders. The computer confirms this phone before anything is shared.", size = Size.Label, color = p.meta)
+                    T("Pairing lets this device read and drive the phone's conversations. Once it approves the phone, the phone gets its conversations and can start Orb in its folders. Pair only with a device you know.", size = Size.Label, color = p.meta)
                 } else {
                     T("Paste the code from  orb bridge pair,  or scan its QR code.", color = p.mute)
                     Box(Modifier.fillMaxWidth().heightIn(min = 120.dp).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(16.dp)) {
@@ -180,16 +179,16 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String, auto: Boolean) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("pair", inverted = true) { pair() }
-                    Btn("scan") { context.scan { value = it; pair() } }
+                    Btn("scan") { context.scan { value = it } }
                     Btn("paste") { value = context.paste() }
                 }
                 if (error.isNotEmpty()) T(error, color = Ink.Rupture)
             } else {
-                Stretch(if (state == "paired") "PAIRED" else "APPROVE", 120.dp, squeeze = 0.6f, modifier = Modifier.padding(top = 12.dp))
+                T(if (state == "paired") "Paired" else "Approve on the computer", Modifier.padding(top = 12.dp), size = 26.sp, bold = true)
                 T(if (state == "paired") "The computer said yes. Its sessions appear on Home." else "On the computer, answer y. It shows this phone as", color = p.mute)
                 if (state != "paired") {
                     // The fingerprint exactly as the terminal prints it, its start large enough to compare at a glance.
-                    Stretch(b.self.substringAfterLast(':').take(8), 64.dp, squeeze = 0.7f)
+                    T(b.self.substringAfterLast(':').take(8), size = 28.sp, bold = true)
                     BasicText(b.self, style = mono(13.sp, p.meta))
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(if (state == "claiming") "reaching the computer" else "waiting for the yes", Modifier.weight(1f), color = p.mute)

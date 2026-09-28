@@ -73,10 +73,11 @@ fun Interrupt(a: Ask, answer: (String?) -> Unit) {
 }
 
 @Composable
-fun PairRequest(claimant: String, c: Ctx) {
+fun PairRequest(claim: org.json.JSONObject, c: Ctx) {
     val scope = rememberCoroutineScope()
+    val claimant = claim.optString("claimant")
     Interrupt(Ask("pair:$claimant", "bridge", "Pair with ${claimant.substringAfterLast(':').take(8)}?",
-        "Check the other device shows this fingerprint:\n$claimant\nAllowing gives both sides control of each other's sessions, and lets them start Orb in any folder.", listOf("allow", "deny"))) { v ->
-        scope.launch { if (v == "allow") c.rt.bridge.approve() else c.rt.bridge.forget(claimant) }
+        "Check the other device shows this fingerprint:\n$claimant\nAllowing lets it read and drive this phone's conversations, run what they run, and start Orb here.", listOf("allow", "deny"))) { v ->
+        scope.launch { if (v == "allow") c.rt.bridge.approve(claim) else c.rt.bridge.forget(claimant) }
     }
 }

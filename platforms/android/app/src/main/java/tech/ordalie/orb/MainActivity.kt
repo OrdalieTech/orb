@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
     private val cites = mutableStateListOf<String>()
     private val shared = mutableStateOf<String?>(null)
 
-    /** Cited documents are copied into the workspace, where every Orb tool can read them. */
+    /** Cited documents are copied where the core works, so every Orb tool can read them. */
     private val pick = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> uris.forEach(::cite) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
         receive(intent)
         setContent { OrbTheme { App(runtime, cites, { pick.launch(arrayOf("*/*")) }, shared) } }
     }
+
+    // Access to the phone's files may have just been granted in Settings: show them to the Linux.
+    override fun onResume() { super.onResume(); runtime.orb.linux.linkStorage() }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); receive(intent) }
 
@@ -43,7 +46,7 @@ class MainActivity : ComponentActivity() {
         val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }?.replace('/', '_') ?: "document"
-        val file = File(runtime.orb.workspace, "cites/$name").apply { parentFile?.mkdirs() }
+        val file = File(runtime.orb.cwd, "cites/$name").apply { parentFile?.mkdirs() }
         contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use(input::copyTo) }
         cites += "cites/$name"
     }

@@ -17,11 +17,11 @@ data class Peer(val id: String, val state: String, val instances: List<Instance>
     val short get() = id.substringAfterLast(":").take(6)
     /** Peers have no names on the wire; the home directory of their sessions says whose machine it is. */
     val named: String? get() = instances.firstNotNullOfOrNull { i ->
-        Regex("^/(Users|home)/([^/]+)").find(i.cwd)?.let { m -> m.groupValues[2] + if (m.groupValues[1] == "Users") "'s mac" else "'s linux" }
+        if (i.cwd.startsWith("/data/data/com.termux/")) "termux" else Regex("^/(Users|home)/([^/]+)").find(i.cwd)?.let { m -> m.groupValues[2] + if (m.groupValues[1] == "Users") "'s mac" else "'s linux" }
             ?: i.cwd.takeIf { it.startsWith("/data/") }?.let { "android · " + i.alias }
     }
-    /** The machine's own name once it said it (host.sessions), else a guess from its sessions. */
-    val name: String get() = known.ifEmpty { named ?: short }
+    /** The machine's own name once it said it (host.sessions), else a guess from its sessions. Termux calls itself localhost. */
+    val name: String get() = known.takeUnless { it.isEmpty() || it == "localhost" } ?: named ?: short
     val connected get() = state == "connected"
 }
 data class Instance(val peer: String, val id: String, val alias: String, val available: Boolean, val title: String = "", val cwd: String = "", val busy: Boolean = false, val session: String = "")
@@ -134,6 +134,10 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         return Result.success(peers.firstOrNull { it.id == peer }?.instances?.firstOrNull { it.id == id } ?: Instance(peer, id, r.optJSONObject("result")?.optString("alias").orEmpty(), true, cwd = cwd.orEmpty(), session = session.orEmpty()))
     }
 
+    /** The model and reasoning last chosen for threads on this device. */
+    fun preferred(peer: String) = orb.recall("model:$peer") to orb.recall("thinking:$peer")
+    fun prefer(peer: String, model: String, thinking: String) { orb.remember("model:$peer", model); orb.remember("thinking:$peer", thinking) }
+
     /** Brings a peer's Orb to the latest release (host.update); the words say what happened. */
     suspend fun update(peer: String): String {
         val r = remote(peer, "host.update", JSONObject())
@@ -177,17 +181,20 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
     }
     fun cancelJoin() { joining = "" }
 
-    suspend fun approve(): String? {
-        val c = claim ?: return null
-        val peer = c.optString("claimant")
-        call("approve", JSONObject().put("invitation_id", c.optString("invitation_id")).put("claimant", peer)).optJSONObject("error")?.let { return it.optString("message") }
-        claim = null
-        return trust(peer).also { refresh() }
+    /** Approves exactly the claim the owner was shown; the invitation's grants take effect. */
+    suspend fun approve(c: JSONObject): String? {
+        call("approve", JSONObject().put("invitation_id", c.optString("invitation_id")).put("claimant", c.optString("claimant"))).optJSONObject("error")?.let {
+            return if ("identity_conflict" in listOf(it.optString("code"), it.optString("message"))) "Two devices used this code, so someone else saw it: not paired. Invite again where only you see the code." else it.optString("message")
+        }
+        if (claim?.optString("invitation_id") == c.optString("invitation_id")) claim = null
+        refresh()
+        return null
     }
 
+    /** What a joining phone gives back to the Orb it joined: its conversations, never the phone itself. */
     private suspend fun trust(peer: String): String? {
         val grant = JSONObject().put("principal", JSONObject().put("peer_id", peer).put("subject", JSONObject().put("kind", "controller")))
-            .put("group_id", "*").put("include_future", true).put("permissions", JSONArray(PERMISSIONS))
+            .put("group_id", "*").put("include_future", true).put("permissions", JSONArray(PERMISSIONS - "host.launch"))
         return call("grant", grant).optJSONObject("error")?.optString("message")?.takeUnless { it == "identity_conflict" }
     }
 

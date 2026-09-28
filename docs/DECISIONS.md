@@ -147,6 +147,14 @@ Revisable records of how things currently work; each holds until changed by owne
   `CGO_ENABLED=0` CLI (`liborb.so`) over RPC mode and `orb bridge pipe`: no API to bind, the phone
   runs exactly what desktops run, and updates arrive as signed release APKs. P2's "embed the core as
   a library" remains the path for iOS, which cannot spawn processes.
+- **The Android app's agent works in a Linux the app carries (owner request, 2026-09-28).** Android
+  10+ refuses to execute files from app data, so the app ships proot and its loader as `lib*.so`
+  (GPL-2.0, from Termux's package repository, checked against its index) and downloads Termux's
+  `bootstrap-aarch64.zip` at first start, checked against GitHub's published sha256. proot maps the
+  app's copy onto `/data/data/com.termux`, where those packages expect to live, so `pkg`/`apt` work
+  unmodified; the Termux app is never involved. The bash tool's `shellPath` and the in-app terminal
+  (Termux's Apache-2.0 terminal-view) both start `liblinux.so`. The core itself stays the plain
+  `CGO_ENABLED=0` binary outside proot.
 
 - **Windows CI is blocking again (owner decision of 2026-09-22, resolved 2026-09-24).** The first
   real Windows run failed 179 tests in 31 packages; it ran informationally while v0.10.0 shipped

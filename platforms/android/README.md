@@ -24,6 +24,17 @@ The Gradle task `orbCore` cross-compiles `./cmd/orb` (`GOOS=android GOARCH=arm64
 into `liborb.so`; the APK installs it extracted because Android executes only files in
 `nativeLibraryDir`.
 
+## The phone's Linux
+
+The agent's commands run in a Linux the app carries, invisible to the owner. `linux-tools.sh`
+puts proot, its loader and two libraries in the APK (from Termux's package repository, checked
+against its index), and `linux.sh` ships beside them as `liblinux.so`: the shell Orb's bash tool
+(`shellPath`) and the terminal screen start. At first start `core/Linux` downloads Termux's base
+system (`bootstrap-aarch64.zip`, checked against GitHub's sha256) into `files/linux`, which proot
+maps onto `/data/data/com.termux`, so `pkg` and `apt` work unmodified. With all-files access
+(asked once on Home) the phone's storage is `~/storage/shared`. The terminal is Termux's
+terminal view (Apache-2.0); the Termux app itself is never needed.
+
 ## Build and run
 
 Requires Go, JDK 17 and the Android SDK (platform 37).
@@ -39,8 +50,9 @@ service it offers so Bridge outlives the SSH session and the machine's reboots.
 
 ## Releases and updates
 
-Each Orb release carries `orb_<version>_android_arm64.apk` and its `.sha256`, built and signed by
-the release workflow with `release.sh`. The app checks Orb's latest release and offers it on Home;
+Each Orb release carries `orb_<version>_android_arm64.apk` and its `.sha256`, built by the release
+workflow with `release.sh build`, then signed in a step of its own with `release.sh sign`, so
+Gradle never runs with the key present. The app checks Orb's latest release and offers it on Home;
 the update downloads, verifies and hands the APK to Android's installer, which only accepts it
 over an app signed with the same key. The Bridge screen updates paired machines the same way
 (`host.update`: their Orb replaces itself, as `orb update` does, and restarts its Bridge).

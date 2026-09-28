@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
  * The process is supervised: when it dies it starts again (backing off to 30 s, with a fresh
  * [env]), and the owner hears an `exit` event, then a `restart` event once it is back.
  */
-class Lines(scope: CoroutineScope, private val args: List<String>, private val env: () -> Map<String, String>, private val dir: File, private val tag: String) {
+class Lines(scope: CoroutineScope, private val args: List<String>, private val env: () -> Map<String, String>, private val dir: () -> File, private val tag: String) {
     @Volatile private var process = spawn()
     @Volatile private var closed = false
     @Volatile private var soon = false // an asked-for restart comes back at once
@@ -30,7 +30,7 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
     val events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 1024)
     val errors = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
-    private fun spawn(): Process = ProcessBuilder(args).directory(dir).apply { environment().putAll(env()) }.start()
+    private fun spawn(): Process = ProcessBuilder(args).directory(dir()).apply { environment().putAll(env()) }.start()
 
     init {
         scope.launch(Dispatchers.IO) {
@@ -74,7 +74,7 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
         } finally { pending.remove(id) }
     }
 
-    /** Ends this process now; the supervisor starts it again right away, with the current [env]. */
+    /** Ends this process now; the supervisor starts it again right away, with the current [env] and [dir]. */
     fun restart() { soon = true; process.destroy() }
 
     /** Ends the process for good and waits for it, so a successor never overlaps it. */

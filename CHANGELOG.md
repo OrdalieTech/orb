@@ -5,6 +5,25 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The Android app carries its own Linux: on first start it installs Termux's base system (checked
+  against the sha256 GitHub publishes) and runs it through proot, which ships in the APK. The
+  agent's commands run there, with `pkg`/`apt` to install what it needs, and the menu opens a
+  terminal on the same system. Nothing of Termux shows, and the Termux app is not needed. Once
+  allowed from Home, the phone's files are `~/storage/shared`.
+- The Android app's model picker is a compact sheet rising from the bottom instead of a side
+  rolodex: every model grouped by provider with search, and reasoning pinned at the bottom within
+  thumb's reach, one segmented control that says what each level means ("balanced", "thorough").
+- The Android app's conversations fold each stretch of work into one line, as the TUI folds
+  exploration: "worked · 6 thoughts · 5 commands · 3 failed", which opens to the thoughts and tool
+  calls in order, each still expandable; a running action stays in view. Thoughts now read as
+  actions on the same grid as tool calls instead of a separate tag.
+- The Android app remembers the model and reasoning last chosen: every new session on the phone
+  starts with them, and threads the phone starts on a paired machine take the choices last made
+  for that machine.
+- The Android app keeps the condensed display type for the Home wordmark, its readouts and the
+  one-word interrupts; screen titles, the pairing screens and the model sheet use the regular
+  type.
+
 - `orb bridge join` asks before pairing and says what the other side gets: it reads and drives
   this Orb's conversations, not starting or updating Orb here. Joining now grants conversations
   only; starting Orb on a machine stays with `orb bridge trust` on that machine. A code on stdin
