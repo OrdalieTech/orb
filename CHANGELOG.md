@@ -17,6 +17,10 @@ line. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
   agent's commands run there, with `pkg`/`apt` to install what it needs, and the menu opens a
   terminal on the same system. Nothing of Termux shows, and the Termux app is not needed. Once
   allowed from Home, the phone's files are `~/storage/shared`.
+- The Android app's Home is reduced to the wordmark, one line per session (its title, then where
+  it lives and how long ago) and the prompt box: the readouts, the sessions header, the device
+  pills' borders, the rules between rows and inside the prompt box are gone, and status notices
+  share a single line.
 - The Android app's model picker is a compact sheet rising from the bottom instead of a side
   rolodex: every model grouped by provider with search, and reasoning pinned at the bottom within
   thumb's reach, one segmented control that says what each level means ("balanced", "thorough").

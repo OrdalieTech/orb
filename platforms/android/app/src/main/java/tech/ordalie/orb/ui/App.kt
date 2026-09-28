@@ -273,51 +273,17 @@ fun ColumnScope.Home(c: Ctx) {
     LaunchedEffect(local?.busy, local?.id, peers.map { it.id to it.connected }) { if (local?.busy != true) rt.reload() }
     // Other devices work too: their threads refresh while Home is on screen.
     LaunchedEffect(Unit) { while (true) { delay(20_000); rt.reload() } }
-    Header("Orb", sub = rt.orb.device + " · " + if (rt.bridge.up) "bridge on" else "bridge starting") { MenuMark(c::menu) }
-    // The Linux sets itself up on first start; its one line says how far along it is.
-    rt.orb.linux.state.takeIf { it.isNotEmpty() }?.let { state ->
-        Row(Modifier.fillMaxWidth().press(enabled = state.contains("failed")) { rt.setupLinux() }.padding(start = Margin, end = Margin, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Dot(if (state.contains("failed")) Ink.Rupture else p.mute, pulse = !state.contains("failed")); Spacer(Modifier.width(10.dp))
-            T(state, Modifier.weight(1f), size = 13.sp, color = if (state.contains("failed")) Ink.Rupture else p.mute, lines = 2)
-        }
-    }
-    // Asked once: the phone's files become ~/storage/shared in the Linux.
-    if (rt.orb.linux.ready && !rt.orb.linux.storage && android.os.Build.VERSION.SDK_INT >= 30) Row(Modifier.fillMaxWidth().press {
-        c.context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, android.net.Uri.parse("package:" + c.context.packageName)))
-    }.padding(start = Margin, end = Margin, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Dot(p.fg); Spacer(Modifier.width(10.dp)); T("Let Orb use the phone's files · allow", Modifier.weight(1f), size = 13.sp)
-    }
-    // A newer Orb is one tap away: the app downloads its release and hands it to Android's installer.
-    rt.latest?.takeIf { Release.newer(it, rt.version) }?.let { next ->
-        val scope = rememberCoroutineScope()
-        var state by remember { mutableStateOf("") }
-        Row(Modifier.fillMaxWidth().press(enabled = state.isEmpty() || state.startsWith("could")) {
-            state = "downloading $next…"
-            scope.launch { state = runCatching { Release.install(c.context, next) }.fold({ "" }, { "could not update · " + it.message }) }
-        }.padding(start = Margin, end = Margin, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Dot(Ink.Rupture, pulse = state.startsWith("downloading")); Spacer(Modifier.width(10.dp))
-            T(state.ifEmpty { "Orb $next is available · update" }, Modifier.weight(1f), size = 13.sp, color = if (state.startsWith("could")) Ink.Rupture else p.fg, lines = 2)
-        }
-    }
-    // Readouts, one line: what is running, who is reachable, what it costs, how full the context is.
-    // They fold away while the keyboard is up, so the prompt box keeps its room.
-    val typing = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    AnimatedVisibility(!typing) { Row(Modifier.padding(start = Margin, end = Margin, bottom = 12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-        Readout("live", rt.sessions.count { it.busy }.toString().padStart(2, '0'), if (rt.sessions.any { it.ask != null }) Ink.Rupture else p.fg)
-        Readout("peers", "${peers.count { it.connected }}/${peers.size}", if (rt.acting) Ink.Blue else p.fg)
-        Readout("cost", "$" + "%.2f".format(java.util.Locale.US, local?.cost ?: 0.0))
-        Spacer(Modifier.weight(1f))
-        Ring(local?.context ?: 0f, "${((local?.context ?: 0f) * 100).toInt()}%", size = 50.dp)
-    } }
-    Rule(color = p.fg.copy(alpha = 0.5f))
+    // Only the wordmark: the Bridge is mentioned when it is not up yet.
+    Header("Orb", sub = if (rt.bridge.up) "" else "bridge starting") { MenuMark(c::menu) }
+    Notice(c)
     // Every thread on every device in one list, newest first: where it lives is a detail of the row.
     val now = System.currentTimeMillis()
     val entries = buildList {
         if (local != null && rt.history.none { it.id == local.id } && local.transcript.items.isNotEmpty())
-            add(Entry("current", local.title.ifEmpty { "this conversation" }, "phone", now, local.busy, local.ask != null, current = true) { c.nav.go(Screen.Chat(local)) })
+            add(Entry("current", local.title.ifEmpty { "this conversation" }, "", now, local.busy, local.ask != null, current = true) { c.nav.go(Screen.Chat(local)) })
         rt.history.forEach { past ->
             val on = local != null && past.id == local.id
-            add(Entry("p:" + past.id, past.title, "phone · ${past.messages} messages", past.modified, on && local!!.busy, on && local!!.ask != null, current = on) {
+            add(Entry("p:" + past.id, past.title, "", past.modified, on && local!!.busy, on && local!!.ask != null, current = on) {
                 local?.let { l -> l.switchTo(past.id); c.nav.go(Screen.Chat(l)) }
             })
         }
@@ -326,36 +292,25 @@ fun ColumnScope.Home(c: Ctx) {
             threads.forEach { t ->
                 val i = peer.instances.firstOrNull { it.session == t.id }
                 val s = i?.let { rt.opened(it.id) }
-                add(Entry("t:${peer.id}:${t.id}", t.title, listOf(peer.name, t.cwd.substringAfterLast('/'), "${t.messages} messages").joinToString(" · "),
+                add(Entry("t:${peer.id}:${t.id}", t.title, peer.name,
                     if (i != null && (s?.busy ?: i.busy)) now else t.modified, s?.busy ?: i?.busy == true, s?.ask != null, remote = true, device = peer.id) { c.openThread(peer, t) })
             }
             // Open instances whose thread is not listed: unsaved yet, or a device that lists no threads.
             peer.instances.filter { i -> threads.none { it.id == i.session } }.forEach { i ->
                 val s = rt.opened(i.id)
-                val folder = i.cwd.substringAfterLast('/')
-                add(Entry("i:" + i.id, s?.title?.ifEmpty { null } ?: i.title.ifEmpty { null } ?: folder.ifEmpty { i.alias }, listOf(peer.name, folder).filter(String::isNotEmpty).joinToString(" · "),
+                add(Entry("i:" + i.id, s?.title?.ifEmpty { null } ?: i.title.ifEmpty { null } ?: i.cwd.substringAfterLast('/').ifEmpty { i.alias }, peer.name,
                     now, s?.busy ?: i.busy, s?.ask != null, remote = true, age = "open", device = peer.id) { c.nav.go(Screen.Chat(rt.open(i))) })
             }
         }
     }.sortedByDescending { it.modified }
-    // The header stays put: starting a thread never depends on how far the list is scrolled.
-    Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 18.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        T("sessions", Modifier.weight(1f), label = true)
-        Box(Modifier.press {
-            val hosts = peers.filter { rt.bridge.threads.containsKey(it.id) }
-            fun here() { local?.let { l -> if (l.transcript.items.isNotEmpty()) l.newSession(); c.nav.go(Screen.Chat(l)) } }
-            if (hosts.isEmpty()) here() else c.pick(Picker("new thread on", listOf("this phone") + hosts.map { it.name }) { choice ->
-                hosts.firstOrNull { it.name == choice }?.let { c.nav.go(Screen.Device(it.id)) } ?: here()
-            })
-        }.padding(4.dp)) { T("+ new", label = true) }
-    }
     // Devices narrow the list: all of them, this phone, or one machine (whose folders open from here).
+    // New sessions start from the prompt box, which also chooses the device.
     var device by rememberSaveable { mutableStateOf("") }
     val devices = listOf("phone") + peers.filter { p -> p.instances.isNotEmpty() || rt.bridge.threads.containsKey(p.id) }.map { it.id }
-    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Margin, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Margin, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         (listOf("") + devices).forEach { d ->
             val name = when (d) { "" -> "all"; "phone" -> "this phone"; else -> peers.firstOrNull { it.id == d }?.name ?: d }
-            Box(Modifier.press { device = d }) { Chip(name, if (device == d) ChipKind.Inverted else ChipKind.Outline, caps = false) }
+            Box(Modifier.press { device = d }.padding(vertical = 6.dp)) { T(name, size = 14.sp, color = if (device == d) p.fg else p.meta, bold = device == d) }
         }
     }
     val shown = if (device.isEmpty()) entries else entries.filter { it.device == device }
@@ -372,7 +327,6 @@ fun ColumnScope.Home(c: Ctx) {
                 Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Device(peer.id)) }.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     T("folders on ${peer.name}", Modifier.weight(1f), bold = true); T("›", size = 20.sp, color = p.mute)
                 }
-                Rule()
             }
         }
         items(shown, key = { it.key }) { e ->
@@ -391,12 +345,6 @@ fun ColumnScope.Home(c: Ctx) {
     }
 }
 
-@Composable
-private fun Readout(label: String, value: String, color: Color = p.fg) = Column {
-    Stretch(value, 30.dp, color, squeeze = 0.86f)
-    T(label, size = Size.Label, color = p.meta)
-}
-
 fun ago(ms: Long): String {
     val m = (System.currentTimeMillis() - ms) / 60_000L
     return when { m < 1 -> "now"; m < 60 -> "${m}m"; m < 1440 -> "${m / 60}h"; else -> "${m / 1440}d" }
@@ -408,22 +356,43 @@ private class Entry(
     val current: Boolean = false, val remote: Boolean = false, val age: String? = null, val device: String = "phone", val open: () -> Unit,
 )
 
-/** A session row states its condition in words — live, asking, or how long ago — never as a switch. */
+/** At most one line above the list: the Linux setting up, a newer Orb, or the phone's files to allow. */
+@Composable
+private fun Notice(c: Ctx) {
+    val rt = c.rt
+    val linux = rt.orb.linux
+    val scope = rememberCoroutineScope()
+    var updating by remember { mutableStateOf("") }
+    val next = rt.latest?.takeIf { Release.newer(it, rt.version) }
+    val failed = linux.state.contains("failed") || updating.startsWith("could")
+    val (text, act) = when {
+        linux.state.isNotEmpty() -> linux.state to { if (failed) rt.setupLinux() }
+        next != null -> updating.ifEmpty { "Orb $next is available · update" } to {
+            if (updating.isEmpty() || updating.startsWith("could")) {
+                updating = "downloading $next…"
+                scope.launch { updating = runCatching { Release.install(c.context, next) }.fold({ "" }, { "could not update · " + it.message }) }
+            }
+        }
+        linux.ready && !linux.storage && android.os.Build.VERSION.SDK_INT >= 30 -> "Let Orb use the phone's files · allow" to {
+            c.context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, android.net.Uri.parse("package:" + c.context.packageName)))
+        }
+        else -> return
+    }
+    Row(Modifier.fillMaxWidth().press(onClick = act).padding(start = Margin, end = Margin, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Dot(if (failed || next != null) Ink.Rupture else p.mute, pulse = !failed && (linux.state.isNotEmpty() || updating.startsWith("downloading"))); Spacer(Modifier.width(10.dp))
+        T(text, Modifier.weight(1f), size = 13.sp, color = if (failed) Ink.Rupture else p.mute, lines = 2)
+    }
+}
+
+/** One line per session: its title, then where it lives and its condition in words — live, asking,
+ *  or how long ago. No rules between rows: the space and the bold of the open one are enough. */
 @Composable
 fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, open: () -> Unit) = Column(modifier) {
     Row(Modifier.fillMaxWidth().press(onClick = open).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.width(3.dp).height(34.dp).background(if (current) p.fg else Color.Transparent))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            T(title, size = 16.sp, bold = current || live, lines = 1)
-            T(meta, size = Size.Label, color = p.meta, lines = 1)
-        }
-        when {
-            asks -> Chip("ask", ChipKind.Rupture)
-            live -> Row(verticalAlignment = Alignment.CenterVertically) { Dot(if (remote) Ink.Blue else Ink.Rupture, pulse = true); Spacer(Modifier.width(6.dp)); T("live", label = true) }
-            else -> T(age, size = Size.Label, color = p.meta)
-        }
+        T(title, Modifier.weight(1f), size = 16.sp, bold = current || live, lines = 1)
+        if (live) Dot(if (remote) Ink.Blue else Ink.Rupture, pulse = true)
+        T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = Size.Label, color = if (asks) Ink.Rupture else p.meta, lines = 1)
     }
-    Rule()
 }
 
 /** The app's commands, named like the TUI's. Those in [NOW] run on tap; the rest take an argument. */

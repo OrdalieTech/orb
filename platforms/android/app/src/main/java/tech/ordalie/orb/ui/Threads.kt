@@ -64,7 +64,7 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         items(folders, key = { it.first }) { (cwd, n, last) ->
-            SessionRow(cwd.substringAfterLast('/').ifEmpty { "/" }, tidy(cwd) + " · $n thread" + if (n == 1) "" else "s", ago(last), live = peer.instances.any { it.cwd == cwd && it.busy }, asks = false, remote = true) {
+            SessionRow(cwd.substringAfterLast('/').ifEmpty { "/" }, "$n", ago(last), live = peer.instances.any { it.cwd == cwd && it.busy }, asks = false, remote = true) {
                 c.nav.go(Screen.Folder(peer.id, cwd))
             }
         }
@@ -86,7 +86,7 @@ fun ColumnScope.FolderScreen(c: Ctx, peerId: String, cwd: String) {
         items(threads, key = { it.id }) { t ->
             val running = peer.instances.firstOrNull { it.session == t.id }
             val s = running?.let { c.rt.opened(it.id) }
-            SessionRow(t.title, "${t.messages} messages" + if (running != null) " · open" else "", ago(t.modified), s?.busy ?: running?.busy == true, s?.ask != null, remote = true) { c.openThread(peer, t) }
+            SessionRow(t.title, if (running != null) "open" else "", ago(t.modified), s?.busy ?: running?.busy == true, s?.ask != null, remote = true) { c.openThread(peer, t) }
         }
     }
 }

@@ -116,10 +116,10 @@ fun PromptBox(
             }
             .clip(shape).background(p.raised).border(1.dp, p.fg.copy(alpha = 0.85f), shape).animateContentSize(spring(stiffness = 500f)),
     ) {
-        // The top edge is a handle: drag it to give the draft more room.
+        // The top edge is a handle, unmarked until used: drag it to give the draft more room.
         Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp).pointerInput(Unit) {
             detectVerticalDragGestures { _, dy -> extra = (extra - dy / density.density).coerceIn(0f, 320f) }
-        }, contentAlignment = Alignment.Center) { Box(Modifier.size(36.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(if (extra > 0f) p.fg else p.meta)) }
+        }, contentAlignment = Alignment.Center) { Box(Modifier.size(36.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(if (extra > 0f) p.fg else Color.Transparent)) }
         if (cites.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             cites.toList().forEach { c -> Box(Modifier.press { cites.remove(c) }) { Chip("@ ${c.substringAfterLast('/')}  ×", caps = false) } }
             Box(Modifier.press(onClick = onCite)) { Chip("+ cite", ChipKind.Quiet) }
@@ -139,7 +139,6 @@ fun PromptBox(
                 }
             }
         }
-        if (matches.isNotEmpty()) Rule(Modifier.padding(horizontal = 14.dp))
         Box(Modifier.fillMaxWidth().heightIn(min = ((if (matches.isEmpty()) 72 else 48) + extra).dp, max = (240 + extra).dp).padding(horizontal = 18.dp, vertical = 10.dp)) {
             BasicTextField(
                 value, { value = it }, Modifier.fillMaxWidth(), textStyle = mono(17.sp, p.fg), cursorBrush = SolidColor(p.fg),
@@ -147,9 +146,8 @@ fun PromptBox(
                 decorationBox = { inner -> if (value.text.isEmpty()) T(if (busy) "steer or queue a message" else placeholder, size = 17.sp, color = p.meta); inner() },
             )
         }
-        Rule()
         Row(
-            Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp).windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
+            Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 4.dp, bottom = 10.dp).windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

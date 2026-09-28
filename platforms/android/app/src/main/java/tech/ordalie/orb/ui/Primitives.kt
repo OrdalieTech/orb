@@ -109,19 +109,6 @@ fun Toggle(on: Boolean, labelOn: String = "on", labelOff: String = "off", accent
     }
 }
 
-/** A thin arc gauge with its value in the middle, like the 68% dial. */
-@Composable
-fun Ring(fraction: Float, label: String, size: Dp = 64.dp) = Box(Modifier.size(size), contentAlignment = Alignment.Center) {
-    val track = p.rule
-    val ink = p.fg
-    Canvas(Modifier.size(size)) {
-        val w = 3.dp.toPx()
-        drawArc(track, 0f, 360f, false, style = Stroke(w))
-        drawArc(ink, -90f, 360f * fraction.coerceIn(0f, 1f), false, style = Stroke(w, cap = StrokeCap.Round))
-    }
-    T(label, size = 14.sp)
-}
-
 @Composable
 fun Dot(color: Color = Ink.Rupture, size: Dp = 8.dp, pulse: Boolean = false) {
     val a = if (pulse) rememberInfiniteTransition("dot").animateFloat(1f, 0.25f, infiniteRepeatable(tween(700), RepeatMode.Reverse), "a").value else 1f
