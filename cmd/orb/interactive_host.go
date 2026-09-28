@@ -766,7 +766,7 @@ func (host *interactiveSessionHost) ListProjectSessions(onProgress session.Sessi
 	manager := current.Manager()
 	if host.args.native != nil {
 		rows, _ := host.args.native.sessions().ListInfo(context.Background(), manager.GetCWD(), nil)
-		return rows
+		return spoken(rows)
 	}
 	return session.List(manager.GetCWD(), manager.GetSessionDir(), onProgress, session.WithAgentDir(host.agentDir))
 }
@@ -778,7 +778,7 @@ func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionLi
 	}
 	if host.args.native != nil {
 		rows, _ := host.args.native.sessions().ListInfo(context.Background(), "", nil)
-		return rows
+		return spoken(rows)
 	}
 	manager := current.Manager()
 	sessionDir := manager.GetSessionDir()
@@ -794,7 +794,8 @@ func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Conte
 		return nil, err
 	}
 	if host.args.native != nil {
-		return host.args.native.sessions().ListInfo(ctx, current.Manager().GetCWD(), onUpdate)
+		rows, err := host.args.native.sessions().ListInfo(ctx, current.Manager().GetCWD(), spokenUpdates(onUpdate))
+		return spoken(rows), err
 	}
 	manager := current.Manager()
 	return session.ListContext(ctx, manager.GetCWD(), manager.GetSessionDir(), onUpdate, session.WithAgentDir(host.agentDir))
@@ -806,7 +807,8 @@ func (host *interactiveSessionHost) ListAllSessionsContext(ctx context.Context, 
 		return nil, err
 	}
 	if host.args.native != nil {
-		return host.args.native.sessions().ListInfo(ctx, "", onUpdate)
+		rows, err := host.args.native.sessions().ListInfo(ctx, "", spokenUpdates(onUpdate))
+		return spoken(rows), err
 	}
 	manager := current.Manager()
 	sessionDir := manager.GetSessionDir()
@@ -814,6 +816,23 @@ func (host *interactiveSessionHost) ListAllSessionsContext(ctx context.Context, 
 		sessionDir = ""
 	}
 	return session.ListAllContext(ctx, sessionDir, onUpdate, session.WithAgentDir(host.agentDir))
+}
+
+// spoken leaves out conversations nobody wrote in, as the current one is
+// until its first message; the ones left behind are pruned.
+func spoken(rows []session.SessionInfo) []session.SessionInfo {
+	return slices.DeleteFunc(rows, func(row session.SessionInfo) bool { return row.MessageCount == 0 && row.Name == nil })
+}
+
+func spokenUpdates(update session.SessionListUpdateFunc) session.SessionListUpdateFunc {
+	if update == nil {
+		return nil
+	}
+	return func(progress session.SessionListUpdate) {
+		progress.Sessions = spoken(progress.Sessions)
+		progress.Loaded, progress.Total = len(progress.Sessions), len(progress.Sessions)
+		update(progress)
+	}
 }
 
 func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, error) {
