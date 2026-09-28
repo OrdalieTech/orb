@@ -8,6 +8,8 @@ shown by `/changelog`.
 - Conversations left without a message are not kept: quitting, `/new` or switching away from
   one removes it, those earlier versions left behind are cleared at start, and the session
   pickers list no empty rows. A session started with a skill shows the skill's name.
+- Settled tool calls sit back at reduced opacity so the conversation reads first; hovering or
+  expanding one, a running tool and a failed one show at full strength.
 
 ## [0.13.1] - 2026-09-28
 

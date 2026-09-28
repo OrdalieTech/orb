@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/modes/theme"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
@@ -417,5 +418,33 @@ func TestToolsWithoutRendererShowTheirMainArgument(t *testing.T) {
 	}
 	if editArgsPath(map[string]any{"file_path": "/p/main.go", "old_string": "a"}) != "/p/main.go" {
 		t.Fatal("native edit path lost")
+	}
+}
+
+// A settled tool block rests behind the conversation; hovering, expanding,
+// running or failing brings it back to full opacity.
+func TestSettledToolsRestUntilHovered(t *testing.T) {
+	initTestTheme(t)
+	tool := NewToolExecutionComponent("read", "call", map[string]any{"path": "go.mod"}, false,
+		nativeToolDefinition("read", tools.NewReadTool("/", nil)), &toolOutputRenderRequester{}, "/")
+	running := strings.Join(tool.Render(60), "\n")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "module orb"}}, false, nil, false)
+	resting := strings.Join(tool.Render(60), "\n")
+	if tui.StripANSI(resting) == "" || !strings.Contains(resting, "\x1b[38;2;") || resting == strings.Replace(running, "○", "✓", 1) {
+		t.Fatalf("settled tool did not rest: %q", resting)
+	}
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: 1})
+	hovered := strings.Join(tool.Render(60), "\n")
+	if hovered == resting || tui.StripANSI(hovered) != tui.StripANSI(resting) {
+		t.Fatalf("hover kept the resting look: %q", hovered)
+	}
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1})
+	if again := strings.Join(tool.Render(60), "\n"); again != resting {
+		t.Fatalf("leaving hover did not rest again: %q", again)
+	}
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "denied"}}, true, nil, false)
+	failed := tool.Render(60)
+	if faded := theme.Current().Fade(failed[1:2], restingOpacity)[0]; failed[1] == faded {
+		t.Fatal("a failed tool rested")
 	}
 }
