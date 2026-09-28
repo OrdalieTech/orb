@@ -5,6 +5,25 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb bridge join` asks before pairing and says what the other side gets: it reads and drives
+  this Orb's conversations, not starting or updating Orb here. Joining now grants conversations
+  only; starting Orb on a machine stays with `orb bridge trust` on that machine. A code on stdin
+  needs `--yes`.
+- Releases include an `android/arm64` build for running Orb inside Termux, and `install.sh`
+  detects Termux and installs there.
+- Pairing refuses a code that two devices presented: someone else saw it, so neither is approved
+  and the owner is told to pair again out of sight. A joining Orb keeps an inviter as a peer
+  only once it trusts it, so one that never approves is not dialled at every start.
+- The TUI draws names, folders and first messages from paired machines without their escape
+  sequences, so a peer cannot write the clipboard or forge links through them.
+- Starting Orb for a peer (`host.launch`) waits a minute at most for it to come up, and fails at
+  once if it exits first.
+- Anthropic sign-in also holds `[::1]` on its callback port, and refuses to start when another
+  program listens there: the browser may send the code to either loopback address.
+- The Bridge's systemd unit keeps `%` and `$` in paths literal.
+- The Android release is built without the signing key present and signed in a separate step,
+  with the password read from a file rather than the command line.
+
 - Conversations left without a message are not kept: quitting, `/new` or switching away from
   one removes it, those earlier versions left behind are cleared at start, and the session
   pickers list no empty rows. A session started with a skill shows the skill's name.

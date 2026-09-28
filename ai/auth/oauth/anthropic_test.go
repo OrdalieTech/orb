@@ -58,7 +58,10 @@ func TestAnthropicLoginManualCode(t *testing.T) {
 		RedirectURI:  "http://localhost:" + listener.Addr().(*net.TCPAddr).String()[strings.LastIndex(listener.Addr().String(), ":")+1:] + callbackPath,
 		Random:       bytes.NewReader(make([]byte, 32)),
 		Now:          func() time.Time { return time.UnixMilli(1_700_000_000_000) },
-		Listen: func(_, _ string) (net.Listener, error) {
+		Listen: func(_, address string) (net.Listener, error) {
+			if strings.HasPrefix(address, "[::1]") {
+				return nil, errors.New("no IPv6 here")
+			}
 			if used {
 				t.Fatal("listener reused")
 			}
@@ -280,3 +283,32 @@ func (err oauthDiagnosticTestError) Code() string  { return err.code }
 func (err oauthDiagnosticTestError) Errno() any    { return err.errno }
 func (err oauthDiagnosticTestError) Unwrap() error { return err.cause }
 func (err oauthDiagnosticTestError) Stack() string { return err.stack }
+
+func TestAnthropicLoginRefusesWhenAnotherProgramHoldsIPv6Loopback(t *testing.T) {
+	squatter, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skip("no IPv6 loopback here")
+	}
+	defer func() { _ = squatter.Close() }()
+	port := squatter.Addr().(*net.TCPAddr).Port
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Skip("port taken on IPv4")
+	}
+	flow := NewAnthropic(&AnthropicOptions{
+		CallbackPort: port,
+		Random:       bytes.NewReader(make([]byte, 32)),
+		Listen: func(_, address string) (net.Listener, error) {
+			if address == "[::1]:0" {
+				return net.Listen("tcp", address)
+			}
+			if strings.HasPrefix(address, "[::1]") {
+				return nil, errors.New("address already in use")
+			}
+			return listener, nil
+		},
+	})
+	if _, err := flow.Login(context.Background(), &manualInteraction{input: "code"}); err == nil || !strings.Contains(err.Error(), "another program is listening") {
+		t.Fatalf("err = %v", err)
+	}
+}

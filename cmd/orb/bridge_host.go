@@ -25,6 +25,7 @@ import (
 const (
 	maxLaunched  = 8
 	launchedIdle = 30 * time.Minute
+	launchWait   = time.Minute // for a started Orb to come up on Bridge
 )
 
 // launched is an Orb this Bridge started for a peer. It lives while its stdin stays open: until
@@ -275,9 +276,18 @@ func idle(events io.Reader, input io.Closer, limit time.Duration) {
 	}
 }
 
-// launchedInstance waits until the Orb with alias is on Bridge and names it.
+// launchedInstance waits until the Orb with alias is on Bridge and names it: a minute at most,
+// and not past the process, whose exit releases its slot.
 func (s *bridgeService) launchedInstance(ctx context.Context, p bridge.Principal, alias string) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, launchWait)
+	defer cancel()
 	for {
+		s.mu.Lock()
+		running := s.launched[alias] != nil
+		s.mu.Unlock()
+		if !running {
+			return nil, bridge.Fail("unavailable")
+		}
 		for _, i := range s.b.Catalog(p) {
 			if i.Alias == alias && i.Available {
 				s.mu.Lock()

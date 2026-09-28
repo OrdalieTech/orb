@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,6 +34,12 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 		_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "\nScan with the Orb app, or on another machine run:\n  orb bridge join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", code, inv.PeerID)
+	// In Termux the Orb app is on this very phone: hand it the code instead of a photo of it.
+	if opener, err := exec.LookPath("termux-open-url"); err == nil && runtime.GOOS == "android" {
+		if exec.CommandContext(ctx, opener, code).Run() == nil {
+			_, _ = fmt.Fprintln(streams.Stdout, "Opened the Orb app with this code: tap pair there, then answer here.")
+		}
+	}
 	claimed, err := pollBridgePairing(ctx, inv.Expires, func(ctx context.Context) (bridge.Invitation, bool, error) {
 		var status bridgeSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
@@ -55,6 +62,9 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 		return 1
 	}
 	if err = client.Call(ctx, "approve", map[string]string{"invitation_id": claimed.ID, "claimant": claimed.Claimant}, nil); err != nil {
+		if bridge.Code(err) == "identity_conflict" {
+			err = errors.New("two devices used this code, so someone else saw it: not paired.\nRun orb bridge pair again where only you can see the code")
+		}
 		return reportCLIError(streams.Stderr, err)
 	}
 	_, _ = fmt.Fprintln(streams.Stdout, "Paired. The device reconnects on its own from now on; orb bridge block <fingerprint> revokes it.")
@@ -86,9 +96,16 @@ func yes(in *bufio.Reader, def bool) bool {
 	return false
 }
 
-// runBridgeJoin claims an invitation, waits for the inviter's yes, then trusts it back.
+// runBridgeJoin claims an invitation, waits for the inviter's yes, then trusts it back. Joining
+// hands the inviter this Orb's conversations, so it is never done without the owner's yes here:
+// an invitation is only someone else's claim of who they are.
 func runBridgeJoin(ctx context.Context, profile string, args []string, streams cliStreams) int {
+	agreed := slices.Contains(args, "--yes")
+	args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == "--yes" })
 	text := strings.Join(args, "")
+	if text == "" && !agreed {
+		return reportCLIError(streams.Stderr, errors.New("pass the code as an argument to confirm the pairing here, or --yes to join without asking"))
+	}
 	if text == "" {
 		raw, err := io.ReadAll(io.LimitReader(streams.Stdin, protocol.MaxFrame+1))
 		if err != nil {
@@ -109,6 +126,13 @@ func runBridgeJoin(ctx context.Context, profile string, args []string, streams c
 	if err = client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
+	if !agreed {
+		_, _ = fmt.Fprintf(streams.Stdout, "Pair with %s?\nIt will read and drive this Orb's conversations, current and future (not start or update Orb here).\nOnce it approves this Orb, you get the same over its conversations. [y/N] ", inv.PeerID)
+		if !yes(bufio.NewReader(io.LimitReader(streams.Stdin, 256)), false) {
+			_, _ = fmt.Fprintln(streams.Stdout, "Not joined.")
+			return 1
+		}
+	}
 	if err = client.Call(ctx, "join", inv, nil); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -119,7 +143,7 @@ func runBridgeJoin(ctx context.Context, profile string, args []string, streams c
 		return i, i.Status == "approved", err
 	})
 	if err == nil {
-		err = trustBridgePeer(ctx, client, inv.PeerID)
+		err = trustBridgePeer(ctx, client, inv.PeerID, false)
 	}
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)

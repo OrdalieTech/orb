@@ -272,6 +272,17 @@ func TestPairClaimRecoveryBindsApprovalToIdentity(t *testing.T) {
 	if _, err = b.PairStatus(attacker.PeerID(), inv.ID); Code(err) != "not_found" {
 		t.Fatal(err)
 	}
+	// Two devices presented the code: someone else saw it, so neither is ever approved.
+	if err = b.Approve(inv.ID, claimant.PeerID()); Code(err) != "identity_conflict" {
+		t.Fatal(err)
+	}
+	inv, err = b.Invite([]Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.list"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Claim(claimant.PeerID(), inv.ID, inv.Token); err != nil {
+		t.Fatal(err)
+	}
 	if err = b.Approve(inv.ID, claimant.PeerID()); err != nil {
 		t.Fatal(err)
 	}

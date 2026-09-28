@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,13 +29,23 @@ func bridgeUnitName(profile string) string {
 // exits cleanly). It carries PATH so the Orbs it starts for peers find the owner's tools.
 func bridgeUnit(exe, profile string, env map[string]string) string {
 	lines := []string{"[Unit]", "Description=Orb Bridge (" + profile + ")", "Wants=network-online.target", "After=network-online.target", "",
-		"[Service]", fmt.Sprintf("ExecStart=%q bridge run --profile %s", exe, profile), "Restart=on-failure", "RestartSec=2"}
+		"[Service]", fmt.Sprintf("ExecStart=%s bridge run --profile %s", systemdQuote(exe, true), systemdQuote(profile, true)), "Restart=on-failure", "RestartSec=2"}
 	for _, k := range []string{"PATH", "ORB_BRIDGE_HOME", "ORB_STATE_HOME"} {
 		if v := env[k]; v != "" {
-			lines = append(lines, fmt.Sprintf("Environment=%q", k+"="+v))
+			lines = append(lines, "Environment="+systemdQuote(k+"="+v, false))
 		}
 	}
 	return strings.Join(append(lines, "", "[Install]", "WantedBy=default.target", ""), "\n")
+}
+
+// systemdQuote quotes a value for a unit file: systemd reads % as a specifier everywhere, and $
+// as a variable in commands, so both are doubled to stay literal.
+func systemdQuote(s string, command bool) string {
+	s = strings.ReplaceAll(strconv.Quote(s), "%", "%%")
+	if command {
+		s = strings.ReplaceAll(s, "$", "$$")
+	}
+	return s
 }
 
 func bridgeUnitPath(profile string) (string, error) {

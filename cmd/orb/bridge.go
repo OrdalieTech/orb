@@ -179,6 +179,9 @@ type bridgeService struct {
 	node    *transport.Node
 	mu      sync.Mutex
 	peers   map[string]*protocol.Conn
+	// joining: inviters this Bridge claimed an invitation from, kept as known peers only once
+	// trusted, so one that never approves is not dialled at every start.
+	joining map[string]string
 	// launched: Orbs this Bridge started in a folder for a peer (host.launch).
 	launched map[string]*launched
 	// restart ends the service so its process can exec the binary at path (host.update).
@@ -199,6 +202,11 @@ func (s *bridgeService) peer(ctx context.Context, id, locator string) (*protocol
 		default:
 			return c, nil
 		}
+	}
+	if locator == "" {
+		s.mu.Lock()
+		locator = s.joining[id]
+		s.mu.Unlock()
 	}
 	if locator == "" {
 		var err error
@@ -398,10 +406,25 @@ func (s *bridgeService) admin(ctx context.Context, method string, params json.Ra
 		if err != nil {
 			return nil, err
 		}
-		if err = s.b.SavePeer(inv.PeerID, inv.Locator); err != nil {
+		s.mu.Lock()
+		s.joining[inv.PeerID] = inv.Locator
+		s.mu.Unlock()
+		return bridge.JSON(result), nil
+	case "grant":
+		raw, err := s.b.Admin(ctx, method, params)
+		if err != nil {
 			return nil, err
 		}
-		return bridge.JSON(result), nil
+		var g bridge.Grant
+		_ = json.Unmarshal(params, &g)
+		s.mu.Lock()
+		locator, joined := s.joining[g.Principal.PeerID]
+		delete(s.joining, g.Principal.PeerID)
+		s.mu.Unlock()
+		if joined {
+			return raw, s.b.SavePeer(g.Principal.PeerID, locator)
+		}
+		return raw, nil
 	case "remote":
 		var p struct {
 			PeerID string          `json:"peer_id"`
@@ -495,7 +518,7 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		defer func() { _ = server.Close() }()
 		go func() { _ = server.Serve(listener); stop() }()
 	}
-	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, launched: map[string]*launched{}, ctx: serviceCtx}
+	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, joining: map[string]string{}, launched: map[string]*launched{}, ctx: serviceCtx}
 	b.SetHost(service.host)
 	defer service.stopLaunched()
 	reexec := ""
@@ -841,7 +864,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		if len(args) != 2 {
 			err = errors.New("trust requires PeerID")
 		} else {
-			err = trustBridgePeer(ctx, client, args[1])
+			err = trustBridgePeer(ctx, client, args[1], true)
 			if err == nil {
 				return 0
 			}
@@ -1054,15 +1077,30 @@ func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, tar
 	if _, err = runBridgeSSH(ctx, target, remoteOrb, remoteProfile, "pair", "approve", inv.ID, localPeer); err != nil {
 		return "", err
 	}
-	return inv.PeerID, trustBridgePeer(ctx, client, inv.PeerID)
+	return inv.PeerID, trustBridgePeer(ctx, client, inv.PeerID, false)
 }
 
+// fullBridgeGrant is what an invitation offers: control of every conversation, current and
+// future, and of the machine itself (host.launch: its threads, starting Orb, updating it).
 func fullBridgeGrant(peer string) bridge.Grant {
-	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage", "host.launch"}}
+	g := conversationBridgeGrant(peer)
+	g.Permissions = append(g.Permissions, "host.launch")
+	return g
 }
 
-func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string) error {
-	g := fullBridgeGrant(peer)
+// conversationBridgeGrant is control of every conversation without the machine: what a joining
+// Orb gives back to the Orb it joined, which never asked for more.
+func conversationBridgeGrant(peer string) bridge.Grant {
+	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
+}
+
+// trustBridgePeer grants peer control of this Orb's conversations, and of the machine too when
+// machine is set (`orb bridge trust`, the owner's explicit choice).
+func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string, machine bool) error {
+	g := conversationBridgeGrant(peer)
+	if machine {
+		g = fullBridgeGrant(peer)
+	}
 	var status bridgeSettingsStatus
 	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return err

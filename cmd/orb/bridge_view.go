@@ -37,13 +37,24 @@ func (v *remoteTranscript) Render(width int) []string {
 }
 func (v *remoteTranscript) set(s string) {
 	v.mu.Lock()
-	v.text = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+	v.text = peerText(s, true)
+	v.mu.Unlock()
+}
+
+// peerText is text a peer sent, safe to draw: no escape sequences (a peer could otherwise write
+// the clipboard or forge links) and no control characters; lines only when a transcript keeps them.
+func peerText(s string, lines bool) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case lines && (r == '\n' || r == '\t'):
+			return r
+		case r == '\n' || r == '\t':
+			return ' '
+		case unicode.IsControl(r):
 			return -1
 		}
 		return r
 	}, tui.StripANSI(s))
-	v.mu.Unlock()
 }
 func remoteMessage(raw json.RawMessage) string {
 	var m struct {
