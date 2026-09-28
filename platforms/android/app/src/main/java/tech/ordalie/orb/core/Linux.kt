@@ -95,7 +95,8 @@ class Linux(private val context: Context) {
                 val file = File(into, e.name)
                 check(file.canonicalPath.startsWith(into.canonicalPath)) { "unsafe path in the archive: ${e.name}" }
                 when {
-                    e.name == "SYMLINKS.txt" -> z.bufferedReader().readLines().forEach { l -> l.split('←').takeIf { it.size == 2 }?.let { links += it[0] to it[1] } }
+                    // Read as bytes: a reader over the zip would close it.
+                    e.name == "SYMLINKS.txt" -> z.readBytes().decodeToString().lines().forEach { l -> l.split('←').takeIf { it.size == 2 }?.let { links += it[0] to it[1] } }
                     e.isDirectory -> file.mkdirs()
                     else -> {
                         file.parentFile?.mkdirs()
