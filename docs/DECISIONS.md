@@ -156,6 +156,12 @@ Revisable records of how things currently work; each holds until changed by owne
   (Termux's Apache-2.0 terminal-view) both start `liblinux.so`. The core itself stays the plain
   `CGO_ENABLED=0` binary outside proot.
 
+- **Releases are signed with one Ed25519 key (2026-09-28).** `checksums.txt.sig` is the raw
+  signature over `checksums.txt`, made by GoReleaser with `openssl pkeyutl` from the
+  `ORB_RELEASE_SIGNING_KEY` secret (backup: the owner's `~/.config/orb/release-signing.pem`).
+  `orb update` and `host.update` verify it against `releaseKey` in the binary before trusting any
+  checksum. Rotating the key means a release signed by the old key that ships the new one.
+  The Android APK needs no more: Android itself refuses an update signed by another key.
 - **Windows CI is blocking again (owner decision of 2026-09-22, resolved 2026-09-24).** The first
   real Windows run failed 179 tests in 31 packages; it ran informationally while v0.10.0 shipped
   linux/darwin artifacts. Three parity rounds turned it green on 04a430a, so the job blocks every

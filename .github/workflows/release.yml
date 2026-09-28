@@ -123,6 +123,12 @@ jobs:
           done
           echo "timed out waiting for CI" >&2
           exit 1
+      - name: Load the release signing key
+        env:
+          ORB_RELEASE_SIGNING_KEY: ${{ secrets.ORB_RELEASE_SIGNING_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "${ORB_RELEASE_SIGNING_KEY}" > "${RUNNER_TEMP}/release-signing.pem"
       - name: Publish verified release artifacts
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
@@ -130,6 +136,7 @@ jobs:
           args: release --clean --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORB_SIGNING_KEY: ${{ runner.temp }}/release-signing.pem
       - name: Attach the Android app
         env:
           GH_TOKEN: ${{ github.token }}

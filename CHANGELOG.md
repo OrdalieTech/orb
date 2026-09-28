@@ -5,6 +5,9 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Releases are signed: `checksums.txt.sig` is an Ed25519 signature over `checksums.txt`, and
+  `orb update` (and a paired phone's update of a machine) refuses a release that Orb's key,
+  built into the binary, does not vouch for. HTTPS to GitHub alone no longer decides.
 - `orb storage delete <session>` deletes a stored conversation by the ID `orb storage sessions`
   lists. In the Android app, the long-press sheet of a phone session deletes it; the open one is
   left for a new session first.

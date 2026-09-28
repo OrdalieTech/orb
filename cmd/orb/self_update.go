@@ -10,7 +10,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -71,7 +73,21 @@ const (
 var updateRevealStages = [...]int{0, 6, 12, 18, 24, 30, 36, 41, 45, 47}
 
 // selfUpdater injects every effect the upgrade has, so a test never resolves or overwrites the binary running it.
+// releaseKey signs every release's checksums.txt (checksums.txt.sig, raw Ed25519): an update
+// trusts no file GitHub serves unless this key vouches for it. The private half is the
+// ORB_RELEASE_SIGNING_KEY secret, with a backup at ~/.config/orb/release-signing.pem.
+var releaseKey = ed25519.PublicKey(mustBase64("/xaew4KpYjMRLnDkPbbkbUgToYycCEv5Ur5LWpfLMTc="))
+
+func mustBase64(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
 type selfUpdater struct {
+	key            ed25519.PublicKey
 	currentVersion string
 	releaseURL     string
 	releaseBase    string
@@ -86,6 +102,7 @@ type selfUpdater struct {
 
 func newSelfUpdater(currentVersion string, offline bool) selfUpdater {
 	return selfUpdater{
+		key:            releaseKey,
 		currentVersion: currentVersion,
 		releaseURL:     latestReleaseURL,
 		releaseBase:    releaseDownloadBase,
@@ -478,6 +495,13 @@ func (updater selfUpdater) downloadTarget(ctx context.Context, tag, goos, goarch
 	checksums, err := updater.get(ctx, base+"checksums.txt", selfUpdateMaxChecksums)
 	if err != nil {
 		return nil, err
+	}
+	signature, err := updater.get(ctx, base+"checksums.txt.sig", ed25519.SignatureSize)
+	if err != nil {
+		return nil, err
+	}
+	if !ed25519.Verify(updater.key, checksums, signature) {
+		return nil, errors.New("checksums.txt is not signed by Orb's release key")
 	}
 	want, err := checksumFor(string(checksums), name)
 	if err != nil {
