@@ -152,7 +152,8 @@ fun PromptBox(
         ) {
             Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(if (session?.remote == true) Ink.Blue else p.fg)); Spacer(Modifier.width(7.dp))
-                T((session?.where ?: "this phone").uppercase() + " ▾", size = 13.sp, bold = true, lines = 1)
+                // The model matters more here: a long machine name gives way to it.
+                T((session?.where ?: "this phone").let { if (it.length > 12) it.take(11) + "…" else it }.uppercase() + " ▾", size = 13.sp, bold = true, lines = 1)
             }
             Row(Modifier.weight(1f).press(onClick = onModel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 T((session?.model?.substringAfter('/')?.ifEmpty { null } ?: "model") + " ▾", Modifier.weight(1f, fill = false), size = 13.sp, bold = true, color = p.mute, lines = 1)
