@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The Android app's Bridge screen shows each paired machine's Orb version, and offers to update
+  it, as soon as it opens; before, both appeared only once Home had refreshed.
+- The Android release attaches only the app and its sha256: the APK signer no longer adds an
+  `.idsig` file, which is for incremental installs from a store.
+
 ## [0.13.0] - 2026-09-27
 
 Orb on Android, and Bridge made for servers and phones. The Android app runs the full Orb core on

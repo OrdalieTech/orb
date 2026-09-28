@@ -12,8 +12,9 @@ name="orb_${version}_android_arm64.apk"
 
 "$here/gradlew" -p "$here" assembleRelease -PorbVersion="$version" --console=plain -q
 mkdir -p "$out"
-# v3 only (Android 9+; the app needs 10): v1 and v2 would have to be signed by the old key too.
-"$tools/apksigner" sign --v1-signing-enabled false --v2-signing-enabled false --ks "$keystore" --ks-pass "pass:$password" --ks-key-alias orb \
+# v3 only (Android 9+; the app needs 10): v1 and v2 would have to be signed by the old key too,
+# and v4 is a separate .idsig file for incremental installs from a store, which this is not.
+"$tools/apksigner" sign --v1-signing-enabled false --v2-signing-enabled false --v4-signing-enabled false --ks "$keystore" --ks-pass "pass:$password" --ks-key-alias orb \
 	--lineage "$here/signing/lineage" --rotation-min-sdk-version 28 \
 	--out "$out/$name" "$here/app/build/outputs/apk/release/app-release-unsigned.apk"
 "$tools/apksigner" verify --print-certs "$out/$name" | grep -q "CN=Orb, O=Ordalie"

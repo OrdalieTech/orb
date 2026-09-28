@@ -63,6 +63,8 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
     val b = c.rt.bridge
     val context = LocalContext.current
     Header("bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back, big = true)
+    // Each device's thread list carries its name and Orb version, which its row and update show.
+    LaunchedEffect(b.peers.size) { c.rt.reload() }
     if (c.rt.acting) PatternBlue { c.rt.local?.abort() }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         item {
