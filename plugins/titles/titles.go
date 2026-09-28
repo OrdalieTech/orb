@@ -4,8 +4,10 @@
 package titles
 
 import (
+	"cmp"
 	"context"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -72,10 +74,27 @@ func firstExchange(messages []any) string {
 	return "Request:\n" + clip(request, 2000) + "\n\nAnswer:\n" + clip(answer, 1500)
 }
 
+// ask names the exchange with the session's model or, when that model only runs whole
+// conversations (Claude through Claude Code), with the cheapest other model signed in.
 func ask(ctx context.Context, registry extensions.ModelRegistry, model *ai.Model, exchange string) string {
 	if registry == nil {
 		return ""
 	}
+	if title, ok := askWith(ctx, registry, model, exchange); ok {
+		return title
+	}
+	others := slices.DeleteFunc(registry.Available(nil), func(m ai.Model) bool { return m.Provider == model.Provider })
+	slices.SortStableFunc(others, func(a, b ai.Model) int { return cmp.Compare(a.Cost.Input+a.Cost.Output, b.Cost.Input+b.Cost.Output) })
+	for _, other := range others[:min(len(others), 3)] {
+		if title, ok := askWith(ctx, registry, &other, exchange); ok {
+			return title
+		}
+	}
+	return ""
+}
+
+// askWith reports false when the model could not be asked at all, so another can be.
+func askWith(ctx context.Context, registry extensions.ModelRegistry, model *ai.Model, exchange string) (string, bool) {
 	request := *model
 	options := &ai.SimpleStreamOptions{}
 	if resolved, err := registry.ResolveProviderAuth(ctx, string(model.Provider), nil); err == nil && resolved != nil {
@@ -99,13 +118,14 @@ func ask(ctx context.Context, registry extensions.ModelRegistry, model *ai.Model
 	system := prompt
 	stream, err := registry.StreamSimple(ctx, &request, ai.Context{SystemPrompt: &system, Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText(exchange), Timestamp: time.Now().UnixMilli()}}}, options)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	reply, err := ai.Collect(stream)
 	if err != nil || reply == nil || reply.StopReason == ai.StopReasonError || reply.StopReason == ai.StopReasonAborted {
-		return ""
+		return "", false
 	}
-	return tidy(ai.ContentText(reply.Content))
+	title := tidy(ai.ContentText(reply.Content))
+	return title, title != ""
 }
 
 func userText(content ai.UserContent) string {
