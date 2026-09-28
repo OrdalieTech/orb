@@ -5,6 +5,12 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-28
+
+A small follow-up to 0.13.0 that also exercises the new update paths: the Android app updates
+itself to it from Home, and a paired machine updates to it from the app's Bridge screen. The
+compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
+
 - The Android app's Bridge screen shows each paired machine's Orb version, and offers to update
   it, as soon as it opens; before, both appeared only once Home had refreshed.
 - The Android release attaches only the app and its sha256: the APK signer no longer adds an
