@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -63,6 +64,7 @@ type release struct {
 	tag                                     string // "" serves v0.5.0
 	archive                                 []byte // nil serves a LICENSE + orb archive
 	checksums                               string // "" serves the correct line for the archive
+	forged                                  bool   // sign checksums.txt with a key that is not Orb's
 	metadataHits, checksumHits, archiveHits int
 }
 
@@ -97,8 +99,15 @@ func updaterFor(t *testing.T, currentVersion string, state *release) selfUpdater
 		sum := sha256.Sum256(state.archive)
 		state.checksums = hex.EncodeToString(sum[:]) + "  " + asset + "\n"
 	}
+	public, private, _ := ed25519.GenerateKey(nil)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
+		case "/download/" + state.tag + "/checksums.txt.sig":
+			signer := private
+			if state.forged {
+				_, signer, _ = ed25519.GenerateKey(nil)
+			}
+			_, _ = writer.Write(ed25519.Sign(signer, []byte(state.checksums)))
 		case "/releases/latest":
 			state.metadataHits++
 			_, _ = io.WriteString(writer, `{"tag_name":"`+state.tag+`"}`)
@@ -114,6 +123,7 @@ func updaterFor(t *testing.T, currentVersion string, state *release) selfUpdater
 	}))
 	t.Cleanup(server.Close)
 	return selfUpdater{
+		key:            public,
 		currentVersion: currentVersion,
 		releaseURL:     server.URL + "/releases/latest",
 		releaseBase:    server.URL + "/download",
@@ -373,6 +383,7 @@ func TestSelfUpdateRejectsBadReleasesAndRollsBack(t *testing.T) {
 		wantErr string
 	}{
 		{name: "checksum mismatch", state: release{checksums: line(strings.Repeat("ab", 32), asset)}, wantErr: "failed its sha256 checksum"},
+		{name: "signed by another key", state: release{forged: true}, wantErr: "not signed by Orb's release key"},
 		{name: "duplicate checksum line", state: release{checksums: line(hex.EncodeToString(good[:]), asset) + line(strings.Repeat("ab", 32), asset)}, wantErr: "more than once"},
 		{name: "malformed checksum line", state: release{checksums: line("not-a-digest", asset)}, wantErr: "malformed sha256"},
 		{name: "no checksum line for the asset", state: release{checksums: line(strings.Repeat("ab", 32), "orb_0.5.0_source.tar.gz")}, wantErr: "no sha256"},
