@@ -78,6 +78,10 @@ class Transcript {
         retry = next.takeUnless { alarm }
     }
 
+    /** A `!command` the owner ran: live until [settle] gives it its output. */
+    fun shell(command: String): Tool = Tool(key(), "bash", command.lineSequence().first().take(120), command).also { items += it }
+    fun settle(t: Tool, output: String, code: Int) { t.output = output.takeLast(OUTPUT); t.result = summary("bash", t.output); t.failed = code != 0; t.live = false }
+
     fun load(messages: JSONArray) {
         replaying = true
         last = messages.length() - 1

@@ -42,7 +42,9 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
                 runCatching {
                     p.inputStream.bufferedReader().forEachLine { line ->
                         val o = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                        pending.remove(o.optString("id"))?.complete(o) ?: events.tryEmit(o)
+                        // Only an answer resolves a call: RPC streams progress events (bash output) under the call's id too.
+                        val answer = o.optString("type").let { it.isEmpty() || it == "response" }
+                        (if (answer) pending.remove(o.optString("id")) else null)?.complete(o) ?: events.tryEmit(o)
                     }
                 }
                 runCatching { p.waitFor() }
