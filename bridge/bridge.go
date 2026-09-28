@@ -616,7 +616,7 @@ func permission(method string) string {
 	switch method {
 	case "inspect":
 		return "instance.inspect"
-	case "session.list", "session.new", "session.switch", "session.fork", "session.model":
+	case "session.list", "session.new", "session.switch", "session.fork", "session.model", "session.name":
 		return "instance.session.manage"
 	default:
 		return "instance." + method

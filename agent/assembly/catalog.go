@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/plugins/subagents"
 	"github.com/OrdalieTech/orb/plugins/tasks"
+	"github.com/OrdalieTech/orb/plugins/titles"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/plugins/usage/footer"
 	"github.com/OrdalieTech/orb/plugins/websearch"
@@ -36,13 +37,14 @@ type CatalogOptions struct {
 	Bash jobs.Bash
 }
 
-var names = []string{"tasks", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
 	"questions":          "Ask the user questions with choices and custom answers",
 	"bridge":             "Pair devices and control explicitly shared Orb instances",
 	"bridge-agent-calls": "Allow granted agent-initiated calls through a Bridge attachment",
 	"tasks":              "Live session task list and todo tool",
+	"titles":             "Name each session after its first exchange",
 	"websearch":          "Web search and readable page fetching",
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
 	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
@@ -92,6 +94,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions,
 		"questions":      questions.Extension(),
 		"tasks":          tasks.Extension(),
+		"titles":         titles.Extension(),
 		"websearch":      websearch.Extension(options.HTTPClient),
 		"subagents":      subagents.Extension(options.StreamFn, inheritPolicy, options.Settings),
 		"jobs":           jobs.Extension(options.Bash),

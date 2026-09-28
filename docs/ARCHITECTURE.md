@@ -49,6 +49,7 @@ orb/
 │   ├── usage/                quota client + cache; ai/auth and stdlib only
 │   │   └── footer/           optional extension status display
 │   ├── tasks/                task tool and its optional TUI rendering
+│   ├── titles/               names a session after its first exchange, once
 │   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
 │   ├── subagents/            child agents and native CLI execution
 │   ├── permissions/          policy, hooks and configuration UI
