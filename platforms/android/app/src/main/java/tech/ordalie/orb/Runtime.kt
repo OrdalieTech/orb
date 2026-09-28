@@ -71,7 +71,9 @@ class Runtime(context: Context) {
     }
 
     // Looked up by the Orb a session follows now: a reopened thread moves to a new one.
-    fun open(i: Instance): RemoteSession = opened(i.id) ?: RemoteSession(scope, bridge, i.peer, i.id, i.cwd.substringAfterLast('/').ifEmpty { i.alias }).also { remotes[i.id] = it }
+    // A remote session is named by where it runs, the device; its folder is in its title until it has one.
+    fun open(i: Instance): RemoteSession = opened(i.id) ?: RemoteSession(scope, bridge, i.peer, i.id,
+        bridge.peers.firstOrNull { it.id == i.peer }?.name ?: i.cwd.substringAfterLast('/').ifEmpty { i.alias }).also { remotes[i.id] = it }
     /** What starting Orb on a device is doing ("starting Orb on lab-3…", or why it failed); empty when idle. */
     var launching by mutableStateOf("")
     fun opened(instance: String): RemoteSession? = remotes.values.firstOrNull { it.instance == instance }

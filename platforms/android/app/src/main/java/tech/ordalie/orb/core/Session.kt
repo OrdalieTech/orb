@@ -322,7 +322,10 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
             }
         } ?: run { asked = ""; questions = null; if (ask != null) ask = null }
         if (!watched) { cursor = ""; return 5000 } // the transcript is fetched again when a screen shows it
-        if (pending.isNotEmpty()) remote("operations.get", JSONObject().put("instance_id", instance).put("operation_id", pending)).optJSONObject("result")?.let { status = listOf(it.optString("status"), it.optString("error")).filter(String::isNotEmpty).joinToString(" · ") }
+        if (pending.isNotEmpty()) remote("operations.get", JSONObject().put("instance_id", instance).put("operation_id", pending)).optJSONObject("result")?.let {
+            // Only what is still going or went wrong is worth a line; a done call says nothing.
+            status = if (it.optString("status") == "succeeded") "" else listOf(it.optString("status"), it.optString("error")).filter(String::isNotEmpty).joinToString(" · ")
+        }
         if (cursor.isEmpty()) snapshot() else events()
         return if (busy) 350 else 900
     }
