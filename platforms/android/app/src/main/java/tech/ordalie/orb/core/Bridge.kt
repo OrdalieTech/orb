@@ -164,7 +164,10 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         val peer = inv.optString("peer_id")
         if (inv.optLong("expires") * 1000 < System.currentTimeMillis()) return "this invitation expired; create a new one"
         joining = "claiming"
-        call("join", inv).optJSONObject("error")?.let { joining = ""; return it.optString("message") }
+        call("join", inv).optJSONObject("error")?.let {
+            joining = ""
+            return if ("identity_conflict" in listOf(it.optString("code"), it.optString("message"))) "another device already used this code: ask for a new one" else it.optString("message")
+        }
         joining = "waiting"
         while (System.currentTimeMillis() < inv.optLong("expires") * 1000 && joining == "waiting") {
             val r = remote(peer, "pair.status", JSONObject().put("invitation_id", inv.optString("invitation_id")))
