@@ -53,6 +53,8 @@ type Invitation struct {
 type invitationState struct {
 	Invitation
 	Hash string `json:"token_hash"`
+	// Contested: a second device presented the code. Someone else saw it, so it is never approved.
+	Contested bool `json:"contested,omitempty"`
 }
 type state struct {
 	Version     int                        `json:"version"`
@@ -487,7 +489,7 @@ func (b *Bridge) Invite(grants []Grant) (Invitation, error) {
 	inv := Invitation{ID: protocol.NewID(), PeerID: b.PeerID(), Token: token, Expires: now + 600, Grants: grants, Status: "pending"}
 	stored := inv
 	stored.Token = ""
-	b.state.Invitations[inv.ID] = invitationState{stored, hash(token)}
+	b.state.Invitations[inv.ID] = invitationState{Invitation: stored, Hash: hash(token)}
 	if err := b.save(); err != nil {
 		return Invitation{}, err
 	}
@@ -504,6 +506,9 @@ func (b *Bridge) Claim(peer, id, token string, locators ...string) (Invitation, 
 		return Invitation{}, Fail("unauthorized")
 	}
 	if i.Claimant != "" && i.Claimant != peer {
+		i.Contested = true
+		b.state.Invitations[id] = i
+		_ = b.save()
 		return Invitation{}, Fail("identity_conflict")
 	}
 	if len(locators) > 0 {
@@ -543,6 +548,9 @@ func (b *Bridge) Approve(id, claimant string) error {
 	}
 	if i.Expires < time.Now().Unix() {
 		return Fail("unauthorized")
+	}
+	if i.Contested {
+		return Fail("identity_conflict")
 	}
 	if len(b.state.Grants)+len(i.Grants) > 1024 {
 		return Fail("resource_exhausted")

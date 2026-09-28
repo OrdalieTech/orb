@@ -472,7 +472,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
-		if e = trustBridgePeer(ctx, client, inv.PeerID); e != nil {
+		if e = trustBridgePeer(ctx, client, inv.PeerID, false); e != nil {
 			return e
 		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
@@ -570,7 +570,7 @@ func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer str
 			if !instance.Available {
 				continue
 			}
-			label := instance.Alias
+			label := peerText(instance.Alias, false)
 			if label == "" {
 				label = "Conversation"
 			}
@@ -615,7 +615,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 				name = entry.ID
 			}
 			detail := "Cached · " + entry.RefreshedAt.Format(time.RFC822) + " · read-only until connected"
-			rows = append(rows, tui.GridRow{Value: "cached:" + string(bridge.JSON([2]string{entry.Namespace, entry.ID})), Cells: []string{th.FG("muted", tui.StripANSI(name))}, Detail: []string{detail}})
+			rows = append(rows, tui.GridRow{Value: "cached:" + string(bridge.JSON([2]string{entry.Namespace, entry.ID})), Cells: []string{th.FG("muted", peerText(name, false))}, Detail: []string{detail}})
 		}
 		return rows
 	}
@@ -938,7 +938,7 @@ func openBridgeFolder(ctx context.Context, ui extensions.UI, profile, peer strin
 	}
 	choices := []string{}
 	for _, f := range folders {
-		choices = append(choices, fmt.Sprintf("%s · %d thread%s", f, count[f], map[bool]string{true: "", false: "s"}[count[f] == 1]))
+		choices = append(choices, fmt.Sprintf("%s · %d thread%s", peerText(f, false), count[f], map[bool]string{true: "", false: "s"}[count[f] == 1]))
 	}
 	choices = append(choices, "Other folder…")
 	choice, ok, err := ui.Select(ctx, "Open a folder on "+bridgeDeviceLabel(peer), choices, nil)
@@ -957,11 +957,11 @@ func openBridgeFolder(ctx context.Context, ui extensions.UI, profile, peer strin
 		if t.CWD != folder {
 			continue
 		}
-		title := cmp.Or(t.Name, strings.Join(strings.Fields(t.First), " "), t.ID)
+		title := peerText(cmp.Or(t.Name, strings.Join(strings.Fields(t.First), " "), t.ID), false)
 		options = append(options, tui.TruncateToWidth(title, 70, "…", false)+" · "+time.UnixMilli(t.Modified).Format("Jan 2 15:04"))
 		ids = append(ids, t.ID)
 	}
-	choice, ok, err = ui.Select(ctx, folder, options, nil)
+	choice, ok, err = ui.Select(ctx, peerText(folder, false), options, nil)
 	if err != nil || !ok {
 		return "", err
 	}
@@ -969,7 +969,7 @@ func openBridgeFolder(ctx context.Context, ui extensions.UI, profile, peer strin
 	if id := ids[slices.Index(options, choice)]; id != "" {
 		params = map[string]string{"session_id": id}
 	}
-	ui.Notify("Starting Orb in "+folder+"…", extensions.NotifyInfo)
+	ui.Notify("Starting Orb in "+peerText(folder, false)+"…", extensions.NotifyInfo)
 	var launched struct {
 		InstanceID string `json:"instance_id"`
 	}

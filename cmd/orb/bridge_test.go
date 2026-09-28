@@ -856,10 +856,15 @@ func TestBridgeJoinTrustsTheInviterOnceItApproves(t *testing.T) {
 		return nil, bridge.Fail("not_found")
 	})
 	var out, errs bytes.Buffer
-	if code := runBridgeCommand(t.Context(), []string{"join", bridgeInvitationCode(inv)}, cliStreams{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errs}); code != 0 {
+	if code := runBridgeCommand(t.Context(), []string{"join", bridgeInvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("\n"), Stdout: &out, Stderr: &errs}); code == 0 || polls != 0 {
+		t.Fatalf("joined without a yes: %s", out.String())
+	}
+	out.Reset()
+	if code := runBridgeCommand(t.Context(), []string{"join", bridgeInvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("y\n"), Stdout: &out, Stderr: &errs}); code != 0 {
 		t.Fatalf("join: %s", errs.String())
 	}
-	if polls != 2 || !strings.Contains(granted, inv.PeerID) || !strings.Contains(out.String(), "Paired with "+inv.PeerID) {
+	// The inviter gets the conversations back, never the machine: that is the owner's own call.
+	if polls != 2 || !strings.Contains(granted, inv.PeerID) || strings.Contains(granted, "host.launch") || !strings.Contains(out.String(), "Paired with "+inv.PeerID) {
 		t.Fatalf("polls %d granted %q output %s", polls, granted, out.String())
 	}
 }
@@ -1390,5 +1395,38 @@ func TestKeepaliveClosesAPeerThatStoppedAnswering(t *testing.T) {
 		}
 		_ = client.Close()
 		_ = server.Close()
+	}
+}
+
+func TestAnInviterBecomesAKnownPeerOnlyOnceTrusted(t *testing.T) {
+	b, err := bridge.Open(&testBridgeStore{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	inviter, err := b.Invite(nil) // any valid PeerID stands in for the inviter
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := inviter.PeerID
+	s := &bridgeService{b: b, joining: map[string]string{peer: "tailcat-locator"}}
+	if locator, _ := b.PeerLocator(peer); locator != "" {
+		t.Fatalf("known before trust: %q", locator)
+	}
+	if _, err = s.admin(t.Context(), "grant", bridge.JSON(conversationBridgeGrant(peer))); err != nil {
+		t.Fatal(err)
+	}
+	if locator, _ := b.PeerLocator(peer); locator != "tailcat-locator" || len(s.joining) != 0 {
+		t.Fatalf("after trust: locator %q, joining %v", locator, s.joining)
+	}
+}
+
+func TestPeerTextDrawsNoEscapes(t *testing.T) {
+	in := "a\x1b]52;c;cGF3bmVk\x07b\x1b]8;;https://evil\x1b\\c\u009b31md\ne\tf"
+	if got := peerText(in, false); got != "abc31md e f" { // a lone C1 CSI loses its byte; what followed is plain text
+		t.Fatalf("one line: %q", got)
+	}
+	if got := peerText(in, true); got != "abc31md\ne\tf" {
+		t.Fatalf("transcript: %q", got)
 	}
 }

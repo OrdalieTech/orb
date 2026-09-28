@@ -3,9 +3,14 @@
 set -eu
 
 REPO="OrdalieTech/orb"
-INSTALL_DIR="${ORB_INSTALL_DIR:-$HOME/.local/bin}"
-
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
+# Termux calls itself Linux but is Android: its build keeps Android's DNS, and it installs to $PREFIX.
+if [ -n "${TERMUX_VERSION:-}" ]; then
+  os=android
+  INSTALL_DIR="${ORB_INSTALL_DIR:-$PREFIX/bin}"
+fi
+INSTALL_DIR="${ORB_INSTALL_DIR:-${INSTALL_DIR:-$HOME/.local/bin}}"
+
 arch=$(uname -m)
 case "$arch" in
   x86_64) arch=amd64 ;;
@@ -13,7 +18,7 @@ case "$arch" in
   *) echo "unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 case "$os" in
-  linux | darwin) ;;
+  linux | darwin | android) ;;
   *) echo "unsupported OS: $os (Windows binaries are not released yet; see docs/deployments.md)" >&2; exit 1 ;;
 esac
 

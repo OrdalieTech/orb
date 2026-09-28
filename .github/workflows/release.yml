@@ -88,20 +88,26 @@ jobs:
           sha256sum "${source_archive}" > /tmp/orb-source.sha256
       - name: Build the Android app
         # Built and signed before anything is published: a release without its app never ships.
-        env:
-          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        # The build runs Gradle and its plugins, so it gets no secrets; signing is its own step.
         run: |
           set -euo pipefail
           export JAVA_HOME="${JAVA_HOME_17_X64}"
           sdkmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           "${sdkmanager}" --licenses < <(yes) > /dev/null # a pipe from yes would fail pipefail on SIGPIPE
           "${sdkmanager}" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
+          platforms/android/release.sh build "${GITHUB_REF_NAME#v}"
+          ./platforms/android/gradlew -p platforms/android --stop > /dev/null
+      - name: Sign the Android app
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
           keys="$(mktemp -d)"
           trap 'rm -rf "${keys}"' EXIT
           printf '%s' "${ANDROID_KEYSTORE}" | base64 -d > "${keys}/release.jks"
           printf '%s' "${ANDROID_KEYSTORE_PASSWORD}" > "${keys}/release.pass"
-          platforms/android/release.sh "${GITHUB_REF_NAME#v}" "${keys}/release.jks" "${keys}/release.pass" "${RUNNER_TEMP}/android"
+          platforms/android/release.sh sign "${GITHUB_REF_NAME#v}" "${keys}/release.jks" "${keys}/release.pass" "${RUNNER_TEMP}/android"
       - name: Require green CI for tagged commit
         env:
           GH_TOKEN: ${{ github.token }}

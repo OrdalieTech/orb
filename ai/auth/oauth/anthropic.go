@@ -86,6 +86,30 @@ func NewAnthropic(options *AnthropicOptions) *Anthropic {
 	return &Anthropic{options: configured}
 }
 
+// listenIPv6Loopback also holds [::1] on the callback port when the redirect names "localhost",
+// which a browser may resolve to either loopback address. The state carries the PKCE verifier
+// (as upstream), so a local program listening there instead would receive all it needs to sign
+// in as the owner. A machine without IPv6 has no [::1] to hold; where [::1] works but the port is
+// taken there, another program holds it and the sign-in does not start.
+func (flow *Anthropic) listenIPv6Loopback(first net.Listener) (net.Listener, error) {
+	if flow.options.CallbackHost != "127.0.0.1" || !strings.Contains(flow.options.RedirectURI, "//localhost:") {
+		return nil, nil
+	}
+	address := net.JoinHostPort("::1", strconv.Itoa(flow.options.CallbackPort))
+	other, err := flow.options.Listen("tcp", address)
+	if err == nil {
+		if other == first { // a test's single listener
+			return nil, nil
+		}
+		return other, nil
+	}
+	if free, freeErr := flow.options.Listen("tcp", "[::1]:0"); freeErr == nil {
+		_ = free.Close()
+		return nil, fmt.Errorf("another program is listening on %s, where the sign-in may return; close it and try again", address)
+	}
+	return nil, nil
+}
+
 func (*Anthropic) Name() string { return "Anthropic (Claude Pro/Max)" }
 
 func (flow *Anthropic) Login(ctx context.Context, interaction auth.AuthInteraction) (*auth.Credential, error) {
@@ -98,24 +122,35 @@ func (flow *Anthropic) Login(ctx context.Context, interaction auth.AuthInteracti
 		return nil, err
 	}
 	defer func() { _ = listener.Close() }()
+	listeners := []net.Listener{listener}
+	if other, err := flow.listenIPv6Loopback(listener); err != nil {
+		return nil, err
+	} else if other != nil {
+		defer func() { _ = other.Close() }()
+		listeners = append(listeners, other)
+	}
 
 	wait := make(chan callbackResult, 1)
 	server := &http.Server{Handler: callbackHandler(verifier, wait)}
-	serveDone := make(chan error, 1)
-	go func() {
-		err := server.Serve(listener)
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
-		}
-		serveDone <- err
-	}()
+	serveDone := make(chan error, len(listeners))
+	for _, l := range listeners {
+		go func() {
+			err := server.Serve(l)
+			if errors.Is(err, http.ErrServerClosed) {
+				err = nil
+			}
+			serveDone <- err
+		}()
+	}
 	defer func() {
 		// Let the browser receive the callback response before closing its connection.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 		_ = server.Close()
-		<-serveDone
+		for range listeners {
+			<-serveDone
+		}
 	}()
 
 	authorizeURL, err := flow.authorizeURL(verifier, challenge)
