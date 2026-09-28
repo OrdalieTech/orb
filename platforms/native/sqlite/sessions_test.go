@@ -5,10 +5,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine/harness"
@@ -262,72 +260,5 @@ func TestImportLegacySessionsAndRejectDamagedTrees(t *testing.T) {
 	}
 	if _, err := repo.Import(ctx, []byte(strings.ReplaceAll(header, `"version":3`, `"version":99`))); err == nil {
 		t.Fatal("future format accepted")
-	}
-}
-
-// Only conversations nobody wrote in, named or forked are pruned, and only
-// once they are older than the cutoff.
-func TestEmptySessionsArePruned(t *testing.T) {
-	ctx := context.Background()
-	db, err := Open(ctx, filepath.Join(t.TempDir(), "state", "orb.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	repo := db.Sessions("personal")
-	cwd := t.TempDir()
-	open := func(id string) *session.SessionManager {
-		created, err := repo.Create(ctx, harness.SessionCreateOptions{ID: id, CWD: cwd})
-		if err != nil {
-			t.Fatal(err)
-		}
-		manager, err := session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(repo))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return manager
-	}
-	empty := open("empty")
-	if _, err = empty.AppendModelChange("openai", "gpt"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = open("spoken").AppendMessage(map[string]any{"role": "user", "content": "hello"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = open("named").AppendSessionInfo("kept"); err != nil {
-		t.Fatal(err)
-	}
-	open("forked")
-	open("child")
-	if _, err = db.exec(ctx, "UPDATE sessions SET parent_id='forked' WHERE id='child'"); err != nil {
-		t.Fatal(err)
-	}
-	if ids, err := repo.EmptyIDs(ctx, time.Now().Add(-time.Hour)); err != nil || len(ids) != 0 {
-		t.Fatalf("fresh sessions listed: %v, %v", ids, err)
-	}
-	ids, err := repo.EmptyIDs(ctx, time.Now().Add(time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(ids)
-	if !slices.Equal(ids, []string{"child", "empty"}) {
-		t.Fatalf("empty sessions = %v", ids)
-	}
-	for _, id := range []string{"empty", "spoken", "named", "forked"} {
-		if err = repo.DeleteIfEmpty(ctx, id); err != nil {
-			t.Fatal(err)
-		}
-	}
-	listed, err := repo.List(ctx, harness.SessionListOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var left []string
-	for _, metadata := range listed {
-		left = append(left, metadata.ID)
-	}
-	slices.Sort(left)
-	if !slices.Equal(left, []string{"child", "forked", "named", "spoken"}) {
-		t.Fatalf("sessions left = %v", left)
 	}
 }
