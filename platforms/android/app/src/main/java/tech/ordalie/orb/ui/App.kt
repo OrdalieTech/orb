@@ -110,7 +110,7 @@ class Nav {
 }
 
 /** A name to change, rising from the bottom with the current one ready to edit. */
-class Rename(val title: String, val apply: (String) -> Unit)
+class Rename(val title: String, val delete: (() -> Unit)? = null, val apply: (String) -> Unit)
 
 /** A choice list rising from the bottom — models, instances, the menu all use it. */
 class Picker(val title: String, val options: List<String>, val selected: String = "", val pick: (String) -> Unit)
@@ -305,7 +305,8 @@ fun AnimatedVisibilityScope.RenameSheet(r: Rename, dismiss: () -> Unit) = Box(Mo
         Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicTextField(value, { value = it }, Modifier.weight(1f).focusRequester(focus), textStyle = mono(18.sp, p.fg), singleLine = true, cursorBrush = SolidColor(p.fg),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { done() }))
-            Spacer(Modifier.width(12.dp)); Btn("save", inverted = true) { done() }
+            r.delete?.let { Spacer(Modifier.width(8.dp)); Btn("delete", color = Ink.Rupture) { it(); dismiss() } }
+            Spacer(Modifier.width(8.dp)); Btn("save", inverted = true) { done() }
         }
     }
 }
@@ -330,7 +331,7 @@ fun ColumnScope.Home(c: Ctx) {
         rt.history.forEach { past ->
             val on = local != null && past.id == local.id
             add(Entry("p:" + past.id, past.title, "", past.modified, on && local!!.busy, on && local!!.ask != null, current = on,
-                rename = { c.rename(Rename(past.title) { name -> local?.rename(past.id, name); rt.scope.launch { kotlinx.coroutines.delay(800); rt.reload() } }) }) {
+                rename = { c.rename(Rename(past.title, delete = { rt.forget(past.id) }) { name -> local?.rename(past.id, name); rt.scope.launch { kotlinx.coroutines.delay(800); rt.reload() } }) }) {
                 local?.let { l -> l.switchTo(past.id); c.nav.go(Screen.Chat(l)) }
             })
         }

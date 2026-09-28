@@ -1043,4 +1043,15 @@ func TestStorageSessionsListsStoredConversationsAsJSONLines(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &row); err != nil || row.CWD != "/work" || row.Messages != 1 || row.First != "hello phone" || row.Modified == 0 || row.ID == "" {
 		t.Fatalf("row %+v from %q: %v", row, out.String(), err)
 	}
+	// Deleting by that ID removes it; an ID nothing matches is an error, not a silent success.
+	if runNativeCLI(t.Context(), []string{"storage", "delete", row.ID}, cliStreams{Stdout: io.Discard, Stderr: &errs}) != 0 {
+		t.Fatal("delete:", errs.String())
+	}
+	out.Reset()
+	if runNativeCLI(t.Context(), []string{"storage", "sessions"}, cliStreams{Stdout: &out, Stderr: &errs}) != 0 || out.Len() != 0 {
+		t.Fatalf("after delete: %q %s", out.String(), errs.String())
+	}
+	if runNativeCLI(t.Context(), []string{"storage", "delete", row.ID}, cliStreams{Stdout: io.Discard, Stderr: io.Discard}) == 0 {
+		t.Fatal("deleted a conversation twice")
+	}
 }

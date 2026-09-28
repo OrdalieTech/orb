@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -431,6 +432,20 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 			}
 			return 0
 		}
+		if len(argv) == 3 && argv[1] == "delete" {
+			// A stored conversation, by the ID `orb storage sessions` lists; the Android app deletes through it.
+			rows, err := state.sessions().ListInfo(ctx, "", nil)
+			if err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+			if !slices.ContainsFunc(rows, func(row session.SessionInfo) bool { return row.ID == argv[2] }) {
+				return reportCLIError(streams.Stderr, fmt.Errorf("no stored conversation %s", argv[2]))
+			}
+			if err = state.sessions().Delete(ctx, harness.SessionMetadata{ID: argv[2]}); err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+			return 0
+		}
 		if len(argv) == 3 && argv[1] == "import" {
 			stored, err := state.sessions().OpenPath(ctx, argv[2])
 			if err != nil {
@@ -454,7 +469,7 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 			_, _ = fmt.Fprintln(streams.Stdout, "Exported to "+argv[3])
 			return 0
 		}
-		return reportCLIError(streams.Stderr, errors.New("usage: orb storage migrate [legacy-session-dir...] | sessions | import <jsonl> | export <session> <jsonl> | backup <path> | restore <backup> | config import|export <name.json> <path>"))
+		return reportCLIError(streams.Stderr, errors.New("usage: orb storage migrate [legacy-session-dir...] | sessions | delete <session> | import <jsonl> | export <session> <jsonl> | backup <path> | restore <backup> | config import|export <name.json> <path>"))
 	}
 	return runCLI(context.WithValue(ctx, nativeStateKey{}, state), argv, streams)
 }
