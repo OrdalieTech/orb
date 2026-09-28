@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -339,7 +338,6 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 		return reportCLIError(streams.Stderr, err)
 	}
 	defer func() { _ = state.close() }()
-	state.pruneEmpty(ctx)
 	if len(argv) > 0 && argv[0] == "storage" {
 		if migrate {
 			_, _ = fmt.Fprintln(streams.Stdout, "Migration complete. Original files are retained; use this Orb version for this state root.")
@@ -586,46 +584,19 @@ func (state *nativeState) claimSession(manager *session.SessionManager) (func(),
 			return nil, errors.New("conversation is already open in another Orb process")
 		}
 	}
-	previous, previousID := state.sessionLock, state.sessionID
+	previous := state.sessionLock
 	state.sessionID, state.sessionLock = id, lock
 	return func() {
 		if previous != nil {
 			_ = previous.Close()
-			state.discardIfEmpty(previousID)
 		}
 	}, nil
 }
 func (state *nativeState) close() error {
 	if state.sessionLock != nil {
 		_ = state.sessionLock.Close()
-		state.discardIfEmpty(state.sessionID)
 	}
 	return state.db.Close()
-}
-
-// discardIfEmpty drops a conversation left without a message, unless an Orb
-// holds it open.
-func (state *nativeState) discardIfEmpty(id string) {
-	if id == "" {
-		return
-	}
-	lock, err := state.ownerLock(id)
-	if err != nil {
-		return
-	}
-	defer func() { _ = lock.Close() }()
-	if acquired, err := lock.TryLock(); err == nil && acquired {
-		_ = state.sessions().DeleteIfEmpty(context.Background(), id)
-	}
-}
-
-// pruneEmpty drops the empty conversations earlier runs left behind. A minute
-// of grace covers one that another Orb created but has not claimed yet.
-func (state *nativeState) pruneEmpty(ctx context.Context) {
-	ids, _ := state.sessions().EmptyIDs(ctx, time.Now().Add(-time.Minute))
-	for _, id := range ids {
-		state.discardIfEmpty(id)
-	}
 }
 func (state *nativeState) deleteSession(id string) (modes.SessionDeleteMethod, error) {
 	lock, err := state.ownerLock(id)

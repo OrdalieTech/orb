@@ -60,12 +60,6 @@ func skillChip(name string) string {
 func skillPreview(text string) string {
 	skill, ok := agent.ParseSkillBlock(text)
 	if !ok {
-		// A stored preview is clipped, often before the block closes.
-		if rest, open := strings.CutPrefix(text, `<skill name="`); open {
-			if end := strings.IndexByte(rest, '"'); end > 0 {
-				return "◆ " + rest[:end]
-			}
-		}
 		return text
 	}
 	return exporthtml.ReplaceSkillTokens(skill.InvocationText(), skill.Name, func(name string) string { return "◆ " + name })

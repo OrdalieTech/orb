@@ -157,33 +157,6 @@ func (r *Sessions) Delete(ctx context.Context, metadata harness.SessionMetadata)
 	return err
 }
 
-// emptySession matches a conversation nobody wrote in: no message, no name, no fork.
-const emptySession = `message_count=0 AND coalesce(name,'')='' AND NOT EXISTS(SELECT 1 FROM sessions AS child WHERE child.namespace=sessions.namespace AND child.parent_id=sessions.id)`
-
-// EmptyIDs lists empty conversations created before the given time (UTC, the stored format).
-func (r *Sessions) EmptyIDs(ctx context.Context, before time.Time) ([]string, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT id FROM sessions WHERE namespace=? AND created<? AND "+emptySession, r.namespace, before.UTC().Format("2006-01-02T15:04:05.000Z"))
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
-// DeleteIfEmpty removes a conversation only while it is still empty.
-func (r *Sessions) DeleteIfEmpty(ctx context.Context, id string) error {
-	_, err := r.db.exec(ctx, "DELETE FROM sessions WHERE namespace=? AND id=? AND "+emptySession, r.namespace, id)
-	return err
-}
-
 func (r *Sessions) Fork(ctx context.Context, source harness.SessionMetadata, options harness.SessionForkOptions) (*harness.Session, error) {
 	s, err := r.Open(ctx, source)
 	if err != nil {
