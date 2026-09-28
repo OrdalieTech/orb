@@ -20,6 +20,13 @@ line. The compatibility target remains Pi **v0.86.0** on Go **1.27.1**.
 - A new `titles` plugin names each session after its first exchange: a few words chosen by the
   session's own model, set once and never over a name the owner gave. It is on by default in the
   Android app and one toggle away in `/plugins` elsewhere.
+- Claude sessions (the `claude-sessions` plugin) get titles too: Claude through Claude Code only
+  runs whole conversations, so the plugin names them with the cheapest other model signed in.
+- A Bridge retires the throwaway registrations crashed or killed Orbs left behind, two minutes
+  after it starts: they only retired on a clean exit, and a long-used machine listed hundreds.
+- The Android app names a remote conversation by its device, not its folder, drops the raw
+  "succeeded" left under the prompt after a call, and keeps the model name readable next to a
+  long device name.
 - Sessions on a paired machine can be renamed: the Bridge gains `session.name`, under the same
   grant as switching sessions. In the Android app, a long press on any session, on the phone or
   another device, renames it; `/name` works in remote conversations too.

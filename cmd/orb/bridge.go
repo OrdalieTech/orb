@@ -612,6 +612,10 @@ func (r restartInto) Error() string { return "restarting into " + string(r) }
 // greet runs once at startup: it clears what the previous run left, then dials every known peer.
 // Their connections to that run are half-open; a fresh channel from this side becomes their
 // newest, so their next call lands at once instead of waiting out a timeout on the dead one.
+// retireAfter is how long a restarted Bridge waits before retiring throwaway registrations no Orb
+// came back to: attached Orbs retry every two seconds at most.
+const retireAfter = 2 * time.Minute
+
 func (s *bridgeService) greet() {
 	raw, err := s.b.Admin(s.ctx, "status", bridge.JSON(struct{}{}))
 	if err != nil {
@@ -633,6 +637,13 @@ func (s *bridgeService) greet() {
 	if len(stale) > 0 {
 		_, _ = s.b.Admin(s.ctx, "retire", bridge.JSON(map[string][]string{"instance_ids": stale}))
 	}
+	// Throwaway registrations retire when their Orb exits cleanly; a crashed or killed one never
+	// does. Once the Orbs still running have had time to attach again, the rest are gone.
+	time.AfterFunc(retireAfter, func() {
+		if s.ctx.Err() == nil {
+			_, _ = s.b.Admin(s.ctx, "retire", bridge.JSON(struct{}{}))
+		}
+	})
 	for _, peer := range status.Peers {
 		if status.States[peer] == "blocked" || peer == s.b.PeerID() {
 			continue

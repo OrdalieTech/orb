@@ -2,6 +2,7 @@ package titles
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -37,9 +38,14 @@ func (*fakeSessions) GetSessionID() string      { return "s1" }
 
 type fakeRegistry struct {
 	extensions.ModelRegistry
-	reply  string
-	prompt string
+	reply     string
+	prompt    string
+	refuse    ai.ProviderID // a provider that only runs whole conversations
+	available []ai.Model
+	used      []string
 }
+
+func (r *fakeRegistry) Available(map[string]string) []ai.Model { return r.available }
 
 func (*fakeRegistry) ResolveProviderAuth(context.Context, string, map[string]string) (*aiauth.AuthResult, error) {
 	return nil, nil
@@ -47,7 +53,11 @@ func (*fakeRegistry) ResolveProviderAuth(context.Context, string, map[string]str
 func (*fakeRegistry) ResolveModelHeaders(context.Context, ai.Model, map[string]string, ...*string) (*map[string]string, error) {
 	return nil, nil
 }
-func (r *fakeRegistry) StreamSimple(_ context.Context, _ *ai.Model, request ai.Context, _ *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+func (r *fakeRegistry) StreamSimple(_ context.Context, model *ai.Model, request ai.Context, _ *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+	r.used = append(r.used, model.ID)
+	if model.Provider == r.refuse {
+		return nil, errors.New("runs in its own conversation")
+	}
 	r.prompt = userText(request.Messages[0].(*ai.UserMessage).Content)
 	message := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: r.reply}}, StopReason: ai.StopReasonStop}
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
@@ -125,5 +135,17 @@ func TestTidyKeepsOneCleanLine(t *testing.T) {
 		if got := tidy(in); got != want {
 			t.Errorf("tidy(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestAConversationOnlyModelIsNamedByTheCheapestOther(t *testing.T) {
+	registry := &fakeRegistry{reply: "Saluer en français", refuse: "claude-sessions", available: []ai.Model{
+		{ID: "big", Provider: "openai", Cost: ai.ModelCost{Input: 5, Output: 20}},
+		{ID: "sonnet", Provider: "claude-sessions"},
+		{ID: "small", Provider: "opencode", Cost: ai.ModelCost{Input: 0.1, Output: 0.4}},
+	}}
+	title := ask(t.Context(), registry, &ai.Model{ID: "sonnet", Provider: "claude-sessions"}, "Request:\nhi")
+	if title != "Saluer en français" || strings.Join(registry.used, ",") != "sonnet,small" {
+		t.Fatalf("title %q, asked %v", title, registry.used)
 	}
 }
