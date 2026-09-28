@@ -156,9 +156,7 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			render := func() string {
 				return tui.StripANSI(strings.Join(mode.chat.RenderLines(80, 0, mode.chat.LineCount(80)), "\n"))
 			}
-			start := func(name, id string) {
-				call := &ai.ToolCall{Name: name, ID: id}
-				message := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "\n"}, &ai.ThinkingContent{}, call}, StopReason: "toolUse"}
+			startWith := func(message *ai.AssistantMessage, name, id string) {
 				if live {
 					mode.handleEvent(engine.MessageStartEvent{Message: message})
 					mode.handleEvent(engine.MessageEndEvent{Message: message})
@@ -166,6 +164,10 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 				} else {
 					mode.renderAgentMessage(message)
 				}
+			}
+			start := func(name, id string) {
+				call := &ai.ToolCall{Name: name, ID: id}
+				startWith(&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "\n"}, &ai.ThinkingContent{}, call}, StopReason: "toolUse"}, name, id)
 			}
 			finish := func(name, id, output string, failed bool) {
 				content := ai.ToolResultContent{&ai.TextContent{Text: output}}
@@ -192,7 +194,7 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			if got := render(); !strings.Contains(got, "✓  read") || !strings.Contains(got, "✓  Grep") || strings.Contains(got, "first file") || strings.Contains(got, "search result") {
 				t.Fatalf("batch expansion should list actions without dumping their output: %q", got)
 			}
-			group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 3})
+			group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 2})
 			if got := render(); !strings.Contains(got, "beginning") {
 				t.Fatalf("clicking a grouped tool did not expand its output: %q", got)
 			}
@@ -214,7 +216,7 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			if got := render(); !strings.Contains(got, "2 reads · 1 search") || !strings.Contains(got, "×  Read") || !strings.Contains(got, "permission denied") {
 				t.Fatalf("collapsed group hid a failure: %q", got)
 			}
-			for _, boundary := range []string{"bash", "edit", "write", "custom"} {
+			for _, boundary := range []string{"edit", "write", "custom"} {
 				previous := mode.toolActivity
 				start(boundary, boundary)
 				finish(boundary, boundary, "done", false)
@@ -235,6 +237,27 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			start("read", "after-user")
 			if mode.toolActivity == previous {
 				t.Fatal("batch crossed a user message")
+			}
+
+			// Web tools, commands and the reasoning between them join the batch.
+			finish("read", "after-user", "file", false)
+			previous = mode.toolActivity
+			start("web_search", "w1")
+			finish("web_search", "w1", "results", false)
+			reasoning := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.ThinkingContent{Thinking: "**Locating official docs**"}, &ai.ToolCall{Name: "fetch_content", ID: "w2"}}, StopReason: "toolUse"}
+			startWith(reasoning, "fetch_content", "w2")
+			if got := render(); !strings.Contains(got, "Exploring · 1 read · 1 web search · 1 page · Locating official docs") {
+				t.Fatalf("a working batch should say its current step: %q", got)
+			}
+			finish("fetch_content", "w2", "page", false)
+			start("bash", "w3")
+			finish("bash", "w3", "ok", false)
+			if got := render(); mode.toolActivity != previous || !strings.Contains(got, "Worked · 1 command · 1 read · 1 web search · 1 page") || strings.Contains(got, "Locating") {
+				t.Fatalf("reasoning or commands split the batch: %q", got)
+			}
+			mode.toolActivity.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1})
+			if got := render(); !strings.Contains(got, "Locating official docs") {
+				t.Fatalf("an open batch should show its reasoning: %q", got)
 			}
 		})
 	}
@@ -413,8 +436,19 @@ func (terminal *toolOutputTerminal) resetOutput() {
 
 func TestToolsWithoutRendererShowTheirMainArgument(t *testing.T) {
 	initTestTheme(t)
-	if got := tui.StripANSI(fallbackToolTitle("mcp__docs__fetch", map[string]any{"url": "https://example.com/a  b"})); got != "mcp__docs__fetch https://example.com/a b" {
+	if got, _ := fallbackToolTitle("mcp__docs__fetch", map[string]any{"url": "https://example.com/a  b"}); tui.StripANSI(got) != "mcp__docs__fetch https://example.com/a b" {
 		t.Fatalf("title %q", got)
+	}
+	if got, from := fallbackToolTitle("fetch", map[string]any{"urls": []any{"https://a.dev/x", "https://b.dev"}}); tui.StripANSI(got) != "fetch https://a.dev/x +1" || from != 6 {
+		t.Fatalf("title %q from %d", got, from)
+	}
+	// A long URL keeps its host and its last part on one line.
+	url := "https://code.claude.com/docs/en/agent-sdk/very/long/path/to/the/tools-reference"
+	tool := NewToolExecutionComponent("fetch_content", "f", map[string]any{"url": url}, false, nil, &toolOutputRenderRequester{}, "/")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "page"}}, false, nil, false)
+	lines := tool.Render(60)
+	if row := tui.StripANSI(lines[1]); len(lines) != 2 || !strings.Contains(row, "https://code") || !strings.Contains(row, "tools-reference") || !strings.Contains(row, "…") || tui.VisibleWidth(lines[1]) > 60 {
+		t.Fatalf("long URL row = %q", lines)
 	}
 	if editArgsPath(map[string]any{"file_path": "/p/main.go", "old_string": "a"}) != "/p/main.go" {
 		t.Fatal("native edit path lost")
@@ -446,5 +480,39 @@ func TestSettledToolsRestUntilHovered(t *testing.T) {
 	failed := tool.Render(60)
 	if faded := theme.Current().Fade(failed[1:2], restingOpacity)[0]; failed[1] == faded {
 		t.Fatal("a failed tool rested")
+	}
+}
+
+// A long URL keeps its host whole and cuts at slashes; a path keeps its file.
+func TestMiddleCutKeepsWhatNamesTheThing(t *testing.T) {
+	for _, test := range []struct{ title, want string }{
+		{"fetch https://code.claude.com/docs/en/agent-sdk/claude-code-features", "fetch https://code.claude.com/…/claude-code-features"},
+		{"fetch https://code.claude.com/docs/en/typescript-v2-preview-and-streaming-input-modes", "fetch https://code.claude.com/…and-streaming-input-modes"},
+		{"read /workspace/long-directory/long-directory/session_runtime_test.go", "read /workspace/…/long-directory/session_runtime_test.go"},
+	} {
+		if got := middleCut(test.title, strings.IndexByte(test.title, ' ')+1, 56); got != test.want || tui.VisibleWidth(got) > 56 {
+			t.Errorf("middleCut(%q) = %q, want %q", test.title, got, test.want)
+		}
+	}
+}
+
+// Title-only reasoning stacks; reasoning with a body stays paragraphs apart;
+// tools right after reasoning sit under it without a blank line.
+func TestReasoningSpacing(t *testing.T) {
+	initTestTheme(t)
+	if got := joinReasoning([]string{"**Checking support**", "**Checking availability**"}); got != "**Checking support**\n**Checking availability**" {
+		t.Fatalf("titles = %q", got)
+	}
+	if got := joinReasoning([]string{"**Plan**\nRead the docs.", "**Next**"}); got != "**Plan**\nRead the docs.\n\n**Next**" {
+		t.Fatalf("paragraphs = %q", got)
+	}
+	if !leadsTools(&ai.AssistantMessage{Content: ai.AssistantContent{&ai.ThinkingContent{Thinking: "**Edit**"}, &ai.ToolCall{Name: "edit"}}}) ||
+		leadsTools(&ai.AssistantMessage{Content: ai.AssistantContent{&ai.ThinkingContent{Thinking: "x"}, &ai.TextContent{Text: "said"}, &ai.ToolCall{Name: "edit"}}}) {
+		t.Fatal("leadsTools misjudged")
+	}
+	tool := NewToolExecutionComponent("edit", "e", map[string]any{"path": "a.go"}, false, nil, &toolOutputRenderRequester{}, "/")
+	tool.headed = true
+	if lines := tool.Render(40); len(lines) == 0 || lines[0] == "" {
+		t.Fatalf("a headed tool kept its blank line: %q", lines)
 	}
 }

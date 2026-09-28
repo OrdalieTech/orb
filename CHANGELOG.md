@@ -8,6 +8,11 @@ shown by `/changelog`.
 - Conversations left without a message are not kept: quitting, `/new` or switching away from
   one removes it, those earlier versions left behind are cleared at start, and the session
   pickers list no empty rows. A session started with a skill shows the skill's name.
+- Quiet tool calls in a row share one line: reads, searches, commands, web searches and fetched
+  pages read as "Searched the web · 3 web searches · 4 pages", the reasoning between them folds
+  inside, and while it works the line says the current step; a click opens the list. Reasoning
+  sits right on the steps it leads to, and title-only summaries stack. Long URLs keep their host
+  and long paths their file name on one line.
 - Settled tool calls sit back at reduced opacity so the conversation reads first; hovering or
   expanding one, a running tool and a failed one show at full strength.
 

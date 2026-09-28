@@ -248,6 +248,8 @@ type AssistantMessageComponent struct {
 	toggleStart       int
 	toggleEnd         int
 	onChange          func()
+	// folded reasoning shows inside the tool group it came between, not here.
+	folded bool
 }
 
 func NewAssistantMessageComponent(
@@ -419,7 +421,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 					c.toggleHint = tui.NewText(theme.FG("muted", "… reasoning · click to collapse"), c.outputPad+2, 0, nil)
 					c.contentContainer.AddChild(c.toggleHint)
 				}
-				addMarkdown(index, strings.Join(thinkingBlocks, "\n\n"), true)
+				addMarkdown(index, joinReasoning(thinkingBlocks), true)
 			}
 			for trailing := index + 1; trailing < len(message.Content); trailing++ {
 				switch next := message.Content[trailing].(type) {
@@ -483,7 +485,61 @@ func (c *AssistantMessageComponent) HandleMouse(event tui.MouseEvent) bool {
 	}
 	return true
 }
+
+// joinReasoning stacks reasoning parts that are only a title ("**Checking
+// support**") line under line; parts with a body stay paragraphs apart.
+func joinReasoning(blocks []string) string {
+	var joined strings.Builder
+	for index, block := range blocks {
+		if index > 0 {
+			if strings.Contains(blocks[index-1], "\n") || strings.Contains(block, "\n") {
+				joined.WriteString("\n")
+			}
+			joined.WriteString("\n")
+		}
+		joined.WriteString(block)
+	}
+	return joined.String()
+}
+
+// Fold moves the message into the tool group it sits between.
+func (c *AssistantMessageComponent) Fold() {
+	c.mu.Lock()
+	c.folded = true
+	c.mu.Unlock()
+}
+
+// reasoningTitle is the first line of the message's latest reasoning, as
+// models title their reasoning summaries ("**Locating official docs**").
+func (c *AssistantMessageComponent) reasoningTitle() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.message == nil {
+		return ""
+	}
+	for index := len(c.message.Content) - 1; index >= 0; index-- {
+		if thinking, ok := c.message.Content[index].(*ai.ThinkingContent); ok {
+			for line := range strings.SplitSeq(thinking.Thinking, "\n") {
+				if line = strings.Trim(strings.TrimSpace(line), "*#_ :"); line != "" {
+					return line
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func (c *AssistantMessageComponent) Render(width int) []string {
+	c.mu.Lock()
+	folded := c.folded
+	c.mu.Unlock()
+	if folded {
+		return nil
+	}
+	return c.renderUnfolded(width)
+}
+
+func (c *AssistantMessageComponent) renderUnfolded(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.renderTheme != theme.Current().Palette() {
@@ -538,6 +594,8 @@ type ToolExecutionComponent struct {
 	resultComponent extensions.Component
 	// faded caches the resting look of the last rendered lines.
 	fadedFrom, faded []string
+	// headed sits right under the reasoning that led to it.
+	headed bool
 }
 
 // restingOpacity is how a settled tool block sits behind the conversation;
@@ -675,7 +733,8 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			c.contentBox.AddChild(rendered)
 		}
 	} else {
-		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(fallbackToolTitle(c.toolName, c.args), 0, 0, nil), expanded: c.expanded})
+		title, detailFrom := fallbackToolTitle(c.toolName, c.args)
+		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(title, 0, 0, nil), expanded: c.expanded, title: title, keepTailFrom: detailFrom})
 	}
 
 	// Tool result
@@ -718,7 +777,8 @@ func (c *ToolExecutionComponent) updateDisplay() {
 }
 
 func (c *ToolExecutionComponent) showOutput() bool {
-	return c.expanded || c.result != nil && c.result.IsError || c.isPartial && toolActivityKind(c.toolName) == ""
+	kind := toolActivityKind(c.toolName)
+	return c.expanded || c.result != nil && c.result.IsError || c.isPartial && (kind == "" || kind == "command")
 }
 
 type toolCallHeader struct {
@@ -738,14 +798,13 @@ func (header toolCallHeader) Render(width int) []string {
 	if !header.expanded && header.title != "" {
 		title, _, multiline := strings.Cut(header.title, "\n")
 		budget := max(0, width-2)
-		clipped := multiline || tui.VisibleWidth(title) > budget
-		if header.keepTailFrom > 0 && header.keepTailFrom+1 < budget && tui.VisibleWidth(title) > budget {
-			prefix := tui.SliceByColumn(title, 0, header.keepTailFrom, true)
-			tailWidth := budget - header.keepTailFrom - 1
-			title = prefix + "…" + tui.SliceByColumn(title, tui.VisibleWidth(title)-tailWidth, tailWidth, true)
+		if header.keepTailFrom > 0 && tui.VisibleWidth(title) > budget {
+			title = middleCut(title, header.keepTailFrom, budget)
 		}
+		// A title cut for width already ends in "…"; the suffix says only
+		// whether a click shows more lines.
 		suffix := " ›"
-		if clipped {
+		if multiline {
 			suffix = " …"
 		}
 		return []string{tui.TruncateToWidth(title, budget, "…", false) + theme.FG("accent", tui.TruncateToWidth(suffix, width, "", false))}
@@ -759,6 +818,47 @@ func (header toolCallHeader) Render(width int) []string {
 		suffix = " …"
 	}
 	return []string{tui.TruncateToWidth(strings.TrimRight(lines[0], " "), max(0, width-2), "…", false) + theme.FG("accent", tui.TruncateToWidth(suffix, width, "", false))}
+}
+
+// middleCut fits a title whose tail from column from is a path or URL into
+// budget columns by dropping its middle at slashes: the host or first folder
+// stays, then as many final segments as fit.
+func middleCut(title string, from, budget int) string {
+	full := tui.VisibleWidth(title)
+	room := budget - from - 1
+	if room < 8 {
+		return title
+	}
+	detail := tui.StripANSI(tui.SliceByColumn(title, from, full-from, true))
+	head := 0
+	scheme := strings.Index(detail, "://")
+	if scheme >= 0 {
+		if slash := strings.IndexByte(detail[scheme+3:], '/'); slash >= 0 {
+			head = tui.VisibleWidth(detail[:scheme+3+slash+1])
+		}
+	} else if slash := strings.IndexByte(detail[1:], '/'); slash >= 0 {
+		head = tui.VisibleWidth(detail[:slash+2])
+	}
+	if head == 0 || head > room/2 {
+		head = room / 3
+	}
+	tail := room - head
+	fitted := false
+	for index := range len(detail) {
+		if detail[index] == '/' && index > 0 {
+			if width := tui.VisibleWidth(detail[index:]); width <= tail {
+				tail, fitted = width, true
+				break
+			}
+		}
+	}
+	// A file's name matters more than its first folder; a URL keeps its host.
+	if last := strings.LastIndexByte(detail, '/'); !fitted && last > 0 && scheme < 0 {
+		if width := tui.VisibleWidth(detail[last:]); width <= room-4 {
+			head, tail = room-width, width
+		}
+	}
+	return tui.SliceByColumn(title, 0, from+head, true) + "…" + tui.SliceByColumn(title, full-tail, tail, true)
 }
 
 type toolOutputPreview struct {
@@ -880,12 +980,17 @@ func (c *ToolExecutionComponent) Render(width int) []string {
 	if !c.hovered && !c.expanded && !c.isPartial && (c.result == nil || !c.result.IsError) {
 		lines = fade(lines, &c.fadedFrom, &c.faded)
 	}
+	if c.headed {
+		return lines
+	}
 	return append([]string{""}, lines...)
 }
 
 type toolActivityGroup struct {
-	mu       sync.Mutex
-	tools    []*ToolExecutionComponent
+	mu    sync.Mutex
+	tools []*ToolExecutionComponent
+	// items keeps tools and the reasoning folded between them in order.
+	items    []tui.Component
 	expanded bool
 	hovered  bool
 	hover    *ToolExecutionComponent
@@ -893,6 +998,8 @@ type toolActivityGroup struct {
 	ui       tui.RenderRequester
 	// faded caches the header's resting look.
 	fadedFrom, faded []string
+	// headed sits right under the reasoning that led to it.
+	headed bool
 }
 
 type toolActivityRow struct {
@@ -900,18 +1007,36 @@ type toolActivityRow struct {
 	start, end int
 }
 
-// fallbackToolTitle names a tool without a renderer by its most telling argument.
-func fallbackToolTitle(name string, args any) string {
+// fallbackToolTitle names a tool without a renderer by its most telling
+// argument, and returns where that argument starts when it is a path or URL,
+// whose ends matter more than its middle.
+func fallbackToolTitle(name string, args any) (string, int) {
 	title := theme.FG("accent", theme.Bold(name))
 	values, _ := args.(map[string]any)
-	for _, key := range []string{"file_path", "path", "command", "url", "query", "pattern", "description"} {
-		if value, ok := values[key].(string); ok && value != "" {
-			return title + theme.FG("toolTitle", " "+strings.Join(strings.Fields(value), " "))
+	for _, key := range []string{"file_path", "path", "command", "url", "urls", "query", "pattern", "description"} {
+		value, more := values[key], 0
+		if list, ok := value.([]any); ok && len(list) > 0 {
+			value, more = list[0], len(list)-1
 		}
+		text, ok := value.(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			continue
+		}
+		text = strings.Join(strings.Fields(text), " ")
+		detailFrom := 0
+		if !strings.Contains(text, " ") {
+			detailFrom = tui.VisibleWidth(name) + 1
+		}
+		if more > 0 {
+			text += fmt.Sprintf(" +%d", more)
+		}
+		return title + theme.FG("toolTitle", " "+text), detailFrom
 	}
-	return title
+	return title, 0
 }
 
+// toolActivityKind names what a quiet tool does; consecutive quiet tools
+// share one row. Edits, writes and anything else stand alone.
 func toolActivityKind(name string) string {
 	switch strings.ToLower(name) {
 	case "read":
@@ -920,8 +1045,37 @@ func toolActivityKind(name string) string {
 		return "search"
 	case "ls":
 		return "listing"
+	case "bash":
+		return "command"
+	case "web_search", "websearch":
+		return "web search"
+	case "fetch_content", "webfetch", "web_fetch":
+		return "page"
 	}
 	return ""
+}
+
+// activityKinds orders a group's counts; plurals are irregular for two.
+var activityKinds = []struct{ kind, plural string }{
+	{"command", "commands"}, {"read", "reads"}, {"search", "searches"}, {"listing", "listings"},
+	{"web search", "web searches"}, {"page", "pages"},
+}
+
+// activityVerb names a group by what it holds, as done or ongoing.
+func activityVerb(counts map[string]int, total int, active bool) string {
+	verbs := [2]string{"Explored", "Exploring"}
+	switch web := counts["web search"] + counts["page"]; {
+	case web == total:
+		verbs = [2]string{"Searched the web", "Searching the web"}
+	case counts["command"] == total:
+		verbs = [2]string{"Ran", "Running"}
+	case counts["command"] > 0:
+		verbs = [2]string{"Worked", "Working"}
+	}
+	if active {
+		return verbs[1]
+	}
+	return verbs[0]
 }
 
 func (group *toolActivityGroup) SetExpanded(expanded bool) {
@@ -936,9 +1090,21 @@ func (group *toolActivityGroup) SetExpanded(expanded bool) {
 func (group *toolActivityGroup) Invalidate() {
 	group.mu.Lock()
 	defer group.mu.Unlock()
-	for _, tool := range group.tools {
-		tool.Invalidate()
+	for _, item := range group.items {
+		if invalidator, ok := item.(tui.Invalidatable); ok {
+			invalidator.Invalidate()
+		}
 	}
+}
+
+// add appends a tool, or reasoning that came between the group's tools.
+func (group *toolActivityGroup) add(item tui.Component) {
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	if tool, ok := item.(*ToolExecutionComponent); ok {
+		group.tools = append(group.tools, tool)
+	}
+	group.items = append(group.items, item)
 }
 
 func (group *toolActivityGroup) Render(width int) []string {
@@ -956,16 +1122,11 @@ func (group *toolActivityGroup) Render(width int) []string {
 			tool.mu.Unlock()
 		}
 		var labels []string
-		for _, kind := range []string{"read", "search", "listing"} {
-			if count := counts[kind]; count > 0 {
-				label := kind
-				if count != 1 {
-					label += "s"
-					if kind == "search" {
-						label = "searches"
-					}
-				}
-				labels = append(labels, fmt.Sprintf("%d %s", count, label))
+		for _, kind := range activityKinds {
+			if count := counts[kind.kind]; count == 1 {
+				labels = append(labels, "1 "+kind.kind)
+			} else if count > 1 {
+				labels = append(labels, fmt.Sprintf("%d %s", count, kind.plural))
 			}
 		}
 		marker, color := "›", "accent"
@@ -975,27 +1136,66 @@ func (group *toolActivityGroup) Render(width int) []string {
 		if group.hovered {
 			color = "toolTitle"
 		}
-		label := "Explored"
-		if active {
-			label = "Exploring"
+		header := theme.FG(color, marker+"  "+theme.Bold(activityVerb(counts, len(group.tools), active))) + theme.FG("toolTitle", " · "+strings.Join(labels, " · "))
+		// While it works, the group says what it is doing now.
+		if step := group.stepLocked(); active && !group.expanded && step != "" {
+			header += theme.FG("muted", " · "+theme.Italic(step))
 		}
-		header := []string{tui.TruncateToWidth(theme.FG(color, marker+"  "+theme.Bold(label))+theme.FG("toolTitle", " · "+strings.Join(labels, " · ")), width, "…", false)}
+		row := []string{tui.TruncateToWidth(header, width, "…", false)}
 		if !group.hovered && !group.expanded && !active {
-			header = fade(header, &group.fadedFrom, &group.faded)
+			row = fade(row, &group.fadedFrom, &group.faded)
 		}
-		lines = append([]string{""}, header...)
+		lines = row
+		if !group.headed {
+			lines = append([]string{""}, row...)
+		}
 	}
-	for _, tool := range group.tools {
-		tool.mu.Lock()
-		visible := len(group.tools) == 1 || group.expanded || tool.isPartial || tool.result != nil && tool.result.IsError
-		tool.mu.Unlock()
-		if visible {
-			start := len(lines)
-			lines = append(lines, tool.Render(width)...)
-			group.rows = append(group.rows, toolActivityRow{tool: tool, start: start, end: len(lines)})
+	// Rows sit tight under a header, and a step under its reasoning.
+	tight := len(group.tools) > 1 || group.headed
+	for _, item := range group.items {
+		switch item := item.(type) {
+		case *ToolExecutionComponent:
+			item.mu.Lock()
+			visible := len(group.tools) == 1 || group.expanded || item.isPartial || item.result != nil && item.result.IsError
+			item.mu.Unlock()
+			if visible {
+				rendered := item.Render(width)
+				if tight && len(rendered) > 0 && rendered[0] == "" {
+					rendered = rendered[1:]
+				}
+				start := len(lines)
+				lines = append(lines, rendered...)
+				group.rows = append(group.rows, toolActivityRow{tool: item, start: start, end: len(lines)})
+				tight = len(group.tools) > 1
+			}
+		case *AssistantMessageComponent:
+			if group.expanded || len(group.tools) == 1 {
+				if rendered := item.renderUnfolded(width); len(rendered) > 0 {
+					lines = append(lines, rendered...)
+					tight = true
+				}
+			}
 		}
 	}
 	return lines
+}
+
+// headerRow is the header's line in the group's render.
+func (group *toolActivityGroup) headerRow() int {
+	if group.headed {
+		return 0
+	}
+	return 1
+}
+
+// stepLocked is the title of the latest reasoning folded into the group.
+func (group *toolActivityGroup) stepLocked() string {
+	for index := len(group.items) - 1; index >= 0; index-- {
+		if note, ok := group.items[index].(*AssistantMessageComponent); ok {
+			return note.reasoningTitle()
+		}
+	}
+	return ""
 }
 
 func (group *toolActivityGroup) HandleMouse(event tui.MouseEvent) bool {
@@ -1012,10 +1212,10 @@ func (group *toolActivityGroup) HandleMouse(event tui.MouseEvent) bool {
 	changed := false
 	previous := group.hover
 	if event.Type == tui.MouseMove {
-		hovered := len(group.tools) > 1 && event.Row == 1
+		hovered := len(group.tools) > 1 && event.Row == group.headerRow()
 		changed = hovered != group.hovered
 		group.hovered, group.hover = hovered, target
-	} else if event.Type == tui.MouseRelease && (event.Button == 0 || event.Button == 3) && len(group.tools) > 1 && event.Row == 1 {
+	} else if event.Type == tui.MouseRelease && (event.Button == 0 || event.Button == 3) && len(group.tools) > 1 && event.Row == group.headerRow() {
 		group.expanded = !group.expanded
 		changed = true
 	}

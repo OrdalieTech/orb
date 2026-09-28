@@ -132,35 +132,37 @@ type InteractiveMode struct {
 	toolComponents             map[string]*ToolExecutionComponent
 	toolActivity               *toolActivityGroup
 	toolActivityTail           tui.Component
-	expandables                []expandableComponent
-	statusIndicator            tui.Component
-	editorChromeWidth          int
-	editorChromeStatus         string
-	editorChromeTitleShown     bool
-	statusNotice               string
-	statusNoticeTimer          *time.Timer
-	statusNoticeStarted        time.Time
-	statusNoticeOpening        bool
-	footerStatuses             map[string]string
-	footerTooltip              tui.OverlayHandle
-	autocompleteProvider       tui.AutocompleteProvider
-	paletteCommands            []tui.SlashCommand
-	cwd                        string
-	outputPad                  int
-	lastEscape                 time.Time
-	extensionEditor            extensions.EditorComponent
-	themeRegistry              *theme.Registry
-	themeController            *theme.Controller
-	terminalBackgroundMu       sync.Mutex
-	terminalBackground         *tui.RgbColor
-	themeSetting               string // --use-theme override; "" defers to settings
-	authContext                context.Context
-	authCancel                 context.CancelFunc
-	accountSwitcherOpen        bool
-	modelSelectorCancel        context.CancelFunc
-	modelSelectorDone          chan struct{}
-	logoCancel                 context.CancelFunc
-	logoDone                   chan struct{}
+	// lastReasoning is reasoning shown for the tools that follow it.
+	lastReasoning          tui.Component
+	expandables            []expandableComponent
+	statusIndicator        tui.Component
+	editorChromeWidth      int
+	editorChromeStatus     string
+	editorChromeTitleShown bool
+	statusNotice           string
+	statusNoticeTimer      *time.Timer
+	statusNoticeStarted    time.Time
+	statusNoticeOpening    bool
+	footerStatuses         map[string]string
+	footerTooltip          tui.OverlayHandle
+	autocompleteProvider   tui.AutocompleteProvider
+	paletteCommands        []tui.SlashCommand
+	cwd                    string
+	outputPad              int
+	lastEscape             time.Time
+	extensionEditor        extensions.EditorComponent
+	themeRegistry          *theme.Registry
+	themeController        *theme.Controller
+	terminalBackgroundMu   sync.Mutex
+	terminalBackground     *tui.RgbColor
+	themeSetting           string // --use-theme override; "" defers to settings
+	authContext            context.Context
+	authCancel             context.CancelFunc
+	accountSwitcherOpen    bool
+	modelSelectorCancel    context.CancelFunc
+	modelSelectorDone      chan struct{}
+	logoCancel             context.CancelFunc
+	logoDone               chan struct{}
 	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
 	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
 	anthropicSubscriptionWarningShown bool
@@ -243,22 +245,71 @@ func (mode *InteractiveMode) addToolComponent(component *ToolExecutionComponent)
 	mode.toolComponents[component.toolCallID] = component
 	component.SetExpanded(mode.toolsExpanded)
 	mode.expandables = append(mode.expandables, component)
+	headed := mode.lastReasoning != nil && mode.chat.EndsWith(mode.lastReasoning)
 	if toolActivityKind(component.toolName) == "" {
+		component.headed = headed
 		mode.chat.AddChild(component)
 		return
 	}
 	group := mode.toolActivity
 	if group == nil || !mode.chat.EndsWith(mode.toolActivityTail) {
-		group = &toolActivityGroup{expanded: mode.toolsExpanded, ui: component.ui}
+		group = &toolActivityGroup{expanded: mode.toolsExpanded, ui: component.ui, headed: headed}
 		mode.toolActivity = group
 		mode.toolActivityTail = group
 		mode.chat.AddChild(group)
 	}
 	component.ui.(*chatRenderRequester).Bind(group)
-	group.mu.Lock()
-	group.tools = append(group.tools, component)
-	group.mu.Unlock()
+	group.add(component)
 	mode.chat.ChildChanged(group)
+}
+
+// foldIntoActivityLocked moves reasoning that only leads to more quiet tools
+// into the tool group it follows, so one stretch of work reads as one row.
+// It reports whether the message was folded; the caller holds mode.mu.
+func (mode *InteractiveMode) foldIntoActivityLocked(message *ai.AssistantMessage, component *AssistantMessageComponent, tail ...tui.Component) bool {
+	if mode.toolActivity == nil || !mode.chat.EndsWith(append([]tui.Component{mode.toolActivityTail}, tail...)...) {
+		return false
+	}
+	calls := 0
+	for _, block := range message.Content {
+		switch block := block.(type) {
+		case *ai.ToolCall:
+			if toolActivityKind(block.Name) == "" {
+				return false
+			}
+			calls++
+		case *ai.TextContent:
+			if strings.TrimSpace(block.Text) != "" {
+				return false
+			}
+		}
+	}
+	if calls == 0 || message.ErrorMessage != nil || message.StopReason == "error" || message.StopReason == "aborted" {
+		return false
+	}
+	component.Fold()
+	mode.toolActivity.add(component)
+	mode.chat.ChildChanged(mode.toolActivity)
+	return true
+}
+
+// leadsTools reports reasoning with nothing said, only tools to call: it
+// heads the tools that follow, so they sit right under it.
+func leadsTools(message *ai.AssistantMessage) bool {
+	reasoning, calls := false, false
+	for _, block := range message.Content {
+		switch block := block.(type) {
+		case *ai.ToolCall:
+			calls = true
+		case *ai.ThinkingContent:
+			reasoning = reasoning || strings.TrimSpace(block.Thinking) != ""
+		case *ai.TextContent:
+			if strings.TrimSpace(block.Text) != "" {
+				return false
+			}
+		}
+	}
+	return reasoning && calls
 }
 
 func toolOnlyAssistant(message *ai.AssistantMessage) bool {
@@ -4402,8 +4453,11 @@ func (mode *InteractiveMode) handleEvent(event any) {
 			comp.UpdateContentStreaming(assistant, false)
 			mode.mu.Lock()
 			// Keep empty assistant children: removing them rebuilds the history's line index.
-			if toolOnlyAssistant(assistant) && mode.toolActivity != nil && mode.chat.EndsWith(mode.toolActivityTail, comp) {
+			if toolOnlyAssistant(assistant) && mode.toolActivity != nil && mode.chat.EndsWith(mode.toolActivityTail, comp) ||
+				mode.foldIntoActivityLocked(assistant, comp, comp) {
 				mode.toolActivityTail = comp
+			} else if leadsTools(assistant) {
+				mode.lastReasoning = comp
 			}
 			mode.mu.Unlock()
 			mode.chat.ChildChanged(comp)
@@ -4873,7 +4927,15 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 		component := NewAssistantMessageComponent(assistant, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
 		component.onChange = func() { mode.requestChatRender(component) }
 		if !toolOnlyAssistant(assistant) {
+			mode.mu.Lock()
+			folded := mode.foldIntoActivityLocked(assistant, component)
 			mode.chat.AddChild(component)
+			if folded {
+				mode.toolActivityTail = component
+			} else if leadsTools(assistant) {
+				mode.lastReasoning = component
+			}
+			mode.mu.Unlock()
 		}
 		for _, block := range assistant.Content {
 			call, ok := block.(*ai.ToolCall)
