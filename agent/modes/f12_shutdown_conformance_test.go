@@ -42,6 +42,10 @@ func TestF12ShutdownLifecycleMatchesUpstream(t *testing.T) {
 	}{{"ordinary", false, fixture.Ordinary}, {"signal", true, fixture.Signal}} {
 		t.Run(test.name, func(t *testing.T) {
 			mode, host, temporary, output := newF12ShutdownMode(t)
+			// Orb drops a conversation without a message, and offers no resume for it.
+			if _, err := mode.session.Manager().AppendMessage(map[string]any{"role": "user", "content": "hello"}); err != nil {
+				t.Fatal(err)
+			}
 			mode.shutdown(test.fromSignal)
 
 			wantOrder := shutdownObservableOrder(test.want.Order)

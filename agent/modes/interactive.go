@@ -5171,7 +5171,12 @@ func (mode *InteractiveMode) writeResumeHint() {
 			outputTTY = info.Mode()&os.ModeCharDevice != 0
 		}
 	}
-	command := formatResumeCommand(mode.session.Manager(), outputTTY)
+	// An empty conversation is not kept, so there is nothing to resume.
+	manager := mode.session.Manager()
+	if manager.IsEmpty() {
+		return
+	}
+	command := formatResumeCommand(manager, outputTTY)
 	if command == "" {
 		return
 	}

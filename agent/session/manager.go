@@ -1072,6 +1072,22 @@ func (manager *SessionManager) GetHeader() *SessionHeader {
 	return nil
 }
 
+// IsEmpty reports a conversation nobody wrote in: no message and no name.
+// Orb drops such conversations when it leaves them.
+func (manager *SessionManager) IsEmpty() bool {
+	if manager.GetSessionName() != nil {
+		return false
+	}
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	for _, entry := range manager.fileEntries {
+		if entry != nil && entry.Entry != nil && entry.Type == "message" {
+			return false
+		}
+	}
+	return true
+}
+
 func (manager *SessionManager) GetSessionName() *string {
 	if manager.harnessStorage != nil {
 		name, ok := manager.harnessStorage.SessionName()
