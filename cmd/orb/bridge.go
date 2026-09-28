@@ -547,7 +547,10 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		return err
 	}
 	defer closeAttach()
-	slots := make(chan struct{}, 64)
+	// Anyone holding an old invitation can reach this listener, so peers it does not know yet
+	// (a device pairing) get a small pool of their own, and only for an invitation's lifetime:
+	// throwaway identities can fill that pool, never the slots of paired peers.
+	slots, strangers := make(chan struct{}, 64), make(chan struct{}, 8)
 	go func() {
 		for {
 			stream, err := listener.Accept()
@@ -557,14 +560,34 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 			select {
 			case slots <- struct{}{}:
 				go func(c net.Conn) {
-					defer func() { <-slots }()
-					peer, _, err := b.Connect(serviceCtx, c, "", true)
-					if err == nil {
-						// A peer that dialled here can vanish without a word (its network changed):
-						// pinging finds out in seconds, where a call would wait out its timeout.
-						keepalive(serviceCtx, peer, 4*time.Second)
-						_ = peer.Close()
+					slot := slots
+					defer func() { <-slot }()
+					peer, id, err := b.Connect(serviceCtx, c, "", true)
+					if err != nil {
+						return
 					}
+					if !b.Known(id) {
+						select {
+						case strangers <- struct{}{}:
+							<-slots
+							slot = strangers
+						default:
+							_ = peer.Close()
+							return
+						}
+						// Still unknown when its invitation would have expired, it is dropped;
+						// paired by then, it stays like any known peer.
+						drop := time.AfterFunc(10*time.Minute, func() {
+							if !b.Known(id) {
+								_ = peer.Close()
+							}
+						})
+						defer drop.Stop()
+					}
+					// A peer that dialled here can vanish without a word (its network changed):
+					// pinging finds out in seconds, where a call would wait out its timeout.
+					keepalive(serviceCtx, peer, 4*time.Second)
+					_ = peer.Close()
 				}(stream)
 			default:
 				_ = stream.Close()

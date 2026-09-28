@@ -134,6 +134,9 @@ func runBridgeJoin(ctx context.Context, profile string, args []string, streams c
 		}
 	}
 	if err = client.Call(ctx, "join", inv, nil); err != nil {
+		if bridge.Code(err) == "identity_conflict" {
+			err = errors.New("another device already used this code: ask for a new one")
+		}
 		return reportCLIError(streams.Stderr, err)
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "Waiting for approval on %s\nThis Orb   %s\n", inv.PeerID, status.PeerID)

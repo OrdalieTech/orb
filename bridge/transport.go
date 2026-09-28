@@ -263,6 +263,28 @@ func page[T any](items []T, cursor string, limits ...int) (pageResult[T], error)
 	}
 	return out, nil
 }
+
+// Known reports whether peer is one this Bridge deals with beyond pairing: a saved peer, one
+// holding a grant, or a member of a scope.
+func (b *Bridge) Known(peer string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state.Peers[peer] != "" {
+		return true
+	}
+	for _, g := range b.state.Grants {
+		if g.Principal.PeerID == peer {
+			return true
+		}
+	}
+	for _, members := range b.state.Scopes {
+		if slices.Contains(members, peer) {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.RawMessage) (json.RawMessage, error) {
 	b.mu.Lock()
 	blocked := b.state.Blocked[peer] || b.closed || b.failed
@@ -270,20 +292,7 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 	if blocked {
 		return nil, Fail("unauthorized")
 	}
-	b.mu.Lock()
-	known := b.state.Peers[peer] != ""
-	for _, g := range b.state.Grants {
-		if g.Principal.PeerID == peer {
-			known = true
-		}
-	}
-	for _, members := range b.state.Scopes {
-		if slices.Contains(members, peer) {
-			known = true
-		}
-	}
-	b.mu.Unlock()
-	if !known && method != "pair.claim" && method != "pair.status" {
+	if !b.Known(peer) && method != "pair.claim" && method != "pair.status" {
 		return nil, Fail("unauthorized")
 	}
 	principal := Principal{PeerID: peer, Subject: Subject{Kind: "controller"}}

@@ -33,6 +33,9 @@ shown by `/changelog`.
 - Pairing refuses a code that two devices presented: someone else saw it, so neither is approved
   and the owner is told to pair again out of sight. A joining Orb keeps an inviter as a peer
   only once it trusts it, so one that never approves is not dialled at every start.
+- Devices a Bridge does not know yet (someone pairing) connect through a small pool of their
+  own, dropped after ten minutes unless paired: throwaway identities from a leaked invitation can
+  no longer take the connection slots paired machines use.
 - The TUI draws names, folders and first messages from paired machines without their escape
   sequences, so a peer cannot write the clipboard or forge links through them.
 - Starting Orb for a peer (`host.launch`) waits a minute at most for it to come up, and fails at
