@@ -160,24 +160,29 @@ fun Stretch(text: String, height: Dp, color: Color = p.fg, squeeze: Float = 1f, 
     )
 }
 
-/** One line per tool call: verb, target, result. Live calls get the dot. */
+/**
+ * One line per action — a tool call, a thought, a group of them: a mark, the verb, what it acted
+ * on, what came of it. Live actions get the dot; ones that open show › or ⌄. Every action aligns.
+ */
 @Composable
-fun ToolLine(t: Tool) = Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-    Box(Modifier.width(14.dp)) { if (t.live) Dot(pulse = true) }
-    T(t.verb, Modifier.width(58.dp), color = if (t.live) p.fg else p.meta, lines = 1, size = 15.sp)
-    T(t.target, Modifier.weight(1f), color = if (t.live) p.fg else p.mute, lines = 1, size = 15.sp)
-    Spacer(Modifier.width(8.dp))
-    T(t.result, Modifier.fillMaxWidth(0.34f), color = if (t.failed) Ink.Rupture else p.meta, lines = 1, size = 13.sp)
-}
+fun ActionLine(verb: String, target: String, result: String, live: Boolean = false, failed: Boolean = false, open: Boolean? = null) =
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(16.dp)) { if (live) Dot(pulse = true) else if (open != null) T(if (open) "⌄" else "›", size = 14.sp, color = p.meta) }
+        T(verb, Modifier.width(76.dp), color = if (live) p.fg else p.meta, lines = 1, size = 15.sp)
+        T(target, Modifier.weight(1f), color = if (live) p.fg else p.mute, lines = 1, size = 15.sp)
+        Spacer(Modifier.width(8.dp))
+        T(result, Modifier.fillMaxWidth(0.3f), color = if (failed) Ink.Rupture else p.meta, lines = 1, size = 13.sp)
+    }
+
+@Composable
+fun ToolLine(t: Tool, open: Boolean? = null) = ActionLine(t.verb, t.target, t.result, t.live, t.failed, open)
 
 /** A labelled value, the unit of every instrument card: small caps over a large number. */
 @Composable
 fun Reading(label: String, value: String, modifier: Modifier = Modifier, sub: String = "", big: Boolean = false) = Column(modifier) {
     T(label, label = true, color = p.fg)
     if (sub.isNotEmpty()) T(sub, size = Size.Label, color = p.meta)
-    // Numbers read as condensed readouts; words stay at title size so they fit the card.
-    if (value.any(Char::isLetter)) T(value, size = 19.sp, lines = 1)
-    else Stretch(value, if (big) 52.dp else 36.dp, squeeze = 0.86f, modifier = Modifier.padding(top = 4.dp))
+    T(value, Modifier.padding(top = 2.dp), size = if (big) 26.sp else 19.sp, bold = true, lines = 1)
 }
 
 /** Where plugins live: a name, a state, a body. */
@@ -188,14 +193,14 @@ fun Slot(name: String, state: String = "", modifier: Modifier = Modifier, body: 
     body()
 }
 
-/** Every screen opens with its name set large, like a product on a panel, and an action at right. */
+/** Every screen opens with its name and an action at right; only Home sets it as the condensed wordmark. */
 @Composable
-fun Header(title: String, sub: String = "", back: (() -> Unit)? = null, big: Boolean = back == null, right: @Composable RowScope.() -> Unit = {}) =
+fun Header(title: String, sub: String = "", back: (() -> Unit)? = null, right: @Composable RowScope.() -> Unit = {}) =
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (back != null) Box(Modifier.press(onClick = back).padding(end = 2.dp)) { T("‹", size = 34.sp, color = p.fg) }
         Column(Modifier.weight(1f)) {
-            if (big) Stretch(title.uppercase(), if (back == null) 46.dp else 34.dp, squeeze = 0.9f, modifier = Modifier.padding(bottom = 6.dp))
-            else T(title, size = Size.Title, lines = 1)
+            if (back == null) Stretch(title.uppercase(), 46.dp, squeeze = 0.9f, modifier = Modifier.padding(bottom = 6.dp))
+            else T(title, size = Size.Title, bold = true, lines = 1)
             if (sub.isNotEmpty()) T(sub, size = 13.sp, color = p.meta, lines = 1)
         }
         right()

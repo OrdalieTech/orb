@@ -87,7 +87,7 @@ fun ColumnScope.ProvidersScreen(c: Ctx) {
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
     // Endpoints added through models.json have no sign-in; they show with what they unlocked.
     val custom = c.rt.local?.models().orEmpty().groupBy { it.substringBefore('/') }.filterKeys { id -> known.none { it.id == id } }
-    Header("providers", sub = if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready } + custom.size} ready · ${known.size} to choose from", back = c.nav::back, big = true)
+    Header("providers", sub = if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready } + custom.size} ready · ${known.size} to choose from", back = c.nav::back)
     Search(query, "anthropic, openai, groq…") { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         fun section(name: String, rows: List<Provider>) {
@@ -156,7 +156,7 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String) {
             if (ok) app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
     }
-    Header(pr.name, sub = pr.methods.joinToString(" · ") { it.about }, back = c.nav::back, big = true)
+    Header(pr.name, sub = pr.methods.joinToString(" · ") { it.about }, back = c.nav::back)
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Margin).animateContentSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
             Reading("status", if (pr.ready) "ready" else "off"); Reading("models", pr.models.toString())
@@ -206,7 +206,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
         "starting" -> Row(verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(f.detail.ifEmpty { "starting…" }, color = p.mute) }
         "browser" -> {
             LaunchedEffect(f.url) { f.url?.let { context.browse(it, tint) } }
-            Stretch("BROWSER", 96.dp, squeeze = 0.62f)
+            T("Continue in the browser", size = 22.sp, bold = true)
             T("Finish on the page that opened. It redirects to Orb on this phone, which brings you back here.", color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open again", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
             f.prompt?.takeIf { it.kind == "manual_code" }?.let { pr ->
@@ -220,7 +220,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
             // The code rides the clipboard to the page, which opens by itself.
             LaunchedEffect(code) { context.copy(code, "code"); f.url?.let { context.browse(it, tint) } }
             T("enter this code", label = true, color = p.meta)
-            Box(Modifier.press { context.copy(code, "code") }) { Stretch(code, 92.dp, squeeze = 0.66f) }
+            Box(Modifier.press { context.copy(code, "code") }) { T(code, size = 34.sp, bold = true) }
             T("It is on your clipboard. The page is " + f.url.orEmpty().removePrefix("https://"), size = 13.sp, color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open page", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
             if (f.detail.isNotEmpty()) T(f.detail, size = 13.sp, color = p.meta)
@@ -233,7 +233,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
             Btn("cancel") { f.cancel(); close() }
         }
         "done" -> {
-            Stretch("SIGNED IN", 96.dp, squeeze = 0.62f)
+            T("Signed in", size = 22.sp, bold = true)
             T("The core restarted with the new credential; its models are in the model deck.", color = p.mute)
             Btn("done", inverted = true, onClick = close)
         }

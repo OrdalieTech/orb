@@ -32,7 +32,7 @@ android {
     // No fragments here: an old one only arrives transitively, so its activity-result check misfires.
     lint { disable += "InvalidFragmentVersionForActivityResult" }
     // The Orb core ships as an executable; Android only executes files extracted to nativeLibraryDir.
-    packaging { jniLibs { useLegacyPackaging = true } }
+    packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += "**/liblinux.so" } } // a script, nothing to strip
     sourceSets.getByName("main").jniLibs.directories.add(layout.buildDirectory.dir("orb/jniLibs").get().asFile.path)
 }
 
@@ -47,7 +47,20 @@ val orbCore = tasks.register<Exec>("orbCore") {
     inputs.property("version", orbVersion)
     commandLine(System.getenv("GO") ?: "go", "build", "-trimpath", "-ldflags=-s -w -X main.version=$orbVersion", "-o", out.path, "./cmd/orb")
 }
-tasks.named("preBuild") { dependsOn(orbCore) }
+// Orb's Linux: proot and what it needs, from Termux's repository, plus the launcher both the agent's
+// bash tool and the terminal start (linux.sh). Android runs programs only from the app's lib dir.
+val linuxTools = tasks.register<Exec>("linuxTools") {
+    val out = layout.buildDirectory.dir("orb/jniLibs/arm64-v8a").get().asFile
+    inputs.file(rootDir.resolve("linux-tools.sh"))
+    outputs.files(listOf("libproot.so", "libprootloader.so", "libtalloc.so", "libandroid-shmem.so").map { out.resolve(it) })
+    commandLine(rootDir.resolve("linux-tools.sh").path, out.path)
+}
+val linuxLauncher = tasks.register<Copy>("linuxLauncher") {
+    from(rootDir.resolve("linux.sh")) { rename { "liblinux.so" } }
+    into(layout.buildDirectory.dir("orb/jniLibs/arm64-v8a"))
+    filePermissions { unix("755") }
+}
+tasks.named("preBuild") { dependsOn(orbCore, linuxTools, linuxLauncher) }
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
@@ -57,6 +70,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     // Sign-in pages open in a Custom Tab: the owner's browser session, and back to the app when done.
     implementation("androidx.browser:browser:1.9.0")
+    implementation("com.github.termux.termux-app:terminal-view:v0.118.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517") // android.jar's org.json is a stub on the JVM
 }

@@ -149,23 +149,77 @@ private fun Block(items: List<Item>, size: Float, first: Boolean) {
         Box(Modifier.width(58.dp).padding(top = 1.dp)) { if (you.via != null) Chip("peer", ChipKind.Blue) else Chip("you", ChipKind.Inverted) }
         BasicText(tokens(you.text, p.fg, p.bg), Modifier.weight(1f).copyable(you.text), mono(size.sp, p.fg, bold = true))
     } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 4.dp, bottom = 8.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.forEach { item ->
-            when (item) {
-                is Said -> Said(item, size)
-                is Tool -> ToolView(item)
-                is Note -> Folded(item.text, if (item.alarm) Ink.Rupture else p.meta)
-                is You -> Unit
+        runs(items).forEach { run ->
+            when (val one = run.singleOrNull()) {
+                null -> Worked(run, size)
+                is Act.Thought -> Thought(one.said, size)
+                is Act.Call -> ToolView(one.tool)
+                is Act.Prose -> Said(one.said, size)
+                is Act.Aside -> Folded(one.note.text, if (one.note.alarm) Ink.Rupture else p.meta)
             }
         }
     }
 }
 
+/** What Orb did between two things it said: thoughts and tool calls are actions, the rest is not. */
+private sealed interface Act {
+    class Thought(val said: Said) : Act
+    class Call(val tool: Tool) : Act
+    class Prose(val said: Said) : Act
+    class Aside(val note: Note) : Act
+}
+
+/** Consecutive actions form one run, which folds into a line; prose and notes stand alone. */
+private fun runs(items: List<Item>): List<List<Act>> = buildList {
+    var run = mutableListOf<Act>()
+    fun close() { if (run.isNotEmpty()) add(run); run = mutableListOf() }
+    for (i in items) when (i) {
+        is Said -> {
+            if (i.thinking.isNotBlank()) run += Act.Thought(i)
+            if (i.text.isNotBlank() || (i.live && i.thinking.isBlank())) { close(); add(listOf(Act.Prose(i))) }
+        }
+        is Tool -> run += Act.Call(i)
+        is Note -> { close(); add(listOf(Act.Aside(i))) }
+        is You -> close()
+    }
+    close()
+}
+
+private val KIND = mapOf("bash" to "command", "read" to "read", "grep" to "search", "find" to "search", "glob" to "search", "ls" to "listing", "edit" to "edit", "write" to "edit")
+
+/**
+ * A run of actions folds into one line, as the TUI folds exploration: "worked · 2 thoughts ·
+ * 3 commands", failures counted at its end. It opens to the actions; running ones stay in view.
+ */
+@Composable
+private fun Worked(run: List<Act>, size: Float) = Column(Modifier.fillMaxWidth().animateContentSize()) {
+    var open by remember { mutableStateOf(false) }
+    val live = run.any { it is Act.Call && it.tool.live || it is Act.Thought && it.said.live }
+    val kinds = run.map { if (it is Act.Call) KIND[it.tool.verb] ?: it.tool.verb else "thought" }
+    val what = kinds.groupingBy { it }.eachCount().entries.joinToString(" · ") { (k, n) ->
+        "$n " + if (n == 1) k else if (k == "search") "searches" else k + "s"
+    }
+    val failed = run.count { it is Act.Call && it.tool.failed }
+    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", what, if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open) }
+    run.filter { open || it is Act.Call && it.tool.live }.forEach {
+        Box(Modifier.padding(start = 16.dp)) { if (it is Act.Call) ToolView(it.tool) else if (it is Act.Thought) Thought(it.said, size) }
+    }
+}
+
+/** A thought is an action like the tools around it: same line, same columns, opens the same way. */
+@Composable
+private fun Thought(s: Said, size: Float) = Column(Modifier.fillMaxWidth().animateContentSize()) {
+    var open by remember { mutableStateOf(false) }
+    Box(Modifier.press { open = !open }) {
+        ActionLine("thought", s.thinking.trim().lineSequence().first().removePrefix("**").substringBefore("**"), "${s.thinking.length / 4} tok", live = s.live && s.text.isBlank(), open = open)
+    }
+    if (open) Box(Modifier.padding(start = 16.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp)) {
+        BasicText(s.thinking.trim(), Modifier.copyable(s.thinking), mono((size - 3).sp, p.mute).copy(lineHeight = (size + 2).sp))
+    }
+}
+
 @Composable
 private fun Said(s: Said, size: Float) = Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    var open by remember { mutableStateOf(false) }
-    if (s.thinking.isNotBlank()) Box(Modifier.press { open = !open }.animateContentSize()) {
-        T(if (open) s.thinking else "▸ thought · " + s.thinking.length / 4 + " tok", color = p.meta, size = if (open) (size - 2).sp else Size.Label, lines = if (open) Int.MAX_VALUE else 1)
-    }
     if (s.text.isNotBlank()) Markdown(s.text, Modifier.copyable(s.text), size)
     if (s.live) Caret(Ink.Rupture, (size * 0.55f).dp, (size * 1.1f).dp)
 }
@@ -175,8 +229,8 @@ private fun Said(s: Said, size: Float) = Column(verticalArrangement = Arrangemen
 private fun ToolView(t: Tool) {
     var open by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().animateContentSize()) {
-        Box(Modifier.press { open = !open }) { ToolLine(t) }
-        if (open) Column(Modifier.padding(start = 14.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.press { open = !open }) { ToolLine(t, open) }
+        if (open) Column(Modifier.padding(start = 16.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (t.args.isNotBlank()) { T("input", label = true, color = p.meta); BasicText(t.args, Modifier.copyable(t.args), mono(12.sp, p.mute).copy(lineHeight = 17.sp)) }
             T("output", label = true, color = p.meta)
             BasicText(t.output.ifBlank { if (t.live) "running…" else "no output" }, Modifier.copyable(t.output), mono(12.sp, if (t.failed) Ink.Rupture else p.fg).copy(lineHeight = 17.sp))
@@ -215,13 +269,13 @@ private fun tokens(text: String, fg: Color, bg: Color): AnnotatedString = buildA
 
 @Composable
 private fun Standby() = Box(Modifier.fillMaxSize().padding(Margin), contentAlignment = Alignment.Center) {
-    Stretch("STANDBY", 150.dp, p.rule.copy(alpha = 0.55f), squeeze = 0.62f)
+    T("standby", label = true, color = p.meta)
 }
 
 /** Another Orb is driving this phone. Blue fills space here and nowhere else. */
 @Composable
 fun PatternBlue(stop: () -> Unit) = Column(Modifier.fillMaxWidth().background(Ink.Blue).padding(horizontal = Margin, vertical = 14.dp)) {
-    Stretch("PATTERN BLUE", 44.dp, Ink.Texte, squeeze = 0.78f)
+    T("PATTERN BLUE", size = 20.sp, bold = true, color = Ink.Texte)
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         T("a peer is prompting this phone", Modifier.weight(1f), color = Ink.Texte)
         Btn("stop", inverted = true, color = Ink.Texte, on = Ink.Blue, onClick = stop)

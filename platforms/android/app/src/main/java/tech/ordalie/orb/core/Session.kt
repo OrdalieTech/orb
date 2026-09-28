@@ -112,7 +112,7 @@ class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Se
     /** Brings a (re)started core to where this session was: the chosen model, the open conversation. */
     private suspend fun boot() {
         available = cmd("get_available_models")?.optJSONArray("models")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { m -> m.optString("provider") + "/" + m.optString("id") } } } ?: emptyList()
-        orb.model.takeIf { it in available }?.let { cmd("set_model") { put("provider", it.substringBefore('/')).put("modelId", it.substringAfter('/')) } }
+        preferred()
         commands = cmd("get_commands")?.optJSONArray("commands")?.let { a ->
             (0 until a.length()).map { a.getJSONObject(it).let { c -> Command(c.optString("name"), c.optString("description").takeIf { d -> d != "null" }.orEmpty().ifEmpty { c.optString("source") }) } }
         } ?: emptyList()
@@ -192,10 +192,18 @@ class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Se
     }
     override fun models() = available
     override fun useModel(id: String) {
+        orb.model = id
         val (provider, model) = id.split("/", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
         scope.launch { cmd("set_model") { put("provider", provider).put("modelId", model) }; refresh() }
     }
-    override fun useThinking(level: String) { scope.launch { cmd("set_thinking_level") { put("level", level) }; refresh() } }
+    override fun useThinking(level: String) { orb.thinking = level; scope.launch { cmd("set_thinking_level") { put("level", level) }; refresh() } }
+
+    /** Applies the remembered model, then the remembered reasoning if that model takes it. */
+    private suspend fun preferred() {
+        orb.model.takeIf { it in available }?.let { cmd("set_model") { put("provider", it.substringBefore('/')).put("modelId", it.substringAfter('/')) } }
+        val levels = cmd("get_available_thinking_levels")?.optJSONArray("levels")?.let { a -> (0 until a.length()).map(a::optString) }.orEmpty()
+        orb.thinking.takeIf { it in levels }?.let { cmd("set_thinking_level") { put("level", it) } }
+    }
     override fun compact(instructions: String) {
         scope.launch {
             val r = rpc.call(JSONObject().put("type", "compact").apply { if (instructions.isNotBlank()) put("customInstructions", instructions) }, 600_000)
@@ -218,8 +226,7 @@ class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Se
     override fun newSession(first: String?) {
         scope.launch {
             cmd("new_session"); transcript.clear(); title = ""
-            // A new conversation keeps the model the owner chose, not the settings default.
-            orb.model.takeIf { it in available }?.let { id -> id.split("/", limit = 2).let { cmd("set_model") { put("provider", it[0]).put("modelId", it[1]) } } }
+            preferred() // a new conversation keeps the owner's choices, not the settings defaults
             refresh()
             first?.let(::prompt)
         }
@@ -267,6 +274,13 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
             return if (gone) 5000 else 2000
         }
         reopening?.takeIf { next.optJSONObject("target") != null }?.let { text -> reopening = null; info = next; call("prompt", JSONObject().put("text", text)) }
+        if (wanted && next.optJSONObject("target") != null) {
+            wanted = false
+            info = next
+            val (m, t) = bridge.preferred(peer)
+            val known = next.optJSONArray("models")?.let { a -> (0 until a.length()).map(a::getJSONObject).firstOrNull { it.optString("provider") + "/" + it.optString("id") == m } }
+            if (known != null) { thinking = t; useModel(m) }
+        }
         val session = next.optJSONObject("target")?.optString("session_id")
         if (session != info.optJSONObject("target")?.optString("session_id")) { cursor = ""; transcript.clear() }
         info = next; online = true
@@ -344,9 +358,17 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
         call("input.reply", execution(JSONObject().put("id", a.id).put("value", reply)))
     }
     override fun models() = info.optJSONArray("models")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { m -> m.optString("provider") + "/" + m.optString("id") } } } ?: emptyList()
-    override fun useModel(id: String) { val (p, m) = id.split("/", limit = 2).let { it[0] to it.getOrElse(1) { "" } }; call("session.model", JSONObject().put("provider", p).put("model", m).apply { if (thinking.isNotEmpty()) put("thinking", thinking) }) }
+    override fun useModel(id: String) {
+        bridge.prefer(peer, id, thinking)
+        val (p, m) = id.split("/", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+        call("session.model", JSONObject().put("provider", p).put("model", m).apply { if (thinking.isNotEmpty()) put("thinking", thinking) })
+    }
     // A peer's level is not described on the wire: it is set with the model, and remembered here.
     override fun useThinking(level: String) { thinking = level; model.takeIf { it.contains('/') }?.let(::useModel) }
+
+    /** A thread this phone just started on the device takes the choices last made for that device. */
+    fun takePreferred() { wanted = true }
+    private var wanted = false
     override fun newSession(first: String?) = call("session.new", JSONObject())
     override fun close() = job.cancel()
 }

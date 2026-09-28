@@ -45,7 +45,15 @@ class Runtime(context: Context) {
         bridge.up // the pipe starts the Bridge service before the session attaches to it
         scope.launch {
             try { withContext(Dispatchers.IO) { orb.seed() }; local = LocalSession(scope, orb) } finally { starting = false }
+            setupLinux()
         }
+    }
+
+    /** The first start installs the Linux in the background (a failed one again on a tap); the core then moves into it. */
+    fun setupLinux() = scope.launch {
+        if (orb.linux.ready || !orb.linux.install()) return@launch
+        withContext(Dispatchers.IO) { orb.seed() }
+        local?.restart()
     }
 
     /** Provider keys are process environment: a new core picks them up. */

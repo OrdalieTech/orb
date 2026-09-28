@@ -40,7 +40,7 @@ fun ColumnScope.PluginsScreen(c: Ctx) {
     var dirty by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(c.rt.orb.permissions) }
     LaunchedEffect(Unit) { list = withContext(Dispatchers.IO) { c.rt.orb.plugins() }.filter { it.name !in MANAGED } }
-    Header("plugins", sub = if (list.isEmpty()) "reading" else "${list.count { it.on }} of ${list.size} on", back = c.nav::back, big = true)
+    Header("plugins", sub = if (list.isEmpty()) "reading" else "${list.count { it.on }} of ${list.size} on", back = c.nav::back)
     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
         items(list, key = { it.name }) { pl ->
             Row(
