@@ -34,12 +34,6 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 		_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "\nScan with the Orb app, or on another machine run:\n  orb bridge join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", code, inv.PeerID)
-	// In Termux the Orb app is on this very phone: hand it the code instead of a photo of it.
-	if opener, err := exec.LookPath("termux-open-url"); err == nil && runtime.GOOS == "android" {
-		if exec.CommandContext(ctx, opener, code).Run() == nil {
-			_, _ = fmt.Fprintln(streams.Stdout, "Opened the Orb app with this code: tap pair there, then answer here.")
-		}
-	}
 	claimed, err := pollBridgePairing(ctx, inv.Expires, func(ctx context.Context) (bridge.Invitation, bool, error) {
 		var status bridgeSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
