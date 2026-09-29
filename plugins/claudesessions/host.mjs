@@ -27,6 +27,9 @@ function ask(title, choices, signal, ruled = false) { return request({ type: 'in
 async function run(config) {
   const { query } = await import(pathToFileURL(config.sdk));
   let permissionMode = config.permissionMode || 'default';
+  // Tool calls Orb's policy already allowed: Claude Code may still ask for them (its own safety
+  // checks run after hooks), and a second prompt for an approved call is noise.
+  const approved = new Set();
   const options = {
     cwd: config.cwd, pathToClaudeCodeExecutable: config.claude,
     model: config.model === "default" ? undefined : config.model, includePartialMessages: true, agentProgressSummaries: true,
@@ -38,6 +41,7 @@ async function run(config) {
         const result = await request({ type: 'tool', tool: input.tool_name, args: input.tool_input,
           tool_id: toolID, cwd: input.cwd }, signal);
         if (!result.decision || (permissionMode === 'plan' && result.decision === 'allow')) return {};
+        if (result.decision === 'allow' && toolID) approved.add(toolID);
         return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: result.decision,
           permissionDecisionReason: result.reason } };
       } catch { return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
@@ -59,6 +63,8 @@ async function run(config) {
           }));
           return { behavior: 'allow', updatedInput: { ...input, answers } };
         }
+        // A user's own ask rule still wants a human; otherwise Orb's allow stands.
+        if (approved.delete(options.toolUseID) && !options.matchedAskRule) return { behavior: 'allow', updatedInput: input };
         const relative = path => typeof path === 'string' && path.startsWith(config.cwd + '/') ? path.slice(config.cwd.length + 1) : path;
         const quote = (mark, text) => String(text ?? '').slice(0, 2000).split('\n').map(line => mark + line).join('\n');
         const details = name === 'ExitPlanMode' ? (input.plan ?? 'Claude is ready to leave planning and start implementation.')

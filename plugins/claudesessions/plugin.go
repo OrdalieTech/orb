@@ -282,7 +282,7 @@ func configuredOptions(ctx context.Context, settingsManager *config.SettingsMana
 	}
 	policy, err := permissions.FromSettings(settingsManager.GetPluginSettings("permissions"))
 	headless := !settingsManager.GetPlugins()["permissions"] || (err == nil && policy.AskFallback == permissions.Allow)
-	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode, Headless: headless}, nil
+	return Options{Node: node, Claude: claude, SDK: sdk, Env: env, Sandbox: mode, Headless: headless, Unasked: !settingsManager.GetPlugins()["permissions"]}, nil
 }
 
 // Published versions live at immutable paths so upgrades cannot break active sessions.
