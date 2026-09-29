@@ -39,7 +39,7 @@ jobs:
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           version: v2.18.2
-          args: release --clean --skip=publish --release-notes /tmp/notes.md
+          args: release --clean --skip=publish,sign --release-notes /tmp/notes.md # the dry run has no key; the publish step signs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify packaged binaries
