@@ -9,8 +9,9 @@ shown by `/changelog`.
   Orb's permission hook allowed a call, and a second prompt now follows Orb's answer (your own
   Claude ask rules and plan mode still prompt). With the permissions plugin off, Claude's tools
   run unasked, like Orb's.
-- A click in the login dialog copies its link: a drag there selected the transcript behind it, so
-  a sign-in URL could not be copied.
+- Any text on screen can be selected and copied: a drag inside a dialog, the editor or the footer
+  selects the cells as drawn (it used to select the transcript behind a dialog, or nothing), and
+  a click in the login dialog copies its link.
 - Images in the transcript leave the screen while a dialog is open: terminals draw them above
   text, so they covered the dialog.
 - The TUI no longer lists skill and prompt warnings at startup (a skill name other tools accept, a

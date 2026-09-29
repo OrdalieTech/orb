@@ -301,39 +301,33 @@ func TestSelectionE2EReleaseAndEscapeStopTicker(t *testing.T) {
 // TestSelectionE2EChromePressStartsNothing pins the thread constraint: a
 // press over the editor chrome (or the filler below a short transcript)
 // never starts a text selection.
-func TestSelectionE2EChromePressStartsNothing(t *testing.T) {
+func TestSelectionE2EChromeDragSelectsWhatIsDrawn(t *testing.T) {
 	fixture := newSelectionFixture(t)
 	height := fixture.bodyHeight()
 
-	// The editor's top border declines the press; constrained selection must
-	// not pick it up either.
+	// A click on chrome copies nothing: only a drag selects.
+	fixture.terminal.deliver(sgr(0, 3, height, false))
+	fixture.terminal.deliver(sgr(0, 3, height, true))
+	select {
+	case text := <-fixture.copied:
+		t.Fatalf("a chrome click copied %q", text)
+	default:
+	}
+	// A drag across the editor's rows copies the cells as drawn there, not transcript text.
+	fixture.ui.RenderNow()
+	fixture.ui.renderMu.Lock()
+	want := strings.TrimRight(plainTerminalText(SliceByColumn(fixture.ui.frame[height], 3, 3, false)), " ")
+	fixture.ui.renderMu.Unlock()
 	fixture.terminal.deliver(sgr(0, 3, height, false))
 	fixture.terminal.deliver(sgr(32, 5, height, false))
 	fixture.terminal.deliver(sgr(0, 5, height, true))
-	if selection, _ := fixture.selectionState(); selection.active || selection.moved {
-		t.Fatalf("chrome press started a selection: %+v", selection)
-	}
-	// Only the transcript rows matter: the editor legitimately paints its
-	// block cursor with the same reverse-video attribute.
-	fixture.ui.RenderNow()
-	fixture.ui.renderMu.Lock()
-	body := strings.Join(fixture.ui.previousLines[:height], "\n")
-	fixture.ui.renderMu.Unlock()
-	if strings.Contains(body, "\x1b[7m") {
-		t.Fatalf("chrome drag painted a selection highlight in the thread: %q", body)
-	}
 	select {
 	case text := <-fixture.copied:
-		t.Fatalf("chrome drag copied %q", text)
-	default:
-	}
-
-	// Filler rows below a short transcript are not the thread either.
-	fixture.body.lines = fixture.body.lines[:2]
-	fixture.ui.RenderNow()
-	fixture.terminal.deliver(sgr(0, 3, 4, false))
-	if selection, _ := fixture.selectionState(); selection.active {
-		t.Fatalf("press on filler rows started a selection: %+v", selection)
+		if text != want {
+			t.Fatalf("chrome drag copied %q, want %q", text, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("chrome drag copied nothing")
 	}
 }
 
@@ -415,5 +409,22 @@ func TestSelectionE2EMultiMessageDragExtractsCleanContent(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("multi-message drag did not copy")
+	}
+}
+
+func TestSelectionE2EDragInsideADialogCopiesTheDialog(t *testing.T) {
+	fixture := newSelectionFixture(t)
+	fixture.ui.ShowOverlay(&overlayLines{lines: []string{"https://example.test/login"}}, OverlayOptions{Anchor: OverlayTopLeft, Width: AbsoluteSize(30)})
+	fixture.ui.RenderNow()
+	fixture.terminal.deliver(sgr(0, 0, 0, false))
+	fixture.terminal.deliver(sgr(32, 25, 0, false))
+	fixture.terminal.deliver(sgr(0, 25, 0, true))
+	select {
+	case text := <-fixture.copied:
+		if text != "https://example.test/login" {
+			t.Fatalf("copied %q, want the dialog's link", text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a drag in a dialog copied nothing")
 	}
 }

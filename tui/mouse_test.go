@@ -111,12 +111,13 @@ func TestTUIMouseFallsThroughWhenComponentDeclines(t *testing.T) {
 	ui, _ := viewportWithTarget(t, target)
 	ui.SetSelectionHandler(func(string) {})
 
-	// A declined press still falls through to the viewport, but selection is
-	// constrained to the transcript: a chrome press starts nothing.
+	// A declined press falls through to the viewport; outside the transcript it
+	// selects the cells as drawn, not transcript content.
 	ui.handleMouse("\x1b[<0;4;5M")
-	if len(target.events) != 1 || ui.selection.active {
-		t.Fatalf("declined chrome press = events %d selection %+v, want fall-through without selection", len(target.events), ui.selection)
+	if len(target.events) != 1 || !ui.selection.active || !ui.selection.screen {
+		t.Fatalf("declined chrome press = events %d selection %+v, want fall-through to a screen selection", len(target.events), ui.selection)
 	}
+	ui.handleMouse("\x1b[<0;4;5m")
 	// The fall-through path itself stays alive: a declined wheel scrolls the
 	// transcript.
 	ui.handleMouse("\x1b[<64;4;5M")
