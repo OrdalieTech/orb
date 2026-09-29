@@ -62,10 +62,13 @@ type mousePoint struct{ row, column int }
 type mouseSelection struct {
 	anchor, focus, lastClick mousePoint
 	active, moved            bool
-	unit, clicks             int
-	unitStart, unitEnd       mousePoint
-	scrollbar                bool
-	lastClickAt              time.Time
+	// screen: cells of the frame as drawn (dialogs, editor, footer), not transcript content; it
+	// does not follow scrolling, as what it holds is only ever what is on screen.
+	screen             bool
+	unit, clicks       int
+	unitStart, unitEnd mousePoint
+	scrollbar          bool
+	lastClickAt        time.Time
 }
 
 // selectionAutoScroll drives the edge-drag auto-scroll: while a selection
@@ -97,6 +100,7 @@ type TUI struct {
 	previousViewportTop int
 	fullRedraws         int
 	previousImageIDs    []uint32
+	frame               []string // the last composited frame, before selection highlight
 	clearOnShrink       bool
 	showHardwareCursor  bool
 	viewportBody        Component
@@ -771,6 +775,14 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		ui.selection.scrollbar = false
 	case event.Type == MouseDrag && ui.selection.scrollbar:
 		ui.scrollViewportToLocked(event.Row)
+	case event.Type == MouseRelease && ui.selection.active && ui.selection.screen:
+		ui.extendScreenSelectionLocked(event)
+		if ui.selection.moved {
+			selected = ui.selectedTextLocked()
+		}
+		ui.selection.active = false
+	case event.Type == MouseDrag && ui.selection.active && ui.selection.screen:
+		ui.extendScreenSelectionLocked(event)
 	case event.Type == MouseRelease && ui.selection.active:
 		ui.stopSelectionScrollLocked()
 		if point, ok := ui.bodyPointLocked(event.Column, event.Row, true); ok {
@@ -811,10 +823,16 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		ui.selection = mouseSelection{scrollbar: true}
 		ui.scrollViewportToLocked(event.Row)
 	case event.Type == MousePress && event.Button == 0 && ui.selectionHandler != nil:
-		// Presses outside the transcript (editor, status chrome, filler rows
-		// below a short history) start nothing: selection is constrained to
-		// the thread.
-		if point, ok := ui.bodyPointLocked(event.Column, event.Row, false); ok {
+		// The transcript selects content (it follows scrolling); a press
+		// anywhere else no component took, or inside a dialog, selects the
+		// cells as drawn.
+		point, ok := ui.bodyPointLocked(event.Column, event.Row, false)
+		if !ok || ui.modalAtLocked(event) {
+			// Anything else on screen, a dialog over the transcript included, selects as drawn.
+			ui.stopSelectionScrollLocked()
+			here := mousePoint{row: event.Row, column: event.Column}
+			ui.selection = mouseSelection{anchor: here, focus: here, active: true, screen: true}
+		} else {
 			ui.stopSelectionScrollLocked()
 			previous, now := ui.selection, time.Now()
 			clicks := 1
@@ -877,6 +895,35 @@ func (ui *TUI) bodyPointLocked(column, row int, clamp bool) (mousePoint, bool) {
 	row = max(0, min(row, visible-1))
 	column = max(0, min(column, max(0, ui.viewportBodyWidth-1)))
 	return mousePoint{row: start + row, column: column}, true
+}
+
+// modalAtLocked reports whether a dialog covers the pressed cell.
+func (ui *TUI) modalAtLocked(event MouseEvent) bool {
+	for _, box := range ui.mouseOverlays {
+		if box.modal && event.Row >= box.row && event.Row < box.row+box.height && event.Column >= box.col && event.Column < box.col+box.width {
+			return true
+		}
+	}
+	return false
+}
+
+func (ui *TUI) extendScreenSelectionLocked(event MouseEvent) {
+	focus := mousePoint{row: max(0, min(event.Row, len(ui.frame)-1)), column: max(0, event.Column)}
+	ui.selection.focus = focus
+	ui.selection.moved = ui.selection.moved || focus != ui.selection.anchor
+}
+
+// screenSelectedTextLocked is the selected cells of the last frame, one line per row.
+func (ui *TUI) screenSelectedTextLocked() string {
+	start, end := ui.selection.bounds()
+	rows := []string{}
+	for row := start.row; row <= end.row && row < len(ui.frame); row++ {
+		line := ui.frame[row]
+		from, to := selectionColumns(row, start, end, VisibleWidth(line))
+		from = selectionColumnStart(line, from)
+		rows = append(rows, strings.TrimRight(plainTerminalText(SliceByColumn(line, from, max(0, to-from), false)), " "))
+	}
+	return strings.Join(rows, "\n")
 }
 
 func (ui *TUI) clearSelectionLocked() {
@@ -1046,6 +1093,9 @@ func plainTerminalText(text string) string {
 // scrollbar column can't leak in) and strips presentation decoration so the
 // clipboard receives clean message text.
 func (ui *TUI) selectedTextLocked() string {
+	if ui.selection.screen {
+		return ui.screenSelectedTextLocked()
+	}
 	if ui.viewportBody == nil || ui.viewportBodyLines <= 0 {
 		return ""
 	}
@@ -1400,6 +1450,7 @@ func (ui *TUI) RenderNow() {
 	if ui.overlayCount() > 0 {
 		newLines = ui.compositeOverlays(newLines, width, height)
 	}
+	ui.frame = newLines
 	newLines = ui.renderSelection(newLines)
 	cursorRow, cursorColumn, hasCursor := ui.extractCursor(newLines, height)
 	newLines = applyLineResets(newLines)
@@ -1717,6 +1768,16 @@ func scrollbar(total, height, end int) (top, size int) {
 func (ui *TUI) renderSelection(lines []string) []string {
 	if !ui.selection.moved {
 		return lines
+	}
+	if ui.selection.screen {
+		start, end := ui.selection.bounds()
+		result := append([]string(nil), lines...)
+		for row := start.row; row <= end.row && row < len(result); row++ {
+			if from, to := selectionColumns(row, start, end, VisibleWidth(result[row])); to > from && !IsImageLine(result[row]) {
+				result[row] = highlightSelection(result[row], from, to, ui.selectionStyle)
+			}
+		}
+		return result
 	}
 	start, end := ui.selection.bounds()
 	viewStart, viewEnd := ui.viewportRangeLocked()
