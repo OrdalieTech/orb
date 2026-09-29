@@ -455,7 +455,8 @@ func TestShutdownEndsEveryJob(t *testing.T) {
 			t.Errorf("process group %d survived the session", group)
 		}
 	}
-	if took := time.Since(start); took > 4*time.Second {
+	// ponytail: "at once" against 30 s sleeps; the TERM grace alone nears 4 s, which loaded CI runners passed.
+	if took := time.Since(start); took > 10*time.Second {
 		t.Errorf("shutdown took %v", took)
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
