@@ -102,7 +102,9 @@ export function query({prompt,options:o}) {
   ]}:{file_path:'/fixture'};
   const hook=await o.hooks?.PreToolUse[0].hooks[0]({hook_event_name:'PreToolUse',tool_name:tool,tool_input:input,tool_use_id:'native-write',cwd:o.cwd},'native-write',{signal:abort.signal});
   const decision=hook?.hookSpecificOutput?.permissionDecision;
-  const reply=decision==='deny'?{behavior:'deny'}:decision==='allow'&&!question?{behavior:'allow',updatedInput:input}:await o.canUseTool(tool,input,{signal:abort.signal});
+  // ask-anyway: like the real CLI's own safety checks, it asks even after a hook allowed the call.
+  const anyway=JSON.stringify(p.message.content).includes('ask-anyway');
+  const reply=decision==='deny'?{behavior:'deny'}:decision==='allow'&&!question&&!anyway?{behavior:'allow',updatedInput:input}:await o.canUseTool(tool,input,{signal:abort.signal,toolUseID:'native-write'});
   if(reply.behavior!=='allow') throw new Error('permission denied');
   const text=JSON.stringify({resume:o.resume??'',read,turn,content:p.message.content,reply,effort:o.effort,thinking:o.thinking});
   // Like the real CLI: one assistant record per content block, beside the raw stream.
@@ -1820,5 +1822,36 @@ func TestSteeringReachesClaudeWaitingOnATask(t *testing.T) {
 	got := transcript()
 	if !strings.Contains(got, "steered") || !strings.Contains(got, "meanwhile") || strings.LastIndex(got, "task done") < strings.LastIndex(got, "steered") {
 		t.Fatalf("transcript = %s", got)
+	}
+}
+
+// With Orb's permissions plugin off, Claude's tools run unasked like Orb's own, whatever policy hooks exist.
+func TestNativeToolsRunUnaskedWithoutOrbPermissions(t *testing.T) {
+	driver := &Driver{options: Options{Unasked: true}}
+	blocked := func(context.Context, engine.BeforeToolCallContext) (*engine.BeforeToolCallResult, error) {
+		t.Fatal("asked a policy with permissions off")
+		return nil, nil
+	}
+	if decision, _ := driver.approve(t.Context(), "Bash", "t1", "/", map[string]any{"command": "ls"}, nil, blocked); decision != "allow" {
+		t.Fatalf("decision %q", decision)
+	}
+}
+
+// Claude Code may ask after a hook allowed the call; Orb's allow stands, with no second prompt.
+func TestAnAllowedNativeCallIsNotAskedAgain(t *testing.T) {
+	host, _ := fixture(t, &plugins.Policy{Mode: "auto"})
+	if _, err := host.EnableControl(); err != nil {
+		t.Fatal(err)
+	}
+	s := host.Session()
+	done := make(chan error, 1)
+	go func() { done <- s.Prompt(t.Context(), "native write ask-anyway") }()
+	select {
+	case err := <-done:
+		if err != nil || s.State().ErrorMessage != nil {
+			t.Fatalf("err %v, state error %v", err, s.State().ErrorMessage)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an allowed call was asked again")
 	}
 }

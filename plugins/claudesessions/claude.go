@@ -49,6 +49,9 @@ type Options struct {
 	Manager           *session.SessionManager
 	// Headless approves native asks that no UI can answer, as Orb runs its own tools.
 	Headless bool
+	// Unasked: Orb's permissions plugin is off, so Orb runs its tools without asking, and Claude's
+	// run the same way instead of falling back to Claude Code's own prompts.
+	Unasked bool
 	// Context is Orb's instructions that Claude does not load itself.
 	Context string
 	Ask     func(context.Context, string, []string) (string, error)
@@ -580,6 +583,9 @@ func nativeContent(ctx context.Context, prompts engine.AgentMessages, convert en
 
 // approve asks Orb's tool policy about a native call, using Orb's tool names.
 func (d *Driver) approve(ctx context.Context, tool, toolID, cwd string, args map[string]any, prompts engine.AgentMessages, before engine.BeforeToolCallFunc) (decision, reason string) {
+	if d.options.Unasked {
+		return "allow", ""
+	}
 	if before == nil {
 		return "", ""
 	}
