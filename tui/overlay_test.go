@@ -96,6 +96,17 @@ func TestOverlayLayoutOptionsAndTerminalHeight(t *testing.T) {
 		}
 	})
 
+	t.Run("images-leave-while-an-overlay-is-open", func(t *testing.T) {
+		ui := NewTUI(newFakeTerminal(20, 4))
+		ui.ShowOverlay(&overlayLines{lines: []string{"DIALOG"}}, OverlayOptions{Anchor: OverlayTopLeft, Width: AbsoluteSize(8)})
+		image := EncodeKitty("AAAA", 4, 2, 7, false)
+		for _, line := range ui.compositeOverlays([]string{"text", image, "", "more"}, 20, 4) {
+			if IsImageLine(line) {
+				t.Fatalf("image drawn under a dialog: %q", line)
+			}
+		}
+	})
+
 	t.Run("overlay-is-relative-to-bottom-viewport", func(t *testing.T) {
 		terminal := newFakeTerminal(20, 4)
 		ui := NewTUI(terminal)

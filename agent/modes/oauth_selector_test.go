@@ -811,3 +811,22 @@ func TestProviderMenuAlwaysOffersAddAccountPerProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestAClickCopiesTheLoginLink(t *testing.T) {
+	copied := ""
+	restore := copyAuthLink
+	copyAuthLink = func(text string) error { copied = text; return nil }
+	defer func() { copyAuthLink = restore }()
+	dialog := newLoginAuthDialogComponent("Login", nil)
+	if dialog.HandleMouse(tui.MouseEvent{Type: tui.MousePress}) {
+		t.Fatal("consumed a click with no link shown")
+	}
+	url := "https://claude.ai/oauth/authorize?code=true&client_id=x&state=" + strings.Repeat("s", 90)
+	dialog.showAuth(url, "")
+	if !dialog.HandleMouse(tui.MouseEvent{Type: tui.MousePress}) || copied != url {
+		t.Fatalf("copied %q", copied)
+	}
+	if !strings.Contains(strings.Join(dialog.Render(60), "\n"), "Link copied") {
+		t.Fatal("no feedback after copying")
+	}
+}

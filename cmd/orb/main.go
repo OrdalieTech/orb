@@ -506,9 +506,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 				version, http.DefaultClient, latestReleaseURL, versionCheckTimeout,
 			),
 			StartupModelRefresh: startupModelRefresh,
-			// Skill/prompt resource diagnostics stay interactive-only; upstream
-			// print/RPC modes emit no resource diagnostics (main.ts:87-91).
-			Diagnostics:         append(append([]modes.StartupDiagnostic(nil), inputs.Diagnostics...), inputs.ResourceDiagnostics...),
+			// Skill and prompt warnings (a name other tools accept, a YAML slip in a skill from another
+			// tool's folder) are not shown: the owner cannot act on them from here, and the skill
+			// loads or is skipped either way. Upstream prints them at startup.
+			// ponytail: dropped, not listed elsewhere; add an `orb doctor` when a skipped skill needs explaining.
+			Diagnostics:         inputs.Diagnostics,
 			Host:                host,
 			Changelog:           "",
 			Output:              streams.Stdout,

@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
 
+	"github.com/OrdalieTech/orb/agent/clipboard"
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
 )
 
@@ -265,6 +266,8 @@ func (component *OAuthSelectorComponent) ListConfirm() { component.confirmSelect
 type authDialogLine struct {
 	text  string
 	style string
+	hint  bool   // the "click to copy" line, rewritten once copied
+	url   string // on the hint line: what a click copies
 }
 
 // loginAuthDialogComponent keeps OAuth notifications in the editor area for
@@ -277,6 +280,35 @@ type loginAuthDialogComponent struct {
 	title     string
 	lines     []authDialogLine
 	onCancel  func()
+	link      string // the URL a click copies
+}
+
+// copyAuthLink is swappable for tests.
+var copyAuthLink = clipboard.CopyToClipboard
+
+// HandleMouse copies the link on a click: a drag in a dialog selects the transcript behind it,
+// and a long URL wraps or clips in the box, so copying by hand does not work.
+// ponytail: the link only; general text selection inside overlays is a TUI-wide change.
+func (component *loginAuthDialogComponent) HandleMouse(event tui.MouseEvent) bool {
+	if event.Type != tui.MousePress || event.Button != 0 {
+		return false
+	}
+	component.mu.Lock()
+	defer component.mu.Unlock()
+	if component.link == "" {
+		return false
+	}
+	hint := "Link copied to clipboard"
+	if err := copyAuthLink(component.link); err != nil {
+		hint = "Copy failed: " + err.Error()
+	}
+	for index, line := range component.lines {
+		if line.hint {
+			component.lines[index].text = hint
+		}
+	}
+	component.rebuildLocked()
+	return true
 }
 
 func newLoginAuthDialogComponent(title string, onCancel func()) *loginAuthDialogComponent {
@@ -292,6 +324,12 @@ func newLoginAuthDialogComponent(title string, onCancel func()) *loginAuthDialog
 
 func (component *loginAuthDialogComponent) replace(lines ...authDialogLine) {
 	component.mu.Lock()
+	component.link = ""
+	for _, line := range lines {
+		if line.hint {
+			component.link = line.url
+		}
+	}
 	component.lines = append([]authDialogLine(nil), lines...)
 	component.rebuildLocked()
 	component.mu.Unlock()
@@ -330,15 +368,19 @@ func authDialogHyperlink(url, label string) string {
 	return "\x1b]8;;" + url + "\x07" + label + "\x1b]8;;\x07"
 }
 
-func (component *loginAuthDialogComponent) showAuth(url, instructions string) {
-	clickHint := "Ctrl+click to open"
+// clickHint names both gestures: a click copies (HandleMouse), Cmd/Ctrl+click is the terminal's own open.
+func clickHint() string {
 	if runtime.GOOS == "darwin" {
-		clickHint = "Cmd+click to open"
+		return "Click to copy · Cmd+click to open"
 	}
+	return "Click to copy · Ctrl+click to open"
+}
+
+func (component *loginAuthDialogComponent) showAuth(url, instructions string) {
 	lines := []authDialogLine{
 		{style: "spacer"},
 		{text: authDialogHyperlink(url, url), style: "accent"},
-		{text: authDialogHyperlink(url, clickHint), style: "dim"},
+		{text: authDialogHyperlink(url, clickHint()), style: "dim", hint: true, url: url},
 	}
 	if instructions != "" {
 		lines = append(lines, authDialogLine{style: "spacer"}, authDialogLine{text: instructions, style: "warning"})
@@ -347,14 +389,10 @@ func (component *loginAuthDialogComponent) showAuth(url, instructions string) {
 }
 
 func (component *loginAuthDialogComponent) showDeviceCode(verificationURI, userCode string) {
-	clickHint := "Ctrl+click to open"
-	if runtime.GOOS == "darwin" {
-		clickHint = "Cmd+click to open"
-	}
 	component.replace(
 		authDialogLine{style: "spacer"},
 		authDialogLine{text: authDialogHyperlink(verificationURI, verificationURI), style: "accent"},
-		authDialogLine{text: authDialogHyperlink(verificationURI, clickHint), style: "dim"},
+		authDialogLine{text: authDialogHyperlink(verificationURI, clickHint()), style: "dim", hint: true, url: verificationURI},
 		authDialogLine{style: "spacer"},
 		authDialogLine{text: "Enter code: " + userCode, style: "warning"},
 		authDialogLine{style: "spacer"},

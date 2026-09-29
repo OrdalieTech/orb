@@ -732,6 +732,13 @@ func (ui *TUI) compositeOverlays(lines []string, termWidth, termHeight int) []st
 		result = append(result, "")
 	}
 	viewportStart := max(0, workingHeight-termHeight)
+	// Terminal images sit in a layer above text, so no dialog drawn in text can cover them: while
+	// one is open they leave the screen (the diff render deletes them) and return when it closes.
+	for index := viewportStart; len(entries) > 0 && index < len(result); index++ {
+		if IsImageLine(result[index]) {
+			result[index] = ""
+		}
+	}
 	var backdrop StyleFunc
 	for _, entry := range entries {
 		if entry.options != nil && entry.options.Backdrop != nil {
