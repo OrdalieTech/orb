@@ -5,6 +5,12 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A click in the login dialog copies its link: a drag there selected the transcript behind it, so
+  a sign-in URL could not be copied.
+- Images in the transcript leave the screen while a dialog is open: terminals draw them above
+  text, so they covered the dialog.
+- The TUI no longer lists skill and prompt warnings at startup (a skill name other tools accept, a
+  YAML slip in another tool's skill); the skill loads or is skipped as before.
 - Releases are signed: `checksums.txt.sig` is an Ed25519 signature over `checksums.txt`, and
   `orb update` (and a paired phone's update of a machine) refuses a release that Orb's key,
   built into the binary, does not vouch for. HTTPS to GitHub alone no longer decides.
