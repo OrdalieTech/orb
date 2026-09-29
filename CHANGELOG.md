@@ -5,6 +5,13 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-09-29
+
+The first signed release: `orb update` checks Orb's signature from now on. Claude sessions stop
+prompting for what Orb already allowed, any text in the TUI can be selected, dialogs stay clear
+of images and warnings, and conversations can be deleted. The compatibility target remains Pi
+**v0.86.0** on Go **1.27.1**.
+
 - Claude sessions stop asking for permissions Orb already gave: Claude Code could still ask after
   Orb's permission hook allowed a call, and a second prompt now follows Orb's answer (your own
   Claude ask rules and plan mode still prompt). With the permissions plugin off, Claude's tools
