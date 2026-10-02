@@ -1072,13 +1072,14 @@ func (manager *Manager) Close() error {
 	}
 	manager.progress = make(map[string]*progressRegistration)
 	manager.mu.Unlock()
-	manager.cancel()
 	var failures []error
 	for _, session := range sessions {
 		if err := session.Close(); err != nil && !isChildExit(err) {
 			failures = append(failures, err)
 		}
 	}
+	// After the sessions: cancelling first would kill stdio children mid-close.
+	manager.cancel()
 	return errors.Join(failures...)
 }
 
