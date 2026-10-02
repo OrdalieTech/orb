@@ -47,7 +47,10 @@ type Extension struct {
 	Path         string
 	ResolvedPath string
 	Hidden       bool
-	SourceInfo   SourceInfo
+	// Replaceable built-ins step aside for an extension that registers one of
+	// their tool, command, or flag names.
+	Replaceable bool
+	SourceInfo  SourceInfo
 
 	mu               sync.RWMutex
 	handlers         map[EventType][]Handler
@@ -82,12 +85,20 @@ type registration struct {
 type RegisterOption func(*registerOptions)
 
 type registerOptions struct {
-	hidden     bool
-	sourceInfo *SourceInfo
+	hidden      bool
+	replaceable bool
+	sourceInfo  *SourceInfo
 }
+
+// BuiltinPathPrefix names built-in extensions and tools: "builtin:<name>".
+const BuiltinPathPrefix = "builtin:"
 
 func WithHidden(hidden bool) RegisterOption {
 	return func(options *registerOptions) { options.hidden = hidden }
+}
+
+func WithReplaceable(replaceable bool) RegisterOption {
+	return func(options *registerOptions) { options.replaceable = replaceable }
 }
 
 func WithSourceInfo(sourceInfo SourceInfo) RegisterOption {
@@ -122,7 +133,7 @@ func (registry *Registry) Register(path string, factory Factory, options ...Regi
 
 func (registry *Registry) register(path string, factory Factory, configuration registerOptions) error {
 	resolved := path
-	if !strings.HasPrefix(path, "<") {
+	if !strings.HasPrefix(path, "<") && !strings.HasPrefix(path, BuiltinPathPrefix) {
 		if filepath.IsAbs(path) {
 			resolved = filepath.Clean(path)
 		} else {
@@ -137,6 +148,7 @@ func (registry *Registry) register(path string, factory Factory, configuration r
 		Path:             path,
 		ResolvedPath:     resolved,
 		Hidden:           configuration.hidden,
+		Replaceable:      configuration.replaceable,
 		SourceInfo:       sourceInfo,
 		handlers:         make(map[EventType][]Handler),
 		handlerTokens:    make(map[EventType][]*struct{}),
@@ -168,7 +180,7 @@ func (registry *Registry) register(path string, factory Factory, configuration r
 }
 
 func cloneRegisterOptions(options registerOptions) registerOptions {
-	cloned := registerOptions{hidden: options.hidden}
+	cloned := registerOptions{hidden: options.hidden, replaceable: options.replaceable}
 	if options.sourceInfo != nil {
 		sourceInfo := *options.sourceInfo
 		cloned.sourceInfo = &sourceInfo
@@ -238,7 +250,9 @@ func (registry *Registry) BindModelRegistry(models ModelRegistry, report func(Ex
 func syntheticSourceInfo(path, resolved string) SourceInfo {
 	source := "local"
 	var baseDir *string
-	if strings.HasPrefix(path, "<") && strings.HasSuffix(path, ">") {
+	if strings.HasPrefix(path, BuiltinPathPrefix) {
+		source = "builtin"
+	} else if strings.HasPrefix(path, "<") && strings.HasSuffix(path, ">") {
 		name := strings.TrimSuffix(strings.TrimPrefix(path, "<"), ">")
 		if prefix, _, ok := strings.Cut(name, ":"); ok {
 			name = prefix
@@ -330,6 +344,9 @@ func isObjectSchema(schema []byte) bool {
 
 func (api *extensionAPI) RegisterCommand(name string, command Command) {
 	api.assertActive()
+	if name == "" {
+		panic("registerCommand requires a name")
+	}
 	command.Name = name
 	command.SourceInfo = api.extension.SourceInfo
 	api.extension.mu.Lock()
@@ -590,3 +607,75 @@ func (bus extensionEventBus) On(channel string, handler EventListener) func() {
 	return unsubscribe
 }
 func (bus extensionEventBus) Clear() { bus.api.assertActive(); bus.api.events.Clear() }
+
+// OmitReplaced leaves out replaceable extensions that share a tool, command,
+// or flag name with another extension, so a third-party extension that
+// registers /mcp replaces the built-in MCP extension instead of both running.
+// It returns one warning per built-in left out.
+func (registry *Registry) OmitReplaced() []string {
+	if registry == nil {
+		return nil
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	names := func(extension *Extension) []string {
+		extension.mu.RLock()
+		defer extension.mu.RUnlock()
+		var result []string
+		for _, name := range extension.toolOrder {
+			result = append(result, "tool:"+name)
+		}
+		for _, name := range extension.commandOrder {
+			result = append(result, "command:"+name)
+		}
+		for _, name := range extension.flagOrder {
+			result = append(result, "flag:"+name)
+		}
+		return result
+	}
+	taken := map[string]*Extension{}
+	for _, extension := range registry.extensions {
+		if !extension.Replaceable {
+			for _, name := range names(extension) {
+				if _, exists := taken[name]; !exists {
+					taken[name] = extension
+				}
+			}
+		}
+	}
+	var warnings []string
+	kept := registry.extensions[:0]
+	keptRegistrations := registry.registrations[:0]
+	for index, extension := range registry.extensions {
+		replaced := ""
+		var replacement *Extension
+		if extension.Replaceable {
+			for _, name := range names(extension) {
+				if owner, ok := taken[name]; ok {
+					replaced, replacement = name, owner
+					break
+				}
+			}
+		}
+		if replacement == nil {
+			kept = append(kept, extension)
+			keptRegistrations = append(keptRegistrations, registry.registrations[index])
+			continue
+		}
+		if builtin, ok := strings.CutPrefix(extension.Path, BuiltinPathPrefix); ok {
+			kind, name, _ := strings.Cut(replaced, ":")
+			switch kind {
+			case "command":
+				name = "/" + name
+			case "flag":
+				name = "--" + name
+			}
+			warnings = append(warnings, fmt.Sprintf("Extension %s registers %s `%s`, so built-in extension `%s` was not loaded. "+
+				"To use `%s`, run `orb plugins enable %s`, then disable or remove the existing extension. "+
+				"We recommend only having one or the other loaded at a time.", replacement.Path, kind, name, builtin, builtin, builtin))
+		}
+	}
+	registry.extensions = kept
+	registry.registrations = keptRegistrations
+	return warnings
+}

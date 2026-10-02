@@ -715,7 +715,7 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 		order = append(order, spec.Name)
 		info[spec.Name] = extensions.ToolInfo{
 			Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters,
-			SourceInfo: extensions.SourceInfo{Path: "<builtin:" + spec.Name + ">", Source: "builtin", Scope: extensions.SourceScopeTemporary, Origin: extensions.SourceOriginTopLevel},
+			SourceInfo: extensions.SourceInfo{Path: extensions.BuiltinPathPrefix + spec.Name, Source: "builtin", Scope: extensions.SourceScopeTemporary, Origin: extensions.SourceOriginTopLevel},
 		}
 	}
 	extensionNames := make([]string, 0)

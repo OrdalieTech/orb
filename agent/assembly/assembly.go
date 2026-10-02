@@ -28,10 +28,13 @@ const (
 // Row is one composable unit of the product, addressable by its stable ID.
 // Row ids are a public contract (P3): renaming one is a breaking change.
 type Row struct {
-	ID             string
-	Description    string
-	Source         Source
-	Hidden         bool
+	ID          string
+	Description string
+	Source      Source
+	Hidden      bool
+	// Replaceable rows step aside for an extension registering one of their
+	// tool, command, or flag names.
+	Replaceable    bool
 	DefaultEnabled bool
 	Factory        extensions.Factory
 }
@@ -95,7 +98,7 @@ func Rows(options Options) ([]Row, []string) {
 		if len(servers) > 0 {
 			rows = append(rows, Row{
 				ID: "mcp", Description: "MCP servers from settings",
-				Source: SourceMCP, Hidden: true, DefaultEnabled: true,
+				Source: SourceMCP, Hidden: true, Replaceable: true, DefaultEnabled: true,
 				Factory: mcp.NewManager(options.CWD, servers).Extension(),
 			})
 		}
@@ -107,7 +110,7 @@ func Rows(options Options) ([]Row, []string) {
 type Resolved struct {
 	Row
 	Enabled   bool
-	DecidedBy string // "default", "goExtensions", "plugins", "always", "--no-extensions"
+	DecidedBy string // "default", "goExtensions", "plugins", "always", "--no-extensions", "--auto", "-e"
 }
 
 // Resolve applies the settings gates: DefaultEnabled, then the goExtensions
@@ -143,13 +146,13 @@ func Resolve(rows []Row, settings *config.SettingsManager, disableAll bool) []Re
 }
 
 // Load registers the enabled rows into a Registry, preserving
-// extensions.LoadCompiled semantics: "<inline:id>" registration paths, a nil
+// extensions.LoadCompiled semantics: "builtin:id" registration paths, a nil
 // registry when nothing is enabled, and identical error text.
 func Load(cwd string, resolved []Resolved) (*extensions.Registry, []extensions.CompiledLoadError) {
 	catalog := make([]extensions.CompiledExtension, len(resolved))
 	for index, row := range resolved {
 		catalog[index] = extensions.CompiledExtension{
-			Name: row.ID, Factory: row.Factory, Hidden: row.Hidden, DefaultEnabled: row.Enabled,
+			Name: row.ID, Factory: row.Factory, Hidden: row.Hidden, Replaceable: row.Replaceable, DefaultEnabled: row.Enabled,
 		}
 	}
 	return extensions.LoadCompiled(cwd, catalog)

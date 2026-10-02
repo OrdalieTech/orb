@@ -194,7 +194,7 @@ func hasMemoryTags(itemTags, required []string) bool {
 
 func TestMemoryWithStoreRejectsNil(t *testing.T) {
 	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("<inline:memory>", Extension(nil)); err == nil || !strings.Contains(err.Error(), "store is required") {
+	if err := registry.Register("builtin:memory", Extension(nil)); err == nil || !strings.Contains(err.Error(), "store is required") {
 		t.Fatalf("Extension(nil) error = %v", err)
 	}
 }
@@ -424,7 +424,7 @@ func TestMemoryProfileIsFrozenInSystemPrompt(t *testing.T) {
 func memoryPluginTool(t *testing.T, store memorysdk.Store, name string) engine.AgentTool {
 	t.Helper()
 	registry := extensions.NewRegistry(t.TempDir())
-	mustOK(registry.Register("<inline:memory>", Extension(store)))
+	mustOK(registry.Register("builtin:memory", Extension(store)))
 	manager := must(sessionstore.InMemory(t.TempDir()))
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
 		SessionManager: manager,
@@ -467,7 +467,7 @@ func newMemoryPluginSessionWithManager(
 		settings = must(config.NewSettingsManager(root, config.WithAgentDir(agentDir)))
 	}
 	registry := extensions.NewRegistry(root)
-	mustOK(registry.Register("<inline:memory>", factory))
+	mustOK(registry.Register("builtin:memory", factory))
 	prompt := "memory test"
 	result := must(agent.NewAgentSession(agent.AgentSessionOptions{
 		CWD: root, AgentDir: agentDir, Settings: settings, SessionManager: manager,

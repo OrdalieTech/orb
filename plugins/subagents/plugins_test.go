@@ -118,7 +118,7 @@ func TestSubagentExternalCLIConfigSchemaAndExecution(t *testing.T) {
 			root := t.TempDir()
 			settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 			settings.SetPluginSetting("subagents", invalid.key, invalid.value)
-			err := extensions.NewRegistry(root).Register("<inline:subagents>", Extension(nil, nil, settings))
+			err := extensions.NewRegistry(root).Register("builtin:subagents", Extension(nil, nil, settings))
 			require(t, err != nil && strings.Contains(err.Error(), invalid.want), "setting %s=%#v error = %v, want %q", invalid.key, invalid.value, err, invalid.want)
 		})
 	}
@@ -301,7 +301,7 @@ func newSubagentParent(t *testing.T, provider *faux.Provider) *agent.AgentSessio
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(root+"/agent")))
 	manager := must(sessionstore.InMemory(root))
 	registry := extensions.NewRegistry(root)
-	mustOK(registry.Register("<inline:subagents>", Extension(provider.StreamSimple, nil, nil)))
+	mustOK(registry.Register("builtin:subagents", Extension(provider.StreamSimple, nil, nil)))
 	prompt := "parent"
 	result := must(agent.NewAgentSession(agent.AgentSessionOptions{
 		CWD: root, AgentDir: root + "/agent", Settings: settings, SessionManager: manager,
@@ -381,7 +381,7 @@ func TestSubagentParallelWidthIsCapped(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(10)})
 	root := t.TempDir()
 	registry := extensions.NewRegistry(root)
-	mustOK(registry.Register("<inline:subagents>", Extension(provider.StreamSimple, nil, nil)))
+	mustOK(registry.Register("builtin:subagents", Extension(provider.StreamSimple, nil, nil)))
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI})
 	definition := runner.ToolDefinition("subagent")
 	require(t, definition != nil, "subagent tool missing")

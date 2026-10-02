@@ -3,9 +3,12 @@ package extensions
 import "fmt"
 
 type CompiledExtension struct {
-	Name           string
-	Factory        Factory
-	Hidden         bool
+	Name    string
+	Factory Factory
+	Hidden  bool
+	// Replaceable built-ins step aside for an extension that registers one of
+	// their tool, command, or flag names.
+	Replaceable    bool
 	DefaultEnabled bool
 }
 
@@ -30,7 +33,7 @@ func LoadCompiled(cwd string, catalog []CompiledExtension) (*Registry, []Compile
 		if registry == nil {
 			registry = NewRegistry(cwd)
 		}
-		if err := registry.Register("<inline:"+entry.Name+">", entry.Factory, WithHidden(entry.Hidden)); err != nil {
+		if err := registry.Register(BuiltinPathPrefix+entry.Name, entry.Factory, WithHidden(entry.Hidden), WithReplaceable(entry.Replaceable)); err != nil {
 			loadErrors = append(loadErrors, CompiledLoadError{Name: entry.Name, Err: err})
 		}
 	}

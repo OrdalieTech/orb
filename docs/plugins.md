@@ -36,6 +36,11 @@ object settings. `orb plugins list --all` prints the full resolved composition
 settings layer that decided each state — through the same code path the real
 boot uses.
 
+Bundled plugins are named `builtin:<name>` in errors and diagnostics, and
+`-e builtin:<name>` loads one for a single run, even with `--no-extensions`.
+The MCP plugin steps aside, with a startup warning, when another extension
+registers one of its tool, command, or flag names (its own `/mcp`, say).
+
 ### subagents
 
 ```json

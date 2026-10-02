@@ -134,8 +134,8 @@ func TestLoadPreservesLoadCompiledSemantics(t *testing.T) {
 	if len(loadErrors) != 0 {
 		t.Fatalf("load errors = %v", loadErrors)
 	}
-	if registry == nil || !registry.HasPath("<inline:alpha>") || !registry.HasPath("<inline:tasks>") ||
-		!registry.HasPath("<inline:plugin-control>") || registry.HasPath("<inline:websearch>") {
+	if registry == nil || !registry.HasPath("builtin:alpha") || !registry.HasPath("builtin:tasks") ||
+		!registry.HasPath("builtin:plugin-control") || registry.HasPath("builtin:websearch") {
 		t.Fatalf("registry state unexpected (nil=%v)", registry == nil)
 	}
 	if registry, _ := assembly.Load(root, assembly.Resolve(rows, settings, true)); registry != nil {
@@ -158,7 +158,7 @@ func TestConcurrentAssembliesAreIndependent(t *testing.T) {
 				t.Errorf("load = registry nil:%v errors:%v", registry == nil, loadErrors)
 				return
 			}
-			if registry.HasPath("<inline:tasks>") != wantTasks {
+			if registry.HasPath("builtin:tasks") != wantTasks {
 				t.Errorf("tasks enabled = %v, want %v", !wantTasks, wantTasks)
 				return
 			}

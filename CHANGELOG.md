@@ -37,6 +37,9 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   more model request; runs started from `agent_settled` wait until every handler has finished.
   `context` handlers no longer see system messages, so pruning cannot drop the prompt or tools, and
   the new `context_with_system` sees the full transcript.
+- Bundled plugins and built-in tools are named `builtin:<name>`; `-e builtin:<name>` loads one even
+  with `--no-extensions`, and the MCP plugin steps aside (with a warning) for an extension that
+  registers the same tool, command or flag. Extension commands without a name fail to load.
 - Extensions can watch raw provider stream events (`provider_stream_event`), style text with
   `theme.style()`, and read `theme.colors` and `theme.appearance`; pi-tui's color helpers
   (`rgbColor`, `mixColors`, `styleText`, …) work, and the SDK declares pi 1.0's full export surface

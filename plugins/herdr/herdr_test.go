@@ -54,7 +54,7 @@ func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 
 	idle := true
 	registry := extensions.NewRegistry(root)
-	if err := registry.Register("<inline:herdr>", Extension(binary, "w1:p1")); err != nil {
+	if err := registry.Register("builtin:herdr", Extension(binary, "w1:p1")); err != nil {
 		t.Fatal(err)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
@@ -104,7 +104,7 @@ func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 	}
 
 	headlessRegistry := extensions.NewRegistry(root)
-	if err := headlessRegistry.Register("<inline:herdr>", Extension(binary, "w1:p1")); err != nil {
+	if err := headlessRegistry.Register("builtin:herdr", Extension(binary, "w1:p1")); err != nil {
 		t.Fatal(err)
 	}
 	headless := extensions.NewRunner(headlessRegistry, extensions.RunnerOptions{Mode: extensions.ModePrint})
