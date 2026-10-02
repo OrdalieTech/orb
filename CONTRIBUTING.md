@@ -11,8 +11,9 @@ orb is a faithful Go port of [pi](https://pi.dev) (MIT, Mario Zechner). The port
   `make fixtures-check` when touching anything conformance-adjacent. Every mainline commit is green.
 - **Slim.** Stdlib first, dependency last and only via the table in `docs/ARCHITECTURE.md` §8.
   Trim passes close every sprint; mirrored packages stay ≤ 1.3× upstream TS lines.
-- **Wire formats are byte-compatible.** Session JSONL, event JSON, RPC frames, settings/models/auth
-  files: never rename, reorder, or "clean up" persisted or emitted JSON.
+- **Wire formats interoperate with released pi.** Session JSONL, event JSON, RPC frames,
+  settings/models/auth files: change persisted or emitted JSON on purpose (with its fixture and a
+  divergence-ledger line), never by accident. Orb keeps no backward compatibility with its own past.
 - User-visible changes append a line to `CHANGELOG.md` under `[Unreleased]`.
 
 Execution contract for coding agents: `AGENTS.md`. Architecture and layout:

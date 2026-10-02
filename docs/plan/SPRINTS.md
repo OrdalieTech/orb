@@ -19,7 +19,7 @@ them for *what to port*, ignore their sequencing.
    scripted scenarios through TS pi (`.upstream/`) and orb, every difference fixed or ledgered.
 4. **Close = trim + criteria.** Sprint close: trim checklist (RELEASE-CRITERIA), milestone boxes
    checked, comparison report committed. No separate trim WPs.
-5. Hard rules from AGENTS.md unchanged: byte-compat kernel formats, dependency table, never weaken
+5. Hard rules from AGENTS.md: pi-interop kernel formats (P5 as amended 2026-10-02), dependency table, never weaken
    a golden, pure Go.
 
 ## Sprint 0 — Consolidate (first, before anything else)
@@ -423,3 +423,91 @@ its evidence rules live in `docs/deployments.md`; a target moves up only with it
 6. **WASI**: an entry program and an HTTP host import.
 7. **iOS and Android apps**: gomobile library driven by RPC frames; iOS `Exec` through in-process
    WASI commands.
+
+## Pi 1.0 adoption — todo (owner, 2026-10-02)
+
+Target: pi **v1.0.0** (`a13d35a742c6ef8462812a28fbe1d8c8b7431c32`), under P5 as amended 2026-10-02:
+interop with released pi, improvements allowed, no backward compatibility with Orb's own past.
+The 2026-10-02 dry run classified 152 kernel paths (75 wire, 77 API) and stopped at extraction.
+Out of scope for now: codemode and what only it consumes (script `models` API, classifier models,
+Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
+
+**Ground**
+- [ ] Fixture extraction runs at v1.0.0 (`oauth-page` moved to `utils/`, `tsx` dropped upstream,
+      harness files deleted) on the pinned Node.
+- [ ] Upstream deleted its experimental harness (session v4, pico3, `AgentHarness`): `engine/harness`
+      becomes Orb-owned, its fixtures and sync paths reclassified, no further port obligation.
+- [ ] Delete backward-compatibility code: session v1/v2 migration, `auth_migrate`, D37 companion
+      interfaces folded in place, legacy `ai.Context` fields and the legacy `SetSystemPrompt` path,
+      the sync exported-API comparison gate, settings-based MCP config.
+
+**Agent loop and sessions**
+- [ ] `finishTurn` replaces `shouldStopAfterTurn`; `prepareRequest`; `peekQueuedMessages`.
+- [ ] `thinkingLevel` recorded on assistant messages.
+- [ ] `context_edit` entries (append-only omit/replace) in JSONL, the SQLite store and import/export;
+      the session is the canonical provider context; `refreshContext`; retain-none compaction.
+- [ ] Actionable `turn_end` and `agent_before_settle` boundaries; `agent_settled` defers runs until
+      every handler finishes.
+- [ ] `context_with_system`; `context` handlers no longer see system messages.
+- [ ] Abandoned attempts (selected error retries, final overflow recovery) persisted as omissions.
+- [ ] Split-turn compaction prompt that Fable 5.1 accepts.
+
+**Extension surface**
+- [ ] Tool `exposure` (`direct`, `model-only`, `deferred`, `hidden`; `codemode` treated as
+      `deferred`), `namespace`, `annotations`, `outputSchema`/`structuredContent`, `isError`,
+      `prepareLoadout()`.
+- [ ] `ctx.executeTool()` with `parentToolCallId`, bounded `nestedCalls` and usage rolled into the
+      caller's result.
+- [ ] `provider_stream_event` / `onProviderStreamEvent`.
+- [ ] `theme.style()`, `theme.colors`, `theme.appearance`; theme files accept `#rgb`, `oklch()`,
+      `okhsl()` and `appearance`.
+- [ ] Built-ins named `builtin:<name>`; replacing one warns; extension commands without a name or
+      handler fail to load.
+- [ ] HTML export: show/hide toggle for `display: false` custom messages.
+
+**RPC**
+- [ ] Per-input disposition on `prompt`, `steer` and `follow_up` responses; client
+      `streamingBehavior`; the Android app shows whether a message was sent, steered or queued.
+
+**Settings, models, catalog**
+- [ ] `defaultTools` `+name`/`-name` entries (project on top of user); `/reload` enables newly added.
+- [ ] `inputLimits.images.resize` applied to attachments, `read` and tool-result images.
+- [ ] `quietStartup: "header"`.
+- [ ] Catalog refresh: model `type`, image entries in the same catalog, image-input limits; Claude
+      Opus 5.5 and Sonnet 5.5 (adaptive thinking, 1M), GPT-6 Sol/Luna, GPT-6.1 Sol (Codex default),
+      Grok 4.7 (xAI default), Kimi K3 defaults, Meta Muse Spark, Copilot Opus 5.5 levels.
+- [ ] Audit the remaining kernel paths the dry run listed (keybindings, trust, prompt-template
+      frontmatter warnings, system prompt, CLI args).
+
+**Providers and sign-in**
+- [ ] Anthropic: non-strict fallback for rejected schema keywords; current Claude Code version;
+      redirect errors end sign-in; busy callback port falls back to paste.
+- [ ] Anthropic copy-code login, and on a headless Orb the link and code travel over the Bridge to
+      the paired phone.
+- [ ] Anthropic workload identity federation through the `Env` port.
+- [ ] Sign in with ChatGPT on `openai` (stable `deviceId`); usage-limit errors not retried; Codex
+      provider renamed legacy.
+- [ ] Meta provider: `META_API_KEY` and `/login meta`.
+- [ ] One shared OAuth callback server and Orb-branded pages.
+- [ ] Wire fixes: OpenAI-compatible strict only when advertised (Cerebras off); image-only messages
+      without empty text; `samplingParams` on direct calls; Responses streams without `output_index`
+      end in error; `ctc` IDs on replayed grammar tool calls; Mistral GLM chunks and
+      `reasoning_effort`; OpenCode `qwen3.8-flash` empty signatures; Z.AI overflow (both messages);
+      Fast-tier and Vercel 1-hour cache pricing; unparseable `Retry-After` backs off.
+- [ ] CLI: `--provider` without `--model` and invalid `--mode` are errors.
+
+**MCP**
+- [ ] `mcp.json` (global, and project once trusted) is the only config; `description` per server.
+- [ ] OAuth: discovery, `clientName`, `authServerMetadataUrl`, RFC 9207 `iss`, credentials per server
+      name and URL, step-up keeping granted scopes, empty optional fields tolerated, clickable URL.
+- [ ] `"auth": {"provider": "<p>"}` sends that provider's `/login` token (global only; https except
+      loopback).
+- [ ] Servers connect in the background; a short `mcp_servers` system prompt section.
+- [ ] Deferred tools and `tool_search`, using the provider's native tool search where the API has
+      one; deferred tools survive resume and `/reload`.
+- [ ] Names normalize `-` to `_`, colliding tools get a hash suffix, near-duplicate servers rejected.
+- [ ] `orb mcp add|remove|list|login|logout` and `/mcp`.
+
+**Close**
+- [ ] `UPSTREAM.lock` at v1.0.0 with its sync report; CHANGELOG; release.
+- [ ] Ordalie-back upgraded from Orb v0.7.0, filtering system messages out of client SSE.

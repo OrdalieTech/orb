@@ -42,12 +42,14 @@ agent (Claude Code, Codex, or other).
 
 ## Hard rules
 
-- **Kernel surfaces are byte-compatible with upstream.** Session JSONL, event JSON, RPC frames,
-  settings/models/auth files, provider wire shapes, the JS extension surface: field names and
-  shapes come from upstream, verified by fixtures. Never rename, "clean up", or reorder
-  persisted/emitted JSON on a kernel surface.
-- **Inside the kernel, do not improve upstream.** Quirks are spec there: note suspected upstream
-  bugs in the commit body and port them faithfully unless DECISIONS.md diverges explicitly.
+- **Kernel surfaces interoperate with released pi.** Session JSONL, event JSON, RPC frames,
+  settings/models/auth files, provider wire shapes, the JS extension surface: Orb reads what pi
+  writes and runs what pi runs, verified by fixtures. Orb may improve on upstream, kernel included
+  (DECISIONS P5): a deliberate improvement makes that fixture Orb-owned and adds a divergence-ledger
+  line. Never change persisted/emitted JSON by accident; change it on purpose or not at all.
+- **No backward compatibility.** Orb is deployed only inside Ordalie. Do not keep legacy formats,
+  migrations, deprecated APIs or compatibility shims for Orb's own past; change interfaces in place
+  and update every consumer (this repo, and Ordalie-back when it upgrades) in the same work.
   Outside the kernel — features, layout, internal APIs, TUI — Orb evolves on its own judgment;
   upstream work is cherry-picked on merit, never ported by obligation. New Orb capabilities follow
   P3: capability modules (seam + attachment + default-off assembly row), never ad-hoc core widening.
@@ -63,7 +65,7 @@ agent (Claude Code, Codex, or other).
   is genuinely impossible — including when a required toolchain no longer supports it — stop and
   surface it; retiring or replacing it is the owner's call.
 - **Scope.** Surprises the plan didn't anticipate: decide slim and boring — and, inside the
-  kernel, faithful — note the decision and rationale in the commit body, keep moving. Only genuine
+  kernel, interoperable — note the decision and rationale in the commit body, keep moving. Only genuine
   DECISIONS.md contradictions warrant stopping.
 - **Comments** state constraints the code can't (e.g. "field order matches upstream serialization"),
   never narration.
