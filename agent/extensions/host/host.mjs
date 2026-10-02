@@ -1741,8 +1741,10 @@ emit(channel, data) {
 		return { ...value, operations: { hostOperationId: operationId } };
 	}
 
-	function normalizeEventResult(state, event, payload, value) {
-		if (event === "context" && (value == null || typeof value !== "object" || !Object.hasOwn(value, "messages"))) {
+	function normalizeEventResult(state, event, payload, value, before) {
+		if ((event === "context" || event === "context_with_system") && (value == null || typeof value !== "object" || !Object.hasOwn(value, "messages"))) {
+			// In-place edits count as a result; an untouched conversation is no change.
+			if (before !== undefined && JSON.stringify(payload.messages) === before) return undefined;
 			return { messages: payload.messages };
 		}
 		if (event === "user_bash") return retainBashOperations(state, value);
@@ -1779,7 +1781,10 @@ emit(channel, data) {
 		const registerOn = api.on.bind(api);
 		api.on = (event, handler) => {
 			if (typeof handler !== "function") throw new TypeError("on requires an event name and handler");
-			registerOn(event, async (payload, context) => normalizeEventResult(state, event, payload, await handler(payload, context)));
+			registerOn(event, async (payload, context) => {
+				const before = event === "context" ? JSON.stringify(payload.messages) : undefined;
+				return normalizeEventResult(state, event, payload, await handler(payload, context), before);
+			});
 		};
 		api.registerFlag = (name, definition) => {
 			if (typeof name !== "string" || name === "" || !definition || !["boolean", "string"].includes(definition.type)) {

@@ -111,6 +111,10 @@ type SessionRuntime struct {
 	baseSlashResolver    *SlashResolver
 	resourceLoader       ResourceLoader
 	activeRuns           int
+	runAborted           bool
+	activityOutcome      extensions.ActivityOutcome
+	emittingSettled      bool
+	deferredSettled      []func()
 	idleWait             chan struct{}
 	extensionState       *extensionRuntimeState
 	beginReload          func() error
@@ -310,6 +314,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		}
 		return &engine.AgentLoopTurnUpdate{Context: &next}, nil
 	})
+	runtime.installTurnEndBoundary()
 	var previousPrepare engine.PrepareNextTurnFunc
 	previousPrepare = runtime.agent.SwapPrepareNextTurnContext(func(ctx context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
 		snapshot := runtime.agent.State()
@@ -764,6 +769,7 @@ func (runtime *SessionRuntime) Abort() {
 	runtime.mu.Lock()
 	retryCancel := runtime.retryCancel
 	runtime.retryCancel = nil
+	runtime.runAborted = runtime.activeRuns != 0
 	runtime.refreshIdleWaitLocked()
 	runtime.mu.Unlock()
 	if retryCancel != nil {
@@ -841,6 +847,16 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// A run requested by an agent_settled handler starts once every handler
+	// has finished, so no reentrant agent_start interrupts the notification.
+	runtime.mu.Lock()
+	if runtime.emittingSettled {
+		runtime.deferredSettled = append(runtime.deferredSettled, func() { _ = runtime.runPolicies(ctx, start) })
+		runtime.mu.Unlock()
+		return nil
+	}
+	runtime.mu.Unlock()
+	defer runtime.runDeferredSettled()
 	finishControl, controlErr := runtime.beginControlRun(ctx)
 	if controlErr != nil {
 		return controlErr
@@ -867,8 +883,14 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 		for _, message := range pending {
 			flushErr = errors.Join(flushErr, runtime.appendCustomMessage(message))
 		}
+		runtime.mu.Lock()
+		runtime.emittingSettled = true
+		runtime.mu.Unlock()
 		runtime.emitExtensionSettled(ctx)
 		runtime.emit(AgentSettledEvent{})
+		runtime.mu.Lock()
+		runtime.emittingSettled = false
+		runtime.mu.Unlock()
 		runtime.endRun()
 		if err == nil && flushErr != nil {
 			err = flushErr
@@ -880,42 +902,64 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 	if runtime.agent.UsesSessionLoop() {
 		return nil
 	}
-	for {
-		message := runtime.takeLastAssistant()
-		if message == nil {
+	for !runtime.aborted() {
+		shouldContinue, err := runtime.handlePostAgentRun(ctx)
+		if err != nil {
+			return err
+		}
+		if !shouldContinue && (runtime.aborted() || !runtime.runBeforeSettleBoundary(ctx)) {
 			break
 		}
-		if runtime.isRetryable(message) {
-			shouldContinue, err := runtime.prepareRetry(ctx, message)
-			if err != nil {
-				return err
-			}
-			if shouldContinue {
-				if err := runtime.agent.Continue(ctx); err != nil {
-					return err
-				}
-				continue
-			}
+		if runtime.aborted() {
+			break
 		}
-		if message.StopReason == ai.StopReasonError {
-			runtime.mu.Lock()
-			attempt := runtime.retryAttempt
-			runtime.retryAttempt = 0
-			runtime.mu.Unlock()
-			if attempt > 0 {
-				runtime.emit(AutoRetryEndEvent{Success: false, Attempt: attempt, FinalError: message.ErrorMessage})
-			}
+		if err := runtime.agent.Continue(ctx); err != nil {
+			return err
 		}
-		continueAfterCompaction, _ := runtime.checkCompaction(ctx, message, true)
-		if continueAfterCompaction || runtime.agent.HasQueuedMessages() {
-			if err := runtime.agent.Continue(ctx); err != nil {
-				return err
-			}
-			continue
-		}
-		break
 	}
 	return nil
+}
+
+// handlePostAgentRun reports whether retry, compaction or queued work
+// continues the run.
+func (runtime *SessionRuntime) handlePostAgentRun(ctx context.Context) (bool, error) {
+	message := runtime.takeLastAssistant()
+	if message == nil {
+		return runtime.agent.HasQueuedMessages(), nil
+	}
+	if runtime.isRetryable(message) {
+		shouldContinue, err := runtime.prepareRetry(ctx, message)
+		if err != nil || shouldContinue {
+			return shouldContinue, err
+		}
+	}
+	if message.StopReason == ai.StopReasonError {
+		runtime.mu.Lock()
+		attempt := runtime.retryAttempt
+		runtime.retryAttempt = 0
+		runtime.mu.Unlock()
+		if attempt > 0 {
+			runtime.emit(AutoRetryEndEvent{Success: false, Attempt: attempt, FinalError: message.ErrorMessage})
+		}
+	}
+	continueAfterCompaction, _ := runtime.checkCompaction(ctx, message, true)
+	return continueAfterCompaction || runtime.agent.HasQueuedMessages(), nil
+}
+
+func (runtime *SessionRuntime) aborted() bool {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.runAborted
+}
+
+func (runtime *SessionRuntime) runDeferredSettled() {
+	runtime.mu.Lock()
+	deferred := runtime.deferredSettled
+	runtime.deferredSettled = nil
+	runtime.mu.Unlock()
+	for _, run := range deferred {
+		run()
+	}
 }
 
 func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engine.AgentEvent) error {
@@ -1730,6 +1774,8 @@ func (runtime *SessionRuntime) beginRun() bool {
 		return false
 	}
 	runtime.activeRuns = 1
+	runtime.runAborted = false
+	runtime.activityOutcome = "completed"
 	runtime.refreshIdleWaitLocked()
 	return true
 }
@@ -1764,32 +1810,12 @@ func (runtime *SessionRuntime) dropLastAssistant() {
 // entries. Harness storage cannot record edits yet, so there the attempt is
 // only dropped from memory.
 func (runtime *SessionRuntime) omitRecoveryAttempt() error {
-	branch := runtime.manager.GetBranch()
-	var targets []string
-	for index := len(branch) - 1; index >= 0; index-- {
-		if branch[index].Type != "message" {
-			continue
-		}
-		var header struct {
-			Role string `json:"role"`
-		}
-		_ = json.Unmarshal(branch[index].Message, &header)
-		if header.Role == "toolResult" {
-			targets = append([]string{branch[index].ID}, targets...)
-			continue
-		}
-		if header.Role == "assistant" {
-			targets = append([]string{branch[index].ID}, targets...)
-		} else {
-			targets = nil
-		}
-		break
-	}
-	if len(targets) == 0 {
+	assistantID, toolResultIDs := runtime.trailingTurnEntryIDs()
+	if assistantID == "" {
 		runtime.dropLastAssistant()
 		return nil
 	}
-	for _, targetID := range targets {
+	for _, targetID := range append([]string{assistantID}, toolResultIDs...) {
 		entryID, err := runtime.manager.AppendContextEdit(targetID, nil)
 		if errors.Is(err, sessionstore.ErrHarnessContextEdit) {
 			runtime.dropLastAssistant()
@@ -1815,6 +1841,32 @@ func (runtime *SessionRuntime) RefreshContext() {
 	runtime.agent.SetMessages(messages)
 	runtime.footerRevision = 0
 	runtime.footerMu.Unlock()
+}
+
+// trailingTurnEntryIDs returns the entries of the branch's latest turn: its
+// assistant message and the tool results after it, or "" when the branch does
+// not end with a turn.
+func (runtime *SessionRuntime) trailingTurnEntryIDs() (string, []string) {
+	branch := runtime.manager.GetBranch()
+	var toolResults []string
+	for index := len(branch) - 1; index >= 0; index-- {
+		if branch[index].Type != "message" {
+			continue
+		}
+		var header struct {
+			Role string `json:"role"`
+		}
+		_ = json.Unmarshal(branch[index].Message, &header)
+		switch header.Role {
+		case "toolResult":
+			toolResults = append([]string{branch[index].ID}, toolResults...)
+		case "assistant":
+			return branch[index].ID, toolResults
+		default:
+			return "", nil
+		}
+	}
+	return "", nil
 }
 
 // sessionMessages decodes the session's context projection.

@@ -1234,7 +1234,7 @@ func (host *stateHost) decodeEventResult(manager *Manager, extensionID string, e
 			return nil, err
 		}
 		return extensions.ProviderRequestResult{Payload: payload, Replace: true}, nil
-	case extensions.EventContext:
+	case extensions.EventContext, extensions.EventContextWithSystem:
 		var value struct {
 			Messages []json.RawMessage `json:"messages"`
 		}

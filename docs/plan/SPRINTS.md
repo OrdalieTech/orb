@@ -448,12 +448,12 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 - [x] `thinkingLevel` recorded on assistant messages.
 - [x] `context_edit` entries (append-only omit/replace) in the session and its projection; each
       request is the session's projection; `refreshContext`.
-- [ ] Retain-none compaction (`appendCompaction(summary, null, ...)`).
+- [x] Retain-none compaction (`appendCompaction(summary, null, ...)`).
 - [ ] Harness (v4) storage records `context_edit` too (it rejects it for now; retries there fall
       back to dropping the failed attempt in memory).
-- [ ] Actionable `turn_end` and `agent_before_settle` boundaries; `agent_settled` defers runs until
+- [x] Actionable `turn_end` and `agent_before_settle` boundaries; `agent_settled` defers runs until
       every handler finishes.
-- [ ] `context_with_system`; `context` handlers no longer see system messages.
+- [x] `context_with_system`; `context` handlers no longer see system messages.
 - [x] Abandoned attempts (selected error retries, final overflow recovery) persisted as omissions.
 - [x] Split-turn compaction prompt that Fable 5.1 accepts.
 
@@ -468,6 +468,8 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 - [x] Theme files accept `#rgb`, `oklch()`, `okhsl()` and `appearance`; HTML export follows pi 1.0
       palettes and token order.
 - [ ] `theme.style()`, `theme.colors`, `theme.appearance` for extensions.
+- [ ] Embedded extension SDK (`host/sdk`) declares pi 1.0's export surface (still stamped 0.84.1/0.86.0),
+      so 1.0 extensions importing new names link.
 - [ ] Built-ins named `builtin:<name>`; replacing one warns; extension commands without a name or
       handler fail to load.
 - [x] HTML export: show/hide toggle for `display: false` custom messages.

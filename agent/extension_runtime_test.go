@@ -1532,3 +1532,141 @@ func assistantText(message *ai.AssistantMessage) string {
 	}
 	return result.String()
 }
+
+func TestTurnEndAndBeforeSettleBoundariesPersistEntriesAndContinue(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var turnEnds, settles int
+	var events []string
+	if err := registry.Register("<inline:boundaries>", func(api extensions.API) error {
+		api.On(extensions.EventTurnEnd, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			event := raw.(extensions.TurnEndEvent)
+			turnEnds++
+			if turnEnds > 1 || event.MessageEntryID == "" || event.Outcome != "completed" || event.Context.CanContinue {
+				return nil, nil
+			}
+			entries := append(event.Entries, extensions.SessionBoundaryDraft{Type: "custom_message", CustomType: "nudge", Content: "keep going", Display: true})
+			proceed := true
+			return extensions.BoundaryResult{Entries: &entries, Continue: &proceed}, nil
+		})
+		api.On(extensions.EventAgentBeforeSettle, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			settles++
+			if settles > 1 {
+				return nil, nil
+			}
+			entries := []extensions.SessionBoundaryDraft{{Type: "compaction", Summary: "all of it"}}
+			proceed := true
+			return extensions.BoundaryResult{Entries: &entries, Continue: &proceed}, nil
+		})
+		api.On(extensions.EventAgentStart, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			events = append(events, "start")
+			return nil, nil
+		})
+		api.On(extensions.EventAgentSettled, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			events = append(events, "settled")
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	var requests [][]string
+	respond := func(text string) faux.ResponseStep {
+		return faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			var roles []string
+			for _, message := range request.Messages {
+				encoded, _ := ai.Marshal(message)
+				var header struct{ Role string }
+				_ = json.Unmarshal(encoded, &header)
+				roles = append(roles, header.Role)
+			}
+			requests = append(requests, roles)
+			return faux.AssistantMessage(text), nil
+		})
+	}
+	provider.SetResponses([]faux.ResponseStep{respond("first"), respond("second"), respond("third")})
+	created := engine.NewAgent(
+		provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: provider.GetModel()}),
+		engine.WithConvertToLLM(ConvertToLLM),
+	)
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if err := runtime.Prompt(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	// turn_end's nudge continues once; agent_before_settle's retain-none
+	// compaction continues once more with only the summary in context.
+	if len(requests) != 3 || turnEnds != 3 || settles != 2 {
+		t.Fatalf("requests = %v, turn_end = %d, settles = %d", requests, turnEnds, settles)
+	}
+	if got := strings.Join(requests[1], ","); got != "user,assistant,user" {
+		t.Fatalf("second request roles = %s", got)
+	}
+	if got := strings.Join(requests[2], ","); got != "user" {
+		t.Fatalf("third request roles = %s", got)
+	}
+	// The continuation after agent_before_settle is a fresh agent loop.
+	if strings.Join(events, ",") != "start,start,settled" {
+		t.Fatalf("lifecycle = %v", events)
+	}
+}
+
+func TestAgentSettledHandlerRunsStartAfterEveryHandler(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var events []string
+	var runtime *SessionRuntime
+	if err := registry.Register("<inline:settled>", func(api extensions.API) error {
+		api.On(extensions.EventAgentStart, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			events = append(events, "start")
+			return nil, nil
+		})
+		api.On(extensions.EventAgentSettled, func(ctx context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
+			events = append(events, "settled")
+			if len(events) == 2 {
+				if err := runtime.SendUserMessage(ctx, ai.NewUserText("again"), nil); err != nil {
+					return nil, err
+				}
+				events = append(events, "sent")
+			}
+			return nil, nil
+		})
+		api.On(extensions.EventAgentSettled, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			events = append(events, "second-handler")
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("one"), faux.AssistantMessage("two")})
+	created := engine.NewAgent(
+		provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: provider.GetModel()}),
+		engine.WithConvertToLLM(ConvertToLLM),
+	)
+	var err error
+	runtime, err = NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if err := runtime.Prompt(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(events, ","); got != "start,settled,sent,second-handler,start,settled,second-handler" {
+		t.Fatalf("lifecycle = %s", got)
+	}
+}

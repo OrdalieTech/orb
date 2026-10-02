@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1065,22 +1066,156 @@ func (runner *Runner) EmitUserBashChecked(ctx context.Context, event UserBashEve
 	return nil, nil
 }
 
+// EmitContext runs the request-time transforms in two phases. context
+// handlers see the conversation only; an unchanged result keeps every system
+// message in place, a changed one gets the current prompt and tool state as
+// one leading system message, so pruning cannot drop it. context_with_system
+// handlers then see the full transcript and their output is used as returned.
 func (runner *Runner) EmitContext(ctx context.Context, messages engine.AgentMessages) engine.AgentMessages {
 	extensionContext := runner.CreateContext()
 	current := cloneMessages(messages)
 	for _, extension := range runner.extensions {
 		for _, handler := range handlersFor(extension, EventContext) {
-			result, err := callHandler(ctx, handler, ContextEvent{Messages: current}, extensionContext)
+			visible := slices.DeleteFunc(slices.Clone(current), isSystemMessage)
+			snapshot := slices.Clone(visible)
+			result, err := callHandler(ctx, handler, ContextEvent{Messages: visible}, extensionContext)
 			if err != nil {
 				runner.emitError(makeExtensionError(extension.Path, EventContext, err))
+				continue
+			}
+			returned := visible
+			if parsed, ok := contextResult(result); ok && parsed.Messages != nil {
+				returned = parsed.Messages
+			}
+			if reflect.DeepEqual(returned, snapshot) {
+				continue
+			}
+			if head := currentSystemMessage(current); head != nil {
+				returned = append(engine.AgentMessages{head}, returned...)
+			}
+			current = returned
+		}
+	}
+	for _, extension := range runner.extensions {
+		for _, handler := range handlersFor(extension, EventContextWithSystem) {
+			leading := len(current) > 0 && isSystemMessage(current[0])
+			result, err := callHandler(ctx, handler, ContextWithSystemEvent{Messages: current}, extensionContext)
+			if err != nil {
+				runner.emitError(makeExtensionError(extension.Path, EventContextWithSystem, err))
 				continue
 			}
 			if parsed, ok := contextResult(result); ok && parsed.Messages != nil {
 				current = parsed.Messages
 			}
+			// Providers read the prompt and initial tools from the leading system message.
+			if leading && (len(current) == 0 || !isSystemMessage(current[0])) {
+				runner.emitError(ExtensionError{ExtensionPath: extension.Path, Event: string(EventContextWithSystem),
+					Error: "Handler removed the leading system message; the request has no prompt or initial tool declarations. Keep it at index 0 or replace a dropped prefix with getCurrentSystemMessage()."})
+			}
 		}
 	}
 	return current
+}
+
+func isSystemMessage(message engine.AgentMessage) bool {
+	switch message.(type) {
+	case *ai.SystemMessage, ai.SystemMessage:
+		return true
+	}
+	return false
+}
+
+func currentSystemMessage(messages engine.AgentMessages) engine.AgentMessage {
+	list := make(ai.MessageList, 0, len(messages))
+	for _, message := range messages {
+		switch typed := message.(type) {
+		case *ai.SystemMessage:
+			list = append(list, typed)
+		case ai.SystemMessage:
+			list = append(list, &typed)
+		}
+	}
+	if head := ai.CurrentSystemMessage(list); head != nil {
+		return head
+	}
+	return nil
+}
+
+// BoundaryDispatch is the outcome of an actionable boundary. Invalid entries
+// (the last preview failed to build) discard every proposal.
+type BoundaryDispatch struct {
+	Entries  []SessionBoundaryDraft
+	Continue bool
+	Context  BoundaryContextPreview
+	Valid    bool
+}
+
+// EmitBoundary dispatches turn_end or agent_before_settle: each handler sees
+// the entries and continuation chained so far plus their preview, rebuilt by
+// buildContext after every handler.
+func (runner *Runner) EmitBoundary(
+	ctx context.Context,
+	base Event,
+	buildContext func([]SessionBoundaryDraft) (BoundaryContextPreview, error),
+) BoundaryDispatch {
+	extensionContext := runner.CreateContext()
+	state := BoundaryState{Entries: []SessionBoundaryDraft{}}
+	if turnEnd, ok := base.(TurnEndEvent); ok {
+		state.Outcome = turnEnd.Outcome
+	} else if settle, ok := base.(AgentBeforeSettleEvent); ok {
+		state.Outcome = settle.Outcome
+	}
+	preview, err := buildContext(state.Entries)
+	valid := err == nil
+	state.Context = preview
+	for _, extension := range runner.extensions {
+		for _, handler := range handlersFor(extension, base.Type()) {
+			var event Event
+			switch typed := base.(type) {
+			case TurnEndEvent:
+				typed.BoundaryState = state
+				event = typed
+			default:
+				event = AgentBeforeSettleEvent{BoundaryState: state}
+			}
+			result, err := callHandler(ctx, handler, event, extensionContext)
+			if err != nil {
+				runner.emitError(makeExtensionError(extension.Path, base.Type(), err))
+			} else if parsed := boundaryResult(result); parsed != nil {
+				if parsed.Entries != nil {
+					state.Entries = slices.Clone(*parsed.Entries)
+				}
+				if parsed.Continue != nil {
+					state.Continue = *parsed.Continue
+				}
+			}
+			if state.Context, err = buildContext(state.Entries); err != nil {
+				valid = false
+				runner.emitError(ExtensionError{ExtensionPath: extension.Path, Event: string(base.Type()), Error: "Invalid boundary entries: " + err.Error()})
+			} else {
+				valid = true
+			}
+		}
+	}
+	if !valid {
+		return BoundaryDispatch{Entries: []SessionBoundaryDraft{}, Context: state.Context}
+	}
+	return BoundaryDispatch{Entries: state.Entries, Continue: state.Continue, Context: state.Context, Valid: true}
+}
+
+func boundaryResult(value any) *BoundaryResult {
+	switch typed := value.(type) {
+	case BoundaryResult:
+		return &typed
+	case *BoundaryResult:
+		return typed
+	}
+	return nil
+}
+
+// EmitBoundaryError reports a boundary failure that no single handler owns.
+func (runner *Runner) EmitBoundaryError(event EventType, message string) {
+	runner.emitError(ExtensionError{ExtensionPath: "<boundary>", Event: string(event), Error: message})
 }
 
 func (runner *Runner) EmitBeforeProviderRequest(ctx context.Context, payload any) any {

@@ -32,6 +32,11 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Hitting the ChatGPT subscription's usage limit stops retrying and links to the usage page.
 - `--provider` without `--model`, and an invalid `--mode`, are now errors instead of being ignored.
 - `quietStartup: "header"` keeps the startup logo while hiding startup details.
+- Extensions: `turn_end` and the new `agent_before_settle` can persist entries (custom, custom
+  message, context edit, compaction, including one that keeps nothing before it) and ask for one
+  more model request; runs started from `agent_settled` wait until every handler has finished.
+  `context` handlers no longer see system messages, so pruning cannot drop the prompt or tools, and
+  the new `context_with_system` sees the full transcript.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
