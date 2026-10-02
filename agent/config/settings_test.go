@@ -882,3 +882,25 @@ func writeRaw(t *testing.T, path, contents string) {
 		t.Fatal(err)
 	}
 }
+
+func TestDefaultToolsModifiersLayerProjectOverUser(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	projectDir := filepath.Join(root, "project")
+	load := func(user, project any) []string {
+		t.Helper()
+		writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{"defaultTools": user})
+		writeSettings(t, filepath.Join(projectDir, ".pi", "settings.json"), map[string]any{"defaultTools": project})
+		manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return manager.GetDefaultTools()
+	}
+	if got := load([]string{"+grep"}, []string{"-bash", "+find"}); !reflect.DeepEqual(got, []string{"read", "edit", "write", "grep", "find"}) {
+		t.Fatalf("modifiers = %v", got)
+	}
+	if got := load([]string{"+grep"}, []string{"read", "+ls"}); !reflect.DeepEqual(got, []string{"read", "ls"}) {
+		t.Fatalf("plain project list = %v", got)
+	}
+}

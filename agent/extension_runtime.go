@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -200,7 +201,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 
 	if replacingRunner {
 		runtime.agent.SetTransformContext(nil)
-		runtime.agent.SetToolCallHooks(nil, nil)
+		runtime.agent.SetToolCallHooks(nil, runtime.afterExtensionToolCall)
 		runtime.agent.SetProviderHooks(nil, nil, nil, nil)
 	}
 	if runner.HasHandlers(extensions.EventContext) || runner.HasHandlers(extensions.EventContextWithSystem) {
@@ -208,7 +209,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 			return runner.EmitContext(ctx, messages), nil
 		})
 	}
-	if runner.HasHandlers(extensions.EventToolCall) || runner.HasHandlers(extensions.EventToolResult) {
+	if runner.HasHandlers(extensions.EventToolCall) {
 		runtime.agent.SetToolCallHooks(runtime.beforeExtensionToolCall, runtime.afterExtensionToolCall)
 	}
 	if runner.HasHandlers(extensions.EventBeforeProviderRequest) || runner.HasHandlers(extensions.EventBeforeProviderHeaders) ||
@@ -409,7 +410,15 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 	if runner != nil {
 		runner.Invalidate("")
 	}
+	previousDefaults := runtime.defaultToolNames(configuration.UsesDefaultTools)
 	runtime.settings.Reload()
+	// Tools newly added to defaultTools turn on; removed ones stay active, and
+	// tools turned off during the session stay off unless newly added.
+	for _, name := range runtime.defaultToolNames(configuration.UsesDefaultTools) {
+		if !slices.Contains(previousDefaults, name) && !slices.Contains(configuration.InitialActiveToolNames, name) {
+			configuration.InitialActiveToolNames = append(configuration.InitialActiveToolNames, name)
+		}
+	}
 	var registry *extensions.Registry
 	if loader := runtime.ResourceLoader(); loader != nil {
 		loaderOwnedRegistry := configuration.ExtensionRegistry == loader.GetExtensions()
@@ -993,28 +1002,38 @@ func toolCallInput(args any, recorded map[string]any) map[string]any {
 	return recorded
 }
 
+// afterExtensionToolCall runs tool_result handlers, then normalizes the
+// result's images to the model's limits, including images handlers injected.
 func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call engine.AfterToolCallContext) (*engine.AfterToolCallResult, error) {
-	state := runtime.extensionState
-	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventToolResult) {
-		return nil, nil
+	var patch *engine.AfterToolCallResult
+	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventToolResult) {
+		if result := state.runner.EmitToolResult(ctx, extensions.ToolResultEvent{
+			ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments),
+			Content: call.Result.Content, Details: call.Result.Details, IsError: call.IsError, Usage: call.Result.Usage,
+		}); result != nil {
+			patch = &engine.AfterToolCallResult{IsError: result.IsError, Usage: result.Usage}
+			if result.Content != nil {
+				patch.Content = *result.Content
+			}
+			if result.Details != nil {
+				patch.Details = *result.Details
+				patch.DetailsSet = true
+			}
+		}
 	}
-	result := state.runner.EmitToolResult(ctx, extensions.ToolResultEvent{
-		ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments),
-		Content: call.Result.Content, Details: call.Result.Details, IsError: call.IsError, Usage: call.Result.Usage,
-	})
-	if result == nil {
-		return nil, nil
+	content := call.Result.Content
+	if patch != nil && patch.Content != nil {
+		content = patch.Content
 	}
-	patch := &engine.AfterToolCallResult{}
-	if result.Content != nil {
-		patch.Content = *result.Content
+	normalized, changed := tools.NormalizeToolResultImages(content, runtime.settings.GetImageAutoResize(), tools.ModelResizeOptions(runtime.agent.State().Model))
+	if !changed {
+		return patch, nil
 	}
-	if result.Details != nil {
-		patch.Details = *result.Details
-		patch.DetailsSet = true
+	if patch == nil {
+		// Resized images still match the tool's structured content.
+		patch = &engine.AfterToolCallResult{StructuredContent: call.Result.StructuredContent}
 	}
-	patch.IsError = result.IsError
-	patch.Usage = result.Usage
+	patch.Content = normalized
 	return patch, nil
 }
 
@@ -1621,7 +1640,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		if streamingBehavior == nil {
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}
-		message := userMessageWithImagesAt(text, images, runtime.clock())
+		message := runtime.userMessage(text, images)
 		runtime.mu.Lock()
 		if *streamingBehavior == extensions.DeliverFollowUp {
 			runtime.followUps = append(runtime.followUps, text)
@@ -1705,7 +1724,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	} else if current == nil && basePrompt != "" {
 		messages = append(messages, &ai.SystemMessage{Content: basePrompt, Timestamp: runtime.clock()})
 	}
-	messages = append(messages, userMessageWithImagesAt(text, images, runtime.clock()))
+	messages = append(messages, runtime.userMessage(text, images))
 	messages = append(messages, pending...)
 	messages = append(messages, injected...)
 	runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
@@ -1923,4 +1942,14 @@ func applyBoundaryDrafts(manager *sessionstore.SessionManager, drafts []extensio
 		}
 	}
 	return appended, nil
+}
+
+func (runtime *SessionRuntime) defaultToolNames(usesDefaults bool) []string {
+	if !usesDefaults {
+		return nil
+	}
+	if tools := runtime.settings.GetDefaultTools(); tools != nil {
+		return tools
+	}
+	return DefaultActiveToolNames
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -279,6 +280,16 @@ func migrateSettings(settings map[string]any) {
 func mergeSettings(base, overrides Settings) Settings {
 	result := cloneMap(base)
 	for key, override := range overrides {
+		// A defaultTools list of only +name/-name entries modifies the inherited one.
+		if baseList, ok := base[key].([]any); key == "defaultTools" && ok {
+			if overrideList, ok := override.([]any); ok && !slices.ContainsFunc(overrideList, func(entry any) bool {
+				text, ok := entry.(string)
+				return !ok || !isToolModifier(text)
+			}) {
+				result[key] = append(cloneValue(baseList).([]any), cloneValue(overrideList).([]any)...)
+				continue
+			}
+		}
 		baseObject, baseOK := base[key].(map[string]any)
 		overrideObject, overrideOK := override.(map[string]any)
 		if baseOK && overrideOK {
@@ -480,8 +491,39 @@ func (manager *SettingsManager) GetEnabledModels() []string {
 	return manager.stringList("enabledModels")
 }
 
-// GetDefaultTools returns the configured initial built-in tool selection.
-func (manager *SettingsManager) GetDefaultTools() []string { return manager.stringList("defaultTools") }
+// DefaultToolNames are the tools enabled at startup when defaultTools does not change them.
+var DefaultToolNames = []string{"read", "bash", "edit", "write"}
+
+// GetDefaultTools resolves the defaultTools selection, or nil when no layer
+// sets it: plain names replace DefaultToolNames, then +name adds and -name
+// removes a tool, in order.
+func (manager *SettingsManager) GetDefaultTools() []string {
+	entries := manager.stringList("defaultTools")
+	if entries == nil {
+		return nil
+	}
+	tools := slices.DeleteFunc(slices.Clone(entries), isToolModifier)
+	if len(tools) == 0 && len(entries) > 0 {
+		tools = slices.Clone(DefaultToolNames)
+	}
+	for _, entry := range entries {
+		if !isToolModifier(entry) {
+			continue
+		}
+		name := entry[1:]
+		index := slices.Index(tools, name)
+		if entry[0] == '+' && index < 0 && name != "" {
+			tools = append(tools, name)
+		} else if entry[0] == '-' && index >= 0 {
+			tools = slices.Delete(tools, index, index+1)
+		}
+	}
+	return tools
+}
+
+func isToolModifier(entry string) bool {
+	return strings.HasPrefix(entry, "+") || strings.HasPrefix(entry, "-")
+}
 
 func (manager *SettingsManager) AgentDir() string { return filepath.Dir(manager.globalPath) }
 func (manager *SettingsManager) CWD() string      { return filepath.Dir(filepath.Dir(manager.projectPath)) }

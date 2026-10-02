@@ -194,8 +194,8 @@ func (tool *readTool) Execute(
 
 func (tool *readTool) imageResult(ctx context.Context, data []byte, mimeType string) engine.AgentToolResult {
 	autoResize := tool.autoResizeImages
-	processed := ProcessImage(data, mimeType, &ProcessImageOptions{AutoResizeImages: &autoResize})
 	model := engine.ToolExecutionModel(ctx)
+	processed := ProcessImage(data, mimeType, &ProcessImageOptions{AutoResizeImages: &autoResize, ResizeOptions: ModelResizeOptions(model)})
 	vision := model == nil
 	if model != nil {
 		for _, modality := range model.Input {

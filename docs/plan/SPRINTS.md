@@ -480,8 +480,8 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
       message was started, steered or queued.
 
 **Settings, models, catalog**
-- [ ] `defaultTools` `+name`/`-name` entries (project on top of user); `/reload` enables newly added.
-- [ ] `inputLimits.images.resize` applied to attachments, `read` and tool-result images.
+- [x] `defaultTools` `+name`/`-name` entries (project on top of user); `/reload` enables newly added.
+- [x] `inputLimits.images.resize` applied to attachments, `read` and tool-result images.
 - [x] `quietStartup: "header"`.
 - [x] Catalog refresh: model `type`, image-input limits; Claude
       Opus 5.5 and Sonnet 5.5 (adaptive thinking, 1M), GPT-6 Sol/Luna, GPT-6.1 Sol (Codex default),

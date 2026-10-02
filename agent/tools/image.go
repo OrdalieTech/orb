@@ -13,6 +13,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/OrdalieTech/orb/ai"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 )
@@ -564,4 +565,55 @@ func applyEXIFOrientation(source image.Image, orientation int) image.Image {
 		}
 	}
 	return destination
+}
+
+// ModelResizeOptions is the model's image resize profile (inputLimits), or
+// nil for the conservative defaults.
+func ModelResizeOptions(model *ai.Model) *ImageResizeOptions {
+	if model == nil || model.InputLimits == nil || model.InputLimits.Images == nil || model.InputLimits.Images.Resize == nil {
+		return nil
+	}
+	resize := model.InputLimits.Images.Resize
+	value := func(field *float64) int {
+		if field == nil {
+			return 0
+		}
+		return int(*field)
+	}
+	return &ImageResizeOptions{MaxWidth: value(resize.MaxWidth), MaxHeight: value(resize.MaxHeight), MaxBytes: value(resize.MaxBytes), JPEGQuality: value(resize.JPEGQuality)}
+}
+
+// NormalizeToolResultImages runs images a tool produced itself (extensions,
+// MCP, screenshots) through ProcessImage as they enter history, since one
+// oversized image makes providers reject the whole conversation. An image that
+// fails to process stays as produced. It reports whether anything changed.
+func NormalizeToolResultImages(content ai.ToolResultContent, autoResize bool, resize *ImageResizeOptions) (ai.ToolResultContent, bool) {
+	changed := false
+	normalized := make(ai.ToolResultContent, 0, len(content))
+	for _, block := range content {
+		image, ok := block.(*ai.ImageContent)
+		if !ok {
+			normalized = append(normalized, block)
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(image.Data)
+		if err != nil {
+			normalized = append(normalized, block)
+			continue
+		}
+		processed := ProcessImage(data, image.MimeType, &ProcessImageOptions{AutoResizeImages: &autoResize, ResizeOptions: resize})
+		if !processed.OK || processed.Data == image.Data && processed.MimeType == image.MimeType && len(processed.Hints) == 0 {
+			normalized = append(normalized, block)
+			continue
+		}
+		normalized = append(normalized, &ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType})
+		if len(processed.Hints) > 0 {
+			normalized = append(normalized, &ai.TextContent{Text: strings.Join(processed.Hints, "\n")})
+		}
+		changed = true
+	}
+	if !changed {
+		return content, false
+	}
+	return normalized, true
 }

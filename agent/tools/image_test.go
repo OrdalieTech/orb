@@ -6,8 +6,11 @@ import (
 	"encoding/binary"
 	"image"
 	"image/color"
+	"image/png"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/ai"
 )
 
 const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQMAAABIeJ9nAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURf8AAP///0EdNBEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gEOADM5Ddoh/wAAAAxJREFUCNdjYGBgAAAABAABJzQnCgAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wMS0xNFQwMDo1MTo1NyswMDowMOnKzHgAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDEtMTRUMDA6NTE6NTcrMDA6MDCYl3TEAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTAxLTE0VDAwOjUxOjU3KzAwOjAwz4JVGwAAAABJRU5ErkJggg=="
@@ -135,5 +138,27 @@ func TestReadTIFFOrientationLittleAndBigEndian(t *testing.T) {
 		if got := readTIFFOrientation(data, 0); got != 7 {
 			t.Fatalf("little=%v orientation=%d", little, got)
 		}
+	}
+}
+
+func TestNormalizeToolResultImagesUsesModelResizeProfile(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 300, 200))); err != nil {
+		t.Fatal(err)
+	}
+	width := 150.0
+	model := &ai.Model{InputLimits: &ai.ModelInputLimits{Images: &ai.ModelImageInputLimits{Resize: &ai.ModelImageResizeOptions{MaxWidth: &width}}}}
+	content := ai.ToolResultContent{&ai.TextContent{Text: "shot"}, &ai.ImageContent{Data: base64.StdEncoding.EncodeToString(encoded.Bytes()), MimeType: "image/png"}}
+	normalized, changed := NormalizeToolResultImages(content, true, ModelResizeOptions(model))
+	if !changed || len(normalized) != 3 {
+		t.Fatalf("normalized = %#v, changed = %v", normalized, changed)
+	}
+	data, _ := base64.StdEncoding.DecodeString(normalized[1].(*ai.ImageContent).Data)
+	decoded, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || decoded.Width != 150 || decoded.Height != 100 {
+		t.Fatalf("resized = %#v, %v", decoded, err)
+	}
+	if _, changed := NormalizeToolResultImages(content[:1], true, nil); changed {
+		t.Fatal("text-only content changed")
 	}
 }
