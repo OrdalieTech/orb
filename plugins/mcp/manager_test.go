@@ -1166,7 +1166,7 @@ func NewManager(cwd string, servers []testServer) *Manager {
 			Timeout: server.Timeout, Exposure: ExposureDirect,
 		}})
 	}
-	manager := newManager(func(string, bool) ([]Entry, []string) { return entries, nil })
+	manager := newManager(cwd, func(string, bool) ([]Entry, []string) { return entries, nil })
 	manager.configure(cwd, entries)
 	return manager
 }

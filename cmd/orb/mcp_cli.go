@@ -1,13 +1,19 @@
 package main
 
 import (
+	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 )
 
@@ -16,14 +22,18 @@ const mcpCommandUsage = `Usage:
   orb mcp add <server> [options] --url <url>
   orb mcp remove <server> [-l]
   orb mcp list [--json]
+  orb mcp login <server> [--timeout <seconds>]
+  orb mcp logout <server>
 
-Configure and check MCP servers without starting a session. Reads
-~/.pi/agent/mcp.json and, in trusted projects, .pi/mcp.json.
+Configure and check MCP servers and sign in to OAuth servers without starting
+a session. Reads ~/.pi/agent/mcp.json and, in trusted projects, .pi/mcp.json.
 
 Commands:
   add <server>            Add or replace a server in mcp.json
   remove <server>         Remove a server from mcp.json
   list                    Show state, tools, and errors (exits 1 on failure)
+  login <server>          Sign in through the browser
+  logout <server>         Delete the stored OAuth credentials
 
 Options for add and remove:
   -l, --local             Use .pi/mcp.json in the current project instead of the global file
@@ -46,7 +56,8 @@ Options for add:
   --description <text>    What the server offers, shown in the system prompt
 
 Other options:
-  --json                  Print the list as JSON`
+  --json                  Print the list as JSON
+  --timeout <seconds>     How long login waits for the browser (default: 300)`
 
 const mcpHelpHint = `Use "orb mcp --help" for usage.`
 
@@ -143,6 +154,19 @@ func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (b
 			return fail("Usage: orb mcp list [--json]\n" + mcpHelpHint)
 		}
 		return true, listMCPServers(ctx, cwd, agentDir, parsed.values["json"] != "", streams)
+	case "login", "logout":
+		known := map[string]string{}
+		if command == "login" {
+			known["timeout"] = "value"
+		}
+		parsed, err := parseMCPOptions(rest, known, 1<<30)
+		if err != nil {
+			return fail(err.Error())
+		}
+		if len(parsed.positional) != 1 {
+			return fail("Usage: orb mcp " + command + " <server>\n" + mcpHelpHint)
+		}
+		return true, signInMCPServer(ctx, cwd, agentDir, command, parsed.positional[0], parsed.values["timeout"], streams)
 	}
 	return fail(fmt.Sprintf("Unknown mcp command %q.\n%s", command, mcpHelpHint))
 }
@@ -249,7 +273,11 @@ func addMCPServer(ctx context.Context, cwd, agentDir string, args []string, stre
 	if local && !projectTrusted(ctx, cwd, agentDir) {
 		_, _ = fmt.Fprintf(streams.Stdout, "The project is not trusted, so %s is ignored until you start orb in the project and trust it.\n", path)
 	}
-	_, _ = fmt.Fprintln(streams.Stdout, "Check it with: orb mcp list")
+	check := "Check it with: orb mcp list"
+	if server.UsesOAuth() {
+		check += ". If it requires sign-in: orb mcp login " + name
+	}
+	_, _ = fmt.Fprintln(streams.Stdout, check)
 	return 0
 }
 
@@ -303,7 +331,7 @@ func listMCPServers(ctx context.Context, cwd, agentDir string, asJSON bool, stre
 		note = mcp.ProjectPath(cwd) + " is ignored because the project is not trusted. Start orb in the project to trust it."
 	}
 	status := map[string]mcp.ServerStatus{}
-	for _, server := range mcp.Probe(ctx, cwd, entries) {
+	for _, server := range mcp.Probe(ctx, cwd, agentDir, entries) {
 		status[server.Name] = server
 	}
 	reports := make([]mcpServerReport, 0, len(entries))
@@ -355,7 +383,13 @@ func listMCPServers(ctx context.Context, cwd, agentDir string, asJSON bool, stre
 		if report.State == string(mcp.ServerConnected) {
 			state = fmt.Sprintf("connected, %d tool%s", len(report.Tools), map[bool]string{true: "", false: "s"}[len(report.Tools) == 1])
 		}
+		if report.State == string(mcp.ServerNeedsAuth) {
+			state = "needs sign-in"
+		}
 		_, _ = fmt.Fprintf(streams.Stdout, "%s: %s (%s, %s)\n  %s\n", report.Name, state, report.Exposure, report.Scope, report.Transport)
+		if report.State == string(mcp.ServerNeedsAuth) {
+			_, _ = fmt.Fprintf(streams.Stdout, "  sign in with: orb mcp login %s\n", report.Name)
+		}
 		if len(report.Tools) > 0 {
 			tools := make([]string, 0, len(report.Tools))
 			for _, tool := range report.Tools {
@@ -377,4 +411,81 @@ func listMCPServers(ctx context.Context, cwd, agentDir string, asJSON bool, stre
 		_, _ = fmt.Fprintln(streams.Stdout, note)
 	}
 	return code
+}
+
+func signInMCPServer(ctx context.Context, cwd, agentDir, command, name, timeout string, streams cliStreams) int {
+	trusted := projectTrusted(ctx, cwd, agentDir)
+	entries, _ := mcp.Load(agentDir, cwd, trusted)
+	index := slices.IndexFunc(entries, func(entry mcp.Entry) bool { return entry.Name == name })
+	if index < 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name)
+		}
+		_, _ = fmt.Fprintf(streams.Stderr, "No MCP server named %q. Configured: %s.\n", name, cmp.Or(strings.Join(names, ", "), "none"))
+		return 1
+	}
+	entry := entries[index]
+	if !entry.Config.UsesOAuth() {
+		_, _ = fmt.Fprintf(streams.Stderr, "MCP server %q does not use OAuth. Only HTTP servers without an Authorization header do.\n", name)
+		return 1
+	}
+	if command == "logout" {
+		removed, err := mcp.RemoveCredentials(agentDir, name, entry.Config.URL)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		if removed {
+			_, _ = fmt.Fprintf(streams.Stdout, "Signed out of MCP server %q.\n", name)
+		} else {
+			_, _ = fmt.Fprintf(streams.Stdout, "No stored credentials for MCP server %q.\n", name)
+		}
+		return 0
+	}
+	seconds := 300.0
+	if timeout != "" {
+		parsed, err := strconv.ParseFloat(timeout, 64)
+		if err != nil || parsed <= 0 {
+			_, _ = fmt.Fprintln(streams.Stderr, "--timeout must be a positive number of seconds.")
+			return 1
+		}
+		seconds = parsed
+	}
+	loginCtx, cancel := context.WithTimeout(ctx, time.Duration(seconds*float64(time.Second)))
+	defer cancel()
+	tools, already, err := mcp.Login(loginCtx, cwd, agentDir, entry, func(target string) {
+		_, _ = fmt.Fprintf(streams.Stdout, "Sign in to MCP server %q in your browser:\n%s\n", name, target)
+		agent.OpenBrowser(target)
+	}, func(pasteCtx context.Context) (string, error) {
+		// Without a terminal only the browser callback can finish the sign-in.
+		if !streams.StdinTTY {
+			<-pasteCtx.Done()
+			return "", nil
+		}
+		_, _ = fmt.Fprint(streams.Stderr, "If the browser cannot reach this machine, paste the URL it was redirected to: ")
+		line := make(chan string, 1)
+		go func() {
+			text, _ := bufio.NewReader(streams.Stdin).ReadString('\n')
+			line <- text
+		}()
+		select {
+		case text := <-line:
+			return text, nil
+		case <-pasteCtx.Done():
+			return "", nil
+		}
+	})
+	switch {
+	case errors.Is(err, mcp.ErrSignInCancelled):
+		_, _ = fmt.Fprintf(streams.Stderr, "Sign-in to MCP server %q was cancelled or not completed within %g seconds.\n", name, seconds)
+		return 1
+	case err != nil:
+		_, _ = fmt.Fprintf(streams.Stderr, "Sign-in to MCP server %q failed: %v\n", name, err)
+		return 1
+	case already:
+		_, _ = fmt.Fprintf(streams.Stdout, "Already signed in to MCP server %q (%d tools).\n", name, tools)
+	default:
+		_, _ = fmt.Fprintf(streams.Stdout, "Signed in to MCP server %q (%d tools).\n", name, tools)
+	}
+	return 0
 }

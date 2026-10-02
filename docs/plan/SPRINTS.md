@@ -515,15 +515,15 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 
 **MCP**
 - [x] `mcp.json` (global, and project once trusted) is the only config; `description` per server.
-- [ ] OAuth: discovery, `clientName`, `authServerMetadataUrl`, RFC 9207 `iss`, credentials per server
+- [x] OAuth: discovery, `clientName`, `authServerMetadataUrl`, RFC 9207 `iss`, credentials per server
       name and URL, step-up keeping granted scopes, empty optional fields tolerated, clickable URL.
-- [ ] `"auth": {"provider": "<p>"}` sends that provider's `/login` token (global only; https except
+- [x] `"auth": {"provider": "<p>"}` sends that provider's `/login` token (global only; https except
       loopback).
 - [x] Servers connect in the background; a short `mcp_servers` system prompt section.
 - [x] Deferred tools and `tool_search`, using the provider's native tool search where the API has
       one; deferred tools survive resume and `/reload`.
 - [x] Names normalize `-` to `_`, colliding tools get a hash suffix, near-duplicate servers rejected.
-- [ ] `orb mcp add|remove|list|login|logout` and `/mcp`.
+- [x] `orb mcp add|remove|list|login|logout` and `/mcp`.
 
 **Close**
 - [ ] `UPSTREAM.lock` at v1.0.0 with its sync report; CHANGELOG; release.

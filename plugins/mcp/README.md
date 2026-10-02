@@ -42,6 +42,27 @@ by exact name or `*` pattern:
 - `direct`: declared like built-in tools.
 - `hidden`: registered but unreachable.
 
+## Sign-in
+
+An HTTP server without an `Authorization` header signs in with OAuth when it answers 401.
+Connections never open a browser: they send the stored token and refresh it near expiry or after a
+401, and otherwise the server shows "needs sign-in" until `/mcp login [server]` or
+`orb mcp login <server>` runs the authorization code flow: protected resource and authorization
+server discovery, dynamic client registration (`client_name` from `oauth.clientName`, default
+`orb`), PKCE, the RFC 8707 resource and the RFC 9207 `iss` check, against a loopback callback whose
+redirect URL can also be pasted when the browser runs elsewhere. A server that asks for more scope
+(`insufficient_scope`) gets a new sign-in that keeps the scope granted so far. `oauth.clientId` and
+`clientSecret` use a pre-registered client, `callbackPort`/`callbackUrl` fix the redirect URI,
+`scope` sets the scopes, and `authServerMetadataUrl` replaces discovery for servers that advertise
+the wrong authorization server. Credentials live in `mcp-auth.json` in the agent directory, keyed by
+server name and URL in the shape pi writes, so both share them; refreshes are serialized across
+processes, and sign-ins done in another process (say `orb mcp login` run by the agent) are picked
+up on the next turn. `/mcp logout` and `orb mcp logout` delete them.
+
+`"auth": {"provider": "<p>"}` sends the token of an `orb login` provider instead. Only the global
+`mcp.json` may use it, so a repository cannot pick where a credential goes, and the URL must be
+https (http only on loopback).
+
 ## Lifecycle and tools
 
 Servers connect in the background when a session starts. The first prompt waits up to 10 seconds

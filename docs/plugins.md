@@ -160,11 +160,17 @@ orb mcp list [--json]          # connects each server once and reports it
 orb mcp add files --env TOKEN=x -- mcp-files --root .
 orb mcp add remote --url https://example.com/mcp --bearer-token-env-var REMOTE_TOKEN
 orb mcp remove <name> [-l]     # -l / --local edits the project's .pi/mcp.json
+orb mcp login <name>           # OAuth sign-in through the browser
+orb mcp logout <name>
 ```
+
+HTTP servers without an `Authorization` header sign in with OAuth (`oauth.clientId`,
+`clientName`, `callbackPort`, `authServerMetadataUrl`, …); `"auth": {"provider": "anthropic"}`
+in the global file sends that provider's `orb login` token instead.
 
 Servers connect in the background when a session starts. `/mcp` opens the
 live status window (state, transport, target, tools, errors) with in-place
-reconnection; `/mcp reconnect [server]` works everywhere.
+reconnection; `/mcp login|logout|reconnect [server]` work everywhere.
 
 ## Questions
 

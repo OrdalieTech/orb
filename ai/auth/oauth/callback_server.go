@@ -239,3 +239,53 @@ type manualResult struct {
 var errLoopbackTaken = errors.New("loopback callback address taken")
 
 var errMissingAuthorizationCode = errors.New("Missing authorization code") //nolint:staticcheck // Upstream capitalization is observable.
+
+// LoopbackOptions configure a loopback redirect for sign-ins outside the
+// provider registry, such as MCP servers'.
+type LoopbackOptions struct {
+	// Provider names what is signed in to on the browser page.
+	Provider string
+	// Host is the address to listen on; RedirectHost the host in the redirect
+	// URI when it differs.
+	Host, RedirectHost, Path string
+	// Port 0 picks a free port.
+	Port  int
+	State string
+	// Complete finishes sign-in with the callback's query before the browser
+	// page is sent, so the page shows failures.
+	Complete func(url.Values) error
+}
+
+// Loopback waits for one sign-in redirect.
+type Loopback struct {
+	server *callbackServer[struct{}]
+}
+
+func ListenLoopback(options LoopbackOptions) (*Loopback, error) {
+	server, err := startCallbackServer(callbackOptions[struct{}]{
+		provider: options.Provider, host: options.Host, port: options.Port, path: options.Path, redirectHost: options.RedirectHost,
+		state: options.State, complete: func(query url.Values) (struct{}, error) { return struct{}{}, options.Complete(query) },
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Loopback{server: server}, nil
+}
+
+func (loopback *Loopback) RedirectURI() string { return loopback.server.redirectURI }
+
+// Wait returns when the browser completed sign-in, with Complete's error.
+func (loopback *Loopback) Wait(ctx context.Context) error {
+	select {
+	case outcome := <-loopback.server.outcome:
+		return outcome.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Cancel stops waiting unless a callback is being completed, and reports
+// whether it did.
+func (loopback *Loopback) Cancel() bool { return loopback.server.cancel() }
+
+func (loopback *Loopback) Close() { loopback.server.close() }

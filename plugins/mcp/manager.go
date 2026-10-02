@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -24,10 +25,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
 	configpkg "github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/tui"
 	mcpjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -38,6 +41,7 @@ const (
 	ServerConnecting ServerState = "connecting"
 	ServerConnected  ServerState = "connected"
 	ServerFailed     ServerState = "failed"
+	ServerNeedsAuth  ServerState = "needs-auth"
 	ServerDisabled   ServerState = "disabled"
 	ServerStopped    ServerState = "stopped"
 )
@@ -74,6 +78,7 @@ type connectFunc func(
 
 type progressTracker struct {
 	manager *Manager
+	server  string
 }
 
 type serverConnection struct {
@@ -91,6 +96,11 @@ type serverConnection struct {
 	definitions map[string]extensions.ToolDefinition
 	// ready is closed when the running connection attempt settles.
 	ready chan struct{}
+	// challenge is the server's last WWW-Authenticate challenge, which sign-in answers.
+	challenge *challenge
+	// tokensAtSignIn are the stored tokens when the server came to need a
+	// sign-in, to notice one done in another process.
+	tokensAtSignIn string
 }
 
 type progressRegistration struct {
@@ -105,13 +115,17 @@ type progressRegistration struct {
 
 // Manager owns all MCP client sessions for one coding-agent session.
 type Manager struct {
-	cwd     string
-	order   []string
-	servers map[string]*serverConnection
-	load    func(cwd string, projectTrusted bool) ([]Entry, []string)
-	connect connectFunc
+	cwd      string
+	agentDir string
+	order    []string
+	servers  map[string]*serverConnection
+	load     func(cwd string, projectTrusted bool) ([]Entry, []string)
+	connect  connectFunc
 	// startupWait bounds the first prompt's wait for servers with direct tools.
 	startupWait time.Duration
+	// providerToken resolves auth.provider tokens; set from the session's model registry.
+	providerToken func(ctx context.Context, provider string) (string, error)
+	openURL       func(string)
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -133,17 +147,17 @@ type Manager struct {
 // servers in the background.
 func Extension(agentDir string) extensions.Factory {
 	return func(api extensions.API) error {
-		manager := newManager(func(cwd string, trusted bool) ([]Entry, []string) { return Load(agentDir, cwd, trusted) })
+		manager := newManager(agentDir, func(cwd string, trusted bool) ([]Entry, []string) { return Load(agentDir, cwd, trusted) })
 		manager.register(api)
 		return nil
 	}
 }
 
-func newManager(load func(string, bool) ([]Entry, []string)) *Manager {
+func newManager(agentDir string, load func(string, bool) ([]Entry, []string)) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		servers: map[string]*serverConnection{}, load: load, connect: defaultConnect, startupWait: startupWait,
-		ctx: ctx, cancel: cancel, progress: map[string]*progressRegistration{}, toolOwners: map[string]string{},
+		agentDir: agentDir, servers: map[string]*serverConnection{}, load: load, connect: defaultConnect, startupWait: startupWait,
+		ctx: ctx, cancel: cancel, progress: map[string]*progressRegistration{}, toolOwners: map[string]string{}, openURL: agent.OpenBrowser,
 	}
 }
 
@@ -193,6 +207,15 @@ func (manager *Manager) register(api extensions.API) {
 		manager.configure(ctx.CWD(), entries)
 		manager.mu.Lock()
 		manager.problems = problems
+		if registry := ctx.ModelRegistry(); registry != nil {
+			manager.providerToken = func(callCtx context.Context, provider string) (string, error) {
+				key, err := registry.ResolveAPIKey(callCtx, provider, nil)
+				if err != nil || key == nil {
+					return "", err
+				}
+				return *key, nil
+			}
+		}
 		manager.mu.Unlock()
 		manager.ensureDiscoveryActive(ctx)
 		// Connecting runs in the background: the first prompt waits only for
@@ -221,6 +244,14 @@ func (manager *Manager) register(api extensions.API) {
 	api.On(extensions.EventToolCall, func(callCtx context.Context, event extensions.Event, _ extensions.Context) (any, error) {
 		if call, ok := event.(extensions.ToolCallEvent); ok && call.ToolName == ToolSearchName {
 			manager.waitForServers(callCtx, manager.enabledNames(nil))
+		}
+		return nil, nil
+	})
+	// Sign-ins done outside the session, such as `orb mcp login` run by the
+	// agent, are picked up on the next turn.
+	api.On(extensions.EventTurnStart, func(callCtx context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+		for _, name := range manager.signedInElsewhere() {
+			_ = manager.connectServer(callCtx, name, true)
 		}
 		return nil, nil
 	})
@@ -309,8 +340,11 @@ func (manager *Manager) reportProblems(ctx extensions.Context) {
 	closed := manager.closed
 	manager.mu.Unlock()
 	for _, server := range manager.Status() {
-		if server.State == ServerFailed {
+		switch server.State {
+		case ServerFailed:
 			lines = append(lines, server.Name+": failed: "+firstLine(server.Error))
+		case ServerNeedsAuth:
+			lines = append(lines, server.Name+": needs sign-in, run /mcp login "+server.Name)
 		}
 	}
 	if closed || len(lines) == 0 {
@@ -393,7 +427,7 @@ func (manager *Manager) connectServer(ctx context.Context, name string, replace 
 			manager.handleProgress(request.Params)
 		},
 	}
-	session, err := manager.connect(connectCtx, manager.ctx, entry.Config, options, progressTracker{manager: manager})
+	session, err := manager.connect(connectCtx, manager.ctx, entry.Config, options, progressTracker{manager: manager, server: name})
 	if err != nil {
 		manager.setServerFailed(name, nil, err)
 		return err
@@ -440,7 +474,11 @@ func defaultConnect(
 		if err != nil {
 			return nil, err
 		}
-		base := headerRoundTripper{base: http.DefaultTransport, headers: headers}
+		authenticated, err := tracker.manager.authTransport(tracker.server, config, http.DefaultTransport)
+		if err != nil {
+			return nil, err
+		}
+		base := headerRoundTripper{base: authenticated, headers: headers}
 		httpClient := &http.Client{Transport: progressRoundTripper{base: base, manager: tracker.manager}}
 		return client.Connect(connectCtx, &mcpsdk.StreamableClientTransport{Endpoint: config.URL, HTTPClient: httpClient}, nil)
 	}
@@ -790,6 +828,9 @@ func (manager *Manager) execute(
 	manager.mu.Unlock()
 	if session == nil {
 		if err := manager.connectServer(ctx, server, true); err != nil {
+			if errors.Is(err, errSignInRequired) {
+				return engine.AgentToolResult{}, fmt.Errorf("MCP server %q needs sign-in: the user can run /mcp login %s", server, server)
+			}
 			return engine.AgentToolResult{}, err
 		}
 		manager.mu.Lock()
@@ -823,6 +864,10 @@ func (manager *Manager) execute(
 	if err != nil {
 		if callCtx.Err() != nil && ctx.Err() == nil {
 			err = fmt.Errorf("mcp: %s/%s timed out after %s without progress", server, tool, timeout)
+		}
+		if errors.Is(err, errSignInRequired) {
+			manager.setServerFailed(server, session, err)
+			return engine.AgentToolResult{}, fmt.Errorf("MCP server %q needs sign-in: the user can run /mcp login %s, or you can run `orb mcp login %s` for them to approve in the browser", server, server, server)
 		}
 		if isConnectionDead(err) {
 			// The next call reconnects.
@@ -972,13 +1017,17 @@ func (manager *Manager) setServerFailed(name string, session *mcpsdk.ClientSessi
 		connection.session = nil
 		connection.state = ServerFailed
 		connection.err = err.Error()
+		if errors.Is(err, errSignInRequired) {
+			connection.state, connection.err = ServerNeedsAuth, ""
+			connection.tokensAtSignIn = manager.storedTokens(name, connection.entry.Config)
+		}
 	}
 }
 
 // Probe connects each enabled server once, outside a session, and reports
 // the servers with the tools they offer.
-func Probe(ctx context.Context, cwd string, entries []Entry) []ServerStatus {
-	manager := newManager(nil)
+func Probe(ctx context.Context, cwd, agentDir string, entries []Entry) []ServerStatus {
+	manager := newManager(agentDir, nil)
 	manager.configure(cwd, entries)
 	var group sync.WaitGroup
 	for _, name := range manager.enabledNames(nil) {
@@ -1139,44 +1188,173 @@ func firstLine(text string) string {
 }
 
 func (manager *Manager) completeCommand(_ context.Context, prefix string) ([]extensions.AutocompleteItem, error) {
-	prefix = strings.TrimSpace(prefix)
-	var items []extensions.AutocompleteItem
-	if prefix == "" || strings.HasPrefix("reconnect", prefix) {
-		items = append(items, extensions.AutocompleteItem{Value: "reconnect", Label: "reconnect", Description: "Reconnect all MCP servers"})
+	fields := strings.Fields(prefix)
+	if len(fields) <= 1 && !strings.HasSuffix(prefix, " ") {
+		var items []extensions.AutocompleteItem
+		for _, action := range []string{"login", "logout", "reconnect"} {
+			if len(fields) == 0 || strings.HasPrefix(action, fields[0]) {
+				items = append(items, extensions.AutocompleteItem{Value: action + " ", Label: action})
+			}
+		}
+		return items, nil
 	}
-	for _, name := range manager.enabledNames(nil) {
-		value := "reconnect " + name
-		if prefix == "" || strings.HasPrefix(value, prefix) {
-			items = append(items, extensions.AutocompleteItem{Value: value, Label: value})
+	action, partial := fields[0], ""
+	if len(fields) > 1 {
+		partial = fields[1]
+	}
+	var items []extensions.AutocompleteItem
+	for _, server := range manager.Status() {
+		eligible := server.State != ServerDisabled
+		if action != "reconnect" {
+			eligible = manager.usesOAuth(server.Name)
+		}
+		if eligible && strings.HasPrefix(server.Name, partial) {
+			items = append(items, extensions.AutocompleteItem{Value: action + " " + server.Name, Label: server.Name, Description: string(server.State)})
 		}
 	}
 	return items, nil
 }
 
+func (manager *Manager) usesOAuth(name string) bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	connection := manager.servers[name]
+	return connection != nil && connection.entry.Config.IsEnabled() && connection.entry.Config.UsesOAuth()
+}
+
+// pickServer resolves a subcommand's server; without a name, the only
+// eligible one, the only preferred one, or the user's choice.
+func (manager *Manager) pickServer(ctx context.Context, name string, commandContext extensions.CommandContext, eligible func(ServerStatus) bool, preferred ServerState, none string) string {
+	var candidates, favored []string
+	for _, server := range manager.Status() {
+		if !eligible(server) {
+			continue
+		}
+		if name == "" || server.Name == name {
+			candidates = append(candidates, server.Name)
+		}
+		if server.State == preferred {
+			favored = append(favored, server.Name)
+		}
+	}
+	switch {
+	case name != "" && len(candidates) == 0:
+		commandContext.UI().Notify(none, extensions.NotifyError)
+		return ""
+	case len(candidates) == 0:
+		commandContext.UI().Notify(none, extensions.NotifyInfo)
+		return ""
+	case len(candidates) == 1:
+		return candidates[0]
+	case len(favored) == 1:
+		return favored[0]
+	}
+	choice, ok, err := commandContext.UI().Select(ctx, "MCP server", candidates, nil)
+	if err != nil || !ok {
+		return ""
+	}
+	return choice
+}
+
+const mcpUsage = "Usage: /mcp, /mcp login [server], /mcp logout [server], /mcp reconnect [server]"
+
 func (manager *Manager) handleCommand(ctx context.Context, args string, commandContext extensions.CommandContext) error {
 	fields := strings.Fields(args)
-	if len(fields) > 0 && fields[0] == "reconnect" && len(fields) <= 2 {
-		name := ""
-		if len(fields) > 1 {
-			name = fields[1]
+	if len(fields) == 0 {
+		if commandContext.Mode() == extensions.ModeTUI && commandContext.HasUI() {
+			return manager.statusWindow(ctx, commandContext)
+		}
+		commandContext.UI().Notify(manager.formatStatus(), extensions.NotifyInfo)
+		return nil
+	}
+	if len(fields) > 2 {
+		commandContext.UI().Notify(mcpUsage, extensions.NotifyWarning)
+		return nil
+	}
+	name := ""
+	if len(fields) == 2 {
+		name = fields[1]
+	}
+	oauth := func(server ServerStatus) bool { return manager.usesOAuth(server.Name) }
+	const noOAuth = "No enabled MCP server uses OAuth. Only HTTP servers without an Authorization header do."
+	ui := commandContext.UI()
+	switch fields[0] {
+	case "login":
+		if name = manager.pickServer(ctx, name, commandContext, oauth, ServerNeedsAuth, noOAuth); name == "" {
+			return nil
+		}
+		if !commandContext.HasUI() {
+			ui.Notify(fmt.Sprintf("Signing in to MCP server %q requires interactive mode; run orb mcp login %s.", name, name), extensions.NotifyError)
+			return nil
+		}
+		err := manager.SignIn(ctx, name, signInPrompt{
+			show: func(target string) {
+				link := target
+				if commandContext.Mode() == extensions.ModeTUI {
+					// Long URLs wrap, which some terminals cannot open; the short link stays on one line.
+					label := "Ctrl+click to open"
+					if runtime.GOOS == "darwin" {
+						label = "Cmd+click to open"
+					}
+					link = tui.Hyperlink(target, target) + "\n" + tui.Hyperlink(label, target)
+				}
+				ui.Notify(fmt.Sprintf("Sign in to MCP server %q in your browser:\n%s", name, link), extensions.NotifyInfo)
+				manager.openURL(target)
+			},
+			paste: func(pasteCtx context.Context) (string, error) {
+				placeholder := "http://127.0.0.1:.../callback?code=..."
+				value, ok, err := ui.Input(pasteCtx, fmt.Sprintf("Waiting for sign-in to %q. If the browser cannot reach this machine, paste the URL it was redirected to.", name), &placeholder, &extensions.DialogOptions{Signal: pasteCtx})
+				if !ok {
+					return "", err
+				}
+				return value, err
+			},
+		})
+		switch {
+		case errors.Is(err, errSignInCancelled):
+			ui.Notify("Sign-in cancelled.", extensions.NotifyInfo)
+		case err != nil:
+			ui.Notify("Sign-in failed: "+err.Error(), extensions.NotifyError)
+		default:
+			manager.ensureDiscoveryActive(commandContext)
+			ui.Notify(fmt.Sprintf("Signed in to MCP server %q (%d tools).", name, len(manager.statusOf(name).Tools)), extensions.NotifyInfo)
+		}
+	case "logout":
+		if name = manager.pickServer(ctx, name, commandContext, oauth, ServerConnected, noOAuth); name == "" {
+			return nil
+		}
+		removed, err := manager.SignOut(name)
+		switch {
+		case err != nil:
+			ui.Notify(err.Error(), extensions.NotifyError)
+		case removed:
+			ui.Notify(fmt.Sprintf("Signed out of MCP server %q.", name), extensions.NotifyInfo)
+		default:
+			ui.Notify(fmt.Sprintf("No stored credentials for MCP server %q.", name), extensions.NotifyInfo)
+		}
+	case "reconnect":
+		if name = manager.pickServer(ctx, name, commandContext, func(server ServerStatus) bool { return server.State != ServerDisabled }, ServerFailed, "No enabled MCP server to reconnect."); name == "" {
+			return nil
 		}
 		if err := manager.Reconnect(ctx, name); err != nil {
-			commandContext.UI().Notify("MCP reconnect failed: "+err.Error(), extensions.NotifyError)
+			ui.Notify(fmt.Sprintf("MCP server %q: %v", name, err), extensions.NotifyError)
 			return nil
 		}
 		manager.ensureDiscoveryActive(commandContext)
-		commandContext.UI().Notify("MCP servers reconnected", extensions.NotifyInfo)
-		return nil
+		ui.Notify(fmt.Sprintf("Reconnected to MCP server %q (%d tools).", name, len(manager.statusOf(name).Tools)), extensions.NotifyInfo)
+	default:
+		ui.Notify(mcpUsage, extensions.NotifyWarning)
 	}
-	if len(fields) > 0 {
-		commandContext.UI().Notify("Usage: /mcp, /mcp reconnect [server]", extensions.NotifyWarning)
-		return nil
-	}
-	if commandContext.Mode() == extensions.ModeTUI && commandContext.HasUI() {
-		return manager.statusWindow(ctx, commandContext)
-	}
-	commandContext.UI().Notify(manager.formatStatus(), extensions.NotifyInfo)
 	return nil
+}
+
+func (manager *Manager) statusOf(name string) ServerStatus {
+	for _, server := range manager.Status() {
+		if server.Name == name {
+			return server
+		}
+	}
+	return ServerStatus{}
 }
 
 func (manager *Manager) formatStatus() string {
@@ -1190,6 +1368,9 @@ func (manager *Manager) formatStatus() string {
 	lines := make([]string, 0, len(status)+len(problems))
 	for _, server := range status {
 		line := fmt.Sprintf("%s: %s", server.Name, server.State)
+		if server.State == ServerNeedsAuth {
+			line = fmt.Sprintf("%s: needs sign-in, run /mcp login %s", server.Name, server.Name)
+		}
 		if server.State == ServerConnected {
 			line += fmt.Sprintf(", %d tools", len(server.Tools))
 		}

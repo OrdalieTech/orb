@@ -74,6 +74,12 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   takes `--exposure`, `--description`, `--bearer-token-env-var`, OAuth client options and `-l`, and
   `orb mcp list` connects each server and reports its tools (`--json`); `get`, `enable` and
   `disable` are gone.
+- MCP servers sign in with OAuth: `/mcp login` or `orb mcp login` runs the browser flow (discovery,
+  client registration with `oauth.clientName`, PKCE, the authorization server's `iss` checked, a
+  pasted redirect URL when the browser is elsewhere), tokens refresh on their own, a server asking
+  for more scope keeps what it had, and `oauth.authServerMetadataUrl` overrides discovery.
+  Credentials are stored per server name and URL in `mcp-auth.json`, shared with pi. A server can
+  instead use a provider's `orb login` token with `"auth": {"provider": "…"}`.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

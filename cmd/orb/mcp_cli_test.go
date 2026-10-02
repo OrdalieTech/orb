@@ -61,3 +61,22 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 		t.Fatalf("remove unknown: code=%d stderr=%q", code, stderr)
 	}
 }
+
+func TestMCPCLILoginNeedsAnOAuthServer(t *testing.T) {
+	env := setupPackageCLI(t)
+	if err := os.WriteFile(filepath.Join(env.agentDir, "mcp.json"), []byte(`{"mcpServers":{"local":{"command":"x"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runPackageCLI(t, []string{"mcp", "login", "ghost"})
+	if code != 1 || !strings.Contains(stderr, `No MCP server named "ghost". Configured: local.`) {
+		t.Fatalf("login unknown: code=%d stderr=%q", code, stderr)
+	}
+	code, _, stderr = runPackageCLI(t, []string{"mcp", "logout", "local"})
+	if code != 1 || !strings.Contains(stderr, "does not use OAuth") {
+		t.Fatalf("logout stdio: code=%d stderr=%q", code, stderr)
+	}
+	code, _, stderr = runPackageCLI(t, []string{"mcp", "login", "local", "--timeout", "0"})
+	if code != 1 || !strings.Contains(stderr, "does not use OAuth") {
+		t.Fatalf("login stdio: code=%d stderr=%q", code, stderr)
+	}
+}
