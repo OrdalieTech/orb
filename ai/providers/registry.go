@@ -18,7 +18,7 @@ var registry = []Provider{
 	envProvider("ant-ling", "Ant Ling", "https://api.ant-ling.com/v1", "Ant Ling API key", []string{"ANT_LING_API_KEY"}, ai.APIOpenAICompletions),
 	// ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but the
 	// api-key lookup skips it because requests must pass it as Authorization: Bearer.
-	withProviderMetadata(anthropicProvider, "https://api.anthropic.com", []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, ai.APIAnthropicMessages),
+	withProviderMetadata(anthropicProvider, "https://api.anthropic.com", []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_FEDERATION_RULE_ID"}, []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(azureOpenAIResponsesProvider, "", []string{"AZURE_OPENAI_API_KEY"}, []string{"AZURE_OPENAI_API_KEY"}, ai.APIAzureOpenAIResponses),
 	envProvider("baseten", "Baseten", "https://inference.baseten.co/v1", "Baseten API key", []string{"BASETEN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("cerebras", "Cerebras", "https://api.cerebras.ai/v1", "Cerebras API key", []string{"CEREBRAS_API_KEY"}, ai.APIOpenAICompletions),

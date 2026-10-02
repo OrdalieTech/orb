@@ -105,7 +105,7 @@ func (adc *googleVertexADC) externalAccountCachedExecutableResponse(path string)
 	if err != nil || !info.Mode().IsRegular() {
 		return googleVertexExternalAccountExecutableResponse{}, false, nil
 	}
-	data, err := os.ReadFile(resolved)
+	data, err := readHostFile(resolved)
 	if err != nil {
 		return googleVertexExternalAccountExecutableResponse{}, false, err
 	}

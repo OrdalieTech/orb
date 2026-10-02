@@ -15,7 +15,7 @@ func TestMakeStrictJSONSchemaDerivesProviderSchema(t *testing.T) {
 		`"nullable":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["path","metadata"]}`)
 	original := string(parameters)
 
-	strict, err := makeStrictJSONSchema(parameters)
+	strict, err := makeStrictJSONSchema(parameters, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestStrictJSONSchemaRejectsUnsupportedShapes(t *testing.T) {
 			"$ref schemas are unsupported",
 		},
 	} {
-		if _, err := makeStrictJSONSchema(test.parameters); err == nil || err.Error() != test.reason {
+		if _, err := makeStrictJSONSchema(test.parameters, nil); err == nil || err.Error() != test.reason {
 			t.Fatalf("makeStrictJSONSchema error = %v, want %q", err, test.reason)
 		}
 		tool := ai.Tool{
@@ -80,5 +80,17 @@ func TestStrictJSONSchemaRejectsUnsupportedShapes(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), test.reason) {
 			t.Fatalf("require error = %v, want it to mention %q", err, test.reason)
 		}
+	}
+}
+
+func TestAnthropicStrictRejectsFallBackToNonStrictForPreferTools(t *testing.T) {
+	tool := ai.Tool{Name: "pick", Parameters: jsonschema.Schema(`{"type":"object","properties":{"n":{"type":"integer","minimum":1},"tags":{"type":"array","items":{"type":"string"},"minItems":1}}}`),
+		ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingPrefer}}
+	if strict, err := resolveJSONSchemaStrictSampling(tool, true, anthropicStrictRejects); err != nil || strict != nil {
+		t.Fatalf("minimum: strict = %v, err = %v", strict, err)
+	}
+	tool.Parameters = jsonschema.Schema(`{"type":"object","properties":{"when":{"type":"string","format":"date"},"tags":{"type":"array","items":{"type":"string"},"minItems":1}}}`)
+	if strict, err := resolveJSONSchemaStrictSampling(tool, true, anthropicStrictRejects); err != nil || strict == nil || !*strict {
+		t.Fatalf("supported keywords: strict = %v, err = %v", strict, err)
 	}
 }

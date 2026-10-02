@@ -35,6 +35,13 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - `samplingParams` (and image `inputLimits`) can be set per model in `models.json`, in
   `modelOverrides` and by extension providers; OpenAI-compatible requests send them last.
 - Hitting the ChatGPT subscription's usage limit stops retrying and links to the usage page.
+- Anthropic: copy-code login (the code shows on Anthropic's page, for a browser on another machine),
+  workload identity federation from `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID` and
+  `ANTHROPIC_IDENTITY_TOKEN_FILE`, and tools whose schemas use keywords Anthropic's strict mode
+  rejects (`minimum`, `maxItems`, …) are sent non-strict instead of failing the request.
+- Browser sign-in (Anthropic, ChatGPT, Codex, OpenRouter) shares one callback server: a provider
+  error ends sign-in with its description, a busy callback port falls back to pasting the redirect
+  URL, and the browser page is Orb's.
 - `--provider` without `--model`, and an invalid `--mode`, are now errors instead of being ignored.
 - `quietStartup: "header"` keeps the startup logo while hiding startup details.
 - Extensions: `turn_end` and the new `agent_before_settle` can persist entries (custom, custom

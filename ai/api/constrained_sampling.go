@@ -88,10 +88,14 @@ func containsStrictSchemaEntry(value, wanted any) bool {
 	return false
 }
 
+// strictKeywordCheck reports a keyword a provider's strict mode rejects with
+// this value.
+type strictKeywordCheck func(key string, value any) bool
+
 // makeStrictJSONSchemaNode rewrites one schema node in place: every property
 // becomes required, optional properties gain a null union, and additional
 // properties are closed off.
-func makeStrictJSONSchemaNode(schema any) (any, error) {
+func makeStrictJSONSchemaNode(schema any, rejects strictKeywordCheck) (any, error) {
 	object, ok := schema.(jsonwire.OrderedObject)
 	if !ok {
 		return nil, unsupportedStrict("boolean schemas are unsupported")
@@ -99,6 +103,14 @@ func makeStrictJSONSchemaNode(schema any) (any, error) {
 	for _, key := range unsupportedStrictSchemaKeys {
 		if _, present := object.Value(key); present {
 			return nil, unsupportedStrict("%s schemas are unsupported", key)
+		}
+	}
+	if rejects != nil {
+		for _, member := range object {
+			if rejects(member.Name, member.Value) {
+				encoded, _ := jsonwire.Marshal(member.Value)
+				return nil, unsupportedStrict("%s: %s is unsupported", member.Name, encoded)
+			}
 		}
 	}
 
@@ -111,7 +123,7 @@ func makeStrictJSONSchemaNode(schema any) (any, error) {
 			if isStructuredStrictSchema(variant) {
 				return nil, unsupportedStrict("object and array unions are unsupported")
 			}
-			converted, err := makeStrictJSONSchemaNode(variant)
+			converted, err := makeStrictJSONSchemaNode(variant, rejects)
 			if err != nil {
 				return nil, err
 			}
@@ -123,7 +135,7 @@ func makeStrictJSONSchemaNode(schema any) (any, error) {
 		if _, isTuple := value.(orderedJSONArray); isTuple {
 			return nil, unsupportedStrict("tuple schemas are unsupported")
 		}
-		items, err := makeStrictJSONSchemaNode(value)
+		items, err := makeStrictJSONSchemaNode(value, rejects)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +165,7 @@ func makeStrictJSONSchemaNode(schema any) (any, error) {
 	names := make(orderedJSONArray, 0, len(properties))
 	for index, member := range properties {
 		names = append(names, member.Name)
-		value, err := makeStrictJSONSchemaNode(member.Value)
+		value, err := makeStrictJSONSchemaNode(member.Value, rejects)
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +204,7 @@ func strictSchemaRequired(object, properties jsonwire.OrderedObject) (map[string
 
 // makeStrictJSONSchema converts a tool schema to the strict subset expected by
 // provider constrained sampling.
-func makeStrictJSONSchema(parameters jsonschema.Schema) (jsonschema.Schema, error) {
+func makeStrictJSONSchema(parameters jsonschema.Schema, rejects strictKeywordCheck) (jsonschema.Schema, error) {
 	raw, err := parameters.MarshalJSON()
 	if err != nil {
 		return nil, err
@@ -204,7 +216,7 @@ func makeStrictJSONSchema(parameters jsonschema.Schema) (jsonschema.Schema, erro
 	if _, ok := decoded.(jsonwire.OrderedObject); !ok {
 		return nil, unsupportedStrict("root schema must have type object")
 	}
-	converted, err := makeStrictJSONSchemaNode(decoded)
+	converted, err := makeStrictJSONSchemaNode(decoded, rejects)
 	if err != nil {
 		return nil, err
 	}
@@ -224,5 +236,5 @@ func getJSONSchemaToolParameters(parameters jsonschema.Schema, strict bool) (jso
 	if !strict {
 		return parameters, nil
 	}
-	return makeStrictJSONSchema(parameters)
+	return makeStrictJSONSchema(parameters, nil)
 }

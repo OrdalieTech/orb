@@ -61,8 +61,7 @@ func TestAnthropicProvider(t *testing.T) {
 	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != fixture.BaseURL {
 		t.Fatalf("unexpected provider: %#v", provider)
 	}
-	// Workload identity federation is ledgered as not yet adopted.
-	upstreamEnv := slices.DeleteFunc(slices.Clone(fixture.Auth.Env), func(name string) bool { return name == "ANTHROPIC_FEDERATION_RULE_ID" })
+	upstreamEnv := fixture.Auth.Env
 	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, upstreamEnv) {
 		t.Fatalf("unexpected auth metadata: %#v", provider)
 	}

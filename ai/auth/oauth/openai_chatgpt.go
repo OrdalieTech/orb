@@ -131,17 +131,17 @@ func (flow *OpenAIChatGPT) login(ctx context.Context, interaction auth.AuthInter
 	if err != nil {
 		return nil, err
 	}
-	callback := make(chan chatGPTAuthorization, 1)
-	failure := make(chan error, 1)
-	listener, listenErr := flow.options.Listen("tcp", fmt.Sprintf("%s:%d", flow.options.CallbackHost, flow.options.CallbackPort))
+	server, listenErr := startCallbackServer(callbackOptions[chatGPTAuthorization]{
+		provider: "ChatGPT", listen: flow.options.Listen, host: flow.options.CallbackHost, port: flow.options.CallbackPort,
+		path: openAIChatGPTCallbackPath, state: state,
+		complete: func(query url.Values) (chatGPTAuthorization, error) {
+			return chatGPTAuthorizationFromQuery(query, state)
+		},
+	})
 	if listenErr != nil {
 		interaction.Notify(auth.AuthEvent{Type: auth.EventInfo, Message: fmt.Sprintf("Could not listen on %s; paste the final redirect URL to continue. %s", flow.redirectURI(), listenErr)})
 	} else {
-		server := &http.Server{Handler: flow.callbackHandler(state, callback, failure)}
-		go func() { _ = server.Serve(listener) }()
-		// Close drops idle keep-alive connections too: a browser's spare
-		// connection must not deliver a later login's callback to this server.
-		defer func() { _ = server.Close() }()
+		defer server.close()
 	}
 	interaction.Notify(auth.AuthEvent{
 		Type: auth.EventAuthURL, URL: appendOrderedQuery(flow.options.AuthorizeURL,
@@ -159,31 +159,17 @@ func (flow *OpenAIChatGPT) login(ctx context.Context, interaction auth.AuthInter
 		),
 		Instructions: "Complete sign-in in your browser. If the callback does not complete, paste the final redirect URL here.",
 	})
-	manualCtx, cancelManual := context.WithCancel(ctx)
-	defer cancelManual()
-	manual := make(chan manualResult, 1)
-	go func() {
-		input, promptErr := interaction.Prompt(manualCtx, auth.AuthPrompt{
-			Type: auth.PromptManualCode, Message: "Complete login in your browser, or paste the final redirect URL here:", Placeholder: flow.redirectURI(),
-		})
-		manual <- manualResult{input: input, err: promptErr}
-	}()
-	var result chatGPTAuthorization
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case result = <-callback:
-	case err := <-failure:
+	result, input, fromCallback, err := waitForCallbackOrManualInput(ctx, interaction, server, auth.AuthPrompt{
+		Message: "Complete login in your browser, or paste the final redirect URL here:", Placeholder: flow.redirectURI(),
+	})
+	if err != nil {
 		return nil, err
-	case pasted := <-manual:
-		if pasted.err != nil {
-			return nil, pasted.err
-		}
-		if result, err = flow.parseManual(pasted.input, state); err != nil {
+	}
+	if !fromCallback {
+		if result, err = flow.parseManual(input, state); err != nil {
 			return nil, err
 		}
 	}
-	cancelManual()
 	interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Exchanging authorization code for tokens..."})
 	token, err := flow.requestToken(ctx, orderedForm(
 		"grant_type", "authorization_code",
@@ -273,37 +259,6 @@ func (flow *OpenAIChatGPT) parseManual(input, expectedState string) (chatGPTAuth
 		return chatGPTAuthorization{}, fmt.Errorf("ChatGPT authorization failed: %s", failure)
 	}
 	return chatGPTAuthorizationFromQuery(parsed.Query(), expectedState)
-}
-
-func (flow *OpenAIChatGPT) callbackHandler(expectedState string, callback chan<- chatGPTAuthorization, failure chan<- error) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if request.URL.Path != openAIChatGPTCallbackPath {
-			writer.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(writer, errorPage("Callback route not found."))
-			return
-		}
-		if denied := request.URL.Query().Get("error"); denied != "" {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPageWithDetails("ChatGPT was not connected.", "Error: "+denied))
-			select {
-			case failure <- fmt.Errorf("ChatGPT authorization failed: %s", denied):
-			default:
-			}
-			return
-		}
-		result, err := chatGPTAuthorizationFromQuery(request.URL.Query(), expectedState)
-		if err != nil {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPage(err.Error()))
-			return
-		}
-		_, _ = io.WriteString(writer, successPage("ChatGPT authentication completed. You can close this window."))
-		select {
-		case callback <- result:
-		default:
-		}
-	})
 }
 
 func (flow *OpenAIChatGPT) requestToken(ctx context.Context, body []byte) (map[string]any, error) {

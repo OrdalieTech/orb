@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,11 +23,17 @@ import (
 )
 
 type manualInteraction struct {
-	input  string
-	events []auth.AuthEvent
+	input   string
+	method  string
+	events  []auth.AuthEvent
+	prompts []auth.AuthPrompt
 }
 
-func (interaction *manualInteraction) Prompt(context.Context, auth.AuthPrompt) (string, error) {
+func (interaction *manualInteraction) Prompt(_ context.Context, prompt auth.AuthPrompt) (string, error) {
+	interaction.prompts = append(interaction.prompts, prompt)
+	if prompt.Type == auth.PromptSelect {
+		return cmp.Or(interaction.method, "browser"), nil
+	}
 	return interaction.input, nil
 }
 
@@ -98,7 +105,10 @@ type callbackInteraction struct {
 	urlReady chan string
 }
 
-func (interaction *callbackInteraction) Prompt(ctx context.Context, _ auth.AuthPrompt) (string, error) {
+func (interaction *callbackInteraction) Prompt(ctx context.Context, prompt auth.AuthPrompt) (string, error) {
+	if prompt.Type == auth.PromptSelect {
+		return "browser", nil
+	}
 	<-ctx.Done()
 	return "", ctx.Err()
 }
@@ -141,7 +151,7 @@ func TestAnthropicLoginCallback(t *testing.T) {
 	}
 	body, readErr := io.ReadAll(response.Body)
 	_ = response.Body.Close()
-	if readErr != nil || string(body) != successPage("Anthropic authentication completed. You can close this window.") {
+	if readErr != nil || string(body) != successPage("Signed in to Anthropic.") {
 		t.Fatalf("callback body = %q, error = %v", body, readErr)
 	}
 	if response.StatusCode != http.StatusOK {
@@ -152,18 +162,71 @@ func TestAnthropicLoginCallback(t *testing.T) {
 	}
 }
 
-func TestAnthropicCallbackRejectsMismatchedState(t *testing.T) {
-	wait := make(chan callbackResult, 1)
-	request := httptest.NewRequest(http.MethodGet, callbackPath+"?code=code&state=wrong", nil)
-	response := httptest.NewRecorder()
-	callbackHandler("expected", wait).ServeHTTP(response, request)
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "State mismatch.") {
-		t.Fatalf("callback response = %d %q", response.Code, response.Body.String())
+func TestCallbackServerRejectsMismatchedStateAndEndsOnProviderError(t *testing.T) {
+	server, err := startCallbackServer(callbackOptions[string]{
+		provider: "Anthropic", host: "127.0.0.1", port: 0, path: callbackPath, state: "expected",
+		complete: func(query url.Values) (string, error) { return query.Get("code"), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	select {
-	case result := <-wait:
-		t.Fatalf("mismatched callback resolved login: %#v", result)
-	default:
+	defer server.close()
+	get := func(query string) (int, string) {
+		response, err := http.Get(server.redirectURI + "?" + query) //nolint:gosec // local OAuth callback under test
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		body, _ := io.ReadAll(response.Body)
+		return response.StatusCode, string(body)
+	}
+	if status, body := get("code=code&state=wrong"); status != http.StatusBadRequest || !strings.Contains(body, "State mismatch.") {
+		t.Fatalf("mismatched state = %d %q", status, body)
+	}
+	if status, _ := get("state=expected&error=access_denied&error_description=User+said+no"); status != http.StatusBadRequest {
+		t.Fatalf("provider error status = %d", status)
+	}
+	_, _, _, err = waitForCallbackOrManualInput(context.Background(), &callbackInteraction{urlReady: make(chan string, 1)}, server, auth.AuthPrompt{})
+	if err == nil || err.Error() != "Anthropic authorization failed: User said no" {
+		t.Fatalf("wait err = %v", err)
+	}
+}
+
+func TestAnthropicCopyCodeLoginUsesAnthropicsCodePage(t *testing.T) {
+	var requestBody string
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		requestBody = string(body)
+		_, _ = io.WriteString(writer, `{"access_token":"access","refresh_token":"refresh","expires_in":3600}`)
+	}))
+	defer tokenServer.Close()
+	flow := NewAnthropic(&AnthropicOptions{
+		TokenURL: tokenServer.URL, Random: bytes.NewReader(make([]byte, 32)),
+		Listen: func(string, string) (net.Listener, error) { t.Fatal("copy code login listened"); return nil, nil },
+	})
+	interaction := &manualInteraction{method: "copy_code", input: "pasted-code#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+	if _, err := flow.Login(context.Background(), interaction); err != nil {
+		t.Fatal(err)
+	}
+	authorize, _ := url.Parse(interaction.events[0].URL)
+	if authorize.Query().Get("redirect_uri") != anthropicCopyCodeRedirectURI || !strings.Contains(requestBody, `"code":"pasted-code"`) ||
+		!strings.Contains(requestBody, `"redirect_uri":"`+anthropicCopyCodeRedirectURI+`"`) {
+		t.Fatalf("authorize = %s, token body = %s", authorize, requestBody)
+	}
+}
+
+func TestAnthropicBusyCallbackPortFallsBackToPaste(t *testing.T) {
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, `{"access_token":"access","refresh_token":"refresh","expires_in":3600}`)
+	}))
+	defer tokenServer.Close()
+	flow := NewAnthropic(&AnthropicOptions{
+		TokenURL: tokenServer.URL, Random: bytes.NewReader(make([]byte, 32)),
+		Listen: func(string, string) (net.Listener, error) { return nil, syscall.EADDRINUSE },
+	})
+	credential, err := flow.Login(context.Background(), &manualInteraction{input: "http://localhost:53692/callback?code=pasted&state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})
+	if err != nil || credential.Access != "access" {
+		t.Fatalf("credential = %#v, err = %v", credential, err)
 	}
 }
 

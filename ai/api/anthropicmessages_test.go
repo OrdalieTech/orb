@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -524,4 +527,55 @@ func anthropicToolCallSSE(text string, chunk int) string {
 	}
 	sse.WriteString("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n")
 	return sse.String()
+}
+
+func TestAnthropicWorkloadIdentityFederationExchangesAndCachesToken(t *testing.T) {
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("identity-jwt\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var exchanges int
+	var exchange map[string]string
+	var authorizations, betas []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/oauth/token":
+			exchanges++
+			_ = json.NewDecoder(request.Body).Decode(&exchange)
+			_, _ = io.WriteString(writer, `{"access_token":"federated","token_type":"Bearer","expires_in":3600}`)
+		case "/v1/messages":
+			authorizations = append(authorizations, request.Header.Get("Authorization"))
+			betas = append(betas, request.Header.Get("anthropic-beta"))
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(writer, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n"+
+				"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n"+
+				"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+		}
+	}))
+	defer server.Close()
+	previousClient := anthropicHTTPClient
+	anthropicHTTPClient = server.Client()
+	t.Cleanup(func() { anthropicHTTPClient = previousClient })
+	model := anthropicTestModel()
+	model.BaseURL = server.URL
+	env := ai.ProviderEnv{"ANTHROPIC_FEDERATION_RULE_ID": "fdrl_1", "ANTHROPIC_ORGANIZATION_ID": "org_1", "ANTHROPIC_IDENTITY_TOKEN_FILE": tokenFile, "ANTHROPIC_WORKSPACE_ID": "default"}
+	for range 2 {
+		stream, err := StreamAnthropicMessages(context.Background(), ai.Request{
+			Model: model, Context: ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}},
+			Options: &ai.StreamOptions{Env: env},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		message, err := ai.Collect(stream)
+		if err != nil || message.StopReason != ai.StopReasonStop {
+			t.Fatalf("message = %#v, err = %v", message, err)
+		}
+	}
+	if exchanges != 1 || exchange["assertion"] != "identity-jwt" || exchange["federation_rule_id"] != "fdrl_1" || exchange["workspace_id"] != "default" {
+		t.Fatalf("exchanges = %d, body = %v", exchanges, exchange)
+	}
+	if authorizations[1] != "Bearer federated" || !strings.Contains(betas[1], "oauth-2025-04-20") {
+		t.Fatalf("authorization = %q, beta = %q", authorizations, betas)
+	}
 }
