@@ -4,8 +4,8 @@
 	"description": "Orb's embedded implementation of the @earendil-works/pi-* extension SDK surface. Materialized from the orb binary; never installed from npm.",
 	"upstream": {
 		"package": "pi",
-		"version": "0.86.0",
-		"commit": "ecac0a9c",
+		"version": "1.0.0",
+		"commit": "a13d35a7",
 		"license": "MIT"
 	},
 	"capabilities": {
@@ -61,7 +61,23 @@
 				"parseKey",
 				"truncateToWidth",
 				"visibleWidth",
-				"wrapTextWithAnsi"
+				"wrapTextWithAnsi",
+				"backgroundAnsi",
+				"colorToHex",
+				"colorToOkhsl",
+				"colorToOklch",
+				"colorToRgb",
+				"foregroundAnsi",
+				"getTerminalColorMode",
+				"indexedColor",
+				"mixColors",
+				"okhslColor",
+				"oklabToOkhslLightness",
+				"oklchColor",
+				"parseColor",
+				"rgbColor",
+				"styleText",
+				"styleTextWithAnsi"
 			]
 		}
 	}

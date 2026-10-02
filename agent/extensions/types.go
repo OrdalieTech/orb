@@ -56,6 +56,7 @@ const (
 	EventBeforeProviderRequest EventType = "before_provider_request"
 	EventBeforeProviderHeaders EventType = "before_provider_headers"
 	EventAfterProviderResponse EventType = "after_provider_response"
+	EventProviderStreamEvent   EventType = "provider_stream_event"
 	EventBeforeAgentStart      EventType = "before_agent_start"
 	EventAgentStart            EventType = "agent_start"
 	EventAgentEnd              EventType = "agent_end"
@@ -318,6 +319,17 @@ type ProviderRequestResult struct {
 	Payload any
 	Replace bool
 }
+
+// ProviderStreamEvent carries a parsed provider stream event before
+// normalization. It is notification-only and must be treated as read-only.
+type ProviderStreamEvent struct {
+	Provider ai.ProviderID
+	API      ai.API
+	Model    string
+	Data     json.RawMessage
+}
+
+func (ProviderStreamEvent) Type() EventType { return EventProviderStreamEvent }
 
 type BeforeProviderHeadersEvent struct{ Headers ai.ProviderHeaders }
 

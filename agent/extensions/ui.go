@@ -100,6 +100,10 @@ type Theme interface {
 	FGANSI(string) string
 	BGANSI(string) string
 	ColorMode() string
+	// Colors maps every token to its concrete #rrggbb color.
+	Colors() map[string]string
+	// Appearance is "dark" or "light".
+	Appearance() string
 	ThinkingBorderColor(engine.ThinkingLevel) func(string) string
 	BashModeBorderColor() func(string) string
 }
@@ -373,6 +377,10 @@ func (plainTheme) Inverse(text string) string { return text }
 func (plainTheme) Strikethrough(text string) string { return text }
 
 func (plainTheme) FGANSI(string) string { return "" }
+
+func (plainTheme) Colors() map[string]string { return map[string]string{} }
+
+func (plainTheme) Appearance() string { return "dark" }
 
 func (plainTheme) BGANSI(string) string { return "" }
 

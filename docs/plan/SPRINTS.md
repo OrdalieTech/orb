@@ -464,12 +464,12 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
       fields through the JS extension surface.
 - [ ] `ctx.executeTool()` with `parentToolCallId`, bounded `nestedCalls` and usage rolled into the
       caller's result.
-- [ ] `provider_stream_event` / `onProviderStreamEvent`.
+- [x] `provider_stream_event` / `onProviderStreamEvent`.
 - [x] Theme files accept `#rgb`, `oklch()`, `okhsl()` and `appearance`; HTML export follows pi 1.0
       palettes and token order.
-- [ ] `theme.style()`, `theme.colors`, `theme.appearance` for extensions.
-- [ ] Embedded extension SDK (`host/sdk`) declares pi 1.0's export surface (still stamped 0.84.1/0.86.0),
-      so 1.0 extensions importing new names link.
+- [x] `theme.style()`, `theme.colors`, `theme.appearance` for extensions.
+- [x] Embedded extension SDK (`host/sdk`) declares pi 1.0's export surface (still stamped 0.84.1/0.86.0),
+      so 1.0 extensions importing new names link (`make sdk-surface`, plus `pi-ai/models`).
 - [ ] Built-ins named `builtin:<name>`; replacing one warns; extension commands without a name or
       handler fail to load.
 - [x] HTML export: show/hide toggle for `display: false` custom messages.

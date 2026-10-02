@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -200,7 +201,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	if replacingRunner {
 		runtime.agent.SetTransformContext(nil)
 		runtime.agent.SetToolCallHooks(nil, nil)
-		runtime.agent.SetProviderHooks(nil, nil, nil)
+		runtime.agent.SetProviderHooks(nil, nil, nil, nil)
 	}
 	if runner.HasHandlers(extensions.EventContext) || runner.HasHandlers(extensions.EventContextWithSystem) {
 		runtime.agent.SetTransformContext(func(ctx context.Context, messages engine.AgentMessages) (engine.AgentMessages, error) {
@@ -210,7 +211,8 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	if runner.HasHandlers(extensions.EventToolCall) || runner.HasHandlers(extensions.EventToolResult) {
 		runtime.agent.SetToolCallHooks(runtime.beforeExtensionToolCall, runtime.afterExtensionToolCall)
 	}
-	if runner.HasHandlers(extensions.EventBeforeProviderRequest) || runner.HasHandlers(extensions.EventBeforeProviderHeaders) || runner.HasHandlers(extensions.EventAfterProviderResponse) {
+	if runner.HasHandlers(extensions.EventBeforeProviderRequest) || runner.HasHandlers(extensions.EventBeforeProviderHeaders) ||
+		runner.HasHandlers(extensions.EventAfterProviderResponse) || runner.HasHandlers(extensions.EventProviderStreamEvent) {
 		runtime.agent.SetProviderHooks(
 			func(ctx context.Context, payload any, _ *ai.Model) (any, bool, error) {
 				return runner.EmitBeforeProviderRequest(ctx, payload), true, nil
@@ -221,6 +223,11 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 			func(ctx context.Context, response ai.ProviderResponse, _ *ai.Model) error {
 				runner.Emit(ctx, extensions.AfterProviderResponseEvent{Status: response.Status, Headers: response.Headers})
 				return nil
+			},
+			func(ctx context.Context, data json.RawMessage, model *ai.Model) {
+				if runner.HasHandlers(extensions.EventProviderStreamEvent) {
+					runner.Emit(ctx, extensions.ProviderStreamEvent{Provider: model.Provider, API: model.API, Model: model.ID, Data: data})
+				}
 			},
 		)
 	}

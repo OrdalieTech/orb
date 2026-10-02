@@ -626,3 +626,63 @@ func TestRealHostReceivesPromptLifecycleAndCompactionFailure(t *testing.T) {
 		t.Fatal("missing compact-failed event")
 	}
 }
+
+type colorThemeUIStub struct{ sdkThemeUIStub }
+
+type colorTheme struct{ extensions.Theme }
+
+func (colorTheme) FGANSI(color string) string {
+	if color == "accent" {
+		return "\x1b[36m"
+	}
+	return ""
+}
+func (colorTheme) ColorMode() string                 { return "truecolor" }
+func (colorTheme) Colors() map[string]string         { return map[string]string{"accent": "#112233"} }
+func (colorTheme) Appearance() string                { return "light" }
+func (ui *colorThemeUIStub) Theme() extensions.Theme { return colorTheme{extensions.NoopUI{}.Theme()} }
+func (ui *colorThemeUIStub) Custom(ctx context.Context, factory extensions.CustomFactory, options *extensions.CustomOptions) (any, bool, error) {
+	done := make(chan any, 1)
+	component, err := factory(&stubUIHost{invalidated: make(chan struct{}, 8)}, ui.Theme(), stubKeybindings{}, func(value any) { done <- value })
+	if err != nil {
+		return nil, false, err
+	}
+	ui.rendered = waitForRender(tContext{ctx}, component, 40, func(lines []string) bool { return len(lines) > 0 })
+	return <-done, true, nil
+}
+
+// Extensions style text with theme tokens or concrete colors (pi 1.0's
+// theme.style, theme.colors and theme.appearance).
+func TestHostThemeStyleColorsAndAppearance(t *testing.T) {
+	agentDir := isolatedTempDir(t)
+	entry := filepath.Join(agentDir, "extensions", "theme-style.mjs")
+	writeFile(t, entry, `
+import { colorToHex } from "@earendil-works/pi-tui";
+export default function (pi) {
+  pi.registerCommand("theme-style", {
+    async handler(_args, ctx) {
+      await ctx.ui.custom((_tui, theme, _keybindings, done) => {
+        const line = [theme.style("ok", { fg: "accent", bold: true }), theme.appearance, colorToHex(theme.colors.accent), theme.style("x", { bg: theme.colors.accent })].join("|");
+        queueMicrotask(() => done("mounted"));
+        return { render() { return [line]; }, invalidate() {}, dispose() {} };
+      });
+    }
+  });
+}
+`, 0o600)
+	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	ui := &colorThemeUIStub{}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd, Mode: extensions.ModeTUI, UI: ui})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runner.Command("theme-style").Handler(ctx, "", runner.CreateCommandContext()); err != nil {
+		t.Fatal(err)
+	}
+	want := "\x1b[36m\x1b[1mok\x1b[22m\x1b[39m|light|#112233|\x1b[48;2;17;34;51mx\x1b[49m"
+	if !reflect.DeepEqual(ui.rendered, []string{want}) {
+		t.Fatalf("rendered = %q, want %q", ui.rendered, want)
+	}
+}

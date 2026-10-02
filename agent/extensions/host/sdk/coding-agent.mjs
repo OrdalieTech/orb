@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-coding-agent surface.
-// Pure symbols are ported from pi-coding-agent (pi 0.84.1, commit 53fa77cc,
+// Pure symbols are ported from pi-coding-agent (pi 1.0.0, commit a13d35a7,
 // MIT © Mario Zechner), trimmed to the contracts published extensions
 // exercise. The three protocol services (createAgentSession, ModelRuntime,
 // ModelRegistry) call the host transport through internal/services.mjs;
@@ -635,6 +635,8 @@ attachUnsupportedMethods(
 // ── Unsupported upstream exports (generated from pinned pi-coding-agent 0.84.1) ─
 export const AgentSession = stub("AgentSession");
 export const AgentSessionRuntime = stub("AgentSessionRuntime");
+export const AgentToolResult = stub("AgentToolResult");
+export const AgentToolUpdateCallback = stub("AgentToolUpdateCallback");
 export const ArminComponent = stub("ArminComponent");
 export const AssistantMessageComponent = stub("AssistantMessageComponent");
 export const BashExecutionComponent = stub("BashExecutionComponent");
@@ -657,6 +659,7 @@ export const ExtensionRunner = stub("ExtensionRunner");
 export const ExtensionSelectorComponent = stub("ExtensionSelectorComponent");
 export const FooterComponent = stub("FooterComponent");
 export const InteractiveMode = stub("InteractiveMode");
+export const KeybindingsManager = stub("KeybindingsManager");
 export const LoginDialogComponent = stub("LoginDialogComponent");
 export const ModelSelectorComponent = stub("ModelSelectorComponent");
 export const OAuthSelectorComponent = stub("OAuthSelectorComponent");
@@ -670,12 +673,15 @@ export const Theme = stub("Theme");
 export const ThemeSelectorComponent = stub("ThemeSelectorComponent");
 export const ThinkingSelectorComponent = stub("ThinkingSelectorComponent");
 export const ToolExecutionComponent = stub("ToolExecutionComponent");
+export const ToolExecutionMode = stub("ToolExecutionMode");
 export const TreeSelectorComponent = stub("TreeSelectorComponent");
 export const UserMessageComponent = stub("UserMessageComponent");
 export const UserMessageSelectorComponent = stub("UserMessageSelectorComponent");
 export const VERSION = stub("VERSION");
+export const VIRTUAL_MODEL_STATE_ENTRY = stub("VIRTUAL_MODEL_STATE_ENTRY");
 export const buildContextEntries = stub("buildContextEntries");
 export const buildSessionContext = stub("buildSessionContext");
+export const buildSessionProjection = stub("buildSessionProjection");
 export const calculateContextTokens = stub("calculateContextTokens");
 export const collectEntriesForBranchSummary = stub("collectEntriesForBranchSummary");
 export const compact = stub("compact");
@@ -687,6 +693,7 @@ export const createAgentSessionRuntime = stub("createAgentSessionRuntime");
 export const createAgentSessionServices = stub("createAgentSessionServices");
 export const createBashTool = stub("createBashTool");
 export const createBashToolDefinition = stub("createBashToolDefinition");
+export const createCodemodeExtension = stub("createCodemodeExtension");
 export const createEditTool = stub("createEditTool");
 export const createEditToolDefinition = stub("createEditToolDefinition");
 export const createEventBus = stub("createEventBus");
@@ -696,12 +703,17 @@ export const createFindToolDefinition = stub("createFindToolDefinition");
 export const createGrepTool = stub("createGrepTool");
 export const createGrepToolDefinition = stub("createGrepToolDefinition");
 export const createLocalBashOperations = stub("createLocalBashOperations");
+export const createLocalPowerShellOperations = stub("createLocalPowerShellOperations");
 export const createLsTool = stub("createLsTool");
 export const createLsToolDefinition = stub("createLsToolDefinition");
+export const createMcpExtension = stub("createMcpExtension");
+export const createPowerShellTool = stub("createPowerShellTool");
+export const createPowerShellToolDefinition = stub("createPowerShellToolDefinition");
 export const createReadOnlyTools = stub("createReadOnlyTools");
 export const createReadTool = stub("createReadTool");
 export const createReadToolDefinition = stub("createReadToolDefinition");
 export const createSyntheticSourceInfo = stub("createSyntheticSourceInfo");
+export const createToolSearchExtension = stub("createToolSearchExtension");
 export const createWriteTool = stub("createWriteTool");
 export const createWriteToolDefinition = stub("createWriteToolDefinition");
 export const discoverAndLoadExtensions = stub("discoverAndLoadExtensions");
@@ -721,6 +733,7 @@ export const getExamplesPath = stub("getExamplesPath");
 export const getLastAssistantUsage = stub("getLastAssistantUsage");
 export const getLatestCompactionEntry = stub("getLatestCompactionEntry");
 export const getPackageDir = stub("getPackageDir");
+export const getPowerShellConfig = stub("getPowerShellConfig");
 export const getReadmePath = stub("getReadmePath");
 export const getSelectListTheme = stub("getSelectListTheme");
 export const getSettingsListTheme = stub("getSettingsListTheme");
@@ -728,7 +741,6 @@ export const getShellConfig = stub("getShellConfig");
 export const hasTrustRequiringProjectResources = stub("hasTrustRequiringProjectResources");
 export const highlightCode = stub("highlightCode");
 export const initTheme = stub("initTheme");
-export const isPowerShellToolResult = (event) => event.toolName === "powershell";
 export const isBashToolResult = stub("isBashToolResult");
 export const isEditToolResult = stub("isEditToolResult");
 export const isFindToolResult = stub("isFindToolResult");
@@ -766,9 +778,6 @@ export const truncateToVisualLines = stub("truncateToVisualLines");
 export const withFileMutationQueue = stub("withFileMutationQueue");
 export const wrapRegisteredTool = stub("wrapRegisteredTool");
 export const wrapRegisteredTools = stub("wrapRegisteredTools");
+export const isPowerShellToolResult = (event) => event.toolName === "powershell";
 
-export const createLocalPowerShellOperations = stub("createLocalPowerShellOperations");
-export const createPowerShellTool = stub("createPowerShellTool");
-export const createPowerShellToolDefinition = stub("createPowerShellToolDefinition");
 export { detectSupportedImageMimeTypeFromFile } from "./internal/mime.mjs";
-export const getPowerShellConfig = stub("getPowerShellConfig");

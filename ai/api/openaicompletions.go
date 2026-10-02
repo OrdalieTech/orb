@@ -203,14 +203,14 @@ func StreamOpenAICompletionsWithOptions(
 
 		state := newCompletionsStreamState(output)
 		state.grammarToolInputProperties = grammarToolInputProperties
-		err = readSSE(response.Body, func(raw json.RawMessage) error {
+		err = readSSE(response.Body, withStreamEvents(ctx, &options.StreamOptions, model, func(raw json.RawMessage) error {
 			return state.consumeChunk(model, raw, func(event ai.AssistantMessageEvent) error {
 				if !yield(event, nil) {
 					return errStopSSE
 				}
 				return nil
 			})
-		})
+		}))
 		if errors.Is(err, errStopSSE) {
 			return
 		}

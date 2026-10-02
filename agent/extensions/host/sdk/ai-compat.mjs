@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-ai "/compat" surface (upstream
-// packages/ai/src/compat.ts, pi 0.84.1, commit 53fa77cc): the root surface
+// packages/ai/src/compat.ts, pi 1.0.0, commit a13d35a7): the root surface
 // plus the legacy global API (api-dispatch stream()/complete(), api registry,
 // generated catalog reads, per-API lazy stream wrappers, image generation).
 // modelsAreEqual stays real via the root re-export; everything else throws
@@ -15,7 +15,12 @@ const stub = (name) => unsupported("ai", name, SUPPORTED);
 // -- Compat-only upstream exports (generated from pinned pi-ai 0.84.1) -------
 export const ANTHROPIC_API_KEY_ENV = stub("ANTHROPIC_API_KEY_ENV");
 export const ANTHROPIC_AUTH_TOKEN_ENV = stub("ANTHROPIC_AUTH_TOKEN_ENV");
+export const ANTHROPIC_FEDERATION_RULE_ID_ENV = stub("ANTHROPIC_FEDERATION_RULE_ID_ENV");
+export const ANTHROPIC_IDENTITY_TOKEN_FILE_ENV = stub("ANTHROPIC_IDENTITY_TOKEN_FILE_ENV");
 export const ANTHROPIC_OAUTH_TOKEN_ENV = stub("ANTHROPIC_OAUTH_TOKEN_ENV");
+export const ANTHROPIC_ORGANIZATION_ID_ENV = stub("ANTHROPIC_ORGANIZATION_ID_ENV");
+export const ANTHROPIC_SERVICE_ACCOUNT_ID_ENV = stub("ANTHROPIC_SERVICE_ACCOUNT_ID_ENV");
+export const ANTHROPIC_WORKSPACE_ID_ENV = stub("ANTHROPIC_WORKSPACE_ID_ENV");
 export const anthropicMessagesApi = stub("anthropicMessagesApi");
 export const azureOpenAIResponsesApi = stub("azureOpenAIResponsesApi");
 export const bedrockConverseStreamApi = stub("bedrockConverseStreamApi");

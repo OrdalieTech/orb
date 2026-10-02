@@ -34,10 +34,10 @@ function clearTheme() {
 // ── Export surface ───────────────────────────────────────────────────────────
 
 test("modules expose every upstream runtime export name", () => {
-	assert.equal(Object.keys(codingAgent).length, 151);
+	assert.equal(Object.keys(codingAgent).length, 160);
 	assert.equal(Object.keys(ai).length, 68);
-	assert.equal(Object.keys(aiCompat).length, 122);
-	assert.equal(Object.keys(tui).length, 72);
+	assert.equal(Object.keys(aiCompat).length, 127);
+	assert.equal(Object.keys(tui).length, 88);
 	for (const name of manifest.modules["coding-agent"].implemented) {
 		assert.ok(name in codingAgent, `coding-agent missing ${name}`);
 	}
@@ -485,4 +485,16 @@ test("image MIME file sniffing matches upstream format fixtures", async () => {
    assert.equal(await codingAgent.detectSupportedImageMimeTypeFromFile(file), fixture.detectedMimeType, fixture.name);
   }
  } finally { rmSync(root, {recursive:true, force:true}); }
+});
+
+// ── Colors ───────────────────────────────────────────────────────────────────
+
+test("pi-tui colors convert, mix and style like upstream", () => {
+	const color = tui.parseColor("oklch(0.7 0.1 200)");
+	assert.equal(tui.colorToHex(tui.parseColor("#abc")), "#aabbcc");
+	assert.equal(tui.foregroundAnsi(tui.rgbColor(1, 2, 3), "truecolor"), "\x1b[38;2;1;2;3m");
+	assert.equal(tui.backgroundAnsi(tui.indexedColor(7), "256color"), "\x1b[48;5;7m");
+	assert.equal(tui.colorToHex(tui.mixColors(tui.rgbColor(0, 0, 0), tui.rgbColor(255, 255, 255), 0, "srgb")), "#000000");
+	assert.equal(tui.styleText("x", { bold: true, fg: tui.rgbColor(255, 0, 0) }, "truecolor"), "\x1b[38;2;255;0;0m\x1b[1mx\x1b[22m\x1b[39m");
+	assert.equal(color.kind, "oklch");
 });

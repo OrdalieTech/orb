@@ -143,7 +143,7 @@ func StreamAzureOpenAIResponsesWithOptions(
 		// processResponsesStream, so service-tier multipliers are ignored (OA-M2).
 		processor.applyServiceTierPricing = false
 		processor.grammarToolInputProperties = grammarToolInputProperties
-		err = readSSE(response.Body, processor.handle)
+		err = readSSE(response.Body, withStreamEvents(ctx, streamOptions, model, processor.handle))
 		if errors.Is(err, errStopSSE) {
 			return
 		}

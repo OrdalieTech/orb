@@ -65,6 +65,8 @@ type wireTheme struct {
 	ColorMode      string            `json:"colorMode"`
 	ThinkingBorder map[string]string `json:"thinkingBorder"`
 	BashModeBorder string            `json:"bashModeBorder"`
+	Colors         map[string]string `json:"colors"`
+	Appearance     string            `json:"appearance"`
 }
 
 type wireKeybindings struct {
@@ -110,6 +112,8 @@ func snapshotTheme(theme extensions.Theme) *wireTheme {
 		BGANSI:         make(map[string]string, len(wireThemeBackgrounds)),
 		ThinkingBorder: make(map[string]string, len(wireThinkingLevels)),
 		ColorMode:      theme.ColorMode(),
+		Colors:         theme.Colors(),
+		Appearance:     theme.Appearance(),
 	}
 	for _, color := range wireThemeForegrounds {
 		result.FG[color] = theme.FG(color, wireThemeMarker)

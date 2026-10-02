@@ -934,3 +934,25 @@ func assignJSONObject(encoded []byte, values map[string]any) ([]byte, error) {
 	}
 	return jsonwire.Marshal(object)
 }
+
+// withStreamEvents hands each raw stream event to OnProviderStreamEvent before
+// handle normalizes it.
+func withStreamEvents(ctx context.Context, options *ai.StreamOptions, model *ai.Model, handle func(json.RawMessage) error) func(json.RawMessage) error {
+	if options == nil || options.OnProviderStreamEvent == nil {
+		return handle
+	}
+	return func(raw json.RawMessage) error {
+		options.OnProviderStreamEvent(ctx, raw, model)
+		return handle(raw)
+	}
+}
+
+// emitProviderStreamEvent hands a decoded stream event to OnProviderStreamEvent.
+func emitProviderStreamEvent(ctx context.Context, options *ai.StreamOptions, model *ai.Model, event any) {
+	if options == nil || options.OnProviderStreamEvent == nil {
+		return
+	}
+	if encoded, err := ai.Marshal(event); err == nil {
+		options.OnProviderStreamEvent(ctx, encoded, model)
+	}
+}

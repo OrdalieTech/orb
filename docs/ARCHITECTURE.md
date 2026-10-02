@@ -516,7 +516,8 @@ content-addressed beside `host.mjs`): pure ports of the exercised upstream symbo
 session/settings/resource handles, and capability-negotiated services (`sdk_v1`,
 `agent_session_v1`, `model_runtime_v1`) that bridge `createAgentSession`, `ModelRuntime`, and
 `ModelRegistry` onto the Go runtime (`agent.ExtensionAgentSessionService`); every other
-upstream export throws a precise `OrbUnsupportedCapability` diagnostic. The loader refuses — as a
+upstream export throws a precise `OrbUnsupportedCapability` diagnostic. `make sdk-surface`
+re-declares that export surface from the pinned upstream sources at each sync. The loader refuses — as a
 per-extension resolve-time load failure — any resolution reaching a real installed pi SDK.
 Missing declared dependencies are materialized with npm or Bun before load.
 

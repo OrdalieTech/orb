@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-tui surface.
-// Implemented symbols are ported from pi-tui (pi 0.84.1, commit 53fa77cc,
+// Implemented symbols are ported from pi-tui (pi 1.0.0, commit a13d35a7,
 // MIT © Mario Zechner), trimmed to the D15 Component contract published
 // extensions exercise: render(width) → string[] flowing through the host's
 // ui_component_render push bridge — no per-frame RPC, no terminal ownership.
@@ -14,11 +14,34 @@ import {
 	wrapTextWithAnsi,
 } from "./internal/text.mjs";
 import { unsupported } from "./internal/unsupported.mjs";
+import { activeTheme } from "./internal/theme.mjs";
+export {
+	backgroundAnsi,
+	colorToHex,
+	colorToOkhsl,
+	colorToOklch,
+	colorToRgb,
+	foregroundAnsi,
+	indexedColor,
+	mixColors,
+	okhslColor,
+	oklabToOkhslLightness,
+	oklchColor,
+	parseColor,
+	rgbColor,
+	styleText,
+	styleTextWithAnsi,
+} from "./internal/colors.mjs";
 
 const SUPPORTED = manifest.modules.tui.implemented;
 const stub = (name) => unsupported("tui", name, SUPPORTED);
 
 export { parseKey, truncateToWidth, visibleWidth, wrapTextWithAnsi };
+
+/** The color mode of the host terminal, as the active theme renders it. */
+export function getTerminalColorMode() {
+	return activeTheme().getColorMode?.() === "256color" ? "256color" : "truecolor";
+}
 
 /** Container - a component that renders its children in order. */
 export class Container {
@@ -394,6 +417,7 @@ export const Key = stub("Key");
 export const KeybindingsManager = stub("KeybindingsManager");
 export const Loader = stub("Loader");
 export const Marked = stub("Marked");
+export const MouseRegion = stub("MouseRegion");
 export const ProcessTerminal = stub("ProcessTerminal");
 export const ScrollView = stub("ScrollView");
 export const SettingsList = stub("SettingsList");
@@ -426,23 +450,22 @@ export const getPngDimensions = stub("getPngDimensions");
 export const getWebpDimensions = stub("getWebpDimensions");
 export const hyperlink = stub("hyperlink");
 export const imageFallback = stub("imageFallback");
+export const isAppleTerminalSession = stub("isAppleTerminalSession");
 export const isFocusable = stub("isFocusable");
 export const isKeyRelease = stub("isKeyRelease");
 export const isKeyRepeat = stub("isKeyRepeat");
 export const isKittyProtocolActive = stub("isKittyProtocolActive");
 export const isViewportTUI = stub("isViewportTUI");
 export const matchesKey = stub("matchesKey");
-export const parseOsc11BackgroundColor = stub("parseOsc11BackgroundColor");
 export const parseTerminalColorSchemeReport = stub("parseTerminalColorSchemeReport");
 export const renderImage = stub("renderImage");
 export const renderLatex = stub("renderLatex");
 export const resetCapabilitiesCache = stub("resetCapabilitiesCache");
 export const setCapabilities = stub("setCapabilities");
+export const setCapabilityOverrides = stub("setCapabilityOverrides");
 export const setCellDimensions = stub("setCellDimensions");
 export const setKeybindings = stub("setKeybindings");
 export const setKittyProtocolActive = stub("setKittyProtocolActive");
 export const sliceByColumn = stub("sliceByColumn");
 export const stripTerminalSequences = stub("stripTerminalSequences");
 
-export const MouseRegion = stub("MouseRegion");
-export const setCapabilityOverrides = stub("setCapabilityOverrides");

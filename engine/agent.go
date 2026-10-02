@@ -663,11 +663,12 @@ func (agent *Agent) SetToolCallHooks(before BeforeToolCallFunc, after AfterToolC
 	agent.mu.Unlock()
 }
 
-func (agent *Agent) SetProviderHooks(payload ai.PayloadHook, headers ai.HeadersHook, response ai.ResponseHook) {
+func (agent *Agent) SetProviderHooks(payload ai.PayloadHook, headers ai.HeadersHook, response ai.ResponseHook, stream ai.ProviderStreamEventHook) {
 	agent.mu.Lock()
 	agent.streamOptions.OnPayload = payload
 	agent.streamOptions.TransformHeaders = headers
 	agent.streamOptions.OnResponse = response
+	agent.streamOptions.OnProviderStreamEvent = stream
 	agent.mu.Unlock()
 }
 

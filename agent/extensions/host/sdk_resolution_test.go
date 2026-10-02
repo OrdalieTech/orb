@@ -217,7 +217,7 @@ export default function () {}
 	}
 }
 
-// Legacy subpaths with no implemented Orb module — pi-agent-core, pi-ai/oauth,
+// Legacy subpaths with no implemented Orb module — pi-agent-core, pi-ai/models,
 // pi-ai/providers/all — still link: every upstream export name exists as a
 // stub that throws the precise OrbUnsupportedCapability diagnostic on use.
 func TestNodeUnsupportedSubpathExportsLinkAndThrowOnUse(t *testing.T) {
@@ -225,12 +225,12 @@ func TestNodeUnsupportedSubpathExportsLinkAndThrowOnUse(t *testing.T) {
 	extensionDir := t.TempDir()
 	entry := filepath.Join(extensionDir, "extension.mjs")
 	writeFixtureFile(t, entry, `import { agentLoop } from "@earendil-works/pi-agent-core";
-import { OAuthCredentials } from "@earendil-works/pi-ai/oauth";
+import { createModels } from "@earendil-works/pi-ai/models";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 
 export default function (pi) {
 	const messages = [];
-	for (const probe of [agentLoop, OAuthCredentials, getBuiltinModel]) {
+	for (const probe of [agentLoop, createModels, getBuiltinModel]) {
 		try {
 			probe();
 			messages.push("no error");
@@ -259,7 +259,7 @@ export default function (pi) {
 	}
 	for _, fragment := range []string{
 		"OrbUnsupportedCapability: agent-core#agentLoop is not implemented by orb-extension-sdk",
-		"OrbUnsupportedCapability: ai/oauth#OAuthCredentials is not implemented by orb-extension-sdk",
+		"OrbUnsupportedCapability: ai/models#createModels is not implemented by orb-extension-sdk",
 		"OrbUnsupportedCapability: ai/providers/all#getBuiltinModel is not implemented by orb-extension-sdk",
 		"supported exports: none",
 	} {

@@ -314,7 +314,7 @@ func StreamOpenAIResponsesWithOptions(
 
 		processor := newOpenAIResponsesProcessor(model, output, options, sink)
 		processor.grammarToolInputProperties = grammarToolInputProperties
-		err = readSSE(response.Body, processor.handle)
+		err = readSSE(response.Body, withStreamEvents(ctx, streamOptions, model, processor.handle))
 		if errors.Is(err, errStopSSE) {
 			return
 		}

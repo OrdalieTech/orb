@@ -533,3 +533,20 @@ func TestTerminalPaletteContrastAndLiveSwitch(t *testing.T) {
 	}
 	<-done
 }
+
+func TestThemeAppearanceAndConcreteColors(t *testing.T) {
+	registry := Load(LoadOptions{Mode: TrueColor, NoThemes: true})
+	for _, name := range []string{"dark", "light"} {
+		value, ok := registry.Get(name)
+		if !ok {
+			t.Fatalf("built-in theme %s missing", name)
+		}
+		if got := value.Appearance(); got != name {
+			t.Fatalf("%s appearance = %q", name, got)
+		}
+		colors := value.Colors()
+		if accent := colors["accent"]; len(accent) != 7 || accent[0] != '#' {
+			t.Fatalf("%s accent = %q", name, accent)
+		}
+	}
+}

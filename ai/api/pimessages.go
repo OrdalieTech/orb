@@ -268,6 +268,7 @@ func StreamPiMessagesWithOptions(
 		converter := newPiMessagesEventConverter(model)
 		// Each event carries the partial as of its own emission.
 		err = readPiMessagesEvents(response.Body, func(wire piMessagesWireEvent) error {
+			emitProviderStreamEvent(ctx, &options.StreamOptions, model, wire)
 			event, done, convertErr := converter.convert(wire)
 			if convertErr != nil {
 				return convertErr

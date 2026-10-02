@@ -800,6 +800,27 @@ registerHostSection((() => {
 		return theme;
 	}
 
+	// pi-tui's color utilities, from the embedded SDK, back theme.colors and theme.style().
+	let sdkColors;
+	const sdkRoot = process.env.ORB_EXTENSION_SDK_ROOT;
+	if (sdkRoot) {
+		import(pathToFileURL(join(sdkRoot, "internal", "colors.mjs")).href).then(
+			(module) => { sdkColors = module; },
+			(error) => log("error", ["failed to load orb-extension-sdk colors:", errorValue(error).message]),
+		);
+	}
+
+	// A style color is a theme token (precomputed escape) or a concrete pi-tui Color.
+	function themeAnsi(table, color, background, mode) {
+		if (color === undefined) return undefined;
+		if (typeof color === "string") {
+			const ansi = table?.[color];
+			if (ansi === undefined) throw new Error(`Unknown theme color: ${color}`);
+			return ansi;
+		}
+		return background ? sdkColors.backgroundAnsi(color, mode) : sdkColors.foregroundAnsi(color, mode);
+	}
+
 	function createTheme(snapshot, name) {
 		const value = snapshot ?? {};
 		const theme = {
@@ -815,6 +836,19 @@ registerHostSection((() => {
 			getColorMode: () => value.colorMode ?? "",
 			getThinkingBorderColor: (level) => (text) => applyTheme(value.thinkingBorder?.[level], text),
 			getBashModeBorderColor: () => (text) => applyTheme(value.bashModeBorder, text),
+			appearance: value.appearance === "light" ? "light" : "dark",
+			get colors() {
+				return Object.freeze(Object.fromEntries(Object.entries(value.colors ?? {}).map(([token, hex]) => [token, sdkColors.parseColor(hex)])));
+			},
+			style: (text, options = {}) => {
+				const mode = value.colorMode === "256color" ? "256color" : "truecolor";
+				return sdkColors.styleTextWithAnsi(
+					String(text),
+					themeAnsi(value.fgAnsi, options.fg, false, mode),
+					themeAnsi(value.bgAnsi, options.bg, true, mode),
+					options,
+				);
+			},
 		};
 		Object.defineProperty(theme, "__orbThemeName", { value: name, enumerable: false });
 		Object.defineProperty(theme, "__orbHostTheme", { value: true, enumerable: false });
