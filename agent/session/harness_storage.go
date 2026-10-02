@@ -234,7 +234,7 @@ func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: cloneBool(entry.FromHook), FromID: entry.FromID,
 		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),
 		Display: entry.Display, TargetID: targetID, LeafTargetID: cloneString(entry.TargetID),
-		Label: cloneString(entry.Label), Name: entry.Name,
+		Label: cloneString(entry.Label), Name: entry.Name, Replacement: cloneRaw(entry.Replacement),
 	}
 }
 
@@ -246,7 +246,7 @@ func harnessEntryFromSession(entry SessionEntry) harness.SessionTreeEntry {
 		if targetID == nil && entry.TargetID != "" {
 			targetID = cloneString(&entry.TargetID)
 		}
-	case "label":
+	case "label", "context_edit":
 		targetID = cloneString(&entry.TargetID)
 	}
 	return harness.SessionTreeEntry{
@@ -256,8 +256,8 @@ func harnessEntryFromSession(entry SessionEntry) harness.SessionTreeEntry {
 		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
 		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: cloneBool(entry.FromHook), FromID: entry.FromID,
 		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),
-		Display: entry.Display, TargetID: targetID, HasTargetID: entry.Type == "leaf" || entry.Type == "label",
-		Label: cloneString(entry.Label), Name: entry.Name,
+		Display: entry.Display, TargetID: targetID, HasTargetID: entry.Type == "leaf" || entry.Type == "label" || entry.Type == "context_edit",
+		Label: cloneString(entry.Label), Name: entry.Name, Replacement: cloneRaw(entry.Replacement),
 	}
 }
 

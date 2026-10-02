@@ -888,10 +888,6 @@ func (manager *SessionManager) AppendCustomMessageEntry(customType string, conte
 	return manager.appendEntryLocked(entry)
 }
 
-// ErrHarnessContextEdit reports that harness (v4) storage cannot record
-// context edits yet.
-var ErrHarnessContextEdit = errors.New("session: harness storage does not support context edits")
-
 // AppendContextEdit appends a branch-local edit to an earlier model-visible
 // entry: a nil or JSON null replacement omits it from model context, otherwise
 // replacement must be {"content": string | array} and replaces only its
@@ -936,9 +932,6 @@ func (manager *SessionManager) AppendContextEdit(targetID string, replacement js
 	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if manager.harnessStorage != nil {
-		return "", ErrHarnessContextEdit
-	}
 	entry, err := manager.newEntryBaseLocked("context_edit")
 	if err != nil {
 		return "", err

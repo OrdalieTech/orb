@@ -8,7 +8,7 @@ shown by `/changelog`.
 Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 
 - Context edits: a retried or recovered response stays in the session's history but leaves the
-  model's context, recorded as a `context_edit` entry; each request is now built from the session
+  model's context, recorded as a `context_edit` entry (in the native SQLite sessions too); each request is now built from the session
   itself, so a bootstrap prompt the session never recorded no longer reaches the provider twice.
 - Sessions are written to disk at the first message you send, not the first reply, so a prompt
   survives quitting before the model answers.

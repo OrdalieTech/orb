@@ -164,3 +164,40 @@ func TestHarnessTransactionStorageRejectsRemovedV3Projection(t *testing.T) {
 		t.Fatalf("removed projection: %v", err)
 	}
 }
+
+func TestHarnessStorageRecordsContextEdits(t *testing.T) {
+	rootID := "root"
+	storage, err := harness.NewInMemorySessionStorage([]harness.SessionTreeEntry{
+		{Type: "message", ID: rootID, Timestamp: "2026-10-02T00:00:00.000Z", Message: json.RawMessage(`{"role":"user","content":"keep"}`)},
+		{Type: "message", ID: "failed", ParentID: &rootID, Timestamp: "2026-10-02T00:00:01.000Z", Message: json.RawMessage(`{"role":"user","content":"drop"}`)},
+	}, harness.SessionMetadata{ID: "session", CreatedAt: "2026-10-02T00:00:00.000Z", CWD: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.FromHarnessStorage(storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editID, err := manager.AppendContextEdit("failed", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages := manager.BuildSessionContext().Messages; len(messages) != 1 || !strings.Contains(string(messages[0]), "keep") {
+		t.Fatalf("context = %s", messages)
+	}
+	stored, ok := storage.Entry(editID)
+	if !ok {
+		t.Fatal("edit not stored")
+	}
+	encoded, err := harness.MarshalSessionTreeEntry(*stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"type":"context_edit"`) || !strings.Contains(string(encoded), `"targetId":"failed","replacement":null`) {
+		t.Fatalf("encoded edit = %s", encoded)
+	}
+	decoded, err := harness.ParseSessionTreeEntry(encoded)
+	if err != nil || decoded.TargetID == nil || *decoded.TargetID != "failed" || string(decoded.Replacement) != "null" {
+		t.Fatalf("decoded edit = %#v, %v", decoded, err)
+	}
+}

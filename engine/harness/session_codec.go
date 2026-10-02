@@ -150,6 +150,7 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 		}
 	}
 	decodeHarnessStringInto(object["name"], &entry.Name)
+	entry.Replacement = cloneHarnessRaw(object["replacement"])
 	return entry, nil
 }
 
@@ -326,6 +327,12 @@ func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 		}
 	case "session_info":
 		members = append(members, harnessStringMember("name", entry.Name))
+	case "context_edit":
+		target := ""
+		if entry.TargetID != nil {
+			target = *entry.TargetID
+		}
+		members = append(members, harnessStringMember("targetId", target), harnessRawMember("replacement", entry.Replacement))
 	case "leaf":
 		target := json.RawMessage("null")
 		if entry.TargetID != nil {

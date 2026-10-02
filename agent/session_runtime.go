@@ -1832,8 +1832,7 @@ func (runtime *SessionRuntime) dropLastAssistant() {
 // omitRecoveryAttempt keeps a failed attempt in raw history while durably
 // omitting it from model context: the branch's trailing assistant response and
 // the tool results after it each get a context_edit, announced as appended
-// entries. Harness storage cannot record edits yet, so there the attempt is
-// only dropped from memory.
+// entries.
 func (runtime *SessionRuntime) omitRecoveryAttempt() error {
 	assistantID, toolResultIDs := runtime.trailingTurnEntryIDs()
 	if assistantID == "" {
@@ -1842,10 +1841,6 @@ func (runtime *SessionRuntime) omitRecoveryAttempt() error {
 	}
 	for _, targetID := range append([]string{assistantID}, toolResultIDs...) {
 		entryID, err := runtime.manager.AppendContextEdit(targetID, nil)
-		if errors.Is(err, sessionstore.ErrHarnessContextEdit) {
-			runtime.dropLastAssistant()
-			return nil
-		}
 		if err != nil {
 			return err
 		}

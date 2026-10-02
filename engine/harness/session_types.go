@@ -96,6 +96,8 @@ type SessionTreeEntry struct {
 	HasTargetID      bool
 	Label            *string
 	Name             string
+	// Replacement is a context_edit's replacement; JSON null omits the target.
+	Replacement json.RawMessage
 
 	raw json.RawMessage
 }
@@ -118,6 +120,7 @@ func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy.Content = cloneHarnessRaw(entry.Content)
 	copy.TargetID = cloneHarnessString(entry.TargetID)
 	copy.Label = cloneHarnessString(entry.Label)
+	copy.Replacement = cloneHarnessRaw(entry.Replacement)
 	copy.raw = cloneHarnessRaw(entry.raw)
 	return copy
 }
