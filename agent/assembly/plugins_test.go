@@ -90,7 +90,7 @@ func TestPluginControlPersistsAndReloads(t *testing.T) {
 	root := t.TempDir()
 	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
 	registry := extensions.NewRegistry(root)
-	mustOK(registry.Register("<inline:plugin-control>", Control("", "", settings)))
+	mustOK(registry.Register("builtin:plugin-control", Control("", "", settings)))
 	ui := &selectorUI{keys: []string{" ", "\x1b"}} // toggle the first row (tasks), close
 	reloads := 0
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
@@ -131,7 +131,7 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 		key := invalid[0].(string)
 		settings.SetPluginSetting("permissions", key, invalid[1])
 		registry := extensions.NewRegistry(root)
-		mustOK(registry.Register("<inline:permissions>", Catalog(CatalogOptions{Settings: settings})["permissions"]))
+		mustOK(registry.Register("builtin:permissions", Catalog(CatalogOptions{Settings: settings})["permissions"]))
 		blocked := extensions.NewRunner(registry, extensions.RunnerOptions{}).EmitToolCall(context.Background(), extensions.ToolCallEvent{ToolName: "read"})
 		require(t, blocked != nil && blocked.Block && strings.Contains(blocked.Reason, invalid[3].(string)), "invalid SDK policy for %s = %#v", key, blocked)
 		settings.SetPluginSetting("permissions", key, invalid[2])

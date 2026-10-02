@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 
@@ -145,6 +146,10 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		if args.Auto && !args.NoExtensions && resolved[i].ID == "permissions" {
 			resolved[i].Enabled, resolved[i].DecidedBy = true, "--auto"
 		}
+		// -e builtin:<name> loads that bundled plugin, even with --no-extensions.
+		if slices.Contains(args.Extensions, extensions.BuiltinPathPrefix+resolved[i].ID) {
+			resolved[i].Enabled, resolved[i].DecidedBy = true, "-e"
+		}
 	}
 	registry, loadErrors := assembly.Load(cwd, resolved)
 	for _, loadError := range loadErrors {
@@ -154,6 +159,9 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		explicitPaths := make([]string, 0, len(args.Extensions))
 		var sourceSpecs []string
 		for _, extension := range args.Extensions {
+			if strings.HasPrefix(extension, extensions.BuiltinPathPrefix) {
+				continue
+			}
 			if isPackageSourceSpec(extension) {
 				sourceSpecs = append(sourceSpecs, extension)
 			} else {
@@ -204,6 +212,9 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		} else {
 			replaceActiveExtensionHost(nil)
 		}
+	}
+	for _, warning := range registry.OmitReplaced() {
+		diagnostics = append(diagnostics, otherDiagnostic(warning))
 	}
 	return registry, diagnostics
 }

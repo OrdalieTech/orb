@@ -487,7 +487,7 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 	// child plugin selection when callers need cross-agent memory access.
 	if policy != nil {
 		extensionRegistry = extensions.NewRegistry(parent.CWD())
-		if err := extensionRegistry.Register("<inline:permissions>", permissions.Extension(policy, nil, parent)); err != nil {
+		if err := extensionRegistry.Register("builtin:permissions", permissions.Extension(policy, nil, parent)); err != nil {
 			return "", err
 		}
 	}

@@ -29,7 +29,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{}
 	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("<inline:jobs>", Extension(nil)); err != nil {
+	if err := registry.Register("builtin:jobs", Extension(nil)); err != nil {
 		t.Fatal(err)
 	}
 	manager, err := sessionstore.InMemory(t.TempDir())

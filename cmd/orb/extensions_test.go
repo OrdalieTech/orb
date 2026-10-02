@@ -79,7 +79,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 		t.Fatalf("diagnostics = %v", diagnostics)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if got := strings.Join(runner.ExtensionPaths(), ","); got != "<inline:plugin-control>,<inline:bridge>" {
+	if got := strings.Join(runner.ExtensionPaths(), ","); got != "builtin:plugin-control,builtin:bridge" {
 		t.Fatalf("compiled extension order = %q", got)
 	}
 	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)
@@ -96,12 +96,12 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 		wantPath    string
 		wantWarning string
 	}{
-		{name: "absent", settings: `{}`, wantPath: "<inline:plugin-control>,<inline:bridge>"},
-		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`, wantPath: "<inline:plugin-control>,<inline:bridge>"},
-		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`, wantPath: "<inline:plugin-control>,<inline:bridge>"},
+		{name: "absent", settings: `{}`, wantPath: "builtin:plugin-control,builtin:bridge"},
+		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`, wantPath: "builtin:plugin-control,builtin:bridge"},
+		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`, wantPath: "builtin:plugin-control,builtin:bridge"},
 		{name: "all extensions disabled", settings: `{"mcpServers":[]}`, args: CLIArgs{NoExtensions: true}},
-		{name: "invalid", settings: `{"mcpServers":[]}`, wantPath: "<inline:plugin-control>,<inline:bridge>", wantWarning: "mcpServers"},
-		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"orb-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "<inline:plugin-control>,<inline:bridge>,<inline:mcp>"},
+		{name: "invalid", settings: `{"mcpServers":[]}`, wantPath: "builtin:plugin-control,builtin:bridge", wantWarning: "mcpServers"},
+		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"orb-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "builtin:plugin-control,builtin:bridge,builtin:mcp"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 			if test.wantWarning == "" && warnings != "" || test.wantWarning != "" && !strings.Contains(warnings, test.wantWarning) {
 				t.Fatalf("diagnostics = %q, want substring %q", warnings, test.wantWarning)
 			}
-			if strings.Contains(test.wantPath, "<inline:mcp>") && runner.Command("mcp") == nil {
+			if strings.Contains(test.wantPath, "builtin:mcp") && runner.Command("mcp") == nil {
 				t.Fatal("/mcp command was not registered")
 			}
 		})

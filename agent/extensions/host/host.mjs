@@ -258,7 +258,7 @@ function createAPI(state) {
 			registerWithOrb(state, "register_tool", { extensionId: state.id, definition: serializableTool(tool, state) });
 		},
 		registerCommand(name, options) {
-			if (typeof name !== "string" || !options || typeof options.handler !== "function") {
+			if (typeof name !== "string" || name === "" || !options || typeof options.handler !== "function") {
 				throw new TypeError("registerCommand requires a name and handler");
 			}
 			state.commands.set(name, options);
