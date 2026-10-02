@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"sort"
 	"strconv"
@@ -828,6 +829,7 @@ func buildOpenAICompletionsPayload(
 		}
 		payload["providerOptions"] = map[string]any{"gateway": gateway}
 	}
+	maps.Copy(payload, mergedSamplingParams(model, &options.StreamOptions))
 	return payload, nil
 }
 
@@ -993,7 +995,10 @@ func convertOpenAICompletionsUserMessage(message *ai.UserMessage) (map[string]an
 	for _, rawBlock := range message.Content.Blocks {
 		switch block := rawBlock.(type) {
 		case *ai.TextContent:
-			content = append(content, map[string]any{"type": "text", "text": sanitizeText(block.Text)})
+			// Some providers reject image-only messages that carry an empty text part.
+			if block.Text != "" {
+				content = append(content, map[string]any{"type": "text", "text": sanitizeText(block.Text)})
+			}
 		case *ai.ImageContent:
 			content = append(content, map[string]any{
 				"type":      "image_url",

@@ -2,11 +2,13 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -44,6 +46,8 @@ type ModelDefinition struct {
 	Cost             *ai.ModelCost                      `json:"cost,omitempty"`
 	ContextWindow    *float64                           `json:"contextWindow,omitempty"`
 	MaxTokens        *float64                           `json:"maxTokens,omitempty"`
+	InputLimits      *ai.ModelInputLimits               `json:"inputLimits,omitempty"`
+	SamplingParams   map[string]any                     `json:"samplingParams,omitempty"`
 	Headers          map[string]string                  `json:"headers,omitempty"`
 	Compat           json.RawMessage                    `json:"compat,omitempty"`
 }
@@ -56,6 +60,8 @@ type ModelOverride struct {
 	Cost             *ModelCostOverride                 `json:"cost,omitempty"`
 	ContextWindow    *float64                           `json:"contextWindow,omitempty"`
 	MaxTokens        *float64                           `json:"maxTokens,omitempty"`
+	InputLimits      *ai.ModelInputLimits               `json:"inputLimits,omitempty"`
+	SamplingParams   map[string]any                     `json:"samplingParams,omitempty"`
 	Headers          map[string]string                  `json:"headers,omitempty"`
 	Compat           json.RawMessage                    `json:"compat,omitempty"`
 }
@@ -389,7 +395,8 @@ func modelFromConfig(providerID string, definition ModelDefinition, provider Mod
 	}
 	return ai.Model{ID: definition.ID, Name: name, API: api, Provider: ai.ProviderID(providerID), BaseURL: baseURL, Reasoning: reasoning,
 		ThinkingLevelMap: cloneThinkingMap(definition.ThinkingLevelMap), Input: input, Cost: cost, ContextWindow: contextWindow,
-		MaxTokens: maxTokens, Compat: mergeCompat(provider.Compat, definition.Compat)}, nil
+		MaxTokens: maxTokens, InputLimits: definition.InputLimits, SamplingParams: maps.Clone(definition.SamplingParams),
+		Compat: mergeCompat(provider.Compat, definition.Compat)}, nil
 }
 
 func applyModelOverride(model ai.Model, override ModelOverride) ai.Model {
@@ -438,8 +445,50 @@ func applyModelOverride(model ai.Model, override ModelOverride) ai.Model {
 	if override.MaxTokens != nil {
 		model.MaxTokens = *override.MaxTokens
 	}
+	model.InputLimits = mergeInputLimits(model.InputLimits, override.InputLimits)
+	if override.SamplingParams != nil {
+		merged := maps.Clone(model.SamplingParams)
+		if merged == nil {
+			merged = map[string]any{}
+		}
+		maps.Copy(merged, override.SamplingParams)
+		model.SamplingParams = merged
+	}
 	model.Compat = mergeCompat(model.Compat, override.Compat)
 	return model
+}
+
+// mergeInputLimits overlays the override's set fields, resize options included.
+func mergeInputLimits(base, override *ai.ModelInputLimits) *ai.ModelInputLimits {
+	if override == nil {
+		return base
+	}
+	merged := ai.ModelInputLimits{MaxRequestBytes: override.MaxRequestBytes}
+	if base != nil {
+		merged = *base
+		merged.MaxRequestBytes = cmp.Or(override.MaxRequestBytes, base.MaxRequestBytes)
+	}
+	if override.Images != nil {
+		images := ai.ModelImageInputLimits{}
+		if merged.Images != nil {
+			images = *merged.Images
+		}
+		images.MaxPerMessage = cmp.Or(override.Images.MaxPerMessage, images.MaxPerMessage)
+		images.MaxPerRequest = cmp.Or(override.Images.MaxPerRequest, images.MaxPerRequest)
+		if resize := override.Images.Resize; resize != nil {
+			merged := ai.ModelImageResizeOptions{}
+			if images.Resize != nil {
+				merged = *images.Resize
+			}
+			merged.MaxWidth = cmp.Or(resize.MaxWidth, merged.MaxWidth)
+			merged.MaxHeight = cmp.Or(resize.MaxHeight, merged.MaxHeight)
+			merged.MaxBytes = cmp.Or(resize.MaxBytes, merged.MaxBytes)
+			merged.JPEGQuality = cmp.Or(resize.JPEGQuality, merged.JPEGQuality)
+			images.Resize = &merged
+		}
+		merged.Images = &images
+	}
+	return &merged
 }
 
 func cloneThinkingMap(source *map[ai.ModelThinkingLevel]*string) *map[ai.ModelThinkingLevel]*string {

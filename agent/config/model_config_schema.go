@@ -129,6 +129,9 @@ func validateModelDefinitionJSON(path string, model map[string]any) error {
 			return err
 		}
 	}
+	if err := validateInputLimitsAndSampling(model, path); err != nil {
+		return err
+	}
 	if err := validateOptionalHeaders(model, "headers", path); err != nil {
 		return err
 	}
@@ -162,6 +165,9 @@ func validateModelOverrideJSON(path string, override map[string]any) error {
 		if err := validateOptionalNumber(override, name, path); err != nil {
 			return err
 		}
+	}
+	if err := validateInputLimitsAndSampling(override, path); err != nil {
+		return err
 	}
 	if err := validateOptionalHeaders(override, "headers", path); err != nil {
 		return err
@@ -533,4 +539,58 @@ func validateOptionalNumber(object map[string]any, name, path string) error {
 		return fmt.Errorf("%s.%s must be a number", path, name)
 	}
 	return nil
+}
+
+func validateInputLimitsAndSampling(object map[string]any, path string) error {
+	if value, exists := object["samplingParams"]; exists {
+		if _, ok := value.(map[string]any); !ok {
+			return fmt.Errorf("%s.samplingParams must be an object", path)
+		}
+	}
+	value, exists := object["inputLimits"]
+	if !exists {
+		return nil
+	}
+	limits, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s.inputLimits must be an object", path)
+	}
+	path += ".inputLimits"
+	positive := func(object map[string]any, path string, names ...string) error {
+		for _, name := range names {
+			value, exists := object[name]
+			if !exists {
+				continue
+			}
+			number, ok := value.(json.Number)
+			parsed, err := number.Int64()
+			if !ok || err != nil || parsed < 1 || (name == "jpegQuality" && parsed > 100) {
+				return fmt.Errorf("%s.%s must be a positive integer", path, name)
+			}
+		}
+		return nil
+	}
+	if err := positive(limits, path, "maxRequestBytes"); err != nil {
+		return err
+	}
+	images, exists := limits["images"]
+	if !exists {
+		return nil
+	}
+	imageLimits, ok := images.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s.images must be an object", path)
+	}
+	if err := positive(imageLimits, path+".images", "maxPerMessage", "maxPerRequest"); err != nil {
+		return err
+	}
+	resize, exists := imageLimits["resize"]
+	if !exists {
+		return nil
+	}
+	resizeLimits, ok := resize.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s.images.resize must be an object", path)
+	}
+	return positive(resizeLimits, path+".images.resize", "maxWidth", "maxHeight", "maxBytes", "jpegQuality")
 }

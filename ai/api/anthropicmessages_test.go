@@ -87,6 +87,18 @@ func TestAnthropicMalformedEventUsesPartialJSONRepair(t *testing.T) {
 	}
 }
 
+func TestAnthropicDeltaUsageKeepsOneHourCacheWrites(t *testing.T) {
+	model := anthropicTestModel()
+	output := newAssistantMessage(model)
+	processor := newAnthropicStreamProcessor(model, ai.Context{}, output, false, func(ai.AssistantMessageEvent) bool { return true })
+	if err := processor.handleSSE("message_delta", []byte(`{"type":"message_delta","delta":{},"usage":{"cache_creation_input_tokens":40,"cache_creation":{"ephemeral_1h_input_tokens":30}}}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	if output.Usage.CacheWrite != 40 || output.Usage.CacheWrite1h == nil || *output.Usage.CacheWrite1h != 30 {
+		t.Fatalf("usage = %#v", output.Usage)
+	}
+}
+
 func TestAnthropicRawStopReasonAndSensitiveError(t *testing.T) {
 	model := anthropicTestModel()
 	output := newAssistantMessage(model)

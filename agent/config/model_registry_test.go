@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -1053,4 +1054,32 @@ func (document *testDocument) Update(_ context.Context, update func([]byte) ([]b
 		document.data = next
 	}
 	return err
+}
+
+func TestModelRegistryModelsJSONSamplingParamsAndInputLimits(t *testing.T) {
+	directory := t.TempDir()
+	content := `{"providers":{"local":{"baseUrl":"http://127.0.0.1:8080/v1","apiKey":"k","api":"openai-completions",` +
+		`"models":[{"id":"m","samplingParams":{"top_k":20,"min_p":0},"inputLimits":{"images":{"maxPerRequest":4,"resize":{"maxWidth":1024,"maxHeight":1024}}}}],` +
+		`"modelOverrides":{"m":{"samplingParams":{"top_k":40},"inputLimits":{"images":{"resize":{"maxBytes":500000}}}}}}}}`
+	if err := os.WriteFile(filepath.Join(directory, "models.json"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, ok := registry.Find("local", "m")
+	if !ok || !reflect.DeepEqual(model.SamplingParams, map[string]any{"top_k": float64(40), "min_p": float64(0)}) {
+		t.Fatalf("sampling params = %#v, ok=%v", model.SamplingParams, ok)
+	}
+	images := model.InputLimits.Images
+	if *images.MaxPerRequest != 4 || *images.Resize.MaxWidth != 1024 || *images.Resize.MaxBytes != 500000 {
+		t.Fatalf("input limits = %#v / %#v", images, images.Resize)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "models.json"), []byte(`{"providers":{"local":{"modelOverrides":{"m":{"inputLimits":{"maxRequestBytes":0}}}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if loaded, _ := LoadModelConfig(filepath.Join(directory, "models.json")); !strings.Contains(loaded.Error(), "maxRequestBytes must be a positive integer") {
+		t.Fatalf("invalid input limits error = %q", loaded.Error())
+	}
 }

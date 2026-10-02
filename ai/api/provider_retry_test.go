@@ -191,4 +191,11 @@ func TestProviderRetryDelayReadsServerHeaders(t *testing.T) {
 	if !strings.Contains(when, "GMT") {
 		t.Fatalf("date format sanity: %q", when)
 	}
+	// An unparseable value backs off exponentially instead of retrying at once.
+	for _, value := range []string{"soon", "NaN"} {
+		delay, err = providerRetryDelay(errors.New("x"), http.Header{"Retry-After": []string{value}}, 2, nil)
+		if err != nil || delay < 1500*time.Millisecond || delay > 2*time.Second {
+			t.Fatalf("retry-after %q: %s / %v", value, delay, err)
+		}
+	}
 }

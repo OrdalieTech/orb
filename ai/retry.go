@@ -32,6 +32,8 @@ type AssistantCall func() (*AssistantMessage, error)
 var nonRetryableProviderLimitPatterns = compilePatterns([]string{
 	`GoUsageLimitError`, `FreeUsageLimitError`, `Monthly usage limit reached`, `available balance`,
 	`insufficient_quota`, `out of budget`, `quota exceeded`, `billing`,
+	// Sign in with ChatGPT's shared usage limit resets after hours, not seconds.
+	`subscription_sharing_usage_limit_exceeded`,
 })
 
 var retryableProviderPatterns = compilePatterns([]string{
@@ -51,10 +53,12 @@ var retryableProviderPatterns = compilePatterns([]string{
 	`websocket.?error`, `ended without`, `stream ended before message_stop`,
 	`stream ended before a terminal response event`, `http2 request did not get a response`, `retry delay`,
 	`you can retry your request`, `try your request again`, `please retry your request`, `ResourceExhausted`,
+	// Sign in with ChatGPT: usage or user data temporarily unavailable, possibly mid-stream.
+	`subscription_sharing_usage_unavailable`, `subscription_sharing_user_unavailable`,
 })
 
 var overflowPatterns = compilePatterns([]string{
-	`prompt is too long`, `request_too_large`, `input is too long for requested model`,
+	`prompt (is )?too long`, `prompt exceeds max length`, `request_too_large`, `input is too long for requested model`,
 	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length( of [0-9,]+ tokens?|[[:space:]]*\([0-9,]+\))`,
 	`input token count.*exceeds the maximum`, `maximum prompt length is [0-9]+`,
 	`reduce the length of the messages`, `range of input length should be`, `maximum context length is [0-9]+ tokens`,

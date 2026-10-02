@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -107,8 +108,15 @@ func TestParseArgsMode(t *testing.T) {
 			t.Fatalf("mode %q parsed as %q", mode, got)
 		}
 	}
-	if got := ParseArgs([]string{"--mode", "invalid"}).Mode; got != "" {
-		t.Fatalf("invalid mode parsed as %q", got)
+	for argv, message := range map[string]string{
+		"invalid":   `Invalid mode "invalid". Valid values: text, json, rpc`,
+		"":          "--mode requires text, json, or rpc",
+		"--verbose": "--mode requires text, json, or rpc",
+	} {
+		args := ParseArgs(append([]string{"--mode"}, strings.Fields(argv)...))
+		if args.Mode != "" || len(args.Diagnostics) != 1 || args.Diagnostics[0] != (CLIDiagnostic{Type: "error", Message: message}) {
+			t.Fatalf("--mode %s: mode %q, diagnostics %#v", argv, args.Mode, args.Diagnostics)
+		}
 	}
 }
 

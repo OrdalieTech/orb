@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -737,7 +738,7 @@ func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 	// Keep the normalized /fixture paths at upstream's 80-column width.
 	renderWidth := 80 + max(0, len(filepath.ToSlash(root))-len("/fixture"))
 	renderListing := func(quiet, verbose, expanded bool) []string {
-		sessionRuntime.SetQuietStartup(quiet)
+		sessionRuntime.SetQuietStartup(strconv.FormatBool(quiet))
 		mode.options.Verbose = verbose
 		mode.toolsExpanded = expanded
 		mode.showLoadedResources()

@@ -235,7 +235,7 @@ func TestInteractiveSettingsSnapshotUsesDocumentedDefaults(t *testing.T) {
 
 	snapshot := runtime.InteractiveSettings()
 	want := InteractiveSettings{
-		DoubleEscapeAction: "tree", ShowImages: true, ImageWidthCells: 60,
+		QuietStartup: "false", DoubleEscapeAction: "tree", ShowImages: true, ImageWidthCells: 60,
 		EditorPaddingX: 0, AutocompleteMaxVisible: 5,
 		SteeringMode: engine.QueueOneAtATime, FollowUpMode: engine.QueueOneAtATime,
 	}

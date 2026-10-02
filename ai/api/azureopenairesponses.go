@@ -354,6 +354,7 @@ func buildAzureOpenAIResponsesPayload(
 		payload.ToolChoice = options.ToolChoice
 	}
 	applyAzureOpenAIReasoning(payload, model, options)
+	payload.Extra = mergedSamplingParams(model, streamOptions)
 	return payload, nil
 }
 

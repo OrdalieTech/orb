@@ -1039,6 +1039,8 @@ type ProviderModelConfig struct {
 	Cost             ai.ModelCost
 	ContextWindow    float64
 	MaxTokens        float64
+	InputLimits      *ai.ModelInputLimits
+	SamplingParams   map[string]any
 	Headers          map[string]string
 	Compat           json.RawMessage
 }

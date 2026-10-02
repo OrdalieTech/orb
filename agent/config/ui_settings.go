@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 // Getters mirror upstream settings-manager.ts UI accessors, including their
 // defaults and env fallbacks.
@@ -11,9 +14,13 @@ func (manager *SettingsManager) boolValue(key string) (bool, bool) {
 	return result, ok
 }
 
-func (manager *SettingsManager) GetQuietStartup() bool {
-	value, _ := manager.boolValue("quietStartup")
-	return value
+// GetQuietStartup returns "true" (no startup header), "header" (header only,
+// no startup details) or "false".
+func (manager *SettingsManager) GetQuietStartup() string {
+	if value, _ := manager.value("quietStartup"); value == true || value == "header" {
+		return fmt.Sprint(value)
+	}
+	return "false"
 }
 
 func (manager *SettingsManager) GetDoubleEscapeAction() string {

@@ -237,7 +237,7 @@ func (runtime *SessionRuntime) PendingMessages() QueueUpdateEvent {
 // interactive mode reads (upstream docs/settings.md UI keys); the mutable
 // SettingsManager itself is never exposed.
 type InteractiveSettings struct {
-	QuietStartup           bool
+	QuietStartup           string
 	DoubleEscapeAction     string
 	ClearOnShrink          bool
 	HideThinkingBlock      bool
@@ -400,9 +400,9 @@ func (runtime *SessionRuntime) SetHTTPIdleTimeoutMS(timeoutMS int64) {
 	}
 }
 
-func (runtime *SessionRuntime) SetQuietStartup(enabled bool) {
+func (runtime *SessionRuntime) SetQuietStartup(quiet string) {
 	if runtime != nil {
-		runtime.settings.SetQuietStartup(enabled)
+		runtime.settings.SetQuietStartup(quiet)
 	}
 }
 

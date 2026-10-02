@@ -1587,6 +1587,10 @@ func (processor *anthropicStreamProcessor) applyDeltaUsage(usage anthropicRawUsa
 	if usage.CacheCreationInputTokens != nil {
 		processor.output.Usage.CacheWrite = *usage.CacheCreationInputTokens
 	}
+	// Vercel AI Gateway also sends the TTL breakdown in deltas.
+	if usage.CacheCreation != nil && usage.CacheCreation.Ephemeral1hInputTokens != nil {
+		processor.output.Usage.CacheWrite1h = usage.CacheCreation.Ephemeral1hInputTokens
+	}
 	if usage.OutputTokensDetails != nil && usage.OutputTokensDetails.ThinkingTokens != nil {
 		processor.output.Usage.Reasoning = usage.OutputTokensDetails.ThinkingTokens
 	}

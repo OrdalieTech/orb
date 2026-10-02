@@ -130,27 +130,43 @@ func TestMistralSimpleReasoningSelection(t *testing.T) {
 	})}
 	t.Cleanup(func() { mistralHTTPClient = previousClient })
 
+	levels := func(values map[ai.ModelThinkingLevel]string) *map[ai.ModelThinkingLevel]*string {
+		mapped := map[ai.ModelThinkingLevel]*string{}
+		for _, level := range []ai.ModelThinkingLevel{ai.ModelThinkingOff, ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium, ai.ModelThinkingHigh, ai.ModelThinkingXHigh, ai.ModelThinkingMax} {
+			if value, ok := values[level]; ok {
+				mapped[level] = &value
+			} else {
+				mapped[level] = nil
+			}
+		}
+		return &mapped
+	}
+	noneHigh := levels(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high"})
+	glm52 := levels(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
+	glm53 := levels(map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
 	tests := []struct {
 		name           string
 		modelID        string
+		levels         *map[ai.ModelThinkingLevel]*string
 		reasoning      *ai.ThinkingLevel
 		wantEffort     string
 		wantPromptMode string
 	}{
-		{name: "small uses reasoning effort", modelID: "mistral-small-2603", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
-		{name: "medium 3.5 uses reasoning effort", modelID: "mistral-medium-3.5", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
-		{name: "future medium uses reasoning effort", modelID: "mistral-medium-4", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
-		{name: "Mistral-hosted GLM uses reasoning effort", modelID: "zai-glm-5-2", reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
+		{name: "mapped model clamps to a supported effort", modelID: "mistral-small-2603", levels: noneHigh, reasoning: thinkingLevel(ai.ThinkingLow), wantEffort: "high"},
+		{name: "mapped model sends none when thinking is off", modelID: "mistral-medium-latest", levels: noneHigh, wantEffort: "none"},
+		{name: "GLM 5.2 sends max", modelID: "zai-glm-5-2", levels: glm52, reasoning: thinkingLevel(ai.ThinkingLevel("max")), wantEffort: "max"},
+		{name: "GLM 5.3 sends low", modelID: "zai-glm-5-3", levels: glm53, reasoning: thinkingLevel(ai.ThinkingLow), wantEffort: "low"},
+		{name: "GLM 5.3 maps medium to high", modelID: "zai-glm-5-3", levels: glm53, reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
+		{name: "GLM 5.3 without off omits controls", modelID: "zai-glm-5-3", levels: glm53},
 		{name: "magistral uses prompt mode", modelID: "magistral-medium-latest", reasoning: thinkingLevel(ai.ThinkingMedium), wantPromptMode: "reasoning"},
-		{name: "omits controls without reasoning", modelID: "mistral-small-2603"},
-		{name: "omits controls when reasoning is off", modelID: "mistral-small-2603", reasoning: thinkingLevel(ai.ThinkingLevel("off"))},
+		{name: "magistral omits controls when reasoning is off", modelID: "magistral-medium-latest", reasoning: thinkingLevel(ai.ThinkingLevel("off"))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			apiKey := "test-key"
 			model := &ai.Model{
 				ID: test.modelID, Name: test.modelID, API: ai.APIMistralConversations, Provider: "mistral",
-				BaseURL: "https://mistral.invalid", Reasoning: true, Input: ai.InputModalities{ai.InputText},
+				BaseURL: "https://mistral.invalid", Reasoning: true, ThinkingLevelMap: test.levels, Input: ai.InputModalities{ai.InputText},
 				ContextWindow: 128_000, MaxTokens: 8_192,
 			}
 			var captured *MistralChatPayload

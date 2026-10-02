@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
@@ -48,6 +51,17 @@ type OpenAIResponsesPayload struct {
 	ToolChoice           any                       `json:"tool_choice,omitempty"`
 	Reasoning            *OpenAIReasoningParams    `json:"reasoning,omitempty"`
 	Include              []string                  `json:"include,omitempty"`
+	// Extra keys (samplingParams) are assigned last, overriding named fields.
+	Extra map[string]any `json:"-"`
+}
+
+func (payload OpenAIResponsesPayload) MarshalJSON() ([]byte, error) {
+	type fields OpenAIResponsesPayload
+	encoded, err := jsonwire.Marshal(fields(payload))
+	if err != nil || len(payload.Extra) == 0 {
+		return encoded, err
+	}
+	return assignJSONObject(encoded, payload.Extra)
 }
 
 type OpenAIPromptCacheOptions struct {
@@ -247,7 +261,12 @@ func StreamOpenAIResponsesWithOptions(
 			if model.Provider == "openai" {
 				provider = "OpenAI"
 			}
-			sink(streamFailure(ctx, output, err, provider+" API error"))
+			event := streamFailure(ctx, output, err, provider+" API error")
+			// Sign in with ChatGPT shares the subscription's usage limit with other apps.
+			if strings.Contains(*output.ErrorMessage, "subscription_sharing_usage_limit_exceeded") {
+				*output.ErrorMessage += "\nCheck your ChatGPT usage: " + chatGPTUsageURL
+			}
+			sink(event)
 		}
 		if _, err := resolveOpenAIAPIKey(model, streamOptions); err != nil {
 			fail(err)
@@ -412,8 +431,11 @@ func buildOpenAIResponsesPayload(
 		}
 	}
 	applyResponsesReasoning(payload, model, options)
+	payload.Extra = mergedSamplingParams(model, streamOptions)
 	return payload, compat, nil
 }
+
+const chatGPTUsageURL = "https://chatgpt.com/settings/usage"
 
 // isChatGPTSignIn reports a Sign in with ChatGPT access token: OpenAI API keys
 // start with sk-, any other credential sent directly to OpenAI is a token.
@@ -788,10 +810,13 @@ func convertResponsesMessagesWithOptions(
 				case *ai.ToolCall:
 					callID, itemID := splitResponsesToolCallID(block.ID)
 					customInputProperty, custom := options.grammarToolInputProperties[block.Name]
-					if isDifferentModel && itemID != nil && strings.HasPrefix(*itemID, "fc_") {
-						itemID = nil
+					// Item ids must match the replayed type (fc_* function calls,
+					// ctc_* custom tool calls), which can switch with grammar support.
+					prefix := "fc_"
+					if custom {
+						prefix = "ctc_"
 					}
-					if !custom && (itemID == nil || !strings.HasPrefix(*itemID, "fc_")) {
+					if isDifferentModel || itemID == nil || !strings.HasPrefix(*itemID, prefix) {
 						itemID = nil
 					}
 					// A namespace only replays where the target can also replay
@@ -1611,6 +1636,16 @@ func (processor *openAIResponsesProcessor) finalizeResponse(raw json.RawMessage)
 			}
 		}
 	}
+	// Every tool call in the final message runs, so refuse calls whose
+	// output_item.done never arrived (arguments cut off, or mixed up by a
+	// server that omits output_index): finished items have no slot left.
+	if processor.output.StopReason == ai.StopReasonToolUse {
+		for _, index := range slices.Sorted(maps.Keys(processor.slots)) {
+			if slot := processor.slots[index]; slot.kind == "toolCall" {
+				return fmt.Errorf("OpenAI Responses stream completed with an unfinished tool call: %s (%s)", slot.toolCall.Name, slot.toolCall.ID)
+			}
+		}
+	}
 	return nil
 }
 
@@ -1639,7 +1674,7 @@ func applyResponsesServiceTierPricing(usage *ai.Usage, serviceTier string, model
 	switch serviceTier {
 	case "flex":
 		multiplier = 0.5
-	case "priority":
+	case "priority", "fast":
 		multiplier = 2
 		if model.ID == "gpt-5.5" {
 			multiplier = 2.5

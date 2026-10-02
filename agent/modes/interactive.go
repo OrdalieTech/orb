@@ -2383,7 +2383,7 @@ func (mode *InteractiveMode) settingItems() []tui.SettingItem {
 		tui.SettingItem{ID: "hide-thinking", Label: "Hide thinking", Description: "Hide thinking blocks in assistant responses", CurrentValue: boolText(settings.HideThinkingBlock), Values: []string{"true", "false"}},
 		tui.SettingItem{ID: "mermaid-rendering", Label: "Mermaid diagrams", Description: "Render Mermaid code blocks as Unicode diagrams", CurrentValue: settings.MermaidRenderingMode, Values: []string{"off", "final", "streaming"}},
 		tui.SettingItem{ID: "cache-miss-notices", Label: "Cache miss notices", Description: "Show transcript notices for significant prompt-cache misses", CurrentValue: boolText(settings.ShowCacheMissNotices), Values: []string{"true", "false"}},
-		tui.SettingItem{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup", CurrentValue: boolText(settings.QuietStartup), Values: []string{"true", "false"}},
+		tui.SettingItem{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup (header: keep only the startup header)", CurrentValue: settings.QuietStartup, Values: []string{"true", "header", "false"}},
 		tui.SettingItem{ID: "default-project-trust", Label: "Default project trust", Description: "Fallback behavior when no extension or saved trust decision decides project trust", CurrentValue: settings.DefaultProjectTrust, Values: []string{"ask", "always", "never"}},
 		tui.SettingItem{ID: "double-escape-action", Label: "Double-escape action", Description: "Action when pressing Escape twice with empty editor", CurrentValue: settings.DoubleEscapeAction, Values: []string{"tree", "fork", "none"}},
 		tui.SettingItem{ID: "tree-filter-mode", Label: "Tree filter mode", Description: "Default filter when opening /tree", CurrentValue: settings.TreeFilterMode, Values: []string{"default", "no-tools", "user-only", "labeled-only", "all"}},
@@ -2497,7 +2497,7 @@ func (mode *InteractiveMode) applySetting(id, value string) {
 		mode.session.SetShowCacheMissNotices(enabled)
 		mode.renderInitialMessages()
 	case "quiet-startup":
-		mode.session.SetQuietStartup(enabled)
+		mode.session.SetQuietStartup(value)
 	case "default-project-trust":
 		mode.session.SetDefaultProjectTrust(value)
 	case "double-escape-action":

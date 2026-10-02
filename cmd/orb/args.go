@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -132,10 +133,16 @@ func ParseArgs(argv []string) CLIArgs {
 				break
 			}
 			result.Resume = true
-		case argument == "--mode" && index+1 < len(argv):
+		case argument == "--mode":
+			if index+1 >= len(argv) || strings.HasPrefix(argv[index+1], "-") {
+				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: "--mode requires text, json, or rpc"})
+				continue
+			}
 			index++
-			if argv[index] == "text" || argv[index] == "json" || argv[index] == "rpc" {
-				result.Mode = argv[index]
+			if mode := argv[index]; mode == "text" || mode == "json" || mode == "rpc" {
+				result.Mode = mode
+			} else {
+				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: fmt.Sprintf("Invalid mode %q. Valid values: text, json, rpc", mode)})
 			}
 		case argument == "--provider" && index+1 < len(argv):
 			index++

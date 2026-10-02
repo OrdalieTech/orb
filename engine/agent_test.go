@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -364,4 +365,22 @@ func joinInts(values []int) string {
 		}
 	}
 	return joinStrings(strings)
+}
+
+func TestAgentPeekQueuedMessagesFollowsQueueModes(t *testing.T) {
+	agent := NewAgent(nil, WithFollowUpMode(QueueAll))
+	agent.FollowUp(loopUser("follow 1"))
+	agent.FollowUp(loopUser("follow 2"))
+	if got := agent.PeekQueuedMessages(); len(got) != 2 {
+		t.Fatalf("follow-ups peeked = %d, want both", len(got))
+	}
+	agent.Steer(loopUser("steer 1"))
+	agent.Steer(loopUser("steer 2"))
+	if got := agent.PeekQueuedMessages(); len(got) != 1 || !reflect.DeepEqual(got[0], loopUser("steer 1")) {
+		t.Fatalf("steering peeked = %#v", got)
+	}
+	agent.ClearSteeringQueue()
+	if got := agent.PeekQueuedMessages(); len(got) != 2 || !agent.HasQueuedMessages() {
+		t.Fatalf("peek consumed messages: %#v", got)
+	}
 }
