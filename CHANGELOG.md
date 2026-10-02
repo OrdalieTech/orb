@@ -54,6 +54,12 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Bundled plugins and built-in tools are named `builtin:<name>`; `-e builtin:<name>` loads one even
   with `--no-extensions`, and the MCP plugin steps aside (with a warning) for an extension that
   registers the same tool, command or flag. Extension commands without a name fail to load.
+- Extension tools declare an `exposure` (`direct`, `model-only`, `deferred`, `hidden`), a
+  `namespace`, `annotations`, an `outputSchema` and `defaultActive`; a `prepareLoadout` hook can
+  rewrite declared descriptions and hide declarations from requests. Tools run other tools with
+  `ctx.executeTool()`: nested calls go through validation and the `tool_call`/`tool_result` hooks,
+  carry `parentToolCallId` in their events, and are recorded with their usage on the caller's result
+  (`nestedCalls`).
 - Extensions can watch raw provider stream events (`provider_stream_event`), style text with
   `theme.style()`, and read `theme.colors` and `theme.appearance`; pi-tui's color helpers
   (`rgbColor`, `mixColors`, `styleText`, …) work, and the SDK declares pi 1.0's full export surface

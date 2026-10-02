@@ -105,6 +105,8 @@ type LoadResult struct {
 
 type Manager struct {
 	options Options
+	// toolCalls are the running JS tool calls, by id, for ctx.executeTool.
+	toolCalls sync.Map
 
 	lifecycleMu sync.Mutex
 	mu          sync.Mutex
@@ -153,6 +155,13 @@ type wireToolDefinition struct {
 	ConstrainedSampling *ai.ConstrainedSamplingConfig `json:"constrainedSampling,omitempty"`
 	RenderShell         extensions.RenderShell        `json:"renderShell,omitempty"`
 	ExecutionMode       engine.ToolExecutionMode      `json:"executionMode,omitempty"`
+	OutputSchema        json.RawMessage               `json:"outputSchema,omitempty"`
+	Exposure            extensions.ToolExposure       `json:"exposure,omitempty"`
+	Namespace           *extensions.ToolNamespace     `json:"namespace,omitempty"`
+	Annotations         *extensions.ToolAnnotations   `json:"annotations,omitempty"`
+	DefaultActive       *bool                         `json:"defaultActive,omitempty"`
+	// HasPrepareLoadout marks a live prepareLoadout hook, called over prepare_tool_loadout.
+	HasPrepareLoadout bool `json:"hasPrepareLoadout,omitempty"`
 	// LazyPromptGuidelines marks a JS-side `get promptGuidelines()` accessor:
 	// PromptGuidelines above is only the registration-time snapshot and the
 	// live value is re-read over get_tool_prompt_guidelines.
@@ -739,6 +748,12 @@ func (manager *Manager) factory(extensionID string) extensions.Factory {
 	}
 }
 
+// nestedToolCaller is a running tool call whose JS execute may call other tools.
+type nestedToolCaller struct {
+	ctx   context.Context
+	tools extensions.ToolContext
+}
+
 func (manager *Manager) tool(extensionID string, definition wireToolDefinition) extensions.ToolDefinition {
 	result := extensions.ToolDefinition{
 		Name:                definition.Name,
@@ -767,12 +782,19 @@ func (manager *Manager) tool(extensionID string, definition wireToolDefinition) 
 			releaseSignal := manager.stateHost.bindContextSignal(bound.generation, extensionID, callbackSignal(nil, extensionContext), &bound.wire)
 			defer releaseSignal()
 			request := struct {
-				ExtensionID string      `json:"extensionId"`
-				ToolName    string      `json:"toolName"`
-				ToolCallID  string      `json:"toolCallId"`
-				Params      any         `json:"params"`
-				Context     wireContext `json:"context"`
-			}{extensionID, definition.Name, toolCallID, params, bound.wire}
+				ExtensionID string                   `json:"extensionId"`
+				ToolName    string                   `json:"toolName"`
+				ToolCallID  string                   `json:"toolCallId"`
+				Params      any                      `json:"params"`
+				Context     wireContext              `json:"context"`
+				Tools       []extensions.LoadoutTool `json:"tools,omitempty"`
+			}{extensionID, definition.Name, toolCallID, params, bound.wire, nil}
+			// ctx.executeTool in JS calls back (execute_nested_tool) to this call's tool context.
+			if toolContext, ok := extensionContext.(extensions.ToolContext); ok {
+				request.Tools = toolContext.Tools()
+				manager.toolCalls.Store(toolCallID, nestedToolCaller{ctx: ctx, tools: toolContext})
+				defer manager.toolCalls.Delete(toolCallID)
+			}
 			var update func(json.RawMessage)
 			if onUpdate != nil {
 				update = func(raw json.RawMessage) {
@@ -798,6 +820,20 @@ func (manager *Manager) tool(extensionID string, definition wireToolDefinition) 
 	// the registration snapshot, and live renderCall/renderResult functions
 	// are bridged through the renderer-component RPC instead of being
 	// dropped.
+	result.Exposure, result.Namespace, result.Annotations, result.DefaultActive = definition.Exposure, definition.Namespace, definition.Annotations, definition.DefaultActive
+	if len(definition.OutputSchema) > 0 {
+		result.OutputSchema = ai.JSONSchema(definition.OutputSchema)
+	}
+	if definition.HasPrepareLoadout {
+		toolName := definition.Name
+		result.PrepareLoadout = func(loadout extensions.ToolLoadout) *extensions.ToolLoadoutChanges {
+			changes, err := manager.prepareToolLoadout(extensionID, toolName, loadout)
+			if err != nil {
+				panic(err) // reported by the session as a prepare_loadout error
+			}
+			return changes
+		}
+	}
 	if definition.LazyPromptGuidelines {
 		toolName := definition.Name
 		result.PromptGuidelinesFunc = func(ctx context.Context) ([]string, error) {
@@ -977,6 +1013,25 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		}, nil
 	case "ui_request":
 		return manager.handleUIRequest(generation, value)
+	case "execute_nested_tool":
+		var params struct {
+			ToolCallID string         `json:"toolCallId"`
+			Name       string         `json:"name"`
+			Args       map[string]any `json:"args"`
+		}
+		if err := json.Unmarshal(value.Params, &params); err != nil {
+			return nil, &protocolError{Code: "invalid_request", Message: err.Error()}
+		}
+		caller, ok := manager.toolCalls.Load(params.ToolCallID)
+		if !ok {
+			return nil, &protocolError{Code: "not_found", Message: "tool call " + params.ToolCallID + " is not running"}
+		}
+		nested := caller.(nestedToolCaller)
+		outcome := nested.tools.ExecuteTool(nested.ctx, params.Name, params.Args, nil)
+		return map[string]any{
+			"toolCall": map[string]any{"type": "toolCall", "id": outcome.ToolCall.ID, "name": outcome.ToolCall.Name, "arguments": outcome.ToolCall.Arguments},
+			"result":   outcome.Result, "isError": outcome.IsError,
+		}, nil
 	case "register_tool":
 		var params struct {
 			ExtensionID string             `json:"extensionId"`
@@ -1227,7 +1282,7 @@ func (generation *generation) readLoop() {
 		case frameResponse:
 			generation.routeResponse(value)
 		case frameRequest:
-			if value.Method == "ui_request" || generation.manager.stateHost.asyncRequest(value.Method) || generation.manager.services.asyncRequest(value.Method) {
+			if value.Method == "ui_request" || value.Method == "execute_nested_tool" || generation.manager.stateHost.asyncRequest(value.Method) || generation.manager.services.asyncRequest(value.Method) {
 				go generation.respondHostRequest(value)
 				continue
 			}

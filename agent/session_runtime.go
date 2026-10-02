@@ -116,6 +116,7 @@ type SessionRuntime struct {
 	resourceLoader       ResourceLoader
 	activeRuns           int
 	runAborted           bool
+	nested               *nestedToolCalls
 	activityOutcome      extensions.ActivityOutcome
 	emittingSettled      bool
 	deferredSettled      []func()
@@ -311,7 +312,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		// projection, so agent state the session never recorded (a bootstrap
 		// prompt a host seeded) does not reach the provider.
 		next := *request.Context
-		next.Messages = runtime.sessionMessages()
+		next.Messages = runtime.hideDeclarations(runtime.sessionMessages())
 		request.Context = &next
 		if previousRequest != nil {
 			return previousRequest(ctx, request)
@@ -319,6 +320,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		return &engine.AgentLoopTurnUpdate{Context: &next}, nil
 	})
 	runtime.installTurnEndBoundary()
+	runtime.nested = &nestedToolCalls{scopes: map[string]*nestedScope{}, queue: make(chan struct{}, 1)}
 	runtime.agent.SetToolCallHooks(nil, runtime.afterExtensionToolCall)
 	var previousPrepare engine.PrepareNextTurnFunc
 	previousPrepare = runtime.agent.SwapPrepareNextTurnContext(func(ctx context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
@@ -968,6 +970,16 @@ func (runtime *SessionRuntime) runDeferredSettled() {
 }
 
 func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engine.AgentEvent) error {
+	switch typed := event.(type) {
+	case engine.MessageStartEvent:
+		if result, ok := typed.Message.(*ai.ToolResultMessage); ok {
+			runtime.recordNestedCalls(result)
+		}
+	case engine.AgentEndEvent:
+		runtime.nested.mu.Lock()
+		clear(runtime.nested.scopes)
+		runtime.nested.mu.Unlock()
+	}
 	if start, ok := event.(engine.MessageStartEvent); ok {
 		switch start.Message.(type) {
 		case *ai.UserMessage, ai.UserMessage:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -37,12 +38,15 @@ type extensionRuntimeState struct {
 	systemPromptOverride *string
 	resources            extensions.DiscoveredResources
 	pendingNextTurn      engine.AgentMessages
-	turnIndex            int
-	startEvent           extensions.SessionStartEvent
-	started              bool
-	config               SessionRuntimeConfig
-	shutdownEmitted      bool
-	shutdownHandler      func()
+	// hiddenDeclarations are active tools whose declarations requests leave
+	// out, from prepareLoadout hooks.
+	hiddenDeclarations map[string]struct{}
+	turnIndex          int
+	startEvent         extensions.SessionStartEvent
+	started            bool
+	config             SessionRuntimeConfig
+	shutdownEmitted    bool
+	shutdownHandler    func()
 }
 
 func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig) {
@@ -198,6 +202,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		ContextActions: contextActions, CommandActions: &commandActions, ErrorHandler: runtimeConfig.ExtensionErrorHandler,
 	})
 	state.runner = runner
+	runner.SetToolCallHost(&extensions.ToolCallHost{Tools: runtime.nestedLoadout, Execute: runtime.executeNestedTool})
 
 	if replacingRunner {
 		runtime.agent.SetTransformContext(nil)
@@ -723,7 +728,7 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 		registry[spec.Name] = tool
 		order = append(order, spec.Name)
 		info[spec.Name] = extensions.ToolInfo{
-			Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters,
+			Name: spec.Name, Description: spec.Description, Parameters: spec.Parameters, Exposure: extensions.ToolDirect,
 			SourceInfo: extensions.SourceInfo{Path: extensions.BuiltinPathPrefix + spec.Name, Source: "builtin", Scope: extensions.SourceScopeTemporary, Origin: extensions.SourceOriginTopLevel},
 		}
 	}
@@ -739,7 +744,8 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 		registry[name] = extensions.WrapRegisteredTool(registered, state.runner)
 		info[name] = extensions.ToolInfo{
 			Name: name, Description: registered.Definition.Description, Parameters: registered.Definition.Parameters,
-			PromptGuidelines: append([]string(nil), registered.Definition.PromptGuidelines...), SourceInfo: registered.SourceInfo,
+			PromptGuidelines: append([]string(nil), registered.Definition.PromptGuidelines...), Exposure: registered.Definition.EffectiveExposure(),
+			Namespace: registered.Definition.Namespace, Annotations: registered.Definition.Annotations, SourceInfo: registered.SourceInfo,
 		}
 		extensionNames = append(extensionNames, name)
 	}
@@ -758,15 +764,169 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 			}
 		}
 	} else if includeAll {
-		active = append(active, extensionNames...)
+		for _, name := range extensionNames {
+			if state.activatedOnRegistration(name) {
+				active = append(active, name)
+			}
+		}
 	} else {
 		for _, name := range order {
-			if _, existed := previousRegistry[name]; !existed {
+			if _, existed := previousRegistry[name]; !existed && state.activatedOnRegistration(name) {
 				active = append(active, name)
 			}
 		}
 	}
 	runtime.setActiveToolsLocked(uniqueStrings(active), state)
+}
+
+// exposure is how the model reaches a registered tool; built-ins are direct.
+func (state *extensionRuntimeState) exposure(name string) extensions.ToolExposure {
+	if info, ok := state.toolInfo[name]; ok && info.Exposure != "" {
+		return info.Exposure
+	}
+	return extensions.ToolDirect
+}
+
+// activatedOnRegistration: direct and model-only tools turn on when
+// registered unless they opt out with DefaultActive false.
+func (state *extensionRuntimeState) activatedOnRegistration(name string) bool {
+	exposure := state.exposure(name)
+	if exposure != extensions.ToolDirect && exposure != extensions.ToolModelOnly {
+		return false
+	}
+	definition := state.runner.ToolDefinition(name)
+	return definition == nil || definition.DefaultActive == nil || *definition.DefaultActive
+}
+
+// callableTools are the tools reachable through ctx.ExecuteTool: the active
+// direct tools and every registered deferred tool.
+func (state *extensionRuntimeState) callableTools(active map[string]struct{}) []engine.AgentTool {
+	var callable []engine.AgentTool
+	for _, name := range state.toolOrder {
+		_, isActive := active[name]
+		if exposure := state.exposure(name); exposure == extensions.ToolDeferred || exposure == extensions.ToolDirect && isActive {
+			callable = append(callable, state.toolRegistry[name])
+		}
+	}
+	return callable
+}
+
+// applyLoadoutHooks runs the prepareLoadout hooks of the active tools: they
+// may rewrite declared descriptions and hide declarations from requests.
+func (runtime *SessionRuntime) applyLoadoutHooks(state *extensionRuntimeState, active []engine.AgentTool) []engine.AgentTool {
+	state.hiddenDeclarations = nil
+	activeNames := make(map[string]struct{}, len(active))
+	var hooks []*extensions.ToolDefinition
+	for _, tool := range active {
+		name := tool.Spec().Name
+		activeNames[name] = struct{}{}
+		if definition := state.runner.ToolDefinition(name); definition != nil && definition.PrepareLoadout != nil {
+			hooks = append(hooks, definition)
+		}
+	}
+	if len(hooks) == 0 {
+		return active
+	}
+	listed := func(tool engine.AgentTool) extensions.LoadoutTool {
+		spec := tool.Spec()
+		return extensions.LoadoutTool{Name: spec.Name, Label: spec.Label, Description: spec.Description, Parameters: spec.Parameters}
+	}
+	specs := func(tools []engine.AgentTool) []extensions.LoadoutTool {
+		result := make([]extensions.LoadoutTool, 0, len(tools))
+		for _, tool := range tools {
+			result = append(result, listed(tool))
+		}
+		return result
+	}
+	loadout := extensions.ToolLoadout{Declared: specs(active), Callable: specs(state.callableTools(activeNames)), Exposures: map[string]extensions.ToolExposure{}, Namespaces: map[string]extensions.ToolNamespace{}}
+	for _, name := range state.toolOrder {
+		loadout.Registered = append(loadout.Registered, listed(state.toolRegistry[name]))
+		loadout.Exposures[name] = state.exposure(name)
+		if namespace := state.toolInfo[name].Namespace; namespace != nil {
+			loadout.Namespaces[name] = *namespace
+		}
+	}
+	descriptions := map[string]string{}
+	hidden := map[string]struct{}{}
+	for _, definition := range hooks {
+		changes, err := callLoadoutHook(definition.PrepareLoadout, loadout)
+		if err != nil {
+			state.runner.ReportError(extensions.ExtensionError{ExtensionPath: state.toolInfo[definition.Name].SourceInfo.Path, Event: "prepare_loadout", Error: err.Error()})
+			continue
+		}
+		if changes != nil {
+			maps.Copy(descriptions, changes.Descriptions)
+			for _, name := range changes.HiddenDeclarations {
+				hidden[name] = struct{}{}
+			}
+		}
+	}
+	state.hiddenDeclarations = hidden
+	declared := make([]engine.AgentTool, len(active))
+	for index, tool := range active {
+		declared[index] = tool
+		if description, ok := descriptions[tool.Spec().Name]; ok {
+			declared[index] = describedTool{AgentTool: tool, description: description}
+		}
+	}
+	return declared
+}
+
+func callLoadoutHook(hook func(extensions.ToolLoadout) *extensions.ToolLoadoutChanges, loadout extensions.ToolLoadout) (changes *extensions.ToolLoadoutChanges, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("%v", recovered)
+		}
+	}()
+	return hook(loadout), nil
+}
+
+// describedTool declares a tool with the description a prepareLoadout hook gave it.
+type describedTool struct {
+	engine.AgentTool
+	description string
+}
+
+func (tool describedTool) Spec() engine.AgentToolSpec {
+	spec := tool.AgentTool.Spec()
+	spec.Description = tool.description
+	return spec
+}
+
+func (tool describedTool) PrepareParallelExecution(ctx context.Context, args any) (context.Context, func(), error) {
+	if preparer, ok := tool.AgentTool.(engine.ParallelExecutionPreparer); ok {
+		return preparer.PrepareParallelExecution(ctx, args)
+	}
+	return ctx, func() {}, nil
+}
+
+// hideDeclarations leaves the declarations prepareLoadout hooks hide out of a
+// request; the whole transcript is filtered with the current set, so
+// declarations change only when the loadout does.
+func (runtime *SessionRuntime) hideDeclarations(messages engine.AgentMessages) engine.AgentMessages {
+	state := runtime.extensionState
+	if state == nil {
+		return messages
+	}
+	state.mu.Lock()
+	hidden := state.hiddenDeclarations
+	state.mu.Unlock()
+	if len(hidden) == 0 {
+		return messages
+	}
+	result := make(engine.AgentMessages, len(messages))
+	for index, message := range messages {
+		result[index] = message
+		system, ok := message.(*ai.SystemMessage)
+		if !ok || len(system.ToolsAdded) == 0 && len(system.ToolsRemoved) == 0 {
+			continue
+		}
+		filtered := *system
+		filtered.ToolsAdded = slices.DeleteFunc(slices.Clone(system.ToolsAdded), func(tool ai.Tool) bool { _, hide := hidden[tool.Name]; return hide })
+		filtered.ToolsRemoved = slices.DeleteFunc(slices.Clone(system.ToolsRemoved), func(tool ai.ToolReference) bool { _, hide := hidden[tool.Name]; return hide })
+		result[index] = &filtered
+	}
+	return result
 }
 
 func (state *extensionRuntimeState) toolAllowed(name string) bool {
@@ -795,12 +955,13 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 	active := make([]engine.AgentTool, 0, len(names))
 	valid := make([]string, 0, len(names))
 	for _, name := range names {
-		if tool := state.toolRegistry[name]; tool != nil {
+		// Hidden tools are registered but never active.
+		if tool := state.toolRegistry[name]; tool != nil && state.exposure(name) != extensions.ToolHidden {
 			active = append(active, tool)
 			valid = append(valid, name)
 		}
 	}
-	runtime.agent.SetTools(active)
+	runtime.agent.SetTools(runtime.applyLoadoutHooks(state, active))
 	if state.promptOptions == nil {
 		return
 	}
@@ -984,7 +1145,7 @@ func (runtime *SessionRuntime) beforeExtensionToolCall(ctx context.Context, call
 	if runtime.control.Load() != nil {
 		ctx = extensions.WithInputHandler(ctx, runtime.RequestInput)
 	}
-	result := state.runner.EmitToolCall(ctx, extensions.ToolCallEvent{ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments)})
+	result := state.runner.EmitToolCall(ctx, extensions.ToolCallEvent{ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, ParentToolCallID: parentToolCall(ctx), Input: toolCallInput(call.Args, call.ToolCall.Arguments)})
 	if result == nil {
 		return nil, nil
 	}
@@ -1008,8 +1169,8 @@ func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call 
 	var patch *engine.AfterToolCallResult
 	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventToolResult) {
 		if result := state.runner.EmitToolResult(ctx, extensions.ToolResultEvent{
-			ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, Input: toolCallInput(call.Args, call.ToolCall.Arguments),
-			Content: call.Result.Content, Details: call.Result.Details, IsError: call.IsError, Usage: call.Result.Usage,
+			ToolCallID: call.ToolCall.ID, ToolName: call.ToolCall.Name, ParentToolCallID: parentToolCall(ctx), Input: toolCallInput(call.Args, call.ToolCall.Arguments),
+			Content: call.Result.Content, Details: call.Result.Details, StructuredContent: call.Result.StructuredContent, IsError: call.IsError, Usage: call.Result.Usage,
 		}); result != nil {
 			patch = &engine.AfterToolCallResult{IsError: result.IsError, Usage: result.Usage}
 			if result.Content != nil {
@@ -1463,11 +1624,11 @@ func (runtime *SessionRuntime) extensionLifecycleEvent(ctx context.Context, even
 			return typed
 		}
 	case engine.ToolExecutionStartEvent:
-		runner.Emit(ctx, extensions.ToolExecutionStartEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Args: typed.Args})
+		runner.Emit(ctx, extensions.ToolExecutionStartEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Args: typed.Args, ParentToolCallID: typed.ParentToolCallID})
 	case engine.ToolExecutionUpdateEvent:
-		runner.Emit(ctx, extensions.ToolExecutionUpdateEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Args: typed.Args, PartialResult: typed.PartialResult})
+		runner.Emit(ctx, extensions.ToolExecutionUpdateEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Args: typed.Args, PartialResult: typed.PartialResult, ParentToolCallID: typed.ParentToolCallID})
 	case engine.ToolExecutionEndEvent:
-		runner.Emit(ctx, extensions.ToolExecutionEndEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Result: typed.Result, IsError: typed.IsError})
+		runner.Emit(ctx, extensions.ToolExecutionEndEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Result: typed.Result, IsError: typed.IsError, ParentToolCallID: typed.ParentToolCallID})
 	}
 	return event
 }

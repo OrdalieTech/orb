@@ -139,6 +139,13 @@ func (agent *Agent) SwapPrepareRequest(hook PrepareRequestFunc) PrepareRequestFu
 	return previous
 }
 
+// ToolExecution is how the agent runs a response's tool calls.
+func (agent *Agent) ToolExecution() ToolExecutionMode {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return agent.toolExecution
+}
+
 // SwapFinishTurn replaces the finish-turn hook and returns its predecessor.
 func (agent *Agent) SwapFinishTurn(hook FinishTurnFunc) FinishTurnFunc {
 	agent.mu.Lock()

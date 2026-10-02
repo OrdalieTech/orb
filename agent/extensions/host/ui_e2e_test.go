@@ -6,11 +6,14 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 type uiNotification struct {
@@ -684,5 +687,87 @@ export default function (pi) {
 	want := "\x1b[36m\x1b[1mok\x1b[22m\x1b[39m|light|#112233|\x1b[48;2;17;34;51mx\x1b[49m"
 	if !reflect.DeepEqual(ui.rendered, []string{want}) {
 		t.Fatalf("rendered = %q, want %q", ui.rendered, want)
+	}
+}
+
+// pi 1.0's tool exposure fields and prepareLoadout reach Go from a JS extension.
+func TestHostToolExposureFieldsAndPrepareLoadout(t *testing.T) {
+	agentDir := isolatedTempDir(t)
+	entry := filepath.Join(agentDir, "extensions", "loadout.mjs")
+	writeFile(t, entry, `
+export default function (pi) {
+  pi.registerTool({
+    name: "search_docs", label: "Search", description: "search", parameters: { type: "object", properties: {} },
+    exposure: "deferred", namespace: { name: "mcp__docs", description: "Docs" }, annotations: { readOnlyHint: true },
+    outputSchema: { type: "object" }, defaultActive: false,
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; },
+  });
+  pi.registerTool({
+    name: "orchestrate", label: "Orchestrate", description: "run tools", parameters: { type: "object", properties: {} }, exposure: "model-only",
+    prepareLoadout(loadout) {
+      const names = loadout.callable.map((tool) => tool.name + ":" + loadout.getExposure(tool.name));
+      return { descriptions: { orchestrate: "calls " + names.join(",") }, hiddenDeclarations: ["search_docs"] };
+    },
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; },
+  });
+}
+`, 0o600)
+	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
+	search := runner.ToolDefinition("search_docs")
+	if search == nil || search.EffectiveExposure() != extensions.ToolDeferred || search.Namespace == nil || search.Namespace.Name != "mcp__docs" ||
+		search.Annotations == nil || search.Annotations.ReadOnlyHint == nil || !*search.Annotations.ReadOnlyHint || len(search.OutputSchema) == 0 ||
+		search.DefaultActive == nil || *search.DefaultActive {
+		t.Fatalf("search_docs = %#v", search)
+	}
+	orchestrate := runner.ToolDefinition("orchestrate")
+	changes := orchestrate.PrepareLoadout(extensions.ToolLoadout{
+		Callable:  []extensions.LoadoutTool{{Name: "search_docs"}},
+		Exposures: map[string]extensions.ToolExposure{"search_docs": extensions.ToolDeferred},
+	})
+	if changes == nil || changes.Descriptions["orchestrate"] != "calls search_docs:deferred" || len(changes.HiddenDeclarations) != 1 {
+		t.Fatalf("changes = %#v", changes)
+	}
+}
+
+// A JS tool runs other tools with ctx.executeTool and lists them in ctx.tools.
+func TestHostToolExecuteToolCallsBackIntoTheSession(t *testing.T) {
+	agentDir := isolatedTempDir(t)
+	entry := filepath.Join(agentDir, "extensions", "nested.mjs")
+	writeFile(t, entry, `
+export default function (pi) {
+  pi.registerTool({
+    name: "orchestrate", label: "Orchestrate", description: "run tools", parameters: { type: "object", properties: {} },
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      const outcome = await ctx.executeTool("lookup", { q: "orb" });
+      const names = ctx.tools.map((tool) => tool.name).join(",");
+      return { content: [{ type: "text", text: names + " " + outcome.toolCall.id + " " + outcome.result.content[0].text + " " + outcome.isError }] };
+    },
+  });
+}
+`, 0o600)
+	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
+	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("load result = %#v", result)
+	}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
+	var asked []string
+	runner.SetToolCallHost(&extensions.ToolCallHost{
+		Tools: func() []extensions.LoadoutTool { return []extensions.LoadoutTool{{Name: "lookup"}} },
+		Execute: func(_ context.Context, parent, name string, args any, _ engine.AgentToolUpdateCallback) engine.AgentToolCallOutcome {
+			asked = append(asked, parent+">"+name+":"+args.(map[string]any)["q"].(string))
+			return engine.AgentToolCallOutcome{ToolCall: &ai.ToolCall{ID: parent + "/1", Name: name}, Result: engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "found"}}}}
+		},
+	})
+	definition := runner.ToolDefinition("orchestrate")
+	output, err := definition.Execute(context.Background(), "call-9", map[string]any{}, nil, runner.CreateToolContext("call-9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := output.Content[0].(*ai.TextContent).Text; text != "lookup call-9/1 found false" || strings.Join(asked, ",") != "call-9>lookup:orb" {
+		t.Fatalf("output = %q, asked = %v", text, asked)
 	}
 }

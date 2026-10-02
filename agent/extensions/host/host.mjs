@@ -239,6 +239,12 @@ function serializableTool(tool, state) {
 			: { constrainedSampling: tool.constrainedSampling }),
 		...(tool.renderShell === undefined ? {} : { renderShell: tool.renderShell }),
 		...(tool.executionMode === undefined ? {} : { executionMode: tool.executionMode }),
+		...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
+		...(tool.exposure === undefined ? {} : { exposure: tool.exposure }),
+		...(tool.namespace === undefined ? {} : { namespace: tool.namespace }),
+		...(tool.annotations === undefined ? {} : { annotations: tool.annotations }),
+		...(tool.defaultActive === undefined ? {} : { defaultActive: tool.defaultActive }),
+		...(typeof tool.prepareLoadout === "function" ? { hasPrepareLoadout: true } : {}),
 		...(lazyPromptGuidelines ? { lazyPromptGuidelines: true } : {}),
 		...(typeof tool.renderCall === "function" ? { hasRenderCall: true } : {}),
 		...(typeof tool.renderResult === "function" ? { hasRenderResult: true } : {}),
@@ -368,13 +374,12 @@ async function executeTool(frame) {
 		// docs/extension-host-protocol.md.
 		let params = frame.params.params;
 		if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
-		const result = await tool.execute(
-			frame.params.toolCallId,
-			params,
-			controller.signal,
-			onUpdate,
-			makeContext(frame.params.context, state),
-		);
+		// The tool context: the extension context plus the tools it can call and executeTool().
+		const context = Object.freeze(Object.assign(Object.create(makeContext(frame.params.context, state)), {
+			tools: frame.params.tools ?? [],
+			executeTool: (name, args) => request("execute_nested_tool", { toolCallId: frame.params.toolCallId, name, args: args ?? {} }),
+		}));
+		const result = await tool.execute(frame.params.toolCallId, params, controller.signal, onUpdate, context);
 		await state.registrationTail;
 		return result ?? { content: [] };
 	} finally {
@@ -907,6 +912,22 @@ registerHostSection((() => {
 		return tool;
 	}
 
+	// A tool's prepareLoadout sees the loadout as plain data plus upstream's accessors.
+	function prepareToolLoadout(params) {
+		const tool = registeredTool(params);
+		const value = params.loadout ?? {};
+		const exposures = value.exposures ?? {};
+		const namespaces = value.namespaces ?? {};
+		const changes = tool.prepareLoadout?.({
+			declared: value.declared ?? [],
+			callable: value.callable ?? [],
+			registered: value.registered ?? [],
+			getExposure: (name) => exposures[name] ?? "direct",
+			getNamespace: (name) => namespaces[name],
+		});
+		return { changes: changes ?? null };
+	}
+
 	function getToolPromptGuidelines(params) {
 		const tool = registeredTool(params);
 		const guidelines = tool.promptGuidelines;
@@ -1349,6 +1370,7 @@ registerHostSection((() => {
 			if (frame.method === "render_registered_renderer_component") return { handled: true, result: renderRegisteredRendererComponent(frame.params) };
 			if (frame.method === "dispose_registered_renderer_component") return { handled: true, result: disposeRegisteredRendererComponent(frame.params) };
 			if (frame.method === "get_tool_prompt_guidelines") return { handled: true, result: getToolPromptGuidelines(frame.params) };
+			if (frame.method === "prepare_tool_loadout") return { handled: true, result: prepareToolLoadout(frame.params) };
 			if (frame.method === "create_tool_render_component") return { handled: true, result: createToolRenderComponent(frame.params) };
 			return { handled: false };
 		},
