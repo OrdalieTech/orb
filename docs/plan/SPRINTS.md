@@ -496,7 +496,7 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 - [x] Anthropic reports Claude Code 2.1.280.
 - [x] Anthropic: non-strict fallback for rejected schema keywords; redirect errors end sign-in;
       busy callback port falls back to paste.
-- [ ] Anthropic copy-code login, and on a headless Orb the link and code travel over the Bridge to
+- [x] Anthropic copy-code login, and on a headless Orb the link and code travel over the Bridge to
       the paired phone.
 - [x] Anthropic workload identity federation through the `Env` port.
 - [x] Sign in with ChatGPT on `openai` (stable `deviceId`, request fields it rejects left out);

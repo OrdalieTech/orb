@@ -39,6 +39,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   workload identity federation from `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID` and
   `ANTHROPIC_IDENTITY_TOKEN_FILE`, and tools whose schemas use keywords Anthropic's strict mode
   rejects (`minimum`, `maxItems`, …) are sent non-strict instead of failing the request.
+- A paired phone signs a headless Orb in to providers over Bridge (`host.login.*`, device →
+  providers in the Android app): the sign-in link, device code and questions come to the phone.
 - Browser sign-in (Anthropic, ChatGPT, Codex, OpenRouter) shares one callback server: a provider
   error ends sign-in with its description, a busy callback port falls back to pasting the redirect
   URL, and the browser page is Orb's.

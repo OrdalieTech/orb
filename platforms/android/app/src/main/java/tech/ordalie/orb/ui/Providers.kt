@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,16 +58,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tech.ordalie.orb.MainActivity
+import tech.ordalie.orb.core.LocalSignIn
 import tech.ordalie.orb.core.Login
 import tech.ordalie.orb.core.Method
+import tech.ordalie.orb.core.RemoteSignIn
 import tech.ordalie.orb.core.Orb
 import tech.ordalie.orb.core.Provider
 import tech.ordalie.orb.core.providers
 
-/** The last listing, so the screen opens full and refreshes in place. */
-private var known by mutableStateOf(emptyList<Provider>())
+/** The last listing per machine ("" is this phone), so the screen opens full and refreshes in place. */
+private val listings = mutableStateMapOf<String, List<Provider>>()
 
-private suspend fun Ctx.reload() { known = withContext(Dispatchers.IO) { rt.orb.providers() } }
+private fun known(peer: String?) = listings[peer.orEmpty()].orEmpty()
+
+private suspend fun Ctx.reload(peer: String?) {
+    listings[peer.orEmpty()] = if (peer == null) withContext(Dispatchers.IO) { rt.orb.providers() } else rt.bridge.providers(peer)
+}
 
 /** Opens a page in a Custom Tab tinted like the app, or the browser when there is none. */
 fun Context.browse(url: String, tint: androidx.compose.ui.graphics.Color) = runCatching {
@@ -81,19 +88,21 @@ private fun Context.copy(text: String, what: String) {
 }
 
 @Composable
-fun ColumnScope.ProvidersScreen(c: Ctx) {
+fun ColumnScope.ProvidersScreen(c: Ctx, peer: String? = null) {
     var query by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { c.reload() }
+    LaunchedEffect(peer) { c.reload(peer) }
+    val known = known(peer)
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
     // Endpoints added through models.json have no sign-in; they show with what they unlocked.
-    val custom = c.rt.local?.models().orEmpty().groupBy { it.substringBefore('/') }.filterKeys { id -> known.none { it.id == id } }
-    Header("providers", sub = if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready } + custom.size} ready · ${known.size} to choose from", back = c.nav::back)
+    val custom = if (peer != null) emptyMap() else c.rt.local?.models().orEmpty().groupBy { it.substringBefore('/') }.filterKeys { id -> known.none { it.id == id } }
+    val device = peer?.let { id -> c.rt.bridge.peers.firstOrNull { it.id == id }?.name ?: "that device" }
+    Header("providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready } + custom.size} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
     Search(query, "anthropic, openai, groq…") { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         fun section(name: String, rows: List<Provider>) {
             if (rows.isEmpty()) return
             item(key = "s:$name") { T(name, Modifier.padding(top = 22.dp, bottom = 4.dp).animateItem(), label = true, color = p.meta) }
-            items(rows, key = { it.id }) { pr -> ProviderRow(pr, Modifier.animateItem()) { c.nav.go(Screen.Vendor(pr.id)) } }
+            items(rows, key = { it.id }) { pr -> ProviderRow(pr, Modifier.animateItem()) { c.nav.go(Screen.Vendor(pr.id, peer)) } }
         }
         section("ready", shown.filter { it.ready })
         section("your subscription", shown.filter { !it.ready && it.methods.any(Method::account) })
@@ -104,7 +113,7 @@ fun ColumnScope.ProvidersScreen(c: Ctx) {
                 custom.forEach { (id, models) -> Line(id, "models.json", "${models.size} models", true) {} }
             }
         }
-        item(key = "add") {
+        if (peer == null) item(key = "add") {
             Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Provider) }.padding(vertical = 22.dp)) {
                 T("+ endpoint", label = true); Spacer(Modifier.weight(1f)); T("any OpenAI, Anthropic or Google-shaped API", size = Size.Label, color = p.meta)
             }
@@ -137,21 +146,21 @@ private fun Search(value: String, hint: String, set: (String) -> Unit) =
 
 /** One provider: its sign-in methods exactly as /login offers them, the flow running, and what it unlocked. */
 @Composable
-fun ColumnScope.VendorScreen(c: Ctx, id: String) {
+fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String? = null) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tint = p.bg
-    val pr = known.firstOrNull { it.id == id } ?: Provider(id, id, emptyList(), 0, null, "")
+    val pr = known(peer).firstOrNull { it.id == id } ?: Provider(id, id, emptyList(), 0, null, "")
     var flow by remember { mutableStateOf<Login?>(null) }
     var note by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { if (known.none { it.id == id }) c.reload() }
+    LaunchedEffect(Unit) { if (known(peer).none { it.id == id }) c.reload(peer) }
     DisposableEffect(Unit) { onDispose { flow?.takeIf { it.state != "done" }?.cancel() } }
-    // Signed in: the core restarts with the credential and the listing says what it unlocked.
-    LaunchedEffect(flow?.state) { if (flow?.state == "done") { c.rt.restart(); c.reload(); note = "" } }
+    // Signed in: this phone's core restarts with the credential and the listing says what it unlocked.
+    LaunchedEffect(flow?.state) { if (flow?.state == "done") { if (peer == null) c.rt.restart(); c.reload(peer); note = "" } }
     fun start(m: Method) {
         note = ""
         val app = context.applicationContext
-        flow = Login(scope, c.rt.orb, m) { ok ->
+        flow = Login(scope, if (peer == null) LocalSignIn(c.rt.orb, m) else RemoteSignIn(c.rt.bridge, peer, m), m) { ok ->
             // The browser is in front: bring the app back the moment Orb has the credential.
             if (ok) app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
@@ -167,8 +176,8 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String) {
             if (state.isEmpty() || f == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (f?.state == "failed") T(f.detail.ifEmpty { "sign-in failed" }, color = Ink.Rupture)
                 pr.methods.forEach { m -> MethodCard(m, pr.ready) { start(m) } }
-                if (pr.ready) SignOut(c, pr) { note = it; scope.launch { c.rt.restart(); c.reload() } }
-            } else Flow(f, state, tint) { flow = null }
+                if (pr.ready && peer == null) SignOut(c, pr) { note = it; scope.launch { c.rt.restart(); c.reload(null) } }
+            } else Flow(f, state, tint, remote = peer != null) { flow = null }
         }
         if (note.isNotEmpty()) T(note, color = p.mute)
         Spacer(Modifier.height(20.dp))
@@ -200,17 +209,18 @@ private fun SignOut(c: Ctx, pr: Provider, done: (String) -> Unit) {
 
 /** A sign-in in progress: a browser page, a device code, or a question, as the TUI shows them. */
 @Composable
-private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Color, close: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Color, remote: Boolean, close: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     val context = LocalContext.current
     when (state) {
         "starting" -> Row(verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(f.detail.ifEmpty { "starting…" }, color = p.mute) }
         "browser" -> {
             LaunchedEffect(f.url) { f.url?.let { context.browse(it, tint) } }
             T("Continue in the browser", size = 22.sp, bold = true)
-            T("Finish on the page that opened. It redirects to Orb on this phone, which brings you back here.", color = p.mute)
+            // A device signing in over Bridge listens on its own localhost: the code or final URL comes back by paste.
+            T(if (remote) "Finish on the page that opened, then paste the code it shows or the final redirect URL here." else "Finish on the page that opened. It redirects to Orb on this phone, which brings you back here.", color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open again", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
             f.prompt?.takeIf { it.kind == "manual_code" }?.let { pr ->
-                var paste by remember { mutableStateOf(false) }
+                var paste by remember { mutableStateOf(remote) }
                 if (!paste) Box(Modifier.press { paste = true }) { T("signing in from another device? paste the code or redirect URL", size = 13.sp, color = p.meta) }
                 else Answer(pr.message, pr.placeholder, secret = false) { f.answer(it) }
             }
@@ -234,7 +244,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
         }
         "done" -> {
             T("Signed in", size = 22.sp, bold = true)
-            T("The core restarted with the new credential; its models are in the model deck.", color = p.mute)
+            T(if (remote) "That device holds the new credential; its sessions can use the models now." else "The core restarted with the new credential; its models are in the model deck.", color = p.mute)
             Btn("done", inverted = true, onClick = close)
         }
     }

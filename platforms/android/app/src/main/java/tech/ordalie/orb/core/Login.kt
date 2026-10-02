@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -42,26 +44,84 @@ fun Orb.providers(): List<Provider> = Provider.parse(run("login", "--json").seco
 /** What a sign-in is asking for: a menu, a line of text, a secret, or a pasted code or redirect URL. */
 data class Prompt(val kind: String, val message: String, val placeholder: String, val options: List<Pair<String, String>>)
 
+/** Where a sign-in runs: `orb login --json <provider> <method>` here, or on a Bridge peer that relays it. */
+interface SignIn {
+    /** Starts the flow; each JSON line it reports goes to [line], then [end] once it stopped. */
+    fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit)
+    fun answer(text: String)
+    fun cancel()
+}
+
+/** A sign-in by this phone's Orb. A browser sign-in redirects to its listener on localhost, so it completes in place. */
+class LocalSignIn(private val orb: Orb, private val method: Method) : SignIn {
+    private lateinit var process: Process
+    private val input by lazy { process.outputStream.bufferedWriter() }
+    override fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit) {
+        process = ProcessBuilder(orb.binary, "login", "--json", method.id, method.auth).directory(orb.workspace).redirectErrorStream(true)
+            .apply { environment().putAll(orb.env()) }.start()
+        scope.launch(Dispatchers.IO) {
+            runCatching { process.inputStream.bufferedReader().forEachLine(line) }
+            process.waitFor()
+            end()
+        }
+    }
+    override fun answer(text: String) { runCatching { synchronized(input) { input.write(text.replace('\n', ' ')); input.newLine(); input.flush() } } }
+    override fun cancel() { runCatching { input.close() }; process.destroy() }
+}
+
 /**
- * `orb login --json <provider> <method>`: the TUI's sign-in flow, reported as JSON lines. A browser
- * sign-in redirects to Orb's own listener on this phone's localhost, so it completes in place.
+ * A sign-in a Bridge peer runs for this phone (host.login.*), so a headless Orb is signed in from
+ * here: its link, device code and questions come to the phone, and the answers go back.
  */
-class Login(scope: CoroutineScope, orb: Orb, val method: Method, private val finished: (Boolean) -> Unit) {
+class RemoteSignIn(private val bridge: Bridge, private val peer: String, private val method: Method) : SignIn {
+    @Volatile private var id = ""
+    private var job: Job? = null
+    private lateinit var scope: CoroutineScope
+
+    override fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit) {
+        this.scope = scope
+        val failed = { message: String -> line(JSONObject().put("type", "error").put("message", message).toString()) }
+        job = scope.launch(Dispatchers.IO) {
+            try {
+                val started = bridge.remote(peer, "host.login.start", JSONObject().put("provider", method.id).put("method", method.auth))
+                started.optJSONObject("error")?.let { e ->
+                    return@launch failed(if (e.optString("code") == "unauthorized") "that device does not let this phone sign it in" else e.optString("message"))
+                }
+                id = started.optJSONObject("result")?.optString("login_id").orEmpty()
+                var cursor = 0
+                while (isActive) {
+                    val page = bridge.remote(peer, "host.login.poll", JSONObject().put("login_id", id).put("cursor", cursor))
+                    val result = page.optJSONObject("result") ?: return@launch failed(page.optJSONObject("error")?.optString("message") ?: "the device stopped answering")
+                    result.optJSONArray("events")?.let { a -> for (i in 0 until a.length()) line(a.get(i).toString()) }
+                    cursor = result.optInt("cursor", cursor)
+                    if (result.optBoolean("done")) break
+                }
+            } finally { end() }
+        }
+    }
+
+    override fun answer(text: String) {
+        scope.launch(Dispatchers.IO) { bridge.remote(peer, "host.login.answer", JSONObject().put("login_id", id).put("value", text)) }
+    }
+
+    override fun cancel() {
+        job?.cancel()
+        scope.launch(Dispatchers.IO) { bridge.remote(peer, "host.login.cancel", JSONObject().put("login_id", id)) }
+    }
+}
+
+/** The TUI's sign-in flow, reported as JSON lines by a [SignIn]. */
+class Login(private val scope: CoroutineScope, private val sign: SignIn, val method: Method, private val finished: (Boolean) -> Unit) {
     var state by mutableStateOf("starting") // starting · browser · code · asking · done · failed
     var url by mutableStateOf<String?>(null)
     var instructions by mutableStateOf("")
     var code by mutableStateOf<String?>(null)
     var prompt by mutableStateOf<Prompt?>(null)
     var detail by mutableStateOf("")
-    private val process = ProcessBuilder(orb.binary, "login", "--json", method.id, method.auth).directory(orb.workspace).redirectErrorStream(true)
-        .apply { environment().putAll(orb.env()) }.start()
-    private val input = process.outputStream.bufferedWriter()
 
     init {
-        scope.launch(Dispatchers.IO) {
-            runCatching { process.inputStream.bufferedReader().forEachLine { line -> scope.launch(Dispatchers.Main) { read(line) } } }
-            process.waitFor()
-            withContext(Dispatchers.Main) { if (state != "done" && state != "failed") { state = "failed"; if (detail.isEmpty()) detail = "sign-in stopped" } }
+        sign.start(scope, { line -> scope.launch(Dispatchers.Main) { read(line) } }) {
+            scope.launch(Dispatchers.Main) { if (state != "done" && state != "failed") { state = "failed"; if (detail.isEmpty()) detail = "sign-in stopped" } }
         }
     }
 
@@ -86,8 +146,8 @@ class Login(scope: CoroutineScope, orb: Orb, val method: Method, private val fin
     fun answer(text: String) {
         prompt = null
         if (state == "asking") state = "starting"
-        runCatching { synchronized(input) { input.write(text.replace('\n', ' ')); input.newLine(); input.flush() } }
+        sign.answer(text)
     }
 
-    fun cancel() { runCatching { input.close() }; process.destroy() }
+    fun cancel() = sign.cancel()
 }

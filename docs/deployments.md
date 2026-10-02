@@ -192,7 +192,10 @@ explicitly and in two separate kinds:
   its own Orb, with that Orb's tools and credentials, and continues when you disconnect.
 - **Launching** is part of full controller access (`host.launch`): the controller sees the threads
   stored on the machine across folders and starts Orb in a folder there, on a new thread or an old
-  one. That Orb is ephemeral; it retires when it exits or when the machine's Bridge stops.
+  one. That Orb is ephemeral; it retires when it exits or when the machine's Bridge stops. The same
+  access signs the machine in to providers (`host.login.*`): its sign-in link, device code and
+  questions come to the controller (the Android app's device → providers), and answers go back, so a
+  headless Orb is signed in from the phone, with copy-code login or a pasted redirect URL.
 - **Agents** are Orbs acting on their own. With the opt-in `bridge_call` tool, one Orb's agent can
   call another Orb, but only under an instance subject with its own grants. A person's controller
   access never passes to their agent.
