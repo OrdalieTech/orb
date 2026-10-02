@@ -160,7 +160,7 @@ func TestHarnessTransactionStorageRejectsRemovedV3Projection(t *testing.T) {
 	if err = json.Unmarshal(data, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = harness.RehydrateJSONLSession([]byte(fixture.Content), filepath.Join(t.TempDir(), "session.jsonl")); err == nil || !strings.Contains(err.Error(), "SessionV4TransactionStorage API") {
+	if _, err = harness.RehydrateJSONLSession([]byte(fixture.Content), filepath.Join(t.TempDir(), "session.jsonl")); err == nil || !strings.Contains(err.Error(), "require transaction storage") {
 		t.Fatalf("removed projection: %v", err)
 	}
 }

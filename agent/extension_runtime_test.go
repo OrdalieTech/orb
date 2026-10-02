@@ -32,6 +32,7 @@ func TestSessionRuntimeWiresExtensionHooksAndLifecycle(t *testing.T) {
 	var events []string
 	var extensionExecuted bool
 	var providerPayload any
+	var providerPrompt string
 	var providerHeaders ai.ProviderHeaders
 	var providerResponse int
 	if err := registry.Register("<inline:wire>", func(api extensions.API) error {
@@ -144,6 +145,9 @@ func TestSessionRuntimeWiresExtensionHooksAndLifecycle(t *testing.T) {
 			}
 		}
 		providerPayload = payload
+		if request.SystemPrompt != nil {
+			providerPrompt = *request.SystemPrompt
+		}
 		remove := "remove"
 		headers := ai.ProviderHeaders{"X-Remove": &remove}
 		if options.TransformHeaders != nil {
@@ -212,9 +216,10 @@ func TestSessionRuntimeWiresExtensionHooksAndLifecycle(t *testing.T) {
 	if providerResponse != 201 {
 		t.Fatalf("provider response status = %d", providerResponse)
 	}
+	// The forced prompt reaches the provider for the run only.
 	state := runtime.State()
-	if !strings.Contains(state.SystemPrompt, "HOOKED") {
-		t.Fatalf("system prompt = %q", state.SystemPrompt)
+	if !strings.Contains(providerPrompt, "HOOKED") || strings.Contains(state.SystemPrompt, "HOOKED") {
+		t.Fatalf("provider prompt = %q, state prompt = %q", providerPrompt, state.SystemPrompt)
 	}
 	var result *ai.ToolResultMessage
 	var final *ai.AssistantMessage

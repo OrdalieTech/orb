@@ -542,10 +542,23 @@ func (agent *Agent) Reset() {
 	agent.mu.Unlock()
 }
 
+// State is a copy of the agent's state. SystemPrompt is replayed from the
+// transcript's system messages; to change it, append a system message.
 func (agent *Agent) State() AgentState {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
-	return copyAgentState(agent.state)
+	state := copyAgentState(agent.state)
+	state.SystemPrompt = agent.systemPromptLocked()
+	return state
+}
+
+// systemPromptLocked is the transcript's prompt, or the initial state's when
+// the transcript has no system message.
+func (agent *Agent) systemPromptLocked() string {
+	if messages := agentMessagesToAI(agent.state.Messages); ai.CurrentSystemMessage(messages) != nil {
+		return ai.CurrentSystemPrompt(messages)
+	}
+	return agent.state.SystemPrompt
 }
 
 func (agent *Agent) DisplayState() AgentDisplayState {
@@ -562,30 +575,6 @@ func (agent *Agent) DisplayState() AgentDisplayState {
 		result.Reasoning = agent.state.Model.Reasoning
 	}
 	return result
-}
-
-func (agent *Agent) SetSystemPrompt(prompt string) {
-	agent.mu.Lock()
-	current := ai.CurrentSystemPrompt(agentMessagesToAI(agent.state.Messages))
-	if agent.prepareNextTurn == nil && agent.prepareNextTurnWithContext == nil && current != prompt {
-		updated := false
-		for index, message := range agent.state.Messages {
-			system, ok := message.(*ai.SystemMessage)
-			if !ok {
-				continue
-			}
-			copy := *system
-			copy.Content = ""
-			copy.Sections = nil
-			if !updated {
-				copy.Content = prompt
-				updated = true
-			}
-			agent.state.Messages[index] = &copy
-		}
-	}
-	agent.state.SystemPrompt = prompt
-	agent.mu.Unlock()
 }
 
 // SetRequestSystemPromptOverride projects an exact provider-facing prompt for
@@ -919,7 +908,7 @@ func (agent *Agent) contextSnapshot() AgentContext {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
 	return AgentContext{
-		SystemPrompt: agent.state.SystemPrompt,
+		SystemPrompt: agent.systemPromptLocked(),
 		Messages:     append(AgentMessages(nil), agent.state.Messages...),
 		Tools:        cloneAgentTools(agent.state.Tools),
 	}

@@ -266,8 +266,7 @@ func TestAgentProjectsUpdatedSystemPromptAfterContextReplacement(t *testing.T) {
 	tool := AgentToolFunc{AgentToolSpec: AgentToolSpec{Name: "echo", Parameters: jsonschema.Schema(`{"type":"object"}`)}, Run: func(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
 		return textToolResult("ok"), nil
 	}}
-	var agent *Agent
-	agent = NewAgent(responses.stream,
+	agent := NewAgent(responses.stream,
 		WithInitialState(AgentState{SystemPrompt: "base", Model: loopModel(), Tools: []AgentTool{tool}}),
 		WithConvertToLLM(func(_ context.Context, messages AgentMessages) (ai.MessageList, error) {
 			return agentMessagesToAI(messages), nil
@@ -275,7 +274,6 @@ func TestAgentProjectsUpdatedSystemPromptAfterContextReplacement(t *testing.T) {
 		WithPrepareNextTurnContext(func(_ context.Context, turn PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
 			turn.Context.Messages = append(AgentMessages(nil), turn.Context.Messages[1:]...)
 			turn.Context.SystemPrompt = "updated"
-			agent.SetSystemPrompt("updated")
 			return &AgentLoopTurnUpdate{Context: turn.Context}, nil
 		}),
 	)
@@ -332,7 +330,7 @@ func TestRunLoopFinishTurnDecisionsAndPrepareRequest(t *testing.T) {
 	}
 }
 
-func TestAgentSetSystemPromptUpdatesProviderTranscript(t *testing.T) {
+func TestAgentSystemPromptFollowsTheTranscript(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
 		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"}),
 	}}
@@ -340,15 +338,18 @@ func TestAgentSetSystemPromptUpdatesProviderTranscript(t *testing.T) {
 		SystemPrompt: "base",
 		Model:        loopModel(),
 	}))
-	agent.SetSystemPrompt("updated")
+	if got := agent.State().SystemPrompt; got != "base" {
+		t.Fatalf("seeded prompt = %q", got)
+	}
+	agent.SetMessages(append(agent.State().Messages, &ai.SystemMessage{Content: "updated", Timestamp: 1}))
 	if err := agent.Prompt(context.Background(), "go"); err != nil {
 		t.Fatal(err)
 	}
-	if got := responses.contexts[0].SystemPrompt; got == nil || *got != "updated" {
+	if got := responses.contexts[0].SystemPrompt; got == nil || !strings.Contains(*got, "updated") {
 		t.Fatalf("provider system prompt = %#v, want updated", got)
 	}
-	if got := ai.CurrentSystemPrompt(agentMessagesToAI(agent.State().Messages)); got != "updated" {
-		t.Fatalf("transcript system prompt = %q, want updated", got)
+	if got := agent.State().SystemPrompt; got != ai.CurrentSystemPrompt(agentMessagesToAI(agent.State().Messages)) || !strings.Contains(got, "updated") {
+		t.Fatalf("state system prompt = %q", got)
 	}
 }
 

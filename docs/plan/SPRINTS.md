@@ -437,9 +437,11 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
       harness files deleted) on the pinned Node.
 - [x] Upstream deleted its experimental harness (session v4, pico3, `AgentHarness`): `engine/harness`
       becomes Orb-owned, its fixtures and sync paths reclassified, no further port obligation.
-- [ ] Delete backward-compatibility code: session v1/v2 migration, `auth_migrate`, D37 companion
-      interfaces folded in place, legacy `ai.Context` fields and the legacy `SetSystemPrompt` path,
-      the sync exported-API comparison gate, settings-based MCP config.
+- [x] Delete backward-compatibility code: D37 companion interfaces folded in place, the legacy
+      `SetSystemPrompt` path (the agent's prompt is the transcript's), settings-based MCP config; the
+      exported-API comparison was a sync procedure, now gone with P5's amendment. Kept as pi interop,
+      since pi 1.0 still has them: session v1/v2 migration, `auth_migrate`, `ai.Context`'s
+      `systemPrompt`/`tools`, and the native-state import of pi's file layout.
 
 **Agent loop and sessions**
 - [x] `finishTurn` replaces `shouldStopAfterTurn`; `prepareRequest`; every request is the session's
@@ -527,4 +529,6 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 
 **Close**
 - [ ] `UPSTREAM.lock` at v1.0.0 with its sync report; CHANGELOG; release.
-- [ ] Ordalie-back upgraded from Orb v0.7.0, filtering system messages out of client SSE.
+- [ ] Ordalie-back upgraded from Orb v0.7.0, filtering system messages out of client SSE;
+      `agentengine` moves from `shouldStopAfterTurn` to `finishTurn` and from `SetSystemPrompt` to a
+      system message ahead of its replayed messages.

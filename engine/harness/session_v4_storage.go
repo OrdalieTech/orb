@@ -48,16 +48,11 @@ type SessionV4Storage interface {
 	Log(options SessionV4LogOptions) ([]SessionV4LogItem, error)
 	Name() (string, bool)
 	SetName(name string) error
+	// ClearName is upstream's setName(undefined).
+	ClearName() error
 	Label(id string) (string, bool)
 	SetLabel(id string, label *string) error
 	Stats() SessionStats
-}
-
-// SessionV4NameClearer is upstream's `setName(undefined)` half of the storage
-// contract. It stays a separate interface so SessionV4Storage keeps its
-// published method set for existing implementations.
-type SessionV4NameClearer interface {
-	ClearName() error
 }
 
 func sessionV4NowMS(now func() int64) int64 {

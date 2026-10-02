@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -81,9 +82,8 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		copy := cloneSystemPromptOptions(*runtimeConfig.SystemPromptOptions)
 		state.promptOptions = &copy
 		state.baseSystemPrompt = BuildSystemPrompt(copy)
-		runtime.agent.SetSystemPrompt(state.baseSystemPrompt)
 	} else {
-		state.baseSystemPrompt = runtime.agent.State().SystemPrompt
+		state.baseSystemPrompt = cmp.Or(runtimeConfig.SystemPrompt, runtime.agent.State().SystemPrompt)
 	}
 	runtime.extensionState = state
 	registerProvider := runtimeConfig.RegisterProvider
@@ -197,7 +197,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 				}
 			}()
 		},
-		GetSystemPrompt:        func() string { return runtime.agent.State().SystemPrompt },
+		GetSystemPrompt:        runtime.systemPrompt,
 		GetSystemPromptOptions: runtime.extensionSystemPromptOptions,
 	}
 	commandActions := runtime.runtimeCommandActions()
@@ -653,12 +653,7 @@ func (runtime *SessionRuntime) applyDiscoveredSlashResources(skills []Skill, pro
 		state.promptOptions = &options
 		state.baseSystemPrompt = BuildSystemPrompt(options)
 	}
-	basePrompt := state.baseSystemPrompt
-	overridden := state.systemPromptOverride != nil
 	state.mu.Unlock()
-	if !overridden {
-		runtime.agent.SetSystemPrompt(basePrompt)
-	}
 }
 
 func resourcePathsFromExtensions(cwd string, paths []extensions.DiscoveredPath) []ResourcePath {
@@ -1013,11 +1008,18 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 	options.PromptGuidelines = guidelines
 	state.promptOptions = &options
 	state.baseSystemPrompt = BuildSystemPrompt(options)
+}
+
+// systemPrompt is the current effective prompt, including changes not yet
+// sent to the model.
+func (runtime *SessionRuntime) systemPrompt() string {
+	state := runtime.extensionState
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	if state.systemPromptOverride != nil {
-		runtime.agent.SetSystemPrompt(*state.systemPromptOverride)
-	} else {
-		runtime.agent.SetSystemPrompt(state.baseSystemPrompt)
+		return *state.systemPromptOverride
 	}
+	return state.baseSystemPrompt
 }
 
 // refreshLazyToolGuidelines re-reads the current prompt guidelines of every
@@ -1865,7 +1867,6 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	pending := append(engine.AgentMessages(nil), state.pendingNextTurn...)
 	state.pendingNextTurn = nil
 	state.mu.Unlock()
-	runtime.agent.SetSystemPrompt(basePrompt)
 
 	var injected engine.AgentMessages
 	var forcedPrompt *string
@@ -1892,7 +1893,6 @@ func (runtime *SessionRuntime) promptExtensionInput(
 				prompt := *result.SystemPrompt
 				state.systemPromptOverride = &prompt
 				state.mu.Unlock()
-				runtime.agent.SetSystemPrompt(*result.SystemPrompt)
 			}
 		}
 	}

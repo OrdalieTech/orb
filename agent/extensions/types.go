@@ -1280,6 +1280,8 @@ type Provider struct {
 
 type API interface {
 	On(EventType, Handler)
+	// OnWithUnsubscribe registers a handler and returns an idempotent unsubscribe.
+	OnWithUnsubscribe(EventType, Handler) func()
 	RegisterTool(ToolDefinition)
 	RegisterCommand(string, Command)
 	RegisterShortcut(string, Shortcut)
@@ -1305,22 +1307,4 @@ type API interface {
 	RegisterProviderConfig(string, ProviderConfig)
 	UnregisterProvider(string)
 	Events() EventBus
-}
-
-// UnsubscribableAPI is the additive event-registration capability exposed by
-// Orb's native extension API. API remains source-compatible for embedders that
-// provide their own implementation.
-type UnsubscribableAPI interface {
-	OnWithUnsubscribe(EventType, Handler) func()
-}
-
-// OnWithUnsubscribe registers a handler and returns an idempotent unsubscribe
-// function when the API supports it. Legacy API implementations still receive
-// the registration through On and return a no-op unsubscribe function.
-func OnWithUnsubscribe(api API, event EventType, handler Handler) func() {
-	if capability, ok := api.(UnsubscribableAPI); ok {
-		return capability.OnWithUnsubscribe(event, handler)
-	}
-	api.On(event, handler)
-	return func() {}
 }

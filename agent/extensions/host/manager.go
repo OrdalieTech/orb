@@ -728,7 +728,7 @@ func (manager *Manager) factory(extensionID string) extensions.Factory {
 		}
 		for _, subscription := range state.Subscriptions {
 			subscription := subscription
-			unsubscribe := extensions.OnWithUnsubscribe(api, subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
+			unsubscribe := api.OnWithUnsubscribe(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
 				return manager.emitEvent(ctx, extensionID, subscription, event, extensionContext)
 			})
 			manager.mu.Lock()
@@ -1140,7 +1140,7 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if api := manager.stateHost.api(params.ExtensionID); api != nil {
 			subscription := wireSubscription{ID: params.SubscriptionID, Event: params.Event}
 			if err := callStateAPI(func() {
-				unsubscribe := extensions.OnWithUnsubscribe(api, subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
+				unsubscribe := api.OnWithUnsubscribe(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
 					return manager.emitEvent(ctx, params.ExtensionID, subscription, event, extensionContext)
 				})
 				manager.mu.Lock()

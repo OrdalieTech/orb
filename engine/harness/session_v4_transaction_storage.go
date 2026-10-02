@@ -58,21 +58,6 @@ type SessionV4BranchScan struct {
 	Limit                *int
 }
 
-// SessionV4TransactionStorage is a companion contract: upstream's transaction
-// model does not widen SessionV4Storage's published method set (D37).
-type SessionV4TransactionStorage interface {
-	Commit(context.Context, []json.RawMessage) (SessionV4CommitResult, error)
-	GetEntries([]string) (map[string]json.RawMessage, error)
-	GetValue(SessionV4Address) (SessionV4StoredValue, bool, error)
-	ScanValues(SessionV4Address) ([]SessionV4StoredValue, error)
-	ReadList(SessionV4Address, SessionV4ListReadOptions) ([]SessionV4ListElement, error)
-	ScanEntries(SessionV4Scan) ([]json.RawMessage, error)
-	ScanUsage(SessionV4Scan) ([]json.RawMessage, error)
-	ScanBranch(SessionV4BranchScan) ([]json.RawMessage, error)
-	TransactionStats() (SessionV4TransactionStats, error)
-	Close(context.Context) error
-}
-
 type transactionState struct {
 	nextSeq    int64
 	entries    map[string]json.RawMessage

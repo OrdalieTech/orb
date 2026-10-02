@@ -182,7 +182,7 @@ func TestSessionV4ClearsSessionNamesDurably(t *testing.T) {
 		t.Fatalf("forked Name() = %q, %v", name, ok)
 	}
 
-	var memory SessionV4NameClearer = NewInMemorySessionV4Storage(SessionV4Metadata{ID: "session"})
+	var memory SessionV4Storage = NewInMemorySessionV4Storage(SessionV4Metadata{ID: "session"})
 	if err := memory.(*InMemorySessionV4Storage).SetName("Temporary"); err != nil {
 		t.Fatal(err)
 	}

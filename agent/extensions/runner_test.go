@@ -650,7 +650,7 @@ func TestAPIOnWithUnsubscribeUsesDispatchSnapshots(t *testing.T) {
 	var unsubscribe func()
 	var calls []string
 	if err := registry.Register("snapshot", func(api API) error {
-		unsubscribe = OnWithUnsubscribe(api, EventAgentStart, func(context.Context, Event, Context) (any, error) {
+		unsubscribe = api.OnWithUnsubscribe(EventAgentStart, func(context.Context, Event, Context) (any, error) {
 			calls = append(calls, "first")
 			unsubscribe()
 			return nil, nil

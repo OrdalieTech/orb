@@ -607,7 +607,6 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		agentOpts = append(agentOpts, engine.WithModelHeadersResolver(getModelHeaders))
 	}
 	a = engine.NewAgent(streamFn, agentOpts...)
-	a.SetSystemPrompt(assembledPrompt)
 
 	if hasExisting {
 		messages := make(engine.AgentMessages, 0, len(existing.Messages))
@@ -667,7 +666,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 			return buildBuiltInTools(cwd, settings, opts.ToolOptions)
 		},
 		ResourceLoader:      resourceLoader,
-		SystemPromptOptions: promptOptions,
+		SystemPromptOptions: promptOptions, SystemPrompt: assembledPrompt,
 		SessionStartEvent:   opts.SessionStartEvent,
 		Clock:               opts.Clock,
 		BuiltinToolPrompts:  opts.BuiltinToolPrompts,

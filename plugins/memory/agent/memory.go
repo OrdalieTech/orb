@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -244,8 +245,10 @@ func Attach(ctx context.Context, target *engine.Agent, store memorysdk.Store) er
 			}
 		}
 	}
-	prompt := runtime.SystemPrompt(state.SystemPrompt)
-	target.SetSystemPrompt(prompt)
+	// The prompt only changes through the transcript: the profile is a section.
+	if profile := strings.TrimPrefix(runtime.SystemPrompt(""), "\n\n"); profile != "" {
+		target.SetMessages(append(state.Messages, &ai.SystemMessage{Sections: ai.SystemPromptSections{{Name: "memory", Text: &profile}}, Timestamp: time.Now().UnixMilli()}))
+	}
 	target.SetTools(append(state.Tools, tools...))
 	return nil
 }

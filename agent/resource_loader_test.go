@@ -123,7 +123,7 @@ func TestDefaultResourceLoaderOverridesAndSDKReuse(t *testing.T) {
 	if result.Services.ResourceLoader != loader || result.ExtensionRegistry != loader.GetExtensions() {
 		t.Fatal("SDK did not retain the supplied resource loader services")
 	}
-	prompt := result.Session.Agent().State().SystemPrompt
+	prompt := result.Session.State().SystemPrompt
 	if !strings.Contains(prompt, customPrompt) || strings.Contains(prompt, ignored) || !strings.Contains(prompt, "SDK context") {
 		t.Fatalf("assembled prompt = %q", prompt)
 	}

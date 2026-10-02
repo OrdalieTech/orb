@@ -486,9 +486,7 @@ func applyPiCompatibilityPrompt(session *AgentSession) {
 	}
 	state.promptOptions = &options
 	state.baseSystemPrompt = BuildSystemPrompt(options)
-	prompt := state.baseSystemPrompt
 	state.mu.Unlock()
-	session.agent.SetSystemPrompt(prompt)
 }
 
 func piCompatibilityText(text string) string {

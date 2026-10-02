@@ -55,6 +55,8 @@ type SessionRuntimeConfig struct {
 	ExcludedToolNames   []string
 	RebuildBaseTools    func() ([]engine.AgentTool, error)
 	SystemPromptOptions *SystemPromptOptions
+	// SystemPrompt is the prompt when there are no SystemPromptOptions.
+	SystemPrompt        string
 	BuiltinToolPrompts  map[string]ToolPromptContribution
 	ResourceLoader      ResourceLoader
 	SessionStartEvent   *extensions.SessionStartEvent
@@ -760,11 +762,17 @@ func (runtime *SessionRuntime) Commands() []SlashCommandInfo {
 	return runtime.slashResolver.Commands(runtime.settings.GetEnableSkillCommands())
 }
 
+// State is the agent's state with the session's effective system prompt,
+// including changes not yet sent to the model.
 func (runtime *SessionRuntime) State() engine.AgentState {
 	if runtime == nil || runtime.agent == nil {
 		return engine.AgentState{}
 	}
-	return runtime.agent.State()
+	state := runtime.agent.State()
+	if runtime.extensionState != nil {
+		state.SystemPrompt = runtime.systemPrompt()
+	}
+	return state
 }
 
 func (runtime *SessionRuntime) Abort() {
