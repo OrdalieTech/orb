@@ -228,6 +228,7 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 		return CutPointResult{FirstKeptEntryIndex: startIndex, TurnStartIndex: -1}
 	}
 	var accumulated int64
+	exceeded := false
 	cutIndex := cutPoints[0]
 	for index := endIndex - 1; index >= startIndex; index-- {
 		// Compaction entries count here: upstream weighs each entry through
@@ -242,6 +243,7 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 		}
 		accumulated += messageTokens
 		if accumulated >= keepRecentTokens {
+			exceeded = true
 			chosen := -1
 			for _, candidate := range cutPoints {
 				if candidate >= index {
@@ -266,6 +268,12 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 			break
 		}
 	}
+	// A recovery attempt and its omission edits are invisible after the last
+	// visible input. Advance past that input only for a closed suffix holding an
+	// omitted assistant attempt, so metadata never moves the cut past unsent input.
+	if exceeded && isRecoverySuffix(entries[cutIndex+1:endIndex]) {
+		cutIndex++
+	}
 	for cutIndex > startIndex {
 		previous := entries[cutIndex-1]
 		if previous.Type == "compaction" || entryMessage(previous, false) != nil {
@@ -283,6 +291,30 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 		TurnStartIndex:      turnStart,
 		IsSplitTurn:         !startsTurn && turnStart != -1,
 	}
+}
+
+// isRecoverySuffix reports entries that hold an omitted assistant attempt and
+// nothing else the model sees, and replace no content outside them.
+func isRecoverySuffix(suffix []SessionEntry) bool {
+	omitted := map[string]bool{}
+	attempt := false
+	for _, entry := range suffix {
+		switch {
+		case entry.Type == "compaction":
+			return false
+		case entry.Omitted:
+			omitted[entry.ID] = true
+			attempt = attempt || entry.Type == "message" && messageRole(entry.Message) == "assistant"
+		case entryMessage(entry, false) != nil:
+			return false
+		}
+	}
+	for _, entry := range suffix {
+		if entry.Type == "context_edit" && entry.Replaces && !omitted[entry.TargetID] {
+			return false
+		}
+	}
+	return attempt
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
@@ -405,7 +437,7 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 		TurnPrefixMessages:  prefix,
 		RetainedTail:        tail,
 		IsSplitTurn:         cut.IsSplitTurn,
-		TokensBefore:        EstimateContextTokens(ContextMessages(pathEntries)).Tokens,
+		TokensBefore:        EstimateProjectedContextTokens(pathEntries).Tokens,
 		PreviousSummary:     previousSummary,
 		FileOps:             fileOps,
 		Settings:            settings,
@@ -418,15 +450,58 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 }
 
 func ContextMessages(entries []SessionEntry) engine.AgentMessages {
+	messages, _ := contextMessages(entries)
+	return messages
+}
+
+// EstimateProjectedContextTokens estimates a branch's projected context
+// without trusting usage recorded before a later context edit or compaction.
+func EstimateProjectedContextTokens(entries []SessionEntry) ContextUsageEstimate {
+	messages, owners := contextMessages(entries)
+	estimate := EstimateContextTokens(messages)
+	if estimate.LastUsageIndex != nil {
+		latest := -1
+		for index := len(entries) - 1; index >= 0; index-- {
+			if entries[index].Type == "context_edit" || entries[index].Type == "compaction" {
+				latest = index
+				break
+			}
+		}
+		if owners[*estimate.LastUsageIndex] > latest {
+			return estimate
+		}
+	}
+	// The prompt counts once, as the transcript's current system message.
+	var tokens int64
+	var transcript ai.MessageList
+	for _, message := range messages {
+		if system, ok := message.(*ai.SystemMessage); ok {
+			transcript = append(transcript, system)
+			continue
+		}
+		tokens += EstimateTokens(message)
+	}
+	if current := ai.CurrentSystemMessage(transcript); current != nil {
+		tokens += EstimateTokens(current)
+	}
+	return ContextUsageEstimate{Tokens: tokens, TrailingTokens: tokens}
+}
+
+// contextMessages projects entries to model messages, with the index of the
+// entry each message came from.
+func contextMessages(entries []SessionEntry) (engine.AgentMessages, []int) {
 	latest := -1
 	for index := range entries {
 		if entries[index].Type == "compaction" {
 			latest = index
 		}
 	}
-	selected := entries
+	selected := make([]int, 0, len(entries))
+	for index := range entries {
+		selected = append(selected, index)
+	}
 	if latest >= 0 {
-		selected = []SessionEntry{entries[latest]}
+		selected = []int{latest}
 		if entries[latest].RetainedTail == nil {
 			found := false
 			for index := 0; index < latest; index++ {
@@ -434,22 +509,30 @@ func ContextMessages(entries []SessionEntry) engine.AgentMessages {
 					found = true
 				}
 				if found {
-					selected = append(selected, entries[index])
+					selected = append(selected, index)
 				}
 			}
 		}
-		selected = append(selected, entries[latest+1:]...)
+		for index := latest + 1; index < len(entries); index++ {
+			selected = append(selected, index)
+		}
 	}
 	messages := make(engine.AgentMessages, 0, len(selected))
-	for _, entry := range selected {
+	owners := make([]int, 0, len(selected))
+	for _, index := range selected {
+		entry := entries[index]
 		if message := entryMessage(entry, true); message != nil {
 			messages = append(messages, message)
+			owners = append(owners, index)
 		}
 		if entry.Type == "compaction" {
-			messages = append(messages, entry.RetainedTail...)
+			for _, message := range entry.RetainedTail {
+				messages = append(messages, message)
+				owners = append(owners, index)
+			}
 		}
 	}
-	return messages
+	return messages, owners
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
@@ -731,6 +814,9 @@ func validCutPoints(entries []SessionEntry, startIndex, endIndex int) []int {
 	result := make([]int, 0)
 	for index := startIndex; index < endIndex; index++ {
 		entry := entries[index]
+		if entry.Omitted {
+			continue
+		}
 		if entry.Type == "message" {
 			switch messageRole(entry.Message) {
 			case "bashExecution", "custom", "branchSummary", "compactionSummary", "user", "assistant":
@@ -904,6 +990,9 @@ func entryMessage(entry SessionEntry, includeCompaction bool) engine.AgentMessag
 // harnessEntryMessage mirrors harness getMessageFromEntry, which projects a
 // branch_summary even when its summary is empty.
 func harnessEntryMessage(entry SessionEntry, includeCompaction bool) engine.AgentMessage {
+	if entry.Omitted {
+		return nil
+	}
 	switch entry.Type {
 	case "message":
 		if raw, ok := entry.Message.(json.RawMessage); ok {

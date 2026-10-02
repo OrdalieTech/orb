@@ -492,7 +492,7 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
       user message; the system prompt's docs line names MCP.
 - [ ] Audit the remaining kernel paths the dry run listed (keybindings, trust, CLI args).
 - [x] `samplingParams` (model and per request) merged into OpenAI-compatible request bodies.
-- [ ] Projection-aware compaction (context edits respected by cut points and token estimates).
+- [x] Projection-aware compaction (context edits respected by cut points and token estimates).
 
 **Providers and sign-in**
 - [x] Anthropic reports Claude Code 2.1.280.

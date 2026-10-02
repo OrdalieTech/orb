@@ -190,6 +190,40 @@ func entryContextMessages(entry SessionEntry) []json.RawMessage {
 	}
 }
 
+// ApplyContextEdits applies each entry's latest context edit on the branch to
+// its message or custom content, and reports the entries an edit omitted.
+func ApplyContextEdits(entries []SessionEntry) ([]SessionEntry, map[string]bool) {
+	edits := map[string]json.RawMessage{}
+	for _, entry := range entries {
+		if entry.Type == "context_edit" {
+			edits[entry.TargetID] = entry.Replacement
+		}
+	}
+	omitted := map[string]bool{}
+	edited := make([]SessionEntry, len(entries))
+	for index, entry := range entries {
+		edited[index] = entry
+		replacement, ok := edits[entry.ID]
+		if !ok || entry.Type != "message" && entry.Type != "custom_message" {
+			continue
+		}
+		messages := applyContextEdit(entryContextMessages(entry), replacement)
+		switch {
+		case len(messages) == 0:
+			omitted[entry.ID] = true
+		case entry.Type == "message":
+			edited[index].Message = messages[0]
+		default:
+			var custom struct {
+				Content json.RawMessage `json:"content"`
+			}
+			_ = json.Unmarshal(messages[0], &custom)
+			edited[index].Content = custom.Content
+		}
+	}
+	return edited, omitted
+}
+
 // applyContextEdit applies a context_edit replacement to an entry's model
 // messages: null omits them, {"content": ...} replaces only their content (a
 // string becomes one text block for assistant and tool-result messages).

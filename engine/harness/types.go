@@ -189,6 +189,12 @@ type SessionEntry struct {
 	CustomType       string
 	Content          any
 	Display          bool
+	// Omitted marks an entry a context edit removed from model context.
+	Omitted bool
+	// TargetID and Replaces describe a context_edit: its target, and whether it
+	// replaces the target's content rather than omitting it.
+	TargetID string
+	Replaces bool
 }
 
 type CustomMessage struct {

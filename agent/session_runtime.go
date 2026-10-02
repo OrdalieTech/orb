@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1238,7 +1239,11 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 	}
 	direct := harness.CalculateContextTokens(message.Usage)
 	contextTokens := direct
-	if message.StopReason == ai.StopReasonError || direct == 0 {
+	branch := runtime.manager.GetBranch()
+	if slices.ContainsFunc(branch, func(entry sessionstore.SessionEntry) bool { return entry.Type == "context_edit" }) {
+		// The response's usage predates edits made since; estimate what the model sees now.
+		contextTokens = harness.EstimateProjectedContextTokens(projectSessionEntries(branch)).Tokens
+	} else if message.StopReason == ai.StopReasonError || direct == 0 {
 		estimate := harness.EstimateContextTokens(state.Messages)
 		if estimate.LastUsageIndex == nil {
 			return false, nil
@@ -1572,7 +1577,7 @@ func (runtime *SessionRuntime) EstimateContextUsage() *harness.ContextUsage {
 			return &harness.ContextUsage{ContextWindow: state.Model.ContextWindow}
 		}
 	}
-	estimate := harness.EstimateContextTokens(state.Messages)
+	estimate := harness.EstimateProjectedContextTokens(projectSessionEntries(branch))
 	tokens := estimate.Tokens
 	percent := float64(tokens) / state.Model.ContextWindow * 100
 	return &harness.ContextUsage{Tokens: &tokens, ContextWindow: state.Model.ContextWindow, Percent: &percent}
@@ -1899,9 +1904,12 @@ func (runtime *SessionRuntime) sessionMessages() engine.AgentMessages {
 	return messages
 }
 
+// projectSessionEntries converts a branch for compaction, with its context
+// edits applied.
 func projectSessionEntries(entries []sessionstore.SessionEntry) []harness.SessionEntry {
-	projected := make([]harness.SessionEntry, 0, len(entries))
-	for _, entry := range entries {
+	edited, omitted := sessionstore.ApplyContextEdits(entries)
+	projected := make([]harness.SessionEntry, 0, len(edited))
+	for _, entry := range edited {
 		fromHook := entry.FromHook != nil && *entry.FromHook
 		var content any
 		if len(entry.Content) > 0 {
@@ -1917,6 +1925,8 @@ func projectSessionEntries(entries []sessionstore.SessionEntry) []harness.Sessio
 			FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
 			Details: details, Usage: entry.Usage, FromHook: fromHook, FromID: entry.FromID,
 			CustomType: entry.CustomType, Content: content, Display: entry.Display,
+			Omitted: omitted[entry.ID], TargetID: entry.TargetID,
+			Replaces: entry.Type == "context_edit" && len(entry.Replacement) > 0 && string(entry.Replacement) != "null",
 		})
 	}
 	return projected

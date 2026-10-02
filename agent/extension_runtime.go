@@ -2112,16 +2112,13 @@ func applyBoundaryDrafts(manager *sessionstore.SessionManager, drafts []extensio
 			}
 			entryID, err = manager.AppendContextEdit(draft.TargetID, replacement)
 		case "compaction":
-			messages := make(engine.AgentMessages, 0)
-			for _, raw := range manager.BuildSessionContext().Messages {
-				messages = append(messages, decodeSessionMessage(raw))
-			}
+			tokensBefore := harness.EstimateProjectedContextTokens(projectSessionEntries(manager.GetBranch())).Tokens
 			fromHook := true
 			firstKept := ""
 			if draft.FirstKeptEntryID != nil {
 				firstKept = *draft.FirstKeptEntryID
 			}
-			entryID, err = manager.AppendCompaction(draft.Summary, firstKept, int64(harness.EstimateContextTokens(messages).Tokens),
+			entryID, err = manager.AppendCompaction(draft.Summary, firstKept, tokensBefore,
 				sessionstore.OptionalEntryFields{HasDetails: draft.Details != nil, Details: draft.Details, FromHook: &fromHook, Usage: draft.Usage})
 		default:
 			err = fmt.Errorf("unknown boundary entry type %q", draft.Type)
