@@ -805,3 +805,68 @@ func TestToolConsentIsExplicitAndDenialWins(t *testing.T) {
 		})
 	}
 }
+
+func TestRunnerContextHidesSystemMessagesAndContextWithSystemSeesThem(t *testing.T) {
+	registry := NewRegistry(t.TempDir())
+	var contextSaw, withSystemSaw int
+	if err := registry.Register("trim", func(api API) error {
+		api.On(EventContext, func(_ context.Context, raw Event, _ Context) (any, error) {
+			messages := raw.(ContextEvent).Messages
+			contextSaw = len(messages)
+			return ContextResult{Messages: messages[len(messages)-1:]}, nil
+		})
+		api.On(EventContextWithSystem, func(_ context.Context, raw Event, _ Context) (any, error) {
+			withSystemSaw = len(raw.(ContextWithSystemEvent).Messages)
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	system := &ai.SystemMessage{Content: "prompt"}
+	original := engine.AgentMessages{system, &ai.UserMessage{Content: ai.NewUserText("old")}, &ai.UserMessage{Content: ai.NewUserText("new")}}
+	result := newRunner(t, registry, RunnerOptions{}).EmitContext(context.Background(), original)
+	if contextSaw != 2 || withSystemSaw != 2 || len(result) != 2 {
+		t.Fatalf("context saw %d, context_with_system saw %d, result = %#v", contextSaw, withSystemSaw, result)
+	}
+	if head, ok := result[0].(*ai.SystemMessage); !ok || head.Content != "prompt" {
+		t.Fatalf("system message not restored: %#v", result[0])
+	}
+}
+
+func TestRunnerBoundaryChainsEntriesAndContinuation(t *testing.T) {
+	registry := NewRegistry(t.TempDir())
+	var secondSaw []SessionBoundaryDraft
+	if err := registry.Register("first", func(api API) error {
+		api.On(EventAgentBeforeSettle, func(_ context.Context, raw Event, _ Context) (any, error) {
+			entries := append(raw.(AgentBeforeSettleEvent).Entries, SessionBoundaryDraft{Type: "custom", CustomType: "note"})
+			proceed := true
+			return BoundaryResult{Entries: &entries, Continue: &proceed}, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register("second", func(api API) error {
+		api.On(EventAgentBeforeSettle, func(_ context.Context, raw Event, _ Context) (any, error) {
+			event := raw.(AgentBeforeSettleEvent)
+			secondSaw = event.Entries
+			if !event.Continue || event.Context.PendingMessages == nil {
+				return nil, errors.New("continuation or preview missing")
+			}
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	builds := 0
+	result := newRunner(t, registry, RunnerOptions{}).EmitBoundary(context.Background(), AgentBeforeSettleEvent{},
+		func(entries []SessionBoundaryDraft) (BoundaryContextPreview, error) {
+			builds++
+			return BoundaryContextPreview{PendingMessages: engine.AgentMessages{}, CanContinue: len(entries) > 0}, nil
+		})
+	if !result.Valid || !result.Continue || len(result.Entries) != 1 || len(secondSaw) != 1 || builds != 3 || !result.Context.CanContinue {
+		t.Fatalf("result = %#v, second saw %#v, builds = %d", result, secondSaw, builds)
+	}
+}

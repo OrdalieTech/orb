@@ -3,12 +3,14 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
@@ -200,7 +202,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		runtime.agent.SetToolCallHooks(nil, nil)
 		runtime.agent.SetProviderHooks(nil, nil, nil)
 	}
-	if runner.HasHandlers(extensions.EventContext) {
+	if runner.HasHandlers(extensions.EventContext) || runner.HasHandlers(extensions.EventContextWithSystem) {
 		runtime.agent.SetTransformContext(func(ctx context.Context, messages engine.AgentMessages) (engine.AgentMessages, error) {
 			return runner.EmitContext(ctx, messages), nil
 		})
@@ -1411,11 +1413,10 @@ func (runtime *SessionRuntime) extensionLifecycleEvent(ctx context.Context, even
 		state.mu.Unlock()
 		runner.Emit(ctx, extensions.TurnStartEvent{TurnIndex: index, Timestamp: time.Now().UnixMilli()})
 	case engine.TurnEndEvent:
+		// Extensions saw turn_end as an actionable boundary from finishTurn.
 		state.mu.Lock()
-		index := state.turnIndex
 		state.turnIndex++
 		state.mu.Unlock()
-		runner.Emit(ctx, extensions.TurnEndEvent{TurnIndex: index, Message: typed.Message, ToolResults: typed.ToolResults})
 	case engine.MessageStartEvent:
 		runner.Emit(ctx, extensions.MessageStartEvent{Message: typed.Message})
 	case engine.MessageUpdateEvent:
@@ -1715,4 +1716,204 @@ func (runtime *SessionRuntime) extensionSystemPromptOptionsLocked(state *extensi
 		ToolSnippets: cloneStringMap(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}
+}
+
+// installTurnEndBoundary dispatches turn_end to extensions from finishTurn,
+// before the engine's turn_end, so handlers can persist entries and ensure one
+// more request.
+func (runtime *SessionRuntime) installTurnEndBoundary() {
+	var previous engine.FinishTurnFunc
+	previous = runtime.agent.SwapFinishTurn(func(ctx context.Context, turn engine.TurnContext) (engine.TurnAction, error) {
+		extensionContinue := runtime.dispatchTurnEndBoundary(ctx, turn)
+		var action engine.TurnAction
+		if previous != nil {
+			var err error
+			if action, err = previous(ctx, turn); err != nil {
+				return "", err
+			}
+		}
+		if action == engine.TurnEnd {
+			return action, nil
+		}
+		if extensionContinue || action == engine.TurnContinue {
+			return engine.TurnContinue, nil
+		}
+		return "", nil
+	})
+}
+
+func (runtime *SessionRuntime) dispatchTurnEndBoundary(ctx context.Context, turn engine.TurnContext) bool {
+	if turn.Message == nil || engine.IsEphemeralAgentEvent(ctx) {
+		return false
+	}
+	outcome := extensions.ActivityOutcome("completed")
+	switch turn.Message.StopReason {
+	case ai.StopReasonAborted:
+		outcome = "aborted"
+	case ai.StopReasonError:
+		outcome = "error"
+	}
+	runtime.mu.Lock()
+	runtime.activityOutcome = outcome
+	runtime.mu.Unlock()
+	state := runtime.extensionState
+	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventTurnEnd) {
+		return false
+	}
+	messageEntryID, toolResultEntryIDs := runtime.trailingTurnEntryIDs()
+	if messageEntryID == "" || len(toolResultEntryIDs) != len(turn.ToolResults) {
+		state.runner.EmitBoundaryError(extensions.EventTurnEnd, "turn_end could not resolve the persisted assistant entry ID")
+		return false
+	}
+	state.mu.Lock()
+	index := state.turnIndex
+	state.mu.Unlock()
+	event := extensions.TurnEndEvent{
+		TurnIndex: index, Message: turn.Message, ToolResults: turn.ToolResults,
+		MessageEntryID: messageEntryID, ToolResultEntryIDs: toolResultEntryIDs,
+		BoundaryState: extensions.BoundaryState{Outcome: outcome},
+	}
+	boundary := state.runner.EmitBoundary(ctx, event, func(drafts []extensions.SessionBoundaryDraft) (extensions.BoundaryContextPreview, error) {
+		return runtime.boundaryContext(drafts, extensions.EventTurnEnd)
+	})
+	if err := runtime.commitBoundaryDrafts(boundary.Entries); err != nil {
+		state.runner.EmitBoundaryError(extensions.EventTurnEnd, err.Error())
+		return false
+	}
+	if boundary.Continue {
+		if final, err := runtime.boundaryContext(nil, extensions.EventTurnEnd); err != nil || !final.CanContinue {
+			state.runner.EmitBoundaryError(extensions.EventTurnEnd, "turn_end requested continuation without runnable model context")
+			return false
+		}
+	}
+	return boundary.Continue
+}
+
+// runBeforeSettleBoundary dispatches agent_before_settle and reports whether
+// the run continues.
+func (runtime *SessionRuntime) runBeforeSettleBoundary(ctx context.Context) bool {
+	state := runtime.extensionState
+	if state == nil || state.runner == nil || !state.runner.HasHandlers(extensions.EventAgentBeforeSettle) {
+		return runtime.agent.HasQueuedMessages()
+	}
+	runtime.mu.Lock()
+	outcome := runtime.activityOutcome
+	runtime.mu.Unlock()
+	result := state.runner.EmitBoundary(ctx, extensions.AgentBeforeSettleEvent{BoundaryState: extensions.BoundaryState{Outcome: outcome}},
+		func(drafts []extensions.SessionBoundaryDraft) (extensions.BoundaryContextPreview, error) {
+			return runtime.boundaryContext(drafts, extensions.EventAgentBeforeSettle)
+		})
+	if err := runtime.commitBoundaryDrafts(result.Entries); err != nil {
+		state.runner.EmitBoundaryError(extensions.EventAgentBeforeSettle, err.Error())
+		return false
+	}
+	if err := runtime.flushPendingCustom(); err != nil {
+		state.runner.EmitBoundaryError(extensions.EventAgentBeforeSettle, err.Error())
+	}
+	if runtime.aborted() {
+		return false
+	}
+	shouldContinue := result.Continue || runtime.agent.HasQueuedMessages()
+	if final, err := runtime.boundaryContext(nil, extensions.EventAgentBeforeSettle); shouldContinue && (err != nil || !final.CanContinue) {
+		if result.Continue {
+			state.runner.EmitBoundaryError(extensions.EventAgentBeforeSettle, "agent_before_settle requested continuation without runnable model context")
+		}
+		return false
+	}
+	return shouldContinue
+}
+
+// boundaryContext previews the next request's context with drafts applied to
+// an in-memory copy of the branch.
+func (runtime *SessionRuntime) boundaryContext(drafts []extensions.SessionBoundaryDraft, boundary extensions.EventType) (extensions.BoundaryContextPreview, error) {
+	preview, err := runtime.manager.BranchPreview()
+	if err != nil {
+		return extensions.BoundaryContextPreview{}, err
+	}
+	if _, err := applyBoundaryDrafts(preview, drafts); err != nil {
+		return extensions.BoundaryContextPreview{}, err
+	}
+	projection := preview.BuildSessionContext()
+	messages := make(engine.AgentMessages, 0, len(projection.Messages))
+	for _, raw := range projection.Messages {
+		messages = append(messages, decodeSessionMessage(raw))
+	}
+	llmMessages, err := ConvertToLLM(context.Background(), messages)
+	if err != nil {
+		return extensions.BoundaryContextPreview{}, err
+	}
+	runtime.mu.Lock()
+	pendingCustom := len(runtime.pendingCustom) > 0
+	pending := runtime.agent.PeekQueuedMessages()
+	for _, message := range runtime.pendingCustom {
+		pending = append(pending, message)
+	}
+	runtime.mu.Unlock()
+	endsWithAssistant, nonSystem := false, false
+	for _, message := range llmMessages {
+		_, system := message.(*ai.SystemMessage)
+		_, endsWithAssistant = message.(*ai.AssistantMessage)
+		nonSystem = nonSystem || !system
+	}
+	queued := runtime.agent.HasQueuedMessages()
+	if boundary == extensions.EventAgentBeforeSettle {
+		queued = queued && endsWithAssistant
+	}
+	return extensions.BoundaryContextPreview{
+		ContextEntries: preview.BuildContextEntries(), ContextMessages: messages, LLMMessages: llmMessages, PendingMessages: pending,
+		CanContinue: (nonSystem && !endsWithAssistant) || pendingCustom || queued,
+	}, nil
+}
+
+func (runtime *SessionRuntime) commitBoundaryDrafts(drafts []extensions.SessionBoundaryDraft) error {
+	if len(drafts) == 0 {
+		return nil
+	}
+	appended, err := applyBoundaryDrafts(runtime.manager, drafts)
+	runtime.RefreshContext()
+	for _, entry := range appended {
+		runtime.emit(EntryAppendedEvent{Entry: entry})
+	}
+	return err
+}
+
+func applyBoundaryDrafts(manager *sessionstore.SessionManager, drafts []extensions.SessionBoundaryDraft) ([]sessionstore.SessionEntry, error) {
+	appended := make([]sessionstore.SessionEntry, 0, len(drafts))
+	for _, draft := range drafts {
+		var entryID string
+		var err error
+		switch draft.Type {
+		case "custom":
+			entryID, err = manager.AppendCustomEntry(draft.CustomType, draft.Data)
+		case "custom_message":
+			entryID, err = manager.AppendCustomMessageEntry(draft.CustomType, draft.Content, draft.Display, draft.Details)
+		case "context_edit":
+			replacement := draft.Replacement
+			if string(replacement) == "null" {
+				replacement = nil
+			}
+			entryID, err = manager.AppendContextEdit(draft.TargetID, replacement)
+		case "compaction":
+			messages := make(engine.AgentMessages, 0)
+			for _, raw := range manager.BuildSessionContext().Messages {
+				messages = append(messages, decodeSessionMessage(raw))
+			}
+			fromHook := true
+			firstKept := ""
+			if draft.FirstKeptEntryID != nil {
+				firstKept = *draft.FirstKeptEntryID
+			}
+			entryID, err = manager.AppendCompaction(draft.Summary, firstKept, int64(harness.EstimateContextTokens(messages).Tokens),
+				sessionstore.OptionalEntryFields{HasDetails: draft.Details != nil, Details: draft.Details, FromHook: &fromHook, Usage: draft.Usage})
+		default:
+			err = fmt.Errorf("unknown boundary entry type %q", draft.Type)
+		}
+		if err != nil {
+			return appended, err
+		}
+		if entry := manager.GetEntry(entryID); entry != nil {
+			appended = append(appended, *entry)
+		}
+	}
+	return appended, nil
 }

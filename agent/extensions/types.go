@@ -52,12 +52,14 @@ const (
 	EventSessionBeforeTree     EventType = "session_before_tree"
 	EventSessionTree           EventType = "session_tree"
 	EventContext               EventType = "context"
+	EventContextWithSystem     EventType = "context_with_system"
 	EventBeforeProviderRequest EventType = "before_provider_request"
 	EventBeforeProviderHeaders EventType = "before_provider_headers"
 	EventAfterProviderResponse EventType = "after_provider_response"
 	EventBeforeAgentStart      EventType = "before_agent_start"
 	EventAgentStart            EventType = "agent_start"
 	EventAgentEnd              EventType = "agent_end"
+	EventAgentBeforeSettle     EventType = "agent_before_settle"
 	EventAgentSettled          EventType = "agent_settled"
 	EventUIPromptStart         EventType = "ui_prompt_start"
 	EventUIPromptEnd           EventType = "ui_prompt_end"
@@ -293,9 +295,17 @@ type SessionTreeEvent struct {
 
 func (SessionTreeEvent) Type() EventType { return EventSessionTree }
 
+// ContextEvent carries the conversation without system messages; the prompt
+// and tool state are restored after each handler.
 type ContextEvent struct{ Messages engine.AgentMessages }
 
 func (ContextEvent) Type() EventType { return EventContext }
+
+// ContextWithSystemEvent runs after every context handler on the full
+// transcript, system messages included; its result is sent as returned.
+type ContextWithSystemEvent struct{ Messages engine.AgentMessages }
+
+func (ContextWithSystemEvent) Type() EventType { return EventContextWithSystem }
 
 type ContextResult struct{ Messages engine.AgentMessages }
 
@@ -394,13 +404,70 @@ type TurnStartEvent struct {
 
 func (TurnStartEvent) Type() EventType { return EventTurnStart }
 
+// ActivityOutcome is how the latest response ended: "completed", "aborted" or "error".
+type ActivityOutcome string
+
+// SessionBoundaryDraft is a structural entry a turn_end or agent_before_settle
+// handler proposes: "custom" (CustomType, Data), "custom_message" (CustomType,
+// Content, Display, Details), "context_edit" (TargetID, Replacement) or
+// "compaction" (Summary, FirstKeptEntryID, Details, Usage). A compaction with
+// no FirstKeptEntryID keeps no preceding entries.
+type SessionBoundaryDraft struct {
+	Type             string          `json:"type"`
+	CustomType       string          `json:"customType,omitempty"`
+	Data             any             `json:"data,omitempty"`
+	Content          any             `json:"content,omitempty"`
+	Display          bool            `json:"display,omitempty"`
+	Details          any             `json:"details,omitempty"`
+	TargetID         string          `json:"targetId,omitempty"`
+	Replacement      json.RawMessage `json:"replacement,omitempty"`
+	Summary          string          `json:"summary,omitempty"`
+	FirstKeptEntryID *string         `json:"firstKeptEntryId,omitempty"`
+	Usage            *ai.Usage       `json:"usage,omitempty"`
+}
+
+// BoundaryContextPreview is the context the next request would see with the
+// proposed entries applied.
+type BoundaryContextPreview struct {
+	ContextEntries  []session.SessionEntry `json:"contextEntries"`
+	ContextMessages engine.AgentMessages   `json:"contextMessages"`
+	LLMMessages     ai.MessageList         `json:"llmMessages"`
+	PendingMessages engine.AgentMessages   `json:"pendingMessages"`
+	CanContinue     bool                   `json:"canContinue"`
+}
+
+// BoundaryState is what each handler of an actionable boundary sees: the
+// entries and continuation chained by earlier handlers, and their preview.
+type BoundaryState struct {
+	Entries  []SessionBoundaryDraft `json:"entries"`
+	Continue bool                   `json:"continue"`
+	Context  BoundaryContextPreview `json:"context"`
+	Outcome  ActivityOutcome        `json:"outcome"`
+}
+
+// BoundaryResult replaces the chained entries and/or continuation when set.
+type BoundaryResult struct {
+	Entries  *[]SessionBoundaryDraft `json:"entries,omitempty"`
+	Continue *bool                   `json:"continue,omitempty"`
+}
+
+// TurnEndEvent is an actionable boundary: handlers may persist entries and
+// request one more model request.
 type TurnEndEvent struct {
-	TurnIndex   int
-	Message     engine.AgentMessage
-	ToolResults []*ai.ToolResultMessage
+	TurnIndex          int
+	Message            engine.AgentMessage
+	ToolResults        []*ai.ToolResultMessage
+	MessageEntryID     string
+	ToolResultEntryIDs []string
+	BoundaryState
 }
 
 func (TurnEndEvent) Type() EventType { return EventTurnEnd }
+
+// AgentBeforeSettleEvent is the final actionable boundary before agent_settled.
+type AgentBeforeSettleEvent struct{ BoundaryState }
+
+func (AgentBeforeSettleEvent) Type() EventType { return EventAgentBeforeSettle }
 
 type MessageStartEvent struct{ Message engine.AgentMessage }
 

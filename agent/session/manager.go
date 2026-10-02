@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -318,6 +319,20 @@ func InMemory(cwd string, options ...Option) (*SessionManager, error) {
 		manager.buildIndexLocked()
 	}
 	return manager, nil
+}
+
+// BranchPreview is an in-memory copy of the header and current branch, for
+// trying appends without touching this session.
+func (manager *SessionManager) BranchPreview() (*SessionManager, error) {
+	header := manager.GetHeader()
+	if header == nil {
+		return nil, errors.New("Session header is missing") //nolint:staticcheck // Upstream error text is observable.
+	}
+	records := []*FileEntry{newHeaderRecord(*header)}
+	for _, entry := range manager.GetBranch() {
+		records = append(records, newEntryRecord(entry))
+	}
+	return InMemory(manager.cwd, WithEntries(records), WithClock(manager.clock), WithEntryIDGenerator(manager.entryIDGenerator))
 }
 
 func newManager(cwd, sessionDir string, persist bool, options managerOptions) *SessionManager {
@@ -781,7 +796,8 @@ func (manager *SessionManager) AppendCompaction(
 		return "", err
 	}
 	entry.Summary = summary
-	entry.FirstKeptEntryID = firstKeptEntryID
+	// An empty first kept entry is a self-retaining compaction: nothing before it stays.
+	entry.FirstKeptEntryID = cmp.Or(firstKeptEntryID, entry.ID)
 	entry.TokensBefore = float64(tokensBefore)
 	if len(systemMessage) > 0 {
 		var current ai.SystemMessage

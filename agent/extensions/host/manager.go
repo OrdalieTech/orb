@@ -1636,6 +1636,8 @@ func decodeEventResult(event extensions.EventType, raw json.RawMessage) (any, er
 		target = &extensions.SessionBeforeCompactResult{}
 	case extensions.EventSessionBeforeTree:
 		target = &extensions.SessionBeforeTreeResult{}
+	case extensions.EventTurnEnd, extensions.EventAgentBeforeSettle:
+		target = &extensions.BoundaryResult{}
 	default:
 		var value any
 		if err := json.Unmarshal(raw, &value); err != nil {
