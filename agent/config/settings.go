@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -633,6 +634,23 @@ func (manager *SettingsManager) GetFollowUpMode() string {
 		return value
 	}
 	return "one-at-a-time"
+}
+
+// DeviceID is this installation's stable ID, a UUID created and stored in the
+// global settings on first use. Login flows that identify the installation
+// (Sign in with ChatGPT) send it.
+func (manager *SettingsManager) DeviceID() (string, error) {
+	if id := manager.stringValue("deviceId"); id != "" {
+		return id, nil
+	}
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	value[6], value[8] = value[6]&0x0f|0x40, value[8]&0x3f|0x80
+	id := fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:])
+	manager.setGlobalValues(settingMember("deviceId", id))
+	return id, nil
 }
 
 func (manager *SettingsManager) GetThemeSetting() string { return manager.stringValue("theme") }

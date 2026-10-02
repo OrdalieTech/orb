@@ -674,17 +674,19 @@ func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCom
 		cacheControl = &value
 	}
 	return resolvedOpenAICompletionsCompat{
-		supportsStore:                               !isNonStandard,
-		supportsDeveloperRole:                       isOpenRouterDeveloperModel || (!isNonStandard && !isOpenRouter),
-		supportsReasoningEffort:                     !isGrok && !isZAI && !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA && !isAntLing,
-		supportsUsageInStreaming:                    true,
-		supportsFinishReason:                        true,
-		maxTokensField:                              maxTokensField,
-		thinkingFormat:                              thinkingFormat,
-		chatTemplateKwargs:                          map[string]any{},
-		chatTemplateArgs:                            map[string]any{},
-		supportsOpenAIGrammarTools:                  false,
-		supportsStrictMode:                          !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA,
+		supportsStore:              !isNonStandard,
+		supportsDeveloperRole:      isOpenRouterDeveloperModel || (!isNonStandard && !isOpenRouter),
+		supportsReasoningEffort:    !isGrok && !isZAI && !isMoonshot && !isTogether && !isCloudflareGateway && !isNVIDIA && !isAntLing,
+		supportsUsageInStreaming:   true,
+		supportsFinishReason:       true,
+		maxTokensField:             maxTokensField,
+		thinkingFormat:             thinkingFormat,
+		chatTemplateKwargs:         map[string]any{},
+		chatTemplateArgs:           map[string]any{},
+		supportsOpenAIGrammarTools: false,
+		// OpenAI compatibility alone does not imply strict JSON-schema tool
+		// support; capable built-in models advertise it in their compat.
+		supportsStrictMode:                          false,
 		cacheControlFormat:                          cacheControl,
 		sendSessionAffinityHeaders:                  isOpenRouter,
 		sessionAffinityFormat:                       sessionFormat,

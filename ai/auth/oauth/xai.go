@@ -44,7 +44,7 @@ func NewXAI(options *XAIOptions) *XAI {
 		configured.TokenURL = defaultXAITokenURL
 	}
 	if configured.HTTPClient == nil {
-		configured.HTTPClient = http.DefaultClient
+		configured.HTTPClient = defaultHTTPClient
 	}
 	if configured.Now == nil {
 		configured.Now = time.Now

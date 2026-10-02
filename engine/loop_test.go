@@ -287,6 +287,51 @@ func TestAgentProjectsUpdatedSystemPromptAfterContextReplacement(t *testing.T) {
 	}
 }
 
+func TestRunLoopFinishTurnDecisionsAndPrepareRequest(t *testing.T) {
+	high := ThinkingHigh
+	for _, testCase := range []struct {
+		name     string
+		action   TurnAction
+		requests int
+	}{
+		{name: "default", requests: 1},
+		{name: "continue", action: TurnContinue, requests: 2},
+		{name: "end", action: TurnEnd, requests: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
+				loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "first"}),
+				loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "second"}),
+			}}
+			finished, prepared := 0, 0
+			agent := NewAgent(responses.stream,
+				WithInitialState(AgentState{Model: loopModel()}),
+				WithFinishTurn(func(context.Context, TurnContext) (TurnAction, error) {
+					finished++
+					if finished == 1 {
+						return testCase.action, nil
+					}
+					return "", nil
+				}),
+				WithPrepareRequest(func(_ context.Context, request PrepareRequestContext) (*AgentLoopTurnUpdate, error) {
+					prepared++
+					return &AgentLoopTurnUpdate{ThinkingLevel: &high}, nil
+				}),
+			)
+			if err := agent.Prompt(context.Background(), "go"); err != nil {
+				t.Fatal(err)
+			}
+			if len(responses.contexts) != testCase.requests || prepared != testCase.requests || finished != testCase.requests {
+				t.Fatalf("requests=%d prepared=%d finished=%d, want %d", len(responses.contexts), prepared, finished, testCase.requests)
+			}
+			last := agent.State().Messages[len(agent.State().Messages)-1].(*ai.AssistantMessage)
+			if last.ThinkingLevel == nil || *last.ThinkingLevel != ai.ModelThinkingHigh {
+				t.Fatalf("recorded thinking level = %v, want high from PrepareRequest", last.ThinkingLevel)
+			}
+		})
+	}
+}
+
 func TestAgentSetSystemPromptUpdatesProviderTranscript(t *testing.T) {
 	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{
 		loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"}),

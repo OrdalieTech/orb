@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -60,10 +59,7 @@ func NewAnthropic(options *AnthropicOptions) *Anthropic {
 		configured.TokenURL = defaultTokenURL
 	}
 	if configured.CallbackHost == "" {
-		configured.CallbackHost = os.Getenv("PI_OAUTH_CALLBACK_HOST")
-		if configured.CallbackHost == "" {
-			configured.CallbackHost = "127.0.0.1"
-		}
+		configured.CallbackHost = callbackHost()
 	}
 	if configured.CallbackPort == 0 {
 		configured.CallbackPort = defaultCallbackPort
@@ -81,7 +77,7 @@ func NewAnthropic(options *AnthropicOptions) *Anthropic {
 		configured.Now = time.Now
 	}
 	if configured.Listen == nil {
-		configured.Listen = net.Listen
+		configured.Listen = defaultListen
 	}
 	return &Anthropic{options: configured}
 }

@@ -35,9 +35,9 @@ func resolveExportTheme(name string, selected *ThemeRef) (exportTheme, error) {
 	}
 	switch name {
 	case "dark":
-		return exportTheme{darkThemeVariables, "#18181e", "#1e1e24", "#3c3728"}, nil
+		return exportTheme{darkThemeVariables, "#21252c", "#282c34", "#4e2f1b"}, nil
 	case "light":
-		return exportTheme{lightThemeVariables, "#f8f8f8", "#ffffff", "#fffae6"}, nil
+		return exportTheme{lightThemeVariables, "#efeeee", "#f7f6f6", "#ede3dd"}, nil
 	}
 	if selected != nil && selected.Name == name {
 		if selected.SourcePath == "" {
@@ -71,12 +71,49 @@ func resolveExportTheme(name string, selected *ThemeRef) (exportTheme, error) {
 	return exportThemeFrom(parsed), nil
 }
 
-var exportColorOrder = []string{
-	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text", "thinkingText",
-	"selectedBg", "scrollbarTrack", "scrollbarThumb", "searchMatchBg", "searchMatchText", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
-	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
-	"toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
-	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+// exportBackgroundTokens are listed after every foreground token, as
+// upstream's theme record keeps them.
+var exportBackgroundTokens = map[string]bool{
+	"selectedBg": true, "searchMatchBg": true, "userMessageBg": true, "customMessageBg": true,
+	"toolPendingBg": true, "toolSuccessBg": true, "toolErrorBg": true,
+}
+
+// exportFallbacks are upstream's defaults for optional tokens a file omits.
+var exportFallbacks = [][2]string{
+	{"scrollbarTrack", "muted"}, {"scrollbarThumb", "text"}, {"thinkingMax", "thinkingXhigh"},
+	{"searchMatchBg", "selectedBg"}, {"searchMatchText", "text"},
+}
+
+// exportColorOrder lists a theme's tokens as upstream's export does: every
+// token the file defines plus omitted fallbacks, foreground before background,
+// and tokens left at the terminal default last.
+func exportColorOrder(selected *themefile.Theme) ([]string, map[string]themefile.Color) {
+	colors := make(map[string]themefile.Color, len(selected.Keys)+len(exportFallbacks))
+	keys := append([]string(nil), selected.Keys...)
+	for _, key := range keys {
+		colors[key] = selected.Colors[key]
+	}
+	for _, fallback := range exportFallbacks {
+		if _, defined := colors[fallback[0]]; !defined {
+			keys = append(keys, fallback[0])
+			colors[fallback[0]] = colors[fallback[1]]
+		}
+	}
+	var foreground, background, defaultForeground, defaultBackground []string
+	for _, key := range keys {
+		isDefault := colors[key].Index == nil && colors[key].Text == ""
+		switch {
+		case exportBackgroundTokens[key] && isDefault:
+			defaultBackground = append(defaultBackground, key)
+		case exportBackgroundTokens[key]:
+			background = append(background, key)
+		case isDefault:
+			defaultForeground = append(defaultForeground, key)
+		default:
+			foreground = append(foreground, key)
+		}
+	}
+	return append(append(append(foreground, background...), defaultForeground...), defaultBackground...), colors
 }
 
 func exportThemeFrom(selected *themefile.Theme) exportTheme {
@@ -84,7 +121,8 @@ func exportThemeFrom(selected *themefile.Theme) exportTheme {
 	if selected.Name == "light" {
 		defaultText = "#000000"
 	}
-	colors := themefile.HexColors(selected.Colors, defaultText)
+	order, tokens := exportColorOrder(selected)
+	colors := themefile.HexColors(tokens, defaultText)
 	backgrounds := deriveExportColors(colors["userMessageBg"])
 	for name, value := range themefile.HexColors(selected.Export, "") {
 		if value == "" {
@@ -100,9 +138,9 @@ func exportThemeFrom(selected *themefile.Theme) exportTheme {
 		}
 	}
 	lines := make([]string, 0, len(colors)+3)
-	for _, name := range exportColorOrder {
+	for _, name := range order {
 		if value, ok := colors[name]; ok {
-			lines = append(lines, "--"+name+": "+value+";")
+			lines = append(lines, "--"+name+": "+strings.ToLower(value)+";")
 		}
 	}
 	lines = append(lines,
@@ -243,122 +281,122 @@ func relativeLuminance(r, g, b int) float64 {
 	return 0.2126*linear(r) + 0.7152*linear(g) + 0.0722*linear(b)
 }
 
-const darkThemeVariables = `--accent: #8abeb7;
-      --border: #5f87ff;
-      --borderAccent: #00d7ff;
-      --borderMuted: #505050;
-      --success: #b5bd68;
-      --error: #cc6666;
-      --warning: #ffff00;
-      --muted: #808080;
-      --dim: #666666;
-      --text: #d4d4d4;
-      --thinkingText: #808080;
-      --selectedBg: #3a3a4a;
-      --scrollbarTrack: #505050;
-      --scrollbarThumb: #d4d4d4;
-      --searchMatchBg: #3a3a4a;
-      --searchMatchText: #d4d4d4;
-      --userMessageBg: #343541;
-      --userMessageText: #d4d4d4;
-      --customMessageBg: #2d2838;
-      --customMessageText: #d4d4d4;
-      --customMessageLabel: #9575cd;
-      --toolPendingBg: #282832;
-      --toolSuccessBg: #283228;
-      --toolErrorBg: #3c2828;
-      --toolTitle: #d4d4d4;
-      --toolOutput: #808080;
-      --mdHeading: #f0c674;
-      --mdLink: #81a2be;
-      --mdLinkUrl: #666666;
-      --mdCode: #8abeb7;
-      --mdCodeBlock: #b5bd68;
-      --mdCodeBlockBorder: #808080;
-      --mdQuote: #808080;
-      --mdQuoteBorder: #808080;
-      --mdHr: #808080;
-      --mdListBullet: #8abeb7;
-      --toolDiffAdded: #b5bd68;
-      --toolDiffRemoved: #cc6666;
-      --toolDiffContext: #808080;
-      --syntaxComment: #6A9955;
-      --syntaxKeyword: #569CD6;
-      --syntaxFunction: #DCDCAA;
-      --syntaxVariable: #9CDCFE;
-      --syntaxString: #CE9178;
-      --syntaxNumber: #B5CEA8;
-      --syntaxType: #4EC9B0;
-      --syntaxOperator: #D4D4D4;
-      --syntaxPunctuation: #D4D4D4;
-      --thinkingOff: #505050;
-      --thinkingMinimal: #6e6e6e;
-      --thinkingLow: #5f87af;
-      --thinkingMedium: #81a2be;
-      --thinkingHigh: #b294bb;
-      --thinkingXhigh: #d183e8;
-      --thinkingMax: #ff5fff;
-      --bashMode: #b5bd68;
-      --exportPageBg: #18181e;
-      --exportCardBg: #1e1e24;
-      --exportInfoBg: #3c3728;`
+const darkThemeVariables = `--accent: #a798d7;
+      --border: #5fa8cc;
+      --borderAccent: #a08ed5;
+      --borderMuted: #768186;
+      --success: #68b78d;
+      --error: #ea7f81;
+      --warning: #cd9a22;
+      --muted: #9da5a9;
+      --dim: #7e888e;
+      --text: #dee0e1;
+      --thinkingText: #96a0a4;
+      --scrollbarTrack: #484e52;
+      --scrollbarThumb: #97a0a5;
+      --searchMatchText: #9da5a9;
+      --userMessageText: #dee0e1;
+      --customMessageText: #9da5a9;
+      --customMessageLabel: #a798d7;
+      --toolTitle: #dee0e1;
+      --toolOutput: #9da5a9;
+      --mdHeading: #cd9a22;
+      --mdLink: #69add0;
+      --mdLinkUrl: #9da5a9;
+      --mdCode: #a798d7;
+      --mdCodeBlock: #68b78d;
+      --mdCodeBlockBorder: #9da5a9;
+      --mdQuote: #9da5a9;
+      --mdQuoteBorder: #9da5a9;
+      --mdHr: #9da5a9;
+      --mdListBullet: #a798d7;
+      --toolDiffAdded: #68b78d;
+      --toolDiffRemoved: #ea7f81;
+      --toolDiffContext: #9da5a9;
+      --syntaxComment: #9da5a9;
+      --syntaxKeyword: #69add0;
+      --syntaxFunction: #cd9a22;
+      --syntaxVariable: #5db3ba;
+      --syntaxString: #de8d5a;
+      --syntaxNumber: #68b78d;
+      --syntaxType: #a798d7;
+      --syntaxOperator: #9da5a9;
+      --syntaxPunctuation: #9da5a9;
+      --thinkingOff: #6c767b;
+      --thinkingMinimal: #68808d;
+      --thinkingLow: #5489a4;
+      --thinkingMedium: #6185cc;
+      --thinkingHigh: #9776e5;
+      --thinkingXhigh: #de54c1;
+      --thinkingMax: #fe5462;
+      --bashMode: #5eb286;
+      --selectedBg: #213b49;
+      --searchMatchBg: #4e2f1b;
+      --userMessageBg: #213b49;
+      --customMessageBg: #3a3055;
+      --toolPendingBg: #34383a;
+      --toolSuccessBg: #254131;
+      --toolErrorBg: #5b282a;
+      --exportPageBg: #21252c;
+      --exportCardBg: #282c34;
+      --exportInfoBg: #4e2f1b;`
 
-const lightThemeVariables = `--accent: #5a8080;
-      --border: #547da7;
-      --borderAccent: #5a8080;
-      --borderMuted: #b0b0b0;
-      --success: #588458;
-      --error: #aa5555;
-      --warning: #9a7326;
-      --muted: #6c6c6c;
-      --dim: #767676;
-      --text: #1f2328;
-      --thinkingText: #6c6c6c;
-      --selectedBg: #d0d0e0;
-      --scrollbarTrack: #b0b0b0;
-      --scrollbarThumb: #1f2328;
-      --searchMatchBg: #d0d0e0;
-      --searchMatchText: #1f2328;
-      --userMessageBg: #e8e8e8;
-      --userMessageText: #1f2328;
-      --customMessageBg: #ede7f6;
-      --customMessageText: #1f2328;
-      --customMessageLabel: #7e57c2;
-      --toolPendingBg: #e8e8f0;
-      --toolSuccessBg: #e8f0e8;
-      --toolErrorBg: #f0e8e8;
-      --toolTitle: #1f2328;
-      --toolOutput: #6c6c6c;
-      --mdHeading: #9a7326;
-      --mdLink: #547da7;
-      --mdLinkUrl: #767676;
-      --mdCode: #5a8080;
-      --mdCodeBlock: #588458;
-      --mdCodeBlockBorder: #6c6c6c;
-      --mdQuote: #6c6c6c;
-      --mdQuoteBorder: #6c6c6c;
-      --mdHr: #6c6c6c;
-      --mdListBullet: #588458;
-      --toolDiffAdded: #588458;
-      --toolDiffRemoved: #aa5555;
-      --toolDiffContext: #6c6c6c;
-      --syntaxComment: #008000;
-      --syntaxKeyword: #0000FF;
-      --syntaxFunction: #795E26;
-      --syntaxVariable: #001080;
-      --syntaxString: #A31515;
-      --syntaxNumber: #098658;
-      --syntaxType: #267F99;
-      --syntaxOperator: #000000;
-      --syntaxPunctuation: #000000;
-      --thinkingOff: #b0b0b0;
-      --thinkingMinimal: #767676;
-      --thinkingLow: #547da7;
-      --thinkingMedium: #5a8080;
-      --thinkingHigh: #875f87;
-      --thinkingXhigh: #8b008b;
-      --thinkingMax: #af005f;
-      --bashMode: #588458;
-      --exportPageBg: #f8f8f8;
-      --exportCardBg: #ffffff;
-      --exportInfoBg: #fffae6;`
+const lightThemeVariables = `--accent: #7459b4;
+      --border: #3d8eb3;
+      --borderAccent: #8a72cb;
+      --borderMuted: #9aa2a7;
+      --success: #337e58;
+      --error: #c8253d;
+      --warning: #8f6802;
+      --muted: #677176;
+      --dim: #879095;
+      --text: #3b3f41;
+      --thinkingText: #7c868c;
+      --scrollbarTrack: #e1e3e4;
+      --scrollbarThumb: #96a0a4;
+      --searchMatchText: #677176;
+      --userMessageText: #3b3f41;
+      --customMessageText: #677176;
+      --customMessageLabel: #7459b4;
+      --toolTitle: #3b3f41;
+      --toolOutput: #677176;
+      --mdHeading: #8f6802;
+      --mdLink: #2f7899;
+      --mdLinkUrl: #677176;
+      --mdCode: #7459b4;
+      --mdCodeBlock: #337e58;
+      --mdCodeBlockBorder: #677176;
+      --mdQuote: #677176;
+      --mdQuoteBorder: #677176;
+      --mdHr: #677176;
+      --mdListBullet: #7459b4;
+      --toolDiffAdded: #337e58;
+      --toolDiffRemoved: #c8253d;
+      --toolDiffContext: #677176;
+      --syntaxComment: #677176;
+      --syntaxKeyword: #2f7899;
+      --syntaxFunction: #8f6802;
+      --syntaxVariable: #287a81;
+      --syntaxString: #a45417;
+      --syntaxNumber: #337e58;
+      --syntaxType: #7459b4;
+      --syntaxOperator: #677176;
+      --syntaxPunctuation: #677176;
+      --thinkingOff: #c2c8ca;
+      --thinkingMinimal: #b5c4cb;
+      --thinkingLow: #9fc2d5;
+      --thinkingMedium: #a2b7e0;
+      --thinkingHigh: #b5a5e8;
+      --thinkingXhigh: #e585cd;
+      --thinkingMax: #fe7479;
+      --bashMode: #40976c;
+      --selectedBg: #dfe7ec;
+      --searchMatchBg: #ede3dd;
+      --userMessageBg: #dfe7ec;
+      --customMessageBg: #e6e4ee;
+      --toolPendingBg: #e4e5e6;
+      --toolSuccessBg: #dee9e1;
+      --toolErrorBg: #eee2e1;
+      --exportPageBg: #efeeee;
+      --exportCardBg: #f7f6f6;
+      --exportInfoBg: #ede3dd;`

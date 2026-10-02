@@ -208,8 +208,9 @@ func TestGenerateFiltersUnsupportedSourceModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	models := catalog["anthropic"]
-	if len(models) != 2 {
-		t.Fatalf("got %d anthropic models, want 2", len(models))
+	// Claude Opus and Sonnet 5.5 are added until models.dev lists them.
+	if len(models) != 4 || models["no-tools"].ID != "" || models["old"].ID == "" {
+		t.Fatalf("anthropic models = %d (%v), want kept, old and the two added frontier models", len(models), sortedKeys(models))
 	}
 	model := models["kept"]
 	if !model.Reasoning || len(model.Input) != 2 || model.Cost.CacheRead != 0.1 {
@@ -272,11 +273,12 @@ func TestReleasedCatalogDeltasMatchPublishedPackages(t *testing.T) {
 		count int
 		hash  string
 	}{
-		"google":                 {24, "13a2f95e9df37bde37aea6fbbd413528546f94172e188a777c6b7a60c9259942"},
-		"opencode":               {58, "1230323f06f03cd57afe37daa33fa56d12c76f8a2d17f24e21edd7fa34aaf9b6"},
-		"openrouter":             {276, "1d6a4676a4dfb29ac6e953c33e80a887d2fc6903f1068d36a2e101e74ce62aea"},
-		"vercel-ai-gateway":      {192, "8a836f4c177943b72afaaae352b2c26a73118ee4ab5d973212fbe870c0f918ac"},
-		"azure-openai-responses": {39, "4ac98db2f6a5145959fe2148d2a681e906d8d43bbacebd47d75a4e34425972d6"},
+		"google":            {24, "13a2f95e9df37bde37aea6fbbd413528546f94172e188a777c6b7a60c9259942"},
+		"opencode":          {58, "1230323f06f03cd57afe37daa33fa56d12c76f8a2d17f24e21edd7fa34aaf9b6"},
+		"openrouter":        {276, "1d6a4676a4dfb29ac6e953c33e80a887d2fc6903f1068d36a2e101e74ce62aea"},
+		"vercel-ai-gateway": {192, "8a836f4c177943b72afaaae352b2c26a73118ee4ab5d973212fbe870c0f918ac"},
+		// v0.82.1 plus pi v0.99's GPT-6 Sol, GPT-6 Luna and GPT-6.1 Sol.
+		"azure-openai-responses": {42, "e445bc07dee5ad6997d6894b0d9f6543b3defd5eb0e564b8f6407f2a17c04a04"},
 		"amazon-bedrock":         {114, "0f4ad04526540dcaf4435de9d18c4f230613331bcb110c3bf3abb384fd1dfeca"},
 	} {
 		if got := len(catalog[provider]); got != want.count {
@@ -323,7 +325,12 @@ func TestReleasedCatalogDeltasMatchPublishedPackages(t *testing.T) {
 				want = candidate.Model
 			}
 		}
+		// pi 1.0 catalogs type every entry and record image input limits; the
+		// limits themselves are checked against upstream through compat-models.
+		want.Type, want.InputLimits = "chat", got.InputLimits
 		switch string(want.Provider) + "/" + want.ID {
+		case "opencode-go/glm-5.2":
+			want.Compat = overlayCompat(t, want.Compat, "supportsStrictMode", true)
 		case "github-copilot/claude-opus-5":
 			(*want.ThinkingLevelMap)[ai.ModelThinkingMinimal] = ptr("low")
 			want.Compat = overlayCompat(t, want.Compat, "supportsMidConvoSystemMessages", true)
@@ -335,12 +342,16 @@ func TestReleasedCatalogDeltasMatchPublishedPackages(t *testing.T) {
 			}
 		case "qwen-token-plan/MiniMax-M2.5":
 			want.Compat = overlayCompat(t, want.Compat, "supportsReasoningEffort", false)
+			want.Compat = overlayCompat(t, want.Compat, "supportsStrictMode", true)
 		case "openai/gpt-5.4":
 			want.Compat = overlayCompat(t, want.Compat, "supportsAdditionalTools", true)
 			want.Compat = overlayCompat(t, want.Compat, "supportsMidConvoSystemMessages", true)
 		case "fireworks/accounts/fireworks/models/glm-5p2":
 			(*want.ThinkingLevelMap)[ai.ModelThinkingLow] = nil
 			(*want.ThinkingLevelMap)[ai.ModelThinkingMedium] = nil
+			want.Compat = overlayCompat(t, want.Compat, "supportsStrictMode", true)
+			want.Compat = overlayCompat(t, want.Compat, "sendSessionAffinityHeaders", true)
+			want.Compat = overlayCompat(t, want.Compat, "supportsLongCacheRetention", false)
 		}
 		gotJSON, err := json.Marshal(got)
 		if err != nil {

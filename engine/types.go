@@ -48,11 +48,17 @@ const (
 )
 
 type AgentToolResult struct {
-	Content        ai.ToolResultContent
-	Details        any
-	Usage          *ai.Usage
-	AddedToolNames *[]string
-	Terminate      *bool
+	Content ai.ToolResultContent
+	Details any
+	// StructuredContent is the machine-readable result matching the tool's
+	// output schema, for programmatic callers; the model sees Content.
+	StructuredContent any
+	Usage             *ai.Usage
+	AddedToolNames    *[]string
+	// IsError reports a failure without returning an error: the model sees
+	// Content as an error result, while Details and StructuredContent remain.
+	IsError   bool
+	Terminate *bool
 }
 
 // AgentToolUpdateCallback snapshots accepted updates and returns before event
@@ -172,9 +178,12 @@ type AfterToolCallResult struct {
 	Content    ai.ToolResultContent
 	Details    any
 	DetailsSet bool
-	IsError    *bool
-	Usage      *ai.Usage
-	Terminate  *bool
+	// StructuredContent replaces the result's; when Content is replaced
+	// without it, the old structured content is dropped as no longer matching.
+	StructuredContent any
+	IsError           *bool
+	Usage             *ai.Usage
+	Terminate         *bool
 }
 
 type BeforeToolCallContext struct {
@@ -193,14 +202,33 @@ type AfterToolCallContext struct {
 	Context          *AgentContext
 }
 
-type ShouldStopAfterTurnContext struct {
+// TurnContext describes a completed turn: the assistant response, its tool
+// results, the context after them and everything the run appended so far.
+type TurnContext struct {
 	Message     *ai.AssistantMessage
 	ToolResults []*ai.ToolResultMessage
 	Context     *AgentContext
 	NewMessages AgentMessages
 }
 
-type PrepareNextTurnContext = ShouldStopAfterTurnContext
+type PrepareNextTurnContext = TurnContext
+
+// TurnAction is a FinishTurn decision. TurnEnd ends a normal run after
+// turn_end without touching steering or follow-up queues; TurnContinue ensures
+// one more provider request, which queued work may satisfy.
+type TurnAction string
+
+const (
+	TurnEnd      TurnAction = "end"
+	TurnContinue TurnAction = "continue"
+)
+
+// PrepareRequestContext is what the next provider request would use.
+type PrepareRequestContext struct {
+	Context       *AgentContext
+	Model         *ai.Model
+	ThinkingLevel ThinkingLevel
+}
 
 type AgentLoopTurnUpdate struct {
 	Context       *AgentContext
@@ -219,7 +247,15 @@ type RequestAuth struct {
 }
 type GetRequestAuthFunc func(context.Context, ai.ProviderID) (*RequestAuth, error)
 type GetModelHeadersFunc func(context.Context, *ai.Model, *string, ai.ProviderEnv) (*map[string]string, error)
-type ShouldStopAfterTurnFunc func(context.Context, ShouldStopAfterTurnContext) (bool, error)
+
+// FinishTurnFunc runs after the assistant response and its tool results are
+// final and before turn_end, for error and aborted responses too (their
+// decision is ignored: those remain hard exits). An empty action keeps normal
+// scheduling.
+type FinishTurnFunc func(context.Context, TurnContext) (TurnAction, error)
+
+// PrepareRequestFunc runs before every provider request, the first included.
+type PrepareRequestFunc func(context.Context, PrepareRequestContext) (*AgentLoopTurnUpdate, error)
 type PrepareNextTurnFunc func(context.Context, PrepareNextTurnContext) (*AgentLoopTurnUpdate, error)
 type GetQueuedMessagesFunc func(context.Context) (AgentMessages, error)
 type BeforeToolCallFunc func(context.Context, BeforeToolCallContext) (*BeforeToolCallResult, error)
@@ -235,7 +271,8 @@ type AgentLoopConfig struct {
 	GetAPIKey           GetAPIKeyFunc
 	GetRequestAuth      GetRequestAuthFunc
 	GetModelHeaders     GetModelHeadersFunc
-	ShouldStopAfterTurn ShouldStopAfterTurnFunc
+	FinishTurn          FinishTurnFunc
+	PrepareRequest      PrepareRequestFunc
 	PrepareNextTurn     PrepareNextTurnFunc
 	GetSteeringMessages GetQueuedMessagesFunc
 	GetFollowUpMessages GetQueuedMessagesFunc

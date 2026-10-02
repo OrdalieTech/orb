@@ -20,14 +20,14 @@ func TestRefreshCodexStoresAccountModels(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"models":[
 			{"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","context_window":1},
-			{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list","context_window":272000,"input_modalities":["text"],"supported_reasoning_levels":[{"effort":"low"}]},
+			{"slug":"gpt-7-sol","display_name":"GPT-7-Sol","visibility":"list","context_window":272000,"input_modalities":["text"],"supported_reasoning_levels":[{"effort":"low"}]},
 			{"slug":"gpt-new","display_name":"GPT New","visibility":"list"},
 			{"slug":"gpt-reserve","visibility":"hide"}]}`))
 	}))
 	defer server.Close()
 
 	fresh := generatedCatalogLastModified + 1
-	sol := ai.Model{ID: "gpt-6-sol", Name: "GPT-6 Sol", Provider: "openai", API: ai.APIOpenAIResponses, MaxTokens: 64000, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 2}}}
+	sol := ai.Model{ID: "gpt-7-sol", Name: "GPT-7 Sol", Provider: "openai", API: ai.APIOpenAIResponses, MaxTokens: 64000, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 2}}}
 	store, err := json.Marshal(map[string]storedProvider{
 		"openai":       {Models: []ai.Model{sol}, CheckedAt: fresh, LastModified: &fresh},
 		"openai-codex": {Models: []ai.Model{}, CheckedAt: fresh, LastModified: &fresh, ETag: "etag"},
@@ -55,8 +55,8 @@ func TestRefreshCodexStoresAccountModels(t *testing.T) {
 	if astra, _ := catalog.Find("openai-codex", "gpt-6-astra"); astra.ContextWindow != builtinAstra.ContextWindow {
 		t.Fatalf("known model lost catalog metadata: %#v", astra)
 	}
-	got, _ := catalog.Find("openai-codex", "gpt-6-sol")
-	if got.Name != "GPT-6 Sol" || got.API != ai.APIOpenAICodexResponses || got.BaseURL != builtinAstra.BaseURL || got.Cost.Input != 2 || got.MaxTokens != 64000 || !got.Reasoning || len(got.Input) != 1 {
+	got, _ := catalog.Find("openai-codex", "gpt-7-sol")
+	if got.Name != "GPT-7 Sol" || got.API != ai.APIOpenAICodexResponses || got.BaseURL != builtinAstra.BaseURL || got.Cost.Input != 2 || got.MaxTokens != 64000 || !got.Reasoning || len(got.Input) != 1 {
 		t.Fatalf("derived model = %#v", got)
 	}
 	if unknown, _ := catalog.Find("openai-codex", "gpt-new"); unknown.Name != "GPT New" || unknown.Cost.Input != 0 {

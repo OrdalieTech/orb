@@ -64,7 +64,8 @@ export async function extractProvidersF2(upstreamRoot: string) {
     const builtin = module.builtinProviders();
     const result = [];
     for (const provider of builtin) {
-      if (provider.id === "radius") continue;
+      // TypeSafe serves only classifier models, which Orb does not adopt yet.
+      if (provider.id === "radius" || provider.id === "typesafe") continue;
       const source = await readFile(
         path.join(upstreamRoot, "packages/ai/src/providers", `${provider.id}.ts`),
         "utf8",

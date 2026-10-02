@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { generateCommandMetadata } from "./f8-command-metadata.ts";
+import { committedFixture } from "./orb-owned.ts";
 
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
 
@@ -18,12 +19,6 @@ type TemplateCase = {
 	name: string;
 	text: string;
 	templates: Array<{ name: string; description: string; content: string }>;
-	expected?: string;
-};
-type HarnessSubstitutionCase = {
-	name: string;
-	content: string;
-	args: string[];
 	expected?: string;
 };
 
@@ -61,6 +56,8 @@ const discoveryFiles: FixtureFile[] = [
 	},
 	{ path: "prompts/skill:missing.md", content: "Fallback template: $1" },
 	{ path: "prompts/empty.md", content: "" },
+	// Upstream >=0.87 reports malformed frontmatter instead of dropping the file silently.
+	{ path: "prompts/malformed.md", content: "---\ndescription: [unclosed\n---\nBroken template body." },
 	{ path: "prompts/unicode.md", content: `${"a".repeat(59)}🎉z` },
 	{ path: "prompts/nested/ignored.md", content: "Must not load" },
 ];
@@ -269,28 +266,6 @@ const templateCases: TemplateCase[] = [
 	},
 ];
 
-const harnessSubstitutionCases: HarnessSubstitutionCase[] = [
-	{
-		name: "positional-slice-and-all",
-		content: "$1 ${@:2} $ARGUMENTS",
-		args: ["hello world", "test", "$1"],
-	},
-	{
-		name: "default-syntax-is-literal",
-		content: "${4:-fallback}",
-		args: ["one", "two"],
-	},
-	{
-		name: "sequential-reexpansion",
-		content: "$1",
-		args: ["$ARGUMENTS", "tail"],
-	},
-	{
-		name: "slice-zero-length-quirk",
-		content: "${@:2:0}",
-		args: ["one", "two", "three"],
-	},
-];
 
 const resolutionTemplateSpecs = [
 	{
@@ -528,7 +503,7 @@ async function generateResourceFilteringFixture(
 			JSON.stringify({
 				...baseTheme,
 				name,
-				vars: { ...baseTheme.vars, accent },
+				colors: { ...baseTheme.colors, accent },
 			});
 		const settings = {
 			skills: ["configured/skills", "!configured/skills/excluded"],
@@ -686,7 +661,7 @@ async function generateResourceLoaderExtensionFixture(
 			JSON.stringify({
 				...baseTheme,
 				name: "extension-theme",
-				vars: { ...baseTheme.vars, accent },
+				colors: { ...baseTheme.colors, accent },
 			});
 		const files = [
 			...resourceExtensionFiles,
@@ -1041,20 +1016,12 @@ export async function generateF8(
 	const skillSource = "packages/coding-agent/src/core/skills.ts";
 	const resourceSource = "packages/coding-agent/src/core/resource-loader.ts";
 	const slashSource = "packages/coding-agent/src/core/slash-commands.ts";
-	const harnessSkillSource = "packages/agent/src/harness/skills.ts";
-	const harnessPromptSource = "packages/agent/src/harness/prompt-templates.ts";
 	const promptModule = (await import(
 		pathToFileURL(path.join(upstreamRoot, promptSource)).href
 	)) as typeof import("../../.upstream/packages/coding-agent/src/core/prompt-templates.ts");
 	const skillModule = (await import(
 		pathToFileURL(path.join(upstreamRoot, skillSource)).href
 	)) as typeof import("../../.upstream/packages/coding-agent/src/core/skills.ts");
-	const harnessSkillModule = (await import(
-		pathToFileURL(path.join(upstreamRoot, harnessSkillSource)).href
-	)) as typeof import("../../.upstream/packages/agent/src/harness/skills.ts");
-	const harnessPromptModule = (await import(
-		pathToFileURL(path.join(upstreamRoot, harnessPromptSource)).href
-	)) as typeof import("../../.upstream/packages/agent/src/harness/prompt-templates.ts");
 	const slashModule = (await import(
 		pathToFileURL(path.join(upstreamRoot, slashSource)).href
 	)) as typeof import("../../.upstream/packages/coding-agent/src/core/slash-commands.ts");
@@ -1073,12 +1040,6 @@ export async function generateF8(
 			fixtureCase.templates as any,
 		);
 	}
-	for (const fixtureCase of harnessSubstitutionCases) {
-		fixtureCase.expected = harnessPromptModule.formatPromptTemplateInvocation(
-			{ name: fixtureCase.name, description: "", content: fixtureCase.content },
-			fixtureCase.args,
-		);
-	}
 
 	const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "orb-f8-"));
 	try {
@@ -1090,54 +1051,13 @@ export async function generateF8(
 			skillPaths: [skillsDir],
 			includeDefaults: false,
 		});
-		const templates = promptModule.loadPromptTemplates({
+		const { templates, diagnostics: templateDiagnostics } = promptModule.loadPromptTemplates({
 			cwd: fixtureRoot,
 			agentDir: path.join(fixtureRoot, "agent"),
 			promptPaths: [promptsDir],
 			includeDefaults: false,
 		});
-		const envModule = await import(
-			pathToFileURL(
-				path.join(upstreamRoot, "packages/agent/src/harness/env/nodejs.ts"),
-			).href
-		);
-		const harnessEnv = new envModule.NodeExecutionEnv({ cwd: fixtureRoot });
-		const { BACKGROUND_CONTEXT } = await import(pathToFileURL(path.join(upstreamRoot, "packages/agent/src/harness/context.ts")).href);
-		const harnessSkills = await harnessSkillModule.loadSkills(
-			harnessEnv,
-			skillsDir,
-			BACKGROUND_CONTEXT,
-		);
-		const harnessPrompts = await harnessPromptModule.loadPromptTemplates(
-			harnessEnv,
-			promptsDir,
-			BACKGROUND_CONTEXT,
-		);
-		const harnessDirectPrompt = await harnessPromptModule.loadPromptTemplates(
-			harnessEnv,
-			path.join(promptsDir, "empty.md"),
-			BACKGROUND_CONTEXT,
-		);
-		const inspect = harnessSkills.skills.find(
-			(skill) => skill.name === "inspect",
-		);
-		if (!inspect)
-			throw new Error("F8 failed to load inspect skill through agent harness");
-		const invocationCases = [
-			{
-				name: "without-extra",
-				additionalInstructions: "",
-				expected: harnessSkillModule.formatSkillInvocation(inspect),
-			},
-			{
-				name: "with-extra",
-				additionalInstructions: "Check errors.",
-				expected: harnessSkillModule.formatSkillInvocation(
-					inspect,
-					"Check errors.",
-				),
-			},
-		];
+		const owned = await committedFixture("F8");
 		const normalizedSkills = skillResult.skills.map((skill) =>
 			normalizeSkill(skill, fixtureRoot),
 		);
@@ -1182,8 +1102,6 @@ export async function generateF8(
 			generator: "conformance/extract/f8-slash-templates.ts",
 			source: `${promptSource} + ${skillSource} + ${resourceSource} + packages/coding-agent/src/core/agent-session.ts`,
 			additionalSources: [
-				harnessSkillSource,
-				harnessPromptSource,
 				slashSource,
 				"packages/coding-agent/src/core/package-manager.ts",
 				"packages/coding-agent/src/core/settings-manager.ts",
@@ -1192,6 +1110,7 @@ export async function generateF8(
 				"packages/coding-agent/src/modes/interactive/theme/dark.json",
 				"packages/coding-agent/src/modes/interactive/interactive-mode.ts",
 			],
+			orbOwned: ["invocationCases", "harnessSubstitutionCases", "harnessPrompts"],
 			files: ["cases.json"],
 		};
 		const fixture = {
@@ -1199,24 +1118,15 @@ export async function generateF8(
 			argumentCases,
 			substitutionCases,
 			templateCases,
-			invocationCases: normalizeDeep(invocationCases, fixtureRoot),
-			harnessSubstitutionCases,
-			harnessPrompts: {
-				promptTemplates: harnessPrompts.promptTemplates,
-				diagnostics: normalizeDeep(harnessPrompts.diagnostics, fixtureRoot),
-				directPrompt: harnessDirectPrompt,
-				invocation: harnessPromptModule.formatPromptTemplateInvocation(
-					harnessPrompts.promptTemplates.find(
-						(template) => template.name === "review",
-					)!,
-					["file.go", "focus", "errors"],
-				),
-			},
+			invocationCases: owned.invocationCases,
+			harnessSubstitutionCases: owned.harnessSubstitutionCases,
+			harnessPrompts: owned.harnessPrompts,
 			discovery: {
 				files: discoveryFiles,
 				skills: normalizedSkills,
 				diagnostics: normalizeDeep(skillResult.diagnostics, fixtureRoot),
 				templates: normalizedTemplates,
+				templateDiagnostics: normalizeDeep(templateDiagnostics, fixtureRoot),
 				commands,
 				rpcCommandsWhenSkillCommandsDisabled: commands,
 				builtinCommands: slashModule.BUILTIN_SLASH_COMMANDS.map((command) => ({

@@ -433,63 +433,78 @@ Out of scope for now: codemode and what only it consumes (script `models` API, c
 Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 
 **Ground**
-- [ ] Fixture extraction runs at v1.0.0 (`oauth-page` moved to `utils/`, `tsx` dropped upstream,
+- [x] Fixture extraction runs at v1.0.0 (`oauth-page` moved to `utils/`, `tsx` dropped upstream,
       harness files deleted) on the pinned Node.
-- [ ] Upstream deleted its experimental harness (session v4, pico3, `AgentHarness`): `engine/harness`
+- [x] Upstream deleted its experimental harness (session v4, pico3, `AgentHarness`): `engine/harness`
       becomes Orb-owned, its fixtures and sync paths reclassified, no further port obligation.
 - [ ] Delete backward-compatibility code: session v1/v2 migration, `auth_migrate`, D37 companion
       interfaces folded in place, legacy `ai.Context` fields and the legacy `SetSystemPrompt` path,
       the sync exported-API comparison gate, settings-based MCP config.
 
 **Agent loop and sessions**
-- [ ] `finishTurn` replaces `shouldStopAfterTurn`; `prepareRequest`; `peekQueuedMessages`.
-- [ ] `thinkingLevel` recorded on assistant messages.
-- [ ] `context_edit` entries (append-only omit/replace) in JSONL, the SQLite store and import/export;
-      the session is the canonical provider context; `refreshContext`; retain-none compaction.
+- [x] `finishTurn` replaces `shouldStopAfterTurn`; `prepareRequest`; every request is the session's
+      projection, so unrecorded agent state never reaches the provider.
+- [ ] `peekQueuedMessages`.
+- [x] `thinkingLevel` recorded on assistant messages.
+- [x] `context_edit` entries (append-only omit/replace) in the session and its projection; each
+      request is the session's projection; `refreshContext`.
+- [ ] Retain-none compaction (`appendCompaction(summary, null, ...)`).
+- [ ] Harness (v4) storage records `context_edit` too (it rejects it for now; retries there fall
+      back to dropping the failed attempt in memory).
 - [ ] Actionable `turn_end` and `agent_before_settle` boundaries; `agent_settled` defers runs until
       every handler finishes.
 - [ ] `context_with_system`; `context` handlers no longer see system messages.
-- [ ] Abandoned attempts (selected error retries, final overflow recovery) persisted as omissions.
-- [ ] Split-turn compaction prompt that Fable 5.1 accepts.
+- [x] Abandoned attempts (selected error retries, final overflow recovery) persisted as omissions.
+- [x] Split-turn compaction prompt that Fable 5.1 accepts.
 
 **Extension surface**
+- [x] Tool results carry `isError` and `structuredContent`; bash returns its structured result.
 - [ ] Tool `exposure` (`direct`, `model-only`, `deferred`, `hidden`; `codemode` treated as
-      `deferred`), `namespace`, `annotations`, `outputSchema`/`structuredContent`, `isError`,
-      `prepareLoadout()`.
+      `deferred`), `namespace`, `annotations`, `outputSchema`, `prepareLoadout()`, and the same
+      fields through the JS extension surface.
 - [ ] `ctx.executeTool()` with `parentToolCallId`, bounded `nestedCalls` and usage rolled into the
       caller's result.
 - [ ] `provider_stream_event` / `onProviderStreamEvent`.
-- [ ] `theme.style()`, `theme.colors`, `theme.appearance`; theme files accept `#rgb`, `oklch()`,
-      `okhsl()` and `appearance`.
+- [x] Theme files accept `#rgb`, `oklch()`, `okhsl()` and `appearance`; HTML export follows pi 1.0
+      palettes and token order.
+- [ ] `theme.style()`, `theme.colors`, `theme.appearance` for extensions.
 - [ ] Built-ins named `builtin:<name>`; replacing one warns; extension commands without a name or
       handler fail to load.
-- [ ] HTML export: show/hide toggle for `display: false` custom messages.
+- [x] HTML export: show/hide toggle for `display: false` custom messages.
 
 **RPC**
-- [ ] Per-input disposition on `prompt`, `steer` and `follow_up` responses; client
-      `streamingBehavior`; the Android app shows whether a message was sent, steered or queued.
+- [x] Per-input disposition on `prompt`, `steer` and `follow_up` responses.
+- [ ] Client `streamingBehavior` and dispositions in the Go RPC client; the Android app shows whether a
+      message was started, steered or queued.
 
 **Settings, models, catalog**
 - [ ] `defaultTools` `+name`/`-name` entries (project on top of user); `/reload` enables newly added.
 - [ ] `inputLimits.images.resize` applied to attachments, `read` and tool-result images.
 - [ ] `quietStartup: "header"`.
-- [ ] Catalog refresh: model `type`, image entries in the same catalog, image-input limits; Claude
+- [x] Catalog refresh: model `type`, image-input limits; Claude
       Opus 5.5 and Sonnet 5.5 (adaptive thinking, 1M), GPT-6 Sol/Luna, GPT-6.1 Sol (Codex default),
       Grok 4.7 (xAI default), Kimi K3 defaults, Meta Muse Spark, Copilot Opus 5.5 levels.
-- [ ] Audit the remaining kernel paths the dry run listed (keybindings, trust, prompt-template
-      frontmatter warnings, system prompt, CLI args).
+- [x] Malformed prompt-template frontmatter is a resource warning; session files appear at the first
+      user message; the system prompt's docs line names MCP.
+- [ ] Audit the remaining kernel paths the dry run listed (keybindings, trust, CLI args).
+- [ ] `samplingParams` (model and per request) merged into OpenAI-compatible request bodies.
+- [ ] Projection-aware compaction (context edits respected by cut points and token estimates).
 
 **Providers and sign-in**
-- [ ] Anthropic: non-strict fallback for rejected schema keywords; current Claude Code version;
-      redirect errors end sign-in; busy callback port falls back to paste.
+- [x] Anthropic reports Claude Code 2.1.280.
+- [ ] Anthropic: non-strict fallback for rejected schema keywords; redirect errors end sign-in;
+      busy callback port falls back to paste.
 - [ ] Anthropic copy-code login, and on a headless Orb the link and code travel over the Bridge to
       the paired phone.
 - [ ] Anthropic workload identity federation through the `Env` port.
-- [ ] Sign in with ChatGPT on `openai` (stable `deviceId`); usage-limit errors not retried; Codex
-      provider renamed legacy.
-- [ ] Meta provider: `META_API_KEY` and `/login meta`.
+- [x] Sign in with ChatGPT on `openai` (stable `deviceId`, request fields it rejects left out);
+      Codex provider renamed legacy.
+- [ ] ChatGPT usage-limit errors are not retried and link to the usage page.
+- [x] Meta provider: `META_API_KEY` and `/login meta`.
 - [ ] One shared OAuth callback server and Orb-branded pages.
-- [ ] Wire fixes: OpenAI-compatible strict only when advertised (Cerebras off); image-only messages
+- [x] OpenAI-compatible strict only when advertised; pi-messages and Codex WebSocket partials as of
+      emission.
+- [ ] Wire fixes: image-only messages
       without empty text; `samplingParams` on direct calls; Responses streams without `output_index`
       end in error; `ctc` IDs on replayed grammar tool calls; Mistral GLM chunks and
       `reasoning_effort`; OpenCode `qwen3.8-flash` empty signatures; Z.AI overflow (both messages);

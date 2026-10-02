@@ -597,21 +597,10 @@ func (manager *SessionManager) persistEntryLocked(entry *FileEntry) error {
 	if !manager.persist || manager.sessionFile == "" {
 		return nil
 	}
-	hasAssistant := false
-	for _, candidate := range manager.fileEntries {
-		if candidate != nil && candidate.Entry != nil && candidate.Entry.Type == "message" && messageRole(candidate.Entry.Message) == "assistant" {
-			hasAssistant = true
-			break
-		}
-	}
-	if !hasAssistant {
-		if manager.flushed {
-			return manager.appendFileEntryLocked(entry)
-		}
-		manager.flushed = false
-		return nil
-	}
 	if !manager.flushed {
+		if !manager.hasConversationLocked() {
+			return nil
+		}
 		err := withFileLock(manager.sessionFile, func() error {
 			file, err := os.OpenFile(manager.sessionFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o666)
 			if err != nil {
@@ -880,6 +869,66 @@ func (manager *SessionManager) AppendCustomMessageEntry(customType string, conte
 			return "", err
 		}
 	}
+	return manager.appendEntryLocked(entry)
+}
+
+// ErrHarnessContextEdit reports that harness (v4) storage cannot record
+// context edits yet.
+var ErrHarnessContextEdit = errors.New("session: harness storage does not support context edits")
+
+// AppendContextEdit appends a branch-local edit to an earlier model-visible
+// entry: a nil or JSON null replacement omits it from model context, otherwise
+// replacement must be {"content": string | array} and replaces only its
+// content. Raw history, usage and UI history keep the original.
+func (manager *SessionManager) AppendContextEdit(targetID string, replacement json.RawMessage) (string, error) {
+	if len(replacement) == 0 {
+		replacement = rawNull()
+	}
+	if !bytes.Equal(bytes.TrimSpace(replacement), []byte("null")) {
+		var edit struct {
+			Content json.RawMessage `json:"content"`
+		}
+		_ = json.Unmarshal(replacement, &edit)
+		if content := bytes.TrimSpace(edit.Content); len(content) == 0 || (content[0] != '"' && content[0] != '[') {
+			return "", errors.New("context edit replacement must be null or contain string/array content")
+		}
+	}
+	target := manager.GetEntry(targetID)
+	if target == nil {
+		return "", fmt.Errorf("entry %s not found", targetID)
+	}
+	onBranch := false
+	for _, entry := range manager.GetBranch() {
+		if entry.ID == targetID {
+			onBranch = true
+			break
+		}
+	}
+	if !onBranch {
+		return "", fmt.Errorf("entry %s is not on the active branch", targetID)
+	}
+	role := "custom"
+	if target.Type == "message" {
+		var header struct {
+			Role string `json:"role"`
+		}
+		_ = json.Unmarshal(target.Message, &header)
+		role = header.Role
+	}
+	if target.Type != "custom_message" && (target.Type != "message" || (role != "user" && role != "assistant" && role != "toolResult")) {
+		return "", fmt.Errorf("entry %s does not contribute editable model content", targetID)
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.harnessStorage != nil {
+		return "", ErrHarnessContextEdit
+	}
+	entry, err := manager.newEntryBaseLocked("context_edit")
+	if err != nil {
+		return "", err
+	}
+	entry.TargetID = targetID
+	entry.Replacement = cloneRaw(replacement)
 	return manager.appendEntryLocked(entry)
 }
 

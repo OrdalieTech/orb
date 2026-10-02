@@ -381,16 +381,20 @@ func buildOpenAIResponsesPayload(
 			payload.PromptCacheKey = &key
 		}
 	}
-	if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention && !compat.supportsExplicitPromptCacheMode {
-		retention := "24h"
-		payload.PromptCacheRetention = &retention
+	// Sign in with ChatGPT rejects these request fields.
+	chatGPTSignIn := isChatGPTSignIn(model, streamOptions)
+	if !chatGPTSignIn {
+		if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention && !compat.supportsExplicitPromptCacheMode {
+			retention := "24h"
+			payload.PromptCacheRetention = &retention
+		}
+		if cacheRetention == ai.CacheRetentionNone && compat.supportsExplicitPromptCacheMode {
+			payload.PromptCacheOptions = &OpenAIPromptCacheOptions{Mode: "explicit"}
+		} else if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention && compat.supportsExplicitPromptCacheMode {
+			payload.PromptCacheOptions = &OpenAIPromptCacheOptions{TTL: "30m"}
+		}
 	}
-	if cacheRetention == ai.CacheRetentionNone && compat.supportsExplicitPromptCacheMode {
-		payload.PromptCacheOptions = &OpenAIPromptCacheOptions{Mode: "explicit"}
-	} else if cacheRetention == ai.CacheRetentionLong && compat.supportsLongCacheRetention && compat.supportsExplicitPromptCacheMode {
-		payload.PromptCacheOptions = &OpenAIPromptCacheOptions{TTL: "30m"}
-	}
-	if streamOptions != nil {
+	if streamOptions != nil && !chatGPTSignIn {
 		if streamOptions.MaxTokens != nil && *streamOptions.MaxTokens != 0 && compat.supportsMaxOutputTokens {
 			value := max(*streamOptions.MaxTokens, openAIResponsesMinOutputTokens)
 			payload.MaxOutputTokens = &value
@@ -409,6 +413,13 @@ func buildOpenAIResponsesPayload(
 	}
 	applyResponsesReasoning(payload, model, options)
 	return payload, compat, nil
+}
+
+// isChatGPTSignIn reports a Sign in with ChatGPT access token: OpenAI API keys
+// start with sk-, any other credential sent directly to OpenAI is a token.
+func isChatGPTSignIn(model *ai.Model, options *ai.StreamOptions) bool {
+	return model.Provider == "openai" && model.BaseURL == "https://api.openai.com/v1" &&
+		options != nil && options.APIKey != nil && !strings.HasPrefix(*options.APIKey, "sk-")
 }
 
 func applyResponsesReasoning(payload *OpenAIResponsesPayload, model *ai.Model, options *OpenAIResponsesOptions) {

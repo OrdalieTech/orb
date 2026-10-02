@@ -500,15 +500,17 @@ func combinePrompts(inputs [][]PromptTemplate) ([]PromptTemplate, []ResourceDiag
 	return combined, diagnostics
 }
 
-func loadPromptsAtPaths(paths []string, cwd, agentDir string) []PromptTemplate {
-	if len(paths) == 0 {
-		return []PromptTemplate{}
-	}
-	return LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: cwd, AgentDir: agentDir, PromptPaths: paths})
-}
-
 func loadCommandPrompts(options commandResourceOptions) ([]PromptTemplate, []ResourceDiagnostic) {
 	inputs := make([][]PromptTemplate, 0)
+	var warnings []ResourceDiagnostic
+	loadPromptsAtPaths := func(paths []string, cwd, agentDir string) []PromptTemplate {
+		if len(paths) == 0 {
+			return []PromptTemplate{}
+		}
+		templates, diagnostics := LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: cwd, AgentDir: agentDir, PromptPaths: paths})
+		warnings = append(warnings, diagnostics...)
+		return templates
+	}
 	projectBase := filepath.Join(options.cwd, ".pi")
 	if !options.noPrompts && options.trusted {
 		paths := resolveConfiguredPaths(options.projectPromptPaths, projectBase)
@@ -542,6 +544,7 @@ func loadCommandPrompts(options commandResourceOptions) ([]PromptTemplate, []Res
 		loadPromptsAtPaths(options.promptPaths, options.cwd, options.agentDir), options.metadata.prompts,
 	))
 	prompts, diagnostics := combinePrompts(inputs)
+	diagnostics = append(warnings, diagnostics...)
 	for _, path := range options.promptPaths {
 		resolved := resolveResourcePathFrom(path, options.cwd)
 		if isLocalPathSource(path) && !pathExists(resolved) {

@@ -169,7 +169,7 @@ func TestReleasedCompactsOversizedToolBeforeNextAssistant(t *testing.T) {
 	if _, err := manager.AppendMessage(runtimeAssistant(provider, "earlier answer", 10)); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	compacted := false
 	runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 		compacted = true
@@ -204,7 +204,7 @@ func TestReleasedWaitForIdleIncludesAutoCompactionAndAbort(t *testing.T) {
 	if _, err := manager.AppendMessage(runtimeAssistant(provider, "answer", 20)); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	runtime.complete = func(ctx context.Context, _ *ai.Model, _ ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 		close(entered)

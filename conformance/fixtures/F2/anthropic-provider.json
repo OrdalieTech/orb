@@ -12,7 +12,8 @@
     "env": [
       "ANTHROPIC_AUTH_TOKEN",
       "ANTHROPIC_OAUTH_TOKEN",
-      "ANTHROPIC_API_KEY"
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_FEDERATION_RULE_ID"
     ],
     "resolved": {
       "headers": {

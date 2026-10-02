@@ -141,8 +141,8 @@ func TestCreateBranchedSessionPersistenceBoundaryAndParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, statErr := os.Stat(branchedPath); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("user-only branch exists before assistant: %v", statErr)
+	if _, statErr := os.Stat(branchedPath); statErr != nil {
+		t.Fatalf("a branch holding a user message is written at once: %v", statErr)
 	}
 	header := manager.GetHeader()
 	if header == nil || header.ParentSession == nil || *header.ParentSession != sourcePath {

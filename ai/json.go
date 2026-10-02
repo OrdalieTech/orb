@@ -354,6 +354,7 @@ func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
 			Timestamp             int64                         `json:"timestamp"`
 			EndTurn               *bool                         `json:"endTurn,omitempty"`
 			RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
+			ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel,omitempty"`
 		}{
 			Role:                  "assistant",
 			Content:               message.Content,
@@ -369,6 +370,7 @@ func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
 			Timestamp:     message.Timestamp,
 			EndTurn:       message.EndTurn,
 			RawStopReason: rawStopReason,
+			ThinkingLevel: message.ThinkingLevel,
 		})
 	}
 	if message.errorBeforeResponseID && message.ErrorMessage != nil {
@@ -388,12 +390,14 @@ func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
 			ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
 			ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
 			Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+			ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel,omitempty"`
 		}{
 			Role: "assistant", Content: message.Content, API: api, Provider: provider, Model: model,
 			Usage: message.Usage, StopReason: stopReason, Timestamp: message.Timestamp,
 			EndTurn:       message.EndTurn,
 			RawStopReason: rawStopReason, ErrorMessage: errorMessage, ResponseID: responseID,
 			ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel, Diagnostics: message.Diagnostics,
+			ThinkingLevel: message.ThinkingLevel,
 		})
 	}
 	return marshalJSON(struct {
@@ -412,6 +416,7 @@ func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
 		EndTurn               *bool                         `json:"endTurn,omitempty"`
 		RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
 		ErrorMessage          json.RawMessage               `json:"errorMessage,omitempty"`
+		ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel,omitempty"`
 	}{
 		Role:                  "assistant",
 		Content:               message.Content,
@@ -427,6 +432,7 @@ func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
 		EndTurn:       message.EndTurn,
 		RawStopReason: rawStopReason,
 		ErrorMessage:  errorMessage,
+		ThinkingLevel: message.ThinkingLevel,
 	})
 }
 
@@ -446,6 +452,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		EndTurn               *bool                         `json:"endTurn"`
 		RawStopReason         json.RawMessage               `json:"rawStopReason"`
 		ErrorMessage          json.RawMessage               `json:"errorMessage"`
+		ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -500,6 +507,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ErrorMessage:  errorMessage,
 		RawStopReason: rawStopReason,
 		EndTurn:       raw.EndTurn,
+		ThinkingLevel: raw.ThinkingLevel,
 	}
 	message.rawStopBeforeDiagnostics = topLevelMemberBefore(data, "rawStopReason", "diagnostics")
 	message.modelOmitted = len(raw.Model) == 0

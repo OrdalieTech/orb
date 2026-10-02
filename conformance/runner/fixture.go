@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
@@ -40,6 +42,35 @@ func ReplacePathAliases(value, path, replacement string) string {
 		value = strings.ReplaceAll(value, canonical, replacement)
 	}
 	return strings.ReplaceAll(value, path, replacement)
+}
+
+var entryAppendedMember = regexp.MustCompile(`"(id|parentId|targetId|timestamp)":"([^"]*)"`)
+
+// CanonicalizeEntryAppended rewrites entry_appended events in a JSONL trace
+// the way the F3-session extractor does: entry IDs become entry-N in order of
+// appearance and timestamps become fixedNow, since upstream IDs are random.
+func CanonicalizeEntryAppended(trace []byte, fixedNow time.Time) []byte {
+	ids := map[string]string{}
+	stamp := fixedNow.UTC().Format("2006-01-02T15:04:05.000Z")
+	lines := bytes.Split(trace, []byte("\n"))
+	for index, line := range lines {
+		if !bytes.HasPrefix(line, []byte(`{"type":"entry_appended",`)) {
+			continue
+		}
+		lines[index] = entryAppendedMember.ReplaceAllFunc(line, func(match []byte) []byte {
+			parts := entryAppendedMember.FindSubmatch(match)
+			if string(parts[1]) == "timestamp" {
+				return []byte(`"timestamp":"` + stamp + `"`)
+			}
+			id, seen := ids[string(parts[2])]
+			if !seen {
+				id = fmt.Sprintf("entry-%d", len(ids)+1)
+				ids[string(parts[2])] = id
+			}
+			return []byte(`"` + string(parts[1]) + `":"` + id + `"`)
+		})
+	}
+	return bytes.Join(lines, []byte("\n"))
 }
 
 // ReplaceJSONPathAliases is ReplacePathAliases for paths inside JSON string

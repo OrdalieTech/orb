@@ -14,12 +14,12 @@
     "durationMs": 0,
     "runId": "run-fixed-persist-agent-sessions",
     "tokenUsage": {
-      "input": 1421,
+      "input": 1451,
       "output": 13,
-      "total": 4259,
+      "total": 4349,
       "cost": 0,
-      "cacheRead": 1403,
-      "cacheWrite": 1422
+      "cacheRead": 1433,
+      "cacheWrite": 1452
     }
   },
   "error": null,
@@ -36,13 +36,13 @@
       "id": "run-fixed-persist-agent-sessions:0",
       "label": "keeper",
       "result": "Kept the marker safe.",
-      "tokens": 4259,
+      "tokens": 4349,
       "tokenUsage": {
-        "input": 1421,
+        "input": 1451,
         "output": 13,
-        "cacheRead": 1403,
-        "cacheWrite": 1422,
-        "total": 4259,
+        "cacheRead": 1433,
+        "cacheWrite": 1452,
+        "total": 4349,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -50,12 +50,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 1421,
+        "input": 1451,
         "output": 13,
-        "total": 4259,
+        "total": 4349,
         "cost": 0,
-        "cacheRead": 1403,
-        "cacheWrite": 1422
+        "cacheRead": 1433,
+        "cacheWrite": 1452
       }
     }
   ],
@@ -204,7 +204,7 @@
               "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
               "tools": "<tools>\n- bash: Execute bash commands (ls, grep, find, etc.)\n- store_put: Write a value to the shared store\n- store_get: Read a value from the shared store\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
               "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- You can inspect PI_* environment variables for current model and session details.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
-              "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: <pi-package>/README.md\n- Additional docs: <pi-package>/docs\n- Examples: <pi-package>/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
+              "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: <pi-package>/README.md\n- Additional docs: <pi-package>/docs\n- Examples: <pi-package>/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
               "cwd": "<cwd>\n<fixture>/project\n</cwd>"
             },
             "timestamp": 1700000200321,
@@ -404,11 +404,11 @@
             "provider": "faux",
             "model": "faux-model",
             "usage": {
-              "input": 1403,
+              "input": 1433,
               "output": 7,
               "cacheRead": 0,
-              "cacheWrite": 1403,
-              "totalTokens": 2813,
+              "cacheWrite": 1433,
+              "totalTokens": 2873,
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -418,7 +418,8 @@
               }
             },
             "stopReason": "toolUse",
-            "timestamp": 1700000200321
+            "timestamp": 1700000200321,
+            "thinkingLevel": "off"
           }
         },
         {
@@ -459,9 +460,9 @@
             "usage": {
               "input": 18,
               "output": 6,
-              "cacheRead": 1403,
+              "cacheRead": 1433,
               "cacheWrite": 19,
-              "totalTokens": 1446,
+              "totalTokens": 1476,
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -471,7 +472,8 @@
               }
             },
             "stopReason": "stop",
-            "timestamp": 1700000200321
+            "timestamp": 1700000200321,
+            "thinkingLevel": "off"
           }
         }
       ]

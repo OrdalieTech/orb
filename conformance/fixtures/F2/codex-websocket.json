@@ -104,8 +104,7 @@
               }
             },
             "stopReason": "pending",
-            "timestamp": 1700000000123,
-            "responseId": "ws-fixture"
+            "timestamp": 1700000000123
           }
         },
         {

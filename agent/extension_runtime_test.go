@@ -863,7 +863,7 @@ func TestExtensionCompactionHooksCanProvideSummary(t *testing.T) {
 	if _, err := manager.AppendMessage(userMessage("latest request")); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	result, err := runtime.Compact(context.Background(), "focus")
 	if err != nil {
 		t.Fatal(err)
@@ -916,7 +916,7 @@ func TestExtensionTreeHooksCanProvideSummaryAndLabel(t *testing.T) {
 	_, _ = manager.AppendMessage(&ai.AssistantMessage{Content: ai.AssistantContent{}, Timestamp: 1})
 	_, _ = manager.AppendMessage(userMessage("second"))
 	_, _ = manager.AppendMessage(&ai.AssistantMessage{Content: ai.AssistantContent{}, Timestamp: 2})
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	result, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true})
 	if err != nil {
 		t.Fatal(err)

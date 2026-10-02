@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -76,10 +75,7 @@ func NewOpenAICodex(options *OpenAICodexOptions) *OpenAICodex {
 		configured.DeviceRedirectURI = authBaseURL + "/deviceauth/callback"
 	}
 	if configured.CallbackHost == "" {
-		configured.CallbackHost = os.Getenv("PI_OAUTH_CALLBACK_HOST")
-		if configured.CallbackHost == "" {
-			configured.CallbackHost = "127.0.0.1"
-		}
+		configured.CallbackHost = callbackHost()
 	}
 	if configured.CallbackPort == 0 {
 		configured.CallbackPort = defaultOpenAICodexCallbackPort
@@ -88,7 +84,7 @@ func NewOpenAICodex(options *OpenAICodexOptions) *OpenAICodex {
 		configured.RedirectURI = fmt.Sprintf("http://localhost:%d%s", configured.CallbackPort, openAICodexCallbackPath)
 	}
 	if configured.HTTPClient == nil {
-		configured.HTTPClient = http.DefaultClient
+		configured.HTTPClient = defaultHTTPClient
 	}
 	if configured.Random == nil {
 		configured.Random = rand.Reader
@@ -97,7 +93,7 @@ func NewOpenAICodex(options *OpenAICodexOptions) *OpenAICodex {
 		configured.Now = time.Now
 	}
 	if configured.Listen == nil {
-		configured.Listen = net.Listen
+		configured.Listen = defaultListen
 	}
 	return &OpenAICodex{options: configured}
 }

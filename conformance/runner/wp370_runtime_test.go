@@ -1,7 +1,9 @@
 package runner_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -97,13 +99,21 @@ func runWP370NewSession(t *testing.T, cancel bool) wp370RuntimeCase {
 		records = append(records, wp370RuntimeRecord{Phase: "beforeSessionInvalidate"})
 	})
 	host.SetRebindSession(func(session *agent.AgentSession) error {
+		// Upstream refreshes the context from the session right after setup;
+		// Orb's observable effect is the setup-written message in the context.
+		if messages := session.State().Messages; len(messages) > 0 {
+			if raw, ok := messages[len(messages)-1].(json.RawMessage); ok && bytes.Contains(raw, []byte(`"customType":"wp370-setup"`)) {
+				records = append(records, wp370RuntimeRecord{Phase: "refreshContext"})
+			}
+		}
 		records = append(records, wp370RuntimeRecord{Phase: "rebindSession"})
 		return session.BindExtensions(context.Background())
 	})
 	result, err := host.NewSession(context.Background(), &extensions.NewSessionOptions{
-		Setup: func(*sessionstore.SessionManager) error {
+		Setup: func(manager *sessionstore.SessionManager) error {
 			records = append(records, wp370RuntimeRecord{Phase: "setup"})
-			return nil
+			_, err := manager.AppendCustomMessageEntry("wp370-setup", "written by setup", false)
+			return err
 		},
 		WithSession: func(_ context.Context, replaced extensions.ReplacedSessionContext) error {
 			if replaced.CWD() != cwd {

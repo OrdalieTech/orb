@@ -108,8 +108,24 @@ func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext 
 			}
 		}
 	}
-	for _, entry := range BuildContextEntries(entries, leafID) {
-		context.Messages = append(context.Messages, entryContextMessages(entry)...)
+	contextEntries := BuildContextEntries(entries, leafID)
+	edits := map[string]json.RawMessage{}
+	for _, entry := range contextEntries {
+		if entry.Type == "context_edit" {
+			edits[entry.TargetID] = entry.Replacement
+		}
+	}
+	for index, entry := range contextEntries {
+		// An older compaction retained inside the newest kept range contributes
+		// nothing; only the newest one, at index zero, adds its summary.
+		if entry.Type == "compaction" && index > 0 {
+			continue
+		}
+		messages := entryContextMessages(entry)
+		if replacement, edited := edits[entry.ID]; edited {
+			messages = applyContextEdit(messages, replacement)
+		}
+		context.Messages = append(context.Messages, messages...)
 	}
 	transcript := make(ai.MessageList, 0, len(context.Messages))
 	for _, raw := range context.Messages {
@@ -172,6 +188,43 @@ func entryContextMessages(entry SessionEntry) []json.RawMessage {
 	default:
 		return nil
 	}
+}
+
+// applyContextEdit applies a context_edit replacement to an entry's model
+// messages: null omits them, {"content": ...} replaces only their content (a
+// string becomes one text block for assistant and tool-result messages).
+func applyContextEdit(messages []json.RawMessage, replacement json.RawMessage) []json.RawMessage {
+	var edit struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if len(replacement) == 0 || bytes.Equal(bytes.TrimSpace(replacement), []byte("null")) || json.Unmarshal(replacement, &edit) != nil {
+		return nil
+	}
+	edited := make([]json.RawMessage, 0, len(messages))
+	for _, raw := range messages {
+		object, err := parseOrderedObject(raw)
+		if err != nil {
+			edited = append(edited, raw)
+			continue
+		}
+		role, _ := stringMember(object, "role")
+		if role != "user" && role != "assistant" && role != "toolResult" && role != "custom" {
+			edited = append(edited, raw)
+			continue
+		}
+		content := edit.Content
+		if text, isString := decodeString(content); isString && (role == "assistant" || role == "toolResult") {
+			content, _ = ai.Marshal([]map[string]string{{"type": "text", "text": text}})
+		}
+		object.set("content", content)
+		encoded, err := object.marshal()
+		if err != nil {
+			edited = append(edited, raw)
+			continue
+		}
+		edited = append(edited, encoded)
+	}
+	return edited
 }
 
 func isSystemMessageEntry(entry SessionEntry) bool {

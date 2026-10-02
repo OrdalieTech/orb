@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,13 +60,13 @@ func NewOpenRouter(options *OpenRouterOptions) *OpenRouter {
 		configured.LoginTimeout = openRouterLoginTimeout
 	}
 	if configured.HTTPClient == nil {
-		configured.HTTPClient = http.DefaultClient
+		configured.HTTPClient = defaultHTTPClient
 	}
 	if configured.Random == nil {
 		configured.Random = rand.Reader
 	}
 	if configured.Listen == nil {
-		configured.Listen = net.Listen
+		configured.Listen = defaultListen
 	}
 	return &OpenRouter{options: configured}
 }
@@ -209,10 +208,7 @@ func (flow *OpenRouter) callbackHost() string {
 	if flow.options.CallbackHost != "" {
 		return flow.options.CallbackHost
 	}
-	if host := os.Getenv("PI_OAUTH_CALLBACK_HOST"); host != "" {
-		return host
-	}
-	return "127.0.0.1"
+	return callbackHost()
 }
 
 type openRouterOutcome struct {

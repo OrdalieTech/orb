@@ -1,11 +1,12 @@
 {
   "family": "F3-session",
-  "upstreamCommit": "ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc",
+  "upstreamCommit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
   "generator": "conformance/extract/f3-session.ts",
   "source": "packages/coding-agent/src/modes/print-mode.ts + packages/coding-agent/src/core/agent-session.ts + packages/ai/src/providers/faux.ts",
   "format": "agent-session-event-jsonl-v1",
   "canonicalized": [
-    "session.timestamp"
+    "session.timestamp",
+    "entry_appended.entry.{id,parentId,targetId,timestamp}"
   ],
   "files": [
     "scenarios.json",

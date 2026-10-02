@@ -248,10 +248,10 @@ func TestRunAuthCommandLogoutAcceptsExplicitAnthropic(t *testing.T) {
 
 func TestRunAuthCommandRejectsUnsupportedProvider(t *testing.T) {
 	var stderr bytes.Buffer
-	code := runAuthCommand(context.Background(), CLIArgs{Command: "login", CommandArgs: []string{"openai"}}, cliStreams{
+	code := runAuthCommand(context.Background(), CLIArgs{Command: "login", CommandArgs: []string{"groq"}}, cliStreams{
 		Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &stderr,
 	})
-	if code != 1 || !strings.Contains(stderr.String(), `provider "openai" does not support headless login yet`) {
+	if code != 1 || !strings.Contains(stderr.String(), `provider "groq" does not support headless login yet`) {
 		t.Fatalf("unsupported login = code %d, stderr %q", code, stderr.String())
 	}
 }

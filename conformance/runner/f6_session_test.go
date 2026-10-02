@@ -202,7 +202,7 @@ func loadF6Fixture(t testing.TB) f6Fixture {
 			len(fixture.MigrationCases),
 		)
 	}
-	if fixture.LazyPersistence.PreAssistantExists || !fixture.LazyPersistence.PostAssistantExists {
+	if !fixture.LazyPersistence.PreAssistantExists || !fixture.LazyPersistence.PostAssistantExists {
 		t.Fatalf("unexpected F6 lazy-persistence fixture: %+v", fixture.LazyPersistence)
 	}
 	return fixture

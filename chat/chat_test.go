@@ -268,7 +268,7 @@ func (s *fauxSessions) Acquire(_ context.Context, key ConversationKey) (*Convers
 	if err != nil {
 		return nil, err
 	}
-	runtime.SyncMessagesFromSession()
+	runtime.RefreshContext()
 	return &Conversation{
 		Session: runtime,
 		Manager: manager,

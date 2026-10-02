@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func TestPersistedSessionFlushesOnFirstAssistant(t *testing.T) {
+func TestPersistedSessionFlushesOnFirstUserMessage(t *testing.T) {
 	dir := t.TempDir()
 	now := fixedTestTime(t)
 	manager, err := Create(
@@ -32,14 +32,11 @@ func TestPersistedSessionFlushesOnFirstAssistant(t *testing.T) {
 	if _, err := manager.AppendMessage(json.RawMessage(`{"role":"user","content":"hello"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("session file exists before assistant: %v", err)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("session file missing after the first user message: %v", err)
 	}
 	if _, err := manager.AppendMessage(json.RawMessage(`{"role":"assistant","content":[]}`)); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("session file missing after assistant: %v", err)
 	}
 	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("lock residue left after write: %v", err)

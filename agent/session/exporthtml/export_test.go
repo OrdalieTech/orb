@@ -82,8 +82,8 @@ func TestEmbeddedAssetsMatchPinnedUpstream(t *testing.T) {
 		hash     string
 	}{
 		"template.html":    {templateHTML, "916782b1184a9597527605ad751e2b3af30fcea23ba2194002969cd217a06881"},
-		"template.css":     {templateCSS, "28c16e3827c23a62eef8283cac316b478f946e023093adad25ff9c9b891d41af"},
-		"template.js":      {templateJS, "1893cdb77587f592eef5717905391269886d6d7a4dc6a488417a73da374d9226"},
+		"template.css":     {templateCSS, "8ee19851f8e583277ed396cbb76496687aa556707fdfc1f78d1118bff87c740a"},
+		"template.js":      {templateJS, "b5bbffdf5d9ec8bb519df45c7ff953ac1969af80e8aba33331b9f87983f91fa5"},
 		"marked.min.js":    {markedJS, "d5487edc7258b404bfa74c393d74a6393155f02517bd5e7e77cd64f8187f39a0"},
 		"highlight.min.js": {highlightJS, "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846"},
 	}
@@ -156,7 +156,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "38ee7ac0202a2c4bf5a5864c119a2d857078ed44b59bf40bce4ebf4cfc208c72" {
+	if got := sha256Hex(contents); got != "96a2c836857eec8566856b5b6f88e432993bef11133dc014af5832dab69ee67f" {
 		t.Fatalf("custom-theme HTML sha256 = %s, want pinned-upstream fixture", got)
 	}
 	for _, want := range []string{
@@ -375,7 +375,7 @@ func sha256Hex(contents []byte) string {
 func TestTerminalThemeExportsAsItsBackgroundPalette(t *testing.T) {
 	t.Setenv("COLORFGBG", "0;15")
 	light, err := resolveExportTheme("terminal", &ThemeRef{Name: "terminal"})
-	if err != nil || light.pageBg != "#f8f8f8" {
+	if err != nil || light.pageBg != "#efeeee" {
 		t.Fatalf("light terminal = %+v, %v", light, err)
 	}
 }

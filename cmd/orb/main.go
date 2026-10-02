@@ -49,8 +49,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion        = "0.86.0"
-	upstreamCommit         = "ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc"
+	upstreamVersion        = "1.0.0"
+	upstreamCommit         = "a13d35a742c6ef8462812a28fbe1d8c8b7431c32"
 	latestReleaseURL       = "https://api.github.com/repos/OrdalieTech/orb/releases/latest"
 	versionCheckTimeout    = 10 * time.Second
 	versionResponseMaxSize = 64 << 10

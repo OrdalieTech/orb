@@ -33,7 +33,8 @@ type agentOptions struct {
 	afterToolCall              AfterToolCallFunc
 	prepareNextTurn            PrepareNextTurnWithoutContextFunc
 	prepareNextTurnWithContext PrepareNextTurnFunc
-	shouldStopAfterTurn        ShouldStopAfterTurnFunc
+	finishTurn                 FinishTurnFunc
+	prepareRequest             PrepareRequestFunc
 	getSteeringMessages        GetQueuedMessagesFunc
 	getFollowUpMessages        GetQueuedMessagesFunc
 	steeringMode               QueueMode
@@ -129,8 +130,21 @@ func (agent *Agent) SwapPrepareNextTurnContext(hook PrepareNextTurnFunc) Prepare
 	return previous
 }
 
-func WithShouldStopAfterTurn(hook ShouldStopAfterTurnFunc) AgentOption {
-	return func(options *agentOptions) { options.shouldStopAfterTurn = hook }
+// SwapPrepareRequest replaces the before-request hook and returns its predecessor.
+func (agent *Agent) SwapPrepareRequest(hook PrepareRequestFunc) PrepareRequestFunc {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	previous := agent.prepareRequest
+	agent.prepareRequest = hook
+	return previous
+}
+
+func WithFinishTurn(hook FinishTurnFunc) AgentOption {
+	return func(options *agentOptions) { options.finishTurn = hook }
+}
+
+func WithPrepareRequest(hook PrepareRequestFunc) AgentOption {
+	return func(options *agentOptions) { options.prepareRequest = hook }
 }
 
 func WithGetSteeringMessages(getter GetQueuedMessagesFunc) AgentOption {
@@ -195,7 +209,8 @@ type Agent struct {
 	afterToolCall               AfterToolCallFunc
 	prepareNextTurn             PrepareNextTurnWithoutContextFunc
 	prepareNextTurnWithContext  PrepareNextTurnFunc
-	shouldStopAfterTurn         ShouldStopAfterTurnFunc
+	finishTurn                  FinishTurnFunc
+	prepareRequest              PrepareRequestFunc
 	getSteeringMessages         GetQueuedMessagesFunc
 	getFollowUpMessages         GetQueuedMessagesFunc
 	streamOptions               ai.SimpleStreamOptions
@@ -279,7 +294,8 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 		afterToolCall:              options.afterToolCall,
 		prepareNextTurn:            options.prepareNextTurn,
 		prepareNextTurnWithContext: options.prepareNextTurnWithContext,
-		shouldStopAfterTurn:        options.shouldStopAfterTurn,
+		finishTurn:                 options.finishTurn,
+		prepareRequest:             options.prepareRequest,
 		getSteeringMessages:        options.getSteeringMessages,
 		getFollowUpMessages:        options.getFollowUpMessages,
 		streamOptions:              options.streamOptions,
@@ -907,7 +923,8 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 		ToolExecution:       agent.toolExecution,
 		BeforeToolCall:      agent.beforeToolCall,
 		AfterToolCall:       agent.afterToolCall,
-		ShouldStopAfterTurn: agent.shouldStopAfterTurn,
+		FinishTurn:          agent.finishTurn,
+		PrepareRequest:      agent.prepareRequest,
 		Now:                 agent.now,
 	}
 	prepareWithoutContext := agent.prepareNextTurn

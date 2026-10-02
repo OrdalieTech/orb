@@ -115,7 +115,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 	}
 	manager.buildIndexLocked()
 
-	if manager.persist && manager.hasAssistantLocked() {
+	if manager.persist && manager.hasConversationLocked() {
 		if err := manager.rewriteFileLocked(); err != nil {
 			return "", err
 		}
@@ -147,9 +147,15 @@ func cloneEntryRecordWithParent(entry *SessionEntry, parentID *string) (*FileEnt
 	return decodeFileEntry(object, nil), nil
 }
 
-func (manager *SessionManager) hasAssistantLocked() bool {
+// hasConversationLocked reports whether the session holds a user or assistant
+// message: a session file is created only then, so setup entries alone leave
+// no file behind while a prompt whose first turn never completes is kept.
+func (manager *SessionManager) hasConversationLocked() bool {
 	for _, candidate := range manager.fileEntries {
-		if candidate != nil && candidate.Entry != nil && candidate.Entry.Type == "message" && messageRole(candidate.Entry.Message) == "assistant" {
+		if candidate == nil || candidate.Entry == nil || candidate.Entry.Type != "message" {
+			continue
+		}
+		if role := messageRole(candidate.Entry.Message); role == "user" || role == "assistant" {
 			return true
 		}
 	}

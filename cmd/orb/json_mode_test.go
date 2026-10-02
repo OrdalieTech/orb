@@ -117,7 +117,7 @@ func TestJSONPrintModeMatchesUpstreamRunPrintModeFixtures(t *testing.T) {
 			if exitCode != scenario.ExpectedExitCode || stderr.Len() != 0 {
 				t.Fatalf("exit=%d want=%d stderr=%q", exitCode, scenario.ExpectedExitCode, stderr.String())
 			}
-			if got := fixtureProjectCWD(t, stdout.Bytes()); !bytes.Equal(got, want) {
+			if got := runner.CanonicalizeEntryAppended(fixtureProjectCWD(t, stdout.Bytes()), time.UnixMilli(fixtures.FixedNow)); !bytes.Equal(got, want) {
 				t.Fatalf("JSON trace mismatch:\n%s", runner.ByteDiff(want, got))
 			}
 		})

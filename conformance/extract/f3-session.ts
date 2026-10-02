@@ -287,6 +287,22 @@ export async function generateF3Session(
         }
         header.timestamp = new originalDate(FIXED_NOW).toISOString();
         lines[0] = JSON.stringify(header);
+        // Session entries carry random IDs and wall-clock timestamps; appended
+        // entries are numbered in order of appearance and stamped FIXED_NOW.
+        const entryIds = new Map<string, string>();
+        const entryId = (id: string) => {
+          if (!entryIds.has(id)) entryIds.set(id, `entry-${entryIds.size + 1}`);
+          return entryIds.get(id)!;
+        };
+        for (let index = 1; index < lines.length; index++) {
+          const event = JSON.parse(lines[index]);
+          if (event.type !== "entry_appended") continue;
+          for (const key of ["id", "parentId", "targetId"]) {
+            if (typeof event.entry[key] === "string") event.entry[key] = entryId(event.entry[key]);
+          }
+          event.entry.timestamp = new originalDate(FIXED_NOW).toISOString();
+          lines[index] = JSON.stringify(event);
+        }
         const output = `${lines.join("\n")}\n`;
         const events = lines.slice(1).map((line) => JSON.parse(line));
         for (const type of definition.requiredEventTypes) {
@@ -324,7 +340,7 @@ export async function generateF3Session(
         source:
           "packages/coding-agent/src/modes/print-mode.ts + packages/coding-agent/src/core/agent-session.ts + packages/ai/src/providers/faux.ts",
         format: "agent-session-event-jsonl-v1",
-        canonicalized: ["session.timestamp"],
+        canonicalized: ["session.timestamp", "entry_appended.entry.{id,parentId,targetId,timestamp}"],
         files: ["scenarios.json", "model-controls.json", ...traceFiles],
       };
       await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

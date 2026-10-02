@@ -382,7 +382,8 @@ func TestF10BranchAndSplitTurnPromptsMatchUpstream(t *testing.T) {
 				FileOps:  harness.FileOperations{Read: map[string]struct{}{}, Written: map[string]struct{}{}, Edited: map[string]struct{}{}},
 				Settings: fixtureCase.Input.Settings,
 			}
-			got, err := harness.Compact(context.Background(), prepared, model, complete, "", ai.ModelThinkingHigh)
+			routing := "00000000-0000-7000-8000-000000000000"
+			got, err := harness.CompactProduct(context.Background(), prepared, model, complete, "", ai.ModelThinkingHigh, &routing)
 			if err != nil {
 				t.Fatalf("compact: %v", err)
 			}

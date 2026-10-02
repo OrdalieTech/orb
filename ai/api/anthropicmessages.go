@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	claudeCodeVersion                             = "2.1.251"
+	claudeCodeVersion                             = "2.1.280"
 	anthropicFineGrainedToolStreamingBeta         = "fine-grained-tool-streaming-2025-05-14"
 	anthropicInterleavedThinkingBeta              = "interleaved-thinking-2025-05-14"
 	defaultAnthropicThinkingBudget        float64 = 1024

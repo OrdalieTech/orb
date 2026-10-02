@@ -172,6 +172,7 @@ func cloneAgentToolResult(result AgentToolResult) AgentToolResult {
 	copy := result
 	copy.Content = cloneToolResultContent(result.Content)
 	copy.Details = cloneJSONValue(result.Details)
+	copy.StructuredContent = cloneJSONValue(result.StructuredContent)
 	copy.Usage = cloneUsage(result.Usage)
 	copy.AddedToolNames = cloneStringSlicePointer(result.AddedToolNames)
 	copy.Terminate = cloneBoolPointer(result.Terminate)

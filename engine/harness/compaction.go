@@ -108,20 +108,20 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`
 
-const TurnPrefixSummarizationPrompt = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
+const TurnPrefixSummarizationPrompt = `The messages above are earlier context from an ongoing conversation. Later messages are stored separately and do not need to be reconstructed.
 
-Summarize the prefix to provide context for the retained suffix:
+Create a concise checkpoint of the user's request and the progress shown above. This checkpoint will be placed before the later messages so the conversation can continue with the necessary context.
 
 ## Original Request
-[What did the user ask for in this turn?]
+[What did the user ask for?]
 
-## Early Progress
-- [Key decisions and work done in the prefix]
+## Progress So Far
+- [Key decisions and work completed in these messages]
 
-## Context for Suffix
-- [Information needed to understand the retained recent work]
+## Context Needed to Continue
+- [Information from these messages needed to understand the later work]
 
-Be concise. Focus on what's needed to understand the kept suffix.`
+Only summarize information explicitly present above. Do not infer or recreate later messages.`
 
 func CalculateContextTokens(usage ai.Usage) int64 {
 	if usage.TotalTokens != 0 {
@@ -570,7 +570,9 @@ func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
 func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
-	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n" + TurnPrefixSummarizationPrompt
+	// Headed sections rather than a tagged conversation: Fable 5.1 refused the
+	// tagged prefix framing as an instruction to fabricate the rest.
+	prompt := "# Conversation\n" + SerializeConversation(messages) + "\n\n# Instructions\n" + TurnPrefixSummarizationPrompt
 	result, err := runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens/2, model), thinkingLevel, product)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

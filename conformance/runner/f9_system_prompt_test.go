@@ -18,8 +18,10 @@ const (
 	f9OrbDocsHeading          = "Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):"
 )
 
-// D30 permits only these product-identity substitutions over upstream-generated F9 goldens.
+// D30 permits these product-identity substitutions over upstream-generated F9
+// goldens, plus the ledgered absence of codemode (DECISIONS divergence ledger).
 var f9OrbPromptReplacer = strings.NewReplacer(
+	", codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)", "",
 	f9UpstreamDefaultIdentity, f9OrbDefaultIdentity,
 	"Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):", f9OrbDocsHeading,
 	"When reading pi docs or examples", "When reading Orb docs or examples",

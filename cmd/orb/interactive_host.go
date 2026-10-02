@@ -469,7 +469,7 @@ func (host *interactiveSessionHost) replace(
 		if err := setup(replacement.Manager()); err != nil {
 			return nil, err
 		}
-		replacement.SyncMessagesFromSession()
+		replacement.RefreshContext()
 	}
 	host.mu.Lock()
 	observers := make([]func(*agent.AgentSession), 0, len(host.bridgeObservers))
@@ -1088,7 +1088,7 @@ func loginCredential(ctx context.Context, registry *config.ModelRegistry, provid
 		if methods.OAuth == nil {
 			return nil, fmt.Errorf("provider %q does not support OAuth login", providerID)
 		}
-		credential, err = methods.OAuth.Login(ctx, interaction)
+		credential, err = methods.OAuth.Login(ctx, withDeviceID(interaction))
 	case aiauth.AuthTypeAPIKey:
 		login, ok := methods.APIKey.(aiauth.APIKeyLogin)
 		if !ok {

@@ -11,13 +11,15 @@ import (
 	"strings"
 )
 
-// orbOwnedFixture reports whether a fixture path belongs to an Orb-owned D35
-// render family (`F12*` plus `WP450`, mirroring the Makefile fixtures-check
-// exclusions). These are never upstream-extracted: the committed snapshots ride
-// along through comparison, conformance, and promotion.
+// orbOwnedFixture reports whether a fixture path belongs to an Orb-owned family:
+// the D35 render snapshots (`F12*`, `WP450`) and the harness session families
+// (`F6Harness*`), whose upstream source was deleted in v1.0.0. The list mirrors
+// the Makefile fixtures-check exclusions. These are never upstream-extracted:
+// the committed snapshots ride along through comparison, conformance, and
+// promotion.
 func orbOwnedFixture(relative string) bool {
 	top, _, _ := strings.Cut(filepath.ToSlash(relative), "/")
-	return strings.HasPrefix(top, "F12") || top == "WP450"
+	return strings.HasPrefix(top, "F12") || top == "WP450" || strings.HasPrefix(top, "F6Harness")
 }
 
 // carryOrbOwnedFixtures preserves Orb snapshots even when an extractor emits

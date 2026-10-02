@@ -45,9 +45,12 @@ type SessionEntry struct {
 	Content          json.RawMessage
 	Display          bool
 	TargetID         string
-	LeafTargetID     *string
-	Label            *string
-	Name             string
+	// Replacement is a context_edit's raw replacement: JSON null omits the
+	// target from model context, {"content": ...} replaces only its content.
+	Replacement  json.RawMessage
+	LeafTargetID *string
+	Label        *string
+	Name         string
 
 	object *orderedObject
 }
@@ -191,6 +194,7 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		}
 	}
 	entry.TargetID, _ = stringMember(object, "targetId")
+	entry.Replacement, _ = object.get("replacement")
 	if entry.Type == "leaf" {
 		if value, ok := object.get("targetId"); ok {
 			if targetID, valid := decodeString(value); valid {
@@ -319,6 +323,12 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 		if entry.Label != nil {
 			members = append(members, member("label", mustRawString(*entry.Label)))
 		}
+	case "context_edit":
+		replacement := rawNull()
+		if entry.Replacement != nil {
+			replacement = entry.Replacement
+		}
+		members = append(base, member("targetId", mustRawString(entry.TargetID)), member("replacement", replacement))
 	case "leaf":
 		targetID := rawNull()
 		if entry.LeafTargetID != nil {

@@ -316,9 +316,13 @@ func TestBashToolFormatsAbortTimeoutAndExitErrors(t *testing.T) {
 				options.OnData([]byte("before"))
 				return BashExecResult{ExitCode: testCase.exitCode}, testCase.executeErr
 			})
-			_, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
+			result, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
 				context.Background(), "call", BashToolInput{Command: "failure"}, nil,
 			)
+			// A non-zero exit is an error result rather than an error.
+			if result.IsError {
+				err = errors.New(result.Content[0].(*ai.TextContent).Text)
+			}
 			if err == nil || err.Error() != testCase.want {
 				t.Fatalf("error = %v, want %q", err, testCase.want)
 			}

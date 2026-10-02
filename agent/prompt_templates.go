@@ -68,11 +68,17 @@ func loadPromptTemplateFile(filePath string, sourceInfo SourceInfo) (*PromptTemp
 	}, nil
 }
 
-func loadPromptTemplatesFromDir(dir string, sourceFor func(string) SourceInfo) []PromptTemplate {
+// promptLoadWarning reports a template file that could not be read or parsed.
+func promptLoadWarning(filePath string, err error) ResourceDiagnostic {
+	return ResourceDiagnostic{Type: "warning", Message: err.Error(), Path: filePath}
+}
+
+func loadPromptTemplatesFromDir(dir string, sourceFor func(string) SourceInfo) ([]PromptTemplate, []ResourceDiagnostic) {
 	templates := make([]PromptTemplate, 0)
+	var diagnostics []ResourceDiagnostic
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return templates
+		return templates, diagnostics
 	}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".md") {
@@ -84,20 +90,24 @@ func loadPromptTemplatesFromDir(dir string, sourceFor func(string) SourceInfo) [
 			continue
 		}
 		template, err := loadPromptTemplateFile(fullPath, sourceFor(fullPath))
-		if err == nil && template != nil {
+		if err != nil {
+			diagnostics = append(diagnostics, promptLoadWarning(fullPath, err))
+		} else if template != nil {
 			templates = append(templates, *template)
 		}
 	}
-	return templates
+	return templates, diagnostics
 }
 
-// LoadPromptTemplates discovers non-recursive markdown templates from default and explicit paths.
-func LoadPromptTemplates(options LoadPromptTemplatesOptions) []PromptTemplate {
+// LoadPromptTemplates discovers non-recursive markdown templates from default
+// and explicit paths; files that cannot be read or parsed become warnings.
+func LoadPromptTemplates(options LoadPromptTemplatesOptions) ([]PromptTemplate, []ResourceDiagnostic) {
 	cwd := resolveResourcePath(options.CWD)
 	agentDir := resolveResourcePath(options.AgentDir)
 	globalDir := filepath.Join(agentDir, "prompts")
 	projectDir := filepath.Join(cwd, ".pi", "prompts")
 	templates := make([]PromptTemplate, 0)
+	var diagnostics []ResourceDiagnostic
 
 	loadPath := func(rawPath string) {
 		resolved := resolveResourcePathFrom(rawPath, cwd)
@@ -118,10 +128,14 @@ func LoadPromptTemplates(options LoadPromptTemplatesOptions) []PromptTemplate {
 			return promptSourceInfo(filePath, baseDir, scope)
 		}
 		if info.IsDir() {
-			templates = append(templates, loadPromptTemplatesFromDir(resolved, sourceFor)...)
+			loaded, warnings := loadPromptTemplatesFromDir(resolved, sourceFor)
+			templates = append(templates, loaded...)
+			diagnostics = append(diagnostics, warnings...)
 		} else if info.Mode().IsRegular() && strings.HasSuffix(resolved, ".md") {
 			template, loadErr := loadPromptTemplateFile(resolved, sourceFor(resolved))
-			if loadErr == nil && template != nil {
+			if loadErr != nil {
+				diagnostics = append(diagnostics, promptLoadWarning(resolved, loadErr))
+			} else if template != nil {
 				templates = append(templates, *template)
 			}
 		}
@@ -134,7 +148,7 @@ func LoadPromptTemplates(options LoadPromptTemplatesOptions) []PromptTemplate {
 	for _, path := range options.PromptPaths {
 		loadPath(path)
 	}
-	return templates
+	return templates, diagnostics
 }
 
 // ParseCommandArgs tokenizes template arguments with upstream's deliberately small quote grammar.

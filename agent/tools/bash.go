@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -214,6 +215,7 @@ func (tool *bashTool) Execute(
 	}
 
 	output := newBashOutputStream(onUpdate)
+	startedAt := time.Now()
 	if onUpdate != nil {
 		onUpdate(engine.AgentToolResult{Content: ai.ToolResultContent{}})
 	}
@@ -243,12 +245,27 @@ func (tool *bashTool) Execute(
 	if result.ExitCode == nil {
 		return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatted, "Command terminated without an exit code"))
 	}
+	fullOutput, truncated := output.accumulator.FullOutput()
+	structured := map[string]any{"output": fullOutput, "truncated": truncated}
+	if truncated && snapshot.FullOutputPath != "" {
+		structured["full_output_path"] = snapshot.FullOutputPath
+	}
+	structured["exit_code"] = *result.ExitCode
+	structured["wall_time_seconds"] = math.Round(time.Since(startedAt).Seconds()*10) / 10
+	// A non-zero exit is an error result for the model; programmatic callers
+	// still receive the structured result.
 	if *result.ExitCode != 0 {
-		return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatted, fmt.Sprintf("Command exited with code %d", *result.ExitCode)))
+		return engine.AgentToolResult{
+			Content:           ai.ToolResultContent{&ai.TextContent{Text: appendBashStatus(formatted, fmt.Sprintf("Command exited with code %d", *result.ExitCode))}},
+			Details:           details,
+			StructuredContent: structured,
+			IsError:           true,
+		}, nil
 	}
 	return engine.AgentToolResult{
-		Content: ai.ToolResultContent{&ai.TextContent{Text: formatted}},
-		Details: details,
+		Content:           ai.ToolResultContent{&ai.TextContent{Text: formatted}},
+		Details:           details,
+		StructuredContent: structured,
 	}, nil
 }
 

@@ -64,8 +64,8 @@ func TestBuiltinCatalogAndCorrections(t *testing.T) {
 	if anthropicCompat.AllowEmptySignature == nil || !*anthropicCompat.AllowEmptySignature {
 		t.Fatalf("Vercel empty-signature metadata missing: %s", vercel.Compat)
 	}
-	if len(models) != 1135 || len(providers) != 39 {
-		t.Fatalf("snapshot catalog has %d providers/%d models, want 39/1135", len(providers), len(models))
+	if len(models) != 1150 || len(providers) != 40 {
+		t.Fatalf("snapshot catalog has %d providers/%d models, want 40/1150", len(providers), len(models))
 	}
 	for _, model := range models {
 		if model.Provider == "radius" {

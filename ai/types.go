@@ -235,7 +235,10 @@ type AssistantMessage struct {
 	RawStopReason                    *string                       `json:"rawStopReason,omitempty"`
 	// EndTurn records the provider's indication that the model explicitly ended
 	// its turn. Preserved for debugging; it does not affect agent control flow.
-	EndTurn               *bool `json:"endTurn,omitempty"`
+	EndTurn *bool `json:"endTurn,omitempty"`
+	// ThinkingLevel records the level the agent loop requested for this
+	// response, whichever stream function answered it.
+	ThinkingLevel         *ModelThinkingLevel `json:"thinkingLevel,omitempty"`
 	errorBeforeTimestamp  bool
 	errorBeforeResponseID bool
 }

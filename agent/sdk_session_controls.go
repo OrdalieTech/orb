@@ -14,8 +14,21 @@ type PromptOptions struct {
 	Images                []*ai.ImageContent
 	StreamingBehavior     extensions.DeliveryMode
 	Source                extensions.InputSource
-	PreflightResult       func(bool)
+	// PreflightResult observes how accepted input was dispatched; it is not
+	// called when the input is rejected.
+	PreflightResult func(InputDisposition)
 }
+
+// InputDisposition reports what happened to accepted input: a run started,
+// the message was queued behind the current run, or a command or input
+// handler consumed it.
+type InputDisposition string
+
+const (
+	DispositionStarted InputDisposition = "started"
+	DispositionQueued  InputDisposition = "queued"
+	DispositionHandled InputDisposition = "handled"
+)
 
 type CustomMessage = extensions.CustomMessage
 type SendCustomMessageOptions = extensions.SendMessageOptions
@@ -48,7 +61,7 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 	var images []*ai.ImageContent
 	source := extensions.InputInteractive
 	var streamingBehavior *extensions.DeliveryMode
-	var preflightResult func(bool)
+	var preflightResult func(InputDisposition)
 	if options != nil {
 		if options.ExpandPromptTemplates != nil {
 			expand = *options.ExpandPromptTemplates
@@ -64,9 +77,6 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 		preflightResult = options.PreflightResult
 	}
 	if runtime == nil {
-		if preflightResult != nil {
-			preflightResult(false)
-		}
 		return errors.New("agent: nil session runtime")
 	}
 	if runtime.extensionState != nil {
@@ -77,20 +87,17 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 		text, handled = runtime.slashResolver.ResolvePrompt(text)
 		if handled {
 			if preflightResult != nil {
-				preflightResult(true)
+				preflightResult(DispositionHandled)
 			}
 			return nil
 		}
 	}
 	if !runtime.agent.IsIdle() {
 		if streamingBehavior == nil {
-			if preflightResult != nil {
-				preflightResult(false)
-			}
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}
 		if preflightResult != nil {
-			preflightResult(true)
+			preflightResult(DispositionQueued)
 		}
 		message := userMessageWithImagesAt(text, images, runtime.clock())
 		if *streamingBehavior == extensions.DeliverFollowUp {
@@ -101,13 +108,10 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 		return nil
 	}
 	if err := runtime.PromptPreflight(ctx); err != nil {
-		if preflightResult != nil {
-			preflightResult(false)
-		}
 		return err
 	}
 	if preflightResult != nil {
-		preflightResult(true)
+		preflightResult(DispositionStarted)
 	}
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, text, images...) })
 }

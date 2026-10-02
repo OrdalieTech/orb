@@ -53,7 +53,7 @@ func NewGitHubCopilot(options *GitHubCopilotOptions) *GitHubCopilot {
 		configured = *options
 	}
 	if configured.HTTPClient == nil {
-		configured.HTTPClient = http.DefaultClient
+		configured.HTTPClient = defaultHTTPClient
 	}
 	if configured.KnownModelIDs != nil {
 		configured.KnownModelIDs = append([]string(nil), configured.KnownModelIDs...)

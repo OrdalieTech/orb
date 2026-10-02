@@ -49,7 +49,8 @@
         "env": [
           "ANTHROPIC_AUTH_TOKEN",
           "ANTHROPIC_OAUTH_TOKEN",
-          "ANTHROPIC_API_KEY"
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_FEDERATION_RULE_ID"
         ],
         "oauth": true
       }
@@ -271,6 +272,22 @@
       }
     },
     {
+      "id": "meta",
+      "name": "Meta",
+      "baseUrl": "https://api.meta.ai/v1",
+      "apis": [
+        "openai-responses"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Meta Model API key",
+        "env": [
+          "META_API_KEY"
+        ],
+        "oauth": true
+      }
+    },
+    {
       "id": "minimax",
       "name": "MiniMax",
       "baseUrl": "https://api.minimax.io/anthropic",
@@ -379,12 +396,12 @@
         "env": [
           "OPENAI_API_KEY"
         ],
-        "oauth": false
+        "oauth": true
       }
     },
     {
       "id": "openai-codex",
-      "name": "OpenAI Codex",
+      "name": "OpenAI Codex (legacy)",
       "baseUrl": "https://chatgpt.com/backend-api",
       "apis": [
         "openai-codex-responses"
