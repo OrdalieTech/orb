@@ -69,13 +69,13 @@ func TestSDKPublicSessionControlsMatchUpstream(t *testing.T) {
 		t.Fatalf("custom message = %#v", state.Messages[len(state.Messages)-1])
 	}
 
-	var preflight []bool
+	var preflight []InputDisposition
 	if err := result.Session.PromptWithOptions(context.Background(), "hello", &PromptOptions{
-		PreflightResult: func(success bool) { preflight = append(preflight, success) },
+		PreflightResult: func(disposition InputDisposition) { preflight = append(preflight, disposition) },
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(preflight, []bool{true}) {
+	if !reflect.DeepEqual(preflight, []InputDisposition{DispositionStarted}) {
 		t.Fatalf("preflight = %#v", preflight)
 	}
 }
@@ -87,14 +87,14 @@ func TestSDKPromptOptionsReportUnknownModelPreflightRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer result.Session.Dispose()
-	var preflight []bool
+	var preflight []InputDisposition
 	err = result.Session.PromptWithOptions(context.Background(), "hello", &PromptOptions{
-		PreflightResult: func(success bool) { preflight = append(preflight, success) },
+		PreflightResult: func(disposition InputDisposition) { preflight = append(preflight, disposition) },
 	})
 	if err == nil || !strings.HasPrefix(err.Error(), "No API key found for the selected model.") {
 		t.Fatalf("prompt error = %v", err)
 	}
-	if !reflect.DeepEqual(preflight, []bool{false}) {
+	if len(preflight) != 0 {
 		t.Fatalf("preflight = %#v", preflight)
 	}
 }

@@ -11,7 +11,7 @@ export async function extractCompatModelsF2(upstreamRoot: string) {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "orb-f2-compat-models-"));
   const packageRoot = path.join(temporaryRoot, "ai");
   const outputRoot = path.join(temporaryRoot, "catalog");
-  const snapshot = path.resolve(upstreamRoot, "../ai/models/testdata/api.json");
+  const snapshot = path.resolve(import.meta.dirname, "../../ai/models/testdata/api.json");
   try {
     await cp(path.join(upstreamRoot, "packages/ai"), packageRoot, { recursive: true });
     const preload = path.join(temporaryRoot, "fixed-fetch.mjs");
@@ -40,6 +40,17 @@ globalThis.fetch = async (input) => {
   }
   if (url === "https://openrouter.ai/api/v1/models") return Response.json(JSON.parse(readFileSync(process.env.ORB_OPENROUTER_SNAPSHOT, "utf8")));
   if (url === "https://ai-gateway.vercel.sh/v1/models") return Response.json({ data: [] });
+  // Upstream >=0.99 lists OpenRouter image and decision models separately; the
+  // image list is the snapshot filtered by output modality, and classifier
+  // models are not adopted.
+  if (url === "https://openrouter.ai/api/v1/models?output_modalities=image") {
+    const { data } = JSON.parse(readFileSync(process.env.ORB_OPENROUTER_SNAPSHOT, "utf8"));
+    return Response.json({ data: data.filter((model) => model.architecture?.output_modalities?.includes("image")) });
+  }
+  if (url === "https://openrouter.ai/api/v1/models?output_modalities=decisions") return Response.json({ data: [] });
+  if (url === "https://models.dev/models.json?type=decision") {
+    return Response.json({ "typesafe/jev-latest": { type: "decision", name: "Excluded" } });
+  }
   // Radius is excluded from Orb's catalog policy. Keep the released generator
   // satisfied without allowing Radius output into any selected F2 case.
   if (url === "https://radius.pi.dev/v1/config") return Response.json({
@@ -67,7 +78,7 @@ globalThis.fetch = async (input) => {
         env: {
           ...process.env,
           ORB_MODEL_SNAPSHOT: snapshot,
-          ORB_OPENROUTER_SNAPSHOT: path.resolve(upstreamRoot, "../ai/models/testdata/openrouter.json"),
+          ORB_OPENROUTER_SNAPSHOT: path.resolve(import.meta.dirname, "../../ai/models/testdata/openrouter.json"),
           ORB_GENERATE_MODELS_SOURCE: path.join(packageRoot, "scripts/generate-models.ts"),
         },
         maxBuffer: 16 * 1024 * 1024,

@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/truncate"
 	"golang.org/x/text/encoding/unicode"
@@ -55,7 +57,15 @@ type OutputAccumulator struct {
 
 	tempFilePath string
 	tempFile     *os.File
+
+	// The first and last fullOutputHalf bytes of the persisted output, for
+	// FullOutput without reading the temp file back.
+	fullHead, fullTail []byte
+	fullBytes          int
 }
+
+// fullOutputHalf bounds FullOutput at 1 MiB: its first and last 512 KiB.
+const fullOutputHalf = 512 * 1024
 
 func NewOutputAccumulator(options ...OutputAccumulatorOptions) *OutputAccumulator {
 	maxLines := truncate.DefaultMaxLines
@@ -102,6 +112,7 @@ func (output *OutputAccumulator) append(rawSize int, persisted []byte, decoded s
 
 	output.totalRawBytes += rawSize
 	output.appendDecodedText(decoded)
+	output.captureFull(persisted)
 	if output.tempFile != nil || output.shouldUseTempFile() {
 		if err := output.ensureTempFile(); err != nil {
 			return err
@@ -115,6 +126,53 @@ func (output *OutputAccumulator) append(rawSize int, persisted []byte, decoded s
 		output.rawChunks = append(output.rawChunks, append([]byte(nil), persisted...))
 	}
 	return nil
+}
+
+func (output *OutputAccumulator) captureFull(data []byte) {
+	output.fullBytes += len(data)
+	if room := fullOutputHalf - len(output.fullHead); room > 0 {
+		taken := min(room, len(data))
+		output.fullHead = append(output.fullHead, data[:taken]...)
+		data = data[taken:]
+	}
+	if len(data) == 0 {
+		return
+	}
+	output.fullTail = append(output.fullTail, data...)
+	if excess := len(output.fullTail) - fullOutputHalf; excess > 0 {
+		output.fullTail = append(output.fullTail[:0], output.fullTail[excess:]...)
+	}
+}
+
+// FullOutput is the whole output for programmatic callers, which receive far
+// more than the model: up to 1 MiB, then its first and last 512 KiB around an
+// omission marker, cut at character boundaries.
+func (output *OutputAccumulator) FullOutput() (content string, truncated bool) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	if output.fullBytes <= 2*fullOutputHalf {
+		return strings.ToValidUTF8(string(output.fullHead)+string(output.fullTail), "\uFFFD"), false
+	}
+	head := output.fullHead
+	if start := lastRuneStart(head); start > 0 && !utf8.FullRune(head[len(head)-start:]) {
+		head = head[:len(head)-start]
+	}
+	tail := output.fullTail
+	for len(tail) > 0 && tail[0]&0xc0 == 0x80 {
+		tail = tail[1:]
+	}
+	omitted := output.fullBytes - len(output.fullHead) - len(output.fullTail)
+	return fmt.Sprintf("%s\n\n[... %d bytes omitted ...]\n\n%s", head, omitted, strings.ToValidUTF8(string(tail), "\uFFFD")), true
+}
+
+// lastRuneStart is the length of data's trailing bytes from its last rune start.
+func lastRuneStart(data []byte) int {
+	for index := len(data) - 1; index >= 0 && index >= len(data)-utf8.UTFMax; index-- {
+		if utf8.RuneStart(data[index]) {
+			return len(data) - index
+		}
+	}
+	return 0
 }
 
 func (output *OutputAccumulator) Finish() error {

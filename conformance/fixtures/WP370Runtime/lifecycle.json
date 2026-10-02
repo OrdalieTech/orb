@@ -35,6 +35,9 @@
           "phase": "setup"
         },
         {
+          "phase": "refreshContext"
+        },
+        {
           "phase": "rebindSession"
         },
         {

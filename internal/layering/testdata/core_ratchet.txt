@@ -99,9 +99,9 @@ ai/auth	os.LookupEnv	1
 ai/auth	os.Stat	1
 ai/auth	os.UserHomeDir	1
 ai/auth/oauth	import syscall	1
-ai/auth/oauth	net.Listen	3
-ai/auth/oauth	net/http.DefaultClient	5
-ai/auth/oauth	os.Getenv	5
+ai/auth/oauth	net.Listen	1
+ai/auth/oauth	net/http.DefaultClient	1
+ai/auth/oauth	os.Getenv	3
 ai/models	import github.com/OrdalieTech/orb/internal/filelock	1
 ai/models	net/http.DefaultClient	1
 ai/models	os.CreateTemp	1

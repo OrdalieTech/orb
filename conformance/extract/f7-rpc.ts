@@ -36,7 +36,7 @@ async function generateF7WithCatalog(
 ): Promise<void> {
   await rm(FIXTURE_CWD, { recursive: true, force: true });
   await mkdir(FIXTURE_CWD, { recursive: true });
-  const helper = path.resolve(upstreamRoot, "../conformance/extract/f7-rpc-host.ts");
+  const helper = path.resolve(import.meta.dirname, "f7-rpc-host.ts");
   const child = spawn(process.execPath, ["--import", "tsx", helper], {
     cwd: upstreamRoot,
     env: { ...process.env, NO_COLOR: "1" },

@@ -127,7 +127,7 @@ func TestServeOverInMemoryPipes(t *testing.T) {
 	send(`{"id":"p1","type":"prompt","message":"hi"}`)
 	// Upstream answers the prompt once preflight succeeds, before the run's
 	// first event.
-	if frame, want := next(), `{"id":"p1","type":"response","command":"prompt","success":true}`; string(frame) != want {
+	if frame, want := next(), `{"id":"p1","type":"response","command":"prompt","success":true,"data":{"disposition":"started"}}`; string(frame) != want {
 		t.Fatalf("prompt response = %s, want %s", frame, want)
 	}
 	var types, roles []string

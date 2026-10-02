@@ -297,6 +297,19 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		builtinToolPrompts: runtimeConfig.BuiltinToolPrompts,
 	}
 	runtimeConfig.SlashResolver = runtime.slashResolver
+	var previousRequest engine.PrepareRequestFunc
+	previousRequest = runtime.agent.SwapPrepareRequest(func(ctx context.Context, request engine.PrepareRequestContext) (*engine.AgentLoopTurnUpdate, error) {
+		// The session is the canonical provider context: each request is its
+		// projection, so agent state the session never recorded (a bootstrap
+		// prompt a host seeded) does not reach the provider.
+		next := *request.Context
+		next.Messages = runtime.sessionMessages()
+		request.Context = &next
+		if previousRequest != nil {
+			return previousRequest(ctx, request)
+		}
+		return &engine.AgentLoopTurnUpdate{Context: &next}, nil
+	})
 	var previousPrepare engine.PrepareNextTurnFunc
 	previousPrepare = runtime.agent.SwapPrepareNextTurnContext(func(ctx context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
 		snapshot := runtime.agent.State()
@@ -1045,7 +1058,9 @@ func (runtime *SessionRuntime) prepareRetry(ctx context.Context, message *ai.Ass
 		errorMessage = *message.ErrorMessage
 	}
 	runtime.emit(AutoRetryStartEvent{Attempt: attempt, MaxAttempts: settings.MaxRetries, DelayMS: delay, ErrorMessage: errorMessage})
-	runtime.dropLastAssistant()
+	if err := runtime.omitRecoveryAttempt(); err != nil {
+		return false, err
+	}
 	err := runtime.sleep(retryContext, time.Duration(delay)*time.Millisecond)
 	cancel()
 	runtime.mu.Lock()
@@ -1146,7 +1161,9 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 				runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "overflow", ErrorMessage: &errorMessage}, false)
 				return false, nil
 			}
-			runtime.dropLastAssistant()
+			if err := runtime.omitRecoveryAttempt(); err != nil {
+				return false, err
+			}
 		}
 		return runtime.runAutoCompaction(ctx, "overflow", willRetry)
 	}
@@ -1241,7 +1258,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, ErrorMessage: &message}, fromExtension)
 		return false, err
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	runtime.emitExtensionCompaction(compactionContext, entryID, fromExtension, extensions.CompactionReason(reason), willRetry)
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
 	runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: reason, Result: result, WillRetry: willRetry}, fromExtension)
@@ -1365,7 +1382,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	runtime.emitExtensionCompaction(compactionContext, entryID, fromExtension, extensions.CompactionManual, false)
 	result.EstimatedTokensAfter = estimateAllTokens(runtime.agent.State().Messages)
 	runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", Result: result}, fromExtension)
@@ -1656,7 +1673,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 			return NavigateTreeResult{}, err
 		}
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventSessionTree) {
 		var fromExtensionValue *bool
 		if summary != "" {
@@ -1741,22 +1758,73 @@ func (runtime *SessionRuntime) dropLastAssistant() {
 	}
 }
 
-// SyncMessagesFromSession reloads agent messages after a host-side setup
-// callback mutates a replacement session.
-func (runtime *SessionRuntime) SyncMessagesFromSession() {
-	runtime.syncAgentMessages()
+// omitRecoveryAttempt keeps a failed attempt in raw history while durably
+// omitting it from model context: the branch's trailing assistant response and
+// the tool results after it each get a context_edit, announced as appended
+// entries. Harness storage cannot record edits yet, so there the attempt is
+// only dropped from memory.
+func (runtime *SessionRuntime) omitRecoveryAttempt() error {
+	branch := runtime.manager.GetBranch()
+	var targets []string
+	for index := len(branch) - 1; index >= 0; index-- {
+		if branch[index].Type != "message" {
+			continue
+		}
+		var header struct {
+			Role string `json:"role"`
+		}
+		_ = json.Unmarshal(branch[index].Message, &header)
+		if header.Role == "toolResult" {
+			targets = append([]string{branch[index].ID}, targets...)
+			continue
+		}
+		if header.Role == "assistant" {
+			targets = append([]string{branch[index].ID}, targets...)
+		} else {
+			targets = nil
+		}
+		break
+	}
+	if len(targets) == 0 {
+		runtime.dropLastAssistant()
+		return nil
+	}
+	for _, targetID := range targets {
+		entryID, err := runtime.manager.AppendContextEdit(targetID, nil)
+		if errors.Is(err, sessionstore.ErrHarnessContextEdit) {
+			runtime.dropLastAssistant()
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if entry := runtime.manager.GetEntry(entryID); entry != nil {
+			runtime.emit(EntryAppendedEvent{Entry: *entry})
+		}
+	}
+	runtime.RefreshContext()
+	return nil
 }
 
-func (runtime *SessionRuntime) syncAgentMessages() {
+// RefreshContext rebuilds the agent's messages from the session, the
+// canonical provider context, after the session was changed directly (a
+// host setup callback, an append through the session manager).
+func (runtime *SessionRuntime) RefreshContext() {
+	messages := runtime.sessionMessages()
+	runtime.footerMu.Lock()
+	runtime.agent.SetMessages(messages)
+	runtime.footerRevision = 0
+	runtime.footerMu.Unlock()
+}
+
+// sessionMessages decodes the session's context projection.
+func (runtime *SessionRuntime) sessionMessages() engine.AgentMessages {
 	context := runtime.manager.BuildSessionContext()
 	messages := make(engine.AgentMessages, 0, len(context.Messages))
 	for _, raw := range context.Messages {
 		messages = append(messages, decodeSessionMessage(raw))
 	}
-	runtime.footerMu.Lock()
-	runtime.agent.SetMessages(messages)
-	runtime.footerRevision = 0
-	runtime.footerMu.Unlock()
+	return messages
 }
 
 func projectSessionEntries(entries []sessionstore.SessionEntry) []harness.SessionEntry {

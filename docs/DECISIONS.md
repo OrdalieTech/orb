@@ -12,7 +12,7 @@ work, within these bounds.
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc`, version **0.86.0** (2026-09-20) |
+| Pinned reference | commit `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`, version **1.0.0** (2026-10-02) |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
@@ -242,6 +242,10 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | Malformed and colliding provider tool-call recovery | reliability adaptation | owner-directed Hermes-inspired hardening: when a provider declares tool use without emitting a call, orb retries at most three times with non-persisted recovery context; duplicate call pairing IDs are deterministically suffixed before execution so every result remains unambiguous. Canonical pi session and event JSON shapes stay unchanged |
 | Anthropic sign-in holds both loopback addresses | security adaptation | The callback redirect names `localhost` and the OAuth state carries the PKCE verifier (as upstream), so with the default `127.0.0.1` host Orb also binds `[::1]` on the callback port, and refuses to start when another program answers there; a local program could otherwise receive the code and verifier. Nothing on the wire changes. |
 | Bundled MCP extension | addition | owner requirement; kept out of core |
+| No codemode (pi v0.99+) | not yet adopted | owner deferred codemode (2026-10-02): no `codemode` tool, script `models` API, classifier models or Jev; the system prompt's docs line names MCP but not `docs/codemode.md`, and tool `exposure: "codemode"` is treated as `deferred` |
+| Experimental harness is Orb-owned (pi v1.0.0) | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`); `engine/harness` stays as Orb's own, its `F6Harness*` fixtures and the harness parts of F8/F10 are carried from the committed tree instead of extracted |
+| Anthropic workload identity federation (pi v0.99.2) | not yet adopted | the identity token file must be read through a host port (P10) and exchanged with a cached token; until that lands, `ANTHROPIC_FEDERATION_RULE_ID` and its companions are not discovered |
+| Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb has always started the run, and its RPC response now reports that as `started` |
 | `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
 | `packages/{client,protocol}` (v0.84.0) | removed | experimental remote-session client and CBOR protocol for the excluded server product; same D2 boundary |
 | `packages/telemetry` (v0.84.0) | removed | vendor-neutral telemetry contracts; consistent with the existing telemetry-gated attribution removal |

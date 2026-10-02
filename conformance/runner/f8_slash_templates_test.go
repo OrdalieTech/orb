@@ -140,6 +140,7 @@ type f8Discovery struct {
 	Skills                               []f8Skill              `json:"skills"`
 	Diagnostics                          []f8ResourceDiagnostic `json:"diagnostics"`
 	Templates                            []f8PromptTemplate     `json:"templates"`
+	TemplateDiagnostics                  []f8ResourceDiagnostic `json:"templateDiagnostics"`
 	Commands                             []f8Command            `json:"commands"`
 	RPCCommandsWhenSkillCommandsDisabled []f8Command            `json:"rpcCommandsWhenSkillCommandsDisabled"`
 	BuiltinCommands                      []f8BuiltinCommand     `json:"builtinCommands"`
@@ -295,7 +296,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 		t.Fatalf("skills mismatch\nwant: %+v\n got: %+v", fixture.Discovery.Skills, gotSkills)
 	}
 
-	templates := agent.LoadPromptTemplates(agent.LoadPromptTemplatesOptions{
+	templates, templateDiagnostics := agent.LoadPromptTemplates(agent.LoadPromptTemplatesOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"), PromptPaths: []string{promptsDir},
 	})
 	gotTemplates := make([]f8PromptTemplate, len(templates))
@@ -304,6 +305,16 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotTemplates, fixture.Discovery.Templates) {
 		t.Fatalf("templates mismatch\nwant: %+v\n got: %+v", fixture.Discovery.Templates, gotTemplates)
+	}
+	// Messages come from each side's YAML parser; the warning and its file are the contract.
+	if len(templateDiagnostics) != len(fixture.Discovery.TemplateDiagnostics) {
+		t.Fatalf("template diagnostics = %+v, want %+v", templateDiagnostics, fixture.Discovery.TemplateDiagnostics)
+	}
+	for index, want := range fixture.Discovery.TemplateDiagnostics {
+		got := templateDiagnostics[index]
+		if got.Type != want.Type || runner.NormalizeFixturePath(got.Path, fixtureRoot) != want.Path || got.Message == "" {
+			t.Fatalf("template diagnostic %d = %+v, want %+v", index, got, want)
+		}
 	}
 
 	resolver := agent.SlashResolver{Skills: skillResult.Skills, PromptTemplates: templates}
@@ -342,7 +353,15 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 	for index, template := range harnessPrompts.PromptTemplates {
 		gotHarnessPrompts[index] = f8HarnessPrompt{Name: template.Name, Description: template.Description, Content: template.Content}
 	}
-	if len(harnessPrompts.Diagnostics) != len(fixture.HarnessPrompts.Diagnostics) || !reflect.DeepEqual(gotHarnessPrompts, fixture.HarnessPrompts.PromptTemplates) {
+	// The Orb-owned harness expectations predate prompts/malformed.md, which
+	// tests the product loader's warning; leave its diagnostic out here.
+	harnessDiagnostics := 0
+	for _, diagnostic := range harnessPrompts.Diagnostics {
+		if !strings.HasSuffix(diagnostic.Path, "malformed.md") {
+			harnessDiagnostics++
+		}
+	}
+	if harnessDiagnostics != len(fixture.HarnessPrompts.Diagnostics) || !reflect.DeepEqual(gotHarnessPrompts, fixture.HarnessPrompts.PromptTemplates) {
 		t.Fatalf("harness prompts mismatch\nwant: %+v / %+v\n got: %+v / %+v", fixture.HarnessPrompts.PromptTemplates, fixture.HarnessPrompts.Diagnostics, gotHarnessPrompts, harnessPrompts.Diagnostics)
 	}
 	var review agentharness.PromptTemplate
@@ -365,7 +384,7 @@ func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"),
 		SkillPaths: []string{filepath.Join(fixtureRoot, "skills")},
 	}).Skills
-	templates := agent.LoadPromptTemplates(agent.LoadPromptTemplatesOptions{
+	templates, _ := agent.LoadPromptTemplates(agent.LoadPromptTemplatesOptions{
 		CWD: fixtureRoot, AgentDir: filepath.Join(fixtureRoot, "agent"),
 		PromptPaths: []string{filepath.Join(fixtureRoot, "prompts")},
 	})

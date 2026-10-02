@@ -281,7 +281,7 @@
       {
         "message": {
           "customType": "workflow-result",
-          "content": "✓ Background workflow \"ext-run\" finished (1 agents · 2.8K tok).\n\nExtension agent result.\n\n↳ Full result: <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/ext-run-loyw85mp-.json",
+          "content": "✓ Background workflow \"ext-run\" finished (1 agents · 2.9K tok).\n\nExtension agent result.\n\n↳ Full result: <fixture>/home/.pi/workflows/projects/project-<cwdhash>/runs/ext-run-loyw85mp-.json",
           "display": true
         },
         "options": {
@@ -294,7 +294,7 @@
       "content": [
         {
           "type": "text",
-          "text": "action=list result=ok runs=1\nrunId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2816"
+          "text": "action=list result=ok runs=1\nrunId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2876"
         }
       ],
       "details": {
@@ -315,7 +315,7 @@
               "skipped": 0
             },
             "activeLabels": [],
-            "tokenTotal": 2816
+            "tokenTotal": 2876
           }
         ]
       }
@@ -324,7 +324,7 @@
       "content": [
         {
           "type": "text",
-          "text": "action=status result=ok runId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2816"
+          "text": "action=status result=ok runId=ext-run-loyw85mp- name=\"ext-run\" status=completed phase=\"-\" total=1 done=1 running=0 queued=0 error=0 skipped=0 active=\"-\" tokens=2876"
         }
       ],
       "details": {
@@ -344,14 +344,14 @@
             "skipped": 0
           },
           "activeLabels": [],
-          "tokenTotal": 2816
+          "tokenTotal": 2876
         }
       }
     }
   },
   "renderFrames": {
     "renderCall": [
-      "\u001b[38;5;188m\u001b[1mworkflow\u001b[22m\u001b[39m                                                    "
+      "\u001b[38;5;254m\u001b[1mworkflow\u001b[22m\u001b[39m                                                    "
     ],
     "renderResult": [
       "Workflow \"ext-run\" started in the background.                                   ",

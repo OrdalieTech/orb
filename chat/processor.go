@@ -277,7 +277,7 @@ func (p *Processor) runTurn(ctx context.Context, adapter Adapter, key Conversati
 		if branchErr := conv.Manager.Branch(startedID); branchErr != nil {
 			return fmt.Errorf("chat: orphan partial turn: %w", branchErr)
 		}
-		conv.Session.SyncMessagesFromSession()
+		conv.Session.RefreshContext()
 	} else {
 		// The started marker lands before the user message enters the session.
 		if startedID, err = appendTurnMarker(conv.Manager, turnMarker{EventID: m.EventID, Phase: phaseStarted}); err != nil {
@@ -589,7 +589,7 @@ func startNewSession(conv *Conversation) error {
 			return markerErr
 		}
 	}
-	conv.Session.SyncMessagesFromSession()
+	conv.Session.RefreshContext()
 	return nil
 }
 

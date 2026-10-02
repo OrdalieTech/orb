@@ -72,7 +72,7 @@ export async function generateF11ExtensionWiring(
   const wrap = async (before: string[], after: string[], addedToolNames: string[] | undefined) => {
     let call = 0;
     const runner = {
-      createContext: () => ({}),
+      createToolContext: () => ({}),
       getActiveTools: () => call++ === 0 ? before : after,
     };
     const registered = {

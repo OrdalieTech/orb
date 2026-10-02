@@ -517,7 +517,7 @@ func TestSessionRuntimeCompactionCancellationEventsAreAborted(t *testing.T) {
 	if _, err := manager.AppendMessage(runtimeAssistant(provider, "answer", 20)); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 		return nil, context.Canceled
 	}
@@ -587,7 +587,7 @@ func TestSessionRuntimeCancellationWinsOverNonCooperativeCompactionResult(t *tes
 			})
 			_, _ = manager.AppendMessage(userMessage("request"))
 			_, _ = manager.AppendMessage(runtimeAssistant(provider, "response", 100))
-			runtime.syncAgentMessages()
+			runtime.RefreshContext()
 			started := make(chan struct{})
 			release := make(chan struct{})
 			runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
@@ -640,7 +640,7 @@ func TestSessionRuntimeRetriesTransientSummarizationFailures(t *testing.T) {
 		if _, err := manager.AppendMessage(runtimeAssistant(provider, "assistant response to compact", 100)); err != nil {
 			t.Fatal(err)
 		}
-		runtime.syncAgentMessages()
+		runtime.RefreshContext()
 	}
 
 	t.Run("recovers and emits lifecycle", func(t *testing.T) {
@@ -813,7 +813,7 @@ func TestSessionRuntimeRetriesBranchSummaryWithBranchSource(t *testing.T) {
 	_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
 	_, _ = manager.AppendMessage(userMessage("second"))
 	_, _ = manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	calls := 0
 	runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 		calls++
@@ -872,9 +872,13 @@ func TestSessionRuntimeRetriesAndEmitsLifecycle(t *testing.T) {
 	if provider.State().CallCount != 2 || !reflect.DeepEqual(retryEvents, []string{"start", "success"}) || !reflect.DeepEqual(willRetry, []bool{true, false}) {
 		t.Fatalf("calls=%d retry=%#v willRetry=%#v", provider.State().CallCount, retryEvents, willRetry)
 	}
+	// user, failed assistant, the context_edit omitting it, retried assistant
 	entries := manager.GetEntries()
-	if len(entries) != 3 {
-		t.Fatalf("persisted entries = %d", len(entries))
+	if len(entries) != 4 || entries[2].Type != "context_edit" || entries[2].TargetID != entries[1].ID {
+		t.Fatalf("persisted entries = %+v", entries)
+	}
+	if context := manager.BuildSessionContext(); len(context.Messages) != 2 {
+		t.Fatalf("model context = %d messages, want the user and the retried response", len(context.Messages))
 	}
 }
 
@@ -1033,7 +1037,7 @@ func TestSessionRuntimePromptCompactsResumedOversizedAssistantBeforeRequest(t *t
 	if _, err := manager.AppendMessage(oversized); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 		order = append(order, "compact")
 		return runtimeAssistant(provider, "## Goal\nResume compacted", 10), nil
@@ -1118,7 +1122,7 @@ func TestSessionRuntimeManualCompactionDisconnectsAndWaitsForActiveRun(t *testin
 	if _, err := manager.AppendMessage(runtimeAssistant(provider, "seed response", 100)); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	idleBeforeSummary := false
 	runtime.complete = func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 		idleBeforeSummary = !runtime.agent.State().IsStreaming
@@ -1173,7 +1177,7 @@ func TestSessionRuntimeManualCompactionWaitsForRetryPolicyIdle(t *testing.T) {
 	})
 	_, _ = manager.AppendMessage(userMessage("seed request"))
 	_, _ = manager.AppendMessage(runtimeAssistant(provider, "seed response", 100))
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	retryStarted := make(chan struct{})
 	runtime.sleep = func(ctx context.Context, _ time.Duration) error {
 		close(retryStarted)
@@ -1239,7 +1243,7 @@ func TestSessionRuntimeTargetedCompactionAndBranchSummaryCancellation(t *testing
 		})
 		_, _ = manager.AppendMessage(userMessage("request"))
 		_, _ = manager.AppendMessage(runtimeAssistant(provider, "response", 100))
-		runtime.syncAgentMessages()
+		runtime.RefreshContext()
 		started := make(chan context.Context, 1)
 		runtime.complete = func(ctx context.Context, _ *ai.Model, _ ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 			started <- ctx
@@ -1281,7 +1285,7 @@ func TestSessionRuntimeTargetedCompactionAndBranchSummaryCancellation(t *testing
 		_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
 		_, _ = manager.AppendMessage(userMessage("second"))
 		_, _ = manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
-		runtime.syncAgentMessages()
+		runtime.RefreshContext()
 		started := make(chan context.Context, 1)
 		runtime.complete = func(ctx context.Context, _ *ai.Model, _ ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 			started <- ctx
@@ -1396,7 +1400,7 @@ func TestNavigateTreeCreatesBranchSummary(t *testing.T) {
 	_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
 	_, _ = manager.AppendMessage(userMessage("second"))
 	previousLeaf, _ := manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 	result, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true, Label: "return"})
 	if err != nil {
 		t.Fatal(err)
@@ -1437,7 +1441,7 @@ func TestNavigateTreeRejectsActiveResponse(t *testing.T) {
 	if _, err := manager.AppendMessage(runtimeAssistant(provider, "seed reply", 10)); err != nil {
 		t.Fatal(err)
 	}
-	runtime.syncAgentMessages()
+	runtime.RefreshContext()
 
 	promptDone := make(chan error, 1)
 	go func() { promptDone <- runtime.Prompt(context.Background(), "active") }()
@@ -1479,7 +1483,7 @@ func TestSessionRuntimeResolvesModelHeadersForSummaryRequests(t *testing.T) {
 				_, _ = manager.AppendMessage(userMessage("first request"))
 				_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
 				_, _ = manager.AppendMessage(userMessage("second request"))
-				runtime.syncAgentMessages()
+				runtime.RefreshContext()
 				if _, err := runtime.Compact(context.Background(), ""); err != nil {
 					t.Fatal(err)
 				}
@@ -1493,7 +1497,7 @@ func TestSessionRuntimeResolvesModelHeadersForSummaryRequests(t *testing.T) {
 				_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
 				_, _ = manager.AppendMessage(userMessage("second"))
 				_, _ = manager.AppendMessage(runtimeAssistant(provider, "second answer", 20))
-				runtime.syncAgentMessages()
+				runtime.RefreshContext()
 				if _, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true}); err != nil {
 					t.Fatal(err)
 				}

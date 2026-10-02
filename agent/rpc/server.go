@@ -369,7 +369,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 				return failure(errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")) //nolint:staticcheck // Upstream RPC error text.
 			}
 			mode.promptMu.Unlock()
-			return success()
+			return success(dispositionData{agent.DispositionQueued})
 		}
 		mode.prompting = true
 		mode.promptSession = session
@@ -392,12 +392,9 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 		err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
 			Images: command.Images,
 			Source: extensions.InputRPC,
-			PreflightResult: func(succeeded bool) {
-				if !succeeded {
-					return
-				}
+			PreflightResult: func(disposition agent.InputDisposition) {
 				responded = true
-				_ = mode.writeObject(*success())
+				_ = mode.writeObject(*success(dispositionData{disposition}))
 				finishPreflight()
 			},
 		})
@@ -407,19 +404,23 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 		}
 		return nil
 	case "steer":
+		var disposition agent.InputDisposition
 		if err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
 			Images: command.Images, StreamingBehavior: extensions.DeliverSteer, Source: extensions.InputRPC,
+			PreflightResult: func(value agent.InputDisposition) { disposition = value },
 		}); err != nil {
 			return failure(err)
 		}
-		return success()
+		return success(dispositionData{disposition})
 	case "follow_up":
+		var disposition agent.InputDisposition
 		if err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
 			Images: command.Images, StreamingBehavior: extensions.DeliverFollowUp, Source: extensions.InputRPC,
+			PreflightResult: func(value agent.InputDisposition) { disposition = value },
 		}); err != nil {
 			return failure(err)
 		}
-		return success()
+		return success(dispositionData{disposition})
 	case "abort":
 		session.Abort()
 		_ = session.WaitForIdle(mode.ctx)
@@ -889,4 +890,9 @@ func javascriptParseError(line []byte, parseError error) string {
 		}
 	}
 	return message
+}
+
+// dispositionData is the response data of prompt, steer and follow_up.
+type dispositionData struct {
+	Disposition agent.InputDisposition `json:"disposition"`
 }

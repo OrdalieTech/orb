@@ -465,8 +465,8 @@
     },
     "persistence": {
       "userOnly": {
-        "originalExists": false,
-        "branchExists": false,
+        "originalExists": true,
+        "branchExists": true,
         "afterAssistantExists": true,
         "headerCount": 1,
         "entryTypes": [
@@ -636,13 +636,13 @@
     "sessionDataJSON": "{\"header\":{\"type\":\"session\",\"version\":3,\"id\":\"export-source\",\"timestamp\":\"2025-01-01T00:00:00.000Z\",\"cwd\":\"/fixture/project\"},\"entries\":[{\"type\":\"message\",\"id\":\"export-user\",\"parentId\":null,\"timestamp\":\"2025-01-01T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":\"<skill name=\\\"audit\\\" location=\\\"/tmp/SKILL.md\\\">\\n# Skill\\n\\nbody\\n</skill>\\n\\n<script>alert(\\\"xss-fixture\\\")</script>  spaced\",\"timestamp\":1}},{\"type\":\"message\",\"id\":\"export-assistant\",\"parentId\":\"export-user\",\"timestamp\":\"2025-01-01T00:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"[unsafe](java\\u0000script:alert(1))\"}],\"api\":\"openai-responses\",\"provider\":\"openai\",\"model\":\"gpt-test\",\"usage\":{\"input\":1,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":2}}],\"leafId\":\"export-assistant\"}",
     "assetHashes": {
       "templateHTML": "916782b1184a9597527605ad751e2b3af30fcea23ba2194002969cd217a06881",
-      "templateCSS": "28c16e3827c23a62eef8283cac316b478f946e023093adad25ff9c9b891d41af",
-      "templateJS": "1893cdb77587f592eef5717905391269886d6d7a4dc6a488417a73da374d9226",
+      "templateCSS": "8ee19851f8e583277ed396cbb76496687aa556707fdfc1f78d1118bff87c740a",
+      "templateJS": "b5bbffdf5d9ec8bb519df45c7ff953ac1969af80e8aba33331b9f87983f91fa5",
       "markedJS": "d5487edc7258b404bfa74c393d74a6393155f02517bd5e7e77cd64f8187f39a0",
       "highlightJS": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846"
     },
-    "htmlSha256": "38425aad5ffb86c02a52ca3ee1d10f636f3db5335e72efc0603c289522b1e9e5",
-    "htmlBytes": 269194,
+    "htmlSha256": "660952534aa2a480ee41748955b1ed3a09327c9306db96ba119498da81cabd93",
+    "htmlBytes": 272940,
     "placeholderCounts": {
       "CSS": 0,
       "JS": 0,

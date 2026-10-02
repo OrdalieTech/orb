@@ -266,34 +266,21 @@ func StreamPiMessagesWithOptions(
 		defer func() { _ = response.Body.Close() }()
 
 		converter := newPiMessagesEventConverter(model)
-		var pending ai.AssistantMessageEvent
-		emitPending := func() error {
-			if pending == nil {
-				return nil
-			}
-			event := pending
-			pending = nil
-			if !yield(event, nil) {
-				return errStopPiMessagesSSE
-			}
-			return nil
-		}
+		// Each event carries the partial as of its own emission.
 		err = readPiMessagesEvents(response.Body, func(wire piMessagesWireEvent) error {
 			event, done, convertErr := converter.convert(wire)
 			if convertErr != nil {
 				return convertErr
 			}
-			if err := emitPending(); err != nil {
-				return err
+			if !yield(event, nil) {
+				return errStopPiMessagesSSE
 			}
-			pending = event
 			if done {
 				return errPiMessagesTerminal
 			}
 			return nil
-		}, emitPending)
+		})
 		if errors.Is(err, errPiMessagesTerminal) {
-			_ = emitPending()
 			return
 		}
 		if errors.Is(err, errStopPiMessagesSSE) {
@@ -651,11 +638,7 @@ func appendPiMessagesDiagnostic(message *ai.AssistantMessage, diagnostic ai.Assi
 	message.Diagnostics = &diagnostics
 }
 
-func readPiMessagesEvents(
-	reader io.Reader,
-	handle func(piMessagesWireEvent) error,
-	afterChunk func() error,
-) error {
+func readPiMessagesEvents(reader io.Reader, handle func(piMessagesWireEvent) error) error {
 	buffer := make([]byte, 0, 4096)
 	chunk := make([]byte, 4096)
 	for {
@@ -673,23 +656,13 @@ func readPiMessagesEvents(
 				}
 				buffer = append(buffer[:0], buffer[index+2:]...)
 			}
-			if afterChunk != nil {
-				if err := afterChunk(); err != nil {
-					return err
-				}
-			}
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
 				return readErr
 			}
 			if len(bytes.TrimSpace(buffer)) != 0 {
-				if err := parsePiMessagesEvent(buffer, handle); err != nil {
-					return err
-				}
-				if afterChunk != nil {
-					return afterChunk()
-				}
+				return parsePiMessagesEvent(buffer, handle)
 			}
 			return nil
 		}

@@ -12,7 +12,16 @@ export async function writeProviderModelData(
 ): Promise<string> {
   const source = await readFile(path.join(providersDir, `${provider}.models.ts`), "utf8");
   let values: unknown = models;
-  if (source.includes("flattenModelCatalog")) {
+  if (source.includes("flattenChatModelCatalog")) {
+    // Upstream >=0.99 keys every entry `<type>:<id>` and keeps only entries
+    // whose `type` matches the catalog being flattened.
+    const grouped: Record<string, Record<string, unknown>> = {};
+    for (const [id, model] of Object.entries(models)) {
+      const api = model.api ?? "unknown";
+      (grouped[api] ??= {})[`chat:${id}`] = { type: "chat", ...model };
+    }
+    values = grouped;
+  } else if (source.includes("flattenModelCatalog")) {
     const grouped: Record<string, Record<string, unknown>> = {};
     for (const [id, model] of Object.entries(models)) {
       const api = model.api ?? "unknown";

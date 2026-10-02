@@ -514,7 +514,7 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 				return "", err
 			}
 		}
-		result.Session.SyncMessagesFromSession()
+		result.Session.RefreshContext()
 	}
 	if err := result.Session.PromptSync(ctx, strings.TrimSpace(task.Task)); err != nil {
 		return "", err

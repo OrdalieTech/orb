@@ -70,7 +70,7 @@ func TestPromptTemplateLoadingAndExpansion(t *testing.T) {
 	mustWriteResource(t, filepath.Join(prompts, "fallback.md"), "\nFirst line description that is deliberately longer than sixty characters to truncate\nBody")
 	mustWriteResource(t, filepath.Join(prompts, "nested", "ignored.md"), "Ignored")
 
-	templates := LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: root, AgentDir: root, PromptPaths: []string{prompts}})
+	templates, _ := LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: root, AgentDir: root, PromptPaths: []string{prompts}})
 	if len(templates) != 2 || templates[0].Name != "fallback" || templates[1].Name != "review" {
 		t.Fatalf("templates = %#v", templates)
 	}

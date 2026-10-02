@@ -20,12 +20,12 @@
     "durationMs": 0,
     "runId": "run-fixed-agent-types",
     "tokenUsage": {
-      "input": 4654,
+      "input": 4744,
       "output": 38,
-      "total": 12550,
+      "total": 12790,
       "cost": 0,
-      "cacheRead": 3203,
-      "cacheWrite": 4655
+      "cacheRead": 3263,
+      "cacheWrite": 4745
     }
   },
   "error": null,
@@ -42,13 +42,13 @@
       "id": "run-fixed-agent-types:0",
       "label": "scout",
       "result": "The marker says marker-from-repo.",
-      "tokens": 4821,
+      "tokens": 4911,
       "tokenUsage": {
-        "input": 1608,
+        "input": 1638,
         "output": 16,
-        "cacheRead": 1589,
-        "cacheWrite": 1608,
-        "total": 4821,
+        "cacheRead": 1619,
+        "cacheWrite": 1638,
+        "total": 4911,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -65,13 +65,13 @@
       "id": "run-fixed-agent-types:1",
       "label": "isolated",
       "result": "Isolated read complete.",
-      "tokens": 4892,
+      "tokens": 4982,
       "tokenUsage": {
-        "input": 1632,
+        "input": 1662,
         "output": 13,
-        "cacheRead": 1614,
-        "cacheWrite": 1633,
-        "total": 4892,
+        "cacheRead": 1644,
+        "cacheWrite": 1663,
+        "total": 4982,
         "cost": 0
       },
       "worktree": "<fixture>/project/.pi/worktrees/run-fixed-agent-types-1-isolated",
@@ -93,13 +93,13 @@
       "id": "run-fixed-agent-types:2",
       "label": "ghost",
       "result": "Ghost type fell back to defaults.",
-      "tokens": 2837,
+      "tokens": 2897,
       "tokenUsage": {
-        "input": 1414,
+        "input": 1444,
         "output": 9,
         "cacheRead": 0,
-        "cacheWrite": 1414,
-        "total": 2837,
+        "cacheWrite": 1444,
+        "total": 2897,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -107,12 +107,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 4654,
+        "input": 4744,
         "output": 38,
-        "total": 12550,
+        "total": 12790,
         "cost": 0,
-        "cacheRead": 3203,
-        "cacheWrite": 4655
+        "cacheRead": 3263,
+        "cacheWrite": 4745
       }
     }
   ],

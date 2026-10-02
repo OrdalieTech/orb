@@ -12,7 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
-	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
@@ -291,12 +290,7 @@ func (runtime *AgentSessionRuntime) NewSession(
 		if err := options.Setup(replacement); err != nil {
 			return extensions.SessionReplacementResult{}, err
 		}
-		contextState := replacement.BuildSessionContext()
-		messages := make(engine.AgentMessages, 0, len(contextState.Messages))
-		for _, raw := range contextState.Messages {
-			messages = append(messages, decodeSessionMessage(raw))
-		}
-		created.agent.SetMessages(messages)
+		created.RefreshContext()
 	}
 	var withSession func(context.Context, extensions.ReplacedSessionContext) error
 	if options != nil {

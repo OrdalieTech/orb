@@ -17,12 +17,12 @@
     "durationMs": 0,
     "runId": "run-fixed-store-tools",
     "tokenUsage": {
-      "input": 2876,
+      "input": 2936,
       "output": 35,
-      "total": 8606,
+      "total": 8786,
       "cost": 0,
-      "cacheRead": 2818,
-      "cacheWrite": 2877
+      "cacheRead": 2878,
+      "cacheWrite": 2937
     }
   },
   "error": null,
@@ -39,13 +39,13 @@
       "id": "run-fixed-store-tools:0",
       "label": "writer",
       "result": "Stored the finding.",
-      "tokens": 4310,
+      "tokens": 4400,
       "tokenUsage": {
-        "input": 1440,
+        "input": 1470,
         "output": 20,
-        "cacheRead": 1409,
-        "cacheWrite": 1441,
-        "total": 4310,
+        "cacheRead": 1439,
+        "cacheWrite": 1471,
+        "total": 4400,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -62,13 +62,13 @@
       "id": "run-fixed-store-tools:1",
       "label": "reader",
       "result": "The finding was n=1 kind=seed.",
-      "tokens": 4296,
+      "tokens": 4386,
       "tokenUsage": {
-        "input": 1436,
+        "input": 1466,
         "output": 15,
-        "cacheRead": 1409,
-        "cacheWrite": 1436,
-        "total": 4296,
+        "cacheRead": 1439,
+        "cacheWrite": 1466,
+        "total": 4386,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -76,12 +76,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2876,
+        "input": 2936,
         "output": 35,
-        "total": 8606,
+        "total": 8786,
         "cost": 0,
-        "cacheRead": 2818,
-        "cacheWrite": 2877
+        "cacheRead": 2878,
+        "cacheWrite": 2937
       }
     }
   ],

@@ -595,7 +595,7 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 
 	promptInputs := [][]PromptTemplate{append([]PromptTemplate(nil), runtime.slashResolver.PromptTemplates...)}
 	for _, entry := range resources.PromptPaths {
-		loaded := LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: cwd, AgentDir: agentDir, PromptPaths: []string{entry.Path}})
+		loaded, _ := LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: cwd, AgentDir: agentDir, PromptPaths: []string{entry.Path}})
 		source, baseDir := extensionResourceMetadata(cwd, entry.ExtensionPath)
 		for index := range loaded {
 			loaded[index].SourceInfo = SourceInfo{
@@ -1552,7 +1552,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	commands bool,
 	streamingBehavior *extensions.DeliveryMode,
 	runPreflight bool,
-	preflightResult func(bool),
+	preflightResult func(InputDisposition),
 ) error {
 	// Slash commands keep their existing replacement behavior. Model work reserves
 	// its session before preflight or input hooks can mutate it.
@@ -1569,13 +1569,10 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	if state == nil || state.runner == nil {
 		if runPreflight {
 			if err := runtime.PromptPreflight(ctx); err != nil {
-				if preflightResult != nil {
-					preflightResult(false)
-				}
 				return err
 			}
 			if preflightResult != nil {
-				preflightResult(true)
+				preflightResult(DispositionStarted)
 			}
 		}
 		return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, text, images...) })
@@ -1585,7 +1582,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		name, args, _ := strings.Cut(commandText, " ")
 		if state.runner.ExecuteCommand(ctx, name, args) {
 			if preflightResult != nil {
-				preflightResult(true)
+				preflightResult(DispositionHandled)
 			}
 			return nil
 		}
@@ -1598,7 +1595,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		result := state.runner.EmitInput(ctx, text, images, source, eventStreamingBehavior)
 		if result.Action == extensions.InputHandled {
 			if preflightResult != nil {
-				preflightResult(true)
+				preflightResult(DispositionHandled)
 			}
 			return nil
 		}
@@ -1614,9 +1611,6 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	}
 	if !runtime.agent.IsIdle() {
 		if streamingBehavior == nil {
-			if preflightResult != nil {
-				preflightResult(false)
-			}
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}
 		message := userMessageWithImagesAt(text, images, runtime.clock())
@@ -1632,19 +1626,16 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		}
 		runtime.emitQueueUpdate()
 		if preflightResult != nil {
-			preflightResult(true)
+			preflightResult(DispositionQueued)
 		}
 		return nil
 	}
 	if runPreflight {
 		if err := runtime.PromptPreflight(ctx); err != nil {
-			if preflightResult != nil {
-				preflightResult(false)
-			}
 			return err
 		}
 		if preflightResult != nil {
-			preflightResult(true)
+			preflightResult(DispositionStarted)
 		}
 	}
 

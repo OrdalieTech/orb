@@ -108,6 +108,7 @@ func runLoop(
 	streamFn StreamFn,
 ) error {
 	firstTurn := true
+	explicitContinuation := false
 	droppedToolCallRetries := 0
 	recoveryScaffoldStart := -1
 	pendingMessages, err := queuedMessages(ctx, config.GetSteeringMessages)
@@ -136,6 +137,25 @@ func runLoop(
 				}
 				currentContext.Messages = append(currentContext.Messages, message)
 				*newMessages = append(*newMessages, message)
+			}
+			if config.PrepareRequest != nil {
+				update, updateErr := config.PrepareRequest(ctx, PrepareRequestContext{
+					Context: currentContext, Model: config.Model, ThinkingLevel: ThinkingLevel(requestedThinkingLevel(config)),
+				})
+				if updateErr != nil {
+					return updateErr
+				}
+				var scaffold AgentMessages
+				if recoveryScaffoldStart >= 0 && update != nil && update.Context != nil && update.Context != currentContext {
+					// A projected context never holds the unrecorded recovery
+					// scaffold; carry it onto the projection.
+					scaffold = append(scaffold, currentContext.Messages[recoveryScaffoldStart:]...)
+				}
+				currentContext = applyTurnUpdate(&config, currentContext, update)
+				if scaffold != nil {
+					recoveryScaffoldStart = len(currentContext.Messages)
+					currentContext.Messages = append(currentContext.Messages, scaffold...)
+				}
 			}
 			mayRecoverDroppedToolCall := droppedToolCallRetries < maxDroppedToolCallRetries
 			message, err := streamAssistantResponse(ctx, currentContext, config, emitter, streamFn, mayRecoverDroppedToolCall)
@@ -169,6 +189,13 @@ func runLoop(
 			*newMessages = append(*newMessages, message)
 
 			if message.StopReason == ai.StopReasonError || message.StopReason == ai.StopReasonAborted {
+				if config.FinishTurn != nil {
+					if _, err := config.FinishTurn(ctx, TurnContext{
+						Message: message, ToolResults: []*ai.ToolResultMessage{}, Context: currentContext, NewMessages: *newMessages,
+					}); err != nil {
+						return err
+					}
+				}
 				if err := emitter.emit(ctx, TurnEndEvent{Message: message, ToolResults: []*ai.ToolResultMessage{}}); err != nil {
 					return err
 				}
@@ -195,49 +222,34 @@ func runLoop(
 				}
 			}
 
+			turn := TurnContext{Message: message, ToolResults: toolResults, Context: currentContext, NewMessages: *newMessages}
+			var action TurnAction
+			if config.FinishTurn != nil {
+				if action, err = config.FinishTurn(ctx, turn); err != nil {
+					return err
+				}
+			}
 			if err := emitter.emit(ctx, TurnEndEvent{Message: message, ToolResults: toolResults}); err != nil {
 				return err
 			}
-			nextContext := ShouldStopAfterTurnContext{
-				Message: message, ToolResults: toolResults, Context: currentContext, NewMessages: *newMessages,
+			if action == TurnEnd {
+				return emitter.emit(ctx, AgentEndEvent{Messages: *newMessages})
 			}
 			if config.PrepareNextTurn != nil {
-				update, updateErr := config.PrepareNextTurn(ctx, nextContext)
+				update, updateErr := config.PrepareNextTurn(ctx, turn)
 				if updateErr != nil {
 					return updateErr
 				}
-				if update != nil {
-					if update.Context != nil {
-						currentContext = update.Context
-					}
-					if update.Model != nil {
-						config.Model = update.Model
-					}
-					if update.ThinkingLevel != nil {
-						if *update.ThinkingLevel == ThinkingOff {
-							config.Reasoning = nil
-						} else {
-							reasoning := ai.ThinkingLevel(*update.ThinkingLevel)
-							config.Reasoning = &reasoning
-						}
-					}
-				}
+				currentContext = applyTurnUpdate(&config, currentContext, update)
 			}
-			if config.ShouldStopAfterTurn != nil {
-				stop, stopErr := config.ShouldStopAfterTurn(ctx, ShouldStopAfterTurnContext{
-					Message: message, ToolResults: toolResults, Context: currentContext, NewMessages: *newMessages,
-				})
-				if stopErr != nil {
-					return stopErr
-				}
-				if stop {
-					return emitter.emit(ctx, AgentEndEvent{Messages: *newMessages})
-				}
-			}
+			explicitContinuation = action == TurnContinue
 
 			pendingMessages, err = queuedMessages(ctx, config.GetSteeringMessages)
 			if err != nil {
 				return err
+			}
+			if hasMoreToolCalls || len(pendingMessages) > 0 {
+				explicitContinuation = false
 			}
 		}
 
@@ -245,9 +257,16 @@ func runLoop(
 		if err != nil {
 			return err
 		}
-		if len(pendingMessages) == 0 {
+		if len(pendingMessages) > 0 {
+			explicitContinuation = false
+			continue
+		}
+		// No queued work answered the continuation decision, so make one
+		// context-only request.
+		if !explicitContinuation {
 			break
 		}
+		explicitContinuation = false
 	}
 
 	return emitter.emit(ctx, AgentEndEvent{Messages: *newMessages})
@@ -381,13 +400,13 @@ func streamAssistantResponse(
 				return nil, err
 			}
 		case ai.DoneEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter, mayRecoverDroppedToolCall)
+			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter, mayRecoverDroppedToolCall, requestedThinkingLevel(config))
 		case *ai.DoneEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter, mayRecoverDroppedToolCall)
+			return finishAssistantResponse(ctx, loopContext, value.Message, addedPartial, emitter, mayRecoverDroppedToolCall, requestedThinkingLevel(config))
 		case ai.ErrorEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter, false)
+			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter, false, requestedThinkingLevel(config))
 		case *ai.ErrorEvent:
-			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter, false)
+			return finishAssistantResponse(ctx, loopContext, value.Error, addedPartial, emitter, false, requestedThinkingLevel(config))
 		default:
 			eventPartial, ok := assistantEventPartial(event)
 			if ok && partial != nil && eventPartial != nil {
@@ -468,10 +487,12 @@ func finishAssistantResponse(
 	addedPartial bool,
 	emitter *eventEmitter,
 	mayRecoverDroppedToolCall bool,
+	thinkingLevel ai.ModelThinkingLevel,
 ) (*ai.AssistantMessage, error) {
 	if message == nil {
 		return nil, ai.ErrStreamIncomplete
 	}
+	message.ThinkingLevel = &thinkingLevel
 	uniquifyToolCallIDs(message)
 	eventContext := ctx
 	if mayRecoverDroppedToolCall && isDroppedToolCallResponse(message, assistantToolCalls(message)) {
@@ -489,6 +510,38 @@ func finishAssistantResponse(
 		return nil, err
 	}
 	return message, nil
+}
+
+// applyTurnUpdate applies a prepare hook's update to the loop configuration
+// and returns the context the next request uses.
+func applyTurnUpdate(config *AgentLoopConfig, current *AgentContext, update *AgentLoopTurnUpdate) *AgentContext {
+	if update == nil {
+		return current
+	}
+	if update.Model != nil {
+		config.Model = update.Model
+	}
+	if update.ThinkingLevel != nil {
+		if *update.ThinkingLevel == ThinkingOff {
+			config.Reasoning = nil
+		} else {
+			reasoning := ai.ThinkingLevel(*update.ThinkingLevel)
+			config.Reasoning = &reasoning
+		}
+	}
+	if update.Context != nil {
+		return update.Context
+	}
+	return current
+}
+
+// requestedThinkingLevel is the level recorded on each assistant message,
+// whichever stream function answered the request.
+func requestedThinkingLevel(config AgentLoopConfig) ai.ModelThinkingLevel {
+	if config.Reasoning == nil {
+		return ai.ModelThinkingOff
+	}
+	return ai.ModelThinkingLevel(*config.Reasoning)
 }
 
 func isDroppedToolCallResponse(message *ai.AssistantMessage, toolCalls []*ai.ToolCall) bool {
@@ -913,7 +966,7 @@ func executePreparedToolCall(
 	if executeErr != nil {
 		return executedToolCall{result: createErrorToolResult(executeErr.Error()), isError: true}, nil
 	}
-	return executedToolCall{result: result}, nil
+	return executedToolCall{result: result, isError: result.IsError}, nil
 }
 
 func finalizeExecutedToolCall(
@@ -939,6 +992,11 @@ func finalizeExecutedToolCall(
 			result = createErrorToolResult(err.Error())
 			isError = true
 		} else if after != nil {
+			if after.StructuredContent != nil {
+				result.StructuredContent = after.StructuredContent
+			} else if after.Content != nil {
+				result.StructuredContent = nil
+			}
 			if after.Content != nil {
 				result.Content = after.Content
 			}

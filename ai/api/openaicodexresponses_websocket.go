@@ -397,14 +397,7 @@ func processOpenAICodexWebSocket(
 		processorOptions.StreamOptions = options.StreamOptions
 		processorOptions.ServiceTier = options.ServiceTier
 	}
-	pending := make([]ai.AssistantMessageEvent, 0)
-	processor := newOpenAIResponsesProcessor(model, output, processorOptions, func(event ai.AssistantMessageEvent) bool {
-		if !started {
-			pending = append(pending, event)
-			return true
-		}
-		return sink(event)
-	})
+	processor := newOpenAIResponsesProcessor(model, output, processorOptions, sink)
 	processor.grammarToolInputProperties = grammarToolInputProperties
 	for {
 		message, err := lease.socket.ReadMessage(ctx, codexWebSocketIdleTimeout(streamOptions))
@@ -424,19 +417,15 @@ func processOpenAICodexWebSocket(
 		if envelope.Type == "error" || envelope.Type == "response.failed" {
 			return started, handleOpenAICodexEvent(processor, raw)
 		}
-		err = handleOpenAICodexEvent(processor, raw)
+		// Start carries the partial as of its emission, before the first event
+		// (response.created) fills it in.
 		if !started {
 			started = true
 			if !onStart() {
 				return true, errStopSSE
 			}
-			for _, event := range pending {
-				if !sink(event) {
-					return true, errStopSSE
-				}
-			}
-			pending = nil
 		}
+		err = handleOpenAICodexEvent(processor, raw)
 		if errors.Is(err, errCodexTerminal) {
 			break
 		}

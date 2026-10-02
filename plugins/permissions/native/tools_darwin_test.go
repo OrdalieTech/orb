@@ -29,9 +29,9 @@ func TestLiveBashContainment(t *testing.T) {
 			allowed    bool
 		}{{"outside", filepath.Join(root, "outside"), false}, {"workspace", filepath.Join(workspace, "file"), mode == sandbox.ModeWorkspaceWrite}, {"scratch", filepath.Join(scratch, "file"), true}} {
 			t.Run(string(mode)+"/"+tc.name, func(t *testing.T) {
-				_, err := tool.Execute(t.Context(), "live", map[string]any{"command": "printf probe > '" + tc.path + "'"}, nil)
-				if (err == nil) != tc.allowed {
-					t.Fatalf("command: %v", err)
+				result, err := tool.Execute(t.Context(), "live", map[string]any{"command": "printf probe > '" + tc.path + "'"}, nil)
+				if (err == nil && !result.IsError) != tc.allowed {
+					t.Fatalf("command: %v, %#v", err, result.Content)
 				}
 				_, statErr := os.Stat(tc.path)
 				if (statErr == nil) != tc.allowed {

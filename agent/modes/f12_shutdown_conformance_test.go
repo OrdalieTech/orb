@@ -147,9 +147,6 @@ func newF12ShutdownMode(t *testing.T) (*InteractiveMode, *f12VisibleHost, string
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(manager.GetSessionFile(), []byte("{}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	runtimeSession, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
 	})

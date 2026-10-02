@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { AuthStorage } from "../../.upstream/packages/coding-agent/src/core/auth-storage.ts";
 import { migrateAuthToAuthJson } from "../../.upstream/packages/coding-agent/src/migrations.ts";
-import { oauthErrorHtml, oauthSuccessHtml } from "../../.upstream/packages/ai/src/auth/oauth/oauth-page.ts";
+import { oauthErrorHtml, oauthSuccessHtml } from "../../.upstream/packages/ai/src/utils/oauth-page.ts";
 
 const FIXED_EXPIRES = 1_700_003_300_000;
 

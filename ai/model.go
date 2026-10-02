@@ -87,12 +87,41 @@ type Model struct {
 	Reasoning        bool                            `json:"reasoning"`
 	ThinkingLevelMap *map[ModelThinkingLevel]*string `json:"thinkingLevelMap,omitempty"`
 	Input            InputModalities                 `json:"input"`
+	InputLimits      *ModelInputLimits               `json:"inputLimits,omitempty"`
 	Cost             ModelCost                       `json:"cost"`
 	PromptCache      *ModelPromptCache               `json:"promptCache,omitempty"`
 	ContextWindow    float64                         `json:"contextWindow"`
 	MaxTokens        float64                         `json:"maxTokens"`
-	Headers          *map[string]string              `json:"headers,omitempty"`
-	Compat           json.RawMessage                 `json:"compat,omitempty"`
+	// SamplingParams are default request-body parameters for OpenAI-compatible
+	// APIs; per-request StreamOptions.SamplingParams override them per key.
+	SamplingParams map[string]any     `json:"samplingParams,omitempty"`
+	Headers        *map[string]string `json:"headers,omitempty"`
+	Compat         json.RawMessage    `json:"compat,omitempty"`
+	// Type is the catalog operation; chat models may omit it.
+	Type string `json:"type,omitempty"`
+}
+
+// ModelInputLimits are a model's provider input limits and cache-safe
+// preprocessing metadata.
+type ModelInputLimits struct {
+	// MaxRequestBytes is the maximum serialized provider request size.
+	MaxRequestBytes *float64               `json:"maxRequestBytes,omitempty"`
+	Images          *ModelImageInputLimits `json:"images,omitempty"`
+}
+
+type ModelImageInputLimits struct {
+	// Resize is applied before a new image enters conversation history.
+	Resize        *ModelImageResizeOptions `json:"resize,omitempty"`
+	MaxPerMessage *float64                 `json:"maxPerMessage,omitempty"`
+	MaxPerRequest *float64                 `json:"maxPerRequest,omitempty"`
+}
+
+type ModelImageResizeOptions struct {
+	MaxWidth  *float64 `json:"maxWidth,omitempty"`
+	MaxHeight *float64 `json:"maxHeight,omitempty"`
+	// MaxBytes bounds the base64-encoded payload.
+	MaxBytes    *float64 `json:"maxBytes,omitempty"`
+	JPEGQuality *float64 `json:"jpegQuality,omitempty"`
 }
 
 type ImagesModel struct {
@@ -478,6 +507,9 @@ type StreamOptions struct {
 	MaxRetryDelayMS           *int64          `json:"maxRetryDelayMs,omitempty"`
 	Metadata                  map[string]any  `json:"metadata,omitempty"`
 	Env                       ProviderEnv     `json:"env,omitempty"`
+	// SamplingParams are merged into OpenAI-compatible request bodies after the
+	// named fields, over Model.SamplingParams per key; other APIs ignore them.
+	SamplingParams map[string]any `json:"samplingParams,omitempty"`
 }
 
 type SimpleStreamOptions struct {

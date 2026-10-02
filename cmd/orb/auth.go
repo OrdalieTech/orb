@@ -376,7 +376,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}
 
 	interaction := newHeadlessAuthInteraction(streams.Stdin, streams.Stdout, streams.Stderr)
-	credential, err := method.Login(ctx, interaction)
+	credential, err := method.Login(ctx, withDeviceID(interaction))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -469,4 +469,24 @@ func (interaction *headlessAuthInteraction) Notify(event aiauth.AuthEvent) {
 	case aiauth.EventDeviceCode:
 		_, _ = fmt.Fprintf(interaction.out, "%s\n%s\n", event.VerificationURI, event.UserCode)
 	}
+}
+
+// withDeviceID gives login flows this installation's stable device ID, kept in
+// the global settings and created on first use.
+func withDeviceID(interaction aiauth.AuthInteraction) aiauth.AuthInteraction {
+	return deviceIDInteraction{interaction}
+}
+
+type deviceIDInteraction struct{ aiauth.AuthInteraction }
+
+func (deviceIDInteraction) DeviceID() (string, error) {
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return "", err
+	}
+	settings, err := config.NewSettingsManager(agentDir, config.WithAgentDir(agentDir))
+	if err != nil {
+		return "", err
+	}
+	return settings.DeviceID()
 }

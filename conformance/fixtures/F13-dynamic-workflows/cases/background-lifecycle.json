@@ -18,13 +18,13 @@
       "id": "limits-loyw85mp-:0",
       "label": "first",
       "result": "First succeeded.",
-      "tokens": 2806,
+      "tokens": 2866,
       "tokenUsage": {
-        "input": 1401,
+        "input": 1431,
         "output": 4,
         "cacheRead": 0,
-        "cacheWrite": 1401,
-        "total": 2806,
+        "cacheWrite": 1431,
+        "total": 2866,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -48,13 +48,13 @@
       "id": "limits-loyw85mp-:1",
       "label": "second",
       "result": null,
-      "tokens": 2804,
+      "tokens": 2864,
       "tokenUsage": {
-        "input": 1402,
+        "input": 1432,
         "output": 0,
         "cacheRead": 0,
-        "cacheWrite": 1402,
-        "total": 2804,
+        "cacheWrite": 1432,
+        "total": 2864,
         "cost": 0
       },
       "model": "faux/faux-model",
@@ -111,13 +111,13 @@
       "id": "limits-loyw85mp-:1",
       "label": "second",
       "result": "Second succeeded after the reset.",
-      "tokens": 2813,
+      "tokens": 2873,
       "tokenUsage": {
-        "input": 1402,
+        "input": 1432,
         "output": 9,
         "cacheRead": 0,
-        "cacheWrite": 1402,
-        "total": 2813,
+        "cacheWrite": 1432,
+        "total": 2873,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -131,12 +131,12 @@
       "event": "tokenUsage",
       "runId": "limits-loyw85mp-",
       "usage": {
-        "input": 4205,
+        "input": 4295,
         "output": 13,
-        "total": 8423,
+        "total": 8603,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 4205
+        "cacheWrite": 4295
       }
     },
     {
@@ -159,12 +159,12 @@
         "durationMs": 0,
         "runId": "limits-loyw85mp-",
         "tokenUsage": {
-          "input": 4205,
+          "input": 4295,
           "output": 13,
-          "total": 8423,
+          "total": 8603,
           "cost": 0,
           "cacheRead": 0,
-          "cacheWrite": 4205
+          "cacheWrite": 4295
         }
       }
     }
@@ -215,13 +215,13 @@
             }
           ],
           "resultPreview": "First succeeded.",
-          "tokens": 2806,
+          "tokens": 2866,
           "tokenUsage": {
-            "input": 1401,
+            "input": 1431,
             "output": 4,
             "cacheRead": 0,
-            "cacheWrite": 1401,
-            "total": 2806,
+            "cacheWrite": 1431,
+            "total": 2866,
             "cost": 0
           },
           "startedAt": "2023-11-14T22:16:40.321Z",
@@ -253,13 +253,13 @@
           "error": "Codex usage limit reached (plus plan). Resets in ~3h.",
           "errorCode": "PROVIDER_USAGE_LIMIT",
           "recoverable": false,
-          "tokens": 2804,
+          "tokens": 2864,
           "tokenUsage": {
-            "input": 1402,
+            "input": 1432,
             "output": 0,
             "cacheRead": 0,
-            "cacheWrite": 1402,
-            "total": 2804,
+            "cacheWrite": 1432,
+            "total": 2864,
             "cost": 0
           },
           "startedAt": "2023-11-14T22:16:40.321Z",
@@ -270,12 +270,12 @@
         "agent second attempt 1/1 failed: Codex usage limit reached (plus plan). Resets in ~3h."
       ],
       "tokenUsage": {
-        "input": 2803,
+        "input": 2863,
         "output": 4,
-        "total": 5610,
+        "total": 5730,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2803
+        "cacheWrite": 2863
       },
       "startedAt": "2023-11-14T22:16:40.321Z",
       "updatedAt": "2023-11-14T22:16:40.321Z"
@@ -327,13 +327,13 @@
             }
           ],
           "resultPreview": "First succeeded.",
-          "tokens": 2806,
+          "tokens": 2866,
           "tokenUsage": {
-            "input": 1401,
+            "input": 1431,
             "output": 4,
             "cacheRead": 0,
-            "cacheWrite": 1401,
-            "total": 2806,
+            "cacheWrite": 1431,
+            "total": 2866,
             "cost": 0
           },
           "startedAt": "2023-11-14T22:16:40.321Z",
@@ -365,13 +365,13 @@
           "error": "Codex usage limit reached (plus plan). Resets in ~3h.",
           "errorCode": "PROVIDER_USAGE_LIMIT",
           "recoverable": false,
-          "tokens": 2804,
+          "tokens": 2864,
           "tokenUsage": {
-            "input": 1402,
+            "input": 1432,
             "output": 0,
             "cacheRead": 0,
-            "cacheWrite": 1402,
-            "total": 2804,
+            "cacheWrite": 1432,
+            "total": 2864,
             "cost": 0
           },
           "startedAt": "2023-11-14T22:16:40.321Z",
@@ -382,12 +382,12 @@
         "agent second attempt 1/1 failed: Codex usage limit reached (plus plan). Resets in ~3h."
       ],
       "tokenUsage": {
-        "input": 2803,
+        "input": 2863,
         "output": 4,
-        "total": 5610,
+        "total": 5730,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2803
+        "cacheWrite": 2863
       },
       "startedAt": "2023-11-14T22:16:40.321Z",
       "updatedAt": "2023-11-14T22:16:40.321Z"
@@ -442,13 +442,13 @@
             }
           ],
           "resultPreview": "Second succeeded after the reset.",
-          "tokens": 2813,
+          "tokens": 2873,
           "tokenUsage": {
-            "input": 1402,
+            "input": 1432,
             "output": 9,
             "cacheRead": 0,
-            "cacheWrite": 1402,
-            "total": 2813,
+            "cacheWrite": 1432,
+            "total": 2873,
             "cost": 0
           },
           "result": "Second succeeded after the reset.",
@@ -465,12 +465,12 @@
         "second": "Second succeeded after the reset."
       },
       "tokenUsage": {
-        "input": 4205,
+        "input": 4295,
         "output": 13,
-        "total": 8423,
+        "total": 8603,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 4205
+        "cacheWrite": 4295
       },
       "startedAt": "2023-11-14T22:16:40.321Z",
       "updatedAt": "2023-11-14T22:16:40.321Z",

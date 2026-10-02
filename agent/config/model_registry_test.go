@@ -379,13 +379,13 @@ func TestModelRegistryAvailabilityIncludesStoredCredentials(t *testing.T) {
 	if !registry.HasConfiguredAuth("anthropic", nil) {
 		t.Fatal("stored OAuth credential did not make Anthropic available")
 	}
-	if err := os.WriteFile(authPath, []byte(`{"openai":{"type":"oauth","refresh":"r","access":"a","expires":1},"custom":{"type":"oauth","refresh":"r","access":"a","expires":1}}`), 0o600); err != nil {
+	if err := os.WriteFile(authPath, []byte(`{"groq":{"type":"oauth","refresh":"r","access":"a","expires":1},"custom":{"type":"oauth","refresh":"r","access":"a","expires":1}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.Reload(); err != nil {
 		t.Fatal(err)
 	}
-	if registry.HasConfiguredAuth("openai", nil) || registry.HasConfiguredAuth("custom", nil) {
+	if registry.HasConfiguredAuth("groq", nil) || registry.HasConfiguredAuth("custom", nil) {
 		t.Fatal("stored OAuth credential without a matching OAuth handler reported available")
 	}
 	if err := os.WriteFile(authPath, []byte(`{}`), 0o600); err != nil {

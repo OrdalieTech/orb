@@ -141,7 +141,7 @@
     ]
   },
   "lazyPersistence": {
-    "preAssistantExists": false,
+    "preAssistantExists": true,
     "postAssistantExists": true
   }
 }

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { committedFixture } from "./orb-owned.ts";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
 type FixtureModel = {
@@ -127,14 +128,6 @@ const patterns = [
   " openai / gpt-4o ",
 ];
 
-function docsExample(markdown: string, heading: string): string {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = markdown.match(
-    new RegExp("## " + escaped + "\\n[\\s\\S]*?```json\\n([\\s\\S]*?)\\n```")
-  );
-  if (!match) throw new Error(`missing JSON block under ${heading}`);
-  return match[1];
-}
 
 function normalizedResult(result: {
   model?: FixtureModel;
@@ -281,8 +274,9 @@ export async function generateWP250(
       expected: await captureList(listModels, undefined, fixedRoundingModels),
     });
 
-    const docsPath = path.join(upstreamRoot, "packages/coding-agent/docs/models.md");
-    const markdown = await readFile(docsPath, "utf8");
+    // pi 1.0 rewrote docs/models.md without its Minimal/Full examples; the
+    // configs those sections held stay the inputs, carried from the fixture.
+    const docsInputs: Array<{ heading: string; config: unknown }> = await committedFixture("WP250", "docs-examples.json");
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "orb-wp250-"));
     const docsCases: object[] = [];
     const validationCases: object[] = [];
@@ -290,8 +284,8 @@ export async function generateWP250(
     let fractionalNumbers: object = {};
     let storeFixture = "";
     try {
-      for (const heading of ["Minimal Example", "Full Example"]) {
-        const source = docsExample(markdown, heading);
+      for (const { heading, config } of docsInputs) {
+        const source = JSON.stringify(config, null, 2);
         const modelsPath = path.join(tempRoot, `${heading.replaceAll(" ", "-").toLowerCase()}.json`);
         await writeFile(modelsPath, `${source}\n`);
         const runtime = await ModelRuntime.create({

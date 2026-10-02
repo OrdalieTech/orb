@@ -22,12 +22,12 @@
     "durationMs": 0,
     "runId": "run-fixed-nested-workflow",
     "tokenUsage": {
-      "input": 2828,
+      "input": 2888,
       "output": 16,
-      "total": 5672,
+      "total": 5792,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 2828
+      "cacheWrite": 2888
     }
   },
   "error": null,
@@ -53,13 +53,13 @@
       "id": "run-fixed-nested-workflow-nested1:0",
       "label": "child-one",
       "result": "Child one reporting on seeds.",
-      "tokens": 2826,
+      "tokens": 2886,
       "tokenUsage": {
-        "input": 1409,
+        "input": 1439,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1409,
-        "total": 2826,
+        "cacheWrite": 1439,
+        "total": 2886,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -67,12 +67,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2828,
+        "input": 2888,
         "output": 16,
-        "total": 5672,
+        "total": 5792,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2828
+        "cacheWrite": 2888
       }
     },
     {
@@ -96,13 +96,13 @@
       "id": "run-fixed-nested-workflow:0",
       "label": "after",
       "result": "Parent used the child result.",
-      "tokens": 2846,
+      "tokens": 2906,
       "tokenUsage": {
-        "input": 1419,
+        "input": 1449,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1419,
-        "total": 2846,
+        "cacheWrite": 1449,
+        "total": 2906,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -110,12 +110,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 2828,
+        "input": 2888,
         "output": 16,
-        "total": 5672,
+        "total": 5792,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 2828
+        "cacheWrite": 2888
       }
     }
   ],

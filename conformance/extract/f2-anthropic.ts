@@ -172,6 +172,7 @@ const oauthModel = anthropicModel({
 });
 
 export const fireworksCompatModel = anthropicModel({
+  type: "chat",
   id: "accounts/fireworks/models/minimax-m3",
   name: "MiniMax-M3",
   provider: "fireworks",

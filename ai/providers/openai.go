@@ -3,6 +3,7 @@ package providers
 import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/oauth"
 )
 
 type AuthKind string
@@ -30,10 +31,10 @@ var openAI = Provider{
 	ID:   "openai",
 	Name: "OpenAI",
 	Auth: AuthAPIKey,
-	Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{
-		DisplayName: "OpenAI API key",
-		EnvVars:     []string{"OPENAI_API_KEY"},
-	}},
+	Methods: auth.ProviderAuth{
+		APIKey: auth.EnvAPIKeyAuth{DisplayName: "OpenAI API key", EnvVars: []string{"OPENAI_API_KEY"}},
+		OAuth:  oauth.NewOpenAIChatGPT(nil),
+	},
 }
 
 func OpenAI() Provider { return registered("openai") }

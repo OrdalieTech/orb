@@ -32,6 +32,7 @@ var registry = []Provider{
 	envProvider("groq", "Groq", "https://api.groq.com/openai/v1", "Groq API key", []string{"GROQ_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("huggingface", "Hugging Face", "https://router.huggingface.co/v1", "Hugging Face token", []string{"HF_TOKEN"}, ai.APIOpenAICompletions),
 	withProviderMetadata(kimiCodingProvider, "https://api.kimi.com/coding", []string{"KIMI_API_KEY"}, []string{"KIMI_API_KEY"}, ai.APIAnthropicMessages),
+	withProviderMetadata(metaProvider, "https://api.meta.ai/v1", []string{"META_API_KEY"}, []string{"META_API_KEY"}, ai.APIOpenAIResponses),
 	envProvider("minimax", "MiniMax", "https://api.minimax.io/anthropic", "MiniMax API key", []string{"MINIMAX_API_KEY"}, ai.APIAnthropicMessages),
 	envProvider("minimax-cn", "MiniMax CN", "https://api.minimaxi.com/anthropic", "MiniMax CN API key", []string{"MINIMAX_CN_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(mistralProvider, "https://api.mistral.ai", []string{"MISTRAL_API_KEY"}, []string{"MISTRAL_API_KEY"}, ai.APIMistralConversations),

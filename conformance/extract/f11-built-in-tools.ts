@@ -10,6 +10,22 @@ type ToolDefinition = {
 
 type ToolModule = Record<string, (...args: unknown[]) => ToolDefinition>;
 
+// Upstream >=0.99 returns a failed command as an error result with structured
+// content instead of throwing; wall time varies and is left out.
+async function executeResult(tool: ToolDefinition, input: Record<string, unknown>) {
+	const result = (await tool.execute("fixture-call", input)) as {
+		content: Array<{ text?: string }>;
+		isError?: boolean;
+		structuredContent?: Record<string, unknown>;
+	};
+	const { wall_time_seconds: _wallTime, ...structuredContent } = result.structuredContent ?? {};
+	return {
+		text: result.content.map((block) => block.text ?? "").join(""),
+		isError: result.isError === true,
+		structuredContent,
+	};
+}
+
 async function executeError(tool: ToolDefinition, input: Record<string, unknown>): Promise<string> {
 	try {
 		await tool.execute("fixture-call", input);
@@ -58,7 +74,7 @@ export async function generateF11BuiltInTools(
 		tools: definitions.map(({ name, constrainedSampling }) => ({ name, constrainedSampling })),
 		bash: {
 			nullExitError: await executeError(definitions[0], { command: "fixture" }),
-			signalExitError: await executeError(localBash, { command: "kill -TERM $$" }),
+			signalExit: await executeResult(localBash, { command: "kill -TERM $$" }),
 		},
 	};
 

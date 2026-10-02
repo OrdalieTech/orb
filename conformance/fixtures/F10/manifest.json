@@ -1,13 +1,19 @@
 {
   "family": "F10",
-  "upstreamCommit": "ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc",
+  "upstreamCommit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
   "generator": "conformance/extract/f10-compaction.ts",
-  "source": "packages/agent/src/harness/compaction/compaction.ts",
+  "source": "packages/coding-agent/src/core/compaction/compaction.ts",
   "additionalSources": [
-    "packages/coding-agent/src/core/compaction/compaction.ts",
-    "packages/agent/src/harness/compaction/branch-summarization.ts",
-    "packages/agent/src/harness/messages.ts",
-    "packages/agent/src/harness/compaction/utils.ts"
+    "packages/coding-agent/src/core/compaction/branch-summarization.ts"
+  ],
+  "orbOwned": [
+    "tokenCases",
+    "conversationCases",
+    "contextCases",
+    "prepareCases",
+    "branchCases",
+    "summaryPromptCases",
+    "branchPromptCases"
   ],
   "files": [
     "cases.json"

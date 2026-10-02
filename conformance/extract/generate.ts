@@ -13,7 +13,6 @@ import { generateF4 } from "./f4-edit.ts";
 import { generateF5 } from "./f5-truncation.ts";
 import { generateF6 } from "./f6-session.ts";
 import { generateF6Release } from "./f6-release.ts";
-import { generateF6Harness } from "./f6-harness.ts";
 import { generateF7 } from "./f7-rpc.ts";
 import { generateF7CLI } from "./f7-cli.ts";
 import { generateF8 } from "./f8-slash-templates.ts";
@@ -77,7 +76,6 @@ const generators = [
 	generateF5,
 	generateF6,
 	generateF6Release,
-	generateF6Harness,
 	generateF7,
 	generateF7CLI,
 	generateF8,

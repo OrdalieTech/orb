@@ -5,6 +5,29 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
+
+- Context edits: a retried or recovered response stays in the session's history but leaves the
+  model's context, recorded as a `context_edit` entry; each request is now built from the session
+  itself, so a bootstrap prompt the session never recorded no longer reaches the provider twice.
+- Sessions are written to disk at the first message you send, not the first reply, so a prompt
+  survives quitting before the model answers.
+- New models: Claude Opus 5.5 and Sonnet 5.5, GPT-6 Sol, GPT-6 Luna and GPT-6.1 Sol (OpenAI,
+  Azure, Codex, Copilot), and Meta's Muse Spark with `META_API_KEY` or `orb login meta`. OpenAI
+  prices follow the current list, and xAI models price long contexts.
+- Sign in with ChatGPT on the OpenAI provider (`orb login openai`); the Codex provider is now
+  "OpenAI Codex (legacy)".
+- OpenAI-compatible endpoints receive strict tool schemas only when the model says it supports
+  them; built-in models keep them.
+- RPC `prompt`, `steer` and `follow_up` responses say what happened to the input (`started`,
+  `queued` or `handled`).
+- A command that exits non-zero gives the model the same error, and extensions now also receive
+  its full output, exit code and run time.
+- Theme files accept `#rgb`, `oklch()` and `okhsl()` colors and an `appearance`; HTML export uses
+  Pi 1.0's palettes and its show/hide toggle for hidden messages.
+- A prompt template with broken frontmatter is reported instead of skipped silently.
+- Split-turn compaction asks for its summary in a way Claude Fable 5.1 accepts.
+
 ## [0.13.3] - 2026-09-29
 
 The first signed release: `orb update` checks Orb's signature from now on. Claude sessions stop

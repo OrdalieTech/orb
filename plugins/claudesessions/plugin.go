@@ -176,7 +176,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 		closeOnDispose(s, driver)
 		// ponytail: a catch-up that fails leaves the conversation as Orb holds it.
 		if added, _ := catchUp(options.Manager, env); added {
-			s.SyncMessagesFromSession()
+			s.RefreshContext()
 		}
 		s.Subscribe(func(event any) {
 			if _, settled := event.(agent.AgentSettledEvent); settled && !claude(cfg.Agent.State().Model) {

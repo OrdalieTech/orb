@@ -290,6 +290,7 @@ const completionsChatTemplateModel = model("openai-completions", {
 });
 
 const togetherCompatModel = model("openai-completions", {
+  type: "chat",
   id: "deepseek-ai/DeepSeek-V4-Pro",
   name: "DeepSeek V4 Pro",
   provider: "together",
@@ -312,6 +313,7 @@ const togetherCompatModel = model("openai-completions", {
 });
 
 const zaiCompatModel = model("openai-completions", {
+  type: "chat",
   id: "glm-5.2",
   name: "GLM-5.2",
   provider: "zai",
@@ -328,6 +330,7 @@ const zaiCompatModel = model("openai-completions", {
     supportsReasoningEffort: true,
     maxTokensField: "max_tokens",
     thinkingFormat: "zai",
+    supportsStrictMode: true,
     zaiToolStream: true,
   },
 });
@@ -1476,7 +1479,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     const providerParity = await extractProvidersF2(upstreamRoot);
     const compatModels = await extractCompatModelsF2(upstreamRoot);
     if (!isDeepStrictEqual([togetherCompatModel, zaiCompatModel], compatModels.cases.slice(0, 2).map((entry) => entry.model))) {
-      throw new Error("OpenAI-compatible F2 models drifted from the pinned upstream generator");
+      throw new Error(`OpenAI-compatible F2 models drifted from the pinned upstream generator: expected ${JSON.stringify(compatModels.cases.slice(0, 2).map((entry) => entry.model))}, got ${JSON.stringify([togetherCompatModel, zaiCompatModel])}`);
     }
     if (!isDeepStrictEqual(fireworksCompatModel, compatModels.cases[2].model)) {
       throw new Error(`Fireworks F2 model drifted from the pinned upstream generator: expected ${JSON.stringify(compatModels.cases[2].model)}, got ${JSON.stringify(fireworksCompatModel)}`);
@@ -1517,7 +1520,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
       upstreamCommit,
       generator: "conformance/extract/f2-openai.ts",
       source:
-        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/*.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/auth/oauth/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
+        "packages/ai/src/api/openai-responses.ts + packages/ai/src/api/openai-responses-shared.ts + packages/ai/src/api/openai-completions.ts + packages/ai/src/api/openai-prompt-cache.ts + packages/ai/src/api/anthropic-messages.ts + packages/ai/src/api/bedrock-converse-stream.ts + packages/ai/src/api/google-generative-ai.ts + packages/ai/src/api/google-vertex.ts + packages/ai/src/api/google-shared.ts + packages/ai/src/api/mistral-conversations.ts + packages/ai/src/api/azure-openai-responses.ts + packages/ai/src/api/pi-messages.ts + packages/ai/src/utils/deferred-tools.ts + packages/ai/src/api/transform-messages.ts + packages/ai/src/providers/*.ts + packages/ai/src/env-api-keys.ts + packages/ai/src/auth/helpers.ts + packages/ai/src/utils/oauth-page.ts + packages/ai/src/models.ts + packages/ai/scripts/generate-models.ts + packages/coding-agent/src/core/auth-storage.ts + packages/coding-agent/src/core/resolve-config-value.ts + packages/coding-agent/src/migrations.ts",
       files: [
         "provider.json",
         "anthropic-provider.json",

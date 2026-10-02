@@ -61,7 +61,9 @@ func TestAnthropicProvider(t *testing.T) {
 	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != fixture.BaseURL {
 		t.Fatalf("unexpected provider: %#v", provider)
 	}
-	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, fixture.Auth.Env) {
+	// Workload identity federation is ledgered as not yet adopted.
+	upstreamEnv := slices.DeleteFunc(slices.Clone(fixture.Auth.Env), func(name string) bool { return name == "ANTHROPIC_FEDERATION_RULE_ID" })
+	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, upstreamEnv) {
 		t.Fatalf("unexpected auth metadata: %#v", provider)
 	}
 	if provider.Methods.APIKey == nil || provider.Methods.APIKey.Name() != fixture.Auth.Name || provider.Methods.OAuth == nil || provider.Methods.OAuth.Name() != fixture.Auth.OAuthName {
@@ -75,8 +77,8 @@ func TestAnthropicProvider(t *testing.T) {
 	if err != nil || unresolved != nil {
 		t.Fatalf("resolve without credentials = %#v, %v", unresolved, err)
 	}
-	if !slices.Equal(probed, fixture.Auth.Env) {
-		t.Fatalf("env probe order = %v, want %v", probed, fixture.Auth.Env)
+	if !slices.Equal(probed, upstreamEnv) {
+		t.Fatalf("env probe order = %v, want %v", probed, upstreamEnv)
 	}
 
 	// The fixture extraction resolves with every env var answering the same
@@ -123,7 +125,7 @@ func TestAnthropicProvider(t *testing.T) {
 	}
 
 	provider.Env[0] = "changed"
-	if fresh := providers.Anthropic(); !slices.Equal(fresh.Env, fixture.Auth.Env) {
+	if fresh := providers.Anthropic(); !slices.Equal(fresh.Env, upstreamEnv) {
 		t.Fatal("Anthropic returned mutable registry storage")
 	}
 	if !slices.ContainsFunc(providers.List(), func(provider providers.Provider) bool { return provider.ID == fixture.ID }) {

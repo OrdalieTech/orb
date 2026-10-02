@@ -32,6 +32,14 @@
   ],
   "bash": {
     "nullExitError": "before\n\nCommand terminated without an exit code",
-    "signalExitError": "(no output)\n\nCommand exited with code 143"
+    "signalExit": {
+      "text": "(no output)\n\nCommand exited with code 143",
+      "isError": true,
+      "structuredContent": {
+        "output": "",
+        "truncated": false,
+        "exit_code": 143
+      }
+    }
   }
 }

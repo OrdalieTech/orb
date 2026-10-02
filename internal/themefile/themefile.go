@@ -22,11 +22,12 @@ var RequiredColors = []string{
 }
 
 type document struct {
-	Schema string                `json:"$schema"`
-	Name   string                `json:"name"`
-	Vars   map[string]ColorValue `json:"vars"`
-	Colors map[string]ColorValue `json:"colors"`
-	Export struct {
+	Schema     string                `json:"$schema"`
+	Name       string                `json:"name"`
+	Appearance string                `json:"appearance"`
+	Vars       map[string]ColorValue `json:"vars"`
+	Colors     map[string]ColorValue `json:"colors"`
+	Export     struct {
 		PageBG ColorValue `json:"pageBg"`
 		CardBG ColorValue `json:"cardBg"`
 		InfoBG ColorValue `json:"infoBg"`
@@ -35,10 +36,14 @@ type document struct {
 
 // Theme is a parsed theme resource with every color reference resolved.
 type Theme struct {
-	Name       string
+	Name string
+	// Appearance is the theme's declared "dark" or "light" look, if any.
+	Appearance string
 	SourcePath string
-	Colors     map[string]Color
-	Export     map[string]Color
+	// Keys are the color tokens the file defines, in file order.
+	Keys   []string
+	Colors map[string]Color
+	Export map[string]Color
 }
 
 // Color is a resolved theme color: a 256-color palette index, or hex text
@@ -120,7 +125,10 @@ func Parse(label string, data []byte) (*Theme, error) {
 	if _, ok := source.Colors["diffGutterBg"]; !ok {
 		source.Colors["diffGutterBg"] = source.Colors["toolPendingBg"]
 	}
-	theme := &Theme{Name: source.Name, Colors: map[string]Color{}, Export: map[string]Color{}}
+	if source.Appearance != "" && source.Appearance != "dark" && source.Appearance != "light" {
+		return nil, fmt.Errorf("invalid theme %q: appearance must be \"dark\" or \"light\"", label)
+	}
+	theme := &Theme{Name: source.Name, Appearance: source.Appearance, Keys: colorKeys(data), Colors: map[string]Color{}, Export: map[string]Color{}}
 	for name, value := range source.Colors {
 		resolved, err := value.resolve(source.Vars, map[string]bool{})
 		if err == nil && resolved.Index == nil && resolved.Text != "" {
@@ -144,8 +152,8 @@ func Parse(label string, data []byte) (*Theme, error) {
 	return theme, nil
 }
 
-// ColorValue is a theme JSON color: a hex string, a variable name, "" for the
-// terminal default, or a 256-color index.
+// ColorValue is a theme JSON color: #rgb/#rrggbb, oklch(), okhsl(), a
+// variable name, "" for the terminal default, or a 256-color index.
 type ColorValue struct {
 	String *string
 	Index  *int
@@ -176,8 +184,12 @@ func (value ColorValue) resolve(variables map[string]ColorValue, visited map[str
 		return Color{}, errors.New("empty color value")
 	}
 	text := *value.String
-	if text == "" || strings.HasPrefix(text, "#") {
-		return Color{Text: text}, nil
+	if text == "" {
+		return Color{}, nil
+	}
+	if isColorLiteral(text) {
+		normalized, err := normalizeColor(text)
+		return Color{Text: normalized}, err
 	}
 	if visited[text] {
 		return Color{}, fmt.Errorf("circular variable reference detected: %s", text)
@@ -220,4 +232,32 @@ func ANSI256ToHex(index int) string {
 	}
 	gray := 8 + (index-232)*10
 	return fmt.Sprintf("#%02x%02x%02x", gray, gray, gray)
+}
+
+// colorKeys lists the keys of a theme document's "colors" object in order.
+func colorKeys(data []byte) []string {
+	var document struct {
+		Colors json.RawMessage `json:"colors"`
+	}
+	if json.Unmarshal(data, &document) != nil {
+		return nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(document.Colors)))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return nil
+	}
+	var keys []string
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return keys
+		}
+		key, _ := token.(string)
+		keys = append(keys, key)
+		var skip json.RawMessage
+		if decoder.Decode(&skip) != nil {
+			return keys
+		}
+	}
+	return keys
 }

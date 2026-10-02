@@ -55,6 +55,9 @@ async function runNewSessionCase(
     },
     async abort() {},
     dispose() {},
+    refreshContext() {
+      records.push({ phase: "refreshContext" });
+    },
     createReplacedSessionContext() {
       return { cwd };
     },

@@ -21,6 +21,7 @@
         },
         "contextWindow": 512000,
         "maxTokens": 512000,
+        "type": "chat",
         "thinkingLevelMap": {
           "off": null,
           "minimal": null,
@@ -447,7 +448,7 @@
           "authorization": "Bearer sk-ant-oat-fixture",
           "content-type": "application/json",
           "x-app": "cli",
-          "user-agent": "claude-cli/2.1.251"
+          "user-agent": "claude-cli/2.1.280"
         },
         "body": "{\"model\":\"claude-opus-4-8\",\"messages\":[{\"role\":\"user\",\"content\":\"read it\"}],\"max_tokens\":32000,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"You are Claude Code, Anthropic's official CLI for Claude.\"},{\"type\":\"text\",\"text\":\"Read carefully.\"}],\"tools\":[{\"name\":\"Read\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]}}],\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"xhigh\"},\"tool_choice\":{\"type\":\"auto\"}}"
       }

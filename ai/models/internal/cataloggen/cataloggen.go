@@ -141,6 +141,7 @@ var directRules = []rule{
 	{"kimi-code-plan-global", "kimi-coding", ai.APIAnthropicMessages, "https://api.kimi.com/coding"},
 	{"minimax", "minimax", ai.APIAnthropicMessages, "https://api.minimax.io/anthropic"},
 	{"minimax-cn", "minimax-cn", ai.APIAnthropicMessages, "https://api.minimaxi.com/anthropic"},
+	{"meta", "meta", ai.APIOpenAIResponses, "https://api.meta.ai/v1"},
 	{"mistral", "mistral", ai.APIMistralConversations, "https://api.mistral.ai"},
 	{"moonshotai", "moonshotai", ai.APIOpenAICompletions, "https://api.moonshot.ai/v1"},
 	{"moonshotai-cn", "moonshotai-cn", ai.APIOpenAICompletions, "https://api.moonshot.cn/v1"},
@@ -218,6 +219,7 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 	addCodex(result)
 	addAntLing(result)
 	addMissingOpenAI(result)
+	addMissingFrontierModels(result)
 	delete(result["deepseek"], "deepseek-v4-flash")
 	if model, ok := result["deepseek"]["deepseek-v4-pro"]; ok {
 		model.Cost = ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.32, Output: 3.96, CacheRead: .044}}
@@ -372,7 +374,9 @@ func addRule(result map[string]map[string]ai.Model, source sourceProvider, item 
 			}
 		}
 		model := normalizedModel(id, name, modelSource, item.api, item.provider, item.baseURL)
-		if item.provider == "google" || item.provider == "google-vertex" {
+		// Mistral models with effort values use reasoning_effort with these levels;
+		// reasoning models without them (Magistral) use prompt_mode.
+		if item.provider == "google" || item.provider == "google-vertex" || item.provider == "mistral" {
 			if thinking := effortThinkingLevelMap(modelSource.ReasoningOptions); thinking != nil {
 				model.ThinkingLevelMap = thinking
 			}
@@ -667,6 +671,7 @@ func addXAI(result map[string]map[string]ai.Model, source sourceProvider) {
 		}
 		api := ai.APIOpenAIResponses
 		model := normalizedModel(key, raw.Name, raw, api, "xai", "https://api.x.ai/v1")
+		model.Cost = modelCostWithTiers(raw)
 		upsert(result, model)
 	}
 }
@@ -946,12 +951,15 @@ func addCodex(result map[string]map[string]ai.Model) {
 		input    ai.InputModalities
 		cost     ai.ModelCostRates
 	}{
-		{"gpt-6-astra", "GPT-6 Astra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}},
+		{"gpt-6.1-sol", "GPT-6.1 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6.1-sol"]},
+		{"gpt-6-astra", "GPT-6 Astra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-astra"]},
+		{"gpt-6-sol", "GPT-6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-sol"]},
+		{"gpt-6-luna", "GPT-6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-luna"]},
 		{"gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", 128000, ai.InputModalities{ai.InputText}, ai.ModelCostRates{Input: 1.75, Output: 14, CacheRead: .175}},
 		{"gpt-5.5", "GPT-5.5", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5}},
-		{"gpt-5.6-luna", "GPT-5.6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 1, Output: 6, CacheRead: .1, CacheWrite: 1.25}},
-		{"gpt-5.6-sol", "GPT-5.6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25}},
-		{"gpt-5.6-terra", "GPT-5.6 Terra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 2.5, Output: 15, CacheRead: .25, CacheWrite: 3.125}},
+		{"gpt-5.6-luna", "GPT-5.6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-luna"]},
+		{"gpt-5.6-sol", "GPT-5.6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-sol"]},
+		{"gpt-5.6-terra", "GPT-5.6 Terra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-terra"]},
 	}
 	for _, item := range items {
 		model := ai.Model{ID: item.id, Name: item.name, API: ai.APIOpenAICodexResponses, Provider: "openai-codex", BaseURL: "https://chatgpt.com/backend-api", Reasoning: true, Input: item.input, Cost: ai.ModelCost{ModelCostRates: item.cost}, ContextWindow: item.context, MaxTokens: 128000}
@@ -978,6 +986,9 @@ func addAzure(result map[string]map[string]ai.Model) {
 		clone.Compat = nil
 		clone.ThinkingLevelMap = nil
 		clone.Cost.Tiers = nil
+		if standard, ok := openAIStandardCosts[clone.ID]; ok {
+			clone.Cost.ModelCostRates = standard
+		}
 		if slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"}, clone.ID) {
 			clone.ContextWindow = 1050000
 		}
@@ -985,15 +996,28 @@ func addAzure(result map[string]map[string]ai.Model) {
 	}
 }
 
+// openAIStandardCosts are OpenAI's list prices, authoritative until models.dev
+// and passthrough catalogs catch up (https://developers.openai.com/api/docs/pricing).
+var openAIStandardCosts = map[string]ai.ModelCostRates{
+	"gpt-5.6-luna":  {Input: .2, Output: 1.2, CacheRead: .02, CacheWrite: .25},
+	"gpt-5.6-sol":   {Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5},
+	"gpt-5.6-terra": {Input: 2, Output: 12, CacheRead: .2, CacheWrite: 2.5},
+	"gpt-6-astra":   {Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5},
+	"gpt-6-luna":    {Input: .1, Output: .5, CacheRead: .01, CacheWrite: .125},
+	"gpt-6-sol":     {Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5},
+	"gpt-6.1-sol":   {Input: 2, Output: 10, CacheRead: .1, CacheWrite: 2.5},
+}
+
 func addMissingOpenAI(result map[string]map[string]ai.Model) {
-	upsert(result, ai.Model{
-		ID: "gpt-6-astra", Name: "GPT-6 Astra", API: ai.APIOpenAIResponses, Provider: "openai",
-		BaseURL: "https://api.openai.com/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage},
-		Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}, Tiers: &[]ai.ModelCostTier{{
-			InputTokensAbove: 272000, ModelCostRates: ai.ModelCostRates{Input: 20, Output: 75, CacheRead: 2, CacheWrite: 25},
-		}}},
-		ContextWindow: 272000, MaxTokens: 128000,
-	})
+	for _, item := range []struct{ id, name string }{
+		{"gpt-6.1-sol", "GPT-6.1 Sol"}, {"gpt-6-astra", "GPT-6 Astra"}, {"gpt-6-sol", "GPT-6 Sol"}, {"gpt-6-luna", "GPT-6 Luna"},
+	} {
+		upsert(result, ai.Model{
+			ID: item.id, Name: item.name, API: ai.APIOpenAIResponses, Provider: "openai",
+			BaseURL: "https://api.openai.com/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage},
+			Cost: ai.ModelCost{ModelCostRates: openAIStandardCosts[item.id]}, ContextWindow: 272000, MaxTokens: 128000,
+		})
+	}
 	upsert(result, ai.Model{
 		ID: "gpt-5-chat-latest", Name: "GPT-5 Chat Latest", API: ai.APIOpenAIResponses,
 		Provider: "openai", BaseURL: "https://api.openai.com/v1", Input: ai.InputModalities{ai.InputText, ai.InputImage},
@@ -1002,8 +1026,68 @@ func addMissingOpenAI(result map[string]map[string]ai.Model) {
 	})
 }
 
+// addMissingFrontierModels adds models their providers serve before models.dev
+// lists them: Claude Opus and Sonnet 5.5, and the Copilot catalog of 2026-09-22.
+func addMissingFrontierModels(result map[string]map[string]ai.Model) {
+	effort := func() *map[ai.ModelThinkingLevel]*string {
+		return &map[ai.ModelThinkingLevel]*string{
+			ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil, ai.ModelThinkingLow: ptr("low"), ai.ModelThinkingMedium: ptr("medium"),
+			ai.ModelThinkingHigh: ptr("high"), ai.ModelThinkingXHigh: ptr("xhigh"), ai.ModelThinkingMax: ptr("max"),
+		}
+	}
+	image := ai.InputModalities{ai.InputText, ai.InputImage}
+	opus := ai.ModelCostRates{Input: 4, Output: 20, CacheRead: .2, CacheWrite: 5}
+	for _, model := range []ai.Model{
+		{ID: "claude-opus-5-5", Name: "Claude Opus 5.5", Cost: ai.ModelCost{ModelCostRates: opus}},
+		{ID: "claude-sonnet-5-5", Name: "Claude Sonnet 5.5", Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5}}},
+	} {
+		model.API, model.Provider, model.BaseURL = ai.APIAnthropicMessages, "anthropic", "https://api.anthropic.com"
+		model.Reasoning, model.ThinkingLevelMap, model.Input, model.ContextWindow, model.MaxTokens = true, effort(), image, 1000000, 128000
+		upsert(result, model)
+	}
+	copilot := func(model ai.Model) ai.Model {
+		headers := map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"}
+		model.Provider, model.BaseURL, model.Headers = "github-copilot", "https://api.individual.githubcopilot.com", &headers
+		model.Reasoning, model.Input, model.ContextWindow, model.MaxTokens = true, image, 1000000, 128000
+		return model
+	}
+	upsert(result, copilot(ai.Model{ID: "claude-opus-5.5", Name: "Claude Opus 5.5", API: ai.APIAnthropicMessages, ThinkingLevelMap: effort(), Cost: ai.ModelCost{ModelCostRates: opus}}))
+	for _, item := range []struct{ id, name string }{{"gpt-6-sol", "GPT-6 Sol"}, {"gpt-6-luna", "GPT-6 Luna"}} {
+		upsert(result, copilot(ai.Model{ID: item.id, Name: item.name, API: ai.APIOpenAIResponses, Cost: ai.ModelCost{ModelCostRates: openAIStandardCosts[item.id]}}))
+	}
+}
+
 func applyGeneratedMetadata(model *ai.Model) {
 	applyCatalogMetadata(model)
+	applyImageInputMetadata(model)
+	model.Type = "chat"
+}
+
+// applyImageInputMetadata records provider image limits and the cache-safe
+// resize profile, never less restrictive than the historical 2000px / 4.5 MiB.
+func applyImageInputMetadata(model *ai.Model) {
+	if !slices.Contains(model.Input, ai.InputImage) {
+		return
+	}
+	var limits ai.ModelInputLimits
+	images := ai.ModelImageInputLimits{}
+	switch model.Provider {
+	case "anthropic":
+		perRequest := 600.0
+		if model.ContextWindow == 200000 {
+			perRequest = 100
+		}
+		limits.MaxRequestBytes, images.MaxPerRequest = ptr(32.0*1024*1024), &perRequest
+	case "amazon-bedrock":
+		images.MaxPerMessage = ptr(20.0)
+	case "openai":
+		limits.MaxRequestBytes, images.MaxPerRequest = ptr(512.0*1024*1024), ptr(1500.0)
+	case "google":
+		limits.MaxRequestBytes, images.MaxPerRequest = ptr(20.0*1024*1024), ptr(3600.0)
+	}
+	images.Resize = &ai.ModelImageResizeOptions{MaxWidth: ptr(2000.0), MaxHeight: ptr(2000.0), MaxBytes: ptr(4.5 * 1024 * 1024), JPEGQuality: ptr(80.0)}
+	limits.Images = &images
+	model.InputLimits = &limits
 }
 
 func addProviderAliases(result map[string]map[string]ai.Model) {
@@ -1014,7 +1098,9 @@ func addProviderAliases(result map[string]map[string]ai.Model) {
 		upsert(result, ai.Model{ID: "openrouter/fusion", Name: "OpenRouter: Fusion", API: ai.APIOpenAICompletions, Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText}, Cost: ai.ModelCost{}, ContextWindow: 1000000, MaxTokens: 30000})
 	}
 	if _, ok := result["mistral"]["mistral-medium-3.5"]; !ok {
-		upsert(result, ai.Model{ID: "mistral-medium-3.5", Name: "Mistral Medium 3.5", API: ai.APIMistralConversations, Provider: "mistral", BaseURL: "https://api.mistral.ai", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.5, Output: 7.5}}, ContextWindow: 262144, MaxTokens: 262144})
+		upsert(result, ai.Model{ID: "mistral-medium-3.5", Name: "Mistral Medium 3.5", API: ai.APIMistralConversations, Provider: "mistral", BaseURL: "https://api.mistral.ai", Reasoning: true,
+			ThinkingLevelMap: effortThinkingLevelMap([]sourceReasoningOption{{Type: "effort", Values: []*string{ptr("none"), ptr("high")}}}),
+			Input:            ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.5, Output: 7.5}}, ContextWindow: 262144, MaxTokens: 262144})
 	}
 }
 

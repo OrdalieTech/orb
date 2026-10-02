@@ -59,15 +59,21 @@ func applyCorrections(model *ai.Model) {
 	if provider == "openai" && slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}, id) {
 		model.ContextWindow, model.MaxTokens = 272000, 128000
 	}
-	if (provider == "openai" || provider == "openai-codex") && slices.Contains([]string{
+	standard, hasStandard := openAIStandardCosts[id]
+	if ((provider == "openai" || provider == "openai-codex") && slices.Contains([]string{
 		"gpt-5.4", "gpt-5.4-pro", "gpt-5.5", "gpt-5.5-pro", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-	}, id) {
+		"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol",
+	}, id)) || (provider == "cloudflare-ai-gateway" && hasStandard) || (provider == "github-copilot" && slices.Contains([]string{"gpt-6-sol", "gpt-6-luna"}, id)) {
+		// Cloudflare AI Gateway passes OpenAI usage through at OpenAI list prices.
+		if hasStandard {
+			model.Cost.ModelCostRates = standard
+		}
 		rates := model.Cost.ModelCostRates
 		tiers := []ai.ModelCostTier{{
 			InputTokensAbove: 272000,
 			ModelCostRates: ai.ModelCostRates{
-				Input: rates.Input * 2, Output: rates.Output * 1.5,
-				CacheRead: rates.CacheRead * 2, CacheWrite: rates.CacheWrite * 2,
+				Input: roundCost(rates.Input * 2), Output: roundCost(rates.Output * 1.5),
+				CacheRead: roundCost(rates.CacheRead * 2), CacheWrite: roundCost(rates.CacheWrite * 2),
 			},
 		}}
 		model.Cost.Tiers = &tiers
@@ -225,12 +231,17 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if (model.API == ai.APIOpenAIResponses || model.API == ai.APIAzureOpenAIResponses) && strings.HasPrefix(id, "gpt-5") {
 		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
 	}
-	if id == "gpt-6-astra" && slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses}, model.API) {
+	if slices.Contains([]string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"}, id) &&
+		slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses}, model.API) {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{
-			ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingHigh: "high",
+			ai.ModelThinkingOff: "none", ai.ModelThinkingLow: "low", ai.ModelThinkingMedium: "medium", ai.ModelThinkingHigh: "high",
 			ai.ModelThinkingXHigh: "xhigh", ai.ModelThinkingMax: "max",
 		})
-		values[ai.ModelThinkingOff], values[ai.ModelThinkingMinimal] = nil, nil
+		// GPT-6 Astra and GPT-6.1 Sol reject reasoning.effort "none".
+		if id == "gpt-6-astra" || id == "gpt-6.1-sol" {
+			values[ai.ModelThinkingOff] = nil
+		}
+		values[ai.ModelThinkingMinimal] = nil
 		mergeThinking(model, values)
 	}
 	if provider == "github-copilot" && strings.HasPrefix(id, "gpt-5") {
@@ -247,7 +258,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if supportsOpenAIXHigh(id) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh"}))
 	}
-	if (strings.Contains(id, "gpt-5.6") || strings.Contains(id, "gpt-6-astra")) && slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses, ai.APIOpenAICompletions}, model.API) {
+	if (strings.Contains(id, "gpt-5.6") || strings.Contains(id, "gpt-6")) && slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses, ai.APIOpenAICompletions}, model.API) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingMax: "max"}))
 	}
 	if provider == "openai" && id == "gpt-5.5" {
@@ -292,7 +303,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingMedium] = nil, nil
 		mergeThinking(model, values)
 	}
-	if provider == "groq" && id == "qwen/qwen3-32b" {
+	if provider == "groq" && id == "qwen/qwen3.6-27b" {
 		values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "default"})
 		values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 		mergeThinking(model, values)
@@ -390,22 +401,35 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	if isOpenRouter && strings.HasPrefix(strings.TrimPrefix(model.ID, "~"), "anthropic/") {
 		compat.CacheControlFormat = ptr(ai.CacheControlAnthropic)
 	}
-	if isMoonshot || isTogether || isGateway || isNVIDIA {
-		compat.SupportsStrictMode = ptr(false)
+	// Strict tools are opt-in at runtime, so built-in models that support them
+	// say so explicitly; Together, Moonshot and NVIDIA author their lack of
+	// support below.
+	isCerebras := provider == "cerebras" || strings.Contains(baseURL, "cerebras.ai")
+	if !isTogether && !isMoonshot && !isNVIDIA && !isGateway && !isCerebras {
+		compat.SupportsStrictMode = ptr(true)
+	}
+	if isOpenRouter {
+		compat.SendSessionAffinityHeaders = ptr(true)
 	}
 	if isTogether || isWorkers || isGateway || isNVIDIA || isAntLing {
 		compat.SupportsLongCacheRetention = ptr(false)
 	}
 
+	detected := mustCompatJSON(compat)
 	var explicit ai.OpenAICompletionsCompat
 	if len(model.Compat) != 0 {
 		_ = json.Unmarshal(model.Compat, &explicit)
 		mergeCompletionsCompat(&compat, explicit)
 	}
+	if isTogether || isMoonshot || isNVIDIA {
+		compat.SupportsStrictMode = ptr(false)
+	}
 	applyExplicitCompletionsCompat(model, &compat)
-	model.Compat = mustCompatJSON(compat)
+	// Authored compat spreads over the detected one: detected keys keep their
+	// place and authored-only keys follow.
+	model.Compat = spreadCompat(detected, mustCompatJSON(compat))
 	if isQwenTokenPlanProvider(string(model.Provider)) {
-		model.Compat = orderCompat(model.Compat, []string{"thinkingFormat", "supportsDeveloperRole", "supportsStore", "supportsReasoningEffort"})
+		model.Compat = orderCompat(model.Compat, []string{"supportsStrictMode", "thinkingFormat", "supportsDeveloperRole", "supportsStore", "supportsReasoningEffort"})
 	}
 }
 
@@ -486,6 +510,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 	case "fireworks":
 		if strings.Contains(id, "glm-") {
 			compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
+			compat.SendSessionAffinityHeaders, compat.SupportsLongCacheRetention = ptr(true), ptr(false)
 		}
 		if strings.Contains(id, "kimi-k3") {
 			compat.SupportsMidConvoSystemMessages = ptr(true)
@@ -498,6 +523,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		}
 		if strings.HasPrefix(id, "openai/") && slices.Contains([]string{
 			"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
+			"gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol",
 		}, strings.TrimPrefix(id, "openai/")) {
 			compat.SupportsMidConvoSystemMessages = ptr(true)
 		}
@@ -560,7 +586,7 @@ func applyAnthropicCompat(model *ai.Model) {
 	if isAnthropicAdaptiveThinkingModel(id) {
 		compat.ForceAdaptiveThinking = ptr(true)
 	}
-	if containsAny(strings.ToLower(id), "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5") {
+	if containsAny(strings.ToLower(id), "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-5-5", "sonnet-5.5") {
 		compat.SupportsTemperature = ptr(false)
 	}
 	if provider == "fireworks" {
@@ -635,9 +661,10 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 	isProxiedResponses := slices.Contains([]string{"opencode", "opencode-go", "github-copilot"}, provider) && model.API == ai.APIOpenAIResponses
 	if (isOpenAIResponses || isOpenAICodex || isProxiedResponses) && slices.Contains([]string{
 		"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
+		"gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol",
 	}, id) {
-		// Codex only reads additional_tools on its Responses Lite GPT-5.6 models.
-		codexAdditional := slices.Contains([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"}, id)
+		// Codex only reads additional_tools on its Responses Lite GPT-5.6 and GPT-6 models.
+		codexAdditional := slices.Contains([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"}, id)
 		if isOpenAIResponses || codexAdditional || isProxiedResponses {
 			compat.SupportsAdditionalTools = ptr(true)
 		}
@@ -752,7 +779,7 @@ func thinkingValues(values map[ai.ModelThinkingLevel]string) map[ai.ModelThinkin
 }
 
 func supportsOpenAIXHigh(id string) bool {
-	return containsAny(id, "gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6-astra")
+	return containsAny(id, "gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6")
 }
 
 func isAnthropicAdaptiveThinkingModel(id string) bool {
@@ -786,8 +813,8 @@ func effortThinkingLevelMap(options []sourceReasoningOption) *map[ai.ModelThinki
 	return model.ThinkingLevelMap
 }
 
-var anthropicMidConvoPattern = regexp.MustCompile(`^(?:claude-opus-5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
-var anthropicMidConvoSystemPattern = regexp.MustCompile(`^(?:claude-opus-(?:4[.-]8|5)|claude-(?:fable|mythos)-5(?:[.-]1)?)(?:-\d{8})?$`)
+var anthropicMidConvoPattern = regexp.MustCompile(`^(?:claude-opus-(?:5|5[.-]5)|claude-sonnet-5[.-]5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
+var anthropicMidConvoSystemPattern = regexp.MustCompile(`^(?:claude-opus-(?:4[.-]8|5(?:[.-]5)?)|claude-sonnet-5[.-]5|claude-(?:fable|mythos)-5(?:[.-]1)?)(?:-\d{8})?$`)
 
 func supportsAnthropicMidConvoEffort(id string) bool {
 	id = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(id), "~"), "anthropic/")
@@ -834,6 +861,62 @@ func anthropicCatalogCompat(compat ai.AnthropicMessagesCompat) json.RawMessage {
 		SupportsStrictTools             *bool                               `json:"supportsStrictTools,omitempty"`
 		AllowedFallbackModels           *[]ai.AnthropicAllowedFallbackModel `json:"allowedFallbackModels,omitempty"`
 	}{compat.SupportsMidConvoEffort, compat.SupportsMidConvoSystemMessages, compat.SupportsMidConvoToolChanges, compat.SupportsEagerToolInputStreaming, compat.ForceAdaptiveThinking, compat.SupportsTemperature, compat.SupportsStrictTools, compat.AllowedFallbackModels})
+}
+
+// spreadCompat orders final's members like {...detected, ...authored}: the
+// members detected also has first, in detected order, then the rest.
+func spreadCompat(detected, final json.RawMessage) json.RawMessage {
+	members := func(raw json.RawMessage) ([]string, map[string]json.RawMessage) {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		values := map[string]json.RawMessage{}
+		var order []string
+		if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+			return nil, values
+		}
+		for decoder.More() {
+			token, err := decoder.Token()
+			if err != nil {
+				break
+			}
+			name, _ := token.(string)
+			var value json.RawMessage
+			if decoder.Decode(&value) != nil {
+				break
+			}
+			order = append(order, name)
+			values[name] = value
+		}
+		return order, values
+	}
+	detectedOrder, _ := members(detected)
+	finalOrder, values := members(final)
+	keys := make([]string, 0, len(finalOrder))
+	for _, key := range detectedOrder {
+		if _, ok := values[key]; ok {
+			keys = append(keys, key)
+		}
+	}
+	for _, key := range finalOrder {
+		if !slices.Contains(keys, key) {
+			keys = append(keys, key)
+		}
+	}
+	var out bytes.Buffer
+	out.WriteByte('{')
+	for index, key := range keys {
+		if index > 0 {
+			out.WriteByte(',')
+		}
+		name, _ := json.Marshal(key)
+		out.Write(name)
+		out.WriteByte(':')
+		out.Write(values[key])
+	}
+	out.WriteByte('}')
+	if len(keys) == 0 {
+		return final
+	}
+	return out.Bytes()
 }
 
 func orderCompat(raw json.RawMessage, keys []string) json.RawMessage {
