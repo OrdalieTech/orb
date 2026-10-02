@@ -476,7 +476,7 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 
 **RPC**
 - [x] Per-input disposition on `prompt`, `steer` and `follow_up` responses.
-- [ ] Client `streamingBehavior` and dispositions in the Go RPC client; the Android app shows whether a
+- [x] Client `streamingBehavior` and dispositions in the Go RPC client; the Android app shows whether a
       message was started, steered or queued.
 
 **Settings, models, catalog**

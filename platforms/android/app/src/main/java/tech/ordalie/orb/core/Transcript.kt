@@ -39,6 +39,9 @@ class Transcript {
 
     fun clear() { items.clear(); tools.clear(); said = null }
 
+    /** Says that a message sent during a run waits: steering lands after the current step, a follow-up after the run. */
+    fun waiting(steer: Boolean) { items += Note(key(), if (steer) "steering · lands after the current step" else "queued · sends when this run ends") }
+
     fun apply(e: JSONObject): Boolean {
         when (e.optString("type")) {
             "message_start", "message_update" -> message(e.optJSONObject("message") ?: return false, final = false)
