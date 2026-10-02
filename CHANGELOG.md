@@ -20,7 +20,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - OpenAI-compatible endpoints receive strict tool schemas only when the model says it supports
   them; built-in models keep them.
 - RPC `prompt`, `steer` and `follow_up` responses say what happened to the input (`started`,
-  `queued` or `handled`).
+  `queued` or `handled`); the Go RPC client returns it and takes `streamingBehavior`, and the
+  Android app notes when a message is queued or steering.
 - A command that exits non-zero gives the model the same error, and extensions now also receive
   its full output, exit code and run time.
 - Theme files accept `#rgb`, `oklch()` and `okhsl()` colors and an `appearance`; HTML export uses

@@ -175,9 +175,16 @@ class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Se
         scope.launch {
             val r = rpc.call(JSONObject().put("type", "prompt").put("message", text).apply { if (busy) put("streamingBehavior", "followUp") })
             if (!r.optBoolean("success", true)) transcript.items += Note("e" + UUID.randomUUID(), r.problem(), alarm = true)
+            else if (r.optJSONObject("data")?.optString("disposition") == "queued") transcript.waiting(steer = false)
         }
     }
-    override fun steer(text: String) { transcript.sent += text; scope.launch { rpc.call(JSONObject().put("type", "steer").put("message", text)) } }
+    override fun steer(text: String) {
+        transcript.sent += text
+        scope.launch {
+            val r = rpc.call(JSONObject().put("type", "steer").put("message", text))
+            if (r.optJSONObject("data")?.optString("disposition") == "queued") transcript.waiting(steer = true)
+        }
+    }
     override fun abort() { scope.launch { rpc.call(JSONObject().put("type", "abort")) } }
     override fun answer(value: String?) {
         val a = ask ?: return
@@ -365,7 +372,9 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
 
     override fun prompt(text: String) {
         transcript.sent += text
-        if (gone) reopen(text) else if (busy) call("follow_up", execution(JSONObject().put("text", text))) else call("prompt", JSONObject().put("text", text))
+        if (gone) reopen(text)
+        else if (busy) { call("follow_up", execution(JSONObject().put("text", text))); transcript.waiting(steer = false) }
+        else call("prompt", JSONObject().put("text", text))
     }
 
     /** Starts Orb on this thread again over there, then sends [text] once it is on Bridge. */
@@ -375,7 +384,7 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
             instance = it.id; gone = false; cursor = ""; reopening = text
         }.onFailure { status = it.message.orEmpty() }
     }
-    override fun steer(text: String) { transcript.sent += text; call("steer", execution(JSONObject().put("text", text))) }
+    override fun steer(text: String) { transcript.sent += text; call("steer", execution(JSONObject().put("text", text))); transcript.waiting(steer = true) }
     override fun abort() = call("cancel", execution())
     override fun answer(value: String?) {
         val a = ask ?: return

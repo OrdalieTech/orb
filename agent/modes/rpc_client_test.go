@@ -108,7 +108,7 @@ func TestRPCClientTypedCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Stop() })
-	if err := client.Prompt(context.Background(), "hello", nil); err != nil {
+	if _, err := client.Prompt(context.Background(), "hello", nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	model, err := client.SetModel(context.Background(), "openai", "gpt-test")
@@ -170,7 +170,7 @@ func TestRPCClientListenerCanCallClientInOrder(t *testing.T) {
 	})
 	promptCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := client.Prompt(promptCtx, "hello", nil); err != nil {
+	if _, err := client.Prompt(promptCtx, "hello", nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-listenerDone; err != nil {
@@ -219,7 +219,7 @@ func TestRPCClientListenerPanicOnlyStopsCurrentEvent(t *testing.T) {
 		}
 		mu.Unlock()
 	})
-	if err := client.Prompt(context.Background(), "hello", nil); err != nil {
+	if _, err := client.Prompt(context.Background(), "hello", nil, ""); err != nil {
 		t.Fatalf("response after listener panic: %v", err)
 	}
 	select {
@@ -248,7 +248,7 @@ func TestRPCClientListenerCanStopClient(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	promptDone := make(chan error, 1)
-	go func() { promptDone <- client.Prompt(ctx, "stop", nil) }()
+	go func() { _, err := client.Prompt(ctx, "stop", nil, ""); promptDone <- err }()
 	select {
 	case err := <-stopped:
 		if err != nil {

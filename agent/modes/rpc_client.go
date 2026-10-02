@@ -343,16 +343,40 @@ func (client *RPCClient) GetStderr() string {
 	return client.stderr.String()
 }
 
-func (client *RPCClient) Prompt(ctx context.Context, message string, images []*ai.ImageContent) error {
-	return client.sendOnly(ctx, rpc.Command{Type: "prompt", Message: message, Images: images})
+// Prompt returns the input's disposition once accepted: "started", "queued"
+// (steer or followUp while streaming), or "handled", in which case no run
+// started and no agent_settled follows. Events arrive through OnEvent.
+func (client *RPCClient) Prompt(ctx context.Context, message string, images []*ai.ImageContent, streamingBehavior string) (string, error) {
+	return client.disposition(ctx, rpc.Command{Type: "prompt", Message: message, Images: images, StreamingBehavior: streamingBehavior})
 }
 
-func (client *RPCClient) Steer(ctx context.Context, message string, images []*ai.ImageContent) error {
-	return client.sendOnly(ctx, rpc.Command{Type: "steer", Message: message, Images: images})
+// Steer queues a steering message and returns its disposition.
+func (client *RPCClient) Steer(ctx context.Context, message string, images []*ai.ImageContent) (string, error) {
+	return client.disposition(ctx, rpc.Command{Type: "steer", Message: message, Images: images})
 }
 
-func (client *RPCClient) FollowUp(ctx context.Context, message string, images []*ai.ImageContent) error {
-	return client.sendOnly(ctx, rpc.Command{Type: "follow_up", Message: message, Images: images})
+// FollowUp queues a follow-up message and returns its disposition.
+func (client *RPCClient) FollowUp(ctx context.Context, message string, images []*ai.ImageContent) (string, error) {
+	return client.disposition(ctx, rpc.Command{Type: "follow_up", Message: message, Images: images})
+}
+
+func (client *RPCClient) disposition(ctx context.Context, command rpc.Command) (string, error) {
+	result, err := client.send(ctx, rpcClientRequest{Command: command})
+	if err != nil {
+		return "", err
+	}
+	if !result.response.Success {
+		return "", errors.New(result.response.Error)
+	}
+	var data struct {
+		Disposition string `json:"disposition"`
+	}
+	if len(result.data) > 0 {
+		if err := json.Unmarshal(result.data, &data); err != nil {
+			return "", err
+		}
+	}
+	return data.Disposition, nil
 }
 
 func (client *RPCClient) Abort(ctx context.Context) error {
@@ -523,7 +547,10 @@ func (client *RPCClient) CollectEvents(ctx context.Context) ([]RPCEvent, error) 
 }
 
 func (client *RPCClient) PromptAndWait(ctx context.Context, message string, images []*ai.ImageContent) ([]RPCEvent, error) {
-	return client.collectEvents(ctx, func() error { return client.Prompt(ctx, message, images) })
+	return client.collectEvents(ctx, func() error {
+		_, err := client.Prompt(ctx, message, images, "")
+		return err
+	})
 }
 
 func (client *RPCClient) collectEvents(ctx context.Context, start func() error) ([]RPCEvent, error) {
