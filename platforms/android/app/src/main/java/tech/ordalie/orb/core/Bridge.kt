@@ -138,6 +138,12 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
     fun preferred(peer: String) = orb.recall("model:$peer") to orb.recall("thinking:$peer")
     fun prefer(peer: String, model: String, thinking: String) { orb.remember("model:$peer", model); orb.remember("thinking:$peer", thinking) }
 
+    /** A peer's providers and its sign-in status, as `orb login --json` lists them there (host.providers). */
+    suspend fun providers(peer: String): List<Provider> {
+        val rows = remote(peer, "host.providers", JSONObject()).optJSONObject("result")?.optJSONArray("providers") ?: return emptyList()
+        return Provider.parse((0 until rows.length()).joinToString("\n") { rows.get(it).toString() })
+    }
+
     /** Brings a peer's Orb to the latest release (host.update); the words say what happened. */
     suspend fun update(peer: String): String {
         val r = remote(peer, "host.update", JSONObject())

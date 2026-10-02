@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -101,4 +102,62 @@ func TestALaunchedOrbEndsWhenQuietOutsideATurn(t *testing.T) {
 		}
 	}
 	_ = write.Close()
+}
+
+func TestHostLoginRelaysSignInToThePeer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stand-in")
+	}
+	script := filepath.Join(t.TempDir(), "orb")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"+
+		"echo '{\"type\":\"auth_url\",\"url\":\"https://claude.ai/oauth/authorize\"}'\n"+
+		"echo '{\"type\":\"prompt\",\"kind\":\"manual_code\",\"message\":\"Paste the code\"}'\n"+
+		"read code\necho \"{\\\"type\\\":\\\"done\\\",\\\"code\\\":\\\"$code\\\"}\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	previous := loginExecutable
+	loginExecutable = func() (string, error) { return script, nil }
+	t.Cleanup(func() { loginExecutable = previous })
+	s := &bridgeService{logins: map[string]*hostLogin{}, ctx: t.Context()}
+	call := func(method string, params any) map[string]json.RawMessage {
+		t.Helper()
+		raw, err := s.login(t.Context(), method, bridge.JSON(params))
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		var result map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &result)
+		return result
+	}
+	var id string
+	_ = json.Unmarshal(call("host.login.start", map[string]string{"provider": "anthropic", "method": "oauth"})["login_id"], &id)
+	var events []json.RawMessage
+	cursor := 0
+	for len(events) < 2 {
+		page := call("host.login.poll", map[string]any{"login_id": id, "cursor": cursor})
+		var batch []json.RawMessage
+		_ = json.Unmarshal(page["events"], &batch)
+		_ = json.Unmarshal(page["cursor"], &cursor)
+		events = append(events, batch...)
+	}
+	call("host.login.answer", map[string]string{"login_id": id, "value": "the-code"})
+	for {
+		page := call("host.login.poll", map[string]any{"login_id": id, "cursor": cursor})
+		var batch []json.RawMessage
+		_ = json.Unmarshal(page["events"], &batch)
+		_ = json.Unmarshal(page["cursor"], &cursor)
+		events = append(events, batch...)
+		if string(page["done"]) == "true" {
+			break
+		}
+	}
+	if len(events) != 3 || !strings.Contains(string(events[2]), `"code":"the-code"`) {
+		t.Fatalf("events = %s", events)
+	}
+	if _, err := s.login(t.Context(), "host.login.poll", bridge.JSON(map[string]any{"login_id": id})); bridge.Code(err) != "not_found" {
+		t.Fatalf("finished sign-in still polled: %v", err)
+	}
+	if _, err := s.login(t.Context(), "host.login.start", bridge.JSON(map[string]string{"provider": "anthropic", "method": "browser"})); bridge.Code(err) != "invalid_params" {
+		t.Fatalf("unknown method: %v", err)
+	}
 }

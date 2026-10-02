@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -117,8 +119,182 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 			return nil, err
 		}
 		return s.update(ctx), nil
+	case "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel":
+		return s.login(ctx, method, params)
 	}
 	return nil, bridge.Fail("method_not_found")
+}
+
+// maxLogins bounds the sign-ins one Bridge runs at once; loginPoll is how long a poll waits for
+// news; a sign-in its peer abandoned ends after loginLimit, as device codes do.
+const (
+	maxLogins  = 2
+	loginPoll  = 20 * time.Second
+	loginLimit = 15 * time.Minute
+)
+
+// hostLogin is a sign-in this machine runs for a peer, so a headless Orb is signed in from the
+// phone: `orb login --json`, whose lines (the link, a device code, prompts, progress, the
+// outcome) the peer polls and whose prompts it answers.
+type hostLogin struct {
+	stdin  io.WriteCloser
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	lines  []json.RawMessage
+	done   bool
+	wake   chan struct{}
+}
+
+func (l *hostLogin) add(line json.RawMessage, done bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if line != nil {
+		l.lines = append(l.lines, line)
+	}
+	l.done = l.done || done
+	close(l.wake)
+	l.wake = make(chan struct{})
+}
+
+// loginExecutable is the orb a host sign-in runs; tests stand in a script.
+var (
+	loginExecutable = os.Executable
+	providerName    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+)
+
+func (s *bridgeService) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	exe, err := loginExecutable()
+	if err != nil {
+		return nil, err
+	}
+	if method == "host.providers" {
+		var q struct{}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		output, err := exec.CommandContext(ctx, exe, "login", "--json").Output()
+		if err != nil {
+			return nil, bridge.Fail("unavailable")
+		}
+		rows := []json.RawMessage{}
+		for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte("\n")) {
+			if json.Valid(line) {
+				rows = append(rows, append(json.RawMessage(nil), line...))
+			}
+		}
+		return bridge.JSON(map[string]any{"providers": rows}), nil
+	}
+	if method == "host.login.start" {
+		var q struct {
+			Provider string `json:"provider"`
+			Method   string `json:"method"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		if !providerName.MatchString(q.Provider) || q.Method != "oauth" && q.Method != "api_key" {
+			return nil, bridge.Fail("invalid_params")
+		}
+		return s.startLogin(exe, q.Provider, q.Method)
+	}
+	var q struct {
+		ID     string `json:"login_id"`
+		Cursor int    `json:"cursor,omitempty"`
+		Value  string `json:"value,omitempty"`
+	}
+	if err := protocol.Decode(params, &q); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	l := s.logins[q.ID]
+	s.mu.Unlock()
+	if l == nil {
+		return nil, bridge.Fail("not_found")
+	}
+	switch method {
+	case "host.login.answer":
+		l.mu.Lock()
+		_, err := io.WriteString(l.stdin, strings.ReplaceAll(q.Value, "\n", " ")+"\n")
+		l.mu.Unlock()
+		if err != nil {
+			return nil, bridge.Fail("unavailable")
+		}
+		return bridge.JSON(struct{}{}), nil
+	case "host.login.cancel":
+		l.cancel()
+		s.endLogin(q.ID)
+		return bridge.JSON(struct{}{}), nil
+	}
+	timer := time.NewTimer(loginPoll)
+	defer timer.Stop()
+	for {
+		l.mu.Lock()
+		lines, done, wake := l.lines[min(max(q.Cursor, 0), len(l.lines)):], l.done, l.wake
+		cursor := len(l.lines)
+		l.mu.Unlock()
+		if len(lines) > 0 || done {
+			if done {
+				s.endLogin(q.ID)
+			}
+			return bridge.JSON(map[string]any{"events": lines, "cursor": cursor, "done": done}), nil
+		}
+		select {
+		case <-wake:
+		case <-timer.C:
+			return bridge.JSON(map[string]any{"events": []json.RawMessage{}, "cursor": cursor, "done": false}), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (s *bridgeService) startLogin(exe, provider, method string) (json.RawMessage, error) {
+	s.mu.Lock()
+	if len(s.logins) >= maxLogins {
+		s.mu.Unlock()
+		return nil, bridge.Fail("resource_exhausted")
+	}
+	id := protocol.NewID()
+	ctx, cancel := context.WithTimeout(s.ctx, loginLimit)
+	l := &hostLogin{cancel: cancel, wake: make(chan struct{})}
+	s.logins[id] = l
+	s.mu.Unlock()
+	command := exec.CommandContext(ctx, exe, "login", "--json", provider, method)
+	stdin, err := command.StdinPipe()
+	var stdout io.ReadCloser
+	if err == nil {
+		stdout, err = command.StdoutPipe()
+	}
+	if err == nil {
+		err = command.Start()
+	}
+	if err != nil {
+		cancel()
+		s.endLogin(id)
+		return nil, err
+	}
+	l.stdin = stdin
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 64<<10), 1<<20)
+		for scanner.Scan() {
+			if line := scanner.Bytes(); json.Valid(line) {
+				l.add(append(json.RawMessage(nil), line...), false)
+			}
+		}
+		_ = command.Wait()
+		cancel()
+		l.add(nil, true)
+		// The outcome waits a minute for its peer's poll.
+		time.AfterFunc(time.Minute, func() { s.endLogin(id) })
+	}()
+	return bridge.JSON(map[string]string{"login_id": id}), nil
+}
+
+func (s *bridgeService) endLogin(id string) {
+	s.mu.Lock()
+	delete(s.logins, id)
+	s.mu.Unlock()
 }
 
 // update brings this machine's orb to the latest release, as `orb update` does, then restarts

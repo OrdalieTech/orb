@@ -184,6 +184,8 @@ type bridgeService struct {
 	joining map[string]string
 	// launched: Orbs this Bridge started in a folder for a peer (host.launch).
 	launched map[string]*launched
+	// logins: sign-ins this machine runs for a peer (host.login.*).
+	logins map[string]*hostLogin
 	// restart ends the service so its process can exec the binary at path (host.update).
 	restart func(path string)
 	ctx     context.Context
@@ -518,7 +520,7 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		defer func() { _ = server.Close() }()
 		go func() { _ = server.Serve(listener); stop() }()
 	}
-	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, joining: map[string]string{}, launched: map[string]*launched{}, ctx: serviceCtx}
+	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, joining: map[string]string{}, launched: map[string]*launched{}, logins: map[string]*hostLogin{}, ctx: serviceCtx}
 	b.SetHost(service.host)
 	defer service.stopLaunched()
 	reexec := ""

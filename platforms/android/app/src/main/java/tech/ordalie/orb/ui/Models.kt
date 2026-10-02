@@ -117,7 +117,7 @@ fun AnimatedVisibilityScope.ModelSheet(session: Session, c: Ctx, dismiss: () -> 
                 }
             }
             item(key = "add") {
-                Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ provider", color = p.mute) }
+                Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers()) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ provider", color = p.mute) }
             }
         }
         // Reasoning is what changes most often: it sits last, where the thumb already is.

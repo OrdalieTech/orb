@@ -93,8 +93,9 @@ sealed interface Screen {
     data object Bridge : Screen
     data object Invite : Screen
     data class Join(val text: String = "") : Screen
-    data object Providers : Screen
-    data class Vendor(val id: String) : Screen
+    /** Providers of this phone's Orb, or of a Bridge [peer]'s. */
+    data class Providers(val peer: String? = null) : Screen
+    data class Vendor(val id: String, val peer: String? = null) : Screen
     data object Plugins : Screen
     data object Provider : Screen
     data class Device(val peer: String) : Screen
@@ -146,8 +147,8 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                     Screen.Bridge -> BridgeScreen(ctx)
                     Screen.Invite -> InviteScreen(ctx)
                     is Screen.Join -> JoinScreen(ctx, s.text)
-                    Screen.Providers -> ProvidersScreen(ctx)
-                    is Screen.Vendor -> VendorScreen(ctx, s.id)
+                    is Screen.Providers -> ProvidersScreen(ctx, s.peer)
+                    is Screen.Vendor -> VendorScreen(ctx, s.id, s.peer)
                     Screen.Plugins -> PluginsScreen(ctx)
                     Screen.Provider -> ProviderScreen(ctx)
                     is Screen.Device -> DeviceScreen(ctx, s.peer)
@@ -193,7 +194,7 @@ class Ctx(
             }
             "sessions", "resume" -> { while (nav.stack.size > 1) nav.back() }
             "bridge", "pair" -> nav.go(Screen.Bridge)
-            "login", "providers" -> nav.go(Screen.Providers)
+            "login", "providers" -> nav.go(Screen.Providers())
             "plugins" -> nav.go(Screen.Plugins)
             "text" -> rt.orb.chatSize = when (arg) { "small" -> 13f; "large" -> 17f; "" , "medium" -> 15f; else -> arg.toFloatOrNull() ?: return false }
             else -> return false
@@ -224,7 +225,7 @@ class Ctx(
     }
     fun chooseModel(s: Session?) {
         val models = s?.models().orEmpty()
-        if (models.isEmpty()) nav.go(Screen.Providers) else deck(s!!)
+        if (models.isEmpty()) nav.go(Screen.Providers()) else deck(s!!)
     }
     /** Renames a thread of a paired device through the Orb that has it open, starting one if none does. */
     fun renameThread(peer: Peer, t: Thread) = rename(Rename(t.title) { name ->
@@ -249,7 +250,7 @@ class Ctx(
         }.onFailure { rt.launching = it.message.orEmpty() }
     }
 
-    fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) { nav.go(when (it) { "terminal" -> Screen.Terminal; "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers }) })
+    fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) { nav.go(when (it) { "terminal" -> Screen.Terminal; "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers() }) })
 }
 
 /** Keeps the last value on screen while it animates away. */

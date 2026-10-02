@@ -60,6 +60,7 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
             Btn("open", inverted = true) { if (path.isNotBlank()) c.nav.go(Screen.Folder(peer.id, path.trim())) }
         }
         Launching(c)
+        Row(Modifier.padding(top = 12.dp)) { Btn("providers") { c.nav.go(Screen.Providers(peer.id)) } }
         T("folders", Modifier.padding(top = 18.dp, bottom = 4.dp), label = true)
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
