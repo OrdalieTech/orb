@@ -138,13 +138,18 @@ func StreamSimpleMistralConversations(
 		requested = options.Reasoning
 	}
 	level := clampSimpleReasoning(model, requested)
-	if !model.Reasoning || level == nil {
+	if !model.Reasoning {
 		return StreamMistralConversationsWithOptions(ctx, model, requestContext, result)
 	}
-	if usesMistralReasoningEffort(model) {
+	// Models with a thinking level map use reasoning_effort; other reasoning
+	// models use prompt_mode.
+	switch {
+	case model.ThinkingLevelMap != nil && level != nil:
 		value := mappedThinkingLevel(model, string(*level), "high")
 		result.ReasoningEffort = &value
-	} else {
+	case model.ThinkingLevelMap != nil:
+		result.ReasoningEffort = (*model.ThinkingLevelMap)[ai.ModelThinkingOff]
+	case level != nil:
 		value := "reasoning"
 		result.PromptMode = &value
 	}
@@ -487,11 +492,6 @@ func mistralAlphanumeric(value string) string {
 	return builder.String()
 }
 
-func usesMistralReasoningEffort(model *ai.Model) bool {
-	return model.ID == "mistral-small-2603" || model.ID == "mistral-small-latest" ||
-		strings.HasPrefix(model.ID, "mistral-medium-") || model.ID == "zai-glm-5-2"
-}
-
 func postMistralStream(
 	ctx context.Context,
 	model *ai.Model,
@@ -741,6 +741,12 @@ func (processor *mistralStreamProcessor) consumeContent(raw json.RawMessage) err
 }
 
 func (processor *mistralStreamProcessor) appendText(delta string) error {
+	// GLM models send empty content deltas around thinking and tool calls; a
+	// block opened for them splits thinking, which Mistral rejects on replay.
+	delta = sanitizeText(delta)
+	if delta == "" {
+		return nil
+	}
 	if processor.currentKind != "text" {
 		if err := processor.finishCurrent(); err != nil {
 			return err
@@ -754,7 +760,6 @@ func (processor *mistralStreamProcessor) appendText(delta string) error {
 		}
 	}
 	block := processor.output.Content[processor.currentIndex].(*ai.TextContent)
-	delta = sanitizeText(delta)
 	block.Text = processor.accumulated.append(block.Text, delta)
 	if !processor.sink(ai.TextDeltaEvent{ContentIndex: processor.currentIndex, Delta: delta, Partial: processor.output}) {
 		return errStopSSE

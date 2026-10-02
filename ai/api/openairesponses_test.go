@@ -996,6 +996,15 @@ func TestOpenAIResponsesAppliesServiceTierPricingOAM2(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesPricesFastTierLikePriority(t *testing.T) {
+	model := responsesTestModel()
+	usage := &ai.Usage{Cost: ai.Cost{Input: 1, Output: 2}}
+	applyResponsesServiceTierPricing(usage, "fast", model)
+	if usage.Cost.Input != 2 || usage.Cost.Output != 4 {
+		t.Fatalf("fast cost = %#v, want doubled rates", usage.Cost)
+	}
+}
+
 // Gap OA-m7: degenerate Responses edges must match upstream bug-for-bug.
 func TestOpenAIResponsesDegenerateEdgesOAm7(t *testing.T) {
 	t.Run("error event renders missing members like a template literal", func(t *testing.T) {
@@ -1163,5 +1172,53 @@ func TestResponsesDeferredToolsUseAdditionalTools(t *testing.T) {
 		len(additional.Tools) != 1 || additional.Tools[0].Name != "late_tool" ||
 		additional.Tools[0].DeferLoading != nil {
 		t.Fatalf("additional tools item = %#v", messages[1])
+	}
+}
+
+func TestOpenAISamplingParamsOverrideModelDefaultsAndNamedFields(t *testing.T) {
+	model := responsesTestModel()
+	model.SamplingParams = map[string]any{"temperature": 0.2, "top_p": 0.9}
+	temperature := 0.7
+	options := &OpenAIResponsesOptions{StreamOptions: ai.StreamOptions{Temperature: &temperature, SamplingParams: map[string]any{"top_p": 0.5, "min_p": 0.1}}}
+	payload, _, err := buildOpenAIResponsesPayload(model, ai.Context{Messages: ai.MessageList{}}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := ai.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// temperature keeps its position; new keys follow in sorted order.
+	if !strings.Contains(string(encoded), `"store":false,"temperature":0.2,`) || !strings.HasSuffix(string(encoded), `"min_p":0.1,"top_p":0.5}`) {
+		t.Fatalf("responses body = %s", encoded)
+	}
+	compat, err := resolveOpenAICompletionsCompat(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := buildOpenAICompletionsPayload(model, ai.Context{}, &OpenAICompletionsOptions{StreamOptions: options.StreamOptions}, compat, ai.CacheRetentionNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["temperature"] != 0.2 || body["top_p"] != 0.5 || body["min_p"] != 0.1 {
+		t.Fatalf("completions body = %#v", body)
+	}
+}
+
+func TestOpenAIResponsesRejectsUnfinishedToolCalls(t *testing.T) {
+	model := responsesTestModel()
+	output := newAssistantMessage(model)
+	processor := newOpenAIResponsesProcessor(model, output, nil, func(ai.AssistantMessageEvent) bool { return true })
+	for _, event := range []string{
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}`,
+		`{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"command\":\"ls"}`,
+	} {
+		if err := processor.handle(json.RawMessage(event)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := processor.handle(json.RawMessage(`{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[]}}`))
+	if err == nil || err.Error() != "OpenAI Responses stream completed with an unfinished tool call: bash (call_1|fc_1)" {
+		t.Fatalf("err = %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/OrdalieTech/orb/tui"
@@ -55,7 +56,7 @@ func TestBuiltInHeaderIsVerboseOnly(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			mode, _, _, _ := newF12ShutdownMode(t)
-			mode.session.SetQuietStartup(test.quiet)
+			mode.session.SetQuietStartup(strconv.FormatBool(test.quiet))
 			mode.header = &tui.Container{}
 			mode.options.Verbose = test.verbose
 			mode.options.SessionHeader = mode.session.Manager().GetHeader()

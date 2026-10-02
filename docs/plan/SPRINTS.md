@@ -444,7 +444,7 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 **Agent loop and sessions**
 - [x] `finishTurn` replaces `shouldStopAfterTurn`; `prepareRequest`; every request is the session's
       projection, so unrecorded agent state never reaches the provider.
-- [ ] `peekQueuedMessages`.
+- [x] `peekQueuedMessages`.
 - [x] `thinkingLevel` recorded on assistant messages.
 - [x] `context_edit` entries (append-only omit/replace) in the session and its projection; each
       request is the session's projection; `refreshContext`.
@@ -480,14 +480,14 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 **Settings, models, catalog**
 - [ ] `defaultTools` `+name`/`-name` entries (project on top of user); `/reload` enables newly added.
 - [ ] `inputLimits.images.resize` applied to attachments, `read` and tool-result images.
-- [ ] `quietStartup: "header"`.
+- [x] `quietStartup: "header"`.
 - [x] Catalog refresh: model `type`, image-input limits; Claude
       Opus 5.5 and Sonnet 5.5 (adaptive thinking, 1M), GPT-6 Sol/Luna, GPT-6.1 Sol (Codex default),
       Grok 4.7 (xAI default), Kimi K3 defaults, Meta Muse Spark, Copilot Opus 5.5 levels.
 - [x] Malformed prompt-template frontmatter is a resource warning; session files appear at the first
       user message; the system prompt's docs line names MCP.
 - [ ] Audit the remaining kernel paths the dry run listed (keybindings, trust, CLI args).
-- [ ] `samplingParams` (model and per request) merged into OpenAI-compatible request bodies.
+- [x] `samplingParams` (model and per request) merged into OpenAI-compatible request bodies.
 - [ ] Projection-aware compaction (context edits respected by cut points and token estimates).
 
 **Providers and sign-in**
@@ -499,17 +499,17 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 - [ ] Anthropic workload identity federation through the `Env` port.
 - [x] Sign in with ChatGPT on `openai` (stable `deviceId`, request fields it rejects left out);
       Codex provider renamed legacy.
-- [ ] ChatGPT usage-limit errors are not retried and link to the usage page.
+- [x] ChatGPT usage-limit errors are not retried and link to the usage page.
 - [x] Meta provider: `META_API_KEY` and `/login meta`.
 - [ ] One shared OAuth callback server and Orb-branded pages.
 - [x] OpenAI-compatible strict only when advertised; pi-messages and Codex WebSocket partials as of
       emission.
-- [ ] Wire fixes: image-only messages
+- [x] Wire fixes: image-only messages
       without empty text; `samplingParams` on direct calls; Responses streams without `output_index`
       end in error; `ctc` IDs on replayed grammar tool calls; Mistral GLM chunks and
       `reasoning_effort`; OpenCode `qwen3.8-flash` empty signatures; Z.AI overflow (both messages);
       Fast-tier and Vercel 1-hour cache pricing; unparseable `Retry-After` backs off.
-- [ ] CLI: `--provider` without `--model` and invalid `--mode` are errors.
+- [x] CLI: `--provider` without `--model` and invalid `--mode` are errors.
 
 **MCP**
 - [ ] `mcp.json` (global, and project once trusted) is the only config; `description` per server.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"slices"
@@ -893,4 +894,43 @@ func streamFailure(ctx context.Context, output *ai.AssistantMessage, err error, 
 	output.StopReason = reason
 	output.ErrorMessage = &message
 	return ai.ErrorEvent{Reason: reason, Error: output}
+}
+
+// mergedSamplingParams is Object.assign({}, model.samplingParams,
+// options.samplingParams): request keys override model defaults.
+func mergedSamplingParams(model *ai.Model, options *ai.StreamOptions) map[string]any {
+	merged := map[string]any{}
+	maps.Copy(merged, model.SamplingParams)
+	if options != nil {
+		maps.Copy(merged, options.SamplingParams)
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
+// assignJSONObject applies Object.assign to an encoded object: existing keys
+// keep their position, new keys follow in sorted order.
+func assignJSONObject(encoded []byte, values map[string]any) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	if _, err := decoder.Token(); err != nil {
+		return nil, err
+	}
+	object := jsonwire.OrderedObject{}
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		object = append(object, jsonwire.OrderedMember{Name: key.(string), Value: value})
+	}
+	for _, key := range slices.Sorted(maps.Keys(values)) {
+		object.Set(key, values[key])
+	}
+	return jsonwire.Marshal(object)
 }

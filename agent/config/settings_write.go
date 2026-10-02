@@ -403,8 +403,12 @@ func (manager *SettingsManager) SetShowCacheMissNotices(show bool) {
 	manager.setGlobalValues(settingMember("showCacheMissNotices", show))
 }
 
-func (manager *SettingsManager) SetQuietStartup(quiet bool) {
-	manager.setGlobalValues(settingMember("quietStartup", quiet))
+func (manager *SettingsManager) SetQuietStartup(quiet string) {
+	var value any = quiet == "true"
+	if quiet == "header" {
+		value = quiet
+	}
+	manager.setGlobalValues(settingMember("quietStartup", value))
 }
 
 func (manager *SettingsManager) SetDefaultProjectTrust(value string) {

@@ -96,20 +96,21 @@ func validateServerRetryDelay(delayMS float64, maxRetryDelayMS *int64, providerE
 }
 
 func providerRetryDelay(err error, headers http.Header, retryIndex int, maxRetryDelayMS *int64) (time.Duration, error) {
-	if value := headers.Get("retry-after-ms"); value != "" {
-		if parsed, parseErr := strconv.ParseFloat(value, 64); parseErr == nil {
-			return validateServerRetryDelay(parsed, maxRetryDelayMS, err.Error())
-		}
+	finite := func(value string) (float64, bool) {
+		parsed, parseErr := strconv.ParseFloat(value, 64)
+		return parsed, parseErr == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
 	}
+	if parsed, ok := finite(headers.Get("retry-after-ms")); ok {
+		return validateServerRetryDelay(parsed, maxRetryDelayMS, err.Error())
+	}
+	// An unparseable Retry-After falls through to exponential backoff.
 	if value := headers.Get("retry-after"); value != "" {
-		if seconds, parseErr := strconv.ParseFloat(value, 64); parseErr == nil {
+		if seconds, ok := finite(value); ok {
 			return validateServerRetryDelay(seconds*1000, maxRetryDelayMS, err.Error())
 		}
-		delayMS := float64(0)
 		if when, parseErr := http.ParseTime(value); parseErr == nil {
-			delayMS = float64(time.Until(when) / time.Millisecond)
+			return validateServerRetryDelay(float64(time.Until(when)/time.Millisecond), maxRetryDelayMS, err.Error())
 		}
-		return validateServerRetryDelay(delayMS, maxRetryDelayMS, err.Error())
 	}
 	exponential := math.Min(0.5*math.Pow(2, float64(retryIndex)), 8) * 1000
 	return time.Duration(exponential * (1 - providerRetryJitter()*0.25) * float64(time.Millisecond)), nil

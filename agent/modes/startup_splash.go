@@ -87,7 +87,7 @@ func (mode *InteractiveMode) logoAnimationEnabled() bool {
 	if mode.emptyState == nil || !mode.options.OutputTTY || os.Getenv("TERM") == "dumb" {
 		return false
 	}
-	if !mode.options.Verbose && mode.session != nil && mode.session.InteractiveSettings().QuietStartup {
+	if !mode.options.Verbose && mode.session != nil && mode.session.InteractiveSettings().QuietStartup == "true" {
 		return false
 	}
 	terminal := mode.ui.Terminal()

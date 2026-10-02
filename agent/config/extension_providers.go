@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -231,6 +232,7 @@ func registeredModel(id string, definition extensions.ProviderModelConfig, confi
 	model := ai.Model{ID: definition.ID, Name: definition.Name, API: definition.API, Provider: ai.ProviderID(id), BaseURL: definition.BaseURL,
 		Reasoning: definition.Reasoning, ThinkingLevelMap: cloneThinkingMap(definition.ThinkingLevelMap), Input: append(ai.InputModalities(nil), definition.Input...),
 		Cost: definition.Cost, ContextWindow: definition.ContextWindow, MaxTokens: definition.MaxTokens,
+		InputLimits: definition.InputLimits, SamplingParams: maps.Clone(definition.SamplingParams),
 		Compat: append(json.RawMessage(nil), definition.Compat...)}
 	if model.API == ai.APIUnknown {
 		model.API = config.API

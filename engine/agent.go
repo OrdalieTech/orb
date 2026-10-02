@@ -1023,18 +1023,31 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	return config
 }
 
-func (agent *Agent) drainQueueLocked(queue *AgentMessages, mode QueueMode) AgentMessages {
-	if len(*queue) == 0 {
+// PeekQueuedMessages returns the batch the next turn would take, steering
+// first and following the queue modes, without consuming it.
+func (agent *Agent) PeekQueuedMessages() AgentMessages {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	if steering := peekQueue(agent.steering, agent.steeringMode); len(steering) > 0 {
+		return steering
+	}
+	return peekQueue(agent.followUps, agent.followUpMode)
+}
+
+func peekQueue(queue AgentMessages, mode QueueMode) AgentMessages {
+	if len(queue) == 0 {
 		return AgentMessages{}
 	}
 	if mode == QueueAll {
-		drained := append(AgentMessages(nil), (*queue)...)
-		*queue = nil
-		return drained
+		return append(AgentMessages(nil), queue...)
 	}
-	first := (*queue)[0]
-	*queue = append(AgentMessages(nil), (*queue)[1:]...)
-	return AgentMessages{first}
+	return AgentMessages{queue[0]}
+}
+
+func (agent *Agent) drainQueueLocked(queue *AgentMessages, mode QueueMode) AgentMessages {
+	drained := peekQueue(*queue, mode)
+	*queue = append(AgentMessages(nil), (*queue)[len(drained):]...)
+	return drained
 }
 
 func (agent *Agent) clockNow() int64 {

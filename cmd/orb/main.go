@@ -38,6 +38,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/gofrs/flock"
 	"golang.org/x/term"
@@ -315,6 +316,10 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	validationErrors := make([]string, 0, 2)
 	if args.APIKey != nil && *args.APIKey != "" && args.Model == nil && len(args.Models) == 0 {
 		validationErrors = append(validationErrors, "--api-key requires a model to be specified via --model, --provider/--model, or --models")
+	}
+	// claude-sessions picks its own default model.
+	if args.Provider != nil && *args.Provider != "" && *args.Provider != claudesessions.Name && args.Model == nil {
+		validationErrors = append(validationErrors, fmt.Sprintf("--provider requires --model (for example: --provider %s --model <pattern>)", *args.Provider))
 	}
 	if len(args.UnknownFlags) > 0 && len(validationErrors) > 0 {
 		var registry *extensions.Registry
@@ -1103,7 +1108,7 @@ Commands:
   orb storage <command>        Migrate, import/export, back up, or recover conversations
   orb <command> --help        Show help for chat/install/remove/uninstall/update/upgrade/list/config/auth
 
-  --provider <name>              Provider name
+  --provider <name>              Provider to search for --model (requires --model)
   --model <id>                   Model ID
   --models <patterns>            Comma-separated model cycling patterns
   --list-models [search]         List available models

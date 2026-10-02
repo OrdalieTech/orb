@@ -583,6 +583,10 @@ func applyAnthropicCompat(model *ai.Model) {
 			compat.AllowEmptySignature = ptr(true)
 		}
 	}
+	// OpenCode Qwen 3.8 Flash emits and accepts thinking blocks with empty signatures.
+	if (provider == "opencode" || provider == "opencode-go") && id == "qwen3.8-flash" {
+		compat.AllowEmptySignature = ptr(true)
+	}
 	if isAnthropicAdaptiveThinkingModel(id) {
 		compat.ForceAdaptiveThinking = ptr(true)
 	}

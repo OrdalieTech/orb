@@ -968,3 +968,13 @@ func TestOpenAICompletionsOpenRouterRoutingPreservesRawJSONOAm5(t *testing.T) {
 		t.Fatalf("provider wire JSON = %s, want %s", encoded, routing)
 	}
 }
+
+func TestOpenAICompletionsImageOnlyUserMessageOmitsEmptyText(t *testing.T) {
+	message, ok := convertOpenAICompletionsUserMessage(&ai.UserMessage{Content: ai.UserContent{Blocks: ai.UserContentBlocks{
+		&ai.TextContent{Text: ""}, &ai.ImageContent{MimeType: "image/png", Data: "AAAA"},
+	}}})
+	content, _ := message["content"].([]any)
+	if !ok || len(content) != 1 || content[0].(map[string]any)["type"] != "image_url" {
+		t.Fatalf("message = %#v", message)
+	}
+}

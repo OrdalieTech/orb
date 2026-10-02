@@ -19,13 +19,21 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		"dial tcp: lookup chatgpt.com on [::1]:53: androiddns: dnsproxyd error -3 (no such process)",
 		// Upstream gateway buffer exhaustion while retrying (fe10558eb).
 		"Exceeded request buffer limit while retrying upstream",
+		"subscription_sharing_usage_unavailable",
 	} {
 		if !IsRetryableAssistantError(failed(text)) {
 			t.Fatalf("not retryable: %q", text)
 		}
 	}
-	if IsRetryableAssistantError(failed("429 quota exceeded")) {
-		t.Fatal("quota exhaustion retried")
+	for _, text := range []string{"429 quota exceeded", "429 subscription_sharing_usage_limit_exceeded"} {
+		if IsRetryableAssistantError(failed(text)) {
+			t.Fatalf("limit retried: %q", text)
+		}
+	}
+	for _, text := range []string{`{"code":"1261","message":"Prompt too long"}`, `{"code":"1261","message":"Prompt exceeds max length"}`} {
+		if !IsContextOverflow(failed(text), 200000) {
+			t.Fatalf("z.ai overflow not detected: %s", text)
+		}
 	}
 	if !IsContextOverflow(failed("Range of input length should be [1, 999999]"), 200000) {
 		t.Fatal("Qwen Token Plan overflow not detected")

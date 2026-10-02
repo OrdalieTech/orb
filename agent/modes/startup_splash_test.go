@@ -3,6 +3,7 @@ package modes
 import (
 	"context"
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -131,7 +132,7 @@ func TestLogoUnfoldAnimationGate(t *testing.T) {
 			mode.ui = tui.NewTUI(newLifecycleTerminal(test.width, test.rows))
 			mode.options.OutputTTY = test.tty
 			mode.options.Verbose = test.verbose
-			mode.session.SetQuietStartup(test.quiet)
+			mode.session.SetQuietStartup(strconv.FormatBool(test.quiet))
 			mode.emptyState = emptyChatFixture(19)
 			if got := mode.logoAnimationEnabled(); got != test.want {
 				t.Fatalf("animation enabled = %v, want %v", got, test.want)

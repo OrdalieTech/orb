@@ -27,6 +27,16 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   Pi 1.0's palettes and its show/hide toggle for hidden messages.
 - A prompt template with broken frontmatter is reported instead of skipped silently.
 - Split-turn compaction asks for its summary in a way Claude Fable 5.1 accepts.
+- `samplingParams` (and image `inputLimits`) can be set per model in `models.json`, in
+  `modelOverrides` and by extension providers; OpenAI-compatible requests send them last.
+- Hitting the ChatGPT subscription's usage limit stops retrying and links to the usage page.
+- `--provider` without `--model`, and an invalid `--mode`, are now errors instead of being ignored.
+- `quietStartup: "header"` keeps the startup logo while hiding startup details.
+- Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
+  end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
+  mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
+  Z.AI overflow messages trigger compaction, OpenAI Fast tier and Vercel 1-hour cache writes are
+  priced correctly, and an unparseable `Retry-After` backs off instead of retrying at once.
 
 ## [0.13.3] - 2026-09-29
 

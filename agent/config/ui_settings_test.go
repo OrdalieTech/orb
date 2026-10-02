@@ -23,7 +23,7 @@ func TestInteractiveUISettingsDefaultsAndEnvironmentFallbacks(t *testing.T) {
 	if manager.AgentDir() != agentDir {
 		t.Fatalf("AgentDir() = %q, want %q", manager.AgentDir(), agentDir)
 	}
-	if manager.GetQuietStartup() || manager.GetHideThinkingBlock() || manager.GetShowCacheMissNotices() {
+	if manager.GetQuietStartup() != "false" || manager.GetHideThinkingBlock() || manager.GetShowCacheMissNotices() {
 		t.Fatal("boolean UI defaults must be false")
 	}
 	if !manager.GetClearOnShrink() || !manager.GetShowHardwareCursor() {
@@ -76,7 +76,7 @@ func TestInteractiveUISettingWritesClampPersistAndPreserveUnknowns(t *testing.T)
 		t.Fatal(err)
 	}
 
-	manager.SetQuietStartup(true)
+	manager.SetQuietStartup("header")
 	manager.SetHideThinkingBlock(true)
 	manager.SetShowCacheMissNotices(true)
 	manager.SetDefaultProjectTrust("always")
@@ -95,7 +95,7 @@ func TestInteractiveUISettingWritesClampPersistAndPreserveUnknowns(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reloaded.GetQuietStartup() || !reloaded.GetHideThinkingBlock() || !reloaded.GetShowCacheMissNotices() {
+	if reloaded.GetQuietStartup() != "header" || !reloaded.GetHideThinkingBlock() || !reloaded.GetShowCacheMissNotices() {
 		t.Fatal("boolean UI settings did not persist")
 	}
 	if reloaded.GetDefaultProjectTrust() != "always" || reloaded.GetDoubleEscapeAction() != "fork" || reloaded.GetTreeFilterMode() != "user-only" {
