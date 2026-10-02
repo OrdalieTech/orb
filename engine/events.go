@@ -84,26 +84,31 @@ type MessageEndEvent struct {
 	Message AgentMessage
 }
 
+// Tool execution events of calls a tool made through ExecuteTool carry
+// ParentToolCallID.
 type ToolExecutionStartEvent struct {
-	ToolCallID string
-	ToolName   string
-	Args       map[string]any
-	toolCall   *ai.ToolCall
+	ToolCallID       string
+	ToolName         string
+	Args             map[string]any
+	ParentToolCallID string
+	toolCall         *ai.ToolCall
 }
 
 type ToolExecutionUpdateEvent struct {
-	ToolCallID    string
-	ToolName      string
-	Args          map[string]any
-	PartialResult AgentToolResult
-	toolCall      *ai.ToolCall
+	ToolCallID       string
+	ToolName         string
+	Args             map[string]any
+	PartialResult    AgentToolResult
+	ParentToolCallID string
+	toolCall         *ai.ToolCall
 }
 
 type ToolExecutionEndEvent struct {
-	ToolCallID string
-	ToolName   string
-	Result     AgentToolResult
-	IsError    bool
+	ToolCallID       string
+	ToolName         string
+	Result           AgentToolResult
+	IsError          bool
+	ParentToolCallID string
 }
 
 func NewToolExecutionStartEvent(toolCall *ai.ToolCall) ToolExecutionStartEvent {
@@ -242,15 +247,17 @@ func (event ToolExecutionStartEvent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return ai.Marshal(struct {
-		Type       AgentEventType  `json:"type"`
-		ToolCallID string          `json:"toolCallId"`
-		ToolName   string          `json:"toolName"`
-		Args       json.RawMessage `json:"args"`
+		Type             AgentEventType  `json:"type"`
+		ToolCallID       string          `json:"toolCallId"`
+		ToolName         string          `json:"toolName"`
+		Args             json.RawMessage `json:"args"`
+		ParentToolCallID string          `json:"parentToolCallId,omitempty"`
 	}{
-		Type:       EventToolExecutionStart,
-		ToolCallID: event.ToolCallID,
-		ToolName:   event.ToolName,
-		Args:       args,
+		Type:             EventToolExecutionStart,
+		ToolCallID:       event.ToolCallID,
+		ToolName:         event.ToolName,
+		Args:             args,
+		ParentToolCallID: event.ParentToolCallID,
 	})
 }
 
@@ -260,33 +267,37 @@ func (event ToolExecutionUpdateEvent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return ai.Marshal(struct {
-		Type          AgentEventType  `json:"type"`
-		ToolCallID    string          `json:"toolCallId"`
-		ToolName      string          `json:"toolName"`
-		Args          json.RawMessage `json:"args"`
-		PartialResult AgentToolResult `json:"partialResult"`
+		Type             AgentEventType  `json:"type"`
+		ToolCallID       string          `json:"toolCallId"`
+		ToolName         string          `json:"toolName"`
+		Args             json.RawMessage `json:"args"`
+		PartialResult    AgentToolResult `json:"partialResult"`
+		ParentToolCallID string          `json:"parentToolCallId,omitempty"`
 	}{
-		Type:          EventToolExecutionUpdate,
-		ToolCallID:    event.ToolCallID,
-		ToolName:      event.ToolName,
-		Args:          args,
-		PartialResult: event.PartialResult,
+		Type:             EventToolExecutionUpdate,
+		ToolCallID:       event.ToolCallID,
+		ToolName:         event.ToolName,
+		Args:             args,
+		PartialResult:    event.PartialResult,
+		ParentToolCallID: event.ParentToolCallID,
 	})
 }
 
 func (event ToolExecutionEndEvent) MarshalJSON() ([]byte, error) {
 	return ai.Marshal(struct {
-		Type       AgentEventType  `json:"type"`
-		ToolCallID string          `json:"toolCallId"`
-		ToolName   string          `json:"toolName"`
-		Result     AgentToolResult `json:"result"`
-		IsError    bool            `json:"isError"`
+		Type             AgentEventType  `json:"type"`
+		ToolCallID       string          `json:"toolCallId"`
+		ToolName         string          `json:"toolName"`
+		Result           AgentToolResult `json:"result"`
+		IsError          bool            `json:"isError"`
+		ParentToolCallID string          `json:"parentToolCallId,omitempty"`
 	}{
-		Type:       EventToolExecutionEnd,
-		ToolCallID: event.ToolCallID,
-		ToolName:   event.ToolName,
-		Result:     event.Result,
-		IsError:    event.IsError,
+		Type:             EventToolExecutionEnd,
+		ToolCallID:       event.ToolCallID,
+		ToolName:         event.ToolName,
+		Result:           event.Result,
+		IsError:          event.IsError,
+		ParentToolCallID: event.ParentToolCallID,
 	})
 }
 

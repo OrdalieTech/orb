@@ -586,6 +586,7 @@ func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
 		AddedToolNames json.RawMessage   `json:"addedToolNames,omitempty"`
 		IsError        bool              `json:"isError"`
 		Timestamp      int64             `json:"timestamp"`
+		NestedCalls    *NestedToolCalls  `json:"nestedCalls,omitempty"`
 	}{
 		Role:           "toolResult",
 		ToolCallID:     toolCallID,
@@ -596,6 +597,7 @@ func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
 		AddedToolNames: addedToolNames,
 		IsError:        message.IsError,
 		Timestamp:      message.Timestamp,
+		NestedCalls:    message.NestedCalls,
 	})
 }
 
@@ -609,6 +611,7 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		AddedToolNames json.RawMessage   `json:"addedToolNames"`
 		IsError        bool              `json:"isError"`
 		Timestamp      int64             `json:"timestamp"`
+		NestedCalls    *NestedToolCalls  `json:"nestedCalls"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -634,6 +637,7 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		AddedToolNames: addedToolNames,
 		IsError:        raw.IsError,
 		Timestamp:      raw.Timestamp,
+		NestedCalls:    raw.NestedCalls,
 	}
 	return nil
 }

@@ -83,6 +83,7 @@ type Runner struct {
 	commandActions    CommandActions
 	staleMessage      string
 	deferredProviders *Actions
+	toolCalls         *ToolCallHost
 
 	errorMu        sync.RWMutex
 	nextErrorID    uint64
@@ -847,6 +848,37 @@ func (runner *Runner) CreateContext() Context {
 	return &extensionContext{runner: runner}
 }
 
+// SetToolCallHost lets tools run other tools (ToolContext.ExecuteTool).
+func (runner *Runner) SetToolCallHost(host *ToolCallHost) {
+	runner.mu.Lock()
+	runner.toolCalls = host
+	runner.mu.Unlock()
+}
+
+// CreateToolContext is the context of the tool call toolCallID: a ToolContext
+// when the session runs nested calls.
+func (runner *Runner) CreateToolContext(toolCallID string) Context {
+	runner.mu.RLock()
+	host := runner.toolCalls
+	runner.mu.RUnlock()
+	if host == nil {
+		return runner.CreateContext()
+	}
+	return &toolContext{extensionContext: &extensionContext{runner: runner}, host: host, toolCallID: toolCallID}
+}
+
+type toolContext struct {
+	*extensionContext
+	host       *ToolCallHost
+	toolCallID string
+}
+
+func (tool *toolContext) Tools() []LoadoutTool { return tool.host.Tools() }
+
+func (tool *toolContext) ExecuteTool(ctx context.Context, name string, args any, onUpdate engine.AgentToolUpdateCallback) engine.AgentToolCallOutcome {
+	return tool.host.Execute(ctx, tool.toolCallID, name, args, onUpdate)
+}
+
 func (runner *Runner) CreateCommandContext() CommandContext {
 	return &extensionCommandContext{extensionContext: &extensionContext{runner: runner}}
 }
@@ -1215,8 +1247,12 @@ func boundaryResult(value any) *BoundaryResult {
 
 // EmitBoundaryError reports a boundary failure that no single handler owns.
 func (runner *Runner) EmitBoundaryError(event EventType, message string) {
-	runner.emitError(ExtensionError{ExtensionPath: "<boundary>", Event: string(event), Error: message})
+	runner.ReportError(ExtensionError{ExtensionPath: "<boundary>", Event: string(event), Error: message})
 }
+
+// ReportError reports an extension failure outside event dispatch, such as a
+// tool's prepareLoadout hook.
+func (runner *Runner) ReportError(extensionError ExtensionError) { runner.emitError(extensionError) }
 
 func (runner *Runner) EmitBeforeProviderRequest(ctx context.Context, payload any) any {
 	extensionContext := runner.CreateContext()

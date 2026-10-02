@@ -43,6 +43,11 @@ func cloneAgentMessage(message AgentMessage) AgentMessage {
 		copy.Details = bytes.Clone(value.Details)
 		copy.Usage = cloneUsage(value.Usage)
 		copy.AddedToolNames = cloneStringSlicePointer(value.AddedToolNames)
+		if value.NestedCalls != nil {
+			nested := *value.NestedCalls
+			nested.Calls = append([]ai.NestedToolCallRecord(nil), value.NestedCalls.Calls...)
+			copy.NestedCalls = &nested
+		}
 		return &copy
 	default:
 		return cloneJSONValue(message)

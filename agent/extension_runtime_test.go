@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1668,5 +1669,134 @@ func TestAgentSettledHandlerRunsStartAfterEveryHandler(t *testing.T) {
 	}
 	if got := strings.Join(events, ","); got != "start,settled,sent,second-handler,start,settled,second-handler" {
 		t.Fatalf("lifecycle = %s", got)
+	}
+}
+
+func TestToolExposureActivationAndLoadoutHooks(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	tool := func(name string, exposure extensions.ToolExposure) extensions.ToolDefinition {
+		return extensions.ToolDefinition{Name: name, Description: name + " tool", Parameters: ai.JSONSchema(`{"type":"object"}`), Exposure: exposure,
+			Execute: func(context.Context, string, any, engine.AgentToolUpdateCallback, extensions.Context) (engine.AgentToolResult, error) {
+				return engine.AgentToolResult{}, nil
+			}}
+	}
+	if err := registry.Register("<inline:exposure>", func(api extensions.API) error {
+		api.RegisterTool(tool("plain", ""))
+		api.RegisterTool(tool("deferred_one", extensions.ToolDeferred))
+		api.RegisterTool(tool("secret", extensions.ToolHidden))
+		orchestrator := tool("orchestrate", extensions.ToolModelOnly)
+		orchestrator.PrepareLoadout = func(loadout extensions.ToolLoadout) *extensions.ToolLoadoutChanges {
+			names := []string{}
+			for _, callable := range loadout.Callable {
+				names = append(names, callable.Name)
+			}
+			return &extensions.ToolLoadoutChanges{
+				Descriptions:       map[string]string{"orchestrate": "calls: " + strings.Join(names, ",")},
+				HiddenDeclarations: []string{"plain"},
+			}
+		}
+		api.RegisterTool(orchestrator)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	created := engine.NewAgent(provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: provider.GetModel()}))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	active := map[string]string{}
+	for _, tool := range runtime.State().Tools {
+		active[tool.Spec().Name] = tool.Spec().Description
+	}
+	if _, ok := active["deferred_one"]; ok || active["plain"] == "" || active["orchestrate"] != "calls: plain,deferred_one" {
+		t.Fatalf("active tools = %v", active)
+	}
+	if err := runtime.SetActiveToolsByName([]string{"plain", "secret", "deferred_one", "orchestrate"}); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{}
+	for _, tool := range runtime.State().Tools {
+		names = append(names, tool.Spec().Name)
+	}
+	if strings.Join(names, ",") != "plain,deferred_one,orchestrate" {
+		t.Fatalf("explicitly activated = %v", names)
+	}
+	request := runtime.hideDeclarations(engine.AgentMessages{&ai.SystemMessage{ToolsAdded: []ai.Tool{{Name: "plain"}, {Name: "orchestrate"}}}})
+	if added := request[0].(*ai.SystemMessage).ToolsAdded; len(added) != 1 || added[0].Name != "orchestrate" {
+		t.Fatalf("declared in request = %#v", added)
+	}
+}
+
+func TestToolExecuteToolRunsNestedCallsAndRecordsThem(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var hookParents []string
+	if err := registry.Register("<inline:nested>", func(api extensions.API) error {
+		api.RegisterTool(extensions.ToolDefinition{Name: "lookup", Description: "lookup", Exposure: extensions.ToolDeferred,
+			Parameters: ai.JSONSchema(`{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`),
+			Execute: func(_ context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+				return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "found " + args.(map[string]any)["q"].(string)}},
+					Usage: &ai.Usage{Input: 3, TotalTokens: 3}}, nil
+			}})
+		api.RegisterTool(extensions.ToolDefinition{Name: "orchestrate", Description: "orchestrate", Parameters: ai.JSONSchema(`{"type":"object"}`),
+			Execute: func(ctx context.Context, _ string, _ any, _ engine.AgentToolUpdateCallback, extensionContext extensions.Context) (engine.AgentToolResult, error) {
+				tools := extensionContext.(extensions.ToolContext)
+				good := tools.ExecuteTool(ctx, "lookup", map[string]any{"q": "go"}, nil)
+				bad := tools.ExecuteTool(ctx, "lookup", map[string]any{}, nil)
+				text := good.Result.Content[0].(*ai.TextContent).Text + fmt.Sprintf(" / bad error=%v", bad.IsError)
+				return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: text}}}, nil
+			}})
+		api.On(extensions.EventToolCall, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+			hookParents = append(hookParents, raw.(extensions.ToolCallEvent).ParentToolCallID)
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("orchestrate", map[string]any{}, faux.ToolCallOptions{ID: "call-1"})),
+		faux.AssistantMessage("done"),
+	})
+	created := engine.NewAgent(provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: provider.GetModel()}), engine.WithConvertToLLM(ConvertToLLM))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	var nestedEvents []string
+	runtime.Subscribe(func(event any) {
+		if start, ok := event.(engine.ToolExecutionStartEvent); ok && start.ParentToolCallID != "" {
+			nestedEvents = append(nestedEvents, start.ToolCallID+"<"+start.ParentToolCallID)
+		}
+	})
+	if err := runtime.Prompt(context.Background(), "go"); err != nil {
+		t.Fatal(err)
+	}
+	var result *ai.ToolResultMessage
+	for _, message := range runtime.State().Messages {
+		if typed, ok := message.(*ai.ToolResultMessage); ok {
+			result = typed
+		}
+	}
+	if result == nil || result.Content[0].(*ai.TextContent).Text != "found go / bad error=true" {
+		t.Fatalf("result = %#v", result)
+	}
+	calls := result.NestedCalls
+	if calls == nil || len(calls.Calls) != 2 || calls.Calls[0].ID != "call-1/1" || calls.Calls[0].Status != "ok" || calls.Calls[1].Status != "error" || !calls.Complete {
+		t.Fatalf("nested calls = %#v", calls)
+	}
+	if result.Usage == nil || result.Usage.Input != 3 {
+		t.Fatalf("usage = %#v", result.Usage)
+	}
+	if strings.Join(nestedEvents, ",") != "call-1/1<call-1,call-1/2<call-1" || strings.Join(hookParents, ",") != ",call-1" {
+		t.Fatalf("events = %v, hook parents = %q", nestedEvents, hookParents)
 	}
 }

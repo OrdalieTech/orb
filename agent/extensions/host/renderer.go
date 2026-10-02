@@ -102,6 +102,33 @@ func (manager *Manager) toolPromptGuidelines(ctx context.Context, extensionID, t
 	return response.Guidelines, nil
 }
 
+// prepareToolLoadout runs a tool's JS prepareLoadout hook on a loadout snapshot.
+func (manager *Manager) prepareToolLoadout(extensionID, toolName string, loadout extensions.ToolLoadout) (*extensions.ToolLoadoutChanges, error) {
+	manager.mu.Lock()
+	generation := manager.current
+	manager.mu.Unlock()
+	if generation == nil || !generation.ready.Load() {
+		return nil, ErrNotRunning
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), manager.options.RequestTimeout)
+	defer cancel()
+	raw, err := generation.request(ctx, "prepare_tool_loadout", struct {
+		ExtensionID string                 `json:"extensionId"`
+		ToolName    string                 `json:"toolName"`
+		Loadout     extensions.ToolLoadout `json:"loadout"`
+	}{extensionID, toolName, loadout}, nil)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Changes *extensions.ToolLoadoutChanges `json:"changes"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, err
+	}
+	return response.Changes, nil
+}
+
 // wireToolRenderContext is the serializable subset of ToolRenderContext that
 // crosses to the host process; live members (Invalidate, LastComponent,
 // State) stay Go-side and the JS context carries inert stand-ins.

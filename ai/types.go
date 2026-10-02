@@ -252,6 +252,28 @@ type ToolResultMessage struct {
 	AddedToolNames *[]string         `json:"addedToolNames,omitempty"`
 	IsError        bool              `json:"isError"`
 	Timestamp      int64             `json:"timestamp"`
+	// NestedCalls records the calls the tool made through ctx.ExecuteTool.
+	NestedCalls *NestedToolCalls `json:"nestedCalls,omitempty"`
+}
+
+// NestedToolCalls are the tool calls a tool made while it ran.
+type NestedToolCalls struct {
+	Calls []NestedToolCallRecord `json:"calls"`
+	// Complete is false when calls were dropped, arguments omitted, or calls
+	// had not finished.
+	Complete bool `json:"complete"`
+}
+
+type NestedToolCallRecord struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Arguments is omitted over the size limits; ArgumentsBytes then gives their size.
+	Arguments      json.RawMessage `json:"arguments,omitempty"`
+	ArgumentsBytes int             `json:"argumentsBytes,omitempty"`
+	// Status is "ok", "error", or "unfinished" (still running when the caller finished).
+	Status     string `json:"status"`
+	DurationMS *int64 `json:"durationMs,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (*SystemMessage) isMessage()     {}

@@ -1017,6 +1017,49 @@ func finalizeExecutedToolCall(
 	return finalizedToolCall{toolCall: prepared.toolCall, result: result, isError: isError}
 }
 
+// AgentToolCallOutcome is how one tool call ended.
+type AgentToolCallOutcome struct {
+	ToolCall *ai.ToolCall
+	Result   AgentToolResult
+	IsError  bool
+}
+
+// RunToolCallOptions run one tool call outside the loop, as ExecuteTool does:
+// the call goes through argument preparation, validation and the hooks, against
+// Tools.
+type RunToolCallOptions struct {
+	Tools            []AgentTool
+	AssistantMessage *ai.AssistantMessage
+	Context          AgentContext
+	Model            *ai.Model
+	BeforeToolCall   BeforeToolCallFunc
+	AfterToolCall    AfterToolCallFunc
+	OnUpdate         AgentToolUpdateCallback
+}
+
+// RunToolCall runs one tool call. Failures (unknown tools, validation errors,
+// blocked calls, tool errors) come back as an error outcome, never an error.
+func RunToolCall(ctx context.Context, toolCall *ai.ToolCall, options RunToolCallOptions) AgentToolCallOutcome {
+	currentContext := options.Context
+	currentContext.Tools = options.Tools
+	config := AgentLoopConfig{Model: options.Model, BeforeToolCall: options.BeforeToolCall, AfterToolCall: options.AfterToolCall}
+	prepared, immediate := prepareToolCall(ctx, &currentContext, options.AssistantMessage, toolCall, config)
+	if immediate != nil {
+		return AgentToolCallOutcome{ToolCall: toolCall, Result: immediate.result, IsError: true}
+	}
+	onUpdate := options.OnUpdate
+	if onUpdate == nil {
+		onUpdate = func(AgentToolResult) {}
+	}
+	result, err := prepared.tool.Execute(WithToolExecutionModel(ctx, prepared.model), toolCall.ID, prepared.args, onUpdate)
+	executed := executedToolCall{result: result, isError: result.IsError}
+	if err != nil {
+		executed = executedToolCall{result: createErrorToolResult(err.Error()), isError: true}
+	}
+	finalized := finalizeExecutedToolCall(ctx, &currentContext, options.AssistantMessage, prepared, executed, config)
+	return AgentToolCallOutcome{ToolCall: toolCall, Result: finalized.result, IsError: finalized.isError}
+}
+
 func createErrorToolResult(message string) AgentToolResult {
 	return AgentToolResult{
 		Content: ai.ToolResultContent{&ai.TextContent{Text: message}},

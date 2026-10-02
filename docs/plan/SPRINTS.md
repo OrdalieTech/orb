@@ -459,10 +459,10 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 
 **Extension surface**
 - [x] Tool results carry `isError` and `structuredContent`; bash returns its structured result.
-- [ ] Tool `exposure` (`direct`, `model-only`, `deferred`, `hidden`; `codemode` treated as
+- [x] Tool `exposure` (`direct`, `model-only`, `deferred`, `hidden`; `codemode` treated as
       `deferred`), `namespace`, `annotations`, `outputSchema`, `prepareLoadout()`, and the same
       fields through the JS extension surface.
-- [ ] `ctx.executeTool()` with `parentToolCallId`, bounded `nestedCalls` and usage rolled into the
+- [x] `ctx.executeTool()` with `parentToolCallId`, bounded `nestedCalls` and usage rolled into the
       caller's result.
 - [x] `provider_stream_event` / `onProviderStreamEvent`.
 - [x] Theme files accept `#rgb`, `oklch()`, `okhsl()` and `appearance`; HTML export follows pi 1.0

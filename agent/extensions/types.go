@@ -499,27 +499,30 @@ func (MessageEndEvent) Type() EventType { return EventMessageEnd }
 type MessageEndResult struct{ Message engine.AgentMessage }
 
 type ToolExecutionStartEvent struct {
-	ToolCallID string
-	ToolName   string
-	Args       any
+	ToolCallID       string
+	ToolName         string
+	Args             any
+	ParentToolCallID string `json:",omitempty"`
 }
 
 func (ToolExecutionStartEvent) Type() EventType { return EventToolExecutionStart }
 
 type ToolExecutionUpdateEvent struct {
-	ToolCallID    string
-	ToolName      string
-	Args          any
-	PartialResult any
+	ToolCallID       string
+	ToolName         string
+	Args             any
+	PartialResult    any
+	ParentToolCallID string `json:",omitempty"`
 }
 
 func (ToolExecutionUpdateEvent) Type() EventType { return EventToolExecutionUpdate }
 
 type ToolExecutionEndEvent struct {
-	ToolCallID string
-	ToolName   string
-	Result     any
-	IsError    bool
+	ToolCallID       string
+	ToolName         string
+	Result           any
+	IsError          bool
+	ParentToolCallID string `json:",omitempty"`
 }
 
 func (ToolExecutionEndEvent) Type() EventType { return EventToolExecutionEnd }
@@ -547,10 +550,13 @@ type ThinkingLevelSelectEvent struct {
 
 func (ThinkingLevelSelectEvent) Type() EventType { return EventThinkingLevelSelect }
 
+// ToolCallEvent and ToolResultEvent of calls a tool made through ExecuteTool
+// carry the caller's id as ParentToolCallID.
 type ToolCallEvent struct {
-	ToolCallID string
-	ToolName   string
-	Input      map[string]any
+	ToolCallID       string
+	ToolName         string
+	ParentToolCallID string `json:",omitempty"`
+	Input            map[string]any
 }
 
 func (ToolCallEvent) Type() EventType { return EventToolCall }
@@ -563,13 +569,15 @@ type ToolCallResult struct {
 }
 
 type ToolResultEvent struct {
-	ToolCallID string
-	ToolName   string
-	Input      map[string]any
-	Content    ai.ToolResultContent
-	Details    any
-	IsError    bool
-	Usage      *ai.Usage
+	ToolCallID        string
+	ToolName          string
+	ParentToolCallID  string `json:",omitempty"`
+	Input             map[string]any
+	Content           ai.ToolResultContent
+	Details           any
+	StructuredContent any `json:",omitempty"`
+	IsError           bool
+	Usage             *ai.Usage
 }
 
 func (ToolResultEvent) Type() EventType { return EventToolResult }
@@ -710,6 +718,73 @@ type ToolRenderContext struct {
 	IsError          bool
 }
 
+// ToolExposure is how the model reaches a tool; "callable" means through
+// ctx.ExecuteTool from another tool.
+//   - direct (default): declared while active, callable while active.
+//   - model-only: declared while active, never callable; for orchestrating or
+//     interactive tools.
+//   - deferred: callable whenever registered, declared only when explicitly
+//     activated; tool search can find it. "codemode" is treated as deferred.
+//   - hidden: registered but unreachable; activating it has no effect.
+//
+// direct and model-only tools are activated when registered; the others are not.
+type ToolExposure string
+
+const (
+	ToolDirect    ToolExposure = "direct"
+	ToolModelOnly ToolExposure = "model-only"
+	ToolCodemode  ToolExposure = "codemode"
+	ToolDeferred  ToolExposure = "deferred"
+	ToolHidden    ToolExposure = "hidden"
+)
+
+// ToolAnnotations are unverified hints about what a tool does, with the
+// meaning of MCP tool annotations.
+type ToolAnnotations struct {
+	ReadOnlyHint    *bool `json:"readOnlyHint,omitempty"`
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+	IdempotentHint  *bool `json:"idempotentHint,omitempty"`
+	OpenWorldHint   *bool `json:"openWorldHint,omitempty"`
+}
+
+// ToolNamespace groups related tools, such as one MCP server's.
+type ToolNamespace struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Instructions is longer usage guidance, such as MCP server instructions;
+	// not part of tool listings.
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// LoadoutTool is one tool as a loadout lists it.
+type LoadoutTool struct {
+	Name        string        `json:"name"`
+	Label       string        `json:"label"`
+	Description string        `json:"description"`
+	Parameters  ai.JSONSchema `json:"parameters"`
+}
+
+// ToolLoadout is a session's tools as PrepareLoadout sees them.
+type ToolLoadout struct {
+	// Declared are the active tools, in order, with their original descriptions.
+	Declared []LoadoutTool `json:"declared"`
+	// Callable are the tools reachable through ctx.ExecuteTool.
+	Callable []LoadoutTool `json:"callable"`
+	// Registered is every registered tool.
+	Registered []LoadoutTool            `json:"registered"`
+	Exposures  map[string]ToolExposure  `json:"exposures"`
+	Namespaces map[string]ToolNamespace `json:"namespaces,omitempty"`
+}
+
+// ToolLoadoutChanges adjust what the model sees while the hooking tool is active.
+type ToolLoadoutChanges struct {
+	// Descriptions are model-facing descriptions of declared tools, by name.
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	// HiddenDeclarations stay active and callable, and recorded in the
+	// transcript, but requests leave their declarations out.
+	HiddenDeclarations []string `json:"hiddenDeclarations,omitempty"`
+}
+
 type ToolDefinition struct {
 	Name          string
 	Label         string
@@ -729,9 +804,21 @@ type ToolDefinition struct {
 	RenderShell          RenderShell
 	PrepareArguments     engine.PrepareArgumentsFunc
 	ExecutionMode        engine.ToolExecutionMode
-	Execute              func(context.Context, string, any, engine.AgentToolUpdateCallback, Context) (engine.AgentToolResult, error)
-	RenderCall           func(any, Theme, ToolRenderContext) Component
-	RenderResult         func(engine.AgentToolResult, ToolRenderResultOptions, Theme, ToolRenderContext) Component
+	// OutputSchema is the JSON Schema of StructuredContent in successful results.
+	OutputSchema ai.JSONSchema
+	// Exposure defaults to ToolDirect.
+	Exposure    ToolExposure
+	Namespace   *ToolNamespace
+	Annotations *ToolAnnotations
+	// DefaultActive false keeps a direct or model-only tool off until named in
+	// --tools, defaultTools or SetActiveTools.
+	DefaultActive *bool
+	// PrepareLoadout adjusts how the loadout is presented while this tool is
+	// active; orchestrating tools list the callable tools in their description.
+	PrepareLoadout func(ToolLoadout) *ToolLoadoutChanges
+	Execute        func(context.Context, string, any, engine.AgentToolUpdateCallback, Context) (engine.AgentToolResult, error)
+	RenderCall     func(any, Theme, ToolRenderContext) Component
+	RenderResult   func(engine.AgentToolResult, ToolRenderResultOptions, Theme, ToolRenderContext) Component
 }
 
 type RenderShell string
@@ -747,11 +834,25 @@ type RegisteredTool struct {
 }
 
 type ToolInfo struct {
-	Name             string        `json:"name"`
-	Description      string        `json:"description"`
-	Parameters       ai.JSONSchema `json:"parameters"`
-	PromptGuidelines []string      `json:"promptGuidelines,omitempty"`
-	SourceInfo       SourceInfo    `json:"sourceInfo"`
+	Name             string           `json:"name"`
+	Description      string           `json:"description"`
+	Parameters       ai.JSONSchema    `json:"parameters"`
+	PromptGuidelines []string         `json:"promptGuidelines,omitempty"`
+	Exposure         ToolExposure     `json:"exposure"`
+	Namespace        *ToolNamespace   `json:"namespace,omitempty"`
+	Annotations      *ToolAnnotations `json:"annotations,omitempty"`
+	SourceInfo       SourceInfo       `json:"sourceInfo"`
+}
+
+// EffectiveExposure is the definition's exposure, codemode read as deferred.
+func (definition ToolDefinition) EffectiveExposure() ToolExposure {
+	switch definition.Exposure {
+	case "":
+		return ToolDirect
+	case ToolCodemode:
+		return ToolDeferred
+	}
+	return definition.Exposure
 }
 
 type AutocompleteItem struct {
@@ -931,6 +1032,25 @@ type Context interface {
 	GetContextUsage() *ContextUsage
 	Compact(*CompactOptions)
 	GetSystemPrompt() string
+}
+
+// ToolContext is the Context a tool's Execute receives in a session.
+type ToolContext interface {
+	Context
+	// Tools are the tools ExecuteTool can call.
+	Tools() []LoadoutTool
+	// ExecuteTool runs another tool through the same validation, hooks and
+	// permission checks as model-issued calls. The call gets the id
+	// "<calling id>/<n>" and its events carry ParentToolCallID; it is not in
+	// the transcript but recorded on the caller's result. Failures (unknown
+	// tools, validation errors, blocked calls) come back as IsError outcomes.
+	ExecuteTool(ctx context.Context, name string, args any, onUpdate engine.AgentToolUpdateCallback) engine.AgentToolCallOutcome
+}
+
+// ToolCallHost runs a session's nested tool calls.
+type ToolCallHost struct {
+	Tools   func() []LoadoutTool
+	Execute func(ctx context.Context, parentToolCallID, name string, args any, onUpdate engine.AgentToolUpdateCallback) engine.AgentToolCallOutcome
 }
 
 type CommandContext interface {
