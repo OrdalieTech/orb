@@ -19,8 +19,8 @@ work, within these bounds.
 Orb began as a faithful Go port of pi and keeps a tested pi-compatibility **kernel** (below).
 Beyond that kernel, Orb is its own product: features, layout, internal APIs, and UI evolve on Orb's
 judgment, and upstream changes outside the kernel are cherry-picked on merit, never ported by
-obligation. Inside the kernel, upstream's docs and behavior at the pinned commit remain the
-specification.
+obligation. Inside the kernel, upstream's released behavior is the interop target, and Orb may
+improve on it (P5).
 
 ## Constitution — durable paradigms
 
@@ -61,10 +61,15 @@ Eleven paradigms. Everything else in this record is operational memory.
   address, no grants and no visible `bridge_call` until its owner grants one; agent grants replace
   the agent-call toggle. Until that built-in, grant-governed tool lands (SPRINTS "Deployments"),
   the toggle remains.
-- **P5 — Pi compatibility is a kernel, not an identity** *(recasts D2, D4, D5, D6, D13)*. Orb
-  maintains byte-compatibility on the kernel surfaces listed below, verified by conformance
-  fixtures; inside the kernel, upstream quirks are spec. Outside it, Orb evolves freely and
-  upstream work carries no port obligation.
+- **P5 — Pi compatibility is interop, not identity** *(recasts D2, D4, D5, D6, D13; amended by
+  the owner 2026-10-02)*. Orb reads what released pi writes on the kernel surfaces listed below and
+  runs pi extensions, skills, prompt templates and packages unchanged, verified by conformance
+  fixtures; provider wire shapes follow the providers. Orb may improve on upstream anywhere,
+  kernel included: a deliberate improvement makes that fixture Orb-owned and adds one divergence
+  ledger line, and upstream quirks are no longer spec. Orb is deployed only inside Ordalie, so it
+  keeps no backward compatibility with its own past formats, settings or Go APIs: a breaking change
+  updates the in-repo and Ordalie consumers in the same piece of work, and legacy shims are deleted
+  rather than carried.
 - **P6 — Orb-owned presentation and identity** *(formerly D30, D35; substance unchanged)*. Public
   identity is `orb`; upstream compatibility names remain wherever they are the contract (`~/.pi`,
   `PI_*`, `pi-messages`, provider-facing UA/originator strings, the JS `pi` API). The TUI is
@@ -350,7 +355,8 @@ text in git history of this file. Cross-references to these numbers elsewhere re
   implement orb's `SessionV4Storage`, so the clearing half ships as the one-method
   `SessionV4NameClearer` companion plus `ClearName()` on both concrete storages. The same rule
   governs every future upstream signature widening on a published harness interface: add a companion
-  interface, keep the existing method set source-compatible.
+  interface, keep the existing method set source-compatible. *Superseded by P5 as amended
+  2026-10-02: interfaces change in place and their consumers are updated with them.*
 
 ## 2026-07-21 parity-sync amendments
 
@@ -450,7 +456,8 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 
 - **v0.86 transcript defaults (owner, 2026-09-20).** Adopt Pi's transcript-backed system messages
   and their normal agent events by default, rather than placing them behind a legacy headless
-  opt-in. Preserve existing exported Go signatures and legacy session reading. This is an
+  opt-in. Preserve existing exported Go signatures and legacy session reading (retired by P5 as
+  amended 2026-10-02). This is an
   intentional observable change: headless consumers must classify system messages explicitly;
   Ordalie's production SSE forwarding must filter them before deployment to avoid publishing
   system prompts. Source compatibility alone does not establish event-consumer compatibility.
