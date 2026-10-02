@@ -57,15 +57,14 @@ type Options struct {
 	// Compiled rows supplied by the assembly owner (cmd/orb's compiled
 	// extensions, or an embedder's own), first in boot order.
 	Compiled []extensions.CompiledExtension
-	// MCP includes settings-configured MCP servers as a hidden row. Leave it
-	// off for metadata-only runs so no configured server is eagerly spawned.
+	// MCP includes the mcp.json servers as a hidden row. Leave it off for
+	// metadata-only runs so no configured server is spawned.
 	MCP bool
 }
 
 // Rows enumerates the composition in boot order: caller compiled rows,
-// plugin-control, the first-party plugin catalog, then MCP when configured.
-// The warnings surface MCP settings problems.
-func Rows(options Options) ([]Row, []string) {
+// plugin-control, the first-party plugin catalog, tool_search, then MCP.
+func Rows(options Options) []Row {
 	names := Names()
 	rows := make([]Row, 0, len(options.Compiled)+len(names)+2)
 	for _, entry := range options.Compiled {
@@ -88,22 +87,19 @@ func Rows(options Options) ([]Row, []string) {
 			DefaultEnabled: name == "bridge" && options.BridgeManagement && options.Bridge != nil,
 		})
 	}
-	var warnings []string
+	rows = append(rows, Row{
+		ID: "tool-search", Description: "tool_search: load deferred tools such as MCP servers'",
+		Source: SourceCompiled, Hidden: true, Replaceable: true, DefaultEnabled: true,
+		Factory: mcp.ToolSearchExtension(),
+	})
 	if options.MCP {
-		servers, mcpWarnings, err := mcp.ParseSettingsWithWarnings(map[string]any(options.Settings.GetSettings()))
-		warnings = append(warnings, mcpWarnings...)
-		if err != nil {
-			warnings = append(warnings, err.Error())
-		}
-		if len(servers) > 0 {
-			rows = append(rows, Row{
-				ID: "mcp", Description: "MCP servers from settings",
-				Source: SourceMCP, Hidden: true, Replaceable: true, DefaultEnabled: true,
-				Factory: mcp.NewManager(options.CWD, servers).Extension(),
-			})
-		}
+		rows = append(rows, Row{
+			ID: "mcp", Description: "MCP servers from mcp.json",
+			Source: SourceMCP, Hidden: true, Replaceable: true, DefaultEnabled: true,
+			Factory: mcp.Extension(options.AgentDir),
+		})
 	}
-	return rows, warnings
+	return rows
 }
 
 // Resolved is a Row plus its effective enablement and the layer that decided it.

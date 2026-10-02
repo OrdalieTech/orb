@@ -41,12 +41,17 @@ type extensionRuntimeState struct {
 	// hiddenDeclarations are active tools whose declarations requests leave
 	// out, from prepareLoadout hooks.
 	hiddenDeclarations map[string]struct{}
-	turnIndex          int
-	startEvent         extensions.SessionStartEvent
-	started            bool
-	config             SessionRuntimeConfig
-	shutdownEmitted    bool
-	shutdownHandler    func()
+	// pendingTools are tools of the restored or reloaded loadout that are not
+	// registered yet, such as MCP tools of servers still connecting: they turn
+	// on when registered, and are dropped when SetActiveTools deactivates a
+	// tool or the next agent run starts.
+	pendingTools    []string
+	turnIndex       int
+	startEvent      extensions.SessionStartEvent
+	started         bool
+	config          SessionRuntimeConfig
+	shutdownEmitted bool
+	shutdownHandler func()
 }
 
 func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig) {
@@ -244,6 +249,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 			initial = append(initial, tool.Spec().Name)
 		}
 	}
+	state.pendingTools = slices.Clone(initial)
 	runtime.refreshExtensionTools(initial, true)
 	startEvent := extensions.SessionStartEvent{Reason: extensions.SessionStartStartup}
 	if runtimeConfig.SessionStartEvent != nil {
@@ -776,6 +782,8 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 			}
 		}
 	}
+	// Pending tools that are registered now turn on.
+	active = append(active, state.pendingTools...)
 	runtime.setActiveToolsLocked(uniqueStrings(active), state)
 }
 
@@ -947,7 +955,17 @@ func (runtime *SessionRuntime) setActiveToolsByName(names []string) error {
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	previous := runtime.agent.State().Tools
 	runtime.setActiveToolsLocked(names, state)
+	// A loadout that deactivates a tool replaces the restored one and drops its
+	// pending tools; one that only adds tools, like tool_search, keeps them.
+	active := runtime.agent.State().Tools
+	for _, tool := range previous {
+		if !slices.ContainsFunc(active, func(other engine.AgentTool) bool { return other.Spec().Name == tool.Spec().Name }) {
+			state.pendingTools = nil
+			break
+		}
+	}
 	return nil
 }
 
@@ -961,6 +979,7 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 			valid = append(valid, name)
 		}
 	}
+	state.pendingTools = slices.DeleteFunc(state.pendingTools, func(name string) bool { return slices.Contains(valid, name) })
 	runtime.agent.SetTools(runtime.applyLoadoutHooks(state, active))
 	if state.promptOptions == nil {
 		return
@@ -1852,6 +1871,13 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	var forcedPrompt *string
 	if state.runner.HasHandlers(extensions.EventBeforeAgentStart) {
 		result := state.runner.EmitBeforeAgentStart(ctx, text, images, basePrompt, options)
+		if result != nil && promptBuildOptions != nil {
+			// Sections handlers set apply to this run; the transcript records changes.
+			for _, name := range slices.Sorted(maps.Keys(result.SystemPromptOptions.Sections)) {
+				text := result.SystemPromptOptions.Sections[name]
+				promptBuildOptions.Sections = append(promptBuildOptions.Sections, ai.SystemPromptSection{Name: name, Text: &text})
+			}
+		}
 		if result != nil {
 			for _, message := range result.Messages {
 				content := message.Content
@@ -1870,6 +1896,11 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			}
 		}
 	}
+	// The run records the loadout; restored tools that did not register by now
+	// are dropped, so a tool that never registers does not stay pending.
+	state.mu.Lock()
+	state.pendingTools = nil
+	state.mu.Unlock()
 	messages := make(engine.AgentMessages, 0, 2+len(pending)+len(injected))
 	transcript, _ := ConvertToLLM(ctx, runtime.agent.State().Messages)
 	current := ai.CurrentSystemMessage(transcript)

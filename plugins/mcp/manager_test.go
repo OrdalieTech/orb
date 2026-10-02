@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,7 +25,7 @@ import (
 
 func TestManagerRegistersExecutesAndStreamsExampleTool(t *testing.T) {
 	server := exampleServer()
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "example", Command: "in-memory"}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "example", Command: "in-memory"}})
 	var serverSessionsMu sync.Mutex
 	var serverSessions []*mcpsdk.ServerSession
 	manager.connect = func(ctx, _ context.Context, _ ServerConfig, options *mcpsdk.ClientOptions, tracker progressTracker) (*mcpsdk.ClientSession, error) {
@@ -43,7 +44,7 @@ func TestManagerRegistersExecutesAndStreamsExampleTool(t *testing.T) {
 	defer closeManager(t, manager)
 
 	tools := runner.AllRegisteredTools()
-	if len(tools) != 1 || !strings.HasPrefix(tools[0].Definition.Name, "mcp__example__echo_") {
+	if len(tools) != 1 || tools[0].Definition.Name != "mcp__example__echo" {
 		t.Fatalf("registered tools = %#v", tools)
 	}
 	active.set([]string{tools[0].Definition.Name})
@@ -62,8 +63,9 @@ func TestManagerRegistersExecutesAndStreamsExampleTool(t *testing.T) {
 		t.Fatalf("image result = %#v", result.Content[1])
 	}
 	details, ok := result.Details.(map[string]any)
-	if !ok || details["server"] != "example" || details["tool"] != "echo" || !reflect.DeepEqual(details["structuredContent"], map[string]any{"echoed": "hello"}) {
-		t.Fatalf("details = %#v", result.Details)
+	structured, _ := result.StructuredContent.(map[string]any)
+	if !ok || details["server"] != "example" || details["tool"] != "echo" || !reflect.DeepEqual(structured["structuredContent"], map[string]any{"echoed": "hello"}) || len(structured["content"].([]any)) != 2 {
+		t.Fatalf("details = %#v, structured = %#v", result.Details, result.StructuredContent)
 	}
 	select {
 	case update := <-updates:
@@ -98,7 +100,7 @@ func TestManagerDeliversWirePriorProgressBeforeAgentSettlesTool(t *testing.T) {
 		return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: "done"}}}, nil, nil
 	})
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "progress", Command: "in-memory"}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "progress", Command: "in-memory"}})
 	progressStarted := make(chan struct{})
 	releaseProgress := make(chan struct{})
 	manager.connect = func(ctx, _ context.Context, _ ServerConfig, options *mcpsdk.ClientOptions, tracker progressTracker) (*mcpsdk.ClientSession, error) {
@@ -232,7 +234,7 @@ func TestManagerDoesNotCrossWireOverlappingReusedToolCallIDs(t *testing.T) {
 		return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: value.Label}}}, nil, nil
 	})
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "overlap", Command: "in-memory"}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "overlap", Command: "in-memory"}})
 	manager.connect = inMemoryConnector(server)
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
@@ -350,7 +352,7 @@ func TestManagerDoesNotCrossWireLateProgressAfterSequentialIDReuse(t *testing.T)
 		return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: "second"}}}, nil, nil
 	})
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "sequential", Command: "in-memory"}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "sequential", Command: "in-memory"}})
 	progressHandled := make(chan string, 2)
 	manager.connect = func(ctx, _ context.Context, _ ServerConfig, options *mcpsdk.ClientOptions, tracker progressTracker) (*mcpsdk.ClientSession, error) {
 		copied := *options
@@ -452,23 +454,21 @@ func TestManagerDoesNotCrossWireLateProgressAfterSequentialIDReuse(t *testing.T)
 func TestManagerRefreshesDynamicToolList(t *testing.T) {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "dynamic", Version: "1"}, nil)
 	addTextTool(server, "first")
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "dynamic", Command: "in-memory"}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "dynamic", Command: "in-memory"}})
 	manager.connect = inMemoryConnector(server)
-	runner, active := registerManager(t, manager)
+	runner, _ := registerManager(t, manager)
 	defer closeManager(t, manager)
 
 	initial := runner.AllRegisteredTools()
 	if len(initial) != 1 {
 		t.Fatalf("initial tools = %d", len(initial))
 	}
-	active.set([]string{initial[0].Definition.Name})
 	addTextTool(server, "second")
-	eventually(t, func() bool {
-		return runner.ToolDefinition(registeredToolName("dynamic", "second")) != nil && len(active.get()) == 2
-	})
+	eventually(t, func() bool { return runner.ToolDefinition("mcp__dynamic__second") != nil })
 	server.RemoveTools("first")
 	eventually(t, func() bool {
-		return reflect.DeepEqual(active.get(), []string{registeredToolName("dynamic", "second")})
+		definition := runner.ToolDefinition("mcp__dynamic__first")
+		return definition != nil && definition.Exposure == extensions.ToolHidden
 	})
 	_, err := initial[0].Definition.Execute(context.Background(), "old", map[string]any{}, nil, runner.CreateContext())
 	if err == nil || !strings.Contains(err.Error(), "no longer available") {
@@ -494,7 +494,7 @@ func TestManagerUsesStreamableHTTPAndHeaders(t *testing.T) {
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{
+	manager := NewManager(t.TempDir(), []testServer{{
 		Name: "http", URL: httpServer.URL, Headers: map[string]string{"Authorization": "Bearer secret"},
 	}})
 	runner, active := registerManager(t, manager)
@@ -541,7 +541,7 @@ func TestManagerDrainsStreamableHTTPProgressBeforeExecuteReturns(t *testing.T) {
 	}))
 	defer httpServer.Close()
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "http-progress", URL: httpServer.URL}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "http-progress", URL: httpServer.URL}})
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
 	registered := runner.AllRegisteredTools()[0]
@@ -620,7 +620,7 @@ func TestManagerDrainsJSONResponseStandaloneProgressBeforeExecuteReturns(t *test
 	httpServer := httptest.NewServer(mcpHandler)
 	defer httpServer.Close()
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "http-json-progress", URL: httpServer.URL}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "http-json-progress", URL: httpServer.URL}})
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
 	registered := runner.AllRegisteredTools()[0]
@@ -761,7 +761,7 @@ func TestManagerIgnoresStandaloneProgressObservedAfterCallSettles(t *testing.T) 
 	release := func() { releaseOnce.Do(func() { close(releaseSSE) }) }
 	defer release()
 	progressHandled := make(chan struct{})
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "http-late-progress", URL: httpServer.URL}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "http-late-progress", URL: httpServer.URL}})
 	manager.connect = gatedStandaloneConnector(httpServer.URL, releaseSSE, progressHandled)
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
@@ -816,7 +816,7 @@ func TestManagerMatchesSDKWhitespaceParsingBeforeExecuteReturns(t *testing.T) {
 	}))
 	defer httpServer.Close()
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "http-whitespace-progress", URL: httpServer.URL}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "http-whitespace-progress", URL: httpServer.URL}})
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
 	registered := runner.AllRegisteredTools()[0]
@@ -893,7 +893,7 @@ func TestManagerMalformedSSEDoesNotLeavePendingProgress(t *testing.T) {
 	}))
 	defer httpServer.Close()
 
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "http-malformed-progress", URL: httpServer.URL}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "http-malformed-progress", URL: httpServer.URL}})
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
 	registered := runner.AllRegisteredTools()[0]
@@ -931,7 +931,7 @@ func TestManagerUsesStdioTransport(t *testing.T) {
 	if os.Getenv("ORB_MCP_HELPER") == "1" {
 		return
 	}
-	manager := NewManager(t.TempDir(), []ServerConfig{{
+	manager := NewManager(t.TempDir(), []testServer{{
 		Name: "stdio", Command: os.Args[0], Args: []string{"-test.run=^TestMCPStdioHelper$"}, Env: map[string]string{"ORB_MCP_HELPER": "1"},
 	}})
 	runner, active := registerManager(t, manager)
@@ -960,7 +960,7 @@ func TestMCPStdioHelper(t *testing.T) {
 	os.Exit(0)
 }
 
-func TestEmptyManagerRegistersNothingAndConnectsZeroTimes(t *testing.T) {
+func TestEmptyManagerRegistersOnlyItsCommandAndConnectsZeroTimes(t *testing.T) {
 	manager := NewManager(t.TempDir(), nil)
 	var calls atomic.Int64
 	manager.connect = func(context.Context, context.Context, ServerConfig, *mcpsdk.ClientOptions, progressTracker) (*mcpsdk.ClientSession, error) {
@@ -972,7 +972,7 @@ func TestEmptyManagerRegistersNothingAndConnectsZeroTimes(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if calls.Load() != 0 || len(runner.AllRegisteredTools()) != 0 || len(runner.RegisteredCommands()) != 0 {
+	if calls.Load() != 0 || len(runner.AllRegisteredTools()) != 0 || len(runner.RegisteredCommands()) != 1 {
 		t.Fatalf("connects = %d, tools = %d, commands = %d", calls.Load(), len(runner.AllRegisteredTools()), len(runner.RegisteredCommands()))
 	}
 }
@@ -980,14 +980,14 @@ func TestEmptyManagerRegistersNothingAndConnectsZeroTimes(t *testing.T) {
 func TestManagerIsolatesServerFailuresAndReconnects(t *testing.T) {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "healthy", Version: "1"}, nil)
 	addTextTool(server, "ping")
-	manager := NewManager(t.TempDir(), []ServerConfig{
-		{Name: "broken", Command: "broken", TimeoutMS: 25},
+	manager := NewManager(t.TempDir(), []testServer{
+		{Name: "broken", Command: "broken", Timeout: 0.025},
 		{Name: "healthy", Command: "healthy"},
 	})
 	var healthyConnects atomic.Int64
 	connectHealthy := inMemoryConnector(server)
 	manager.connect = func(connectCtx, lifecycleCtx context.Context, config ServerConfig, options *mcpsdk.ClientOptions, tracker progressTracker) (*mcpsdk.ClientSession, error) {
-		if config.Name == "broken" {
+		if config.Command == "broken" {
 			<-connectCtx.Done()
 			return nil, connectCtx.Err()
 		}
@@ -997,7 +997,7 @@ func TestManagerIsolatesServerFailuresAndReconnects(t *testing.T) {
 	runner, active := registerManager(t, manager)
 	defer closeManager(t, manager)
 	status := manager.Status()
-	if len(status) != 2 || status[0].Name != "broken" || status[0].State != ServerError || status[1].State != ServerConnected {
+	if len(status) != 2 || status[0].Name != "broken" || status[0].State != ServerFailed || status[1].State != ServerConnected {
 		t.Fatalf("status = %#v", status)
 	}
 	tools := runner.AllRegisteredTools()
@@ -1016,26 +1016,39 @@ func TestManagerIsolatesServerFailuresAndReconnects(t *testing.T) {
 	}
 }
 
-func TestStableRegisteredToolNamesAreSafeAndDistinct(t *testing.T) {
-	first := registeredToolName("same server", "tool/name")
-	second := registeredToolName("same-server", "tool name")
-	if first == second {
-		t.Fatalf("colliding names: %q", first)
+func TestToolNamesNormalizeAndHashOnlyWhenNeeded(t *testing.T) {
+	free := func(string) bool { return false }
+	if got := toolName("my-server", "get.item", free); got != "mcp__my_server__get_item" {
+		t.Fatalf("plain name = %q", got)
 	}
-	for _, name := range []string{first, second, registeredToolName("服务", "工具")} {
-		if len(name) > 64 {
-			t.Fatalf("name exceeds provider-safe length: %q", name)
-		}
-		for _, character := range name {
-			safe := character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
-				character >= '0' && character <= '9' || character == '_' || character == '-'
-			if !safe {
-				t.Fatalf("unsafe character %q in %q", character, name)
-			}
+	taken := toolName("my-server", "get.item", func(string) bool { return true })
+	if !strings.HasPrefix(taken, "mcp__my_server__get_item_") || len(taken) != len("mcp__my_server__get_item_")+8 {
+		t.Fatalf("taken name = %q", taken)
+	}
+	long := toolName("server", strings.Repeat("x", 80), free)
+	if len(long) != 64 || long != toolName("server", strings.Repeat("x", 80), free) {
+		t.Fatalf("long name = %q", long)
+	}
+}
+
+func TestToolsWhoseNamesCollideAllGetTheHash(t *testing.T) {
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "collide", Version: "1"}, nil)
+	addTextTool(server, "a-b")
+	addTextTool(server, "a_b")
+	addTextTool(server, "c")
+	manager := NewManager(t.TempDir(), []testServer{{Name: "collide", Command: "in-memory"}})
+	manager.connect = inMemoryConnector(server)
+	runner, _ := registerManager(t, manager)
+	defer closeManager(t, manager)
+	var names []string
+	for _, tool := range runner.AllRegisteredTools() {
+		names = append(names, tool.Definition.Name)
+		if tool.Definition.Exposure != extensions.ToolDirect || tool.Definition.Namespace.Name != "mcp__collide" {
+			t.Fatalf("definition = %#v", tool.Definition)
 		}
 	}
-	if first != registeredToolName("same server", "tool/name") {
-		t.Fatal("registered tool name is not stable")
+	if len(names) != 3 || !slices.Contains(names, "mcp__collide__c") || slices.Contains(names, "mcp__collide__a_b") {
+		t.Fatalf("names = %v", names)
 	}
 }
 
@@ -1137,6 +1150,36 @@ func (active *activeTools) set(names []string) {
 	active.mu.Unlock()
 }
 
+// testServer is a configured server for tests; its tools are direct.
+type testServer struct {
+	Name, Command, URL string
+	Args               []string
+	Env, Headers       map[string]string
+	Timeout            float64
+}
+
+func NewManager(cwd string, servers []testServer) *Manager {
+	entries := make([]Entry, 0, len(servers))
+	for _, server := range servers {
+		entries = append(entries, Entry{Name: server.Name, Scope: "global", Config: ServerConfig{
+			Command: server.Command, Args: server.Args, Env: server.Env, URL: server.URL, Headers: server.Headers,
+			Timeout: server.Timeout, Exposure: ExposureDirect,
+		}})
+	}
+	manager := newManager(func(string, bool) ([]Entry, []string) { return entries, nil })
+	manager.configure(cwd, entries)
+	return manager
+}
+
+func (manager *Manager) Extension() extensions.Factory {
+	return func(api extensions.API) error {
+		manager.register(api)
+		return nil
+	}
+}
+
+// registerManager loads the manager's extension, starts the session and
+// waits for the servers to connect.
 func registerManager(t *testing.T, manager *Manager) (*extensions.Runner, *activeTools) {
 	t.Helper()
 	registry := extensions.NewRegistry(t.TempDir())
@@ -1151,6 +1194,8 @@ func registerManager(t *testing.T, manager *Manager) (*extensions.Runner, *activ
 			return nil
 		},
 	}})
+	runner.Emit(context.Background(), extensions.SessionStartEvent{Reason: extensions.SessionStartStartup})
+	manager.waitForServers(context.Background(), manager.enabledNames(nil))
 	return runner, active
 }
 

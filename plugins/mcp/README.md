@@ -1,78 +1,67 @@
 # Bundled MCP extension
 
-This package is the D18 addition to upstream pi: an MCP client built on the official Go SDK and
-registered through the same native ExtensionAPI used by every other extension. MCP does not enter
-the agent loop, provider layer, or built-in tool registry directly. With no enabled server in
-settings, the CLI does not construct the extension and performs no MCP work.
+An MCP client built on the official Go SDK and registered through the same native ExtensionAPI as
+every other extension, following pi 1.0's built-in MCP integration. MCP does not enter the agent
+loop, provider layer, or built-in tool registry directly. `goExtensions.mcp: false` or
+`--no-extensions` turns it off.
 
-## Settings
+## mcp.json
 
-Add a top-level `mcpServers` object to global or trusted-project `settings.json`. Each key is the
-server's local name and each value selects exactly one transport:
+Servers are configured in `mcp.json` in the agent directory (`~/.pi/agent/mcp.json`) and, once the
+project is trusted, `.pi/mcp.json` in the project, whose entries replace global ones of the same
+name. The `mcpServers` shape is the one other MCP clients use, so their configurations copy over.
+`orb mcp add|remove|list` edits and checks the files without starting a session.
 
 ```json
 {
   "mcpServers": {
-    "local": {
-      "command": "my-mcp-server",
-      "args": ["--stdio"],
-      "env": { "API_TOKEN": "..." },
-      "cwd": ".",
-      "timeoutMs": 10000
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "docs": {
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" },
+      "exposure": "direct",
+      "description": "Product documentation search"
     },
-    "remote": {
-      "url": "https://example.test/mcp",
-      "headers": { "Authorization": "Bearer ..." },
-      "maxRetries": 2,
-      "timeoutMs": 10000
-    },
-    "temporarily-off": {
-      "command": "another-server",
-      "enabled": false
-    }
+    "off": { "command": "another-server", "enabled": false }
   }
 }
 ```
 
-`command` selects stdio and accepts `args`, `env`, and `cwd`; `url` selects streamable HTTP and
-accepts `headers` and `maxRetries`. Omit `maxRetries` for the SDK default of 5 reconnect attempts;
-an explicit `0` (or any negative value) disables retries so a dropped connection fails fast. `cwd`
-is resolved from orb's working directory. The process inherits the current environment before
-applying `env` overrides. `timeoutMs` defaults to 10 seconds and bounds connect, initialization,
-and initial tool discovery. `"disabled": true` — the convention used by Cline, Roo, and
-Claude Desktop configs — is honored exactly like `"enabled": false`. Other unknown fields are
-ignored so settings remain forward-compatible. Invalid entries are skipped with a per-entry
-warning while the remaining valid servers still load (`ParseSettingsWithWarnings` reports them);
-only a malformed `mcpServers` value itself is an error. Project entries are invisible until the
-existing project-trust flow accepts that project. Setting `goExtensions.mcp` to `false` or passing
-`--no-extensions` disables the bundled extension as a whole.
+`command` selects stdio and takes `args`, `env` and `cwd` (relative to the session's directory;
+`~` expands); `url` selects streamable HTTP and takes `headers`. Header and env values may be
+`${NAME}` or `!command`. `timeout` is the per-request timeout in seconds (default 60), reset by
+progress notifications. Server names use letters, digits, `_` and `-`; names that differ only in
+`-` and `_` would share a tool namespace and are rejected. Invalid entries are reported once
+(and by `/mcp`) while the others load.
 
-## Lifecycle and tool mapping
+`exposure` says how the model reaches a server's tools, and `toolExposure` overrides it per tool,
+by exact name or `*` pattern:
 
-All enabled servers connect concurrently during extension loading, each bounded by its own
-`timeoutMs`, so one unavailable server is reported by `/mcp` without preventing the session from
-starting and without delaying the other servers. Startup failures are also printed as warnings.
-(A stdio child that ignores shutdown still adds the SDK's ~5s kill grace on top of `timeoutMs`
-before its process is killed.) `/mcp reconnect [server]` recreates one or every connection;
-re-running the extension factory against a fresh registry re-registers the already-discovered
-tools without reconnecting. A call that fails because the connection died (closed connection, EOF
-or a broken pipe from a dead child) deactivates that server's tools immediately. Session shutdown
-closes the SDK sessions and stdio children; a child's exit status (for example
-`signal: terminated` after the kill grace) is expected there and not reported as an error. Server
-tool-list notifications add new tools and deactivate removed ones without retrying calls whose
-side effects may already have run.
+- `codemode` (default): Orb has no codemode, so these behave as `deferred`.
+- `deferred`: declared once `tool_search` loads them, then called directly.
+- `direct`: declared like built-in tools.
+- `hidden`: registered but unreachable.
 
-Remote names are exposed as stable, provider-safe names of the form
-`mcp__<server>__<tool>_<hash>`. The hash prevents collisions after sanitizing or truncating long
-names. JSON input schemas pass through unchanged. Text and image results map to orb's native tool
-result blocks, structured content and MCP metadata remain in `Details`, and MCP progress
-notifications become normal tool execution updates. MCP tool errors are returned through the
-agent's ordinary error path so providers receive an error tool result.
+## Lifecycle and tools
 
-## Test strategy
+Servers connect in the background when a session starts. The first prompt waits up to 10 seconds
+for servers with direct tools; `tool_search` waits for every server still connecting. Each prompt
+carries an `mcp_servers` system prompt section listing the servers whose tools are not declared,
+with their descriptions (or instructions) cut to fit 4096 characters. A server that fails is
+reported once; `/mcp` shows every server and `/mcp reconnect [server]` reconnects. A call that
+finds the connection dead marks the server failed and the next call reconnects.
 
-There is no upstream pi implementation to extract a conformance golden from. The package tests
-instead run the official SDK example-server pattern end to end, including progress and mixed
-text/image output, and separately exercise real stdio and streamable-HTTP transports. Dynamic tool
-changes, reconnect/error isolation, disabled configuration, deterministic naming, and the
-unconfigured zero-work path are ordinary Go tests.
+Tools are named `mcp__<server>__<tool>` with everything but `[A-Za-z0-9_]` turned into `_`; names
+over 64 characters or shared by several tools get an 8-hex hash suffix. Each tool carries its
+server's namespace, its annotations' hints, and a `CallToolResult` output schema: the result's
+`structuredContent` is the whole MCP result without `_meta`, and `isError` results are error
+results. Tools a server stops offering are re-registered hidden.
+
+## tool_search
+
+`tool_search` (the `tool-search` row) is registered for every session and activated when a server
+has deferred tools. It ranks the deferred tools that are not active with BM25 over their names,
+descriptions, schema text and namespace, and activates the matches, so the transcript records them
+and resume restores them; tools of a restored loadout that register late (servers still
+connecting) turn on when they register. Providers with native tool search receive later
+additions as deferred declarations.

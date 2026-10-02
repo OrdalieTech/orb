@@ -131,15 +131,12 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 // extensions through the same Rows/Resolve and DiscoveryOptions construction
 // that boot uses, so the dump cannot drift from what boots.
 func listFullComposition(cwd, agentDir string, settings *config.SettingsManager, streams cliStreams) int {
-	rows, warnings := assembly.Rows(assembly.Options{
+	rows := assembly.Rows(assembly.Options{
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
 		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
 		Bridge:         bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
-	for _, warning := range warnings {
-		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
-	}
 	for _, row := range assembly.Resolve(rows, settings, false) {
 		state := "off"
 		if row.Enabled {

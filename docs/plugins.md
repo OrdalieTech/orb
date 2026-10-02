@@ -133,39 +133,38 @@ in native SQLite (or under the agent dir for file-backed SDKs); `tasks` adds the
 
 ## MCP servers
 
-Top-level `mcpServers` object, Claude Desktop / Cline dialect. Two transports:
+Servers live in `mcp.json`: `~/.pi/agent/mcp.json`, plus `.pi/mcp.json` in a
+trusted project (its entries replace global ones of the same name). The shape is
+the `mcpServers` object other MCP clients use:
 
 ```json
 {
   "mcpServers": {
-    "files":  { "command": "mcp-files", "args": ["--root", "."], "env": { "TOKEN": "…" } },
-    "remote": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer …" } }
+    "files":  { "command": "mcp-files", "args": ["--root", "."], "env": { "TOKEN": "${FILES_TOKEN}" } },
+    "remote": { "url": "https://example.com/mcp", "exposure": "direct", "description": "Docs search" }
   }
 }
 ```
 
-Optional per server: `enabled: false` (or the `disabled: true` alias),
-`cwd`, `timeoutMs` (default 10000), `maxRetries` (HTTP only). Exactly one of
-`command` / `url`; `args`, `env`, and `cwd` are stdio-only.
+Optional per server: `enabled: false`, `cwd`, `timeout` (seconds per request,
+default 60), `exposure` (`codemode`, the default, and `deferred` load through
+`tool_search`; `direct`; `hidden`), `toolExposure` per tool or `*` pattern, and
+`description`, which the `mcp_servers` system prompt section shows. Exactly one
+of `command` / `url`; `args`, `env`, and `cwd` are stdio-only. See
+`plugins/mcp/README.md`.
 
-From the shell (no session, no server is spawned):
+From the shell (no session):
 
 ```
-orb mcp list
-orb mcp get <name>
+orb mcp list [--json]          # connects each server once and reports it
 orb mcp add files --env TOKEN=x -- mcp-files --root .
-orb mcp add remote --url https://example.com/mcp --header "Authorization=Bearer x"
-orb mcp remove <name>
-orb mcp enable <name> | disable <name>
+orb mcp add remote --url https://example.com/mcp --bearer-token-env-var REMOTE_TOKEN
+orb mcp remove <name> [-l]     # -l / --local edits the project's .pi/mcp.json
 ```
 
-`orb mcp add` validates through the exact parser the session uses, so anything
-it accepts is something the session will start. Writes go to the global
-settings; project entries are edited in `.pi/settings.json` by hand.
-
-In a session, `/mcp` opens the live status window (state, transport, target,
-registered tools, errors) with in-place reconnection; `/mcp reconnect [server]`
-still works everywhere.
+Servers connect in the background when a session starts. `/mcp` opens the
+live status window (state, transport, target, tools, errors) with in-place
+reconnection; `/mcp reconnect [server]` works everywhere.
 
 ## Questions
 

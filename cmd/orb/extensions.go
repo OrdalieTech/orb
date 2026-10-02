@@ -113,7 +113,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
-	rows, warnings := assembly.Rows(assembly.Options{
+	rows := assembly.Rows(assembly.Options{
 		UsageCache: args.usageCache,
 		Memory:     args.native.memory(),
 		Policy:     policy,
@@ -140,7 +140,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		Compiled: compiledExtensionsForEnvironment(os.Getenv),
 		MCP:      !args.NoExtensions && !args.metadataOnly,
 	})
-	diagnostics := otherDiagnostics(warnings)
+	var diagnostics []modes.StartupDiagnostic
 	resolved := assembly.Resolve(rows, settings, args.NoExtensions)
 	for i := range resolved {
 		if args.Auto && !args.NoExtensions && resolved[i].ID == "permissions" {

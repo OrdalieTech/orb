@@ -10,9 +10,13 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// mapToolResult converts a CallToolResult. The model sees its content;
+// StructuredContent is the whole result without _meta, and isError results are
+// error results that keep it.
 func mapToolResult(server, tool string, result *mcpsdk.CallToolResult) engine.AgentToolResult {
+	details := map[string]any{"server": server, "tool": tool}
 	if result == nil {
-		return engine.AgentToolResult{Content: textToolContent(""), Details: resultDetails(server, tool, nil)}
+		return engine.AgentToolResult{Content: textToolContent(""), Details: details}
 	}
 	content := make(ai.ToolResultContent, 0, len(result.Content))
 	for _, block := range result.Content {
@@ -33,10 +37,17 @@ func mapToolResult(server, tool string, result *mcpsdk.CallToolResult) engine.Ag
 	if len(content) == 0 && result.StructuredContent != nil {
 		content = append(content, &ai.TextContent{Text: marshalContent(result.StructuredContent)})
 	}
+	if result.IsError && toolResultText(content) == "" {
+		content = append(content, &ai.TextContent{Text: "MCP tool " + server + "/" + tool + " returned an error"})
+	}
 	if len(content) == 0 {
 		content = textToolContent("")
 	}
-	return engine.AgentToolResult{Content: content, Details: resultDetails(server, tool, result)}
+	var structured map[string]any
+	if data, err := json.Marshal(result); err == nil && json.Unmarshal(data, &structured) == nil {
+		delete(structured, "_meta")
+	}
+	return engine.AgentToolResult{Content: content, Details: details, StructuredContent: structured, IsError: result.IsError}
 }
 
 func appendEmbeddedResource(content ai.ToolResultContent, embedded *mcpsdk.EmbeddedResource) ai.ToolResultContent {
@@ -56,21 +67,6 @@ func appendEmbeddedResource(content ai.ToolResultContent, embedded *mcpsdk.Embed
 	return append(content, &ai.TextContent{Text: marshalContent(embedded)})
 }
 
-func resultDetails(server, tool string, result *mcpsdk.CallToolResult) map[string]any {
-	details := map[string]any{"server": server, "tool": tool}
-	if result == nil {
-		return details
-	}
-	details["isError"] = result.IsError
-	if result.StructuredContent != nil {
-		details["structuredContent"] = result.StructuredContent
-	}
-	if len(result.Meta) != 0 {
-		details["meta"] = result.Meta
-	}
-	return details
-}
-
 func marshalContent(value any) string {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -86,12 +82,9 @@ func textToolContent(text string) ai.ToolResultContent {
 func toolResultText(content ai.ToolResultContent) string {
 	texts := make([]string, 0, len(content))
 	for _, block := range content {
-		if text, ok := block.(*ai.TextContent); ok {
+		if text, ok := block.(*ai.TextContent); ok && text.Text != "" {
 			texts = append(texts, text.Text)
 		}
-	}
-	if len(texts) == 0 {
-		return "MCP tool returned an error"
 	}
 	return strings.Join(texts, "\n")
 }

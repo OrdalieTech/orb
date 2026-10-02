@@ -50,14 +50,11 @@ func rowIDs(rows []assembly.Row) []string {
 
 func TestRowsEnumerateInBootOrder(t *testing.T) {
 	settings, root, agentDir := newTestSettings(t, "")
-	rows, warnings := assembly.Rows(assembly.Options{
+	rows := assembly.Rows(assembly.Options{
 		CWD: root, AgentDir: agentDir, Settings: settings,
 		Compiled: compiled("alpha", "beta"), MCP: true,
 	})
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v", warnings)
-	}
-	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls", "tool-search", "mcp"}
 	got := rowIDs(rows)
 	if len(got) != len(want) {
 		t.Fatalf("row ids = %v, want %v", got, want)
@@ -69,20 +66,17 @@ func TestRowsEnumerateInBootOrder(t *testing.T) {
 	}
 }
 
-func TestRowsIncludeConfiguredMCPServers(t *testing.T) {
-	settings, root, agentDir := newTestSettings(t, `{"mcpServers":{"probe":{"command":"true"}}}`)
-	rows, warnings := assembly.Rows(assembly.Options{
+func TestRowsIncludeMCP(t *testing.T) {
+	settings, root, agentDir := newTestSettings(t, "")
+	rows := assembly.Rows(assembly.Options{
 		CWD: root, AgentDir: agentDir, Settings: settings, MCP: true,
 	})
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v", warnings)
-	}
 	last := rows[len(rows)-1]
 	if last.ID != "mcp" || last.Source != assembly.SourceMCP || !last.Hidden || !last.DefaultEnabled {
 		t.Fatalf("mcp row = %+v", last)
 	}
 	// Metadata-only assemblies must not touch MCP configuration.
-	rows, _ = assembly.Rows(assembly.Options{CWD: root, AgentDir: agentDir, Settings: settings, MCP: false})
+	rows = assembly.Rows(assembly.Options{CWD: root, AgentDir: agentDir, Settings: settings, MCP: false})
 	if got := rowIDs(rows); got[len(got)-1] == "mcp" {
 		t.Fatalf("MCP row present with MCP disabled: %v", got)
 	}
@@ -127,7 +121,7 @@ func TestResolvePrecedence(t *testing.T) {
 
 func TestLoadPreservesLoadCompiledSemantics(t *testing.T) {
 	settings, root, agentDir := newTestSettings(t, `{"plugins":{"tasks":true}}`)
-	rows, _ := assembly.Rows(assembly.Options{
+	rows := assembly.Rows(assembly.Options{
 		CWD: root, AgentDir: agentDir, Settings: settings, Compiled: compiled("alpha"),
 	})
 	registry, loadErrors := assembly.Load(root, assembly.Resolve(rows, settings, false))
@@ -150,7 +144,7 @@ func TestConcurrentAssembliesAreIndependent(t *testing.T) {
 	run := func(settings *config.SettingsManager, root, agentDir string, wantTasks bool) {
 		defer wg.Done()
 		for range 25 {
-			rows, _ := assembly.Rows(assembly.Options{
+			rows := assembly.Rows(assembly.Options{
 				CWD: root, AgentDir: agentDir, Settings: settings, Compiled: compiled("alpha"),
 			})
 			registry, loadErrors := assembly.Load(root, assembly.Resolve(rows, settings, false))
@@ -172,7 +166,7 @@ func TestConcurrentAssembliesAreIndependent(t *testing.T) {
 
 func TestBridgeManagementIsAvailableWithoutEnablingNetworking(t *testing.T) {
 	settings, root, dir := newTestSettings(t, `{"plugins":{"bridge":false,"bridge-agent-calls":false}}`)
-	rows, _ := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory, BridgeManagement: true})
+	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory, BridgeManagement: true})
 	for _, row := range assembly.Resolve(rows, settings, false) {
 		switch row.ID {
 		case "bridge":
@@ -192,7 +186,7 @@ func TestBridgeManagementIsAvailableWithoutEnablingNetworking(t *testing.T) {
 
 func TestBridgeFactoryRemainsOptInForExistingAssemblies(t *testing.T) {
 	settings, root, dir := newTestSettings(t, "")
-	rows, _ := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory})
+	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory})
 	for _, row := range assembly.Resolve(rows, settings, false) {
 		if row.ID == "bridge" && row.Enabled {
 			t.Fatal("host factory enabled without explicit management opt-in")

@@ -79,7 +79,7 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 		t.Fatalf("diagnostics = %v", diagnostics)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if got := strings.Join(runner.ExtensionPaths(), ","); got != "builtin:plugin-control,builtin:bridge" {
+	if got := strings.Join(runner.ExtensionPaths(), ","); got != "builtin:plugin-control,builtin:bridge,builtin:tool-search,builtin:mcp" {
 		t.Fatalf("compiled extension order = %q", got)
 	}
 	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)
@@ -88,20 +88,16 @@ func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
 	}
 }
 
-func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) {
+func TestLoadCompiledExtensionsAddsToolSearchAndMCP(t *testing.T) {
 	tests := []struct {
-		name        string
-		settings    string
-		args        CLIArgs
-		wantPath    string
-		wantWarning string
+		name     string
+		settings string
+		args     CLIArgs
+		wantPath string
 	}{
-		{name: "absent", settings: `{}`, wantPath: "builtin:plugin-control,builtin:bridge"},
-		{name: "server disabled", settings: `{"mcpServers":{"local":{"command":"ignored","enabled":false}}}`, wantPath: "builtin:plugin-control,builtin:bridge"},
-		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false},"mcpServers":{"local":{"command":"ignored"}}}`, wantPath: "builtin:plugin-control,builtin:bridge"},
-		{name: "all extensions disabled", settings: `{"mcpServers":[]}`, args: CLIArgs{NoExtensions: true}},
-		{name: "invalid", settings: `{"mcpServers":[]}`, wantPath: "builtin:plugin-control,builtin:bridge", wantWarning: "mcpServers"},
-		{name: "enabled", settings: `{"mcpServers":{"local":{"command":"orb-mcp-command-that-does-not-exist","timeoutMs":20}}}`, wantPath: "builtin:plugin-control,builtin:bridge,builtin:mcp"},
+		{name: "default", settings: `{}`, wantPath: "builtin:plugin-control,builtin:bridge,builtin:tool-search,builtin:mcp"},
+		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false}}`, wantPath: "builtin:plugin-control,builtin:bridge,builtin:tool-search"},
+		{name: "all extensions disabled", settings: `{}`, args: CLIArgs{NoExtensions: true}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -116,17 +112,8 @@ func TestLoadCompiledExtensionsAddsMCPOnlyForEnabledConfiguration(t *testing.T) 
 			}
 			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, test.args, settings, nil)
 			runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-			paths := strings.Join(runner.ExtensionPaths(), ",")
-			if paths != test.wantPath {
-				t.Fatalf("extension paths = %q, want %q", paths, test.wantPath)
-			}
-			texts := make([]string, 0, len(diagnostics))
-			for _, diagnostic := range diagnostics {
-				texts = append(texts, startupDiagnosticText(diagnostic))
-			}
-			warnings := strings.Join(texts, "\n")
-			if test.wantWarning == "" && warnings != "" || test.wantWarning != "" && !strings.Contains(warnings, test.wantWarning) {
-				t.Fatalf("diagnostics = %q, want substring %q", warnings, test.wantWarning)
+			if paths := strings.Join(runner.ExtensionPaths(), ","); paths != test.wantPath || len(diagnostics) != 0 {
+				t.Fatalf("extension paths = %q, want %q; diagnostics = %v", paths, test.wantPath, diagnostics)
 			}
 			if strings.Contains(test.wantPath, "builtin:mcp") && runner.Command("mcp") == nil {
 				t.Fatal("/mcp command was not registered")
@@ -140,8 +127,8 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 		name, settings string
 		want           []string
 	}{
-		{name: "default off", settings: `{}`},
-		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"},"memory":true}}`, want: []string{"fetch_content", "forget", "recall", "remember", "replace", "subagent", "todo", "web_search"}},
+		{name: "default off", settings: `{}`, want: []string{"tool_search"}},
+		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"},"memory":true}}`, want: []string{"fetch_content", "forget", "recall", "remember", "replace", "subagent", "todo", "tool_search", "web_search"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
