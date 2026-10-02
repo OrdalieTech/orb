@@ -467,6 +467,22 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	initialActiveToolNames := resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
 	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
 		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
+	} else if hasExisting && opts.Tools == nil && opts.NoTools == "" {
+		// A resumed session restores the loadout its transcript declares; tools
+		// that register later, such as MCP tools, turn on when they do.
+		var transcript ai.MessageList
+		for _, raw := range existing.Messages {
+			if system, ok := decodeSessionMessage(raw).(*ai.SystemMessage); ok {
+				transcript = append(transcript, system)
+			}
+		}
+		if current := ai.CurrentSystemMessage(transcript); current != nil {
+			names := make([]string, 0, len(current.ToolsAdded))
+			for _, tool := range current.ToolsAdded {
+				names = append(names, tool.Name)
+			}
+			initialActiveToolNames = filterExcluded(names, opts.ExcludeTools)
+		}
 	}
 
 	if opts.Tools != nil {

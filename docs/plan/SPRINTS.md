@@ -514,15 +514,15 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 - [x] CLI: `--provider` without `--model` and invalid `--mode` are errors.
 
 **MCP**
-- [ ] `mcp.json` (global, and project once trusted) is the only config; `description` per server.
+- [x] `mcp.json` (global, and project once trusted) is the only config; `description` per server.
 - [ ] OAuth: discovery, `clientName`, `authServerMetadataUrl`, RFC 9207 `iss`, credentials per server
       name and URL, step-up keeping granted scopes, empty optional fields tolerated, clickable URL.
 - [ ] `"auth": {"provider": "<p>"}` sends that provider's `/login` token (global only; https except
       loopback).
-- [ ] Servers connect in the background; a short `mcp_servers` system prompt section.
-- [ ] Deferred tools and `tool_search`, using the provider's native tool search where the API has
+- [x] Servers connect in the background; a short `mcp_servers` system prompt section.
+- [x] Deferred tools and `tool_search`, using the provider's native tool search where the API has
       one; deferred tools survive resume and `/reload`.
-- [ ] Names normalize `-` to `_`, colliding tools get a hash suffix, near-duplicate servers rejected.
+- [x] Names normalize `-` to `_`, colliding tools get a hash suffix, near-duplicate servers rejected.
 - [ ] `orb mcp add|remove|list|login|logout` and `/mcp`.
 
 **Close**

@@ -131,12 +131,12 @@ func TestMetadataCommandsDoNotSpawnMCPServers(t *testing.T) {
 			if err := os.WriteFile(spawn, []byte("#!/bin/sh\ntouch \""+marker+"\"\ncat\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			// Global (user-scope) settings need no project trust to load.
+			// The global mcp.json needs no project trust to load.
 			if err := os.MkdirAll(agentDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			settings := `{"mcpServers":{"toy":{"command":"` + spawn + `"}}}`
-			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(agentDir, "mcp.json"), []byte(settings), 0o644); err != nil {
 				t.Fatal(err)
 			}
 
@@ -175,7 +175,7 @@ func TestVersionDoesNotSpawnExtensionInfrastructure(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := `{"mcpServers":{"toy":{"command":"` + spawn + `"}}}`
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(agentDir, "mcp.json"), []byte(settings), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writeJSExtension(t, filepath.Join(agentDir, "extensions", "guard"), listModelsProviderExtension)

@@ -1,54 +1,63 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestMCPCLIRoundTrip(t *testing.T) {
-	setupPackageCLI(t)
-	code, stdout, stderr := runPackageCLI(t, []string{"mcp", "add", "local", "--env", "TOKEN=x", "--", "server-bin", "--fast"})
-	if code != 0 || !strings.Contains(stdout, "Added local") {
+	env := setupPackageCLI(t)
+	code, stdout, stderr := runPackageCLI(t, []string{"mcp", "add", "local", "--env", "TOKEN=x", "--", "orb-missing-mcp-server", "--fast"})
+	if code != 0 || !strings.Contains(stdout, `Added global MCP server "local"`) {
 		t.Fatalf("add local: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	code, _, stderr = runPackageCLI(t, []string{"mcp", "add", "remote", "--url", "https://example.com/mcp", "--header", "Authorization=Bearer x", "--disabled"})
+	code, _, stderr = runPackageCLI(t, []string{"mcp", "add", "remote", "--url", "https://example.com/mcp", "--bearer-token-env-var", "REMOTE_TOKEN", "--exposure", "direct", "--description", "Remote docs"})
 	if code != 0 {
 		t.Fatalf("add remote: code=%d stderr=%q", code, stderr)
 	}
-	code, stdout, stderr = runPackageCLI(t, []string{"mcp", "list"})
-	if code != 0 || stderr != "" ||
-		!strings.Contains(stdout, "local\tstdio\ton\tserver-bin --fast") ||
-		!strings.Contains(stdout, "remote\thttp\toff\thttps://example.com/mcp") {
-		t.Fatalf("list: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	data, err := os.ReadFile(filepath.Join(env.agentDir, "mcp.json"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	code, stdout, _ = runPackageCLI(t, []string{"mcp", "get", "local"})
-	if code != 0 || !strings.Contains(stdout, `"server-bin"`) || !strings.Contains(stdout, `"TOKEN": "x"`) {
-		t.Fatalf("get: code=%d stdout=%q", code, stdout)
+	var file struct {
+		MCPServers map[string]map[string]any `json:"mcpServers"`
 	}
-	code, _, _ = runPackageCLI(t, []string{"mcp", "enable", "remote"})
-	if code != 0 {
-		t.Fatal("enable failed")
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatal(err)
+	}
+	local, remote := file.MCPServers["local"], file.MCPServers["remote"]
+	if local["command"] != "orb-missing-mcp-server" || local["env"].(map[string]any)["TOKEN"] != "x" ||
+		remote["headers"].(map[string]any)["Authorization"] != "Bearer ${REMOTE_TOKEN}" || remote["exposure"] != "direct" || remote["description"] != "Remote docs" {
+		t.Fatalf("mcp.json = %s", data)
+	}
+	if err := os.WriteFile(filepath.Join(env.agentDir, "mcp.json"), []byte(`{"mcpServers":{"local":{"command":"orb-missing-mcp-server","timeout":2},"remote":{"url":"https://example.com/mcp","enabled":false}}}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	code, stdout, _ = runPackageCLI(t, []string{"mcp", "list"})
-	if code != 0 || !strings.Contains(stdout, "remote\thttp\ton\t") {
-		t.Fatalf("enabled list: %q", stdout)
+	if code != 1 || !strings.Contains(stdout, "local: failed (codemode, global)\n  orb-missing-mcp-server") || !strings.Contains(stdout, "remote: disabled (codemode, global)") {
+		t.Fatalf("list: code=%d stdout=%q", code, stdout)
 	}
-	// A server with both a command and a URL must be rejected by the same
-	// validation the session applies.
+	code, stdout, _ = runPackageCLI(t, []string{"mcp", "list", "--json"})
+	if code != 1 || !strings.Contains(stdout, `"state": "disabled"`) || !strings.Contains(stdout, `"errors": []`) {
+		t.Fatalf("list --json: code=%d stdout=%q", code, stdout)
+	}
 	code, _, stderr = runPackageCLI(t, []string{"mcp", "add", "bad", "--url", "https://example.com", "--", "command"})
-	if code != 1 || !strings.Contains(stderr, "exactly one of command or url") {
+	if code != 1 || !strings.Contains(stderr, "Usage: orb mcp add") {
 		t.Fatalf("invalid add: code=%d stderr=%q", code, stderr)
 	}
+	code, _, stderr = runPackageCLI(t, []string{"mcp", "add", "bad", "--env", "A=b", "--url", "https://example.com"})
+	if code != 1 || !strings.Contains(stderr, "--env only applies to stdio servers") {
+		t.Fatalf("misplaced option: code=%d stderr=%q", code, stderr)
+	}
 	code, stdout, _ = runPackageCLI(t, []string{"mcp", "remove", "local"})
-	if code != 0 || !strings.Contains(stdout, "Removed local") {
+	if code != 0 || !strings.Contains(stdout, `Removed global MCP server "local"`) {
 		t.Fatalf("remove: code=%d stdout=%q", code, stdout)
 	}
-	code, stdout, _ = runPackageCLI(t, []string{"mcp", "list"})
-	if code != 0 || strings.Contains(stdout, "local") {
-		t.Fatalf("post-remove list: %q", stdout)
-	}
 	code, _, stderr = runPackageCLI(t, []string{"mcp", "remove", "ghost"})
-	if code != 1 || !strings.Contains(stderr, `Unknown MCP server "ghost"`) {
+	if code != 1 || !strings.Contains(stderr, `No global MCP server named "ghost"`) {
 		t.Fatalf("remove unknown: code=%d stderr=%q", code, stderr)
 	}
 }

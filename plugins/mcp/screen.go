@@ -91,7 +91,7 @@ func (panel *mcpPanel) rows(status []ServerStatus) []tui.GridRow {
 	rows := make([]tui.GridRow, 0, len(status))
 	for _, server := range status {
 		stateColor := map[ServerState]string{
-			ServerConnected: "success", ServerConnecting: "warning", ServerError: "error", ServerStopped: "dim",
+			ServerConnected: "success", ServerConnecting: "warning", ServerFailed: "error", ServerDisabled: "dim", ServerStopped: "dim",
 		}[server.State]
 		if stateColor == "" {
 			stateColor = "muted"

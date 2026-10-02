@@ -64,6 +64,16 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   `theme.style()`, and read `theme.colors` and `theme.appearance`; pi-tui's color helpers
   (`rgbColor`, `mixColors`, `styleText`, …) work, and the SDK declares pi 1.0's full export surface
   including `@earendil-works/pi-ai/models`.
+- MCP servers move to `mcp.json` (`~/.pi/agent/mcp.json`, and `.pi/mcp.json` in a trusted project);
+  `mcpServers` in `settings.json` is no longer read. Servers connect in the background, a short
+  `mcp_servers` section tells the model what they offer (`description` per server), and their tools
+  are deferred by default: the new `tool_search` loads the ones a task needs, and loaded tools come
+  back on resume and `/reload`. `exposure`/`toolExposure` make tools direct or hidden instead. Tools
+  are named `mcp__<server>__<tool>` (a hash only on collisions), carry MCP annotations and the full
+  result as structured content, and `isError` results reach the model as errors. `orb mcp add`
+  takes `--exposure`, `--description`, `--bearer-token-env-var`, OAuth client options and `-l`, and
+  `orb mcp list` connects each server and reports its tools (`--json`); `get`, `enable` and
+  `disable` are gone.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

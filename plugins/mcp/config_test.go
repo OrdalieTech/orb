@@ -1,90 +1,119 @@
 package mcp
 
 import (
-	"encoding/json"
-	"reflect"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestParseSettingsFiltersDisabledServersAndSortsNames(t *testing.T) {
-	settings := decodeSettings(t, `{
-		"unrelated": true,
-		"mcpServers": {
-			"zeta": {"url": "https://example.test/mcp", "headers": {"Authorization": "Bearer token"}},
-			"disabled": {"command": "ignored", "enabled": false},
-			"alpha": {"command": "server", "args": ["--stdio"], "env": {"MODE": "test"}, "cwd": ".pi"}
-		}
-	}`)
-	servers, err := ParseSettings(settings)
-	if err != nil {
+func writeConfig(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := []string{servers[0].Name, servers[1].Name}; !reflect.DeepEqual(got, []string{"alpha", "zeta"}) {
-		t.Fatalf("server order = %v", got)
-	}
-	if servers[0].TimeoutMS != defaultConnectTimeoutMS || servers[1].TimeoutMS != defaultConnectTimeoutMS {
-		t.Fatalf("default timeouts = %d, %d", servers[0].TimeoutMS, servers[1].TimeoutMS)
-	}
-	if servers[0].Command != "server" || !reflect.DeepEqual(servers[0].Args, []string{"--stdio"}) || servers[0].Env["MODE"] != "test" {
-		t.Fatalf("stdio server = %#v", servers[0])
-	}
-	if servers[1].URL != "https://example.test/mcp" || servers[1].Headers["Authorization"] != "Bearer token" {
-		t.Fatalf("http server = %#v", servers[1])
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestParseSettingsValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  string
-		message string
-	}{
-		{"server not an object", `[]`, "cannot unmarshal array"},
-		{"missing transport", `{}`, "set exactly one"},
-		{"both transports", `{"command":"x","url":"https://example.test"}`, "set exactly one"},
-		{"relative URL", `{"url":"/mcp"}`, "absolute http or https"},
-		{"stdio headers", `{"command":"x","headers":{"X":"y"}}`, "headers require"},
-		{"stdio retries", `{"command":"x","maxRetries":1}`, "maxRetries requires"},
-		{"http args", `{"url":"https://example.test","args":["x"]}`, "require a stdio command"},
-		{"negative timeout", `{"command":"x","timeoutMs":-1}`, "non-negative"},
-		{"invalid retries", `{"url":"https://example.test","maxRetries":-2}`, "at least -1"},
+func TestLoadMergesProjectOverGlobalOnlyWhenTrusted(t *testing.T) {
+	agentDir, cwd := t.TempDir(), t.TempDir()
+	writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{
+		"docs":{"url":"https://example.com/mcp","description":"Docs"},
+		"files":{"command":"files","enabled":false},
+		"bad name":{"command":"x"},
+		"broken":{"url":"ftp://example.com"}
+	}}`)
+	writeConfig(t, ProjectPath(cwd), `{"mcpServers":{"docs":{"command":"local-docs"},"keyed":{"url":"https://example.com","auth":{"provider":"anthropic"}}}}`)
+
+	entries, problems := Load(agentDir, cwd, false)
+	if len(entries) != 2 || entries[0].Name != "docs" || entries[0].Config.URL == "" || entries[1].Config.IsEnabled() {
+		t.Fatalf("untrusted entries = %#v", entries)
 	}
-	for _, test := range tests {
+	if len(problems) != 2 || !strings.Contains(problems[0], `invalid server name "bad name"`) || !strings.Contains(problems[1], "http or https") {
+		t.Fatalf("problems = %q", problems)
+	}
+
+	entries, problems = Load(agentDir, cwd, true)
+	if entries[0].Name != "docs" || entries[0].Config.Command != "local-docs" || entries[0].Scope != "project" {
+		t.Fatalf("project entry did not replace the global one: %#v", entries[0])
+	}
+	if len(problems) != 3 || !strings.Contains(problems[2], "auth is only allowed in the global mcp.json") {
+		t.Fatalf("problems = %q", problems)
+	}
+}
+
+func TestLoadRejectsServersSharingANamespace(t *testing.T) {
+	agentDir := t.TempDir()
+	writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{"my-server":{"command":"a"},"my_server":{"command":"b"}}}`)
+	entries, problems := Load(agentDir, t.TempDir(), false)
+	if len(entries) != 1 || len(problems) != 1 || !strings.Contains(problems[0], `"my_server" conflicts with "my-server"`) {
+		t.Fatalf("entries = %#v, problems = %q", entries, problems)
+	}
+}
+
+func TestValidate(t *testing.T) {
+	for _, test := range []struct {
+		name, config, message string
+	}{
+		{"neither", `{}`, `needs either "command"`},
+		{"sse", `{"type":"sse","url":"https://x"}`, "legacy SSE"},
+		{"exposure", `{"command":"x","exposure":"loud"}`, "exposure must be one of"},
+		{"tool exposure", `{"command":"x","toolExposure":{"a":"loud"}}`, `toolExposure "a"`},
+		{"timeout", `{"command":"x","timeout":-1}`, "timeout"},
+		{"auth http", `{"url":"http://example.com","auth":{"provider":"p"}}`, "auth requires an https URL"},
+		{"callback", `{"url":"https://x","oauth":{"callbackUrl":"https://example.com/cb"}}`, "oauth.callbackUrl"},
+		{"metadata", `{"url":"https://x","oauth":{"authServerMetadataUrl":"http://example.com"}}`, "oauth.authServerMetadataUrl"},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			settings := decodeSettings(t, `{"mcpServers":{"server":`+test.config+`}}`)
-			servers, warnings, err := ParseSettingsWithWarnings(settings)
-			if err != nil || len(servers) != 0 {
-				t.Fatalf("servers = %#v, error = %v", servers, err)
-			}
-			if len(warnings) != 1 || !strings.Contains(warnings[0], "mcpServers.server: ") || !strings.Contains(warnings[0], test.message) {
-				t.Fatalf("warnings = %q, want substring %q", warnings, test.message)
+			agentDir := t.TempDir()
+			writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{"server":`+test.config+`}}`)
+			_, problems := Load(agentDir, t.TempDir(), false)
+			if len(problems) != 1 || !strings.Contains(problems[0], test.message) {
+				t.Fatalf("problems = %q, want %q", problems, test.message)
 			}
 		})
 	}
-}
-
-func TestParseSettingsRejectsNonObjectServerMap(t *testing.T) {
-	_, err := ParseSettings(decodeSettings(t, `{"mcpServers":[]}`))
-	if err == nil || !strings.Contains(err.Error(), "cannot unmarshal array") {
-		t.Fatalf("error = %v", err)
+	config := ServerConfig{URL: "http://localhost:3000", Auth: &ProviderAuth{Provider: "p"}, Exposure: "codemode-deferred"}
+	if err := Validate("local", &config); err != nil || config.Exposure != ExposureCodemode {
+		t.Fatalf("loopback auth: %v, exposure %q", err, config.Exposure)
 	}
 }
 
-func TestParseSettingsWithoutMCPDoesNoWork(t *testing.T) {
-	for _, settings := range []map[string]any{nil, {}, {"mcpServers": nil}} {
-		servers, err := ParseSettings(settings)
-		if err != nil || len(servers) != 0 {
-			t.Fatalf("servers = %#v, error = %v", servers, err)
+func TestToolExposurePrefersExactNamesThenFirstPattern(t *testing.T) {
+	agentDir := t.TempDir()
+	writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{"s":{"command":"x","exposure":"direct","toolExposure":{"get_*":"hidden","*":"deferred","get_item":"direct"}}}}`)
+	entries, _ := Load(agentDir, t.TempDir(), false)
+	config := entries[0].Config
+	for tool, want := range map[string]Exposure{"get_item": ExposureDirect, "get_list": ExposureHidden, "other": ExposureDeferred} {
+		if got := config.ToolExposureOf(tool); got != want {
+			t.Fatalf("%s: %s, want %s", tool, got, want)
 		}
 	}
 }
 
-func decodeSettings(t *testing.T, value string) map[string]any {
-	t.Helper()
-	var settings map[string]any
-	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+func TestAddAndRemoveServerKeepOtherContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp.json")
+	writeConfig(t, path, "{\n    \"other\": true,\n    \"mcpServers\": {\"a\": {\"command\": \"a\", \"custom\": 1}}\n}\n")
+	if replaced, err := AddServer(path, "b", ServerConfig{URL: "https://example.com"}); err != nil || replaced {
+		t.Fatalf("add: %v, replaced %v", err, replaced)
+	}
+	if replaced, err := AddServer(path, "b", ServerConfig{URL: "https://example.org"}); err != nil || !replaced {
+		t.Fatalf("replace: %v, replaced %v", err, replaced)
+	}
+	if err := SetServerFields(path, "a", map[string]any{"enabled": false}); err != nil {
 		t.Fatal(err)
 	}
-	return settings
+	if removed, err := RemoveServer(path, "missing"); err != nil || removed {
+		t.Fatalf("remove missing: %v, %v", err, removed)
+	}
+	data, _ := os.ReadFile(path)
+	want := "{\n    \"other\": true,\n    \"mcpServers\": {\n        \"a\": {\n            \"command\": \"a\",\n            \"custom\": 1,\n            \"enabled\": false\n        },\n        \"b\": {\n            \"url\": \"https://example.org\"\n        }\n    }\n}\n"
+	if string(data) != want {
+		t.Fatalf("file =\n%s", data)
+	}
+	if removed, err := RemoveServer(path, "b"); err != nil || !removed {
+		t.Fatalf("remove: %v, %v", err, removed)
+	}
 }

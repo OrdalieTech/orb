@@ -142,9 +142,6 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 	if len(state.Tools) != 1 || state.Tools[0].Spec().Name != "read" {
 		t.Fatalf("tools = %#v", state.Tools)
 	}
-	if len(runtime.BaseTools) != 1 || runtime.BaseTools[0].Spec().Name != "read" {
-		t.Fatalf("unused extension base tools = %#v", runtime.BaseTools)
-	}
 	prompt := agent.BuildSystemPrompt(runtime.PromptOptions)
 	if !strings.Contains(prompt, "project rules") || !strings.Contains(prompt, "- read: Read file contents") || !strings.Contains(prompt, "<name>inspect</name>") {
 		t.Fatalf("system prompt omitted resources/tools: %q", prompt)

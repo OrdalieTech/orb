@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,17 +10,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	configpkg "github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
@@ -32,7 +37,8 @@ type ServerState string
 const (
 	ServerConnecting ServerState = "connecting"
 	ServerConnected  ServerState = "connected"
-	ServerError      ServerState = "error"
+	ServerFailed     ServerState = "failed"
+	ServerDisabled   ServerState = "disabled"
 	ServerStopped    ServerState = "stopped"
 )
 
@@ -40,10 +46,23 @@ type ServerStatus struct {
 	Name      string
 	Transport string
 	Target    string // the command line or URL the server was configured with
+	Exposure  Exposure
+	Scope     string
 	State     ServerState
 	Tools     []string
 	Error     string
 }
+
+const (
+	defaultTimeout = 60 * time.Second
+	// startupWait bounds how long the first prompt waits for servers with direct tools.
+	startupWait = 10 * time.Second
+	// MCPServersSection is the system prompt section listing servers whose tools are not declared.
+	MCPServersSection    = "mcp_servers"
+	maxServerDescription = 250
+	maxServersSection    = 4096
+	maxToolName          = 64
+)
 
 type connectFunc func(
 	context.Context,
@@ -60,17 +79,24 @@ type progressTracker struct {
 type serverConnection struct {
 	connectMu sync.Mutex // serializes connect attempts for this server only
 
-	config      ServerConfig
-	session     *mcpsdk.ClientSession
-	state       ServerState
-	err         string
-	tools       map[string]string
-	definitions []extensions.ToolDefinition
+	entry        Entry
+	session      *mcpsdk.ClientSession
+	state        ServerState
+	err          string
+	instructions string
+	// tools maps the tools the server offers to their registered names.
+	tools map[string]string
+	// definitions are the last definitions registered per name, kept to hide
+	// tools the server stops offering.
+	definitions map[string]extensions.ToolDefinition
+	// ready is closed when the running connection attempt settles.
+	ready chan struct{}
 }
 
 type progressRegistration struct {
 	token     string
 	update    engine.AgentToolUpdateCallback
+	touch     func()
 	pending   int
 	unhandled int
 	drained   chan struct{}
@@ -82,109 +108,236 @@ type Manager struct {
 	cwd     string
 	order   []string
 	servers map[string]*serverConnection
+	load    func(cwd string, projectTrusted bool) ([]Entry, []string)
 	connect connectFunc
+	// startupWait bounds the first prompt's wait for servers with direct tools.
+	startupWait time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	mu                sync.Mutex
-	activeMu          sync.Mutex // serializes read-modify-write of the active tool list
-	warnOutput        io.Writer
 	api               extensions.API
 	closed            bool
+	problems          []string
+	waitedForStartup  bool
 	nextProgressToken uint64
 	progress          map[string]*progressRegistration
+	// toolOwners maps registered names to "<server>\x00<tool>", so names stay
+	// unique and stable across reconnects.
+	toolOwners map[string]string
 }
 
-func NewManager(cwd string, configs []ServerConfig) *Manager {
-	ctx, cancel := context.WithCancel(context.Background())
-	manager := &Manager{
-		cwd: cwd, servers: make(map[string]*serverConnection, len(configs)), connect: defaultConnect,
-		ctx: ctx, cancel: cancel, progress: make(map[string]*progressRegistration), warnOutput: os.Stderr,
-	}
-	for _, config := range configs {
-		copy := cloneServerConfig(config)
-		if copy.TimeoutMS == 0 {
-			copy.TimeoutMS = defaultConnectTimeoutMS
-		}
-		copy.CWD = resolveCommandCWD(cwd, copy.CWD)
-		manager.order = append(manager.order, copy.Name)
-		manager.servers[copy.Name] = &serverConnection{config: copy, state: ServerStopped, tools: make(map[string]string)}
-	}
-	sort.Strings(manager.order)
-	return manager
-}
-
-func cloneServerConfig(config ServerConfig) ServerConfig {
-	config.Args = append([]string(nil), config.Args...)
-	config.Env = cloneStrings(config.Env)
-	config.Headers = cloneStrings(config.Headers)
-	if config.MaxRetries != nil {
-		value := *config.MaxRetries
-		config.MaxRetries = &value
-	}
-	return config
-}
-
-// Extension returns the compiled extension factory for this manager. A
-// manager with no configured servers registers nothing and performs no MCP
-// connection work.
-func (manager *Manager) Extension() extensions.Factory {
+// Extension is the MCP integration. When a session starts it reads mcp.json
+// (the agent directory's, and the project's once trusted) and connects the
+// servers in the background.
+func Extension(agentDir string) extensions.Factory {
 	return func(api extensions.API) error {
-		if len(manager.order) == 0 {
-			return nil
-		}
-		manager.mu.Lock()
-		manager.api = api
-		manager.mu.Unlock()
-		api.RegisterCommand("mcp", extensions.Command{
-			Description:            "Show MCP server status or reconnect a server",
-			GetArgumentCompletions: manager.completeCommand,
-			Handler:                manager.handleCommand,
-		})
-		api.On(extensions.EventSessionShutdown, func(context.Context, extensions.Event, extensions.Context) (any, error) {
-			return nil, manager.Close()
-		})
-		if err := manager.Start(context.Background()); err != nil {
-			for _, line := range strings.Split(err.Error(), "\n") {
-				_, _ = fmt.Fprintf(manager.warnOutput, "Warning: mcp: %s\n", line)
-			}
-		}
+		manager := newManager(func(cwd string, trusted bool) ([]Entry, []string) { return Load(agentDir, cwd, trusted) })
+		manager.register(api)
 		return nil
 	}
 }
 
-// Start connects every configured server concurrently, each bounded by its own
-// timeoutMs, and registers the tools available from the successful sessions.
-// Per-server failures remain visible in Status and do not prevent other
-// servers or the coding agent from starting. Calling Start again re-registers
-// the tools of already-connected servers against the currently bound API, so a
-// factory re-run against a fresh registry keeps every MCP tool exposed.
-func (manager *Manager) Start(ctx context.Context) error {
+func newManager(load func(string, bool) ([]Entry, []string)) *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Manager{
+		servers: map[string]*serverConnection{}, load: load, connect: defaultConnect, startupWait: startupWait,
+		ctx: ctx, cancel: cancel, progress: map[string]*progressRegistration{}, toolOwners: map[string]string{},
+	}
+}
+
+// configure replaces the configured servers; it runs before any connects.
+func (manager *Manager) configure(cwd string, entries []Entry) {
 	manager.mu.Lock()
-	if manager.closed {
-		manager.mu.Unlock()
-		return errors.New("mcp: manager is closed")
+	defer manager.mu.Unlock()
+	manager.cwd = cwd
+	manager.order = nil
+	manager.servers = make(map[string]*serverConnection, len(entries))
+	for _, entry := range entries {
+		entry.Config = cloneServerConfig(entry.Config)
+		entry.Config.Command = expandHome(entry.Config.Command)
+		for index, arg := range entry.Config.Args {
+			entry.Config.Args[index] = expandHome(arg)
+		}
+		if entry.Config.Command != "" {
+			entry.Config.CWD = resolveCommandCWD(cwd, expandHome(entry.Config.CWD))
+		}
+		state := ServerStopped
+		if !entry.Config.IsEnabled() {
+			state = ServerDisabled
+		}
+		manager.order = append(manager.order, entry.Name)
+		manager.servers[entry.Name] = &serverConnection{entry: entry, state: state, tools: map[string]string{}, definitions: map[string]extensions.ToolDefinition{}}
 	}
-	if manager.api == nil && len(manager.order) > 0 {
+	sort.Strings(manager.order)
+}
+
+func cloneServerConfig(config ServerConfig) ServerConfig {
+	config.Args = slices.Clone(config.Args)
+	config.Env = maps.Clone(config.Env)
+	config.Headers = maps.Clone(config.Headers)
+	config.ToolExposure = slices.Clone(config.ToolExposure)
+	return config
+}
+
+func (manager *Manager) register(api extensions.API) {
+	manager.api = api
+	api.RegisterCommand("mcp", extensions.Command{
+		Description:            "Show MCP servers, or reconnect one",
+		GetArgumentCompletions: manager.completeCommand,
+		Handler:                manager.handleCommand,
+	})
+	api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+		entries, problems := manager.load(ctx.CWD(), ctx.IsProjectTrusted())
+		manager.configure(ctx.CWD(), entries)
+		manager.mu.Lock()
+		manager.problems = problems
 		manager.mu.Unlock()
-		return errors.New("mcp: extension is not registered")
-	}
-	names := append([]string(nil), manager.order...)
-	manager.mu.Unlock()
-	failures := make([]error, len(names))
-	var group sync.WaitGroup
-	for index, name := range names {
-		group.Add(1)
+		manager.ensureDiscoveryActive(ctx)
+		// Connecting runs in the background: the first prompt waits only for
+		// servers with direct tools, tool_search for the others.
+		manager.startAll()
 		go func() {
-			defer group.Done()
-			if err := manager.connectServer(ctx, name, false); err != nil {
-				failures[index] = fmt.Errorf("%s: %w", name, err)
-			}
+			manager.waitForServers(manager.ctx, manager.enabledNames(nil))
+			manager.reportProblems(ctx)
 		}()
+		return nil, nil
+	})
+	api.On(extensions.EventBeforeAgentStart, func(callCtx context.Context, event extensions.Event, ctx extensions.Context) (any, error) {
+		manager.waitForDirectServers(callCtx, ctx)
+		start, ok := event.(extensions.BeforeAgentStartEvent)
+		if !ok || start.SystemPromptOptions.Sections == nil {
+			return nil, nil
+		}
+		if section := manager.serversSection(); section != "" {
+			start.SystemPromptOptions.Sections[MCPServersSection] = section
+		} else {
+			delete(start.SystemPromptOptions.Sections, MCPServersSection)
+		}
+		return nil, nil
+	})
+	// tool_search reaches every server, so it waits for the ones still connecting.
+	api.On(extensions.EventToolCall, func(callCtx context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+		if call, ok := event.(extensions.ToolCallEvent); ok && call.ToolName == ToolSearchName {
+			manager.waitForServers(callCtx, manager.enabledNames(nil))
+		}
+		return nil, nil
+	})
+	api.On(extensions.EventSessionShutdown, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+		return nil, manager.Close()
+	})
+}
+
+// startAll starts connecting every enabled server that is not connected.
+func (manager *Manager) startAll() {
+	for _, name := range manager.enabledNames(nil) {
+		manager.mu.Lock()
+		connection := manager.servers[name]
+		start := connection.session == nil && connection.ready == nil
+		if start {
+			connection.ready = make(chan struct{})
+			connection.state = ServerConnecting
+		}
+		manager.mu.Unlock()
+		if start {
+			go func() { _ = manager.connectServer(manager.ctx, name, false) }()
+		}
 	}
-	group.Wait()
-	return errors.Join(failures...)
+}
+
+// enabledNames are the enabled servers, all or those matching keep.
+func (manager *Manager) enabledNames(keep func(Entry) bool) []string {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	var names []string
+	for _, name := range manager.order {
+		entry := manager.servers[name].entry
+		if entry.Config.IsEnabled() && (keep == nil || keep(entry)) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// waitForServers waits until the named servers' connection attempts settle.
+func (manager *Manager) waitForServers(ctx context.Context, names []string) {
+	for _, name := range names {
+		manager.mu.Lock()
+		ready := manager.servers[name].ready
+		manager.mu.Unlock()
+		if ready == nil {
+			continue
+		}
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return
+		case <-manager.ctx.Done():
+			return
+		}
+	}
+}
+
+// waitForDirectServers holds the first prompt until servers with direct tools
+// connect, so their tools are in its first request, but not for longer than
+// startupWait.
+func (manager *Manager) waitForDirectServers(callCtx context.Context, ctx extensions.Context) {
+	manager.mu.Lock()
+	waited := manager.waitedForStartup
+	manager.waitedForStartup = true
+	manager.mu.Unlock()
+	names := manager.enabledNames(func(entry Entry) bool { return slices.Contains(entry.Config.exposuresOf(), ExposureDirect) })
+	if waited || len(names) == 0 {
+		return
+	}
+	waitCtx, cancel := context.WithTimeout(callCtx, manager.startupWait)
+	defer cancel()
+	manager.waitForServers(waitCtx, names)
+	if waitCtx.Err() != nil && callCtx.Err() == nil {
+		ctx.UI().Notify("MCP servers are still connecting; their tools become available once connected.", extensions.NotifyInfo)
+	}
+}
+
+// reportProblems tells the user once about config errors and failed servers.
+func (manager *Manager) reportProblems(ctx extensions.Context) {
+	manager.mu.Lock()
+	lines := make([]string, 0, len(manager.problems))
+	for _, problem := range manager.problems {
+		lines = append(lines, "config: "+problem)
+	}
+	closed := manager.closed
+	manager.mu.Unlock()
+	for _, server := range manager.Status() {
+		if server.State == ServerFailed {
+			lines = append(lines, server.Name+": failed: "+firstLine(server.Error))
+		}
+	}
+	if closed || len(lines) == 0 {
+		return
+	}
+	ctx.UI().Notify("MCP servers need attention:\n  "+strings.Join(lines, "\n  ")+"\nRun /mcp to see them.", extensions.NotifyWarning)
+}
+
+// ensureDiscoveryActive activates tool_search when servers have tools only it
+// reaches; it is decided from the config, before the servers connect.
+func (manager *Manager) ensureDiscoveryActive(ctx extensions.Context) {
+	indirect := manager.enabledNames(func(entry Entry) bool {
+		exposures := entry.Config.exposuresOf()
+		return slices.Contains(exposures, ExposureCodemode) || slices.Contains(exposures, ExposureDeferred)
+	})
+	if len(indirect) == 0 {
+		return
+	}
+	tools, err := manager.api.GetAllTools()
+	if err != nil || !slices.ContainsFunc(tools, func(tool extensions.ToolInfo) bool { return tool.Name == ToolSearchName }) {
+		ctx.UI().Notify("MCP tools are only reachable through tool_search, which is not loaded; they cannot be called.", extensions.NotifyWarning)
+		return
+	}
+	active, err := manager.api.GetActiveTools()
+	if err == nil && !slices.Contains(active, ToolSearchName) {
+		_ = manager.api.SetActiveTools(append(active, ToolSearchName))
+	}
 }
 
 func (manager *Manager) connectServer(ctx context.Context, name string, replace bool) error {
@@ -202,38 +355,33 @@ func (manager *Manager) connectServer(ctx context.Context, name string, replace 
 		manager.mu.Unlock()
 		return errors.New("manager is closed")
 	}
-	if !replace && connection.session != nil && connection.state == ServerConnected {
-		// A factory re-run rebinds manager.api to a fresh registry, so the
-		// already-discovered tools must be registered again or they would only
-		// exist in the discarded previous registry.
-		definitions := append([]extensions.ToolDefinition(nil), connection.definitions...)
-		api := manager.api
+	if connection.ready == nil {
+		connection.ready = make(chan struct{})
+	}
+	ready := connection.ready
+	defer func() {
+		manager.mu.Lock()
+		connection.ready = nil
 		manager.mu.Unlock()
-		for _, definition := range definitions {
-			api.RegisterTool(definition)
-		}
+		close(ready)
+	}()
+	if !replace && connection.session != nil && connection.state == ServerConnected {
+		manager.mu.Unlock()
 		return nil
 	}
 	previous := connection.session
-	previousTools := cloneStrings(connection.tools)
 	connection.session = nil
 	connection.state = ServerConnecting
 	connection.err = ""
-	config := cloneServerConfig(connection.config)
-	api := manager.api
+	entry := connection.entry
 	manager.mu.Unlock()
-	if replace && previous != nil {
+	if previous != nil {
 		_ = previous.Close()
 	}
 
-	connectCtx, cancelConnect := context.WithCancel(ctx)
+	connectCtx, cancelConnect := context.WithTimeout(ctx, entry.Config.timeout())
 	stopClose := context.AfterFunc(manager.ctx, cancelConnect)
-	cancelTimeout := func() {}
-	if config.TimeoutMS > 0 {
-		connectCtx, cancelTimeout = context.WithTimeout(connectCtx, time.Duration(config.TimeoutMS)*time.Millisecond)
-	}
 	defer func() {
-		cancelTimeout()
 		cancelConnect()
 		stopClose()
 	}()
@@ -245,53 +393,39 @@ func (manager *Manager) connectServer(ctx context.Context, name string, replace 
 			manager.handleProgress(request.Params)
 		},
 	}
-	session, err := manager.connect(connectCtx, manager.ctx, config, options, progressTracker{manager: manager})
+	session, err := manager.connect(connectCtx, manager.ctx, entry.Config, options, progressTracker{manager: manager})
 	if err != nil {
-		manager.setServerUnavailable(name, err)
-		if replace {
-			manager.replaceActiveTools(previousTools, nil)
-		}
+		manager.setServerFailed(name, nil, err)
 		return err
 	}
 	tools, err := listTools(connectCtx, session)
 	if err != nil {
 		_ = session.Close()
-		manager.setServerUnavailable(name, err)
-		if replace {
-			manager.replaceActiveTools(previousTools, nil)
-		}
+		manager.setServerFailed(name, nil, err)
 		return err
 	}
-	definitions, names, err := manager.toolDefinitions(name, tools)
-	if err != nil {
-		_ = session.Close()
-		manager.setServerUnavailable(name, err)
-		if replace {
-			manager.replaceActiveTools(previousTools, nil)
-		}
-		return err
-	}
-
 	manager.mu.Lock()
 	if manager.closed {
 		manager.mu.Unlock()
 		_ = session.Close()
 		return errors.New("manager is closed")
 	}
-	connection = manager.servers[name]
 	connection.session = session
 	connection.state = ServerConnected
 	connection.err = ""
-	connection.tools = names
-	connection.definitions = definitions
+	if result := session.InitializeResult(); result != nil {
+		connection.instructions = strings.TrimSpace(result.Instructions)
+	}
 	manager.mu.Unlock()
-	for _, definition := range definitions {
-		api.RegisterTool(definition)
-	}
-	if replace {
-		manager.replaceActiveTools(previousTools, names)
-	}
+	manager.registerTools(name, tools)
 	return nil
+}
+
+func (config ServerConfig) timeout() time.Duration {
+	if config.Timeout > 0 {
+		return time.Duration(config.Timeout * float64(time.Second))
+	}
+	return defaultTimeout
 }
 
 func defaultConnect(
@@ -301,34 +435,29 @@ func defaultConnect(
 	tracker progressTracker,
 ) (*mcpsdk.ClientSession, error) {
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb", Version: "0.1.0"}, options)
-	var transport mcpsdk.Transport
-	if config.Command != "" {
-		command := exec.CommandContext(lifecycleCtx, config.Command, config.Args...)
-		if config.CWD != "" {
-			command.Dir = config.CWD
+	if config.IsHTTP() {
+		headers, err := configpkg.ResolveHeadersOrThrow(config.Headers, "MCP server header", nil)
+		if err != nil {
+			return nil, err
 		}
-		command.Env = mergedEnvironment(config.Env)
-		transport = &mcpsdk.CommandTransport{Command: command}
-	} else {
-		base := headerRoundTripper{base: http.DefaultTransport, headers: config.Headers}
+		base := headerRoundTripper{base: http.DefaultTransport, headers: headers}
 		httpClient := &http.Client{Transport: progressRoundTripper{base: base, manager: tracker.manager}}
-		transport = &mcpsdk.StreamableClientTransport{Endpoint: config.URL, HTTPClient: httpClient, MaxRetries: sdkMaxRetries(config.MaxRetries)}
-		return client.Connect(connectCtx, transport, nil)
+		return client.Connect(connectCtx, &mcpsdk.StreamableClientTransport{Endpoint: config.URL, HTTPClient: httpClient}, nil)
 	}
-	return client.Connect(connectCtx, tracker.wrapTransport(transport), nil)
-}
-
-// sdkMaxRetries translates the configured maxRetries into the go-sdk field,
-// where 0 means "use the default of 5" and only a negative value disables
-// retries. A user's explicit 0 therefore maps to the disabled sentinel.
-func sdkMaxRetries(configured *int) int {
-	if configured == nil {
-		return 0 // SDK default
+	env := make(map[string]string, len(config.Env))
+	for key, value := range config.Env {
+		resolved, err := configpkg.ResolveConfigValueOrThrow(value, fmt.Sprintf("MCP server env %q", key), nil)
+		if err != nil {
+			return nil, err
+		}
+		env[key] = resolved
 	}
-	if *configured <= 0 {
-		return -1 // fail fast: no reconnect retries
+	command := exec.CommandContext(lifecycleCtx, config.Command, config.Args...)
+	if config.CWD != "" {
+		command.Dir = config.CWD
 	}
-	return *configured
+	command.Env = mergedEnvironment(env)
+	return client.Connect(connectCtx, tracker.wrapTransport(&mcpsdk.CommandTransport{Command: command}), nil)
 }
 
 type progressTransport struct {
@@ -485,16 +614,9 @@ func mergedEnvironment(overrides map[string]string) []string {
 			values[entry[:index]] = entry[index+1:]
 		}
 	}
-	for name, value := range overrides {
-		values[name] = value
-	}
-	names := make([]string, 0, len(values))
-	for name := range values {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	result := make([]string, 0, len(names))
-	for _, name := range names {
+	maps.Copy(values, overrides)
+	result := make([]string, 0, len(values))
+	for _, name := range slices.Sorted(maps.Keys(values)) {
 		result = append(result, name+"="+values[name])
 	}
 	return result
@@ -516,62 +638,138 @@ func listTools(ctx context.Context, session *mcpsdk.ClientSession) ([]*mcpsdk.To
 	}
 }
 
-func (manager *Manager) toolDefinitions(server string, tools []*mcpsdk.Tool) ([]extensions.ToolDefinition, map[string]string, error) {
-	definitions := make([]extensions.ToolDefinition, 0, len(tools))
-	names := make(map[string]string, len(tools))
+var nonIdentifier = regexp.MustCompile(`[^A-Za-z0-9_]`)
+
+// toolName is mcp__<server>__<tool> with everything but [A-Za-z0-9_] as _,
+// shortened with a hash suffix past 64 characters or when taken reports the
+// name used by another tool.
+func toolName(server, tool string, taken func(string) bool) string {
+	name := nonIdentifier.ReplaceAllString("mcp__"+server+"__"+tool, "_")
+	if len(name) <= maxToolName && !taken(name) {
+		return name
+	}
+	digest := sha256.Sum256([]byte(server + "\x00" + tool))
+	hash := hex.EncodeToString(digest[:4])
+	return name[:min(len(name), maxToolName-len(hash)-1)] + "_" + hash
+}
+
+// registerTools registers the tools a server offers and hides those it no
+// longer offers, since tools cannot be unregistered.
+func (manager *Manager) registerTools(server string, tools []*mcpsdk.Tool) {
+	manager.mu.Lock()
+	connection := manager.servers[server]
+	entry := connection.entry
+	namespace := &extensions.ToolNamespace{Name: Namespace(server), Description: strings.TrimSpace(entry.Config.Description), Instructions: connection.instructions}
+	// Every tool whose name sanitizes to a shared name gets the hash suffix, so
+	// which keeps the plain name does not depend on the list's order.
+	plain := map[string]int{}
 	for _, tool := range tools {
-		if tool == nil || tool.Name == "" {
+		if tool != nil && tool.Name != "" {
+			plain[toolName(server, tool.Name, func(string) bool { return false })]++
+		}
+	}
+	current := map[string]string{}
+	var definitions []extensions.ToolDefinition
+	for _, tool := range tools {
+		if tool == nil || tool.Name == "" || current[tool.Name] != "" {
 			continue
 		}
-		schema, err := json.Marshal(tool.InputSchema)
-		if err != nil {
-			return nil, nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err)
-		}
-		if string(schema) == "null" {
-			schema = []byte("{}")
-		}
-		registered := registeredToolName(server, tool.Name)
-		original := tool.Name
-		label := tool.Title
-		if label == "" && tool.Annotations != nil {
-			label = tool.Annotations.Title
-		}
-		if label == "" {
-			label = original
-		}
-		definitions = append(definitions, extensions.ToolDefinition{
-			Name: registered, Label: label, Description: tool.Description, Parameters: jsonschema.Schema(schema),
-			ExecutionMode: engine.ToolExecutionParallel,
-			Execute: func(ctx context.Context, toolCallID string, args any, update engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
-				return manager.execute(ctx, server, original, toolCallID, args, update)
-			},
+		owner := server + "\x00" + tool.Name
+		name := toolName(server, tool.Name, func(candidate string) bool {
+			existing, owned := manager.toolOwners[candidate]
+			return owned && existing != owner || plain[candidate] > 1 || slices.Contains(slices.Collect(maps.Values(current)), candidate)
 		})
-		names[original] = registered
+		manager.toolOwners[name] = owner
+		current[tool.Name] = name
+		definition := manager.toolDefinition(server, name, entry.Config.ToolExposureOf(tool.Name), namespace, tool)
+		connection.definitions[name] = definition
+		definitions = append(definitions, definition)
 	}
-	return definitions, names, nil
-}
-
-func registeredToolName(server, tool string) string {
-	digest := sha256.Sum256([]byte(server + "\x00" + tool))
-	return "mcp__" + toolPart(server, 16) + "__" + toolPart(tool, 25) + "_" + hex.EncodeToString(digest[:4])
-}
-
-func toolPart(value string, limit int) string {
-	var result strings.Builder
-	for _, r := range value {
-		if result.Len() >= limit {
-			break
-		}
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
-			result.WriteRune(r)
-		} else {
-			result.WriteByte('_')
+	for _, name := range connection.tools {
+		if !slices.Contains(slices.Collect(maps.Values(current)), name) {
+			hidden := connection.definitions[name]
+			hidden.Exposure = extensions.ToolHidden
+			definitions = append(definitions, hidden)
 		}
 	}
-	if result.Len() == 0 {
-		return "server"
+	connection.tools = current
+	api := manager.api
+	manager.mu.Unlock()
+	for _, definition := range definitions {
+		if api != nil {
+			api.RegisterTool(definition)
+		}
 	}
-	return result.String()
+}
+
+func (manager *Manager) toolDefinition(server, name string, exposure Exposure, namespace *extensions.ToolNamespace, tool *mcpsdk.Tool) extensions.ToolDefinition {
+	parameters := map[string]any{}
+	if data, err := json.Marshal(tool.InputSchema); err == nil {
+		_ = json.Unmarshal(data, &parameters)
+	}
+	// Tool schemas must be objects; servers may omit type, and some providers
+	// reject object schemas without properties.
+	if parameters == nil {
+		parameters = map[string]any{}
+	}
+	if _, ok := parameters["type"]; !ok {
+		parameters["type"] = "object"
+	}
+	if _, ok := parameters["properties"]; !ok {
+		parameters["properties"] = map[string]any{}
+	}
+	parametersJSON, _ := json.Marshal(parameters)
+	output := map[string]any{"content": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}}
+	if tool.OutputSchema != nil {
+		output["structuredContent"] = tool.OutputSchema
+	}
+	output["isError"] = map[string]any{"type": "boolean"}
+	output["_meta"] = map[string]any{"type": "object"}
+	outputJSON, _ := json.Marshal(map[string]any{"type": "object", "properties": output, "required": []string{"content"}})
+	title := tool.Title
+	if title == "" && tool.Annotations != nil {
+		title = tool.Annotations.Title
+	}
+	description := cmp.Or(strings.TrimSpace(tool.Description), title, fmt.Sprintf("MCP tool %s from server %s", tool.Name, server))
+	original := tool.Name
+	return extensions.ToolDefinition{
+		Name: name, Label: server + "/" + tool.Name, Description: description,
+		Parameters: jsonschema.Schema(parametersJSON), OutputSchema: jsonschema.Schema(outputJSON),
+		Exposure: toolExposure(exposure), Namespace: namespace, Annotations: toolAnnotations(tool.Annotations),
+		ExecutionMode: engine.ToolExecutionParallel,
+		Execute: func(ctx context.Context, toolCallID string, args any, update engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+			return manager.execute(ctx, server, original, toolCallID, args, update)
+		},
+	}
+}
+
+// toolExposure maps a server exposure to a tool exposure; Orb has no
+// codemode, so codemode tools are deferred.
+func toolExposure(exposure Exposure) extensions.ToolExposure {
+	switch exposure {
+	case ExposureDirect:
+		return extensions.ToolDirect
+	case ExposureHidden:
+		return extensions.ToolHidden
+	}
+	return extensions.ToolDeferred
+}
+
+func toolAnnotations(annotations *mcpsdk.ToolAnnotations) *extensions.ToolAnnotations {
+	if annotations == nil {
+		return nil
+	}
+	hint := func(value bool) *bool {
+		if !value {
+			return nil
+		}
+		return &value
+	}
+	result := &extensions.ToolAnnotations{ReadOnlyHint: hint(annotations.ReadOnlyHint), DestructiveHint: annotations.DestructiveHint, IdempotentHint: hint(annotations.IdempotentHint), OpenWorldHint: annotations.OpenWorldHint}
+	if *result == (extensions.ToolAnnotations{}) {
+		return nil
+	}
+	return result
 }
 
 func (manager *Manager) execute(
@@ -580,6 +778,7 @@ func (manager *Manager) execute(
 	args any,
 	update engine.AgentToolUpdateCallback,
 ) (engine.AgentToolResult, error) {
+	manager.waitForServers(ctx, []string{server})
 	manager.mu.Lock()
 	connection := manager.servers[server]
 	if connection == nil {
@@ -587,13 +786,13 @@ func (manager *Manager) execute(
 		return engine.AgentToolResult{}, fmt.Errorf("mcp: unknown server %q", server)
 	}
 	session := connection.session
+	timeout := connection.entry.Config.timeout()
 	manager.mu.Unlock()
 	if session == nil {
 		if err := manager.connectServer(ctx, server, true); err != nil {
 			return engine.AgentToolResult{}, err
 		}
 		manager.mu.Lock()
-		connection = manager.servers[server]
 		session = connection.session
 		manager.mu.Unlock()
 	}
@@ -603,49 +802,39 @@ func (manager *Manager) execute(
 	if !available {
 		return engine.AgentToolResult{}, fmt.Errorf("mcp: tool %q is no longer available from server %q", tool, server)
 	}
+	// The request times out after the server's timeout without progress.
+	callCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	timer := time.AfterFunc(timeout, cancel)
+	defer timer.Stop()
 	manager.mu.Lock()
 	manager.nextProgressToken++
 	token := fmt.Sprintf("%s:%s:%d", server, toolCallID, manager.nextProgressToken)
-	var registration *progressRegistration
-	if update != nil {
-		registration = &progressRegistration{token: token, update: update}
-		manager.progress[token] = registration
-	}
+	registration := &progressRegistration{token: token, update: update, touch: func() { timer.Reset(timeout) }}
+	manager.progress[token] = registration
 	manager.mu.Unlock()
-	if registration != nil {
-		defer manager.dropProgress(registration)
-	}
+	defer manager.dropProgress(registration)
 	params := &mcpsdk.CallToolParams{Name: tool, Arguments: args}
 	params.SetProgressToken(token)
-	result, err := session.CallTool(ctx, params)
-	if registration != nil && err == nil {
-		if waitErr := manager.waitForProgress(ctx, registration); waitErr != nil {
-			err = waitErr
-		}
+	result, err := session.CallTool(callCtx, params)
+	if err == nil {
+		err = manager.waitForProgress(callCtx, registration)
 	}
 	if err != nil {
+		if callCtx.Err() != nil && ctx.Err() == nil {
+			err = fmt.Errorf("mcp: %s/%s timed out after %s without progress", server, tool, timeout)
+		}
 		if isConnectionDead(err) {
-			manager.mu.Lock()
-			previousTools := cloneStrings(connection.tools)
-			manager.mu.Unlock()
-			manager.setServerUnavailable(server, err)
-			manager.replaceActiveTools(previousTools, nil)
-		} else {
-			manager.setServerError(server, err)
+			// The next call reconnects.
+			manager.setServerFailed(server, session, err)
 		}
 		return engine.AgentToolResult{}, err
 	}
-	mapped := mapToolResult(server, tool, result)
-	if result != nil && result.IsError {
-		return engine.AgentToolResult{}, errors.New(toolResultText(mapped.Content))
-	}
-	return mapped, nil
+	return mapToolResult(server, tool, result), nil
 }
 
 // isConnectionDead reports whether a tool call failed because the transport
-// itself is gone (closed connection, EOF or broken pipe from a dead child), in
-// which case the server's tools are deactivated immediately instead of only
-// after a second failing call.
+// itself is gone (closed connection, EOF or broken pipe from a dead child).
 func isConnectionDead(err error) bool {
 	var exitError *exec.ExitError
 	return errors.Is(err, mcpsdk.ErrConnectionClosed) || errors.Is(err, io.EOF) ||
@@ -666,6 +855,12 @@ func (manager *Manager) handleProgress(params *mcpsdk.ProgressNotificationParams
 	registration.unhandled--
 	manager.mu.Unlock()
 	defer manager.progressHandled(registration)
+	if registration.touch != nil {
+		registration.touch()
+	}
+	if registration.update == nil {
+		return
+	}
 	message := params.Message
 	if message == "" {
 		if params.Total > 0 {
@@ -743,120 +938,66 @@ func (manager *Manager) dropProgress(registration *progressRegistration) {
 
 func (manager *Manager) refreshServerTools(name string) {
 	manager.mu.Lock()
-	if manager.closed {
+	connection := manager.servers[name]
+	if manager.closed || connection == nil || connection.session == nil {
 		manager.mu.Unlock()
 		return
 	}
-	connection := manager.servers[name]
 	session := connection.session
-	previous := cloneStrings(connection.tools)
-	api := manager.api
+	timeout := connection.entry.Config.timeout()
 	manager.mu.Unlock()
-	if session == nil || api == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(manager.ctx, time.Duration(connection.config.TimeoutMS)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(manager.ctx, timeout)
 	defer cancel()
 	tools, err := listTools(ctx, session)
 	if err != nil {
-		manager.setServerError(name, err)
-		return
-	}
-	definitions, names, err := manager.toolDefinitions(name, tools)
-	if err != nil {
-		manager.setServerError(name, err)
-		return
-	}
-	manager.mu.Lock()
-	if manager.closed || manager.servers[name].session != session {
+		manager.mu.Lock()
+		connection.err = err.Error()
 		manager.mu.Unlock()
 		return
 	}
-	manager.servers[name].tools = names
-	manager.servers[name].state = ServerConnected
-	manager.servers[name].err = ""
-	manager.servers[name].definitions = definitions
+	manager.mu.Lock()
+	current := !manager.closed && connection.session == session
 	manager.mu.Unlock()
-	for _, definition := range definitions {
-		api.RegisterTool(definition)
+	if current {
+		manager.registerTools(name, tools)
 	}
-	manager.replaceActiveTools(previous, names)
 }
 
-func (manager *Manager) replaceActiveTools(previous, current map[string]string) {
+// setServerFailed records a failed connection; with session set, only while
+// that session is still the server's.
+func (manager *Manager) setServerFailed(name string, session *mcpsdk.ClientSession, err error) {
 	manager.mu.Lock()
-	api := manager.api
-	manager.mu.Unlock()
-	if api == nil {
-		return
-	}
-	manager.activeMu.Lock()
-	defer manager.activeMu.Unlock()
-	active, err := api.GetActiveTools()
-	if err != nil {
-		return
-	}
-	remove := make(map[string]struct{}, len(previous))
-	for _, name := range previous {
-		remove[name] = struct{}{}
-	}
-	updated := make([]string, 0, len(active)+len(current))
-	seen := make(map[string]struct{}, len(active)+len(current))
-	for _, name := range active {
-		if _, removed := remove[name]; removed {
-			continue
-		}
-		if _, exists := seen[name]; !exists {
-			seen[name] = struct{}{}
-			updated = append(updated, name)
-		}
-	}
-	currentNames := make([]string, 0, len(current))
-	for _, name := range current {
-		currentNames = append(currentNames, name)
-	}
-	sort.Strings(currentNames)
-	for _, name := range currentNames {
-		if _, exists := seen[name]; !exists {
-			seen[name] = struct{}{}
-			updated = append(updated, name)
-		}
-	}
-	_ = api.SetActiveTools(updated)
-}
-
-func (manager *Manager) setServerError(name string, err error) {
-	manager.mu.Lock()
-	if connection := manager.servers[name]; connection != nil && !manager.closed {
-		connection.state = ServerError
-		connection.err = err.Error()
-	}
-	manager.mu.Unlock()
-}
-
-func (manager *Manager) setServerUnavailable(name string, err error) {
-	manager.mu.Lock()
-	if connection := manager.servers[name]; connection != nil && !manager.closed {
+	defer manager.mu.Unlock()
+	if connection := manager.servers[name]; connection != nil && !manager.closed && (session == nil || connection.session == session) {
 		connection.session = nil
-		connection.state = ServerError
+		connection.state = ServerFailed
 		connection.err = err.Error()
-		connection.tools = make(map[string]string)
-		connection.definitions = nil
 	}
-	manager.mu.Unlock()
+}
+
+// Probe connects each enabled server once, outside a session, and reports
+// the servers with the tools they offer.
+func Probe(ctx context.Context, cwd string, entries []Entry) []ServerStatus {
+	manager := newManager(nil)
+	manager.configure(cwd, entries)
+	var group sync.WaitGroup
+	for _, name := range manager.enabledNames(nil) {
+		group.Go(func() { _ = manager.connectServer(ctx, name, false) })
+	}
+	group.Wait()
+	status := manager.Status()
+	_ = manager.Close()
+	return status
 }
 
 // Reconnect closes and recreates one server session. An empty name reconnects
-// all configured servers in deterministic order.
+// all enabled servers in name order.
 func (manager *Manager) Reconnect(ctx context.Context, name string) error {
 	if name != "" {
 		return manager.connectServer(ctx, name, true)
 	}
-	manager.mu.Lock()
-	names := append([]string(nil), manager.order...)
-	manager.mu.Unlock()
 	var failures []error
-	for _, server := range names {
+	for _, server := range manager.enabledNames(nil) {
 		if err := manager.connectServer(ctx, server, true); err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", server, err))
 		}
@@ -882,13 +1023,13 @@ func (manager *Manager) Close() error {
 	}
 	manager.progress = make(map[string]*progressRegistration)
 	manager.mu.Unlock()
+	manager.cancel()
 	var failures []error
 	for _, session := range sessions {
 		if err := session.Close(); err != nil && !isChildExit(err) {
 			failures = append(failures, err)
 		}
 	}
-	manager.cancel()
 	return errors.Join(failures...)
 }
 
@@ -907,30 +1048,103 @@ func (manager *Manager) Status() []ServerStatus {
 	status := make([]ServerStatus, 0, len(manager.order))
 	for _, name := range manager.order {
 		connection := manager.servers[name]
-		tools := make([]string, 0, len(connection.tools))
-		for _, registered := range connection.tools {
-			tools = append(tools, registered)
+		config := connection.entry.Config
+		transport, target := "stdio", strings.TrimSpace(config.Command+" "+strings.Join(config.Args, " "))
+		if config.IsHTTP() {
+			transport, target = "http", config.URL
 		}
-		sort.Strings(tools)
-		transport, target := "stdio", strings.TrimSpace(connection.config.Command+" "+strings.Join(connection.config.Args, " "))
-		if connection.config.URL != "" {
-			transport, target = "http", connection.config.URL
-		}
-		status = append(status, ServerStatus{Name: name, Transport: transport, Target: target, State: connection.state, Tools: tools, Error: connection.err})
+		status = append(status, ServerStatus{
+			Name: name, Transport: transport, Target: target, Exposure: config.ExposureOf(), Scope: connection.entry.Scope,
+			State: connection.state, Tools: slices.Sorted(maps.Keys(connection.tools)), Error: connection.err,
+		})
 	}
 	return status
 }
 
-func (manager *Manager) completeCommand(_ context.Context, prefix string) ([]extensions.AutocompleteItem, error) {
+// serversSection lists the enabled servers whose tools are not declared, so
+// the model knows to load them with tool_search; empty when there are none.
+func (manager *Manager) serversSection() string {
 	manager.mu.Lock()
-	names := append([]string(nil), manager.order...)
+	type listing struct{ head, summary string }
+	var listed []listing
+	for _, name := range manager.order {
+		connection := manager.servers[name]
+		config := connection.entry.Config
+		exposures := config.exposuresOf()
+		if !config.IsEnabled() || !slices.Contains(exposures, ExposureCodemode) && !slices.Contains(exposures, ExposureDeferred) {
+			continue
+		}
+		summary := firstLine(cmp.Or(strings.TrimSpace(config.Description), connection.instructions))
+		listed = append(listed, listing{head: "- " + Namespace(name) + " (tool_search)", summary: strings.TrimSpace(summary)})
+	}
 	manager.mu.Unlock()
+	if len(listed) == 0 {
+		return ""
+	}
+	intro := "MCP servers whose tools are not declared to you. Load the tools of `tool_search` servers with `tool_search`."
+	omitted := func(count int) []string {
+		if count == 0 {
+			return nil
+		}
+		return []string{fmt.Sprintf("- … %d more server%s; find their tools with tool_search", count, plural(count))}
+	}
+	size := func(kept int) int {
+		lines := []string{intro}
+		for _, item := range listed[:kept] {
+			lines = append(lines, item.head)
+		}
+		return len([]rune(strings.Join(append(lines, omitted(len(listed)-kept)...), "\n")))
+	}
+	kept := len(listed)
+	for kept > 0 && size(kept) > maxServersSection {
+		kept--
+	}
+	perServer := 0
+	if kept > 0 {
+		// Each description also takes a ": " separator.
+		perServer = min(maxServerDescription, (maxServersSection-size(kept))/kept-2)
+	}
+	lines := []string{intro}
+	for _, item := range listed[:kept] {
+		if summary := truncate(item.summary, perServer); summary != "" {
+			lines = append(lines, item.head+": "+summary)
+		} else {
+			lines = append(lines, item.head)
+		}
+	}
+	return strings.Join(append(lines, omitted(len(listed)-kept)...), "\n")
+}
+
+func truncate(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	if limit <= 1 {
+		return ""
+	}
+	return strings.TrimRight(string(runes[:limit-1]), " \t\n") + "…"
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	return line
+}
+
+func (manager *Manager) completeCommand(_ context.Context, prefix string) ([]extensions.AutocompleteItem, error) {
 	prefix = strings.TrimSpace(prefix)
-	items := make([]extensions.AutocompleteItem, 0, len(names)+1)
+	var items []extensions.AutocompleteItem
 	if prefix == "" || strings.HasPrefix("reconnect", prefix) {
 		items = append(items, extensions.AutocompleteItem{Value: "reconnect", Label: "reconnect", Description: "Reconnect all MCP servers"})
 	}
-	for _, name := range names {
+	for _, name := range manager.enabledNames(nil) {
 		value := "reconnect " + name
 		if prefix == "" || strings.HasPrefix(value, prefix) {
 			items = append(items, extensions.AutocompleteItem{Value: value, Label: value})
@@ -941,51 +1155,71 @@ func (manager *Manager) completeCommand(_ context.Context, prefix string) ([]ext
 
 func (manager *Manager) handleCommand(ctx context.Context, args string, commandContext extensions.CommandContext) error {
 	fields := strings.Fields(args)
-	if len(fields) > 0 && fields[0] == "reconnect" {
+	if len(fields) > 0 && fields[0] == "reconnect" && len(fields) <= 2 {
 		name := ""
 		if len(fields) > 1 {
 			name = fields[1]
-		}
-		if len(fields) > 2 {
-			commandContext.UI().Notify("Usage: /mcp reconnect [server]", extensions.NotifyError)
-			return nil
 		}
 		if err := manager.Reconnect(ctx, name); err != nil {
 			commandContext.UI().Notify("MCP reconnect failed: "+err.Error(), extensions.NotifyError)
 			return nil
 		}
+		manager.ensureDiscoveryActive(commandContext)
 		commandContext.UI().Notify("MCP servers reconnected", extensions.NotifyInfo)
 		return nil
 	}
 	if len(fields) > 0 {
-		commandContext.UI().Notify("Usage: /mcp [reconnect [server]]", extensions.NotifyError)
+		commandContext.UI().Notify("Usage: /mcp, /mcp reconnect [server]", extensions.NotifyWarning)
 		return nil
 	}
 	if commandContext.Mode() == extensions.ModeTUI && commandContext.HasUI() {
 		return manager.statusWindow(ctx, commandContext)
 	}
-	commandContext.UI().Notify(formatStatus(manager.Status()), extensions.NotifyInfo)
+	commandContext.UI().Notify(manager.formatStatus(), extensions.NotifyInfo)
 	return nil
 }
 
-func formatStatus(status []ServerStatus) string {
-	if len(status) == 0 {
-		return "MCP is not configured"
+func (manager *Manager) formatStatus() string {
+	status := manager.Status()
+	manager.mu.Lock()
+	problems := slices.Clone(manager.problems)
+	manager.mu.Unlock()
+	if len(status) == 0 && len(problems) == 0 {
+		return "No MCP servers configured. Add them with orb mcp add, or to mcp.json."
 	}
-	lines := make([]string, 0, len(status))
+	lines := make([]string, 0, len(status)+len(problems))
 	for _, server := range status {
-		line := fmt.Sprintf("%s: %s (%s, %d tools)", server.Name, server.State, server.Transport, len(server.Tools))
-		if server.Error != "" {
-			line += ": " + server.Error
+		line := fmt.Sprintf("%s: %s", server.Name, server.State)
+		if server.State == ServerConnected {
+			line += fmt.Sprintf(", %d tools", len(server.Tools))
+		}
+		line += " (" + string(server.Exposure) + ")"
+		if server.Error != "" && server.State != ServerConnected {
+			line += "\n    " + strings.ReplaceAll(server.Error, "\n", "\n    ")
 		}
 		lines = append(lines, line)
+	}
+	for _, problem := range problems {
+		lines = append(lines, "config error: "+problem)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func resolveCommandCWD(base, configured string) string {
-	if configured == "" || filepath.IsAbs(configured) {
+	if configured == "" {
+		return base
+	}
+	if filepath.IsAbs(configured) {
 		return configured
 	}
 	return filepath.Join(base, configured)
+}
+
+func expandHome(value string) string {
+	if value == "~" || strings.HasPrefix(value, "~/") {
+		if expanded, err := configpkg.NormalizePath(value); err == nil {
+			return expanded
+		}
+	}
+	return value
 }

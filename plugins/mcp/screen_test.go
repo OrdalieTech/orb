@@ -9,7 +9,7 @@ import (
 )
 
 func TestStatusWindowRendersConfiguredServers(t *testing.T) {
-	manager := NewManager(t.TempDir(), []ServerConfig{{Name: "files", Command: "mcp-files", Args: []string{"--root"}}})
+	manager := NewManager(t.TempDir(), []testServer{{Name: "files", Command: "mcp-files", Args: []string{"--root"}}})
 	list := tui.NewGridList(nil, 8, tui.GridListTheme{})
 	list.DetailHeight = 3
 	panel := &mcpPanel{manager: manager, theme: extensions.NewNoopUI().Theme(), list: list}

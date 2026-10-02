@@ -1679,3 +1679,75 @@ func TestReloadEnablesToolsNewlyAddedToDefaultTools(t *testing.T) {
 		t.Fatalf("reloaded tools = %v", got)
 	}
 }
+
+func TestResumeRestoresLoadoutAndActivatesToolsThatRegisterLate(t *testing.T) {
+	isolateSDKAgentDir(t)
+	provider := testFaux(100000)
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "first", 10)})
+	model := provider.GetModel()
+	cwd := t.TempDir()
+	sm, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := extensions.ToolDefinition{Name: "late", Exposure: extensions.ToolDeferred, Parameters: ai.JSONSchema(`{"type":"object"}`)}
+	start := func(registerNow bool) (*AgentSessionResult, *extensions.API) {
+		var bound extensions.API
+		registry := extensions.NewRegistry(cwd)
+		if err := registry.Register("<inline:late>", func(api extensions.API) error {
+			bound = api
+			api.On(extensions.EventBeforeAgentStart, func(_ context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+				event.(extensions.BeforeAgentStartEvent).SystemPromptOptions.Sections["servers"] = "late servers"
+				return nil, nil
+			})
+			if registerNow {
+				api.RegisterTool(late)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		result, err := NewAgentSession(AgentSessionOptions{
+			CWD: cwd, AgentDir: t.TempDir(), SessionManager: sm, Model: model,
+			StreamFn: provider.StreamSimple, ExtensionRegistry: registry, Resources: &Resources{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result, &bound
+	}
+	active := func(result *AgentSessionResult) []string {
+		var names []string
+		for _, tool := range result.Session.State().Tools {
+			names = append(names, tool.Spec().Name)
+		}
+		return names
+	}
+
+	first, _ := start(true)
+	if slices.Contains(active(first), "late") {
+		t.Fatal("deferred tool active on registration")
+	}
+	if err := first.Session.SetActiveToolsByName([]string{"read", "late"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Session.Prompt(context.Background(), "first"); err != nil {
+		t.Fatal(err)
+	}
+	transcript, _ := ConvertToLLM(context.Background(), first.Session.State().Messages)
+	current := ai.CurrentSystemMessage(transcript)
+	if current == nil || !strings.Contains(ai.SystemMessageText(current), "<servers>\nlate servers\n</servers>") {
+		t.Fatalf("section missing from the transcript: %#v", current)
+	}
+	first.Session.Dispose()
+
+	second, api := start(false)
+	defer second.Session.Dispose()
+	if got := active(second); !reflect.DeepEqual(got, []string{"read"}) {
+		t.Fatalf("restored loadout = %v", got)
+	}
+	(*api).RegisterTool(late)
+	if got := active(second); !reflect.DeepEqual(got, []string{"read", "late"}) {
+		t.Fatalf("late tool did not turn on when it registered: %v", got)
+	}
+}
