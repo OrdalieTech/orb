@@ -40,6 +40,7 @@ type ProjectTrustOption struct {
 
 var trustRequiringProjectConfigResources = []string{
 	"settings.json",
+	"mcp.json",
 	"extensions",
 	"skills",
 	"prompts",

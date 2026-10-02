@@ -1103,10 +1103,10 @@ Commands:
   orb list                    List installed packages from settings
   orb config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
   orb plugins <command>       List, enable, or disable bundled plugins (list --all shows the full composition)
-  orb mcp <command>           List, add, remove, or toggle MCP servers (see orb mcp --help)
+  orb mcp <command>           Check MCP servers, sign in to or out of OAuth servers
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
-  orb <command> --help        Show help for chat/install/remove/uninstall/update/upgrade/list/config/auth
+  orb <command> --help        Show help for chat/install/remove/uninstall/update/upgrade/list/config/auth/mcp
 
   --provider <name>              Provider to search for --model (requires --model)
   --model <id>                   Model ID
@@ -1134,8 +1134,8 @@ Commands:
   --no-skills, -ns               Disable discovered skills; --skill remains additive
   --prompt-template <path>       Load a prompt template file or directory; repeatable
   --no-prompt-templates, -np     Disable prompt template discovery
-  --extension, -e <path>         Load an extension file (can be used multiple times)
-  --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
+  --extension, -e <path>         Load an extension file or builtin:<name> (can be used multiple times)
+  --no-extensions, -ne           Disable extension discovery and built-in extensions (explicit -e paths still work)
   --theme <path>                 Load a theme file or directory; repeatable
   --use-theme <name[/name]>      Set the initial interactive theme for this run
   --no-themes                    Disable theme discovery

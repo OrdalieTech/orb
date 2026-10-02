@@ -490,7 +490,8 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
       Grok 4.7 (xAI default), Kimi K3 defaults, Meta Muse Spark, Copilot Opus 5.5 levels.
 - [x] Malformed prompt-template frontmatter is a resource warning; session files appear at the first
       user message; the system prompt's docs line names MCP.
-- [ ] Audit the remaining kernel paths the dry run listed (keybindings, trust, CLI args).
+- [x] Audit the remaining kernel paths the dry run listed (keybindings, trust, CLI args): a project
+      `mcp.json` asks for trust, help text follows 1.0; the startup UI changes are the system theme.
 - [x] `samplingParams` (model and per request) merged into OpenAI-compatible request bodies.
 - [x] Projection-aware compaction (context edits respected by cut points and token estimates).
 

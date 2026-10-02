@@ -85,6 +85,7 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   transcript's (`State().SystemPrompt`), changed by adding a system message, and the session's
   `State()` reports the prompt it will send next. `extensions.API` includes `OnWithUnsubscribe`, and
   `harness.SessionV4Storage` includes `ClearName`.
+- A project with only `.pi/mcp.json` asks for trust before its servers load.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

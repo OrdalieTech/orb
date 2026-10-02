@@ -16,7 +16,7 @@ import (
 func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 	for _, want := range []string{
 		"--extension, -e <path>",
-		"--no-extensions, -ne           Disable extension discovery (explicit -e paths still work)",
+		"--no-extensions, -ne           Disable extension discovery and built-in extensions (explicit -e paths still work)",
 		"--theme <path>",
 		"--no-themes",
 		"orb install <source>",
