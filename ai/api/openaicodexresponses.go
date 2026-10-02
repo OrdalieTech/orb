@@ -342,9 +342,9 @@ func StreamOpenAICodexResponsesWithOptions(
 		}
 		processor := newOpenAIResponsesProcessor(model, output, processorOptions, sink)
 		processor.grammarToolInputProperties = grammarToolInputProperties
-		err = readOpenAICodexSSE(response.Body, func(raw json.RawMessage) error {
+		err = readOpenAICodexSSE(response.Body, withStreamEvents(ctx, &processorOptions.StreamOptions, model, func(raw json.RawMessage) error {
 			return handleOpenAICodexEvent(processor, raw)
-		})
+		}))
 		if errors.Is(err, errStopSSE) {
 			return
 		}

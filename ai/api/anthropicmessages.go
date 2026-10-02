@@ -361,7 +361,12 @@ func StreamAnthropicMessagesWithOptions(
 		}
 
 		processor := newAnthropicStreamProcessor(model, requestContext, output, isOAuth, sink)
-		err = readAnthropicSSE(response.Body, processor.handleSSE)
+		err = readAnthropicSSE(response.Body, func(event string, data []byte, raw []string) error {
+			if options != nil && options.OnProviderStreamEvent != nil && json.Valid(data) {
+				options.OnProviderStreamEvent(ctx, data, model)
+			}
+			return processor.handleSSE(event, data, raw)
+		})
 		if errors.Is(err, errStopSSE) {
 			return
 		}

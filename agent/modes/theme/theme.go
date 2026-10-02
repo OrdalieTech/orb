@@ -29,6 +29,7 @@ type Theme struct {
 	background      map[string]string
 	resolved        map[string]themefile.Color
 	export          map[string]themefile.Color
+	appearance      string
 }
 
 func Parse(label string, data []byte, mode ColorMode) (*Theme, error) {
@@ -45,7 +46,7 @@ func FromFile(source *themefile.Theme, mode ColorMode) *Theme {
 		mode = DetectColorMode(nil)
 	}
 	theme := &Theme{
-		Name: source.Name, SourcePath: source.SourcePath, mode: mode,
+		Name: source.Name, SourcePath: source.SourcePath, mode: mode, appearance: source.Appearance,
 		foreground: map[string]string{}, background: map[string]string{}, resolved: map[string]themefile.Color{}, export: map[string]themefile.Color{},
 	}
 	for name, color := range source.Colors {
@@ -96,6 +97,10 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	next := terminalTheme(theme.mode)
 	bg := fmt.Sprintf("#%02x%02x%02x", background.R, background.G, background.B)
 	light := luminance(background.R, background.G, background.B) > .179
+	next.appearance = string(Dark)
+	if light {
+		next.appearance = string(Light)
+	}
 	ink, accent, purple, green, red, amber := "#eeeeee", "#70c9bf", "#c4a7e7", "#91c789", "#ed9993", "#dfba73"
 	if light {
 		ink, accent, purple, green, red, amber = "#202428", "#087f83", "#8552a0", "#387348", "#b04040", "#916018"
@@ -163,6 +168,66 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 }
 
 func (theme *Theme) ColorMode() ColorMode { return theme.mode }
+
+// Appearance is the background the theme is designed for: declared in its
+// file, else detected from its own colors, else the terminal's.
+func (theme *Theme) Appearance() string {
+	palette := theme.Palette()
+	if palette.appearance != "" {
+		return palette.appearance
+	}
+	var foreground, background []float64
+	for name, color := range palette.resolved {
+		// Terminal defaults and palette colors 0-15 follow the user's terminal.
+		if color.Index != nil && *color.Index < 16 || color.Index == nil && color.Text == "" {
+			continue
+		}
+		if hex, err := color.Hex(""); err == nil {
+			if backgroundTokens[name] {
+				background = append(background, luminanceHex(hex))
+			} else {
+				foreground = append(foreground, luminanceHex(hex))
+			}
+		}
+	}
+	average := func(values []float64) float64 {
+		total := 0.0
+		for _, value := range values {
+			total += value
+		}
+		return total / float64(len(values))
+	}
+	switch {
+	case len(foreground) > 0 && len(background) > 0 && average(background) < average(foreground),
+		len(foreground) == 0 && len(background) > 0 && average(background) < .179,
+		len(background) == 0 && len(foreground) > 0 && average(foreground) > .179:
+		return string(Dark)
+	case len(foreground) > 0 || len(background) > 0:
+		return string(Light)
+	}
+	return string(DetectBackground(nil).Theme)
+}
+
+// Colors returns every token's concrete color as #rrggbb. Tokens left to the
+// terminal default get the usual default color for the theme's appearance.
+func (theme *Theme) Colors() map[string]string {
+	foreground, background := "#e5e5e7", "#000000"
+	if theme.Appearance() == string(Light) {
+		foreground, background = "#000000", "#ffffff"
+	}
+	palette := theme.Palette()
+	result := make(map[string]string, len(palette.resolved))
+	for name, color := range palette.resolved {
+		fallback := foreground
+		if backgroundTokens[name] {
+			fallback = background
+		}
+		if hex, err := color.Hex(fallback); err == nil {
+			result[name] = strings.ToLower(hex)
+		}
+	}
+	return result
+}
 
 // Palette identifies the immutable colors used by cached renderers.
 func (theme *Theme) Palette() *Theme {

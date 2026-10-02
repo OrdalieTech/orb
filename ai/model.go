@@ -489,24 +489,29 @@ type PayloadHook func(ctx context.Context, payload any, model *Model) (replaceme
 type HeadersHook func(ctx context.Context, headers ProviderHeaders, model *Model) (ProviderHeaders, error)
 type ResponseHook func(ctx context.Context, response ProviderResponse, model *Model) error
 
+// ProviderStreamEventHook receives each parsed provider stream event, as JSON,
+// before normalization. It is awaited in stream order and must not mutate data.
+type ProviderStreamEventHook func(ctx context.Context, data json.RawMessage, model *Model)
+
 type StreamOptions struct {
-	Temperature               *float64        `json:"temperature,omitempty"`
-	MaxTokens                 *float64        `json:"maxTokens,omitempty"`
-	APIKey                    *string         `json:"apiKey,omitempty"`
-	HTTPClient                *http.Client    `json:"-"`
-	Transport                 *Transport      `json:"transport,omitempty"`
-	CacheRetention            *CacheRetention `json:"cacheRetention,omitempty"`
-	SessionID                 *string         `json:"sessionId,omitempty"`
-	OnPayload                 PayloadHook     `json:"-"`
-	TransformHeaders          HeadersHook     `json:"-"`
-	OnResponse                ResponseHook    `json:"-"`
-	Headers                   ProviderHeaders `json:"headers,omitempty"`
-	TimeoutMS                 *int64          `json:"timeoutMs,omitempty"`
-	WebSocketConnectTimeoutMS *int64          `json:"websocketConnectTimeoutMs,omitempty"`
-	MaxRetries                *int            `json:"maxRetries,omitempty"`
-	MaxRetryDelayMS           *int64          `json:"maxRetryDelayMs,omitempty"`
-	Metadata                  map[string]any  `json:"metadata,omitempty"`
-	Env                       ProviderEnv     `json:"env,omitempty"`
+	Temperature               *float64                `json:"temperature,omitempty"`
+	MaxTokens                 *float64                `json:"maxTokens,omitempty"`
+	APIKey                    *string                 `json:"apiKey,omitempty"`
+	HTTPClient                *http.Client            `json:"-"`
+	Transport                 *Transport              `json:"transport,omitempty"`
+	CacheRetention            *CacheRetention         `json:"cacheRetention,omitempty"`
+	SessionID                 *string                 `json:"sessionId,omitempty"`
+	OnPayload                 PayloadHook             `json:"-"`
+	TransformHeaders          HeadersHook             `json:"-"`
+	OnResponse                ResponseHook            `json:"-"`
+	OnProviderStreamEvent     ProviderStreamEventHook `json:"-"`
+	Headers                   ProviderHeaders         `json:"headers,omitempty"`
+	TimeoutMS                 *int64                  `json:"timeoutMs,omitempty"`
+	WebSocketConnectTimeoutMS *int64                  `json:"websocketConnectTimeoutMs,omitempty"`
+	MaxRetries                *int                    `json:"maxRetries,omitempty"`
+	MaxRetryDelayMS           *int64                  `json:"maxRetryDelayMs,omitempty"`
+	Metadata                  map[string]any          `json:"metadata,omitempty"`
+	Env                       ProviderEnv             `json:"env,omitempty"`
 	// SamplingParams are merged into OpenAI-compatible request bodies after the
 	// named fields, over Model.SamplingParams per key; other APIs ignore them.
 	SamplingParams map[string]any `json:"samplingParams,omitempty"`

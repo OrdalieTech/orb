@@ -1267,6 +1267,18 @@ func (adapter themeAdapter) BGANSI(color string) string {
 	}
 	return theme.BGANSI(color)
 }
+func (adapter themeAdapter) Colors() map[string]string {
+	if adapter.value != nil {
+		return adapter.value.Colors()
+	}
+	return theme.Current().Colors()
+}
+func (adapter themeAdapter) Appearance() string {
+	if adapter.value != nil {
+		return adapter.value.Appearance()
+	}
+	return theme.Current().Appearance()
+}
 func (adapter themeAdapter) ColorMode() string {
 	if adapter.value != nil {
 		return string(adapter.value.ColorMode())

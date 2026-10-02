@@ -225,6 +225,7 @@ func streamGoogleWithOptions(
 		}
 		processor := googleStreamProcessor{model: model, output: output}
 		err = readGoogleSSE(response.Body, func(raw json.RawMessage) error {
+			emitProviderStreamEvent(ctx, streamOptions, model, raw)
 			var chunk googleGenerateContentResponse
 			if err := json.Unmarshal(raw, &chunk); err != nil {
 				return err

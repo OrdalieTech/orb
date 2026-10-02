@@ -38,6 +38,7 @@ func prepareRuntimeAliases(agentDir string, environment []string) ([]string, err
 var runtimeSDKAIExports = map[string]string{
 	".":               "ai.mjs",
 	"./compat":        "ai-compat.mjs",
+	"./models":        "ai-models.mjs",
 	"./oauth":         "ai-oauth.mjs",
 	"./providers/all": "ai-providers-all.mjs",
 }

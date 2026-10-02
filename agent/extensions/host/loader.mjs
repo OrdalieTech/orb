@@ -40,6 +40,7 @@ const sdkModules = {
 	"@earendil-works/pi-agent-core": "agent-core.mjs",
 	"@earendil-works/pi-ai": "ai.mjs",
 	"@earendil-works/pi-ai/compat": "ai-compat.mjs",
+	"@earendil-works/pi-ai/models": "ai-models.mjs",
 	"@earendil-works/pi-ai/oauth": "ai-oauth.mjs",
 	"@earendil-works/pi-ai/providers/all": "ai-providers-all.mjs",
 	"@earendil-works/pi-tui": "tui.mjs",

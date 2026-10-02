@@ -414,6 +414,7 @@ func processOpenAICodexWebSocket(
 		if err := json.Unmarshal(raw, &envelope); err != nil {
 			return started, &codexProtocolError{message: "Invalid Codex WebSocket JSON: " + err.Error()}
 		}
+		emitProviderStreamEvent(ctx, &processorOptions.StreamOptions, model, raw)
 		if envelope.Type == "error" || envelope.Type == "response.failed" {
 			return started, handleOpenAICodexEvent(processor, raw)
 		}

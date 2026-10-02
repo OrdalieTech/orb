@@ -978,3 +978,32 @@ func TestOpenAICompletionsImageOnlyUserMessageOmitsEmptyText(t *testing.T) {
 		t.Fatalf("message = %#v", message)
 	}
 }
+
+func TestProviderStreamEventsReachHookBeforeNormalization(t *testing.T) {
+	previousClient := openAIHTTPClient
+	t.Cleanup(func() { openAIHTTPClient = previousClient })
+	chunk := `{"id":"chatcmpl-1","choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}`
+	openAIHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader("data: " + chunk + "\n\ndata: [DONE]\n\n")), Request: request}, nil
+	})}
+	model := &ai.Model{ID: "fixture-model", API: ai.APIOpenAICompletions, Provider: "openai", BaseURL: "https://fixture.invalid/v1/", Input: ai.InputModalities{ai.InputText}}
+	key := "fixture-key"
+	var seen []string
+	stream, err := StreamOpenAICompletions(context.Background(), ai.Request{
+		Model:   model,
+		Context: ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("test")}}},
+		Options: &ai.StreamOptions{APIKey: &key, OnProviderStreamEvent: func(_ context.Context, data json.RawMessage, model *ai.Model) {
+			seen = append(seen, model.ID+" "+string(data))
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message, _ := collectOpenAICompletionsFixture(t, stream); message.StopReason != ai.StopReasonStop {
+		t.Fatalf("stop reason = %q", message.StopReason)
+	}
+	if len(seen) != 1 || seen[0] != "fixture-model "+chunk {
+		t.Fatalf("stream events = %q", seen)
+	}
+}

@@ -381,6 +381,7 @@ func StreamBedrockConverseWithOptions(
 			if !ok {
 				break
 			}
+			emitProviderStreamEvent(ctx, streamOptions, model, item)
 			if err := processor.handle(item); err != nil {
 				fail(err)
 				return

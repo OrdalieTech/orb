@@ -11,7 +11,7 @@ GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/ca
 endif
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: check build test lint portability nightly-live upstream fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump
+.PHONY: check build test lint portability nightly-live upstream fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump sdk-surface
 
 # The canonical gate (upstream's `npm run check` norm): run after any code change.
 check: build lint test portability
@@ -114,6 +114,11 @@ ensure-upstream-fixture-tools: upstream
 
 fixtures: ensure-upstream-fixture-tools
 	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$(CURDIR)/conformance/fixtures" $(UPSTREAM_COMMIT)
+
+# Re-declare the embedded extension SDK's export surface from the pinned
+# upstream sources: new names become stubs, removed names drop out.
+sdk-surface: ensure-upstream-fixture-tools
+	@cd "$(UPSTREAM_DIR)" && node "$(CURDIR)/conformance/extract/sdk-surface.mjs" "$(CURDIR)/agent/extensions/host/sdk" $(UPSTREAM_COMMIT)
 
 # Regenerate the Orb-owned TUI render snapshots (D35): the F12* families and
 # the WP450 replay/UI-demo render files rewrite from Orb's own renderer, then

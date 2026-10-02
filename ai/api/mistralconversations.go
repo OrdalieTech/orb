@@ -208,7 +208,7 @@ func StreamMistralConversationsWithOptions(
 		}
 
 		processor := newMistralStreamProcessor(model, output, sink)
-		err = readSSE(response.Body, processor.handle)
+		err = readSSE(response.Body, withStreamEvents(ctx, streamOptions, model, processor.handle))
 		if errors.Is(err, errStopSSE) {
 			return
 		}
