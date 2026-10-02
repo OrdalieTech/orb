@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,16 +48,19 @@ type SessionRuntimeConfig struct {
 	UnregisterProvider     func(string) error
 	BaseTools              []engine.AgentTool
 	InitialActiveToolNames []string
-	AllowedToolNames       *[]string
-	ExcludedToolNames      []string
-	RebuildBaseTools       func() ([]engine.AgentTool, error)
-	SystemPromptOptions    *SystemPromptOptions
-	BuiltinToolPrompts     map[string]ToolPromptContribution
-	ResourceLoader         ResourceLoader
-	SessionStartEvent      *extensions.SessionStartEvent
-	DeferExtensionStart    bool
-	SessionStart           *extensions.SessionStartEvent
-	DeferSessionStart      bool
+	// UsesDefaultTools is set when the initial tools came from defaultTools
+	// (no --tools or --no-tools), so /reload enables tools newly added to it.
+	UsesDefaultTools    bool
+	AllowedToolNames    *[]string
+	ExcludedToolNames   []string
+	RebuildBaseTools    func() ([]engine.AgentTool, error)
+	SystemPromptOptions *SystemPromptOptions
+	BuiltinToolPrompts  map[string]ToolPromptContribution
+	ResourceLoader      ResourceLoader
+	SessionStartEvent   *extensions.SessionStartEvent
+	DeferExtensionStart bool
+	SessionStart        *extensions.SessionStartEvent
+	DeferSessionStart   bool
 }
 
 type SessionRuntime struct {
@@ -315,6 +319,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		return &engine.AgentLoopTurnUpdate{Context: &next}, nil
 	})
 	runtime.installTurnEndBoundary()
+	runtime.agent.SetToolCallHooks(nil, runtime.afterExtensionToolCall)
 	var previousPrepare engine.PrepareNextTurnFunc
 	previousPrepare = runtime.agent.SwapPrepareNextTurnContext(func(ctx context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
 		snapshot := runtime.agent.State()
@@ -645,7 +650,7 @@ func (runtime *SessionRuntime) QueueInteractive(ctx context.Context, text string
 			return err
 		}
 	}
-	message := userMessageWithImagesAt(text, images, runtime.clock())
+	message := runtime.userMessage(text, images)
 	runtime.mu.Lock()
 	if delivery == extensions.DeliverFollowUp {
 		runtime.followUps = append(runtime.followUps, text)
@@ -709,7 +714,7 @@ func (runtime *SessionRuntime) SteerImages(text string, images []*ai.ImageConten
 			return err
 		}
 	}
-	message := userMessageWithImagesAt(text, images, runtime.clock())
+	message := runtime.userMessage(text, images)
 	runtime.mu.Lock()
 	runtime.steering = append(runtime.steering, text)
 	runtime.mu.Unlock()
@@ -733,7 +738,7 @@ func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageCon
 			return err
 		}
 	}
-	message := userMessageWithImagesAt(text, images, runtime.clock())
+	message := runtime.userMessage(text, images)
 	runtime.mu.Lock()
 	runtime.followUps = append(runtime.followUps, text)
 	runtime.mu.Unlock()
@@ -1932,6 +1937,36 @@ func asAssistant(message engine.AgentMessage) *ai.AssistantMessage {
 		}
 	}
 	return nil
+}
+
+// userMessage builds a prompt message, normalizing attached images to the
+// model's limits; images that cannot be processed become notes in the text.
+func (runtime *SessionRuntime) userMessage(text string, images []*ai.ImageContent) *ai.UserMessage {
+	autoResize := runtime.settings.GetImageAutoResize()
+	resize := tools.ModelResizeOptions(runtime.agent.State().Model)
+	normalized := make([]*ai.ImageContent, 0, len(images))
+	var hints []string
+	for _, image := range images {
+		if image == nil {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(image.Data)
+		if err != nil {
+			normalized = append(normalized, image)
+			continue
+		}
+		processed := tools.ProcessImage(data, image.MimeType, &tools.ProcessImageOptions{AutoResizeImages: &autoResize, ResizeOptions: resize})
+		if !processed.OK {
+			hints = append(hints, processed.Message)
+			continue
+		}
+		normalized = append(normalized, &ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType})
+		hints = append(hints, processed.Hints...)
+	}
+	if len(hints) > 0 {
+		text += "\n\n" + strings.Join(hints, "\n")
+	}
+	return userMessageWithImagesAt(text, normalized, runtime.clock())
 }
 
 func userMessageWithImagesAt(text string, images []*ai.ImageContent, timestamp int64) *ai.UserMessage {

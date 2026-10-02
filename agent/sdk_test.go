@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1626,5 +1627,55 @@ func BenchmarkNewAgentSessionMinimal(b *testing.B) {
 			b.Fatal(err)
 		}
 		result.Session.Dispose()
+	}
+}
+
+func TestReloadEnablesToolsNewlyAddedToDefaultTools(t *testing.T) {
+	t.Parallel()
+	cwd := t.TempDir()
+	agentDir := t.TempDir()
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"defaultTools":["+grep"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := testFaux(100000)
+	result, err := NewAgentSession(AgentSessionOptions{
+		CWD: cwd, AgentDir: agentDir, Settings: settings, SessionManager: manager,
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Session.Dispose()
+	active := func() []string {
+		var names []string
+		for _, tool := range result.Session.State().Tools {
+			names = append(names, tool.Spec().Name)
+		}
+		return names
+	}
+	if got := active(); !slices.Contains(got, "grep") || slices.Contains(got, "find") {
+		t.Fatalf("initial tools = %v", got)
+	}
+	// write is turned off during the session; find is newly added and grep removed.
+	if err := result.Session.SetActiveToolsByName([]string{"read", "bash", "edit", "grep"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"defaultTools":["+find"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Session.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := active(); !slices.Contains(got, "find") || !slices.Contains(got, "grep") || slices.Contains(got, "write") {
+		t.Fatalf("reloaded tools = %v", got)
 	}
 }

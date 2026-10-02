@@ -216,7 +216,7 @@ type AgentSessionResult struct {
 }
 
 // DefaultActiveToolNames is the upstream default tool set.
-var DefaultActiveToolNames = []string{"read", "bash", "edit", "write"}
+var DefaultActiveToolNames = config.DefaultToolNames
 
 // NewAgentSession creates a fully configured [AgentSession]. It mirrors
 // upstream's createAgentSession: it creates the internal Agent, wires
@@ -644,6 +644,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		ModelRegistry:          modelRegistry,
 		BaseTools:              baseTools,
 		InitialActiveToolNames: initialActiveToolNames,
+		UsesDefaultTools:       opts.Tools == nil && opts.NoTools == "",
 		AllowedToolNames:       allowedToolNames,
 		ExcludedToolNames:      opts.ExcludeTools,
 		RebuildBaseTools: func() ([]engine.AgentTool, error) {

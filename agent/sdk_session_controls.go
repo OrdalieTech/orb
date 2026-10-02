@@ -99,7 +99,7 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 		if preflightResult != nil {
 			preflightResult(DispositionQueued)
 		}
-		message := userMessageWithImagesAt(text, images, runtime.clock())
+		message := runtime.userMessage(text, images)
 		if *streamingBehavior == extensions.DeliverFollowUp {
 			runtime.agent.FollowUp(message)
 		} else {
