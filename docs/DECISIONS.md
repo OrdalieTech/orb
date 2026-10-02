@@ -244,7 +244,6 @@ text in git history of this file. Cross-references to these numbers elsewhere re
 | Bundled MCP extension | addition | owner requirement; kept out of core |
 | No codemode (pi v0.99+) | not yet adopted | owner deferred codemode (2026-10-02): no `codemode` tool, script `models` API, classifier models or Jev; the system prompt's docs line names MCP but not `docs/codemode.md`, and tool `exposure: "codemode"` is treated as `deferred` |
 | Experimental harness is Orb-owned (pi v1.0.0) | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`); `engine/harness` stays as Orb's own, its `F6Harness*` fixtures and the harness parts of F8/F10 are carried from the committed tree instead of extracted |
-| Anthropic workload identity federation (pi v0.99.2) | not yet adopted | the identity token file must be read through a host port (P10) and exchanged with a cached token; until that lands, `ANTHROPIC_FEDERATION_RULE_ID` and its companions are not discovered |
 | Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb has always started the run, and its RPC response now reports that as `started` |
 | `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
 | `packages/{client,protocol}` (v0.84.0) | removed | experimental remote-session client and CBOR protocol for the excluded server product; same D2 boundary |

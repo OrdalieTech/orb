@@ -91,7 +91,7 @@ ai/api	net/http.DefaultTransport	1
 ai/api	os.Environ	1
 ai/api	os.Getenv	6
 ai/api	os.Lstat	3
-ai/api	os.ReadFile	8
+ai/api	os.ReadFile	1
 ai/api	os.Stat	2
 ai/api	os.UserHomeDir	1
 ai/api	path/filepath.EvalSymlinks	2

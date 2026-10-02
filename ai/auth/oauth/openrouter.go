@@ -12,9 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/auth"
@@ -87,108 +85,46 @@ func (flow *OpenRouter) Login(ctx context.Context, interaction auth.AuthInteract
 	if err != nil {
 		return nil, err
 	}
-	callbackPath := "/oauth/callback/" + uuid
-	callbackHost := flow.callbackHost()
-
-	listener, err := flow.options.Listen("tcp", net.JoinHostPort(callbackHost, "0"))
+	// OpenRouter sends no state; the random path keeps stray requests from completing the sign-in.
+	server, err := startCallbackServer(callbackOptions[*auth.Credential]{
+		provider: "OpenRouter", listen: flow.options.Listen, host: flow.callbackHost(), port: 0,
+		path: "/oauth/callback/" + uuid, timeout: flow.options.LoginTimeout,
+		complete: func(query url.Values) (*auth.Credential, error) {
+			return flow.exchangeAuthorizationCode(ctx, query.Get("code"), verifier)
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	state := &openRouterCallbackState{outcome: make(chan openRouterOutcome, 1)}
-	server := &http.Server{Handler: flow.callbackHandler(ctx, callbackPath, verifier, state)}
-	serveDone := make(chan error, 1)
-	go func() {
-		err := server.Serve(listener)
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
-		}
-		serveDone <- err
-	}()
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		if server.Shutdown(shutdownCtx) != nil {
-			_ = server.Close()
-		}
-		<-serveDone
-	}()
-
-	address, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		return nil, errors.New("Could not determine the OpenRouter OAuth callback port") //nolint:staticcheck // Upstream capitalization is observable.
-	}
-	callbackURL := "http://" + net.JoinHostPort(callbackHost, strconv.Itoa(address.Port)) + callbackPath
+	defer server.close()
 	authorizeURL := appendOrderedQuery(flow.options.AuthorizeURL,
-		"callback_url", callbackURL,
+		"callback_url", server.redirectURI,
 		"code_challenge", challenge,
 		"code_challenge_method", "S256",
 	)
-
-	interaction.Notify(auth.AuthEvent{
-		Type:    auth.EventProgress,
-		Message: "Listening for OpenRouter OAuth callback on " + callbackURL,
-	})
+	interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Listening for OpenRouter OAuth callback on " + server.redirectURI})
 	interaction.Notify(auth.AuthEvent{
 		Type: auth.EventAuthURL, URL: authorizeURL,
 		Instructions: "Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here.",
 	})
-
-	manualCtx, cancelManual := context.WithCancel(ctx)
-	defer cancelManual()
-	manual := make(chan openRouterManualResult, 1)
-	go func() {
-		input, promptErr := interaction.Prompt(manualCtx, auth.AuthPrompt{
-			Type:        auth.PromptManualCode,
-			Message:     "Complete sign-in in your browser, or paste the authorization code / redirect URL here:",
-			Placeholder: callbackURL,
-		})
-		manual <- openRouterManualResult{input: input, err: promptErr}
-	}()
-
-	timer := time.NewTimer(flow.options.LoginTimeout)
-	defer timer.Stop()
-	var completedManual *openRouterManualResult
-	for {
-		select {
-		case <-ctx.Done():
+	credential, input, fromCallback, err := waitForCallbackOrManualInput(ctx, interaction, server, auth.AuthPrompt{
+		Message: "Complete sign-in in your browser, or paste the authorization code / redirect URL here:", Placeholder: server.redirectURI,
+	})
+	if err != nil {
+		if ctx.Err() != nil {
 			return nil, errors.New(deviceCodeCancelMessage)
-		case <-timer.C:
-			return nil, errors.New("OpenRouter OAuth login timed out")
-		case result := <-manual:
-			completedManual = &result
-			manual = nil
-			if !state.claimManual() {
-				continue
-			}
-			if result.err != nil {
-				// A cancelled login can surface through the prompt goroutine
-				// before this select observes ctx.Done(); report the same
-				// message either way.
-				if ctx.Err() != nil {
-					return nil, errors.New(deviceCodeCancelMessage)
-				}
-				return nil, result.err
-			}
-			code := parseOpenRouterAuthorizationInput(result.input)
-			if code == "" {
-				return nil, errors.New("Missing authorization code") //nolint:staticcheck // Exact upstream text is observable.
-			}
-			interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Exchanging authorization code for an API key..."})
-			return flow.exchangeAuthorizationCode(ctx, code, verifier)
-		case outcome := <-state.outcome:
-			cancelManual()
-			if outcome.err != nil {
-				if ctx.Err() != nil {
-					return nil, errors.New(deviceCodeCancelMessage)
-				}
-				return nil, outcome.err
-			}
-			if completedManual != nil && completedManual.err != nil {
-				return nil, completedManual.err
-			}
-			return outcome.credential, nil
 		}
+		return nil, err
 	}
+	if fromCallback {
+		return credential, nil
+	}
+	code := parseOpenRouterAuthorizationInput(input)
+	if code == "" {
+		return nil, errMissingAuthorizationCode
+	}
+	interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Exchanging authorization code for an API key..."})
+	return flow.exchangeAuthorizationCode(ctx, code, verifier)
 }
 
 // Refresh is a no-op: the OAuth flow mints a permanent API key.
@@ -211,44 +147,6 @@ func (flow *OpenRouter) callbackHost() string {
 	return callbackHost()
 }
 
-type openRouterOutcome struct {
-	credential *auth.Credential
-	err        error
-}
-
-type openRouterManualResult struct {
-	input string
-	err   error
-}
-
-type openRouterCallbackState struct {
-	mu      sync.Mutex
-	claimed bool
-	settled bool
-	outcome chan openRouterOutcome
-}
-
-func (state *openRouterCallbackState) finish(credential *auth.Credential, err error) {
-	state.mu.Lock()
-	if state.settled {
-		state.mu.Unlock()
-		return
-	}
-	state.settled = true
-	state.mu.Unlock()
-	state.outcome <- openRouterOutcome{credential: credential, err: err}
-}
-
-func (state *openRouterCallbackState) claimManual() bool {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	if state.claimed || state.settled {
-		return false
-	}
-	state.settled = true
-	return true
-}
-
 func parseOpenRouterAuthorizationInput(input string) string {
 	value := strings.TrimSpace(input)
 	if value == "" {
@@ -263,50 +161,6 @@ func parseOpenRouterAuthorizationInput(input string) string {
 		}
 	}
 	return value
-}
-
-func (flow *OpenRouter) callbackHandler(ctx context.Context, callbackPath, verifier string, state *openRouterCallbackState) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.Path != callbackPath {
-			sendOpenRouterHTML(writer, http.StatusNotFound, errorPage("OAuth callback route not found."))
-			return
-		}
-		state.mu.Lock()
-		if state.claimed || state.settled {
-			state.mu.Unlock()
-			sendOpenRouterHTML(writer, http.StatusConflict, errorPage("This OAuth callback has already been used."))
-			return
-		}
-		query := request.URL.Query()
-		if oauthError := query.Get("error"); oauthError != "" {
-			state.claimed = true
-			state.mu.Unlock()
-			description := oauthError
-			if query.Has("error_description") {
-				description = query.Get("error_description")
-			}
-			sendOpenRouterHTML(writer, http.StatusBadRequest, errorPageWithDetails("OpenRouter authorization was denied.", description))
-			state.finish(nil, fmt.Errorf("OpenRouter authorization failed: %s", description))
-			return
-		}
-		code := query.Get("code")
-		if code == "" {
-			state.mu.Unlock()
-			sendOpenRouterHTML(writer, http.StatusBadRequest, errorPage("OpenRouter returned no authorization code."))
-			return
-		}
-		state.claimed = true
-		state.mu.Unlock()
-
-		credential, err := flow.exchangeAuthorizationCode(ctx, code, verifier)
-		if err != nil {
-			sendOpenRouterHTML(writer, http.StatusBadGateway, errorPageWithDetails("OpenRouter key exchange failed.", err.Error()))
-			state.finish(nil, err)
-			return
-		}
-		sendOpenRouterHTML(writer, http.StatusOK, successPage("Signed in to OpenRouter. You may now close this page."))
-		state.finish(credential, nil)
-	})
 }
 
 func (flow *OpenRouter) exchangeAuthorizationCode(ctx context.Context, code, verifier string) (*auth.Credential, error) {
@@ -386,13 +240,6 @@ func openRouterErrorDetail(body map[string]any) string {
 		}
 	}
 	return ""
-}
-
-func sendOpenRouterHTML(writer http.ResponseWriter, status int, html string) {
-	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	writer.Header().Set("Cache-Control", "no-store")
-	writer.WriteHeader(status)
-	_, _ = io.WriteString(writer, html)
 }
 
 // randomUUID mirrors crypto.randomUUID(): a lowercase-hex UUIDv4.

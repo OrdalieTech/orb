@@ -54,7 +54,7 @@ func TestRegistryMatchesPinnedUpstream(t *testing.T) {
 	for index, expected := range fixture.Providers {
 		got := actual[index]
 		// Workload identity federation is ledgered as not yet adopted.
-		env := slices.DeleteFunc(slices.Clone(expected.Auth.Env), func(name string) bool { return name == "ANTHROPIC_FEDERATION_RULE_ID" })
+		env := expected.Auth.Env
 		if got.ID != expected.ID || got.Name != expected.Name || got.BaseURL != expected.BaseURL || got.Auth != expected.Auth.Kind || got.OAuth != expected.Auth.OAuth || !slices.Equal(got.APIs, expected.APIs) || !slices.Equal(got.Env, env) {
 			t.Fatalf("provider %d mismatch\n got: %#v\nwant: %#v", index, got, expected)
 		}

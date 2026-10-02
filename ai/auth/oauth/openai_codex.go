@@ -265,52 +265,28 @@ func (flow *OpenAICodex) loginBrowser(ctx context.Context, interaction auth.Auth
 		"originator", "pi",
 	)
 
-	callback := make(chan codexCallbackResult, 1)
-	listener, listenErr := flow.options.Listen("tcp", fmt.Sprintf("%s:%d", flow.options.CallbackHost, flow.options.CallbackPort))
-	var server *http.Server
-	if listenErr == nil {
-		server = &http.Server{Handler: openAICodexCallbackHandler(state, callback)}
-		go func() { _ = server.Serve(listener) }()
-		defer func() { _ = server.Close() }()
+	// A busy callback port leaves only the pasted redirect URL.
+	server, _ := startCallbackServer(callbackOptions[string]{
+		provider: "OpenAI", listen: flow.options.Listen, host: flow.options.CallbackHost, port: flow.options.CallbackPort,
+		path: openAICodexCallbackPath, state: state, complete: func(query url.Values) (string, error) { return query.Get("code"), nil },
+	})
+	if server != nil {
+		defer server.close()
 	}
 	interaction.Notify(auth.AuthEvent{Type: auth.EventAuthURL, URL: authorizeURL, Instructions: "A browser window should open. Complete login to finish."})
-
-	manualCtx, cancelManual := context.WithCancel(ctx)
-	defer cancelManual()
-	manual := make(chan manualResult, 1)
-	go func() {
-		input, promptErr := interaction.Prompt(manualCtx, auth.AuthPrompt{
-			Type: auth.PromptManualCode, Message: "Complete login in your browser, or paste the authorization code / redirect URL here:", Placeholder: flow.options.RedirectURI,
-		})
-		manual <- manualResult{input: input, err: promptErr}
-	}()
-
-	code := ""
-	if listenErr != nil {
-		result := <-manual
-		if result.err != nil {
-			return nil, result.err
-		}
-		code, err = parseOpenAICodexManual(result.input, state)
-	} else {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case result := <-callback:
-			cancelManual()
-			code = result.code
-		case result := <-manual:
-			if result.err != nil {
-				return nil, result.err
-			}
-			code, err = parseOpenAICodexManual(result.input, state)
-		}
-	}
+	code, input, fromCallback, err := waitForCallbackOrManualInput(ctx, interaction, server, auth.AuthPrompt{
+		Message: "Complete login in your browser, or paste the authorization code / redirect URL here:", Placeholder: flow.options.RedirectURI,
+	})
 	if err != nil {
 		return nil, err
 	}
+	if !fromCallback {
+		if code, err = parseOpenAICodexManual(input, state); err != nil {
+			return nil, err
+		}
+	}
 	if code == "" {
-		return nil, errors.New("Missing authorization code") //nolint:staticcheck // Upstream capitalization is observable.
+		return nil, errMissingAuthorizationCode
 	}
 	return flow.exchangeCode(ctx, code, verifier, flow.options.RedirectURI)
 }
@@ -324,35 +300,6 @@ func parseOpenAICodexManual(input, expectedState string) (string, error) {
 		return "", errors.New("State mismatch") //nolint:staticcheck // Upstream capitalization is observable.
 	}
 	return code, nil
-}
-
-type codexCallbackResult struct{ code string }
-
-func openAICodexCallbackHandler(expectedState string, callback chan<- codexCallbackResult) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if request.URL.Path != openAICodexCallbackPath {
-			writer.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(writer, errorPage("Callback route not found."))
-			return
-		}
-		if request.URL.Query().Get("state") != expectedState {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPage("State mismatch."))
-			return
-		}
-		code := request.URL.Query().Get("code")
-		if code == "" {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPage("Missing authorization code."))
-			return
-		}
-		_, _ = io.WriteString(writer, successPage("OpenAI authentication completed. You can close this window."))
-		select {
-		case callback <- codexCallbackResult{code: code}:
-		default:
-		}
-	})
 }
 
 func (flow *OpenAICodex) exchangeCode(ctx context.Context, code, verifier, redirectURI string) (*auth.Credential, error) {

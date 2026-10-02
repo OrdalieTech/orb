@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -22,11 +23,14 @@ import (
 )
 
 const (
-	defaultAuthorizeURL = "https://claude.ai/oauth/authorize"
-	defaultTokenURL     = "https://platform.claude.com/v1/oauth/token"
-	defaultCallbackPort = 53692
-	callbackPath        = "/callback"
-	anthropicScopes     = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
+	defaultAuthorizeURL          = "https://claude.ai/oauth/authorize"
+	defaultTokenURL              = "https://platform.claude.com/v1/oauth/token"
+	defaultCallbackPort          = 53692
+	callbackPath                 = "/callback"
+	anthropicCopyCodeRedirectURI = "https://platform.claude.com/oauth/code/callback"
+	anthropicBrowserLogin        = "browser"
+	anthropicCopyCodeLogin       = "copy_code"
+	anthropicScopes              = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 )
 
 var anthropicClientID = mustDecode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl")
@@ -82,74 +86,48 @@ func NewAnthropic(options *AnthropicOptions) *Anthropic {
 	return &Anthropic{options: configured}
 }
 
-// listenIPv6Loopback also holds [::1] on the callback port when the redirect names "localhost",
-// which a browser may resolve to either loopback address. The state carries the PKCE verifier
-// (as upstream), so a local program listening there instead would receive all it needs to sign
-// in as the owner. A machine without IPv6 has no [::1] to hold; where [::1] works but the port is
-// taken there, another program holds it and the sign-in does not start.
-func (flow *Anthropic) listenIPv6Loopback(first net.Listener) (net.Listener, error) {
-	if flow.options.CallbackHost != "127.0.0.1" || !strings.Contains(flow.options.RedirectURI, "//localhost:") {
-		return nil, nil
-	}
-	address := net.JoinHostPort("::1", strconv.Itoa(flow.options.CallbackPort))
-	other, err := flow.options.Listen("tcp", address)
-	if err == nil {
-		if other == first { // a test's single listener
-			return nil, nil
-		}
-		return other, nil
-	}
-	if free, freeErr := flow.options.Listen("tcp", "[::1]:0"); freeErr == nil {
-		_ = free.Close()
-		return nil, fmt.Errorf("another program is listening on %s, where the sign-in may return; close it and try again", address)
-	}
-	return nil, nil
-}
-
 func (*Anthropic) Name() string { return "Anthropic (Claude Pro/Max)" }
 
 func (flow *Anthropic) Login(ctx context.Context, interaction auth.AuthInteraction) (*auth.Credential, error) {
+	method, err := interaction.Prompt(ctx, auth.AuthPrompt{
+		Type:    auth.PromptSelect,
+		Message: "Select Anthropic login method:",
+		Options: []auth.PromptOption{
+			{ID: anthropicBrowserLogin, Label: "Browser login (default)"},
+			{ID: anthropicCopyCodeLogin, Label: "Copy code login (headless)"},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	switch method {
+	case anthropicBrowserLogin:
+		return flow.loginBrowser(ctx, interaction)
+	case anthropicCopyCodeLogin:
+		return flow.loginCopyCode(ctx, interaction)
+	default:
+		return nil, fmt.Errorf("Unknown Anthropic login method: %s", method) //nolint:staticcheck // Upstream capitalization is observable.
+	}
+}
+
+func (flow *Anthropic) loginBrowser(ctx context.Context, interaction auth.AuthInteraction) (*auth.Credential, error) {
 	verifier, challenge, err := GeneratePKCE(flow.options.Random)
 	if err != nil {
 		return nil, err
 	}
-	listener, err := flow.options.Listen("tcp", fmt.Sprintf("%s:%d", flow.options.CallbackHost, flow.options.CallbackPort))
-	if err != nil {
+	// A busy callback port leaves only the pasted redirect URL.
+	server, err := startCallbackServer(callbackOptions[string]{
+		provider: "Anthropic", listen: flow.options.Listen, host: flow.options.CallbackHost, port: flow.options.CallbackPort,
+		path: callbackPath, redirectHost: "localhost", state: verifier, ipv6Loopback: true,
+		complete: func(query url.Values) (string, error) { return query.Get("code"), nil },
+	})
+	if errors.Is(err, errLoopbackTaken) {
 		return nil, err
 	}
-	defer func() { _ = listener.Close() }()
-	listeners := []net.Listener{listener}
-	if other, err := flow.listenIPv6Loopback(listener); err != nil {
-		return nil, err
-	} else if other != nil {
-		defer func() { _ = other.Close() }()
-		listeners = append(listeners, other)
+	if server != nil {
+		defer server.close()
 	}
-
-	wait := make(chan callbackResult, 1)
-	server := &http.Server{Handler: callbackHandler(verifier, wait)}
-	serveDone := make(chan error, len(listeners))
-	for _, l := range listeners {
-		go func() {
-			err := server.Serve(l)
-			if errors.Is(err, http.ErrServerClosed) {
-				err = nil
-			}
-			serveDone <- err
-		}()
-	}
-	defer func() {
-		// Let the browser receive the callback response before closing its connection.
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-		_ = server.Close()
-		for range listeners {
-			<-serveDone
-		}
-	}()
-
-	authorizeURL, err := flow.authorizeURL(verifier, challenge)
+	authorizeURL, err := flow.authorizeURL(flow.options.RedirectURI, verifier, challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -158,46 +136,65 @@ func (flow *Anthropic) Login(ctx context.Context, interaction auth.AuthInteracti
 		URL:          authorizeURL,
 		Instructions: "Complete login in your browser. If the browser is on another machine, paste the final redirect URL here.",
 	})
-
-	manualCtx, cancelManual := context.WithCancel(ctx)
-	defer cancelManual()
-	manual := make(chan manualResult, 1)
-	go func() {
-		input, promptErr := interaction.Prompt(manualCtx, auth.AuthPrompt{
-			Type:        auth.PromptManualCode,
-			Message:     "Complete login in your browser, or paste the authorization code / redirect URL here:",
-			Placeholder: flow.options.RedirectURI,
-		})
-		manual <- manualResult{input: input, err: promptErr}
-	}()
-
-	var code, state string
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case result := <-wait:
-		cancelManual()
-		code, state = result.code, result.state
-	case result := <-manual:
-		if result.err != nil {
-			return nil, result.err
-		}
-		code, state, err = parseAuthorizationInput(result.input)
-		if err != nil {
+	code, input, fromCallback, err := waitForCallbackOrManualInput(ctx, interaction, server, auth.AuthPrompt{
+		Message:     "Complete login in your browser, or paste the authorization code / redirect URL here:",
+		Placeholder: flow.options.RedirectURI,
+	})
+	if err != nil {
+		return nil, err
+	}
+	state := verifier
+	if !fromCallback {
+		if code, state, err = parseAnthropicCode(input, verifier); err != nil {
 			return nil, err
 		}
-		if state != "" && state != verifier {
-			return nil, errors.New("OAuth state mismatch")
-		}
-		if state == "" {
-			state = verifier
-		}
 	}
+	return flow.exchangeCode(ctx, interaction, code, state, verifier, flow.options.RedirectURI)
+}
+
+// loginCopyCode has Anthropic show the code on its own page, so the browser can
+// run on another machine.
+func (flow *Anthropic) loginCopyCode(ctx context.Context, interaction auth.AuthInteraction) (*auth.Credential, error) {
+	verifier, challenge, err := GeneratePKCE(flow.options.Random)
+	if err != nil {
+		return nil, err
+	}
+	authorizeURL, err := flow.authorizeURL(anthropicCopyCodeRedirectURI, verifier, challenge)
+	if err != nil {
+		return nil, err
+	}
+	interaction.Notify(auth.AuthEvent{
+		Type:         auth.EventAuthURL,
+		URL:          authorizeURL,
+		Instructions: "Complete login in your browser, then copy the code Anthropic shows and paste it here.",
+	})
+	input, err := interaction.Prompt(ctx, auth.AuthPrompt{
+		Type: auth.PromptManualCode, Message: "Paste the code Anthropic shows after you sign in:", Placeholder: "code#state",
+	})
+	if err != nil {
+		return nil, err
+	}
+	code, state, err := parseAnthropicCode(input, verifier)
+	if err != nil {
+		return nil, err
+	}
+	return flow.exchangeCode(ctx, interaction, code, state, verifier, anthropicCopyCodeRedirectURI)
+}
+
+func parseAnthropicCode(input, verifier string) (code, state string, err error) {
+	code, state, err = parseAuthorizationInput(input)
+	if err != nil {
+		return "", "", err
+	}
+	if state != "" && state != verifier {
+		return "", "", errors.New("OAuth state mismatch")
+	}
+	return code, cmp.Or(state, verifier), nil
+}
+
+func (flow *Anthropic) exchangeCode(ctx context.Context, interaction auth.AuthInteraction, code, state, verifier, redirectURI string) (*auth.Credential, error) {
 	if code == "" {
-		return nil, errors.New("Missing authorization code") //nolint:staticcheck // Upstream error capitalization is observable.
-	}
-	if state == "" {
-		return nil, errors.New("Missing OAuth state") //nolint:staticcheck // Upstream error capitalization is observable.
+		return nil, errMissingAuthorizationCode
 	}
 	interaction.Notify(auth.AuthEvent{Type: auth.EventProgress, Message: "Exchanging authorization code for tokens..."})
 	body := orderedJSON(
@@ -205,7 +202,7 @@ func (flow *Anthropic) Login(ctx context.Context, interaction auth.AuthInteracti
 		"client_id", anthropicClientID,
 		"code", code,
 		"state", state,
-		"redirect_uri", flow.options.RedirectURI,
+		"redirect_uri", redirectURI,
 		"code_verifier", verifier,
 	)
 	return flow.exchange(ctx, body, "Token exchange")
@@ -231,7 +228,7 @@ func (*Anthropic) ToAuth(credential *auth.Credential) (auth.ModelAuth, error) {
 	return auth.ModelAuth{APIKey: &key}, nil
 }
 
-func (flow *Anthropic) authorizeURL(verifier, challenge string) (string, error) {
+func (flow *Anthropic) authorizeURL(redirectURI, verifier, challenge string) (string, error) {
 	parsed, err := url.Parse(flow.options.AuthorizeURL)
 	if err != nil {
 		return "", err
@@ -240,7 +237,7 @@ func (flow *Anthropic) authorizeURL(verifier, challenge string) (string, error) 
 		"code", "true",
 		"client_id", anthropicClientID,
 		"response_type", "code",
-		"redirect_uri", flow.options.RedirectURI,
+		"redirect_uri", redirectURI,
 		"scope", anthropicScopes,
 		"code_challenge", challenge,
 		"code_challenge_method", "S256",
@@ -335,49 +332,6 @@ func formatOAuthErrorDetails(err error) string {
 		details = append(details, "stack="+stacked.Stack())
 	}
 	return strings.Join(details, "; ")
-}
-
-type callbackResult struct {
-	code  string
-	state string
-}
-
-type manualResult struct {
-	input string
-	err   error
-}
-
-func callbackHandler(expectedState string, wait chan<- callbackResult) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if request.URL.Path != callbackPath {
-			writer.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(writer, errorPage("Callback route not found."))
-			return
-		}
-		query := request.URL.Query()
-		if oauthError := query.Get("error"); oauthError != "" {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPageWithDetails("Anthropic authentication did not complete.", "Error: "+oauthError))
-			return
-		}
-		code, state := query.Get("code"), query.Get("state")
-		if code == "" || state == "" {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPage("Missing code or state parameter."))
-			return
-		}
-		if state != expectedState {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(writer, errorPage("State mismatch."))
-			return
-		}
-		_, _ = io.WriteString(writer, successPage("Anthropic authentication completed. You can close this window."))
-		select {
-		case wait <- callbackResult{code: code, state: state}:
-		default:
-		}
-	})
 }
 
 func parseAuthorizationInput(input string) (code, state string, err error) {

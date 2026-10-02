@@ -104,13 +104,20 @@ func appendGrammarToolInputJSONDelta(
 	return &value, nil
 }
 
-func resolveJSONSchemaStrictSampling(tool ai.Tool, supportsStrictMode bool) (*bool, error) {
+// resolveJSONSchemaStrictSampling decides strict sampling for a tool; with
+// rejects, a "prefer" tool whose schema hits a keyword the provider's strict
+// mode rejects is sent non-strict.
+func resolveJSONSchemaStrictSampling(tool ai.Tool, supportsStrictMode bool, rejects ...strictKeywordCheck) (*bool, error) {
 	config := tool.ConstrainedSampling
 	if config == nil || config.Type != ai.ConstrainedSamplingJSONSchema {
 		return nil, nil
 	}
 	if supportsStrictMode {
-		if _, err := makeStrictJSONSchema(tool.Parameters); err != nil {
+		var check strictKeywordCheck
+		if len(rejects) > 0 {
+			check = rejects[0]
+		}
+		if _, err := makeStrictJSONSchema(tool.Parameters, check); err != nil {
 			var unsupported *unsupportedStrictSchemaError
 			if !errors.As(err, &unsupported) {
 				return nil, err

@@ -494,16 +494,16 @@ Jev), virtual models, Radius, pi's `system` theme and `tuiMode: "regular"`.
 
 **Providers and sign-in**
 - [x] Anthropic reports Claude Code 2.1.280.
-- [ ] Anthropic: non-strict fallback for rejected schema keywords; redirect errors end sign-in;
+- [x] Anthropic: non-strict fallback for rejected schema keywords; redirect errors end sign-in;
       busy callback port falls back to paste.
 - [ ] Anthropic copy-code login, and on a headless Orb the link and code travel over the Bridge to
       the paired phone.
-- [ ] Anthropic workload identity federation through the `Env` port.
+- [x] Anthropic workload identity federation through the `Env` port.
 - [x] Sign in with ChatGPT on `openai` (stable `deviceId`, request fields it rejects left out);
       Codex provider renamed legacy.
 - [x] ChatGPT usage-limit errors are not retried and link to the usage page.
 - [x] Meta provider: `META_API_KEY` and `/login meta`.
-- [ ] One shared OAuth callback server and Orb-branded pages.
+- [x] One shared OAuth callback server and Orb-branded pages.
 - [x] OpenAI-compatible strict only when advertised; pi-messages and Codex WebSocket partials as of
       emission.
 - [x] Wire fixes: image-only messages

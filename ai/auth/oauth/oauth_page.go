@@ -79,10 +79,47 @@ const oauthPageTemplate = `<!doctype html>
 </body>
 </html>`
 
-const orbOAuthLogo = `<span style="font:600 36px ui-sans-serif,system-ui,sans-serif;letter-spacing:-2px">orb</span>`
+// orbPageTemplate is the browser page of Orb's own sign-in callbacks: Ubuntu
+// Mono on the Ordalie palette, one stretched-caps title, red only on failure.
+const orbPageTemplate = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{TITLE}}</title>
+  <style>
+    :root { --bg: #12151A; --text: #FAF9F6; --dim: #6A6F77; --accent: #C94A3D; color-scheme: dark; }
+    @media (prefers-color-scheme: light) { :root { --bg: #FAF9F6; --text: #12151A; --dim: #8C8C87; color-scheme: light; } }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; padding: 32px 16px;
+      background: var(--bg); color: var(--text); font: 13px/1.6 "Ubuntu Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    main { width: 100%; max-width: 560px; margin: 0 auto; }
+    .mark { font-size: 10px; letter-spacing: 2px; color: var(--dim); }
+    h1 {
+      margin: 28px 0 36px; font-size: 40px; font-weight: 700; line-height: 1; letter-spacing: 1px;
+      transform: scaleY(1.9); transform-origin: top left;
+    }
+    .failed h1 { color: var(--accent); }
+    p { margin: 0; }
+    .details { margin-top: 12px; color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+    .next { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--dim); color: var(--dim); }
+  </style>
+</head>
+<body>
+  <main class="{{CLASS}}">
+    <div class="mark">ORB</div>
+    <h1>{{HEADING}}</h1>
+    <p>{{MESSAGE}}</p>
+    {{DETAILS}}
+    <p class="next">{{NEXT}}</p>
+  </main>
+</body>
+</html>`
 
 func successPage(message string) string {
-	return renderOAuthPage("Connected · Orb", "Connected to Orb", message+" Return to your Orb terminal.", "", orbOAuthLogo)
+	return renderOrbPage("Connected · Orb", "CONNECTED", message, "", "You can close this page and return to Orb.", "")
 }
 
 func errorPage(message string) string {
@@ -90,7 +127,22 @@ func errorPage(message string) string {
 }
 
 func errorPageWithDetails(message, details string) string {
-	return renderOAuthPage("Connection failed · Orb", "Couldn’t connect to Orb", message, details, orbOAuthLogo)
+	return renderOrbPage("Not connected · Orb", "NOT CONNECTED", message, details, "Return to Orb to try again.", "failed")
+}
+
+func renderOrbPage(title, heading, message, details, next, class string) string {
+	detailsHTML := ""
+	if details != "" {
+		detailsHTML = `<p class="details">` + escapeOAuthHTML(details) + `</p>`
+	}
+	return strings.NewReplacer(
+		"{{TITLE}}", escapeOAuthHTML(title),
+		"{{CLASS}}", class,
+		"{{HEADING}}", escapeOAuthHTML(heading),
+		"{{MESSAGE}}", escapeOAuthHTML(message),
+		"{{DETAILS}}", detailsHTML,
+		"{{NEXT}}", escapeOAuthHTML(next),
+	).Replace(orbPageTemplate)
 }
 
 // OAuthSuccessHTML retains the upstream HTML helper contract; browser callbacks

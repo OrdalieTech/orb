@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -17,6 +20,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
 	anthropic "github.com/anthropics/anthropic-sdk-go"
+	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
@@ -783,7 +787,7 @@ func convertAnthropicTools(
 		if oauth {
 			name = toClaudeCodeToolName(name)
 		}
-		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictTools)
+		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictTools, anthropicStrictRejects)
 		if err != nil {
 			return nil, err
 		}
@@ -1158,7 +1162,7 @@ func fromClaudeCodeToolName(name string, tools *[]ai.Tool) string {
 }
 
 func assertAnthropicAuth(model *ai.Model, options *ai.StreamOptions) error {
-	if anthropicAPIKey(options) != "" || hasAnthropicAuthHeader(options) {
+	if anthropicAPIKey(options) != "" || hasAnthropicAuthHeader(options) || anthropicFederation(model, options) != nil {
 		return nil
 	}
 	return fmt.Errorf("No API key for provider: %s", model.Provider) //nolint:staticcheck // Exact upstream error text is observable.
@@ -1283,6 +1287,16 @@ func postAnthropicStream(
 			clientOptions = append(clientOptions, option.WithAuthToken(apiKey))
 		} else if apiKey != "" {
 			clientOptions = append(clientOptions, option.WithAPIKey(apiKey))
+		} else if federation := anthropicFederation(model, options); federation != nil {
+			exchangeClient, _ := baseClient.(*http.Client)
+			token, err := federation.accessToken(ctx, model.BaseURL, exchangeClient)
+			if err != nil {
+				return nil, err
+			}
+			clientOptions = append(clientOptions, option.WithAuthToken(token))
+			if !slices.Contains(fields.Betas, anthropicOAuthBeta) {
+				requestOptions = append(requestOptions, option.WithHeader("anthropic-beta", strings.Join(append(fields.Betas, anthropicOAuthBeta), ",")))
+			}
 		}
 		for name, values := range headers {
 			if len(values) == 0 {
@@ -1934,4 +1948,99 @@ func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAl
 		return nil
 	}
 	return *compat.AllowedFallbackModels
+}
+
+// anthropicStrictRejects lists keywords Anthropic strict tool use rejects with
+// a 400 for the whole request.
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations
+func anthropicStrictRejects(key string, value any) bool {
+	switch key {
+	case "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "maxItems", "uniqueItems",
+		"minContains", "maxContains", "minProperties", "maxProperties":
+		return true
+	case "minItems":
+		number, ok := value.(json.Number)
+		parsed, err := number.Float64()
+		return !ok || err != nil || parsed != 0 && parsed != 1
+	case "format":
+		format, ok := value.(string)
+		return !ok || !slices.Contains([]string{"date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"}, format)
+	}
+	return false
+}
+
+// Workload identity federation: the identity token named by
+// ANTHROPIC_IDENTITY_TOKEN_FILE is exchanged for a short-lived access token,
+// cached and re-exchanged near expiry. Only for the anthropic provider (the
+// exchange is an Anthropic endpoint) and only when no key or auth header was
+// resolved; the ids arrive as provider env.
+const (
+	anthropicFederationRuleIDEnv    = "ANTHROPIC_FEDERATION_RULE_ID"
+	anthropicOrganizationIDEnv      = "ANTHROPIC_ORGANIZATION_ID"
+	anthropicIdentityTokenFileEnv   = "ANTHROPIC_IDENTITY_TOKEN_FILE"
+	anthropicServiceAccountIDEnv    = "ANTHROPIC_SERVICE_ACCOUNT_ID"
+	anthropicWorkspaceIDEnv         = "ANTHROPIC_WORKSPACE_ID"
+	anthropicOAuthBeta              = "oauth-2025-04-20"
+	anthropicFederationRefreshAhead = 30 * time.Second
+)
+
+type anthropicFederationConfig struct {
+	ruleID, organizationID, tokenFile, serviceAccountID, workspaceID string
+}
+
+func anthropicFederation(model *ai.Model, options *ai.StreamOptions) *anthropicFederationConfig {
+	if model.Provider != "anthropic" || options == nil || anthropicAPIKey(options) != "" || hasAnthropicAuthHeader(options) {
+		return nil
+	}
+	config := &anthropicFederationConfig{
+		ruleID: options.Env[anthropicFederationRuleIDEnv], organizationID: options.Env[anthropicOrganizationIDEnv],
+		tokenFile: options.Env[anthropicIdentityTokenFileEnv], serviceAccountID: options.Env[anthropicServiceAccountIDEnv],
+		workspaceID: options.Env[anthropicWorkspaceIDEnv],
+	}
+	if config.ruleID == "" || config.organizationID == "" || config.tokenFile == "" {
+		return nil
+	}
+	return config
+}
+
+var anthropicFederationTokens = struct {
+	sync.Mutex
+	byConfig map[string]anthropicFederationToken
+}{byConfig: map[string]anthropicFederationToken{}}
+
+type anthropicFederationToken struct {
+	value   string
+	expires time.Time
+}
+
+func (config *anthropicFederationConfig) accessToken(ctx context.Context, baseURL string, client *http.Client) (string, error) {
+	key := strings.Join([]string{baseURL, config.ruleID, config.organizationID, config.tokenFile, config.serviceAccountID, config.workspaceID}, "\x00")
+	anthropicFederationTokens.Lock()
+	defer anthropicFederationTokens.Unlock()
+	if cached, ok := anthropicFederationTokens.byConfig[key]; ok && (cached.expires.IsZero() || time.Until(cached.expires) > anthropicFederationRefreshAhead) {
+		return cached.value, nil
+	}
+	// The file is read on every exchange, so rotated tokens (Kubernetes
+	// projected service-account tokens) are picked up.
+	data, err := readHostFile(config.tokenFile)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read identity token file at %s: %w", config.tokenFile, err) //nolint:staticcheck // SDK text.
+	}
+	assertion := strings.TrimSpace(string(data))
+	if assertion == "" {
+		return "", fmt.Errorf("Identity token file at %s is empty", config.tokenFile) //nolint:staticcheck // SDK text.
+	}
+	credentials, err := anthropicconfig.ExchangeFederationAssertion(ctx, anthropicconfig.FederationExchangeParams{
+		Assertion: assertion, FederationRuleID: config.ruleID, OrganizationID: config.organizationID,
+		ServiceAccountID: config.serviceAccountID, WorkspaceID: config.workspaceID, BaseURL: baseURL, HTTPClient: client,
+	})
+	if err != nil {
+		return "", err
+	}
+	token := anthropicFederationToken{value: credentials.AccessToken}
+	if credentials.ExpiresAt != nil {
+		token.expires = *credentials.ExpiresAt
+	}
+	anthropicFederationTokens.byConfig[key] = token
+	return token.value, nil
 }

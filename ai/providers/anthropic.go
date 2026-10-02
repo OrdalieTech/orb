@@ -51,7 +51,22 @@ func (anthropicAPIKeyAuth) Resolve(
 			return &auth.AuthResult{Auth: auth.ModelAuth{APIKey: &key}, Source: name}, nil
 		}
 	}
-	return nil, nil
+	// Workload identity federation comes last, so keys and the auth token keep
+	// winning; its ids are provider configuration and travel as env.
+	federation := map[string]string{}
+	for _, name := range []string{"ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_IDENTITY_TOKEN_FILE"} {
+		value, ok := authContext.Env(ctx, name)
+		if !ok {
+			return nil, nil
+		}
+		federation[name] = value
+	}
+	for _, name := range []string{"ANTHROPIC_SERVICE_ACCOUNT_ID", "ANTHROPIC_WORKSPACE_ID"} {
+		if value, ok := authContext.Env(ctx, name); ok {
+			federation[name] = value
+		}
+	}
+	return &auth.AuthResult{Env: federation, Source: "workload identity federation"}, nil
 }
 
 var anthropicProvider = Provider{

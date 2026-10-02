@@ -217,7 +217,7 @@ func (adc *googleVertexADC) gcpResident() bool {
 	}
 	if runtime.GOOS == "linux" {
 		if _, err := os.Stat("/sys/class/dmi/id/bios_date"); err == nil {
-			if vendor, err := os.ReadFile("/sys/class/dmi/id/bios_vendor"); err == nil && strings.Contains(string(vendor), "Google") {
+			if vendor, err := readHostFile("/sys/class/dmi/id/bios_vendor"); err == nil && strings.Contains(string(vendor), "Google") {
 				return true
 			}
 		}
@@ -235,7 +235,7 @@ func (adc *googleVertexADC) gcpResident() bool {
 }
 
 func readGoogleVertexADCFile(path string) (*googleVertexADCFile, error) {
-	data, err := os.ReadFile(path)
+	data, err := readHostFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read Google application default credentials %q: %w", path, err)
 	}

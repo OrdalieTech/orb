@@ -82,7 +82,7 @@ func googleVertexExternalAccountFileSubjectToken(path, formatType, fieldName str
 		}
 		return "", fmt.Errorf("the file at %s does not exist, or it is not a file: %w", resolved, err)
 	}
-	data, err := os.ReadFile(resolved)
+	data, err := readHostFile(resolved)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +150,7 @@ func (adc *googleVertexADC) externalAccountCertificateSubjectToken(
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(configPath)
+	data, err := readHostFile(configPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read certificate config file at %s: %w", configPath, err)
 	}
@@ -163,7 +163,7 @@ func (adc *googleVertexADC) externalAccountCertificateSubjectToken(
 	if certPath == "" || keyPath == "" {
 		return "", fmt.Errorf("certificate config file (%s) is missing required cert_path or key_path in the workload config", configPath)
 	}
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := readHostFile(certPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read certificate file at %s: %w", certPath, err)
 	}
@@ -171,7 +171,7 @@ func (adc *googleVertexADC) externalAccountCertificateSubjectToken(
 	if err != nil {
 		return "", fmt.Errorf("failed to read certificate file at %s: %w", certPath, err)
 	}
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := readHostFile(keyPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read private key file at %s: %w", keyPath, err)
 	}
@@ -249,7 +249,7 @@ func googleVertexExternalAccountParseCertificate(data []byte) (*x509.Certificate
 }
 
 func googleVertexExternalAccountCertificateChain(leaf *x509.Certificate, path string) ([]*x509.Certificate, error) {
-	data, err := os.ReadFile(path)
+	data, err := readHostFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process certificate chain from %s: %w", path, err)
 	}
