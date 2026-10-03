@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"runtime/debug"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -91,7 +91,6 @@ type Runner struct {
 
 	diagnosticsMu       sync.RWMutex
 	shortcutDiagnostics []Diagnostic
-	commandDiagnostics  []Diagnostic
 }
 
 func NewRunner(registry *Registry, options RunnerOptions) *Runner {
@@ -128,17 +127,9 @@ func NewRunner(registry *Registry, options RunnerOptions) *Runner {
 		}
 	}
 	runner.bindCore(actions, options.ContextActions, runner.HasHandlers(EventProjectTrust))
-	if options.CommandActions != nil {
-		runner.BindCommandContext(options.CommandActions)
-	} else {
-		runner.BindCommandContext(nil)
-	}
+	runner.BindCommandContext(options.CommandActions)
 	runner.SetUI(options.UI, options.Mode)
 	return runner
-}
-
-func (runner *Runner) BindCore(actions Actions, contextActions ContextActions) {
-	runner.bindCore(actions, contextActions, false)
 }
 
 func (runner *Runner) bindCore(actions Actions, contextActions ContextActions, deferProviders bool) {
@@ -167,47 +158,29 @@ func (runner *Runner) bindDeferredProviders() {
 }
 
 func normalizeContextActions(actions ContextActions, cwd string) ContextActions {
-	if actions.GetModel == nil {
-		actions.GetModel = func() *ai.Model { return nil }
-	}
-	if actions.GetScopedModels == nil {
-		actions.GetScopedModels = func() []ScopedModel { return []ScopedModel{} }
-	}
-	if actions.IsIdle == nil {
-		actions.IsIdle = func() bool { return true }
-	}
-	if actions.IsProjectTrusted == nil {
-		actions.IsProjectTrusted = func() bool { return true }
-	}
-	if actions.GetSignal == nil {
-		actions.GetSignal = func() context.Context { return nil }
-	}
-	if actions.Abort == nil {
-		actions.Abort = func() {}
-	}
-	if actions.HasPendingMessages == nil {
-		actions.HasPendingMessages = func() bool { return false }
-	}
-	if actions.Shutdown == nil {
-		actions.Shutdown = func() {}
-	}
-	if actions.GetContextUsage == nil {
-		actions.GetContextUsage = func() *ContextUsage { return nil }
-	}
-	if actions.Compact == nil {
-		actions.Compact = func(*CompactOptions) {}
-	}
-	if actions.GetSystemPrompt == nil {
-		actions.GetSystemPrompt = func() string { return "" }
-	}
-	if actions.GetSystemPromptOptions == nil {
-		actions.GetSystemPromptOptions = func() SystemPromptOptions { return SystemPromptOptions{CWD: cwd} }
-	}
+	fillNilFuncs(&actions, ContextActions{
+		GetModel:               func() *ai.Model { return nil },
+		GetScopedModels:        func() []ScopedModel { return []ScopedModel{} },
+		IsIdle:                 func() bool { return true },
+		IsProjectTrusted:       func() bool { return true },
+		GetSignal:              func() context.Context { return nil },
+		Abort:                  func() {},
+		HasPendingMessages:     func() bool { return false },
+		Shutdown:               func() {},
+		GetContextUsage:        func() *ContextUsage { return nil },
+		Compact:                func(*CompactOptions) {},
+		GetSystemPrompt:        func() string { return "" },
+		GetSystemPromptOptions: func() SystemPromptOptions { return SystemPromptOptions{CWD: cwd} },
+	})
 	return actions
 }
 
 func (runner *Runner) BindCommandContext(actions *CommandActions) {
-	resolved := CommandActions{
+	var resolved CommandActions
+	if actions != nil {
+		resolved = *actions
+	}
+	fillNilFuncs(&resolved, CommandActions{
 		WaitForIdle: func(context.Context) error { return nil },
 		NewSession: func(context.Context, *NewSessionOptions) (SessionReplacementResult, error) {
 			return SessionReplacementResult{}, nil
@@ -222,27 +195,7 @@ func (runner *Runner) BindCommandContext(actions *CommandActions) {
 			return SessionReplacementResult{}, nil
 		},
 		Reload: func(context.Context) error { return nil },
-	}
-	if actions != nil {
-		if actions.WaitForIdle != nil {
-			resolved.WaitForIdle = actions.WaitForIdle
-		}
-		if actions.NewSession != nil {
-			resolved.NewSession = actions.NewSession
-		}
-		if actions.Fork != nil {
-			resolved.Fork = actions.Fork
-		}
-		if actions.NavigateTree != nil {
-			resolved.NavigateTree = actions.NavigateTree
-		}
-		if actions.SwitchSession != nil {
-			resolved.SwitchSession = actions.SwitchSession
-		}
-		if actions.Reload != nil {
-			resolved.Reload = actions.Reload
-		}
-	}
+	})
 	runner.mu.Lock()
 	runner.commandActions = resolved
 	runner.mu.Unlock()
@@ -345,39 +298,13 @@ func (runner *Runner) ToolDefinition(name string) *ToolDefinition {
 
 func (runner *Runner) Flags() map[string]Flag {
 	result := make(map[string]Flag)
-	for _, extension := range runner.extensions {
-		extension.mu.RLock()
-		for _, name := range extension.flagOrder {
-			if _, exists := result[name]; exists {
-				continue
-			}
-			result[name] = extension.flags[name]
-		}
-		extension.mu.RUnlock()
+	for _, flag := range runner.RegisteredFlags() {
+		result[flag.Name] = flag
 	}
 	return result
 }
 
-func (runner *Runner) RegisteredFlags() []Flag {
-	seen := make(map[string]struct{})
-	var flags []Flag
-	for _, extension := range runner.extensions {
-		extension.mu.RLock()
-		for _, name := range extension.flagOrder {
-			if _, exists := seen[name]; exists {
-				continue
-			}
-			flag, exists := extension.flags[name]
-			if !exists {
-				continue
-			}
-			seen[name] = struct{}{}
-			flags = append(flags, flag)
-		}
-		extension.mu.RUnlock()
-	}
-	return flags
-}
+func (runner *Runner) RegisteredFlags() []Flag { return registeredFlags(runner.extensions) }
 
 func (runner *Runner) SetFlagValue(name string, value any) { runner.runtime.setFlag(name, value) }
 
@@ -449,9 +376,6 @@ func (runner *Runner) resolveCommands() []ResolvedCommand {
 }
 
 func (runner *Runner) RegisteredCommands() []ResolvedCommand {
-	runner.diagnosticsMu.Lock()
-	runner.commandDiagnostics = nil
-	runner.diagnosticsMu.Unlock()
 	return runner.resolveCommands()
 }
 
@@ -492,13 +416,6 @@ func callCommandHandler(ctx context.Context, handler func(context.Context, strin
 		}
 	}()
 	return handler(ctx, args, commandContext)
-}
-
-func (runner *Runner) CommandDiagnostics() []Diagnostic {
-	runner.diagnosticsMu.RLock()
-	diagnostics := append([]Diagnostic(nil), runner.commandDiagnostics...)
-	runner.diagnosticsMu.RUnlock()
-	return diagnostics
 }
 
 var reservedShortcutBindings = map[string]struct{}{
@@ -609,13 +526,8 @@ func (runner *Runner) OnError(listener func(ExtensionError)) func() {
 
 func (runner *Runner) emitError(extensionError ExtensionError) {
 	runner.errorMu.RLock()
-	ids := make([]uint64, 0, len(runner.errorListeners))
-	for id := range runner.errorListeners {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(left, right int) bool { return ids[left] < ids[right] })
-	listeners := make([]func(ExtensionError), 0, len(ids))
-	for _, id := range ids {
+	listeners := make([]func(ExtensionError), 0, len(runner.errorListeners))
+	for _, id := range slices.Sorted(maps.Keys(runner.errorListeners)) {
 		listeners = append(listeners, runner.errorListeners[id])
 	}
 	runner.errorMu.RUnlock()
@@ -906,7 +818,7 @@ func (runner *Runner) EmitProjectTrust(ctx context.Context, event ProjectTrustEv
 				runner.emitError(extensionError)
 				continue
 			}
-			decision, ok := projectTrustResult(result)
+			decision, ok := eventResult[ProjectTrustResult](result)
 			if !ok || decision.Trusted == ProjectTrustUndecided {
 				continue
 			}
@@ -970,7 +882,7 @@ func (runner *Runner) EmitMessageEnd(ctx context.Context, event MessageEndEvent)
 				runner.emitError(makeExtensionError(extension.Path, EventMessageEnd, err))
 				continue
 			}
-			replacement, ok := messageEndResult(result)
+			replacement, ok := eventResult[MessageEndResult](result)
 			if !ok || replacement.Message == nil {
 				continue
 			}
@@ -1005,7 +917,7 @@ func (runner *Runner) EmitToolResult(ctx context.Context, event ToolResultEvent)
 				runner.emitError(makeExtensionError(extension.Path, EventToolResult, err))
 				continue
 			}
-			patch, ok := toolResultResult(result)
+			patch, ok := eventResult[ToolResultResult](result)
 			if !ok {
 				continue
 			}
@@ -1056,7 +968,7 @@ func (runner *Runner) EmitToolCall(ctx context.Context, event ToolCallEvent) *To
 				runner.emitError(makeExtensionError(extension.Path, EventToolCall, err))
 				return &ToolCallResult{Block: true, Reason: err.Error()}
 			}
-			if parsed, ok := toolCallResult(result); ok {
+			if parsed, ok := eventResult[ToolCallResult](result); ok {
 				next := *parsed
 				if current != nil {
 					next.Approved = next.Approved || current.Approved
@@ -1071,11 +983,6 @@ func (runner *Runner) EmitToolCall(ctx context.Context, event ToolCallEvent) *To
 	return current
 }
 
-func (runner *Runner) EmitUserBash(ctx context.Context, event UserBashEvent) *UserBashResult {
-	result, _ := runner.EmitUserBashChecked(ctx, event)
-	return result
-}
-
 func (runner *Runner) EmitUserBashChecked(ctx context.Context, event UserBashEvent) (*UserBashResult, error) {
 	extensionContext := runner.CreateContext()
 	for _, extension := range runner.extensions {
@@ -1085,7 +992,7 @@ func (runner *Runner) EmitUserBashChecked(ctx context.Context, event UserBashEve
 				runner.emitError(makeExtensionError(extension.Path, EventUserBash, err))
 				return nil, err
 			}
-			if parsed, ok := userBashResult(result); ok {
+			if parsed, ok := eventResult[UserBashResult](result); ok {
 				return parsed, nil
 			}
 			if result != nil {
@@ -1116,7 +1023,7 @@ func (runner *Runner) EmitContext(ctx context.Context, messages engine.AgentMess
 				continue
 			}
 			returned := visible
-			if parsed, ok := contextResult(result); ok && parsed.Messages != nil {
+			if parsed, ok := eventResult[ContextResult](result); ok && parsed.Messages != nil {
 				returned = parsed.Messages
 			}
 			if reflect.DeepEqual(returned, snapshot) {
@@ -1136,7 +1043,7 @@ func (runner *Runner) EmitContext(ctx context.Context, messages engine.AgentMess
 				runner.emitError(makeExtensionError(extension.Path, EventContextWithSystem, err))
 				continue
 			}
-			if parsed, ok := contextResult(result); ok && parsed.Messages != nil {
+			if parsed, ok := eventResult[ContextResult](result); ok && parsed.Messages != nil {
 				current = parsed.Messages
 			}
 			// Providers read the prompt and initial tools from the leading system message.
@@ -1213,7 +1120,7 @@ func (runner *Runner) EmitBoundary(
 			result, err := callHandler(ctx, handler, event, extensionContext)
 			if err != nil {
 				runner.emitError(makeExtensionError(extension.Path, base.Type(), err))
-			} else if parsed := boundaryResult(result); parsed != nil {
+			} else if parsed, ok := eventResult[BoundaryResult](result); ok {
 				if parsed.Entries != nil {
 					state.Entries = slices.Clone(*parsed.Entries)
 				}
@@ -1233,16 +1140,6 @@ func (runner *Runner) EmitBoundary(
 		return BoundaryDispatch{Entries: []SessionBoundaryDraft{}, Context: state.Context}
 	}
 	return BoundaryDispatch{Entries: state.Entries, Continue: state.Continue, Context: state.Context, Valid: true}
-}
-
-func boundaryResult(value any) *BoundaryResult {
-	switch typed := value.(type) {
-	case BoundaryResult:
-		return &typed
-	case *BoundaryResult:
-		return typed
-	}
-	return nil
 }
 
 // EmitBoundaryError reports a boundary failure that no single handler owns.
@@ -1335,7 +1232,7 @@ func (runner *Runner) EmitBeforeAgentStart(
 				runner.emitError(makeExtensionError(extension.Path, EventBeforeAgentStart, err))
 				continue
 			}
-			parsed, ok := beforeAgentStartResult(result)
+			parsed, ok := eventResult[BeforeAgentStartResult](result)
 			if !ok {
 				continue
 			}
@@ -1369,7 +1266,7 @@ func (runner *Runner) EmitResourcesDiscover(ctx context.Context, cwd string, rea
 				runner.emitError(makeExtensionError(extension.Path, EventResourcesDiscover, err))
 				continue
 			}
-			resources, ok := resourcesDiscoverResult(value)
+			resources, ok := eventResult[ResourcesDiscoverResult](value)
 			if !ok {
 				continue
 			}
@@ -1407,7 +1304,7 @@ func (runner *Runner) EmitInput(
 				runner.emitError(makeExtensionError(extension.Path, EventInput, err))
 				continue
 			}
-			result, ok := inputResult(value)
+			result, ok := eventResult[InputResult](value)
 			if !ok || result.Action == InputContinue || result.Action == "" {
 				continue
 			}
@@ -1487,92 +1384,30 @@ func isSessionBeforeEvent(event EventType) bool {
 }
 
 func sessionBeforeCancelled(result any) bool {
-	switch typed := result.(type) {
-	case SessionBeforeSwitchResult:
+	if typed, ok := eventResult[SessionBeforeSwitchResult](result); ok {
 		return typed.Cancel
-	case *SessionBeforeSwitchResult:
-		return typed != nil && typed.Cancel
-	case SessionBeforeForkResult:
+	}
+	if typed, ok := eventResult[SessionBeforeForkResult](result); ok {
 		return typed.Cancel
-	case *SessionBeforeForkResult:
-		return typed != nil && typed.Cancel
-	case SessionBeforeCompactResult:
+	}
+	if typed, ok := eventResult[SessionBeforeCompactResult](result); ok {
 		return typed.Cancel
-	case *SessionBeforeCompactResult:
-		return typed != nil && typed.Cancel
-	case SessionBeforeTreeResult:
+	}
+	if typed, ok := eventResult[SessionBeforeTreeResult](result); ok {
 		return typed.Cancel
-	case *SessionBeforeTreeResult:
-		return typed != nil && typed.Cancel
-	default:
-		return false
 	}
+	return false
 }
 
-func projectTrustResult(value any) (*ProjectTrustResult, bool) {
+// eventResult accepts a handler result returned as T or as a non-nil *T.
+func eventResult[T any](value any) (*T, bool) {
 	switch typed := value.(type) {
-	case ProjectTrustResult:
+	case T:
 		return &typed, true
-	case *ProjectTrustResult:
+	case *T:
 		return typed, typed != nil
-	default:
-		return nil, false
 	}
-}
-
-func messageEndResult(value any) (*MessageEndResult, bool) {
-	switch typed := value.(type) {
-	case MessageEndResult:
-		return &typed, true
-	case *MessageEndResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
-}
-
-func toolResultResult(value any) (*ToolResultResult, bool) {
-	switch typed := value.(type) {
-	case ToolResultResult:
-		return &typed, true
-	case *ToolResultResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
-}
-
-func toolCallResult(value any) (*ToolCallResult, bool) {
-	switch typed := value.(type) {
-	case ToolCallResult:
-		return &typed, true
-	case *ToolCallResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
-}
-
-func userBashResult(value any) (*UserBashResult, bool) {
-	switch typed := value.(type) {
-	case UserBashResult:
-		return &typed, true
-	case *UserBashResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
-}
-
-func contextResult(value any) (*ContextResult, bool) {
-	switch typed := value.(type) {
-	case ContextResult:
-		return &typed, true
-	case *ContextResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
+	return nil, false
 }
 
 func providerRequestResult(value any) (*ProviderRequestResult, bool) {
@@ -1586,39 +1421,6 @@ func providerRequestResult(value any) (*ProviderRequestResult, bool) {
 			return nil, false
 		}
 		return &ProviderRequestResult{Payload: value, Replace: true}, true
-	}
-}
-
-func beforeAgentStartResult(value any) (*BeforeAgentStartResult, bool) {
-	switch typed := value.(type) {
-	case BeforeAgentStartResult:
-		return &typed, true
-	case *BeforeAgentStartResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
-}
-
-func resourcesDiscoverResult(value any) (*ResourcesDiscoverResult, bool) {
-	switch typed := value.(type) {
-	case ResourcesDiscoverResult:
-		return &typed, true
-	case *ResourcesDiscoverResult:
-		return typed, typed != nil
-	default:
-		return nil, false
-	}
-}
-
-func inputResult(value any) (*InputResult, bool) {
-	switch typed := value.(type) {
-	case InputResult:
-		return &typed, true
-	case *InputResult:
-		return typed, typed != nil
-	default:
-		return nil, false
 	}
 }
 

@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -534,24 +533,17 @@ func (services *servicesHost) emitSessionEvent(generation *generation, handle *s
 	}
 	handle.nextTransferID++
 	transferID := fmt.Sprintf("%s-transfer-%d", handle.id, handle.nextTransferID)
-	const chunkSize = 2 << 20
-	total := (len(encoded) + chunkSize - 1) / chunkSize
-	for index, offset := 0, 0; offset < len(encoded); index, offset = index+1, offset+chunkSize {
-		end := min(offset+chunkSize, len(encoded))
-		chunk, chunkErr := eventFrame("agent_session_chunk", struct {
+	if err := generation.codec.writeChunks("agent_session_chunk", encoded, func(index, total int, data string) any {
+		return struct {
 			Handle     string `json:"handle"`
 			TransferID string `json:"transferId"`
 			Index      int    `json:"index"`
 			Total      int    `json:"total"`
 			Data       string `json:"data"`
-		}{handle.id, transferID, index, total, base64.StdEncoding.EncodeToString(encoded[offset:end])})
-		if chunkErr == nil {
-			chunkErr = generation.codec.write(chunk)
-		}
-		if chunkErr != nil {
-			services.reportEventFailure(generation, handle, kind, chunkErr)
-			return
-		}
+		}{handle.id, transferID, index, total, data}
+	}); err != nil {
+		services.reportEventFailure(generation, handle, kind, err)
+		return
 	}
 	envelope.Event = nil
 	envelope.TransferID = transferID

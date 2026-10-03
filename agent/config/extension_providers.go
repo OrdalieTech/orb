@@ -86,7 +86,7 @@ func mergeProviderConfig(previous, incoming extensions.ProviderConfig) extension
 		case "streamSimple":
 			result.Stream = incoming.Stream
 		case "headers":
-			result.Headers = cloneStringMap(incoming.Headers)
+			result.Headers = maps.Clone(incoming.Headers)
 		case "authHeader":
 			result.AuthHeader = cloneBool(incoming.AuthHeader)
 		case "models":
@@ -322,11 +322,11 @@ func configLoadErrors(config *ModelConfig) []string {
 }
 
 func cloneProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
-	config.Headers = cloneStringMap(config.Headers)
+	config.Headers = maps.Clone(config.Headers)
 	config.AuthHeader = cloneBool(config.AuthHeader)
 	config.Models = cloneProviderModels(config.Models)
-	config.Defined = cloneBoolMap(config.Defined)
-	config.RegistrationValues = cloneAnyMap(config.RegistrationValues)
+	config.Defined = maps.Clone(config.Defined)
+	config.RegistrationValues = maps.Clone(config.RegistrationValues)
 	return config
 }
 
@@ -338,14 +338,6 @@ func cloneProviderConfigs(source map[string]extensions.ProviderConfig) map[strin
 	return result
 }
 
-func cloneNativeProviders(source map[string]extensions.Provider) map[string]extensions.Provider {
-	result := make(map[string]extensions.Provider, len(source))
-	for id, provider := range source {
-		result[id] = provider
-	}
-	return result
-}
-
 func cloneProviderModels(source []extensions.ProviderModelConfig) []extensions.ProviderModelConfig {
 	if source == nil {
 		return nil
@@ -353,7 +345,7 @@ func cloneProviderModels(source []extensions.ProviderModelConfig) []extensions.P
 	result := append([]extensions.ProviderModelConfig(nil), source...)
 	for index := range result {
 		result[index].Input = append(ai.InputModalities(nil), result[index].Input...)
-		result[index].Headers = cloneStringMap(result[index].Headers)
+		result[index].Headers = maps.Clone(result[index].Headers)
 		result[index].Compat = append(json.RawMessage(nil), result[index].Compat...)
 		result[index].ThinkingLevelMap = cloneThinkingMap(result[index].ThinkingLevelMap)
 	}
@@ -364,47 +356,6 @@ func cloneCredentials(source map[string]*aiauth.Credential) map[string]*aiauth.C
 	result := make(map[string]*aiauth.Credential, len(source))
 	for id, credential := range source {
 		result[id] = credential.Clone()
-	}
-	return result
-}
-
-func cloneUint64Map(source map[string]uint64) map[string]uint64 {
-	result := make(map[string]uint64, len(source))
-	for key, value := range source {
-		result[key] = value
-	}
-	return result
-}
-
-func cloneStringMap(source map[string]string) map[string]string {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]string, len(source))
-	for name, value := range source {
-		result[name] = value
-	}
-	return result
-}
-
-func cloneBoolMap(source map[string]bool) map[string]bool {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]bool, len(source))
-	for name, value := range source {
-		result[name] = value
-	}
-	return result
-}
-
-func cloneAnyMap(source map[string]any) map[string]any {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]any, len(source))
-	for name, value := range source {
-		result[name] = value
 	}
 	return result
 }
@@ -502,7 +453,7 @@ func (method registeredAPIKeyAuth) resolve(ctx context.Context, authContext aiau
 			return nil, nil
 		}
 		key := *credential.Key
-		return &aiauth.AuthResult{Auth: aiauth.ModelAuth{APIKey: &key}, Env: cloneStringMap(credential.Env), Source: "stored credential"}, nil
+		return &aiauth.AuthResult{Auth: aiauth.ModelAuth{APIKey: &key}, Env: maps.Clone(credential.Env), Source: "stored credential"}, nil
 	}
 	if method.valueDefined || method.value != "" {
 		env := make(map[string]string)

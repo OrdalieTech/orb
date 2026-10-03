@@ -621,8 +621,8 @@ func TestRPCTogglesKeepProjectOverridesEffective(t *testing.T) {
 
 	runtime.SetAutoCompactionEnabled(true)
 	runtime.SetAutoRetryEnabled(true)
-	if runtime.AutoCompactionEnabled() || runtime.AutoRetryEnabled() {
-		t.Fatalf("effective policies = compaction %t, retry %t", runtime.AutoCompactionEnabled(), runtime.AutoRetryEnabled())
+	if runtime.AutoCompactionEnabled() || runtime.autoRetryEnabled() {
+		t.Fatalf("effective policies = compaction %t, retry %t", runtime.AutoCompactionEnabled(), runtime.autoRetryEnabled())
 	}
 }
 

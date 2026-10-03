@@ -132,14 +132,7 @@ func validateSkillName(name string) []string {
 	if length := utf16Length(name); length > maxSkillNameLength {
 		errors = append(errors, fmt.Sprintf("name exceeds %d characters (%d)", maxSkillNameLength, length))
 	}
-	valid := name != ""
-	for _, character := range name {
-		if character != '-' && (character < 'a' || character > 'z') && (character < '0' || character > '9') {
-			valid = false
-			break
-		}
-	}
-	if !valid {
+	if name == "" || strings.Trim(name, "-abcdefghijklmnopqrstuvwxyz0123456789") != "" {
 		errors = append(errors, "name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)")
 	}
 	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {

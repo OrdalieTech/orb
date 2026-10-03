@@ -18,8 +18,8 @@ var (
 	ErrUIUnavailable         = errors.New("UI not available")
 )
 
-// MessageRenderOptions mirrors upstream MessageRenderOptions (types.ts):
-// OutputPad is the horizontal padding configured by the outputPad setting.
+// MessageRenderOptions.OutputPad is the horizontal padding configured by the
+// outputPad setting.
 type MessageRenderOptions struct {
 	Expanded  bool
 	OutputPad int
@@ -27,16 +27,15 @@ type MessageRenderOptions struct {
 
 type EntryRenderOptions struct{ Expanded bool }
 
-// MarkdownTransformContext mirrors upstream MarkdownTransformContext (types.ts).
 type MarkdownTransformContext struct {
 	MessageType    string // "user" | "assistant" | "assistant-thinking"
 	IsStreaming    bool
 	AvailableWidth int
 }
 
-// MarkdownTransformer rewrites interactive message markdown before rendering
-// (upstream types.ts MarkdownTransformer). Extension registration is deferred;
-// interactive mode composes the built-in transformers as a list.
+// MarkdownTransformer rewrites interactive message markdown before rendering.
+// Extension registration is deferred; interactive mode composes the built-in
+// transformers as a list.
 type MarkdownTransformer func(markdown string, context MarkdownTransformContext) string
 
 type MessageRenderer func(CustomMessage, MessageRenderOptions, Theme) Component
@@ -173,19 +172,10 @@ func (registry *Registry) register(path string, factory Factory, configuration r
 	registry.mu.Lock()
 	registry.extensions = append(registry.extensions, extension)
 	registry.registrations = append(registry.registrations, registration{
-		path: path, factory: factory, configuration: cloneRegisterOptions(configuration),
+		path: path, factory: factory, configuration: configuration,
 	})
 	registry.mu.Unlock()
 	return nil
-}
-
-func cloneRegisterOptions(options registerOptions) registerOptions {
-	cloned := registerOptions{hidden: options.hidden, replaceable: options.replaceable}
-	if options.sourceInfo != nil {
-		sourceInfo := *options.sourceInfo
-		cloned.sourceInfo = &sourceInfo
-	}
-	return cloned
 }
 
 // Fresh recreates every registered extension against a new active runtime.
@@ -200,7 +190,7 @@ func (registry *Registry) Fresh(cwd string) (*Registry, error) {
 	registrations := append([]registration(nil), registry.registrations...)
 	registry.mu.RUnlock()
 	for _, entry := range registrations {
-		if err := fresh.register(entry.path, entry.factory, cloneRegisterOptions(entry.configuration)); err != nil {
+		if err := fresh.register(entry.path, entry.factory, entry.configuration); err != nil {
 			return nil, err
 		}
 	}

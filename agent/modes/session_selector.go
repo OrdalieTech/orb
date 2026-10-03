@@ -87,8 +87,8 @@ type selectorStatus struct {
 	message string
 }
 
-// SessionSelectorComponent mirrors the startup and interactive session picker
-// used by upstream. Loaders may block; scope loads run away from the TUI input
+// SessionSelectorComponent is the startup and interactive session picker.
+// Loaders may block; scope loads run away from the TUI input
 // loop and publish progress through RequestRender.
 type SessionSelectorComponent struct {
 	mu sync.Mutex
@@ -195,29 +195,19 @@ func (selector *SessionSelectorComponent) loadScope(scope sessionSelectorScope) 
 		selector.mu.Unlock()
 		return
 	}
+	selector.cancelScopeLoadLocked(scope)
+	loadContext, cancel := context.WithCancel(context.Background())
 	var loader SessionSelectorLoader
 	var contextLoader SessionSelectorContextLoader
 	seq := 0
 	if scope == sessionScopeCurrent {
-		selector.cancelScopeLoadLocked(scope)
-		selector.currentLoading = true
+		selector.currentLoading, selector.currentCancel = true, cancel
 		selector.currentLoadSeq++
-		seq = selector.currentLoadSeq
-		loader = selector.currentLoader
-		contextLoader = selector.currentContextLoader
+		seq, loader, contextLoader = selector.currentLoadSeq, selector.currentLoader, selector.currentContextLoader
 	} else {
-		selector.cancelScopeLoadLocked(scope)
-		selector.allLoading = true
+		selector.allLoading, selector.allCancel = true, cancel
 		selector.allLoadSeq++
-		seq = selector.allLoadSeq
-		loader = selector.allLoader
-		contextLoader = selector.allContextLoader
-	}
-	loadContext, cancel := context.WithCancel(context.Background())
-	if scope == sessionScopeCurrent {
-		selector.currentCancel = cancel
-	} else {
-		selector.allCancel = cancel
+		seq, loader, contextLoader = selector.allLoadSeq, selector.allLoader, selector.allContextLoader
 	}
 	selector.loadProgress = ""
 	selector.mu.Unlock()
@@ -886,12 +876,10 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		}
 		return
 	}
+	keys := tui.GetKeybindings()
 	switch {
-	case tui.GetKeybindings().Matches(data, "tui.input.tab"):
+	case keys.Matches(data, "tui.input.tab"):
 		selector.toggleScopeLocked()
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
 	case selector.keybindings.Matches(data, "app.session.toggleSort"):
 		switch selector.sortMode {
 		case sessionSortThreaded:
@@ -902,9 +890,6 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 			selector.sortMode = sessionSortThreaded
 		}
 		selector.filterLocked(selector.search.GetValue())
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
 	case selector.keybindings.Matches(data, "app.session.toggleNamedFilter"):
 		if selector.nameFilter == sessionNamesAll {
 			selector.nameFilter = sessionNamesNamed
@@ -912,53 +897,28 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 			selector.nameFilter = sessionNamesAll
 		}
 		selector.filterLocked(selector.search.GetValue())
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
 	case selector.keybindings.Matches(data, "app.session.togglePath"):
 		selector.showPath = !selector.showPath
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case selector.keybindings.Matches(data, "app.session.delete"):
+	case selector.keybindings.Matches(data, "app.session.delete"),
+		selector.keybindings.Matches(data, "app.session.deleteNoninvasive") && selector.search.GetValue() == "":
 		selector.startDeleteLocked()
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case selector.keybindings.Matches(data, "app.session.deleteNoninvasive") && selector.search.GetValue() == "":
-		selector.startDeleteLocked()
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case tui.GetKeybindings().Matches(data, "tui.select.up"):
+	case keys.Matches(data, "tui.select.up"):
 		selector.selectionTouched = true
 		selector.selected = max(0, selector.selected-1)
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case tui.GetKeybindings().Matches(data, "tui.select.down"):
+	case keys.Matches(data, "tui.select.down"):
 		selector.selectionTouched = true
 		if len(selector.filtered) > 0 {
 			selector.selected = min(len(selector.filtered)-1, selector.selected+1)
 		}
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case tui.GetKeybindings().Matches(data, "tui.select.pageUp"):
+	case keys.Matches(data, "tui.select.pageUp"):
 		selector.selectionTouched = true
 		selector.selected = max(0, selector.selected-selector.maxVisible)
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case tui.GetKeybindings().Matches(data, "tui.select.pageDown"):
+	case keys.Matches(data, "tui.select.pageDown"):
 		selector.selectionTouched = true
 		if len(selector.filtered) > 0 {
 			selector.selected = min(len(selector.filtered)-1, selector.selected+selector.maxVisible)
 		}
-		selector.mu.Unlock()
-		selector.requestRender()
-		return
-	case tui.GetKeybindings().Matches(data, "tui.select.confirm"):
+	case keys.Matches(data, "tui.select.confirm"):
 		callback := selector.onSelect
 		path := ""
 		if selector.selected >= 0 && selector.selected < len(selector.filtered) {
@@ -973,7 +933,7 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 			callback(path)
 		}
 		return
-	case tui.GetKeybindings().Matches(data, "tui.select.cancel"):
+	case keys.Matches(data, "tui.select.cancel"):
 		callback := selector.onCancel
 		selector.clearStatusLocked()
 		selector.cancelActiveLoadsLocked()
@@ -982,12 +942,13 @@ func (selector *SessionSelectorComponent) HandleInput(event tui.KeyEvent) {
 			callback()
 		}
 		return
+	default:
+		selector.selectionTouched = true
+		selector.mu.Unlock()
+		selector.search.HandleInput(event)
+		selector.mu.Lock()
+		selector.filterLocked(selector.search.GetValue())
 	}
-	selector.selectionTouched = true
-	selector.mu.Unlock()
-	selector.search.HandleInput(event)
-	selector.mu.Lock()
-	selector.filterLocked(selector.search.GetValue())
 	selector.mu.Unlock()
 	selector.requestRender()
 }
@@ -1124,14 +1085,7 @@ func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSel
 // RunSessionSelectorContext runs the startup picker with cancellable,
 // progressively publishing loaders.
 func RunSessionSelectorContext(ctx context.Context, current, all SessionSelectorContextLoader) (string, bool, error) {
-	return RunSessionSelectorContextWithTerminal(ctx, current, all, tui.NewProcessTerminal())
-}
-
-func RunSessionSelectorContextWithTerminal(ctx context.Context, current, all SessionSelectorContextLoader, terminal tui.Terminal) (string, bool, error) {
-	return runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{
-		CurrentSessionsContext: current,
-		AllSessionsContext:     all,
-	}, terminal)
+	return runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{CurrentSessionsContext: current, AllSessionsContext: all}, tui.NewProcessTerminal())
 }
 
 // RunSessionSelectorWithOptions assembles native loaders and actions explicitly.

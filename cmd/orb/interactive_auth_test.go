@@ -149,7 +149,7 @@ func TestInteractiveHostDescribesConfiguredAuthPerMethod(t *testing.T) {
 		t.Fatalf("missing auth option %s/%s", id, authType)
 		return modes.InteractiveAuthProvider{}
 	}
-	// LOG-m3: statuses surface the raw runtime sources like upstream
+	// Statuses surface the raw runtime sources like upstream
 	// getProviderAuthStatus ("stored", env label, ...), not invented labels.
 	for _, option := range []modes.InteractiveAuthProvider{
 		find("anthropic", aiauth.AuthTypeOAuth),
@@ -173,7 +173,7 @@ func TestInteractiveHostDescribesConfiguredAuthPerMethod(t *testing.T) {
 	}
 }
 
-// LOG-m3: --api-key is a runtime credential upstream, so it must surface as
+// --api-key is a runtime credential upstream, so it must surface as
 // source "runtime", participate in /logout, and disappear from both request
 // auth and the stored credential beneath it when logged out.
 func TestLOGm3InteractiveHostRuntimeAPIKeyStatusAndLogout(t *testing.T) {
@@ -333,8 +333,7 @@ func TestInteractiveHostMapsConfiguredAuthSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// LOG-m3: raw upstream sources (provider-composer.ts
-	// configuredRequestAuthStatus), not invented friendly labels.
+	// Raw upstream sources, not invented friendly labels.
 	want := map[string]string{"key-auth": "models_json_key", "command-auth": "models_json_command"}
 	for _, option := range options.Login {
 		source, expected := want[option.ID]

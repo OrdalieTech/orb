@@ -2,9 +2,11 @@ package tools
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/OrdalieTech/orb/internal/jstrim"
 	udiff "github.com/aymanbagabas/go-udiff"
 	"github.com/aymanbagabas/go-udiff/myers"
 	"golang.org/x/text/unicode/norm"
@@ -83,7 +85,7 @@ func RestoreLineEndings(text, ending string) string {
 func NormalizeForFuzzyMatch(text string) string {
 	lines := strings.Split(norm.NFKC.String(text), "\n")
 	for index := range lines {
-		lines[index] = strings.TrimRightFunc(lines[index], javascriptWhitespace)
+		lines[index] = strings.TrimRightFunc(lines[index], jstrim.IsSpace)
 	}
 	normalized := strings.Join(lines, "\n")
 	return strings.NewReplacer(
@@ -96,14 +98,6 @@ func NormalizeForFuzzyMatch(text string) string {
 		"\u2009", " ", "\u200a", " ", "\u202f", " ", "\u205f", " ",
 		"\u3000", " ",
 	).Replace(normalized)
-}
-
-func javascriptWhitespace(value rune) bool {
-	switch value {
-	case '\u0009', '\u000b', '\u000c', '\u000d', '\u0020', '\u00a0', '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff':
-		return true
-	}
-	return value >= '\u2000' && value <= '\u200a'
 }
 
 func FuzzyFindText(content, oldText string) FuzzyMatchResult {
@@ -165,13 +159,9 @@ func ApplyEditsToNormalizedContent(normalizedContent string, edits []Edit, path 
 		}
 	}
 
-	usedFuzzyMatch := false
-	for _, edit := range normalizedEdits {
-		if fuzzyFindText(normalizedContent, edit.OldText).UsedFuzzyMatch {
-			usedFuzzyMatch = true
-			break
-		}
-	}
+	usedFuzzyMatch := slices.ContainsFunc(normalizedEdits, func(edit Edit) bool {
+		return fuzzyFindText(normalizedContent, edit.OldText).UsedFuzzyMatch
+	})
 	replacementBase := normalizedContent
 	if usedFuzzyMatch {
 		replacementBase = NormalizeForFuzzyMatch(normalizedContent)

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf16"
@@ -153,10 +155,7 @@ func decodeTrust(contents []byte, path string) (trustFile, error) {
 
 // writeTrustFile matches upstream's JSON.stringify(sorted, null, 2) + "\n".
 func writeTrustFile(path string, data trustFile) error {
-	keys := make([]string, 0, len(data))
-	for key := range data {
-		keys = append(keys, key)
-	}
+	keys := slices.Collect(maps.Keys(data))
 	sort.Slice(keys, func(left, right int) bool { return lessUTF16(keys[left], keys[right]) })
 	var output bytes.Buffer
 	if len(keys) == 0 {

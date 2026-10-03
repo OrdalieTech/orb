@@ -256,7 +256,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			resourceDiagnostics = append(resourceDiagnostics, startupResourceDiagnostic(diagnostic))
 		}
 
-		selection := ResolveBuiltInToolSelection(args)
+		selection := ResolveToolSelection(args, defaultBuiltInTools)
 		activeTools, err = createBuiltInTools(cwd, selection, settings, toolSandboxMode)
 		if err != nil {
 			return runtimeInputs{}, err
@@ -273,7 +273,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 				return runtimeInputs{}, err
 			}
 			if args.Tools != nil {
-				initialNames = filterExcludedTools(args.Tools, args.ExcludeTools)
+				initialNames = slices.DeleteFunc(slices.Clone(args.Tools), func(name string) bool { return slices.Contains(args.ExcludeTools, name) })
 				allowed := append([]string(nil), args.Tools...)
 				allowedTools = &allowed
 			} else if args.NoTools {
@@ -308,15 +308,13 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	if extensionRegistry != nil {
-		extensionRegistry.BindModelRegistry(registry, func(extensionError extensions.ExtensionError) {
-			diagnostics = append(diagnostics, modes.StartupDiagnostic{
-				Kind:    modes.StartupDiagnosticExtension,
-				Path:    extensionError.ExtensionPath,
-				Message: fmt.Sprintf("%s: %s", extensionError.Event, extensionError.Error),
-			})
+	extensionRegistry.BindModelRegistry(registry, func(extensionError extensions.ExtensionError) {
+		diagnostics = append(diagnostics, modes.StartupDiagnostic{
+			Kind:    modes.StartupDiagnosticExtension,
+			Path:    extensionError.ExtensionPath,
+			Message: fmt.Sprintf("%s: %s", extensionError.Event, extensionError.Error),
 		})
-	}
+	})
 	var model *ai.Model
 	var scopedThinking *ai.ModelThinkingLevel
 	var scopedModels []agent.ScopedModel
@@ -333,7 +331,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	diagnostics = append(diagnostics, otherDiagnostics(modelDiagnostics)...)
+	for _, message := range modelDiagnostics {
+		diagnostics = append(diagnostics, otherDiagnostic(message))
+	}
 	var thinking ai.ModelThinkingLevel
 	// Upstream order: a new session takes the per-model level before the global default.
 	if model != nil && len(priorMessages) == 0 {
@@ -393,7 +393,6 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		return registry.StreamSimple(ctx, model, request, &merged)
 	}
 	state := engine.AgentState{
-		SystemPrompt:  "",
 		Model:         model,
 		ThinkingLevel: thinking,
 		Tools:         activeTools,
@@ -403,9 +402,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	if args.APIKey != nil && *args.APIKey != "" && model != nil {
 		provider := model.Provider
 		cliAPIKeyProvider = &provider
-	}
-	if cliAPIKeyProvider != nil {
-		runtimeAuth.SetRuntimeAPIKey(string(*cliAPIKeyProvider), *args.APIKey)
+		runtimeAuth.SetRuntimeAPIKey(string(provider), *args.APIKey)
 	}
 	resolveRequestAuth := requestAuthResolverWithCredentials(registry, runtimeAuth)
 	resolveAPIKey := func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
@@ -497,20 +494,6 @@ func hasNonControlExtensions(registry *extensions.Registry) bool {
 		}
 	}
 	return false
-}
-
-func filterExcludedTools(names, excluded []string) []string {
-	denied := make(map[string]struct{}, len(excluded))
-	for _, name := range excluded {
-		denied[name] = struct{}{}
-	}
-	result := make([]string, 0, len(names))
-	for _, name := range names {
-		if _, exists := denied[name]; !exists {
-			result = append(result, name)
-		}
-	}
-	return result
 }
 
 // enabledPackageResourcePaths keeps enabled package-contributed resources;

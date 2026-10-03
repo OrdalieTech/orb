@@ -18,6 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 type Clock func() time.Time
@@ -712,13 +713,6 @@ func cloneString(value *string) *string {
 	return &copy
 }
 
-func cloneStringSlice(values []string) []string {
-	if values == nil {
-		return nil
-	}
-	return append([]string{}, values...)
-}
-
 func (manager *SessionManager) AppendMessage(message any) (string, error) {
 	raw, err := rawValue(message)
 	if err != nil {
@@ -764,7 +758,7 @@ func (manager *SessionManager) AppendActiveToolsChange(activeToolNames []string)
 	if err != nil {
 		return "", err
 	}
-	entry.ActiveToolNames = cloneStringSlice(activeToolNames)
+	entry.ActiveToolNames = slices.Clone(activeToolNames)
 	return manager.appendEntryLocked(entry)
 }
 
@@ -909,14 +903,7 @@ func (manager *SessionManager) AppendContextEdit(targetID string, replacement js
 	if target == nil {
 		return "", fmt.Errorf("entry %s not found", targetID)
 	}
-	onBranch := false
-	for _, entry := range manager.GetBranch() {
-		if entry.ID == targetID {
-			onBranch = true
-			break
-		}
-	}
-	if !onBranch {
+	if !slices.ContainsFunc(manager.GetBranch(), func(entry SessionEntry) bool { return entry.ID == targetID }) {
 		return "", fmt.Errorf("entry %s is not on the active branch", targetID)
 	}
 	role := "custom"
@@ -983,10 +970,6 @@ func (manager *SessionManager) GetCWD() string {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	return manager.cwd
-}
-
-func (manager *SessionManager) GetCwd() string {
-	return manager.GetCWD()
 }
 
 func (manager *SessionManager) GetSessionDir() string {
@@ -1062,7 +1045,7 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 	copy.ParentID = cloneString(entry.ParentID)
 	copy.LeafTargetID = cloneString(entry.LeafTargetID)
 	copy.Label = cloneString(entry.Label)
-	copy.ActiveToolNames = cloneStringSlice(entry.ActiveToolNames)
+	copy.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
 	copy.Message = cloneRaw(entry.Message)
 	copy.Details = cloneRaw(entry.Details)
 	copy.Usage = cloneSessionUsage(entry.Usage)
@@ -1159,7 +1142,7 @@ func (manager *SessionManager) GetSessionName() *string {
 	for index := len(manager.fileEntries) - 1; index >= 0; index-- {
 		entry := manager.fileEntries[index]
 		if entry != nil && entry.Entry != nil && entry.Type == "session_info" {
-			name := trimJSSpace(entry.Entry.Name)
+			name := strings.TrimFunc(entry.Entry.Name, jstrim.IsSpace)
 			if name == "" {
 				return nil
 			}

@@ -3,8 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -44,60 +44,21 @@ type CreateAgentSessionFromServicesOptions struct {
 }
 
 func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*AgentSessionServices, error) {
-	cwd := options.CWD
-	if cwd == "" {
-		cwd = "."
-	}
-	normalizedCWD, err := config.NormalizePath(cwd)
-	if err != nil {
-		return nil, err
-	}
-	// A host FS port owns its path namespace: a virtual POSIX tree must not
-	// pick up the process drive on win32 (DECISIONS.md P10).
-	if options.Host != nil && options.Host.FS != nil {
-		cwd, err = options.Host.FS.AbsolutePath(context.Background(), normalizedCWD)
-	} else {
-		cwd, err = filepath.Abs(normalizedCWD)
-	}
-	if err != nil {
-		return nil, err
-	}
-	agentDir := options.AgentDir
-	if agentDir == "" && options.Host != nil {
-		agentDir = options.Host.AgentDir
-	}
-	if agentDir == "" {
-		agentDir = DefaultAgentDir()
-	}
-	agentDir, err = config.NormalizePath(agentDir)
-	if err != nil {
-		return nil, err
-	}
-	if options.Host != nil && options.Host.FS != nil {
-		agentDir, err = options.Host.FS.AbsolutePath(context.Background(), agentDir)
-	} else {
-		agentDir, err = filepath.Abs(agentDir)
-	}
+	cwd, agentDir, err := resolveSessionDirs(options.Host, options.CWD, options.AgentDir)
 	if err != nil {
 		return nil, err
 	}
 	settings := options.SettingsManager
-	if settings == nil && options.Host != nil {
-		settings, err = hostSettings(options.Host, cwd, agentDir)
-	} else if settings == nil {
-		settings, err = config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	}
-	if err != nil {
-		return nil, err
+	if settings == nil {
+		if settings, err = newSettings(options.Host, cwd, agentDir); err != nil {
+			return nil, err
+		}
 	}
 	modelRegistry := options.ModelRegistry
-	if modelRegistry == nil && options.Host != nil {
-		modelRegistry, err = hostModelRegistry(options.Host, agentDir)
-	} else if modelRegistry == nil {
-		modelRegistry, err = config.NewModelRegistry(agentDir)
-	}
-	if err != nil {
-		return nil, err
+	if modelRegistry == nil {
+		if modelRegistry, err = newModelRegistry(options.Host, agentDir); err != nil {
+			return nil, err
+		}
 	}
 	loaderOptions := DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings}
 	if options.ResourceLoaderOptions != nil {
@@ -148,11 +109,7 @@ func applyExtensionFlagValues(registry *extensions.Registry, values map[string]a
 	for _, flag := range registry.RegisteredFlags() {
 		registered[flag.Name] = flag.Type
 	}
-	names := make([]string, 0, len(values))
-	for name := range values {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(values))
 	var diagnostics []AgentSessionRuntimeDiagnostic
 	var unknown []string
 	for _, name := range names {

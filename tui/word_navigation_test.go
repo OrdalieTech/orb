@@ -95,7 +95,9 @@ func TestWordNavigationAtomicSegments(t *testing.T) {
 	marker := "[paste #1 +5 lines]"
 	text := "hello " + marker + " world"
 	options := &wordNavigationOptions{
-		segment:         func(input string) []segment { return segmentWithMarkers(input, wordSegments, map[int]bool{1: true}) },
+		segment: func(input string) []segment {
+			return mergeAtomicSpans(input, wordSegments, markerSpans(input, map[int]bool{1: true}))
+		},
 		isAtomicSegment: func(value string) bool { return value == marker },
 	}
 

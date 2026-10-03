@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -21,7 +22,7 @@ func TestPrimitiveComponents(t *testing.T) {
 	container := &Container{}
 	container.AddChild(NewSpacer(2))
 	container.AddChild(NewTruncatedText("ok", 0, 0))
-	if got := container.Render(4); !equalLines(got, []string{"", "", "ok  "}) {
+	if got := container.Render(4); !slices.Equal(got, []string{"", "", "ok  "}) {
 		t.Fatalf("Container.Render = %#v", got)
 	}
 
@@ -47,7 +48,7 @@ func TestLoaderStaticIndicator(t *testing.T) {
 	loader := NewLoader(counter, func(value string) string { return "<" + value + ">" }, func(value string) string { return "[" + value + "]" }, "Work", &LoaderIndicatorOptions{Frames: []string{"*"}, Interval: time.Millisecond})
 	defer loader.Stop()
 	lines := loader.Render(20)
-	if !equalLines(lines, []string{"", " * [Work]           "}) {
+	if !slices.Equal(lines, []string{"", " * [Work]           "}) {
 		t.Fatalf("Loader.Render = %#v", lines)
 	}
 	if counter.count == 0 {

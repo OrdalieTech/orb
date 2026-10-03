@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"sync"
 )
@@ -34,27 +35,9 @@ func (box *Box) AddChild(component Component) {
 	box.cache = nil
 }
 
-func (box *Box) RemoveChild(component Component) {
-	box.mu.Lock()
-	defer box.mu.Unlock()
-	for index, child := range box.Children {
-		if child == component {
-			box.Children = append(box.Children[:index], box.Children[index+1:]...)
-			box.cache = nil
-			return
-		}
-	}
-}
-
 func (box *Box) Clear() {
 	box.mu.Lock()
 	box.Children, box.cache = nil, nil
-	box.mu.Unlock()
-}
-
-func (box *Box) SetBackground(background StyleFunc) {
-	box.mu.Lock()
-	box.bg, box.cache = background, nil
 	box.mu.Unlock()
 }
 
@@ -88,7 +71,7 @@ func (box *Box) Render(width int) []string {
 	if box.bg != nil {
 		sample = box.bg("test")
 	}
-	if box.cache != nil && box.cache.width == width && box.cache.bgSample == sample && equalLines(box.cache.childLines, childLines) {
+	if box.cache != nil && box.cache.width == width && box.cache.bgSample == sample && slices.Equal(box.cache.childLines, childLines) {
 		return box.cache.lines
 	}
 	lines := make([]string, 0, len(childLines)+box.paddingY*2)
@@ -111,16 +94,4 @@ func (box *Box) applyBackground(line string, width int) string {
 		return ApplyBackgroundToLine(line, width, box.bg)
 	}
 	return line
-}
-
-func equalLines(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }

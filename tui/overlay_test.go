@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -376,7 +377,7 @@ func TestViewportKeysDeferToFocusedOverlay(t *testing.T) {
 	overlay := &overlayFocusRecorder{lines: []string{"OVERLAY"}}
 	handle := ui.ShowOverlay(overlay)
 	ui.handleInput(ctrlPageUp)
-	if !equalLines(overlay.inputs, []string{ctrlPageUp}) || ui.viewportEnd != scrolledEnd {
+	if !slices.Equal(overlay.inputs, []string{ctrlPageUp}) || ui.viewportEnd != scrolledEnd {
 		t.Fatalf("focused overlay: inputs=%q end=%d, want the overlay to keep the key", overlay.inputs, ui.viewportEnd)
 	}
 

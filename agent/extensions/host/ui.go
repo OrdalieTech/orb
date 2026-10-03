@@ -189,14 +189,7 @@ func (manager *Manager) handleUIRequest(generation *generation, frameValue frame
 
 	switch request.Method {
 	case "select":
-		value, selected, err := userInterface.Select(ctx, request.Title, append([]string(nil), request.Options...), dialogOptions)
-		if err != nil {
-			return nil, uiRequestError(err)
-		}
-		if !selected {
-			return wireUIDialogResult{Cancelled: true}, nil
-		}
-		return wireUIDialogResult{Value: value}, nil
+		return dialogResult(userInterface.Select(ctx, request.Title, append([]string(nil), request.Options...), dialogOptions))
 	case "confirm":
 		confirmed, err := userInterface.Confirm(ctx, request.Title, request.Message, dialogOptions)
 		if err != nil {
@@ -204,28 +197,24 @@ func (manager *Manager) handleUIRequest(generation *generation, frameValue frame
 		}
 		return wireUIDialogResult{Confirmed: &confirmed}, nil
 	case "input":
-		value, entered, err := userInterface.Input(ctx, request.Title, request.Placeholder, dialogOptions)
-		if err != nil {
-			return nil, uiRequestError(err)
-		}
-		if !entered {
-			return wireUIDialogResult{Cancelled: true}, nil
-		}
-		return wireUIDialogResult{Value: value}, nil
+		return dialogResult(userInterface.Input(ctx, request.Title, request.Placeholder, dialogOptions))
 	case "editor":
-		value, edited, err := userInterface.Editor(ctx, request.Title, request.Prefill)
-		if err != nil {
-			return nil, uiRequestError(err)
-		}
-		if !edited {
-			return wireUIDialogResult{Cancelled: true}, nil
-		}
-		return wireUIDialogResult{Value: value}, nil
+		return dialogResult(userInterface.Editor(ctx, request.Title, request.Prefill))
 	case "custom":
 		return manager.handleUICustom(ctx, generation, userInterface, request)
 	default:
 		return nil, uiProtocolError("unknown_ui_method", fmt.Errorf("unknown correlated UI method %q", request.Method))
 	}
+}
+
+func dialogResult[T any](value T, ok bool, err error) (any, *protocolError) {
+	if err != nil {
+		return nil, uiRequestError(err)
+	}
+	if !ok {
+		return wireUIDialogResult{Cancelled: true}, nil
+	}
+	return wireUIDialogResult{Value: value}, nil
 }
 
 func (manager *Manager) handleUIEvent(generation *generation, raw json.RawMessage) {
@@ -362,10 +351,7 @@ func (ui *uiGeneration) unregisterDialog(id string) {
 
 func uiRequestError(err error) *protocolError {
 	var cancellation *UIDialogCancellationError
-	if errors.As(err, &cancellation) || errors.Is(err, ErrUIDialogHostRestarted) {
-		return &protocolError{Code: "ui_cancelled", Message: err.Error()}
-	}
-	if errors.Is(err, context.Canceled) {
+	if errors.As(err, &cancellation) || errors.Is(err, context.Canceled) {
 		return &protocolError{Code: "ui_cancelled", Message: err.Error()}
 	}
 	return uiProtocolError("ui_error", err)

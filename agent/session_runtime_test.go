@@ -1327,7 +1327,6 @@ func TestSessionRuntimeListenersEmitInSubscriptionOrder(t *testing.T) {
 		order := []int{}
 		unsubscribers := make([]func(), 0, 3)
 		for listener := 1; listener <= 3; listener++ {
-			listener := listener
 			unsubscribers = append(unsubscribers, runtime.Subscribe(func(any) { order = append(order, listener) }))
 		}
 		runtime.emit(AgentSettledEvent{})

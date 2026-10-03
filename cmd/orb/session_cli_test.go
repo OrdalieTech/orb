@@ -122,7 +122,7 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 		return listed[0].Path, true, nil
 	}
 	streams := cliStreams{Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}, StdinTTY: true, StdoutTTY: true}
-	manager, _, err := createCLISession(project, CLIArgs{Resume: true}, streams, selector)
+	manager, _, err := createCLISession(project, CLIArgs{Resume: true}, streams, selector, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	}
 
 	forkArg := "source"
-	forked, _, err := createCLISession(project, CLIArgs{Fork: &forkArg}, streams, nil)
+	forked, _, err := createCLISession(project, CLIArgs{Fork: &forkArg}, streams, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,63 +142,12 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 
 	exactID := "exact-new"
 	var warning bytes.Buffer
-	created, _, err := createCLISession(project, CLIArgs{SessionID: &exactID}, cliStreams{Stderr: &warning}, nil)
+	created, _, err := createCLISession(project, CLIArgs{SessionID: &exactID}, cliStreams{Stderr: &warning}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created.GetSessionID() != exactID || !strings.Contains(warning.String(), "creating a new session") {
 		t.Fatalf("exact-id create = %q warning %q", created.GetSessionID(), warning.String())
-	}
-}
-
-func TestTUISessionSelectorAdapterPreservesLoadersAndResult(t *testing.T) {
-	currentProgress, allProgress := false, false
-	current := func(progress session.SessionListProgress) []session.SessionInfo {
-		progress(1, 2)
-		return []session.SessionInfo{{Path: "/current.jsonl"}}
-	}
-	all := func(progress session.SessionListProgress) []session.SessionInfo {
-		progress(3, 4)
-		return []session.SessionInfo{{Path: "/all.jsonl"}}
-	}
-	runnerCalled := false
-	selector := newTUISessionSelector(context.Background(), func(_ context.Context, gotCurrent, gotAll SessionListLoader) (string, bool, error) {
-		runnerCalled = true
-		if listed := gotCurrent(func(loaded, total int) { currentProgress = loaded == 1 && total == 2 }); len(listed) != 1 || listed[0].Path != "/current.jsonl" {
-			t.Fatalf("current sessions = %#v", listed)
-		}
-		if listed := gotAll(func(loaded, total int) { allProgress = loaded == 3 && total == 4 }); len(listed) != 1 || listed[0].Path != "/all.jsonl" {
-			t.Fatalf("all sessions = %#v", listed)
-		}
-		return "/selected.jsonl", true, nil
-	})
-	path, selected, err := selector(current, all)
-	if err != nil || !selected || path != "/selected.jsonl" || !runnerCalled || !currentProgress || !allProgress {
-		t.Fatalf("path=%q selected=%t err=%v called=%t progress=%t/%t", path, selected, err, runnerCalled, currentProgress, allProgress)
-	}
-}
-
-func TestContextTUISessionSelectorAdapterPreservesLoadersAndResult(t *testing.T) {
-	progressed := false
-	loader := func(_ context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
-		update(session.SessionListUpdate{Loaded: 1, Total: 1})
-		return []session.SessionInfo{{Path: "/current.jsonl"}}, nil
-	}
-	selector := newContextTUISessionSelector(context.Background(), func(_ context.Context, current, _ ContextSessionListLoader) (string, bool, error) {
-		listed, err := current(context.Background(), func(update session.SessionListUpdate) {
-			progressed = update.Loaded == 1 && update.Total == 1
-		})
-		if err != nil {
-			return "", false, err
-		}
-		if len(listed) != 1 {
-			return "", false, errors.New("context loader returned unexpected sessions")
-		}
-		return listed[0].Path, true, nil
-	})
-	path, selected, err := selector(loader, loader)
-	if err != nil || !selected || path != "/current.jsonl" || !progressed {
-		t.Fatalf("path=%q selected=%t progressed=%t err=%v", path, selected, progressed, err)
 	}
 }
 
@@ -275,7 +224,7 @@ func TestCreateCLISessionConfirmsGlobalIDBeforeForking(t *testing.T) {
 	var output bytes.Buffer
 	forked, _, err := createCLISession(current, CLIArgs{Session: &argument}, cliStreams{
 		Stdin: strings.NewReader("yes\n"), Stdout: &output,
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +239,7 @@ func TestCreateCLISessionConfirmsGlobalIDBeforeForking(t *testing.T) {
 	output.Reset()
 	_, _, err = createCLISession(current, CLIArgs{Session: &argument}, cliStreams{
 		Stdin: strings.NewReader("no\n"), Stdout: &output,
-	}, nil)
+	}, nil, nil)
 	if !errors.Is(err, errNoSessionSelected) || !strings.HasSuffix(output.String(), "Aborted.\n") {
 		t.Fatalf("declined global session err=%v output=%q", err, output.String())
 	}
@@ -682,7 +631,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	}
 	id := legacy.GetSessionID()
 	args := CLIArgs{Session: &id, native: state}
-	manager, _, err := createCLISession(cwd, args, cliStreams{}, nil)
+	manager, _, err := createCLISession(cwd, args, cliStreams{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -711,7 +660,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	}
 	_ = other.close()
 	missing, requested := "missing", "new-id"
-	if _, _, err := createCLISession(cwd, CLIArgs{Fork: &missing, SessionID: &requested, native: state}, cliStreams{}, nil); err == nil {
+	if _, _, err := createCLISession(cwd, CLIArgs{Fork: &missing, SessionID: &requested, native: state}, cliStreams{}, nil, nil); err == nil {
 		t.Fatal("forked missing session")
 	}
 	backup := filepath.Join(root, "backup.db")
@@ -740,7 +689,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	}
 	defer func() { _ = state.close() }()
 	args.native = state
-	manager, _, err = createCLISession(cwd, args, cliStreams{}, nil)
+	manager, _, err = createCLISession(cwd, args, cliStreams{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +704,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, reference := range []string{id, id[:len(id)-1]} {
-		resumed, _, err := createCLISession(cwd, CLIArgs{Session: &reference, native: state}, cliStreams{}, nil)
+		resumed, _, err := createCLISession(cwd, CLIArgs{Session: &reference, native: state}, cliStreams{}, nil, nil)
 		if err != nil {
 			t.Fatal("legacy files interfered with native resume", err)
 		}

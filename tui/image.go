@@ -50,8 +50,6 @@ func NewImage(base64Data, mimeType string, theme ImageTheme, options *ImageOptio
 	}
 }
 
-func (image *Image) GetImageID() *uint32 { return image.imageID }
-
 func (image *Image) Invalidate() {
 	image.cached = nil
 	image.cacheWidth = -1

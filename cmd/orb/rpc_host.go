@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/signal"
 
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/agent/tools"
-	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // serveRPC runs RPC mode on the process streams. A shutdown signal kills
@@ -37,8 +35,4 @@ func serveRPC(ctx context.Context, host rpc.SessionHost, streams cliStreams, com
 		Input: streams.Stdin, Output: streams.Stdout, Diagnostics: streams.Stderr,
 		Commands: commands, Terminate: terminate,
 	})
-}
-
-func rpcMessageRoleAndText(raw json.RawMessage) (string, string) {
-	return jsonwire.MessageRoleAndText(raw)
 }

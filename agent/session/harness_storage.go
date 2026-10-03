@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/engine/harness"
@@ -229,7 +230,7 @@ func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 	return SessionEntry{
 		Type: entry.Type, ID: entry.ID, ParentID: cloneString(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: cloneRaw(entry.Message), ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
-		ModelID: entry.ModelID, ActiveToolNames: cloneStringSlice(entry.ActiveToolNames),
+		ModelID: entry.ModelID, ActiveToolNames: slices.Clone(entry.ActiveToolNames),
 		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
 		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: cloneBool(entry.FromHook), FromID: entry.FromID,
 		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),
@@ -252,7 +253,7 @@ func harnessEntryFromSession(entry SessionEntry) harness.SessionTreeEntry {
 	return harness.SessionTreeEntry{
 		Type: entry.Type, ID: entry.ID, ParentID: cloneString(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: cloneRaw(entry.Message), ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
-		ModelID: entry.ModelID, ActiveToolNames: cloneStringSlice(entry.ActiveToolNames),
+		ModelID: entry.ModelID, ActiveToolNames: slices.Clone(entry.ActiveToolNames),
 		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
 		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: cloneBool(entry.FromHook), FromID: entry.FromID,
 		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),

@@ -82,10 +82,6 @@ type cappedOutput struct {
 	cancel   context.CancelFunc
 }
 
-func newCappedOutput(cancel context.CancelFunc) *cappedOutput {
-	return &cappedOutput{cancel: cancel}
-}
-
 func (output *cappedOutput) Write(data []byte) (int, error) {
 	room := min(externalOutputLimit-output.buffer.Len(), len(data))
 	if room > 0 {
@@ -396,7 +392,7 @@ func runExternalChild(ctx context.Context, cwd, name, command, task string, mode
 		name, value, _ := strings.Cut(entry, "=")
 		env[name] = value
 	}
-	stdout, stderr := newCappedOutput(cancelProcess), newCappedOutput(cancelProcess)
+	stdout, stderr := &cappedOutput{cancel: cancelProcess}, &cappedOutput{cancel: cancelProcess}
 	run, err := runExternalCommand(processCtx, cwd, command, env, mode, strings.NewReader(task), stdout, stderr)
 	var unavailable unavailableError
 	if errors.As(err, &unavailable) {
@@ -567,17 +563,7 @@ func forkTranscript(messages []json.RawMessage) string {
 
 func restrictTools(allowed, requested []string) []string {
 	if requested == nil {
-		return append([]string(nil), allowed...)
+		return slices.Clone(allowed)
 	}
-	set := make(map[string]struct{}, len(allowed))
-	for _, name := range allowed {
-		set[name] = struct{}{}
-	}
-	result := make([]string, 0, len(requested))
-	for _, name := range requested {
-		if _, ok := set[name]; ok {
-			result = append(result, name)
-		}
-	}
-	return result
+	return slices.DeleteFunc(slices.Clone(requested), func(name string) bool { return !slices.Contains(allowed, name) })
 }

@@ -262,9 +262,7 @@ func (ui *uiGeneration) routeRender(raw json.RawMessage) {
 	if json.Unmarshal(raw, &render) != nil || render.ComponentHandle == "" {
 		return
 	}
-	ui.componentMu.RLock()
-	component := ui.components[render.ComponentHandle]
-	ui.componentMu.RUnlock()
+	component := ui.component(render.ComponentHandle)
 	if component == nil {
 		return
 	}
@@ -283,9 +281,7 @@ func (ui *uiGeneration) routeRender(raw json.RawMessage) {
 }
 
 func (ui *uiGeneration) completeCustom(handle string, raw json.RawMessage) {
-	ui.componentMu.RLock()
-	component := ui.components[handle]
-	ui.componentMu.RUnlock()
+	component := ui.component(handle)
 	if component == nil || component.done == nil {
 		return
 	}
@@ -296,10 +292,14 @@ func (ui *uiGeneration) completeCustom(handle string, raw json.RawMessage) {
 	component.doneOnce.Do(func() { component.done(value) })
 }
 
-func (ui *uiGeneration) invalidateComponent(handle string) {
+func (ui *uiGeneration) component(handle string) *wireComponent {
 	ui.componentMu.RLock()
-	component := ui.components[handle]
-	ui.componentMu.RUnlock()
+	defer ui.componentMu.RUnlock()
+	return ui.components[handle]
+}
+
+func (ui *uiGeneration) invalidateComponent(handle string) {
+	component := ui.component(handle)
 	if component == nil {
 		return
 	}
@@ -334,14 +334,7 @@ func (manager *Manager) handleUICustom(
 			ctx, request.ComponentHandle, request.FactoryHandle, "custom", host, theme, keybindings, nil, done,
 		)
 	}
-	value, resolved, err := userInterface.Custom(ctx, factory, options)
-	if err != nil {
-		return nil, uiRequestError(err)
-	}
-	if !resolved {
-		return wireUIDialogResult{Cancelled: true}, nil
-	}
-	return wireUIDialogResult{Value: value}, nil
+	return dialogResult(userInterface.Custom(ctx, factory, options))
 }
 
 func decodeWireCustomOptions(value *wireCustomOptions) *extensions.CustomOptions {

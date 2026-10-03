@@ -354,10 +354,7 @@ func (ui *TUI) Stop() error {
 	ui.renderMu.Unlock()
 	if lines > 0 && !viewport {
 		ui.terminal.Write(" ")
-		target := lines
-		if difference := target - row; difference > 0 {
-			ui.terminal.MoveBy(difference)
-		} else if difference < 0 {
+		if difference := lines - row; difference != 0 {
 			ui.terminal.MoveBy(difference)
 		}
 		ui.terminal.Write("\r\n")
@@ -1427,13 +1424,7 @@ func (ui *TUI) RenderNow() {
 	if ui.isStopped() {
 		return
 	}
-	width, height := ui.terminal.Columns(), ui.terminal.Rows()
-	if width < 1 {
-		width = 1
-	}
-	if height < 1 {
-		height = 1
-	}
+	width, height := max(1, ui.terminal.Columns()), max(1, ui.terminal.Rows())
 	widthChanged := ui.previousWidth != 0 && ui.previousWidth != width
 	heightChanged := ui.previousHeight != 0 && ui.previousHeight != height
 	previousBufferLength := height
@@ -1553,12 +1544,7 @@ func (ui *TUI) RenderNow() {
 			var output strings.Builder
 			output.WriteString("\x1b[?2026h")
 			output.WriteString(deleteKittyImages(changedKittyImageIDs(ui.previousLines, firstChanged, lastChanged)))
-			difference := lineDifference(target)
-			if difference > 0 {
-				fmt.Fprintf(&output, "\x1b[%dB", difference)
-			} else if difference < 0 {
-				fmt.Fprintf(&output, "\x1b[%dA", -difference)
-			}
+			writeVerticalMove(&output, lineDifference(target))
 			output.WriteByte('\r')
 			extra, offset := len(ui.previousLines)-len(newLines), 0
 			if len(newLines) > 0 {
@@ -1613,12 +1599,7 @@ func (ui *TUI) RenderNow() {
 		viewportTop += scroll
 		hardwareCursorRow = moveTarget
 	}
-	difference := lineDifference(moveTarget)
-	if difference > 0 {
-		fmt.Fprintf(&output, "\x1b[%dB", difference)
-	} else if difference < 0 {
-		fmt.Fprintf(&output, "\x1b[%dA", -difference)
-	}
+	writeVerticalMove(&output, lineDifference(moveTarget))
 	if appendStart {
 		output.WriteString("\r\n")
 	} else {
@@ -1679,6 +1660,14 @@ func (ui *TUI) RenderNow() {
 	ui.positionCursor(cursorRow, cursorColumn, hasCursor, len(newLines))
 	ui.previousLines, ui.previousWidth, ui.previousHeight = newLines, width, height
 	ui.previousImageIDs = collectKittyImageIDs(newLines)
+}
+
+func writeVerticalMove(output *strings.Builder, difference int) {
+	if difference > 0 {
+		fmt.Fprintf(output, "\x1b[%dB", difference)
+	} else if difference < 0 {
+		fmt.Fprintf(output, "\x1b[%dA", -difference)
+	}
 }
 
 func (ui *TUI) renderViewport(width, height int) []string {

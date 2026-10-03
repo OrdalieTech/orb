@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/internal/termcaps"
 )
 
 func TestDetectCapabilitiesMatchesUpstreamProfiles(t *testing.T) {
@@ -30,7 +32,7 @@ func TestDetectCapabilitiesMatchesUpstreamProfiles(t *testing.T) {
 			for name, value := range test.env {
 				t.Setenv(name, value)
 			}
-			if got := DetectCapabilities(func() bool { return false }); got != test.want {
+			if got := termcaps.Detect(func() bool { return false }); got != test.want {
 				t.Fatalf("capabilities = %#v, want %#v", got, test.want)
 			}
 		})
@@ -40,7 +42,7 @@ func TestDetectCapabilitiesMatchesUpstreamProfiles(t *testing.T) {
 			t.Setenv(name, "")
 		}
 		t.Setenv("TMUX", "1")
-		got := DetectCapabilities(func() bool { return true })
+		got := termcaps.Detect(func() bool { return true })
 		if got.Images != "" || !got.Hyperlinks {
 			t.Fatalf("tmux capabilities = %#v", got)
 		}

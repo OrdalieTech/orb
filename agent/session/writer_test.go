@@ -258,9 +258,6 @@ func TestLeafTargetPreservesNullAndEmptyString(t *testing.T) {
 }
 
 func TestSessionStringHelpersPreserveUpstreamWhitespaceRules(t *testing.T) {
-	if got := trimJSSpace("\ufeff\u00a0 value \u1680"); got != "value" {
-		t.Fatalf("trimJSSpace() = %q", got)
-	}
 	if got := sanitizeSessionName("  line one\r\nline two\n\nline three  "); got != "line one line two line three" {
 		t.Fatalf("sanitizeSessionName() = %q", got)
 	}

@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/semver"
@@ -97,16 +99,11 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 			if err != nil {
 				return nil, err
 			}
-			found := false
-			for _, r := range rows {
-				if r.ID == q.SessionID {
-					q.CWD, found = r.CWD, true
-					break
-				}
-			}
-			if !found {
+			i := slices.IndexFunc(rows, func(r session.SessionInfo) bool { return r.ID == q.SessionID })
+			if i < 0 {
 				return nil, bridge.Fail("not_found")
 			}
+			q.CWD = rows[i].CWD
 		}
 		cwd, err := launchFolder(q.CWD)
 		if err != nil {

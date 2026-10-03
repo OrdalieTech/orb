@@ -25,8 +25,8 @@ type wireRendererComponent struct {
 
 func (manager *Manager) messageRenderer(extensionID, customType string) extensions.MessageRenderer {
 	return func(message extensions.CustomMessage, options extensions.MessageRenderOptions, theme extensions.Theme) extensions.Component {
-		// Only message renderers receive outputPad (518855dd); entry
-		// renderer options stay {expanded}.
+		// Only message renderers receive outputPad; entry renderer options
+		// stay {expanded}.
 		outputPad := options.OutputPad
 		return manager.createRendererComponent(extensionID, rendererMessage, customType, message, options.Expanded, &outputPad, theme)
 	}
@@ -39,10 +39,8 @@ func (manager *Manager) entryRenderer(extensionID, customType string) extensions
 }
 
 func (manager *Manager) createRendererComponent(extensionID, kind, customType string, value any, expanded bool, outputPad *int, theme extensions.Theme) extensions.Component {
-	manager.mu.Lock()
-	generation := manager.current
-	manager.mu.Unlock()
-	if generation == nil || !generation.ready.Load() {
+	generation := manager.readyGeneration()
+	if generation == nil {
 		return nil
 	}
 	ctx, cancel := callbackContext(context.Background())
@@ -56,6 +54,22 @@ func (manager *Manager) createRendererComponent(extensionID, kind, customType st
 		OutputPad   *int       `json:"outputPad,omitempty"`
 		Theme       *wireTheme `json:"theme,omitempty"`
 	}{extensionID, kind, customType, value, expanded, outputPad, snapshotTheme(theme)}, nil)
+	return manager.rendererComponent(generation, extensionID, raw, err)
+}
+
+// readyGeneration is the current generation once its extensions loaded.
+func (manager *Manager) readyGeneration() *generation {
+	manager.mu.Lock()
+	generation := manager.current
+	manager.mu.Unlock()
+	if generation == nil || !generation.ready.Load() {
+		return nil
+	}
+	return generation
+}
+
+// rendererComponent wraps the handle a create_*_component request returned.
+func (manager *Manager) rendererComponent(generation *generation, extensionID string, raw json.RawMessage, err error) extensions.Component {
 	if err != nil {
 		manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: extensionID})
 		return nil
@@ -73,10 +87,8 @@ func (manager *Manager) createRendererComponent(extensionID, kind, customType st
 // toolPromptGuidelines re-reads a registered tool's current promptGuidelines
 // from the host process (lazy `get promptGuidelines()` upstream contract).
 func (manager *Manager) toolPromptGuidelines(ctx context.Context, extensionID, toolName string) ([]string, error) {
-	manager.mu.Lock()
-	generation := manager.current
-	manager.mu.Unlock()
-	if generation == nil || !generation.ready.Load() {
+	generation := manager.readyGeneration()
+	if generation == nil {
 		return nil, ErrNotRunning
 	}
 	if ctx == nil {
@@ -104,10 +116,8 @@ func (manager *Manager) toolPromptGuidelines(ctx context.Context, extensionID, t
 
 // prepareToolLoadout runs a tool's JS prepareLoadout hook on a loadout snapshot.
 func (manager *Manager) prepareToolLoadout(extensionID, toolName string, loadout extensions.ToolLoadout) (*extensions.ToolLoadoutChanges, error) {
-	manager.mu.Lock()
-	generation := manager.current
-	manager.mu.Unlock()
-	if generation == nil || !generation.ready.Load() {
+	generation := manager.readyGeneration()
+	if generation == nil {
 		return nil, ErrNotRunning
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), manager.options.RequestTimeout)
@@ -181,10 +191,8 @@ func (manager *Manager) createToolRenderComponent(
 	theme extensions.Theme,
 	renderContext extensions.ToolRenderContext,
 ) extensions.Component {
-	manager.mu.Lock()
-	generation := manager.current
-	manager.mu.Unlock()
-	if generation == nil || !generation.ready.Load() {
+	generation := manager.readyGeneration()
+	if generation == nil {
 		return nil
 	}
 	ctx, cancel := callbackContext(context.Background())
@@ -207,18 +215,7 @@ func (manager *Manager) createToolRenderComponent(
 		request.IsPartial = options.IsPartial
 	}
 	raw, err := generation.request(ctx, "create_tool_render_component", request, nil)
-	if err != nil {
-		manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: extensionID})
-		return nil
-	}
-	var response struct {
-		Present bool   `json:"present"`
-		Handle  string `json:"handle"`
-	}
-	if json.Unmarshal(raw, &response) != nil || !response.Present || response.Handle == "" {
-		return nil
-	}
-	return &wireRendererComponent{generation: generation, handle: response.Handle}
+	return manager.rendererComponent(generation, extensionID, raw, err)
 }
 
 func (component *wireRendererComponent) Render(width int) []string {

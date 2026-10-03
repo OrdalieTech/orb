@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 func TestChunkTextBoundaries(t *testing.T) {
@@ -64,10 +66,10 @@ func TestChunkTextCountsRunesNotBytes(t *testing.T) {
 }
 
 func TestTruncateRunes(t *testing.T) {
-	if got := truncateRunes("héllo", 10); got != "héllo" {
+	if got := runechunk.Truncate("héllo", 10); got != "héllo" {
 		t.Errorf("truncateRunes short = %q", got)
 	}
-	if got := truncateRunes("héllo", 3); got != "hél" {
+	if got := runechunk.Truncate("héllo", 3); got != "hél" {
 		t.Errorf("truncateRunes = %q, want hél", got)
 	}
 }

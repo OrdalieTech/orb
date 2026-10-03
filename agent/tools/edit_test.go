@@ -146,7 +146,6 @@ func TestEditToolParallelDisjointEditsSerialize(t *testing.T) {
 	var wait sync.WaitGroup
 	errorsSeen := make(chan error, 2)
 	for _, edit := range []Edit{{OldText: "alpha", NewText: "ALPHA"}, {OldText: "beta", NewText: "BETA"}} {
-		edit := edit
 		wait.Add(1)
 		go func() {
 			defer wait.Done()

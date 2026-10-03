@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 func validateRawModelConfig(data []byte, providerOrder []string) error {
@@ -490,12 +491,7 @@ func optionalEnum(object map[string]any, name string, values ...string) bool {
 	if !ok {
 		return false
 	}
-	for _, candidate := range values {
-		if text == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, text)
 }
 
 func optionalStringOrNull(object map[string]any, name string) bool {

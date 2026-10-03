@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -12,15 +13,55 @@ import (
 	"github.com/OrdalieTech/orb/host"
 )
 
+// resolveSessionDirs makes cwd and agentDir absolute. A host FS port owns its
+// path namespace: a virtual POSIX tree must not pick up the process drive on
+// win32 (DECISIONS.md P10).
+func resolveSessionDirs(h *host.Host, cwd, agentDir string) (string, string, error) {
+	resolve := func(path string) (string, error) {
+		normalized, err := config.NormalizePath(path)
+		if err != nil {
+			return "", err
+		}
+		if h != nil && h.FS != nil {
+			return h.FS.AbsolutePath(context.Background(), normalized)
+		}
+		return filepath.Abs(normalized)
+	}
+	if cwd == "" {
+		cwd = "."
+	}
+	cwd, err := resolve(cwd)
+	if err != nil {
+		return "", "", err
+	}
+	if agentDir == "" && h != nil {
+		agentDir = h.AgentDir
+	}
+	if agentDir == "" {
+		agentDir = DefaultAgentDir()
+	}
+	agentDir, err = resolve(agentDir)
+	if err != nil {
+		return "", "", err
+	}
+	return cwd, agentDir, nil
+}
+
 // Project settings are read from the process filesystem, so a Host session
 // keeps them untrusted until they are served through the FS port.
-func hostSettings(h *host.Host, cwd, agentDir string) (*config.SettingsManager, error) {
+func newSettings(h *host.Host, cwd, agentDir string) (*config.SettingsManager, error) {
+	if h == nil {
+		return config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	}
 	return config.NewSettingsManager(cwd, config.WithAgentDir(agentDir),
 		config.WithGlobalDocument(h.Document("settings.json")), config.WithProjectTrusted(false))
 }
 
 // Provider model discovery stays offline: a Host has no outbound-network port yet.
-func hostModelRegistry(h *host.Host, agentDir string) (*config.ModelRegistry, error) {
+func newModelRegistry(h *host.Host, agentDir string) (*config.ModelRegistry, error) {
+	if h == nil {
+		return config.NewModelRegistry(agentDir)
+	}
 	auth, err := config.NewAuthStorageWithDocument(h.Document("auth.json"))
 	if err != nil {
 		return nil, err

@@ -208,36 +208,12 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	complete := runtimeConfig.Complete
 	if complete == nil {
 		complete = func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
-			providerSettings := runtimeConfig.Settings.GetProviderRetrySettings()
-			merged := ai.SimpleStreamOptions{}
-			if options != nil {
-				merged = *options
-			}
-			if merged.TimeoutMS == nil {
-				merged.TimeoutMS = providerSettings.TimeoutMS
-			}
-			if merged.TimeoutMS == nil {
-				httpIdleTimeout, err := runtimeConfig.Settings.GetHTTPIdleTimeoutMS()
-				if err != nil {
-					return nil, err
-				}
-				if httpIdleTimeout == 0 {
-					httpIdleTimeout = 2147483647
-				}
-				merged.TimeoutMS = &httpIdleTimeout
-			}
-			if merged.WebSocketConnectTimeoutMS == nil {
-				webSocketConnectTimeout, err := runtimeConfig.Settings.GetWebSocketConnectTimeoutMS()
-				if err != nil {
-					return nil, err
-				}
-				merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
-			}
-			if merged.MaxRetries == nil {
-				merged.MaxRetries = providerSettings.MaxRetries
+			merged, err := providerStreamOptions(runtimeConfig.Settings, options)
+			if err != nil {
+				return nil, err
 			}
 			if merged.MaxRetryDelayMS == nil {
-				maxDelay := providerSettings.MaxRetryDelayMS
+				maxDelay := runtimeConfig.Settings.GetProviderRetrySettings().MaxRetryDelayMS
 				merged.MaxRetryDelayMS = &maxDelay
 			}
 			if merged.ThinkingBudgets == nil {
@@ -415,6 +391,41 @@ func (runtime *SessionRuntime) ResourceLoader() ResourceLoader {
 		return nil
 	}
 	return runtime.resourceLoader
+}
+
+// providerStreamOptions fills the provider transport settings options leave
+// unset: request timeout (falling back to the HTTP idle timeout, 0 meaning
+// none), WebSocket connect timeout and retry count.
+func providerStreamOptions(settings *config.SettingsManager, options *ai.SimpleStreamOptions) (ai.SimpleStreamOptions, error) {
+	merged := ai.SimpleStreamOptions{}
+	if options != nil {
+		merged = *options
+	}
+	providerRetry := settings.GetProviderRetrySettings()
+	if merged.TimeoutMS == nil {
+		merged.TimeoutMS = providerRetry.TimeoutMS
+	}
+	if merged.TimeoutMS == nil {
+		httpIdleTimeout, err := settings.GetHTTPIdleTimeoutMS()
+		if err != nil {
+			return merged, err
+		}
+		if httpIdleTimeout == 0 {
+			httpIdleTimeout = 2147483647
+		}
+		merged.TimeoutMS = &httpIdleTimeout
+	}
+	if merged.WebSocketConnectTimeoutMS == nil {
+		webSocketConnectTimeout, err := settings.GetWebSocketConnectTimeoutMS()
+		if err != nil {
+			return merged, err
+		}
+		merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
+	}
+	if merged.MaxRetries == nil {
+		merged.MaxRetries = providerRetry.MaxRetries
+	}
+	return merged, nil
 }
 
 func cloneSlashResolver(resolver *SlashResolver) *SlashResolver {
@@ -648,22 +659,28 @@ func (runtime *SessionRuntime) QueueInteractive(ctx context.Context, text string
 			}
 		}
 	}
+	return runtime.enqueue(text, images, delivery == extensions.DeliverFollowUp)
+}
+
+// enqueue expands text and queues it as a follow-up or steering message.
+func (runtime *SessionRuntime) enqueue(text string, images []*ai.ImageContent, followUp bool) error {
 	if runtime.slashResolver != nil {
 		var err error
-		text, err = runtime.slashResolver.ExpandQueued(text)
-		if err != nil {
+		if text, err = runtime.slashResolver.ExpandQueued(text); err != nil {
 			return err
 		}
 	}
 	message := runtime.userMessage(text, images)
 	runtime.mu.Lock()
-	if delivery == extensions.DeliverFollowUp {
+	if followUp {
 		runtime.followUps = append(runtime.followUps, text)
-		runtime.mu.Unlock()
-		runtime.agent.FollowUp(message)
 	} else {
 		runtime.steering = append(runtime.steering, text)
-		runtime.mu.Unlock()
+	}
+	runtime.mu.Unlock()
+	if followUp {
+		runtime.agent.FollowUp(message)
+	} else {
 		runtime.agent.Steer(message)
 	}
 	runtime.emitQueueUpdate()
@@ -712,20 +729,7 @@ func (runtime *SessionRuntime) SteerImages(text string, images []*ai.ImageConten
 	if err := runtime.checkLive(); err != nil {
 		return err
 	}
-	if runtime.slashResolver != nil {
-		var err error
-		text, err = runtime.slashResolver.ExpandQueued(text)
-		if err != nil {
-			return err
-		}
-	}
-	message := runtime.userMessage(text, images)
-	runtime.mu.Lock()
-	runtime.steering = append(runtime.steering, text)
-	runtime.mu.Unlock()
-	runtime.agent.Steer(message)
-	runtime.emitQueueUpdate()
-	return nil
+	return runtime.enqueue(text, images, false)
 }
 
 func (runtime *SessionRuntime) FollowUp(text string) error {
@@ -736,20 +740,7 @@ func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageCon
 	if err := runtime.checkLive(); err != nil {
 		return err
 	}
-	if runtime.slashResolver != nil {
-		var err error
-		text, err = runtime.slashResolver.ExpandQueued(text)
-		if err != nil {
-			return err
-		}
-	}
-	message := runtime.userMessage(text, images)
-	runtime.mu.Lock()
-	runtime.followUps = append(runtime.followUps, text)
-	runtime.mu.Unlock()
-	runtime.agent.FollowUp(message)
-	runtime.emitQueueUpdate()
-	return nil
+	return runtime.enqueue(text, images, true)
 }
 
 func (runtime *SessionRuntime) Commands() []SlashCommandInfo {

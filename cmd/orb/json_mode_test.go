@@ -415,7 +415,7 @@ func TestCLIJSONModeKeepsMetadataOffStdout(t *testing.T) {
 	}{
 		{name: "plain help", argv: []string{"--help"}, wantText: "Usage: orb", wantStderr: false},
 		{name: "json help", argv: []string{"--mode", "json", "--help"}, wantText: "Usage: orb", wantStderr: true},
-		// Upstream lists models after full runtime creation (main.ts:747-764).
+		// Models are listed after full runtime creation.
 		{name: "plain model list", argv: []string{"--list-models"}, wantText: "No models available", wantStderr: false, wantRuntime: true},
 		{name: "json model list", argv: []string{"--mode", "json", "--list-models"}, wantText: "No models available", wantStderr: true, wantRuntime: true},
 	} {

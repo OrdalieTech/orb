@@ -89,9 +89,9 @@ type CLIArgs struct {
 	resolvedProjectTrust *bool
 }
 
-// ParseArgs follows upstream's sequential CLI parsing rules.
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// ParseArgs follows upstream's sequential CLI parsing rules.
 func ParseArgs(argv []string) CLIArgs {
 	result := CLIArgs{
 		CommandArgs:  []string{},
@@ -168,9 +168,6 @@ func ParseArgs(argv []string) CLIArgs {
 			result.SystemPrompt = stringValue(argv[index])
 		case argument == "--append-system-prompt" && index+1 < len(argv):
 			index++
-			if result.AppendSystemPrompt == nil {
-				result.AppendSystemPrompt = make([]string, 0, 1)
-			}
 			result.AppendSystemPrompt = append(result.AppendSystemPrompt, argv[index])
 		case argument == "--name" || argument == "-n":
 			if index+1 < len(argv) {
@@ -260,11 +257,9 @@ func ParseArgs(argv []string) CLIArgs {
 		case argument == "--verbose":
 			result.Verbose = true
 		case argument == "--approve" || argument == "-a":
-			trusted := true
-			result.ProjectTrusted = &trusted
+			result.ProjectTrusted = boolPointer(true)
 		case argument == "--no-approve" || argument == "-na":
-			trusted := false
-			result.ProjectTrusted = &trusted
+			result.ProjectTrusted = boolPointer(false)
 		case argument == "--offline":
 			result.Offline = true
 		case strings.HasPrefix(argument, "@"):
@@ -328,7 +323,4 @@ func parseToolList(value string) []string {
 	return result
 }
 
-func stringValue(value string) *string {
-	copy := value
-	return &copy
-}
+func stringValue(value string) *string { return &value }

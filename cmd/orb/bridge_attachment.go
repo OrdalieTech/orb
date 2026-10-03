@@ -244,7 +244,9 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 	}, nil
 }
 
-func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, settings *config.SettingsManager, writer io.Writer) (func(), error) {
+// attachCLIBridge keeps this Orb attached to Bridge while the bridge plugin is
+// enabled; failures are reported to writer and retried, never returned.
+func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, settings *config.SettingsManager, writer io.Writer) func() {
 	link := args.bridgeLink
 	if link == nil {
 		link = &cliBridgeLink{}
@@ -321,7 +323,7 @@ func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, s
 			detach()
 		}
 		mu.Unlock()
-	}, nil
+	}
 }
 func (l *cliBridgeLink) configureBridge(enabled bool) error {
 	if l == nil {

@@ -11,7 +11,7 @@ import (
 )
 
 // MermaidTheme is the slice of the interactive theme the Mermaid transformer
-// styles diagram spans with (upstream components/mermaid.ts styleSpan).
+// styles diagram spans with.
 type MermaidTheme interface {
 	Fg(color, text string) string
 	Bold(text string) string
@@ -26,8 +26,7 @@ func (mermaidThemeAdapter) Bold(text string) string      { return theme.Bold(tex
 // marked's lexer normalizes carriage returns before tokenizing.
 var mermaidCarriageReturns = strings.NewReplacer("\r\n", "\n", "\r", "\n")
 
-// NewMermaidMarkdownTransformer ports upstream createMermaidMarkdownTransformer
-// (components/mermaid.ts): it replaces top-level Mermaid code blocks with
+// NewMermaidMarkdownTransformer replaces top-level Mermaid code blocks with
 // Unicode terminal diagrams. getMode returns the settings-manager mermaid
 // rendering mode ("off" | "final" | "streaming"); a nil theme renders unstyled.
 func NewMermaidMarkdownTransformer(getMode func() string, mermaidTheme MermaidTheme) extensions.MarkdownTransformer {

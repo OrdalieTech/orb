@@ -1,9 +1,9 @@
 package main
 
-// Direct self-upgrade (G4, amended 2026-08-11). orb fetches the same release
-// archive and checksums.txt that scripts/install.sh does, verifies the sha256,
-// and replaces its own binary by atomic rename. Deliberately absent: signing,
-// backups, retries, progress percentages, elevation.
+// Direct self-upgrade. orb fetches the same release archive and checksums.txt
+// that scripts/install.sh does, verifies the signature and sha256, and replaces
+// its own binary by atomic rename. Deliberately absent: backups, retries,
+// progress percentages, elevation.
 
 import (
 	"archive/tar"
@@ -72,7 +72,6 @@ const (
 // trace draws; the tail is denser because that is where the mark settles.
 var updateRevealStages = [...]int{0, 6, 12, 18, 24, 30, 36, 41, 45, 47}
 
-// selfUpdater injects every effect the upgrade has, so a test never resolves or overwrites the binary running it.
 // releaseKey signs every release's checksums.txt (checksums.txt.sig, raw Ed25519): an update
 // trusts no file GitHub serves unless this key vouches for it. The private half is the
 // ORB_RELEASE_SIGNING_KEY secret, with a backup at ~/.config/orb/release-signing.pem.
@@ -86,6 +85,7 @@ func mustBase64(s string) []byte {
 	return b
 }
 
+// selfUpdater injects every effect the upgrade has, so a test never resolves or overwrites the binary running it.
 type selfUpdater struct {
 	key            ed25519.PublicKey
 	currentVersion string
@@ -271,10 +271,6 @@ func updateBarWidth(out io.Writer, override int) int {
 	return updateBarCap
 }
 
-func joinBar(width int, cells []string) string {
-	return joinBarStyled(width, cells, false)
-}
-
 func joinBarStyled(width int, cells []string, faintLinks bool) string {
 	if width <= 0 {
 		width = updateBarCap
@@ -431,12 +427,6 @@ func barProgress(width int, from string, progress float64, styled bool) string {
 		}
 	}
 	return updateIndent + from + " " + rule
-}
-
-// startUpdateAnimation owns the active bar until stop returns. Callers only
-// print durable state after stop, so animation can never outrun the operation.
-func startUpdateAnimation(out io.Writer, enabled bool, width int, cells ...string) func() {
-	return (updateScreen{out: out, animate: enabled, width: width}).spin(cells...)
 }
 
 func plainVersion(value string) string { return strings.TrimPrefix(strings.TrimSpace(value), "v") }

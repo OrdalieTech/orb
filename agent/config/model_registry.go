@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -186,10 +187,10 @@ func (registry *ModelRegistry) refreshSnapshot(base []ai.Model, config *ModelCon
 	registry.opMu.Lock()
 	registry.mu.RLock()
 	providerConfigs := cloneProviderConfigs(registry.providerConfigs)
-	nativeProviders := cloneNativeProviders(registry.nativeProviders)
+	nativeProviders := maps.Clone(registry.nativeProviders)
 	configOrder := append([]string(nil), registry.configOrder...)
 	nativeOrder := append([]string(nil), registry.nativeOrder...)
-	providerVersions := cloneUint64Map(registry.providerVersions)
+	providerVersions := maps.Clone(registry.providerVersions)
 	revision := registry.revision
 	registry.mu.RUnlock()
 	registry.opMu.Unlock()
@@ -205,7 +206,7 @@ func (registry *ModelRegistry) refreshSnapshot(base []ai.Model, config *ModelCon
 	registry.mu.RLock()
 	if registry.revision != revision {
 		latestConfigs := cloneProviderConfigs(registry.providerConfigs)
-		latestNative := cloneNativeProviders(registry.nativeProviders)
+		latestNative := maps.Clone(registry.nativeProviders)
 		for id, latestVersion := range registry.providerVersions {
 			if providerVersions[id] == latestVersion {
 				continue
@@ -298,7 +299,7 @@ func (registry *ModelRegistry) refreshRegisteredProviders(allowNetwork bool) {
 	registry.opMu.Lock()
 	registry.mu.RLock()
 	base, config := append([]ai.Model(nil), registry.base...), registry.config
-	providerConfigs, nativeProviders := cloneProviderConfigs(registry.providerConfigs), cloneNativeProviders(registry.nativeProviders)
+	providerConfigs, nativeProviders := cloneProviderConfigs(registry.providerConfigs), maps.Clone(registry.nativeProviders)
 	configOrder, nativeOrder := append([]string(nil), registry.configOrder...), append([]string(nil), registry.nativeOrder...)
 	authProviders := cloneCredentials(registry.authProviders)
 	revision := registry.revision
@@ -544,7 +545,7 @@ func (registry *ModelRegistry) AvailableWithError(env map[string]string) ([]ai.M
 	models := append([]ai.Model(nil), registry.all...)
 	credential := registry.authProviders["github-copilot"].Clone()
 	credentials := cloneCredentials(registry.authProviders)
-	native := cloneNativeProviders(registry.nativeProviders)
+	native := maps.Clone(registry.nativeProviders)
 	nativeOrder := append([]string(nil), registry.nativeOrder...)
 	registry.mu.RUnlock()
 	models = filterCredentialModels(models, map[string]*aiauth.Credential{"github-copilot": credential})
@@ -706,7 +707,7 @@ func (registry *ModelRegistry) RegisterProviderConfig(id string, incoming extens
 	defer registry.opMu.Unlock()
 	registry.mu.RLock()
 	base, config := append([]ai.Model(nil), registry.base...), registry.config
-	configs, native := cloneProviderConfigs(registry.providerConfigs), cloneNativeProviders(registry.nativeProviders)
+	configs, native := cloneProviderConfigs(registry.providerConfigs), maps.Clone(registry.nativeProviders)
 	configOrder, nativeOrder := append([]string(nil), registry.configOrder...), append([]string(nil), registry.nativeOrder...)
 	credentials := cloneCredentials(registry.authProviders)
 	registry.mu.RUnlock()
@@ -761,7 +762,7 @@ func (registry *ModelRegistry) RegisterProvider(provider extensions.Provider) er
 	defer registry.opMu.Unlock()
 	registry.mu.RLock()
 	base, config := append([]ai.Model(nil), registry.base...), registry.config
-	configs, native := cloneProviderConfigs(registry.providerConfigs), cloneNativeProviders(registry.nativeProviders)
+	configs, native := cloneProviderConfigs(registry.providerConfigs), maps.Clone(registry.nativeProviders)
 	configOrder, nativeOrder := append([]string(nil), registry.configOrder...), append([]string(nil), registry.nativeOrder...)
 	credentials := cloneCredentials(registry.authProviders)
 	registry.mu.RUnlock()
@@ -794,7 +795,7 @@ func (registry *ModelRegistry) UnregisterProvider(id string) error {
 	defer registry.opMu.Unlock()
 	registry.mu.RLock()
 	base, config := append([]ai.Model(nil), registry.base...), registry.config
-	configs, native := cloneProviderConfigs(registry.providerConfigs), cloneNativeProviders(registry.nativeProviders)
+	configs, native := cloneProviderConfigs(registry.providerConfigs), maps.Clone(registry.nativeProviders)
 	configOrder, nativeOrder := append([]string(nil), registry.configOrder...), append([]string(nil), registry.nativeOrder...)
 	credentials := cloneCredentials(registry.authProviders)
 	registry.mu.RUnlock()
@@ -844,7 +845,7 @@ func (registry *ModelRegistry) Provider(id string) (extensions.Provider, bool) {
 	if !registered && !builtin && !configured && !modelBacked {
 		return extensions.Provider{}, false
 	}
-	provider := extensions.Provider{ID: id, Name: config.Name, BaseURL: config.BaseURL, Headers: cloneStringMap(config.Headers), Config: config}
+	provider := extensions.Provider{ID: id, Name: config.Name, BaseURL: config.BaseURL, Headers: maps.Clone(config.Headers), Config: config}
 	if provider.Name == "" && builtin {
 		provider.Name = definition.Name
 	}
@@ -1037,7 +1038,7 @@ func (registry *ModelRegistry) resolveRefreshCredential(
 	if err != nil || resolved == nil {
 		return nil, err
 	}
-	result := &aiauth.Credential{Type: aiauth.CredentialAPIKey, Env: cloneStringMap(resolved.Env)}
+	result := &aiauth.Credential{Type: aiauth.CredentialAPIKey, Env: maps.Clone(resolved.Env)}
 	if resolved.Auth.APIKey != nil {
 		key := *resolved.Auth.APIKey
 		result.Key = &key
@@ -1117,7 +1118,7 @@ func (registry *ModelRegistry) DefaultRequestAuthResolver(credentials aiauth.Cre
 		}
 		if stored != nil {
 			if stored.Type == aiauth.CredentialAPIKey {
-				return &RequestAuth{APIKey: stored.Key, Env: cloneRuntimeEnv(stored.Env)}, nil
+				return &RequestAuth{APIKey: stored.Key, Env: maps.Clone(stored.Env)}, nil
 			}
 			return nil, nil
 		}
@@ -1174,7 +1175,7 @@ func FallbackRequestAuthResolver(credentials aiauth.CredentialStore) func(contex
 			return registryRequestAuth(resolved), nil
 		}
 		if stored != nil && stored.Type == aiauth.CredentialAPIKey {
-			return &RequestAuth{APIKey: stored.Key, Env: cloneRuntimeEnv(stored.Env)}, nil
+			return &RequestAuth{APIKey: stored.Key, Env: maps.Clone(stored.Env)}, nil
 		}
 		if knownProvider {
 			resolved, err := aiauth.ResolveProviderAuth(
@@ -1196,7 +1197,7 @@ func registryRequestAuth(resolved *aiauth.AuthResult) *RequestAuth {
 	}
 	return &RequestAuth{
 		APIKey: resolved.Auth.APIKey, Headers: cloneProviderHeaders(resolved.Auth.Headers),
-		Env: cloneRuntimeEnv(resolved.Env), BaseURL: resolved.Auth.BaseURL,
+		Env: maps.Clone(resolved.Env), BaseURL: resolved.Auth.BaseURL,
 	}
 }
 
@@ -1212,17 +1213,6 @@ func cloneProviderHeaders(source ai.ProviderHeaders) ai.ProviderHeaders {
 		}
 		copy := *value
 		result[name] = &copy
-	}
-	return result
-}
-
-func cloneRuntimeEnv(source map[string]string) map[string]string {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]string, len(source))
-	for name, value := range source {
-		result[name] = value
 	}
 	return result
 }

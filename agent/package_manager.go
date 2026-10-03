@@ -1,12 +1,12 @@
 package agent
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +21,7 @@ import (
 
 // Port of packages/coding-agent/src/core/package-manager.ts. npm sources are
 // fetched natively from the registry (tarball + integrity check) instead of
-// shelling out to npm — orb runs without a Node toolchain (WP-360 scope).
+// shelling out to npm — orb runs without a Node toolchain.
 // Declared package dependencies are installed with the npmCommand setting
 // (default ["npm"], upstream getNpmCommand) after npm extraction and git
 // clone/reconcile; a missing npm binary degrades to a warning so the package
@@ -93,11 +93,6 @@ type PackageVersionUpdate struct {
 	PackageUpdate
 	CurrentVersion string
 	LatestVersion  string
-}
-
-type PackageUpdateCheck struct {
-	Installed int
-	Updates   []PackageVersionUpdate
 }
 
 type ConfiguredPackage struct {
@@ -753,98 +748,6 @@ func (manager *PackageManager) shouldUpdateNpmSource(source *npmSource, scope st
 	return targetVersion != installedVersion
 }
 
-// CheckForPackageUpdates checks all installed, unpinned packages within ctx.
-func (manager *PackageManager) CheckForPackageUpdates(ctx context.Context) (PackageUpdateCheck, error) {
-	type installedPackage struct {
-		entry scopedPackageSource
-		path  string
-	}
-	installed := make([]installedPackage, 0)
-	for _, entry := range manager.dedupePackages(manager.collectConfiguredPackages()) {
-		if entry.scope == "temporary" {
-			continue
-		}
-		if path := manager.GetInstalledPath(entry.pkg.Source, entry.scope); path != "" {
-			installed = append(installed, installedPackage{entry: entry, path: path})
-		}
-	}
-	check := PackageUpdateCheck{Installed: len(installed)}
-	if len(installed) == 0 || isOfflineModeEnabled() {
-		return check, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return check, err
-	}
-
-	type result struct {
-		update *PackageVersionUpdate
-		err    error
-	}
-	results := runWithConcurrency(len(installed), updateCheckConcurrency, func(index int) result {
-		item := installed[index]
-		parsed := manager.parseSource(item.entry.pkg.Source)
-		switch {
-		case parsed.npm != nil:
-			if parsed.npm.pinned {
-				return result{}
-			}
-			current := getInstalledNpmVersion(item.path)
-			if current == "" {
-				return result{err: fmt.Errorf("installed npm package %s has no version", parsed.npm.name)}
-			}
-			latest, err := manager.getLatestNpmVersionContext(ctx, parsed.npm)
-			if err != nil || latest == current {
-				return result{err: err}
-			}
-			return result{update: &PackageVersionUpdate{
-				PackageUpdate:  PackageUpdate{Source: item.entry.pkg.Source, DisplayName: parsed.npm.name, Type: "npm", Scope: item.entry.scope},
-				CurrentVersion: current, LatestVersion: latest,
-			}}
-		case parsed.git != nil:
-			if parsed.git.Pinned {
-				return result{}
-			}
-			current, err := manager.captureGitContext(ctx, item.path, "rev-parse", "HEAD")
-			if err != nil {
-				return result{err: err}
-			}
-			latest, err := manager.getRemoteGitHeadContext(ctx, item.path)
-			if err != nil || latest == current {
-				return result{err: err}
-			}
-			return result{update: &PackageVersionUpdate{
-				PackageUpdate:  PackageUpdate{Source: item.entry.pkg.Source, DisplayName: parsed.git.Host + "/" + parsed.git.Path, Type: "git", Scope: item.entry.scope},
-				CurrentVersion: current, LatestVersion: latest,
-			}}
-		default:
-			return result{}
-		}
-	})
-	var checkErrors []error
-	for _, result := range results {
-		if result.update != nil {
-			check.Updates = append(check.Updates, *result.update)
-		}
-		if result.err != nil {
-			checkErrors = append(checkErrors, result.err)
-		}
-	}
-	return check, errors.Join(checkErrors...)
-}
-
-// CheckForAvailableUpdates keeps the upstream-shaped best-effort API.
-func (manager *PackageManager) CheckForAvailableUpdates() []PackageUpdate {
-	check, _ := manager.CheckForPackageUpdates(context.Background())
-	if len(check.Updates) == 0 {
-		return nil
-	}
-	updates := make([]PackageUpdate, len(check.Updates))
-	for index, update := range check.Updates {
-		updates[index] = update.PackageUpdate
-	}
-	return updates
-}
-
 func (manager *PackageManager) installedNpmMatchesConfiguredVersion(source *npmSource, installedPath string) bool {
 	installedVersion := getInstalledNpmVersion(installedPath)
 	if installedVersion == "" {
@@ -969,11 +872,7 @@ func declaredDependencies(packageJSONPath string) []string {
 		return nil
 	}
 	dependencies, _ := pkg["dependencies"].(map[string]any)
-	names := make([]string, 0, len(dependencies))
-	for name := range dependencies {
-		names = append(names, name)
-	}
-	return names
+	return slices.Collect(maps.Keys(dependencies))
 }
 
 // installPackageDependencies runs the npmCommand install inside an installed
@@ -989,14 +888,9 @@ func (manager *PackageManager) installPackageDependencies(packageDir string, dis
 	if len(dependencies) == 0 {
 		return nil
 	}
-	bundled := true
-	for _, name := range dependencies {
-		if !pathExists(filepath.Join(packageDir, "node_modules", name)) {
-			bundled = false
-			break
-		}
-	}
-	if bundled {
+	if !slices.ContainsFunc(dependencies, func(name string) bool {
+		return !pathExists(filepath.Join(packageDir, "node_modules", name))
+	}) {
 		return nil
 	}
 	command, baseArgs, err := manager.getNpmCommand()
@@ -1029,10 +923,6 @@ type execSpec struct {
 }
 
 func (manager *PackageManager) execCommand(spec execSpec) (string, error) {
-	return manager.execCommandContext(context.Background(), spec)
-}
-
-func (manager *PackageManager) execCommandContext(ctx context.Context, spec execSpec) (string, error) {
 	cmd := exec.Command(spec.name, spec.args...)
 	cmd.Dir = spec.dir
 	cmd.Env = append(os.Environ(), spec.env...)
@@ -1070,10 +960,6 @@ func (manager *PackageManager) execCommandContext(ctx context.Context, spec exec
 		_ = cmd.Process.Kill()
 		<-done
 		return "", fmt.Errorf("%s %s timed out after %s", spec.name, strings.Join(spec.args, " "), spec.timeout)
-	case <-ctx.Done():
-		_ = cmd.Process.Kill()
-		<-done
-		return "", ctx.Err()
 	}
 }
 
@@ -1084,18 +970,6 @@ func (manager *PackageManager) runGit(dir string, args ...string) error {
 
 func (manager *PackageManager) captureGit(dir string, timeout time.Duration, args ...string) (string, error) {
 	return manager.runCommand(execSpec{name: "git", args: args, dir: dir, timeout: timeout})
-}
-
-func (manager *PackageManager) captureGitContext(ctx context.Context, dir string, args ...string) (string, error) {
-	return manager.execCommandContext(ctx, execSpec{name: "git", args: args, dir: dir, timeout: packageNetworkTimeout})
-}
-
-func (manager *PackageManager) runGitRemoteCommandContext(ctx context.Context, installedPath string, args ...string) (string, error) {
-	return manager.execCommandContext(ctx, execSpec{
-		name: "git", args: args, dir: installedPath,
-		timeout: packageNetworkTimeout,
-		env:     []string{"GIT_TERMINAL_PROMPT=0"},
-	})
 }
 
 type gitUpdateTarget struct {
@@ -1145,67 +1019,6 @@ func (manager *PackageManager) getLocalGitUpdateTarget(installedPath string) (gi
 		}, nil
 	}
 	return gitUpdateTarget{}, err
-}
-
-func (manager *PackageManager) getGitUpstreamRefContext(ctx context.Context, installedPath string) string {
-	upstreamRef, err := manager.captureGitContext(ctx, installedPath, "rev-parse", "--abbrev-ref", "@{upstream}")
-	if err != nil {
-		return ""
-	}
-	trimmed := strings.TrimSpace(upstreamRef)
-	if !strings.HasPrefix(trimmed, "origin/") {
-		return ""
-	}
-	branch := strings.TrimPrefix(trimmed, "origin/")
-	if branch == "" {
-		return ""
-	}
-	return "refs/heads/" + branch
-}
-
-func (manager *PackageManager) getRemoteGitHeadContext(ctx context.Context, installedPath string) (string, error) {
-	if upstreamRef := manager.getGitUpstreamRefContext(ctx, installedPath); upstreamRef != "" {
-		remoteHead, err := manager.runGitRemoteCommandContext(ctx, installedPath, "ls-remote", "origin", upstreamRef)
-		if err == nil {
-			if hash := firstGitHash(remoteHead, ""); hash != "" {
-				return hash, nil
-			}
-		}
-	}
-	remoteHead, err := manager.runGitRemoteCommandContext(ctx, installedPath, "ls-remote", "origin", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	if hash := firstGitHash(remoteHead, "HEAD"); hash != "" {
-		return hash, nil
-	}
-	return "", errors.New("Failed to determine remote HEAD") //nolint:staticcheck // Upstream error text is observable.
-}
-
-func firstGitHash(output, requiredRef string) string {
-	for line := range strings.SplitSeq(output, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 1 || len(fields[0]) != 40 {
-			continue
-		}
-		if !isHex40(fields[0]) {
-			continue
-		}
-		if requiredRef != "" && (len(fields) < 2 || fields[1] != requiredRef) {
-			continue
-		}
-		return fields[0]
-	}
-	return ""
-}
-
-func isHex40(value string) bool {
-	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return true
 }
 
 func (manager *PackageManager) installGit(source *GitSource, scope string) (resultErr error) {
@@ -1286,15 +1099,7 @@ func (manager *PackageManager) ensureConfiguredGitRef(targetDir, ref string) err
 }
 
 func isHexGitObjectID(ref string) bool {
-	if len(ref) < 7 || len(ref) > 40 {
-		return false
-	}
-	for _, char := range ref {
-		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
-			return false
-		}
-	}
-	return true
+	return len(ref) >= 7 && len(ref) <= 40 && strings.Trim(ref, "0123456789abcdefABCDEF") == ""
 }
 
 func (manager *PackageManager) ensureGitRef(targetDir string, fetchArgs []string, ref string) error {

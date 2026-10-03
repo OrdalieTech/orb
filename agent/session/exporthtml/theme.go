@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
@@ -196,7 +197,7 @@ func adjustBrightness(r, g, b int, factor float64) string {
 func defaultThemeName(colorFgBg string) string {
 	parts := strings.Split(colorFgBg, ";")
 	for index := len(parts) - 1; index >= 0; index-- {
-		colorIndex, ok := parseJSDecimalInteger(trimJSSpace(parts[index]))
+		colorIndex, ok := parseJSDecimalInteger(strings.TrimFunc(parts[index], jstrim.IsSpace))
 		if !ok || colorIndex < 0 || colorIndex > 255 {
 			continue
 		}
@@ -207,21 +208,6 @@ func defaultThemeName(colorFgBg string) string {
 		return "dark"
 	}
 	return "dark"
-}
-
-func trimJSSpace(value string) string {
-	return strings.TrimFunc(value, func(character rune) bool {
-		switch {
-		case character >= '\t' && character <= '\r':
-			return true
-		case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-			return true
-		case character >= '\u2000' && character <= '\u200a':
-			return true
-		default:
-			return false
-		}
-	})
 }
 
 func parseJSDecimalInteger(value string) (int, bool) {

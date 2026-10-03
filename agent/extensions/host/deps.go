@@ -68,11 +68,11 @@ func owningPackageJSON(entryPath string) (string, error) {
 		return "", err
 	}
 	directory := resolved
-	if info, statErr := os.Stat(resolved); statErr == nil && !info.IsDir() {
-		directory = filepath.Dir(resolved)
-	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+	info, statErr := os.Stat(resolved)
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return "", statErr
-	} else if errors.Is(statErr, os.ErrNotExist) {
+	}
+	if statErr != nil || !info.IsDir() {
 		directory = filepath.Dir(resolved)
 	}
 	for {

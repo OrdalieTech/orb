@@ -3,6 +3,7 @@ package host
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -141,6 +142,24 @@ func (codec *codec) write(value frame) error {
 	defer codec.writeMu.Unlock()
 	_, err = codec.writer.Write(encoded)
 	return err
+}
+
+// writeChunks writes encoded as base64 event frames of method, each 2 MiB of
+// payload so it fits the frame cap; params builds one chunk's frame params.
+func (codec *codec) writeChunks(method string, encoded []byte, params func(index, total int, data string) any) error {
+	const chunkSize = 2 << 20
+	total := (len(encoded) + chunkSize - 1) / chunkSize
+	for index := range total {
+		data := base64.StdEncoding.EncodeToString(encoded[index*chunkSize : min((index+1)*chunkSize, len(encoded))])
+		value, err := eventFrame(method, params(index, total, data))
+		if err == nil {
+			err = codec.write(value)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateFrame(value frame) error {

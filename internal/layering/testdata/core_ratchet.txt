@@ -18,7 +18,7 @@ agent	os.Stderr	1
 agent	os.Stdout	1
 agent	os.UserHomeDir	4
 agent	os.WriteFile	5
-agent	path/filepath.Abs	13
+agent	path/filepath.Abs	10
 agent	path/filepath.EvalSymlinks	1
 agent/config	import github.com/OrdalieTech/orb/internal/filelock	2
 agent/config	import os/exec	1

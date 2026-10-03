@@ -473,22 +473,21 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	_, tokenErr := stateFromContext(ctx).read(ctx, filepath.Join(dir, "admin.token"))
+	tokenPath := filepath.Join(dir, "admin.token")
+	token, tokenErr := stateFromContext(ctx).read(ctx, tokenPath)
 	b, err := bridge.Open(store, errors.Is(tokenErr, os.ErrNotExist))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = b.Close() }()
-	tokenPath := filepath.Join(dir, "admin.token")
-	token, err := stateFromContext(ctx).read(ctx, tokenPath)
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(tokenErr, os.ErrNotExist) {
 		var v [32]byte
 		_, _ = rand.Read(v[:])
 		token = []byte(base64.RawURLEncoding.EncodeToString(v[:]))
-		err = stateFromContext(ctx).write(ctx, tokenPath, token)
+		tokenErr = stateFromContext(ctx).write(ctx, tokenPath, token)
 	}
-	if err != nil {
-		return err
+	if tokenErr != nil {
+		return tokenErr
 	}
 	if len(token) != 43 {
 		return errors.New("corrupt bridge admin credential")
@@ -668,54 +667,52 @@ func (s *bridgeService) reconcile() {
 		case <-ticker.C:
 		case <-s.b.Changes():
 		}
-		{
-			raw, err := s.b.Admin(s.ctx, "status", bridge.JSON(struct{}{}))
-			if err != nil {
-				continue
-			}
-			var status struct {
-				Scopes map[string][]string `json:"scopes"`
-			}
-			_ = json.Unmarshal(raw, &status)
-			for scope, peers := range status.Scopes {
-				for _, peer := range peers {
-					if peer == s.b.PeerID() {
-						continue
-					}
-					ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
-					c, err := s.peer(ctx, peer, "")
-					if err == nil {
-						cursor := ""
-						for pages := 0; pages < 16; pages++ {
-							var page struct {
-								Items  []bridge.Record `json:"items"`
-								Cursor string          `json:"cursor"`
-							}
-							err = c.Call(ctx, "peers.list", map[string]string{"scope_id": scope, "cursor": cursor}, &page)
-							if err != nil {
-								break
-							}
-							for _, r := range page.Items {
-								_, _ = s.b.MergeContact(peer, r)
-							}
-							cursor = page.Cursor
-							if cursor == "" {
-								break
-							}
-						}
-						records, e := s.b.Contacts(peer, scope)
-						if e == nil {
-							for len(records) > 0 {
-								n := min(len(records), 16)
-								if c.Call(ctx, "peers.publish", map[string]any{"records": records[:n]}, nil) != nil {
-									break
-								}
-								records = records[n:]
-							}
-						}
-					}
-					cancel()
+		raw, err := s.b.Admin(s.ctx, "status", bridge.JSON(struct{}{}))
+		if err != nil {
+			continue
+		}
+		var status struct {
+			Scopes map[string][]string `json:"scopes"`
+		}
+		_ = json.Unmarshal(raw, &status)
+		for scope, peers := range status.Scopes {
+			for _, peer := range peers {
+				if peer == s.b.PeerID() {
+					continue
 				}
+				ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+				c, err := s.peer(ctx, peer, "")
+				if err == nil {
+					cursor := ""
+					for pages := 0; pages < 16; pages++ {
+						var page struct {
+							Items  []bridge.Record `json:"items"`
+							Cursor string          `json:"cursor"`
+						}
+						err = c.Call(ctx, "peers.list", map[string]string{"scope_id": scope, "cursor": cursor}, &page)
+						if err != nil {
+							break
+						}
+						for _, r := range page.Items {
+							_, _ = s.b.MergeContact(peer, r)
+						}
+						cursor = page.Cursor
+						if cursor == "" {
+							break
+						}
+					}
+					records, e := s.b.Contacts(peer, scope)
+					if e == nil {
+						for len(records) > 0 {
+							n := min(len(records), 16)
+							if c.Call(ctx, "peers.publish", map[string]any{"records": records[:n]}, nil) != nil {
+								break
+							}
+							records = records[n:]
+						}
+					}
+				}
+				cancel()
 			}
 		}
 	}

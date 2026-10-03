@@ -1,12 +1,9 @@
 package main
 
+import "slices"
+
 var defaultBuiltInTools = []string{"read", "bash", "edit", "write", "grep", "find", "ls"}
 var defaultActiveTools = []string{"read", "bash", "edit", "write"}
-
-// ResolveBuiltInToolSelection applies CLI allow/deny rules to built-in tools.
-func ResolveBuiltInToolSelection(args CLIArgs) []string {
-	return ResolveToolSelection(args, defaultBuiltInTools)
-}
 
 // ResolveToolSelection applies upstream allowlist precedence and returns the
 // valid active tools in CLI order.
@@ -20,23 +17,7 @@ func ResolveToolSelection(args CLIArgs, registeredTools []string) []string {
 	default:
 		requested = defaultActiveTools
 	}
-	registered := make(map[string]struct{}, len(registeredTools))
-	for _, name := range registeredTools {
-		registered[name] = struct{}{}
-	}
-	excluded := make(map[string]struct{}, len(args.ExcludeTools))
-	for _, name := range args.ExcludeTools {
-		excluded[name] = struct{}{}
-	}
-	selection := make([]string, 0, len(requested))
-	for _, name := range requested {
-		if _, exists := registered[name]; !exists {
-			continue
-		}
-		if _, denied := excluded[name]; denied {
-			continue
-		}
-		selection = append(selection, name)
-	}
-	return selection
+	return slices.DeleteFunc(slices.Clone(requested), func(name string) bool {
+		return !slices.Contains(registeredTools, name) || slices.Contains(args.ExcludeTools, name)
+	})
 }

@@ -12,8 +12,7 @@ import (
 
 // Regression: the project_trust extension event never fired in the shipped CLI
 // (ResolveProjectTrusted was always called without a Runner). Upstream consults
-// pre-trust extensions ahead of the trust store and the interactive prompt
-// (main.ts resolveProjectTrust wiring -> project-trust.ts emitProjectTrustEvent).
+// pre-trust extensions ahead of the trust store and the interactive prompt.
 func TestLoadStartupExtensionsConsultsProjectTrustExtension(t *testing.T) {
 	agentDir := t.TempDir()
 	t.Setenv(config.EnvAgentDir, agentDir)

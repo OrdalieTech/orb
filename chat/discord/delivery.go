@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound event id
@@ -89,7 +90,7 @@ var errPreviewThrottled = errors.New("discord: preview edit rate limited")
 // from under us (10008 Unknown Message) is recreated. Every payload carries
 // allowed_mentions {"parse":[]}.
 func (d *delivery) Preview(ctx context.Context, text string) error {
-	text = truncateRunes(text, messageLimit)
+	text = runechunk.Truncate(text, messageLimit)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if text == "" || text == d.previewText {

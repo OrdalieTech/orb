@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"unicode"
+	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/internal/cjksegment"
 	"github.com/rivo/uniseg"
@@ -38,10 +39,7 @@ func runeIndexFromUTF16(value string, offset int) int {
 	}
 	units, runes := 0, 0
 	for _, r := range value {
-		width := 1
-		if r > 0xFFFF {
-			width = 2
-		}
+		width := utf16.RuneLen(r)
 		if units+width > offset {
 			break
 		}
@@ -57,10 +55,7 @@ func utf16OffsetSplitsRune(value string, offset int) bool {
 	}
 	units := 0
 	for _, r := range value {
-		width := 1
-		if r > 0xFFFF {
-			width = 2
-		}
+		width := utf16.RuneLen(r)
 		if units < offset && offset < units+width {
 			return true
 		}

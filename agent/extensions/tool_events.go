@@ -15,9 +15,8 @@ import (
 // stays event.ToolName == "bash".
 //
 // Deliberate public surface for compiled Go extensions, mirroring upstream's
-// exported guards (upstream extension API parity, Sprint 4): no in-repo caller beyond its tests
-// is expected — do not prune as dead code without an upstream-parity
-// decision.
+// exported guards: no in-repo caller beyond its tests is expected — do not
+// prune as dead code without an upstream-parity decision.
 
 func toolCallInput[T any](event ToolCallEvent, name string) (T, bool) {
 	var input T

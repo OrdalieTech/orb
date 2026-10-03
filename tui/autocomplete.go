@@ -287,37 +287,28 @@ func (provider *CombinedAutocompleteProvider) GetSuggestions(ctx context.Context
 		spaceIndex := strings.IndexByte(textBeforeCursor, ' ')
 		if spaceIndex == -1 {
 			prefix := textBeforeCursor[1:]
-			type commandItem struct {
-				name        string
-				label       string
-				description string
-			}
-			commandItems := make([]commandItem, len(provider.commands))
+			items := make([]AutocompleteItem, len(provider.commands))
 			for index, command := range provider.commands {
-				fullDescription := command.Description
+				description := command.Description
 				if command.ArgumentHint != "" {
 					if command.Description != "" {
-						fullDescription = command.ArgumentHint + " — " + command.Description
+						description = command.ArgumentHint + " — " + command.Description
 					} else {
-						fullDescription = command.ArgumentHint
+						description = command.ArgumentHint
 					}
 				}
-				commandItems[index] = commandItem{name: command.Name, label: command.Name, description: fullDescription}
+				items[index] = AutocompleteItem{Value: command.Name, Label: command.Name, Description: description}
 			}
-			filtered := FuzzyFilter(commandItems, prefix, func(item commandItem) string {
+			filtered := FuzzyFilter(items, prefix, func(item AutocompleteItem) string {
 				if !strings.HasPrefix(prefix, "skill:") {
-					return strings.TrimPrefix(item.name, "skill:")
+					return strings.TrimPrefix(item.Value, "skill:")
 				}
-				return item.name
+				return item.Value
 			})
 			if len(filtered) == 0 {
 				return nil
 			}
-			items := make([]AutocompleteItem, len(filtered))
-			for index, item := range filtered {
-				items[index] = AutocompleteItem{Value: item.name, Label: item.label, Description: item.description}
-			}
-			return &AutocompleteSuggestions{Items: items, Prefix: textBeforeCursor}
+			return &AutocompleteSuggestions{Items: filtered, Prefix: textBeforeCursor}
 		}
 
 		commandName := textBeforeCursor[1:spaceIndex]
@@ -378,29 +369,19 @@ func (provider *CombinedAutocompleteProvider) ApplyCompletion(lines []string, cu
 		return CompletionResult{Lines: newLines, CursorLine: cursorLine, CursorCol: runeLen(beforePrefix) + runeLen(item.Value) + 2}
 	}
 
-	// File attachment: no trailing space after directories so completion can
-	// continue.
-	if strings.HasPrefix(prefix, "@") {
-		isDirectory := strings.HasSuffix(item.Label, "/")
-		suffix := " "
-		if isDirectory {
-			suffix = ""
-		}
-		setLine(beforePrefix + item.Value + suffix + adjustedAfterCursor)
-		cursorOffset := runeLen(item.Value)
-		if isDirectory && hasTrailingQuoteInItem {
-			cursorOffset = runeLen(item.Value) - 1
-		}
-		return CompletionResult{Lines: newLines, CursorLine: cursorLine, CursorCol: runeLen(beforePrefix) + cursorOffset + runeLen(suffix)}
-	}
-
-	setLine(beforePrefix + item.Value + adjustedAfterCursor)
 	isDirectory := strings.HasSuffix(item.Label, "/")
 	cursorOffset := runeLen(item.Value)
 	if isDirectory && hasTrailingQuoteInItem {
-		cursorOffset = runeLen(item.Value) - 1
+		cursorOffset--
 	}
-	return CompletionResult{Lines: newLines, CursorLine: cursorLine, CursorCol: runeLen(beforePrefix) + cursorOffset}
+	// File attachments get a trailing space, except after directories so
+	// completion can continue.
+	suffix := ""
+	if strings.HasPrefix(prefix, "@") && !isDirectory {
+		suffix = " "
+	}
+	setLine(beforePrefix + item.Value + suffix + adjustedAfterCursor)
+	return CompletionResult{Lines: newLines, CursorLine: cursorLine, CursorCol: runeLen(beforePrefix) + cursorOffset + runeLen(suffix)}
 }
 
 func (provider *CombinedAutocompleteProvider) extractAtPrefix(text string) string {

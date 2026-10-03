@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -16,7 +15,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
 )
@@ -352,10 +350,6 @@ func TestUpdateReinstallsWhenVersionDiffers(t *testing.T) {
 	registry.add(fakeNpmPackage{name: "pkg", version: "1.1.0", files: map[string]string{
 		"package.json": packageJSONContent("pkg", "1.1.0"),
 	}})
-	check, err := manager.CheckForPackageUpdates(context.Background())
-	if err != nil || check.Installed != 1 || len(check.Updates) != 1 || check.Updates[0].Source != "npm:pkg" || check.Updates[0].Type != "npm" || check.Updates[0].Scope != "user" || check.Updates[0].CurrentVersion != "1.0.0" || check.Updates[0].LatestVersion != "1.1.0" {
-		t.Fatalf("check = %+v, error = %v", check, err)
-	}
 	updates, err := manager.UpdateWithResults("")
 	if err != nil {
 		t.Fatal(err)
@@ -366,40 +360,6 @@ func TestUpdateReinstallsWhenVersionDiffers(t *testing.T) {
 	if version := getInstalledNpmVersion(installedPath); version != "1.1.0" {
 		t.Fatalf("updated version = %q", version)
 	}
-
-	// Pinned packages are skipped by updates.
-	if err := settings.SetPackages([]config.PackageSource{{Source: "npm:pkg@1.1.0"}}); err != nil {
-		t.Fatal(err)
-	}
-	if updates := manager.CheckForAvailableUpdates(); len(updates) != 0 {
-		t.Fatalf("pinned updates = %+v", updates)
-	}
-}
-
-func TestPackageUpdateCheckUsesSharedContextBudget(t *testing.T) {
-	manager, _, agentDir, settings := newTestPackageManager(t)
-	if err := settings.SetPackages([]config.PackageSource{{Source: "npm:slow-a"}, {Source: "npm:slow-b"}}); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"slow-a", "slow-b"} {
-		writeTestFile(t, filepath.Join(agentDir, "npm", "node_modules", name, "package.json"), packageJSONContent(name, "1.0.0"))
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
-		<-request.Context().Done()
-	}))
-	t.Cleanup(server.Close)
-	manager.registryBaseURL = server.URL
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	started := time.Now()
-	check, err := manager.CheckForPackageUpdates(ctx)
-	if err == nil || check.Installed != 2 {
-		t.Fatalf("check = %+v, error = %v", check, err)
-	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("shared update-check budget took %s", elapsed)
-	}
 }
 
 func TestOfflineModeSkipsUpdates(t *testing.T) {
@@ -407,9 +367,6 @@ func TestOfflineModeSkipsUpdates(t *testing.T) {
 	t.Setenv("PI_OFFLINE", "1")
 	if err := settings.SetPackages([]config.PackageSource{{Source: "npm:pkg"}}); err != nil {
 		t.Fatal(err)
-	}
-	if updates := manager.CheckForAvailableUpdates(); updates != nil {
-		t.Fatalf("offline updates = %+v", updates)
 	}
 	if err := manager.Update(""); err != nil {
 		t.Fatal(err)

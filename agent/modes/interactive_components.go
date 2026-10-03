@@ -2,9 +2,9 @@ package modes
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,11 +31,11 @@ const (
 )
 
 // ─────────────────────────────────────────────────────────────
-// Markdown transformers (upstream components/markdown-transform.ts)
+// Markdown transformers
 // ─────────────────────────────────────────────────────────────
 
 // newMarkdownTransform curries the message context over the transformer chain
-// for a tui.Markdown Transform option (upstream createMarkdownTransform).
+// for a tui.Markdown Transform option.
 func newMarkdownTransform(messageType string, isStreaming bool, transformers []extensions.MarkdownTransformer) func(string, int) string {
 	if len(transformers) == 0 {
 		return nil
@@ -55,7 +55,7 @@ func newMarkdownTransform(messageType string, isStreaming bool, transformers []e
 }
 
 // applyMarkdownTransformer keeps the current markdown when a transformer
-// panics, mirroring upstream's per-transformer try/catch.
+// panics.
 func applyMarkdownTransformer(transformer extensions.MarkdownTransformer, markdown string, context extensions.MarkdownTransformContext) (result string) {
 	defer func() {
 		if recover() != nil {
@@ -281,8 +281,8 @@ func (c *AssistantMessageComponent) UpdateContent(message *ai.AssistantMessage) 
 	c.setMessageLocked(message)
 }
 
-// UpdateContentStreaming mirrors upstream updateContent(message, isStreaming):
-// the streaming flag feeds the markdown transformer context.
+// UpdateContentStreaming also records whether the message is still streaming,
+// which feeds the markdown transformer context.
 func (c *AssistantMessageComponent) UpdateContentStreaming(message *ai.AssistantMessage, isStreaming bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -919,19 +919,18 @@ func (preview *toolOutputPreview) Render(width int) []string {
 	if output == "" {
 		return nil
 	}
-	if preview.options.Expanded {
+	style := func(output string) string {
 		lines := strings.Split(output, "\n")
 		for index := range lines {
 			lines[index] = preview.palette.FG("toolOutput", lines[index])
 		}
-		return tui.NewText(strings.Join(lines, "\n"), 0, 0, nil).Render(width)
+		return strings.Join(lines, "\n")
+	}
+	if preview.options.Expanded {
+		return tui.NewText(style(output), 0, 0, nil).Render(width)
 	}
 	output, earlier := lastOutputLines(output, toolPreviewLines)
-	styled := strings.Split(output, "\n")
-	for index := range styled {
-		styled[index] = preview.palette.FG("toolOutput", styled[index])
-	}
-	truncated := tui.TruncateToVisualLines(strings.Join(styled, "\n"), toolPreviewLines, width, 0)
+	truncated := tui.TruncateToVisualLines(style(output), toolPreviewLines, width, 0)
 	lines := append([]string(nil), truncated.VisualLines...)
 	if earlier || truncated.SkippedCount > 0 {
 		hint := preview.palette.FG("muted", "… earlier output · click to expand")
@@ -1512,24 +1511,20 @@ func (si *StatusIndicator) Dispose() {
 
 func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options ...*extensions.WorkingIndicatorOptions) *StatusIndicator {
 	var indicator *tui.LoaderIndicatorOptions
-	if len(options) > 0 && options[0] != nil {
-		frames := []string(nil)
-		if options[0].Frames != nil {
-			frames = append([]string{}, options[0].Frames...)
-		}
-		interval := time.Duration(0)
-		if options[0].IntervalMS > 0 {
-			interval = time.Duration(options[0].IntervalMS) * time.Millisecond
-		}
-		indicator = &tui.LoaderIndicatorOptions{Frames: frames, Interval: interval}
+	if len(options) > 0 {
+		indicator = loaderIndicatorOptions(options[0])
 	}
+	return newStatusIndicator(ui, StatusWorking, "accent", message, indicator)
+}
+
+func newStatusIndicator(ui tui.RenderRequester, kind StatusIndicatorKind, color, message string, indicator *tui.LoaderIndicatorOptions) *StatusIndicator {
 	return &StatusIndicator{
 		Loader: tui.NewLoader(ui,
-			func(s string) string { return theme.FG("accent", s) },
+			func(s string) string { return theme.FG(color, s) },
 			func(s string) string { return theme.FG("muted", s) },
 			message, indicator,
 		),
-		Kind: StatusWorking,
+		Kind: kind,
 	}
 }
 
@@ -1537,14 +1532,7 @@ func NewRetryStatusIndicator(ui tui.RenderRequester, attempt, maxAttempts int, d
 	retryMessage := func(seconds int) string {
 		return fmt.Sprintf("Retrying (%d/%d) in %ds... (%s to cancel)", attempt, maxAttempts, seconds, KeyText("app.interrupt"))
 	}
-	status := &StatusIndicator{
-		Loader: tui.NewLoader(ui,
-			func(s string) string { return theme.FG("warning", s) },
-			func(s string) string { return theme.FG("muted", s) },
-			retryMessage(int((delayMS+999)/1000)), nil,
-		),
-		Kind: StatusRetry,
-	}
+	status := newStatusIndicator(ui, StatusRetry, "warning", retryMessage(int((delayMS+999)/1000)), nil)
 	status.countdown = NewCountdownTimer(delayMS, ui, func(seconds int) {
 		status.SetMessage(retryMessage(seconds))
 	}, nil)
@@ -1562,25 +1550,11 @@ func NewCompactionStatusIndicator(ui tui.RenderRequester, reason string) *Status
 	default:
 		label = "Auto-compacting... " + cancelHint
 	}
-	return &StatusIndicator{
-		Loader: tui.NewLoader(ui,
-			func(s string) string { return theme.FG("accent", s) },
-			func(s string) string { return theme.FG("muted", s) },
-			label, nil,
-		),
-		Kind: StatusCompaction,
-	}
+	return newStatusIndicator(ui, StatusCompaction, "accent", label, nil)
 }
 
 func NewBranchSummaryStatusIndicator(ui tui.RenderRequester) *StatusIndicator {
-	return &StatusIndicator{
-		Loader: tui.NewLoader(ui,
-			func(s string) string { return theme.FG("accent", s) },
-			func(s string) string { return theme.FG("muted", s) },
-			fmt.Sprintf("Summarizing branch... (%s to cancel)", KeyText("app.interrupt")), nil,
-		),
-		Kind: StatusBranchSummary,
-	}
+	return newStatusIndicator(ui, StatusBranchSummary, "accent", fmt.Sprintf("Summarizing branch... (%s to cancel)", KeyText("app.interrupt")), nil)
 }
 
 // IdleStatus renders two empty lines (same height as a status indicator).
@@ -1805,11 +1779,7 @@ func (f *FooterComponent) render(width int) []string {
 
 	display, stats, latestCacheHitRate, autoCompactEnabled := f.collect()
 	statuses := f.provider.Statuses()
-	keys := make([]string, 0, len(statuses))
-	for key := range statuses {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(statuses))
 	values := make([]string, 0, len(keys))
 	for _, key := range keys {
 		values = append(values, strings.Join(strings.Fields(statuses[key]), " "))
@@ -1975,16 +1945,20 @@ func (f *FooterComponent) statusLabel(key string) string {
 	return ""
 }
 
+// hitAtLocked is the status hit under the pointer, or the zero hit.
+func (f *FooterComponent) hitAtLocked(event tui.MouseEvent) statusHit {
+	for _, hit := range f.hits {
+		if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
+			return hit
+		}
+	}
+	return statusHit{}
+}
+
 func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
 	if event.Type == tui.MouseMove {
 		f.hitMu.Lock()
-		var hovered statusHit
-		for _, hit := range f.hits {
-			if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
-				hovered = hit
-				break
-			}
-		}
+		hovered := f.hitAtLocked(event)
 		changed := hovered.key != f.hover
 		f.hover = hovered.key
 		tooltip := f.tooltip
@@ -2002,13 +1976,7 @@ func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
 		return false
 	}
 	f.hitMu.Lock()
-	var clicked statusHit
-	for _, hit := range f.hits {
-		if event.Row == hit.row && event.Column >= hit.start && event.Column < hit.end {
-			clicked = hit
-			break
-		}
-	}
+	clicked := f.hitAtLocked(event)
 	tooltip := f.tooltip
 	f.hitMu.Unlock()
 	if clicked.action == nil {
@@ -2108,107 +2076,61 @@ func (f *FooterComponent) collect() (engine.AgentDisplayState, agent.SessionStat
 }
 
 // ─────────────────────────────────────────────────────────────
-// CompactionSummaryMessageComponent
+// Summary messages (compaction and branch)
 // ─────────────────────────────────────────────────────────────
 
-type CompactionSummaryMessageComponent struct {
-	box      *tui.Box
-	expanded bool
-	summary  string
-	tokens   int64
-	mdTheme  tui.MarkdownTheme
+type SummaryMessageComponent struct {
+	box       *tui.Box
+	expanded  bool
+	label     string
+	header    string // expanded markdown heading
+	collapsed string // collapsed text before the expand hint
+	summary   string
+	mdTheme   tui.MarkdownTheme
 }
 
-func NewCompactionSummaryMessage(summary string, tokensBefore int64, mdTheme tui.MarkdownTheme) *CompactionSummaryMessageComponent {
-	c := &CompactionSummaryMessageComponent{
-		box:     tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
-		summary: summary,
-		tokens:  tokensBefore,
-		mdTheme: mdTheme,
+func NewCompactionSummaryMessage(summary string, tokensBefore int64, mdTheme tui.MarkdownTheme) *SummaryMessageComponent {
+	tokens := formatInteger(tokensBefore)
+	return newSummaryMessage("[compaction]", "Compacted from "+tokens+" tokens", "Compacted from "+tokens+" tokens", summary, mdTheme)
+}
+
+func NewBranchSummaryMessage(summary string, mdTheme tui.MarkdownTheme) *SummaryMessageComponent {
+	return newSummaryMessage("[branch]", "Branch Summary", "Branch summary", summary, mdTheme)
+}
+
+func newSummaryMessage(label, header, collapsed, summary string, mdTheme tui.MarkdownTheme) *SummaryMessageComponent {
+	c := &SummaryMessageComponent{
+		box:   tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
+		label: label, header: header, collapsed: collapsed, summary: summary, mdTheme: mdTheme,
 	}
 	c.updateDisplay()
 	return c
 }
 
-func (c *CompactionSummaryMessageComponent) SetExpanded(expanded bool) {
+func (c *SummaryMessageComponent) SetExpanded(expanded bool) {
 	c.expanded = expanded
 	c.updateDisplay()
 }
 
-func (c *CompactionSummaryMessageComponent) updateDisplay() {
+func (c *SummaryMessageComponent) updateDisplay() {
 	c.box.Clear()
-	label := theme.FG("customMessageLabel", theme.Bold("[compaction]"))
-	c.box.AddChild(tui.NewText(label, 0, 0, nil))
+	c.box.AddChild(tui.NewText(theme.FG("customMessageLabel", theme.Bold(c.label)), 0, 0, nil))
 	c.box.AddChild(tui.NewSpacer(1))
-
-	tokenStr := formatInteger(c.tokens)
 	if c.expanded {
-		header := fmt.Sprintf("**Compacted from %s tokens**\n\n", tokenStr)
-		c.box.AddChild(tui.NewMarkdown(header+c.summary, 0, 0, c.mdTheme,
+		c.box.AddChild(tui.NewMarkdown("**"+c.header+"**\n\n"+c.summary, 0, 0, c.mdTheme,
 			&tui.DefaultTextStyle{Color: func(t string) string { return theme.FG("customMessageText", t) }}, nil))
-	} else {
-		c.box.AddChild(tui.NewText(
-			theme.FG("customMessageText", fmt.Sprintf("Compacted from %s tokens (", tokenStr))+
-				theme.FG("dim", KeyText("app.tools.expand"))+
-				theme.FG("customMessageText", " to expand)"),
-			0, 0, nil,
-		))
+		return
 	}
+	c.box.AddChild(tui.NewText(
+		theme.FG("customMessageText", c.collapsed+" (")+
+			theme.FG("dim", KeyText("app.tools.expand"))+
+			theme.FG("customMessageText", " to expand)"),
+		0, 0, nil,
+	))
 }
 
-func (c *CompactionSummaryMessageComponent) Invalidate() { c.box.Invalidate() }
-func (c *CompactionSummaryMessageComponent) Render(width int) []string {
-	return renderBand(c.box, width, "")
-}
-
-// ─────────────────────────────────────────────────────────────
-// BranchSummaryMessageComponent
-// ─────────────────────────────────────────────────────────────
-
-type BranchSummaryMessageComponent struct {
-	box      *tui.Box
-	expanded bool
-	summary  string
-	mdTheme  tui.MarkdownTheme
-}
-
-func NewBranchSummaryMessage(summary string, mdTheme tui.MarkdownTheme) *BranchSummaryMessageComponent {
-	c := &BranchSummaryMessageComponent{
-		box:     tui.NewBox(chatBandPad, 1, func(t string) string { return theme.BG("customMessageBg", t) }),
-		summary: summary,
-		mdTheme: mdTheme,
-	}
-	c.updateDisplay()
-	return c
-}
-
-func (c *BranchSummaryMessageComponent) SetExpanded(expanded bool) {
-	c.expanded = expanded
-	c.updateDisplay()
-}
-
-func (c *BranchSummaryMessageComponent) updateDisplay() {
-	c.box.Clear()
-	label := theme.FG("customMessageLabel", theme.Bold("[branch]"))
-	c.box.AddChild(tui.NewText(label, 0, 0, nil))
-	c.box.AddChild(tui.NewSpacer(1))
-
-	if c.expanded {
-		header := "**Branch Summary**\n\n"
-		c.box.AddChild(tui.NewMarkdown(header+c.summary, 0, 0, c.mdTheme,
-			&tui.DefaultTextStyle{Color: func(t string) string { return theme.FG("customMessageText", t) }}, nil))
-	} else {
-		c.box.AddChild(tui.NewText(
-			theme.FG("customMessageText", "Branch summary (")+
-				theme.FG("dim", KeyText("app.tools.expand"))+
-				theme.FG("customMessageText", " to expand)"),
-			0, 0, nil,
-		))
-	}
-}
-
-func (c *BranchSummaryMessageComponent) Invalidate() { c.box.Invalidate() }
-func (c *BranchSummaryMessageComponent) Render(width int) []string {
+func (c *SummaryMessageComponent) Invalidate() { c.box.Invalidate() }
+func (c *SummaryMessageComponent) Render(width int) []string {
 	return renderBand(c.box, width, "")
 }
 

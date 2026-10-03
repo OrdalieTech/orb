@@ -10,7 +10,7 @@ import (
 func TestParseArgsVerboseFlag(t *testing.T) {
 	// Regression: --verbose used to fall into the unknown-long-flag branch,
 	// swallowing the following argument as its value and failing startup with
-	// "Unknown option: --verbose" (upstream accepts it: args.ts:178-179).
+	// "Unknown option: --verbose" (upstream accepts it).
 	args := ParseArgs([]string{"--verbose", "hi"})
 	if !args.Verbose {
 		t.Fatal("--verbose not parsed")

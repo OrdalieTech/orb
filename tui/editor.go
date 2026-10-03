@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -22,7 +23,7 @@ var (
 	imageMarkerSingle = regexp.MustCompile(`^\[Image #\d+\]$`)
 )
 
-// isAtomicMarker reports whether a segment was merged by segmentWithMarkers.
+// isAtomicMarker reports whether a segment is a paste or image marker.
 func isAtomicMarker(value string) bool {
 	return len(value) >= 10 && (pasteMarkerSingle.MatchString(value) || imageMarkerSingle.MatchString(value))
 }
@@ -30,12 +31,8 @@ func isAtomicMarker(value string) bool {
 // atomicSpan is a half-open rune range merged into one editing unit.
 type atomicSpan struct{ start, end int }
 
-// segmentWithMarkers makes paste and image markers atomic for editing and wrapping.
-// Paste markers only count while their IDs exist in validIDs.
-func segmentWithMarkers(text string, base func(string) []segment, validIDs map[int]bool) []segment {
-	return mergeAtomicSpans(text, base, markerSpans(text, validIDs))
-}
-
+// markerSpans finds the paste and image markers that editing and wrapping
+// treat as atomic. Paste markers only count while their IDs are in validIDs.
 func markerSpans(text string, validIDs map[int]bool) []atomicSpan {
 	hasPastes := len(validIDs) > 0 && strings.Contains(text, "[paste #")
 	hasImages := strings.Contains(text, "[Image #")
@@ -288,7 +285,7 @@ func matchesAutocompleteTrigger(text string, triggerCharacters []string) bool {
 	if quoted := strings.LastIndex(text, `@"`); quoted >= 0 {
 		start := runeLen(text[:quoted])
 		if isAutocompleteBoundary(runes, start) && !strings.ContainsRune(text[quoted+2:], '"') {
-			return containsString(triggerCharacters, "@")
+			return slices.Contains(triggerCharacters, "@")
 		}
 	}
 	start := 0
@@ -298,11 +295,7 @@ func matchesAutocompleteTrigger(text string, triggerCharacters []string) bool {
 			break
 		}
 	}
-	return start < len(runes) && containsString(triggerCharacters, string(runes[start]))
-}
-
-func matchesAutocompleteDebounce(text string, triggerCharacters []string) bool {
-	return matchesAutocompleteTrigger(text, triggerCharacters)
+	return start < len(runes) && slices.Contains(triggerCharacters, string(runes[start]))
 }
 
 const (
@@ -1160,101 +1153,59 @@ func (editor *Editor) handleData(data string) {
 		}
 	}
 
-	// Tab: trigger completion.
-	if kb.Matches(data, "tui.input.tab") && !editor.popupOpenLocked() {
+	switch {
+	case kb.Matches(data, "tui.input.tab") && !editor.popupOpenLocked():
 		editor.handleTabCompletion()
-		return
-	}
-
-	// Deletion actions.
-	if kb.Matches(data, "tui.editor.deleteToLineEnd") {
+	case kb.Matches(data, "tui.editor.deleteToLineEnd"):
 		editor.deleteToEndOfLine()
-		return
-	}
-	if kb.Matches(data, "tui.editor.deleteToLineStart") {
+	case kb.Matches(data, "tui.editor.deleteToLineStart"):
 		editor.deleteToStartOfLine()
-		return
-	}
-	if kb.Matches(data, "tui.editor.deleteWordBackward") {
+	case kb.Matches(data, "tui.editor.deleteWordBackward"):
 		editor.deleteWordBackwards()
-		return
-	}
-	if kb.Matches(data, "tui.editor.deleteWordForward") {
+	case kb.Matches(data, "tui.editor.deleteWordForward"):
 		editor.deleteWordForward()
-		return
-	}
-	if kb.Matches(data, "tui.editor.deleteCharBackward") || MatchesKey(data, "shift+backspace") {
+	case kb.Matches(data, "tui.editor.deleteCharBackward") || MatchesKey(data, "shift+backspace"):
 		editor.handleBackspace()
-		return
-	}
-	if kb.Matches(data, "tui.editor.deleteCharForward") || MatchesKey(data, "shift+delete") {
+	case kb.Matches(data, "tui.editor.deleteCharForward") || MatchesKey(data, "shift+delete"):
 		editor.handleForwardDelete()
-		return
-	}
-
-	// Kill ring actions.
-	if kb.Matches(data, "tui.editor.yank") {
+	case kb.Matches(data, "tui.editor.yank"):
 		editor.yank()
-		return
-	}
-	if kb.Matches(data, "tui.editor.yankPop") {
+	case kb.Matches(data, "tui.editor.yankPop"):
 		editor.yankPop()
-		return
-	}
-
-	// Cursor movement actions.
-	if kb.Matches(data, "tui.editor.cursorLineStart") {
+	case kb.Matches(data, "tui.editor.cursorLineStart"):
 		editor.moveToLineStart()
-		return
-	}
-	if kb.Matches(data, "tui.editor.cursorLineEnd") {
+	case kb.Matches(data, "tui.editor.cursorLineEnd"):
 		editor.moveToLineEnd()
-		return
-	}
-	if kb.Matches(data, "tui.editor.cursorWordLeft") {
+	case kb.Matches(data, "tui.editor.cursorWordLeft"):
 		editor.moveWordBackwards()
-		return
-	}
-	if kb.Matches(data, "tui.editor.cursorWordRight") {
+	case kb.Matches(data, "tui.editor.cursorWordRight"):
 		editor.moveWordForwards()
-		return
-	}
-
-	// New line.
-	if kb.Matches(data, "tui.input.newLine") ||
+	case kb.Matches(data, "tui.input.newLine") ||
 		(len(data) > 1 && data[0] == '\n') ||
 		data == "\x1b\r" ||
 		data == "\x1b[13;2~" ||
 		(len(data) > 1 && strings.Contains(data, "\x1b") && strings.Contains(data, "\r")) ||
-		data == "\n" {
+		data == "\n":
 		if editor.shouldSubmitOnBackslashEnter(data, kb) {
 			editor.handleBackspace()
 			editor.submitValue()
 			return
 		}
 		editor.addNewLine()
-		return
-	}
-
-	// Submit (Enter).
-	if kb.Matches(data, "tui.input.submit") {
+	case kb.Matches(data, "tui.input.submit"):
 		if editor.DisableSubmit {
 			return
 		}
 		// Workaround for terminals without Shift+Enter support: a backslash
 		// before the cursor turns Enter into a newline.
-		currentLine := []rune(editor.currentLine())
-		if editor.state.cursorCol > 0 && editor.state.cursorCol <= len(currentLine) && currentLine[editor.state.cursorCol-1] == '\\' {
+		if editor.backslashBeforeCursor() {
 			editor.handleBackspace()
 			editor.addNewLine()
 			return
 		}
 		editor.submitValue()
-		return
-	}
-
 	// Arrow key navigation (with history support).
-	if kb.Matches(data, "tui.editor.cursorUp") {
+	case kb.Matches(data, "tui.editor.cursorUp"):
 		if editor.isOnFirstVisualLine() && (editor.isEditorEmpty() || editor.historyIndex > -1 || editor.state.cursorCol == 0) {
 			editor.navigateHistory(-1)
 		} else if editor.isOnFirstVisualLine() {
@@ -1262,9 +1213,7 @@ func (editor *Editor) handleData(data string) {
 		} else {
 			editor.moveCursor(-1, 0)
 		}
-		return
-	}
-	if kb.Matches(data, "tui.editor.cursorDown") {
+	case kb.Matches(data, "tui.editor.cursorDown"):
 		if editor.historyIndex > -1 && editor.isOnLastVisualLine() {
 			editor.navigateHistory(1)
 		} else if editor.isOnLastVisualLine() {
@@ -1272,47 +1221,26 @@ func (editor *Editor) handleData(data string) {
 		} else {
 			editor.moveCursor(1, 0)
 		}
-		return
-	}
-	if kb.Matches(data, "tui.editor.cursorRight") {
+	case kb.Matches(data, "tui.editor.cursorRight"):
 		editor.moveCursor(0, 1)
-		return
-	}
-	if kb.Matches(data, "tui.editor.cursorLeft") {
+	case kb.Matches(data, "tui.editor.cursorLeft"):
 		editor.moveCursor(0, -1)
-		return
-	}
-
-	if kb.Matches(data, "tui.editor.pageUp") {
+	case kb.Matches(data, "tui.editor.pageUp"):
 		editor.pageScroll(-1)
-		return
-	}
-	if kb.Matches(data, "tui.editor.pageDown") {
+	case kb.Matches(data, "tui.editor.pageDown"):
 		editor.pageScroll(1)
-		return
-	}
-
-	if kb.Matches(data, "tui.editor.jumpForward") {
+	case kb.Matches(data, "tui.editor.jumpForward"):
 		editor.jumpMode = "forward"
-		return
-	}
-	if kb.Matches(data, "tui.editor.jumpBackward") {
+	case kb.Matches(data, "tui.editor.jumpBackward"):
 		editor.jumpMode = "backward"
-		return
-	}
-
-	if MatchesKey(data, "shift+space") {
+	case MatchesKey(data, "shift+space"):
 		editor.insertCharacter(" ", false)
-		return
-	}
-
-	if printable := DecodePrintableKey(data); printable != "" {
-		editor.insertCharacter(printable, false)
-		return
-	}
-
-	if r, _ := utf8.DecodeRuneInString(data); data != "" && r >= 32 {
-		editor.insertCharacter(data, false)
+	default:
+		if printable := DecodePrintableKey(data); printable != "" {
+			editor.insertCharacter(printable, false)
+		} else if r, _ := utf8.DecodeRuneInString(data); data != "" && r >= 32 {
+			editor.insertCharacter(data, false)
+		}
 	}
 }
 
@@ -1446,12 +1374,6 @@ func (editor *Editor) GetExpandedText() string {
 	return editor.expandPasteMarkers(editor.getTextLocked())
 }
 
-func (editor *Editor) GetLines() []string {
-	editor.mu.Lock()
-	defer editor.mu.Unlock()
-	return append([]string(nil), editor.state.lines...)
-}
-
 // GetCursor returns the upstream-compatible UTF-16 column offset.
 func (editor *Editor) GetCursor() (line, col int) {
 	editor.mu.Lock()
@@ -1562,7 +1484,7 @@ func (editor *Editor) insertCharacter(char string, skipUndoCoalescing bool) {
 	switch {
 	case char == "/" && editor.isAtStartOfMessage():
 		editor.tryTriggerAutocomplete()
-	case containsString(editor.autocompleteTriggerCharacters, char):
+	case slices.Contains(editor.autocompleteTriggerCharacters, char):
 		currentLine := editor.currentLine()
 		textBeforeCursor := runeSlice(currentLine, 0, editor.state.cursorCol)
 		if matchesAutocompleteTrigger(textBeforeCursor, editor.autocompleteTriggerCharacters) {
@@ -1586,15 +1508,6 @@ func isSlashWordChar(char string) bool {
 	}
 	r := runes[0]
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_'
-}
-
-func containsString(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
 }
 
 var csiUCtrlInPaste = regexp.MustCompile(`\x1b\[(\d+);5u`)
@@ -1662,11 +1575,7 @@ func (editor *Editor) handlePaste(pastedText string) {
 func utf16Length(value string) int {
 	length := 0
 	for _, r := range value {
-		if r > 0xFFFF {
-			length += 2
-		} else {
-			length++
-		}
+		length += utf16.RuneLen(r)
 	}
 	return length
 }
@@ -1692,23 +1601,12 @@ func (editor *Editor) addNewLine() {
 }
 
 func (editor *Editor) shouldSubmitOnBackslashEnter(data string, kb *KeybindingsManager) bool {
-	if editor.DisableSubmit {
-		return false
-	}
-	if !MatchesKey(data, "enter") {
-		return false
-	}
-	submitKeys := kb.Keys("tui.input.submit")
-	hasShiftEnter := false
-	for _, key := range submitKeys {
-		if key == "shift+enter" || key == "shift+return" {
-			hasShiftEnter = true
-			break
-		}
-	}
-	if !hasShiftEnter {
-		return false
-	}
+	return !editor.DisableSubmit && MatchesKey(data, "enter") &&
+		slices.ContainsFunc(kb.Keys("tui.input.submit"), func(key KeyID) bool { return key == "shift+enter" || key == "shift+return" }) &&
+		editor.backslashBeforeCursor()
+}
+
+func (editor *Editor) backslashBeforeCursor() bool {
 	currentLine := []rune(editor.currentLine())
 	return editor.state.cursorCol > 0 && editor.state.cursorCol <= len(currentLine) && currentLine[editor.state.cursorCol-1] == '\\'
 }
@@ -2491,7 +2389,7 @@ func (editor *Editor) requestAutocomplete(force, explicitTab bool) {
 func (editor *Editor) setAutocompleteTriggerCharacters(triggerCharacters []string) {
 	next := append([]string(nil), defaultAutocompleteTriggerCharacters...)
 	for _, character := range triggerCharacters {
-		if runeLen(character) != 1 || isWhitespaceChar(character) || containsString(next, character) {
+		if runeLen(character) != 1 || isWhitespaceChar(character) || slices.Contains(next, character) {
 			continue
 		}
 		next = append(next, character)
@@ -2504,7 +2402,7 @@ func (editor *Editor) autocompleteDebounceDuration(force, explicitTab bool) time
 		return 0
 	}
 	textBeforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
-	if matchesAutocompleteDebounce(textBeforeCursor, editor.autocompleteTriggerCharacters) {
+	if matchesAutocompleteTrigger(textBeforeCursor, editor.autocompleteTriggerCharacters) {
 		return attachmentAutocompleteDebounce
 	}
 	return 0

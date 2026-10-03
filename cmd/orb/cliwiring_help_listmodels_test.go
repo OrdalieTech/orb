@@ -11,8 +11,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 )
 
-// Finding 8: pi --help must document the --extension/-e flag and the package
-// subcommands, mirroring upstream cli/args.ts.
+// --help documents the --extension/-e flag and the package subcommands.
 func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
 	for _, want := range []string{
 		"--extension, -e <path>",
@@ -72,9 +71,8 @@ const listModelsProviderExtension = `export default function (pi) {
 }
 `
 
-// Finding 7: --list-models lists providers registered by extensions, because it
-// now runs after full runtime creation (upstream main.ts:747-764) instead of
-// short-circuiting on a bare models.json registry.
+// --list-models lists providers registered by extensions, because it runs
+// after full runtime creation instead of on a bare models.json registry.
 func TestListModelsIncludesExtensionRegisteredProviders(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := filepath.Join(t.TempDir(), "agent")

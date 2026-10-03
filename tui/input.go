@@ -104,83 +104,65 @@ func (input *Input) handleData(data string) {
 		if input.OnEscape != nil {
 			input.pending = append(input.pending, input.OnEscape)
 		}
-		return
 	case kb.Matches(data, "tui.editor.undo"):
 		input.undo()
-		return
 	case kb.Matches(data, "tui.input.submit") || data == "\n":
 		if input.OnSubmit != nil {
 			callback, value := input.OnSubmit, input.value
 			input.pending = append(input.pending, func() { callback(value) })
 		}
-		return
 	case kb.Matches(data, "tui.editor.deleteCharBackward"):
 		input.handleBackspace()
-		return
 	case kb.Matches(data, "tui.editor.deleteCharForward"):
 		input.handleForwardDelete()
-		return
 	case kb.Matches(data, "tui.editor.deleteWordBackward"):
 		input.deleteWordBackwards()
-		return
 	case kb.Matches(data, "tui.editor.deleteWordForward"):
 		input.deleteWordForward()
-		return
 	case kb.Matches(data, "tui.editor.deleteToLineStart"):
 		input.deleteToLineStart()
-		return
 	case kb.Matches(data, "tui.editor.deleteToLineEnd"):
 		input.deleteToLineEnd()
-		return
 	case kb.Matches(data, "tui.editor.yank"):
 		input.yank()
-		return
 	case kb.Matches(data, "tui.editor.yankPop"):
 		input.yankPop()
-		return
 	case kb.Matches(data, "tui.editor.cursorLeft"):
 		input.lastAction = ""
 		if input.cursor > 0 {
 			graphemes := graphemeSegments(runeSlice(input.value, 0, input.cursor))
 			input.cursor -= lastGraphemeLength(graphemes)
 		}
-		return
 	case kb.Matches(data, "tui.editor.cursorRight"):
 		input.lastAction = ""
 		if input.cursor < runeLen(input.value) {
 			graphemes := graphemeSegments(runeSliceFrom(input.value, input.cursor))
 			input.cursor += firstGraphemeLength(graphemes)
 		}
-		return
 	case kb.Matches(data, "tui.editor.cursorLineStart"):
 		input.lastAction = ""
 		input.cursor = 0
-		return
 	case kb.Matches(data, "tui.editor.cursorLineEnd"):
 		input.lastAction = ""
 		input.cursor = runeLen(input.value)
-		return
 	case kb.Matches(data, "tui.editor.cursorWordLeft"):
 		input.moveWordBackwards()
-		return
 	case kb.Matches(data, "tui.editor.cursorWordRight"):
 		input.moveWordForwards()
-		return
-	}
-
-	// Kitty CSI-u printable characters arrive before the control-char check
-	// because the sequences themselves contain ESC.
-	if printable := DecodeKittyPrintable(data); printable != "" {
-		input.insertCharacter(printable)
-		return
-	}
-
-	for _, r := range data {
-		if r < 32 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+	default:
+		// Kitty CSI-u printable characters arrive before the control-char check
+		// because the sequences themselves contain ESC.
+		if printable := DecodeKittyPrintable(data); printable != "" {
+			input.insertCharacter(printable)
 			return
 		}
+		for _, r := range data {
+			if r < 32 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+				return
+			}
+		}
+		input.insertCharacter(data)
 	}
-	input.insertCharacter(data)
 }
 
 func lastGraphemeLength(graphemes []segment) int {

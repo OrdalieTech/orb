@@ -106,13 +106,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 		}
 	}()
 	for ctx.Err() == nil {
-		var status bridgeSettingsStatus
-		probe, cancel := context.WithTimeout(ctx, time.Second)
-		client, probeErr := bridgeAdmin(probe, profile)
-		if probeErr == nil {
-			probeErr = client.Call(probe, "status", struct{}{}, &status)
-		}
-		cancel()
+		client, status, probeErr := probeBridge(ctx, profile)
 		running := probeErr == nil
 		if client != nil {
 			_ = client.Close()
@@ -123,12 +117,8 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 			panel := newBridgeSettingsPanel(profile, page, selected, rows, th, host.Height, done)
 			page, notice, status := page, notice, status
 			panel.watch(ctx, host, func(ctx context.Context) []tui.GridRow {
-				probe, cancel := context.WithTimeout(ctx, time.Second)
-				defer cancel()
-				var current bridgeSettingsStatus
-				client, err := bridgeAdmin(probe, profile)
-				if err == nil {
-					err = client.Call(probe, "status", struct{}{}, &current)
+				client, current, err := probeBridge(ctx, profile)
+				if client != nil {
 					_ = client.Close()
 				}
 				if err == nil {
@@ -146,9 +136,6 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 		}, extensions.ModalOptions())
 		action, _ := result.(string)
 		if menuErr != nil || !ok || action == "" {
-			if client != nil {
-				_ = client.Close()
-			}
 			if menuErr != nil {
 				return menuErr
 			}
@@ -159,13 +146,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 			return nil
 		}
 		selected, notice = action, ""
-		status = bridgeSettingsStatus{}
-		probe, cancel = context.WithTimeout(ctx, time.Second)
-		client, probeErr = bridgeAdmin(probe, profile)
-		if probeErr == nil {
-			probeErr = client.Call(probe, "status", struct{}{}, &status)
-		}
-		cancel()
+		client, status, probeErr = probeBridge(ctx, profile)
 		running = probeErr == nil
 		actionErr := func() error {
 			defer func() {
@@ -257,6 +238,18 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 		}
 	}
 	return ctx.Err()
+}
+
+// probeBridge asks the running Bridge for its status, giving up after a second.
+func probeBridge(ctx context.Context, profile string) (*protocol.Conn, bridgeSettingsStatus, error) {
+	probe, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	var status bridgeSettingsStatus
+	client, err := bridgeAdmin(probe, profile)
+	if err == nil {
+		err = client.Call(probe, "status", struct{}{}, &status)
+	}
+	return client, status, err
 }
 
 func bridgeSettingsRows(page string, running, enabled, agentCalls bool, status bridgeSettingsStatus, th extensions.Theme) []tui.GridRow {
@@ -508,8 +501,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil || !ok {
 			return e
 		}
-		inv := claims[choice]
-		return approveBridgePairing(ctx, ui, client, inv, status.Groups)
+		return approveBridgePairing(ctx, ui, client, claims[choice], status.Groups)
 	case "Peers":
 		if status.PeerStates[peer] == "blocked" {
 			return fmt.Errorf("this device is blocked.\nIts access has been revoked")

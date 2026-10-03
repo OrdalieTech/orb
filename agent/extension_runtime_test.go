@@ -46,7 +46,6 @@ func TestSessionRuntimeWiresExtensionHooksAndLifecycle(t *testing.T) {
 			extensions.EventToolExecutionStart, extensions.EventToolExecutionEnd,
 			extensions.EventTurnEnd, extensions.EventAgentEnd, extensions.EventAgentSettled,
 		} {
-			eventType := eventType
 			api.On(eventType, func(context.Context, extensions.Event, extensions.Context) (any, error) {
 				record(string(eventType))
 				return nil, nil

@@ -640,18 +640,6 @@ func (manager *SettingsManager) GetModelThinkingLevel(provider, modelID string) 
 	return ai.ModelThinkingLevel(value)
 }
 
-func (manager *SettingsManager) GetAllModelThinkingLevels() map[string]ai.ModelThinkingLevel {
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	result := map[string]ai.ModelThinkingLevel{}
-	for key, value := range nestedObject(manager.effective, "modelThinkingLevels") {
-		if level, ok := value.(string); ok {
-			result[key] = ai.ModelThinkingLevel(level)
-		}
-	}
-	return result
-}
-
 func (manager *SettingsManager) GetTransport() ai.Transport {
 	value := manager.stringValue("transport")
 	if value == "" {
@@ -709,10 +697,6 @@ func (manager *SettingsManager) SetTheme(value string) {
 	manager.setGlobalValues(settingMember("theme", value))
 }
 
-func (manager *SettingsManager) GetThemePaths() []string {
-	return settingsStringSlice(manager.GetSettings(), "themes")
-}
-
 func (manager *SettingsManager) GetExternalEditor() string {
 	if configured := strings.TrimSpace(manager.stringValue("externalEditor")); configured != "" {
 		return configured
@@ -748,14 +732,6 @@ func (manager *SettingsManager) GetOutputPad() int {
 
 func (manager *SettingsManager) GetShowTerminalProgress() bool {
 	return boolDefault(manager.objectValue("terminal"), "showTerminalProgress", false)
-}
-
-func (manager *SettingsManager) GetMarkdownCodeBlockIndent() string {
-	value, _ := manager.objectValue("markdown")["codeBlockIndent"].(string)
-	if value == "" {
-		return "  "
-	}
-	return value
 }
 
 // GetMermaidRenderingMode reads markdown.mermaid; unknown values clamp to the

@@ -28,32 +28,16 @@ type SessionSelector func(current, all SessionListLoader) (path string, selected
 
 type ContextSessionSelector func(current, all ContextSessionListLoader) (path string, selected bool, err error)
 
-type tuiSessionSelectorRunner func(context.Context, SessionListLoader, SessionListLoader) (string, bool, error)
-
-type tuiContextSessionSelectorRunner func(context.Context, ContextSessionListLoader, ContextSessionListLoader) (string, bool, error)
-
-func newTUISessionSelector(ctx context.Context, runner tuiSessionSelectorRunner) SessionSelector {
-	return func(current, all SessionListLoader) (string, bool, error) {
-		return runner(ctx, current, all)
-	}
-}
-
 func startupTUISessionSelector(ctx context.Context) SessionSelector {
-	return newTUISessionSelector(ctx, func(ctx context.Context, current, all SessionListLoader) (string, bool, error) {
+	return func(current, all SessionListLoader) (string, bool, error) {
 		return modes.RunSessionSelector(ctx, modes.SessionSelectorLoader(current), modes.SessionSelectorLoader(all))
-	})
-}
-
-func newContextTUISessionSelector(ctx context.Context, runner tuiContextSessionSelectorRunner) ContextSessionSelector {
-	return func(current, all ContextSessionListLoader) (string, bool, error) {
-		return runner(ctx, current, all)
 	}
 }
 
 func startupContextTUISessionSelector(ctx context.Context) ContextSessionSelector {
-	return newContextTUISessionSelector(ctx, func(ctx context.Context, current, all ContextSessionListLoader) (string, bool, error) {
+	return func(current, all ContextSessionListLoader) (string, bool, error) {
 		return modes.RunSessionSelectorContext(ctx, modes.SessionSelectorContextLoader(current), modes.SessionSelectorContextLoader(all))
-	})
+	}
 }
 
 type resolvedSession struct {
@@ -119,22 +103,7 @@ func validateSessionFlags(args CLIArgs) []string {
 
 func hasCLIValue(value *string) bool { return value != nil && *value != "" }
 
-func createCLISession(
-	cwd string,
-	args CLIArgs,
-	streams cliStreams,
-	selector SessionSelector,
-) (*session.SessionManager, session.SessionContext, error) {
-	return createCLISessionWithSelectors(cwd, args, streams, selector, nil)
-}
-
-func createCLISessionWithSelectors(
-	cwd string,
-	args CLIArgs,
-	streams cliStreams,
-	selector SessionSelector,
-	contextSelector ContextSessionSelector,
-) (*session.SessionManager, session.SessionContext, error) {
+func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector SessionSelector, contextSelector ContextSessionSelector) (*session.SessionManager, session.SessionContext, error) {
 	if args.native != nil && !args.NoSession {
 		return createNativeSession(cwd, args, streams, selector, contextSelector)
 	}
@@ -329,8 +298,7 @@ func confirmGlobalSessionFork(streams cliStreams, sessionCWD string) (bool, erro
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false, err
 	}
-	answer := strings.TrimSuffix(line, "\n")
-	answer = strings.ToLower(strings.TrimSuffix(answer, "\r"))
+	answer := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"))
 	return answer == "y" || answer == "yes", nil
 }
 
@@ -409,6 +377,10 @@ func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector 
 	if err != nil && (args.SessionID == nil || hasCLIValue(args.Fork) || hasCLIValue(args.Session) || !errors.Is(err, fs.ErrNotExist)) {
 		return nil, session.SessionContext{}, err
 	}
+	createOptions := harness.SessionCreateOptions{CWD: cwd}
+	if args.SessionID != nil {
+		createOptions.ID = *args.SessionID
+	}
 	if hasCLIValue(args.Fork) {
 		leaf, leafErr := opened.Storage().LeafID()
 		if leafErr != nil {
@@ -418,17 +390,9 @@ func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector 
 		if leaf != nil {
 			entry = *leaf
 		}
-		options := harness.SessionCreateOptions{CWD: cwd}
-		if args.SessionID != nil {
-			options.ID = *args.SessionID
-		}
-		opened, err = repo.Fork(ctx, opened.Metadata(), harness.SessionForkOptions{SessionCreateOptions: options, EntryID: entry, Position: harness.ForkAt})
+		opened, err = repo.Fork(ctx, opened.Metadata(), harness.SessionForkOptions{SessionCreateOptions: createOptions, EntryID: entry, Position: harness.ForkAt})
 	} else if opened == nil {
-		options := harness.SessionCreateOptions{CWD: cwd}
-		if args.SessionID != nil {
-			options.ID = *args.SessionID
-		}
-		opened, err = repo.Create(ctx, options)
+		opened, err = repo.Create(ctx, createOptions)
 	}
 	if err != nil {
 		return nil, session.SessionContext{}, err

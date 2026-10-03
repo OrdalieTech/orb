@@ -70,10 +70,7 @@ func NewGridList(rows []GridRow, maxVisible int, theme GridListTheme) *GridList 
 	if theme.Cursor == "" {
 		theme.Cursor = "> "
 	}
-	if maxVisible < 3 {
-		maxVisible = 3
-	}
-	list := &GridList{maxVisible: maxVisible, theme: theme}
+	list := &GridList{maxVisible: max(3, maxVisible), theme: theme}
 	list.SetRows(rows)
 	return list
 }

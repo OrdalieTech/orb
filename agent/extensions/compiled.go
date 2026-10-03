@@ -57,9 +57,12 @@ func (registry *Registry) RegisteredFlags() []Flag {
 	if registry == nil {
 		return nil
 	}
-	registry.mu.RLock()
-	extensions := append([]*Extension(nil), registry.extensions...)
-	registry.mu.RUnlock()
+	return registeredFlags(registry.Extensions())
+}
+
+// registeredFlags lists flags in registration order, the first extension to
+// register a name winning.
+func registeredFlags(extensions []*Extension) []Flag {
 	seen := make(map[string]struct{})
 	var flags []Flag
 	for _, extension := range extensions {

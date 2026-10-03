@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -18,7 +20,7 @@ import (
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
 )
 
-// Selector modes mirroring upstream oauth-selector.ts mode: "login" | "logout".
+// Selector modes.
 const (
 	oauthSelectorLogin  = "login"
 	oauthSelectorLogout = "logout"
@@ -26,8 +28,6 @@ const (
 
 const authSelectorMaxVisible = 8
 
-// formatAuthSelectorProviderType mirrors oauth-selector.ts
-// formatAuthSelectorProviderType.
 func formatAuthSelectorProviderType(authType aiauth.AuthType) string {
 	if authType == aiauth.AuthTypeOAuth {
 		return "subscription"
@@ -36,8 +36,7 @@ func formatAuthSelectorProviderType(authType aiauth.AuthType) string {
 }
 
 // OAuthSelectorComponent is the searchable auth-provider selector behind
-// /login and /logout, a port of upstream components/oauth-selector.ts: a
-// fuzzy-search input over name+id+authType+methodName, an 8-row visible
+// /login and /logout: a fuzzy-search input over name+id+authType+methodName, an 8-row visible
 // window with a scroll counter, and per-row status indicators.
 type OAuthSelectorComponent struct {
 	container          *tui.Container
@@ -55,7 +54,7 @@ type OAuthSelectorComponent struct {
 }
 
 // NewOAuthSelectorComponent builds the selector; initialSearchInput pre-fills
-// the search field (upstream constructor's initialSearchInput) so /login with
+// the search field so /login with
 // an unmatched fuzzy ref opens the list already filtered.
 func NewOAuthSelectorComponent(
 	selectorMode string,
@@ -89,7 +88,7 @@ func NewOAuthSelectorComponent(
 
 	if initialSearchInput != "" {
 		// Insert through HandleInput so the cursor lands after the pre-filled
-		// text like upstream Input.setValue.
+		// text.
 		component.searchInput.HandleInput(tui.KeyEvent{Raw: initialSearchInput})
 	}
 	component.searchInput.OnSubmit = func(string) { component.confirmSelection() }
@@ -155,8 +154,7 @@ func (component *OAuthSelectorComponent) updateList() {
 	}
 }
 
-// formatAuthStatusIndicator ports oauth-selector.ts formatStatusIndicator: raw
-// runtime sources render as-is, all-caps names get an "env:" prefix, and the
+// formatAuthStatusIndicator: raw runtime sources render as-is, all-caps names get an "env:" prefix, and the
 // OAuth/stored-credential sources collapse to "configured".
 func formatAuthStatusIndicator(provider InteractiveAuthProvider) string {
 	if provider.Status == nil {
@@ -271,8 +269,7 @@ type authDialogLine struct {
 }
 
 // loginAuthDialogComponent keeps OAuth notifications in the editor area for
-// the lifetime of a login. It is the waiting-state subset of upstream's
-// LoginDialogComponent; prompt/select input continues through InteractiveUI.
+// the lifetime of a login; prompt/select input continues through InteractiveUI.
 type loginAuthDialogComponent struct {
 	mu        sync.Mutex
 	container *tui.Container
@@ -458,8 +455,7 @@ func (component *loginAuthDialogComponent) Render(width int) []string {
 }
 
 // selectAuthProviderSearchable presents the searchable selector in place of
-// the editor and blocks until a choice, cancel, or context cancellation, the
-// Go seam for upstream showSelector(OAuthSelectorComponent).
+// the editor and blocks until a choice, cancel, or context cancellation.
 func (mode *InteractiveMode) selectAuthProviderSearchable(
 	ctx context.Context,
 	selectorMode string,
@@ -503,9 +499,7 @@ func (mode *InteractiveMode) selectAuthProviderSearchable(
 }
 
 // ambientAuthDialogComponent is the titled information dialog for providers
-// whose authentication is configured outside the agent (upstream
-// showAmbientAuthDialog: LoginDialogComponent with "NAME setup" title and
-// showInfo(..., showCloseHint)).
+// whose authentication is configured outside the agent.
 type ambientAuthDialogComponent struct {
 	container *tui.Container
 	onClose   func()
@@ -524,10 +518,8 @@ func newAmbientAuthDialogComponent(title, message string, onClose func()) *ambie
 }
 
 func (component *ambientAuthDialogComponent) HandleInput(event tui.KeyEvent) {
-	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") {
-		if component.onClose != nil {
-			component.onClose()
-		}
+	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") && component.onClose != nil {
+		component.onClose()
 	}
 }
 
@@ -537,7 +529,7 @@ func (component *ambientAuthDialogComponent) Render(width int) []string {
 }
 
 // showAmbientAuthDialog presents the ambient-provider information dialog and
-// blocks until closed (upstream interactive-mode.ts:5086-5107).
+// blocks until closed.
 func (mode *InteractiveMode) showAmbientAuthDialog(ctx context.Context, provider InteractiveAuthProvider) {
 	method := provider.MethodName
 	if method == "" {
@@ -584,7 +576,7 @@ func (mode *InteractiveMode) providerMenu(ctx context.Context, title string, row
 		frame.Action = "+ Connect provider"
 		frame.OnAction = func() { resolve("connect") }
 	}
-	handle := mode.ui.ShowOverlay(frame, dialogOverlayOptions())
+	handle := mode.ui.ShowOverlay(frame, configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() { handle.Hide(); mode.ui.RequestRender() }()
 	select {
@@ -810,7 +802,7 @@ func (mode *InteractiveMode) showAccountUsage(parent context.Context, host Inter
 		}
 	}
 	palette := newCommandPalette([]tui.GridRow{{Cells: []string{"Checking usage…"}}}, mode.keybindings, mode.Height, func(string) { closeMenu() }, closeMenu)
-	handle := mode.ui.ShowOverlay(menuFrame("Usage · "+account.Name, palette), dialogOverlayOptions())
+	handle := mode.ui.ShowOverlay(menuFrame("Usage · "+account.Name, palette), configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() { handle.Hide(); mode.ui.RequestRender() }()
 	result := make(chan []tui.GridRow, 1)
@@ -929,7 +921,7 @@ func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
 			}
 		}
 	}
-	handle := mode.ui.ShowOverlay(menuFrame("Switch account", palette), dialogOverlayOptions())
+	handle := mode.ui.ShowOverlay(menuFrame("Switch account", palette), configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() { handle.Hide(); mode.ui.RequestRender() }()
 	type updated struct {
@@ -1008,16 +1000,14 @@ func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host Int
 		return
 	}
 	available := mode.session.AvailableModels()
-	if current != nil {
-		for _, model := range available {
-			if string(model.Provider) == account.Provider && model.ID == current.ID {
-				if err := mode.session.SetModel(ctx, model); err != nil {
-					mode.showError(err)
-				}
-				mode.ui.RequestRender()
-				return
-			}
+	if index := slices.IndexFunc(available, func(model ai.Model) bool {
+		return current != nil && string(model.Provider) == account.Provider && model.ID == current.ID
+	}); index >= 0 {
+		if err := mode.session.SetModel(ctx, available[index]); err != nil {
+			mode.showError(err)
 		}
+		mode.ui.RequestRender()
+		return
 	}
 	// Provider changes keep the model choice explicit when no identical model exists.
 	mode.showModelSelector(account.Provider)

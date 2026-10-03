@@ -33,7 +33,7 @@ func FormatText(markdown string) string {
 	inFence := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") && isFenceMarker(trimmed, inFence) {
+		if runechunk.IsFence(trimmed, inFence) {
 			inFence = !inFence
 			out = append(out, "```")
 			continue
@@ -51,18 +51,6 @@ func FormatText(markdown string) string {
 		out = append(out, formatInline(line))
 	}
 	return strings.Join(out, "\n")
-}
-
-// isFenceMarker reports whether trimmed (known to start with ```) is a pure
-// fence marker: bare ``` always, or ``` plus a single language token when
-// opening a fence. Closing fences carry no info string (CommonMark), and any
-// line with more backticks or extra words is inline content, not a fence.
-func isFenceMarker(trimmed string, inFence bool) bool {
-	rest := trimmed[len("```"):]
-	if rest == "" {
-		return true
-	}
-	return !inFence && !strings.Contains(rest, "`") && len(strings.Fields(rest)) == 1
 }
 
 func formatInline(line string) string {

@@ -102,14 +102,11 @@ func TestAddAndRemoveServerKeepOtherContent(t *testing.T) {
 	if replaced, err := AddServer(path, "b", ServerConfig{URL: "https://example.org"}); err != nil || !replaced {
 		t.Fatalf("replace: %v, replaced %v", err, replaced)
 	}
-	if err := SetServerFields(path, "a", map[string]any{"enabled": false}); err != nil {
-		t.Fatal(err)
-	}
 	if removed, err := RemoveServer(path, "missing"); err != nil || removed {
 		t.Fatalf("remove missing: %v, %v", err, removed)
 	}
 	data, _ := os.ReadFile(path)
-	want := "{\n    \"other\": true,\n    \"mcpServers\": {\n        \"a\": {\n            \"command\": \"a\",\n            \"custom\": 1,\n            \"enabled\": false\n        },\n        \"b\": {\n            \"url\": \"https://example.org\"\n        }\n    }\n}\n"
+	want := "{\n    \"other\": true,\n    \"mcpServers\": {\n        \"a\": {\n            \"command\": \"a\",\n            \"custom\": 1\n        },\n        \"b\": {\n            \"url\": \"https://example.org\"\n        }\n    }\n}\n"
 	if string(data) != want {
 		t.Fatalf("file =\n%s", data)
 	}

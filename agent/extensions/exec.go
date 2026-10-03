@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// execKillGrace mirrors upstream execCommand (core/exec.ts): SIGTERM first,
-// SIGKILL only if the process survives 5 seconds.
+// execKillGrace mirrors upstream execCommand: SIGTERM first, SIGKILL only if
+// the process survives 5 seconds.
 const execKillGrace = 5 * time.Second
 
 func Exec(ctx context.Context, command string, args []string, options *ExecOptions) (ExecResult, error) {

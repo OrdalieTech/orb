@@ -3,6 +3,7 @@ package modes
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -53,11 +54,6 @@ func NewInteractiveUI(mode *InteractiveMode) *InteractiveUI {
 		terminalInputListeners: make(map[uint64]func()),
 		workingVisible:         true,
 	}
-	// The JS bridge's CustomEditor base constructs the current mode's real
-	// built-in editor (upstream custom-editor.ts extends the tui Editor).
-	extensions.RegisterCustomEditorBase(func(extensions.UIHost, extensions.Theme, extensions.Keybindings) extensions.EditorComponent {
-		return bridgeEditorBase{NewCustomEditor(mode.ui, theme.EditorTheme(), mode.keybindings)}
-	})
 	if mode.footer != nil {
 		ui.builtInFooter = mode.footer.Children()
 	}
@@ -78,23 +74,12 @@ func (ui *InteractiveUI) Select(ctx context.Context, title string, options []str
 }
 
 func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []tui.SelectItem, opts *extensions.DialogOptions) (string, bool, error) {
-	if opts != nil && opts.Signal != nil {
-		select {
-		case <-opts.Signal.Done():
-			return "", false, nil
-		default:
-		}
+	signal := dialogSignal(opts)
+	if signal.Err() != nil {
+		return "", false, nil
 	}
-	result := make(chan selectResult, 1)
-	resolve := func(value selectResult) {
-		select {
-		case result <- value:
-		default:
-		}
-	}
-	dialog := NewExtensionSelectorItemsComponent(title, items,
-		func(value string) { resolve(selectResult{value: value}) },
-		func() { resolve(selectResult{cancelled: true}) },
+	result, submit, cancel := dialogResolvers()
+	dialog := NewExtensionSelectorItemsComponent(title, items, submit, cancel,
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts), onToggleToolsExpanded: func() {
 			ui.SetToolsExpanded(!ui.GetToolsExpanded())
 		}},
@@ -121,12 +106,35 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 		handle.Hide()
 		ui.mode.ui.RequestRender()
 	}()
+	return awaitDialog(ctx, signal, result)
+}
 
-	signal := context.Background()
-	if opts != nil && opts.Signal != nil {
-		signal = opts.Signal
+type dialogResult struct {
+	value     string
+	cancelled bool
+}
+
+// dialogResolvers returns a one-shot result channel with its submit and
+// cancel callbacks; only the first resolution counts.
+func dialogResolvers() (chan dialogResult, func(string), func()) {
+	result := make(chan dialogResult, 1)
+	resolve := func(value dialogResult) {
+		select {
+		case result <- value:
+		default:
+		}
 	}
+	return result, func(value string) { resolve(dialogResult{value: value}) }, func() { resolve(dialogResult{cancelled: true}) }
+}
 
+func dialogSignal(opts *extensions.DialogOptions) context.Context {
+	if opts != nil && opts.Signal != nil {
+		return opts.Signal
+	}
+	return context.Background()
+}
+
+func awaitDialog(ctx, signal context.Context, result chan dialogResult) (string, bool, error) {
 	select {
 	case r := <-result:
 		return r.value, !r.cancelled, nil
@@ -135,11 +143,6 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 	case <-ctx.Done():
 		return "", false, ctx.Err()
 	}
-}
-
-type selectResult struct {
-	value     string
-	cancelled bool
 }
 
 func (ui *InteractiveUI) Confirm(ctx context.Context, title, message string, opts *extensions.DialogOptions) (bool, error) {
@@ -152,27 +155,16 @@ func (ui *InteractiveUI) Confirm(ctx context.Context, title, message string, opt
 }
 
 func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *string, opts *extensions.DialogOptions) (string, bool, error) {
-	if opts != nil && opts.Signal != nil {
-		select {
-		case <-opts.Signal.Done():
-			return "", false, nil
-		default:
-		}
+	signal := dialogSignal(opts)
+	if signal.Err() != nil {
+		return "", false, nil
 	}
-	result := make(chan inputDialogResult, 1)
-	resolve := func(value inputDialogResult) {
-		select {
-		case result <- value:
-		default:
-		}
-	}
+	result, submit, cancel := dialogResolvers()
 	placeholderValue := ""
 	if placeholder != nil {
 		placeholderValue = *placeholder
 	}
-	dialog := NewExtensionInputComponent(title, placeholderValue,
-		func(value string) { resolve(inputDialogResult{value: value}) },
-		func() { resolve(inputDialogResult{cancelled: true}) },
+	dialog := NewExtensionInputComponent(title, placeholderValue, submit, cancel,
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
 	)
 	handle := ui.floatDialog(dialog)
@@ -195,25 +187,7 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 		handle.Hide()
 		ui.mode.ui.RequestRender()
 	}()
-
-	signal := context.Background()
-	if opts != nil && opts.Signal != nil {
-		signal = opts.Signal
-	}
-
-	select {
-	case r := <-result:
-		return r.value, !r.cancelled, nil
-	case <-signal.Done():
-		return "", false, nil
-	case <-ctx.Done():
-		return "", false, ctx.Err()
-	}
-}
-
-type inputDialogResult struct {
-	value     string
-	cancelled bool
+	return awaitDialog(ctx, signal, result)
 }
 
 // ─── Notifications & Status ──────────────────────────────
@@ -356,8 +330,7 @@ func loaderIndicatorOptions(value *extensions.WorkingIndicatorOptions) *tui.Load
 	return &tui.LoaderIndicatorOptions{Frames: frames, Interval: interval}
 }
 
-// Upstream mutates the working indicator single-threaded; lookup and mutation
-// must stay atomic here or a concurrent Dispose can be resurrected by
+// Lookup and mutation of the working indicator must stay atomic or a concurrent Dispose can be resurrected by
 // Loader.SetIndicator's unconditional ticker restart.
 func (ui *InteractiveUI) mutateWorkingIndicator(mutate func(indicator *StatusIndicator)) {
 	ui.mode.mu.Lock()
@@ -426,7 +399,9 @@ func (ui *InteractiveUI) SetWidget(key string, widget *extensions.Widget, opts *
 	existing := ui.widgetComps[key]
 	delete(ui.widgets, key)
 	delete(ui.widgetComps, key)
-	ui.widgetOrder = removeWidgetOrderKey(ui.widgetOrder, key)
+	if index := slices.Index(ui.widgetOrder, key); index >= 0 {
+		ui.widgetOrder = slices.Delete(ui.widgetOrder, index, index+1)
+	}
 	ui.mu.Unlock()
 	disposeExtensionComponent(existing)
 	if widget == nil {
@@ -458,15 +433,6 @@ func (ui *InteractiveUI) SetWidget(key string, widget *extensions.Widget, opts *
 	ui.renderWidgets()
 }
 
-func removeWidgetOrderKey(order []string, key string) []string {
-	for index, candidate := range order {
-		if candidate == key {
-			return append(order[:index], order[index+1:]...)
-		}
-	}
-	return order
-}
-
 func (ui *InteractiveUI) renderWidgets() {
 	ui.mu.Lock()
 	type placedComponent struct {
@@ -483,14 +449,7 @@ func (ui *InteractiveUI) renderWidgets() {
 	}
 	if ui.mode.widgetAbove != nil {
 		ui.mode.widgetAbove.Clear()
-		hasAbove := false
-		for _, entry := range components {
-			if entry.placement != extensions.WidgetBelowEditor {
-				hasAbove = true
-				break
-			}
-		}
-		if hasAbove {
+		if slices.ContainsFunc(components, func(entry placedComponent) bool { return entry.placement != extensions.WidgetBelowEditor }) {
 			ui.mode.widgetAbove.AddChild(tui.NewSpacer(1))
 			for _, entry := range components {
 				if entry.placement != extensions.WidgetBelowEditor {
@@ -965,13 +924,7 @@ func (ui *InteractiveUI) GetEditorText() string {
 }
 
 func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *string) (string, bool, error) {
-	result := make(chan inputDialogResult, 1)
-	resolve := func(value inputDialogResult) {
-		select {
-		case result <- value:
-		default:
-		}
-	}
+	result, submit, cancel := dialogResolvers()
 	prefillValue := ""
 	if prefill != nil {
 		prefillValue = *prefill
@@ -980,11 +933,7 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 	if ui.mode.session != nil {
 		externalEditorCommand = ui.mode.session.InteractiveModeSettings().ExternalEditor
 	}
-	editor := NewExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue,
-		func(value string) { resolve(inputDialogResult{value: value}) },
-		func() { resolve(inputDialogResult{cancelled: true}) },
-		externalEditorCommand,
-	)
+	editor := NewExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue, submit, cancel, externalEditorCommand)
 	handle := ui.floatDialog(editor)
 	ui.mu.Lock()
 	previous := ui.activeEditorDialog
@@ -1003,12 +952,7 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 		handle.Hide()
 		ui.mode.ui.RequestRender()
 	}()
-	select {
-	case resolved := <-result:
-		return resolved.value, !resolved.cancelled, nil
-	case <-ctx.Done():
-		return "", false, ctx.Err()
-	}
+	return awaitDialog(ctx, context.Background(), result)
 }
 
 func (ui *InteractiveUI) trackCustomOverlay(handle tui.OverlayHandle) {
@@ -1050,8 +994,6 @@ func backdropStyle() tui.StyleFunc {
 	}
 }
 
-func dialogOverlayOptions() tui.OverlayOptions { return configOverlayOptions() }
-
 func configOverlayOptions() tui.OverlayOptions {
 	return toTUIOverlayOptions(*extensions.ModalOptions().StaticOverlayOptions)
 }
@@ -1060,7 +1002,7 @@ func configOverlayOptions() tui.OverlayOptions {
 // it as a centered floating overlay over the veiled page.
 func (ui *InteractiveUI) floatDialog(component tui.Component) tui.OverlayHandle {
 	frame := menuFrame("", component)
-	return ui.mode.ui.ShowOverlay(frame, dialogOverlayOptions())
+	return ui.mode.ui.ShowOverlay(frame, configOverlayOptions())
 }
 
 func dialogTimeout(opts *extensions.DialogOptions) *int64 {
@@ -1152,20 +1094,11 @@ func (bindings extensionKeybindings) Matches(input, binding string) bool {
 	return bindings.manager.Matches(input, binding)
 }
 func (bindings extensionKeybindings) Keys(binding string) []string {
-	keys := bindings.manager.Keys(binding)
-	result := make([]string, len(keys))
-	for index := range keys {
-		result[index] = string(keys[index])
-	}
-	return result
+	return keyStrings(bindings.manager.Keys(binding))
 }
 func (bindings extensionKeybindings) Definition(binding string) extensions.KeybindingDefinition {
 	definition, _ := bindings.manager.Definition(binding)
-	keys := make([]string, len(definition.DefaultKeys))
-	for index := range definition.DefaultKeys {
-		keys[index] = string(definition.DefaultKeys[index])
-	}
-	return extensions.KeybindingDefinition{DefaultKeys: keys, Description: definition.Description}
+	return extensions.KeybindingDefinition{DefaultKeys: keyStrings(definition.DefaultKeys), Description: definition.Description}
 }
 func (bindings extensionKeybindings) Conflicts() []extensions.KeybindingConflict {
 	conflicts := bindings.manager.Conflicts()
@@ -1185,11 +1118,15 @@ func (bindings extensionKeybindings) ResolvedBindings() map[string][]string {
 func keybindingStrings(values tui.KeybindingsConfig) map[string][]string {
 	result := make(map[string][]string, len(values))
 	for name, keys := range values {
-		converted := make([]string, len(keys))
-		for index := range keys {
-			converted[index] = string(keys[index])
-		}
-		result[name] = converted
+		result[name] = keyStrings(keys)
+	}
+	return result
+}
+
+func keyStrings(keys []tui.KeyID) []string {
+	result := make([]string, len(keys))
+	for index, key := range keys {
+		result[index] = string(key)
 	}
 	return result
 }
@@ -1288,7 +1225,6 @@ func (c *styledTextComponent) Render(width int) []string {
 	return tui.WrapTextWithANSI(theme.FG(c.color, c.text), width)
 }
 
-// selectListTheme mirrors upstream getSelectListTheme's color mapping.
 func selectListTheme() tui.SelectListTheme {
 	return tui.SelectListTheme{
 		SelectedPrefix: func(s string) string { return theme.FG("accent", s) },

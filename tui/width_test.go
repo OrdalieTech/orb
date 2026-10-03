@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -65,7 +66,7 @@ func TestSliceByColumnMatchesUpstreamWideAndANSIColumns(t *testing.T) {
 func TestWrapTextWithANSIPreservesStyle(t *testing.T) {
 	got := WrapTextWithANSI("\x1b[31mone two three\x1b[0m", 7)
 	want := []string{"\x1b[31mone two", "\x1b[31mthree\x1b[0m"}
-	if !equalLines(got, want) {
+	if !slices.Equal(got, want) {
 		t.Fatalf("wrapped = %#v, want %#v", got, want)
 	}
 	for _, line := range got {
@@ -76,14 +77,14 @@ func TestWrapTextWithANSIPreservesStyle(t *testing.T) {
 }
 
 func TestWrapTextWithANSIUpstreamRegressions(t *testing.T) {
-	if got := WrapTextWithANSI("first\nsecond\r\nthird\rfourth", 80); !equalLines(got, []string{"first", "second", "third", "fourth"}) {
+	if got := WrapTextWithANSI("first\nsecond\r\nthird\rfourth", 80); !slices.Equal(got, []string{"first", "second", "third", "fourth"}) {
 		t.Fatalf("line endings = %#v", got)
 	}
-	if got := WrapTextWithANSI("\x1b[31mfirst\r\nsecond\rthird\x1b[0m", 80); !equalLines(got, []string{"\x1b[31mfirst", "\x1b[31msecond", "\x1b[31mthird\x1b[0m"}) {
+	if got := WrapTextWithANSI("\x1b[31mfirst\r\nsecond\rthird\x1b[0m", 80); !slices.Equal(got, []string{"\x1b[31mfirst", "\x1b[31msecond", "\x1b[31mthird\x1b[0m"}) {
 		t.Fatalf("style over line endings = %#v", got)
 	}
 	cjk := "This is an example 中文汉字测试段落内容中文汉字测试段落内容."
-	if got := WrapTextWithANSI(cjk, 40); !equalLines(got, []string{"This is an example 中文汉字测试段落内容", "中文汉字测试段落内容."}) {
+	if got := WrapTextWithANSI(cjk, 40); !slices.Equal(got, []string{"This is an example 中文汉字测试段落内容", "中文汉字测试段落内容."}) {
 		t.Fatalf("CJK wrapping = %#v", got)
 	}
 	background := WrapTextWithANSI("\x1b[44mhello world this is blue background text\x1b[0m", 15)

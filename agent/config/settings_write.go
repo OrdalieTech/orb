@@ -330,27 +330,6 @@ func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
 
-func (manager *SettingsManager) removeGlobalNested(field, key string) {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	if !manager.globalLoadError {
-		if err := manager.writeGlobalSettings(nil, field, key, nil); err != nil {
-			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
-			return
-		}
-	}
-	if object := nestedObject(manager.global, field); object != nil {
-		object = cloneMap(object)
-		delete(object, key)
-		if len(object) == 0 {
-			delete(manager.global, field)
-		} else {
-			manager.global[field] = object
-		}
-	}
-	manager.effective = mergeSettings(manager.global, manager.project)
-}
-
 func settingMember(name string, value any) settingsMember {
 	raw, err := encodeSetting(value)
 	if err != nil {
@@ -369,10 +348,6 @@ func (manager *SettingsManager) SetDefaultThinkingLevel(level ai.ModelThinkingLe
 
 func (manager *SettingsManager) SetModelThinkingLevel(provider, modelID string, level ai.ModelThinkingLevel) {
 	manager.setGlobalNested("modelThinkingLevels", provider+"/"+modelID, string(level))
-}
-
-func (manager *SettingsManager) RemoveModelThinkingLevel(provider, modelID string) {
-	manager.removeGlobalNested("modelThinkingLevels", provider+"/"+modelID)
 }
 
 func (manager *SettingsManager) SetSteeringMode(mode string) {

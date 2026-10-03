@@ -598,8 +598,8 @@ func TestRunCLIHelpAndListModelsRunAuthMigration(t *testing.T) {
 }
 
 func TestRunCLIListModelsIsReadOnly(t *testing.T) {
-	// Upstream runs listModels after full runtime creation (main.ts:747-764) so
-	// extension-registered providers are listed; the run must stay read-only.
+	// Models are listed after full runtime creation so extension-registered
+	// providers are listed; the run must stay read-only.
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(t.TempDir())

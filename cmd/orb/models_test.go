@@ -41,7 +41,7 @@ func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
 	if err := json.Unmarshal(caseData, &cases); err != nil {
 		t.Fatal(err)
 	}
-	// LOG-m6: the empty-list guidance resolves doc pointers through
+	// The empty-list guidance resolves doc pointers through
 	// authGuidanceDocPaths like formatNoAPIKeyFoundMessage, so the fixture's
 	// literal upstream paths are substituted with the resolved ones.
 	providersDoc, modelsDoc := agent.AuthGuidanceDocPaths()
@@ -62,7 +62,7 @@ func TestFormatModelListMatchesUpstreamFixture(t *testing.T) {
 	}
 }
 
-// LOG-m6: --list-models empty output shares upstream
+// --list-models empty output shares upstream
 // formatNoModelsAvailableMessage via the same doc-path resolution.
 func TestLOGm6FormatModelListUsesAuthGuidance(t *testing.T) {
 	if got, want := formatModelList(nil, ""), agent.FormatNoModelsAvailableMessage()+"\n"; got != want {

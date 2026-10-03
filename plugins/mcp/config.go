@@ -391,37 +391,6 @@ func RemoveServer(path, name string) (bool, error) {
 	})
 }
 
-// SetServerFields sets top-level fields of one server (nil deletes), keeping the rest.
-func SetServerFields(path, name string, fields map[string]any) error {
-	return editServers(path, func(servers []member) ([]member, bool) {
-		index := slices.IndexFunc(servers, func(entry member) bool { return entry.name == name })
-		if index < 0 {
-			return servers, false
-		}
-		object, err := orderedMembers(servers[index].value)
-		if err != nil {
-			return servers, false
-		}
-		for _, key := range slices.Sorted(mapsKeys(fields)) {
-			position := slices.IndexFunc(object, func(entry member) bool { return entry.name == key })
-			if fields[key] == nil {
-				if position >= 0 {
-					object = slices.Delete(object, position, position+1)
-				}
-				continue
-			}
-			value, _ := json.Marshal(fields[key])
-			if position >= 0 {
-				object[position].value = value
-			} else {
-				object = append(object, member{name: key, value: value})
-			}
-		}
-		servers[index].value = encodeMembers(object)
-		return servers, true
-	})
-}
-
 type member struct {
 	name  string
 	value json.RawMessage
@@ -523,14 +492,4 @@ func encodeMembers(members []member) json.RawMessage {
 	}
 	buffer.WriteByte('}')
 	return buffer.Bytes()
-}
-
-func mapsKeys(values map[string]any) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for key := range values {
-			if !yield(key) {
-				return
-			}
-		}
-	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -196,15 +197,7 @@ func (tool *readTool) imageResult(ctx context.Context, data []byte, mimeType str
 	autoResize := tool.autoResizeImages
 	model := engine.ToolExecutionModel(ctx)
 	processed := ProcessImage(data, mimeType, &ProcessImageOptions{AutoResizeImages: &autoResize, ResizeOptions: ModelResizeOptions(model)})
-	vision := model == nil
-	if model != nil {
-		for _, modality := range model.Input {
-			if modality == ai.InputImage {
-				vision = true
-				break
-			}
-		}
-	}
+	vision := model == nil || slices.Contains(model.Input, ai.InputImage)
 	nonVisionNote := ""
 	if !vision {
 		nonVisionNote = "[Current model does not support images. The image will be omitted from this request.]"

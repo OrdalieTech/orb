@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -197,20 +199,8 @@ func (host *stateHost) setEnvironment(environment []string) {
 
 func (host *stateHost) reset(entries []extensionEntry) {
 	host.mu.Lock()
-	for _, subscriptions := range host.busUnsubscribe {
-		for _, unsubscribe := range subscriptions {
-			unsubscribe()
-		}
-	}
-	for _, cancel := range host.execCancels {
-		cancel()
-	}
+	host.releaseLocked()
 	host.registrations = make(map[string]*stateRegistrations, len(entries))
-	host.busUnsubscribe = make(map[string]map[string]func())
-	host.execCancels = make(map[string]context.CancelFunc)
-	host.execCancelled = make(map[string]bool)
-	host.contexts = make(map[string][]extensions.Context)
-	host.lastContexts = make(map[string]extensions.Context)
 	host.sentSessionRevisions = make(map[string]bool)
 	for _, entry := range entries {
 		host.registrations[entry.ID] = &stateRegistrations{flags: make(map[string]wireFlag), bus: make(map[string]wireBusSubscription)}
@@ -223,6 +213,12 @@ func (host *stateHost) reset(entries []extensionEntry) {
 
 func (host *stateHost) close() {
 	host.mu.Lock()
+	host.releaseLocked()
+	host.mu.Unlock()
+}
+
+// releaseLocked drops every bus subscription, exec and captured context.
+func (host *stateHost) releaseLocked() {
 	for _, subscriptions := range host.busUnsubscribe {
 		for _, unsubscribe := range subscriptions {
 			unsubscribe()
@@ -236,7 +232,6 @@ func (host *stateHost) close() {
 	host.execCancelled = make(map[string]bool)
 	host.contexts = make(map[string][]extensions.Context)
 	host.lastContexts = make(map[string]extensions.Context)
-	host.mu.Unlock()
 }
 
 func (host *stateHost) bind(manager *Manager, extensionID string, api extensions.API) error {
@@ -247,20 +242,12 @@ func (host *stateHost) bind(manager *Manager, extensionID string, api extensions
 	if registration == nil {
 		return fmt.Errorf("extension host: unknown state extension %s", extensionID)
 	}
-	for _, flag := range sortedFlags(registration.flags) {
-		var defaultValue any
-		if len(flag.Default) != 0 {
-			if err := json.Unmarshal(flag.Default, &defaultValue); err != nil {
-				return fmt.Errorf("extension host: decode flag %s default: %w", flag.Name, err)
-			}
-		}
-		if err := callStateAPI(func() {
-			api.RegisterFlag(flag.Name, extensions.Flag{Description: flag.Description, Type: flag.Type, Default: defaultValue})
-		}); err != nil {
+	for _, flag := range sortedValues(registration.flags) {
+		if err := registerWireFlag(api, flag); err != nil {
 			return err
 		}
 	}
-	for _, subscription := range sortedBusSubscriptions(registration.bus) {
+	for _, subscription := range sortedValues(registration.bus) {
 		if err := host.bindBus(manager, extensionID, api, subscription); err != nil {
 			return err
 		}
@@ -269,19 +256,23 @@ func (host *stateHost) bind(manager *Manager, extensionID string, api extensions
 	return nil
 }
 
+func registerWireFlag(api extensions.API, flag wireFlag) error {
+	var defaultValue any
+	if len(flag.Default) != 0 {
+		if err := json.Unmarshal(flag.Default, &defaultValue); err != nil {
+			return fmt.Errorf("extension host: decode flag %s default: %w", flag.Name, err)
+		}
+	}
+	return callStateAPI(func() {
+		api.RegisterFlag(flag.Name, extensions.Flag{Description: flag.Description, Type: flag.Type, Default: defaultValue})
+	})
+}
+
 func (host *stateHost) rebindCaptured(manager *Manager) {
 	host.mu.RLock()
-	ids := make([]string, 0, len(host.apis))
-	for id := range host.apis {
-		ids = append(ids, id)
-	}
-	apis := make(map[string]extensions.API, len(host.apis))
-	for id, api := range host.apis {
-		apis[id] = api
-	}
+	apis := maps.Clone(host.apis)
 	host.mu.RUnlock()
-	sort.Strings(ids)
-	for _, id := range ids {
+	for _, id := range slices.Sorted(maps.Keys(apis)) {
 		if err := host.bind(manager, id, apis[id]); err != nil {
 			manager.report(extensions.Diagnostic{Type: "error", Message: err.Error(), Path: id})
 		}
@@ -456,17 +447,7 @@ func (host *stateHost) handleRequest(manager *Manager, generation *generation, v
 			return nil, invalidRegistration(errors.New("unknown extension id")), true
 		}
 		if api := host.api(params.ExtensionID); api != nil {
-			var defaultValue any
-			if len(params.Definition.Default) != 0 {
-				if err := json.Unmarshal(params.Definition.Default, &defaultValue); err != nil {
-					return nil, invalidRegistration(err), true
-				}
-			}
-			if err := callStateAPI(func() {
-				api.RegisterFlag(params.Definition.Name, extensions.Flag{
-					Description: params.Definition.Description, Type: params.Definition.Type, Default: defaultValue,
-				})
-			}); err != nil {
+			if err := registerWireFlag(api, params.Definition); err != nil {
 				return nil, invalidRegistration(err), true
 			}
 		}
@@ -855,7 +836,7 @@ func (host *stateHost) contextModelRegistry(extensionID string) (extensions.Mode
 func (host *stateHost) environmentMap() map[string]string {
 	host.mu.RLock()
 	defer host.mu.RUnlock()
-	return cloneStringMap(host.environmentValues)
+	return maps.Clone(host.environmentValues)
 }
 
 func wireStateProviderAuth(resolved *aiauth.AuthResult) *stateProviderAuthResult {
@@ -863,18 +844,18 @@ func wireStateProviderAuth(resolved *aiauth.AuthResult) *stateProviderAuthResult
 		return nil
 	}
 	result := &stateProviderAuthResult{
-		Auth:   stateModelAuth{APIKey: cloneStringPointer(resolved.Auth.APIKey), BaseURL: cloneStringPointer(resolved.Auth.BaseURL)},
+		Auth:   stateModelAuth{APIKey: clonePointer(resolved.Auth.APIKey), BaseURL: clonePointer(resolved.Auth.BaseURL)},
 		Source: resolved.Source,
 	}
 	if resolved.Auth.Headers != nil {
 		headers := make(map[string]*string, len(resolved.Auth.Headers))
 		for name, value := range resolved.Auth.Headers {
-			headers[name] = cloneStringPointer(value)
+			headers[name] = clonePointer(value)
 		}
 		result.Auth.Headers = &headers
 	}
 	if resolved.Env != nil {
-		environment := cloneStringMap(resolved.Env)
+		environment := maps.Clone(resolved.Env)
 		result.Env = &environment
 	}
 	return result
@@ -889,9 +870,9 @@ func resolveStateModelAuth(ctx context.Context, registry extensions.ModelRegistr
 	var env *map[string]string
 	var headers *map[string]string
 	if resolved != nil {
-		apiKey = cloneStringPointer(resolved.Auth.APIKey)
+		apiKey = clonePointer(resolved.Auth.APIKey)
 		if resolved.Env != nil {
-			copy := cloneStringMap(resolved.Env)
+			copy := maps.Clone(resolved.Env)
 			env = &copy
 		}
 		if resolved.Auth.Headers != nil {
@@ -904,11 +885,9 @@ func resolveStateModelAuth(ctx context.Context, registry extensions.ModelRegistr
 			headers = &copy
 		}
 	}
-	headerEnvironment := cloneStringMap(environment)
+	headerEnvironment := maps.Clone(environment)
 	if env != nil {
-		for name, value := range *env {
-			headerEnvironment[name] = value
-		}
+		maps.Copy(headerEnvironment, *env)
 	}
 	configured, err := registry.ResolveModelHeaders(ctx, model, headerEnvironment, apiKey)
 	if err != nil {
@@ -936,13 +915,9 @@ func setStateHeader(headers map[string]string, name, value string) {
 }
 
 func (host *stateHost) refreshCurrent(manager *Manager, extensionID string, contextValue extensions.Context) {
-	manager.mu.Lock()
-	generation := manager.current
-	manager.mu.Unlock()
-	if generation == nil || !generation.ready.Load() {
-		return
+	if generation := manager.readyGeneration(); generation != nil {
+		host.refreshAndPush(manager, generation, extensionID, contextValue)
 	}
-	host.refreshAndPush(manager, generation, extensionID, contextValue)
 }
 
 func (host *stateHost) refreshAndPush(manager *Manager, generation *generation, extensionID string, contextValue extensions.Context) {
@@ -997,22 +972,15 @@ func (host *stateHost) writeStateDelta(generation *generation, extensionID strin
 	host.nextTransferID++
 	transferID := fmt.Sprintf("%s-session-%d", extensionID, host.nextTransferID)
 	host.mu.Unlock()
-	const chunkSize = 2 << 20
-	total := (len(encoded) + chunkSize - 1) / chunkSize
-	for index, offset := 0, 0; offset < len(encoded); index, offset = index+1, offset+chunkSize {
-		end := min(offset+chunkSize, len(encoded))
-		chunk, frameErr := eventFrame("state_session_chunk", struct {
+	if err := generation.codec.writeChunks("state_session_chunk", encoded, func(index, total int, data string) any {
+		return struct {
 			TransferID string `json:"transferId"`
 			Index      int    `json:"index"`
 			Total      int    `json:"total"`
 			Data       string `json:"data"`
-		}{transferID, index, total, base64.StdEncoding.EncodeToString(encoded[offset:end])})
-		if frameErr != nil {
-			return frameErr
-		}
-		if frameErr = generation.codec.write(chunk); frameErr != nil {
-			return frameErr
-		}
+		}{transferID, index, total, data}
+	}); err != nil {
+		return err
 	}
 	snapshot.Session = nil
 	value, err = frameFor(transferID)
@@ -1037,7 +1005,7 @@ func (host *stateHost) refreshSnapshot(extensionID string, api extensions.API, c
 		snapshot = cloneStateSnapshot(snapshot)
 	}
 	if registration != nil {
-		for _, flag := range sortedFlags(registration.flags) {
+		for _, flag := range sortedValues(registration.flags) {
 			var value any
 			var ok bool
 			if callStateAPI(func() { value, ok = api.GetFlag(flag.Name) }) == nil && ok {
@@ -1045,44 +1013,19 @@ func (host *stateHost) refreshSnapshot(extensionID string, api extensions.API, c
 			}
 		}
 	}
-	var sessionName *string
-	if err := callStateAPIError(func() error {
-		var err error
-		sessionName, err = api.GetSessionName(context.Background())
-		return err
-	}); err == nil {
-		snapshot.SessionName = cloneStringPointer(sessionName)
+	if name, ok := stateAPIValue(func() (*string, error) { return api.GetSessionName(context.Background()) }); ok {
+		snapshot.SessionName = clonePointer(name)
 	}
-	var active []string
-	if err := callStateAPIError(func() error {
-		var err error
-		active, err = api.GetActiveTools()
-		return err
-	}); err == nil {
+	if active, ok := stateAPIValue(api.GetActiveTools); ok {
 		snapshot.ActiveTools = append([]string(nil), active...)
 	}
-	var all []extensions.ToolInfo
-	if err := callStateAPIError(func() error {
-		var err error
-		all, err = api.GetAllTools()
-		return err
-	}); err == nil {
+	if all, ok := stateAPIValue(api.GetAllTools); ok {
 		snapshot.AllTools = append([]extensions.ToolInfo(nil), all...)
 	}
-	var commands []extensions.SlashCommandInfo
-	if err := callStateAPIError(func() error {
-		var err error
-		commands, err = api.GetCommands()
-		return err
-	}); err == nil {
+	if commands, ok := stateAPIValue(api.GetCommands); ok {
 		snapshot.Commands = append([]extensions.SlashCommandInfo(nil), commands...)
 	}
-	var thinking engine.ThinkingLevel
-	if err := callStateAPIError(func() error {
-		var err error
-		thinking, err = api.GetThinkingLevel()
-		return err
-	}); err == nil && thinking != "" {
+	if thinking, ok := stateAPIValue(api.GetThinkingLevel); ok && thinking != "" {
 		snapshot.ThinkingLevel = thinking
 	}
 	if contextValue != nil {
@@ -1099,18 +1042,13 @@ func (host *stateHost) updateContextSnapshot(snapshot *stateSnapshot, contextVal
 		snapshot.Context.CWD = contextValue.CWD()
 		snapshot.Context.Mode = contextValue.Mode()
 		snapshot.Context.HasUI = contextValue.HasUI()
-		if model := contextValue.Model(); model != nil {
-			copy := *model
-			snapshot.Context.Model = &copy
-		} else {
-			snapshot.Context.Model = nil
-		}
+		snapshot.Context.Model = clonePointer(contextValue.Model())
 		snapshot.Context.ScopedModels = append([]extensions.ScopedModel{}, contextValue.ScopedModels()...)
 		snapshot.Context.Idle = contextValue.IsIdle()
 		snapshot.Context.ProjectTrusted = contextValue.IsProjectTrusted()
 		snapshot.Context.HasPendingMessages = contextValue.HasPendingMessages()
 		if usage := contextValue.GetContextUsage(); usage != nil {
-			snapshot.Context.ContextUsage = &stateContextUsage{Tokens: cloneInt64Pointer(usage.Tokens), ContextWindow: usage.ContextWindow, Percent: cloneFloat64Pointer(usage.Percent)}
+			snapshot.Context.ContextUsage = &stateContextUsage{Tokens: clonePointer(usage.Tokens), ContextWindow: usage.ContextWindow, Percent: clonePointer(usage.Percent)}
 		} else {
 			snapshot.Context.ContextUsage = nil
 		}
@@ -1144,8 +1082,8 @@ func (host *stateHost) captureSession(manager extensions.ReadonlySessionManager)
 	}
 	snapshot := &stateSessionSnapshot{
 		Persisted: manager.IsPersisted(), CWD: manager.GetCWD(), SessionDir: manager.GetSessionDir(), SessionID: manager.GetSessionID(),
-		SessionFile: sessionFile, LeafID: cloneStringPointer(leafID), Entries: append([]session.SessionEntry(nil), entries...),
-		Header: manager.GetHeader(), SessionName: cloneStringPointer(manager.GetSessionName()),
+		SessionFile: sessionFile, LeafID: clonePointer(leafID), Entries: append([]session.SessionEntry(nil), entries...),
+		Header: manager.GetHeader(), SessionName: clonePointer(manager.GetSessionName()),
 	}
 	host.mu.Lock()
 	if key != host.sessionCacheKey {
@@ -1186,7 +1124,7 @@ func captureModelRegistry(registry extensions.ModelRegistry) *stateModelRegistry
 		value := stateProviderSnapshot{ID: id, DisplayName: registry.ProviderDisplayName(id), AuthStatus: registry.GetProviderAuthStatus(id, nil), UsingOAuth: registry.IsUsingOAuth(id)}
 		if provider, ok := registry.Provider(id); ok {
 			value.Name, value.BaseURL = provider.Name, provider.BaseURL
-			value.Headers = cloneStringMap(provider.Headers)
+			value.Headers = maps.Clone(provider.Headers)
 		}
 		_, value.RegisteredConfig = registry.RegisteredProviderConfig(id)
 		_, value.RegisteredNative = registry.RegisteredNativeProvider(id)
@@ -1208,9 +1146,7 @@ func (host *stateHost) applyEventMutation(event extensions.Event, raw json.RawMe
 			return err
 		}
 		clear(typed.Input)
-		for key, value := range payload.Input {
-			typed.Input[key] = value
-		}
+		maps.Copy(typed.Input, payload.Input)
 	case extensions.BeforeProviderHeadersEvent:
 		var payload struct {
 			Headers map[string]*string `json:"headers"`
@@ -1219,9 +1155,7 @@ func (host *stateHost) applyEventMutation(event extensions.Event, raw json.RawMe
 			return err
 		}
 		clear(typed.Headers)
-		for key, value := range payload.Headers {
-			typed.Headers[key] = value
-		}
+		maps.Copy(typed.Headers, payload.Headers)
 	}
 	return nil
 }
@@ -1387,11 +1321,12 @@ func callStateAPI(call func()) (err error) {
 	return nil
 }
 
-func callStateAPIError(call func() error) (err error) {
-	if panicErr := callStateAPI(func() { err = call() }); panicErr != nil {
-		return panicErr
-	}
-	return err
+// stateAPIValue reports a value only when the call neither failed nor panicked.
+func stateAPIValue[T any](call func() (T, error)) (T, bool) {
+	var value T
+	var err error
+	panicErr := callStateAPI(func() { value, err = call() })
+	return value, panicErr == nil && err == nil
 }
 
 func cloneStateRegistrations(value *stateRegistrations) *stateRegistrations {
@@ -1403,93 +1338,40 @@ func cloneStateRegistrations(value *stateRegistrations) *stateRegistrations {
 		flag.Default = append(json.RawMessage(nil), flag.Default...)
 		result.flags[name] = flag
 	}
-	for id, subscription := range value.bus {
-		result.bus[id] = subscription
-	}
+	maps.Copy(result.bus, value.bus)
 	return result
 }
 
 func cloneStateSnapshot(value stateSnapshot) stateSnapshot {
 	result := value
 	result.Flags = make(map[string]any, len(value.Flags))
-	for key, item := range value.Flags {
-		result.Flags[key] = item
-	}
-	result.SessionName = cloneStringPointer(value.SessionName)
+	maps.Copy(result.Flags, value.Flags)
+	result.SessionName = clonePointer(value.SessionName)
 	result.ActiveTools = append([]string(nil), value.ActiveTools...)
 	result.AllTools = append([]extensions.ToolInfo(nil), value.AllTools...)
 	result.Commands = append([]extensions.SlashCommandInfo(nil), value.Commands...)
-	if value.Context.Model != nil {
-		model := *value.Context.Model
-		result.Context.Model = &model
-	}
+	result.Context.Model = clonePointer(value.Context.Model)
 	result.Context.ScopedModels = append([]extensions.ScopedModel{}, value.Context.ScopedModels...)
 	if value.Context.ContextUsage != nil {
 		usage := *value.Context.ContextUsage
-		usage.Tokens = cloneInt64Pointer(usage.Tokens)
-		usage.Percent = cloneFloat64Pointer(usage.Percent)
+		usage.Tokens = clonePointer(usage.Tokens)
+		usage.Percent = clonePointer(usage.Percent)
 		result.Context.ContextUsage = &usage
 	}
 	return result
 }
 
-func sortedFlags(values map[string]wireFlag) []wireFlag {
-	names := make([]string, 0, len(values))
-	for name := range values {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	result := make([]wireFlag, 0, len(names))
-	for _, name := range names {
-		result = append(result, values[name])
+func sortedValues[V any](values map[string]V) []V {
+	result := make([]V, 0, len(values))
+	for _, key := range slices.Sorted(maps.Keys(values)) {
+		result = append(result, values[key])
 	}
 	return result
 }
 
-func sortedBusSubscriptions(values map[string]wireBusSubscription) []wireBusSubscription {
-	ids := make([]string, 0, len(values))
-	for id := range values {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	result := make([]wireBusSubscription, 0, len(ids))
-	for _, id := range ids {
-		result = append(result, values[id])
-	}
-	return result
-}
-
-func cloneStringPointer(value *string) *string {
+func clonePointer[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
-}
-
-func cloneInt64Pointer(value *int64) *int64 {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
-func cloneFloat64Pointer(value *float64) *float64 {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
-func cloneStringMap(value map[string]string) map[string]string {
-	if value == nil {
-		return nil
-	}
-	result := make(map[string]string, len(value))
-	for key, item := range value {
-		result[key] = item
-	}
-	return result
+	return new(*value)
 }

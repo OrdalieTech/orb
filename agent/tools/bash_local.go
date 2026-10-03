@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -402,10 +403,7 @@ func UntrackDetachedChildPID(pid int) {
 
 func KillTrackedDetachedChildren() {
 	trackedDetachedChildren.Lock()
-	pids := make([]int, 0, len(trackedDetachedChildren.pids))
-	for pid := range trackedDetachedChildren.pids {
-		pids = append(pids, pid)
-	}
+	pids := slices.Collect(maps.Keys(trackedDetachedChildren.pids))
 	clear(trackedDetachedChildren.pids)
 	trackedDetachedChildren.Unlock()
 	for _, pid := range pids {

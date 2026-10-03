@@ -287,16 +287,13 @@ func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.R
 
 	runtime, err := manager.resolveRuntime(ctx)
 	if err != nil {
+		diagnostic := extensions.Diagnostic{Type: "error", Message: err.Error(), Path: "<extension-host>"}
 		var unavailable *RuntimeUnavailableError
 		if errors.As(err, &unavailable) {
-			diagnostic := unavailable.Diagnostic()
-			result.Diagnostics = append(result.Diagnostics, diagnostic)
-			manager.report(diagnostic)
-		} else {
-			diagnostic := extensions.Diagnostic{Type: "error", Message: err.Error(), Path: "<extension-host>"}
-			result.Diagnostics = append(result.Diagnostics, diagnostic)
-			manager.report(diagnostic)
+			diagnostic = unavailable.Diagnostic()
 		}
+		result.Diagnostics = append(result.Diagnostics, diagnostic)
+		manager.report(diagnostic)
 		return result
 	}
 	result.Runtime = &runtime
@@ -710,41 +707,55 @@ func (manager *Manager) factory(extensionID string) extensions.Factory {
 			api.RegisterTool(manager.tool(extensionID, definition))
 		}
 		for _, command := range state.Commands {
-			api.RegisterCommand(command.Name, extensions.Command{
-				Description: command.Description,
-				Handler: func(ctx context.Context, arguments string, commandContext extensions.CommandContext) error {
-					return manager.executeCommand(ctx, extensionID, command.Name, arguments, commandContext)
-				},
-			})
+			manager.registerCommand(api, extensionID, command)
 		}
 		for _, shortcut := range state.Shortcuts {
-			shortcut := shortcut
-			api.RegisterShortcut(shortcut.Shortcut, extensions.Shortcut{
-				Description: shortcut.Description,
-				Handler: func(ctx context.Context, extensionContext extensions.Context) error {
-					return manager.executeShortcut(ctx, extensionID, shortcut.Shortcut, extensionContext)
-				},
-			})
+			manager.registerShortcut(api, extensionID, shortcut)
 		}
 		for _, subscription := range state.Subscriptions {
-			subscription := subscription
-			unsubscribe := api.OnWithUnsubscribe(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
-				return manager.emitEvent(ctx, extensionID, subscription, event, extensionContext)
-			})
-			manager.mu.Lock()
-			manager.eventUnsubs[eventSubscriptionKey(extensionID, subscription.ID)] = unsubscribe
-			manager.mu.Unlock()
+			manager.subscribe(api, extensionID, subscription)
 		}
 		for _, renderer := range state.Renderers {
-			switch renderer.Kind {
-			case rendererMessage:
-				api.RegisterMessageRenderer(renderer.CustomType, manager.messageRenderer(extensionID, renderer.CustomType))
-			case rendererEntry:
-				api.RegisterEntryRenderer(renderer.CustomType, manager.entryRenderer(extensionID, renderer.CustomType))
-			}
+			manager.registerRenderer(api, extensionID, renderer)
 		}
 		manager.registerProviders(api, extensionID, state.Providers)
 		return manager.stateHost.bind(manager, extensionID, api)
+	}
+}
+
+func (manager *Manager) registerCommand(api extensions.API, extensionID string, command wireCommand) {
+	api.RegisterCommand(command.Name, extensions.Command{
+		Description: command.Description,
+		Handler: func(ctx context.Context, arguments string, commandContext extensions.CommandContext) error {
+			return manager.executeCommand(ctx, extensionID, command.Name, arguments, commandContext)
+		},
+	})
+}
+
+func (manager *Manager) registerShortcut(api extensions.API, extensionID string, shortcut wireShortcut) {
+	api.RegisterShortcut(shortcut.Shortcut, extensions.Shortcut{
+		Description: shortcut.Description,
+		Handler: func(ctx context.Context, extensionContext extensions.Context) error {
+			return manager.executeShortcut(ctx, extensionID, shortcut.Shortcut, extensionContext)
+		},
+	})
+}
+
+func (manager *Manager) subscribe(api extensions.API, extensionID string, subscription wireSubscription) {
+	unsubscribe := api.OnWithUnsubscribe(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
+		return manager.emitEvent(ctx, extensionID, subscription, event, extensionContext)
+	})
+	manager.mu.Lock()
+	manager.eventUnsubs[eventSubscriptionKey(extensionID, subscription.ID)] = unsubscribe
+	manager.mu.Unlock()
+}
+
+func (manager *Manager) registerRenderer(api extensions.API, extensionID string, renderer wireRendererRegistration) {
+	switch renderer.Kind {
+	case rendererMessage:
+		api.RegisterMessageRenderer(renderer.CustomType, manager.messageRenderer(extensionID, renderer.CustomType))
+	case rendererEntry:
+		api.RegisterEntryRenderer(renderer.CustomType, manager.entryRenderer(extensionID, renderer.CustomType))
 	}
 }
 
@@ -772,26 +783,10 @@ func (manager *Manager) tool(extensionID string, definition wireToolDefinition) 
 			onUpdate engine.AgentToolUpdateCallback,
 			extensionContext extensions.Context,
 		) (engine.AgentToolResult, error) {
-			finishState := manager.stateHost.beforeCallback(manager, extensionID, extensionContext)
-			defer finishState()
-			bound, err := manager.bindUIContext(extensionContext)
-			if err != nil {
-				return engine.AgentToolResult{}, err
-			}
-			defer bound.close()
-			releaseSignal := manager.stateHost.bindContextSignal(bound.generation, extensionID, callbackSignal(nil, extensionContext), &bound.wire)
-			defer releaseSignal()
-			request := struct {
-				ExtensionID string                   `json:"extensionId"`
-				ToolName    string                   `json:"toolName"`
-				ToolCallID  string                   `json:"toolCallId"`
-				Params      any                      `json:"params"`
-				Context     wireContext              `json:"context"`
-				Tools       []extensions.LoadoutTool `json:"tools,omitempty"`
-			}{extensionID, definition.Name, toolCallID, params, bound.wire, nil}
+			var loadout []extensions.LoadoutTool
 			// ctx.executeTool in JS calls back (execute_nested_tool) to this call's tool context.
 			if toolContext, ok := extensionContext.(extensions.ToolContext); ok {
-				request.Tools = toolContext.Tools()
+				loadout = toolContext.Tools()
 				manager.toolCalls.Store(toolCallID, nestedToolCaller{ctx: ctx, tools: toolContext})
 				defer manager.toolCalls.Delete(toolCallID)
 			}
@@ -804,7 +799,16 @@ func (manager *Manager) tool(extensionID string, definition wireToolDefinition) 
 					}
 				}
 			}
-			raw, err := bound.request(ctx, "execute_tool", request, update)
+			raw, err := manager.callWithContext(ctx, extensionID, nil, extensionContext, "execute_tool", func(wire wireContext) any {
+				return struct {
+					ExtensionID string                   `json:"extensionId"`
+					ToolName    string                   `json:"toolName"`
+					ToolCallID  string                   `json:"toolCallId"`
+					Params      any                      `json:"params"`
+					Context     wireContext              `json:"context"`
+					Tools       []extensions.LoadoutTool `json:"tools,omitempty"`
+				}{extensionID, definition.Name, toolCallID, params, wire, loadout}
+			}, update)
 			if err != nil {
 				return engine.AgentToolResult{}, err
 			}
@@ -815,11 +819,9 @@ func (manager *Manager) tool(extensionID string, definition wireToolDefinition) 
 			return result, nil
 		},
 	}
-	// Tool-wire gap closures (DOSSIER §7 risks 4-5): a lazy JS
-	// `get promptGuidelines()` is re-read over the wire instead of freezing
-	// the registration snapshot, and live renderCall/renderResult functions
-	// are bridged through the renderer-component RPC instead of being
-	// dropped.
+	// A lazy JS `get promptGuidelines()` is re-read over the wire instead of
+	// freezing the registration snapshot, and live renderCall/renderResult
+	// functions are bridged through the renderer-component RPC.
 	result.Exposure, result.Namespace, result.Annotations, result.DefaultActive = definition.Exposure, definition.Namespace, definition.Annotations, definition.DefaultActive
 	if len(definition.OutputSchema) > 0 {
 		result.OutputSchema = ai.JSONSchema(definition.OutputSchema)
@@ -870,22 +872,14 @@ func (manager *Manager) executeCommand(
 	extensionID, name, arguments string,
 	commandContext extensions.CommandContext,
 ) error {
-	finishState := manager.stateHost.beforeCallback(manager, extensionID, commandContext)
-	defer finishState()
-	bound, err := manager.bindUIContext(commandContext)
-	if err != nil {
-		return err
-	}
-	defer bound.close()
-	releaseSignal := manager.stateHost.bindContextSignal(bound.generation, extensionID, callbackSignal(nil, commandContext), &bound.wire)
-	defer releaseSignal()
-	request := struct {
-		ExtensionID string      `json:"extensionId"`
-		CommandName string      `json:"commandName"`
-		Arguments   string      `json:"arguments"`
-		Context     wireContext `json:"context"`
-	}{extensionID, name, arguments, bound.wire}
-	_, err = bound.request(ctx, "execute_command", request, nil)
+	_, err := manager.callWithContext(ctx, extensionID, nil, commandContext, "execute_command", func(wire wireContext) any {
+		return struct {
+			ExtensionID string      `json:"extensionId"`
+			CommandName string      `json:"commandName"`
+			Arguments   string      `json:"arguments"`
+			Context     wireContext `json:"context"`
+		}{extensionID, name, arguments, wire}
+	}, nil)
 	return err
 }
 
@@ -894,22 +888,37 @@ func (manager *Manager) executeShortcut(
 	extensionID, shortcut string,
 	extensionContext extensions.Context,
 ) error {
-	finishState := manager.stateHost.beforeCallback(manager, extensionID, extensionContext)
+	_, err := manager.callWithContext(ctx, extensionID, nil, extensionContext, "execute_shortcut", func(wire wireContext) any {
+		return struct {
+			ExtensionID string      `json:"extensionId"`
+			Shortcut    string      `json:"shortcut"`
+			Context     wireContext `json:"context"`
+		}{extensionID, shortcut, wire}
+	}, nil)
+	return err
+}
+
+// callWithContext sends method with the callback's state, UI context and
+// abort signal bound for the duration of the request.
+func (manager *Manager) callWithContext(
+	ctx context.Context,
+	extensionID string,
+	event extensions.Event,
+	contextValue extensions.Context,
+	method string,
+	request func(wireContext) any,
+	update func(json.RawMessage),
+) (json.RawMessage, error) {
+	finishState := manager.stateHost.beforeCallback(manager, extensionID, contextValue)
 	defer finishState()
-	bound, err := manager.bindUIContext(extensionContext)
+	bound, err := manager.bindUIContext(contextValue)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer bound.close()
-	releaseSignal := manager.stateHost.bindContextSignal(bound.generation, extensionID, callbackSignal(nil, extensionContext), &bound.wire)
+	releaseSignal := manager.stateHost.bindContextSignal(bound.generation, extensionID, callbackSignal(event, contextValue), &bound.wire)
 	defer releaseSignal()
-	request := struct {
-		ExtensionID string      `json:"extensionId"`
-		Shortcut    string      `json:"shortcut"`
-		Context     wireContext `json:"context"`
-	}{extensionID, shortcut, bound.wire}
-	_, err = bound.request(ctx, "execute_shortcut", request, nil)
-	return err
+	return bound.request(ctx, method, request(bound.wire), update)
 }
 
 func (manager *Manager) emitEvent(
@@ -1072,17 +1081,10 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if state == nil {
 			return nil, invalidRegistration(errors.New("unknown extension id"))
 		}
-		state.Commands = append(state.Commands, wireCommand{Name: params.Name, Description: params.Options.Description})
+		command := wireCommand{Name: params.Name, Description: params.Options.Description}
+		state.Commands = append(state.Commands, command)
 		if api := manager.stateHost.api(params.ExtensionID); api != nil {
-			command := wireCommand{Name: params.Name, Description: params.Options.Description}
-			if err := callStateAPI(func() {
-				api.RegisterCommand(command.Name, extensions.Command{
-					Description: command.Description,
-					Handler: func(ctx context.Context, arguments string, commandContext extensions.CommandContext) error {
-						return manager.executeCommand(ctx, params.ExtensionID, command.Name, arguments, commandContext)
-					},
-				})
-			}); err != nil {
+			if err := callStateAPI(func() { manager.registerCommand(api, params.ExtensionID, command) }); err != nil {
 				return nil, invalidRegistration(err)
 			}
 		}
@@ -1105,17 +1107,10 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if state == nil {
 			return nil, invalidRegistration(errors.New("unknown extension id"))
 		}
-		state.Shortcuts = append(state.Shortcuts, wireShortcut{Shortcut: params.Shortcut, Description: params.Options.Description})
+		shortcut := wireShortcut{Shortcut: params.Shortcut, Description: params.Options.Description}
+		state.Shortcuts = append(state.Shortcuts, shortcut)
 		if api := manager.stateHost.api(params.ExtensionID); api != nil {
-			shortcut := wireShortcut{Shortcut: params.Shortcut, Description: params.Options.Description}
-			if err := callStateAPI(func() {
-				api.RegisterShortcut(shortcut.Shortcut, extensions.Shortcut{
-					Description: shortcut.Description,
-					Handler: func(ctx context.Context, extensionContext extensions.Context) error {
-						return manager.executeShortcut(ctx, params.ExtensionID, shortcut.Shortcut, extensionContext)
-					},
-				})
-			}); err != nil {
+			if err := callStateAPI(func() { manager.registerShortcut(api, params.ExtensionID, shortcut) }); err != nil {
 				return nil, invalidRegistration(err)
 			}
 		}
@@ -1136,17 +1131,10 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if state == nil {
 			return nil, invalidRegistration(errors.New("unknown extension id"))
 		}
-		state.Subscriptions = append(state.Subscriptions, wireSubscription{ID: params.SubscriptionID, Event: params.Event})
+		subscription := wireSubscription{ID: params.SubscriptionID, Event: params.Event}
+		state.Subscriptions = append(state.Subscriptions, subscription)
 		if api := manager.stateHost.api(params.ExtensionID); api != nil {
-			subscription := wireSubscription{ID: params.SubscriptionID, Event: params.Event}
-			if err := callStateAPI(func() {
-				unsubscribe := api.OnWithUnsubscribe(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
-					return manager.emitEvent(ctx, params.ExtensionID, subscription, event, extensionContext)
-				})
-				manager.mu.Lock()
-				manager.eventUnsubs[eventSubscriptionKey(params.ExtensionID, subscription.ID)] = unsubscribe
-				manager.mu.Unlock()
-			}); err != nil {
+			if err := callStateAPI(func() { manager.subscribe(api, params.ExtensionID, subscription) }); err != nil {
 				return nil, invalidRegistration(err)
 			}
 		}
@@ -1192,15 +1180,10 @@ func (manager *Manager) handleHostRequest(generation *generation, value frame) (
 		if state == nil {
 			return nil, invalidRegistration(errors.New("unknown extension id"))
 		}
-		state.Renderers = append(state.Renderers, wireRendererRegistration{Kind: params.Kind, CustomType: params.CustomType})
+		renderer := wireRendererRegistration{Kind: params.Kind, CustomType: params.CustomType}
+		state.Renderers = append(state.Renderers, renderer)
 		if api := manager.stateHost.api(params.ExtensionID); api != nil {
-			if err := callStateAPI(func() {
-				if params.Kind == rendererMessage {
-					api.RegisterMessageRenderer(params.CustomType, manager.messageRenderer(params.ExtensionID, params.CustomType))
-				} else {
-					api.RegisterEntryRenderer(params.CustomType, manager.entryRenderer(params.ExtensionID, params.CustomType))
-				}
-			}); err != nil {
+			if err := callStateAPI(func() { manager.registerRenderer(api, params.ExtensionID, renderer) }); err != nil {
 				return nil, invalidRegistration(err)
 			}
 		}

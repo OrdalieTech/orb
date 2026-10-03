@@ -128,7 +128,7 @@ func TestRealHostRegistersProviderAuthCallbacksAndRecoversAfterRestart(t *testin
 
 	_, err = methods.APIKey.Resolve(context.Background(), providerTestAuthContext{}, aiauth.APIKeyCredential("throw"))
 	var invokeError *ProviderInvokeError
-	if !errors.As(err, &invokeError) || invokeError.Retryable() {
+	if !errors.As(err, &invokeError) || invokeError.CanRetry {
 		t.Fatalf("extension callback error = %#v", err)
 	}
 	diagnosticsMu.Lock()
@@ -139,7 +139,7 @@ func TestRealHostRegistersProviderAuthCallbacksAndRecoversAfterRestart(t *testin
 	}
 
 	_, err = methods.APIKey.Resolve(context.Background(), providerTestAuthContext{}, aiauth.APIKeyCredential("crash"))
-	if !errors.As(err, &invokeError) || !invokeError.Retryable() {
+	if !errors.As(err, &invokeError) || !invokeError.CanRetry {
 		t.Fatalf("crashed in-flight callback error = %#v", err)
 	}
 	waitForProviderRestart(t, manager)

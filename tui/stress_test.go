@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -184,7 +185,7 @@ func TestStdinBufferPasteFloodArbitraryChunking(t *testing.T) {
 		buffer.Process(input[offset:end])
 		offset = end
 	}
-	if !equalLines(got, want) {
+	if !slices.Equal(got, want) {
 		t.Fatalf("paste flood delivered %d payloads, want %d", len(got), len(want))
 	}
 }

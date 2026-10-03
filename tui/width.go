@@ -648,9 +648,7 @@ func wrapTextWithANSI(text string, width int, selection bool) []string {
 	if text == "" {
 		return []string{""}
 	}
-	if width < 1 {
-		width = 1
-	}
+	width = max(1, width)
 	tracker := &ansiTracker{}
 	result := make([]string, 0)
 	for index, input := range splitLines(text) {

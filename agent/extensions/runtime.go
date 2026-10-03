@@ -3,6 +3,9 @@ package extensions
 import (
 	"context"
 	"errors"
+	"maps"
+	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -79,6 +82,16 @@ func uninitializedActions() Actions {
 	}
 }
 
+// fillNilFuncs sets every nil func field of *target to the field of defaults.
+func fillNilFuncs[T any](target *T, defaults T) {
+	value, fallback := reflect.ValueOf(target).Elem(), reflect.ValueOf(defaults)
+	for index := range value.NumField() {
+		if field := value.Field(index); field.Kind() == reflect.Func && field.IsNil() {
+			field.Set(fallback.Field(index))
+		}
+	}
+}
+
 func normalizeActions(actions Actions) Actions {
 	defaults := uninitializedActions()
 	if actions.RegisterProviderConfig == nil && actions.RegisterProvider != nil {
@@ -87,57 +100,7 @@ func normalizeActions(actions Actions) Actions {
 			return register(Provider{ID: name, Name: config.Name, Config: config})
 		}
 	}
-	if actions.SendMessage == nil {
-		actions.SendMessage = defaults.SendMessage
-	}
-	if actions.SendUserMessage == nil {
-		actions.SendUserMessage = defaults.SendUserMessage
-	}
-	if actions.AppendEntry == nil {
-		actions.AppendEntry = defaults.AppendEntry
-	}
-	if actions.SetSessionName == nil {
-		actions.SetSessionName = defaults.SetSessionName
-	}
-	if actions.GetSessionName == nil {
-		actions.GetSessionName = defaults.GetSessionName
-	}
-	if actions.SetLabel == nil {
-		actions.SetLabel = defaults.SetLabel
-	}
-	if actions.GetActiveTools == nil {
-		actions.GetActiveTools = defaults.GetActiveTools
-	}
-	if actions.GetAllTools == nil {
-		actions.GetAllTools = defaults.GetAllTools
-	}
-	if actions.SetActiveTools == nil {
-		actions.SetActiveTools = defaults.SetActiveTools
-	}
-	if actions.RefreshTools == nil {
-		actions.RefreshTools = func() {}
-	}
-	if actions.GetCommands == nil {
-		actions.GetCommands = defaults.GetCommands
-	}
-	if actions.SetModel == nil {
-		actions.SetModel = defaults.SetModel
-	}
-	if actions.GetThinkingLevel == nil {
-		actions.GetThinkingLevel = defaults.GetThinkingLevel
-	}
-	if actions.SetThinkingLevel == nil {
-		actions.SetThinkingLevel = defaults.SetThinkingLevel
-	}
-	if actions.RegisterProvider == nil {
-		actions.RegisterProvider = defaults.RegisterProvider
-	}
-	if actions.RegisterProviderConfig == nil {
-		actions.RegisterProviderConfig = defaults.RegisterProviderConfig
-	}
-	if actions.UnregisterProvider == nil {
-		actions.UnregisterProvider = defaults.UnregisterProvider
-	}
+	fillNilFuncs(&actions, defaults)
 	return actions
 }
 
@@ -150,54 +113,42 @@ func (runtime *runtimeState) bindActions(actions Actions) Actions {
 }
 
 func (runtime *runtimeState) bindProviderActions(actions Actions, report func(ExtensionError)) {
-	runtime.mu.Lock()
-	runtime.registerNative = actions.RegisterProvider
-	runtime.registerConfig = actions.RegisterProviderConfig
-	runtime.unregister = actions.UnregisterProvider
-	runtime.providerBound = true
-	pending := append([]pendingProviderRegistration(nil), runtime.pendingProviders...)
-	runtime.pendingProviders = nil
-	runtime.mu.Unlock()
-	flushProviderRegistrations(pending, actions.RegisterProvider, actions.RegisterProviderConfig, report)
+	runtime.bindProviderFuncs(actions.RegisterProvider, actions.RegisterProviderConfig, actions.UnregisterProvider, report)
 }
 
 func (runtime *runtimeState) bindProviders(registry ModelRegistry, report func(ExtensionError)) {
-	if registry == nil {
-		return
+	if registry != nil {
+		runtime.bindProviderFuncs(registry.RegisterProvider, registry.RegisterProviderConfig, registry.UnregisterProvider, report)
 	}
-	runtime.mu.Lock()
-	runtime.registerNative = registry.RegisterProvider
-	runtime.registerConfig = registry.RegisterProviderConfig
-	runtime.unregister = registry.UnregisterProvider
-	runtime.providerBound = true
-	pending := append([]pendingProviderRegistration(nil), runtime.pendingProviders...)
-	runtime.pendingProviders = nil
-	runtime.mu.Unlock()
-	flushProviderRegistrations(pending, registry.RegisterProvider, registry.RegisterProviderConfig, report)
 }
 
-func flushProviderRegistrations(
-	pending []pendingProviderRegistration,
+// bindProviderFuncs binds provider registration and flushes the registrations
+// queued while unbound: configs first, then native providers.
+func (runtime *runtimeState) bindProviderFuncs(
 	registerNative func(Provider) error,
 	registerConfig func(string, ProviderConfig) error,
+	unregister func(string) error,
 	report func(ExtensionError),
 ) {
-	for _, registration := range pending {
-		if registration.config == nil {
-			continue
-		}
-		err := registerConfig(registration.name, *registration.config)
+	runtime.mu.Lock()
+	runtime.registerNative, runtime.registerConfig, runtime.unregister = registerNative, registerConfig, unregister
+	runtime.providerBound = true
+	pending := runtime.pendingProviders
+	runtime.pendingProviders = nil
+	runtime.mu.Unlock()
+	flush := func(registration pendingProviderRegistration, err error) {
 		if err != nil && report != nil {
 			report(ExtensionError{ExtensionPath: registration.extensionPath, Event: "register_provider", Error: err.Error()})
 		}
 	}
 	for _, registration := range pending {
-		if registration.native == nil {
-			continue
+		if registration.config != nil {
+			flush(registration, registerConfig(registration.name, *registration.config))
 		}
-		err := registerNative(*registration.native)
-		if err != nil && report != nil {
-			report(ExtensionError{ExtensionPath: registration.extensionPath, Event: "register_provider", Error: err.Error()})
+	}
+	for _, registration := range pending {
+		if registration.native != nil {
+			flush(registration, registerNative(*registration.native))
 		}
 	}
 }
@@ -242,12 +193,8 @@ func (runtime *runtimeState) flag(name string) (any, bool) {
 
 func (runtime *runtimeState) flagValues() map[string]any {
 	runtime.mu.RLock()
-	values := make(map[string]any, len(runtime.flags))
-	for name, value := range runtime.flags {
-		values[name] = value
-	}
-	runtime.mu.RUnlock()
-	return values
+	defer runtime.mu.RUnlock()
+	return maps.Clone(runtime.flags)
 }
 
 func (runtime *runtimeState) registerProvider(provider Provider, extensionPath string) {
@@ -281,13 +228,9 @@ func (runtime *runtimeState) registerProviderConfig(name string, config Provider
 func (runtime *runtimeState) unregisterProvider(name, _ string) {
 	runtime.mu.Lock()
 	if !runtime.providerBound {
-		filtered := runtime.pendingProviders[:0]
-		for _, registration := range runtime.pendingProviders {
-			if registration.name != name {
-				filtered = append(filtered, registration)
-			}
-		}
-		runtime.pendingProviders = filtered
+		runtime.pendingProviders = slices.DeleteFunc(runtime.pendingProviders, func(registration pendingProviderRegistration) bool {
+			return registration.name == name
+		})
 		runtime.mu.Unlock()
 		return
 	}

@@ -446,7 +446,7 @@ func (terminal *lifecycleTerminal) waitFor(value string, timeout time.Duration) 
 func TestStandardModalWidths(t *testing.T) {
 	initTestTheme(t)
 	for _, columns := range []int{32, 40, 80, 120, 240} {
-		for _, options := range []tui.OverlayOptions{dialogOverlayOptions(), configOverlayOptions(), toTUIOverlayOptions(*extensions.ModalOptions().StaticOverlayOptions)} {
+		for _, options := range []tui.OverlayOptions{configOverlayOptions(), configOverlayOptions(), toTUIOverlayOptions(*extensions.ModalOptions().StaticOverlayOptions)} {
 			ui := tui.NewTUI(newFakeTerminal(columns, 30))
 			component := &f12UILifecycleOverlayComponent{label: "modal"}
 			if err := ui.Start(); err != nil {

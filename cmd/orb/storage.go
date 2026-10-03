@@ -186,50 +186,17 @@ func (state *nativeState) migrationSources(sessionDirs []string) ([]sqlite.Migra
 	if err != nil {
 		return nil, err
 	}
-	roots := append([]string{filepath.Join(state.agentDir, "sessions"), configured}, sessionDirs...)
 	seen := map[string]bool{}
-	for _, root := range roots {
+	// walk adds the files under root that source classifies, refusing symlinks.
+	walk := func(root string, source func(path string, entry fs.DirEntry) (sqlite.MigrationSource, bool)) error {
 		if root == "" {
-			continue
-		}
-		root, err = filepath.Abs(root)
-		if err != nil {
-			return nil, err
-		}
-		err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-			if errors.Is(walkErr, os.ErrNotExist) && path == root {
-				return nil
-			}
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.Type()&os.ModeSymlink != 0 {
-				return fmt.Errorf("migration source is a symlink: %s", path)
-			}
-			if entry.IsDir() || !strings.HasSuffix(path, ".jsonl") || seen[path] {
-				return nil
-			}
-			seen[path] = true
-			sources = append(sources, sqlite.MigrationSource{Path: path, Namespace: "personal", Kind: "session"})
 			return nil
-		})
+		}
+		root, err := filepath.Abs(root)
 		if err != nil {
-			return nil, err
+			return err
 		}
-	}
-	bridge, err := bridgeDir("personal")
-	if err != nil {
-		return nil, err
-	}
-	for _, root := range []string{filepath.Dir(bridge), filepath.Join(filepath.Dir(filepath.Dir(bridge)), "instances"), filepath.Join(state.agentDir, "memory"), filepath.Join(state.agentDir, "chat"), os.Getenv("ORB_CHAT_DATA_DIR")} {
-		if root == "" {
-			continue
-		}
-		root, err = filepath.Abs(root)
-		if err != nil {
-			return nil, err
-		}
-		err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 			if errors.Is(walkErr, os.ErrNotExist) && path == root {
 				return nil
 			}
@@ -242,6 +209,26 @@ func (state *nativeState) migrationSources(sessionDirs []string) ([]sqlite.Migra
 			if entry.IsDir() || seen[path] {
 				return nil
 			}
+			if found, ok := source(path, entry); ok {
+				seen[path] = true
+				sources = append(sources, found)
+			}
+			return nil
+		})
+	}
+	for _, root := range append([]string{filepath.Join(state.agentDir, "sessions"), configured}, sessionDirs...) {
+		if err := walk(root, func(path string, _ fs.DirEntry) (sqlite.MigrationSource, bool) {
+			return sqlite.MigrationSource{Path: path, Namespace: "personal", Kind: "session"}, strings.HasSuffix(path, ".jsonl")
+		}); err != nil {
+			return nil, err
+		}
+	}
+	bridge, err := bridgeDir("personal")
+	if err != nil {
+		return nil, err
+	}
+	for _, root := range []string{filepath.Dir(bridge), filepath.Join(filepath.Dir(filepath.Dir(bridge)), "instances"), filepath.Join(state.agentDir, "memory"), filepath.Join(state.agentDir, "chat"), os.Getenv("ORB_CHAT_DATA_DIR")} {
+		if err := walk(root, func(path string, entry fs.DirEntry) (sqlite.MigrationSource, bool) {
 			namespace, key := state.address(path)
 			source := sqlite.MigrationSource{Path: path, Namespace: namespace, Key: key, Kind: "json"}
 			switch entry.Name() {
@@ -256,16 +243,13 @@ func (state *nativeState) migrationSources(sessionDirs []string) ([]sqlite.Migra
 				source.Namespace = state.chatNamespace(filepath.Dir(path))
 			default:
 				if !strings.HasSuffix(path, ".jsonl") {
-					return nil
+					return source, false
 				}
 				source.Kind = "session"
 				source.Namespace = state.chatNamespace(filepath.Dir(path))
 			}
-			seen[path] = true
-			sources = append(sources, source)
-			return nil
-		})
-		if err != nil {
+			return source, true
+		}); err != nil {
 			return nil, err
 		}
 	}

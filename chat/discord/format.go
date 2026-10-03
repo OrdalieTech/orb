@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"unicode/utf8"
-
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
@@ -22,11 +20,4 @@ func chunkText(text string, limit int) []string {
 		limit = messageLimit
 	}
 	return runechunk.Split(text, limit)
-}
-
-func truncateRunes(s string, limit int) string {
-	if len(s) <= limit || utf8.RuneCountInString(s) <= limit {
-		return s
-	}
-	return string([]rune(s)[:limit])
 }

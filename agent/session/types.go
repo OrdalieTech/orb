@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 const CurrentVersion = 3
@@ -385,20 +386,5 @@ func sanitizeSessionName(name string) string {
 		inBreak = false
 		output.WriteRune(character)
 	}
-	return trimJSSpace(output.String())
-}
-
-func trimJSSpace(value string) string {
-	return strings.TrimFunc(value, func(character rune) bool {
-		switch {
-		case character >= '\t' && character <= '\r':
-			return true
-		case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-			return true
-		case character >= '\u2000' && character <= '\u200a':
-			return true
-		default:
-			return false
-		}
-	})
+	return strings.TrimFunc(output.String(), jstrim.IsSpace)
 }

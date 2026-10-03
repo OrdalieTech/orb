@@ -237,7 +237,7 @@ func (ui *TUI) visibleOverlayFocusRestoreLocked() overlayFocusRestoreState {
 	if state.status == overlayFocusRestoreInactive {
 		return state
 	}
-	if !ui.hasOverlayEntryLocked(state.overlay) || !ui.isOverlayVisibleLocked(state.overlay) {
+	if !slices.Contains(ui.overlayStack, state.overlay) || !ui.isOverlayVisibleLocked(state.overlay) {
 		return overlayFocusRestoreState{status: overlayFocusRestoreInactive}
 	}
 	return state
@@ -331,24 +331,26 @@ func (ui *TUI) showOverlay(component Component, options *OverlayOptions, resolve
 	return &overlayHandle{ui: ui, entry: entry}
 }
 
-func (handle *overlayHandle) Hide() {
-	ui, entry := handle.ui, handle.entry
+func (handle *overlayHandle) Hide() { handle.ui.removeOverlay(handle.entry) }
+
+// removeOverlay drops entry, or the newest overlay when entry is nil, and
+// hands focus on when the overlay held it.
+func (ui *TUI) removeOverlay(entry *overlayStackEntry) {
 	ui.focusMu.Lock()
-	index := ui.overlayIndexLocked(entry)
+	index := len(ui.overlayStack) - 1
+	if entry != nil {
+		index = slices.Index(ui.overlayStack, entry)
+	}
 	if index < 0 {
 		ui.focusMu.Unlock()
 		return
 	}
+	entry = ui.overlayStack[index]
 	ui.clearOverlayFocusRestoreForLocked(entry)
 	ui.retargetOverlayPreFocusLocked(entry)
 	ui.overlayStack = slices.Delete(ui.overlayStack, index, index+1)
 	if ui.focused == entry.component {
-		top := ui.topmostVisibleOverlayLocked()
-		if top != nil {
-			ui.setFocusLocked(top.component, overlayFocusRestoreClear)
-		} else {
-			ui.setFocusLocked(entry.preFocus, overlayFocusRestoreClear)
-		}
+		ui.focusTopOverlayOrLocked(entry.preFocus)
 	}
 	empty := len(ui.overlayStack) == 0
 	ui.focusMu.Unlock()
@@ -356,6 +358,14 @@ func (handle *overlayHandle) Hide() {
 		ui.terminal.HideCursor()
 	}
 	ui.RequestRender()
+}
+
+// focusTopOverlayOrLocked focuses the topmost visible capturing overlay, else fallback.
+func (ui *TUI) focusTopOverlayOrLocked(fallback Component) {
+	if top := ui.topmostVisibleOverlayLocked(); top != nil {
+		fallback = top.component
+	}
+	ui.setFocusLocked(fallback, overlayFocusRestoreClear)
 }
 
 func (handle *overlayHandle) SetHidden(hidden bool) {
@@ -369,12 +379,7 @@ func (handle *overlayHandle) SetHidden(hidden bool) {
 	if hidden {
 		ui.clearOverlayFocusRestoreForLocked(entry)
 		if ui.focused == entry.component {
-			top := ui.topmostVisibleOverlayLocked()
-			if top != nil {
-				ui.setFocusLocked(top.component, overlayFocusRestoreClear)
-			} else {
-				ui.setFocusLocked(entry.preFocus, overlayFocusRestoreClear)
-			}
+			ui.focusTopOverlayOrLocked(entry.preFocus)
 		}
 	} else if options := ui.overlayOptionsLocked(entry); (options == nil || !options.NonCapturing) && ui.isOverlayVisibleWithOptionsLocked(entry, options) {
 		ui.focusOrderCounter++
@@ -394,7 +399,7 @@ func (handle *overlayHandle) IsHidden() bool {
 func (handle *overlayHandle) Focus() {
 	ui, entry := handle.ui, handle.entry
 	ui.focusMu.Lock()
-	if !ui.hasOverlayEntryLocked(entry) || !ui.isOverlayVisibleLocked(entry) {
+	if !slices.Contains(ui.overlayStack, entry) || !ui.isOverlayVisibleLocked(entry) {
 		ui.focusMu.Unlock()
 		return
 	}
@@ -436,17 +441,14 @@ func (handle *overlayHandle) Unfocus(options ...OverlayUnfocusOptions) {
 		return
 	}
 	ui.clearOverlayFocusRestoreForLocked(entry)
-	if isFocused || hasOptions {
-		top := ui.topmostVisibleOverlayLocked()
+	if hasOptions {
+		ui.setFocusLocked(target, overlayFocusRestoreClear)
+	} else if isFocused {
 		fallback := entry.preFocus
-		if top != nil && top != entry {
+		if top := ui.topmostVisibleOverlayLocked(); top != nil && top != entry {
 			fallback = top.component
 		}
-		if hasOptions {
-			ui.setFocusLocked(target, overlayFocusRestoreClear)
-		} else {
-			ui.setFocusLocked(fallback, overlayFocusRestoreClear)
-		}
+		ui.setFocusLocked(fallback, overlayFocusRestoreClear)
 	}
 	ui.focusMu.Unlock()
 	ui.RequestRender()
@@ -459,31 +461,7 @@ func (handle *overlayHandle) IsFocused() bool {
 }
 
 // HideOverlay removes the most recently created overlay, independent of focus order.
-func (ui *TUI) HideOverlay() {
-	ui.focusMu.Lock()
-	if len(ui.overlayStack) == 0 {
-		ui.focusMu.Unlock()
-		return
-	}
-	overlay := ui.overlayStack[len(ui.overlayStack)-1]
-	ui.clearOverlayFocusRestoreForLocked(overlay)
-	ui.retargetOverlayPreFocusLocked(overlay)
-	ui.overlayStack = slices.Delete(ui.overlayStack, len(ui.overlayStack)-1, len(ui.overlayStack))
-	if ui.focused == overlay.component {
-		top := ui.topmostVisibleOverlayLocked()
-		if top != nil {
-			ui.setFocusLocked(top.component, overlayFocusRestoreClear)
-		} else {
-			ui.setFocusLocked(overlay.preFocus, overlayFocusRestoreClear)
-		}
-	}
-	empty := len(ui.overlayStack) == 0
-	ui.focusMu.Unlock()
-	if empty {
-		ui.terminal.HideCursor()
-	}
-	ui.RequestRender()
-}
+func (ui *TUI) HideOverlay() { ui.removeOverlay(nil) }
 
 // HasOverlay reports whether at least one overlay is currently visible.
 func (ui *TUI) HasOverlay() bool {
@@ -495,19 +473,6 @@ func (ui *TUI) HasOverlay() bool {
 		}
 	}
 	return false
-}
-
-func (ui *TUI) overlayIndexLocked(entry *overlayStackEntry) int {
-	for index, overlay := range ui.overlayStack {
-		if overlay == entry {
-			return index
-		}
-	}
-	return -1
-}
-
-func (ui *TUI) hasOverlayEntryLocked(entry *overlayStackEntry) bool {
-	return ui.overlayIndexLocked(entry) >= 0
 }
 
 func (ui *TUI) overlayForComponentLocked(component Component) *overlayStackEntry {
@@ -639,11 +604,9 @@ func resolveOverlayLayout(options *OverlayOptions, overlayHeight, termWidth, ter
 	width = max(1, min(width, availableWidth))
 
 	maxHeight, hasMaxHeight := parseSizeValue(opt.MaxHeight, termHeight)
-	if hasMaxHeight {
-		maxHeight = max(1, min(maxHeight, availableHeight))
-	}
 	effectiveHeight := overlayHeight
 	if hasMaxHeight {
+		maxHeight = max(1, min(maxHeight, availableHeight))
 		effectiveHeight = min(effectiveHeight, maxHeight)
 	}
 
@@ -880,7 +843,7 @@ func (ui *TUI) VisibleOverlayComponents() []Component {
 	defer ui.focusMu.RUnlock()
 	components := make([]Component, 0, len(ui.overlayStack))
 	for _, entry := range ui.overlayStack {
-		if ui.isOverlayVisibleWithOptionsLocked(entry, ui.overlayOptionsLocked(entry)) {
+		if ui.isOverlayVisibleLocked(entry) {
 			components = append(components, entry.component)
 		}
 	}

@@ -3,6 +3,7 @@ package assembly
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -348,11 +349,7 @@ func externalCLIRows(settings *config.SettingsManager, th extensions.Theme) []tu
 	if err != nil {
 		return []tui.GridRow{{Header: true, Cells: []string{th.FG("error", "  "+err.Error())}}}
 	}
-	names := make([]string, 0, len(entries))
-	for name := range entries {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(entries))
 	rows := make([]tui.GridRow, 0, len(names)+len(subagents.KnownCLIs()))
 	for _, name := range names {
 		entry := entries[name]

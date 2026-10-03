@@ -70,7 +70,7 @@ type server struct {
 	unsub    func()
 	disposed bool
 	// shutdownRequested is set by extension ctx.shutdown() and honored after
-	// the current command or agent_settled (upstream rpc-mode.ts:85,344-346).
+	// the current command or agent_settled.
 	shutdownRequested bool
 	promptMu          sync.Mutex
 	prompting         bool
@@ -79,7 +79,7 @@ type server struct {
 }
 
 // requestExtensionShutdown is the RPC shutdownHandler for extension
-// ctx.shutdown(): it only records the request (rpc-mode.ts:344-346); the
+// ctx.shutdown(): it only records the request; the
 // shutdown itself runs after the in-flight command settles.
 func (mode *server) requestExtensionShutdown() {
 	mode.mu.Lock()
@@ -87,7 +87,7 @@ func (mode *server) requestExtensionShutdown() {
 	mode.mu.Unlock()
 }
 
-// checkShutdownRequested mirrors rpc-mode.ts:727-730: once a shutdown was
+// checkShutdownRequested: once a shutdown was
 // requested, cancel the serve loop, which disposes, flushes stdout, and
 // returns exit code 0 like upstream's shutdown().
 func (mode *server) checkShutdownRequested() {
@@ -124,7 +124,7 @@ func Serve(ctx context.Context, host SessionHost, options Options) int {
 	if rebindHost, ok := host.(rebindHost); ok {
 		rebindHost.SetRebindSession(mode.bindReplacement)
 	}
-	if err := mode.bindSession(); err != nil {
+	if err := mode.bindReplacement(host.Session()); err != nil {
 		mode.dispose()
 		_ = mode.output.Close()
 		_, _ = fmt.Fprintln(options.Diagnostics, err)
@@ -172,27 +172,12 @@ func Serve(ctx context.Context, host SessionHost, options Options) int {
 	}
 }
 
-func (mode *server) bindSession() error {
-	session := mode.host.Session()
-	if session == nil {
-		return errors.New("rpc mode: session replacement returned nil")
-	}
-	return mode.bindReplacement(session)
-}
-
 func (mode *server) bindReplacement(session *agent.SessionRuntime) error {
 	if session == nil {
 		return errors.New("rpc mode: session replacement returned nil")
 	}
-	// Upstream rebindSession passes the RPC uiContext into bindExtensions on
-	// every rebind (rpc-mode.ts:311-320) so extensions get a live UI seam.
 	session.BindExtensionUI(newExtensionUIAdapter(mode.ui), extensions.ModeRPC)
-	// Upstream binds the RPC shutdownHandler in the same rebind
-	// (rpc-mode.ts:344-346). The runtime setter is asserted optionally so the
-	// RPC wiring stands alone until SessionRuntime exposes the seam.
-	if binder, ok := any(session).(interface{ SetExtensionShutdownHandler(func()) }); ok {
-		binder.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
-	}
+	session.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	if err := session.BindExtensions(mode.ctx); err != nil {
 		return err
 	}
@@ -206,8 +191,7 @@ func (mode *server) bindReplacement(session *agent.SessionRuntime) error {
 	}
 	mode.unsub = session.Subscribe(func(event any) {
 		mode.output.WriteEvent(event)
-		// Upstream re-checks extension shutdown requests on agent_settled
-		// (rpc-mode.ts:353-358).
+		// Extension shutdown requests are re-checked on agent_settled.
 		if _, settled := event.(agent.AgentSettledEvent); settled {
 			mode.checkShutdownRequested()
 		}
@@ -259,10 +243,10 @@ func (mode *server) handleLine(line []byte, commands *sync.WaitGroup) {
 	if err != nil || !hasType || string(typeRaw) == "null" {
 		// Upstream dispatches untyped: a missing or non-string type member
 		// reaches handleCommand's default and answers Unknown command with
-		// the raw id/type values echoed (rpc-mode.ts:695-698,735-770).
+		// the raw id/type values echoed.
 		_ = mode.writeObject(rpcUnknownCommandResponse(raw))
 		// Upstream checks after every handled command, including the unknown
-		// default (rpc-mode.ts:766-771).
+		// default.
 		mode.checkShutdownRequested()
 		return
 	}
@@ -303,7 +287,7 @@ func (mode *server) handleLine(line []byte, commands *sync.WaitGroup) {
 		if response != nil {
 			_ = mode.writeObject(*response)
 		}
-		// Upstream checks after every handled command (rpc-mode.ts:764-771).
+		// Upstream checks after every handled command.
 		mode.checkShutdownRequested()
 	}
 	if preflight != nil || rpcCommandIsAsync(command.Type) {
@@ -387,7 +371,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 		}()
 		// Upstream dispatches extension commands before any model/API-key
 		// validation and emits the authoritative response from preflightResult
-		// (agent-session.ts:1102-1117, rpc-mode.ts:393-414).
+		// so a handled command never needs a model.
 		responded := false
 		err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
 			Images: command.Images,
@@ -437,7 +421,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 			return failure(err)
 		}
 		if !cancelled {
-			if err := mode.bindSession(); err != nil {
+			if err := mode.bindReplacement(mode.host.Session()); err != nil {
 				return failure(err)
 			}
 		}
@@ -562,7 +546,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 			return failure(err)
 		}
 		if !cancelled {
-			if err := mode.bindSession(); err != nil {
+			if err := mode.bindReplacement(mode.host.Session()); err != nil {
 				return failure(err)
 			}
 		}
@@ -575,7 +559,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 			return failure(err)
 		}
 		if !cancelled {
-			if err := mode.bindSession(); err != nil {
+			if err := mode.bindReplacement(mode.host.Session()); err != nil {
 				return failure(err)
 			}
 		}
@@ -593,7 +577,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 			return failure(err)
 		}
 		if !cancelled {
-			if err := mode.bindSession(); err != nil {
+			if err := mode.bindReplacement(mode.host.Session()); err != nil {
 				return failure(err)
 			}
 		}
@@ -696,8 +680,7 @@ func rpcUnknownCommandResponse(raw rawRPCObject) rpcRawResponse {
 
 // canonicalRawJSON re-serializes an echoed member the way JSON.stringify
 // renders JSON.parse's value: JS number formatting (5.0 -> 5, -0 -> 0),
-// insertion-ordered object keys, and no interior whitespace
-// (rpc-mode.ts:695-698 echoes the parsed id/type values).
+// insertion-ordered object keys, and no interior whitespace.
 func canonicalRawJSON(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return nil

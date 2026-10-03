@@ -9,6 +9,9 @@ package teams
 import (
 	"regexp"
 	"strings"
+	"unicode/utf16"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // Bot Framework text is capped conservatively in UTF-16 code units.
@@ -35,7 +38,7 @@ func formatText(markdown string) string {
 	}
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") && isFenceMarker(trimmed, inFence) {
+		if runechunk.IsFence(trimmed, inFence) {
 			closeTable()
 			inFence = !inFence
 			out = append(out, line)
@@ -70,14 +73,6 @@ func formatLine(line string) string {
 		return "———"
 	}
 	return reImage.ReplaceAllString(line, "[$1](")
-}
-
-func isFenceMarker(trimmed string, inFence bool) bool {
-	rest := trimmed[len("```"):]
-	if rest == "" {
-		return true
-	}
-	return !inFence && !strings.Contains(rest, "`") && len(strings.Fields(rest)) == 1
 }
 
 func chunkText(text string, limit int) []string {
@@ -138,7 +133,7 @@ func chunkText(text string, limit int) []string {
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		opens, closes := false, false
-		if strings.HasPrefix(trimmed, "```") && isFenceMarker(trimmed, inFence) {
+		if runechunk.IsFence(trimmed, inFence) {
 			opens, closes = !inFence, inFence
 		}
 		// The fence state flips only after the marker line is placed, so a
@@ -208,10 +203,7 @@ func cutIndex(line string, limit int) int {
 	units := 0
 	lastSpace, lastAny := 0, 0
 	for i, r := range line {
-		width := 1
-		if r > 0xFFFF {
-			width = 2
-		}
+		width := utf16.RuneLen(r)
 		if units+width > limit {
 			break
 		}
@@ -240,11 +232,7 @@ func cutIndex(line string, limit int) int {
 func utf16Len(s string) int {
 	n := 0
 	for _, r := range s {
-		if r > 0xFFFF {
-			n += 2
-		} else {
-			n++
-		}
+		n += utf16.RuneLen(r)
 	}
 	return n
 }
@@ -252,10 +240,7 @@ func utf16Len(s string) int {
 func utf16Truncate(s string, limit int) string {
 	units := 0
 	for i, r := range s {
-		width := 1
-		if r > 0xFFFF {
-			width = 2
-		}
+		width := utf16.RuneLen(r)
 		if units+width > limit {
 			return s[:i]
 		}

@@ -297,7 +297,7 @@ func applyProviderConfig(providerID string, base []ai.Model, provider ModelProvi
 	}
 	if len(provider.Models) == 0 && provider.BaseURL == nil && provider.Headers == nil && len(provider.Compat) == 0 &&
 		len(provider.ModelOverrides) == 0 && provider.APIKey == nil && provider.AuthHeader == nil {
-		//nolint:staticcheck // Exact upstream error text is part of WP-250 conformance.
+		//nolint:staticcheck // Exact upstream error text is observable.
 		return nil, fmt.Errorf(`Provider %s: must specify "baseUrl", "headers", "compat", "modelOverrides", or "models".`, providerID)
 	}
 	models := make([]ai.Model, len(base))
@@ -346,7 +346,7 @@ func modelFromConfig(providerID string, definition ModelDefinition, provider Mod
 		api = *definition.API
 	}
 	if api == ai.APIUnknown {
-		//nolint:staticcheck // Exact upstream error text is part of WP-250 conformance.
+		//nolint:staticcheck // Exact upstream error text is observable.
 		return ai.Model{}, fmt.Errorf(`Provider %s, model %s: no "api" specified. Set at provider or model level.`, providerID, definition.ID)
 	}
 	baseURL := ""
@@ -360,15 +360,15 @@ func modelFromConfig(providerID string, definition ModelDefinition, provider Mod
 		baseURL = *definition.BaseURL
 	}
 	if baseURL == "" {
-		//nolint:staticcheck // Exact upstream error text is part of WP-250 conformance.
+		//nolint:staticcheck // Exact upstream error text is observable.
 		return ai.Model{}, fmt.Errorf(`Provider %s: "baseUrl" is required when defining custom models.`, providerID)
 	}
 	if definition.ContextWindow != nil && *definition.ContextWindow <= 0 {
-		//nolint:staticcheck // Exact upstream error text is part of WP-250 conformance.
+		//nolint:staticcheck // Exact upstream error text is observable.
 		return ai.Model{}, fmt.Errorf("Provider %s, model %s: invalid contextWindow", providerID, definition.ID)
 	}
 	if definition.MaxTokens != nil && *definition.MaxTokens <= 0 {
-		//nolint:staticcheck // Exact upstream error text is part of WP-250 conformance.
+		//nolint:staticcheck // Exact upstream error text is observable.
 		return ai.Model{}, fmt.Errorf("Provider %s, model %s: invalid maxTokens", providerID, definition.ID)
 	}
 	name, reasoning := definition.ID, false

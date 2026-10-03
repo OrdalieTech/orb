@@ -244,7 +244,7 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 		t.Fatalf("tool_result content = %#v", *toolResult.Content)
 	}
 
-	bashResult := runner.EmitUserBash(context.Background(), extensions.UserBashEvent{Command: "delegate", CWD: cwd})
+	bashResult, _ := runner.EmitUserBashChecked(context.Background(), extensions.UserBashEvent{Command: "delegate", CWD: cwd})
 	if bashResult == nil || bashResult.Operations == nil {
 		t.Fatalf("user_bash result = %#v", bashResult)
 	}

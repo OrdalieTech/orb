@@ -40,6 +40,13 @@ const (
 	localMaxAttempts = 10
 )
 
+// Spool is a durable pending-message store. The owner supplies its lifetime.
+type Spool interface {
+	Pending(context.Context) ([]Message, error)
+	Put(context.Context, Message) error
+	Ack(context.Context, string) error
+}
+
 // Local is a durable single-process spool plus a keyed FIFO dispatcher:
 // per-key FIFO order, at most one in-flight Handle per key, a global worker
 // pool, and replay-with-compaction on boot. /stop messages bypass the keyed
@@ -49,13 +56,6 @@ const (
 //
 // ponytail: single-process spool; swap Publish for a broker in clustered
 // deployments.
-// Spool is a durable pending-message store. The owner supplies its lifetime.
-type Spool interface {
-	Pending(context.Context) ([]Message, error)
-	Put(context.Context, Message) error
-	Ack(context.Context, string) error
-}
-
 type Local struct {
 	spool   Spool
 	handler Handler
@@ -376,6 +376,14 @@ func parseSpool(reader io.Reader, strict bool) ([]Message, error) {
 
 // compactSpool rewrites the spool to contain only the pending messages.
 func compactSpool(path string, pending []Message) error {
+	var data bytes.Buffer
+	for _, m := range pending {
+		encoded, err := json.Marshal(spoolLine{M: &m})
+		if err != nil {
+			return fmt.Errorf("chat: compact spool: %w", err)
+		}
+		data.Write(append(encoded, '\n'))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("chat: create spool dir: %w", err)
 	}
@@ -383,31 +391,18 @@ func compactSpool(path string, pending []Message) error {
 	if err != nil {
 		return fmt.Errorf("chat: compact spool: %w", err)
 	}
-	tempPath := temp.Name()
-	for _, m := range pending {
-		encoded, err := json.Marshal(spoolLine{M: &m})
-		if err != nil {
-			_ = temp.Close()
-			_ = os.Remove(tempPath)
-			return fmt.Errorf("chat: compact spool: %w", err)
-		}
-		if _, err := temp.Write(append(encoded, '\n')); err != nil {
-			_ = temp.Close()
-			_ = os.Remove(tempPath)
-			return fmt.Errorf("chat: compact spool: %w", err)
-		}
+	_, err = temp.Write(data.Bytes())
+	if err == nil {
+		err = temp.Sync()
 	}
-	if err := temp.Sync(); err != nil {
-		_ = temp.Close()
-		_ = os.Remove(tempPath)
-		return fmt.Errorf("chat: compact spool: %w", err)
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
 	}
-	if err := temp.Close(); err != nil {
-		_ = os.Remove(tempPath)
-		return fmt.Errorf("chat: compact spool: %w", err)
+	if err == nil {
+		err = os.Rename(temp.Name(), path)
 	}
-	if err := os.Rename(tempPath, path); err != nil {
-		_ = os.Remove(tempPath)
+	if err != nil {
+		_ = os.Remove(temp.Name())
 		return fmt.Errorf("chat: compact spool: %w", err)
 	}
 	return nil

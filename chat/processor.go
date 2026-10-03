@@ -639,33 +639,28 @@ func parseCommand(text string) string {
 var deliveryBackoff = []time.Duration{0, 50 * time.Millisecond, 200 * time.Millisecond}
 
 func (p *Processor) finalizeWithRetry(ctx context.Context, delivery Delivery, text string) (Receipt, error) {
-	var lastErr error
-	for _, delay := range deliveryBackoff {
-		if err := ctxsleep.Sleep(ctx, delay); err != nil {
-			return Receipt{}, err
-		}
-		receipt, err := delivery.Finalize(ctx, text)
-		if err == nil {
-			return receipt, nil
-		}
-		lastErr = err
-	}
-	return Receipt{}, fmt.Errorf("chat: finalize delivery: %w", lastErr)
+	return retryDelivery(ctx, "finalize", func() (Receipt, error) { return delivery.Finalize(ctx, text) })
 }
 
 func (p *Processor) notifyWithRetry(ctx context.Context, delivery Delivery, text string) error {
+	_, err := retryDelivery(ctx, "notify", func() (struct{}, error) { return struct{}{}, delivery.Notify(ctx, text) })
+	return err
+}
+
+func retryDelivery[T any](ctx context.Context, what string, send func() (T, error)) (T, error) {
+	var zero T
 	var lastErr error
 	for _, delay := range deliveryBackoff {
 		if err := ctxsleep.Sleep(ctx, delay); err != nil {
-			return err
+			return zero, err
 		}
-		err := delivery.Notify(ctx, text)
+		result, err := send()
 		if err == nil {
-			return nil
+			return result, nil
 		}
 		lastErr = err
 	}
-	return fmt.Errorf("chat: notify delivery: %w", lastErr)
+	return zero, fmt.Errorf("chat: %s delivery: %w", what, lastErr)
 }
 
 // keyedMutex is a refcounted per-key mutex: the map entry is removed at

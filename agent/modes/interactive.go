@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -59,14 +60,13 @@ type InteractiveModeOptions struct {
 	InitialImages  []*ai.ImageContent
 	Messages       []string
 	SessionHeader  *sessionstore.SessionHeader
-	// Verbose forces verbose startup, overriding the quietStartup setting
-	// (upstream interactive-mode.ts:319-320).
+	// Verbose forces verbose startup, overriding the quietStartup setting.
 	Verbose     bool
 	Diagnostics []StartupDiagnostic
 	Terminal    tui.Terminal
 	Host        InteractiveSessionHost
-	// StartupVersionCheck is the non-blocking startup seam used by WP-661. The
-	// interactive package owns no update transport or policy.
+	// StartupVersionCheck runs without blocking startup; the interactive
+	// package owns no update transport or policy.
 	StartupVersionCheck func(context.Context, extensions.UI)
 	StartupModelRefresh func(context.Context) error
 	Changelog           string
@@ -85,8 +85,7 @@ type InteractiveMode struct {
 	mdTheme     tui.MarkdownTheme
 	options     InteractiveModeOptions
 	// markdownTransformers is the transformer chain applied to interactive
-	// message markdown (upstream getMarkdownTransformers). Extension-registered
-	// transformers are deferred; only the built-in Mermaid transformer populates it.
+	// message markdown; only the built-in Mermaid transformer populates it.
 	markdownTransformers []extensions.MarkdownTransformer
 
 	// TUI containers
@@ -122,7 +121,7 @@ type InteractiveMode struct {
 	shutdownRequested bool
 	// extensionShutdownRequested tracks extension ctx.shutdown() requests
 	// separately from shutdownRequested, which doubles as the "already shut
-	// down" latch (upstream keeps them distinct: interactive-mode.ts:404).
+	// down" latch.
 	extensionShutdownRequested bool
 	inputCh                    chan inputEntry
 	pendingImages              []*ai.ImageContent
@@ -164,7 +163,7 @@ type InteractiveMode struct {
 	logoCancel             context.CancelFunc
 	logoDone               chan struct{}
 	// anthropicSubscriptionWarningShown gates the once-per-session Anthropic
-	// extra-usage warning (upstream anthropicSubscriptionWarningShown).
+	// extra-usage warning.
 	anthropicSubscriptionWarningShown bool
 	keyDisplayOS                      string
 	exportHTML                        func(string) (string, error)
@@ -433,14 +432,12 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 		fmt.Fprintln(os.Stderr, "Error starting TUI:", err)
 		return 1
 	}
-	defer func() {
-		mode.cleanup()
-	}()
+	defer mode.cleanup()
 	mode.mu.Lock()
 	mode.unsubscribe = mode.session.Subscribe(mode.handleEvent)
 	mode.mu.Unlock()
 	defer mode.detachSession()
-	mode.bindExtensionShutdownHandler(mode.session)
+	mode.session.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	mode.session.StartExtensions()
 	if err := mode.extendExtensionThemes(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error loading themes:", err)
@@ -471,7 +468,6 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 		versionCheck.Wait()
 	}()
 
-	// Render initial session entries
 	mode.renderInitialMessages()
 
 	// Show startup diagnostics as one compact band: one truncated line per
@@ -682,7 +678,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *agent.SessionRuntime
 	mode.mu.Lock()
 	mode.unsubscribe = replacement.Subscribe(mode.handleEvent)
 	mode.mu.Unlock()
-	mode.bindExtensionShutdownHandler(replacement)
+	replacement.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	mode.renderInitialMessages()
 	mode.ui.SetFocus(mode.activeEditorFocus())
 	mode.updateTerminalTitle()
@@ -779,10 +775,7 @@ func (mode *InteractiveMode) installResourceThemes() (bool, error) {
 		rendered.SourceInfo = resource.SourceInfo
 		loaded = append(loaded, rendered)
 	}
-	if err := mode.themeRegistry.ReplaceLoaded(loaded); err != nil {
-		return true, err
-	}
-	return true, nil
+	return true, mode.themeRegistry.ReplaceLoaded(loaded)
 }
 
 func (mode *InteractiveMode) refreshResourcesAfterSessionStart(replacement *agent.SessionRuntime) error {
@@ -975,13 +968,9 @@ func (mode *InteractiveMode) installEditorFactory(factory extensions.EditorFacto
 			GetActionHandlers() map[string]func()
 			SetActionHandlers(map[string]func())
 		}); ok {
-			merged := make(map[string]func(), len(actions.GetActionHandlers())+len(mode.editor.actionHandlers))
-			for action, handler := range actions.GetActionHandlers() {
-				merged[action] = handler
-			}
-			for action, handler := range mode.editor.actionHandlers {
-				merged[action] = handler
-			}
+			merged := map[string]func(){}
+			maps.Copy(merged, actions.GetActionHandlers())
+			maps.Copy(merged, mode.editor.actionHandlers)
 			actions.SetActionHandlers(merged)
 		}
 		if appearance, ok := replacement.(interface{ SetBorderColor(tui.StyleFunc) }); ok {
@@ -1256,12 +1245,7 @@ func skillAutocompletePrefix(lines []string, cursorLine, cursorCol int) (string,
 }
 
 func (provider *skillAutocompleteProvider) skillName(item tui.AutocompleteItem) (string, bool) {
-	for _, skill := range provider.skills {
-		if item == skill {
-			return strings.TrimPrefix(skill.Value, "@"), true
-		}
-	}
-	return "", false
+	return strings.TrimPrefix(item.Value, "@"), slices.Contains(provider.skills, item)
 }
 
 func (provider *skillAutocompleteProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item tui.AutocompleteItem, prefix string) tui.CompletionResult {
@@ -1310,18 +1294,12 @@ func (provider *skillAutocompleteProvider) TriggerCharacters() []string {
 }
 
 func (provider *skillAutocompleteProvider) known(name string) bool {
-	for _, skill := range provider.skills {
-		if skill.Value == "@"+name {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(provider.skills, func(skill tui.AutocompleteItem) bool { return skill.Value == "@"+name })
 }
 
 // setupExtensionShortcuts installs the extension shortcut dispatcher on the
-// default editor (upstream interactive-mode.ts setupExtensionShortcuts): the
-// resolved shortcuts are matched against raw key input ahead of built-in
-// keybindings and each hit runs its handler asynchronously.
+// default editor: the resolved shortcuts are matched against raw key input
+// ahead of built-in keybindings and each hit runs its handler asynchronously.
 func (mode *InteractiveMode) setupExtensionShortcuts() {
 	runner := mode.session.ExtensionRunner()
 	if runner == nil || mode.editor == nil {
@@ -1343,7 +1321,7 @@ func (mode *InteractiveMode) setupExtensionShortcuts() {
 				continue
 			}
 			shortcut := shortcuts[key]
-			// Run handler async, don't block input (upstream interactive-mode.ts:1800).
+			// Async so a slow handler never blocks input.
 			go func() {
 				if err := callShortcutHandler(shortcut.Handler, runner.CreateContext()); err != nil {
 					mode.showError(errors.New("Shortcut handler error: " + err.Error()))
@@ -1442,7 +1420,7 @@ func (mode *InteractiveMode) loginArgumentCompletions(prefix string) []tui.Autoc
 	filtered := tui.FuzzyFilter(providers, prefix, func(provider autocompleteLoginProvider) string {
 		authTypes := make([]string, len(provider.authTypes))
 		for index, authType := range provider.authTypes {
-			authTypes[index] = string(authType) + " " + formatAutocompleteAuthType(authType)
+			authTypes[index] = string(authType) + " " + formatAuthSelectorProviderType(authType)
 		}
 		return provider.id + " " + provider.name + " " + strings.Join(authTypes, " ")
 	})
@@ -1453,7 +1431,7 @@ func (mode *InteractiveMode) loginArgumentCompletions(prefix string) []tui.Autoc
 	for index, provider := range filtered {
 		authTypes := make([]string, len(provider.authTypes))
 		for authIndex, authType := range provider.authTypes {
-			authTypes[authIndex] = formatAutocompleteAuthType(authType)
+			authTypes[authIndex] = formatAuthSelectorProviderType(authType)
 		}
 		description := strings.Join(authTypes, "/")
 		if provider.name != provider.id {
@@ -1472,13 +1450,6 @@ func compareAutocompleteAuthTypes(left, right aiauth.AuthType) int {
 		return 1
 	}
 	return order(left) - order(right)
-}
-
-func formatAutocompleteAuthType(authType aiauth.AuthType) string {
-	if authType == aiauth.AuthTypeOAuth {
-		return "subscription"
-	}
-	return "API key"
 }
 
 func (mode *InteractiveMode) setExtensionEditorAutocompleteProvider(provider tui.AutocompleteProvider) {
@@ -1674,33 +1645,21 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	mode.editor.OnAction("app.session.rename", func() { mode.runPaletteCommand("name") })
 	mode.editor.OnAction("app.editor.external", mode.handleOpenExternalEditor)
 
-	mode.editor.OnAction("app.message.copy", func() {
-		mode.handleCopyCommand()
-	})
-
-	mode.editor.OnAction("app.model.cycleForward", func() {
-		result, err := mode.session.CycleModel(context.Background())
-		if err != nil {
-			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
-		} else if result != nil {
-			mode.showStatusMessage(fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel))
-			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
-		}
-		mode.ui.RequestRender()
-	})
-
-	mode.editor.OnAction("app.model.cycleBackward", func() {
-		result, err := mode.session.CycleModelBackward(context.Background())
-		if err != nil {
-			mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
-		} else if result != nil {
-			mode.showStatusMessage(fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel))
-			mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
-		}
-		mode.ui.RequestRender()
-	})
-
+	mode.editor.OnAction("app.message.copy", mode.handleCopyCommand)
+	mode.editor.OnAction("app.model.cycleForward", func() { mode.cycleModelAction(mode.session.CycleModel) })
+	mode.editor.OnAction("app.model.cycleBackward", func() { mode.cycleModelAction(mode.session.CycleModelBackward) })
 	mode.editor.OnAction("app.suspend", mode.suspend)
+}
+
+func (mode *InteractiveMode) cycleModelAction(cycle func(context.Context) (*agent.ModelCycleResult, error)) {
+	result, err := cycle(context.Background())
+	if err != nil {
+		mode.chat.AddChild(newStyledText("error", "Error: "+err.Error()))
+	} else if result != nil {
+		mode.showStatusMessage(fmt.Sprintf("Model: %s/%s (thinking: %s)", result.Model.Provider, result.Model.ID, result.ThinkingLevel))
+		mode.maybeWarnAboutAnthropicSubscriptionAuth(context.Background(), &result.Model)
+	}
+	mode.ui.RequestRender()
 }
 
 func (mode *InteractiveMode) setupEditorSubmitHandler() {
@@ -1907,15 +1866,6 @@ func interactiveCommandNames() []string {
 	return append(names, hiddenInteractiveCommandNames...)
 }
 
-func isInteractiveCommandName(name string) bool {
-	for _, candidate := range interactiveCommandNames() {
-		if candidate == name {
-			return true
-		}
-	}
-	return false
-}
-
 func slashCommandClearsEditorFirst(name string) bool {
 	switch name {
 	case "model", "thinking", "scoped-models", "clone", "login", "new", "compact", "reload", "quit":
@@ -1932,7 +1882,7 @@ type slashCommandAction struct {
 }
 
 func (mode *InteractiveMode) resolveSlashCommand(name, args string) (slashCommandAction, bool) {
-	if !isInteractiveCommandName(name) {
+	if !slices.Contains(interactiveCommandNames(), name) {
 		return slashCommandAction{}, false
 	}
 	noArguments := []string{}
@@ -2000,18 +1950,7 @@ func commandText(name, args string) string {
 }
 
 func (mode *InteractiveMode) handleHotkeysCommand() {
-	goos := mode.keyDisplayOS
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	display := func(binding string) string {
-		keys := mode.keybindings.Keys(binding)
-		formatted := make([]string, len(keys))
-		for index, key := range keys {
-			formatted[index] = formatKeyDisplayTextForOS(string(key), goos)
-		}
-		return strings.Join(formatted, "/")
-	}
+	display := mode.appKeyDisplay
 	hotkeys := fmt.Sprintf(`**Everyday**
 | Key | Action |
 |-----|--------|
@@ -2076,13 +2015,7 @@ func (mode *InteractiveMode) handleHotkeysCommand() {
 		markdownKey(display("app.tools.expand")), markdownKey(display("app.thinking.toggle")), markdownKey(display("app.editor.external")), markdownKey(display("app.message.copy")),
 		markdownKey(display("app.message.followUp")), markdownKey(display("app.message.dequeue")), markdownKey(display("app.clipboard.pasteImage")), markdownKey("/"), markdownKey("!"), markdownKey("!!"),
 	)
-	mode.chat.AddChild(tui.NewSpacer(1))
-	mode.chat.AddChild(NewDynamicBorder())
-	mode.chat.AddChild(tui.NewText(theme.Bold(theme.FG("accent", "Keyboard Shortcuts")), 1, 0, nil))
-	mode.chat.AddChild(tui.NewSpacer(1))
-	mode.chat.AddChild(tui.NewMarkdown(hotkeys, 1, 1, mode.mdTheme, nil, nil))
-	mode.chat.AddChild(NewDynamicBorder())
-	mode.ui.RequestRender()
+	mode.addMarkdownPanel("Keyboard Shortcuts", hotkeys)
 }
 
 func (mode *InteractiveMode) handleChangelogCommand() {
@@ -2090,11 +2023,15 @@ func (mode *InteractiveMode) handleChangelogCommand() {
 	if changelog == "" {
 		changelog = bundledChangelog()
 	}
+	mode.addMarkdownPanel("What's New", changelog)
+}
+
+func (mode *InteractiveMode) addMarkdownPanel(title, markdown string) {
 	mode.chat.AddChild(tui.NewSpacer(1))
 	mode.chat.AddChild(NewDynamicBorder())
-	mode.chat.AddChild(tui.NewText(theme.Bold(theme.FG("accent", "What's New")), 1, 0, nil))
+	mode.chat.AddChild(tui.NewText(theme.Bold(theme.FG("accent", title)), 1, 0, nil))
 	mode.chat.AddChild(tui.NewSpacer(1))
-	mode.chat.AddChild(tui.NewMarkdown(changelog, 1, 1, mode.mdTheme, nil, nil))
+	mode.chat.AddChild(tui.NewMarkdown(markdown, 1, 1, mode.mdTheme, nil, nil))
 	mode.chat.AddChild(NewDynamicBorder())
 	mode.ui.RequestRender()
 }
@@ -2282,8 +2219,8 @@ func (mode *InteractiveMode) handleModelCommand(args string) {
 
 func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 	mode.cancelModelSelector()
-	// f8746813: opening the model picker re-reads models.json so external
-	// edits show up without a restart.
+	// Opening the model picker re-reads models.json so external edits show
+	// up without a restart.
 	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
 	scoped := mode.session.ScopedModels()
@@ -3389,8 +3326,7 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 				return
 			}
 			if provider != "" {
-				// Go-only CLI-style ref; the upstream /logout command is
-				// always selector-driven.
+				// A CLI-style ref skips the selector.
 				for _, candidate := range candidates {
 					if strings.EqualFold(candidate.ID, provider) || strings.EqualFold(candidate.Name, provider) {
 						mode.runLogout(candidate)
@@ -3413,8 +3349,7 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 			return
 		}
 		if provider != "" {
-			// Upstream handleLoginCommand (interactive-mode.ts:4849-4873):
-			// an exact id/name match starts the login, one provider with
+			// An exact id/name match starts the login, one provider with
 			// several methods asks for the method, and anything else opens
 			// the provider selector pre-filtered with the ref.
 			matched := matchingAuthProviders(candidates, provider)
@@ -3433,8 +3368,7 @@ func (mode *InteractiveMode) authenticateProvider(argument string, logout bool) 
 	}()
 }
 
-// showLoginAuthTypeSelector ports upstream showLoginAuthTypeSelector
-// (interactive-mode.ts:4885-4940): subscription vs API key first, then the
+// showLoginAuthTypeSelector asks subscription vs API key first, then shows the
 // provider selector; with providerOptions it selects among one provider's
 // methods instead.
 func (mode *InteractiveMode) showLoginAuthTypeSelector(ctx context.Context, candidates, providerOptions []InteractiveAuthProvider) {
@@ -3492,9 +3426,8 @@ func (mode *InteractiveMode) showLoginAuthTypeSelector(ctx context.Context, cand
 	mode.showLoginProviderSelector(ctx, candidates, &authType, "")
 }
 
-// showLoginProviderSelector ports upstream showLoginProviderSelector
-// (interactive-mode.ts:4942-4984); cancelling a type-scoped list returns to
-// the auth-type selector.
+// showLoginProviderSelector lists login providers; cancelling a type-scoped
+// list returns to the auth-type selector.
 func (mode *InteractiveMode) showLoginProviderSelector(ctx context.Context, candidates []InteractiveAuthProvider, authType *aiauth.AuthType, initialSearchInput string) {
 	providerOptions := candidates
 	if authType != nil {
@@ -3544,16 +3477,7 @@ func matchingAuthProviders(options []InteractiveAuthProvider, provider string) [
 }
 
 func allAuthOptionsForSameProvider(options []InteractiveAuthProvider) bool {
-	if len(options) == 0 {
-		return false
-	}
-	id := options[0].ID
-	for _, option := range options[1:] {
-		if option.ID != id {
-			return false
-		}
-	}
-	return true
+	return len(options) > 0 && !slices.ContainsFunc(options, func(option InteractiveAuthProvider) bool { return option.ID != options[0].ID })
 }
 
 func authMethodLabel(option InteractiveAuthProvider) string {
@@ -3581,9 +3505,8 @@ func isAuthEnvironmentSource(source string) bool {
 	return true
 }
 
-// startProviderLogin ports upstream startProviderLogin
-// (interactive-mode.ts:4875-4883): OAuth and login-capable API-key methods run
-// the login flow, everything else gets the ambient-configuration dialog.
+// startProviderLogin runs the login flow for OAuth and login-capable API-key
+// methods; everything else gets the ambient-configuration dialog.
 func (mode *InteractiveMode) startProviderLogin(ctx context.Context, provider InteractiveAuthProvider) {
 	if provider.AuthType != aiauth.AuthTypeOAuth && !provider.LoginAvailable {
 		mode.showAmbientAuthDialog(ctx, provider)
@@ -3629,7 +3552,6 @@ func (mode *InteractiveMode) runLogin(provider InteractiveAuthProvider) {
 	if err := login(); err != nil {
 		restoreDialog()
 		if errors.Is(err, context.Canceled) {
-			// Upstream stays silent for "Login cancelled".
 			return
 		}
 		if provider.AuthType == aiauth.AuthTypeOAuth {
@@ -3667,35 +3589,25 @@ func (mode *InteractiveMode) runLogout(provider InteractiveAuthProvider) {
 	}
 }
 
-// resolveDefaultModelSelection ports the default-model block of upstream
-// completeProviderAuthentication (interactive-mode.ts:5040-5069): pick the
-// provider's pinned default from the now-available models or explain exactly
-// why no model was selected.
+// resolveDefaultModelSelection picks the provider's pinned default from the
+// now-available models or explains exactly why no model was selected.
 func resolveDefaultModelSelection(actionLabel, providerID string, available []ai.Model) (*ai.Model, string) {
-	providerModels := make([]ai.Model, 0, len(available))
-	for _, model := range available {
-		if string(model.Provider) == providerID {
-			providerModels = append(providerModels, model)
-		}
-	}
 	defaultModelID, hasDefault := agent.DefaultModelIDForProvider(providerID)
 	if !hasDefault {
 		return nil, actionLabel + `, but no default model is configured for provider "` + providerID + `". Use /model to select a model.`
 	}
-	if len(providerModels) == 0 {
+	if !slices.ContainsFunc(available, func(model ai.Model) bool { return string(model.Provider) == providerID }) {
 		return nil, actionLabel + ", but no models are available for that provider. Use /model to select a model."
 	}
-	for _, model := range providerModels {
-		if model.ID == defaultModelID {
-			selected := model
-			return &selected, ""
-		}
+	if index := slices.IndexFunc(available, func(model ai.Model) bool {
+		return string(model.Provider) == providerID && model.ID == defaultModelID
+	}); index >= 0 {
+		selected := available[index]
+		return &selected, ""
 	}
 	return nil, actionLabel + `, but its default model "` + defaultModelID + `" is not available. Use /model to select a model.`
 }
 
-// completeProviderAuthentication ports upstream completeProviderAuthentication
-// (interactive-mode.ts:5033-5084).
 func (mode *InteractiveMode) completeProviderAuthentication(ctx context.Context, provider InteractiveAuthProvider, previousModel *ai.Model) {
 	actionLabel := "Saved API key for " + provider.Name
 	if provider.AuthType == aiauth.AuthTypeOAuth {
@@ -3733,19 +3645,15 @@ func (mode *InteractiveMode) completeProviderAuthentication(ctx context.Context,
 	mode.maybeWarnAboutAnthropicSubscriptionAuth(ctx, currentModel)
 }
 
-// anthropicSubscriptionAuthWarning is ANTHROPIC_SUBSCRIPTION_AUTH_WARNING
-// (interactive-mode.ts:207).
 const anthropicSubscriptionAuthWarning = "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage. Disable this warning in /settings."
 
-// isAnthropicSubscriptionAuthKey mirrors interactive-mode.ts:210-212.
 func isAnthropicSubscriptionAuthKey(apiKey string) bool {
 	return strings.HasPrefix(apiKey, "sk-ant-oat")
 }
 
-// maybeWarnAboutAnthropicSubscriptionAuth ports upstream
-// maybeWarnAboutAnthropicSubscriptionAuth (interactive-mode.ts:4336-4364):
-// warn once per TUI session when the anthropic model runs on subscription
-// auth, gated by settings warnings.anthropicExtraUsage.
+// maybeWarnAboutAnthropicSubscriptionAuth warns once per TUI session when the
+// anthropic model runs on subscription auth, gated by settings
+// warnings.anthropicExtraUsage.
 func (mode *InteractiveMode) maybeWarnAboutAnthropicSubscriptionAuth(ctx context.Context, model *ai.Model) {
 	if mode.session == nil || !mode.session.WarnAnthropicExtraUsage() {
 		return
@@ -3758,28 +3666,19 @@ func (mode *InteractiveMode) maybeWarnAboutAnthropicSubscriptionAuth(ctx context
 	}
 	key, err := mode.session.ProviderAPIKey(ctx, model.Provider)
 	if err == nil && key != "" {
-		if !isAnthropicSubscriptionAuthKey(key) {
-			return
+		if isAnthropicSubscriptionAuthKey(key) {
+			mode.showAnthropicSubscriptionWarningOnce()
 		}
+		return
+	}
+	if mode.options.Host == nil {
+		return
+	}
+	if options, err := mode.options.Host.AuthOptions(ctx); err == nil && slices.ContainsFunc(options.Logout, func(credential InteractiveAuthProvider) bool {
+		return credential.ID == "anthropic" && credential.AuthType == aiauth.AuthTypeOAuth
+	}) {
 		mode.showAnthropicSubscriptionWarningOnce()
-		return
 	}
-
-	oauthStored := false
-	if mode.options.Host != nil {
-		if options, err := mode.options.Host.AuthOptions(ctx); err == nil {
-			for _, credential := range options.Logout {
-				// Upstream checkAuth("anthropic")?.type === "oauth".
-				if credential.ID == "anthropic" && credential.AuthType == aiauth.AuthTypeOAuth {
-					oauthStored = true
-				}
-			}
-		}
-	}
-	if !oauthStored {
-		return
-	}
-	mode.showAnthropicSubscriptionWarningOnce()
 }
 
 func (mode *InteractiveMode) showAnthropicSubscriptionWarningOnce() {
@@ -3793,7 +3692,6 @@ func (mode *InteractiveMode) showAnthropicSubscriptionWarningOnce() {
 	mode.showWarning(anthropicSubscriptionAuthWarning)
 }
 
-// showWarning mirrors upstream showWarning (interactive-mode.ts:3849-3853).
 func (mode *InteractiveMode) showWarning(message string) {
 	mode.chat.AddChild(tui.NewSpacer(1))
 	mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), 1, 0, nil))
@@ -3896,9 +3794,7 @@ func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
 	switch event.Type {
 	case aiauth.EventAuthURL:
 		message = strings.TrimSpace(event.Instructions + "\n" + event.URL)
-		// Upstream auto-opens the browser when the login dialog receives the
-		// auth URL (login-dialog.ts:111); launch is best-effort and the URL
-		// stays visible either way.
+		// Opening the browser is best-effort; the URL stays visible either way.
 		if event.URL != "" {
 			openAuthURLInBrowser(event.URL)
 		}
@@ -3910,10 +3806,9 @@ func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
 	}
 }
 
-// handleOpenExternalEditor mirrors upstream 75e6123a: the editor command is
-// always resolved (settings -> $VISUAL -> $EDITOR -> platform default), so
-// there is no "no editor configured" warning, and the edit itself runs in the
-// shared editInExternalEditor helper.
+// handleOpenExternalEditor always resolves an editor command (settings ->
+// $VISUAL -> $EDITOR -> platform default), so there is no "no editor
+// configured" warning.
 func (mode *InteractiveMode) handleOpenExternalEditor() {
 	command := mode.session.InteractiveModeSettings().ExternalEditor
 	content := mode.editor.GetText()
@@ -3935,10 +3830,9 @@ func (mode *InteractiveMode) handleOpenExternalEditor() {
 	}()
 }
 
-// scopedModelsSelectorState mirrors upstream showModelsSelector (a3ee1d28):
-// the enabled set comes from the session scope or the persisted patterns, and
-// configured patterns with a "no-match" diagnostic surface as unavailable
-// entries so they stay removable without editing settings manually.
+// scopedModelsSelectorState takes the enabled set from the session scope or the
+// persisted patterns; configured patterns with a "no-match" diagnostic surface
+// as unavailable entries so they stay removable without editing settings.
 func scopedModelsSelectorState(
 	models []ai.Model,
 	configured []string,
@@ -3952,19 +3846,17 @@ func scopedModelsSelectorState(
 	// enabled == nil means every model is enabled (no filter).
 	var enabled []string
 	var diagnostics []agent.ModelDiagnostic
+	scope := sessionScoped
 	if len(configured) > 0 {
 		var configuredScope []agent.ScopedModel
 		configuredScope, diagnostics = agent.ResolveModelScope(configured, models)
-		if len(sessionScoped) == 0 {
-			enabled = make([]string, 0, len(configuredScope))
-			for _, scoped := range configuredScope {
-				enabled = append(enabled, fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID))
-			}
+		if len(scope) == 0 {
+			scope = configuredScope
 		}
 	}
-	if len(sessionScoped) > 0 {
-		enabled = make([]string, 0, len(sessionScoped))
-		for _, scoped := range sessionScoped {
+	if len(configured) > 0 || len(sessionScoped) > 0 {
+		enabled = make([]string, 0, len(scope))
+		for _, scoped := range scope {
 			enabled = append(enabled, fmt.Sprintf("%s/%s", scoped.Model.Provider, scoped.Model.ID))
 		}
 	}
@@ -3995,9 +3887,7 @@ func scopedModelsSelectorState(
 }
 
 func (mode *InteractiveMode) showModelsSelector() {
-	// f8746813: opening the picker re-reads models.json before listing.
-	// 53fa77cc (0.84.1): the selector always opens — even with no models —
-	// instead of bailing out with a "No models available" status.
+	// The picker re-reads models.json and opens even with no models.
 	_ = mode.session.RefreshModels()
 	models := mode.session.AvailableModels()
 	configured := mode.session.EnabledModels()
@@ -4070,17 +3960,17 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavai
 			unavailableEnabled++
 		}
 	}
-	// Upstream updateSessionModels (a3ee1d28): the session scope forms only
-	// when at least one available model is enabled and not all of them are;
-	// enabled unavailable ids never clear a partial scope.
+	// The session scope forms only when at least one available model is
+	// enabled and not all of them are; enabled unavailable ids never clear a
+	// partial scope.
 	if len(scoped) == 0 || len(scoped) == len(models) {
 		mode.session.SetScopedModels(nil)
 	} else {
 		mode.session.SetScopedModels(scoped)
 	}
 	if persist {
-		// Upstream onPersist: the filter clears only when every enabled id is
-		// an available model and all available models are enabled.
+		// The filter clears only when every enabled id is an available model
+		// and all available models are enabled.
 		if unavailableEnabled == 0 && len(patterns) == len(models) {
 			patterns = nil
 		}
@@ -4100,8 +3990,7 @@ func (mode *InteractiveMode) GitBranch() string {
 		return ""
 	}
 	branch := strings.TrimSpace(string(out))
-	// rev-parse prints the literal "HEAD" on detached HEAD; upstream's
-	// footer-data-provider shows "detached" for that state.
+	// rev-parse prints the literal "HEAD" on detached HEAD.
 	if branch == "HEAD" {
 		return "detached"
 	}
@@ -4203,9 +4092,7 @@ func (mode *InteractiveMode) Statuses() map[string]string {
 	mode.mu.Lock()
 	defer mode.mu.Unlock()
 	result := make(map[string]string, len(mode.footerStatuses))
-	for k, v := range mode.footerStatuses {
-		result[k] = v
-	}
+	maps.Copy(result, mode.footerStatuses)
 	return result
 }
 
@@ -4506,8 +4393,6 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		}
 		mode.clearStatusIndicatorKind(StatusWorking)
 		mode.ui.Terminal().SetProgress(false)
-		// Upstream checks pending extension shutdown requests on
-		// agent_settled (interactive-mode.ts:3055-3057).
 		mode.checkExtensionShutdownRequested()
 
 	case agent.QueueUpdateEvent:
@@ -4694,8 +4579,7 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 			// A final result makes the preview stale by construction: the edit
 			// has been applied, so re-matching oldText against the file would
 			// report a mismatch error over a successful edit. RenderResult owns
-			// the display from that point (upstream edit.ts renderResult
-			// overwrites the preview with the recorded result diff).
+			// the display from that point.
 			if !context.IsPartial {
 				return container
 			}
@@ -4778,8 +4662,7 @@ func loadEditPreview(state map[string]any) editPreviewCapture {
 	return capture
 }
 
-// editPreview computes the pending-edit preview at most once per argument set
-// (upstream edit.ts keys the preview by its JSON args and never recomputes),
+// editPreview computes the pending-edit preview at most once per argument set,
 // so re-renders during and after execution reuse the pre-execution capture
 // instead of re-reading a file the edit may since have modified.
 func editPreview(state map[string]any, path string, edits []tools.Edit, cwd string) (diff, previewError string) {
@@ -5110,8 +4993,7 @@ func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) 
 	if renderer == nil {
 		return
 	}
-	// Upstream passes the whole session entry to the renderer, not just its
-	// data payload (interactive-mode.ts addCustomEntryToChat -> CustomEntryComponent).
+	// Renderers receive the whole session entry, not just its data payload.
 	entryValue := map[string]any{
 		"type":       "custom",
 		"customType": entry.CustomType,
@@ -5131,8 +5013,7 @@ func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) 
 }
 
 // requestExtensionShutdown is the interactive shutdownHandler for extension
-// ctx.shutdown() (upstream interactive-mode.ts:1689-1694): remember the
-// request and quit immediately only when the session is idle; otherwise the
+// ctx.shutdown(): remember the request and quit immediately only when the session is idle; otherwise the
 // agent_settled check completes it.
 func (mode *InteractiveMode) requestExtensionShutdown() {
 	mode.mu.Lock()
@@ -5144,25 +5025,12 @@ func (mode *InteractiveMode) requestExtensionShutdown() {
 	}
 }
 
-// checkExtensionShutdownRequested mirrors checkShutdownRequested
-// (interactive-mode.ts:3626-3631).
 func (mode *InteractiveMode) checkExtensionShutdownRequested() {
 	mode.mu.Lock()
 	requested := mode.extensionShutdownRequested
 	mode.mu.Unlock()
 	if requested {
 		mode.shutdown()
-	}
-}
-
-// bindExtensionShutdownHandler installs the per-mode behavior for extension
-// ctx.shutdown() (upstream binds a shutdownHandler through
-// session.bindExtensions, runner.ts:343). The runtime setter is asserted
-// optionally so the modes-side wiring stands alone until SessionRuntime
-// exposes the seam.
-func (mode *InteractiveMode) bindExtensionShutdownHandler(session *agent.SessionRuntime) {
-	if binder, ok := any(session).(interface{ SetExtensionShutdownHandler(func()) }); ok {
-		binder.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	}
 }
 
@@ -5265,17 +5133,8 @@ func formatResumeCommand(manager *sessionstore.SessionManager, outputTTY bool) s
 }
 
 func quoteResumeArgument(value string) string {
-	if value != "" {
-		safe := true
-		for _, character := range value {
-			if !resumeArgumentCharacter(character) {
-				safe = false
-				break
-			}
-		}
-		if safe {
-			return value
-		}
+	if value != "" && !strings.ContainsFunc(value, func(character rune) bool { return !resumeArgumentCharacter(character) }) {
+		return value
 	}
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
@@ -5289,14 +5148,8 @@ func resumeArgumentCharacter(character rune) bool {
 
 // parseSlashCommand splits "/name arg1 arg2" into (name, "arg1 arg2").
 func parseSlashCommand(text string) (string, string) {
-	text = strings.TrimPrefix(text, "/")
-	parts := strings.SplitN(text, " ", 2)
-	name := parts[0]
-	args := ""
-	if len(parts) > 1 {
-		args = strings.TrimSpace(parts[1])
-	}
-	return name, args
+	name, args, _ := strings.Cut(strings.TrimPrefix(text, "/"), " ")
+	return name, strings.TrimSpace(args)
 }
 
 func asAssistantMessage(message any) *ai.AssistantMessage {
@@ -5422,17 +5275,16 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		}
 	}
 	for _, action := range []string{"app.tools.expand", "app.thinking.toggle", "app.thinking.cycle", "app.message.dequeue", "app.editor.external", "app.model.cycleForward", "app.model.cycleBackward"} {
-		for _, definition := range AppKeybindingDefinitions {
-			if definition.ID != action {
-				continue
-			}
-			hint := ""
-			if len(mode.keybindings.Keys(action)) > 0 {
-				hint = KeyText(action)
-			}
-			rows = append(rows, tui.GridRow{Value: "action:" + action, Cells: []string{theme.FG("text", definition.Description), theme.FG("muted", hint)}, Search: definition.Description})
-			break
+		index := slices.IndexFunc(AppKeybindingDefinitions, func(definition tui.KeybindingDefinition) bool { return definition.ID == action })
+		if index < 0 {
+			continue
 		}
+		hint := ""
+		if len(mode.keybindings.Keys(action)) > 0 {
+			hint = KeyText(action)
+		}
+		description := AppKeybindingDefinitions[index].Description
+		rows = append(rows, tui.GridRow{Value: "action:" + action, Cells: []string{theme.FG("text", description), theme.FG("muted", hint)}, Search: description})
 	}
 	return rows
 }
@@ -5446,7 +5298,7 @@ func (mode *InteractiveMode) showCommandPalette() {
 	}, closePalette)
 	palette.modelShortcut = true
 	frame := menuFrame("Commands", palette)
-	options := dialogOverlayOptions()
+	options := configOverlayOptions()
 	options.MaxHeight = tui.PercentSize(100)
 	handle = mode.ui.ShowOverlay(frame, options)
 	mode.ui.RequestRender()

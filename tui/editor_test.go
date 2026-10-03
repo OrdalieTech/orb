@@ -13,18 +13,18 @@ func TestAutocompleteTriggerCJKBoundaries(t *testing.T) {
 	for _, before := range []string{"查看，", "　", "查看。", "查看：「"} {
 		for _, trigger := range triggers {
 			text := before + trigger + "路径"
-			if !matchesAutocompleteTrigger(text, triggers) || !matchesAutocompleteDebounce(text, triggers) {
+			if !matchesAutocompleteTrigger(text, triggers) {
 				t.Fatalf("expected trigger context for %q", text)
 			}
 		}
 	}
 	for _, text := range []string{"user@example.com", "查看@路径", "@src，路径", "#src。路径"} {
-		if matchesAutocompleteTrigger(text, triggers) || matchesAutocompleteDebounce(text, triggers) {
+		if matchesAutocompleteTrigger(text, triggers) {
 			t.Fatalf("unexpected trigger context for %q", text)
 		}
 	}
 	for _, text := range []string{`查看：@"我的 文档/说`, `查看：@"资料，归档/说`} {
-		if !matchesAutocompleteTrigger(text, triggers) || !matchesAutocompleteDebounce(text, triggers) {
+		if !matchesAutocompleteTrigger(text, triggers) {
 			t.Fatalf("expected quoted trigger context for %q", text)
 		}
 	}
@@ -33,12 +33,12 @@ func TestAutocompleteTriggerCJKBoundaries(t *testing.T) {
 func TestAutocompleteTriggerBoundariesExcludePathDelimiters(t *testing.T) {
 	triggers := []string{"@", "#", "$"}
 	for _, text := range []string{`key=@src`, `foo'@src`, `foo"#src`, `key=$src`, `key=@"my path`, "prefix\u0085@src"} {
-		if matchesAutocompleteTrigger(text, triggers) || matchesAutocompleteDebounce(text, triggers) {
+		if matchesAutocompleteTrigger(text, triggers) {
 			t.Fatalf("unexpected trigger context for %q", text)
 		}
 	}
 	for _, text := range []string{`@foo=bar`, `@foo"bar`, `#foo'bar`, `$foo=bar`, `prefix @"my path`, "prefix\uFEFF@src"} {
-		if !matchesAutocompleteTrigger(text, triggers) || !matchesAutocompleteDebounce(text, triggers) {
+		if !matchesAutocompleteTrigger(text, triggers) {
 			t.Fatalf("expected trigger context for %q", text)
 		}
 	}
@@ -1304,14 +1304,6 @@ func TestEditorPredictsHiddenLinesBeforeRender(t *testing.T) {
 	if editor.HasHiddenLinesAboveLastRender(30) {
 		t.Fatal("editor reused scroll state at a different width")
 	}
-}
-
-func TestEditorGetLinesDefensiveCopy(t *testing.T) {
-	editor := newTestEditor()
-	editor.SetText("a\nb")
-	lines := editor.GetLines()
-	lines[0] = "mutated"
-	wantText(t, editor, "a\nb")
 }
 
 // flushAutocomplete blocks until no debounce timer or request is pending

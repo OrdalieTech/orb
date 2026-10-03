@@ -71,7 +71,7 @@ func closeExtensionHostOnCleanup(t *testing.T) {
 	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 }
 
-// Finding 2: extensions provided by installed pi packages must load. cmd/orb now
+// Extensions provided by installed pi packages must load. cmd/orb now
 // forwards resolvedPaths.Extensions into the host's package-path fields; a
 // user-scope package extension therefore reaches the loaded tool set.
 func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
@@ -129,7 +129,7 @@ func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.
 	}
 }
 
-// Finding 2, trust gate: a project-scope package extension stays invisible until
+// Trust gate: a project-scope package extension stays invisible until
 // the project is trusted (the host gates ProjectResolvedPackagePaths behind
 // ProjectTrusted).
 func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *testing.T) {
@@ -160,7 +160,7 @@ func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *test
 	}
 }
 
-// Finding 3: isPackageSourceSpec routes npm:/git:/http(s)/ssh specs through the
+// IsPackageSourceSpec routes npm:/git:/http(s)/ssh specs through the
 // package resolver instead of treating them as literal file paths, while plain
 // paths continue straight to the extension host.
 func TestIsPackageSourceSpecClassification(t *testing.T) {
@@ -176,7 +176,7 @@ func TestIsPackageSourceSpecClassification(t *testing.T) {
 	}
 }
 
-// Finding 3, end-to-end: `-e npm:<pkg>` installs the package to a temporary dir
+// End-to-end: `-e npm:<pkg>` installs the package to a temporary dir
 // and loads its extension, rather than failing on a literal `<cwd>/npm:<pkg>`
 // path. A fake registry (via npm_config_registry) keeps the test offline.
 func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {

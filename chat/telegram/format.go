@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -370,10 +371,7 @@ func cutIndex(line string, limit int) int {
 	entityLen := 0 // runes since an unclosed '&' (0 = not in an entity)
 	lastSpace, lastSafe, lastAny := 0, 0, 0
 	for i, r := range line {
-		width := 1
-		if r > 0xFFFF {
-			width = 2
-		}
+		width := utf16.RuneLen(r)
 		if units+width > limit {
 			break
 		}
@@ -427,11 +425,7 @@ func cutIndex(line string, limit int) int {
 func utf16Len(s string) int {
 	n := 0
 	for _, r := range s {
-		if r > 0xFFFF {
-			n += 2
-		} else {
-			n++
-		}
+		n += utf16.RuneLen(r)
 	}
 	return n
 }
@@ -440,10 +434,7 @@ func utf16Len(s string) int {
 func utf16Truncate(s string, limit int) string {
 	units := 0
 	for i, r := range s {
-		width := 1
-		if r > 0xFFFF {
-			width = 2
-		}
+		width := utf16.RuneLen(r)
 		if units+width > limit {
 			return s[:i]
 		}

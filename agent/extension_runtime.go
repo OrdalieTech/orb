@@ -90,35 +90,20 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	registerProviderConfig := runtimeConfig.RegisterProviderConfig
 	unregisterProvider := runtimeConfig.UnregisterProvider
 	if runtimeConfig.ModelRegistry != nil {
-		if registerProvider != nil {
-			register := registerProvider
-			registerProvider = func(provider extensions.Provider) error {
-				if err := register(provider); err != nil {
-					return err
-				}
+		refresh := func(err error) error {
+			if err == nil {
 				runtime.refreshCurrentModelFromRegistry(runtimeConfig.ModelRegistry)
-				return nil
 			}
+			return err
 		}
-		if registerProviderConfig != nil {
-			register := registerProviderConfig
-			registerProviderConfig = func(name string, config extensions.ProviderConfig) error {
-				if err := register(name, config); err != nil {
-					return err
-				}
-				runtime.refreshCurrentModelFromRegistry(runtimeConfig.ModelRegistry)
-				return nil
-			}
+		if register := registerProvider; register != nil {
+			registerProvider = func(provider extensions.Provider) error { return refresh(register(provider)) }
 		}
-		if unregisterProvider != nil {
-			unregister := unregisterProvider
-			unregisterProvider = func(name string) error {
-				if err := unregister(name); err != nil {
-					return err
-				}
-				runtime.refreshCurrentModelFromRegistry(runtimeConfig.ModelRegistry)
-				return nil
-			}
+		if register := registerProviderConfig; register != nil {
+			registerProviderConfig = func(name string, config extensions.ProviderConfig) error { return refresh(register(name, config)) }
+		}
+		if unregister := unregisterProvider; unregister != nil {
+			unregisterProvider = func(name string) error { return refresh(unregister(name)) }
 		}
 	}
 
@@ -312,9 +297,7 @@ func (runtime *SessionRuntime) BindExtensions(ctx context.Context) error {
 }
 
 // BindExtensionUI installs the extension UI seam on the active runner and in
-// the stored runner configuration, so /reload rebuilds keep it. Upstream
-// rpc-mode rebindSession passes its uiContext into bindExtensions on every
-// rebind (rpc-mode.ts:311-320); this is the equivalent seam for Go hosts.
+// the stored runner configuration, so /reload rebuilds keep it.
 func (runtime *SessionRuntime) BindExtensionUI(ui extensions.UI, mode extensions.Mode) {
 	if runtime == nil || runtime.extensionState == nil {
 		return
@@ -1076,7 +1059,7 @@ func (runtime *SessionRuntime) refreshLazyToolGuidelines(ctx context.Context) {
 				current = definition.PromptGuidelines
 			}
 		}
-		if !stringSlicesEqual(current, entry.guidelines) {
+		if !slices.Equal(current, entry.guidelines) {
 			changed = true
 		}
 		state.lazyGuidelines[entry.name] = entry.guidelines
@@ -1084,18 +1067,6 @@ func (runtime *SessionRuntime) refreshLazyToolGuidelines(ctx context.Context) {
 	if changed {
 		runtime.setActiveToolsLocked(activeNames, state)
 	}
-}
-
-func stringSlicesEqual(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }
 
 func (runtime *SessionRuntime) extensionActiveTools() ([]string, error) {
@@ -1377,7 +1348,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptions() extensions.SystemP
 	options := state.promptOptions
 	return extensions.SystemPromptOptions{
 		CustomPrompt: options.CustomPrompt, SelectedTools: append([]string(nil), options.SelectedTools...),
-		ToolSnippets: cloneStringMap(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
+		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}
 }
@@ -1548,21 +1519,10 @@ func uniqueStrings(values []string) []string {
 
 func cloneSystemPromptOptions(options SystemPromptOptions) SystemPromptOptions {
 	options.SelectedTools = append([]string(nil), options.SelectedTools...)
-	options.ToolSnippets = cloneStringMap(options.ToolSnippets)
+	options.ToolSnippets = maps.Clone(options.ToolSnippets)
 	options.PromptGuidelines = append([]string(nil), options.PromptGuidelines...)
 	options.ContextFiles = append([]ContextFile(nil), options.ContextFiles...)
 	return options
-}
-
-func cloneStringMap(values map[string]string) map[string]string {
-	if values == nil {
-		return nil
-	}
-	result := make(map[string]string, len(values))
-	for key, value := range values {
-		result[key] = value
-	}
-	return result
 }
 
 func normalizePromptText(value string) string {
@@ -1931,7 +1891,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptionsLocked(state *extensi
 	options := state.promptOptions
 	return extensions.SystemPromptOptions{
 		CustomPrompt: options.CustomPrompt, SelectedTools: append([]string(nil), options.SelectedTools...),
-		ToolSnippets: cloneStringMap(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
+		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}
 }

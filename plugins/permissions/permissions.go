@@ -179,13 +179,7 @@ func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, 
 	}
 	policy.mu.Lock()
 	defer policy.mu.Unlock()
-	mode := policy.Mode
-	if mode == "" {
-		mode = "auto"
-	}
-	if mode != "log" && mode != "auto" {
-		mode = "enforce"
-	}
+	mode := normalizeMode(policy.Mode)
 	fallback := policy.AskFallback
 	if fallback != Allow {
 		fallback = Deny
@@ -193,15 +187,19 @@ func (policy *Policy) snapshot() (string, Action, []Rule, func(context.Context, 
 	return mode, fallback, append([]Rule(nil), policy.Rules...), policy.Authorizer, append([]func(context.Context, ToolCallInfo) string(nil), policy.Guards...)
 }
 
+func normalizeMode(mode string) string {
+	switch mode {
+	case "", "auto":
+		return "auto"
+	case "log":
+		return "log"
+	}
+	return "enforce"
+}
+
 func (policy *Policy) SetMode(mode string) {
-	if mode == "" {
-		mode = "auto"
-	}
-	if mode != "log" && mode != "auto" {
-		mode = "enforce"
-	}
 	policy.mu.Lock()
-	policy.Mode = mode
+	policy.Mode = normalizeMode(mode)
 	clear(policy.approved)
 	policy.mu.Unlock()
 }

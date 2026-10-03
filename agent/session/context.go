@@ -3,6 +3,7 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -96,7 +97,7 @@ func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext 
 		case "model_change":
 			context.Model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
 		case "active_tools_change":
-			context.ActiveToolNames = cloneStringSlice(entry.ActiveToolNames)
+			context.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
 		case "message":
 			var header struct {
 				Role     string `json:"role"`

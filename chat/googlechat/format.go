@@ -7,6 +7,8 @@ package googlechat
 import (
 	"regexp"
 	"strings"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 const maxMessageLen = 4096
@@ -43,7 +45,7 @@ func FormatText(markdown string) string {
 	inFence := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, fenceMarker) && isFenceMarker(trimmed, inFence) {
+		if runechunk.IsFence(trimmed, inFence) {
 			inFence = !inFence
 			out = append(out, fenceMarker)
 			continue
@@ -60,14 +62,6 @@ func FormatText(markdown string) string {
 		out = append(out, formatInline(line))
 	}
 	return strings.Join(out, "\n")
-}
-
-func isFenceMarker(trimmed string, inFence bool) bool {
-	rest := trimmed[len(fenceMarker):]
-	if rest == "" {
-		return true
-	}
-	return !inFence && !strings.Contains(rest, "`") && len(strings.Fields(rest)) == 1
 }
 
 func formatInline(line string) string {
@@ -133,7 +127,7 @@ func ChunkText(text string, limit int) []string {
 			line = string(runes[budget:])
 		}
 		appendLine(line)
-		if strings.HasPrefix(trimmed, fenceMarker) && isFenceMarker(trimmed, inFence) {
+		if runechunk.IsFence(trimmed, inFence) {
 			inFence = !inFence
 		}
 	}

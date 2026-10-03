@@ -1,4 +1,4 @@
-// Package runechunk splits platform text at readable rune boundaries.
+// Package runechunk splits and cuts platform text at readable rune boundaries.
 package runechunk
 
 import (
@@ -58,4 +58,21 @@ func splitIndex(window []rune) int {
 		}
 	}
 	return len(window)
+}
+
+// Truncate cuts s to at most limit runes.
+func Truncate(s string, limit int) string {
+	if len(s) <= limit || utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	return string([]rune(s)[:limit])
+}
+
+// IsFence reports whether trimmed is a pure code-fence marker: bare ```
+// always, or ``` plus a single language token when opening a fence. Closing
+// fences carry no info string (CommonMark), and any line with more backticks
+// or extra words is inline content, not a fence.
+func IsFence(trimmed string, inFence bool) bool {
+	rest, ok := strings.CutPrefix(trimmed, "```")
+	return ok && (rest == "" || !inFence && !strings.Contains(rest, "`") && len(strings.Fields(rest)) == 1)
 }

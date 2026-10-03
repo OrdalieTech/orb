@@ -273,7 +273,7 @@ func (terminal *ProcessTerminal) enableModifyOtherLocked() {
 	if terminal.kitty || terminal.modifyOther {
 		return
 	}
-	terminal.writeLocked("\x1b[>4;2m")
+	terminal.Write("\x1b[>4;2m")
 	terminal.modifyOther = true
 }
 
@@ -281,7 +281,7 @@ func (terminal *ProcessTerminal) disableModifyOtherLocked() {
 	if !terminal.modifyOther {
 		return
 	}
-	terminal.writeLocked("\x1b[>4;0m")
+	terminal.Write("\x1b[>4;0m")
 	terminal.modifyOther = false
 }
 
@@ -299,12 +299,12 @@ func (terminal *ProcessTerminal) Stop() error {
 	if terminal.progressStop != nil {
 		close(terminal.progressStop)
 		terminal.progressStop = nil
-		terminal.writeLocked(progressClear)
+		terminal.Write(progressClear)
 	}
-	terminal.writeLocked("\x1b[?2004l")
+	terminal.Write("\x1b[?2004l")
 	terminal.clearNegotiationBufferLocked()
 	if terminal.protocolPushed || terminal.kitty {
-		terminal.writeLocked("\x1b[<u")
+		terminal.Write("\x1b[<u")
 	}
 	terminal.protocolPushed, terminal.kitty = false, false
 	SetKittyProtocolActive(false)
@@ -346,7 +346,7 @@ func (terminal *ProcessTerminal) DrainInput(maxDuration, idleDuration time.Durat
 	terminal.mu.Lock()
 	terminal.clearNegotiationBufferLocked()
 	if terminal.protocolPushed || terminal.kitty {
-		terminal.writeLocked("\x1b[<u")
+		terminal.Write("\x1b[<u")
 		terminal.protocolPushed, terminal.kitty = false, false
 		SetKittyProtocolActive(false)
 	}
@@ -377,9 +377,6 @@ func (terminal *ProcessTerminal) DrainInput(maxDuration, idleDuration time.Durat
 func (terminal *ProcessTerminal) Write(data string) {
 	terminal.writeMu.Lock()
 	defer terminal.writeMu.Unlock()
-	terminal.writeOutput(data)
-}
-func (terminal *ProcessTerminal) writeOutput(data string) {
 	if terminal.output != nil {
 		_, _ = terminal.output.WriteString(data)
 	}
@@ -390,12 +387,6 @@ func (terminal *ProcessTerminal) writeOutput(data string) {
 		}
 	}
 }
-func (terminal *ProcessTerminal) writeLocked(data string) {
-	terminal.writeMu.Lock()
-	defer terminal.writeMu.Unlock()
-	terminal.writeOutput(data)
-}
-
 func envDimension(name string, fallback int) int {
 	if parsed, err := strconv.Atoi(os.Getenv(name)); err == nil && parsed > 0 {
 		return parsed
@@ -445,10 +436,10 @@ func (terminal *ProcessTerminal) SetProgress(active bool) {
 			close(terminal.progressStop)
 			terminal.progressStop = nil
 		}
-		terminal.writeLocked(progressClear)
+		terminal.Write(progressClear)
 		return
 	}
-	terminal.writeLocked(progressActive)
+	terminal.Write(progressActive)
 	if terminal.progressStop != nil {
 		return
 	}

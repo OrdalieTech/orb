@@ -79,7 +79,7 @@ func TestBuildInitialMessageConcatenatesWithoutSeparatorsAndConsumesFirstMessage
 	stdin := "stdin"
 	args := CLIArgs{Messages: []string{"first", "second"}}
 	message := BuildInitialMessage(&args, &stdin, "<file></file>\n")
-	if message == nil || *message != "stdin<file></file>\nfirst" {
+	if message != "stdin<file></file>\nfirst" {
 		t.Fatalf("message = %v", message)
 	}
 	if len(args.Messages) != 1 || args.Messages[0] != "second" {
@@ -87,8 +87,8 @@ func TestBuildInitialMessageConcatenatesWithoutSeparatorsAndConsumesFirstMessage
 	}
 
 	empty := CLIArgs{}
-	if got := BuildInitialMessage(&empty, nil, ""); got != nil {
-		t.Fatalf("empty initial message = %q", *got)
+	if got := BuildInitialMessage(&empty, nil, ""); got != "" {
+		t.Fatalf("empty initial message = %q", got)
 	}
 }
 

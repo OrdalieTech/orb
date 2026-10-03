@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 var updateGoldens = flag.Bool("update", false, "rewrite format golden files")
@@ -126,10 +128,10 @@ func TestChunkTextEmpty(t *testing.T) {
 }
 
 func TestTruncateRunes(t *testing.T) {
-	if got := truncateRunes("héllo", 3); got != "hél" {
+	if got := runechunk.Truncate("héllo", 3); got != "hél" {
 		t.Fatalf("truncateRunes = %q", got)
 	}
-	if got := truncateRunes("ok", 10); got != "ok" {
+	if got := runechunk.Truncate("ok", 10); got != "ok" {
 		t.Fatalf("truncateRunes = %q", got)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -100,8 +101,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "__sandbox" {
 		os.Exit(runSandboxChild())
 	}
-	// Process markers, entry points only — not set when embedded through the SDK
-	// (upstream cli.ts/rpc-entry.ts; AI_AGENT carries orb's identity per D30).
+	// Process markers, entry points only — not set when embedded through the SDK.
 	_ = os.Setenv("AI_AGENT", "orb")
 	_ = os.Setenv("PI_CODING_AGENT", "true")
 	os.Exit(runNativeCLI(context.Background(), os.Args[1:], cliStreams{
@@ -286,7 +286,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		return 0
 	}
 	if args.Mode == "rpc" && len(args.FileArgs) > 0 {
-		// Upstream guards before session-flag validation (main.ts:546-549).
+		// Checked before session-flag validation, as upstream does.
 		_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorError, "Error: @file arguments are not supported in RPC mode"))
 		return 1
 	}
@@ -359,8 +359,8 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 	}
 	if args.ListModels != nil {
-		// Upstream lists models after full runtime creation (main.ts:747-764), so
-		// providers registered by extensions participate in the listing.
+		// Models are listed after full runtime creation so providers registered
+		// by extensions participate in the listing.
 		listCWD, err := os.Getwd()
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
@@ -405,7 +405,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		args.useUnknownModel = true
 	}
 	baseArgs := args
-	manager, sessionContext, err := createCLISessionWithSelectors(cwd, args, streams, dependencies.selectSession, dependencies.selectSessionContext)
+	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession, dependencies.selectSessionContext)
 	if err != nil {
 		if errors.Is(err, errNoSessionSelected) {
 			return 0
@@ -468,14 +468,10 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if runtimeErr != nil {
 			return reportCLIError(streams.Stderr, runtimeErr)
 		}
-		initialMessage, initialImages, inputErr := PrepareInitialInput(&args, manager.GetCWD(), nil)
+		initial, initialImages, inputErr := PrepareInitialInput(&args, manager.GetCWD(), nil)
 		if inputErr != nil {
 			sessionRuntime.Dispose()
 			return reportCLIError(streams.Stderr, inputErr)
-		}
-		initial := ""
-		if initialMessage != nil {
-			initial = *initialMessage
 		}
 		agentDir, dirErr := config.GetAgentDir()
 		if dirErr != nil {
@@ -489,12 +485,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			}
 		}
 		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
-		detach, bridgeErr := attachCLIBridge(ctx, bridgeInteractiveHost{host}, args, inputs.Settings, streams.Stderr)
-		if bridgeErr != nil {
-			_, _ = fmt.Fprintln(streams.Stderr, "Bridge disconnected:", bridgeErr)
-		} else {
-			defer detach()
-		}
+		defer attachCLIBridge(ctx, bridgeInteractiveHost{host}, args, inputs.Settings, streams.Stderr)()
 
 		bindings, err := args.native.keybindings()
 		if err != nil {
@@ -540,12 +531,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	detach, bridgeErr := attachCLIBridge(ctx, sessionHost, args, sessionHost.Services().SettingsManager, streams.Stderr)
-	if bridgeErr != nil {
-		_, _ = fmt.Fprintln(streams.Stderr, "Bridge disconnected:", bridgeErr)
-	} else {
-		defer detach()
-	}
+	defer attachCLIBridge(ctx, sessionHost, args, sessionHost.Services().SettingsManager, streams.Stderr)()
 	if services := sessionHost.Services(); services != nil {
 		startStartupModelRefresh(ctx, args.Mode, offlineMode, !networkDisabled, services.AgentDir, services.ModelRegistry, dependencies.refreshModels)
 	}
@@ -575,13 +561,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return reportCLIError(streams.Stderr, err)
 		}
 	}
-	initialMessage, initialImages, err := PrepareInitialInput(&args, manager.GetCWD(), stdinContent)
+	initial, initialImages, err := PrepareInitialInput(&args, manager.GetCWD(), stdinContent)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
-	}
-	initial := ""
-	if initialMessage != nil {
-		initial = *initialMessage
 	}
 	outputMode := modes.PrintOutputText
 	if args.Mode == "json" {
@@ -604,10 +586,8 @@ const (
 	colorClose   = "\x1b[39m"
 )
 
-// colorizeDiagnostic mirrors upstream's chalk.red/chalk.yellow startup
-// diagnostics (main.ts:87-93, 511-514). Upstream's default chalk keys color
-// support on STDOUT even though the lines go to stderr, with NO_COLOR and
-// TERM=dumb opt-outs.
+// colorizeDiagnostic keys color support on STDOUT even though the lines go to
+// stderr, as upstream's chalk does, with NO_COLOR and TERM=dumb opt-outs.
 func colorizeDiagnostic(streams cliStreams, color, line string) string {
 	if !streams.StdoutTTY || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return line
@@ -765,14 +745,7 @@ func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch 
 		args.Model = stringValue(context.Model.ModelID)
 		args.RestoredModel = true
 	}
-	hasThinkingEntry := false
-	for _, entry := range branch {
-		if entry.Type == "thinking_level_change" {
-			hasThinkingEntry = true
-			break
-		}
-	}
-	if args.Thinking == nil && len(context.Messages) > 0 && hasThinkingEntry {
+	if args.Thinking == nil && len(context.Messages) > 0 && hasThinkingLevelChange(branch) {
 		args.Thinking = stringValue(context.ThinkingLevel)
 	}
 }
@@ -791,37 +764,25 @@ func decodeSessionMessages(rawMessages []json.RawMessage) engine.AgentMessages {
 }
 
 func appendInitialRuntimeState(manager *session.SessionManager, state engine.AgentState, prior session.SessionContext) error {
-	hasExistingSession := len(prior.Messages) > 0
-	hasThinkingEntry := false
-	for _, entry := range manager.GetBranch() {
-		if entry.Type == "thinking_level_change" {
-			hasThinkingEntry = true
-			break
-		}
-	}
-	if hasExistingSession {
-		if hasThinkingEntry {
+	if len(prior.Messages) > 0 {
+		if hasThinkingLevelChange(manager.GetBranch()) {
 			return nil
 		}
-		_, err := manager.AppendThinkingLevelChange(string(state.ThinkingLevel))
-		return err
-	}
-	if state.Model != nil && !agent.IsUnknownModel(state.Model) {
+	} else if state.Model != nil && !agent.IsUnknownModel(state.Model) {
 		if _, err := manager.AppendModelChange(string(state.Model.Provider), state.Model.ID); err != nil {
 			return err
 		}
 	}
-	if _, err := manager.AppendThinkingLevelChange(string(state.ThinkingLevel)); err != nil {
-		return err
-	}
-	return nil
+	_, err := manager.AppendThinkingLevelChange(string(state.ThinkingLevel))
+	return err
+}
+
+func hasThinkingLevelChange(branch []session.SessionEntry) bool {
+	return slices.ContainsFunc(branch, func(entry session.SessionEntry) bool { return entry.Type == "thinking_level_change" })
 }
 
 func isTerminalFile(file *os.File) bool {
-	if file == nil {
-		return false
-	}
-	return term.IsTerminal(int(file.Fd()))
+	return file != nil && term.IsTerminal(int(file.Fd()))
 }
 
 func reportCLIError(writer io.Writer, err error) int {

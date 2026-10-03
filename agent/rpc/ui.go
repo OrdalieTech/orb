@@ -121,9 +121,7 @@ type uiDialogResult struct {
 	ok       bool
 }
 
-// ExtensionUI implements the RPC dialog sub-protocol. Phase-5 bindings use
-// this same object; RPC mode already exposes it so native extensions can bind
-// without another transport implementation.
+// ExtensionUI implements the RPC dialog sub-protocol.
 type ExtensionUI struct {
 	mu      sync.Mutex
 	pending map[string]chan uiDialogResult
@@ -284,8 +282,8 @@ func (ui *ExtensionUI) close() {
 }
 
 // extensionUIAdapter exposes the RPC dialog sub-protocol through the
-// extensions.UI seam, mirroring upstream createExtensionUIContext
-// (rpc-mode.ts:135-305): dialogs and fire-and-forget requests go over the
+// extensions.UI seam, mirroring upstream createExtensionUIContext:
+// dialogs and fire-and-forget requests go over the
 // wire, TUI-only surfaces keep NoopUI behavior.
 type extensionUIAdapter struct {
 	extensions.NoopUI

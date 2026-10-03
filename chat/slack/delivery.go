@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // NewDelivery implements [chat.Adapter]. The conversation ThreadID (thread_ts
@@ -59,7 +60,7 @@ var errPreviewThrottled = errors.New("slack: preview edit rate limited")
 // cant_update_message) previews stop for the turn and Finalize posts new
 // messages instead.
 func (d *delivery) Preview(ctx context.Context, text string) error {
-	text = truncateRunes(escapeText(text), textLimit)
+	text = runechunk.Truncate(escapeText(text), textLimit)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if text == "" || text == d.previewText || d.editsDead {

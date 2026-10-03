@@ -18,30 +18,24 @@ type wireAutocompleteMountResult struct {
 }
 
 type wireAutocompleteCall struct {
-	ProviderHandle string                `json:"providerHandle"`
-	Operation      string                `json:"operation"`
-	Lines          []string              `json:"lines,omitempty"`
-	CursorLine     int                   `json:"cursorLine,omitempty"`
-	CursorCol      int                   `json:"cursorCol,omitempty"`
-	Force          bool                  `json:"force,omitempty"`
-	Item           *wireAutocompleteItem `json:"item,omitempty"`
-	Prefix         string                `json:"prefix,omitempty"`
-}
-
-type wireAutocompleteItem struct {
-	Value       string `json:"value"`
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
+	ProviderHandle string                       `json:"providerHandle"`
+	Operation      string                       `json:"operation"`
+	Lines          []string                     `json:"lines,omitempty"`
+	CursorLine     int                          `json:"cursorLine,omitempty"`
+	CursorCol      int                          `json:"cursorCol,omitempty"`
+	Force          bool                         `json:"force,omitempty"`
+	Item           *extensions.AutocompleteItem `json:"item,omitempty"`
+	Prefix         string                       `json:"prefix,omitempty"`
 }
 
 type wireAutocompleteResult struct {
-	Present    bool                   `json:"present,omitempty"`
-	Prefix     string                 `json:"prefix,omitempty"`
-	Items      []wireAutocompleteItem `json:"items,omitempty"`
-	Lines      []string               `json:"lines,omitempty"`
-	CursorLine int                    `json:"cursorLine,omitempty"`
-	CursorCol  int                    `json:"cursorCol,omitempty"`
-	Triggered  bool                   `json:"triggered,omitempty"`
+	Present    bool                          `json:"present,omitempty"`
+	Prefix     string                        `json:"prefix,omitempty"`
+	Items      []extensions.AutocompleteItem `json:"items,omitempty"`
+	Lines      []string                      `json:"lines,omitempty"`
+	CursorLine int                           `json:"cursorLine,omitempty"`
+	CursorCol  int                           `json:"cursorCol,omitempty"`
+	Triggered  bool                          `json:"triggered,omitempty"`
 }
 
 type hostAutocompleteProvider struct {
@@ -93,11 +87,7 @@ func (provider *hostAutocompleteProvider) GetSuggestions(
 	if err != nil || !result.Present {
 		return nil, err
 	}
-	items := make([]extensions.AutocompleteItem, len(result.Items))
-	for index, item := range result.Items {
-		items[index] = extensions.AutocompleteItem{Value: item.Value, Label: item.Label, Description: item.Description}
-	}
-	return &extensions.AutocompleteResult{Prefix: result.Prefix, Items: items}, nil
+	return &extensions.AutocompleteResult{Prefix: result.Prefix, Items: append([]extensions.AutocompleteItem{}, result.Items...)}, nil
 }
 
 func (provider *hostAutocompleteProvider) ApplyCompletion(
@@ -109,7 +99,7 @@ func (provider *hostAutocompleteProvider) ApplyCompletion(
 		ProviderHandle: provider.handle, Operation: "applyCompletion",
 		Lines: append([]string(nil), request.Lines...), CursorLine: request.CursorLine,
 		CursorCol: request.CursorCol, Prefix: prefix,
-		Item: &wireAutocompleteItem{Value: item.Value, Label: item.Label, Description: item.Description},
+		Item: &item,
 	})
 	if err != nil {
 		return request.Lines, request.CursorLine, request.CursorCol

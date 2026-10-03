@@ -51,10 +51,7 @@ func (session *cliPrintSession) Bind(replacement *agent.AgentSession) error {
 	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	if session.unsubscribe != nil {
-		session.unsubscribe()
-		session.unsubscribe = nil
-	}
+	session.unsubscribeLocked()
 	if session.listener != nil {
 		session.unsubscribe = replacement.Subscribe(session.listener)
 	}
@@ -84,10 +81,7 @@ func (session *cliPrintSession) State() engine.AgentState {
 
 func (session *cliPrintSession) Subscribe(listener func(any)) func() {
 	session.mu.Lock()
-	if session.unsubscribe != nil {
-		session.unsubscribe()
-		session.unsubscribe = nil
-	}
+	session.unsubscribeLocked()
 	session.listener = listener
 	if current := session.host.Session(); current != nil && listener != nil {
 		session.unsubscribe = current.Subscribe(listener)
@@ -95,19 +89,20 @@ func (session *cliPrintSession) Subscribe(listener func(any)) func() {
 	session.mu.Unlock()
 	return func() {
 		session.mu.Lock()
-		if session.unsubscribe != nil {
-			session.unsubscribe()
-			session.unsubscribe = nil
-		}
+		session.unsubscribeLocked()
 		session.listener = nil
 		session.mu.Unlock()
 	}
 }
 
-func newCLISessionRuntimeHost(
-	ctx context.Context,
-	options cliSessionRuntimeHostOptions,
-) (*agent.AgentSessionRuntime, error) {
+func (session *cliPrintSession) unsubscribeLocked() {
+	if session.unsubscribe != nil {
+		session.unsubscribe()
+		session.unsubscribe = nil
+	}
+}
+
+func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHostOptions) (*agent.AgentSessionRuntime, error) {
 	if options.Manager == nil {
 		return nil, fmt.Errorf("orb: session runtime host requires a session manager")
 	}
@@ -134,9 +129,7 @@ func newCLISessionRuntimeHost(
 			args.extensionWarnings = nil
 		}
 
-		inputs, err := options.Dependencies.createRuntime(
-			manager.GetCWD(), args, decodeSessionMessages(contextState.Messages),
-		)
+		inputs, err := options.Dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(contextState.Messages))
 		if err != nil {
 			return nil, err
 		}

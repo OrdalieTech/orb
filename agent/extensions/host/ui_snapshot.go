@@ -1,6 +1,8 @@
 package host
 
 import (
+	"maps"
+
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
 )
@@ -94,7 +96,7 @@ func snapshotUI(value extensions.Context) *wireUISnapshot {
 		Themes:        []wireThemeInfo{},
 	}
 	for _, info := range ui.GetAllThemes() {
-		entry := wireThemeInfo{Name: info.Name, Path: cloneUIString(info.Path)}
+		entry := wireThemeInfo{Name: info.Name, Path: clonePointer(info.Path)}
 		entry.Theme = snapshotTheme(ui.GetTheme(info.Name))
 		result.Themes = append(result.Themes, entry)
 	}
@@ -158,12 +160,7 @@ func snapshotFooterData(provider extensions.FooterDataProvider) *wireFooterData 
 	if provider == nil {
 		return nil
 	}
-	statuses := provider.Statuses()
-	copied := make(map[string]string, len(statuses))
-	for key, value := range statuses {
-		copied[key] = value
-	}
-	return &wireFooterData{GitBranch: provider.GitBranch(), Statuses: copied}
+	return &wireFooterData{GitBranch: provider.GitBranch(), Statuses: maps.Clone(provider.Statuses())}
 }
 
 func snapshotAutocompleteProvider(provider extensions.AutocompleteProvider) *wireAutocompleteProvider {
@@ -171,12 +168,4 @@ func snapshotAutocompleteProvider(provider extensions.AutocompleteProvider) *wir
 		return nil
 	}
 	return &wireAutocompleteProvider{TriggerCharacters: append([]string(nil), provider.TriggerCharacters()...)}
-}
-
-func cloneUIString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }

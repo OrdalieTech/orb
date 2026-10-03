@@ -60,14 +60,6 @@ func NewAuthStorageWithDocument(document host.Document) (*AuthStorage, error) {
 	return result, nil
 }
 
-func NewDefaultAuthStorage() (*AuthStorage, error) {
-	agentDir, err := GetAgentDir()
-	if err != nil {
-		return nil, err
-	}
-	return NewAuthStorage(filepath.Join(agentDir, "auth.json"))
-}
-
 func (storage *AuthStorage) Path() string { return storage.path }
 
 func (storage *AuthStorage) Reload() {
@@ -352,7 +344,7 @@ func cloneAuthDocument(document authDocument) authDocument {
 
 func parseAuthDocument(data []byte) (authDocument, error) {
 	// Upstream parseStorageData treats empty content as an empty store
-	// (auth-storage.ts "if (!content) return {}"), self-healing a 0-byte file.
+	// (upstream returns {} for empty content), self-healing a 0-byte file.
 	if len(data) == 0 {
 		return emptyAuthDocument(), nil
 	}

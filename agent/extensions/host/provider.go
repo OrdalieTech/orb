@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -38,8 +40,6 @@ func (err *ProviderInvokeError) Error() string {
 }
 
 func (err *ProviderInvokeError) Unwrap() error { return err.Cause }
-
-func (err *ProviderInvokeError) Retryable() bool { return err != nil && err.CanRetry }
 
 type wireProviderRegistration struct {
 	Kind         string                        `json:"kind"`
@@ -156,20 +156,11 @@ func (manager *Manager) handleProviderHostRequest(generation *generation, value 
 	if err := validateWireProvider(params.Provider); err != nil {
 		return nil, invalidRegistration(err), true
 	}
-	for index := range state.Providers {
-		if state.Providers[index].ID == params.Provider.ID {
-			state.Providers[index] = cloneWireProvider(params.Provider)
-			if api := manager.stateHost.api(params.ExtensionID); api != nil {
-				if err := callStateAPI(func() {
-					manager.registerProviders(api, params.ExtensionID, []wireProviderRegistration{params.Provider})
-				}); err != nil {
-					return nil, invalidRegistration(err), true
-				}
-			}
-			return map[string]bool{"accepted": true}, nil, true
-		}
+	if index := slices.IndexFunc(state.Providers, func(provider wireProviderRegistration) bool { return provider.ID == params.Provider.ID }); index >= 0 {
+		state.Providers[index] = cloneWireProvider(params.Provider)
+	} else {
+		state.Providers = append(state.Providers, cloneWireProvider(params.Provider))
 	}
-	state.Providers = append(state.Providers, cloneWireProvider(params.Provider))
 	if api := manager.stateHost.api(params.ExtensionID); api != nil {
 		if err := callStateAPI(func() {
 			manager.registerProviders(api, params.ExtensionID, []wireProviderRegistration{params.Provider})
@@ -225,7 +216,7 @@ func (manager *Manager) nativeProvider(extensionID, providerID string) extension
 		ID:      providerID,
 		Name:    registration.Name,
 		BaseURL: registration.BaseURL,
-		Headers: cloneProviderStringMap(registration.Headers),
+		Headers: maps.Clone(registration.Headers),
 	}
 	if registration.Auth.APIKey != nil {
 		provider.Auth.APIKey = &hostAPIKeyAuth{manager: manager, extensionID: extensionID, providerID: providerID}
@@ -270,10 +261,10 @@ func providerConfigFromWire(definition *wireProviderConfigDefinition) extensions
 		BaseURL:    definition.BaseURL,
 		APIKey:     definition.APIKey,
 		API:        definition.API,
-		Headers:    cloneProviderStringMap(definition.Headers),
-		AuthHeader: cloneProviderBool(definition.AuthHeader),
+		Headers:    maps.Clone(definition.Headers),
+		AuthHeader: clonePointer(definition.AuthHeader),
 		Models:     append([]extensions.ProviderModelConfig(nil), definition.Models...),
-		Defined:    cloneProviderBoolMap(definition.Defined),
+		Defined:    maps.Clone(definition.Defined),
 	}
 }
 
@@ -299,17 +290,17 @@ func (manager *Manager) providerHandle(extensionID, providerID, method string) (
 	}
 	switch method {
 	case "apiKey.login":
-		return optionalAPIKeyHandle(provider.Auth.APIKey, func(auth *wireAPIKeyAuth) string { return auth.Login })
+		return optionalHandle(provider.Auth.APIKey, func(auth *wireAPIKeyAuth) string { return auth.Login })
 	case "apiKey.check":
-		return optionalAPIKeyHandle(provider.Auth.APIKey, func(auth *wireAPIKeyAuth) string { return auth.Check })
+		return optionalHandle(provider.Auth.APIKey, func(auth *wireAPIKeyAuth) string { return auth.Check })
 	case "apiKey.resolve":
-		return optionalAPIKeyHandle(provider.Auth.APIKey, func(auth *wireAPIKeyAuth) string { return auth.Resolve })
+		return optionalHandle(provider.Auth.APIKey, func(auth *wireAPIKeyAuth) string { return auth.Resolve })
 	case "oauth.login":
-		return optionalOAuthHandle(provider.Auth.OAuth, func(auth *wireOAuthAuth) string { return auth.Login })
+		return optionalHandle(provider.Auth.OAuth, func(auth *wireOAuthAuth) string { return auth.Login })
 	case "oauth.refresh":
-		return optionalOAuthHandle(provider.Auth.OAuth, func(auth *wireOAuthAuth) string { return auth.Refresh })
+		return optionalHandle(provider.Auth.OAuth, func(auth *wireOAuthAuth) string { return auth.Refresh })
 	case "oauth.toAuth":
-		return optionalOAuthHandle(provider.Auth.OAuth, func(auth *wireOAuthAuth) string { return auth.ToAuth })
+		return optionalHandle(provider.Auth.OAuth, func(auth *wireOAuthAuth) string { return auth.ToAuth })
 	case "stream":
 		return provider.Stream, provider.Stream != ""
 	case "streamSimple":
@@ -322,15 +313,7 @@ func (manager *Manager) providerHandle(extensionID, providerID, method string) (
 	}
 }
 
-func optionalAPIKeyHandle(auth *wireAPIKeyAuth, get func(*wireAPIKeyAuth) string) (string, bool) {
-	if auth == nil {
-		return "", false
-	}
-	handle := get(auth)
-	return handle, handle != ""
-}
-
-func optionalOAuthHandle(auth *wireOAuthAuth, get func(*wireOAuthAuth) string) (string, bool) {
+func optionalHandle[T any](auth *T, get func(*T) string) (string, bool) {
 	if auth == nil {
 		return "", false
 	}
@@ -339,15 +322,6 @@ func optionalOAuthHandle(auth *wireOAuthAuth, get func(*wireOAuthAuth) string) (
 }
 
 func (manager *Manager) invokeProvider(
-	ctx context.Context,
-	extensionID, providerID, method string,
-	args any,
-	invocation providerInvocation,
-) (json.RawMessage, bool, error) {
-	return manager.invokeProviderUpdate(ctx, extensionID, providerID, method, args, invocation, nil)
-}
-
-func (manager *Manager) invokeProviderUpdate(
 	ctx context.Context,
 	extensionID, providerID, method string,
 	args any,
@@ -423,6 +397,30 @@ type hostAPIKeyAuth struct {
 	providerID  string
 }
 
+// invokeProviderValue decodes a provider callback's value. An absent value is
+// (nil, nil), or the missing error when one is given.
+func invokeProviderValue[T any](ctx context.Context, auth hostAPIKeyAuth, method string, args any, invocation providerInvocation, missing string) (*T, error) {
+	raw, present, err := auth.manager.invokeProvider(ctx, auth.extensionID, auth.providerID, method, args, invocation, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		if missing == "" {
+			return nil, nil
+		}
+		return nil, errors.New(missing)
+	}
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	return &value, nil
+}
+
+type credentialArgs struct {
+	Credential *aiauth.Credential `json:"credential,omitempty"`
+}
+
 func (method *hostAPIKeyAuth) Name() string {
 	provider, _ := method.manager.providerRegistration(method.extensionID, method.providerID)
 	if provider.Auth.APIKey == nil {
@@ -436,17 +434,7 @@ func (method *hostAPIKeyAuth) Resolve(
 	authContext aiauth.AuthContext,
 	credential *aiauth.Credential,
 ) (*aiauth.AuthResult, error) {
-	raw, present, err := method.manager.invokeProvider(ctx, method.extensionID, method.providerID, "apiKey.resolve", struct {
-		Credential *aiauth.Credential `json:"credential,omitempty"`
-	}{credential}, providerInvocation{authContext: authContext})
-	if err != nil || !present {
-		return nil, err
-	}
-	var result aiauth.AuthResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return invokeProviderValue[aiauth.AuthResult](ctx, *method, "apiKey.resolve", credentialArgs{credential}, providerInvocation{authContext: authContext}, "")
 }
 
 func (method *hostAPIKeyAuth) Check(
@@ -461,39 +449,14 @@ func (method *hostAPIKeyAuth) Check(
 		}
 		return &aiauth.AuthCheck{Source: resolved.Source, Type: aiauth.CredentialAPIKey}, nil
 	}
-	raw, present, err := method.manager.invokeProvider(ctx, method.extensionID, method.providerID, "apiKey.check", struct {
-		Credential *aiauth.Credential `json:"credential,omitempty"`
-	}{credential}, providerInvocation{authContext: authContext})
-	if err != nil || !present {
-		return nil, err
-	}
-	var result aiauth.AuthCheck
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return invokeProviderValue[aiauth.AuthCheck](ctx, *method, "apiKey.check", credentialArgs{credential}, providerInvocation{authContext: authContext}, "")
 }
 
 func (method *hostAPIKeyAuth) Login(ctx context.Context, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
-	raw, present, err := method.manager.invokeProvider(ctx, method.extensionID, method.providerID, "apiKey.login", nil, providerInvocation{interaction: interaction})
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		return nil, errors.New("api-key login returned no credential")
-	}
-	var credential aiauth.Credential
-	if err := json.Unmarshal(raw, &credential); err != nil {
-		return nil, err
-	}
-	return &credential, nil
+	return invokeProviderValue[aiauth.Credential](ctx, *method, "apiKey.login", nil, providerInvocation{interaction: interaction}, "api-key login returned no credential")
 }
 
-type hostOAuthAuth struct {
-	manager     *Manager
-	extensionID string
-	providerID  string
-}
+type hostOAuthAuth hostAPIKeyAuth
 
 func (method *hostOAuthAuth) Name() string {
 	provider, _ := method.manager.providerRegistration(method.extensionID, method.providerID)
@@ -512,52 +475,23 @@ func (method *hostOAuthAuth) LoginLabel() string {
 }
 
 func (method *hostOAuthAuth) Login(ctx context.Context, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
-	raw, present, err := method.manager.invokeProvider(ctx, method.extensionID, method.providerID, "oauth.login", nil, providerInvocation{interaction: interaction})
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		return nil, errors.New("oauth login returned no credential")
-	}
-	var credential aiauth.Credential
-	if err := json.Unmarshal(raw, &credential); err != nil {
-		return nil, err
-	}
-	return &credential, nil
+	return invokeProviderValue[aiauth.Credential](ctx, hostAPIKeyAuth(*method), "oauth.login", nil, providerInvocation{interaction: interaction}, "oauth login returned no credential")
 }
 
 func (method *hostOAuthAuth) Refresh(ctx context.Context, credential *aiauth.Credential) (*aiauth.Credential, error) {
-	raw, present, err := method.manager.invokeProvider(ctx, method.extensionID, method.providerID, "oauth.refresh", struct {
+	return invokeProviderValue[aiauth.Credential](ctx, hostAPIKeyAuth(*method), "oauth.refresh", struct {
 		Credential *aiauth.Credential `json:"credential"`
-	}{credential}, providerInvocation{})
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		return nil, errors.New("oauth refresh returned no credential")
-	}
-	var refreshed aiauth.Credential
-	if err := json.Unmarshal(raw, &refreshed); err != nil {
-		return nil, err
-	}
-	return &refreshed, nil
+	}{credential}, providerInvocation{}, "oauth refresh returned no credential")
 }
 
 func (method *hostOAuthAuth) ToAuth(credential *aiauth.Credential) (aiauth.ModelAuth, error) {
-	raw, present, err := method.manager.invokeProvider(context.Background(), method.extensionID, method.providerID, "oauth.toAuth", struct {
+	auth, err := invokeProviderValue[aiauth.ModelAuth](context.Background(), hostAPIKeyAuth(*method), "oauth.toAuth", struct {
 		Credential *aiauth.Credential `json:"credential"`
-	}{credential}, providerInvocation{})
+	}{credential}, providerInvocation{}, "oauth toAuth returned no auth")
 	if err != nil {
 		return aiauth.ModelAuth{}, err
 	}
-	if !present {
-		return aiauth.ModelAuth{}, errors.New("oauth toAuth returned no auth")
-	}
-	var auth aiauth.ModelAuth
-	if err := json.Unmarshal(raw, &auth); err != nil {
-		return aiauth.ModelAuth{}, err
-	}
-	return auth, nil
+	return *auth, nil
 }
 
 // providerEventQueue hands host-emitted stream events to the Go consumer as
@@ -649,7 +583,7 @@ func (manager *Manager) providerStream(extensionID, providerID, method string) e
 		// provider_invoke request is in flight, so events reach the consumer as
 		// the extension's stream yields them instead of after it completes.
 		go func() {
-			raw, present, err := manager.invokeProviderUpdate(streamContext, extensionID, providerID, method, struct {
+			raw, present, err := manager.invokeProvider(streamContext, extensionID, providerID, method, struct {
 				Model   *ai.Model               `json:"model"`
 				Context ai.Context              `json:"context"`
 				Options *ai.SimpleStreamOptions `json:"options,omitempty"`
@@ -787,53 +721,17 @@ func (manager *Manager) writeProviderInteractionResult(generation *generation, c
 
 func cloneWireProvider(source wireProviderRegistration) wireProviderRegistration {
 	cloned := source
-	cloned.Headers = cloneProviderStringMap(source.Headers)
+	cloned.Headers = maps.Clone(source.Headers)
 	cloned.Models = append([]ai.Model(nil), source.Models...)
-	if source.Auth.APIKey != nil {
-		value := *source.Auth.APIKey
-		cloned.Auth.APIKey = &value
-	}
-	if source.Auth.OAuth != nil {
-		value := *source.Auth.OAuth
-		cloned.Auth.OAuth = &value
-	}
+	cloned.Auth.APIKey = clonePointer(source.Auth.APIKey)
+	cloned.Auth.OAuth = clonePointer(source.Auth.OAuth)
 	if source.Config != nil {
 		value := *source.Config
-		value.Headers = cloneProviderStringMap(source.Config.Headers)
+		value.Headers = maps.Clone(source.Config.Headers)
 		value.Models = append([]extensions.ProviderModelConfig(nil), source.Config.Models...)
-		value.Defined = cloneProviderBoolMap(source.Config.Defined)
-		value.AuthHeader = cloneProviderBool(source.Config.AuthHeader)
+		value.Defined = maps.Clone(source.Config.Defined)
+		value.AuthHeader = clonePointer(source.Config.AuthHeader)
 		cloned.Config = &value
 	}
 	return cloned
-}
-
-func cloneProviderStringMap(source map[string]string) map[string]string {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]string, len(source))
-	for name, value := range source {
-		result[name] = value
-	}
-	return result
-}
-
-func cloneProviderBoolMap(source map[string]bool) map[string]bool {
-	if source == nil {
-		return nil
-	}
-	result := make(map[string]bool, len(source))
-	for name, value := range source {
-		result[name] = value
-	}
-	return result
-}
-
-func cloneProviderBool(source *bool) *bool {
-	if source == nil {
-		return nil
-	}
-	value := *source
-	return &value
 }

@@ -195,11 +195,10 @@ func executePrintMode(ctx context.Context, session printSession, options PrintMo
 	state := session.State()
 	assistant := lastAssistant(state)
 	if assistant == nil {
-		// Overflow recovery drops the failed assistant from agent state
-		// (upstream agent-session.ts:2006) and leaves the user message as the
-		// tail; exiting 0 with empty stdout hides that from scripts. A prompt
-		// consumed by a slash command or input hook appends no user message and
-		// is not a failure.
+		// Overflow recovery drops the failed assistant from agent state and
+		// leaves the user message as the tail; exiting 0 with empty stdout hides
+		// that from scripts. A prompt consumed by a slash command or input hook
+		// appends no user message and is not a failure.
 		if lastMessageIsUser(state) {
 			return printModeResult{err: errors.New("no assistant response was produced; rerun with --mode json to see the provider error")}
 		}

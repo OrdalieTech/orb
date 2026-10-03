@@ -63,10 +63,6 @@ var terminalImageState = struct {
 	cell CellDimensions
 }{cell: CellDimensions{WidthPx: 9, HeightPx: 18}}
 
-func DetectCapabilities(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
-	return termcaps.Detect(tmuxForwardsHyperlink)
-}
-
 func GetCapabilities() TerminalCapabilities { return termcaps.Get() }
 
 func SetCapabilities(capabilities TerminalCapabilities) { termcaps.Set(capabilities) }

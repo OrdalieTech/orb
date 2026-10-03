@@ -273,7 +273,6 @@ func TestNewAgentSessionForwardsStreamSettings(t *testing.T) {
 			wantTimeout: 42,
 		},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			cwd := t.TempDir()

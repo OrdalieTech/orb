@@ -89,23 +89,6 @@ func baseMimeType(mimeType string) string {
 	return strings.ToLower(strings.TrimSpace(base))
 }
 
-// ExtensionForImageMimeType returns the file extension for a supported image
-// MIME type, or "" for unsupported types (upstream returns null).
-func ExtensionForImageMimeType(mimeType string) string {
-	switch baseMimeType(mimeType) {
-	case "image/png":
-		return "png"
-	case "image/jpeg":
-		return "jpg"
-	case "image/webp":
-		return "webp"
-	case "image/gif":
-		return "gif"
-	default:
-		return ""
-	}
-}
-
 // selectPreferredImageMimeType picks the first supported base type in upstream
 // preference order, falling back to any image/* type.
 func selectPreferredImageMimeType(mimeTypes []string) string {

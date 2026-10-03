@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,24 +136,15 @@ func parseModifyOtherKeys(data string) (codepoint, modifier int, ok bool) {
 	return number(match[2], 0), number(match[1], 1) - 1, true
 }
 
-func IsKeyRelease(data string) bool {
-	if strings.Contains(data, "\x1b[200~") {
-		return false
-	}
-	for _, suffix := range []string{":3u", ":3~", ":3A", ":3B", ":3C", ":3D", ":3H", ":3F"} {
-		if strings.Contains(data, suffix) {
-			return true
-		}
-	}
-	return false
-}
+func IsKeyRelease(data string) bool { return hasKeyEventSuffix(data, ":3") }
+func IsKeyRepeat(data string) bool  { return hasKeyEventSuffix(data, ":2") }
 
-func IsKeyRepeat(data string) bool {
+func hasKeyEventSuffix(data, event string) bool {
 	if strings.Contains(data, "\x1b[200~") {
 		return false
 	}
-	for _, suffix := range []string{":2u", ":2~", ":2A", ":2B", ":2C", ":2D", ":2H", ":2F"} {
-		if strings.Contains(data, suffix) {
+	for _, final := range "u~ABCDHF" {
+		if strings.Contains(data, event+string(final)) {
 			return true
 		}
 	}
@@ -247,20 +239,12 @@ var legacyKeys = map[string][]string{
 var shiftedLegacy = map[string][]string{"up": {"\x1b[a"}, "down": {"\x1b[b"}, "right": {"\x1b[c"}, "left": {"\x1b[d"}, "clear": {"\x1b[e"}, "insert": {"\x1b[2$"}, "delete": {"\x1b[3$"}, "pageup": {"\x1b[5$"}, "pagedown": {"\x1b[6$"}, "home": {"\x1b[7$"}, "end": {"\x1b[8$"}}
 var ctrlLegacy = map[string][]string{"up": {"\x1bOa"}, "down": {"\x1bOb"}, "right": {"\x1bOc"}, "left": {"\x1bOd"}, "clear": {"\x1bOe"}, "insert": {"\x1b[2^"}, "delete": {"\x1b[3^"}, "pageup": {"\x1b[5^"}, "pagedown": {"\x1b[6^"}, "home": {"\x1b[7^"}, "end": {"\x1b[8^"}}
 
-func includes(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
-}
 func matchesLegacyModifier(data, key string, modifier int) bool {
 	if modifier == modifierShift {
-		return includes(shiftedLegacy[key], data)
+		return slices.Contains(shiftedLegacy[key], data)
 	}
 	if modifier == modifierCtrl {
-		return includes(ctrlLegacy[key], data)
+		return slices.Contains(ctrlLegacy[key], data)
 	}
 	return false
 }
@@ -345,7 +329,7 @@ func MatchesKey(data string, keyID KeyID) bool {
 		return matchesRawBackspace(data, modifier) || matchesKitty(data, 127, modifier) || matchesModify(data, 127, modifier)
 	case "insert", "delete", "home", "end", "pageup", "pagedown":
 		codes := map[string]int{"insert": -11, "delete": -10, "pageup": -12, "pagedown": -13, "home": -14, "end": -15}
-		if modifier == 0 && includes(legacyKeys[key], data) {
+		if modifier == 0 && slices.Contains(legacyKeys[key], data) {
 			return true
 		}
 		if matchesLegacyModifier(data, key, modifier) {
@@ -354,21 +338,21 @@ func MatchesKey(data string, keyID KeyID) bool {
 		return matchesKitty(data, codes[key], modifier)
 	case "clear":
 		if modifier == 0 {
-			return includes(legacyKeys[key], data)
+			return slices.Contains(legacyKeys[key], data)
 		}
 		return matchesLegacyModifier(data, key, modifier)
 	case "up", "down", "left", "right":
 		codes := map[string]int{"up": -1, "down": -2, "right": -3, "left": -4}
 		if modifier == modifierAlt {
 			legacy := map[string][]string{"up": {"\x1bp"}, "down": {"\x1bn"}, "left": {"\x1b[1;3D", "\x1bb"}, "right": {"\x1b[1;3C", "\x1bf"}}
-			if includes(legacy[key], data) || (!IsKittyProtocolActive() && ((key == "left" && data == "\x1bB") || (key == "right" && data == "\x1bF"))) {
+			if slices.Contains(legacy[key], data) || (!IsKittyProtocolActive() && ((key == "left" && data == "\x1bB") || (key == "right" && data == "\x1bF"))) {
 				return true
 			}
 		}
 		if modifier == modifierCtrl && ((key == "left" && data == "\x1b[1;5D") || (key == "right" && data == "\x1b[1;5C")) {
 			return true
 		}
-		if modifier == 0 && includes(legacyKeys[key], data) {
+		if modifier == 0 && slices.Contains(legacyKeys[key], data) {
 			return true
 		}
 		if matchesLegacyModifier(data, key, modifier) {
@@ -376,7 +360,7 @@ func MatchesKey(data string, keyID KeyID) bool {
 		}
 		return matchesKitty(data, codes[key], modifier)
 	case "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12":
-		return modifier == 0 && includes(legacyKeys[key], data)
+		return modifier == 0 && slices.Contains(legacyKeys[key], data)
 	}
 	r, printable := printableKey(key)
 	if !printable {

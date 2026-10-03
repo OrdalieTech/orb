@@ -163,7 +163,7 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 		if !loaded {
 			// First load adopts the already-materialized instances, mirroring
 			// upstream loadFinalExtensionSet reusing pre-trust-loaded extensions
-			// (resource-loader.ts:517-560) so factories run once per startup.
+			// so factories run once per startup.
 			// Later reloads (/reload) re-run every factory against a fresh registry.
 			registry = options.ExtensionRegistry
 		} else {

@@ -147,10 +147,9 @@ func (ct *CountdownTimer) Dispose() {
 }
 
 // KeyText formats the keys currently bound to a keybinding id (falling back
-// to the id itself), mirroring upstream's exported keyText helper.
+// to the id itself).
 func KeyText(binding string) string {
-	kb := tui.GetKeybindings()
-	keys := kb.Keys(binding)
+	keys := tui.GetKeybindings().Keys(binding)
 	if len(keys) == 0 {
 		return binding
 	}

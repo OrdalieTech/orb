@@ -136,15 +136,15 @@ func TestOpenHandlesSessionsBeyondHeaderDiscoveryLimit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if manager.GetSessionID() != test.id || manager.GetCwd() != storedCWD {
-			t.Fatalf("%s opened id=%q cwd=%q", test.name, manager.GetSessionID(), manager.GetCwd())
+		if manager.GetSessionID() != test.id || manager.GetCWD() != storedCWD {
+			t.Fatalf("%s opened id=%q cwd=%q", test.name, manager.GetSessionID(), manager.GetCWD())
 		}
 		manager, err = Open(path, dir, WithCwdOverride(overrideCWD))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if manager.GetSessionID() != test.id || manager.GetCwd() != overrideCWD {
-			t.Fatalf("%s override id=%q cwd=%q", test.name, manager.GetSessionID(), manager.GetCwd())
+		if manager.GetSessionID() != test.id || manager.GetCWD() != overrideCWD {
+			t.Fatalf("%s override id=%q cwd=%q", test.name, manager.GetSessionID(), manager.GetCWD())
 		}
 	}
 }

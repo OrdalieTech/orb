@@ -181,7 +181,7 @@ func TestCredentialPrintErrorBoundary(t *testing.T) {
 	})
 }
 
-// LOG-m5: bare `orb logout` no longer silently defaults to anthropic; it
+// Bare `orb logout` no longer silently defaults to anthropic; it
 // lists the stored credentials and requires an explicit provider argument.
 func TestLOGm5BareLogoutListsStoredCredentials(t *testing.T) {
 	agentDir := t.TempDir()
@@ -220,7 +220,7 @@ func TestLOGm5BareLogoutListsStoredCredentials(t *testing.T) {
 	}
 }
 
-// LOG-m5: bare logout with nothing stored says so instead of failing on a
+// Bare logout with nothing stored says so instead of failing on a
 // phantom provider.
 func TestLOGm5BareLogoutWithoutStoredCredentials(t *testing.T) {
 	agentDir := t.TempDir()
@@ -269,7 +269,7 @@ func TestHeadlessAuthInteraction(t *testing.T) {
 	}
 }
 
-// LOG-m5: headless PromptSelect prints the numbered options and maps a
+// Headless PromptSelect prints the numbered options and maps a
 // numbered (or literal-id) answer back to the option id.
 func TestLOGm5HeadlessPromptSelectListsNumberedOptions(t *testing.T) {
 	options := []auth.PromptOption{

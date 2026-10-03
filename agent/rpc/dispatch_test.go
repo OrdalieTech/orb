@@ -126,7 +126,7 @@ func TestRPCExtensionShutdownHonoredAfterCommand(t *testing.T) {
 		output: NewFrameWriter(&stdout),
 	}
 	mode.ui = newExtensionUI(mode.writeObject)
-	if err := mode.bindSession(); err != nil {
+	if err := mode.bindReplacement(mode.host.Session()); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
@@ -211,7 +211,7 @@ func TestRPCExtensionShutdownHonoredAfterUntypedCommand(t *testing.T) {
 		output: NewFrameWriter(&stdout),
 	}
 	mode.ui = newExtensionUI(mode.writeObject)
-	if err := mode.bindSession(); err != nil {
+	if err := mode.bindReplacement(mode.host.Session()); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {

@@ -3,6 +3,8 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
+	"slices"
 	"strings"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
@@ -75,18 +77,11 @@ func appendTurnMarker(manager *sessionstore.SessionManager, marker turnMarker) (
 // path when that starts to hurt.
 func scanTurnLedger(manager *sessionstore.SessionManager, eventID string) turnLedger {
 	var ledger turnLedger
-	for _, entry := range manager.GetEntries() {
-		if entry.Type != "custom" || entry.CustomType != turnCustomType {
-			continue
-		}
-		var marker turnMarker
-		if err := json.Unmarshal(entry.Data, &marker); err != nil {
-			continue
-		}
+	for entryID, marker := range turnMarkers(manager) {
 		if marker.EventID != eventID {
 			continue
 		}
-		record := &ledgerEntry{entryID: entry.ID, marker: marker}
+		record := &ledgerEntry{entryID: entryID, marker: marker}
 		switch marker.Phase {
 		case phaseStarted:
 			ledger.started = record
@@ -99,6 +94,22 @@ func scanTurnLedger(manager *sessionstore.SessionManager, eventID string) turnLe
 		}
 	}
 	return ledger
+}
+
+// turnMarkers yields every decodable ledger marker with its entry id, in
+// session order.
+func turnMarkers(manager *sessionstore.SessionManager) iter.Seq2[string, turnMarker] {
+	return func(yield func(string, turnMarker) bool) {
+		for _, entry := range manager.GetEntries() {
+			var marker turnMarker
+			if entry.Type != "custom" || entry.CustomType != turnCustomType || json.Unmarshal(entry.Data, &marker) != nil {
+				continue
+			}
+			if !yield(entry.ID, marker) {
+				return
+			}
+		}
+	}
 }
 
 // carryableMarkers collects the ledger knowledge that must survive a session
@@ -114,14 +125,7 @@ func carryableMarkers(manager *sessionstore.SessionManager) []turnMarker {
 	}
 	states := map[string]*eventState{}
 	var order []string
-	for _, entry := range manager.GetEntries() {
-		if entry.Type != "custom" || entry.CustomType != turnCustomType {
-			continue
-		}
-		var marker turnMarker
-		if err := json.Unmarshal(entry.Data, &marker); err != nil {
-			continue
-		}
+	for entryID, marker := range turnMarkers(manager) {
 		state := states[marker.EventID]
 		if state == nil {
 			state = &eventState{}
@@ -134,7 +138,7 @@ func carryableMarkers(manager *sessionstore.SessionManager) []turnMarker {
 			state.preview = &carried
 		case phaseSettled:
 			state.settled = &carried
-			state.settledEntryID = entry.ID
+			state.settledEntryID = entryID
 		case phaseDelivered:
 			state.delivered = &carried
 		}
@@ -165,11 +169,6 @@ func assistantText(message *ai.AssistantMessage) string {
 	if message == nil {
 		return ""
 	}
-	if len(message.Content) == 1 {
-		if text, ok := message.Content[0].(*ai.TextContent); ok {
-			return text.Text
-		}
-	}
 	var builder strings.Builder
 	for _, block := range message.Content {
 		if text, ok := block.(*ai.TextContent); ok {
@@ -189,10 +188,7 @@ func decodeAssistantEntry(entry *sessionstore.SessionEntry) *ai.AssistantMessage
 	if err != nil {
 		return nil
 	}
-	assistant, ok := decoded.(*ai.AssistantMessage)
-	if !ok {
-		return nil
-	}
+	assistant, _ := decoded.(*ai.AssistantMessage)
 	return assistant
 }
 
@@ -200,13 +196,7 @@ func decodeAssistantEntry(entry *sessionstore.SessionEntry) *ai.AssistantMessage
 // message entry appended after the entry afterID, or nil when none exists.
 func assistantEntryAfter(manager *sessionstore.SessionManager, afterID string) *sessionstore.SessionEntry {
 	branch := manager.GetBranch()
-	start := 0
-	for index := range branch {
-		if branch[index].ID == afterID {
-			start = index + 1
-			break
-		}
-	}
+	start := slices.IndexFunc(branch, func(entry sessionstore.SessionEntry) bool { return entry.ID == afterID }) + 1
 	for index := len(branch) - 1; index >= start; index-- {
 		if decodeAssistantEntry(&branch[index]) != nil {
 			return &branch[index]

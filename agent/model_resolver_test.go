@@ -280,27 +280,12 @@ func TestPreferredAvailableModelUsesPinnedProviderDefaults(t *testing.T) {
 	if PreferredAvailableModel(nil) != nil {
 		t.Fatal("empty available list returned a model")
 	}
-	if selected := DefaultAvailableModel("openai", models); selected == nil || selected.ID != "gpt-5.5" {
-		t.Fatalf("openai default = %#v", selected)
-	}
-	if selected := DefaultAvailableModel("openai", models[:2]); selected != nil {
-		t.Fatalf("missing exact default selected %#v", selected)
-	}
-	if selected := DefaultAvailableModel("custom", models); selected != nil {
-		t.Fatalf("unknown provider default selected %#v", selected)
-	}
 }
 
 func TestQwenTokenPlanProviderDefaults(t *testing.T) {
-	models := []ai.Model{
-		{Provider: "qwen-token-plan", ID: "qwen3.6-plus"},
-		{Provider: "qwen-token-plan", ID: "qwen3.7-max"},
-		{Provider: "qwen-token-plan-cn", ID: "qwen3.7-max"},
-	}
 	for _, provider := range []string{"qwen-token-plan", "qwen-token-plan-cn"} {
-		selected := DefaultAvailableModel(provider, models)
-		if selected == nil || selected.ID != "qwen3.7-max" {
-			t.Fatalf("%s default = %#v", provider, selected)
+		if id := defaultModelPerProvider[provider]; id != "qwen3.7-max" {
+			t.Fatalf("%s default = %q", provider, id)
 		}
 	}
 }

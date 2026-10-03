@@ -189,16 +189,6 @@ func NewStdinBuffer(sequenceTimeout, escapeTimeout time.Duration, onData, onPast
 	return &StdinBuffer{timeout: sequenceTimeout, escapeTimeout: escapeTimeout, onData: onData, onPaste: onPaste}
 }
 
-// ProcessBytes preserves upstream's Buffer input compatibility: a single
-// high byte is decoded as the legacy meta-key form ESC + (byte - 128).
-func (buffer *StdinBuffer) ProcessBytes(data []byte) {
-	if len(data) == 1 && data[0] > 127 {
-		buffer.Process(string([]byte{'\x1b', data[0] - 128}))
-		return
-	}
-	buffer.Process(string(data))
-}
-
 func (buffer *StdinBuffer) Process(data string) {
 	buffer.mu.Lock()
 	// Bumping the generation invalidates a fired AfterFunc parked on mu:
@@ -338,12 +328,6 @@ func (buffer *StdinBuffer) flushExpired(generation uint64) []string {
 	return buffer.flushLocked()
 }
 
-func (buffer *StdinBuffer) Flush() []string {
-	buffer.mu.Lock()
-	defer buffer.mu.Unlock()
-	return buffer.flushLocked()
-}
-
 func (buffer *StdinBuffer) flushLocked() []string {
 	buffer.timerGeneration++
 	if buffer.timer != nil {
@@ -371,8 +355,3 @@ func (buffer *StdinBuffer) Clear() {
 }
 
 func (buffer *StdinBuffer) Close() { buffer.Clear() }
-func (buffer *StdinBuffer) Buffered() string {
-	buffer.mu.Lock()
-	defer buffer.mu.Unlock()
-	return buffer.buffer
-}

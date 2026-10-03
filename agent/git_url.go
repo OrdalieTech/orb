@@ -3,6 +3,7 @@ package agent
 import (
 	neturl "net/url"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -87,10 +88,8 @@ func hasUnsafeGitInstallPart(value string, allowSlash bool) bool {
 		if !allowSlash && strings.Contains(candidate, "/") {
 			return true
 		}
-		for part := range strings.SplitSeq(candidate, "/") {
-			if part == ".." {
-				return true
-			}
+		if slices.Contains(strings.Split(candidate, "/"), "..") {
+			return true
 		}
 	}
 	return false

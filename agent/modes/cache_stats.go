@@ -5,9 +5,8 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 )
 
-// Prompt-cache accounting, mirroring upstream core/cache-stats.ts. The price
-// source is the available-model list (cost is $/million tokens) instead of
-// upstream's ModelRuntime lookup.
+// Prompt-cache accounting. The price source is the available-model list
+// (cost is $/million tokens).
 
 // cacheNoiseFloorTokens: per-turn misses at or below this are cache breakpoint
 // granularity noise.
@@ -40,8 +39,7 @@ type cacheWasteTotals struct {
 	missCount    int
 }
 
-// computeCacheMiss mirrors upstream detectMiss: the miss for one assistant
-// message relative to the previous request, or nil when nothing is counted.
+// computeCacheMiss is the miss for one assistant message relative to the previous request, or nil when nothing is counted.
 func computeCacheMiss(previous *cacheRequest, message *ai.AssistantMessage, models []ai.Model) *cacheMiss {
 	prompt := message.Usage.Input + message.Usage.CacheRead + message.Usage.CacheWrite
 	// A zero-cache turn only counts when cache activity was reported before:
@@ -81,9 +79,8 @@ func computeCacheMiss(previous *cacheRequest, message *ai.AssistantMessage, mode
 }
 
 // scanCacheEntries walks persisted entries in order, invoking visit with the
-// previous-request state before folding each assistant message into it. The
-// walk mirrors upstream cache-stats scan(): compaction and branch summaries
-// reset the segment (the context legitimately changed), model switches do not.
+// previous-request state before folding each assistant message into it.
+// Compaction and branch summaries reset the segment (the context legitimately changed), model switches do not.
 // visit returning false stops the walk before the current message is folded.
 func scanCacheEntries(entries []sessionstore.SessionEntry, visit func(previous *cacheRequest, entryID string, message *ai.AssistantMessage) bool) *cacheRequest {
 	var previous *cacheRequest
@@ -122,8 +119,7 @@ func scanCacheEntries(entries []sessionstore.SessionEntry, visit func(previous *
 	return previous
 }
 
-// computeCacheWaste mirrors upstream computeCacheWaste: cumulative prompt
-// tokens that should have been cache reads but were re-billed.
+// computeCacheWaste sums the prompt tokens that should have been cache reads but were re-billed.
 func computeCacheWaste(entries []sessionstore.SessionEntry, models []ai.Model) cacheWasteTotals {
 	totals := cacheWasteTotals{}
 	scanCacheEntries(entries, func(previous *cacheRequest, _ string, message *ai.AssistantMessage) bool {
@@ -137,8 +133,8 @@ func computeCacheWaste(entries []sessionstore.SessionEntry, models []ai.Model) c
 	return totals
 }
 
-// detectCacheMiss mirrors upstream detectCacheMiss for a just-completed or
-// re-rendered assistant message. When target is already persisted the scan
+// detectCacheMiss finds the miss for a just-completed or re-rendered
+// assistant message. When target is already persisted the scan
 // stops at its entry, so rebuilds resolve the same previous request the live
 // path saw.
 func (mode *InteractiveMode) detectCacheMiss(target *ai.AssistantMessage) *cacheMiss {

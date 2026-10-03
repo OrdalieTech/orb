@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -15,10 +16,10 @@ func TestStdinBufferSequencesPasteAndKittyDuplicates(t *testing.T) {
 	buffer.Process("\x1b[200~hello\nworld\x1b[201~")
 	buffer.Process("\x1b[64u@")
 	want := []string{"a", "b", "c", "\x1b[A", "\x1b[64u"}
-	if !equalLines(data, want) {
+	if !slices.Equal(data, want) {
 		t.Fatalf("data = %#v, want %#v", data, want)
 	}
-	if !equalLines(paste, []string{"hello\nworld"}) {
+	if !slices.Equal(paste, []string{"hello\nworld"}) {
 		t.Fatalf("paste = %#v", paste)
 	}
 }
@@ -34,7 +35,7 @@ func TestStdinBufferPreservesPasteAndKeyOrderWithinOneRead(t *testing.T) {
 	buffer.Process("\x1b[200~pasted\x1b[201~\r")
 
 	want := []string{"paste:pasted", "data:\r"}
-	if !equalLines(events, want) {
+	if !slices.Equal(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
 	}
 
@@ -42,7 +43,7 @@ func TestStdinBufferPreservesPasteAndKeyOrderWithinOneRead(t *testing.T) {
 	buffer.Process("\x1b[200~split")
 	buffer.Process(" paste\x1b[201~\r")
 	want = []string{"paste:split paste", "data:\r"}
-	if !equalLines(events, want) {
+	if !slices.Equal(events, want) {
 		t.Fatalf("split events = %#v, want %#v", events, want)
 	}
 }
@@ -58,7 +59,7 @@ func TestStdinBufferPreservesMixedEventsAndKittyResetAcrossPaste(t *testing.T) {
 	buffer.Process("a\x1b[64u\x1b[200~one\x1b[201~@\x1b[200~two\x1b[201~b")
 
 	want := []string{"data:a", "data:\x1b[64u", "paste:one", "data:@", "paste:two", "data:b"}
-	if !equalLines(events, want) {
+	if !slices.Equal(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
 	}
 }
@@ -85,16 +86,6 @@ func TestStdinBufferTimeoutAndWezTermEscape(t *testing.T) {
 	}
 }
 
-func TestStdinBufferLegacyHighByte(t *testing.T) {
-	data := make(chan string, 1)
-	buffer := NewStdinBuffer(time.Second, time.Second, func(value string) { data <- value }, nil)
-	defer buffer.Close()
-	buffer.ProcessBytes([]byte{0xe1})
-	if got := <-data; got != "\x1ba" {
-		t.Fatalf("high byte = %q", got)
-	}
-}
-
 func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 	var data []string
 	buffer := NewStdinBuffer(time.Second, time.Second, func(value string) { data = append(data, value) }, nil)
@@ -103,7 +94,7 @@ func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 	buffer.Process("\xa9")
 	buffer.Process("\x1b\xc3")
 	buffer.Process("\xa9")
-	if !equalLines(data, []string{"é", "\x1bé"}) {
+	if !slices.Equal(data, []string{"é", "\x1bé"}) {
 		t.Fatalf("split UTF-8 = %#v", data)
 	}
 }
@@ -116,14 +107,14 @@ func TestStdinBufferKittyDedupeSkipsAstralCodepoints(t *testing.T) {
 	// astral printable echoed after its kitty CSI-u report is never deduped.
 	buffer.Process("\x1b[128512u")
 	buffer.Process("\U0001f600")
-	if want := []string{"\x1b[128512u", "\U0001f600"}; !equalLines(data, want) {
+	if want := []string{"\x1b[128512u", "\U0001f600"}; !slices.Equal(data, want) {
 		t.Fatalf("astral data = %#v, want %#v", data, want)
 	}
 
 	data = nil
 	buffer.Process("\x1b[97u")
 	buffer.Process("a")
-	if want := []string{"\x1b[97u"}; !equalLines(data, want) {
+	if want := []string{"\x1b[97u"}; !slices.Equal(data, want) {
 		t.Fatalf("bmp data = %#v, want %#v", data, want)
 	}
 }
@@ -146,14 +137,14 @@ func TestStdinBufferStaleTimerCannotFlushFreshSequence(t *testing.T) {
 	if flushed := buffer.flushExpired(staleGeneration); flushed != nil {
 		t.Fatalf("stale timer flushed %#v", flushed)
 	}
-	if buffered := buffer.Buffered(); buffered != "\x1b[<35;10" {
+	buffer.mu.Lock()
+	buffered := buffer.buffer
+	buffer.mu.Unlock()
+	if buffered != "\x1b[<35;10" {
 		t.Fatalf("buffered = %q", buffered)
 	}
 	if len(data) != 0 {
 		t.Fatalf("data = %#v", data)
-	}
-	if got := buffer.Flush(); !equalLines(got, []string{"\x1b[<35;10"}) {
-		t.Fatalf("flush = %#v", got)
 	}
 }
 
@@ -223,7 +214,7 @@ func TestStdinBufferSplitsEscapeWaitFromSequenceWait(t *testing.T) {
 		buffer.Process("\x1b")
 		time.Sleep(25 * time.Millisecond)
 		buffer.Process("\r")
-		if !equalLines(data, []string{"\x1b\r"}) || ParseKey(data[0]) != "alt+enter" {
+		if !slices.Equal(data, []string{"\x1b\r"}) || ParseKey(data[0]) != "alt+enter" {
 			t.Fatalf("split alt+enter = %#v", data)
 		}
 	})
@@ -235,7 +226,7 @@ func TestStdinBufferSplitsEscapeWaitFromSequenceWait(t *testing.T) {
 		buffer.Process("\x1b[")
 		time.Sleep(25 * time.Millisecond)
 		buffer.Process("<65;48;39M")
-		if !equalLines(data, []string{"\x1b[<65;48;39M"}) {
+		if !slices.Equal(data, []string{"\x1b[<65;48;39M"}) {
 			t.Fatalf("fragmented mouse report = %#v", data)
 		}
 	})

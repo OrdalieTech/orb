@@ -16,9 +16,8 @@ import (
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
-// Port of packages/coding-agent/src/package-manager-cli.ts (pi
-// install/remove/update/list/config). The self route is orb's own direct
-// upgrade (G4, amended); see self_update.go.
+// pi's package commands (install/remove/update/list/config). The self route is
+// orb's own direct upgrade; see self_update.go.
 
 type updateTarget struct {
 	kind   string // "all" | "self" | "extensions" | "models"
@@ -270,9 +269,8 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 	}
 
 	options := &packageCommandOptions{command: command}
-	var selfFlag, extensionsFlag, modelsFlag, allFlag bool
+	updateFlags := map[string]bool{}
 	var extensionFlagSource string
-	var offlineFlag bool
 
 	setInvalidOption := func(arg string) {
 		if options.invalidOption == "" {
@@ -296,33 +294,9 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 			} else {
 				setInvalidOption(arg)
 			}
-		case arg == "--self":
+		case arg == "--self" || arg == "--extensions" || arg == "--models" || arg == "--all" || arg == "--offline":
 			if command == "update" {
-				selfFlag = true
-			} else {
-				setInvalidOption(arg)
-			}
-		case arg == "--extensions":
-			if command == "update" {
-				extensionsFlag = true
-			} else {
-				setInvalidOption(arg)
-			}
-		case arg == "--models":
-			if command == "update" {
-				modelsFlag = true
-			} else {
-				setInvalidOption(arg)
-			}
-		case arg == "--all":
-			if command == "update" {
-				allFlag = true
-			} else {
-				setInvalidOption(arg)
-			}
-		case arg == "--offline":
-			if command == "update" {
-				offlineFlag = true
+				updateFlags[arg] = true
 			} else {
 				setInvalidOption(arg)
 			}
@@ -358,6 +332,7 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 	}
 
 	if command == "update" {
+		selfFlag, extensionsFlag, modelsFlag, allFlag := updateFlags["--self"], updateFlags["--extensions"], updateFlags["--models"], updateFlags["--all"]
 		if allFlag && (selfFlag || extensionsFlag || modelsFlag || extensionFlagSource != "") {
 			setConflict("--all cannot be combined with --self, --extensions, --models, or --extension")
 		}
@@ -406,7 +381,7 @@ func parsePackageCommand(args []string) *packageCommandOptions {
 			options.updateTarget = &updateTarget{kind: "self"}
 		}
 		// --offline only means anything to the release check the self route makes.
-		if offlineFlag {
+		if updateFlags["--offline"] {
 			if options.updateTarget.kind == "self" {
 				options.offline = true
 			} else {
@@ -449,10 +424,9 @@ func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, pro
 		settings.SetProjectTrusted(trusted)
 		return settings, nil, nil
 	}
-	// Upstream loads the pre-trust extension set here too, so a project_trust
-	// handler decides package commands exactly as it decides a session
-	// (package-manager-cli.ts createCommandSettingsManager), and prints its
-	// warnings.
+	// The pre-trust extension set loads here too, so a project_trust handler
+	// decides package commands exactly as it decides a session, and its
+	// warnings are printed.
 	trust, err := resolveStartupProjectTrust(ctx, cwd, agentDir, CLIArgs{ProjectTrusted: projectTrustOverride}, settings)
 	if err != nil {
 		return nil, nil, err
@@ -578,25 +552,20 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 		_, _ = fmt.Fprintf(streams.Stderr, "Use \"orb --help\" or %q.\n", getPackageCommandUsage(options.command))
 		return true, 1
 	}
-	if options.missingOptionValue != "" {
-		_, _ = fmt.Fprintf(streams.Stderr, "Missing value for %s.\n", options.missingOptionValue)
+	usageError := func(message string) (bool, int) {
+		_, _ = fmt.Fprintln(streams.Stderr, message)
 		_, _ = fmt.Fprintf(streams.Stderr, "Usage: %s\n", getPackageCommandUsage(options.command))
 		return true, 1
 	}
-	if options.invalidArgument != "" {
-		_, _ = fmt.Fprintf(streams.Stderr, "Unexpected argument %s.\n", options.invalidArgument)
-		_, _ = fmt.Fprintf(streams.Stderr, "Usage: %s\n", getPackageCommandUsage(options.command))
-		return true, 1
-	}
-	if options.conflictingOptions != "" {
-		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+options.conflictingOptions)
-		_, _ = fmt.Fprintf(streams.Stderr, "Usage: %s\n", getPackageCommandUsage(options.command))
-		return true, 1
-	}
-	if (options.command == "install" || options.command == "remove") && options.source == "" {
-		_, _ = fmt.Fprintf(streams.Stderr, "Missing %s source.\n", options.command)
-		_, _ = fmt.Fprintf(streams.Stderr, "Usage: %s\n", getPackageCommandUsage(options.command))
-		return true, 1
+	switch {
+	case options.missingOptionValue != "":
+		return usageError("Missing value for " + options.missingOptionValue + ".")
+	case options.invalidArgument != "":
+		return usageError("Unexpected argument " + options.invalidArgument + ".")
+	case options.conflictingOptions != "":
+		return usageError("Error: " + options.conflictingOptions)
+	case (options.command == "install" || options.command == "remove") && options.source == "":
+		return usageError("Missing " + options.command + " source.")
 	}
 
 	if options.command == "update" && options.updateTarget != nil && options.updateTarget.kind == "models" {
@@ -667,51 +636,36 @@ func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams
 			_, _ = fmt.Fprintln(streams.Stdout, "No packages installed.")
 			return true, 0
 		}
-		printPackage := func(pkg agent.ConfiguredPackage) {
-			display := pkg.Source
-			if pkg.Filtered {
-				display += " (filtered)"
-			}
-			_, _ = fmt.Fprintln(streams.Stdout, "  "+display)
-			if pkg.InstalledPath != "" {
-				_, _ = fmt.Fprintln(streams.Stdout, "    "+pkg.InstalledPath)
-			}
-		}
-		printedUser := false
-		for _, pkg := range configuredPackages {
-			if pkg.Scope != "user" {
-				continue
-			}
-			if !printedUser {
-				_, _ = fmt.Fprintln(streams.Stdout, "User packages:")
-				printedUser = true
-			}
-			printPackage(pkg)
-		}
-		printedProject := false
-		for _, pkg := range configuredPackages {
-			if pkg.Scope != "project" {
-				continue
-			}
-			if !printedProject {
-				if printedUser {
-					_, _ = fmt.Fprintln(streams.Stdout)
+		printed := false
+		for _, scope := range [][2]string{{"user", "User packages:"}, {"project", "Project packages:"}} {
+			headed := false
+			for _, pkg := range configuredPackages {
+				if pkg.Scope != scope[0] {
+					continue
 				}
-				_, _ = fmt.Fprintln(streams.Stdout, "Project packages:")
-				printedProject = true
+				if !headed {
+					if printed {
+						_, _ = fmt.Fprintln(streams.Stdout)
+					}
+					_, _ = fmt.Fprintln(streams.Stdout, scope[1])
+					headed, printed = true, true
+				}
+				display := pkg.Source
+				if pkg.Filtered {
+					display += " (filtered)"
+				}
+				_, _ = fmt.Fprintln(streams.Stdout, "  "+display)
+				if pkg.InstalledPath != "" {
+					_, _ = fmt.Fprintln(streams.Stdout, "    "+pkg.InstalledPath)
+				}
 			}
-			printPackage(pkg)
 		}
 		return true, 0
 
 	default: // update
 		target := options.updateTarget
 		if target.kind == "all" || target.kind == "extensions" {
-			updateSource := ""
-			if target.kind == "extensions" {
-				updateSource = target.source
-			}
-			updates, err := packageManager.UpdateWithResults(updateSource)
+			updates, err := packageManager.UpdateWithResults(target.source)
 			if err != nil {
 				return true, reportCLIError(streams.Stderr, err)
 			}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -308,7 +309,7 @@ func TestWindowedContainerDuplicateDirty(t *testing.T) {
 		t.Fatalf("LineCount after duplicate dirty = %d, want 5", got)
 	}
 	want := []string{"changed", "changed too", "other", "changed", "changed too"}
-	if got := container.RenderLines(10, 0, 5); !equalLines(got, want) {
+	if got := container.RenderLines(10, 0, 5); !slices.Equal(got, want) {
 		t.Fatalf("RenderLines = %q, want %q", got, want)
 	}
 
@@ -319,7 +320,7 @@ func TestWindowedContainerDuplicateDirty(t *testing.T) {
 		t.Fatalf("LineCount after re-dirty = %d, want 4", got)
 	}
 	want = []string{"again", "other", "again", "again"}
-	if got := container.RenderLines(10, 0, 4); !equalLines(got, want) {
+	if got := container.RenderLines(10, 0, 4); !slices.Equal(got, want) {
 		t.Fatalf("RenderLines after re-dirty = %q, want %q", got, want)
 	}
 }
@@ -378,7 +379,7 @@ func TestWindowedContainerRefillsAfterCascadingCollapse(t *testing.T) {
 		container.ChildChanged(child)
 	}
 	want := children[7].lines[72:90]
-	if got := container.RenderLines(59, 72, 90); !equalLines(got, want) {
+	if got := container.RenderLines(59, 72, 90); !slices.Equal(got, want) {
 		t.Fatalf("refilled range = %q, want %q", got, want)
 	}
 }
@@ -436,7 +437,7 @@ func TestWindowedContainerConcurrentResizeAndMutation(t *testing.T) {
 	child.SetText("restored\ncontent")
 	container.ChildChanged(child)
 	want := child.Render(40)
-	if got := container.RenderLines(40, 0, 100); !equalLines(got, want) {
+	if got := container.RenderLines(40, 0, 100); !slices.Equal(got, want) {
 		t.Fatalf("settled range = %q, want %q", got, want)
 	}
 }

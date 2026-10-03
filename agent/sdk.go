@@ -16,7 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -240,52 +240,16 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	if cwd == "" && opts.SessionManager != nil {
 		cwd = opts.SessionManager.GetCWD()
 	}
-	if cwd == "" {
-		cwd = "."
-	}
-	normalizedCWD, err := config.NormalizePath(cwd)
-	if err != nil {
-		return nil, err
-	}
-	// A host FS port owns its path namespace: a virtual POSIX tree must not
-	// pick up the process drive on win32 (DECISIONS.md P10).
-	if opts.Host != nil && opts.Host.FS != nil {
-		cwd, err = opts.Host.FS.AbsolutePath(context.Background(), normalizedCWD)
-	} else {
-		cwd, err = filepath.Abs(normalizedCWD)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	agentDir := opts.AgentDir
-	if agentDir == "" && opts.Host != nil {
-		agentDir = opts.Host.AgentDir
-	}
-	if agentDir == "" {
-		agentDir = DefaultAgentDir()
-	}
-	agentDir, err = config.NormalizePath(agentDir)
-	if err != nil {
-		return nil, err
-	}
-	if opts.Host != nil && opts.Host.FS != nil {
-		agentDir, err = opts.Host.FS.AbsolutePath(context.Background(), agentDir)
-	} else {
-		agentDir, err = filepath.Abs(agentDir)
-	}
+	cwd, agentDir, err := resolveSessionDirs(opts.Host, cwd, opts.AgentDir)
 	if err != nil {
 		return nil, err
 	}
 
 	modelRegistry := opts.ModelRegistry
-	if modelRegistry == nil && opts.Host != nil {
-		modelRegistry, err = hostModelRegistry(opts.Host, agentDir)
-	} else if modelRegistry == nil {
-		modelRegistry, err = config.NewModelRegistry(agentDir)
-	}
-	if err != nil {
-		return nil, err
+	if modelRegistry == nil {
+		if modelRegistry, err = newModelRegistry(opts.Host, agentDir); err != nil {
+			return nil, err
+		}
 	}
 
 	sm := opts.SessionManager
@@ -307,13 +271,10 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 
 	settings := opts.Settings
-	if settings == nil && opts.Host != nil {
-		settings, err = hostSettings(opts.Host, cwd, agentDir)
-	} else if settings == nil {
-		settings, err = config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	}
-	if err != nil {
-		return nil, err
+	if settings == nil {
+		if settings, err = newSettings(opts.Host, cwd, agentDir); err != nil {
+			return nil, err
+		}
 	}
 
 	// Resolve resources and bind extension providers before model selection so
@@ -364,46 +325,18 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		request ai.Context,
 		options *ai.SimpleStreamOptions,
 	) (ai.AssistantMessageEventStream, error) {
-		merged := ai.SimpleStreamOptions{}
-		if options != nil {
-			merged = *options
-		}
-		providerRetry := settings.GetProviderRetrySettings()
-		if merged.TimeoutMS == nil {
-			merged.TimeoutMS = providerRetry.TimeoutMS
-		}
-		if merged.TimeoutMS == nil {
-			httpIdleTimeout, timeoutErr := settings.GetHTTPIdleTimeoutMS()
-			if timeoutErr != nil {
-				return nil, timeoutErr
-			}
-			if httpIdleTimeout == 0 {
-				httpIdleTimeout = 2147483647
-			}
-			merged.TimeoutMS = &httpIdleTimeout
-		}
-		if merged.WebSocketConnectTimeoutMS == nil {
-			webSocketConnectTimeout, timeoutErr := settings.GetWebSocketConnectTimeoutMS()
-			if timeoutErr != nil {
-				return nil, timeoutErr
-			}
-			merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
-		}
-		if merged.MaxRetries == nil {
-			merged.MaxRetries = providerRetry.MaxRetries
+		merged, err := providerStreamOptions(settings, options)
+		if err != nil {
+			return nil, err
 		}
 		return providerStreamFn(ctx, model, request, &merged)
 	}
 
 	existing := sm.BuildSessionContext()
 	hasExisting := len(existing.Messages) > 0
-	hasThinkingEntry := false
-	for _, entry := range sm.GetBranch() {
-		if entry.Type == "thinking_level_change" {
-			hasThinkingEntry = true
-			break
-		}
-	}
+	hasThinkingEntry := slices.ContainsFunc(sm.GetBranch(), func(entry sessionstore.SessionEntry) bool {
+		return entry.Type == "thinking_level_change"
+	})
 
 	model := opts.Model
 	var fallback string
@@ -504,19 +437,16 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	// Register custom tools as synthetic SDK extensions so their source metadata
 	// matches upstream's per-tool <sdk:name> paths.
-	if len(opts.CustomTools) > 0 {
-		for _, definition := range opts.CustomTools {
-			definition := definition
-			path := "<sdk:" + definition.Name + ">"
-			if registry.HasPath(path) {
-				continue
-			}
-			if err := registry.Register(path, func(api extensions.API) error {
-				api.RegisterTool(definition)
-				return nil
-			}); err != nil {
-				return nil, err
-			}
+	for _, definition := range opts.CustomTools {
+		path := "<sdk:" + definition.Name + ">"
+		if registry.HasPath(path) {
+			continue
+		}
+		if err := registry.Register(path, func(api extensions.API) error {
+			api.RegisterTool(definition)
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 	}
 
@@ -726,10 +656,6 @@ func buildPromptOptions(cwd string, res *Resources, activeTools []string, builti
 		return nil
 	}
 	snippets, guidelines := builtInToolPromptDataWithOverrides(activeTools, builtinToolPrompts)
-	var appendPrompt *string
-	if joined := res.JoinedAppendSystemPrompt(); joined != nil {
-		appendPrompt = joined
-	}
 	contextFiles := make([]ContextFile, len(res.ContextFiles))
 	copy(contextFiles, res.ContextFiles)
 	return &SystemPromptOptions{
@@ -737,7 +663,7 @@ func buildPromptOptions(cwd string, res *Resources, activeTools []string, builti
 		SelectedTools:      activeTools,
 		ToolSnippets:       snippets,
 		PromptGuidelines:   guidelines,
-		AppendSystemPrompt: appendPrompt,
+		AppendSystemPrompt: res.JoinedAppendSystemPrompt(),
 		CWD:                cwd,
 		ContextFiles:       contextFiles,
 		Skills:             res.Skills,

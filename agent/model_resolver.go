@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -158,7 +159,7 @@ func ResolveModelScope(patterns []string, available []ai.Model) ([]ScopedModel, 
 		if strings.ContainsAny(patternValue, "*?[") {
 			glob, level := splitGlobThinking(patternValue)
 			// Ids containing glob metacharacters (e.g. "[1m]") resolve as
-			// exact references before glob matching (upstream da8dd872).
+			// exact references before glob matching.
 			if exact := exactModelReference(glob, available); exact != nil {
 				if !containsScopedModel(models, *exact) {
 					models = append(models, ScopedModel{Model: *exact, ThinkingLevel: level})
@@ -209,13 +210,9 @@ func modelGlobMatch(patternValue, modelID string) bool {
 	if strings.HasPrefix(patternValue, "#") {
 		return false
 	}
-	matched := false
-	for _, expanded := range expandGlobBraces(patternValue) {
-		if matchGlobPath(strings.Split(expanded, "/"), strings.Split(modelID, "/")) {
-			matched = true
-			break
-		}
-	}
+	matched := slices.ContainsFunc(expandGlobBraces(patternValue), func(expanded string) bool {
+		return matchGlobPath(strings.Split(expanded, "/"), strings.Split(modelID, "/"))
+	})
 	if negated {
 		return !matched
 	}
@@ -398,7 +395,7 @@ func globEnds(pattern, text []rune, start int) []int {
 			result[end] = struct{}{}
 		}
 	}
-	return globPositionKeys(result)
+	return slices.Collect(maps.Keys(result))
 }
 
 func globExtPositions(operator rune, alternatives [][]rune, text []rune, start int) []int {
@@ -409,11 +406,11 @@ func globExtPositions(operator rune, alternatives [][]rune, text []rune, start i
 		}
 	}
 	if operator == '@' {
-		return globPositionKeys(once)
+		return slices.Collect(maps.Keys(once))
 	}
 	if operator == '?' {
 		once[start] = struct{}{}
-		return globPositionKeys(once)
+		return slices.Collect(maps.Keys(once))
 	}
 	if operator == '!' {
 		result := make([]int, 0, len(text)-start+1)
@@ -443,15 +440,7 @@ func globExtPositions(operator rune, alternatives [][]rune, text []rune, start i
 			}
 		}
 	}
-	return globPositionKeys(result)
-}
-
-func globPositionKeys(positions map[int]struct{}) []int {
-	result := make([]int, 0, len(positions))
-	for position := range positions {
-		result = append(result, position)
-	}
-	return result
+	return slices.Collect(maps.Keys(result))
 }
 
 func globCanStartDot(pattern []rune) bool {
@@ -789,23 +778,6 @@ var defaultModelProviderOrder = []string{
 	"zai-coding-cn", "mistral", "minimax", "minimax-cn", "moonshotai", "moonshotai-cn", "huggingface", "fireworks",
 	"together", "baseten", "opencode", "opencode-go", "kimi-coding", "cloudflare-workers-ai", "cloudflare-ai-gateway", "qwen-token-plan", "qwen-token-plan-cn",
 	"qwen-token-plan-individual", "xiaomi", "xiaomi-token-plan-cn", "xiaomi-token-plan-ams", "xiaomi-token-plan-sgp",
-}
-
-// DefaultAvailableModel returns the provider's pinned upstream default only
-// when that exact model is available after authentication.
-func DefaultAvailableModel(provider string, available []ai.Model) *ai.Model {
-	id := defaultModelPerProvider[provider]
-	if id == "" {
-		return nil
-	}
-	index := slices.IndexFunc(available, func(model ai.Model) bool {
-		return string(model.Provider) == provider && model.ID == id
-	})
-	if index < 0 {
-		return nil
-	}
-	copy := available[index]
-	return &copy
 }
 
 // IsUnknownModel reports the Agent sentinel used when no model is selected.

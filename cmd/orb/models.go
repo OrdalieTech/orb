@@ -61,19 +61,18 @@ func writeModelRow(output *strings.Builder, value modelListRow, widths modelList
 }
 
 func formatTokenCount(count float64) string {
-	if count >= 1_000_000 {
-		millions := count / 1_000_000
-		if math.Trunc(millions) == millions {
-			return strconv.FormatFloat(millions, 'f', -1, 64) + "M"
+	for _, unit := range []struct {
+		size   float64
+		suffix string
+	}{{1_000_000, "M"}, {1_000, "K"}} {
+		if count < unit.size {
+			continue
 		}
-		return jsToFixedOne(millions) + "M"
-	}
-	if count >= 1_000 {
-		thousands := count / 1_000
-		if math.Trunc(thousands) == thousands {
-			return strconv.FormatFloat(thousands, 'f', -1, 64) + "K"
+		scaled := count / unit.size
+		if math.Trunc(scaled) == scaled {
+			return strconv.FormatFloat(scaled, 'f', -1, 64) + unit.suffix
 		}
-		return jsToFixedOne(thousands) + "K"
+		return jsToFixedOne(scaled) + unit.suffix
 	}
 	if count == 0 {
 		return "0"
@@ -81,11 +80,8 @@ func formatTokenCount(count float64) string {
 	return strconv.FormatFloat(count, 'f', -1, 64)
 }
 
+// jsToFixedOne is JavaScript's value.toFixed(1) for a positive value.
 func jsToFixedOne(value float64) string {
-	negative := math.Signbit(value)
-	if negative {
-		value = -value
-	}
 	scaled := new(big.Rat).SetFloat64(value)
 	scaled.Mul(scaled, big.NewRat(10, 1))
 	integer, remainder := new(big.Int), new(big.Int)
@@ -97,11 +93,7 @@ func jsToFixedOne(value float64) string {
 	if len(digits) == 1 {
 		digits = "0" + digits
 	}
-	result := digits[:len(digits)-1] + "." + digits[len(digits)-1:]
-	if negative {
-		return "-" + result
-	}
-	return result
+	return digits[:len(digits)-1] + "." + digits[len(digits)-1:]
 }
 
 func yesNo(value bool) string {

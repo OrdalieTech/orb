@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 type ModelCycleResult struct {
@@ -476,9 +477,7 @@ func (runtime *SessionRuntime) EnabledModels() []string {
 	return runtime.settings.GetEnabledModels()
 }
 
-// RefreshModels mirrors upstream ModelRegistry.refresh() (model-registry.ts):
-// since f8746813 a picker refresh re-reads models.json before rebuilding the
-// provider snapshots, which orb's Reload already combines.
+// RefreshModels re-reads models.json and rebuilds the provider snapshots.
 func (runtime *SessionRuntime) RefreshModels() error {
 	if runtime == nil || runtime.modelRegistry == nil {
 		return nil
@@ -742,7 +741,6 @@ func (runtime *SessionRuntime) AvailableThinkingLevels() []ai.ModelThinkingLevel
 	return append([]ai.ModelThinkingLevel(nil), ai.SupportedThinkingLevels(runtime.agent.State().Model)...)
 }
 
-// providerLoginHelp mirrors upstream getProviderLoginHelp (auth-guidance.ts:6-12).
 func providerLoginHelp() string {
 	providersDoc, modelsDoc := authGuidanceDocPaths()
 	return "Use /login to log into a provider via OAuth or API key. See:\n  " + providersDoc + "\n  " + modelsDoc
@@ -754,7 +752,7 @@ func noModelSelectedError() error {
 }
 
 // FormatNoModelsAvailableMessage exposes upstream
-// formatNoModelsAvailableMessage (auth-guidance.ts:14-16) to CLI callers.
+// formatNoModelsAvailableMessage to CLI callers.
 func FormatNoModelsAvailableMessage() string {
 	return formatNoModelsAvailableMessage()
 }
@@ -768,7 +766,7 @@ func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
 	return "No API key found for " + display + ".\n\n" + providerLoginHelp()
 }
 
-// authGuidanceDocPaths mirrors upstream getDocsPath (auth-guidance.ts:6-12)
+// authGuidanceDocPaths mirrors upstream getDocsPath
 // when a package layout is configured or the docs ship next to the binary, and
 // falls back to the hosted docs for standalone binaries where
 // <dir-of-binary>/docs does not exist.
@@ -811,8 +809,6 @@ func (runtime *SessionRuntime) SetAutoRetryEnabled(enabled bool) {
 	runtime.mu.Unlock()
 }
 
-func (runtime *SessionRuntime) AutoRetryEnabled() bool { return runtime.autoRetryEnabled() }
-
 func (runtime *SessionRuntime) autoRetryEnabled() bool {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
@@ -831,12 +827,6 @@ func (runtime *SessionRuntime) AbortRetry() {
 // ExecuteBash executes a direct bash command.
 func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, excludeFromContext *bool) (tools.BashResult, error) {
 	return runtime.executeBash(ctx, command, excludeFromContext, nil)
-}
-
-// ExecuteBashWithID includes id in bash_execution_update events streamed for
-// each output chunk.
-func (runtime *SessionRuntime) ExecuteBashWithID(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
-	return runtime.executeBash(ctx, command, excludeFromContext, id)
 }
 
 func (runtime *SessionRuntime) executeBash(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
@@ -1056,20 +1046,13 @@ func (runtime *SessionRuntime) GetLastAssistantText() *string {
 				text.WriteString(block.Text)
 			}
 		}
-		value := strings.TrimFunc(text.String(), isECMAScriptTrimSpace)
+		value := strings.TrimFunc(text.String(), jstrim.IsSpace)
 		if value == "" {
 			return nil
 		}
 		return &value
 	}
 	return nil
-}
-
-func isECMAScriptTrimSpace(character rune) bool {
-	return character == '\ufeff' || character == '\u00a0' || character == '\u1680' ||
-		character >= '\u2000' && character <= '\u200a' || character == '\u2028' || character == '\u2029' ||
-		character == '\u202f' || character == '\u205f' || character == '\u3000' ||
-		character == '\t' || character == '\n' || character == '\v' || character == '\f' || character == '\r' || character == ' '
 }
 
 func (runtime *SessionRuntime) SetSessionName(name string) error {

@@ -195,7 +195,7 @@ func TestUpdateCardKeepsTheProcessOnTheBar(t *testing.T) {
 	if strings.Contains(lockup, "0.4.15") || strings.Contains(lockup, "dev") {
 		t.Fatalf("version leaked onto the lockup:\n%s", lockup)
 	}
-	bar := joinBar(updateBarCap, []string{"0.4.15", "archive verified", "binary replaced", "0.5.0 ✓"})
+	bar := joinBarStyled(updateBarCap, []string{"0.4.15", "archive verified", "binary replaced", "0.5.0 ✓"}, false)
 	if !strings.Contains(got, bar) || !strings.Contains(bar, "─") || strings.Contains(got, "→") {
 		t.Fatalf("process bar missing or carried an arrow:\n%s", got)
 	}
@@ -217,15 +217,15 @@ func TestUpdateCardKeepsTheProcessOnTheBar(t *testing.T) {
 
 func TestUpdateAnimationIsTTYOnly(t *testing.T) {
 	var output bytes.Buffer
-	stop := startUpdateAnimation(&output, false, updateBarCap, "checking release")
+	stop := updateScreen{out: &output, width: updateBarCap}.spin("checking release")
 	stop()
 	if output.Len() != 0 {
 		t.Fatalf("non-TTY animation = %q", output.String())
 	}
 
-	stop = startUpdateAnimation(&output, true, updateBarCap, "checking release")
+	stop = updateScreen{out: &output, animate: true, width: updateBarCap}.spin("checking release")
 	stop()
-	if want := "\r\x1b[2K" + joinBar(updateBarCap, []string{"·   checking release"}) + "\r\x1b[2K"; output.String() != want {
+	if want := "\r\x1b[2K" + joinBarStyled(updateBarCap, []string{"·   checking release"}, false) + "\r\x1b[2K"; output.String() != want {
 		t.Fatalf("TTY animation = %q, want %q", output.String(), want)
 	}
 }
@@ -310,7 +310,7 @@ func wantUpdateOutput(cells ...string) string {
 		body.WriteString(row)
 		body.WriteByte('\n')
 	}
-	body.WriteString(joinBar(updateBarCap, cells))
+	body.WriteString(joinBarStyled(updateBarCap, cells, false))
 	body.WriteString("\n\n\n")
 	return body.String()
 }

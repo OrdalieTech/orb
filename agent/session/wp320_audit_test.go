@@ -436,7 +436,6 @@ func TestListModifiedFallbackPrecedence(t *testing.T) {
 		},
 	}
 	for index, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			path := filepath.Join(root, fmt.Sprintf("%d.jsonl", index))
 			contents := fmt.Sprintf(

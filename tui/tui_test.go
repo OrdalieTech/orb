@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -331,7 +332,7 @@ func TestTUIViewportPinsChromeAndKeepsDetachedBodyStable(t *testing.T) {
 	body.lines = append(body.lines, "loading frame")
 	chrome.lines[0] = "loader frame"
 	ui.RenderNow()
-	if got := ui.previousLines; !equalLines(got[:4], detached[:4]) {
+	if got := ui.previousLines; !slices.Equal(got[:4], detached[:4]) {
 		t.Fatalf("streaming moved detached body:\n before=%q\n  after=%q", detached[:4], got[:4])
 	}
 	if output := terminal.output(); !strings.Contains(output, "loader frame") || strings.Contains(output, "loading frame") || strings.Contains(output, "\x1b[2J") {

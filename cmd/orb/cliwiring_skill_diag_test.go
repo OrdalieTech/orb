@@ -14,7 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 )
 
-// Finding 9: skill/prompt resource diagnostics must not be printed in print/RPC
+// Skill/prompt resource diagnostics must not be printed in print/RPC
 // modes. createRuntimeInputs now returns them separately (ResourceDiagnostics),
 // keeping them out of the always-printed Diagnostics; the print-mode session
 // host prints Diagnostics only, so the skill warning never reaches stderr.

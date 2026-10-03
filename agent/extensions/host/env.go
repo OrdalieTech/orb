@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -104,10 +105,8 @@ func prependPath(directory, value string) string {
 	if value == "" {
 		return directory
 	}
-	for _, entry := range filepath.SplitList(value) {
-		if entry == directory {
-			return value
-		}
+	if slices.Contains(filepath.SplitList(value), directory) {
+		return value
 	}
 	return directory + string(os.PathListSeparator) + value
 }
@@ -122,11 +121,9 @@ func environmentValue(environment []string, name string) string {
 }
 
 func setEnvironmentValue(environment []string, name, value string) []string {
-	filtered := environment[:0]
-	for _, entry := range environment {
-		if key, _, ok := strings.Cut(entry, "="); !ok || !environmentNameEqual(key, name) {
-			filtered = append(filtered, entry)
-		}
-	}
-	return append(filtered, name+"="+value)
+	environment = slices.DeleteFunc(environment, func(entry string) bool {
+		key, _, ok := strings.Cut(entry, "=")
+		return ok && environmentNameEqual(key, name)
+	})
+	return append(environment, name+"="+value)
 }

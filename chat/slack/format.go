@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // chat.update rejects text over 4000 characters.
@@ -41,7 +43,7 @@ func FormatText(markdown string) string {
 	inFence := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") && isFenceMarker(trimmed, inFence) {
+		if runechunk.IsFence(trimmed, inFence) {
 			inFence = !inFence
 			out = append(out, "```")
 			continue
@@ -58,14 +60,6 @@ func FormatText(markdown string) string {
 		out = append(out, formatLine(line))
 	}
 	return strings.Join(out, "\n")
-}
-
-func isFenceMarker(trimmed string, inFence bool) bool {
-	rest := trimmed[len("```"):]
-	if rest == "" {
-		return true
-	}
-	return !inFence && !strings.Contains(rest, "`") && len(strings.Fields(rest)) == 1
 }
 
 var mrkdwnEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
@@ -199,11 +193,4 @@ func splitLongLine(line string, limit int) []string {
 		pieces = append(pieces, string(runes))
 	}
 	return pieces
-}
-
-func truncateRunes(s string, limit int) string {
-	if len(s) <= limit || utf8.RuneCountInString(s) <= limit {
-		return s
-	}
-	return string([]rune(s)[:limit])
 }

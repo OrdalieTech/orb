@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"runtime"
@@ -20,7 +21,7 @@ type extensionDialogOptions struct {
 }
 
 // ExtensionSelectorComponent is the bordered option-list dialog behind
-// ctx.ui.select, exported for extension UI reuse as upstream exports it.
+// ctx.ui.select, exported for extension UI reuse.
 type ExtensionSelectorComponent struct {
 	container             *tui.Container
 	list                  *tui.Container
@@ -148,9 +149,7 @@ func (component *ExtensionSelectorComponent) HandleInput(event tui.KeyEvent) {
 		component.selected = min(len(component.options)-1, component.selected+1)
 		component.updateList()
 	case bindings.Matches(event.Raw, "tui.select.confirm") || event.Raw == "\n":
-		if component.selected >= 0 && component.selected < len(component.options) && component.onSelect != nil {
-			component.onSelect(component.options[component.selected].Value)
-		}
+		component.ListConfirm()
 	case bindings.Matches(event.Raw, "tui.select.cancel"):
 		component.cancel()
 	default:
@@ -387,14 +386,9 @@ func NewExtensionEditorComponent(
 	if bindings == nil {
 		bindings = tui.GetKeybindings()
 	}
-	// The external editor command is always resolved (upstream 75e6123a):
+	// The external editor command is always resolved:
 	// explicit command -> $VISUAL -> $EDITOR -> platform default.
-	if externalEditorCommand == "" {
-		externalEditorCommand = os.Getenv("VISUAL")
-	}
-	if externalEditorCommand == "" {
-		externalEditorCommand = os.Getenv("EDITOR")
-	}
+	externalEditorCommand = cmp.Or(externalEditorCommand, os.Getenv("VISUAL"), os.Getenv("EDITOR"))
 	if externalEditorCommand == "" {
 		if runtime.GOOS == "windows" {
 			externalEditorCommand = "notepad"
@@ -418,8 +412,7 @@ func NewExtensionEditorComponent(
 	component.editor.OnSubmit = onSubmit
 	component.container.AddChild(component.editor)
 	component.container.AddChild(tui.NewSpacer(1))
-	// The external-editor hint is unconditional now that the command always
-	// resolves (upstream 75e6123a).
+	// The external-editor hint is unconditional: the command always resolves.
 	hint :=
 		KeyHint("tui.select.confirm", "submit") + "  " +
 			KeyHint("tui.input.newLine", "newline") + "  " +
@@ -448,8 +441,7 @@ func (component *ExtensionEditorComponent) cancel() {
 }
 
 // handleOpenExternalEditor stops the TUI, edits the prompt through the shared
-// editInExternalEditor helper, and restarts with a forced re-render
-// (extension-editor.ts handleOpenExternalEditor).
+// editInExternalEditor helper, and restarts with a forced re-render.
 func (component *ExtensionEditorComponent) handleOpenExternalEditor() {
 	content := component.editor.GetText()
 	_ = component.ui.Stop()
@@ -477,13 +469,13 @@ func extensionDialogBorder() *DynamicBorder {
 }
 
 // KeyHint renders a dim key label plus muted description for the resolved
-// keybinding, mirroring upstream's exported keyHint helper.
+// keybinding.
 func KeyHint(binding, description string) string {
 	return theme.FG("dim", KeyText(binding)) + theme.FG("muted", " "+description)
 }
 
 // RawKeyHint renders a dim literal key plus muted description without
-// keybinding resolution, mirroring upstream's exported rawKeyHint helper.
+// keybinding resolution.
 func RawKeyHint(key, description string) string {
 	return theme.FG("dim", formatKeyText(key)) + theme.FG("muted", " "+description)
 }

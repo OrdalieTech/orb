@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
@@ -93,8 +95,7 @@ func buildSessionRuntime(inputs runtimeInputs, manager *session.SessionManager, 
 	// Providers key affinity and prompt caches on the session id; upstream
 	// createAgentSession passes sessionId into the Agent at construction.
 	inputs.Agent.SetStreamSessionID(manager.GetSessionID())
-	created, err := newSessionRuntime(runtimeConfig)
-	return created, err
+	return newSessionRuntime(runtimeConfig)
 }
 
 // createReplacementRuntime rebuilds the complete runtime for manager from the
@@ -180,7 +181,7 @@ func forkReplacementManager(manager *session.SessionManager, entryID string, pos
 	targetID := selected.ID
 	selectedText := ""
 	if position != extensions.ForkAt {
-		role, text := rpcMessageRoleAndText(selected.Message)
+		role, text := jsonwire.MessageRoleAndText(selected.Message)
 		if selected.Type != "message" || role != "user" {
 			return nil, "", errors.New("Invalid entry ID for forking")
 		}
@@ -368,6 +369,12 @@ func (host *interactiveSessionHost) endReplacement() {
 	if finish != nil {
 		finish()
 	}
+}
+
+func (host *interactiveSessionHost) currentInputs() runtimeInputs {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	return host.inputs
 }
 
 func (host *interactiveSessionHost) currentSession() (*agent.SessionRuntime, error) {
@@ -849,16 +856,10 @@ func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, e
 	if err != nil {
 		return modes.InteractiveTrustState{}, err
 	}
-	host.mu.Lock()
-	settings := host.inputs.Settings
-	host.mu.Unlock()
-	projectTrusted := false
-	if settings != nil {
-		projectTrusted = settings.IsProjectTrusted()
-	}
+	settings := host.currentInputs().Settings
 	return modes.InteractiveTrustState{
 		CWD:            cwd,
-		ProjectTrusted: projectTrusted,
+		ProjectTrusted: settings != nil && settings.IsProjectTrusted(),
 		SavedDecision:  entry,
 		Options:        config.GetProjectTrustOptions(cwd, false),
 	}, nil
@@ -876,20 +877,14 @@ func (host *interactiveSessionHost) SetProjectTrust(ctx context.Context, updates
 }
 
 func (host *interactiveSessionHost) authStorage() (*config.AuthStorage, error) {
-	host.mu.Lock()
-	storage := host.inputs.Auth
-	host.mu.Unlock()
-	if storage != nil {
+	if storage := host.currentInputs().Auth; storage != nil {
 		return storage, nil
 	}
 	return host.args.native.auth(host.agentDir)
 }
 
 func (host *interactiveSessionHost) authCredentials() (aiauth.CredentialStore, error) {
-	host.mu.Lock()
-	runtimeAuth := host.inputs.RuntimeAuth
-	host.mu.Unlock()
-	if runtimeAuth != nil {
+	if runtimeAuth := host.currentInputs().RuntimeAuth; runtimeAuth != nil {
 		return runtimeAuth, nil
 	}
 	return host.authStorage()
@@ -911,17 +906,11 @@ func (host *interactiveSessionHost) refreshAuthState(_ context.Context, _ string
 		return err
 	}
 	if current != nil {
-		// Default-model selection after login belongs to the TUI
-		// (completeProviderAuthentication, interactive-mode.ts:5033-5084);
-		// the host only refreshes credentials and the current model
-		// projection. RefreshCurrentModelFromRegistry is a no-op for the
-		// unknown-model sentinel.
+		// Default-model selection after login belongs to the TUI; the host only
+		// refreshes credentials and the current model projection.
 		current.RefreshCurrentModelFromRegistry(registry)
 	}
-	host.mu.Lock()
-	extensionsRegistry := host.inputs.Extensions
-	host.mu.Unlock()
-	if extensionsRegistry != nil {
+	if extensionsRegistry := host.currentInputs().Extensions; extensionsRegistry != nil {
 		extensionsRegistry.Events().Emit(context.Background(), "orb.accounts.changed", nil)
 	}
 	return nil
@@ -932,11 +921,8 @@ func (host *interactiveSessionHost) AuthOptions(ctx context.Context) (modes.Inte
 	if err != nil {
 		return modes.InteractiveAuthOptions{}, err
 	}
-	host.mu.Lock()
-	registry := host.inputs.ModelRegistry
-	runtimeAuth := host.inputs.RuntimeAuth
-	host.mu.Unlock()
-	return authOptions(ctx, credentials, registry, runtimeAuth)
+	inputs := host.currentInputs()
+	return authOptions(ctx, credentials, inputs.ModelRegistry, inputs.RuntimeAuth)
 }
 
 // authOptions lists what /login and /logout offer: every provider's sign-in methods with its
@@ -986,8 +972,7 @@ func authOptions(ctx context.Context, credentials aiauth.CredentialStore, regist
 				if registry.IsUsingOAuth(id) {
 					authType = aiauth.AuthTypeOAuth
 				}
-				source := interactiveAuthStatusSource(authStatus)
-				status = &modes.InteractiveAuthStatus{Type: authType, Source: source}
+				status = &modes.InteractiveAuthStatus{Type: authType, Source: cmp.Or(authStatus.Label, authStatus.Source)}
 			}
 		} else if provider, known := providers.Get(ai.ProviderID(id)); known {
 			name = provider.Name
@@ -1006,8 +991,7 @@ func authOptions(ctx context.Context, credentials aiauth.CredentialStore, regist
 		}
 		if status == nil {
 			// Registry-less fallback only: with a registry, the stored
-			// credential already surfaces as the raw "stored" source above
-			// (upstream getProviderAuthStatus).
+			// credential already surfaces as the raw "stored" source above.
 			if storedType, exists := storedTypes[id]; exists {
 				status = &modes.InteractiveAuthStatus{Type: aiauth.AuthType(storedType), Source: "stored"}
 			}
@@ -1050,21 +1034,8 @@ func authOptions(ctx context.Context, credentials aiauth.CredentialStore, regist
 	return options, nil
 }
 
-// interactiveAuthStatusSource mirrors upstream getLoginProviderOptions
-// (interactive-mode.ts:4795-4825): the label when present, otherwise the raw
-// runtime source ("stored", "models_json_key", "runtime", ...).
-func interactiveAuthStatusSource(status extensions.AuthStatus) string {
-	if status.Label != "" {
-		return status.Label
-	}
-	return status.Source
-}
-
 func (host *interactiveSessionHost) loginCredential(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
-	host.mu.Lock()
-	registry := host.inputs.ModelRegistry
-	host.mu.Unlock()
-	return loginCredential(ctx, registry, providerID, authType, interaction)
+	return loginCredential(ctx, host.currentInputs().ModelRegistry, providerID, authType, interaction)
 }
 
 // loginCredential runs one provider's sign-in method and returns the credential to store.
@@ -1081,27 +1052,21 @@ func loginCredential(ctx context.Context, registry *config.ModelRegistry, provid
 	if !known {
 		return nil, fmt.Errorf("provider %q does not support login", providerID)
 	}
-	var credential *aiauth.Credential
-	var err error
 	switch authType {
 	case aiauth.AuthTypeOAuth:
 		if methods.OAuth == nil {
 			return nil, fmt.Errorf("provider %q does not support OAuth login", providerID)
 		}
-		credential, err = methods.OAuth.Login(ctx, withDeviceID(interaction))
+		return methods.OAuth.Login(ctx, withDeviceID(interaction))
 	case aiauth.AuthTypeAPIKey:
 		login, ok := methods.APIKey.(aiauth.APIKeyLogin)
 		if !ok {
 			return nil, fmt.Errorf("provider %q API-key auth is configured outside orb", providerID)
 		}
-		credential, err = login.Login(ctx, interaction)
+		return login.Login(ctx, interaction)
 	default:
 		return nil, fmt.Errorf("provider %q has unknown auth type %q", providerID, authType)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return credential, nil
 }
 
 func (host *interactiveSessionHost) Login(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) error {
@@ -1127,10 +1092,8 @@ func (host *interactiveSessionHost) Logout(ctx context.Context, providerID strin
 	if err != nil {
 		return err
 	}
-	host.mu.Lock()
-	runtimeAuth := host.inputs.RuntimeAuth
+	runtimeAuth := host.currentInputs().RuntimeAuth
 	wasRuntime := runtimeAuth != nil && runtimeAuth.HasRuntimeAPIKey(providerID)
-	host.mu.Unlock()
 	if err := credentials.Delete(ctx, providerID); err != nil {
 		return err
 	}
@@ -1162,7 +1125,6 @@ func (host *interactiveSessionHost) Dispose() {
 	}
 }
 
-// assertSessionCwdExists mirrors upstream session-cwd.ts.
 func assertSessionCwdExists(manager *session.SessionManager, fallbackCWD string) error {
 	if !manager.IsPersisted() {
 		return nil
@@ -1181,8 +1143,7 @@ func assertSessionCwdExists(manager *session.SessionManager, fallbackCWD string)
 	}
 }
 
-// resolveImportPath expands ~ and makes the /import argument absolute
-// (upstream utils/paths resolvePath).
+// resolveImportPath expands ~ and makes the /import argument absolute.
 func resolveImportPath(path string) (string, error) {
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
@@ -1195,10 +1156,7 @@ func resolveImportPath(path string) (string, error) {
 }
 
 func (host *interactiveSessionHost) accountStore() (*accounts.Store, error) {
-	host.mu.Lock()
-	store := host.inputs.Accounts
-	host.mu.Unlock()
-	if store != nil {
+	if store := host.currentInputs().Accounts; store != nil {
 		return store, nil
 	}
 	base, err := host.authStorage()
@@ -1239,10 +1197,7 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 	if claudeLogin != nil {
 		rows = append(rows, *claudeLogin)
 	}
-	host.mu.Lock()
-	runtime := host.inputs.RuntimeAuth
-	host.mu.Unlock()
-	if runtime != nil {
+	if runtime := host.currentInputs().RuntimeAuth; runtime != nil {
 		for provider := range seen {
 			if runtime.HasRuntimeAPIKey(provider) {
 				for i := range rows {
@@ -1260,9 +1215,7 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 
 // ProviderName is a provider's display name, as /login shows it.
 func (host *interactiveSessionHost) ProviderName(id string) string {
-	host.mu.Lock()
-	registry := host.inputs.ModelRegistry
-	host.mu.Unlock()
+	registry := host.currentInputs().ModelRegistry
 	if registry == nil {
 		return ""
 	}
@@ -1273,9 +1226,7 @@ func (host *interactiveSessionHost) ProviderName(id string) string {
 // Unlike other providers' ambient sources it stays listed beside added
 // accounts, since selecting it is how Claude returns to that login.
 func (host *interactiveSessionHost) claudeAmbientAccount(ctx context.Context, rows []accounts.Account) *accounts.Account {
-	host.mu.Lock()
-	settings := host.inputs.Settings
-	host.mu.Unlock()
+	settings := host.currentInputs().Settings
 	if settings == nil || !settings.GetPlugins()[claudesessions.Name] {
 		return nil
 	}
@@ -1290,9 +1241,7 @@ func (host *interactiveSessionHost) claudeAmbientAccount(ctx context.Context, ro
 // forgetClaudeAccount signs out the Claude directory an account ran with once
 // it is removed or replaced; other providers keep nothing outside the store.
 func (host *interactiveSessionHost) forgetClaudeAccount(credential *aiauth.Credential) {
-	host.mu.Lock()
-	settings := host.inputs.Settings
-	host.mu.Unlock()
+	settings := host.currentInputs().Settings
 	if settings != nil && credential != nil {
 		claudesessions.ForgetAccount(settings, host.agentDir, os.Environ(), credential)
 	}
@@ -1319,10 +1268,7 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	var removed *aiauth.Credential
 	switch action {
 	case "select":
-		host.mu.Lock()
-		overridden := host.inputs.RuntimeAuth != nil && host.inputs.RuntimeAuth.HasRuntimeAPIKey(provider)
-		host.mu.Unlock()
-		if overridden {
+		if runtimeAuth := host.currentInputs().RuntimeAuth; runtimeAuth != nil && runtimeAuth.HasRuntimeAPIKey(provider) {
 			return errors.New("restart without --api-key to switch this provider account")
 		}
 		if provider == claudesessions.Name && id == "ambient" {
@@ -1392,9 +1338,7 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 		return usage.Snapshot{}, err
 	}
 	if provider == claudesessions.Name {
-		host.mu.Lock()
-		settings := host.inputs.Settings
-		host.mu.Unlock()
+		settings := host.currentInputs().Settings
 		var credential *aiauth.Credential
 		if id != "ambient" {
 			if credential, err = store.View(provider, id).Read(ctx, provider); err != nil {
@@ -1403,10 +1347,8 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 		}
 		return claudesessions.Usage(ctx, settings, host.agentDir, os.Environ(), credential)
 	}
-	host.mu.Lock()
-	registry := host.inputs.ModelRegistry
-	runtime := host.inputs.RuntimeAuth
-	host.mu.Unlock()
+	inputs := host.currentInputs()
+	registry, runtime := inputs.ModelRegistry, inputs.RuntimeAuth
 	if registry == nil {
 		return usage.Snapshot{}, usage.ErrUnavailable
 	}
@@ -1434,15 +1376,11 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 }
 
 func (host *interactiveSessionHost) UsageEnabled() bool {
-	host.mu.Lock()
-	settings := host.inputs.Settings
-	host.mu.Unlock()
+	settings := host.currentInputs().Settings
 	return settings != nil && settings.GetPlugins()["provider-usage"]
 }
 func (host *interactiveSessionHost) SetUsageEnabled(enabled bool) error {
-	host.mu.Lock()
-	settings := host.inputs.Settings
-	host.mu.Unlock()
+	settings := host.currentInputs().Settings
 	if settings == nil {
 		return errors.New("settings are unavailable")
 	}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 var (
@@ -76,23 +78,6 @@ func ResolveConfigValue(ctx context.Context, value string, scopedEnv map[string]
 	return "", errors.New("failed to resolve configuration value")
 }
 
-func ClearConfigValueCache() {
-	configValueCache.Lock()
-	defer configValueCache.Unlock()
-	configValueCache.values = make(map[string]*string)
-}
-
-func GetConfigValueEnvVarName(value string) (string, bool) {
-	if strings.HasPrefix(value, "!") {
-		return "", false
-	}
-	parts := parseConfigTemplate(value)
-	if len(parts) != 1 || !parts[0].env {
-		return "", false
-	}
-	return parts[0].value, true
-}
-
 func GetConfigValueEnvVarNames(value string) []string {
 	if strings.HasPrefix(value, "!") {
 		return nil
@@ -124,10 +109,6 @@ func GetMissingConfigValueEnvVarNames(value string, scopedEnv map[string]string)
 
 func IsCommandConfigValue(value string) bool { return strings.HasPrefix(value, "!") }
 
-func IsConfigValueConfigured(value string, scopedEnv map[string]string) bool {
-	return len(GetMissingConfigValueEnvVarNames(value, scopedEnv)) == 0
-}
-
 func ResolveConfigValueOrThrow(value, description string, scopedEnv map[string]string) (string, error) {
 	if resolved, ok := ResolveAuthConfigValueUncached(value, scopedEnv); ok {
 		return resolved, nil
@@ -144,22 +125,6 @@ func ResolveConfigValueOrThrow(value, description string, scopedEnv map[string]s
 	default:
 		return "", fmt.Errorf("failed to resolve %s from environment variables: %s", description, strings.Join(missing, ", "))
 	}
-}
-
-func ResolveHeaders(headers map[string]string, scopedEnv map[string]string) map[string]string {
-	if headers == nil {
-		return nil
-	}
-	resolved := make(map[string]string)
-	for name, value := range headers {
-		if result, ok := ResolveAuthConfigValue(value, scopedEnv); ok && result != "" {
-			resolved[name] = result
-		}
-	}
-	if len(resolved) == 0 {
-		return nil
-	}
-	return resolved
 }
 
 func ResolveHeadersOrThrow(headers map[string]string, description string, scopedEnv map[string]string) (map[string]string, error) {
@@ -268,21 +233,6 @@ func executeConfigCommandContext(parent context.Context, command string) (string
 	if !ok {
 		return "", false
 	}
-	value := trimJSWhitespace(stdout)
+	value := strings.TrimFunc(stdout, jstrim.IsSpace)
 	return value, value != ""
-}
-
-func trimJSWhitespace(value string) string {
-	return strings.TrimFunc(value, func(character rune) bool {
-		switch {
-		case character >= '\t' && character <= '\r':
-			return true
-		case character == ' ', character == '\u00a0', character == '\u1680', character == '\u2028', character == '\u2029', character == '\u202f', character == '\u205f', character == '\u3000', character == '\ufeff':
-			return true
-		case character >= '\u2000' && character <= '\u200a':
-			return true
-		default:
-			return false
-		}
-	})
 }

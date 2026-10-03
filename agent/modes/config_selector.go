@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -162,17 +164,11 @@ func buildConfigGroups(resolved *agent.ResolvedPaths, agentDir string) []*config
 				}
 				groupsByKey[groupKey] = group
 			}
-			var subgroup *configResourceSubgroup
-			for _, candidate := range group.subgroups {
-				if candidate.resourceType == resourceType {
-					subgroup = candidate
-					break
-				}
+			// Resources arrive grouped by type, so a type's subgroup is always the last one.
+			if len(group.subgroups) == 0 || group.subgroups[len(group.subgroups)-1].resourceType != resourceType {
+				group.subgroups = append(group.subgroups, &configResourceSubgroup{resourceType: resourceType, label: configResourceLabels[resourceType]})
 			}
-			if subgroup == nil {
-				subgroup = &configResourceSubgroup{resourceType: resourceType, label: configResourceLabels[resourceType]}
-				group.subgroups = append(group.subgroups, subgroup)
-			}
+			subgroup := group.subgroups[len(group.subgroups)-1]
 
 			fileName := filepath.Base(resource.Path)
 			parentFolder := filepath.Base(filepath.Dir(resource.Path))
@@ -194,10 +190,7 @@ func buildConfigGroups(resolved *agent.ResolvedPaths, agentDir string) []*config
 	addResources(resolved.Prompts, configPrompts)
 	addResources(resolved.Themes, configThemes)
 
-	groups := make([]*configResourceGroup, 0, len(groupsByKey))
-	for _, group := range groupsByKey {
-		groups = append(groups, group)
-	}
+	groups := slices.Collect(maps.Values(groupsByKey))
 	sort.SliceStable(groups, func(i, j int) bool {
 		left, right := groups[i], groups[j]
 		if left.origin != right.origin {
@@ -354,12 +347,7 @@ func (list *configResourceList) buildFlatListLocked() {
 }
 
 func firstConfigItem(entries []configFlatEntry) int {
-	for index, entry := range entries {
-		if entry.kind == "item" {
-			return index
-		}
-	}
-	return 0
+	return max(0, slices.IndexFunc(entries, func(entry configFlatEntry) bool { return entry.kind == "item" }))
 }
 
 func (list *configResourceList) findNextItemLocked(fromIndex, direction int) int {
@@ -436,14 +424,9 @@ func (list *configResourceList) Render(width int) []string {
 		selected := index == list.selectedIndex
 		switch entry.kind {
 		case "group":
-			inherited := list.writeScope == ConfigWriteProject && entry.group.scope == "user"
-			label := entry.group.label
-			if inherited {
-				label += " · inherited global"
-			}
-			color := "accent"
-			if inherited {
-				color = "dim"
+			label, color := entry.group.label, "accent"
+			if list.writeScope == ConfigWriteProject && entry.group.scope == "user" {
+				label, color = label+" · inherited global", "dim"
 			}
 			lines = append(lines, tui.TruncateToWidth("  "+theme.FG(color, theme.Bold(label)), width, "", false))
 		case "subgroup":
@@ -489,27 +472,20 @@ func (list *configResourceList) HandleInput(event tui.KeyEvent) {
 	keybindings := tui.GetKeybindings()
 
 	list.mu.Lock()
-	if tui.MatchesKey(data, "ctrl+c") {
-		callback := list.onExit
-		list.mu.Unlock()
-		if callback != nil {
-			callback()
-		}
-		return
+	var callback *func()
+	switch {
+	case tui.MatchesKey(data, "ctrl+c"):
+		callback = &list.onExit
+	case keybindings.Matches(data, "tui.select.cancel"):
+		callback = &list.onCancel
+	case keybindings.Matches(data, "tui.input.tab"):
+		callback = &list.onSwitchMode
 	}
-	if keybindings.Matches(data, "tui.select.cancel") {
-		callback := list.onCancel
+	if callback != nil {
+		run := *callback
 		list.mu.Unlock()
-		if callback != nil {
-			callback()
-		}
-		return
-	}
-	if keybindings.Matches(data, "tui.input.tab") {
-		callback := list.onSwitchMode
-		list.mu.Unlock()
-		if callback != nil {
-			callback()
+		if run != nil {
+			run()
 		}
 		return
 	}
@@ -646,13 +622,15 @@ func (list *configResourceList) toggleTopLevelResourceLocked(item *configResourc
 	}
 	current := resourcePathsFromSettings(settings, item.resourceType)
 	pattern := list.resourcePattern(item)
-	updated := withoutConfigPattern(current, pattern)
-	if enabled {
-		updated = append(updated, "+"+pattern)
-	} else {
-		updated = append(updated, "-"+pattern)
-	}
+	updated := append(withoutConfigPattern(current, pattern), overridePrefix(enabled)+pattern)
 	return list.setResourcePaths(scope, item.resourceType, updated)
+}
+
+func overridePrefix(load bool) string {
+	if load {
+		return "+"
+	}
+	return "-"
 }
 
 func packageResourceEntries(source config.PackageSource, resourceType configResourceType) []string {
@@ -691,25 +669,14 @@ func (list *configResourceList) togglePackageResourceLocked(item *configResource
 	if scope == "project" {
 		packages = list.settings.GetProjectPackages()
 	}
-	packageIndex := -1
-	for index, source := range packages {
-		if source.Source == item.metadata.Source {
-			packageIndex = index
-			break
-		}
-	}
+	packageIndex := slices.IndexFunc(packages, func(source config.PackageSource) bool { return source.Source == item.metadata.Source })
 	if packageIndex < 0 {
 		return nil
 	}
 	source := packages[packageIndex]
 	source.IsObject = true
 	pattern := list.packageResourcePattern(item)
-	updated := withoutConfigPattern(packageResourceEntries(source, item.resourceType), pattern)
-	if enabled {
-		updated = append(updated, "+"+pattern)
-	} else {
-		updated = append(updated, "-"+pattern)
-	}
+	updated := append(withoutConfigPattern(packageResourceEntries(source, item.resourceType), pattern), overridePrefix(enabled)+pattern)
 	setPackageResourceEntries(&source, item.resourceType, updated)
 	if !packageHasFilters(source) {
 		source = config.PackageSource{Source: source.Source}
@@ -815,36 +782,19 @@ func (list *configResourceList) setProjectTopLevelOverrideLocked(item *configRes
 		updated = append(updated, entry)
 	}
 	if state != projectInherit {
-		if list.isInheritedGlobalItemLocked(item) && !containsConfigString(updated, pattern) {
+		if list.isInheritedGlobalItemLocked(item) && !slices.Contains(updated, pattern) {
 			updated = append(updated, pattern)
 		}
-		prefix := "+"
-		if state == projectUnload {
-			prefix = "-"
-		}
-		updated = append(updated, prefix+pattern)
+		updated = append(updated, overridePrefix(state == projectLoad)+pattern)
 	}
 	return list.setResourcePaths("project", item.resourceType, updated)
 }
 
-func containsConfigString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
 func (list *configResourceList) setProjectPackageOverrideLocked(item *configResourceItem, state projectOverrideState) error {
 	packages := list.settings.GetProjectPackages()
-	packageIndex := -1
-	for index, source := range packages {
-		if list.packageSourceMatches(item.metadata.Source, list.itemScope(item), source.Source, "project") {
-			packageIndex = index
-			break
-		}
-	}
+	packageIndex := slices.IndexFunc(packages, func(source config.PackageSource) bool {
+		return list.packageSourceMatches(item.metadata.Source, list.itemScope(item), source.Source, "project")
+	})
 	if packageIndex < 0 {
 		if state == projectInherit {
 			return errors.New("cannot inherit a package without a project override")
@@ -855,18 +805,9 @@ func (list *configResourceList) setProjectPackageOverrideLocked(item *configReso
 	source := packages[packageIndex]
 	source.IsObject = true
 	pattern := list.packageResourcePattern(item)
-	updated := make([]string, 0, len(packageResourceEntries(source, item.resourceType))+1)
-	for _, entry := range packageResourceEntries(source, item.resourceType) {
-		if stripConfigPattern(entry) != pattern {
-			updated = append(updated, entry)
-		}
-	}
+	updated := withoutConfigPattern(packageResourceEntries(source, item.resourceType), pattern)
 	if state != projectInherit {
-		prefix := "+"
-		if state == projectUnload {
-			prefix = "-"
-		}
-		updated = append(updated, prefix+pattern)
+		updated = append(updated, overridePrefix(state == projectLoad)+pattern)
 	}
 	if len(updated) == 0 {
 		updated = nil
@@ -999,19 +940,15 @@ func (list *configResourceList) resourcePatternForScope(item *configResourceItem
 	return relativeConfigPath(baseDir, item.path)
 }
 
-func boolConfigPointer(value bool) *bool { return &value }
-
 func (list *configResourceList) createPackageOverrideSource(item *configResourceItem) config.PackageSource {
 	source := item.metadata.Source
-	if !isConfigLocalPath(source) {
-		return config.PackageSource{Source: source, Autoload: boolConfigPointer(false), IsObject: true}
+	if isConfigLocalPath(source) {
+		source = relativeConfigPath(list.topLevelBaseDir("project"), resolveConfigPath(source, list.topLevelBaseDir(list.itemScope(item))))
+		if source == "" {
+			source = "."
+		}
 	}
-	sourcePath := resolveConfigPath(source, list.topLevelBaseDir(list.itemScope(item)))
-	relative := relativeConfigPath(list.topLevelBaseDir("project"), sourcePath)
-	if relative == "" {
-		relative = "."
-	}
-	return config.PackageSource{Source: relative, Autoload: boolConfigPointer(false), IsObject: true}
+	return config.PackageSource{Source: source, Autoload: new(bool), IsObject: true}
 }
 
 func isConfigLocalPath(value string) bool {
@@ -1122,10 +1059,7 @@ type ConfigSelector struct {
 
 func NewConfigSelector(options ConfigSelectorOptions, onClose, onExit func(), requestRender func()) *ConfigSelector {
 	writeScope := options.WriteScope
-	if writeScope != ConfigWriteProject {
-		writeScope = ConfigWriteGlobal
-	}
-	if writeScope == ConfigWriteProject && !options.ProjectModeAvailable {
+	if writeScope != ConfigWriteProject || !options.ProjectModeAvailable {
 		writeScope = ConfigWriteGlobal
 	}
 	groupsByScope := map[ConfigWriteScope][]*configResourceGroup{

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -29,24 +30,6 @@ import (
 // stream; startupDiagnosticText flattens it back unchanged.
 func otherDiagnostic(message string) modes.StartupDiagnostic {
 	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Message: message}
-}
-
-func otherDiagnostics(messages []string) []modes.StartupDiagnostic {
-	diagnostics := make([]modes.StartupDiagnostic, 0, len(messages))
-	for _, message := range messages {
-		diagnostics = append(diagnostics, otherDiagnostic(message))
-	}
-	return diagnostics
-}
-
-func hostLoadErrorDiagnostic(loadError extensionhost.LoadError) modes.StartupDiagnostic {
-	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticExtension, Path: loadError.Path, Message: loadError.Error}
-}
-
-// hostDiagnostic keeps the host-reported message and path; the message alone is
-// what print modes historically emitted for these.
-func hostDiagnostic(diagnostic extensions.Diagnostic) modes.StartupDiagnostic {
-	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Path: diagnostic.Path, Message: diagnostic.Message}
 }
 
 // startupDiagnosticText flattens a startup diagnostic to the string stderr and
@@ -169,8 +152,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			}
 		}
 		if len(sourceSpecs) > 0 {
-			// Upstream resource-loader.ts:355 resolves -e package specs through
-			// packageManager.resolveExtensionSources with temporary install semantics.
+			// -e package specs resolve with temporary install semantics.
 			manager := agent.NewPackageManager(agent.PackageManagerOptions{
 				CWD: cwd, AgentDir: agentDir, Settings: settings,
 			})
@@ -204,10 +186,10 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)
 			for _, diagnostic := range result.Diagnostics {
-				diagnostics = append(diagnostics, hostDiagnostic(diagnostic))
+				diagnostics = append(diagnostics, modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Path: diagnostic.Path, Message: diagnostic.Message})
 			}
 			for _, loadError := range result.Errors {
-				diagnostics = append(diagnostics, hostLoadErrorDiagnostic(loadError))
+				diagnostics = append(diagnostics, modes.StartupDiagnostic{Kind: modes.StartupDiagnosticExtension, Path: loadError.Path, Message: loadError.Error})
 			}
 		} else {
 			replaceActiveExtensionHost(nil)
@@ -248,8 +230,8 @@ func extensionDiscoveryOptions(cwd, agentDir string, noDiscovery bool, settings 
 	return options
 }
 
-// isPackageSourceSpec mirrors upstream isLocalPath: known package/URL prefixes
-// are package sources, everything else is a local path.
+// isPackageSourceSpec reports known package/URL prefixes; everything else is a
+// local path.
 func isPackageSourceSpec(value string) bool {
 	trimmed := strings.TrimSpace(value)
 	for _, prefix := range [...]string{"npm:", "git:", "github:", "http:", "https:", "ssh:"} {
@@ -319,11 +301,10 @@ type projectTrustResolution struct {
 	Diagnostics      []modes.StartupDiagnostic
 }
 
-// resolveStartupProjectTrust decides project trust the way upstream does: when
-// trust is genuinely in question it loads the pre-trust (global) extension set
-// first so a project_trust handler is consulted ahead of the trust store and the
-// interactive prompt (main.ts resolveProjectTrust wiring → project-trust.ts
-// emitProjectTrustEvent). It leaves settings carrying the decision.
+// resolveStartupProjectTrust decides project trust: when trust is genuinely in
+// question it loads the pre-trust (global) extension set first so a
+// project_trust handler is consulted ahead of the trust store and the
+// interactive prompt. It leaves settings carrying the decision.
 func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args CLIArgs, settings *config.SettingsManager) (projectTrustResolution, error) {
 	resolution := projectTrustResolution{Undecided: args.ProjectTrusted == nil && config.HasTrustRequiringProjectResources(cwd)}
 	var preTrustDiagnostics []modes.StartupDiagnostic
@@ -418,11 +399,7 @@ func extensionHelpText(registry *extensions.Registry) string {
 		if flag.Type == extensions.FlagString {
 			name += " <value>"
 		}
-		description := flag.Description
-		if description == "" {
-			description = "Registered by " + flag.ExtensionPath
-		}
-		fmt.Fprintf(&section, "%-30s%s\n", name, description)
+		fmt.Fprintf(&section, "%-30s%s\n", name, cmp.Or(flag.Description, "Registered by "+flag.ExtensionPath))
 	}
 	return strings.TrimSuffix(helpText, "\n") + section.String()
 }

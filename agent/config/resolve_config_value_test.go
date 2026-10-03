@@ -34,17 +34,8 @@ func TestResolveConfigValueTemplates(t *testing.T) {
 
 func TestConfigValueInspectionAndStrictResolution(t *testing.T) {
 	t.Setenv("PRESENT", "value")
-	if name, ok := GetConfigValueEnvVarName("${PRESENT}"); !ok || name != "PRESENT" {
-		t.Fatalf("env name = %q, %t", name, ok)
-	}
-	if _, ok := GetConfigValueEnvVarName("prefix-$PRESENT"); ok {
-		t.Fatal("template was reported as a single environment reference")
-	}
 	if names := GetConfigValueEnvVarNames("$PRESENT/${MISSING}/$PRESENT"); !reflect.DeepEqual(names, []string{"PRESENT", "MISSING"}) {
 		t.Fatalf("env names = %#v", names)
-	}
-	if IsConfigValueConfigured("$PRESENT/$MISSING", nil) {
-		t.Fatal("value with missing environment variable reported configured")
 	}
 	if _, err := ResolveConfigValueOrThrow("$PRESENT/$MISSING", "test value", nil); err == nil || err.Error() != "failed to resolve test value from environment variable: MISSING" {
 		t.Fatalf("strict error = %v", err)
@@ -56,7 +47,6 @@ func TestConfigValueInspectionAndStrictResolution(t *testing.T) {
 }
 
 func TestResolveConfigValueCommandsAreTrimmedAndCachedIncludingFailure(t *testing.T) {
-	ClearConfigValueCache()
 	value, ok := ResolveAuthConfigValue("!printf '  command-value \\n'", nil)
 	if !ok || value != "command-value" {
 		t.Fatalf("command = %q, %t", value, ok)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -214,17 +215,11 @@ func resolveCredentialForPrint(
 			}
 			overrides = &aiauth.ResolutionOverrides{MinOAuthValidity: &minExpiry}
 		}
-		authResult, authErr := registry.ResolveProviderAuthWithOverrides(
-			ctx,
-			string(model.Provider),
-			nil,
-			overrides,
-		)
+		authResult, authErr := registry.ResolveProviderAuthWithOverrides(ctx, string(model.Provider), nil, overrides)
 		if authErr != nil {
 			return "", authErr
 		}
-		value := credentialValue(command.kind, authResult)
-		if value != "" {
+		if value := credentialValue(command.kind, authResult); value != "" {
 			resolved = append(resolved, resolvedCredential{provider: string(model.Provider), value: value})
 		}
 	}
@@ -264,10 +259,7 @@ func credentialPrintModels(
 	if args.Provider != nil && *args.Provider != "" {
 		resolution := agent.ResolveCLIModel(*args.Provider, *args.Model, nil, available)
 		if resolution.Error != "" || resolution.Model == nil {
-			if resolution.Error != "" {
-				return nil, credentialPrintError(resolution.Error)
-			}
-			return nil, credentialPrintError("Unable to resolve the requested provider/model")
+			return nil, credentialPrintError(cmp.Or(resolution.Error, "Unable to resolve the requested provider/model"))
 		}
 		return []ai.Model{*resolution.Model}, nil
 	}
@@ -413,23 +405,18 @@ func (interaction *headlessAuthInteraction) Prompt(ctx context.Context, prompt a
 			_, _ = fmt.Fprintf(interaction.err, "  %d) %s\n", index+1, label)
 		}
 	}
-	result := make(chan struct {
+	type answer struct {
 		value string
 		err   error
-	}, 1)
+	}
+	result := make(chan answer, 1)
 	go func() {
 		value, err := interaction.reader.ReadString('\n')
 		if err != nil && err != io.EOF {
-			result <- struct {
-				value string
-				err   error
-			}{err: err}
+			result <- answer{err: err}
 			return
 		}
-		result <- struct {
-			value string
-			err   error
-		}{value: strings.TrimRight(value, "\r\n")}
+		result <- answer{value: strings.TrimRight(value, "\r\n")}
 	}()
 	select {
 	case <-ctx.Done():

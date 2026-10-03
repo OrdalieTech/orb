@@ -127,11 +127,14 @@ func (v *remoteConversation) Render(width int) []string {
 
 type remoteControls struct{ v *remoteConversation }
 
+func (v *remoteConversation) currentPrompt() *questions.Panel {
+	v.promptMu.Lock()
+	defer v.promptMu.Unlock()
+	return v.prompt
+}
+
 func (c remoteControls) Render(width int) []string {
-	c.v.promptMu.Lock()
-	prompt := c.v.prompt
-	c.v.promptMu.Unlock()
-	if prompt != nil {
+	if prompt := c.v.currentPrompt(); prompt != nil {
 		return prompt.Render(width)
 	}
 	return append(c.v.status.Render(width), c.v.input.Render(width)...)
@@ -147,10 +150,7 @@ func (v *remoteConversation) HandleInput(key tui.KeyEvent) {
 		v.invalidate()
 		return
 	}
-	v.promptMu.Lock()
-	prompt := v.prompt
-	v.promptMu.Unlock()
-	if prompt != nil {
+	if prompt := v.currentPrompt(); prompt != nil {
 		prompt.HandleInput(key)
 		return
 	}
@@ -158,10 +158,7 @@ func (v *remoteConversation) HandleInput(key tui.KeyEvent) {
 }
 func (c remoteControls) WantsMouseMotion() bool { return true }
 func (c remoteControls) HandleMouse(event tui.MouseEvent) bool {
-	c.v.promptMu.Lock()
-	prompt := c.v.prompt
-	c.v.promptMu.Unlock()
-	if prompt != nil {
+	if prompt := c.v.currentPrompt(); prompt != nil {
 		return prompt.HandleMouse(event)
 	}
 	return false
@@ -184,10 +181,7 @@ func (v *remoteConversation) HandleMouse(event tui.MouseEvent) bool {
 	return true
 }
 func (v *remoteConversation) SetFocused(f bool) {
-	v.promptMu.Lock()
-	prompt := v.prompt
-	v.promptMu.Unlock()
-	if prompt != nil {
+	if prompt := v.currentPrompt(); prompt != nil {
 		prompt.SetFocused(f)
 	} else {
 		v.input.SetFocused(f)

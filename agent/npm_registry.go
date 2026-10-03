@@ -3,7 +3,6 @@ package agent
 import (
 	"archive/tar"
 	"compress/gzip"
-	"context"
 	"crypto/sha1" //nolint:gosec // npm legacy shasum verification
 	"crypto/sha512"
 	"encoding/base64"
@@ -12,12 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -150,13 +150,9 @@ func (manager *PackageManager) httpClient() *http.Client {
 }
 
 func (manager *PackageManager) fetchPackument(name string) (*npmPackument, error) {
-	return manager.fetchPackumentContext(context.Background(), name)
-}
-
-func (manager *PackageManager) fetchPackumentContext(ctx context.Context, name string) (*npmPackument, error) {
 	registry := manager.npmRegistry()
 	endpoint := registry.baseURL + "/" + url.PathEscape(name)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -192,11 +188,7 @@ func selectNpmVersion(packument *npmPackument, source *npmSource) (npmVersionInf
 		return npmVersionInfo{}, fmt.Errorf("npm version %s@%s not found in registry", source.name, source.version)
 	}
 	if source.rng != "" {
-		versions := make([]string, 0, len(packument.Versions))
-		for version := range packument.Versions {
-			versions = append(versions, version)
-		}
-		best := semver.MaxSatisfying(versions, source.rng)
+		best := semver.MaxSatisfying(slices.Collect(maps.Keys(packument.Versions)), source.rng)
 		if best == "" {
 			return npmVersionInfo{}, fmt.Errorf("no npm version of %s satisfies %s", source.name, source.rng)
 		}
@@ -213,11 +205,7 @@ func selectNpmVersion(packument *npmPackument, source *npmSource) (npmVersionInf
 }
 
 func (manager *PackageManager) getLatestNpmVersion(source *npmSource) (string, error) {
-	return manager.getLatestNpmVersionContext(context.Background(), source)
-}
-
-func (manager *PackageManager) getLatestNpmVersionContext(ctx context.Context, source *npmSource) (string, error) {
-	packument, err := manager.fetchPackumentContext(ctx, source.name)
+	packument, err := manager.fetchPackument(source.name)
 	if err != nil {
 		return "", err
 	}
@@ -324,12 +312,7 @@ func (manager *PackageManager) installNpmPeerDependencies(packageDir string) err
 		current := queue[0]
 		queue = queue[1:]
 		peers, optionalPeers := declaredPeerDependencies(filepath.Join(current, "package.json"))
-		names := make([]string, 0, len(peers))
-		for name := range peers {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
+		for _, name := range slices.Sorted(maps.Keys(peers)) {
 			if visited[name] {
 				continue
 			}

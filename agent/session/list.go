@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 const maxConcurrentSessionInfoLoads = 10
@@ -502,7 +504,7 @@ func listedSessionName(entry *SessionEntry) (*string, bool) {
 	if !valid {
 		return nil, false
 	}
-	name = trimJSSpace(name)
+	name = strings.TrimFunc(name, jstrim.IsSpace)
 	if name == "" {
 		return nil, true
 	}

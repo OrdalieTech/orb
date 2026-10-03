@@ -228,15 +228,6 @@ func TestReadImageSkipsTermuxAndNonLinux(t *testing.T) {
 }
 
 func TestImageMimeTypeHelpers(t *testing.T) {
-	if extension := ExtensionForImageMimeType("image/jpeg;charset=binary"); extension != "jpg" {
-		t.Fatalf("jpeg extension = %q", extension)
-	}
-	if extension := ExtensionForImageMimeType("IMAGE/PNG"); extension != "png" {
-		t.Fatalf("case-insensitive extension = %q", extension)
-	}
-	if extension := ExtensionForImageMimeType("application/pdf"); extension != "" {
-		t.Fatalf("unsupported extension = %q", extension)
-	}
 	if !IsWaylandSession(func(key string) string {
 		if key == "XDG_SESSION_TYPE" {
 			return "wayland"

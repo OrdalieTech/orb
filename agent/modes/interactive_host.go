@@ -13,8 +13,7 @@ import (
 )
 
 // InteractiveSessionHost owns the live SessionRuntime behind the interactive
-// TUI and executes every state-changing session command. It mirrors upstream
-// AgentSessionRuntime (core/agent-session-runtime.ts): replacement methods
+// TUI and executes every state-changing session command. Replacement methods
 // shut down and dispose the current runtime before calling the full CLI creation
 // path, apply and rebind the replacement without rollback, and only then let
 // the replacement's session_start extension event fire.
@@ -42,8 +41,7 @@ type InteractiveSessionHost interface {
 	Reload(ctx context.Context) error
 
 	// ListProjectSessions lists sessions for the current cwd;
-	// ListAllSessions lists every project's sessions (upstream
-	// SessionManager.list / listAll semantics).
+	// ListAllSessions lists every project's sessions.
 	ListProjectSessions(onProgress sessionstore.SessionListProgress) []sessionstore.SessionInfo
 	ListAllSessions(onProgress sessionstore.SessionListProgress) []sessionstore.SessionInfo
 
@@ -107,8 +105,7 @@ type InteractiveAuthOptions struct {
 }
 
 // MissingSessionCwdError reports a session whose stored cwd no longer exists;
-// the TUI prompts for a cwd override and retries. Text matches upstream
-// formatMissingSessionCwdError.
+// the TUI prompts for a cwd override and retries.
 type MissingSessionCwdError struct {
 	SessionFile string
 	SessionCWD  string
@@ -128,7 +125,6 @@ func formatMissingSessionCwdPrompt(err *MissingSessionCwdError) string {
 }
 
 // SessionImportFileNotFoundError reports an /import path that does not exist.
-// Text matches upstream SessionImportFileNotFoundError.
 type SessionImportFileNotFoundError struct {
 	FilePath string
 }

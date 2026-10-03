@@ -1104,8 +1104,8 @@ type OAuthCredentials struct {
 }
 
 func (credentials OAuthCredentials) MarshalJSON() ([]byte, error) {
-	// Member order matches upstream OAuthCredentials (ai/src/auth/types.ts):
-	// refresh, access, expires, then extra members. jsonwire keeps <, >, and &
+	// Member order matches upstream OAuthCredentials: refresh, access, expires,
+	// then extra members. jsonwire keeps <, >, and &
 	// literal on the extension-host protocol like JSON.stringify.
 	object := jsonwire.OrderedObject{
 		{Name: "refresh", Value: credentials.Refresh},
