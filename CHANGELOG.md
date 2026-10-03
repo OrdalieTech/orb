@@ -99,6 +99,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   Orb, so `herdr agent prompt` works on Orb panes; without that integration Orb reports its own
   status as before, and headless runs never claim the pane.
 - The working indicator comes back when automatic compaction continues a run.
+- The system prompt's documentation section appears only when the README, docs and examples it
+  points to exist, so standalone installs and dev builds no longer send the model to missing paths.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -100,6 +99,7 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	}
 
 	fixture := loadF9Fixture(t)
+	packageDir := f9DocsPackageDir(t)
 	for _, fixtureCase := range fixture.PromptCases {
 		fixtureCase := fixtureCase
 		t.Run(fixtureCase.Name, func(t *testing.T) {
@@ -112,9 +112,9 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				CWD:                fixtureCase.Input.CWD,
 				ContextFiles:       f9CodingContextFiles(fixtureCase.Input.ContextFiles),
 				Skills:             f9CodingSkills(fixtureCase.Input.Skills),
-				PackageDir:         fixture.PackageDir,
+				PackageDir:         packageDir,
 			})
-			got = f9FixturePackagePaths(t, got, fixture.PackageDir)
+			got = f9FixturePackagePaths(got, packageDir, fixture.PackageDir)
 			expected := f9ExpectedOrbSystemPrompt(fixtureCase.Expected)
 			f9AssertOrbSystemPromptIdentity(t, fixtureCase.Expected, got)
 			if got != expected {
@@ -126,6 +126,7 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 
 func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	fixture := loadF9Fixture(t)
+	packageDir := f9DocsPackageDir(t)
 	for _, fixtureCase := range fixture.DiscoveryCases {
 		fixtureCase := fixtureCase
 		t.Run(fixtureCase.Name, func(t *testing.T) {
@@ -186,7 +187,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				AppendSystemPrompt: appendPromptPointer,
 				CWD:                cwd,
 				ContextFiles:       resources.ContextFiles,
-				PackageDir:         fixture.PackageDir,
+				PackageDir:         packageDir,
 			})
 
 			got := f9DiscoveryExpected{
@@ -195,7 +196,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				SystemPromptSource:        f9FixturePromptSource(resources.SystemPromptSource, fixtureRoot),
 				AppendSystemPrompt:        resources.AppendSystemPrompt,
 				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
-				AssembledPrompt:           runner.NormalizeFixturePath(f9FixturePackagePaths(t, assembled, fixture.PackageDir), fixtureRoot),
+				AssembledPrompt:           runner.NormalizeFixturePath(f9FixturePackagePaths(assembled, packageDir, fixture.PackageDir), fixtureRoot),
 			}
 			expected := fixtureCase.Expected
 			expected.AssembledPrompt = f9ExpectedOrbSystemPrompt(expected.AssembledPrompt)
@@ -210,21 +211,21 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	}
 }
 
-// f9FixturePackagePaths maps the docs pointers back to the fixture's POSIX
-// form. Upstream's getReadmePath/getDocsPath/getExamplesPath path.resolve the
-// POSIX packageDir, which on win32 roots it on the current drive and joins
-// with backslashes.
-func f9FixturePackagePaths(t testing.TB, prompt, packageDir string) string {
+// Pi distributions ship these assets; F9 replays that complete-package environment.
+func f9DocsPackageDir(t testing.TB) string {
 	t.Helper()
-	if runtime.GOOS != "windows" {
-		return prompt
-	}
-	native, err := filepath.Abs(filepath.FromSlash(packageDir))
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := t.TempDir()
+	writeF9Tree(t, root, []f9ContextFile{
+		{Path: "README.md"},
+		{Path: "docs/.keep"},
+		{Path: "examples/.keep"},
+	})
+	return root
+}
+
+func f9FixturePackagePaths(prompt, packageDir, fixturePackageDir string) string {
 	for _, name := range []string{"README.md", "docs", "examples"} {
-		prompt = strings.ReplaceAll(prompt, filepath.Join(native, name), packageDir+"/"+name)
+		prompt = strings.ReplaceAll(prompt, filepath.Join(packageDir, name), fixturePackageDir+"/"+name)
 	}
 	return prompt
 }

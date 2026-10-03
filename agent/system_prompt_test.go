@@ -9,6 +9,7 @@ import (
 
 func TestBuildSystemPromptDefaultIsByteOrdered(t *testing.T) {
 	packageDir := t.TempDir()
+	writeSystemPromptDocsBundle(t, packageDir)
 	prompt := BuildSystemPrompt(SystemPromptOptions{
 		SelectedTools:    []string{"read", "bash", "hidden"},
 		ToolSnippets:     map[string]string{"read": "Read file contents", "bash": "Execute bash commands"},
@@ -122,6 +123,7 @@ func TestBuildSystemPromptNormalizesPackageDirectoryEnvironment(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
 	t.Setenv("USERPROFILE", root)
+	writeSystemPromptDocsBundle(t, filepath.Join(root, "pi-package"))
 	t.Setenv("PI_PACKAGE_DIR", "~/pi-package")
 
 	prompt := BuildSystemPrompt(SystemPromptOptions{CWD: root, SelectedTools: []string{}})
@@ -134,6 +136,7 @@ func TestBuildSystemPromptNormalizesPackageDirectoryEnvironment(t *testing.T) {
 	if filepath.Separator == '\\' {
 		fileURL = "file:///" + strings.TrimPrefix(filepath.ToSlash(root), "/") + "/encoded%20package"
 	}
+	writeSystemPromptDocsBundle(t, filepath.Join(root, "encoded package"))
 	t.Setenv("PI_PACKAGE_DIR", fileURL)
 	prompt = BuildSystemPrompt(SystemPromptOptions{CWD: root, SelectedTools: []string{}})
 	wantReadme = filepath.Join(root, "encoded package", "README.md")
