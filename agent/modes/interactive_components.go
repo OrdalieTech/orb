@@ -1577,9 +1577,11 @@ type statusHit struct {
 }
 
 type FooterComponent struct {
-	hitMu sync.Mutex
-	hits  []statusHit
-	hover string // key of the hit under the pointer
+	hitMu      sync.Mutex
+	hits       []statusHit
+	hover      string // key of the hit under the pointer
+	hoverTimer *time.Timer
+	hoverEpoch uint64
 	// tooltip shows label above footer columns [start, end); "" hides it.
 	tooltip            func(label string, start, end int)
 	session            footerSession
@@ -1958,19 +1960,38 @@ func (f *FooterComponent) hitAtLocked(event tui.MouseEvent) statusHit {
 func (f *FooterComponent) HandleMouse(event tui.MouseEvent) bool {
 	if event.Type == tui.MouseMove {
 		f.hitMu.Lock()
+		defer f.hitMu.Unlock()
 		hovered := f.hitAtLocked(event)
 		changed := hovered.key != f.hover
+		if !changed {
+			return false
+		}
 		f.hover = hovered.key
-		tooltip := f.tooltip
-		f.hitMu.Unlock()
-		if changed && tooltip != nil {
+		f.hoverEpoch++
+		if f.hoverTimer != nil {
+			f.hoverTimer.Stop()
+			f.hoverTimer = nil
+		}
+		if f.tooltip != nil {
 			label := ""
 			if hovered.key != "" {
 				label = f.statusLabel(hovered.key)
 			}
-			tooltip(label, hovered.start, hovered.end)
+			f.tooltip(label, hovered.start, hovered.end)
+			if label != "" {
+				epoch := f.hoverEpoch
+				// Terminals send no mouse-leave when the pointer exits the pane.
+				f.hoverTimer = time.AfterFunc(2*time.Second, func() {
+					f.hitMu.Lock()
+					defer f.hitMu.Unlock()
+					if epoch == f.hoverEpoch {
+						f.hover, f.hoverTimer = "", nil
+						f.tooltip("", 0, 0)
+					}
+				})
+			}
 		}
-		return changed
+		return true
 	}
 	if event.Type != tui.MousePress || event.Button != 0 {
 		return false
