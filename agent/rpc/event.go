@@ -118,6 +118,7 @@ type FrameWriter struct {
 	writer    io.Writer
 	lines     chan []byte
 	done      chan struct{}
+	aborted   chan struct{}
 	callbacks sync.WaitGroup
 	accepting bool
 	closed    bool
@@ -127,7 +128,7 @@ type FrameWriter struct {
 // NewFrameWriter starts the writer goroutine; Close stops it.
 func NewFrameWriter(writer io.Writer) *FrameWriter {
 	output := &FrameWriter{
-		writer: writer, lines: make(chan []byte, 64), done: make(chan struct{}), accepting: true,
+		writer: writer, lines: make(chan []byte, 64), done: make(chan struct{}), aborted: make(chan struct{}), accepting: true,
 	}
 	go output.run()
 	return output
@@ -135,7 +136,23 @@ func NewFrameWriter(writer io.Writer) *FrameWriter {
 
 func (output *FrameWriter) run() {
 	defer close(output.done)
-	for line := range output.lines {
+	for {
+		var line []byte
+		select {
+		case <-output.aborted:
+			return
+		case value, open := <-output.lines:
+			if !open {
+				return
+			}
+			line = value
+		}
+		// Abort and a queued frame can be ready together; never start a write after Abort.
+		select {
+		case <-output.aborted:
+			return
+		default:
+		}
 		output.mu.Lock()
 		failed := output.err != nil
 		output.mu.Unlock()
@@ -150,20 +167,37 @@ func (output *FrameWriter) run() {
 
 // WriteFrame queues one encoded frame; the terminating LF is added.
 func (output *FrameWriter) WriteFrame(value []byte) {
-	output.lines <- bytes.Clone(value)
+	if !output.beginWrite() {
+		return
+	}
+	defer output.callbacks.Done()
+	output.queueFrame(value)
+}
+
+func (output *FrameWriter) queueFrame(value []byte) {
+	select {
+	case output.lines <- bytes.Clone(value):
+	case <-output.aborted:
+	}
+}
+
+func (output *FrameWriter) beginWrite() bool {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	if !output.accepting {
+		return false
+	}
+	output.callbacks.Add(1)
+	return true
 }
 
 // WriteEvent encodes a session event in the stdout JSON/RPC shape
 // (message_update delta-only) and queues it. Events arriving after Close
 // started are dropped.
 func (output *FrameWriter) WriteEvent(event any) {
-	output.mu.Lock()
-	if !output.accepting {
-		output.mu.Unlock()
+	if !output.beginWrite() {
 		return
 	}
-	output.callbacks.Add(1)
-	output.mu.Unlock()
 	defer output.callbacks.Done()
 
 	encoded, err := marshalJSONEvent(event)
@@ -171,7 +205,7 @@ func (output *FrameWriter) WriteEvent(event any) {
 		output.fail(err)
 		return
 	}
-	output.WriteFrame(encoded)
+	output.queueFrame(encoded)
 }
 
 func (output *FrameWriter) fail(err error) {
@@ -185,22 +219,37 @@ func (output *FrameWriter) fail(err error) {
 	output.mu.Unlock()
 }
 
-// Close stops accepting events, flushes queued frames and returns the first
-// write or encoding error.
+// Abort releases queued producers and Close without waiting for a stalled
+// writer. An in-flight io.Writer.Write cannot be interrupted; it may finish
+// after Abort returns, but no caller must wait for it during forced shutdown.
+func (output *FrameWriter) Abort() {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	output.accepting = false
+	select {
+	case <-output.aborted:
+	default:
+		close(output.aborted)
+	}
+}
+
+// Close stops accepting frames, drains output unless aborted, and returns the
+// first write or encoding error. It is safe to call concurrently.
 func (output *FrameWriter) Close() error {
 	output.mu.Lock()
 	output.accepting = false
-	output.mu.Unlock()
-	output.callbacks.Wait()
-
-	output.mu.Lock()
 	if !output.closed {
 		output.closed = true
-		close(output.lines)
+		go func() {
+			output.callbacks.Wait()
+			close(output.lines)
+		}()
 	}
-	done := output.done
 	output.mu.Unlock()
-	<-done
+	select {
+	case <-output.done:
+	case <-output.aborted:
+	}
 
 	output.mu.Lock()
 	defer output.mu.Unlock()

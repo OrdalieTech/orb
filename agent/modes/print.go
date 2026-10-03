@@ -116,6 +116,9 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	}
 
 	shutdown := func(received os.Signal) int {
+		if jsonOutput != nil {
+			jsonOutput.Abort()
+		}
 		if control.killDetachedChildren != nil {
 			control.killDetachedChildren()
 		}
@@ -141,8 +144,19 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 	}
 
 	if mode == PrintOutputJSON {
-		if err := closeJSONOutput(); result.err == nil {
-			result.err = err
+		if unsubscribe != nil {
+			unsubscribe()
+			unsubscribe = nil
+		}
+		closed := make(chan error, 1)
+		go func() { closed <- jsonOutput.Close() }()
+		select {
+		case received := <-control.signals:
+			return shutdown(received)
+		case err := <-closed:
+			if result.err == nil {
+				result.err = err
+			}
 		}
 	}
 	exitCode := 0

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -359,6 +361,62 @@ func (*rpcTestHost) NewSession(string) (bool, error)         { return true, nil 
 func (*rpcTestHost) SwitchSession(string) (bool, error)      { return true, nil }
 func (*rpcTestHost) Fork(string, bool) (string, bool, error) { return "", true, nil }
 func (host *rpcTestHost) Dispose()                           { host.runtime.Dispose() }
+
+func TestServeTerminateInterruptsBlockedOutput(t *testing.T) {
+	for _, exitCode := range []int{143, 129} {
+		for _, eof := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%d/eof=%t", exitCode, eof), func(t *testing.T) {
+				root := t.TempDir()
+				settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+				if err != nil {
+					t.Fatal(err)
+				}
+				manager, err := sessionstore.InMemory(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+					Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				synctest.Test(t, func(t *testing.T) {
+					input, inputWriter := io.Pipe()
+					defer func() { _ = inputWriter.Close() }()
+					writer := &blockedFrameWriter{started: make(chan struct{}), release: make(chan struct{})}
+					defer close(writer.release)
+					terminate := make(chan int, 1)
+					done := make(chan int, 1)
+					go func() {
+						done <- Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{
+							Input: input, Output: writer, Terminate: terminate,
+						})
+					}()
+					if _, err := io.WriteString(inputWriter, "{\"type\":\"get_state\"}\n"); err != nil {
+						t.Fatal(err)
+					}
+					<-writer.started
+					if eof {
+						if err := inputWriter.Close(); err != nil {
+							t.Fatal(err)
+						}
+					}
+					synctest.Wait()
+					terminate <- exitCode
+					select {
+					case code := <-done:
+						if code != exitCode {
+							t.Fatalf("exit=%d want=%d", code, exitCode)
+						}
+					case <-time.After(time.Second):
+						t.Fatal("termination waited for blocked RPC output")
+					}
+				})
+			})
+		}
+	}
+}
 
 func TestFrameWriterStopsAfterWriterFailure(t *testing.T) {
 	writer := &failRPCWriter{}

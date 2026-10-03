@@ -86,6 +86,7 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   `State()` reports the prompt it will send next. `extensions.API` includes `OnWithUnsubscribe`, and
   `harness.SessionV4Storage` includes `ClearName`.
 - A project with only `.pi/mcp.json` asks for trust before its servers load.
+- `--mode json` and `--mode rpc` exit promptly on SIGTERM and SIGHUP even when nothing reads their output, instead of hanging until a forced kill; normal completion still writes every frame.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

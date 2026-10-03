@@ -60,15 +60,16 @@ type Options struct {
 }
 
 type server struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	host     SessionHost
-	options  Options
-	output   *FrameWriter
-	ui       *ExtensionUI
-	mu       sync.Mutex
-	unsub    func()
-	disposed bool
+	ctx     context.Context
+	cancel  context.CancelFunc
+	host    SessionHost
+	options Options
+	output  *FrameWriter
+	ui      *ExtensionUI
+	mu      sync.Mutex
+	unsub   func()
+	// disposed is closed once dispose finishes; a second dispose waits on it.
+	disposed chan struct{}
 	// shutdownRequested is set by extension ctx.shutdown() and honored after
 	// the current command or agent_settled.
 	shutdownRequested bool
@@ -124,16 +125,29 @@ func Serve(ctx context.Context, host SessionHost, options Options) int {
 	if rebindHost, ok := host.(rebindHost); ok {
 		rebindHost.SetRebindSession(mode.bindReplacement)
 	}
-	if err := mode.bindReplacement(host.Session()); err != nil {
+	executed := make(chan int, 1)
+	go func() { executed <- mode.serve() }()
+	select {
+	case code := <-options.Terminate:
+		mode.output.Abort()
+		mode.dispose()
+		return code
+	case code := <-executed:
+		return code
+	}
+}
+
+func (mode *server) serve() int {
+	if err := mode.bindReplacement(mode.host.Session()); err != nil {
 		mode.dispose()
 		_ = mode.output.Close()
-		_, _ = fmt.Fprintln(options.Diagnostics, err)
+		_, _ = fmt.Fprintln(mode.options.Diagnostics, err)
 		return 1
 	}
 
 	lines := make(chan []byte)
 	readErrors := make(chan error, 1)
-	go ReadFrames(options.Input, lines, readErrors)
+	go ReadFrames(mode.options.Input, lines, readErrors)
 
 	var commands sync.WaitGroup
 	for {
@@ -145,26 +159,21 @@ func Serve(ctx context.Context, host SessionHost, options Options) int {
 				commands.Wait()
 				if readErr != nil {
 					_ = mode.output.Close()
-					_, _ = fmt.Fprintln(options.Diagnostics, readErr)
+					_, _ = fmt.Fprintln(mode.options.Diagnostics, readErr)
 					return 1
 				}
 				if err := mode.output.Close(); err != nil {
-					_, _ = fmt.Fprintln(options.Diagnostics, err)
+					_, _ = fmt.Fprintln(mode.options.Diagnostics, err)
 					return 1
 				}
 				return 0
 			}
 			mode.handleLine(line, &commands)
-		case code := <-options.Terminate:
-			mode.dispose()
-			commands.Wait()
-			_ = mode.output.Close()
-			return code
-		case <-ctx.Done():
+		case <-mode.ctx.Done():
 			mode.dispose()
 			commands.Wait()
 			if err := mode.output.Close(); err != nil {
-				_, _ = fmt.Fprintln(options.Diagnostics, err)
+				_, _ = fmt.Fprintln(mode.options.Diagnostics, err)
 				return 1
 			}
 			return 0
@@ -183,7 +192,7 @@ func (mode *server) bindReplacement(session *agent.SessionRuntime) error {
 	}
 	mode.mu.Lock()
 	defer mode.mu.Unlock()
-	if mode.disposed {
+	if mode.disposed != nil {
 		return errors.New("rpc mode is disposed")
 	}
 	if mode.unsub != nil {
@@ -201,11 +210,14 @@ func (mode *server) bindReplacement(session *agent.SessionRuntime) error {
 
 func (mode *server) dispose() {
 	mode.mu.Lock()
-	if mode.disposed {
+	if done := mode.disposed; done != nil {
 		mode.mu.Unlock()
+		<-done
 		return
 	}
-	mode.disposed = true
+	done := make(chan struct{})
+	defer close(done)
+	mode.disposed = done
 	unsub := mode.unsub
 	mode.unsub = nil
 	cancel := mode.cancel

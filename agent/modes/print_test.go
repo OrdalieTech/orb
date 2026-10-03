@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -329,52 +331,97 @@ func TestRunPrintModeSignalShutdown(t *testing.T) {
 }
 
 func TestRunPrintModeJSONSignalTeardownStopsSessionAndClosesSerializer(t *testing.T) {
-	version := sessionstore.CurrentVersion
-	started := make(chan struct{})
-	aborted := make(chan struct{})
-	var order []string
-	session := &jsonPrintSession{}
-	session.prompt = func() {
-		close(started)
-		<-aborted
-	}
-	session.abort = func() {
-		order = append(order, "abort")
-		close(aborted)
-	}
-	signals := make(chan os.Signal, 1)
-	var stdout, stderr bytes.Buffer
-	done := make(chan int, 1)
-	go func() {
-		done <- runPrintMode(context.Background(), session, PrintModeOptions{
-			Mode: PrintOutputJSON, InitialMessage: "hello",
-			SessionHeader: &sessionstore.SessionHeader{
-				Type: "session", Version: &version, ID: "signal", Timestamp: "2026-01-02T03:04:05.000Z", CWD: "/fixture",
-			},
-			Stdout: &stdout, Stderr: &stderr,
-		}, printModeControl{
-			signals: signals,
-			killDetachedChildren: func() {
-				order = append(order, "kill")
-			},
-		})
-	}()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("JSON prompt did not start")
-	}
-	signals <- syscall.SIGTERM
-	select {
-	case code := <-done:
-		if code != 143 || stderr.Len() != 0 || !slices.Equal(order, []string{"kill", "abort"}) {
-			t.Fatalf("code=%d stderr=%q order=%#v", code, stderr.String(), order)
+	synctest.Test(t, func(t *testing.T) {
+		version := sessionstore.CurrentVersion
+		started := make(chan struct{})
+		aborted := make(chan struct{})
+		var order []string
+		session := &jsonPrintSession{}
+		session.prompt = func() {
+			close(started)
+			<-aborted
 		}
-		if !session.unsubscribed || stdout.String() != "{\"type\":\"session\",\"version\":3,\"id\":\"signal\",\"timestamp\":\"2026-01-02T03:04:05.000Z\",\"cwd\":\"/fixture\"}\n" {
-			t.Fatalf("unsubscribed=%t stdout=%q", session.unsubscribed, stdout.String())
+		session.abort = func() {
+			order = append(order, "abort")
+			close(aborted)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("JSON signal teardown did not finish")
+		signals := make(chan os.Signal, 1)
+		var stdout, stderr bytes.Buffer
+		done := make(chan int, 1)
+		go func() {
+			done <- runPrintMode(context.Background(), session, PrintModeOptions{
+				Mode: PrintOutputJSON, InitialMessage: "hello",
+				SessionHeader: &sessionstore.SessionHeader{
+					Type: "session", Version: &version, ID: "signal", Timestamp: "2026-01-02T03:04:05.000Z", CWD: "/fixture",
+				},
+				Stdout: &stdout, Stderr: &stderr,
+			}, printModeControl{
+				signals: signals,
+				killDetachedChildren: func() {
+					order = append(order, "kill")
+				},
+			})
+		}()
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("JSON prompt did not start")
+		}
+		synctest.Wait()
+		signals <- syscall.SIGTERM
+		select {
+		case code := <-done:
+			if code != 143 || stderr.Len() != 0 || !slices.Equal(order, []string{"kill", "abort"}) {
+				t.Fatalf("code=%d stderr=%q order=%#v", code, stderr.String(), order)
+			}
+			if !session.unsubscribed || stdout.String() != "{\"type\":\"session\",\"version\":3,\"id\":\"signal\",\"timestamp\":\"2026-01-02T03:04:05.000Z\",\"cwd\":\"/fixture\"}\n" {
+				t.Fatalf("unsubscribed=%t stdout=%q", session.unsubscribed, stdout.String())
+			}
+		case <-time.After(time.Second):
+			t.Fatal("JSON signal teardown did not finish")
+		}
+	})
+}
+
+func TestRunPrintModeJSONSignalInterruptsBlockedOutput(t *testing.T) {
+	for _, received := range []os.Signal{syscall.SIGTERM, syscall.SIGHUP} {
+		for _, promptFinished := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%v/finished=%t", received, promptFinished), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					writer := &blockingWriter{started: make(chan struct{}), release: make(chan struct{})}
+					defer close(writer.release)
+					aborted := make(chan struct{})
+					session := &jsonPrintSession{
+						prompt: func() {
+							if !promptFinished {
+								<-aborted
+							}
+						},
+						abort: func() { close(aborted) },
+					}
+					signals := make(chan os.Signal, 1)
+					done := make(chan int, 1)
+					go func() {
+						done <- runPrintMode(context.Background(), session, PrintModeOptions{
+							Mode: PrintOutputJSON, InitialMessage: "hello",
+							SessionHeader: &sessionstore.SessionHeader{Type: "session"},
+							Stdout:        writer, Stderr: io.Discard,
+						}, printModeControl{signals: signals})
+					}()
+					<-writer.started
+					synctest.Wait()
+					signals <- received
+					select {
+					case code := <-done:
+						if want := printModeSignalExitCode(received); code != want || !session.unsubscribed {
+							t.Fatalf("code=%d want=%d unsubscribed=%t", code, want, session.unsubscribed)
+						}
+					case <-time.After(time.Second):
+						t.Fatal("signal waited for blocked JSON output")
+					}
+				})
+			})
+		}
 	}
 }
 
