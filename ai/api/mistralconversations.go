@@ -105,17 +105,6 @@ type mistralToolFunction struct {
 	Arguments string `json:"arguments"`
 }
 
-func StreamMistralConversations(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: Mistral Conversations model is nil")
-	}
-	options := &MistralConversationsOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamMistralConversationsWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleMistralConversations(
 	ctx context.Context,
 	model *ai.Model,

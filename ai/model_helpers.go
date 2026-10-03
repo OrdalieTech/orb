@@ -8,13 +8,6 @@ import (
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
 
-// Public model helpers mirroring packages/ai/src/models.ts exports.
-
-// HasAPI reports whether the model streams through the given API shape.
-func HasAPI(model *Model, api API) bool {
-	return model != nil && model.API == api
-}
-
 // CalculateCost fills usage.Cost from the model's rates, applying tiered
 // pricing above each tier's input-token threshold and Anthropic's 2x base
 // input rate for 1h cache writes.
@@ -103,14 +96,6 @@ func ClampThinkingLevel(model *Model, requested ModelThinkingLevel) ModelThinkin
 		return ModelThinkingOff
 	}
 	return levels[0]
-}
-
-// ModelsAreEqual compares models by id and provider; nil never equals.
-func ModelsAreEqual(a, b *Model) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	return a.ID == b.ID && a.Provider == b.Provider
 }
 
 // ContentText extracts text blocks and joins them with a newline by default.

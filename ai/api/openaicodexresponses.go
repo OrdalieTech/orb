@@ -131,17 +131,6 @@ func (tool openAICodexResponsesTool) MarshalJSON() ([]byte, error) {
 	}{tool.Type, tool.Name, tool.Description, tool.Parameters, tool.Strict, tool.DeferLoading})
 }
 
-func StreamOpenAICodexResponses(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: OpenAI Codex Responses model is nil")
-	}
-	options := &OpenAICodexResponsesOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamOpenAICodexResponsesWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleOpenAICodexResponses(
 	ctx context.Context,
 	model *ai.Model,

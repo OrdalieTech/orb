@@ -111,16 +111,6 @@ func TestLOGm8FractionalExpiresRoundTrips(t *testing.T) {
 		t.Fatalf("changed expires = %s, want %s", encoded, wantChanged)
 	}
 
-	var boundary Credential
-	if err := json.Unmarshal([]byte(`{"type":"oauth","expires":2000.75}`), &boundary); err != nil {
-		t.Fatal(err)
-	}
-	if boundary.expiredAt(2000) {
-		t.Fatal("fractional expiry was treated as expired before the JavaScript-number boundary")
-	}
-	if !boundary.expiredAt(2001) {
-		t.Fatal("fractional expiry remained valid after the JavaScript-number boundary")
-	}
 	if err := json.Unmarshal([]byte(`{"type":"oauth","expires":"soon"}`), &credential); err == nil {
 		t.Fatal("non-numeric expires was accepted")
 	}

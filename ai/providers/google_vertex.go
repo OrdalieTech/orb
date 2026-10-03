@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/OrdalieTech/orb/ai/auth"
 )
@@ -119,7 +120,7 @@ func (googleVertexAuth) Resolve(
 		if credential != nil {
 			source = "stored credential"
 		}
-		return &auth.AuthResult{Auth: auth.ModelAuth{}, Env: cloneProviderEnv(credentialEnv), Source: source}, nil
+		return &auth.AuthResult{Auth: auth.ModelAuth{}, Env: maps.Clone(credentialEnv), Source: source}, nil
 	}
 	return nil, nil
 }
@@ -130,17 +131,6 @@ func credentialEnvValue(env map[string]string, name string) (string, bool) {
 	}
 	value, ok := env[name]
 	return value, ok
-}
-
-func cloneProviderEnv(env map[string]string) map[string]string {
-	if env == nil {
-		return nil
-	}
-	cloned := make(map[string]string, len(env))
-	for name, value := range env {
-		cloned[name] = value
-	}
-	return cloned
 }
 
 var googleVertexProvider = Provider{

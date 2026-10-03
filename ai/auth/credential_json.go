@@ -72,7 +72,6 @@ func (credential *Credential) UnmarshalJSON(data []byte) error {
 			}
 			decoded.Expires = int64(value)
 			decoded.expiresJSON = append(json.RawMessage(nil), raw...)
-			decoded.expiresNumber = value
 			decoded.expiresBaseline = decoded.Expires
 		default:
 			decoded.Extra[name] = append(json.RawMessage(nil), raw...)
@@ -179,16 +178,6 @@ func (credential Credential) member(name string) ([]byte, bool, error) {
 		value, exists := credential.Extra[name]
 		return value, exists, nil
 	}
-}
-
-func (credential *Credential) expiredAt(now int64) bool {
-	if credential == nil {
-		return true
-	}
-	if len(credential.expiresJSON) != 0 && credential.Expires == credential.expiresBaseline {
-		return credential.expiresNumber <= float64(now)
-	}
-	return credential.Expires <= now
 }
 
 func decodeOrderedObject(data []byte) (map[string]json.RawMessage, []string, error) {

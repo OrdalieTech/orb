@@ -610,7 +610,7 @@ func openTransactionLegacyV3(ctx context.Context, fs FileSystem, path string, le
 			}
 		}
 		if header.ParentSessionID == nil {
-			header.LegacyParentSessionPath = cloneHarnessString(legacyHeader.ParentSession)
+			header.LegacyParentSessionPath = clonePointer(legacyHeader.ParentSession)
 		}
 	}
 	pairs := []any{"v", 4, "kind", "header", "id", header.ID, "createdAt", header.CreatedAt, "storageVersion", 1, "cwd", header.CWD}

@@ -32,17 +32,6 @@ type AzureOpenAIResponsesOptions struct {
 	AzureDeploymentName *string `json:"azureDeploymentName,omitempty"`
 }
 
-func StreamAzureOpenAIResponses(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: Azure OpenAI Responses model is nil")
-	}
-	options := &AzureOpenAIResponsesOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamAzureOpenAIResponsesWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleAzureOpenAIResponses(
 	ctx context.Context,
 	model *ai.Model,

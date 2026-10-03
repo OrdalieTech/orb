@@ -134,19 +134,6 @@ var (
 	errPiMessagesTerminal = errors.New("ai/api: pi-messages terminal event")
 )
 
-// StreamPiMessages adapts the provider-neutral request to the pi-messages
-// gateway shape.
-func StreamPiMessages(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: pi-messages model is nil")
-	}
-	options := &PiMessagesOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamPiMessagesWithOptions(ctx, request.Model, request.Context, options)
-}
-
 // StreamSimplePiMessages forwards the unified reasoning option without
 // inventing provider defaults that upstream does not send.
 func StreamSimplePiMessages(

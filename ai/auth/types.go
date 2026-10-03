@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"maps"
 )
 
 type CredentialType string
@@ -26,7 +27,6 @@ type Credential struct {
 	order           []string
 	envOrder        []string
 	expiresJSON     json.RawMessage
-	expiresNumber   float64
 	expiresBaseline int64
 }
 
@@ -36,7 +36,7 @@ func APIKeyCredential(key string) *Credential {
 
 func APIKeyEnvCredential(env map[string]string, envOrder ...string) *Credential {
 	return &Credential{
-		Type: CredentialAPIKey, Env: cloneStrings(env),
+		Type: CredentialAPIKey, Env: maps.Clone(env),
 		order: []string{"type", "env"}, envOrder: append([]string(nil), envOrder...),
 	}
 }
@@ -76,7 +76,7 @@ func (credential *Credential) Clone() *Credential {
 		key := *credential.Key
 		cloned.Key = &key
 	}
-	cloned.Env = cloneStrings(credential.Env)
+	cloned.Env = maps.Clone(credential.Env)
 	cloned.Extra = cloneRaw(credential.Extra)
 	cloned.order = append([]string(nil), credential.order...)
 	cloned.envOrder = append([]string(nil), credential.envOrder...)
@@ -185,17 +185,6 @@ type OAuth interface {
 
 type OAuthLoginLabel interface {
 	LoginLabel() string
-}
-
-func cloneStrings(source map[string]string) map[string]string {
-	if source == nil {
-		return nil
-	}
-	cloned := make(map[string]string, len(source))
-	for key, value := range source {
-		cloned[key] = value
-	}
-	return cloned
 }
 
 func cloneRaw(source map[string]json.RawMessage) map[string]json.RawMessage {

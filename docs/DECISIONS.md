@@ -105,7 +105,7 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
 
 Older numbers still cited in code and docs map as follows: D1/D3 → P1, D7/D8 → P2, D16 and
 D32–D34 → P3/P4, D2/D4/D5/D6/D13 → P5, D30/D35 → P6, D31 → P7, G4 (self-update) → "Releases".
-D10, D12, D14, D15, D18, D24, D27–D29 and D36 are live decisions below.
+D10, D12, D14, D15, D18, D24 and D27–D29 are live decisions below.
 
 ## The compat kernel
 
@@ -167,13 +167,7 @@ Each holds until changed by owner-signed decision.
   compiled in, off unless configured.
 - **D29 — One high-level agent runtime.** `agent.AgentSession` is the sole high-level embedding
   runtime; harness primitives live in `engine/harness`. Upstream's `AgentHarness` facade and
-  `streamProxy` `/api/stream` client are not ported: embedders use `AgentSessionOptions.StreamFn`
-  plus `ai.ParseStreamingJSON`.
-- **D36 — Session search is a slim Go service** (`engine/search`). Scanning behavior is upstream's
-  (trimmed case-insensitive match, source order, oldest-first entries, cursor paging, single-type
-  storage pushdown, limits, cancellation, duplicate-session-id guard); the shape is Go's:
-  `Session{ID, Readable}`, `iter.Seq2[Hit, error]`, and no `match`/`createHit`/`sourceOptions`
-  hooks (callers use `ProjectText`, map the iterator, and close over their source).
+  `streamProxy` `/api/stream` client are not ported: embedders use `AgentSessionOptions.StreamFn`.
 - `SendMessageOptions.TriggerTurn` is `*bool`: upstream's `triggerTurn` is tri-state — unset still
   steers a streaming turn, an explicit `false` suppresses it.
 - Entry points set `AI_AGENT=orb` and `PI_CODING_AGENT=true`, at CLI/RPC entry only, never when

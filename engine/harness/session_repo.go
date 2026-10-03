@@ -210,7 +210,7 @@ func (repo *JSONLSessionRepo) Create(ctx context.Context, options SessionCreateO
 	}
 	metadata := SessionMetadata{
 		ID: id, CreatedAt: createdAt, CWD: options.CWD, Path: path,
-		ParentSessionPath: cloneHarnessString(options.ParentSessionPath), Metadata: cloneHarnessRaw(options.Metadata),
+		ParentSessionPath: clonePointer(options.ParentSessionPath), Metadata: cloneHarnessRaw(options.Metadata),
 	}
 	if err := validateHarnessMetadata(metadata); err != nil {
 		return nil, err
@@ -473,7 +473,7 @@ func loadHarnessJSONLMetadata(ctx context.Context, fileSystem FileSystem, path s
 	}
 	return SessionMetadata{
 		ID: header.ID, CreatedAt: header.Timestamp, CWD: header.CWD, Path: path,
-		ParentSessionPath: cloneHarnessString(header.ParentSession), Metadata: cloneHarnessRaw(header.Metadata),
+		ParentSessionPath: clonePointer(header.ParentSession), Metadata: cloneHarnessRaw(header.Metadata),
 	}, nil
 }
 
@@ -495,7 +495,7 @@ func (repo *JSONLSessionRepo) Fork(ctx context.Context, sourceMetadata SessionMe
 	}
 	create := options.SessionCreateOptions
 	if create.ParentSessionPath == nil {
-		create.ParentSessionPath = cloneHarnessString(&sourceMetadata.Path)
+		create.ParentSessionPath = clonePointer(&sourceMetadata.Path)
 	}
 	if len(create.Metadata) == 0 {
 		create.Metadata = cloneHarnessRaw(sourceMetadata.Metadata)

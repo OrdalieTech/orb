@@ -32,17 +32,6 @@ type googleVertexRequestAuth struct {
 	adc      bool
 }
 
-func StreamGoogleVertex(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: Google Vertex model is nil")
-	}
-	options := &GoogleVertexOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamGoogleVertexWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleGoogleVertex(
 	ctx context.Context,
 	model *ai.Model,

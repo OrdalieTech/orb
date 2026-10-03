@@ -2,6 +2,7 @@ package harness
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -66,7 +67,7 @@ func BuildSessionContext(entries []SessionTreeEntry, options ...SessionContextBu
 				contextState.Model = &SessionModel{Provider: envelope.Provider, ModelID: envelope.Model}
 			}
 		case "active_tools_change":
-			contextState.ActiveToolNames = cloneHarnessStrings(entry.ActiveToolNames)
+			contextState.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
 		}
 	}
 	contextEntries := BuildContextEntries(entries, resolved)
@@ -133,7 +134,7 @@ func projectTreeEntry(entry SessionTreeEntry) SessionEntry {
 		fromHook = *entry.FromHook
 	}
 	return SessionEntry{
-		Type: entry.Type, ID: entry.ID, ParentID: cloneHarnessString(entry.ParentID), Timestamp: entry.Timestamp,
+		Type: entry.Type, ID: entry.ID, ParentID: clonePointer(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: entry.Message, Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID,
 		RetainedTail: decodeHarnessAgentMessages(entry.RetainedTail),
 		TokensBefore: entry.TokensBefore, Details: entry.Details, Usage: cloneHarnessUsage(entry.Usage), FromHook: fromHook,

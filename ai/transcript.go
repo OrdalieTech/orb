@@ -102,13 +102,6 @@ func CurrentTools(messages MessageList) []Tool {
 	return result
 }
 
-func ResolveTranscript(context TranscriptContext, supportsMidConversationSystemMessages bool) TranscriptContext {
-	if supportsMidConversationSystemMessages {
-		return TranscriptContext{Messages: append(MessageList(nil), context.Messages...)}
-	}
-	return CollapseSystemMessages(context)
-}
-
 func DeclaredTools(messages MessageList) []Tool {
 	order := []string{}
 	definitions := map[string]Tool{}

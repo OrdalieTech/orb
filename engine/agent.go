@@ -18,30 +18,25 @@ type SessionLoop func(context.Context, AgentMessages, AgentContext, AgentLoopCon
 
 type AgentOption func(*agentOptions)
 
-type PrepareNextTurnWithoutContextFunc func(context.Context) (*AgentLoopTurnUpdate, error)
-
 type agentOptions struct {
-	sessionLoop                SessionLoop
-	initialState               *AgentState
-	convertToLLM               ConvertToLLMFunc
-	transformContext           TransformContextFunc
-	streamFn                   StreamFn
-	getAPIKey                  GetAPIKeyFunc
-	getRequestAuth             GetRequestAuthFunc
-	getModelHeaders            GetModelHeadersFunc
-	beforeToolCall             BeforeToolCallFunc
-	afterToolCall              AfterToolCallFunc
-	prepareNextTurn            PrepareNextTurnWithoutContextFunc
-	prepareNextTurnWithContext PrepareNextTurnFunc
-	finishTurn                 FinishTurnFunc
-	prepareRequest             PrepareRequestFunc
-	getSteeringMessages        GetQueuedMessagesFunc
-	getFollowUpMessages        GetQueuedMessagesFunc
-	steeringMode               QueueMode
-	followUpMode               QueueMode
-	streamOptions              ai.SimpleStreamOptions
-	toolExecution              ToolExecutionMode
-	now                        func() int64
+	sessionLoop         SessionLoop
+	initialState        *AgentState
+	convertToLLM        ConvertToLLMFunc
+	streamFn            StreamFn
+	getAPIKey           GetAPIKeyFunc
+	getRequestAuth      GetRequestAuthFunc
+	getModelHeaders     GetModelHeadersFunc
+	beforeToolCall      BeforeToolCallFunc
+	afterToolCall       AfterToolCallFunc
+	prepareNextTurn     PrepareNextTurnFunc
+	finishTurn          FinishTurnFunc
+	prepareRequest      PrepareRequestFunc
+	getSteeringMessages GetQueuedMessagesFunc
+	steeringMode        QueueMode
+	followUpMode        QueueMode
+	streamOptions       ai.SimpleStreamOptions
+	toolExecution       ToolExecutionMode
+	now                 func() int64
 }
 
 func WithSessionLoop(loop SessionLoop) AgentOption {
@@ -83,10 +78,6 @@ func WithConvertToLLM(convert ConvertToLLMFunc) AgentOption {
 	return func(options *agentOptions) { options.convertToLLM = convert }
 }
 
-func WithTransformContext(transform TransformContextFunc) AgentOption {
-	return func(options *agentOptions) { options.transformContext = transform }
-}
-
 func WithAPIKeyResolver(resolve GetAPIKeyFunc) AgentOption {
 	return func(options *agentOptions) { options.getAPIKey = resolve }
 }
@@ -107,26 +98,16 @@ func WithAfterToolCall(hook AfterToolCallFunc) AgentOption {
 	return func(options *agentOptions) { options.afterToolCall = hook }
 }
 
-func WithPrepareNextTurn(hook PrepareNextTurnWithoutContextFunc) AgentOption {
-	return func(options *agentOptions) { options.prepareNextTurn = hook }
-}
-
 func WithPrepareNextTurnContext(hook PrepareNextTurnFunc) AgentOption {
-	return func(options *agentOptions) { options.prepareNextTurnWithContext = hook }
+	return func(options *agentOptions) { options.prepareNextTurn = hook }
 }
 
 // SwapPrepareNextTurnContext replaces the next-turn hook and returns its predecessor.
 func (agent *Agent) SwapPrepareNextTurnContext(hook PrepareNextTurnFunc) PrepareNextTurnFunc {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
-	previous := agent.prepareNextTurnWithContext
-	if previous == nil && agent.prepareNextTurn != nil {
-		withoutContext := agent.prepareNextTurn
-		previous = func(ctx context.Context, _ PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
-			return withoutContext(ctx)
-		}
-	}
-	agent.prepareNextTurnWithContext = hook
+	previous := agent.prepareNextTurn
+	agent.prepareNextTurn = hook
 	return previous
 }
 
@@ -165,10 +146,6 @@ func WithPrepareRequest(hook PrepareRequestFunc) AgentOption {
 
 func WithGetSteeringMessages(getter GetQueuedMessagesFunc) AgentOption {
 	return func(options *agentOptions) { options.getSteeringMessages = getter }
-}
-
-func WithGetFollowUpMessages(getter GetQueuedMessagesFunc) AgentOption {
-	return func(options *agentOptions) { options.getFollowUpMessages = getter }
 }
 
 func WithSteeringMode(mode QueueMode) AgentOption {
@@ -223,12 +200,10 @@ type Agent struct {
 	getModelHeaders             GetModelHeadersFunc
 	beforeToolCall              BeforeToolCallFunc
 	afterToolCall               AfterToolCallFunc
-	prepareNextTurn             PrepareNextTurnWithoutContextFunc
-	prepareNextTurnWithContext  PrepareNextTurnFunc
+	prepareNextTurn             PrepareNextTurnFunc
 	finishTurn                  FinishTurnFunc
 	prepareRequest              PrepareRequestFunc
 	getSteeringMessages         GetQueuedMessagesFunc
-	getFollowUpMessages         GetQueuedMessagesFunc
 	streamOptions               ai.SimpleStreamOptions
 	toolExecution               ToolExecutionMode
 	now                         func() int64
@@ -250,16 +225,14 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 		steeringMode:  QueueOneAtATime,
 		followUpMode:  QueueOneAtATime,
 		toolExecution: ToolExecutionParallel,
-		now:           func() int64 { return time.Now().UnixMilli() },
 	}
-	options.streamOptions.Transport = pointerTo(ai.TransportAuto)
 	for _, apply := range option {
 		if apply != nil {
 			apply(&options)
 		}
 	}
 	if options.streamOptions.Transport == nil {
-		options.streamOptions.Transport = pointerTo(ai.TransportAuto)
+		options.streamOptions.Transport = new(ai.TransportAuto)
 	}
 	if options.now == nil {
 		options.now = func() int64 { return time.Now().UnixMilli() }
@@ -298,27 +271,24 @@ func NewAgent(stream StreamFn, option ...AgentOption) *Agent {
 	state.ErrorMessage = nil
 
 	return &Agent{
-		sessionLoop:                options.sessionLoop,
-		state:                      state,
-		convertToLLM:               options.convertToLLM,
-		transformContext:           options.transformContext,
-		streamFn:                   options.streamFn,
-		getAPIKey:                  options.getAPIKey,
-		getRequestAuth:             options.getRequestAuth,
-		getModelHeaders:            options.getModelHeaders,
-		beforeToolCall:             options.beforeToolCall,
-		afterToolCall:              options.afterToolCall,
-		prepareNextTurn:            options.prepareNextTurn,
-		prepareNextTurnWithContext: options.prepareNextTurnWithContext,
-		finishTurn:                 options.finishTurn,
-		prepareRequest:             options.prepareRequest,
-		getSteeringMessages:        options.getSteeringMessages,
-		getFollowUpMessages:        options.getFollowUpMessages,
-		streamOptions:              options.streamOptions,
-		toolExecution:              options.toolExecution,
-		now:                        options.now,
-		steeringMode:               normalizeQueueMode(options.steeringMode),
-		followUpMode:               normalizeQueueMode(options.followUpMode),
+		sessionLoop:         options.sessionLoop,
+		state:               state,
+		convertToLLM:        options.convertToLLM,
+		streamFn:            options.streamFn,
+		getAPIKey:           options.getAPIKey,
+		getRequestAuth:      options.getRequestAuth,
+		getModelHeaders:     options.getModelHeaders,
+		beforeToolCall:      options.beforeToolCall,
+		afterToolCall:       options.afterToolCall,
+		prepareNextTurn:     options.prepareNextTurn,
+		finishTurn:          options.finishTurn,
+		prepareRequest:      options.prepareRequest,
+		getSteeringMessages: options.getSteeringMessages,
+		streamOptions:       options.streamOptions,
+		toolExecution:       options.toolExecution,
+		now:                 options.now,
+		steeringMode:        normalizeQueueMode(options.steeringMode),
+		followUpMode:        normalizeQueueMode(options.followUpMode),
 	}
 }
 
@@ -482,7 +452,7 @@ func (agent *Agent) IsIdle() bool {
 
 func (agent *Agent) SetTransport(transport ai.Transport) {
 	agent.mu.Lock()
-	agent.streamOptions.Transport = pointerTo(transport)
+	agent.streamOptions.Transport = new(transport)
 	agent.mu.Unlock()
 }
 
@@ -490,7 +460,7 @@ func (agent *Agent) SetTransport(transport ai.Transport) {
 // affinity and prompt-cache keys (upstream Agent's constructor sessionId).
 func (agent *Agent) SetStreamSessionID(sessionID string) {
 	agent.mu.Lock()
-	agent.streamOptions.SessionID = pointerTo(sessionID)
+	agent.streamOptions.SessionID = new(sessionID)
 	agent.mu.Unlock()
 }
 
@@ -581,7 +551,7 @@ func (agent *Agent) DisplayState() AgentDisplayState {
 // the next run without changing transcript persistence.
 func (agent *Agent) SetRequestSystemPromptOverride(prompt *string) {
 	agent.mu.Lock()
-	agent.requestSystemPromptOverride = cloneStringPointer(prompt)
+	agent.requestSystemPromptOverride = clonePointer(prompt)
 	agent.mu.Unlock()
 }
 
@@ -933,11 +903,9 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 		PrepareRequest:      agent.prepareRequest,
 		Now:                 agent.now,
 	}
-	prepareWithoutContext := agent.prepareNextTurn
-	prepareWithContext := agent.prepareNextTurnWithContext
+	prepare := agent.prepareNextTurn
 	externalSteering := agent.getSteeringMessages
-	externalFollowUps := agent.getFollowUpMessages
-	forcedPrompt := cloneStringPointer(agent.requestSystemPromptOverride)
+	forcedPrompt := clonePointer(agent.requestSystemPromptOverride)
 	agent.mu.Unlock()
 	if forcedPrompt != nil {
 		previous := config.TransformContext
@@ -972,15 +940,7 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 		reasoning := ai.ThinkingLevel(thinking)
 		config.Reasoning = &reasoning
 	}
-	if prepareWithContext != nil {
-		config.PrepareNextTurn = prepareWithContext
-	} else if prepareWithoutContext != nil {
-		config.PrepareNextTurn = func(ctx context.Context, _ PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
-			return prepareWithoutContext(ctx)
-		}
-	}
-	if config.PrepareNextTurn != nil {
-		prepare := config.PrepareNextTurn
+	if prepare != nil {
 		config.PrepareNextTurn = func(ctx context.Context, turn PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
 			update, err := prepare(ctx, turn)
 			if err != nil || update == nil || update.Context == nil || update.Context.SystemPrompt == "" || ai.CurrentSystemMessage(agentMessagesToAI(update.Context.Messages)) != nil {
@@ -1013,18 +973,10 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 		}
 		return messages, nil
 	}
-	config.GetFollowUpMessages = func(ctx context.Context) (AgentMessages, error) {
+	config.GetFollowUpMessages = func(context.Context) (AgentMessages, error) {
 		agent.mu.Lock()
-		messages := agent.drainQueueLocked(&agent.followUps, agent.followUpMode)
-		agent.mu.Unlock()
-		if externalFollowUps != nil {
-			external, err := externalFollowUps(ctx)
-			if err != nil {
-				return nil, err
-			}
-			messages = append(messages, external...)
-		}
-		return messages, nil
+		defer agent.mu.Unlock()
+		return agent.drainQueueLocked(&agent.followUps, agent.followUpMode), nil
 	}
 	return config
 }
@@ -1141,7 +1093,7 @@ func cloneModel(model *ai.Model) *ai.Model {
 	if model.ThinkingLevelMap != nil {
 		levelMap := make(map[ai.ModelThinkingLevel]*string, len(*model.ThinkingLevelMap))
 		for level, value := range *model.ThinkingLevelMap {
-			levelMap[level] = cloneStringPointer(value)
+			levelMap[level] = clonePointer(value)
 		}
 		copy.ThinkingLevelMap = &levelMap
 	}
@@ -1188,5 +1140,3 @@ func normalizeQueueMode(mode QueueMode) QueueMode {
 	}
 	return QueueOneAtATime
 }
-
-func pointerTo[T any](value T) *T { return &value }

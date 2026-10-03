@@ -51,17 +51,17 @@ func TestLoadSkillsReportsInvalidMetadataAndSkipsMissingDescription(t *testing.T
 	}
 }
 
-func TestLoadSourcedSkillsAndInvocation(t *testing.T) {
+func TestLoadSkillsAndInvocation(t *testing.T) {
 	root := t.TempDir()
 	filePath := filepath.Join(root, "inspect", "SKILL.md")
 	writeHarnessSkillFile(t, root, "inspect/SKILL.md", "---\nname: inspect\ndescription: Inspect.\ndisable-model-invocation: true\n---\nRead files.")
 
-	skills, diagnostics := LoadSourcedSkills(&LocalExecutionEnv{CWD: root}, []SourcedSkillInput[string]{{Path: root, Source: "project"}})
-	if len(diagnostics) != 0 || len(skills) != 1 || skills[0].Source != "project" || !skills[0].Skill.DisableModelInvocation {
-		t.Fatalf("sourced result = %+v, %+v", skills, diagnostics)
+	result := LoadSkills(&LocalExecutionEnv{CWD: root}, root)
+	if len(result.Diagnostics) != 0 || len(result.Skills) != 1 || !result.Skills[0].DisableModelInvocation {
+		t.Fatalf("result = %+v", result)
 	}
 	want := "<skill name=\"inspect\" location=\"" + filePath + "\">\nReferences are relative to " + filepath.Dir(filePath) + ".\n\nRead files.\n</skill>\n\nFocus on errors."
-	if got := FormatSkillInvocation(skills[0].Skill, "Focus on errors."); got != want {
+	if got := FormatSkillInvocation(result.Skills[0], "Focus on errors."); got != want {
 		t.Fatalf("invocation\nwant: %q\n got: %q", want, got)
 	}
 }

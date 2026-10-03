@@ -1596,11 +1596,6 @@ func stringifyJSONValue(value any) any {
 	}
 }
 
-// SetAssistantMessageModelOmitted preserves an upstream response with no model member.
-func SetAssistantMessageModelOmitted(message *AssistantMessage, omitted bool) {
-	message.modelOmitted = omitted
-}
-
 // SetAssistantMessageProviderThinkingLevelBeforeUsage preserves constructor field order for managed Anthropic responses.
 func SetAssistantMessageProviderThinkingLevelBeforeUsage(message *AssistantMessage, before bool) {
 	message.providerThinkingLevelBeforeUsage = before

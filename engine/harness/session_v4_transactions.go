@@ -219,26 +219,3 @@ func MarshalSessionV4Transaction(writes []json.RawMessage) ([]byte, error) {
 	output.WriteString("]\n")
 	return output.Bytes(), nil
 }
-
-func decodeTransactionEntry(raw json.RawMessage) (SessionV4Entry, error) {
-	members, fields, err := parseV4Object(raw)
-	if err != nil {
-		return SessionV4Entry{}, err
-	}
-	entry, decodeErr := decodeV4EntryPayload(members, fields)
-	if decodeErr != nil {
-		return SessionV4Entry{}, decodeErr
-	}
-	return entry, nil
-}
-func decodeTransactionEntries(rows []json.RawMessage) ([]SessionV4Entry, error) {
-	entries := make([]SessionV4Entry, 0, len(rows))
-	for _, raw := range rows {
-		entry, err := decodeTransactionEntry(raw)
-		if err != nil {
-			return nil, err
-		}
-		entries = append(entries, entry)
-	}
-	return entries, nil
-}

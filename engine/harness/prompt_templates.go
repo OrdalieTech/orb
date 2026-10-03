@@ -139,39 +139,6 @@ func LoadPromptTemplates(env ResourceFileSystem, paths ...string) HarnessPromptT
 	return result
 }
 
-type SourcedPromptTemplateInput[T any] struct {
-	Path   string
-	Source T
-}
-
-type SourcedPromptTemplate[T any] struct {
-	PromptTemplate PromptTemplate
-	Source         T
-}
-
-type SourcedPromptTemplateDiagnostic[T any] struct {
-	PromptTemplateDiagnostic
-	Source T
-}
-
-func LoadSourcedPromptTemplates[T any](env ResourceFileSystem, inputs []SourcedPromptTemplateInput[T], mapTemplate ...func(PromptTemplate, T) PromptTemplate) ([]SourcedPromptTemplate[T], []SourcedPromptTemplateDiagnostic[T]) {
-	var templates []SourcedPromptTemplate[T]
-	var diagnostics []SourcedPromptTemplateDiagnostic[T]
-	for _, input := range inputs {
-		result := LoadPromptTemplates(env, input.Path)
-		for _, template := range result.PromptTemplates {
-			if len(mapTemplate) > 0 && mapTemplate[0] != nil {
-				template = mapTemplate[0](template, input.Source)
-			}
-			templates = append(templates, SourcedPromptTemplate[T]{PromptTemplate: template, Source: input.Source})
-		}
-		for _, diagnostic := range result.Diagnostics {
-			diagnostics = append(diagnostics, SourcedPromptTemplateDiagnostic[T]{PromptTemplateDiagnostic: diagnostic, Source: input.Source})
-		}
-	}
-	return templates, diagnostics
-}
-
 var (
 	harnessPromptPositionalPattern = regexp.MustCompile(`\$([0-9]+)`)
 	harnessPromptSlicePattern      = regexp.MustCompile(`\$\{@:([0-9]+)(?::([0-9]+))?\}`)

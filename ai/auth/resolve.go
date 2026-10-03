@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 )
@@ -80,7 +81,7 @@ func (method EnvAPIKeyAuth) Resolve(
 ) (*AuthResult, error) {
 	if credential != nil && credential.Key != nil && *credential.Key != "" {
 		key := *credential.Key
-		return &AuthResult{Auth: ModelAuth{APIKey: &key}, Env: cloneStrings(credential.Env), Source: "stored credential"}, nil
+		return &AuthResult{Auth: ModelAuth{APIKey: &key}, Env: maps.Clone(credential.Env), Source: "stored credential"}, nil
 	}
 	for _, name := range method.EnvVars {
 		if value, ok := authContext.Env(ctx, name); ok {
@@ -120,7 +121,7 @@ func ResolveProviderAuth(
 		requestContext = overlayContext{base: authContext, env: overrides.Env}
 	}
 	if overrides != nil && overrides.APIKey != nil && methods.APIKey != nil {
-		credential := &Credential{Type: CredentialAPIKey, Key: overrides.APIKey, Env: cloneStrings(overrides.Env)}
+		credential := &Credential{Type: CredentialAPIKey, Key: overrides.APIKey, Env: maps.Clone(overrides.Env)}
 		return resolveAPIKey(ctx, providerID, methods.APIKey, requestContext, credential)
 	}
 
@@ -242,7 +243,7 @@ func (authContext overlayContext) FileExists(ctx context.Context, path string) b
 }
 
 func mergeStringMaps(base, overrides map[string]string) map[string]string {
-	merged := cloneStrings(base)
+	merged := maps.Clone(base)
 	if merged == nil {
 		merged = make(map[string]string)
 	}

@@ -123,7 +123,4 @@ func TestPublicJSONSchemaFacade(t *testing.T) {
 	if string(encoded) != want {
 		t.Fatalf("schema = %s, want %s", encoded, want)
 	}
-	if enum, err := json.Marshal(ai.JSONStringEnumSchema("read", "write")); err != nil || string(enum) != `{"type":"string","enum":["read","write"]}` {
-		t.Fatalf("enum schema = %s, %v", enum, err)
-	}
 }

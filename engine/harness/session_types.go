@@ -3,6 +3,7 @@ package harness
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -109,17 +110,17 @@ func (entry SessionTreeEntry) RawJSON() json.RawMessage {
 
 func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy := entry
-	copy.ParentID = cloneHarnessString(entry.ParentID)
-	copy.ActiveToolNames = cloneHarnessStrings(entry.ActiveToolNames)
+	copy.ParentID = clonePointer(entry.ParentID)
+	copy.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
 	copy.Message = cloneHarnessRaw(entry.Message)
 	copy.RetainedTail = cloneHarnessRawMessages(entry.RetainedTail)
 	copy.Details = cloneHarnessRaw(entry.Details)
 	copy.Usage = cloneHarnessUsage(entry.Usage)
-	copy.FromHook = cloneHarnessBool(entry.FromHook)
+	copy.FromHook = clonePointer(entry.FromHook)
 	copy.Data = cloneHarnessRaw(entry.Data)
 	copy.Content = cloneHarnessRaw(entry.Content)
-	copy.TargetID = cloneHarnessString(entry.TargetID)
-	copy.Label = cloneHarnessString(entry.Label)
+	copy.TargetID = clonePointer(entry.TargetID)
+	copy.Label = clonePointer(entry.Label)
 	copy.Replacement = cloneHarnessRaw(entry.Replacement)
 	copy.raw = cloneHarnessRaw(entry.raw)
 	return copy
@@ -149,20 +150,11 @@ func cloneHarnessEntries(entries []SessionTreeEntry) []SessionTreeEntry {
 	return copy
 }
 
-func cloneHarnessString(value *string) *string {
+func clonePointer[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
-}
-
-func cloneHarnessBool(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
+	return new(*value)
 }
 
 func cloneHarnessRaw(value json.RawMessage) json.RawMessage {
@@ -178,13 +170,6 @@ func cloneHarnessRawMessages(values []json.RawMessage) []json.RawMessage {
 		copy[index] = cloneHarnessRaw(values[index])
 	}
 	return copy
-}
-
-func cloneHarnessStrings(values []string) []string {
-	if values == nil {
-		return nil
-	}
-	return append([]string{}, values...)
 }
 
 // SessionStorage is the backend-neutral session tree contract.

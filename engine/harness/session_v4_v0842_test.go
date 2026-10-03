@@ -72,128 +72,6 @@ func (fs *failOnce) RenameFile(ctx context.Context, from, to string) error {
 	return fs.FileSystem.RenameFile(ctx, from, to)
 }
 
-func TestSessionV4DecodeErrorsSeparateSyntaxFromSchema(t *testing.T) {
-	for line, want := range map[string]SessionV4DecodeErrorKind{
-		"{":                          SessionV4DecodeSyntax,
-		`[1]`:                        SessionV4DecodeSchema,
-		`{"kind":"unknown","seq":1}`: SessionV4DecodeSchema,
-	} {
-		if _, err := DecodeSessionV4Mutation([]byte(line)); err == nil || err.Kind != want {
-			t.Fatalf("DecodeSessionV4Mutation(%q) = %#v, want kind %q", line, err, want)
-		}
-	}
-	for line, want := range map[string]SessionV4DecodeErrorKind{
-		"not json":                      SessionV4DecodeSyntax,
-		`{"kind":"header","version":5}`: SessionV4DecodeSchema,
-		`{"kind":"header","version":4,"id":"s","createdAt":0,"cwd":"/c","metadata":"x"}`: SessionV4DecodeSchema,
-	} {
-		if _, err := DecodeSessionV4Header([]byte(line)); err == nil || err.Kind != want {
-			t.Fatalf("DecodeSessionV4Header(%q) = %#v, want kind %q", line, err, want)
-		}
-	}
-
-	// The file-context wrapper keeps the decode message and stays unwrappable.
-	err := func() error { _, err := ParseSessionV4Mutation([]byte("{"), "/s.jsonl", 3); return err }()
-	if got := err.Error(); got != "Invalid JSONL v4 session /s.jsonl: line 3 is not valid JSON" {
-		t.Fatalf("ParseSessionV4Mutation error = %q", got)
-	}
-	var decodeErr *SessionV4DecodeError
-	if v4Code(t, err) != SessionErrorInvalidEntry || !errors.As(err, &decodeErr) || decodeErr.Kind != SessionV4DecodeSyntax {
-		t.Fatalf("wrapped error = %v (%#v)", err, decodeErr)
-	}
-}
-
-func TestSessionV4FactNameRoundTripsClearedValues(t *testing.T) {
-	for _, mutation := range []SessionV4Mutation{
-		{Kind: "fact", Seq: 1, Fact: "name", Name: "Example"},
-		{Kind: "fact", Seq: 2, Fact: "name", NameCleared: true},
-		{Kind: "fact", Seq: 3, Fact: "label", TargetID: "entry-1", Label: v4Str("checkpoint")},
-	} {
-		encoded, err := MarshalSessionV4Mutation(mutation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		decoded, decodeErr := DecodeSessionV4Mutation(encoded)
-		if decodeErr != nil {
-			t.Fatalf("decode %s: %v", encoded, decodeErr)
-		}
-		reencoded, err := MarshalSessionV4Mutation(decoded)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(reencoded) != string(encoded) || decoded.NameCleared != mutation.NameCleared {
-			t.Fatalf("round trip of %s = %s (%+v)", encoded, reencoded, decoded)
-		}
-		if mutation.NameCleared && string(encoded) != `{"kind":"fact","seq":2,"fact":"name"}` {
-			t.Fatalf("cleared name line = %s", encoded)
-		}
-	}
-	if _, err := DecodeSessionV4Mutation([]byte(`{"kind":"fact","seq":1,"fact":"name","name":5}`)); err == nil ||
-		err.Kind != SessionV4DecodeSchema {
-		t.Fatalf("non-string name decode = %#v", err)
-	}
-}
-
-func TestSessionV4ClearsSessionNamesDurably(t *testing.T) {
-	ctx := context.Background()
-	repo, _, root := v4Repo(t)
-	storage := v4Create(t, repo, "session", root)
-	if err := storage.SetName("Temporary"); err != nil {
-		t.Fatal(err)
-	}
-	if err := storage.ClearName(); err != nil {
-		t.Fatal(err)
-	}
-
-	assert := func(label string, storage *JSONLSessionV4Storage) {
-		t.Helper()
-		if name, ok := storage.Name(); ok {
-			t.Fatalf("%s Name() = %q", label, name)
-		}
-		if _, err := storage.Log(SessionV4LogOptions{}); err == nil || !strings.Contains(err.Error(), "no longer supported") {
-			t.Fatalf("removed log API: %v", err)
-		}
-		values, err := storage.ScanValues(SessionV4Address{Namespace: "pi.session.name"})
-		if err != nil || len(values) != 0 {
-			t.Fatalf("name values: %#v, %v", values, err)
-		}
-	}
-	assert("live", storage)
-
-	if err := storage.Close(ctx); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := repo.Open(ctx, storage.Metadata())
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert("reopened", reopened)
-
-	forked, err := repo.Fork(ctx, storage.Metadata(), JSONLSessionV4ForkOptions{
-		SessionV4ForkOptions: SessionV4ForkOptions{Scope: "tree"},
-		JSONLSessionV4CreateOptions: JSONLSessionV4CreateOptions{
-			SessionV4CreateOptions: SessionV4CreateOptions{ID: v4Str("fork")}, CWD: root,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if name, ok := forked.Name(); ok {
-		t.Fatalf("forked Name() = %q, %v", name, ok)
-	}
-
-	var memory SessionV4Storage = NewInMemorySessionV4Storage(SessionV4Metadata{ID: "session"})
-	if err := memory.(*InMemorySessionV4Storage).SetName("Temporary"); err != nil {
-		t.Fatal(err)
-	}
-	if err := memory.ClearName(); err != nil {
-		t.Fatal(err)
-	}
-	if name, ok := memory.(*InMemorySessionV4Storage).Name(); ok {
-		t.Fatalf("memory Name() = %q, %v", name, ok)
-	}
-}
-
 func TestSessionV4LoadRejectsCorruptionWithoutRepair(t *testing.T) {
 	ctx := context.Background()
 	const header = `{"v":4,"kind":"header","id":"s","storageVersion":1,"createdAt":0,"cwd":"/c"}` + "\n"
@@ -277,8 +155,8 @@ func TestOpenJSONLSessionV4StorageLoadsListedMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry, ok := storage.Entry("e1"); !ok || entry.CustomType != "note" {
-		t.Fatalf("opened entry = %+v, %v", entry, ok)
+	if entries, err := storage.GetEntries([]string{"e1"}); err != nil || !strings.Contains(string(entries["e1"]), `"customType":"note"`) {
+		t.Fatalf("opened entries = %s, %v", entries, err)
 	}
 	mismatched := listed[0]
 	mismatched.ID = "other"

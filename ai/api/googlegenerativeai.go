@@ -79,17 +79,6 @@ type googleUsageMetadata struct {
 	TotalTokenCount         int64 `json:"totalTokenCount"`
 }
 
-func StreamGoogleGenerativeAI(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: Google Generative AI model is nil")
-	}
-	options := &GoogleOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamGoogleGenerativeAIWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleGoogleGenerativeAI(
 	ctx context.Context,
 	model *ai.Model,

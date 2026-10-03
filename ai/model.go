@@ -433,11 +433,6 @@ func JSONSchemaFrom[T any]() (JSONSchema, error) {
 	return jsonschema.FromStruct[T]()
 }
 
-// JSONStringEnumSchema builds a string enum schema in provider wire order.
-func JSONStringEnumSchema(values ...string) JSONSchema {
-	return jsonschema.StringEnum(values...)
-}
-
 type ConstrainedSamplingType string
 
 const (

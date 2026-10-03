@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/OrdalieTech/orb/ai/auth"
 )
@@ -63,7 +64,7 @@ func (bedrockAuth) Resolve(
 ) (*auth.AuthResult, error) {
 	if credential != nil && credential.Key != nil && *credential.Key != "" {
 		key := *credential.Key
-		return &auth.AuthResult{Auth: auth.ModelAuth{APIKey: &key}, Env: cloneProviderEnv(credential.Env), Source: "stored credential"}, nil
+		return &auth.AuthResult{Auth: auth.ModelAuth{APIKey: &key}, Env: maps.Clone(credential.Env), Source: "stored credential"}, nil
 	}
 	if value, _ := authContext.Env(ctx, "AWS_BEARER_TOKEN_BEDROCK"); value != "" {
 		return &auth.AuthResult{Source: "AWS_BEARER_TOKEN_BEDROCK"}, nil
@@ -73,7 +74,7 @@ func (bedrockAuth) Resolve(
 		profile, exists := credential.Env["AWS_PROFILE"]
 		profileStored = exists
 		if profile != "" {
-			return &auth.AuthResult{Env: cloneProviderEnv(credential.Env), Source: "stored credential"}, nil
+			return &auth.AuthResult{Env: maps.Clone(credential.Env), Source: "stored credential"}, nil
 		}
 	}
 	if !profileStored {

@@ -300,39 +300,6 @@ func LoadSkills(env ResourceFileSystem, dirs ...string) HarnessSkillsResult {
 	return result
 }
 
-type SourcedSkillInput[T any] struct {
-	Path   string
-	Source T
-}
-
-type SourcedSkill[T any] struct {
-	Skill  Skill
-	Source T
-}
-
-type SourcedSkillDiagnostic[T any] struct {
-	SkillDiagnostic
-	Source T
-}
-
-func LoadSourcedSkills[T any](env ResourceFileSystem, inputs []SourcedSkillInput[T], mapSkill ...func(Skill, T) Skill) ([]SourcedSkill[T], []SourcedSkillDiagnostic[T]) {
-	var skills []SourcedSkill[T]
-	var diagnostics []SourcedSkillDiagnostic[T]
-	for _, input := range inputs {
-		result := LoadSkills(env, input.Path)
-		for _, skill := range result.Skills {
-			if len(mapSkill) > 0 && mapSkill[0] != nil {
-				skill = mapSkill[0](skill, input.Source)
-			}
-			skills = append(skills, SourcedSkill[T]{Skill: skill, Source: input.Source})
-		}
-		for _, diagnostic := range result.Diagnostics {
-			diagnostics = append(diagnostics, SourcedSkillDiagnostic[T]{SkillDiagnostic: diagnostic, Source: input.Source})
-		}
-	}
-	return skills, diagnostics
-}
-
 // FormatSkillInvocation embeds a loaded skill and optional explicit instructions.
 func FormatSkillInvocation(skill Skill, additionalInstructions string) string {
 	block := fmt.Sprintf("<skill name=\"%s\" location=\"%s\">\nReferences are relative to %s.\n\n%s\n</skill>", skill.Name, skill.FilePath, dirnameHarnessPath(skill.FilePath), skill.Content)

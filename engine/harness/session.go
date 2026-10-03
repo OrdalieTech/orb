@@ -2,6 +2,7 @@ package harness
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,7 +37,7 @@ func (session *Session) Branch(fromID ...string) ([]SessionTreeEntry, error) {
 	}
 	var leaf *string
 	if len(fromID) > 0 {
-		leaf = cloneHarnessString(&fromID[0])
+		leaf = clonePointer(&fromID[0])
 	} else {
 		var err error
 		leaf, err = session.storage.LeafID()
@@ -101,7 +102,7 @@ func (session *Session) AppendModelChange(provider, modelID string) (string, err
 
 func (session *Session) AppendActiveToolsChange(toolNames []string) (string, error) {
 	entry := SessionTreeEntry{Type: "active_tools_change"}
-	entry.ActiveToolNames = cloneHarnessStrings(toolNames)
+	entry.ActiveToolNames = slices.Clone(toolNames)
 	return session.appendEntry(entry)
 }
 
@@ -126,7 +127,7 @@ func (session *Session) AppendCompactionWithTail(
 ) (string, error) {
 	entry := SessionTreeEntry{Type: "compaction"}
 	entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore = summary, firstKeptEntryID, tokensBefore
-	entry.FromHook = cloneHarnessBool(fromHook)
+	entry.FromHook = clonePointer(fromHook)
 	entry.Usage = cloneHarnessUsage(usage)
 	if retainedTail != nil {
 		entry.RetainedTail = make([]json.RawMessage, len(retainedTail))
@@ -184,7 +185,7 @@ func (session *Session) AppendLabel(targetID string, label *string) (string, err
 		return "", newSessionError(SessionErrorNotFound, "Entry %s not found", targetID)
 	}
 	entry := SessionTreeEntry{Type: "label"}
-	entry.TargetID, entry.HasTargetID, entry.Label = cloneHarnessString(&targetID), true, cloneHarnessString(label)
+	entry.TargetID, entry.HasTargetID, entry.Label = clonePointer(&targetID), true, clonePointer(label)
 	return session.appendEntry(entry)
 }
 
@@ -214,12 +215,12 @@ func (session *Session) MoveTo(entryID *string, summary *BranchSummary) (string,
 		return "", nil
 	}
 	entry := SessionTreeEntry{Type: "branch_summary"}
-	entry.ParentID = cloneHarnessString(entryID)
+	entry.ParentID = clonePointer(entryID)
 	entry.FromID = "root"
 	if entryID != nil {
 		entry.FromID = *entryID
 	}
-	entry.Summary, entry.FromHook = summary.Summary, cloneHarnessBool(summary.FromHook)
+	entry.Summary, entry.FromHook = summary.Summary, clonePointer(summary.FromHook)
 	entry.Usage = cloneHarnessUsage(summary.Usage)
 	if summary.Details != nil {
 		encoded, err := marshalHarnessValue(summary.Details)

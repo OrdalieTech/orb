@@ -65,24 +65,24 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 		case *ai.TextContent:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.TextSignature = cloneStringPointer(block.TextSignature)
+				blockCopy.TextSignature = clonePointer(block.TextSignature)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.ThinkingContent:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.ThinkingSignature = cloneStringPointer(block.ThinkingSignature)
-				blockCopy.Redacted = cloneBoolPointer(block.Redacted)
+				blockCopy.ThinkingSignature = clonePointer(block.ThinkingSignature)
+				blockCopy.Redacted = clonePointer(block.Redacted)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.ToolCall:
 			if block != nil {
 				blockCopy := *block
 				blockCopy.Arguments = cloneJSONObject(block.Arguments)
-				blockCopy.ThoughtSignature = cloneStringPointer(block.ThoughtSignature)
-				blockCopy.PartialJSON = cloneStringPointer(block.PartialJSON)
-				blockCopy.PartialArgs = cloneStringPointer(block.PartialArgs)
-				blockCopy.StreamIndex = cloneIntPointer(block.StreamIndex)
+				blockCopy.ThoughtSignature = clonePointer(block.ThoughtSignature)
+				blockCopy.PartialJSON = clonePointer(block.PartialJSON)
+				blockCopy.PartialArgs = clonePointer(block.PartialArgs)
+				blockCopy.StreamIndex = clonePointer(block.StreamIndex)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.UnknownContentBlock:
@@ -93,9 +93,9 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 			copy.Content[index] = rawBlock
 		}
 	}
-	copy.ResponseID = cloneStringPointer(message.ResponseID)
-	copy.ResponseModel = cloneStringPointer(message.ResponseModel)
-	copy.ErrorMessage = cloneStringPointer(message.ErrorMessage)
+	copy.ResponseID = clonePointer(message.ResponseID)
+	copy.ResponseModel = clonePointer(message.ResponseModel)
+	copy.ErrorMessage = clonePointer(message.ErrorMessage)
 	if message.Diagnostics != nil {
 		diagnostics := make([]ai.AssistantMessageDiagnostic, len(*message.Diagnostics))
 		for index, diagnostic := range *message.Diagnostics {
@@ -103,8 +103,8 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 			diagnostics[index].Details = bytes.Clone(diagnostic.Details)
 			if diagnostic.Error != nil {
 				errorCopy := *diagnostic.Error
-				errorCopy.Name = cloneStringPointer(diagnostic.Error.Name)
-				errorCopy.Stack = cloneStringPointer(diagnostic.Error.Stack)
+				errorCopy.Name = clonePointer(diagnostic.Error.Name)
+				errorCopy.Stack = clonePointer(diagnostic.Error.Stack)
 				errorCopy.Code = bytes.Clone(diagnostic.Error.Code)
 				diagnostics[index].Error = &errorCopy
 			}
@@ -116,7 +116,7 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 
 func cloneUserContent(content ai.UserContent) ai.UserContent {
 	copy := content
-	copy.Text = cloneStringPointer(content.Text)
+	copy.Text = clonePointer(content.Text)
 	if content.Blocks != nil {
 		copy.Blocks = make(ai.UserContentBlocks, len(content.Blocks))
 		for index, rawBlock := range content.Blocks {
@@ -124,7 +124,7 @@ func cloneUserContent(content ai.UserContent) ai.UserContent {
 			case *ai.TextContent:
 				if block != nil {
 					blockCopy := *block
-					blockCopy.TextSignature = cloneStringPointer(block.TextSignature)
+					blockCopy.TextSignature = clonePointer(block.TextSignature)
 					copy.Blocks[index] = &blockCopy
 				}
 			case *ai.ImageContent:
@@ -154,7 +154,7 @@ func cloneToolResultContent(content ai.ToolResultContent) ai.ToolResultContent {
 		case *ai.TextContent:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.TextSignature = cloneStringPointer(block.TextSignature)
+				blockCopy.TextSignature = clonePointer(block.TextSignature)
 				copy[index] = &blockCopy
 			}
 		case *ai.ImageContent:
@@ -180,7 +180,7 @@ func cloneAgentToolResult(result AgentToolResult) AgentToolResult {
 	copy.StructuredContent = cloneJSONValue(result.StructuredContent)
 	copy.Usage = cloneUsage(result.Usage)
 	copy.AddedToolNames = cloneStringSlicePointer(result.AddedToolNames)
-	copy.Terminate = cloneBoolPointer(result.Terminate)
+	copy.Terminate = clonePointer(result.Terminate)
 	return copy
 }
 
@@ -288,28 +288,11 @@ func cloneJSONReflect(value reflect.Value) reflect.Value {
 	}
 }
 
-func cloneStringPointer(value *string) *string {
+func clonePointer[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
-}
-
-func cloneBoolPointer(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
-func cloneIntPointer(value *int) *int {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
+	return new(*value)
 }
 
 func cloneStringSlicePointer(value *[]string) *[]string {

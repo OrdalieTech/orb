@@ -108,9 +108,9 @@ func GetOpenAICodexWebSocketDebugStats(sessionID string) *OpenAICodexWebSocketDe
 		return nil
 	}
 	copy := *stats
-	copy.LastDeltaInputItems = cloneInt(stats.LastDeltaInputItems)
-	copy.LastPreviousResponseID = cloneStringValue(stats.LastPreviousResponseID)
-	copy.LastWebSocketError = cloneStringValue(stats.LastWebSocketError)
+	copy.LastDeltaInputItems = clonePointer(stats.LastDeltaInputItems)
+	copy.LastPreviousResponseID = clonePointer(stats.LastPreviousResponseID)
+	copy.LastWebSocketError = clonePointer(stats.LastWebSocketError)
 	return &copy
 }
 
@@ -153,20 +153,11 @@ func CloseOpenAICodexWebSocketSessions(sessionID ...string) {
 	}
 }
 
-func cloneInt(value *int) *int {
+func clonePointer[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
-}
-
-func cloneStringValue(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
+	return new(*value)
 }
 
 func openAICodexWebSocketFallbackActive(sessionID string) bool {

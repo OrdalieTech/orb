@@ -63,18 +63,6 @@ func TestCalculateCostTiersAndLongCacheWrites(t *testing.T) {
 	}
 }
 
-func TestModelsAreEqualAndHasAPI(t *testing.T) {
-	a := &Model{ID: "m", Provider: "p", API: APIOpenAIResponses}
-	b := &Model{ID: "m", Provider: "p"}
-	c := &Model{ID: "m", Provider: "other"}
-	if !ModelsAreEqual(a, b) || ModelsAreEqual(a, c) || ModelsAreEqual(nil, a) || ModelsAreEqual(a, nil) {
-		t.Fatal("ModelsAreEqual mismatch")
-	}
-	if !HasAPI(a, APIOpenAIResponses) || HasAPI(a, APIAnthropicMessages) || HasAPI(nil, APIOpenAIResponses) {
-		t.Fatal("HasAPI mismatch")
-	}
-}
-
 func TestContentTextAndUUIDv7PublicHelpers(t *testing.T) {
 	content := AssistantContent{
 		&ThinkingContent{Thinking: "reasoning"},

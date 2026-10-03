@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/api"
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
@@ -35,11 +34,6 @@ const maxCapturedErrorBytes = 4001
 
 // Provider registers Bedrock ConverseStream on the AWS SDK backend.
 func Provider() api.Provider { return api.BedrockConverse(Backend()) }
-
-// StreamSimple streams one Bedrock ConverseStream request on the AWS SDK backend.
-func StreamSimple(ctx context.Context, model *ai.Model, requestContext ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-	return Provider().StreamSimple(ctx, model, requestContext, options)
-}
 
 // Backend is the AWS SDK implementation of api.BedrockBackend.
 func Backend() api.BedrockBackend { return backend(nil) }
