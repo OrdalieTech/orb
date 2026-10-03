@@ -64,6 +64,23 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	return environment, nil
 }
 
+func childEnvironment(environment []string, entries []extensionEntry, extra func([]string) []string) []string {
+	if extra == nil {
+		return environment
+	}
+	paths := make([]string, len(entries))
+	for index, entry := range entries {
+		paths[index] = entry.Path
+	}
+	environment = slices.Clone(environment)
+	for _, entry := range extra(paths) {
+		// Herdr inspects startup environments in the foreground job, not Go's later Setenv calls.
+		name, value, _ := strings.Cut(entry, "=")
+		environment = setEnvironmentValue(environment, name, value)
+	}
+	return environment
+}
+
 func replaceExecutableLink(path, target string) error {
 	if current, err := os.Readlink(path); err == nil {
 		if current == target {

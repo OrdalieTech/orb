@@ -89,6 +89,11 @@ type Options struct {
 	BackoffMax      time.Duration
 	Stderr          io.Writer
 	OnDiagnostic    func(extensions.Diagnostic)
+	// WrapFactory, when set, wraps each extension's factory before registration.
+	WrapFactory func(path string, factory extensions.Factory) extensions.Factory
+	// ChildEnv, when set, returns NAME=value entries for the host child given the
+	// loaded extension paths; the parent environment is unchanged.
+	ChildEnv func(paths []string) []string
 }
 
 type LoadError struct {
@@ -317,7 +322,11 @@ func (manager *Manager) RegisterInto(ctx context.Context, registry *extensions.R
 		if manager.primaryID == "" {
 			manager.primaryID = entry.ID
 		}
-		if err := registry.Register(entry.Path, manager.factory(entry.ID)); err != nil {
+		factory := manager.factory(entry.ID)
+		if manager.options.WrapFactory != nil {
+			factory = manager.options.WrapFactory(entry.Path, factory)
+		}
+		if err := registry.Register(entry.Path, factory); err != nil {
 			result.Errors = append(result.Errors, LoadError{Path: entry.Path, Error: stripRegistryPrefix(entry.Path, err)})
 		}
 	}
@@ -442,7 +451,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 	manager.services.reset()
 	command := exec.CommandContext(context.Background(), runtime.Path, append(commandArgs, scriptPath)...)
 	command.Dir = manager.options.CWD
-	command.Env = hostEnvironment
+	command.Env = childEnvironment(hostEnvironment, manager.entries, manager.options.ChildEnv)
 	// Extensions must not inherit a terminal descriptor they can put in cooked mode.
 	// Wrapping forces a pipe, so Wait would otherwise block until every grandchild
 	// that inherited stderr closes it; WaitDelay bounds that.

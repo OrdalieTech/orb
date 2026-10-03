@@ -4404,6 +4404,17 @@ func (mode *InteractiveMode) handleEvent(event any) {
 	case agent.CompactionEndEvent:
 		mode.renderInitialMessages()
 		mode.setStatus(&IdleStatus{})
+		mode.mu.Lock()
+		running := mode.streaming
+		mode.mu.Unlock()
+		// Auto-compaction continues the same run without another agent_start.
+		if running && ev.Reason != "manual" {
+			if mode.interactiveUI != nil {
+				mode.interactiveUI.showWorkingIndicator()
+			} else {
+				mode.setStatus(NewWorkingStatusIndicator(mode.ui, "Working..."))
+			}
+		}
 		if ev.ErrorMessage != nil && !ev.Aborted {
 			mode.showError(errors.New(*ev.ErrorMessage))
 		}

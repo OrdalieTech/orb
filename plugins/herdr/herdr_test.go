@@ -3,6 +3,7 @@ package herdr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +31,9 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			os.Exit(1)
 		}
+		if len(os.Args) > 2 && os.Args[1] == "agent" && os.Args[2] == "get" {
+			fmt.Print(os.Getenv("HERDR_TEST_AGENT_RESPONSE"))
+		}
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
@@ -38,19 +42,7 @@ func TestMain(m *testing.M) {
 func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 	root := t.TempDir()
 	logPath := filepath.Join(root, "calls")
-	binary := filepath.Join(root, "herdr")
-	if runtime.GOOS == "windows" {
-		// No POSIX shell for a script fake: the test binary stands in (TestMain).
-		executable, err := os.Executable()
-		if err != nil {
-			t.Fatal(err)
-		}
-		binary = executable
-		t.Setenv(fakeHerdrEnv, "1")
-	} else if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("HERDR_TEST_LOG", logPath)
+	binary := fakeHerdr(t, root, logPath)
 
 	idle := true
 	registry := extensions.NewRegistry(root)
@@ -113,6 +105,23 @@ func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 	if got := len(waitForLines(t, logPath, 6)); got != 6 {
 		t.Fatalf("headless session changed call count to %d", got)
 	}
+}
+
+func fakeHerdr(t *testing.T, root, logPath string) string {
+	t.Helper()
+	binary := filepath.Join(root, "herdr")
+	if runtime.GOOS == "windows" {
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		binary = executable
+		t.Setenv(fakeHerdrEnv, "1")
+	} else if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\nif [ \"$1\" = agent ] && [ \"$2\" = get ]; then printf '%s' \"$HERDR_TEST_AGENT_RESPONSE\"; fi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HERDR_TEST_LOG", logPath)
+	return binary
 }
 
 func waitForLines(t *testing.T, path string, count int) []string {

@@ -95,6 +95,10 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - OpenRouter turns record the cost OpenRouter reports as their total instead of the catalog
   estimate; per-component costs stay estimates. The OpenRouter catalog is refreshed (400 models,
   including DeepSeek V4.1 Flash).
+- Inside Herdr, an interactive Orb lets Herdr's pi integration own its lifecycle and shows itself as
+  Orb, so `herdr agent prompt` works on Orb panes; without that integration Orb reports its own
+  status as before, and headless runs never claim the pane.
+- The working indicator comes back when automatic compaction continues a run.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

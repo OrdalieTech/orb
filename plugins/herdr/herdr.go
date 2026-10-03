@@ -3,6 +3,7 @@ package herdr
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os/exec"
 	"strconv"
@@ -19,12 +20,13 @@ const (
 )
 
 type reporter struct {
-	binaryPath string
-	paneID     string
-	command    sync.Mutex
-	active     atomic.Bool
-	claimed    atomic.Bool
-	seq        atomic.Uint64
+	binaryPath  string
+	paneID      string
+	command     sync.Mutex
+	active      atomic.Bool
+	claimed     atomic.Bool
+	piLifecycle atomic.Bool
+	seq         atomic.Uint64
 }
 
 // Extension returns the inert-until-TUI compatibility attachment.
@@ -35,11 +37,26 @@ func Extension(binaryPath, paneID string) extensions.Factory {
 		}
 		reporter := &reporter{binaryPath: binaryPath, paneID: paneID}
 		reporter.seq.Store(uint64(time.Now().UnixNano()))
+		api.Events().On(piLifecycleEvent, func(context.Context, any) error {
+			reporter.piLifecycle.Store(true)
+			return nil
+		})
 		api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
 			if interactive(session) {
 				reporter.active.Store(true)
 				reporter.claimed.Store(true)
-				reporter.report(currentState(session))
+				if reporter.piLifecycle.Load() {
+					reference := ""
+					if manager := session.SessionManager(); manager != nil {
+						reference = manager.GetSessionFile()
+						if reference == "" {
+							reference = manager.GetSessionID()
+						}
+					}
+					reporter.metadataAfterAcquisition(reference)
+				} else {
+					reporter.report(currentState(session))
+				}
 			}
 			return nil, nil
 		})
@@ -98,7 +115,65 @@ func (reporter *reporter) report(state string, extra ...string) {
 	if !reporter.active.Load() {
 		return
 	}
-	args := reporter.args("report-agent", append([]string{"--state", state}, extra...)...)
+	if reporter.piLifecycle.Load() {
+		reporter.metadata()
+		return
+	}
+	reporter.enqueue(reporter.args("report-agent", append([]string{"--state", state}, extra...)...))
+}
+
+func (reporter *reporter) metadataAfterAcquisition(reference string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for reporter.active.Load() {
+			// Herdr drops even guarded metadata while the previous pi process is marked exited.
+			if reference == "" || reporter.piReady(ctx, reference) {
+				reporter.metadata()
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+func (reporter *reporter) piReady(ctx context.Context, reference string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, reporter.binaryPath, "agent", "get", reporter.paneID).Output()
+	var response struct {
+		Result struct {
+			Agent struct {
+				Agent                  string
+				ScreenDetectionSkipped bool                           `json:"screen_detection_skipped"`
+				Session                struct{ Source, Value string } `json:"agent_session"`
+			}
+		}
+	}
+	if err != nil || json.Unmarshal(output, &response) != nil {
+		return false
+	}
+	info := response.Result.Agent
+	return info.Agent == "pi" && info.ScreenDetectionSkipped && info.Session.Source == "herdr:pi" && info.Session.Value == reference
+}
+
+func (reporter *reporter) metadata() {
+	reporter.enqueue(reporter.metadataArgs("--display-agent", "Orb"))
+}
+
+func (reporter *reporter) metadataArgs(extra ...string) []string {
+	args := []string{"pane", "report-metadata", reporter.paneID, "--source", reportSource, "--agent", "pi", "--applies-to-source", "herdr:pi"}
+	args = append(args, extra...)
+	return append(args, "--seq", strconv.FormatUint(reporter.seq.Add(1), 10))
+}
+
+func (reporter *reporter) enqueue(args []string) {
 	go func() {
 		reporter.command.Lock()
 		defer reporter.command.Unlock()
@@ -115,7 +190,11 @@ func (reporter *reporter) release() {
 	}
 	reporter.command.Lock()
 	defer reporter.command.Unlock()
-	reporter.run(reporter.args("release-agent"))
+	if reporter.piLifecycle.Load() {
+		reporter.run(reporter.metadataArgs("--clear-display-agent"))
+	} else {
+		reporter.run(reporter.args("release-agent"))
+	}
 }
 
 func (reporter *reporter) args(command string, extra ...string) []string {

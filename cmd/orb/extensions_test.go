@@ -10,6 +10,8 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
+	"github.com/OrdalieTech/orb/ai"
 )
 
 func TestAutoLoadsPolicyWithoutPersistingOverride(t *testing.T) {
@@ -268,5 +270,59 @@ func TestHerdrBinaryAfterAnInPlaceUpdate(t *testing.T) {
 	}
 	if got := herdrBinary(bin); got != bin {
 		t.Fatalf("herdrBinary = %q", got)
+	}
+}
+
+func TestHerdrHostOnlyReceivesInteractiveHint(t *testing.T) {
+	if _, err := extensionhost.DiscoverRuntime(t.Context()); err != nil {
+		t.Skip("extension-host e2e requires Node.js >=22.6 or Bun on PATH")
+	}
+	t.Setenv("HERDR_ENV", "1")
+	t.Setenv("HERDR_PANE_ID", "w1:p1")
+	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(t.TempDir(), "socket"))
+	t.Setenv("HERDR_AGENT", "")
+	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
+	for _, interactive := range []bool{true, false} {
+		t.Run(map[bool]string{true: "interactive", false: "headless"}[interactive], func(t *testing.T) {
+			cwd, agentDir := t.TempDir(), t.TempDir()
+			path := filepath.Join(cwd, "herdr.mjs")
+			source := `// installed by herdr
+// HERDR_INTEGRATION_ID=pi
+export default function(pi) {
+ pi.registerTool({name: "herdr_hint", label: "hint", description: "hint", parameters: {type: "object", properties: {}},
+ execute: async () => ({content: [{type: "text", text: process.env.HERDR_AGENT || "none"}], details: {}})});
+}`
+			if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true, Extensions: []string{path}, allowNoModel: interactive}, settings, nil)
+			if len(diagnostics) != 0 {
+				t.Fatal(diagnostics)
+			}
+			runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
+			tool := runner.ToolDefinition("herdr_hint")
+			if tool == nil {
+				t.Fatal("hint tool not registered")
+			}
+			result, err := tool.Execute(t.Context(), "probe", map[string]any{}, nil, runner.CreateContext())
+			if err != nil || len(result.Content) != 1 {
+				t.Fatalf("probe: %#v, %v", result, err)
+			}
+			want := "none"
+			if interactive {
+				want = "pi"
+			}
+			text, ok := result.Content[0].(*ai.TextContent)
+			if !ok || text.Text != want {
+				t.Fatalf("child hint: %#v, want %q", result.Content, want)
+			}
+			if os.Getenv("HERDR_AGENT") != "" {
+				t.Fatal("changed parent environment")
+			}
+		})
 	}
 }

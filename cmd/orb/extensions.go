@@ -172,12 +172,14 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			if registry == nil {
 				registry = extensions.NewRegistry(cwd)
 			}
-			manager := extensionhost.NewManager(extensionhost.Options{
-				AgentDir: agentDir,
-				CWD:      cwd,
-				Version:  version,
-				Stderr:   os.Stderr,
-			})
+			hostOptions := extensionhost.Options{AgentDir: agentDir, CWD: cwd, Version: version, Stderr: os.Stderr}
+			// The CLI sets allowNoModel only for interactive runtime construction;
+			// headless hosts never claim the Herdr pane.
+			if args.allowNoModel && herdrext.InPane() {
+				hostOptions.WrapFactory = herdrext.WrapPiIntegration
+				hostOptions.ChildEnv = herdrext.PiForegroundHint
+			}
+			manager := extensionhost.NewManager(hostOptions)
 			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
 			// run on the real NewAgentSession-backed runtime.
 			manager.SetAgentSessionService(agent.NewExtensionAgentSessionService(
