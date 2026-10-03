@@ -10,9 +10,11 @@ agent (Claude Code, Codex, or other).
 1. `docs/DECISIONS.md` — the constitution (P1–P11), the compat kernel, live decisions and the
    divergence ledger. Never contradict it silently; changing it is the owner's call.
 2. `docs/ARCHITECTURE.md` — layout, contracts, dependency table (§8).
-3. Upstream pi at the pinned release, for kernel surfaces. `make upstream` clones
-   `earendil-works/pi` at the commit in `UPSTREAM.lock` into `.upstream/`. Where a kernel behavior
-   is ambiguous, read upstream's code and tests for that area.
+3. pi 1.0, the release pinned in `UPSTREAM.lock` (`make upstream` clones it into `.upstream/`).
+   For kernel surfaces it is the spec; where a kernel behavior is ambiguous, read its code and tests
+   for that area. Beyond the kernel it is the general reference, since it is a well-designed
+   product: before building or changing a feature pi also has, read how pi 1.0 does it, then adopt
+   it or diverge on purpose.
 
 ## Working mode
 
