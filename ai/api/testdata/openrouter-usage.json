@@ -1,0 +1,109 @@
+{
+  "owner": "Orb",
+  "generator": "conformance/extract/orb-openrouter-usage.mjs",
+  "modelCost": {
+    "input": 0.6,
+    "output": 1.4,
+    "cacheRead": 0.06,
+    "cacheWrite": 0.1
+  },
+  "cases": [
+    {
+      "name": "reported",
+      "provider": "openrouter",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":0.123}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.123
+      }
+    },
+    {
+      "name": "free",
+      "provider": "openrouter",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":0}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0
+      }
+    },
+    {
+      "name": "missing",
+      "provider": "openrouter",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2}}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.00004039999999999999
+      }
+    },
+    {
+      "name": "null",
+      "provider": "openrouter",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":null}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.00004039999999999999
+      }
+    },
+    {
+      "name": "not-a-number",
+      "provider": "openrouter",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":\"0.123\"}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.00004039999999999999
+      }
+    },
+    {
+      "name": "overflow",
+      "provider": "openrouter",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":1e9999}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.00004039999999999999
+      }
+    },
+    {
+      "name": "other-provider",
+      "provider": "openai",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":0.123}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.00004039999999999999
+      }
+    },
+    {
+      "name": "custom-openrouter-endpoint",
+      "provider": "custom",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "usage": "{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40,\"cache_write_tokens\":10},\"completion_tokens_details\":{\"reasoning_tokens\":2},\"cost\":0.123}",
+      "expectedCost": {
+        "input": 0.000029999999999999997,
+        "output": 0.000007,
+        "cacheRead": 0.0000024,
+        "cacheWrite": 0.000001,
+        "total": 0.123
+      }
+    }
+  ]
+}

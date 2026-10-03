@@ -135,6 +135,23 @@ const promptCases: PromptCase[] = [
       ],
     },
   },
+  {
+    name: "bash-only-skills-progressive-disclosure",
+    input: {
+      selectedTools: ["bash"],
+      toolSnippets: { bash: "Execute bash commands" },
+      cwd: "/fixture/bash-skills",
+      skills: [
+        {
+          name: "inspect",
+          description: "Inspect files.",
+          filePath: "/fixture/skills/inspect/SKILL.md",
+          baseDir: "/fixture/skills/inspect",
+          disableModelInvocation: false,
+        },
+      ],
+    },
+  },
 ];
 
 const discoveryCases: DiscoveryCase[] = [

@@ -395,7 +395,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	state := engine.AgentState{
 		Model:         model,
 		ThinkingLevel: thinking,
-		Tools:         activeTools,
+		Tools:         []engine.AgentTool{},
 		Messages:      priorMessages,
 	}
 	var cliAPIKeyProvider *ai.ProviderID

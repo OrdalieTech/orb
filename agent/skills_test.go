@@ -73,19 +73,29 @@ func TestFormatSkillsForPromptExactAndHidden(t *testing.T) {
 		"<available_skills>\n  <skill>\n    <name>visible</name>\n" +
 		"    <description>Use &lt;read&gt; &amp; &quot;care&quot;.</description>\n" +
 		"    <location>/skills/visible/SKILL.md</location>\n  </skill>\n</available_skills>"
-	if got := FormatSkillsForPrompt(skills); got != want {
-		t.Fatalf("skill prompt mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
-	if got := FormatSkillsForPrompt(skills[1:]); got != "" {
-		t.Fatalf("hidden-only prompt = %q", got)
+	for _, fileReadTool := range []string{"read", "bash"} {
+		expected := want
+		if fileReadTool == "bash" {
+			expected = strings.Replace(expected, "Use the read tool to load", "Use bash to load", 1)
+		}
+		if got := FormatSkillsForPrompt(skills, fileReadTool); got != expected {
+			t.Fatalf("skill prompt mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", fileReadTool, got, expected)
+		}
+		if got := FormatSkillsForPrompt(skills[1:], fileReadTool); got != "" {
+			t.Fatalf("hidden-only prompt = %q", got)
+		}
 	}
 }
 
-func TestBuildSystemPromptIncludesSkillsOnlyWithRead(t *testing.T) {
+func TestBuildSystemPromptIncludesSkillsWithAFileReadTool(t *testing.T) {
 	skill := Skill{Name: "inspect", Description: "Inspect", FilePath: "/skills/inspect/SKILL.md"}
 	withRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"read"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
 	if !strings.Contains(withRead, "<available_skills>") || !strings.HasSuffix(withRead, "<cwd>\n/cwd\n</cwd>") {
 		t.Fatalf("skill block placement mismatch: %q", withRead)
+	}
+	withBoth := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"bash", "read"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
+	if !strings.Contains(withBoth, "Use the read tool to load") || strings.Contains(withBoth, "Use bash to load") {
+		t.Fatalf("read must be preferred over bash: %q", withBoth)
 	}
 	withoutRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"write"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
 	if strings.Contains(withoutRead, "<available_skills>") {

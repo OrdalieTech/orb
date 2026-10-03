@@ -139,8 +139,8 @@ func TestCreateRuntimeInputsUsesResolvedResourcesAndToolSelection(t *testing.T) 
 	if state.ThinkingLevel != ai.ModelThinkingMedium {
 		t.Fatalf("thinking level = %q, want %q", state.ThinkingLevel, ai.ModelThinkingMedium)
 	}
-	if len(state.Tools) != 1 || state.Tools[0].Spec().Name != "read" {
-		t.Fatalf("tools = %#v", state.Tools)
+	if len(state.Tools) != 0 || !slices.Equal(runtime.ActiveToolNames, []string{"read", "missing"}) {
+		t.Fatalf("bootstrap tools = %#v, selected tools = %v", state.Tools, runtime.ActiveToolNames)
 	}
 	prompt := agent.BuildSystemPrompt(runtime.PromptOptions)
 	if !strings.Contains(prompt, "project rules") || !strings.Contains(prompt, "- read: Read file contents") || !strings.Contains(prompt, "<name>inspect</name>") {

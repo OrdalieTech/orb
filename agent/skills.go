@@ -454,7 +454,7 @@ func resolveResourcePathFrom(path, cwd string) string {
 }
 
 // FormatSkillsForPrompt emits the Agent Skills progressive-disclosure XML block.
-func FormatSkillsForPrompt(skills []Skill) string {
+func FormatSkillsForPrompt(skills []Skill, fileReadTool string) string {
 	visible := make([]Skill, 0, len(skills))
 	for _, skill := range skills {
 		if !skill.DisableModelInvocation {
@@ -464,9 +464,13 @@ func FormatSkillsForPrompt(skills []Skill) string {
 	if len(visible) == 0 {
 		return ""
 	}
+	loadInstruction := "Use the read tool to load a skill's file when the task matches its description."
+	if fileReadTool == "bash" {
+		loadInstruction = "Use bash to load a skill's file when the task matches its description."
+	}
 	lines := []string{
 		"", "", "The following skills provide specialized instructions for specific tasks.",
-		"Use the read tool to load a skill's file when the task matches its description.",
+		loadInstruction,
 		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
 		"", "<available_skills>",
 	}

@@ -20,7 +20,7 @@ import (
 
 // pinnedGeneratedAt matches the -generated-at value in the ai/models doc.go
 // generation directive.
-var pinnedGeneratedAt = time.Date(2026, 7, 26, 13, 35, 1, 0, time.UTC)
+var pinnedGeneratedAt = time.Date(2026, 10, 3, 18, 21, 6, 0, time.UTC)
 
 func TestSYNC4GeneratedCatalogTimestampCoversAllSourceCaptures(t *testing.T) {
 	doc := readCatalogTestFile(t, "../../doc.go")
@@ -60,7 +60,7 @@ func TestSYNC4GeneratedCatalogTimestampCoversAllSourceCaptures(t *testing.T) {
 		t.Fatalf("generated catalog timestamp %s predates source capture %s", generatedAt, latestCapture)
 	}
 
-	for _, name := range []string{"api.json", "nvidia-nim.json", "openrouter.json", "vercel.json"} {
+	for _, name := range []string{"api.json", "nvidia-nim.json", "openrouter.json", "openrouter-current.json", "vercel.json"} {
 		digestPattern := regexp.MustCompile("(?m)`" + regexp.QuoteMeta(name) + "`[^\\n]*SHA-256(?: is)? `([0-9a-f]{64})`")
 		digestMatch := digestPattern.FindSubmatch(readme)
 		if len(digestMatch) != 2 {
@@ -119,6 +119,7 @@ func pinnedSources(t *testing.T) Sources {
 
 func TestRenderMatchesCheckedInCatalog(t *testing.T) {
 	sources := pinnedSources(t)
+	sources.OpenRouter = readCatalogTestFile(t, "../../testdata/openrouter-current.json")
 	previous, err := os.ReadFile("../../generated.go")
 	if err != nil {
 		t.Fatal(err)

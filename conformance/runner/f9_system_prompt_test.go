@@ -250,7 +250,7 @@ func loadF9Fixture(t testing.TB) f9Fixture {
 	t.Helper()
 	var fixture f9Fixture
 	runner.LoadJSON(t, "F9", "cases.json", &fixture)
-	if fixture.SchemaVersion != 2 || len(fixture.PromptCases) != 6 || len(fixture.DiscoveryCases) != 6 {
+	if fixture.SchemaVersion != 2 || len(fixture.PromptCases) != 7 || len(fixture.DiscoveryCases) != 6 {
 		t.Fatalf(
 			"F9 fixture header = version %d, prompt cases %d, discovery cases %d",
 			fixture.SchemaVersion,

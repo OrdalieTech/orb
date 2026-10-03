@@ -203,7 +203,11 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		addSection("project_context", wrapPromptSection("project_context", strings.Join(parts, "\n\n")))
 	}
 	if (slices.Contains(tools, "read") || slices.Contains(tools, "bash")) && len(options.Skills) > 0 {
-		if skills := strings.TrimSpace(FormatSkillsForPrompt(options.Skills)); skills != "" {
+		fileReadTool := "read"
+		if !slices.Contains(tools, "read") {
+			fileReadTool = "bash"
+		}
+		if skills := strings.TrimSpace(FormatSkillsForPrompt(options.Skills, fileReadTool)); skills != "" {
 			addSection("skills", wrapPromptSection("skills", skills))
 		}
 	}

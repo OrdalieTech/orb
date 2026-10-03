@@ -1127,7 +1127,7 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 	if state.ID != "state" || !state.Success || state.Data.SessionID == "" || state.Data.Model == nil || state.Data.Model.ID != "faux-1" {
 		t.Fatalf("state response = %s", stateLine)
 	}
-	if line := exchange("{\"id\":\"\",\"type\":\"get_messages\"}\n"); !bytes.HasPrefix(line, []byte(`{"id":"","type":"response"`)) || !bytes.Contains(line, []byte(`"messages":[{"role":"system"`)) {
+	if line := exchange("{\"id\":\"\",\"type\":\"get_messages\"}\n"); string(line) != `{"id":"","type":"response","command":"get_messages","success":true,"data":{"messages":[]}}` {
 		t.Fatalf("empty-ID messages response = %s", line)
 	}
 	if line := exchange("{\"id\":\"models\",\"type\":\"get_available_models\"}\n"); !bytes.Contains(line, []byte(`"models":[{`)) {

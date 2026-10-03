@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -1988,7 +1989,25 @@ func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage 
 		Cost:        ai.Cost{},
 	}
 	calculateCost(model, &result)
+	if model.Provider == "openrouter" || openRouterHost(model.BaseURL) {
+		var reportedCost *float64
+		if json.Unmarshal(usage["cost"], &reportedCost) == nil && reportedCost != nil {
+			// Component costs remain estimates; the reported total includes routing and discounts.
+			result.Cost.Total = *reportedCost
+		}
+	}
 	return result
+}
+
+// openRouterHost matches the endpoint's host, so a proxy path that merely
+// mentions openrouter.ai can't make its reported cost authoritative.
+func openRouterHost(baseURL string) bool {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
 }
 
 func mapOpenAICompletionsStopReason(reason string) (ai.StopReason, *string) {

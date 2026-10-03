@@ -84,9 +84,17 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Go embedders: `engine.Agent.SetSystemPrompt` is gone, as in Pi 1.0: an agent's prompt is its
   transcript's (`State().SystemPrompt`), changed by adding a system message, and the session's
   `State()` reports the prompt it will send next. `extensions.API` includes `OnWithUnsubscribe`, and
-  `harness.SessionV4Storage` includes `ClearName`.
+  `harness.SessionV4Storage` includes `ClearName`. `agent.FormatSkillsForPrompt` takes the name of
+  the tool that reads skill files.
 - A project with only `.pi/mcp.json` asks for trust before its servers load.
 - `--mode json` and `--mode rpc` exit promptly on SIGTERM and SIGHUP even when nothing reads their output, instead of hanging until a forced kill; normal completion still writes every frame.
+- The CLI's first model request declares every active tool; it used to carry only bash and extension
+  tools (no tools at all on OpenRouter), so read, edit and write were unavailable until turn two.
+- With bash but no read tool, the skills section tells the model to load skill files with bash, as
+  pi 1.0 does.
+- OpenRouter turns record the cost OpenRouter reports as their total instead of the catalog
+  estimate; per-component costs stay estimates. The OpenRouter catalog is refreshed (400 models,
+  including DeepSeek V4.1 Flash).
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
