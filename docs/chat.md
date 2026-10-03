@@ -3,8 +3,8 @@
 The `chat` package (D27) turns the orb SDK into a multi-user messaging agent: a synchronous,
 at-least-once turn processor around `agent.AgentSession` with normalized platform messages,
 a `SessionProvider` ownership seam, and platform adapters in `chat/telegram`, `chat/whatsapp`,
-and — since wave 2 (D28) — `chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and
-`chat/googlechat` (see [Platforms](#platforms-wave-2)).
+`chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and `chat/googlechat` (D28; see
+[Platforms](#more-platforms)).
 Dependency direction is strictly `chat → agent`; nothing in the SDK imports `chat`.
 
 ## Quick start — local Telegram bot
@@ -239,14 +239,14 @@ immediately and are never retried; 130429/131048 (rate limits) get bounded backo
 100/131026/131051 fail fast with a clear error. Media downloads resolve the media id to a
 short-lived URL and fetch it with the Bearer token, refetching the URL once on expiry.
 
-## Platforms (wave 2)
+## More platforms
 
-Sprint 6 (D28) adds five adapters on the same frozen `chat` contracts. All of them speak only
+D28 adds five adapters on the same frozen `chat` contracts. All of them speak only
 official platform APIs with caller-supplied credentials, drop the bot's own echoes before
 publishing, populate `Message.Account` to match `Account()` (multi-account routing relies on
 the pair), gate groups on an explicit mention with the mention stripped from `Text` (DMs always
 trigger), and normalize `/cmd` commands like the Telegram adapter. Streamed previews land where
-Sprint 6 enables them (Slack and Discord); Teams, Messenger, and Google Chat are final-only.
+the platform allows them (Slack and Discord); Teams, Messenger, and Google Chat are final-only.
 
 ### Slack (`chat/slack`)
 

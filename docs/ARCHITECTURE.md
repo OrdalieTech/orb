@@ -1,12 +1,12 @@
 # Orb — Architecture
 
 Companion to [DECISIONS.md](DECISIONS.md) (the *why*). This document is the *what and how*: layout,
-per-package design, cross-cutting mechanics, conformance, sync, dependencies, build. The upstream
-source at the pinned commit is the behavioral spec; this document tells you where to look and what
+per-package design, cross-cutting mechanics, conformance, dependencies, build. For kernel surfaces
+the pinned upstream release is the interop target; this document tells you where to look and what
 shape the Go side takes.
 
 Upstream paths below are relative to the upstream repo (`earendil-works/pi` @ `UPSTREAM.lock`),
-e.g. `packages/agent/src/agent-loop.ts`. The sync tool materializes that checkout at `.upstream/`
+e.g. `packages/agent/src/agent-loop.ts`. `make upstream` materializes that checkout at `.upstream/`
 (gitignored).
 
 ## 1. Repository layout
@@ -71,21 +71,19 @@ orb/
 │   ├── localecompare/        JS localeCompare ordering
 │   ├── skilllocations/       external Agent Skills compatibility roots
 │   ├── semver/               semver range matching (packages)
-│   ├── uuidv7/               uuidv7 generation (upstream sequence scheme)
-│   └── sync/                 upstream sync tool (delta report, fixture regen driver)
+│   └── uuidv7/               uuidv7 generation (upstream sequence scheme)
 ├── conformance/
 │   ├── extract/              TS scripts run inside .upstream/ to emit fixtures (dev-only Node)
 │   ├── fixtures/             committed golden fixtures (F1–F13, see §6)
 │   └── runner/               go test helpers consuming fixtures; RPC black-box adapter
-├── docs/                     DECISIONS.md, ARCHITECTURE.md, plan/, sync/reports/
+├── docs/                     DECISIONS.md, ARCHITECTURE.md, user and embedder guides
 ├── AGENTS.md                 execution contract for implementing agents
-└── UPSTREAM.lock             pinned upstream commit + sync state
+└── UPSTREAM.lock             pinned upstream pi release the fixtures are extracted from
 ```
 
 ### Capability packaging and host boundaries
 
-Owner-directed regrouping (2026-09-22): `plugins/` is an organizational namespace, not a
-runtime loader or a single Go package. Each capability can be imported independently. The
+`plugins/` is an organizational namespace, not a runtime loader or a single Go package. Each capability can be imported independently. The
 product catalog and `/plugins` UI live in `agent/assembly`; custom hosts register only their
 chosen extension factories. Runtime disablement does not remove compiled dependencies.
 
@@ -94,9 +92,6 @@ and the product extension adapter. File storage lives in `plugins/memory/filesto
 product assembly selects the default home-directory backend, lazily when enabled. SDK callers
 pass an explicit Store. `plugins/usage` stays usable without the optional `footer` adapter.
 Bridge keeps native IPC and Tailcat in separate packages; the protocol stays in `bridge/protocol`.
-Existing plugin IDs, settings keys, tools and persisted formats are unchanged. Go consumers
-must update old `memory`, `usage`, `bridge`, `agent/mcp`, `agent/extensions/herdr` and
-`agent/plugins` imports to the new packages; no duplicate forwarding packages are retained.
 
 `internal/layering` checks both source edges and transitive dependencies: memory and usage
 cannot pull in presentation, memory attachments cannot pull in file/SQLite backends, and
@@ -254,8 +249,8 @@ Path rules support recursive `**`; an allow must cover every target, including c
    `runAgentLoop` → `RunLoop` (receiver-free), event name strings **unchanged** (`"message_update"`).
 4. Wire/persisted JSON field names are **byte-identical** to upstream (session entries, events, RPC).
    Struct tags carry the exact upstream field names; fixtures enforce this.
-5. The conformance fixtures are the upstream-sync ground truth: red after a pin bump is the work
-   list. There is no upstream-path → go-path mapping table to maintain.
+5. The conformance fixtures are the kernel's ground truth: red after a pin bump is the work list.
+   There is no upstream-path → go-path mapping table to maintain.
 
 ## 2. `ai/` — unified LLM layer
 
@@ -413,7 +408,7 @@ the runtime's advertised catalog, and requires an idle revision-fenced session-m
 Descriptions include display-only model metadata, never model headers or credentials. No Claude event, tool name, account or session type
 enters Bridge. Disconnect does not answer, cancel or broaden a pending permission request.
 
-Research baseline (2026-09-21): [Hermes DirectSDK](https://hermes-agent.nousresearch.com/docs/plugins/claude-subscription-directsdk),
+For comparison, [Hermes DirectSDK](https://hermes-agent.nousresearch.com/docs/plugins/claude-subscription-directsdk),
 source `NousResearch/hermes-plugin-claude-subscription-directsdk@c92c27c9f919178a58974a72333b473c6cb2e71d`,
 uses native stream-json as a *model provider*: replay via `shouldQuery:false`, inert tools, extra-body
 injection, disabled native compaction and a localhost HTTP admission proxy. Those mechanisms are
@@ -517,7 +512,7 @@ session/settings/resource handles, and capability-negotiated services (`sdk_v1`,
 `agent_session_v1`, `model_runtime_v1`) that bridge `createAgentSession`, `ModelRuntime`, and
 `ModelRegistry` onto the Go runtime (`agent.ExtensionAgentSessionService`); every other
 upstream export throws a precise `OrbUnsupportedCapability` diagnostic. `make sdk-surface`
-re-declares that export surface from the pinned upstream sources at each sync. The loader refuses — as a
+re-declares that export surface from the pinned upstream sources at each pin bump. The loader refuses — as a
 per-extension resolve-time load failure — any resolution reaching a real installed pi SDK.
 Missing declared dependencies are materialized with npm or Bun before load.
 
@@ -639,8 +634,7 @@ scopes, and receipts remain CLI administration. Bridge has no duplicate toggles 
 Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings
 grant full controller access to all current and future conversations in both directions, including
-new groups. The owner approved this simpler default on 2026-09-21; existing restricted grants
-are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
+new groups; existing restricted grants are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
 retaining its existing snapshot-versus-future meaning. Trust does not grant remote administration,
 discovery scopes, or agent-subject authority. Saved pairings survive service restarts; connection badges derive from
 live streams, and stopping waits for the admin connection to close. Open panels refresh bounded
@@ -651,8 +645,7 @@ restarts without replaying any commands. Local admin status advertises
 normal stop/start path before issuing grants. The replacement preserves profile state and lets
 non-owning runtime attachments reconnect. A previously deliberate Stop remains effective until
 explicit activation; an upgrade's temporary stop marker is removed before starting the replacement.
-Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials. The 2026-09-21 Bridge v1
-specification governs the protocol; this section supersedes its two-executable packaging.
+Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials.
 Restricted launching remains excluded; mobile apps and hosted deployments follow P11 and
 [deployments.md](deployments.md). The optional
 WebSocket transport accepts outbound browser clients without a local Bridge service.
@@ -813,15 +806,12 @@ that swaps the spawned binary. Host behavior is covered by real Node/Bun end-to-
 locked 44-package harness under `conformance/extensions/`; F11 remains the extracted Go-native
 runner and wiring surface.
 
-## 7. Upstream sync
+## 7. Upstream pin
 
-`UPSTREAM.lock` records `{repo, commit, syncedAt}`. `make sync` (also runnable by an agent as a
-work package): clone/fetch upstream → diff `lock..HEAD` → classify each path by pattern
-(kernel: wire-format / API-surface → obligations; feature-only / docs → optional cherry-picks) →
-regenerate fixtures at the new commit → run conformance → write `docs/sync/reports/<date>.md`
-(delta summary, fixture diffs, failing conformance, proposed work items). Only kernel paths carry
-port obligation (P5). Owner/agent triages; lock bumps when green. Cron automation is deliberately
-deferred until conformance is stably green.
+`UPSTREAM.lock` records `{repo, commit, version}` of a released pi version. Moving it: point the
+lock at the release tag's commit, `make fixtures` and `make sdk-surface`, then `make check`; red
+conformance is the work list. Only kernel paths carry port obligation (P5); other upstream
+changes are cherry-picked on merit.
 
 ## 8. Dependency policy
 
@@ -850,22 +840,11 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `platforms/native/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
-**G1 resolution (WP-110):** `internal/jsonschema` uses a stdlib-only reflector. The evaluated
-`invopop/jsonschema` output required stripping `$schema`/`$defs`/`$ref` and undoing closed-object
-defaults to match TypeBox's inline provider-facing schemas, while adding five transitive packages
-and 640 KiB to a stripped probe binary. No direct dependency was added.
-
-**G2 resolution (WP-221):** Gemini uses a stdlib REST/SSE adapter. Against consolidated commit
-`813da39`, a `google.golang.org/genai@v1.64.0` probe grew the correctly stripped binary from
-17,907,874 to 26,374,306 bytes (+8,466,432, 47.278%), expanded the module graph from 67 to 102
-entries, and grew the compiled package graph from 294 to 477 packages. The final hand-rolled adapter
-adds 155,648 bytes (0.869%) and no modules. WP-222 completes Vertex with stdlib REST/SSE and
-request-scoped pure-Go ADC; against its consolidated parent it adds 393,216 bytes (2.177%), no
-module, and no compiled package (WP-222).
-
-Explicitly rejected: TUI frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10),
-v8go/quickjs CGo bindings (D7), and native SQLite bindings (the v0.81.0 storage package is ledgered;
-sessions remain JSONL or memory-backed).
+Rejected on measurement: `invopop/jsonschema` (`internal/jsonschema` emits TypeBox-style inline
+schemas directly; the probe added five packages and 640 KiB) and `google.golang.org/genai` (+8.5 MB
+and +35 modules; Gemini and Vertex use stdlib REST/SSE with pure-Go ADC). Explicitly rejected: TUI
+frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10), and cgo bindings of any kind
+(P2), including v8go/quickjs and native SQLite.
 
 ## 9. Build, size, release
 
@@ -888,10 +867,10 @@ sessions remain JSONL or memory-backed).
 |---|---|
 | Node/Bun version or module-resolution drift | minimum runtime probe, protocol handshake, real-host end-to-end tests, and the locked ecosystem matrix |
 | Extension API breadth (2,943-line spec) | Go-native API proves semantics; protocol/API inventory and host end-to-end tests cover callbacks and snapshots |
-| TUI fidelity drift | F12 render goldens + side-by-side session comparison protocol in phase 4 |
+| TUI fidelity drift | Orb-owned F12/WP450 render snapshots guarded by Go comparison tests |
 | Provider SDK churn (openai v1→v3 history) | SDK usage confined to `ai/api/*` adapter files; unified types are ours; F2 pins request shapes |
-| Upstream velocity (multi-release weeks) | pin + sync reports; formats-first tracking (D5); path-classified sync reports keep kernel obligations triaged |
-| Event/serialization drift breaking conformance | F1/F3/F6/F7 fixtures regenerate on every sync; wire-format struct tags reviewed against goldens |
+| Upstream velocity (multi-release weeks) | pin released versions only; only kernel paths carry port obligation (P5) |
+| Event/serialization drift breaking conformance | F1/F3/F6/F7 fixtures regenerate on every pin bump; wire-format struct tags reviewed against goldens |
 | Parallel tool execution races | file-mutation queue per realpath (upstream semantics); race detector in CI |
 | Host lifecycle and request races | generation-scoped correlation, bounded restart/backoff, typed UI cancellation, and race tests |
 

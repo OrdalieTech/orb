@@ -1,11 +1,11 @@
 # Orb
 
-A faithful, slim, pure-Go port of Mario Zechner's MIT-licensed [pi coding agent](https://pi.dev),
-built by Ordalie as an SDK-first Go module and a single static CLI binary. Native CLI state lives
-in SQLite, with Pi JSONL import/export and file-backed SDK defaults. Wire protocols, compatibility
-formats and extension behavior follow the pinned version in [UPSTREAM.lock](UPSTREAM.lock);
-every divergence is recorded in
-[docs/DECISIONS.md](docs/DECISIONS.md). The `orb` binary deliberately coexists with upstream's
+A slim, pure-Go agent platform built by Ordalie as an SDK-first Go module and a single static CLI
+binary. It began as a port of Mario Zechner's MIT-licensed [pi coding agent](https://pi.dev) and
+keeps interop with released pi: wire protocols, compatibility formats and extension behavior follow
+the pi release pinned in [UPSTREAM.lock](UPSTREAM.lock), and every deliberate divergence is
+recorded in [docs/DECISIONS.md](docs/DECISIONS.md). Native CLI state lives in SQLite, with Pi JSONL
+import/export and file-backed SDK defaults. The `orb` binary deliberately coexists with upstream's
 `pi`.
 
 ## Install
@@ -91,14 +91,11 @@ orb --extension ./pirate.ts
 
 Run `/pirate` in the TUI to exercise the extension.
 
-61 of upstream's 69 single-file examples run as-is. In a locked snapshot of the 44 most-downloaded
-valid Pi packages, 43 load and 39 are exact-compatible — 35 with load-and-registration parity plus
-four event-driven packages with load-only parity — 88.6% by package count and 96.3% weighted by
-monthly downloads. In a follow-up run where real Pi installed 30 popular packages into isolated
-projects, Orb loaded 29 and 15 completed live tool or hook workflows.
-See the [ecosystem matrix](docs/sync/ecosystem-extension-matrix.md), the
-[live matrix](docs/sync/ecosystem-extension-live.md), and the [bridge guide](docs/sync/node-shims.md) for
-the exact package-by-package result and remaining runtime ceilings.
+In the last measured runs, 61 of upstream's 69 single-file examples ran as-is, 43 of the 44
+most-downloaded Pi packages loaded, and of 30 popular packages installed by real Pi, Orb loaded 29
+and 15 completed live tool or hook workflows. The harness and raw results are in
+[conformance/extensions](conformance/extensions); the remaining runtime ceilings are listed in
+[docs/DECISIONS.md](docs/DECISIONS.md).
 `.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.
 
 ## Plugins, permissions, and MCP
@@ -111,8 +108,8 @@ session. See [docs/plugins.md](docs/plugins.md) for the full reference.
 
 ## Provenance
 
-Upstream pi is © Mario Zechner, MIT — this port tracks the exact commit in `UPSTREAM.lock` and
-regenerates its conformance goldens from upstream source (`make fixtures-check`). Orb is MIT
+Upstream pi is © Mario Zechner, MIT — Orb pins a released pi version in `UPSTREAM.lock` and
+regenerates its conformance goldens from that source (`make fixtures-check`). Orb is MIT
 too; see [LICENSE](LICENSE), [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md).
 
 Every GitHub release includes a checksummed `orb_<version>_source.tar.gz`. To verify that source

@@ -1,127 +1,116 @@
 # Orb — Decision Record
 
-Rewritten 2026-08-17 at the owner's direction. The founding WP-era ledger recorded every port-time
-decision as permanent law, which made the project read as unable to evolve past its origin. This
-record now separates a small constitution of durable paradigms from operational memory. Retired
-decisions are tombstoned below; their full text lives in git history (`git log -- docs/DECISIONS.md`).
-Changes to this record require owner sign-off; everything else is decided by whoever executes the
-work, within these bounds.
+A small constitution of durable paradigms, the compat kernel, the live decisions that bind current
+work, and the divergence ledger. Changes to this record require owner sign-off; everything else is
+decided by whoever executes the work, within these bounds. Earlier versions live in git history
+(`git log -- docs/DECISIONS.md`).
 
 ## Provenance
 
 | | |
 |---|---|
 | Upstream project | **pi** — https://pi.dev, repo `earendil-works/pi` (formerly `badlogic/pi-mono`) |
-| Pinned reference | commit `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`, version **1.0.0** (2026-10-02) |
+| Pinned reference | the released version in `UPSTREAM.lock` |
 | Upstream license | MIT, © 2025 Mario Zechner |
 | This project | `github.com/OrdalieTech/orb`, MIT, © Ordalie — with attribution to upstream in LICENSE and README |
 
-Orb began as a faithful Go port of pi and keeps a tested pi-compatibility **kernel** (below).
-Beyond that kernel, Orb is its own product: features, layout, internal APIs, and UI evolve on Orb's
-judgment, and upstream changes outside the kernel are cherry-picked on merit, never ported by
-obligation. Inside the kernel, upstream's released behavior is the interop target, and Orb may
-improve on it (P5).
+Orb began as a Go port of pi and keeps a tested pi-compatibility **kernel** (below). Beyond it, Orb
+is its own product: features, layout, internal APIs and UI evolve on Orb's judgment, and upstream
+changes outside the kernel are cherry-picked on merit, never ported by obligation.
 
 ## Constitution — durable paradigms
 
-Eleven paradigms. Everything else in this record is operational memory.
-
-- **P1 — SDK-first, layered** *(formerly D1, D3)*. Orb is a Go module first; the `orb` CLI is one
-  consumer. Layers compose upward — `ai/` → `engine/` → `agent/` → assemblies (`cmd/orb`,
-  `chat/`, embedder mains) — and a capability's core lives at the lowest layer that can express it.
-  Audience: Ordalie production embedding (including servers running many differently-configured
-  instances in one process), personal daily-driver, and public OSS, simultaneously. Interfaces are
-  assemblies, never obligations: the TUI, chat platforms, RPC, a web app, or an embedder's own
-  surface are peer drivers of the same runtime, and no layer below an assembly imports one — a
-  binary that skips an interface must contain none of its code.
-- **P2 — Pure Go, portable everywhere, slim** *(formerly D7, D8; evidence in G1/G2; widened by
-  owner direction 2026-09-22, which retires "Windows deferred")*. Orb's code is `CGO_ENABLED=0`
-  on every target. Tier-1 targets are built and tested by the gate, never "deferred": native
-  static binaries for linux, darwin and windows × amd64/arm64, linux/386 and linux/arm (iSH and
-  small hosts), android/arm64 (Termux); `js/wasm` (browser workers, and one Worker host shared by
-  Cloudflare Workers/Durable Objects and self-hosted Celld); `wasip1/wasm`. Standalone iOS and
-  Android apps embed the same core as a library; cgo appears only where the platform linker
-  demands it, in the app shell, never in Orb packages. Stdlib first, internal helper next,
-  dependency last and only via the ARCHITECTURE §8 table. Dev-only exceptions: `-race` test
-  builds, Node as fixture-extraction and `js/wasm` test tooling.
-- **P3 — Everything Orb-original is a capability module** *(promotes D16; D32–D34 are instances)*.
-  A capability ships as: a seam package (interfaces, no upward imports), an instance-scoped
-  attachment at the lowest applicable layer (the `plugins/memory/` + `plugins/memory/agent/` shape), and a
-  default-off assembly row adapting it into the CLI through the public extension API. Capability
-  packages hold no package-level mutable state and read no environment or home directory
-  implicitly; N instances with N configurations must coexist in one process. The core is never
-  widened ad hoc: if the extension API cannot express a capability, the API is extended by recorded
-  decision. Seams are cut when a second implementation is real, never speculatively. Bridge is
-  not a capability module: under P10/P11 it is core (owner, 2026-09-24).
+- **P1 — SDK-first, layered.** Orb is a Go module first; the `orb` CLI is one consumer. Layers
+  compose upward — `ai/` → `engine/` → `agent/` → assemblies (`cmd/orb`, `chat/`, embedder mains)
+  — and a capability's core lives at the lowest layer that can express it. Audience: Ordalie
+  production embedding (including servers running many differently-configured instances in one
+  process), personal daily-driver, and public OSS, simultaneously. Interfaces are assemblies, never
+  obligations: the TUI, chat platforms, RPC, a web app, or an embedder's own surface are peer
+  drivers of the same runtime, and no layer below an assembly imports one — a binary that skips an
+  interface must contain none of its code.
+- **P2 — Pure Go, portable everywhere, slim.** Orb's code is `CGO_ENABLED=0` on every target.
+  Tier-1 targets are built and tested by the gate: native static binaries for linux, darwin and
+  windows × amd64/arm64, linux/386 and linux/arm (iSH and small hosts), android/arm64 (Termux);
+  `js/wasm` (browser workers, and one Worker host shared by Cloudflare Workers/Durable Objects and
+  self-hosted Celld); `wasip1/wasm`. Standalone iOS and Android apps embed the same core; cgo
+  appears only where the platform linker demands it, in the app shell, never in Orb packages.
+  Stdlib first, internal helper next, dependency last and only via the ARCHITECTURE §8 table.
+  Dev-only exceptions: `-race` test builds, Node as fixture-extraction and `js/wasm` test tooling.
+- **P3 — Everything Orb-original is a capability module.** A capability ships as: a seam package
+  (interfaces, no upward imports), an instance-scoped attachment at the lowest applicable layer
+  (the `plugins/memory/` + `plugins/memory/agent/` shape), and a default-off assembly row adapting
+  it into the CLI through the public extension API. Capability packages hold no package-level
+  mutable state and read no environment or home directory implicitly; N instances with N
+  configurations must coexist in one process. The core is never widened ad hoc: if the extension
+  API cannot express a capability, the API is extended by recorded decision. Seams are cut when a
+  second implementation is real, never speculatively. Bridge is not a capability module: under
+  P10/P11 it is core.
 - **P4 — Minimal by default.** New capabilities default off. Stock `orb` stays lean; power is
-  opt-in per user (settings, `/plugins`) or per assembly (embedder wiring). Configuration pages
-  may be available before activation: the owner requested built-in Bridge management in Settings
-  and Ctrl+P (2026-09-21), with service activation inside that page. Bridge defaults are inert
-  rather than off (owner, 2026-09-24): every Orb has an identity but no listener, no advertised
-  address, no grants and no visible `bridge_call` until its owner grants one; agent grants replace
-  the agent-call toggle. Until that built-in, grant-governed tool lands (SPRINTS "Deployments"),
-  the toggle remains.
-- **P5 — Pi compatibility is interop, not identity** *(recasts D2, D4, D5, D6, D13; amended by
-  the owner 2026-10-02)*. Orb reads what released pi writes on the kernel surfaces listed below and
-  runs pi extensions, skills, prompt templates and packages unchanged, verified by conformance
-  fixtures; provider wire shapes follow the providers. Orb may improve on upstream anywhere,
-  kernel included: a deliberate improvement makes that fixture Orb-owned and adds one divergence
-  ledger line, and upstream quirks are no longer spec. Orb is deployed only inside Ordalie, so it
-  keeps no backward compatibility with its own past formats, settings or Go APIs: a breaking change
-  updates the in-repo and Ordalie consumers in the same piece of work, and legacy shims are deleted
-  rather than carried.
-- **P6 — Orb-owned presentation and identity** *(formerly D30, D35; substance unchanged)*. Public
-  identity is `orb`; upstream compatibility names remain wherever they are the contract (`~/.pi`,
-  `PI_*`, `pi-messages`, provider-facing UA/originator strings, the JS `pi` API). The TUI is
-  Orb-owned: `F12*`/WP450 render goldens are Orb snapshots regenerated by `make fixtures-tui`;
-  behavior-shaped values inside those files stay frozen upstream captures; upstream TUI work is
-  cherry-picked on merit.
-- **P7 — Host-only JavaScript** *(formerly D31; substance unchanged)*. JS/TS extensions run out of
-  process on user-provided Node ≥22.6 or Bun; no embedded engine, no shims; the static binary
-  ships neither runtime, and their absence disables extensions only, never the product.
+  opt-in per user (settings, `/plugins`) or per assembly (embedder wiring). Configuration pages may
+  be available before activation, as Bridge management is in Settings and Ctrl+P, with service
+  activation inside that page. Bridge defaults are inert rather than off: every Orb has an identity
+  but no listener, no advertised address, no grants and no visible `bridge_call` until its owner
+  grants one; agent grants replace the agent-call toggle once the built-in, grant-governed tool
+  lands.
+- **P5 — Pi compatibility is interop, not identity.** Orb reads what released pi writes on the
+  kernel surfaces listed below and runs pi extensions, skills, prompt templates and packages
+  unchanged, verified by conformance fixtures; provider wire shapes follow the providers. Orb may
+  improve on upstream anywhere, kernel included: a deliberate improvement makes that fixture
+  Orb-owned and adds one divergence ledger line, and upstream quirks are not spec. Orb is deployed
+  only inside Ordalie, so it keeps no backward compatibility with its own past formats, settings or
+  Go APIs: a breaking change updates the in-repo and Ordalie consumers in the same piece of work,
+  and legacy shims are deleted rather than carried.
+- **P6 — Orb-owned presentation and identity.** Public identity is `orb`; upstream compatibility
+  names remain wherever they are the contract (`~/.pi`, `PI_*`, `pi-messages`, provider-facing
+  UA/originator strings, the JS `pi` API). The TUI is Orb-owned: `F12*`/WP450 render goldens are
+  Orb snapshots regenerated by `make fixtures-tui`; behavior-shaped values inside those files stay
+  frozen upstream captures; upstream TUI work is cherry-picked on merit.
+- **P7 — Host-only JavaScript.** JS/TS extensions run out of process on user-provided Node ≥22.6
+  or Bun; no embedded engine, no shims; the static binary ships neither runtime, and their absence
+  disables extensions only, never the product.
 - **P8 — Trunk-based, every commit green; kernel changes fixtures-first.** One branch, `make check`
   before every commit. Changes to kernel surfaces land their conformance fixtures first (red), then
   the implementation (green).
 - **P9 — Never weaken a criterion or a golden to pass it.** A failing fixture means the code is
   wrong. A genuinely impossible criterion stops the work and surfaces to the owner.
-- **P10 — A portable core behind host ports** *(owner direction 2026-09-22)*. Not everything is
-  a plugin; the core is named and closed. It is the agent semantics that are identical on every
-  target: the `ai` message/stream model and provider wire codecs, the `engine` loop, tool
-  pipeline, events and compaction, session/settings/resource formats and their merge rules, the
-  extension API and registry, the Bridge peer protocol, identity, grants, instance registration
-  and operation ledger, and one assembly that composes them. Core packages compile on
-  every P2 target and reach the platform only through **ports** supplied by a host:
-  `FS` (files), `Exec` (processes, optional), `Store` (documents, append-only logs, locks),
-  `Net` (outbound HTTP and Bridge streams: dial, optional listen) and `Env` (variables,
-  directories, clock, randomness). A core package imports no `os/exec`, `os/signal` or `syscall`,
-  never dials, listens or resolves through `net` (its portable types stay usable),
-  uses no `http.DefaultClient`, and reads no environment, home, working directory or process
-  state implicitly; `internal/layering` enforces this with a ratchet that only shrinks. A
-  platform is a host (port implementations under `platforms/`) plus an assembly; UIs are
+- **P10 — A portable core behind host ports.** Not everything is a plugin; the core is named and
+  closed. It is the agent semantics that are identical on every target: the `ai` message/stream
+  model and provider wire codecs, the `engine` loop, tool pipeline, events and compaction,
+  session/settings/resource formats and their merge rules, the extension API and registry, the
+  Bridge peer protocol, identity, grants, instance registration and operation ledger, and one
+  assembly that composes them. Core packages compile on every P2 target and reach the platform only
+  through **ports** supplied by a host: `FS` (files), `Exec` (processes, optional), `Store`
+  (documents, append-only logs, locks), `Net` (outbound HTTP and Bridge streams: dial, optional
+  listen) and `Env` (variables, directories, clock, randomness). A core package imports no
+  `os/exec`, `os/signal` or `syscall`, never dials, listens or resolves through `net` (its portable
+  types stay usable), uses no `http.DefaultClient`, and reads no environment, home, working
+  directory or process state implicitly; `internal/layering` enforces this with a ratchet that only
+  shrinks. A platform is a host (port implementations under `platforms/`) plus an assembly; UIs are
   drivers, not ports. Capabilities (P3) declare the ports they need, and an assembly on a host
   lacking a port omits them instead of failing: no `Exec` means no bash, process MCP or JS
   extension host. Port implementations pass one shared conformance suite, and the same scripted
   scenarios produce identical kernel output on every host.
-- **P11 — Deployable anywhere, connected as peers** *(owner direction 2026-09-23)*. Orb is a
-  runtime to deploy, not a remote client: every P2 target runs the full core with its own model
-  calls, tools, sessions and state, and hosted targets (Cloudflare Durable Objects, Celld) are in
-  scope. Deployments reach each other as Bridge peers: people control conversations on any Orb
-  that granted them, and an Orb's agent calls another Orb only under its own grants. A target is
-  supported only with evidence: its ports pass the conformance suites, the cross-host scenario
-  matches native, a target end-to-end test runs in CI, one documented command deploys and removes
-  it, and it states its capability profile and Bridge role. `docs/deployments.md` is the
-  catalogue; a target's status there changes only with that evidence. Bridge is core (owner,
-  2026-09-24): every Orb, on every host, has a peer identity, registers its sessions as instances,
-  and dials peers through the transports its host supplies. Shipped in 0.11.0: the core `bridge`
-  package and Durable Object/Celld peers; session auto-registration and host-supplied transports
-  follow in the SPRINTS slices. Listening, advertised addresses and
-  every grant stay explicit and owner-approved; controller and agent-subject authority never
-  merge.
+- **P11 — Deployable anywhere, connected as peers.** Orb is a runtime to deploy, not a remote
+  client: every P2 target runs the full core with its own model calls, tools, sessions and state,
+  and hosted targets (Cloudflare Durable Objects, Celld) are in scope. Deployments reach each other
+  as Bridge peers: people control conversations on any Orb that granted them, and an Orb's agent
+  calls another Orb only under its own grants. A target is supported only with evidence: its ports
+  pass the conformance suites, the cross-host scenario matches native, a target end-to-end test
+  runs in CI, one documented command deploys and removes it, and it states its capability profile
+  and Bridge role. `docs/deployments.md` is the catalogue; a target's status there changes only
+  with that evidence. Bridge is core: every Orb, on every host, has a peer identity, registers its
+  sessions as instances, and dials peers through the transports its host supplies. Listening,
+  advertised addresses and every grant stay explicit and owner-approved; controller and
+  agent-subject authority never merge.
+
+Older numbers still cited in code and docs map as follows: D1/D3 → P1, D7/D8 → P2, D16 and
+D32–D34 → P3/P4, D2/D4/D5/D6/D13 → P5, D30/D35 → P6, D31 → P7, G4 (self-update) → "Releases".
+D10, D12, D14, D15, D18, D24, D27–D29 and D36 are live decisions below.
 
 ## The compat kernel
 
 The kernel is every surface an external artifact can observe: files on disk, bytes on the wire,
-and the extension and RPC protocols. Internal Go APIs, package layout, feature set, and UI are not
+and the extension and RPC protocols. Internal Go APIs, package layout, feature set and UI are not
 kernel. Kernel surfaces:
 
 - `~/.pi/agent/` layout and files: `settings.json` (global + project merge semantics),
@@ -134,408 +123,232 @@ kernel. Kernel surfaces:
   pi package manifests, skills and prompt-template formats.
 - HTML-export theme variables (F6).
 
-CLI-flag parity is pursued but not contractual. Sync policy: released upstream versions only;
-`make sync` classifies the delta by upstream path patterns; **only kernel paths carry port
-obligation** — feature-only upstream changes become optional cherry-picks recorded in the sync
-report. The kernel is operationally defined by the conformance suite: a coverage gap is closed
-by a fixture, never by a mapping table. Conformance families F1–F13 gate the kernel; the render
-families are Orb-owned (P6). Growing or shrinking the kernel is an owner decision recorded here. Fixture
-strategy stays fixtures + black-box: language-neutral goldens extracted from upstream, consumed by
+CLI-flag parity is pursued but not contractual. Only released upstream versions are pinned, and
+only kernel paths carry port obligation. The kernel is operationally defined by the conformance
+suite: a coverage gap is closed by a fixture, never by a mapping table. Families F1–F13 gate it;
+the render families are Orb-owned (P6). Growing or shrinking the kernel is an owner decision
+recorded here. Fixture strategy: language-neutral goldens extracted from upstream and consumed by
 both sides, plus upstream's RPC/CLI tests run as-is against the orb binary.
 
-## Live operational decisions
+## Live decisions
 
-Revisable records of how things currently work; each holds until changed by owner-signed decision.
+Each holds until changed by owner-signed decision.
 
-- **The Android app runs the orb binary, not a gomobile library (shipped with v0.13.0 at the
-  owner's request, 2026-09-27; owner to confirm against P2).** The app executes the unmodified
-  `CGO_ENABLED=0` CLI (`liborb.so`) over RPC mode and `orb bridge pipe`: no API to bind, the phone
-  runs exactly what desktops run, and updates arrive as signed release APKs. P2's "embed the core as
-  a library" remains the path for iOS, which cannot spawn processes.
-- **The Android app's agent works in a Linux the app carries (owner request, 2026-09-28).** Android
-  10+ refuses to execute files from app data, so the app ships proot and its loader as `lib*.so`
-  (GPL-2.0, from Termux's package repository, checked against its index) and downloads Termux's
-  `bootstrap-aarch64.zip` at first start, checked against GitHub's published sha256. proot maps the
-  app's copy onto `/data/data/com.termux`, where those packages expect to live, so `pkg`/`apt` work
-  unmodified; the Termux app is never involved. The bash tool's `shellPath` and the in-app terminal
-  (Termux's Apache-2.0 terminal-view) both start `liblinux.so`. The core itself stays the plain
-  `CGO_ENABLED=0` binary outside proot.
+### Providers and models
 
-- **Releases are signed with one Ed25519 key (2026-09-28).** `checksums.txt.sig` is the raw
-  signature over `checksums.txt`, made by GoReleaser with `openssl pkeyutl` from the
-  `ORB_RELEASE_SIGNING_KEY` secret (backup: the owner's `~/.config/orb/release-signing.pem`).
-  `orb update` and `host.update` verify it against `releaseKey` in the binary before trusting any
-  checksum. Rotating the key means a release signed by the old key that ships the new one.
-  The Android APK needs no more: Android itself refuses an update signed by another key.
-- **Windows CI is blocking again (owner decision of 2026-09-22, resolved 2026-09-24).** The first
-  real Windows run failed 179 tests in 31 packages; it ran informationally while v0.10.0 shipped
-  linux/darwin artifacts. Three parity rounds turned it green on 04a430a, so the job blocks every
-  commit again. Windows artifacts join releases once the release workflow packages and verifies
-  them.
-- **D10 — Provider layer: SDK-preferring hybrid.** Use official Go SDKs where they exist and are
-  sound (`openai-go/v3`, `anthropic-sdk-go`, `aws-sdk-go-v2` bedrockruntime). G2 rejected
-  `google.golang.org/genai` on measured weight, so Gemini and Vertex use hand-rolled JSON/SSE shapes.
-  Hand-roll where no sound SDK exists (mistral-conversations, pi-messages wire shape, OAuth
-  device/PKCE flows). Do not import kitchen sinks.
-- **D12 — Model catalog: direct authoritative sources.** Build-time generation uses
+- **D10 — SDK-preferring provider layer.** Official Go SDKs where they exist and are sound
+  (`openai-go/v3`, `anthropic-sdk-go`, `aws-sdk-go-v2` bedrockruntime). `google.golang.org/genai`
+  was rejected on measured weight (+8.5 MB, +35 modules), so Gemini and Vertex use hand-rolled
+  JSON/SSE. Hand-roll where no sound SDK exists (mistral-conversations, pi-messages, OAuth
+  device/PKCE flows). No kitchen sinks.
+- **D12 — Model catalog from direct authoritative sources.** Build-time generation uses
   `models.dev/api.json` for the baseline, intersects NVIDIA's manifest with the live NIM listing,
-  and uses the live OpenRouter and Vercel AI Gateway APIs for those two catalogs. Runtime refresh
-  remains a direct models.dev fetch into the `~/.pi` cache, never a pi.dev endpoint. `models.json`
-  user overrides behave exactly as upstream (`docs/models.md`). Owner amendment (2026-09-23): with
-  a ChatGPT login, startup also stores the account's `openai-codex` models from the ChatGPT
-  backend list Codex CLI reads, where upstream hard-codes them; the models.dev gate is unchanged.
-- **D14 — Tool schemas.** JSON Schema is a first-class value on tools (raw schema type) — required
-  anyway for extension/MCP-registered tools — plus a reflection helper deriving schemas from Go
-  structs for ergonomic typed tools. JavaScript schema objects cross the extension-host protocol as JSON Schema.
-- **D15 — Component contract.** The TUI is a hand-rolled differential line renderer with the
-  `Render(width int) []string` component contract — no TUI framework. The contract is
-  kernel-adjacent: JS extension custom-UI rides on it, so it changes only with the extension-host
-  surface. The event taxonomy guidance formerly in D13 (upstream names, Go-native mechanics —
-  `context.Context`, error returns, functional options, channel/iterator over subscribe) remains
-  the API style; event shapes are kernel (P5).
+  and uses the live OpenRouter and Vercel AI Gateway APIs for those catalogs. Runtime refresh is a
+  direct models.dev fetch into the `~/.pi` cache, never a pi.dev endpoint, keeping upstream's
+  `checkedAt`/`lastModified` freshness semantics. With a ChatGPT login, startup also stores the
+  account's `openai-codex` models from the ChatGPT backend list Codex CLI reads. `models.json` user
+  overrides behave exactly as upstream (`docs/models.md`). The image catalog is checked in as
+  deterministic Go data pinned by digest; generation-time validation plus full-catalog tests stand
+  in for upstream's TypeScript validator.
+- Shared catalog refreshes port only the joiner half of upstream's coordinator: a caller joining an
+  in-flight refresh honors its own cancellation, but the fetch keeps the initiating caller's
+  context, because `ai/models.Refresh` must observe cancellation synchronously at its commit points
+  (a canceled refresh returns the stored overlay and never mutates the store). An initiator's
+  cancellation therefore settles the call for concurrent joiners too.
+- `ai.RetryAssistantCall` is the one retry policy for normal turns, compaction and branch
+  summaries; retry lifecycle events keep upstream names and payloads on every surface.
+
+### Engine, tools and extensions
+
+- **D14 — Tool schemas.** JSON Schema is a first-class value on tools (raw schema type), plus a
+  stdlib reflection helper deriving schemas from Go structs. JavaScript schema objects cross the
+  extension-host protocol as JSON Schema.
 - **D18 — MCP ships as a bundled first-party Go extension** (`modelcontextprotocol/go-sdk`),
-  compiled into the binary, off unless configured in settings.
-- **Interactive mode owns its viewport.** Orb uses the alternate screen with a scrollable
-  transcript and pins status, extension widgets, editor, and footer at the bottom. Mouse-wheel or
-  `Ctrl+PageUp` scrolling detaches live follow; scrolling back down or `Ctrl+End` reattaches it, so
-  loading and streaming frames cannot move the viewed history. Sending a message reattaches it too:
-  submitting is an explicit request to watch what happens next, unlike an arriving frame. The status spacer is collapsed and
-  the right edge has a one-column proportional thumb with click-to-jump. Left-drag highlights the
-  visible range, holds it stable during streaming, and copies it on release. The reusable TUI stays
-  inline unless a caller opts into this viewport, and mode 1010 remains disabled while either renderer is live.
-- **Huge transcripts use windowed layout.** Interactive chat caches per-child lines and renders only
-  the visible range; steady frames are O(viewport + changed tail), while first render, resize, theme
-  changes, and global expansion intentionally remain O(history).
-- **Reachable clear-on-shrink updates stay differential.** When shorter content can be reconciled
-  inside the renderer's active viewport, Orb clears only the vacated rows and settles the tracked
-  height instead of taking upstream's destructive full-transcript redraw. The inline renderer keeps
-  the upstream fallback for true offscreen mutations; interactive mode avoids it by rendering only
-  its owned viewport.
+  compiled in, off unless configured.
+- **D29 — One high-level agent runtime.** `agent.AgentSession` is the sole high-level embedding
+  runtime; harness primitives live in `engine/harness`. Upstream's `AgentHarness` facade and
+  `streamProxy` `/api/stream` client are not ported: embedders use `AgentSessionOptions.StreamFn`
+  plus `ai.ParseStreamingJSON`.
+- **D36 — Session search is a slim Go service** (`engine/search`). Scanning behavior is upstream's
+  (trimmed case-insensitive match, source order, oldest-first entries, cursor paging, single-type
+  storage pushdown, limits, cancellation, duplicate-session-id guard); the shape is Go's:
+  `Session{ID, Readable}`, `iter.Seq2[Hit, error]`, and no `match`/`createHit`/`sourceOptions`
+  hooks (callers use `ProjectText`, map the iterator, and close over their source).
+- `SendMessageOptions.TriggerTurn` is `*bool`: upstream's `triggerTurn` is tri-state — unset still
+  steers a streaming turn, an explicit `false` suppresses it.
+- Entry points set `AI_AGENT=orb` and `PI_CODING_AGENT=true`, at CLI/RPC entry only, never when
+  embedded.
+- Transcript-backed system messages and their agent events are on by default. Headless consumers
+  must classify system messages explicitly; Ordalie's production SSE forwarding filters them so
+  system prompts are never published.
+- **Native session executors.** A capability may replace Orb's model/tool loop for its own provider
+  only through generic seams: `SessionLoop` and `ContextUsage` on session options/config,
+  `SessionRuntime.RequestInput`, `NewSessionOptions.Prepare` and Bridge `attach.Options.Status`.
+  Core names no executor; the TUI routes typed `/compact` to an executor as its own `/compact`
+  prompt and renders tools case-insensitively. Claude Sessions is the one implementation: a
+  default-off `claude-sessions` catalog row wired in `cmd/orb`. No executor-registration extension
+  API is cut until a second executor exists (P3).
+- **Permissions.** The policy plugin is optional and enforces rules when enabled. `auto` is the
+  default approval mode (including the workspace-write preset): `ask` resolves to one-call consent
+  without AI, while denials and guards stay enforced. Explicit `enforce` keeps manual approval;
+  missing UI and headless fallback default to deny unless `askFallback: allow` is set, and
+  cancellation or authorization errors never grant consent. `--auto` is a non-persistent override.
+  An explicitly configured native filesystem sandbox is a host constraint shared by native bash,
+  edit, write and child agents, and survives disabling extensions or the policy plugin; native
+  executors that cannot honor it refuse the configuration. Go-only `Approved` flags on tool hook
+  results distinguish explicit consent from a hook that merely does not block; they are excluded
+  from JSON, so the pi/JS extension and RPC contracts are unchanged.
+- **Herdr adapter.** A hidden host-environment extension auto-attaches only with `HERDR_ENV=1`,
+  `HERDR_PANE_ID` and `HERDR_BIN_PATH`; it is not default-on precedent under P4.
 
-## Retired decisions (2026-08-17)
+### Extension and package ecosystem
 
-The obligation is retired, not the code: shipped behavior stands until changed by later work. Full
-text in git history of this file. Cross-references to these numbers elsewhere resolve here.
+- Skills ignore files follow upstream's `prefixIgnorePattern` exactly: nested patterns anchor to the
+  ignore file's own directory and a leading `/` is stripped, so root-level `/pattern` matches
+  basenames at any depth. Parity wins over correct gitignore behavior.
+- Skills discovery keeps a canonical-path visit stack and returns each skill once under its clean
+  path, where upstream recurses symlink cycles to ELOOP.
+- MCP `"disabled": true` is honored as `"enabled": false`, and config parsing is per-entry
+  tolerant: invalid entries warn and are skipped.
+- Package dependency installs are Node-optional: the tarball is fetched natively, and `npmCommand`
+  (default `npm install --omit=dev`) runs only when `package.json` declares unbundled
+  dependencies; a missing npm degrades to a warning. `.npmrc` support is `registry=` and nerf-darted
+  `_authToken` only.
+- Package git subprocesses are quiet (`clone -q`, `checkout -q` with `advice.detachedHead=false`,
+  `fetch -q`).
+- Installed abbreviated Git commit pins resolve locally before fetch, since servers reject a short
+  object ID as an unadvertised ref even when the clone already holds the commit.
+- Ecosystem compatibility claims stay layered: stable loading, registration parity, workflow
+  feasibility and executed probes are recorded separately, and a package that only loads is never
+  called end-to-end compatible. Variable dynamic imports, top-level-await-only modules, real Node
+  streams/sockets and native addons remain explicit ceilings.
+- `rg`/`fd` auto-download into `~/.pi/agent/bin` as upstream (system binaries preferred).
+  Clipboard uses OSC52 or `pbcopy`/`xclip`/`wl-copy`, no native addon.
 
-- **D1, D3** → P1. **D7, D8** → P2. **D16** → P3. **D2, D4, D5, D6** → P5 and "The compat kernel".
-  **D30, D31, D35** → P6/P7 (substance unchanged).
-- **D2 — Full parity, no cuts** → retired in substance: Orb no longer owes a port of everything
-  upstream ships. The divergence ledger records what differs; "excluded" stops being an exception
-  that needs defending.
-- **D9 — Mirrored layout** → retired. Layout is Orb-owned and follows capability modules;
-  `docs/MIRROR.md` is deleted — the conformance fixtures are the sync ground truth.
-- **D11 — Provider order** → completed; historical.
-- **D13 — SDK style** → event shapes are kernel (P5); style guidance folded into D15's note.
-- **D17 — Embedded JS engine** → was already superseded by P7 (D31); text deleted.
-- **D19–D23, D25, D26 — WP/sprint machinery, milestones, walking skeleton, expansion study** →
-  execution history. The durable parts (trunk-based, green commits, fixtures-first, trim passes)
-  live in AGENTS.md and RELEASE-CRITERIA.md.
-- **D32, D33, D34 — bundled-but-dormant plugins, permissions, memory** → instances of P3/P4.
-  Shipped behavior unchanged; `plugins/memory/` (+ `plugins/memory/agent/`) remains the reference
-  capability-module shape.
+### TUI
+
+- **D15 — Component contract.** The TUI is a hand-rolled differential line renderer with the
+  `Render(width int) []string` component contract — no TUI framework. JS extension custom UI rides
+  on it, so it changes only with the extension-host surface. API style follows upstream names with
+  Go-native mechanics (`context.Context`, error returns, functional options).
+- **Interactive mode owns its viewport.** The alternate screen holds a scrollable transcript with
+  status, extension widgets, editor and footer pinned at the bottom. Mouse-wheel or
+  `Ctrl+PageUp` scrolling detaches live follow; scrolling back down, `Ctrl+End` or sending a
+  message reattaches it, so streaming frames never move the viewed history. The right edge has a
+  one-column proportional thumb with click-to-jump; left-drag highlights, holds the range stable
+  during streaming, and copies on release. The reusable TUI stays inline unless a caller opts in,
+  and mode 1010 stays disabled while either renderer is live. Upstream's `tuiMode`,
+  `fullscreenExitOutput`, `fullscreenScrollbar` and `tui.altScreen.*` are not ported; the
+  `searchMatchBg`/`searchMatchText` theme roles are carried for the HTML export (F6).
+- **Huge transcripts use windowed layout.** Per-child lines are cached and only the visible range
+  renders; steady frames are O(viewport + changed tail), while first render, resize, theme changes
+  and global expansion stay O(history).
+- **Clear-on-shrink stays differential** when the shorter content can be reconciled inside the
+  active viewport: only vacated rows clear. The inline renderer keeps upstream's full redraw for
+  true offscreen mutations.
+
+### Chat gateway
+
+- **D27 — `chat/` gateway.** An at-least-once processor around `AgentSession` with a
+  `SessionProvider` lease/hydration seam and platform adapters; dependency direction is strictly
+  `chat → agent`. Delivery state lives in `orb.chat.turn` custom session entries — the session is
+  the single durable history; turn finalization keys off `AgentSettledEvent`, and crash recovery
+  reads raw entries, never the built context. Tools are off by default and need an injected
+  isolated workspace. The local provider is single-process; clusters supply fenced conversation
+  ownership. Chat tests are plain `go test` goldens under `chat/`, never `conformance/`.
+- **D28 — Chat platforms.** Telegram, WhatsApp, Slack, Teams, Discord (hand-rolled RFC 6455),
+  Messenger and Google Chat; official platform APIs only, stdlib-only clients, shared helpers in
+  `chat/internal/`, zero new go.mod dependencies. Bridge-based platforms and E2EE Matrix stay
+  excluded.
+
+### Storage, release and platforms
+
+- **Native SQLite storage.** The CLI stores native state in SQLite with Pi JSONL import/export, so
+  pi does not read a live native Orb session file. SDK defaults and the explicit `--pi-files` CLI
+  entry point stay file-backed. A separate SQLite cache holds foreign summaries and bounded visible
+  message excerpts: read-only offline, no reasoning/tool payloads, remote authority on reopen.
+- **D24 — Live tests.** Merges are fixture-only and offline. Provider work runs an opt-in live
+  smoke (`ORB_LIVE_TESTS=1`: one streamed tool-call round-trip per provider). A nightly capped
+  suite (`make nightly-live`: OpenAI + Anthropic, three scripted tasks) reports failures without
+  blocking merges. Live outputs are never recorded into fixtures.
+- **Releases.** Independent semver; the upstream pin is in `UPSTREAM.lock`. `checksums.txt.sig` is
+  an Ed25519 signature over `checksums.txt`, made by GoReleaser from the `ORB_RELEASE_SIGNING_KEY`
+  secret; `orb update` and `host.update` verify it against `releaseKey` in the binary before
+  trusting any checksum, and a key rotation ships in a release signed by the old key. `orb update`
+  replaces the running binary after verification with an atomic swap, never elevates, and leaves
+  Homebrew, Nix and Snap installs to their package managers. Every release carries checksummed
+  source archives that must rebuild with `CGO_ENABLED=0 -buildvcs=false`.
+- **Windows CI blocks every commit.** Windows artifacts join releases once the release workflow
+  packages and verifies them.
+- **The Android app runs the orb binary, not a gomobile library.** It executes the unmodified
+  `CGO_ENABLED=0` CLI (`liborb.so`) over RPC mode and `orb bridge pipe`, so the phone runs exactly
+  what desktops run. P2's library embedding remains the path for iOS, which cannot spawn processes.
+- **The Android app's agent works in a Linux the app carries.** Android 10+ refuses to execute
+  files from app data, so the app ships proot and its loader as `lib*.so` (GPL-2.0, from Termux's
+  package repository) and downloads Termux's `bootstrap-aarch64.zip` at first start, checked
+  against GitHub's published sha256. proot maps the app's copy onto `/data/data/com.termux`, so
+  `pkg`/`apt` work unmodified without the Termux app. The bash tool's `shellPath` and the in-app
+  terminal start `liblinux.so`; the core stays the plain binary outside proot.
 
 ## Divergence ledger
 
 | Divergence | Kind | Rationale |
 |---|---|---|
-| Gemini 3 cross-model tool replay | reliability adaptation | Owner-directed production fix (2026-09-12): foreign-model function calls carry Google's documented literal `skip_thought_signature_validator` on the outgoing request only. Same-model signatures and canonical history remain untouched; this deliberately differs from pinned pi's unsigned replay, which Vertex rejects with HTTP 400. |
-| Malformed and colliding provider tool-call recovery | reliability adaptation | owner-directed Hermes-inspired hardening: when a provider declares tool use without emitting a call, orb retries at most three times with non-persisted recovery context; duplicate call pairing IDs are deterministically suffixed before execution so every result remains unambiguous. Canonical pi session and event JSON shapes stay unchanged |
-| Anthropic sign-in holds both loopback addresses | security adaptation | The callback redirect names `localhost` and the OAuth state carries the PKCE verifier (as upstream), so with the default `127.0.0.1` host Orb also binds `[::1]` on the callback port, and refuses to start when another program answers there; a local program could otherwise receive the code and verifier. Nothing on the wire changes. |
+| Gemini 3 cross-model tool replay | reliability adaptation | foreign-model function calls carry Google's documented `skip_thought_signature_validator` on the outgoing request only; same-model signatures and canonical history are untouched. Pi's unsigned replay is rejected by Vertex with HTTP 400 |
+| Malformed and colliding provider tool-call recovery | reliability adaptation | when a provider declares tool use without emitting a call, orb retries at most three times with non-persisted recovery context; duplicate call IDs are deterministically suffixed. Session and event JSON shapes are unchanged |
+| Anthropic sign-in holds both loopback addresses | security adaptation | with the default `127.0.0.1` callback host Orb also binds `[::1]` and refuses to start when another program answers there, since the OAuth state carries the PKCE verifier. Nothing on the wire changes |
 | Bundled MCP extension | addition | owner requirement; kept out of core |
-| No codemode (pi v0.99+) | not yet adopted | owner deferred codemode (2026-10-02): no `codemode` tool, script `models` API, classifier models or Jev; the system prompt's docs line names MCP but not `docs/codemode.md`, and tool `exposure: "codemode"` is treated as `deferred` |
-| Experimental harness is Orb-owned (pi v1.0.0) | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`); `engine/harness` stays as Orb's own, its `F6Harness*` fixtures and the harness parts of F8/F10 are carried from the committed tree instead of extracted |
-| Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb has always started the run, and its RPC response now reports that as `started` |
-| `packages/server` (formerly `packages/orchestrator`) | removed | experimental upstream side product; the v0.81.0 rename does not change the D2 product boundary |
-| `packages/{client,protocol}` (v0.84.0) | removed | experimental remote-session client and CBOR protocol for the excluded server product; same D2 boundary |
-| `packages/telemetry` (v0.84.0) | removed | vendor-neutral telemetry contracts; consistent with the existing telemetry-gated attribution removal |
-| `packages/session-backends` (renamed from `packages/storage` in v0.84.0) | removed | optional sqlite session backend for the excluded server product; orb's harness keeps the JSONL repo only |
-| Telemetry/analytics (`enableInstallTelemetry`, `enableAnalytics`, `trackingId`) | removed | owner decision; unknown settings keys tolerated on parse, nothing sent, no plumbing |
-| Radius provider + Radius OAuth | removed | pi.dev-coupled service; the generic `pi-messages` SSE wire shape IS ported (usable by any backend, e.g. an Ordalie gateway) |
-| Version/update checks | neutralized | point at OrdalieTech/orb GitHub releases, never pi.dev |
-| Public identity and executable | renamed | D30; `orb` avoids colliding with an installed upstream `pi`. Local OAuth callback pages use Orb branding; exported pi HTML helpers retain their fixture contract. |
-| Default system-prompt identity | product positioning adaptation | Orb presents as a general-purpose problem-solving harness for work and software development rather than using pi's coding-agent identity; tool lists, guidelines, context/skill injection, custom prompts, and assembly order remain upstream-compatible, with F9 applying only the exact ledgered text substitutions to generated upstream goldens |
-| External Agent Skills discovery | compatibility addition | Orb automatically imports standard skill roots from Claude Code, Codex, OpenCode, Gemini CLI, Cursor, and GitHub Copilot. Pi-native and `.agents` roots keep precedence, project roots require trust, canonical files load once, existing first-name-wins collision diagnostics apply, and plugin/cache directories are never scanned — including Claude Code's `skills/synced`, its per-account mirror of claude.ai skills. Interactive `@` completion offers visibly badged skills at any token; accepting one inserts the canonical `/skill:name` token, which the composer draws as an atomic `◆ name` chip (backspace removes it whole) while its text stays canonical, so ordinary `@file` entries and wire/session semantics stay unchanged. The invocation stays where it was typed: a message starting with the token keeps upstream's exact expansion; for an inline token interactive mode prepends `/skill:name ` before the kernel expansion runs, so the upstream `<skill>` envelope is followed by the full message with the token in place. One distinct skill per message — a draft invoking several is refused with a warning and kept. The transcript shows the user message with the chip inline and one dim footer line (`◆ name · description`) that expands to the skill body; the Orb markdown export mirrors this, while the HTML export template stays upstream-pinned (F6). |
+| No codemode | not yet adopted | no `codemode` tool, script `models` API, classifier models or Jev; the system prompt's docs line names MCP but not `docs/codemode.md`, and tool `exposure: "codemode"` is treated as `deferred` |
+| Experimental harness is Orb-owned | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`) in v1.0.0; `engine/harness` is Orb's own, and its `F6Harness*` fixtures and the harness parts of F8/F10 are carried from the committed tree instead of extracted |
+| Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb starts the run and reports `started` |
+| `packages/server`, `packages/{client,protocol}`, `packages/session-backends` | removed | experimental remote-session server, client, CBOR protocol and sqlite backend; outside Orb's product boundary |
+| `packages/telemetry`, telemetry/analytics settings | removed | unknown settings keys tolerated on parse, nothing sent, no plumbing |
+| `packages/ai` Cloudflare `env.AI` gateway binding | excluded | needs a Workers environment object; not exported, and the provider registry (F2) is unchanged |
+| Radius provider and OAuth, `/bug` | removed | pi.dev-coupled services; the generic `pi-messages` wire shape is ported. `/bug` stays captured in F8 with an explicit command-surface exclusion |
+| Version/update checks | neutralized | OrdalieTech/orb GitHub releases, never pi.dev |
+| Public identity and executable | renamed | `orb` avoids colliding with an installed `pi`; local OAuth callback pages use Orb branding; exported pi HTML helpers keep their fixture contract |
+| Default system-prompt identity | product positioning | Orb presents as a general-purpose problem-solving harness rather than a coding agent; tool lists, guidelines, context/skill injection, custom prompts and assembly order stay upstream-compatible, and F9 applies only the exact ledgered substitutions to upstream goldens |
+| External Agent Skills discovery | compatibility addition | standard skill roots from Claude Code, Codex, OpenCode, Gemini CLI, Cursor and GitHub Copilot are imported. Pi-native and `.agents` roots keep precedence, project roots require trust, canonical files load once, first-name-wins diagnostics apply, and plugin/cache directories (including Claude Code's `skills/synced`) are never scanned. Interactive `@` completion offers badged skills at any token and inserts the canonical `/skill:name` token, drawn as an atomic `◆ name` chip. A message starting with the token keeps upstream's expansion; for an inline token interactive mode prepends `/skill:name ` before kernel expansion. One distinct skill per message. The transcript shows the chip inline and an expandable `◆ name · description` footer; the HTML export template stays upstream-pinned (F6) |
 | `/share` | neutralized | local HTML export instead of pi.dev upload |
-| `/changelog`, `/arminsayshi`, `/dementedelves` | product identity | owner decision (2026-09-26): `/changelog` shows Orb's own CHANGELOG.md; pi's hidden easter eggs and the Earendil announcement image are removed |
-| `/bug` (v0.86.0) | excluded | Radius-backed diagnostic uploads are outside the owner-approved adoption; local diagnostic export is deferred. The upstream command remains captured in F8, with this explicit command-surface exclusion applied by the runner. |
-| Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlay endpoints; `openai-codex` models come live from the signed-in ChatGPT account (D12) |
-| darwin modifier-key native addon | gap | kitty keyboard protocol where possible; documented small parity gap |
-| win32 console native addon | replaced | pure-Go console-mode calls instead of upstream's native addon (P2) |
-| Bundled llama.cpp extension | excluded | v0.81.1 still ships this optional native Node/llama.cpp integration; it cannot satisfy the pure-Go, single-static-binary rule in D7 |
-| `packages/storage/sqlite-node` | excluded | v0.81.1's optional Node SQLite storage package requires a native runtime; orb retains the session repository interfaces and JSONL/memory implementations under D7 |
-| `orb login` / `orb logout` CLI subcommands | addition | headless Go deployments need auth lifecycle commands; bare `orb logout` deliberately lists stored credential names and requires an explicit provider instead of silently choosing one |
-| NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its current metadata cannot satisfy orb's chat-model contract; keep the Go-only exclusion explicit until the live shape is usable |
-| `CompleteSimple` and common simple tool choice | Go API adaptation | upstream `Models.completeSimple` only collects `streamSimple`, while TypeScript callers can smuggle provider-specific `toolChoice` fields through structural casts. Go exposes the same collection directly and the portable `auto`/`none`/`required` intersection; a named choice is one advertised tool plus `required`, so no provider shape leaks into embedders |
-| No process-wide default stream (`setDefaultStreamFn`) | Go API adaptation | P10 forbids process globals in the core: `engine.NewAgent` takes its stream explicitly, `NewAgentSession` defaults to `ai/api/all`, and light assemblies build an `api.Registry` with only their providers; the build tag `orb_nodefaultproviders` empties the default for embedders that always pass their own stream |
-| Missing default stream error timing | Go API adaptation | upstream throws in the JavaScript `Agent` constructor; Go's fixed `NewAgent` signature cannot return an error, so orb reports the identical error on the first prompt or low-level loop call |
-| Single Ctrl-C exit at an empty prompt | usability adaptation | owner requirement; a nonempty draft still clears without exiting, and focused selectors retain their cancel binding |
-| Interrupting an unanswered turn takes the prompt back | usability adaptation | owner requirement; upstream's escape restores only queued messages, which orb now does too. When the interrupted turn has shown nothing yet, orb additionally rewinds the branch to before its prompt (the existing tree-navigation path) and returns the text to the editor, so an edited resend replaces the prompt instead of stacking after it. Once any text, thinking, or tool call has appeared, escape aborts exactly as upstream does; the abandoned attempt stays reachable in the tree |
-| Compact built-in editor chrome | usability adaptation | while the built-in editor is mounted, a one-line transient status that fits moves into its top border and the explicit session name appears as a truncated themed badge at the right; dialogs, narrow statuses, scrolled drafts, and extension editors keep upstream's standard status lane, with keybindings and extension UI contracts unchanged |
-| Compact task and queue surfaces | usability adaptation | the bundled tasks plugin keeps its replacement schema and full branch-aware details but condenses persistent/collapsed rendering, makes the native TUI widget click-expandable with dimmed inset details, and adds an unbound `/tasks` full-list command; queued messages retain the configured dequeue binding and every queued item while adding a count to upstream's one-row truncation and edit hint |
-| Moonshot Kimi K3 compat metadata | resolved parity | `thinkingFormat: openai` and reasoning-effort support entered the pinned upstream in v0.81.1 and remain regression-tested |
-| `AgentHarness` orchestration facade | dissolved | D29; harness primitives remain in `engine/harness`, while the high-level embedding lifecycle stays in `agent.AgentSession` |
-| `streamProxy` `/api/stream` client | excluded | D29; application-specific proxy protocols use the `AgentSessionOptions.StreamFn` seam and the public streaming-JSON helper |
-| `chat/` gateway package (+ `chat/telegram`, `chat/whatsapp`) | addition | owner requirement (D27); kept out of core, strictly one-way dependency on the SDK |
-| `AgentSessionOptions` tool-operations injection hook | addition | D27; ergonomic seam over the existing `NewSessionRuntime`/`BaseTools` path for VFS/sandboxed tool operations |
-| `chat/` platform wave 2 (`slack`, `teams`, `discord`, `messenger`, `googlechat` + `chat/internal/` ws/webhook helpers) | addition | owner requirement (D28); official APIs only, stdlib-only clients incl. hand-rolled RFC 6455 |
-| Streaming accumulation via append buffers | Go performance adaptation | upstream's `x += delta` is an O(1) amortized rope in V8 and an O(n) copy in Go, so the transliterated idiom made the port asymptotically slower than its source; buffers preserve every emitted byte. Do not "restore" `+=` on a future sync |
-| Tool-argument re-parse gated above 8 KB | Go performance adaptation | rebuilding the argument map is O(len(buffer)) per delta in both runtimes; below the floor — every fixture and every human-sized call — streamed `arguments` stay byte-identical, above it only the live preview lags while `partialJson`/`partialArgs` and the end event remain exact |
-| Footer metadata refreshed off the render thread | Go performance adaptation | Git process startup and available-provider scans must not hold the TUI render lock during loader frames or first paint; refresh starts after 500 ms, the Git probe is capped at 250 ms, and the footer invalidates when the asynchronous result arrives |
-| Print mode fails a prompted run that produced no assistant | usability adaptation | overflow recovery drops the failed assistant from agent state (upstream `agent-session.ts:2006`), so upstream's text mode exits 0 with empty stdout; scripts cannot distinguish that from success |
-| `exec.Cmd.WaitDelay` on the extension host | Go API adaptation | stderr is deliberately wrapped so extensions cannot put the parent terminal in cooked mode, which forces a pipe; without a delay `Wait` blocks until every grandchild that inherited it closes, which Node's `child_process` does not do |
-| Goroutine panic guard inside `tui` | Go API adaptation | upstream restores the terminal from a process-wide `uncaughtException` handler (`interactive-mode.ts` `uncaughtCrash`); Go cannot observe another goroutine's panic, so every goroutine the package spawns recovers, runs the registered restores, writes the panic and stack to stderr after restore, and exits 1. `ProcessTerminal.Run` stays the synchronous-body guard for embedders and shares the same `Stop` restore path |
-| Terminal widths from uniseg plus a three-class correction | measured divergence | upstream widths come from get-east-asian-width plus an RGI-emoji regex; orb keeps `rivo/uniseg` and corrects the classes measured against upstream — keycap sequences, East-Asian-Wide text-presentation symbols, and halfwidth voiced sound marks U+FF9E/U+FF9F. Residual known divergences: standalone skin-tone modifiers, Yijing symbols, spacing combining marks, Hangul fillers, two/three-em dashes, emoji newer than x/text's Unicode tables, clusters mixing a Wide text-presentation base with a halfwidth voiced mark, and noncharacters x/text tables class as Wide |
-| Session-file locking | addition | upstream `session-manager.ts` writes JSONL with no locking at all; orb keeps cross-process locking and takes it through `internal/filelock`'s proper-lockfile-compatible mkdir+heartbeat lock (self-cleaning, stale-steal), replacing a `gofrs/flock` sidecar that left permanent `.jsonl.lock` files a concurrent upstream pi could neither recognize nor reclaim |
-| Extension-host `cancel_request` and `provider_stream_event` frames | Go API adaptation | D31's host process boundary has no counterpart to upstream's in-process positional `AbortSignal` (`tool-definition-wrapper.ts`) or its live provider streaming (`loader.ts` `streamSimple`); these two Orb-internal frames plus a per-request `AbortController` registry reproduce both, and the host self-exits on stdin close so an Orb hard-crash cannot orphan it |
-| `Request was aborted` for ctx-aborted stream failures | Go API adaptation | every adapter persists upstream's mid-stream abort text `Request was aborted` on a ctx-aborted stream failure (Google's and Mistral's stream paths now included); request-phase texts follow upstream per adapter — `retryProviderRequest` and aborted OpenRouter image body reads return `Request aborted` verbatim, Google's request phase keeps upstream's `Request aborted` — while the anthropic/openai-family stream entry points collapse pre-stream ctx errors into the mid-stream text so the TUI's exact-match "Operation aborted" rendering holds |
-| `extensions.Exec` bounded wait on inherited stdio | Go API adaptation | upstream's `waitForChildProcess` resolves the moment the child exits even when a detached grandchild holds the stdio pipes; Go's `os/exec` cannot observe that without `WaitDelay`, so orb waits up to 5s for the pipes and then reports the child's own exit code (never a synthetic failure) |
-| RPC untyped-dispatch residual | gap | frames with a known command but a mistyped member (e.g. `{"type":"prompt","message":5}`) answer `success:false` with Go decoder text where upstream surfaces the JS `TypeError` of untyped dispatch; byte parity would mean emulating per-command V8 runtime errors. Frame shape and the missing/non-string/null `type` path are byte-exact |
-| `OAuthCredentials` extra members serialize sorted | Go API adaptation | upstream builds the credentials object in JS, so extra members keep insertion order; orb carries extras in a Go map, which has none. Declared members match upstream's declaration order and extras follow, sorted for determinism |
-| Markdown session export | addition | upstream `--export` emits HTML only; an output path ending in `.md` routes to the WP-320 markdown exporter, every other path keeps upstream's HTML behavior and the help text is unchanged |
-| Concurrent `AfterToolCall` hooks and `EventSink` in parallel tool mode | Go API adaptation | upstream's promises interleave at await points but never run simultaneously; orb's parallel workers invoke both concurrently, so an embedder porting a hook that mutates shared state without locks must add its own synchronization (documented at `engine/types.go`) |
-| Parallel tool fan-out bounded at 16 | Go resource adaptation | upstream's `Promise.all` (`agent-loop.ts:539`) is unbounded because JS tool calls are cooperative; in Go each call is a goroutine that may spawn subprocesses, so a model-controlled fan-out is a resource risk. Result ordering is unchanged |
-| Tool-update sink driven by one bounded queue (256) | Go API adaptation | upstream's sink is an event-loop callback, so `emit` is a synchronous call that still never blocks the tool and is awaited per call at `agent-loop.ts:694`; Go's `EventSink` blocks, so a drain goroutine reproduces both ordering and non-blocking. A sink more than 256 updates behind backpressures rather than dropping an event |
-| Native mouse and click support in interactive mode | addition | owner requirement (2026-07-25). Upstream consumes mouse reports only for transcript selection and the scrollbar. orb adds an optional `tui.MouseHandler` found by type assertion, so D15's `Render(width int) []string` contract is unchanged and every existing component and extension UI keeps working. SGR (1006) reports are offered to the component under the cursor before falling back to the existing scrollbar, wheel and selection behavior; an in-flight drag or any modifier skips dispatch, preserving native drag-select and shift-bypass. Wired: `/tree`, `/resume`, `SelectList`, `SettingsList`, the extension option dialog, and the editor. Excluded: the transcript body and inline TUIs, which have no known screen origin |
-| Extension SDK is served exclusively by the embedded orb-extension-sdk | independence | orb once searched `PATH` for the `pi` executable, then resolved a real SDK from orb's managed npm roots with `ORB_PI_SDK_ROOT` as a user override. Both are gone: reading pi's config files is the D4 compatibility promise, executing its code is not. Every `@earendil-works/pi-*`/`@mariozechner/pi-*` specifier now resolves to `orb-extension-sdk` (versioned in `sdk/sdk.json`, go:embed-ed and materialized beside `host.mjs`, named by `ORB_EXTENSION_SDK_ROOT`), which implements the exercised surface and stubs every other upstream export with a precise `OrbUnsupportedCapability` diagnostic. `ORB_PI_SDK_ROOT` is dead — there is no override that re-admits third-party SDK code |
-| Node capability floor is 22.6, full capability is 22.13 | measured divergence | 22.6-22.12 runs plain JavaScript and erasable TypeScript but cannot compile TypeScript published inside `node_modules`, because `module.stripTypeScriptTypes` arrives in 22.13. Refusing to start on 22.12 would refuse extensions that do run, so the floor stays at 22.6 and the loader names the missing capability at the file that needs it. Node 26 removed TypeScript transformation entirely: enums, parameter properties and namespaces do not run there on any path |
-| Staged extension entries removed | simplification | the mechanism gave an entry under `node_modules` a `node_modules`-free path and required `--preserve-symlinks` to keep its links opaque, which broke pnpm store resolution on every Node version. Supplying transpiled source from the load hook covers entry and dependencies at any nesting depth, so the package manager's own layout governs. Cost: an npm-installed TypeScript extension on Node 22.7-22.12 now reports that it needs Node >= 22.13 rather than working |
-| Frontmatter YAML text keeps its terminating newline | dependency workaround | upstream slices it off too (`utils/frontmatter.ts:23`), but npm `yaml` treats end-of-input as a line break so clip chomping still yields the newline, while `gopkg.in/yaml.v3` synthesizes none; upstream pins the observable value in `test/frontmatter.test.ts:25-30`. Do not "restore" the exclusive slice on a future sync |
-| Bun SDK aliases via `NODE_PATH` | Bun adaptation | Bun's runtime `Bun.plugin` `onResolve` never observes a nested import, so Node's resolve hook has no counterpart. `NODE_PATH` is consulted after the `node_modules` walk, which enforces "alias only when absent" in the resolver itself; Node ignores it for ESM, so the primary path is unaffected. The root-to-`/compat` redirect remains Node-only |
-| Embedded orb-extension-sdk replaces real-SDK auto-provisioning | replacement (amends "Pinned SDK auto-provisioning into orb's own npm root") | the auto-install path (`provision.go`: first bare SDK import triggered `npm install --ignore-scripts` of the pinned real SDK into the user npm root) is deleted. The SDK surface ships inside the orb binary as `orb-extension-sdk` — pure symbols ported from pinned upstream (MIT, credited), thin handles, and three capability-negotiated protocol services (`sdk_v1`, `agent_session_v1`, `model_runtime_v1`) bridging `createAgentSession`/`ModelRuntime`/`ModelRegistry` onto the Go runtime. The loader refuses any resolution whose realpath lands in an installed `@earendil-works/pi-*`/`@mariozechner/pi-*` package: an unswallowable resolve-time load failure naming importer, specifier, and import chain — by design a per-extension load diagnostic, never a process abort. Extension-declared dependencies (e.g. `acorn`) still materialize via `deps.go`; F13-dynamic-workflows gates the whole surface against `@quintinshaw/pi-dynamic-workflows@3.5.1` behavior goldens extracted from real pinned pi |
-| Bun runs with `--no-install` | safety adaptation | dependencies are materialized by an explicit audited install step; Bun's implicit auto-install otherwise fetches unresolved specifiers from npm mid-session, which Node never does |
-| Disposed sessions refuse work (`ErrSessionDisposed`) | SDK safety adaptation | upstream `agent-session.ts:835` `dispose()` sets no flag and no method refuses afterwards, so a post-dispose prompt still called the model and persisted the turn with its events silenced. An embedder that disposes on client disconnect spends money invisibly; the guard sits at `runPolicies` plus the queue-only entry points, so a doomed request still reports its specific reason |
-| Subagent parallel width capped at 32 | resource guard | `tasks` is model-controlled and each entry costs a goroutine, a temp dir, a child session, and a real provider call; uncapped, one tool call fanned out to 2,000 children in measurement. Enforced in the tool and declared as `maxItems` in the schema |
-| Unified-patch hunk headers derived locally | dependency workaround | `go-udiff` advances `ToLine` only in its new-hunk branch (`unified.go:143`), so the second and later `@@` headers report the wrong new-file start; orb recomputes them and matches `Diff.createTwoFilesPatch` across a 2,998-case differential fuzz |
-
-## Execution rules and capability records
-
-- **Implemented by coding agents.** `AGENTS.md` at repo root is the execution contract: trunk-based
-  `main`, every commit green (`make check`), kernel changes fixtures-first, trim passes per
-  RELEASE-CRITERIA. Quality gates govern pace; no schedule estimates — progress is red-to-green
-  movement. (Absorbs D19–D23, D25, D26; the WP/sprint/milestone machinery is history.)
-- **D24 — Live-test policy.** Three tiers (RELEASE-CRITERIA): merges are fixture-only/no-network;
-  provider work runs opt-in live smoke; a nightly capped live suite (OpenAI + Anthropic, 3-task
-  corpus) files work items on failure.
-
-- **D27 — Chat gateway `chat/` (owner, 2026-07-19), durable constraints.** An at-least-once
-  processor around `AgentSession` with a `SessionProvider` lease/hydration seam and platform
-  adapters. Dependency direction is strictly `chat → agent`. Delivery state lives in
-  `orb.chat.turn` custom session entries — the session JSONL is the single durable history; turn
-  finalization keys off `AgentSettledEvent`, and crash recovery reads raw entries, never the built
-  context. Tools are off by default; enabling them requires an injected isolated workspace. The
-  local JSONL provider is single-process; clusters must supply fenced conversation ownership.
-  Official platform APIs only; stdlib-only clients. Chat tests are plain `go test` goldens under
-  `chat/`, never `conformance/`.
-- **D28 — Chat platform wave 2 (owner, 2026-07-19).** Slack, Teams, Discord (hand-rolled RFC 6455
-  websocket), Messenger, Google Chat; shared webhook/ws helpers in `chat/internal/`. Bridge-based
-  platforms and E2EE Matrix stay excluded per D27's official-API stance. Zero new go.mod
-  dependencies remains the rule for every wave.
-
-- **D29 — One high-level agent runtime (agent, 2026-07-20).** The pinned upstream exports a
-  second `AgentHarness` orchestrator from `packages/agent`, but its own coding-agent still uses
-  `AgentSession`; upstream documents that migration as pi 2.0 work. orb keeps the already-ported
-  session, repository, compaction, resource, and environment primitives in `engine/harness`, while
-  `agent.AgentSession` remains the sole high-level embedding runtime. Reimplementing the
-  1,029-line facade would duplicate queues, hooks, persistence ordering, and lifecycle state, and
-  placing a wrapper in `agent` would invert the package dependency. The adjacent `streamProxy`
-  client is also excluded: its `/api/stream` endpoint is an application protocol rather than agent
-  behavior, and embedders already have `AgentSessionOptions.StreamFn` plus `ai.ParseStreamingJSON`. Revisit
-  either surface only when upstream's coding-agent adopts it or a real Go consumer requires it.
-
-- **D36 — Session search is a slim Go service, not a transliterated generic API (agent, 2026-08-17).**
-  Upstream v0.84.2 dissolved `harness/session/search.ts` into standalone `packages/agent/src/search/`;
-  orb never ported the predecessor, so only the new surface exists here, as `engine/search`. Scanning
-  behavior is ported exactly (trimmed case-insensitive match, source order, oldest-first entries,
-  cursor paging, single-type storage pushdown, limits, cancellation, duplicate-session-id guard); the
-  shape is not: the metadata type parameter collapses to `Session{ID, Readable}`, `AsyncIterable`
-  becomes `iter.Seq2[Hit, error]`, and the `match`/`createHit`/`sourceOptions` hooks are dropped —
-  callers express all three with `ProjectText`, by mapping the iterator, and by closing over their
-  source. Upstream's only interface consumer is the excluded `packages/session-backends`; revisit
-  only when a real Go consumer needs to swap in an indexed backend.
-
-- **D37 — v4 storage additions land beside published interfaces, never inside them (agent, 2026-08-17).**
-  Upstream widened `SessionStorage.setName` to `string | undefined`. Downstream embedders may
-  implement orb's `SessionV4Storage`, so the clearing half ships as the one-method
-  `SessionV4NameClearer` companion plus `ClearName()` on both concrete storages. The same rule
-  governs every future upstream signature widening on a published harness interface: add a companion
-  interface, keep the existing method set source-compatible. *Superseded by P5 as amended
-  2026-10-02: interfaces change in place and their consumers are updated with them.*
-
-## 2026-07-21 parity-sync amendments
-
-- Codex request compression uses `github.com/klauspost/compress/zstd` as a direct dependency. The
-  upstream wire requires zstd request bodies, and the standard library has no zstd encoder.
-- The v0.81.1 image catalog is checked in as deterministic Go data and pinned by an exact digest.
-  Upstream's strict TypeScript model-data validator has no runtime Go analogue, so generation-time
-  validation plus full-catalog tests enforce the same accepted shape.
-- Remote-catalog freshness preserves upstream's `checkedAt`/`lastModified` semantics, while D12's
-  single direct models.dev endpoint replaces pi.dev's provider-scoped service. The orb identity in
-  its User-Agent remains the D30 public-name substitution.
-
-## 2026-07-22 v0.81.1 sync amendments
-
-- `ai.RetryAssistantCall` is the shared retry policy for normal turns, compaction, and branch
-  summaries. Coding-agent retry lifecycle events retain upstream names and payloads across the Go
-  SDK, JSON, RPC, and interactive surfaces.
-- ~~The coding-agent package installs the default stream function during initialization.~~
-  Superseded 2026-09-22 by P10: there is no process-wide default stream. `NewAgentSession`
-  defaults to the full provider registry (`ai/api/all`), and assemblies pass a registry holding
-  only the providers they select. A missing stream still produces upstream's exact error text
-  when execution begins; constructor-time error timing is the Go API adaptation ledgered above.
-- Release source provenance maps upstream's source-archive feature onto GoReleaser. Every source
-  archive is checksummed, excludes checkout/build state, and must rebuild with `CGO_ENABLED=0`
-  and `-buildvcs=false` before the release is published; source archives intentionally omit the Git
-  metadata Go would otherwise inspect for VCS stamping.
-
-## 2026-08-17 v0.84.2 sync amendments
-
-- `packages/ai/src/api/cloudflare-gateway-binding.ts` is excluded: an AI Gateway transport over the
-  Cloudflare Workers `env.AI` runtime binding. It needs a Workers environment object a static
-  `CGO_ENABLED=0` CLI cannot have, is not exported from the package's public surface, and leaves the
-  provider registry (`F2/providers.json`) unchanged.
-- `SendMessageOptions.TriggerTurn` is `*bool`, not `bool`: upstream's `triggerTurn` is tri-state
-  (`undefined ≠ false`) — unset still steers a streaming turn, an explicit `false` suppresses it.
-- `/export` resolves the active theme before the configured one (upstream 9795d602), reversing the
-  prior "configured wins" rule so a per-run `--use-theme` selection reaches the export.
-- orb has no fullscreen/alt-screen TUI mode: `tuiMode`, `fullscreenExitOutput`,
-  `fullscreenScrollbar`, the `tui.altScreen.*` keybinding namespace, transcript search, and the
-  alt-screen painter/LaTeX work are deliberately unported (D35). The `searchMatchBg`/`searchMatchText`
-  theme roles ARE carried because the HTML export's theme variables are an upstream-pinned wire
-  surface (F6).
-- Kimi For Coding's `pi (…)` User-Agent follows D30: provider-facing compatibility names stay `pi`
-  where they are the provider contract, exactly like the Codex `originator`/UA headers.
-- The OpenRouter image catalog resynced to the full v0.84.2 set (45 models) rather than a
-  three-model delta: the committed catalog had drifted at v0.81.0 and a partial bump would match no
-  upstream version. Digests recomputed from upstream `image-models.generated.ts`, not from orb output.
-- Entry-point process markers are ported with orb identity: `AI_AGENT=orb` (generic launching-agent
-  marker; identity substitution per D30) and `PI_CODING_AGENT=true` (pi-compat marker, same value the
-  extension host already sets for its children). Set only at CLI/RPC entry, never when embedded.
-- Shared catalog refreshes port only the joiner half of upstream's interactive coordinator
-  (`model-catalog-refresh.ts`): a caller joining an in-flight refresh honors its own cancellation,
-  but the fetch itself keeps the initiating caller's context instead of upstream's detached
-  refcounted controller. Orb merged the coordinator into `ai/models.Refresh`, whose cancellation
-  contract (a canceled refresh returns the stored overlay and never mutates the store) requires the
-  refresh to observe cancellation synchronously at its commit points — a detached context only
-  learns of it a goroutine hop later. Consequence: an initiator's cancellation settles the shared
-  call for concurrent joiners too; revisit only if a real surface hits that window.
-
-## Standing assumptions (owner-confirmed)
-
-- **Native session executors (owner, 2026-09-22).** A capability may replace Orb's model/tool loop
-  for its own provider only through generic seams: `SessionLoop` and `ContextUsage` on session
-  options/config, `SessionRuntime.RequestInput`, `NewSessionOptions.Prepare` and Bridge
-  `attach.Options.Status`. Core names no executor; the TUI routes typed `/compact` to an executor as
-  its own `/compact` prompt and renders tools case-insensitively. Claude Sessions is the one
-  implementation: a default-off `claude-sessions` catalog row supplied by the CLI (P4), wired in
-  `cmd/orb`. Under P3 no executor-registration extension API is cut until a second executor exists.
-
-- **Permission hardening (owner, 2026-09-22).** Permission policy remains optional and enforces
-  rules when enabled. The owner's follow-up makes `auto` the default approval mode (including the
-  workspace-write preset): `ask` resolves to one-call consent without AI, while denials and guards
-  remain enforced. Explicit `enforce` retains manual approval, with headless fallback defaulting to
-  deny. `--auto` is a non-persistent opt-in/override; explicit saved modes remain unchanged otherwise.
-  An explicitly configured native filesystem sandbox is a host constraint and survives disabling extensions
-  or the policy plugin. Native bash, edit, write and child agents share that constraint;
-  unsupported native executors refuse the configuration. Go-only `Approved` flags on tool hook
-  results distinguish explicit consent from a hook that merely does not block. They are excluded
-  from JSON, leaving the pi/JS extension and RPC contracts unchanged. In enforce mode, missing UI defaults to deny;
-  cancellation and authorization errors never grant consent. Explicit headless `askFallback: allow`
-  remains available. This changes Orb's original permission behavior, not kernel tool defaults.
-
-- **Herdr environment adapter (owner, 2026-09-21).** A hidden compatibility extension may
-  auto-attach only with `HERDR_ENV=1`, `HERDR_PANE_ID`, and `HERDR_BIN_PATH`; otherwise it is
-  absent. This is host-environment adaptation, not default-on feature precedent under P4.
-
-- **Native SQLite direction (owner, 2026-09-21; native cutover implemented).** The owner approved
-  SQLite as Orb's native storage with Pi JSONL import/export and existing SDK APIs retained,
-  accepting that Pi will no longer directly read a native live Orb session file. The
-  native CLI cutover replaces the live shared-file storage requirement above; explicit file-backed
-  SDK/compatibility entry points and JSON/wire conformance remain supported. The complete scope,
-  migration and packaging gates are in SPRINTS, "Unified conversations and native SQLite".
-  SDK defaults and the explicit `--pi-files` CLI entry point remain file-backed; native sessions
-  use SQLite with Pi import/export. Managed remote hosting remains a separate plan slice. The owner separately
-  approved SQLite caching of foreign summaries and bounded visible message excerpts: separate
-  from owned sessions, read-only offline, no reasoning/tool payloads, remote authority on reopen.
-
-- **v0.86 transcript defaults (owner, 2026-09-20).** Adopt Pi's transcript-backed system messages
-  and their normal agent events by default, rather than placing them behind a legacy headless
-  opt-in. Preserve existing exported Go signatures and legacy session reading (retired by P5 as
-  amended 2026-10-02). This is an
-  intentional observable change: headless consumers must classify system messages explicitly;
-  Ordalie's production SSE forwarding must filter them before deployment to avoid publishing
-  system prompts. Source compatibility alone does not establish event-consumer compatibility.
-
-- Independent semver from `v0.1.0`; upstream snapshot recorded in `UPSTREAM.lock`.
-- OAuth flows land with their provider's wave (ChatGPT/Codex OAuth with OpenAI wave, Claude Pro/Max
-  with Anthropic wave, Copilot device-code later).
-- The example-extension compatibility matrix (~69 upstream examples) is a standing conformance artifact.
-- `rg`/`fd` auto-download into `~/.pi/agent/bin` ported as-is (system binaries preferred). This is
-  upstream behavior, not a single-binary violation.
-- Clipboard via OSC52 / shell-out (`pbcopy`/`xclip`/`wl-copy`), no native addon.
-- Use the latest stable Go release for every maintenance/upstream sync (owner, 2026-09-20).
-  Verify the release on go.dev and update `go.mod`; CI and releases follow its version. Current
-  baseline: Go 1.27.1. Rebuild/update the linter with the same supported toolchain.
-- Node.js ≥22.6 or Bun is an optional runtime dependency for JavaScript/TypeScript extensions and
-  Node remains development tooling for fixture extraction against the upstream clone.
-
-## Deferred decision gates (resolved inside the named work package)
-
-- **G1 (WP-110, resolved):** use the stdlib-only internal JSON-Schema reflector. The invopop probe
-  required provider-shape post-processing and added five transitive packages plus 640 KiB to a
-  stripped binary; the internal helper emits the required TypeBox-style inline schemas directly.
-- **G2 (WP-221, resolved):** use the stdlib REST/SSE Gemini adapter. The correctly stripped official
-  SDK probe added 8,466,432 bytes (47.278%), 35 module entries, and 183 compiled packages; Vertex
-  is completed by WP-222 with stdlib REST/SSE and pure-Go ADC, adding 393,216 bytes (2.177%) and no
-  module or compiled-package entry against its consolidated parent (WP-221, WP-222).
-- **G3 (WP-542):** pi-tui Component bridge overlay/experimental surfaces — bridge now vs documented gap.
-  **Resolved (Sprint 3): bridge now.** `ctx.ui.custom` with overlay options (static and dynamic),
-  `OverlayHandle` round-trips, focusable JS components, and editor replacement including the
-  `CustomEditor` base class (JS class over the mode-registered real editor seam) are bridged; the
-  modal-editor example runs unmodified. Remaining pi-tui component classes (Text/Container/Markdown
-  construction from JS) are bridged on demand as the F11 matrix requires them.
-- **G4 (WP-661):** self-update mechanism — notify-only vs in-place binary self-update.
-  **Resolved (Sprint 4): notify-only.** **Amended (owner, 2026-08-11): direct self-upgrade.** `orb
-  update` replaces the running binary after checksum verification and an atomic swap. It never
-  elevates; Homebrew, Nix, and Snap installs remain package-manager-owned.
-
-## Sprint 5 — ecosystem-compat sweep decisions
-
-The July 2026 real-world compat sweep (six dimensions, real npm MCP servers, published pi
-packages, upstream example extensions) fixed 41 findings. Decisions made while fixing, so they
-are not re-litigated:
-
-- **Skills ignore semantics are upstream-bug-for-bug.** `prefixIgnorePattern` semantics ported
-  exactly: nested ignore-file patterns anchor to the ignore file's own directory, and a leading
-  `/` is stripped (so root-level `/pattern` matches basenames at any depth). Correct gitignore
-  behavior loses to parity with the pinned upstream.
-- **Skills symlink-cycle guard stays.** Upstream has no visited-set and recurses cycles to
-  ELOOP (~40 levels), leaking cycle-expanded paths into system-prompt `<location>` entries.
-  orb keeps the canonical-path visit stack and returns each skill once under its clean path.
-  Deliberate hardening divergence.
-- **MCP `"disabled": true` is honored** as `"enabled": false` (portability with Cline/Roo/
-  Claude Desktop configs). MCP config parsing is per-entry tolerant: invalid entries warn and
-  are skipped, valid entries load.
-- **Package dependency installs are Node-optional.** The package tarball is still fetched
-  natively; `npmCommand` (default `npm install --omit=dev`) runs only when `package.json`
-  declares dependencies that are not bundled, and a missing npm binary degrades to a warning.
-  Supported `.npmrc` surface is deliberately minimal: `registry=` and nerf-darted `_authToken`
-  (no `${VAR}` expansion, no per-scope registries, no `_auth`/username/password).
-- **pi-* shim modules throw on unknown imports at first touch** ("'X' is not exported by ...
-  (orb shim)") with an honest `has()` so `in`-feature-detection still works. True Node-ESM
-  link-time failure is unreachable without a build-time export manifest; first-touch is the slim
-  faithful approximation (question.ts-style examples now fail loudly at load instead of
-  registering broken tools).
-- **Package git subprocesses are quiet** (`clone -q`, `checkout -q` with
-  `advice.detachedHead=false`, `fetch -q`) — a cosmetic deviation from upstream, which inherits
-  git's stderr chatter.
-- **Installed abbreviated Git commit pins resolve locally before fetch.** Git servers reject a
-  short object ID such as `f2433d1` as an unadvertised remote ref even when the normal clone
-  already contains that reachable commit. Orb reconciles that detached object locally; branches,
-  tags, missing commits, and fresh installs retain upstream's fetch/checkout behavior. This is a
-  narrow usability divergence from upstream's failing `git fetch origin <short-sha>` path.
-- **Ecosystem compatibility claims stay layered.** A locked 44-package corpus separately records
-  stable loading, observable registration parity, line-grounded workflow feasibility, and executed
-  offline command/workflow probes. A package that only loads is never labeled end-to-end compatible.
-  The embedded CommonJS build preserves `import.meta.{url,filename,dirname}` per source module, but
-  variable dynamic imports, top-level-await-only modules, real Node streams/sockets, and native
-  addons remain explicit ceilings until their semantics can be implemented faithfully.
+| `/changelog`, `/arminsayshi`, `/dementedelves` | product identity | `/changelog` shows Orb's CHANGELOG.md; pi's easter eggs and the Earendil announcement image are removed |
+| Model catalog runtime refresh | neutralized | models.dev directly, not pi.dev overlays; `openai-codex` models come from the signed-in ChatGPT account (D12) |
+| darwin modifier-key native addon | gap | kitty keyboard protocol where possible |
+| win32 console native addon | replaced | pure-Go console-mode calls (P2) |
+| Bundled llama.cpp extension, `packages/storage/sqlite-node` | excluded | native Node integrations cannot satisfy P2 |
+| `orb login` / `orb logout` subcommands | addition | headless auth lifecycle; bare `orb logout` lists stored credentials and requires an explicit provider |
+| NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its metadata cannot satisfy orb's chat-model contract |
+| `CompleteSimple` and common simple tool choice | Go API adaptation | Go exposes the collection directly and the portable `auto`/`none`/`required` intersection; a named choice is one advertised tool plus `required`, so no provider shape leaks into embedders |
+| No process-wide default stream | Go API adaptation | P10 forbids process globals: `engine.NewAgent` takes its stream explicitly, `NewAgentSession` defaults to `ai/api/all`, light assemblies build an `api.Registry` with only their providers, and `orb_nodefaultproviders` empties the default |
+| Missing default stream error timing | Go API adaptation | `NewAgent` cannot return an error, so orb reports upstream's identical error on the first prompt or loop call |
+| Single Ctrl-C exit at an empty prompt | usability adaptation | a nonempty draft still clears without exiting; focused selectors keep their cancel binding |
+| Interrupting an unanswered turn takes the prompt back | usability adaptation | when the interrupted turn has shown nothing yet, orb rewinds the branch to before its prompt and returns the text to the editor, so an edited resend replaces it. Once any text, thinking or tool call has appeared, escape aborts exactly as upstream; the abandoned attempt stays in the tree |
+| Compact built-in editor chrome | usability adaptation | a fitting one-line transient status moves into the editor's top border and the session name appears as a badge; dialogs, narrow statuses, scrolled drafts and extension editors keep upstream's status lane |
+| Compact task and queue surfaces | usability adaptation | the tasks plugin keeps its schema and details but condenses rendering, adds a click-expandable widget and an unbound `/tasks` command; the queue adds a count to upstream's one-row truncation |
+| `chat/` gateway and platforms | addition | D27/D28; kept out of core, one-way dependency on the SDK |
+| `AgentSessionOptions` tool-operations hook | addition | D27; seam for VFS/sandboxed tool operations |
+| Streaming accumulation via append buffers | Go performance adaptation | `x += delta` is an amortized O(1) rope in V8 and an O(n) copy in Go; buffers preserve every byte. Do not restore `+=` |
+| Tool-argument re-parse gated above 8 KB | Go performance adaptation | below the floor streamed `arguments` stay byte-identical; above it only the live preview lags, while `partialJson`/`partialArgs` and the end event stay exact |
+| Footer metadata refreshed off the render thread | Go performance adaptation | Git and provider scans must not hold the render lock: refresh starts after 500 ms, the Git probe is capped at 250 ms |
+| Print mode fails a prompted run that produced no assistant | usability adaptation | overflow recovery drops the failed assistant, so upstream exits 0 with empty stdout, indistinguishable from success |
+| `exec.Cmd.WaitDelay` on the extension host | Go API adaptation | stderr is wrapped so extensions cannot put the terminal in cooked mode; without a delay `Wait` blocks on every grandchild holding the pipe |
+| Goroutine panic guard inside `tui` | Go API adaptation | Go cannot observe another goroutine's panic, so every goroutine the package spawns recovers, runs the registered restores, writes the panic after restore and exits 1; `ProcessTerminal.Run` shares the same `Stop` path |
+| Terminal widths from uniseg plus a three-class correction | measured divergence | `rivo/uniseg` corrected for keycap sequences, East-Asian-Wide text-presentation symbols, and U+FF9E/U+FF9F. Residual: standalone skin-tone modifiers, Yijing symbols, spacing combining marks, Hangul fillers, two/three-em dashes, emoji newer than x/text's tables, Wide-text-base plus halfwidth-mark clusters, noncharacters |
+| Session-file locking | addition | upstream writes JSONL unlocked; orb uses `internal/filelock`'s proper-lockfile-compatible mkdir+heartbeat lock, which a concurrent pi can recognize and reclaim |
+| Extension-host `cancel_request` and `provider_stream_event` frames | Go API adaptation | the host process boundary has no in-process `AbortSignal` or live provider streaming; these frames plus a per-request `AbortController` registry reproduce both, and the host exits on stdin close |
+| `Request was aborted` for ctx-aborted stream failures | Go API adaptation | every adapter persists upstream's mid-stream abort text; request-phase texts follow upstream per adapter, while the anthropic/openai stream entry points collapse pre-stream ctx errors into the mid-stream text so the TUI's exact-match rendering holds |
+| `extensions.Exec` bounded wait on inherited stdio | Go API adaptation | Go cannot see child exit while a detached grandchild holds the pipes, so orb waits up to 5 s and then reports the child's own exit code |
+| RPC untyped-dispatch residual | gap | a known command with a mistyped member answers `success:false` with Go decoder text where upstream surfaces a JS `TypeError`; frame shape and the missing/non-string/null `type` path are byte-exact |
+| `OAuthCredentials` extra members serialize sorted | Go API adaptation | Go maps have no insertion order; declared members keep upstream order and extras follow sorted |
+| Markdown session export | addition | an `--export` path ending in `.md` uses the markdown exporter; every other path keeps upstream's HTML |
+| Concurrent `AfterToolCall` hooks and `EventSink` in parallel tool mode | Go API adaptation | orb's parallel workers invoke both concurrently, so a hook mutating shared state needs its own locking (documented at `engine/types.go`) |
+| Parallel tool fan-out bounded at 16 | Go resource adaptation | each Go tool call is a goroutine that may spawn subprocesses; result ordering is unchanged |
+| Tool-update sink driven by one bounded queue (256) | Go API adaptation | a drain goroutine keeps ordering and never blocks the tool; a sink more than 256 updates behind backpressures rather than dropping |
+| Native mouse and click support in interactive mode | addition | an optional `tui.MouseHandler` found by type assertion keeps D15's contract. SGR (1006) reports go to the component under the cursor before scrollbar, wheel and selection; drags and modifiers skip dispatch. Wired: `/tree`, `/resume`, `SelectList`, `SettingsList`, the extension option dialog and the editor |
+| Embedded orb-extension-sdk | replacement | every `@earendil-works/pi-*`/`@mariozechner/pi-*` specifier resolves to the go:embed-ed `orb-extension-sdk` (`sdk/sdk.json`, materialized beside `host.mjs`, named by `ORB_EXTENSION_SDK_ROOT`): pure symbols ported from upstream, thin handles, and the `sdk_v1`, `agent_session_v1` and `model_runtime_v1` protocol services. Unsupported exports throw `OrbUnsupportedCapability`; a resolution landing in an installed real pi SDK is a per-extension load failure naming the import chain. Extension dependencies still materialize via `deps.go`; F13 gates the surface |
+| Node capability floor 22.6, full capability 22.13 | measured divergence | 22.6–22.12 runs JavaScript and erasable TypeScript but cannot compile TypeScript inside `node_modules` (`module.stripTypeScriptTypes` arrives in 22.13); the loader names the missing capability. Node 26 removed TypeScript transformation, so enums, parameter properties and namespaces do not run there |
+| Frontmatter YAML text keeps its terminating newline | dependency workaround | npm `yaml` treats end-of-input as a line break while `yaml.v3` does not; upstream pins the observable value in its tests. Do not restore the exclusive slice |
+| Bun SDK aliases via `NODE_PATH` | Bun adaptation | `Bun.plugin` `onResolve` never sees nested imports; `NODE_PATH` is consulted after the `node_modules` walk and ignored by Node for ESM |
+| Bun runs with `--no-install` | safety adaptation | dependencies come from an explicit audited install, never Bun's implicit mid-session fetch |
+| Disposed sessions refuse work (`ErrSessionDisposed`) | SDK safety adaptation | upstream's `dispose()` refuses nothing, so a post-dispose prompt still calls the model with events silenced |
+| Subagent parallel width capped at 32 | resource guard | each entry costs a goroutine, temp dir, child session and provider call; enforced in the tool and declared as `maxItems` |
+| Unified-patch hunk headers derived locally | dependency workaround | `go-udiff` misreports the new-file start of later `@@` headers; orb recomputes them and matches `Diff.createTwoFilesPatch` across a 2,998-case differential fuzz |

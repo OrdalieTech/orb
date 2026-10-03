@@ -1,104 +1,91 @@
 # Orb — Agent execution contract
 
-You are building Orb: a modular Go agent platform that keeps a tested pi-compatibility **kernel**
-(DECISIONS.md "The compat kernel"). Inside the kernel, pi's behavior is spec; outside it, Orb
-evolves on its own judgment. Read this file fully before touching code. It applies to any coding
+Orb is a modular pure-Go agent platform that keeps a tested pi-compatibility **kernel**
+(DECISIONS.md "The compat kernel"). Inside the kernel, released pi is the interop target; outside
+it, Orb evolves on its own judgment. Read this file before touching code. It applies to any coding
 agent (Claude Code, Codex, or other).
 
-## Ground truth, in order
+## Ground truth
 
-1. `docs/DECISIONS.md` — the constitution (P1–P9), the compat kernel, and operational memory.
-   Never contradict it silently; a change goes through the owner, not through code that ignores it.
-2. `docs/ARCHITECTURE.md` — layout, contracts, dependency policy.
-3. `docs/RELEASE-CRITERIA.md` — milestone success criteria (M1–M5), live-test policy, trim checklist.
-4. `docs/plan/SPRINTS.md` — the ACTIVE plan: four large test-defined sprints. The old
-   `docs/plan/phase-*.md` files are spec sheets (upstream refs, per-surface detail), not sequencing.
-5. Upstream source at the pinned commit — the behavioral spec **for kernel surfaces**. Materialize
-   it with `make upstream` (clones `earendil-works/pi` at the commit in `UPSTREAM.lock` into
-   `.upstream/`). On a kernel surface, when the spec sheet and upstream disagree on behavior,
-   upstream wins; when either is ambiguous, read the upstream tests for that area.
+1. `docs/DECISIONS.md` — the constitution (P1–P11), the compat kernel, live decisions and the
+   divergence ledger. Never contradict it silently; changing it is the owner's call.
+2. `docs/ARCHITECTURE.md` — layout, contracts, dependency table (§8).
+3. Upstream pi at the pinned release, for kernel surfaces. `make upstream` clones
+   `earendil-works/pi` at the commit in `UPSTREAM.lock` into `.upstream/`. Where a kernel behavior
+   is ambiguous, read upstream's code and tests for that area.
 
-## Working mode (trunk-based, fixtures-first — replaces the old per-WP protocol)
+## Working mode
 
-1. **Plain Git only, one branch: `main`.** Do not use or set up GitButler. No worktrees or feature
-   branches. Commit directly to main in coherent green chunks — a chunk may span what used to be
-   several WPs.
-2. **Every commit on main builds and passes.** `make check` (build + vet/lint + race suite,
-   fixtures included) is THE pre-commit gate — before every commit, no exceptions. Bigger steps
-   are welcome; broken mainline commits are not. User-visible changes append a line to
-   `CHANGELOG.md` under `[Unreleased]`. The commit is the record of the work: do not add a report
-   file per change. Only the documents named in this file get written, and a measurement write-up
-   supersedes the earlier one rather than joining it.
-3. **Fixtures first.** Open each sprint by landing its conformance surface (extraction scripts,
-   goldens, runners, black-box adapters) so the sprint starts RED; implementation turns it GREEN.
-   Never write the port first and the fixtures after.
-4. **Compare to TS pi.** Each sprint closes with `docs/compare/sprint-N.md`: identical scripted
-   scenarios through TS pi (`.upstream/`) and orb, every difference fixed or ledgered.
-5. **Close the sprint**: trim checklist (RELEASE-CRITERIA), milestone boxes checked with evidence,
-   comparison report committed, `docs/plan/PROGRESS.md` updated. Commit messages: `Sprint N: <what>`
-   with verified checks in the body.
-6. When porting a kernel surface, read the relevant spec sheet AND every upstream file it cites —
-   port what pi actually does, not what agents usually do.
+- **Trunk-based on `main`, plain Git.** Commit directly to main in coherent chunks.
+- **`make check` before every commit, no exceptions** (build, vet + golangci-lint, race suite with
+  fixtures, portability). Every commit on main builds and passes. Run `make fixtures-check` too
+  when touching anything conformance-adjacent.
+- **Kernel changes are fixtures-first** (P8): land the conformance surface red, then turn it green.
+- **User-visible changes** append a line to `CHANGELOG.md` under `[Unreleased]`.
+- **Git history is the record.** No plan, progress or report files. Decisions the work had to make
+  on its own go in the commit body: decide slim and boring (and, in the kernel, interoperable) and
+  keep moving; stop only for a genuine DECISIONS.md contradiction.
+- **Blockers only the owner can clear** (credentials, remotes, hosts): surface them, work around
+  them, never wait.
 
 ## Hard rules
 
 - **Kernel surfaces interoperate with released pi.** Session JSONL, event JSON, RPC frames,
   settings/models/auth files, provider wire shapes, the JS extension surface: Orb reads what pi
   writes and runs what pi runs, verified by fixtures. Orb may improve on upstream, kernel included
-  (DECISIONS P5): a deliberate improvement makes that fixture Orb-owned and adds a divergence-ledger
-  line. Never change persisted/emitted JSON by accident; change it on purpose or not at all.
-- **No backward compatibility.** Orb is deployed only inside Ordalie. Do not keep legacy formats,
-  migrations, deprecated APIs or compatibility shims for Orb's own past; change interfaces in place
-  and update every consumer (this repo, and Ordalie-back when it upgrades) in the same work.
-  Outside the kernel — features, layout, internal APIs, TUI — Orb evolves on its own judgment;
-  upstream work is cherry-picked on merit, never ported by obligation. New Orb capabilities follow
-  P3: capability modules (seam + attachment + default-off assembly row), never ad-hoc core widening.
+  (P5): a deliberate improvement makes that fixture Orb-owned and adds a divergence-ledger line.
+  Never change persisted or emitted JSON by accident.
+- **No backward compatibility with Orb's own past.** Orb is deployed only inside Ordalie. No legacy
+  formats, migrations, deprecated APIs or shims for earlier Orb; change interfaces in place and
+  update every consumer (this repo, and Ordalie-back when it upgrades) in the same work. New
+  capabilities follow P3: capability modules, never ad-hoc core widening.
 - **Pure Go.** `CGO_ENABLED=0` must build. No cgo, no sidecar binaries except the upstream-sanctioned
   rg/fd auto-download.
-- **Latest stable Go.** At each maintenance/upstream sync, verify the latest stable release on
-  go.dev and update `go.mod`; CI/releases use that version. Keep the linter compatible and rerun
-  the complete gate on the upgraded toolchain.
-- **Slim.** Stdlib first; internal helper next; dependency last and only via the ARCHITECTURE §8
+- **Latest stable Go.** `go.mod` tracks the latest stable release from go.dev; CI and releases
+  follow it, and the linter is rebuilt with the same toolchain.
+- **Slim.** Stdlib first, internal helper next, dependency last and only via the ARCHITECTURE §8
   table. No speculative abstraction, no "for later" scaffolding.
-- **Never weaken a criterion or a golden to pass it.** No softened fixtures, no skipped checks, no
-  lowered budgets, no hand-edited goldens. A failing fixture means the code is wrong. If a criterion
-  is genuinely impossible — including when a required toolchain no longer supports it — stop and
-  surface it; retiring or replacing it is the owner's call.
-- **Scope.** Surprises the plan didn't anticipate: decide slim and boring — and, inside the
-  kernel, interoperable — note the decision and rationale in the commit body, keep moving. Only genuine
-  DECISIONS.md contradictions warrant stopping.
-- **Comments** state constraints the code can't (e.g. "field order matches upstream serialization"),
-  never narration.
-- **Blockers needing the owner** (credentials, remotes, hosts): surface in `docs/plan/PROGRESS.md`,
-  work around, never wait.
+- **Never weaken a criterion or a golden to pass it** (P9). No softened fixtures, skipped checks,
+  lowered budgets or hand-edited goldens. A failing fixture means the code is wrong. A genuinely
+  impossible criterion stops the work and goes to the owner.
+- **Comments** state constraints the code can't (e.g. "field order matches upstream
+  serialization"), never narration.
+
+## Conformance and the upstream pin
+
+Fixture families F1–F13 are defined in ARCHITECTURE §6. Extraction scripts live in
+`conformance/extract/` and run with Node ≥22 inside `.upstream/` (Node is dev tooling only).
+Wire, provider and algorithmic families are upstream-extracted parity gates. The render families
+(`F12*` and the `WP450` replay/preview/UI-demo files) are Orb-owned snapshots of Orb's own TUI
+(P6); their behavior-shaped values stay frozen upstream captures.
+
+- `make upstream` — materialize the pinned pi checkout in `.upstream/`.
+- `make fixtures` — regenerate the upstream-extracted goldens.
+- `make fixtures-tui` — regenerate the Orb-owned render snapshots after a deliberate TUI change.
+- `make fixtures-check` — regenerate into a temp tree and diff against the committed goldens
+  (Linux in practice: F9 writes case-distinct files).
+- `make upstream-rpc-tests` — run upstream's RPC suite against the orb binary.
+- `make sdk-surface` — re-declare the embedded extension SDK's exports from the pinned sources.
+
+`UPSTREAM.lock` pins the released pi version the fixtures are extracted from. Pin only the exact
+commit of a published release tag, never `main` or unreleased work. To move it: update the lock,
+run `make fixtures` and `make sdk-surface`, then `make check`; red conformance is the work list.
+Only kernel paths carry port obligation; other upstream changes are cherry-picked on merit.
 
 ## Layout quick reference
 
-`ai/` unified LLM layer · `engine/` loop+Agent+harness · `tui/` renderer/components ·
-`agent/` tools, session, config, extensions (+`host/`, `mcp/`), modes · `cmd/orb` CLI ·
-`internal/` jsonschema, jsonwire, partialjson, truncate, sync · `conformance/` extract (TS,
-dev-only), fixtures, runner. Full tree: ARCHITECTURE §1.
+`ai/` unified LLM layer · `engine/` loop, Agent, harness · `tui/` renderer and components ·
+`agent/` tools, session, config, extensions, modes, assembly · `plugins/` capability modules ·
+`bridge/` peer protocol · `host/` and `platforms/` ports and hosts · `chat/` gateway ·
+`cmd/orb` CLI · `internal/` helpers · `conformance/` extract (TS, dev-only), fixtures, runner.
+Full tree: ARCHITECTURE §1.
 
-## Conformance
+## Open work
 
-Fixture families F1–F13 are defined in ARCHITECTURE §6. Extraction scripts live in
-`conformance/extract/` and run with Node ≥22 inside `.upstream/` (Node is dev tooling only — the
-product is pure Go). Never hand-edit goldens; regenerate them. A failing fixture after your change
-means your change is wrong, not the fixture. Two tiers (D35, split landed 2026-08-11): wire,
-provider, and algorithmic families are upstream-extracted pi-parity gates; the render families
-(`F12*` plus the `WP450` replay/preview/UI-demo files) are Orb-owned snapshots of Orb's own TUI —
-a deliberate TUI change regenerates them with `make fixtures-tui` (`ORB_UPDATE_F12=1`), and
-upstream TUI drift carries no port obligation. Regeneration rewrites only presentation values;
-behavior-shaped values in those files remain frozen upstream captures.
-
-## Upstream sync
-
-- **Released versions only.** Update Orb only against a published upstream release. Never port or
-  advance `UPSTREAM.lock` to an unreleased commit or a moving branch such as `main`; pin the exact
-  commit referenced by the release tag. Unreleased upstream work may be audited, but it must wait
-  for a release before implementation.
-- `make sync` produces `docs/sync/reports/<date>.md`; turn red conformance into follow-up work items
-  in the report; bump `UPSTREAM.lock` only when green.
-- **Only kernel paths carry port obligation.** Feature-only upstream changes are optional
-  cherry-picks recorded in the sync report. The conformance fixtures are the ground truth: red
-  after a pin bump is the work list.
+- Bridge fully in the core (P4, P11): a host-supplied transport port, every session registered as
+  an instance by default, and a built-in `bridge_call` visible only under an agent grant, which
+  retires the `bridge-agent-calls` toggle. Per-target gaps are in `docs/deployments.md`.
+- Release the pi 1.0 adoption now under `[Unreleased]` in `CHANGELOG.md`.
+- Upgrade Ordalie-back from Orb v0.7.0: filter system messages out of client SSE, and move
+  `agentengine` from `shouldStopAfterTurn` to `finishTurn` and from `SetSystemPrompt` to a system
+  message ahead of its replayed messages.

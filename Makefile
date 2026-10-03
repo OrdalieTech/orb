@@ -11,7 +11,7 @@ GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/ca
 endif
 LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
 
-.PHONY: check build test lint portability nightly-live upstream fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sync sync-bump sdk-surface
+.PHONY: check build test lint portability nightly-live upstream fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sdk-surface
 
 # The canonical gate (upstream's `npm run check` norm): run after any code change.
 check: build lint test portability
@@ -120,7 +120,7 @@ fixtures: ensure-upstream-fixture-tools
 sdk-surface: ensure-upstream-fixture-tools
 	@cd "$(UPSTREAM_DIR)" && node "$(CURDIR)/conformance/extract/sdk-surface.mjs" "$(CURDIR)/agent/extensions/host/sdk" $(UPSTREAM_COMMIT)
 
-# Regenerate the Orb-owned TUI render snapshots (D35): the F12* families and
+# Regenerate the Orb-owned TUI render snapshots (P6): the F12* families and
 # the WP450 replay/UI-demo render files rewrite from Orb's own renderer, then
 # a comparison pass proves the tree is self-consistent. Behavior-shaped values
 # in those files are frozen upstream captures and are never rewritten.
@@ -133,7 +133,7 @@ fixtures-tui:
 # line, a fixture diff aborts the target, which previously skipped them silently.
 # Linux-only in practice (as in CI): F9 writes AGENTS.md and AGENTS.MD as
 # distinct files, which a case-insensitive macOS volume collapses.
-# The Orb-owned render snapshots (D35) are excluded from the upstream
+# The Orb-owned render snapshots (P6) are excluded from the upstream
 # extraction diff and guarded by their Go comparison tests instead: snapshot
 # drift fails here, regeneration is the explicit `make fixtures-tui`. The
 # harness session families (F6Harness*) are Orb-owned since upstream v1.0.0
@@ -153,9 +153,3 @@ upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin
 	@$(GO_ENV) CGO_ENABLED=0 go build -o .tools/bin/orb-rpc-test ./cmd/orb
 	@cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/run-upstream-rpc-tests.ts" "$(CURDIR)/.tools/bin/orb-rpc-test"
-
-sync: ensure-upstream-fixture-tools
-	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/orbsync --dry-run $(SYNC_ARGS)
-
-sync-bump: ensure-upstream-fixture-tools
-	$(GO_ENV) CGO_ENABLED=0 go run ./internal/sync/cmd/orbsync --bump $(SYNC_ARGS)

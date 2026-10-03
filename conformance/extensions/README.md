@@ -2,9 +2,9 @@
 
 This harness measures whether the most-downloaded public Pi extension packages load and expose the same observable tool and command registrations in pinned upstream Pi 0.81.1 and Orb. It never sends a model request: RPC starts with a dummy API key, `get_commands` proves session startup, and `observer.ts` emits canonical JSON for `pi.getActiveTools()`, full tool definitions from `pi.getAllTools()`, and `pi.getCommands()`.
 
-The separate [live matrix](../../docs/sync/ecosystem-extension-live.md) installs packages through
-Pi and exercises representative model-driven workflows; do not infer workflow support from this
-offline harness alone.
+The live run (`results/pi-0.81.1-orb-live.json`) installs packages through Pi and exercises
+representative model-driven workflows; do not infer workflow support from this offline harness
+alone.
 
 Registration comparison subtracts each runtime's own observer-only baseline, then compares stable active-tool names, canonical tool descriptions/parameter schemas/prompt guidelines, and command names/descriptions. Runtime-specific source paths and metadata are intentionally excluded. A package-specific command or tool is never executed, so `load_register_pass` is deliberately narrower than end-to-end extension compatibility. Flags, shortcuts, renderers, providers, event-handler behavior, credentials, model requests, and external services need separate workflow probes.
 
@@ -164,9 +164,8 @@ With `--output <file>` the harness writes three artifacts:
   resident memory, last package and status.
 * `<file>` — the aggregate, written at the end, or after `SIGINT`/`SIGTERM` with `incomplete: true`.
 
-Commit only the newest full sweep and the A/B pair it is being compared against. Once a run's
-conclusions are written up under `docs/sync/`, drop its raw aggregate: the write-up keeps the byte
-count and both hashes, and the pinned corpus, lock and Dockerfile are what make it reproducible.
+Commit only the newest full sweep and the A/B pair it is being compared against; the pinned
+corpus, lock and Dockerfile are what make it reproducible.
 
 `--resume` reuses `<file>.jsonl` records when the harness, taxonomy, corpus, observer, lock and
 binary hashes all still match, and re-runs only what is missing; a mismatched fingerprint starts a
