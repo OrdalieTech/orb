@@ -20,6 +20,7 @@ import (
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -28,11 +29,10 @@ import (
 
 const (
 	childConcurrency    = 4
-	forkMessageLimit    = 20
 	externalOutputLimit = 1 << 20
 	externalTimeout     = 10 * time.Minute
 	// ponytail: one flat width cap, because `tasks` is model-controlled and each
-	// entry costs a goroutine, a temp dir, a session, and a real provider call.
+	// entry costs a goroutine, a session, and a real provider call.
 	// Uncapped, one tool call fans out as wide as the model asks. A per-session
 	// or per-run budget is the upgrade path when 32 stops being enough.
 	maxParallelTasks = 32
@@ -41,7 +41,7 @@ const (
 // ponytail: `mode` is the only unconditionally required field — task/tasks are
 // required per branch, which plain JSON Schema cannot say without a oneOf that
 // several providers reject. Execute rejects the wrong pairing with a clear error.
-var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. An external CLI receives only the task text on stdin (context and tools do not apply) and must finish within 10 minutes. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork prepends a transcript of the recent parent conversation. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. An external CLI receives only the task text on stdin (context and tools do not apply) and must finish within 10 minutes. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
+var subagentSchema = ai.JSONSchema(`{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["single","parallel"],"description":"single runs one child from task/agent; parallel runs every entry of tasks concurrently."},"task":{"type":"string","description":"Self-contained instruction for the child, including any context it needs. Required when mode is single."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. An external CLI receives only the task text on stdin (context and tools do not apply) and must finish within 10 minutes. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh starts with an empty conversation; fork continues from the parent conversation so far. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of the role's tools; names outside the role are dropped, and an empty array leaves the child with no tools."},"tasks":{"type":"array","maxItems":32,"description":"Children to run concurrently, at most 32 per call. Required when mode is parallel; ignored otherwise.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."},"agent":{"type":"string","enum":["scout","worker","reviewer"],"description":"Built-in role or configured external CLI. An external CLI receives only the task text on stdin (context and tools do not apply) and must finish within 10 minutes. Defaults to worker."},"context":{"type":"string","enum":["fresh","fork"],"description":"fresh or fork for this task. Defaults to fresh."},"tools":{"type":"array","items":{"type":"string"},"description":"Optional subset of this role's tools."}}}}}}`)
 
 type archetype struct {
 	prompt string
@@ -463,16 +463,11 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 	if model == nil {
 		return "", fmt.Errorf("subagent: parent has no model")
 	}
-	settingsDir, err := os.MkdirTemp("", "orb-subagent-")
+	settings, err := config.NewSettingsManager(parent.CWD(), config.WithGlobalDocument(&document.Memory{}), config.WithProjectTrusted(false))
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = os.RemoveAll(settingsDir) }()
-	settings, err := config.NewSettingsManager(parent.CWD(), config.WithAgentDir(settingsDir), config.WithProjectTrusted(false))
-	if err != nil {
-		return "", err
-	}
-	manager, err := sessionstore.InMemory(parent.CWD())
+	manager, err := childSession(parent.CWD(), parent.SessionManager(), task.Context == "fork")
 	if err != nil {
 		return "", err
 	}
@@ -487,7 +482,7 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 			return "", err
 		}
 	}
-	options.CWD, options.AgentDir, options.Model = parent.CWD(), settingsDir, model
+	options.CWD, options.Model = parent.CWD(), model
 	options.ThinkingLevel, options.Tools = ai.ModelThinkingOff, tools
 	options.SessionManager, options.Settings = manager, settings
 	options.Resources = &agent.Resources{SystemPrompt: &prompt}
@@ -498,20 +493,6 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 		return "", err
 	}
 	defer result.Session.Dispose()
-	if task.Context == "fork" {
-		// ponytail: Fork sends a short text transcript, avoiding an unresolved
-		// parent tool call; use a real session branch when ancestry must persist.
-		messages := parent.SessionManager().BuildSessionContext().Messages
-		if len(messages) > forkMessageLimit {
-			messages = messages[len(messages)-forkMessageLimit:]
-		}
-		if transcript := forkTranscript(messages); transcript != "" {
-			if _, err := manager.AppendMessage(&ai.UserMessage{Content: ai.NewUserText("Parent conversation:\n" + transcript)}); err != nil {
-				return "", err
-			}
-		}
-		result.Session.RefreshContext()
-	}
 	if err := result.Session.PromptSync(ctx, strings.TrimSpace(task.Task)); err != nil {
 		return "", err
 	}
@@ -533,32 +514,40 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 	return *text, nil
 }
 
-func forkTranscript(messages []json.RawMessage) string {
-	lines := make([]string, 0, len(messages))
-	for _, raw := range messages {
-		message, err := ai.UnmarshalMessage(raw)
-		if err != nil {
-			continue
-		}
-		var role, content string
+// childSession forks the parent's branch in memory, cut before the newest
+// assistant message while it has a call without a result: the in-flight
+// subagent call, which a provider would reject unanswered.
+func childSession(cwd string, parent extensions.ReadonlySessionManager, fork bool) (*sessionstore.SessionManager, error) {
+	if !fork {
+		return sessionstore.InMemory(cwd)
+	}
+	previewer, ok := parent.(interface {
+		BranchPreview() (*sessionstore.SessionManager, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("subagent: fork needs the parent session branch")
+	}
+	child, err := previewer.BranchPreview()
+	if err != nil {
+		return nil, err
+	}
+	branch := child.GetBranch()
+	answered := map[string]bool{}
+	for index := len(branch) - 1; index >= 0; index-- {
+		message, _ := ai.UnmarshalMessage(branch[index].Message)
 		switch typed := message.(type) {
-		case *ai.UserMessage:
-			role = "User"
-			if typed.Content.Text != nil {
-				content = *typed.Content.Text
-			} else {
-				content = ai.ContentText(typed.Content.Blocks)
-			}
-		case *ai.AssistantMessage:
-			role, content = "Assistant", ai.ContentText(typed.Content)
 		case *ai.ToolResultMessage:
-			role, content = "Tool "+typed.ToolName, ai.ContentText(typed.Content)
-		}
-		if content = strings.TrimSpace(content); content != "" {
-			lines = append(lines, role+": "+content)
+			answered[typed.ToolCallID] = true
+		case *ai.AssistantMessage:
+			for _, block := range typed.Content {
+				if call, ok := block.(*ai.ToolCall); ok && !answered[call.ID] && branch[index].ParentID != nil {
+					return child, child.Branch(*branch[index].ParentID)
+				}
+			}
+			return child, nil
 		}
 	}
-	return strings.Join(lines, "\n")
+	return child, nil
 }
 
 func restrictTools(allowed, requested []string) []string {

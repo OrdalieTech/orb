@@ -76,12 +76,13 @@ func (ui *widgetUI) showCount() int { ui.mu.Lock(); defer ui.mu.Unlock(); return
 
 func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-	var childSawParent bool
+	var childSawParent, childSawOpenCall bool
 	var returned string
 	provider.SetResponses([]faux.ResponseStep{
 		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "answer", "agent": "scout", "context": "fork"}, faux.ToolCallOptions{ID: "sub-1"})),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
 			childSawParent = contextContains(request, "parent seed")
+			childSawOpenCall = contextContains(request, `"sub-1"`)
 			return faux.AssistantMessage("child answer"), nil
 		}),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
@@ -91,7 +92,8 @@ func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 	})
 	session := newSubagentParent(t, provider)
 	mustOK(session.PromptSync(context.Background(), "parent seed"))
-	require(t, childSawParent && returned == "child answer", "childSawParent=%t tool result=%q", childSawParent, returned)
+	require(t, childSawParent && !childSawOpenCall && returned == "child answer",
+		"childSawParent=%t childSawOpenCall=%t tool result=%q", childSawParent, childSawOpenCall, returned)
 }
 
 func TestSubagentChildOptionsUseParentRegistryForDefaultStream(t *testing.T) {

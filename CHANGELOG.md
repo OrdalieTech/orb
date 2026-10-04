@@ -127,6 +127,9 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   `(*nativebridge.Store).Remove`, `bridge.Snapshot` and `(*bridge.Stream).Snapshot` are removed,
   `nativebridge.OpenStore` takes an optional document, and `agent/bridge.Descriptor` names the
   `instances.describe` shape.
+- Subagents started with `context: "fork"` continue from the parent's real conversation branch
+  instead of a text summary of its last 20 messages, and children no longer create a temporary
+  settings directory.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
