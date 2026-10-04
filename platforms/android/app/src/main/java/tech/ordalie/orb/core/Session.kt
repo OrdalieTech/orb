@@ -118,7 +118,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         val current = next.optJSONArray("models")?.let { a -> (0 until a.length()).map(a::getJSONObject).firstOrNull { it.optString("name") == next.optString("model") } }
         model = current?.let { it.optString("provider") + "/" + it.optString("id") } ?: next.optString("model")
         levels = current?.optJSONArray("thinking").strings()
-        thinking = next.optString("thinking")
+        if (next.has("thinking")) thinking = next.optString("thinking") // an Orb before 0.15 keeps it to itself: the last choice stands
         busy = next.optJSONObject("target")?.optString("execution_id").orEmpty().isNotEmpty() || next.optString("status").contains("stream", true)
         next.optJSONObject("stats")?.let { cost = it.optDouble("cost", 0.0); context = (it.optJSONObject("contextUsage")?.optDouble("percent", 0.0) ?: 0.0).toFloat() / 100f }
         commands = next.optJSONArray("commands")?.let { a -> (0 until a.length()).map(a::getJSONObject).map { Command(it.optString("name"), it.optString("description")) } }.orEmpty()
