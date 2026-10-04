@@ -28,7 +28,7 @@ func ExpandPath(filePath string) (string, error) {
 
 func expandPath(filePath string, normalizeSpaces, stripAtPrefix bool) (string, error) {
 	if normalizeSpaces {
-		filePath = normalizeUnicodeSpaces(filePath)
+		filePath = nodepath.NormalizeUnicodeSpaces(filePath)
 	}
 	if stripAtPrefix && strings.HasPrefix(filePath, "@") {
 		filePath = filePath[1:]
@@ -215,15 +215,4 @@ func escapeEmbeddedURLControls(value string) string {
 		escaped.WriteByte(value[index])
 	}
 	return escaped.String()
-}
-
-func normalizeUnicodeSpaces(value string) string {
-	return strings.Map(func(char rune) rune {
-		switch {
-		case char == '\u00a0', char >= '\u2000' && char <= '\u200a', char == '\u202f', char == '\u205f', char == '\u3000':
-			return ' '
-		default:
-			return char
-		}
-	}, value)
 }

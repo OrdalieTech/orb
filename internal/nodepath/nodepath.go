@@ -50,6 +50,18 @@ func NormalizeShellPath(path string) string {
 	return windowsShellPath(path)
 }
 
+// NormalizeUnicodeSpaces folds pasted path spacing without changing other whitespace.
+func NormalizeUnicodeSpaces(value string) string {
+	return strings.Map(func(char rune) rune {
+		switch {
+		case char == '\u00a0', char >= '\u2000' && char <= '\u200a', char == '\u202f', char == '\u205f', char == '\u3000':
+			return ' '
+		default:
+			return char
+		}
+	}, value)
+}
+
 func windowsShellPath(path string) string {
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.Contains(path, `\`) {
 		return path

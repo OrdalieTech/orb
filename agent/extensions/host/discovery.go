@@ -142,7 +142,7 @@ func isExtensionFile(name string) bool {
 }
 
 func resolvePath(input, base string) string {
-	input = nodepath.NormalizeShellPath(normalizeUnicodeSpaces(input))
+	input = nodepath.NormalizeShellPath(nodepath.NormalizeUnicodeSpaces(input))
 	if input == "~" || strings.HasPrefix(input, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(input, `~\`)) {
 		if home, err := os.UserHomeDir(); err == nil {
 			input = filepath.Join(home, input[1:])
@@ -160,17 +160,6 @@ func resolvePath(input, base string) string {
 		return filepath.Clean(absolute)
 	}
 	return filepath.Clean(input)
-}
-
-func normalizeUnicodeSpaces(input string) string {
-	return strings.Map(func(character rune) rune {
-		switch {
-		case character == '\u00a0', character >= '\u2000' && character <= '\u200a', character == '\u202f', character == '\u205f', character == '\u3000':
-			return ' '
-		default:
-			return character
-		}
-	}, input)
 }
 
 func absoluteOrDot(path string) string {

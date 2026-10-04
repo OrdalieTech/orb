@@ -8,6 +8,18 @@ import (
 // Expected values are Node's url.fileURLToPath/pathToFileURL results on each
 // platform, so both semantics are checked wherever the suite runs.
 
+func TestNormalizeUnicodeSpacesKeepsThePathSpecificSet(t *testing.T) {
+	for _, char := range []rune{'\u00a0', '\u2000', '\u200a', '\u202f', '\u205f', '\u3000'} {
+		if got := NormalizeUnicodeSpaces("a" + string(char) + "b"); got != "a b" {
+			t.Fatalf("U+%04X normalization = %q", char, got)
+		}
+	}
+	const unchanged = "a\t\n\r\u0085\u1680\u2028\u2029\ufeffb"
+	if got := NormalizeUnicodeSpaces(unchanged); got != unchanged {
+		t.Fatalf("non-path whitespace changed: %q", got)
+	}
+}
+
 func TestFileURLToPathPosix(t *testing.T) {
 	for raw, want := range map[string]string{
 		"file:///tmp/a%20b":        "/tmp/a b",
