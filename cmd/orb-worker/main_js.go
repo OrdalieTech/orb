@@ -118,6 +118,11 @@ type frameWriter struct {
 }
 
 func (writer *frameWriter) Write(data []byte) (int, error) {
+	// agent/rpc writes each frame whole, LF included.
+	if end := bytes.IndexByte(data, '\n'); len(writer.partial) == 0 && end == len(data)-1 {
+		writer.emit.Invoke(string(data[:end]))
+		return len(data), nil
+	}
 	writer.partial = append(writer.partial, data...)
 	for {
 		end := bytes.IndexByte(writer.partial, '\n')

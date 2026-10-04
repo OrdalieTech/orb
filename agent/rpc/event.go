@@ -185,7 +185,8 @@ func (output *FrameWriter) run() {
 	}
 }
 
-// WriteFrame queues one encoded frame; the terminating LF is added.
+// WriteFrame queues one encoded frame, which it takes over; the terminating
+// LF is added.
 func (output *FrameWriter) WriteFrame(value []byte) {
 	if !output.beginWrite() {
 		return
@@ -196,7 +197,7 @@ func (output *FrameWriter) WriteFrame(value []byte) {
 
 func (output *FrameWriter) queueFrame(value []byte) {
 	select {
-	case output.lines <- bytes.Clone(value):
+	case output.lines <- value:
 	case <-output.aborted:
 	}
 }
@@ -277,9 +278,7 @@ func (output *FrameWriter) Close() error {
 }
 
 func writeLine(writer io.Writer, value []byte) error {
-	line := make([]byte, len(value)+1)
-	copy(line, value)
-	line[len(value)] = '\n'
+	line := append(value, '\n')
 	for len(line) > 0 {
 		written, err := writer.Write(line)
 		if err != nil {
