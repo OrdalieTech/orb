@@ -1,6 +1,13 @@
 package api
 
-import "runtime"
+import (
+	"runtime"
+	"sync"
+)
+
+// piUserAgent reads the OS release once: it cannot change while Orb runs, and
+// the syscall cost every provider request a few hundred microseconds.
+var piUserAgent = sync.OnceValue(readPIUserAgent)
 
 func piArchitecture() string {
 	return piNodeArchitecture(runtime.GOARCH)

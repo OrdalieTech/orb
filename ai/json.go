@@ -509,11 +509,15 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		EndTurn:       raw.EndTurn,
 		ThinkingLevel: raw.ThinkingLevel,
 	}
-	message.rawStopBeforeDiagnostics = topLevelMemberBefore(data, "rawStopReason", "diagnostics")
+	// Each order flag needs its first member present; rescanning messages
+	// without it dominated decoding.
+	message.rawStopBeforeDiagnostics = len(raw.RawStopReason) > 0 && topLevelMemberBefore(data, "rawStopReason", "diagnostics")
 	message.modelOmitted = len(raw.Model) == 0
-	message.providerThinkingLevelBeforeUsage = topLevelMemberBefore(data, "providerThinkingLevel", "usage")
-	message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
-	message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
+	message.providerThinkingLevelBeforeUsage = len(raw.ProviderThinkingLevel) > 0 && topLevelMemberBefore(data, "providerThinkingLevel", "usage")
+	if len(raw.ErrorMessage) > 0 {
+		message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
+		message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
+	}
 	return nil
 }
 
@@ -1039,13 +1043,87 @@ func (content *ToolCall) setNormalizedArguments(normalizedArguments []byte) erro
 	if err != nil {
 		return err
 	}
-	arguments, ok := value.(map[string]any)
+	arguments, ok := copyJSONContainers(value).(map[string]any)
 	if !ok {
 		arguments = map[string]any{}
 	}
 	content.Arguments = arguments
 	content.rawArguments = normalizedArguments
+	content.rawValue = value
 	return nil
+}
+
+// copyJSONContainers copies a decoded JSON value's objects and arrays; the
+// immutable scalars are shared.
+func copyJSONContainers(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		copied := make(map[string]any, len(typed))
+		for key, item := range typed {
+			copied[key] = copyJSONContainers(item)
+		}
+		return copied
+	case []any:
+		copied := make([]any, len(typed))
+		for index, item := range typed {
+			copied[index] = copyJSONContainers(item)
+		}
+		return copied
+	}
+	return value
+}
+
+// jsonValuesEqual is reflect.DeepEqual for decoded JSON values, without the
+// allocation DeepEqual makes on every call.
+func jsonValuesEqual(left, right any) bool {
+	switch typed := left.(type) {
+	case map[string]any:
+		other, ok := right.(map[string]any)
+		if !ok || (typed == nil) != (other == nil) || len(typed) != len(other) {
+			return false
+		}
+		for key, item := range typed {
+			if value, exists := other[key]; !exists || !jsonValuesEqual(item, value) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		other, ok := right.([]any)
+		if !ok || (typed == nil) != (other == nil) || len(typed) != len(other) {
+			return false
+		}
+		for index := range typed {
+			if !jsonValuesEqual(typed[index], other[index]) {
+				return false
+			}
+		}
+		return true
+	case string:
+		other, ok := right.(string)
+		return ok && typed == other
+	case float64:
+		other, ok := right.(float64)
+		return ok && typed == other
+	case bool:
+		other, ok := right.(bool)
+		return ok && typed == other
+	case nil:
+		return right == nil
+	}
+	return reflect.DeepEqual(left, right)
+}
+
+// originalArguments is the provider-emitted argument value, when known.
+func (content *ToolCall) originalArguments() (any, bool) {
+	if len(content.rawArguments) == 0 {
+		return nil, false
+	}
+	if content.rawValue != nil {
+		return content.rawValue, true
+	}
+	original, err := decodeJSONValue(content.rawArguments)
+	return original, err == nil
 }
 
 // ToolCallArgumentsValue returns the provider-emitted JSON value. Valid tool
@@ -1060,16 +1138,13 @@ func ToolCallArgumentsValue(content *ToolCall) any {
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
-	if len(content.rawArguments) > 0 {
-		original, err := decodeJSONValue(content.rawArguments)
-		if err == nil {
-			if object, ok := original.(map[string]any); ok {
-				if reflect.DeepEqual(object, arguments) {
-					return arguments
-				}
-			} else if len(arguments) == 0 {
-				return original
+	if original, ok := content.originalArguments(); ok {
+		if object, ok := original.(map[string]any); ok {
+			if jsonValuesEqual(object, arguments) {
+				return arguments
 			}
+		} else if len(arguments) == 0 {
+			return original
 		}
 	}
 	return arguments
@@ -1086,16 +1161,13 @@ func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
-	if len(content.rawArguments) > 0 {
-		original, err := decodeJSONValue(content.rawArguments)
-		if err == nil {
-			if object, ok := original.(map[string]any); ok {
-				if reflect.DeepEqual(object, arguments) {
-					return bytes.Clone(content.rawArguments), nil
-				}
-			} else if len(arguments) == 0 {
+	if original, ok := content.originalArguments(); ok {
+		if object, ok := original.(map[string]any); ok {
+			if jsonValuesEqual(object, arguments) {
 				return bytes.Clone(content.rawArguments), nil
 			}
+		} else if len(arguments) == 0 {
+			return bytes.Clone(content.rawArguments), nil
 		}
 	}
 	for _, partial := range []*string{content.PartialJSON, content.PartialArgs} {

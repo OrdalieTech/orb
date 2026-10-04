@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -13,15 +14,35 @@ import (
 // Marshal follows JSON.stringify's string escaping rather than encoding/json's
 // HTML-safe defaults. JavaScript leaves <, >, &, U+2028, and U+2029 literal.
 func Marshal(value any) ([]byte, error) {
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
+	if text, ok := value.(string); ok && utf8.ValidString(text) {
+		return AppendString(nil, text), nil
+	}
+	state := encoders.Get().(*pooledEncoder)
+	state.buffer.Reset()
+	if err := state.encoder.Encode(value); err != nil {
 		return nil, err
 	}
-	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
-	return normalizeNegativeZeros(restoreLineSeparators(encoded)), nil
+	encoded := bytes.TrimSuffix(state.buffer.Bytes(), []byte{'\n'})
+	encoded = bytes.Clone(normalizeNegativeZeros(restoreLineSeparators(encoded)))
+	if state.buffer.Cap() <= 1<<20 {
+		encoders.Put(state)
+	}
+	return encoded, nil
 }
+
+// pooledEncoder reuses an encoder and its buffer: building them made every
+// call allocate, however small the value.
+type pooledEncoder struct {
+	buffer  bytes.Buffer
+	encoder *json.Encoder
+}
+
+var encoders = sync.Pool{New: func() any {
+	state := &pooledEncoder{}
+	state.encoder = json.NewEncoder(&state.buffer)
+	state.encoder.SetEscapeHTML(false)
+	return state
+}}
 
 // MarshalIndent matches JSON.stringify(value, null, 2)-style layout when
 // called with ("", "  "): Marshal's escaping plus json.Indent, which inserts
@@ -38,11 +59,48 @@ func MarshalIndent(value any, prefix, indent string) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+// AppendString appends value as MarshalString encodes it.
+func AppendString(dst []byte, value string) []byte {
+	if !utf8.ValidString(value) {
+		encoded, _ := MarshalString(value)
+		return append(dst, encoded...)
+	}
+	dst = append(dst, '"')
+	start := 0
+	for index := 0; index < len(value); index++ {
+		char := value[index]
+		if char >= 0x20 && char != '"' && char != '\\' {
+			continue
+		}
+		dst = append(dst, value[start:index]...)
+		switch char {
+		case '"', '\\':
+			dst = append(dst, '\\', char)
+		case '\b':
+			dst = append(dst, '\\', 'b')
+		case '\f':
+			dst = append(dst, '\\', 'f')
+		case '\n':
+			dst = append(dst, '\\', 'n')
+		case '\r':
+			dst = append(dst, '\\', 'r')
+		case '\t':
+			dst = append(dst, '\\', 't')
+		default:
+			dst = append(dst, '\\', 'u', '0', '0', hexDigits[char>>4], hexDigits[char&0xf])
+		}
+		start = index + 1
+	}
+	return append(append(dst, value[start:]...), '"')
+}
+
+const hexDigits = "0123456789abcdef"
+
 // MarshalString preserves WTF-8 encoded UTF-16 surrogates so Go can carry
 // JavaScript strings produced by code-unit slicing through a JSON wire format.
 func MarshalString(value string) ([]byte, error) {
 	if utf8.ValidString(value) {
-		return Marshal(value)
+		return AppendString(nil, value), nil
 	}
 	var output bytes.Buffer
 	output.WriteByte('"')
