@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -14,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -1504,35 +1507,44 @@ func (state *completionsStreamState) consumeChunk(
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{' {
 		return nil
 	}
-	var chunk map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &chunk); err != nil {
+	var chunk struct {
+		ID      json.RawMessage `json:"id"`
+		Model   json.RawMessage `json:"model"`
+		Usage   json.RawMessage `json:"usage"`
+		Choices json.RawMessage `json:"choices"`
+	}
+	if err := unmarshalExactMembers(trimmed, &chunk); err != nil {
 		return err
 	}
 	if state.output.ResponseID == nil {
-		if id, ok := rawJSONString(chunk["id"]); ok && id != "" {
+		if id, ok := rawJSONString(chunk.ID); ok && id != "" {
 			state.output.ResponseID = &id
 		}
 	}
 	if state.output.ResponseModel == nil {
-		if responseModel, ok := rawJSONString(chunk["model"]); ok && responseModel != "" && responseModel != model.ID {
+		if responseModel, ok := rawJSONString(chunk.Model); ok && responseModel != "" && responseModel != model.ID {
 			state.output.ResponseModel = &responseModel
 		}
 	}
-	if rawJSTruthy(chunk["usage"]) {
-		state.output.Usage = parseOpenAICompletionsUsage(chunk["usage"], model)
+	if rawJSTruthy(chunk.Usage) {
+		state.output.Usage = parseOpenAICompletionsUsage(chunk.Usage, model)
 	}
-	choices := rawJSONArray(chunk["choices"])
+	choices := rawJSONArray(chunk.Choices)
 	if len(choices) == 0 {
 		return nil
 	}
-	var choice map[string]json.RawMessage
-	if err := json.Unmarshal(choices[0], &choice); err != nil {
+	var choice struct {
+		Delta        json.RawMessage `json:"delta"`
+		FinishReason json.RawMessage `json:"finish_reason"`
+		Usage        json.RawMessage `json:"usage"`
+	}
+	if err := unmarshalExactMembers(choices[0], &choice); err != nil {
 		return nil
 	}
-	if !rawJSTruthy(chunk["usage"]) && rawJSTruthy(choice["usage"]) {
-		state.output.Usage = parseOpenAICompletionsUsage(choice["usage"], model)
+	if !rawJSTruthy(chunk.Usage) && rawJSTruthy(choice.Usage) {
+		state.output.Usage = parseOpenAICompletionsUsage(choice.Usage, model)
 	}
-	if reason, ok := rawJSONString(choice["finish_reason"]); ok && reason != "" {
+	if reason, ok := rawJSONString(choice.FinishReason); ok && reason != "" {
 		state.output.RawStopReason = &reason
 		stopReason, errorMessage := mapOpenAICompletionsStopReason(reason)
 		state.output.StopReason = stopReason
@@ -1542,7 +1554,7 @@ func (state *completionsStreamState) consumeChunk(
 		state.hasFinishReason = true
 	}
 	queued := make([]ai.AssistantMessageEvent, 0, 4)
-	if err := state.consumeDelta(model, choice["delta"], func(event ai.AssistantMessageEvent) error {
+	if err := state.consumeDelta(model, choice.Delta, func(event ai.AssistantMessageEvent) error {
 		queued = append(queued, event)
 		return nil
 	}); err != nil {
@@ -1567,11 +1579,11 @@ func (state *completionsStreamState) consumeDelta(
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return nil
 	}
-	var delta map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &delta); err != nil {
+	var delta openAICompletionsDelta
+	if err := unmarshalExactMembers(trimmed, &delta); err != nil {
 		return err
 	}
-	if content, ok := rawJSONString(delta["content"]); ok && content != "" {
+	if content, ok := rawJSONString(delta.Content); ok && content != "" {
 		if state.text == nil {
 			state.text = &ai.TextContent{}
 			state.output.Content = append(state.output.Content, state.text)
@@ -1604,12 +1616,12 @@ func (state *completionsStreamState) consumeDelta(
 			return err
 		}
 	}
-	for _, rawCall := range rawJSONArray(delta["tool_calls"]) {
+	for _, rawCall := range rawJSONArray(delta.ToolCalls) {
 		if err := state.consumeToolCall(rawCall, emit); err != nil {
 			return err
 		}
 	}
-	for _, rawDetail := range rawJSONArray(delta["reasoning_details"]) {
+	for _, rawDetail := range rawJSONArray(delta.ReasoningDetails) {
 		if err := state.consumeReasoningDetail(rawDetail, emit); err != nil {
 			return err
 		}
@@ -1617,13 +1629,31 @@ func (state *completionsStreamState) consumeDelta(
 	return nil
 }
 
-func firstOpenAICompletionsReasoning(delta map[string]json.RawMessage) (string, string) {
-	for _, name := range []string{"reasoning_content", "reasoning", "reasoning_text"} {
-		if value, ok := rawJSONString(delta[name]); ok && value != "" {
-			return name, value
+type openAICompletionsDelta struct {
+	Content          json.RawMessage `json:"content"`
+	ReasoningContent json.RawMessage `json:"reasoning_content"`
+	Reasoning        json.RawMessage `json:"reasoning"`
+	ReasoningText    json.RawMessage `json:"reasoning_text"`
+	ToolCalls        json.RawMessage `json:"tool_calls"`
+	ReasoningDetails json.RawMessage `json:"reasoning_details"`
+}
+
+func firstOpenAICompletionsReasoning(delta openAICompletionsDelta) (string, string) {
+	for _, field := range []struct {
+		name string
+		raw  json.RawMessage
+	}{{"reasoning_content", delta.ReasoningContent}, {"reasoning", delta.Reasoning}, {"reasoning_text", delta.ReasoningText}} {
+		if value, ok := rawJSONString(field.raw); ok && value != "" {
+			return field.name, value
 		}
 	}
 	return "", ""
+}
+
+// unmarshalExactMembers reads an object's members into target's fields by
+// exact name, like a map decode keeping the last duplicate, without the map.
+func unmarshalExactMembers(data []byte, target any) error {
+	return jsonv2.Unmarshal(data, target, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
 }
 
 func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit func(ai.AssistantMessageEvent) error) error {
@@ -2017,6 +2047,10 @@ func rawJSONArray(raw json.RawMessage) []json.RawMessage {
 }
 
 func rawJSONString(raw json.RawMessage) (string, bool) {
+	// A string without escapes decodes to its bytes when they are valid UTF-8.
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' && bytes.IndexByte(raw, '\\') < 0 && utf8.Valid(raw) {
+		return string(raw[1 : len(raw)-1]), true
+	}
 	var value string
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
 		return "", false

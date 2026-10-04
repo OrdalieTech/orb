@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -102,11 +103,11 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 	}
 	switch typed := event.(type) {
 	case SessionAgentEndEvent:
-		return ai.Marshal(struct {
-			Type      SessionEventType     `json:"type"`
-			Messages  engine.AgentMessages `json:"messages"`
-			WillRetry bool                 `json:"willRetry"`
-		}{SessionEventType(engine.EventAgentEnd), typed.Messages, typed.WillRetry})
+		encoded, err := engine.AgentEndEvent{Messages: typed.Messages}.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		return fmt.Appendf(encoded[:len(encoded)-1], `,"willRetry":%t}`, typed.WillRetry), nil
 	case AgentSettledEvent:
 		return ai.Marshal(struct {
 			Type SessionEventType `json:"type"`
