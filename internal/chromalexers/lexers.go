@@ -96,12 +96,6 @@ func Names(withAliases bool) []string {
 	return globalLexerRegistry().Names(withAliases)
 }
 
-// Aliases of all the lexers, and skip those lexers who do not have any aliases,
-// or show their name instead
-func Aliases(skipWithoutAliases bool) []string {
-	return globalLexerRegistry().Aliases(skipWithoutAliases)
-}
-
 // Get a Lexer by name, alias or file extension.
 //
 // Note that this if there isn't an exact match on name or alias, this will
@@ -113,14 +107,6 @@ func Get(name string) chroma.Lexer {
 // MatchMimeType attempts to find a lexer for the given MIME type.
 func MatchMimeType(mimeType string) chroma.Lexer {
 	return globalLexerRegistry().MatchMimeType(mimeType)
-}
-
-// Match returns the first lexer matching filename.
-//
-// Note that this iterates over all file patterns in all lexers, so it's not
-// particularly efficient.
-func Match(filename string) chroma.Lexer {
-	return globalLexerRegistry().Match(filename)
 }
 
 // Register queues a Lexer for the global registry.
