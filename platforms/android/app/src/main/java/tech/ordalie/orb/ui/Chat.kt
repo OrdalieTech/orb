@@ -48,7 +48,7 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     LaunchedEffect(list) { snapshotFlow { list.isScrollInProgress }.collect { if (!it) follow = !list.canScrollForward } }
     LaunchedEffect(s.transcript.items.size, tail) {
         val n = list.layoutInfo.totalItemsCount
-        if (follow && n > 0) list.animateScrollToItem(n - 1, Int.MAX_VALUE)
+        if (follow && n > 0) list.scrollToItem(n - 1, Int.MAX_VALUE) // streamed text follows at once: an animation per token stutters
     }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         val ghost by animateFloatAsState(if (blocks.isEmpty()) 1f else 0f, tween(400), label = "standby")
@@ -85,7 +85,7 @@ private fun Block(items: List<Item>, first: Boolean) {
     if (you != null) Column(Modifier.fillMaxWidth().padding(start = 48.dp, end = Margin, top = if (first) 12.dp else 20.dp, bottom = 6.dp), horizontalAlignment = Alignment.End) {
         if (you.via != null) T("from a peer", Modifier.padding(bottom = 4.dp), size = Size.Label, color = Ink.Blue)
         BasicText(tokens(you.text, p.fg, p.bg), Modifier.background(p.fg.copy(alpha = 0.07f), Pane).padding(horizontal = 12.dp, vertical = 8.dp).copyable(you.text), type(SIZE.sp, p.fg))
-    } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 2.dp, bottom = 6.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 2.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         runs(items).forEach { run ->
             when (val one = run.singleOrNull()) {
                 null -> Worked(run)

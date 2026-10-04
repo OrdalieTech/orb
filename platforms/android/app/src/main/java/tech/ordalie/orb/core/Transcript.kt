@@ -33,7 +33,8 @@ class Transcript {
     /** Texts this side sent; a user message not in here arrived through Bridge. */
     val sent = ArrayDeque<String>()
 
-    fun clear() { items.clear(); tools.clear(); said = null }
+    /** Empties the transcript; keys restart, so a reload of the same messages keeps its rows. */
+    fun clear() { items.clear(); tools.clear(); said = null; n = 0 }
 
     /** Says that a message sent during a run waits: steering lands after the current step, a follow-up after the run. */
     fun waiting(steer: Boolean) { items += Note(key(), if (steer) "steering · lands after the current step" else "queued · sends when this run ends") }

@@ -135,15 +135,19 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         return true
     }
 
+    /** Reads the whole conversation, then swaps it in at once: the screen never shows it half loaded. */
     private suspend fun snapshot() {
         var snap = ""; var offset = ""
-        transcript.clear()
+        val messages = JSONArray()
         repeat(64) {
             val r = remote("events.subscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap).put("offset", offset)).optJSONObject("result") ?: return
-            transcript.load(r.optJSONArray("messages") ?: JSONArray())
-            r.optJSONObject("partial")?.let { transcript.apply(JSONObject().put("type", "message_update").put("message", it)) }
+            r.optJSONArray("messages")?.let { a -> for (i in 0 until a.length()) messages.put(a.get(i)) }
             snap = r.optString("snapshot_id"); offset = r.optString("offset")
-            if (offset.isEmpty()) { cursor = r.optString("cursor"); remote("events.unsubscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap)); return }
+            if (offset.isEmpty()) {
+                transcript.clear(); transcript.load(messages)
+                r.optJSONObject("partial")?.let { transcript.apply(JSONObject().put("type", "message_update").put("message", it)) }
+                cursor = r.optString("cursor"); remote("events.unsubscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap)); return
+            }
         }
     }
 
