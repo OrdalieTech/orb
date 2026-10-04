@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	mathrand "math/rand/v2"
 	"sync"
 	"time"
 )
@@ -53,13 +54,12 @@ func Generate(now time.Time) (string, error) {
 }
 
 // EntryCandidate returns the eight-hex-character identifier used for session
-// tree entries before collision checking.
-func EntryCandidate() (string, error) {
+// tree entries before collision checking. Callers check collisions, so it
+// needs no crypto/rand, which on js/wasm calls into JavaScript every time.
+func EntryCandidate() string {
 	var value [4]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(value[:]), nil
+	binary.BigEndian.PutUint32(value[:], mathrand.Uint32())
+	return hex.EncodeToString(value[:])
 }
 
 func format(value [16]byte) string {
