@@ -237,6 +237,7 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 			Offset      string `json:"offset,omitempty"`
 			Wait        bool   `json:"wait,omitempty"`
 			State       string `json:"state,omitempty"`
+			Tail        int    `json:"tail,omitempty"`
 		} `json:"params"`
 	}
 	if err := protocol.Decode(params, &p); err != nil {
@@ -259,7 +260,7 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 		if p.Params.Wait && p.Params.Cursor != "" {
 			return a.await(ctx, p.Params.Cursor, p.Params.State, positivePage(p.Limit))
 		}
-		return a.observe(p.Params.Cursor, p.Params.SnapshotID, p.Params.Offset, p.Limit)
+		return a.observe(p.Params.Cursor, p.Params.SnapshotID, p.Params.Offset, p.Params.Tail, p.Limit)
 	case "events.unsubscribe":
 		a.mu.Lock()
 		delete(a.snapshots, p.Params.SnapshotID)
@@ -693,7 +694,11 @@ func (a *Attachment) list(ctx context.Context, args json.RawMessage) (json.RawMe
 	}
 	return bridge.JSON(out), nil
 }
-func (a *Attachment) observe(cursor, id, offset string, limits ...int) (json.RawMessage, error) {
+
+// observe pages a snapshot of the conversation, from offset or, for a new one, its last tail
+// messages (all of them without one: a follower on a phone asks for the end and pages back),
+// or replays the stream after cursor.
+func (a *Attachment) observe(cursor, id, offset string, tail int, limits ...int) (json.RawMessage, error) {
 	limit := protocol.MaxPage
 	if len(limits) > 0 {
 		limit = positivePage(limits[0])
@@ -730,6 +735,8 @@ func (a *Attachment) observe(cursor, id, offset string, limits ...int) (json.Raw
 	var err error
 	if offset != "" {
 		n, err = protocol.Counter(offset)
+	} else if tail > 0 && tail < len(snap.messages) {
+		n = uint64(len(snap.messages) - tail)
 	}
 	if err != nil || n > uint64(len(snap.messages)) {
 		return nil, bridge.Fail("cursor_expired")
@@ -740,7 +747,8 @@ func (a *Attachment) observe(cursor, id, offset string, limits ...int) (json.Raw
 		Messages   []json.RawMessage `json:"messages"`
 		Cursor     string            `json:"cursor"`
 		Offset     string            `json:"offset,omitempty"`
-	}{SnapshotID: id, Partial: snap.partial, Messages: []json.RawMessage{}, Cursor: snap.cursor}
+		From       uint64            `json:"from,omitempty"` // the index of the first message here
+	}{SnapshotID: id, Partial: snap.partial, Messages: []json.RawMessage{}, Cursor: snap.cursor, From: n}
 	size := 0
 	for int(n) < len(snap.messages) && len(out.Messages) < limit {
 		m := snap.messages[n]

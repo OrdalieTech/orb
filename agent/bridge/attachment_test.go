@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // attached is a faux-model runtime with an attachment at generation 1.
@@ -110,7 +112,7 @@ func TestAcceptedWorkOutlivesConnectionAndAttachment(t *testing.T) {
 
 func TestSnapshotExpiresWhenLocalTranscriptResets(t *testing.T) {
 	a, host := attached(t)
-	raw, err := a.observe("", "", "")
+	raw, err := a.observe("", "", "", 0)
 	var snapshot struct {
 		ID     string `json:"snapshot_id"`
 		Cursor string `json:"cursor"`
@@ -119,10 +121,10 @@ func TestSnapshotExpiresWhenLocalTranscriptResets(t *testing.T) {
 		t.Fatal(err)
 	}
 	host.Session().Agent().SetMessages(nil)
-	if _, err = a.observe(snapshot.Cursor, "", ""); bridge.Code(err) != "cursor_expired" {
+	if _, err = a.observe(snapshot.Cursor, "", "", 0); bridge.Code(err) != "cursor_expired" {
 		t.Fatal(err)
 	}
-	if _, err = a.observe("", snapshot.ID, ""); bridge.Code(err) != "cursor_expired" {
+	if _, err = a.observe("", snapshot.ID, "", 0); bridge.Code(err) != "cursor_expired" {
 		t.Fatal(err)
 	}
 }
@@ -144,7 +146,7 @@ func TestAPeerRenamesTheSession(t *testing.T) {
 // conversation changes, with the stream's events and the instance's new pulse.
 func TestAFollowerWaitsForTheConversationToChange(t *testing.T) {
 	a, host := attached(t)
-	raw, _ := a.observe("", "", "")
+	raw, _ := a.observe("", "", "", 0)
 	var first struct {
 		Cursor string `json:"cursor"`
 	}
@@ -189,5 +191,35 @@ func TestAControllerRunsAShellCommandInTheConversation(t *testing.T) {
 	}
 	if _, code := call(t, a, "shell", map[string]string{"command": " "}); code != "invalid_params" {
 		t.Fatal("blank command accepted:", code)
+	}
+}
+
+// A follower on a phone opens a long conversation at its end: the snapshot starts at the last
+// tail messages and says where, so it can keep that window on a reload and page back from it.
+func TestAFollowerOpensALongConversationAtItsEnd(t *testing.T) {
+	a, host := attached(t)
+	var messages engine.AgentMessages
+	for i := range 10 {
+		messages = append(messages, &ai.UserMessage{Content: ai.NewUserText(fmt.Sprint("message ", i)), Timestamp: int64(i + 1)})
+	}
+	host.Session().Agent().SetMessages(messages)
+	read := func(offset string, tail int) (got struct {
+		Messages []json.RawMessage `json:"messages"`
+		From     int               `json:"from"`
+	}) {
+		raw, err := a.observe("", "", offset, tail)
+		if err != nil || json.Unmarshal(raw, &got) != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if end := read("", 3); end.From != 7 || len(end.Messages) != 3 || !strings.Contains(string(end.Messages[0]), "message 7") {
+		t.Fatalf("tail: from %d, %d messages", end.From, len(end.Messages))
+	}
+	if again := read("7", 0); again.From != 7 || len(again.Messages) != 3 {
+		t.Fatalf("same window: from %d, %d messages", again.From, len(again.Messages))
+	}
+	if all := read("", 0); all.From != 0 || len(all.Messages) != 10 {
+		t.Fatalf("whole: from %d, %d messages", all.From, len(all.Messages))
 	}
 }

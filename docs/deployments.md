@@ -202,7 +202,8 @@ explicitly and in two separate kinds:
 - **The owner** reaches its own machine with the same calls, by its own peer id, with no grant:
   the Android app drives the phone's Orbs exactly as it drives a server's. A follower long-polls
   `events.subscribe` (`wait`, with the last `state` it saw) and gets an answer as soon as there are
-  events or the instance's pulse moves (a turn, a question, a rename); instances also take
+  events or the instance's pulse moves (a turn, a question, a rename), and opens a long
+  conversation at its end (a snapshot with `tail`, which says where it starts); instances also take
   `session.compact` and `shell` (a `!command` in the conversation).
 - **Agents** are Orbs acting on their own. With the opt-in `bridge_call` tool, one Orb's agent can
   call another Orb, but only under an instance subject with its own grants. A person's controller

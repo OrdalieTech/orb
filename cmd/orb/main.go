@@ -37,6 +37,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/mermaid"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
@@ -101,6 +102,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "__sandbox" {
 		os.Exit(runSandboxChild())
 	}
+	if len(os.Args) == 2 && os.Args[1] == "mermaid" {
+		os.Exit(runMermaid(os.Stdin, os.Stdout))
+	}
 	// Process markers, entry points only — not set when embedded through the SDK.
 	_ = os.Setenv("AI_AGENT", "orb")
 	_ = os.Setenv("PI_CODING_AGENT", "true")
@@ -112,6 +116,18 @@ func main() {
 		StdoutTTY: isTerminalFile(os.Stdout),
 		StderrTTY: isTerminalFile(os.Stderr),
 	}))
+}
+
+// runMermaid draws the Mermaid diagram on stdin as the TUI shows it, Unicode text, for clients
+// with no renderer of their own (the Android app); nothing drawable exits 1. It opens no state.
+func runMermaid(in io.Reader, out io.Writer) int {
+	src, err := io.ReadAll(io.LimitReader(in, 1<<20))
+	art := mermaid.Render(string(src))
+	if err != nil || art == nil {
+		return 1
+	}
+	_, _ = io.WriteString(out, strings.Join(art.Plain, "\n")+"\n")
+	return 0
 }
 
 func runSandboxChild() int {
@@ -1064,6 +1080,7 @@ Commands:
   orb list                    List installed packages from settings
   orb config [-l]             Open TUI to enable/disable package resources (Tab switches scope)
   orb plugins <command>       List, enable, or disable bundled plugins (list --all shows the full composition)
+  orb mermaid < diagram.mmd   Draw a Mermaid diagram as text, as the TUI shows it
   orb mcp <command>           Check MCP servers, sign in to or out of OAuth servers
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
