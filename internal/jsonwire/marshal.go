@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,6 +96,44 @@ func AppendString(dst []byte, value string) []byte {
 }
 
 const hexDigits = "0123456789abcdef"
+
+// AppendFloat appends the finite number value as JSON.stringify writes it.
+func AppendFloat(dst []byte, value float64) []byte {
+	if value == 0 {
+		return append(dst, '0')
+	}
+	format := byte('f')
+	if abs := math.Abs(value); abs < 1e-6 || abs >= 1e21 {
+		format = 'e'
+	}
+	dst = strconv.AppendFloat(dst, value, format, -1, 64)
+	if n := len(dst); format == 'e' && dst[n-4] == 'e' && dst[n-3] == '-' && dst[n-2] == '0' {
+		// JavaScript writes e-7 where strconv writes e-07.
+		dst[n-2] = dst[n-1]
+		dst = dst[:n-1]
+	}
+	return dst
+}
+
+// AppendCompact appends the JSON value raw as Marshal encodes a
+// json.RawMessage holding it: compacted, with Marshal's -0 and line separator
+// fixes. An empty raw value encodes as null.
+func AppendCompact(dst, raw []byte) ([]byte, error) {
+	if len(raw) == 0 {
+		return append(dst, "null"...), nil
+	}
+	start := len(dst)
+	buffer := bytes.NewBuffer(dst)
+	if err := json.Compact(buffer, raw); err != nil {
+		return nil, err
+	}
+	dst = buffer.Bytes()
+	// Both fixes shorten the value when they change it.
+	if value := normalizeNegativeZeros(restoreLineSeparators(dst[start:])); len(value) < len(dst)-start {
+		dst = append(dst[:start], value...)
+	}
+	return dst, nil
+}
 
 // MarshalString preserves WTF-8 encoded UTF-16 surrogates so Go can carry
 // JavaScript strings produced by code-unit slicing through a JSON wire format.

@@ -65,11 +65,12 @@ func marshalJSONEvent(event any) ([]byte, error) {
 		}
 	}
 	// Member order matches upstream's object literal: type, usage, assistantMessageEvent.
-	return ai.Marshal(struct {
-		Type                  engine.AgentEventType `json:"type"`
-		Usage                 ai.Usage              `json:"usage"`
-		AssistantMessageEvent json.RawMessage       `json:"assistantMessageEvent"`
-	}{engine.EventMessageUpdate, message.Usage, delta})
+	usage, err := message.Usage.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	frame := append(append([]byte(`{"type":"message_update","usage":`), usage...), `,"assistantMessageEvent":`...)
+	return append(append(frame, delta...), '}'), nil
 }
 
 // withoutPartial copies a stream event with its partial message cleared. The
