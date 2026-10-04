@@ -123,7 +123,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		RefreshTools:           func() { runtime.refreshExtensionTools(nil, false) },
 		GetCommands:            runtime.extensionCommands,
 		SetModel:               runtime.setExtensionModel,
-		GetThinkingLevel:       func() (engine.ThinkingLevel, error) { return runtime.agent.State().ThinkingLevel, nil },
+		GetThinkingLevel:       func() (engine.ThinkingLevel, error) { return runtime.agent.StateWithoutMessages().ThinkingLevel, nil },
 		SetThinkingLevel:       runtime.setExtensionThinkingLevel,
 		RegisterProvider:       registerProvider,
 		RegisterProviderConfig: registerProviderConfig,
@@ -131,7 +131,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	}
 	contextActions := extensions.ContextActions{
 		RequestInput: runtime.RequestInput,
-		GetModel:     func() *ai.Model { return runtime.agent.State().Model },
+		GetModel:     func() *ai.Model { return runtime.agent.StateWithoutMessages().Model },
 		GetScopedModels: func() []extensions.ScopedModel {
 			scoped := runtime.ScopedModels()
 			result := make([]extensions.ScopedModel, len(scoped))
@@ -1070,7 +1070,7 @@ func (runtime *SessionRuntime) refreshLazyToolGuidelines(ctx context.Context) {
 }
 
 func (runtime *SessionRuntime) extensionActiveTools() ([]string, error) {
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	names := make([]string, 0, len(state.Tools))
 	for _, tool := range state.Tools {
 		names = append(names, tool.Spec().Name)
@@ -1178,7 +1178,7 @@ func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call 
 	if patch != nil && patch.Content != nil {
 		content = patch.Content
 	}
-	normalized, changed := tools.NormalizeToolResultImages(content, runtime.settings.GetImageAutoResize(), tools.ModelResizeOptions(runtime.agent.State().Model))
+	normalized, changed := tools.NormalizeToolResultImages(content, runtime.settings.GetImageAutoResize(), tools.ModelResizeOptions(runtime.agent.StateWithoutMessages().Model))
 	if !changed {
 		return patch, nil
 	}
@@ -1862,7 +1862,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	state.pendingTools = nil
 	state.mu.Unlock()
 	messages := make(engine.AgentMessages, 0, 2+len(pending)+len(injected))
-	transcript, _ := ConvertToLLM(ctx, runtime.agent.State().Messages)
+	transcript, _ := ConvertToLLM(ctx, runtime.agent.Messages())
 	current := ai.CurrentSystemMessage(transcript)
 	if promptBuildOptions != nil {
 		desired := BuildSystemPromptSections(*promptBuildOptions)
