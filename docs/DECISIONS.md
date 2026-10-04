@@ -137,11 +137,13 @@ Each holds until changed by owner-signed decision.
 ### Providers and models
 
 - **D10 — Lean provider layer.** Wire codecs are Orb's own, and an official Go SDK stays only
-  where it carries protocol work: `aws-sdk-go-v2` bedrockruntime (credential chain, SigV4, event
-  streams) and `anthropic-sdk-go/config` (workload-identity federation). The `openai-go/v3` and
-  Anthropic clients only posted bodies Orb had built, yet weighed 20.7 MB of the 55.4 MB Worker
-  bundle, so requests go through one stdlib client under the shared retry policy (owner,
-  2026-10-04). `google.golang.org/genai` was rejected on measured weight (+8.5 MB, +35 modules),
+  where it carries protocol work: `aws-sdk-go-v2/config` (the AWS shared config and credential
+  chain, on native hosts) and `anthropic-sdk-go/config` (workload-identity federation). The
+  `openai-go/v3` and Anthropic clients only posted bodies Orb had built, yet weighed 20.7 MB of the
+  55.4 MB Worker bundle, so requests go through one stdlib client under the shared retry policy;
+  Bedrock's SigV4 signing, event stream framing and SDK retry policy are Orb's own too, which
+  keeps the AWS SDK out of the Worker, where no shared config exists (owner, 2026-10-04: as much
+  stdlib as possible). `google.golang.org/genai` was rejected on measured weight (+8.5 MB, +35 modules),
   so Gemini and Vertex use hand-rolled JSON/SSE. Hand-roll where no sound SDK exists
   (mistral-conversations, pi-messages, OAuth device/PKCE flows). No kitchen sinks.
 - **D12 — Model catalog from direct authoritative sources.** Build-time generation uses
