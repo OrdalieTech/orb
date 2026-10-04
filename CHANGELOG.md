@@ -5,6 +5,12 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-04
+
+The Android app is simpler: one bar with a tab per open session, monospace type with real weights,
+and a terminal that follows the open conversation, onto the machine it runs on. `orb bridge shell`
+opens that terminal from a computer, and a thread already open elsewhere on a machine says so.
+
 - `orb bridge shell <peer> [folder]` opens a terminal on a paired machine that lets this Orb
   start Orb there (`host.terminal.*`): its owner's login shell, in that folder. The Android app's
   terminal follows the open conversation, on the phone's Linux or on the device it runs on.
