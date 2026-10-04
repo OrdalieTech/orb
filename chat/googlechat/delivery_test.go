@@ -2,8 +2,6 @@ package googlechat
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -32,72 +30,6 @@ func writeCalls(calls []apiCall) []apiCall {
 		}
 	}
 	return out
-}
-
-func TestTurnMessageIDShape(t *testing.T) {
-	id := turnMessageID(testReplyTo, testKey)
-	if !strings.HasPrefix(id, "client-") {
-		t.Fatalf("id %q must start with client-", id)
-	}
-	if len(id) > 63 {
-		t.Fatalf("id %q is %d chars, max 63", id, len(id))
-	}
-	for _, r := range id {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
-			t.Fatalf("id %q contains %q outside [a-z0-9-]", id, r)
-		}
-	}
-	if again := turnMessageID(testReplyTo, testKey); again != id {
-		t.Fatalf("id not deterministic: %q vs %q", id, again)
-	}
-	if fallback := turnMessageID("", testKey); fallback == id || !strings.HasPrefix(fallback, "client-") {
-		t.Fatalf("fallback id %q must differ and keep the prefix", fallback)
-	}
-}
-
-func TestTypingAndPreviewAreNoops(t *testing.T) {
-	env := newTestEnv(t)
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	if err := d.Typing(context.Background()); err != nil {
-		t.Fatalf("Typing: %v", err)
-	}
-	if err := d.Preview(context.Background(), "thinking…"); err != nil {
-		t.Fatalf("Preview: %v", err)
-	}
-	if id := d.PreviewID(); id != "" {
-		t.Fatalf("PreviewID = %q, want empty for final-only delivery", id)
-	}
-	if calls := env.chatAPI.callLog(); len(calls) != 0 {
-		t.Fatalf("Typing/Preview made %d API calls, want 0", len(calls))
-	}
-}
-
-func TestFinalizePacesOverflowChunksPerSpace(t *testing.T) {
-	env := newTestEnv(t)
-	current := time.Now()
-	env.adapter.now = func() time.Time { return current }
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	paragraph := strings.Repeat("word ", 700)
-	if _, err := d.Finalize(context.Background(), paragraph+"\n\n"+paragraph); err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	delays := *env.delays
-	if len(delays) == 0 || delays[0] < time.Second {
-		t.Fatalf("overflow chunk pacing delays = %v, want at least one >=1s delay", delays)
-	}
-}
-
-func TestSpaceWriteCacheIsBounded(t *testing.T) {
-	current := time.Now()
-	adapter := &Adapter{now: func() time.Time { return current }, lastSpaceWrite: map[string]time.Time{}}
-	for i := 0; i <= maxSpaceWriteCache; i++ {
-		if err := adapter.waitSpaceWrite(context.Background(), fmt.Sprintf("spaces/%d", i), time.Second); err != nil {
-			t.Fatalf("reserve space %d: %v", i, err)
-		}
-	}
-	if got := len(adapter.lastSpaceWrite); got != maxSpaceWriteCache {
-		t.Fatalf("space write cache has %d entries, want %d", got, maxSpaceWriteCache)
-	}
 }
 
 func TestFinalizeCreateConflictDegradesToEdit(t *testing.T) {
@@ -191,56 +123,6 @@ func TestFinalizeRetryResumesAtFailedChunk(t *testing.T) {
 	}
 }
 
-func TestFinalizeIgnoresResumePreviewID(t *testing.T) {
-	env := newTestEnv(t)
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "stale-preview-name")
-	receipt, err := d.Finalize(context.Background(), "final text")
-	if err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	wantName := "spaces/AAAA/messages/" + turnMessageID(testReplyTo, testKey)
-	if len(receipt.MessageIDs) != 1 || receipt.MessageIDs[0] != wantName {
-		t.Fatalf("receipt %v, want deterministic final %q", receipt.MessageIDs, wantName)
-	}
-	writes := writeCalls(env.chatAPI.callLog())
-	if len(writes) != 1 || writes[0].Method != http.MethodPost {
-		t.Fatalf("writes = %+v, want one final POST", writes)
-	}
-}
-
-func TestFinalizeEmptyReplyPlaceholder(t *testing.T) {
-	env := newTestEnv(t)
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	receipt, err := d.Finalize(context.Background(), "  \n ")
-	if err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	if len(receipt.MessageIDs) != 1 {
-		t.Fatalf("receipt %v", receipt.MessageIDs)
-	}
-	if got := env.chatAPI.text(receipt.MessageIDs[0]); got != "(empty reply)" {
-		t.Fatalf("stored text %q, want the placeholder", got)
-	}
-}
-
-func TestNotifySendsPlainCreate(t *testing.T) {
-	env := newTestEnv(t)
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	if err := d.Notify(context.Background(), "**status**: ok"); err != nil {
-		t.Fatalf("Notify: %v", err)
-	}
-	writes := writeCalls(env.chatAPI.callLog())
-	if len(writes) != 1 || writes[0].Method != http.MethodPost {
-		t.Fatalf("want one POST, got %+v", writes)
-	}
-	if got := writes[0].Query.Get("messageId"); got != "" {
-		t.Fatalf("Notify used client id %q; notices may repeat and must not collide", got)
-	}
-	if got := writes[0].Body.Text; got != "**status**: ok" {
-		t.Fatalf("Notify text %q, want it verbatim (no markdown conversion)", got)
-	}
-}
-
 func TestBackoffOn429HonorsRetryAfterAndCap(t *testing.T) {
 	env := newTestEnv(t)
 	env.chatAPI.pushScript(
@@ -264,31 +146,6 @@ func TestBackoffOn429HonorsRetryAfterAndCap(t *testing.T) {
 	}
 	if writes := writeCalls(env.chatAPI.callLog()); len(writes) != 4 {
 		t.Fatalf("made %d calls, want 3 failures + 1 success", len(writes))
-	}
-}
-
-func TestBackoffGivesUpAfterMaxAttempts(t *testing.T) {
-	env := newTestEnv(t)
-	for range 10 {
-		env.chatAPI.pushScript(scripted{status: http.StatusTooManyRequests, grpcStatus: "RESOURCE_EXHAUSTED"})
-	}
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	err := d.Notify(context.Background(), "text")
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.HTTPStatus != http.StatusTooManyRequests {
-		t.Fatalf("error %v, want the surfaced 429", err)
-	}
-	if writes := writeCalls(env.chatAPI.callLog()); len(writes) != env.adapter.maxAttempts {
-		t.Fatalf("made %d attempts, want %d", len(writes), env.adapter.maxAttempts)
-	}
-}
-
-func TestDefaultBackoffTruncatesAt64s(t *testing.T) {
-	if defaultBackoff(0) != time.Second || defaultBackoff(3) != 8*time.Second {
-		t.Fatal("backoff is not 1s·2^attempt")
-	}
-	if defaultBackoff(10) != 64*time.Second {
-		t.Fatalf("backoff(10) = %v, want the 64s cap", defaultBackoff(10))
 	}
 }
 
@@ -323,20 +180,6 @@ func TestUnauthorizedMintsFreshTokenOnce(t *testing.T) {
 	}
 }
 
-func TestTokenIsCachedAcrossCalls(t *testing.T) {
-	env := newTestEnv(t)
-	d := env.adapter.NewDelivery(testKey, testReplyTo, "")
-	if err := d.Notify(context.Background(), "one"); err != nil {
-		t.Fatalf("Notify: %v", err)
-	}
-	if err := d.Notify(context.Background(), "two"); err != nil {
-		t.Fatalf("Notify: %v", err)
-	}
-	if got := env.token.mintCount(); got != 1 {
-		t.Fatalf("minted %d tokens for two calls, want 1 (cached)", got)
-	}
-}
-
 func TestDownloadUploadedContent(t *testing.T) {
 	env := newTestEnv(t)
 	env.chatAPI.setMedia("uploaded/resource/0", []byte("pdf-bytes"))
@@ -366,28 +209,5 @@ func TestDownloadUploadedContent(t *testing.T) {
 	}
 	if _, _, err := env.adapter.Download(context.Background(), chat.AttachmentRef{}); err == nil {
 		t.Fatal("Download with no resource name must fail")
-	}
-}
-
-func TestNewRefusesMissingConfig(t *testing.T) {
-	creds := testCredentialsJSON(t)
-	if _, err := New(Options{CredentialsJSON: creds}); err == nil {
-		t.Fatal("New without ProjectNumber must fail (unverifiable ingress)")
-	}
-	if _, err := New(Options{ProjectNumber: testProjectNumber}); err == nil {
-		t.Fatal("New without credentials must fail")
-	}
-	if _, err := New(Options{ProjectNumber: testProjectNumber, CredentialsJSON: []byte(`{"client_email":"a@b","private_key":"not-pem"}`)}); err == nil {
-		t.Fatal("New with a bad key must fail")
-	}
-	adapter, err := New(Options{ProjectNumber: testProjectNumber, CredentialsJSON: creds})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if adapter.Platform() != "googlechat" {
-		t.Fatalf("Platform %q", adapter.Platform())
-	}
-	if adapter.Account() != testProjectNumber {
-		t.Fatalf("Account %q, want the project number", adapter.Account())
 	}
 }

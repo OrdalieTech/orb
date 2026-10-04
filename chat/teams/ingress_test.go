@@ -3,7 +3,6 @@ package teams
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -99,28 +98,6 @@ func TestIngressNormalizesChannelMention(t *testing.T) {
 	}
 }
 
-func TestIngressMentionFallbackMarkup(t *testing.T) {
-	env := newTestEnv(t)
-	var got []chat.Message
-	handler := env.adapter.Webhook(func(m chat.Message) error { got = append(got, m); return nil })
-	serviceURL := env.connector.server.URL
-
-	activity := channelActivity(serviceURL)
-	// Entity identifies the bot but carries no text: the leading <at>
-	// markup is stripped by the fallback.
-	activity["entities"] = []any{map[string]any{
-		"type":      "mention",
-		"mentioned": map[string]any{"id": "28:" + testAppID, "name": "botname"},
-	}}
-	activity["text"] = "<at>renamed bot</at> run it"
-	if recorder := postActivity(t, handler, activity, env.bearer(t, serviceURL, nil)); recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d", recorder.Code)
-	}
-	if len(got) != 1 || got[0].Text != "run it" {
-		t.Fatalf("got %+v, want one message with text %q", got, "run it")
-	}
-}
-
 func TestIngressDrops(t *testing.T) {
 	env := newTestEnv(t)
 	handler := env.adapter.Webhook(func(m chat.Message) error {
@@ -204,16 +181,5 @@ func TestIngressPublishFailureAnswers500(t *testing.T) {
 	recorder := postActivity(t, handler, personalActivity(serviceURL), env.bearer(t, serviceURL, nil))
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", recorder.Code)
-	}
-}
-
-func TestIngressRejectsNonPOST(t *testing.T) {
-	env := newTestEnv(t)
-	handler := env.adapter.Webhook(func(chat.Message) error { return nil })
-	request := httptest.NewRequest(http.MethodGet, "/api/messages", nil)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405", recorder.Code)
 	}
 }

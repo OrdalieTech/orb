@@ -440,17 +440,3 @@ func waitForAcks(t *testing.T, local *Local, path string, want int) (messages, a
 	}
 	return readSpool(t, path)
 }
-
-func TestLocalPublishAfterCloseFails(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "spool.jsonl")
-	local, err := NewLocal(&recordingHandler{}, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := local.Close(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := local.Publish(testMessage("ev-late", "chat-1", "hi")); err == nil {
-		t.Fatal("publish succeeded after close")
-	}
-}

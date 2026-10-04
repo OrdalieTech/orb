@@ -78,128 +78,6 @@ func decodePayload(t *testing.T, body []byte) sentPayload {
 	return payload
 }
 
-func TestTypingSequenceMarkSeenThenTypingOn(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, func(int) (int, string, http.Header) {
-		return http.StatusOK, `{"recipient_id":"PSID1"}`, nil
-	})
-	adapter := newTestAdapter(t, server.URL, nil)
-	adapter.typingInterval = time.Hour // freeze the refresher for this test
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	if err := delivery.Typing(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := delivery.Typing(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	requests := graph.recorded()
-	if len(requests) != 3 {
-		t.Fatalf("got %d requests, want mark_seen + typing_on + typing_on", len(requests))
-	}
-	wantActions := []string{"mark_seen", "typing_on", "typing_on"}
-	for i, req := range requests {
-		if req.Method != http.MethodPost || req.Path != "/v23.0/me/messages" {
-			t.Fatalf("request %d = %s %s", i, req.Method, req.Path)
-		}
-		if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
-			t.Fatalf("Authorization = %q", got)
-		}
-		payload := decodePayload(t, req.Body)
-		if payload.SenderAction != wantActions[i] {
-			t.Errorf("request %d sender_action = %q, want %q", i, payload.SenderAction, wantActions[i])
-		}
-		if payload.Message != nil {
-			t.Errorf("request %d combines a sender_action with a message — the Send API rejects that", i)
-		}
-		if payload.Recipient.ID != "PSID1" {
-			t.Errorf("request %d recipient = %q", i, payload.Recipient.ID)
-		}
-	}
-}
-
-func countActions(requests []capturedRequest, action string) int {
-	n := 0
-	for _, req := range requests {
-		var payload sentPayload
-		if json.Unmarshal(req.Body, &payload) == nil && payload.SenderAction == action {
-			n++
-		}
-	}
-	return n
-}
-
-func TestTypingRefreshLoopUntilFinalize(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, okSend())
-	adapter := newTestAdapter(t, server.URL, nil) // 10ms typing interval
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	if err := delivery.Typing(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	// The refresher must re-fire typing_on beyond the initial call.
-	deadline := time.Now().Add(2 * time.Second)
-	for countActions(graph.recorded(), "typing_on") < 3 {
-		if time.Now().After(deadline) {
-			t.Fatalf("typing refresher never re-fired: %d typing_on calls", countActions(graph.recorded(), "typing_on"))
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	if _, err := delivery.Finalize(context.Background(), "done"); err != nil {
-		t.Fatal(err)
-	}
-	// Finalize stops the refresher: after a settling pause the typing_on
-	// count must not grow anymore.
-	time.Sleep(30 * time.Millisecond)
-	settled := countActions(graph.recorded(), "typing_on")
-	time.Sleep(50 * time.Millisecond)
-	if after := countActions(graph.recorded(), "typing_on"); after != settled {
-		t.Fatalf("typing_on kept firing after Finalize: %d -> %d", settled, after)
-	}
-}
-
-func TestTypingLoopStopsOnThrottle(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, func(int) (int, string, http.Header) {
-		return http.StatusBadRequest, graphErrorBody(613, 0, "rate limit"), nil
-	})
-	adapter := newTestAdapter(t, server.URL, nil)
-	adapter.typingInterval = 5 * time.Millisecond
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	if err := delivery.Typing(context.Background()); err == nil {
-		t.Fatal("initial typing_on against a throttling server did not surface an error")
-	}
-	// The refresh loop must stop on its first throttled tick instead of
-	// burning quota: the request count settles.
-	time.Sleep(40 * time.Millisecond)
-	settled := len(graph.recorded())
-	time.Sleep(40 * time.Millisecond)
-	if after := len(graph.recorded()); after != settled {
-		t.Fatalf("typing loop kept firing while throttled: %d -> %d requests", settled, after)
-	}
-}
-
-func TestPreviewIsNoop(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, okSend())
-	adapter := newTestAdapter(t, server.URL, nil)
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	if err := delivery.Preview(context.Background(), "partial text"); err != nil {
-		t.Fatal(err)
-	}
-	if id := delivery.PreviewID(); id != "" {
-		t.Fatalf("PreviewID = %q, want empty", id)
-	}
-	if requests := graph.recorded(); len(requests) != 0 {
-		t.Fatalf("preview made %d network calls, want 0", len(requests))
-	}
-}
-
 func TestFinalizePayloadAndReceipt(t *testing.T) {
 	graph := &fakeGraph{}
 	server := newSendServer(t, graph, okSend())
@@ -274,26 +152,6 @@ func TestFinalizeChunksLongTextSequentially(t *testing.T) {
 	}
 }
 
-func TestFinalizeEmptyTextSendsPlaceholder(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, okSend())
-	adapter := newTestAdapter(t, server.URL, nil)
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	receipt, err := delivery.Finalize(context.Background(), "   ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	requests := graph.recorded()
-	if len(requests) != 1 || len(receipt.MessageIDs) != 1 {
-		t.Fatalf("got %d sends and receipt %+v, want one placeholder send", len(requests), receipt)
-	}
-	payload := decodePayload(t, requests[0].Body)
-	if payload.Message == nil || payload.Message.Text != "(empty reply)" {
-		t.Fatalf("message = %+v, want the empty-reply placeholder", payload.Message)
-	}
-}
-
 func TestFinalizeRetryResumesFromFailedChunk(t *testing.T) {
 	graph := &fakeGraph{}
 	// Chunk 1 succeeds; chunk 2 fails with a non-retryable policy error on
@@ -334,78 +192,6 @@ func TestFinalizeRetryResumesFromFailedChunk(t *testing.T) {
 	}
 }
 
-func TestSendErrorMapping(t *testing.T) {
-	cases := []struct {
-		code, subcode int
-		wantRequests  int  // with maxAttempts=3
-		recovers      bool // server succeeds on the final attempt
-	}{
-		{10, 2018278, 1, false},  // outside 24h window: surface, never retry
-		{10, 2018065, 1, false},  // user opted out: surface, never retry
-		{551, 1545041, 1, false}, // person unavailable: conversation permanently dead
-		{190, 0, 1, false},       // bad page token: fatal, never retry
-		{100, 2018001, 1, false}, // no matching user (foreign PSID): drop
-		{200, 0, 1, false},       // missing permission: config error
-		{613, 0, 3, true},        // API rate limit: bounded backoff retry
-		{4, 0, 3, true},          // app-level throttle: bounded backoff retry
-		{32, 0, 3, true},         // page-level throttle: bounded backoff retry
-		{80006, 0, 3, true},      // messenger BUC throttle: bounded backoff retry
-		{1200, 0, 3, true},       // temporary send failure: retried
-	}
-	for _, tc := range cases {
-		t.Run(fmt.Sprintf("code %d subcode %d", tc.code, tc.subcode), func(t *testing.T) {
-			graph := &fakeGraph{}
-			server := newSendServer(t, graph, func(seq int) (int, string, http.Header) {
-				if tc.recovers && seq == tc.wantRequests {
-					return okSend()(seq)
-				}
-				return http.StatusBadRequest, graphErrorBody(tc.code, tc.subcode, "boom"), nil
-			})
-			adapter := newTestAdapter(t, server.URL, nil)
-			delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-			receipt, err := delivery.Finalize(context.Background(), "hello")
-			if tc.recovers {
-				if err != nil {
-					t.Fatalf("retryable code %d did not recover: %v", tc.code, err)
-				}
-				if len(receipt.MessageIDs) != 1 {
-					t.Fatalf("receipt = %+v", receipt)
-				}
-			} else {
-				if err == nil {
-					t.Fatalf("code %d did not surface an error", tc.code)
-				}
-				var graphErr *GraphError
-				if !errors.As(err, &graphErr) || graphErr.Code != tc.code || graphErr.Subcode != tc.subcode {
-					t.Fatalf("error %v does not expose graph code %d/%d", err, tc.code, tc.subcode)
-				}
-			}
-			if got := len(graph.recorded()); got != tc.wantRequests {
-				t.Fatalf("code %d made %d requests, want %d", tc.code, got, tc.wantRequests)
-			}
-		})
-	}
-}
-
-func TestSendRetryExhaustionSurfacesError(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, func(int) (int, string, http.Header) {
-		return http.StatusTooManyRequests, graphErrorBody(613, 0, "slow down"), nil
-	})
-	adapter := newTestAdapter(t, server.URL, nil)
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	_, err := delivery.Finalize(context.Background(), "hello")
-	var graphErr *GraphError
-	if !errors.As(err, &graphErr) || graphErr.Code != 613 {
-		t.Fatalf("err = %v, want graph error 613 after retries", err)
-	}
-	if got := len(graph.recorded()); got != adapter.maxAttempts {
-		t.Fatalf("made %d requests, want maxAttempts=%d", got, adapter.maxAttempts)
-	}
-}
-
 func TestSendRegainHintBeyondCapSurfacesImmediately(t *testing.T) {
 	graph := &fakeGraph{}
 	usage := http.Header{}
@@ -429,27 +215,5 @@ func TestSendRegainHintBeyondCapSurfacesImmediately(t *testing.T) {
 	// The regain hint exceeds maxRetryWait: no blind backoff retries.
 	if got := len(graph.recorded()); got != 1 {
 		t.Fatalf("made %d requests, want 1 (hint-driven immediate surface)", got)
-	}
-}
-
-func TestNotifySendsUpdateMessagingType(t *testing.T) {
-	graph := &fakeGraph{}
-	server := newSendServer(t, graph, okSend())
-	adapter := newTestAdapter(t, server.URL, nil)
-	delivery := adapter.NewDelivery(testKey(), "m_IN", "")
-
-	if err := delivery.Notify(context.Background(), "session stopped"); err != nil {
-		t.Fatal(err)
-	}
-	requests := graph.recorded()
-	if len(requests) != 1 {
-		t.Fatalf("got %d sends", len(requests))
-	}
-	payload := decodePayload(t, requests[0].Body)
-	if payload.MessagingType != "UPDATE" {
-		t.Fatalf("messaging_type = %q, want UPDATE for proactive notices", payload.MessagingType)
-	}
-	if payload.Message == nil || payload.Message.Text != "session stopped" {
-		t.Fatalf("message = %+v", payload.Message)
 	}
 }

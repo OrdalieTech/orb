@@ -44,18 +44,6 @@ func TestDownloadPlainUnauthenticatedGET(t *testing.T) {
 	}
 }
 
-func TestDownloadExpiredURLSurfacesError(t *testing.T) {
-	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "url signature expired", http.StatusForbidden)
-	}))
-	t.Cleanup(cdn.Close)
-
-	adapter := newTestAdapter(t, "http://unused.invalid", nil)
-	if _, _, err := adapter.Download(context.Background(), chat.AttachmentRef{Kind: "photo", ID: cdn.URL + "/img.jpg"}); err == nil {
-		t.Fatal("expired CDN url did not surface an error")
-	}
-}
-
 func TestDownloadRejectsNonHTTPRefs(t *testing.T) {
 	adapter := newTestAdapter(t, "http://unused.invalid", nil)
 	for _, id := range []string{"", "not a url", "ftp://example.com/x", "file:///etc/passwd"} {

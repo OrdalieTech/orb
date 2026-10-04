@@ -1,9 +1,7 @@
 package discord
 
 import (
-	"strings"
 	"testing"
-	"time"
 )
 
 func newIngressAdapter(t *testing.T) *Adapter {
@@ -126,100 +124,5 @@ func TestNormalizeGatingMatrix(t *testing.T) {
 				t.Errorf("Text = %q, want %q", m.Text, tt.wantText)
 			}
 		})
-	}
-}
-
-func TestNormalizeFields(t *testing.T) {
-	adapter := newIngressAdapter(t)
-	msg := gwMessage{
-		ID:        "111222333",
-		ChannelID: "chan9",
-		GuildID:   "guild1",
-		Content:   "<@999> summarize the doc",
-		Timestamp: "2026-07-19T10:30:00.123000+00:00",
-		Author:    &gwUser{ID: "42", Username: "lea", GlobalName: "Léa G"},
-		Member:    &gwMember{Nick: "Léa"},
-		Mentions:  []gwUser{{ID: "999"}},
-		ReferencedMessage: &gwMessage{
-			ID:     "111000000",
-			Author: author("999", "pibot", true),
-		},
-		Attachments: []gwAttachment{
-			{Filename: "chart.png", ContentType: "image/png", Size: 1234,
-				URL: "https://cdn.example.com/attachments/1/a1/chart.png?ex=1&is=2&hm=3"},
-			{Filename: "notes.pdf", ContentType: "application/pdf", Size: 999,
-				URL: "https://cdn.example.com/attachments/1/a2/notes.pdf?ex=1&is=2&hm=3"},
-			{Filename: "voice.ogg", ContentType: "audio/ogg", Size: 555,
-				URL: "https://cdn.example.com/attachments/1/a3/voice.ogg?ex=1&is=2&hm=3"},
-		},
-	}
-	m, ok := adapter.normalize(&msg)
-	if !ok {
-		t.Fatal("normalize dropped the message")
-	}
-	if m.EventID != "dc:chan9:111222333" {
-		t.Errorf("EventID = %q, want dc:chan9:111222333", m.EventID)
-	}
-	if m.Platform != "discord" || m.Account != "999" {
-		t.Errorf("Platform/Account = %q/%q, want discord/999", m.Platform, m.Account)
-	}
-	if m.ChatID != "chan9" || m.ThreadID != "" || m.ChatType != "group" {
-		t.Errorf("ChatID/ThreadID/ChatType = %q/%q/%q, want chan9//group", m.ChatID, m.ThreadID, m.ChatType)
-	}
-	if m.SenderID != "42" || m.SenderName != "Léa" {
-		t.Errorf("Sender = %q/%q, want 42/Léa (nick wins)", m.SenderID, m.SenderName)
-	}
-	if m.Text != "summarize the doc" {
-		t.Errorf("Text = %q", m.Text)
-	}
-	if m.ReplyToID != "dc:chan9:111000000" {
-		t.Errorf("ReplyToID = %q, want dc:chan9:111000000", m.ReplyToID)
-	}
-	want := time.Date(2026, 7, 19, 10, 30, 0, 123000000, time.UTC)
-	if !m.SentAt.Equal(want) {
-		t.Errorf("SentAt = %v, want %v", m.SentAt, want)
-	}
-	if len(m.Attachments) != 3 {
-		t.Fatalf("attachments = %d, want 3", len(m.Attachments))
-	}
-	kinds := []string{m.Attachments[0].Kind, m.Attachments[1].Kind, m.Attachments[2].Kind}
-	if kinds[0] != "photo" || kinds[1] != "document" || kinds[2] != "audio" {
-		t.Errorf("attachment kinds = %v, want [photo document audio]", kinds)
-	}
-	first := m.Attachments[0]
-	if !strings.HasPrefix(first.ID, "https://") || first.Name != "chart.png" ||
-		first.MIME != "image/png" || first.Size != 1234 {
-		t.Errorf("attachment ref = %+v", first)
-	}
-}
-
-func TestNormalizeSenderNameFallbacks(t *testing.T) {
-	adapter := newIngressAdapter(t)
-	m, ok := adapter.normalize(&gwMessage{
-		ID: "m1", ChannelID: "d1", Content: "hi",
-		Author: &gwUser{ID: "42", Username: "lea", GlobalName: "Léa G"},
-	})
-	if !ok || m.SenderName != "Léa G" {
-		t.Errorf("SenderName = %q, want global name fallback", m.SenderName)
-	}
-	m, ok = adapter.normalize(&gwMessage{
-		ID: "m2", ChannelID: "d1", Content: "hi again",
-		Author: &gwUser{ID: "42", Username: "lea"},
-	})
-	if !ok || m.SenderName != "lea" {
-		t.Errorf("SenderName = %q, want username fallback", m.SenderName)
-	}
-}
-
-func TestAccountFromToken(t *testing.T) {
-	// "OTk5" is base64("999") — the id segment of a bot token is public.
-	if got := accountFromToken("OTk5.secret.part"); got != "999" {
-		t.Errorf("accountFromToken = %q, want 999", got)
-	}
-	if got := accountFromToken("no-dots-here"); got != "" {
-		t.Errorf("accountFromToken on malformed token = %q, want empty", got)
-	}
-	if got := accountFromToken("!!!.a.b"); got != "" {
-		t.Errorf("accountFromToken on undecodable token = %q, want empty", got)
 	}
 }

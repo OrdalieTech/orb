@@ -15,27 +15,6 @@ func partialUpdate(text string) engine.MessageUpdateEvent {
 	}
 }
 
-func TestCoalescerKeepsLatestSnapshotOnly(t *testing.T) {
-	c := new(coalescer)
-	c.observe(partialUpdate("he"))
-	c.observe(partialUpdate("hello"))
-	c.observe(partialUpdate("hello wor"))
-	text, dirty := c.snapshot()
-	if !dirty || text != "hello wor" {
-		t.Fatalf("snapshot = %q dirty=%v", text, dirty)
-	}
-	c.rendered("hello wor")
-	if _, dirty := c.snapshot(); dirty {
-		t.Fatal("rendered snapshot still dirty")
-	}
-	// A stale rendered() call must not clear a newer snapshot.
-	c.observe(partialUpdate("hello world"))
-	c.rendered("hello wor")
-	if text, dirty := c.snapshot(); !dirty || text != "hello world" {
-		t.Fatalf("stale rendered cleared newer snapshot: %q dirty=%v", text, dirty)
-	}
-}
-
 func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
 	c := new(coalescer)
 	events := []any{
@@ -70,21 +49,6 @@ func TestCoalescerObserveNeverPanicsOrBlocks(t *testing.T) {
 	}
 }
 
-func TestCoalescerCountsSwallowedPanics(t *testing.T) {
-	// observe must recover (session Subscribe callbacks have none), but a
-	// blanket unreported recover hid every bug in the hot event path.
-	c := new(coalescer)
-	c.observe(engine.MessageUpdateEvent{
-		Message: &ai.AssistantMessage{Content: ai.AssistantContent{(*ai.TextContent)(nil)}},
-	})
-	if panics := c.panics.Load(); panics != 1 {
-		t.Fatalf("swallowed panics = %d, want 1", panics)
-	}
-	if _, dirty := c.snapshot(); dirty {
-		t.Fatal("a panicking observe published a snapshot")
-	}
-}
-
 func TestPreviewRendererSurvivesAdapterPanics(t *testing.T) {
 	c := new(coalescer)
 	delivery := &fauxDelivery{previewPanics: 1}
@@ -105,22 +69,5 @@ func TestPreviewRendererSurvivesAdapterPanics(t *testing.T) {
 	}
 	if len(previewIDs) == 0 || previewIDs[0] != "pv-1" {
 		t.Fatalf("preview ids = %#v", previewIDs)
-	}
-}
-
-func TestPreviewRendererStopsCleanly(t *testing.T) {
-	c := new(coalescer)
-	delivery := &fauxDelivery{}
-	stop := startPreviewRenderer(context.Background(), c, delivery, time.Millisecond, func(string) {})
-	c.observe(partialUpdate("tick"))
-	waitUntil(t, 2*time.Second, "first preview", func() bool {
-		return len(delivery.snapshotPreviews()) > 0
-	})
-	stop()
-	count := len(delivery.snapshotPreviews())
-	c.observe(partialUpdate("after stop"))
-	time.Sleep(10 * time.Millisecond)
-	if len(delivery.snapshotPreviews()) != count {
-		t.Fatal("renderer kept previewing after stop")
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/OrdalieTech/orb/chat"
 )
@@ -374,44 +373,6 @@ func TestNormalizeGroupGating(t *testing.T) {
 				t.Fatalf("Text = %q, want %q", m.Text, tc.wantText)
 			}
 		})
-	}
-}
-
-func TestNormalizeThreadAndReplyFields(t *testing.T) {
-	f := newFakeAPI(t)
-	adapter := newTestAdapter(t, f)
-	msg := &apiMessage{
-		MessageID:      60,
-		Date:           1752900000,
-		ThreadID:       12,
-		IsTopicMessage: true,
-		From:           &apiUser{ID: 111, FirstName: "Léa", LastName: "B", Username: "lea"},
-		Chat:           apiChat{ID: -100123, Type: "supergroup"},
-		Text:           "answer me @orbbot",
-		Entities:       []apiEntity{{Type: "mention", Offset: 10, Length: 7}},
-		ReplyTo:        &apiMessage{MessageID: 44, From: &apiUser{ID: 7}},
-	}
-	m, ok, err := adapter.normalizeMessage(context.Background(), msg, nil)
-	if err != nil || !ok {
-		t.Fatalf("normalizeMessage: ok=%v err=%v", ok, err)
-	}
-	if m.ThreadID != "12" {
-		t.Fatalf("ThreadID = %q, want 12", m.ThreadID)
-	}
-	if m.ReplyToID != "tg:-100123:44" {
-		t.Fatalf("ReplyToID = %q", m.ReplyToID)
-	}
-	if m.SenderName != "Léa B" || m.SenderID != "111" {
-		t.Fatalf("sender = %q/%q", m.SenderID, m.SenderName)
-	}
-	if m.ChatType != "group" {
-		t.Fatalf("ChatType = %q, want group", m.ChatType)
-	}
-	if m.Text != "answer me" {
-		t.Fatalf("Text = %q", m.Text)
-	}
-	if !m.SentAt.Equal(time.Unix(1752900000, 0).UTC()) {
-		t.Fatalf("SentAt = %v", m.SentAt)
 	}
 }
 

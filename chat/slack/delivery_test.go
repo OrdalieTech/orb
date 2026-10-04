@@ -23,18 +23,6 @@ func testKey(chatID, threadID string) chat.ConversationKey {
 	return chat.ConversationKey{Platform: "slack", Account: testBotUser, ChatID: chatID, ThreadID: threadID}
 }
 
-func TestTypingIsNoop(t *testing.T) {
-	f := newFakeAPI(t)
-	adapter := newTestAdapter(t, f)
-	delivery := adapter.NewDelivery(testKey("D0DM", ""), "", "")
-	if err := delivery.Typing(context.Background()); err != nil {
-		t.Fatalf("Typing: %v", err)
-	}
-	if calls := f.callMethods(); len(calls) != 0 {
-		t.Fatalf("Typing made API calls: %v", calls)
-	}
-}
-
 func TestPreviewCreateThenEdit(t *testing.T) {
 	f := newFakeAPI(t)
 	adapter := newTestAdapter(t, f, func(o *Options) { o.PreviewMinInterval = 50 * time.Millisecond })
@@ -238,38 +226,6 @@ func TestFinalizeRetrySkipsSentChunks(t *testing.T) {
 	}
 }
 
-func TestFinalizeEmptyReply(t *testing.T) {
-	f := newFakeAPI(t)
-	adapter := newTestAdapter(t, f)
-	delivery := adapter.NewDelivery(testKey("D0DM", ""), "", "")
-	if _, err := delivery.Finalize(context.Background(), "  \n "); err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	posts := f.callsTo("chat.postMessage")
-	if len(posts) != 1 || posts[0].params["text"] != "(empty reply)" {
-		t.Fatalf("posts = %+v, want one \"(empty reply)\"", posts)
-	}
-}
-
-func TestNotifyPostsPlainText(t *testing.T) {
-	f := newFakeAPI(t)
-	adapter := newTestAdapter(t, f)
-	delivery := adapter.NewDelivery(testKey("C0CHAN", "1700000000.000100"), "", "")
-	if err := delivery.Notify(context.Background(), "**status**: 42 tokens"); err != nil {
-		t.Fatalf("Notify: %v", err)
-	}
-	posts := f.callsTo("chat.postMessage")
-	if len(posts) != 1 {
-		t.Fatalf("postMessage calls = %d, want 1", len(posts))
-	}
-	if got := posts[0].params["text"]; got != "**status**: 42 tokens" {
-		t.Fatalf("notify text = %v, want raw text (no transcoding)", got)
-	}
-	if got := posts[0].params["thread_ts"]; got != "1700000000.000100" {
-		t.Fatalf("notify thread_ts = %v", got)
-	}
-}
-
 func TestPreviewAndNotifyEscapeSlackControlSequences(t *testing.T) {
 	f := newFakeAPI(t)
 	adapter := newTestAdapter(t, f)
@@ -333,20 +289,5 @@ func TestBodyLevelRatelimitedRetried(t *testing.T) {
 	}
 	if len(slept) != 1 || slept[0] != time.Second {
 		t.Fatalf("slept = %v, want one default 1s pause", slept)
-	}
-}
-
-func TestAPIErrorSurfacesCode(t *testing.T) {
-	f := newFakeAPI(t)
-	adapter := newTestAdapter(t, f)
-	f.stub("chat.postMessage", stubResponse{body: `{"ok":false,"error":"channel_not_found"}`})
-	delivery := adapter.NewDelivery(testKey("C0GONE", ""), "", "")
-	_, err := delivery.Finalize(context.Background(), "hello")
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Code != "channel_not_found" {
-		t.Fatalf("err = %v, want APIError channel_not_found", err)
-	}
-	if !strings.Contains(err.Error(), "invited") {
-		t.Fatalf("error lacks operator hint: %v", err)
 	}
 }

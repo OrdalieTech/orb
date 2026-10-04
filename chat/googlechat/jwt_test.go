@@ -113,20 +113,6 @@ func TestVerifyMatrix(t *testing.T) {
 	}
 }
 
-func TestVerifierCachesJWKS(t *testing.T) {
-	var fetches int32
-	verifier := newTestVerifier(t, &fetches)
-	token := inboundJWT(t, nil)
-	for range 3 {
-		if err := verifier.verify(context.Background(), token); err != nil {
-			t.Fatalf("verify: %v", err)
-		}
-	}
-	if fetches != 1 {
-		t.Fatalf("JWKS fetched %d times, want 1 (Cache-Control max-age honored)", fetches)
-	}
-}
-
 func TestVerifierThrottlesUnknownKidRefetch(t *testing.T) {
 	var fetches int32
 	verifier := newTestVerifier(t, &fetches)

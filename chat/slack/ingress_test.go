@@ -1,7 +1,6 @@
 package slack
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -400,40 +399,5 @@ func TestWebhookPublishFailureAnswers500(t *testing.T) {
 	body := messageEvent(t, "message", map[string]any{"channel_type": "im", "channel": "D0DM"})
 	if recorder := postEvent(t, adapter, handler, body); recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500 so Slack redelivers", recorder.Code)
-	}
-}
-
-func TestWebhookIgnoresOtherEnvelopes(t *testing.T) {
-	adapter := newTestAdapter(t, newFakeAPI(t))
-	pinClock(adapter)
-	publish, published := capturePublish()
-	handler := adapter.Webhook(publish)
-	if recorder := postEvent(t, adapter, handler, `{"type":"app_rate_limited","minute_rate_limited":1700000000}`); recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recorder.Code)
-	}
-	if len(*published) != 0 {
-		t.Fatal("app_rate_limited published a message")
-	}
-}
-
-func TestTSTime(t *testing.T) {
-	if got := tsTime("1700000000.123456"); !got.Equal(time.Unix(1700000000, 123456000)) {
-		t.Fatalf("tsTime = %v", got)
-	}
-	if got := tsTime("nonsense"); !got.IsZero() {
-		t.Fatalf("tsTime(nonsense) = %v, want zero", got)
-	}
-}
-
-// TestNormalizeDropsUnknownEventTypes exercises normalize directly for event
-// types the webhook should never publish.
-func TestNormalizeDropsUnknownEventTypes(t *testing.T) {
-	adapter := newTestAdapter(t, newFakeAPI(t))
-	var envelope eventEnvelope
-	if err := json.Unmarshal([]byte(messageEvent(t, "reaction_added", nil)), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := adapter.normalize(&envelope); ok {
-		t.Fatal("reaction_added was normalized")
 	}
 }

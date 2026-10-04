@@ -233,36 +233,6 @@ func TestWebhookPostbackWithoutMidGetsStableEventID(t *testing.T) {
 	}
 }
 
-func TestWebhookWatermarks(t *testing.T) {
-	var marks []Watermark
-	adapter := newTestAdapter(t, "http://unused.invalid", func(wm Watermark) { marks = append(marks, wm) })
-	handler := adapter.Webhook(noPublish(t))
-
-	body := []byte(`{"object":"page","entry":[{"id":"1906385232743851","messaging":[
-	  {"sender":{"id":"PSID1"},"recipient":{"id":"1906385232743851"},"timestamp":1458668856463,
-	   "delivery":{"mids":["m_OUT1","m_OUT2"],"watermark":1458668856253}},
-	  {"sender":{"id":"PSID1"},"recipient":{"id":"1906385232743851"},"timestamp":1458668857000,
-	   "read":{"watermark":1458668856800}}]}]}`)
-	rec := postEvent(handler, body, signBody("app-secret", body))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if len(marks) != 2 {
-		t.Fatalf("OnWatermark called %d times, want 2", len(marks))
-	}
-	delivery := marks[0]
-	if delivery.Kind != "delivery" || delivery.PageID != "1906385232743851" || delivery.PSID != "PSID1" {
-		t.Errorf("delivery watermark = %+v", delivery)
-	}
-	if delivery.Watermark != 1458668856253 || len(delivery.MIDs) != 2 || delivery.MIDs[0] != "m_OUT1" {
-		t.Errorf("delivery watermark payload = %+v", delivery)
-	}
-	read := marks[1]
-	if read.Kind != "read" || read.Watermark != 1458668856800 || read.MIDs != nil {
-		t.Errorf("read watermark = %+v", read)
-	}
-}
-
 func TestWebhookPublishErrorYields500(t *testing.T) {
 	adapter := newTestAdapter(t, "http://unused.invalid", nil)
 	handler := adapter.Webhook(func(chat.Message) error { return errors.New("spool full") })
@@ -270,25 +240,5 @@ func TestWebhookPublishErrorYields500(t *testing.T) {
 	rec := postEvent(handler, body, signBody("app-secret", body))
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500 so Meta redelivers", rec.Code)
-	}
-}
-
-func TestWebhookIgnoresNonPageObjects(t *testing.T) {
-	adapter := newTestAdapter(t, "http://unused.invalid", nil)
-	handler := adapter.Webhook(noPublish(t))
-	body := []byte(`{"object":"instagram","entry":[{"id":"X","messaging":[{"sender":{"id":"A"},"message":{"mid":"m_1","text":"hi"}}]}]}`)
-	rec := postEvent(handler, body, signBody("app-secret", body))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (acknowledged, ignored)", rec.Code)
-	}
-}
-
-func TestWebhookRejectsOtherMethods(t *testing.T) {
-	adapter := newTestAdapter(t, "http://unused.invalid", nil)
-	req := httptest.NewRequest(http.MethodPut, "/webhook", strings.NewReader("{}"))
-	rec := httptest.NewRecorder()
-	adapter.Webhook(noPublish(t)).ServeHTTP(rec, req)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }

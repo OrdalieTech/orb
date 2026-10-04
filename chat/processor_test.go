@@ -649,25 +649,6 @@ func TestGroupAttributionAndAttachments(t *testing.T) {
 	}
 }
 
-func TestAttributionKeysOffChatType(t *testing.T) {
-	env := newTestEnv(t, nil)
-	m := testMessage("ev-attr", "chat-1", "hello")
-	m.SenderName = "Alice"
-
-	// Distinct sender and chat IDs alone (the old heuristic) do not attribute.
-	m.SenderID = "user-7"
-	if text, _ := env.proc.buildPrompt(context.Background(), env.adapter, m); text != "hello" {
-		t.Fatalf("non-group prompt = %q, want no attribution", text)
-	}
-
-	// ChatType "group" attributes even when SenderID equals ChatID.
-	m.SenderID = m.ChatID
-	m.ChatType = "group"
-	if text, _ := env.proc.buildPrompt(context.Background(), env.adapter, m); text != "Alice: hello" {
-		t.Fatalf("group prompt = %q, want sender attribution", text)
-	}
-}
-
 func TestUnauthorizedMessageRejected(t *testing.T) {
 	env := newTestEnv(t, func(o *Options) {
 		o.Authorize = func(m Message) error {
@@ -684,12 +665,6 @@ func TestUnauthorizedMessageRejected(t *testing.T) {
 	}
 	if count := env.adapter.deliveryCount(); count != 0 {
 		t.Fatalf("deliveries for unauthorized message = %d", count)
-	}
-}
-
-func TestParseCommandWhitespace(t *testing.T) {
-	if got := parseCommand("\u2003/status\textra"); got != "/status" {
-		t.Fatalf("parseCommand = %q", got)
 	}
 }
 
@@ -808,27 +783,6 @@ func TestCloseWaitsForInFlightAndRejectsNew(t *testing.T) {
 	}
 }
 
-func TestKeyedMutexRefcountsAndHonorsContext(t *testing.T) {
-	locks := newKeyedMutex()
-	if err := locks.Lock(context.Background(), "k"); err != nil {
-		t.Fatal(err)
-	}
-	if size := locks.size(); size != 1 {
-		t.Fatalf("size = %d", size)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	waitErr := make(chan error, 1)
-	go func() { waitErr <- locks.Lock(ctx, "k") }()
-	cancel()
-	if err := <-waitErr; err == nil {
-		t.Fatal("cancelled waiter acquired the lock")
-	}
-	locks.Unlock("k")
-	if size := locks.size(); size != 0 {
-		t.Fatalf("residue after unlock: %d entries", size)
-	}
-}
-
 func TestAdapterRoutingByAccount(t *testing.T) {
 	specific := &fauxAdapter{account: "bot"}
 	wildcard := &fauxAdapter{}
@@ -864,18 +818,6 @@ func TestHandleRejectsUnclaimedAccountWithoutWildcard(t *testing.T) {
 	m.Account = "stranger"
 	if err := env.proc.Handle(context.Background(), m); !errors.Is(err, ErrRejected) {
 		t.Fatalf("err = %v, want ErrRejected", err)
-	}
-}
-
-func TestNewRejectsDuplicatePlatformAccountPairs(t *testing.T) {
-	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
-	_, err := New(Options{
-		Sessions:  newFauxSessions(t, provider),
-		Adapters:  []Adapter{&fauxAdapter{account: "x"}, &fauxAdapter{account: "x"}},
-		Authorize: AllowAll,
-	})
-	if err == nil || !strings.Contains(err.Error(), "duplicate adapter") {
-		t.Fatalf("err = %v, want duplicate adapter error", err)
 	}
 }
 

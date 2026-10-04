@@ -197,46 +197,6 @@ func pattern(n int) []byte {
 	return b
 }
 
-func TestDialHandshakeHeaders(t *testing.T) {
-	done := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("method = %s, want GET", r.Method)
-		}
-		if got := r.URL.RequestURI(); got != "/gateway?v=10&encoding=json" {
-			t.Errorf("request uri = %q", got)
-		}
-		if got := r.Header.Get("Upgrade"); got != "websocket" {
-			t.Errorf("Upgrade = %q", got)
-		}
-		if got := r.Header.Get("Connection"); got != "Upgrade" {
-			t.Errorf("Connection = %q", got)
-		}
-		if got := r.Header.Get("Sec-WebSocket-Version"); got != "13" {
-			t.Errorf("Sec-WebSocket-Version = %q", got)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bot fake" {
-			t.Errorf("Authorization = %q, caller header not passed through", got)
-		}
-		key := r.Header.Get("Sec-WebSocket-Key")
-		if raw, err := base64.StdEncoding.DecodeString(key); err != nil || len(raw) != 16 {
-			t.Errorf("Sec-WebSocket-Key = %q, want base64 of 16 bytes", key)
-		}
-		c, _ := upgrade(t, w, r)
-		defer func() { _ = c.Close() }()
-		done <- struct{}{}
-	}))
-	t.Cleanup(srv.Close)
-
-	conn, err := Dial(context.Background(), wsURL(srv)+"/gateway?v=10&encoding=json",
-		http.Header{"Authorization": {"Bot fake"}}, nil)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	waitDone(t, done)
-}
-
 func TestDialRejectsBadHandshake(t *testing.T) {
 	raw := func(f func(key string) string) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

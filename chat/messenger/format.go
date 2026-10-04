@@ -2,8 +2,7 @@ package messenger
 
 import "github.com/OrdalieTech/orb/chat/internal/runechunk"
 
-const maxMessageLen = 2000
-
+// chunkLimit stays under the Send API's 2000-character cap.
 const chunkLimit = 1900
 
 // chunkText splits text into chunks of at most limit characters (runes —

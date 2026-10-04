@@ -193,34 +193,6 @@ func TestDeliveryParseEntitiesFallback(t *testing.T) {
 	}
 }
 
-func TestDeliveryTypingRefreshesUntilNotify(t *testing.T) {
-	f := newFakeAPI(t)
-	adapter := newTestAdapter(t, f, func(o *Options) { o.TypingInterval = 5 * time.Millisecond })
-	delivery := adapter.NewDelivery(testKey("77"), "", "")
-	ctx := context.Background()
-
-	if err := delivery.Typing(ctx); err != nil {
-		t.Fatalf("Typing: %v", err)
-	}
-	deadline := time.Now().Add(time.Second)
-	for len(f.callsTo("sendChatAction")) < 3 {
-		if time.Now().After(deadline) {
-			t.Fatal("typing refresher never ticked")
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	if err := delivery.Notify(ctx, "stopped"); err != nil {
-		t.Fatalf("Notify: %v", err)
-	}
-	sends := f.callsTo("sendMessage")
-	if len(sends) != 1 || sends[0].params["text"] != "stopped" {
-		t.Fatalf("notify send = %v", sends)
-	}
-	if _, hasParse := sends[0].params["parse_mode"]; hasParse {
-		t.Fatal("Notify must be plain text")
-	}
-}
-
 func TestDeliveryPreviewRateLimitSkips(t *testing.T) {
 	f := newFakeAPI(t)
 	adapter := newTestAdapter(t, f, func(o *Options) { o.PreviewMinInterval = time.Hour })

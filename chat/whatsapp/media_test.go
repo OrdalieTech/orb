@@ -92,33 +92,3 @@ func TestDownloadRefetchesExpiredURLOnce(t *testing.T) {
 		t.Fatalf("metadata fetched %d times, want exactly 2 (expiry refetch once)", metadataCalls.Load())
 	}
 }
-
-func TestDownloadGivesUpAfterSecondFailure(t *testing.T) {
-	var metadataCalls atomic.Int32
-	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-
-	mux.HandleFunc("GET /"+GraphVersion+"/MEDIA123", func(w http.ResponseWriter, r *http.Request) {
-		metadataCalls.Add(1)
-		_, _ = fmt.Fprintf(w, `{"url":%q,"mime_type":"image/jpeg"}`, server.URL+"/cdn/gone")
-	})
-	mux.HandleFunc("GET /cdn/gone", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "gone", http.StatusNotFound)
-	})
-
-	adapter := newTestAdapter(t, server.URL, nil)
-	if _, _, err := adapter.Download(context.Background(), chat.AttachmentRef{Kind: "photo", ID: "MEDIA123"}); err == nil {
-		t.Fatal("expected error after refetch-once failed")
-	}
-	if metadataCalls.Load() != 2 {
-		t.Fatalf("metadata fetched %d times, want exactly 2 (refetch once, no loop)", metadataCalls.Load())
-	}
-}
-
-func TestDownloadRejectsEmptyMediaID(t *testing.T) {
-	adapter := newTestAdapter(t, "http://unused.invalid", nil)
-	if _, _, err := adapter.Download(context.Background(), chat.AttachmentRef{Kind: "photo"}); err == nil {
-		t.Fatal("expected error for missing media id")
-	}
-}

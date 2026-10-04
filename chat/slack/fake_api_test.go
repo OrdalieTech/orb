@@ -86,17 +86,6 @@ func (f *fakeAPI) stub(method string, response stubResponse) {
 	f.stubs[method] = append(f.stubs[method], response)
 }
 
-// callMethods returns the ordered method names of every recorded call.
-func (f *fakeAPI) callMethods() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	methods := make([]string, len(f.calls))
-	for i, call := range f.calls {
-		methods[i] = call.method
-	}
-	return methods
-}
-
 // callsTo returns the recorded calls to one method, in order.
 func (f *fakeAPI) callsTo(method string) []apiCall {
 	f.mu.Lock()

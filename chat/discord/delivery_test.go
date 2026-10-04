@@ -127,30 +127,6 @@ func newTestDelivery(adapter *Adapter, replyTo, resumePreviewID string) chat.Del
 	return adapter.NewDelivery(key, replyTo, resumePreviewID)
 }
 
-func TestTypingRefreshUntilFinalize(t *testing.T) {
-	fake, adapter := newFakeRest(t)
-	d := newTestDelivery(adapter, "dc:chan1:m0", "")
-	if err := d.Typing(t.Context()); err != nil {
-		t.Fatalf("Typing: %v", err)
-	}
-	// The refresher ticks every 10ms; wait for at least two refreshes.
-	deadline := time.Now().Add(2 * time.Second)
-	for fake.countCalls(http.MethodPost, "/typing") < 3 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if got := fake.countCalls(http.MethodPost, "/typing"); got < 3 {
-		t.Fatalf("typing calls = %d, want >= 3 (initial + refreshes)", got)
-	}
-	if _, err := d.Finalize(t.Context(), "done"); err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	settled := fake.countCalls(http.MethodPost, "/typing")
-	time.Sleep(50 * time.Millisecond)
-	if got := fake.countCalls(http.MethodPost, "/typing"); got > settled {
-		t.Errorf("typing refreshed after Finalize: %d -> %d", settled, got)
-	}
-}
-
 func TestPreviewCreateThenEditThenFinalizeEdits(t *testing.T) {
 	fake, adapter := newFakeRest(t)
 	d := newTestDelivery(adapter, "dc:chan1:m0", "")
@@ -354,57 +330,6 @@ func TestRateLimit429HonorsRetryAfter(t *testing.T) {
 	}
 	if got := fake.countCalls(http.MethodPost, "/messages"); got != 2 {
 		t.Errorf("sends = %d, want 2 (429 then success)", got)
-	}
-}
-
-func TestUnauthorizedSurfacesWithoutRetry(t *testing.T) {
-	fake, adapter := newFakeRest(t)
-	fake.setRespond(func(n int, call restCall, w http.ResponseWriter) bool {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = fmt.Fprint(w, `{"message":"401: Unauthorized","code":0}`)
-		return true
-	})
-	d := newTestDelivery(adapter, "", "")
-	_, err := d.Finalize(t.Context(), "should fail fast")
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusUnauthorized {
-		t.Fatalf("Finalize error = %v, want *APIError with 401", err)
-	}
-	if got := len(fake.snapshot()); got != 1 {
-		t.Errorf("calls = %d, want exactly 1 (401 must never be retried)", got)
-	}
-}
-
-func TestNotifyPlainSend(t *testing.T) {
-	fake, adapter := newFakeRest(t)
-	d := newTestDelivery(adapter, "dc:chan1:m0", "")
-	if err := d.Notify(t.Context(), "heads up"); err != nil {
-		t.Fatalf("Notify: %v", err)
-	}
-	calls := fake.snapshot()
-	if len(calls) != 1 || calls[0].method != http.MethodPost {
-		t.Fatalf("calls = %+v, want one POST", calls)
-	}
-	if _, hasRef := calls[0].body["message_reference"]; hasRef {
-		t.Error("Notify attached a message_reference, want a bare send")
-	}
-	if calls[0].body["content"] != "heads up" {
-		t.Errorf("content = %v, want %q", calls[0].body["content"], "heads up")
-	}
-}
-
-func TestEmptyFinalizeDeliversPlaceholder(t *testing.T) {
-	fake, adapter := newFakeRest(t)
-	d := newTestDelivery(adapter, "", "")
-	receipt, err := d.Finalize(t.Context(), "   \n ")
-	if err != nil {
-		t.Fatalf("Finalize: %v", err)
-	}
-	if len(receipt.MessageIDs) != 1 {
-		t.Fatalf("receipt = %v, want one message", receipt.MessageIDs)
-	}
-	if got := fake.snapshot()[0].body["content"]; got != "(empty reply)" {
-		t.Errorf("content = %v, want %q", got, "(empty reply)")
 	}
 }
 

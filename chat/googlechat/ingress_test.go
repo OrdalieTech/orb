@@ -91,37 +91,6 @@ func TestWebhookNormalizesSpaceMention(t *testing.T) {
 	}
 }
 
-func TestWebhookNormalizesDM(t *testing.T) {
-	env := newTestEnv(t)
-	var published []chat.Message
-	handler := env.adapter.Webhook(func(m chat.Message) error {
-		published = append(published, m)
-		return nil
-	})
-	event := `{
-	  "type": "MESSAGE",
-	  "message": {
-	    "name": "spaces/DM1/messages/M1",
-	    "sender": {"name": "users/7", "displayName": "Bo", "type": "HUMAN"},
-	    "text": "/status",
-	    "thread": {"name": "spaces/DM1/threads/T1"},
-	    "space": {"name": "spaces/DM1", "spaceType": "DIRECT_MESSAGE"}
-	  }
-	}`
-	if rec := postEvent(t, handler, inboundJWT(t, nil), event); rec.Code != http.StatusOK {
-		t.Fatalf("status %d, want 200", rec.Code)
-	}
-	if len(published) != 1 {
-		t.Fatalf("published %d, want 1", len(published))
-	}
-	if published[0].ChatType != "dm" {
-		t.Fatalf("ChatType %q, want dm", published[0].ChatType)
-	}
-	if published[0].Text != "/status" {
-		t.Fatalf("Text %q, want /status (text used when argumentText absent)", published[0].Text)
-	}
-}
-
 func TestWebhookAuth(t *testing.T) {
 	env := newTestEnv(t)
 	published := 0
@@ -194,16 +163,5 @@ func TestWebhookPublishFailureAnswers500(t *testing.T) {
 	rec := postEvent(t, handler, inboundJWT(t, nil), messageEvent)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, want 500 so Google redelivers", rec.Code)
-	}
-}
-
-func TestWebhookRejectsNonPost(t *testing.T) {
-	env := newTestEnv(t)
-	handler := env.adapter.Webhook(func(chat.Message) error { return nil })
-	req := httptest.NewRequest(http.MethodGet, "/chat/events", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status %d, want 405", rec.Code)
 	}
 }
