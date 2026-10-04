@@ -93,7 +93,7 @@ func HandleListMouse(target ListMouseTarget, event MouseEvent) bool {
 		}
 		target.ListScroll(direction)
 		return true
-	case event.Type == MousePress && event.Button == 0:
+	case (event.Type == MousePress || event.Type == MouseRelease) && event.Button == 0:
 		index, ok := target.ListRowAt(event.Row)
 		if !ok {
 			return false
@@ -102,8 +102,13 @@ func HandleListMouse(target ListMouseTarget, event MouseEvent) bool {
 		if event.Clicks >= 2 {
 			return true
 		}
-		target.ListSelectRow(index)
-		target.ListConfirm()
+		// A click picks on release what its press selected (the press may have
+		// recentred the window); a drag from the press selects text instead.
+		if event.Type == MouseRelease {
+			target.ListConfirm()
+		} else {
+			target.ListSelectRow(index)
+		}
 		return true
 	}
 	return false

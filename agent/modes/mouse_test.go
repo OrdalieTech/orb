@@ -74,7 +74,7 @@ func TestTreeSelectorClickSelectsRowAndDoubleClickConfirms(t *testing.T) {
 	selector := newTreeFixtureSelector(t, 6, 10, func(id string) { confirmed = id })
 	row := lineIndexContaining(t, selector.Render(60), "主3 main")
 
-	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: 20, Clicks: 1}) {
+	if !click(selector, row, 1) {
 		t.Fatal("click on a tree row was not consumed")
 	}
 	if got := selector.selectedID(); got != "m3" {
@@ -164,14 +164,14 @@ func TestSessionSelectorClickSelectsAndDoubleClickResumes(t *testing.T) {
 	waitForSelector(t, selector, "third session")
 
 	row := lineIndexContaining(t, selector.Render(100), "third session")
-	if !selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
+	if !click(selector, row, 1) {
 		t.Fatal("session click was not consumed")
 	}
 	if resumed != "/tmp/three.jsonl" {
 		t.Fatalf("single click resumed %q", resumed)
 	}
 	selector.Render(100)
-	selector.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+	click(selector, row, 2)
 	if resumed != "/tmp/three.jsonl" {
 		t.Fatalf("double click resumed %q", resumed)
 	}
@@ -199,7 +199,7 @@ func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
 	component := modelSelectorMouseFixture(t, 5, func(model ai.Model) { confirmed = model.ID })
 	row := lineIndexContaining(t, component.Render(80), "model-02")
 
-	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
+	if !click(component, row, 1) {
 		t.Fatal("model click was not consumed")
 	}
 	if confirmed != "model-02" {
@@ -208,7 +208,7 @@ func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {
 	if index := lineIndexContaining(t, component.Render(80), "› model-02"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
 	}
-	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+	click(component, row, 2)
 	if confirmed != "model-02" {
 		t.Fatalf("double click confirmed %q", confirmed)
 	}
@@ -378,6 +378,13 @@ func TestSessionSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
 	}
 }
 
+// click presses and releases on a row, as the TUI delivers a click.
+func click(handler tui.MouseHandler, row, clicks int) bool {
+	pressed := handler.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: clicks})
+	handler.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: row, Clicks: clicks})
+	return pressed
+}
+
 func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testing.T) {
 	initTestTheme(t)
 	chosen := ""
@@ -390,7 +397,7 @@ func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testi
 		func(provider InteractiveAuthProvider) { chosen = provider.ID }, nil, "")
 
 	row := lineIndexContaining(t, component.Render(80), "Beta")
-	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
+	if !click(component, row, 1) {
 		t.Fatal("provider click was not consumed")
 	}
 	if chosen != "beta" {
@@ -399,7 +406,7 @@ func TestOAuthSelectorClickSelectsHoverHighlightsAndDoubleClickConfirms(t *testi
 	if index := lineIndexContaining(t, component.Render(80), "› Beta"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
 	}
-	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+	click(component, row, 2)
 	if chosen != "beta" {
 		t.Fatalf("double click confirmed %q", chosen)
 	}
@@ -493,7 +500,7 @@ func TestExtensionSelectorScrollsWrappedOptions(t *testing.T) {
 	if row < 0 {
 		t.Fatal("last option is not visible or cannot be clicked")
 	}
-	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1})
+	click(component, row, 1)
 	if chosen != items[len(items)-1].Value {
 		t.Fatalf("clicked %q, want last model", chosen)
 	}
@@ -524,7 +531,7 @@ func TestExtensionSelectorScrollsWrappedOptions(t *testing.T) {
 			break
 		}
 	}
-	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1})
+	click(component, row, 1)
 	after := component.Render(40)
 	if len(after) != len(before) || component.searchInput.GetValue() != "model-name-39" || !strings.Contains(strings.Join(after, "\n"), "[x]") {
 		t.Fatal("toggling a filtered result changed the query or modal geometry")
@@ -567,7 +574,7 @@ func TestExtensionSelectorClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	}, func(value string) { chosen = value }, nil, nil)
 
 	row := lineIndexContaining(t, component.Render(60), "approve for this session")
-	if !component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 1}) {
+	if !click(component, row, 1) {
 		t.Fatal("option click was not consumed")
 	}
 	if chosen != "s approve for this session" {
@@ -576,7 +583,7 @@ func TestExtensionSelectorClickSelectsAndDoubleClickConfirms(t *testing.T) {
 	if index := lineIndexContaining(t, component.Render(60), "› s approve for this session"); index != row {
 		t.Fatalf("cursor moved to row %d, want %d", index, row)
 	}
-	component.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Clicks: 2})
+	click(component, row, 2)
 	if chosen != "s approve for this session" {
 		t.Fatalf("double click confirmed %q", chosen)
 	}

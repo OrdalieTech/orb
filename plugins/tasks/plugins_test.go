@@ -119,7 +119,7 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	host := &taskWidgetHost{}
 	component := factory(host, nil)
 	mouse, ok := component.(tui.MouseHandler)
-	require(t, ok && mouse.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}), "task widget did not accept a left click")
+	require(t, ok && click(mouse), "task widget did not accept a left click")
 	expanded := strings.Join(component.Render(80), "\n")
 	require(t, strings.Contains(expanded, "[x] inspect") && strings.Contains(expanded, "→ [ ] implement") && host.invalidations == 1, "expanded task widget = %q, invalidations = %d", expanded, host.invalidations)
 	for width := 1; width <= 4; width++ {
@@ -130,7 +130,7 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 		}
 	}
 	styled := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, host, dimTaskTheme{})
-	styled.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
+	click(styled)
 	styledLines := styled.Render(80)
 	require(t, len(styledLines) >= 3 && strings.Contains(strings.Join(styledLines, "\n"), "\x1b[2m") && strings.HasPrefix(styledLines[1], "    "), "styled expanded task widget = %#v", styledLines)
 
@@ -143,10 +143,16 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	require(t, ok && len(details.Items) == 1 && details.Items[0].Text == "ship", "result details = %#v", result.Details)
 }
 
+// click presses and releases, as the TUI delivers a click.
+func click(handler tui.MouseHandler) bool {
+	return handler.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}) &&
+		handler.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Clicks: 1})
+}
+
 func TestTaskWidgetCachesStableRenders(t *testing.T) {
 	theme := &countingTaskTheme{}
 	widget := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, nil, theme)
-	widget.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
+	click(widget)
 	first := widget.Render(80)
 	calls := theme.calls
 	second := widget.Render(80)
@@ -163,7 +169,7 @@ func TestTaskWidgetCachesStableRenders(t *testing.T) {
 func TestTaskWidgetInvalidationWinsConcurrentRender(t *testing.T) {
 	theme := &blockingTaskTheme{started: make(chan struct{}), release: make(chan struct{})}
 	widget := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}}, nil, theme)
-	widget.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1})
+	click(widget)
 	done := make(chan struct{})
 	go func() {
 		widget.Render(80)

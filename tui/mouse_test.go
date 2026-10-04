@@ -218,19 +218,28 @@ func TestTUIScrollbarClickStillBeatsComponents(t *testing.T) {
 	}
 }
 
+// clickAt presses and releases at event's cell, as the TUI delivers a click.
+func clickAt(handler MouseHandler, event MouseEvent) bool {
+	event.Type = MousePress
+	pressed := handler.HandleMouse(event)
+	event.Type = MouseRelease
+	handler.HandleMouse(event)
+	return pressed
+}
+
 func TestSelectListClickConfirmsOnce(t *testing.T) {
 	items := []SelectItem{{Value: "one"}, {Value: "two"}, {Value: "three"}, {Value: "four"}}
 	list := NewSelectList(items, 4, SelectListTheme{}, SelectListLayoutOptions{})
 	confirmed := ""
 	list.OnSelect = func(item SelectItem) { confirmed = item.Value }
 
-	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 1}) {
+	if !clickAt(list, MouseEvent{Row: 2, Clicks: 1}) {
 		t.Fatal("click was not consumed")
 	}
 	if item, _ := list.GetSelectedItem(); item.Value != "three" || confirmed != "three" {
 		t.Fatalf("single click = %q confirmed %q", item.Value, confirmed)
 	}
-	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 2}) {
+	if !clickAt(list, MouseEvent{Row: 2, Clicks: 2}) {
 		t.Fatal("double click was not consumed")
 	}
 	if confirmed != "three" {
@@ -250,11 +259,11 @@ func TestSelectListClickConfirmsOnce(t *testing.T) {
 	scrolled := NewSelectList(items, 3, SelectListTheme{}, SelectListLayoutOptions{})
 	scrolled.OnSelect = func(item SelectItem) { confirmed = item.Value }
 	scrolled.SetSelectedIndex(3)
-	scrolled.HandleMouse(MouseEvent{Type: MousePress, Row: 0, Clicks: 1})
+	clickAt(scrolled, MouseEvent{Row: 0, Clicks: 1})
 	if item, _ := scrolled.GetSelectedItem(); item.Value != "two" {
 		t.Fatalf("scrolled click = %q, want two", item.Value)
 	}
-	scrolled.HandleMouse(MouseEvent{Type: MousePress, Row: 0, Clicks: 2})
+	clickAt(scrolled, MouseEvent{Row: 0, Clicks: 2})
 	if confirmed != "two" {
 		t.Fatalf("double click on a recentred list confirmed %q, want two", confirmed)
 	}
@@ -432,10 +441,10 @@ func TestSettingsListWheelAndClickShareUnifiedPath(t *testing.T) {
 	if list.selectedIndex != 2 {
 		t.Fatalf("hover selected %d, want 2", list.selectedIndex)
 	}
-	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 1}) {
+	if !clickAt(list, MouseEvent{Row: 2, Clicks: 1}) {
 		t.Fatal("click was not consumed")
 	}
-	if !list.HandleMouse(MouseEvent{Type: MousePress, Row: 2, Clicks: 2}) {
+	if !clickAt(list, MouseEvent{Row: 2, Clicks: 2}) {
 		t.Fatal("double click was not consumed")
 	}
 	if changed != "c=off" {

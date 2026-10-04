@@ -124,6 +124,7 @@ type TUI struct {
 	mouseClicks         int
 	mouseCapture        MouseHandler
 	mouseCaptureOrigin  mousePoint
+	mousePress          MouseEvent // the press the capturing component took, in screen cells
 	mouseHover          MouseHandler
 
 	lifecycleMu        sync.RWMutex
@@ -638,14 +639,30 @@ func (ui *TUI) handleMouse(data string) bool {
 	}
 	ui.renderMu.Lock()
 	if ui.mouseCapture != nil && (event.Type == MouseDrag || event.Type == MouseRelease) {
-		handler := ui.mouseCapture
-		event.Row -= ui.mouseCaptureOrigin.row
-		event.Column -= ui.mouseCaptureOrigin.column
+		handler, press, local := ui.mouseCapture, ui.mousePress, event
+		local.Row -= ui.mouseCaptureOrigin.row
+		local.Column -= ui.mouseCaptureOrigin.column
+		local.Clicks = press.Clicks
 		if event.Type == MouseRelease {
 			ui.mouseCapture = nil
 		}
 		ui.renderMu.Unlock()
-		return handler.HandleMouse(event)
+		// A press is a click only until the pointer leaves its cell: a drag the
+		// component does not take selects text from the press, and its click never completes.
+		switch {
+		case event.Type == MouseRelease:
+			return handler.HandleMouse(local)
+		case event.Row == press.Row && event.Column == press.Column:
+			return false
+		case handler.HandleMouse(local) || ui.selectionHandler == nil:
+			return true
+		}
+		ui.renderMu.Lock()
+		ui.mouseCapture, ui.mouseClickAt = nil, time.Time{} // a drag is no click toward a double click
+		ui.startSelectionLocked(press)
+		ui.renderMu.Unlock()
+		ui.handleViewportMouse(event)
+		return true
 	}
 	if event.Type == MousePress {
 		ui.mouseCapture = nil
@@ -711,7 +728,8 @@ func (ui *TUI) handleMouse(data string) bool {
 		if event.Type == MousePress && event.Button == 0 {
 			ui.renderMu.Lock()
 			ui.clearSelectionLocked()
-			ui.mouseCapture = handler
+			ui.mouseCapture, ui.mousePress = handler, event
+			ui.mousePress.Clicks = local.Clicks
 			ui.mouseCaptureOrigin = mousePoint{row: event.Row - local.Row, column: event.Column - local.Column}
 			ui.renderMu.Unlock()
 		}
@@ -821,36 +839,7 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 		ui.selection = mouseSelection{scrollbar: true}
 		ui.scrollViewportToLocked(event.Row)
 	case event.Type == MousePress && event.Button == 0 && ui.selectionHandler != nil:
-		// The transcript selects content (it follows scrolling); a press
-		// anywhere else no component took, or inside a dialog, selects the
-		// cells as drawn.
-		point, ok := ui.bodyPointLocked(event.Column, event.Row, false)
-		if !ok || ui.modalAtLocked(event) {
-			// Anything else on screen, a dialog over the transcript included, selects as drawn.
-			ui.stopSelectionScrollLocked()
-			here := mousePoint{row: event.Row, column: event.Column}
-			ui.selection = mouseSelection{anchor: here, focus: here, active: true, screen: true}
-		} else {
-			ui.stopSelectionScrollLocked()
-			previous, now := ui.selection, time.Now()
-			clicks := 1
-			if point == previous.lastClick && now.Sub(previous.lastClickAt) <= doubleClickInterval {
-				clicks = previous.clicks%3 + 1
-			}
-			ui.selection = mouseSelection{anchor: point, focus: point, active: true, lastClick: point, lastClickAt: now, clicks: clicks}
-			if event.Shift && previous.moved {
-				ui.selection.anchor = previous.anchor
-				ui.extendSelectionLocked(point)
-			} else if clicks > 1 {
-				ui.selection.unit = clicks
-				ui.selection.unitStart, ui.selection.unitEnd = ui.selectionUnitBoundsLocked(point)
-				ui.extendSelectionLocked(point)
-			}
-
-			if ui.viewportFollow && ui.viewportBodyLines > ui.viewportBodyHeight {
-				ui.viewportEnd, ui.viewportFollow = ui.viewportBodyLines, false
-			}
-		}
+		ui.startSelectionLocked(event)
 	}
 	handler := ui.selectionHandler
 	ui.renderMu.Unlock()
@@ -859,6 +848,37 @@ func (ui *TUI) handleViewportMouse(event MouseEvent) {
 	}
 	if selected != "" && handler != nil {
 		handler(selected)
+	}
+}
+
+// startSelectionLocked anchors a selection at a press: transcript content
+// follows scrolling; anything else, a dialog over the transcript included,
+// selects the cells as drawn.
+func (ui *TUI) startSelectionLocked(event MouseEvent) {
+	ui.stopSelectionScrollLocked()
+	point, ok := ui.bodyPointLocked(event.Column, event.Row, false)
+	if !ok || ui.modalAtLocked(event) {
+		here := mousePoint{row: event.Row, column: event.Column}
+		ui.selection = mouseSelection{anchor: here, focus: here, active: true, screen: true}
+	} else {
+		previous, now := ui.selection, time.Now()
+		clicks := 1
+		if point == previous.lastClick && now.Sub(previous.lastClickAt) <= doubleClickInterval {
+			clicks = previous.clicks%3 + 1
+		}
+		ui.selection = mouseSelection{anchor: point, focus: point, active: true, lastClick: point, lastClickAt: now, clicks: clicks}
+		if event.Shift && previous.moved {
+			ui.selection.anchor = previous.anchor
+			ui.extendSelectionLocked(point)
+		} else if clicks > 1 {
+			ui.selection.unit = clicks
+			ui.selection.unitStart, ui.selection.unitEnd = ui.selectionUnitBoundsLocked(point)
+			ui.extendSelectionLocked(point)
+		}
+
+		if ui.viewportFollow && ui.viewportBodyLines > ui.viewportBodyHeight {
+			ui.viewportEnd, ui.viewportFollow = ui.viewportBodyLines, false
+		}
 	}
 }
 
@@ -1127,7 +1147,11 @@ func selectedContent(lines []string, start, end mousePoint) string {
 		row := start.row + index
 		from, to := selectionColumns(line, row, start, end)
 		if row == start.row {
-			first, _ := contentColumns(line)
+			// A start in the row's margin starts at its content.
+			first, last := contentColumns(line)
+			if from <= first+selectionMarginWidth(plainTerminalText(SliceByColumn(line, first, last-first, false))) {
+				from = first
+			}
 			firstFull = from == first
 		}
 		if index > 0 && marker >= 0 {

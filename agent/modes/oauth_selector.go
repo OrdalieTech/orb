@@ -286,13 +286,13 @@ var copyAuthLink = clipboard.CopyToClipboard
 
 // HandleMouse copies the link on a click; a drag selects it as any wrapped text.
 func (component *loginAuthDialogComponent) HandleMouse(event tui.MouseEvent) bool {
-	if event.Type != tui.MousePress || event.Button != 0 {
+	if event.Type != tui.MousePress && event.Type != tui.MouseRelease || event.Button != 0 {
 		return false
 	}
 	component.mu.Lock()
 	defer component.mu.Unlock()
-	if component.link == "" {
-		return false
+	if component.link == "" || event.Type == tui.MousePress {
+		return component.link != ""
 	}
 	hint := "Link copied to clipboard"
 	if err := copyAuthLink(component.link); err != nil {

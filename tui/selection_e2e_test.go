@@ -513,3 +513,52 @@ func TestSelectionE2EDragInChromeJoinsSoftWraps(t *testing.T) {
 		t.Fatalf("copied %q, highlighted %q, want the link alone", text, highlighted)
 	}
 }
+
+// A drag over a list item in a dialog selects its label, though the list
+// takes presses; a click without motion still picks the item.
+func TestSelectionE2EDragOverAListSelectsTextAndAClickPicks(t *testing.T) {
+	terminal := newTrackingTerminal(60, 16)
+	ui := NewTUI(terminal)
+	ui.SetViewport(&mutableLines{lines: []string{"transcript"}}, &Container{})
+	copied := make(chan string, 1)
+	ui.SetSelectionHandler(func(text string) { copied <- text })
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ui.Stop() })
+	list := NewSelectList([]SelectItem{{Value: "a", Label: "alpha model"}, {Value: "b", Label: "beta model"}}, 5, testSelectTheme, SelectListLayoutOptions{})
+	picked := make(chan string, 2)
+	list.OnSelect = func(item SelectItem) { picked <- item.Value }
+	ui.ShowOverlay(NewPanel("Pick a model", "", nil, nil, nil, list), OverlayOptions{Anchor: OverlayTopLeft, Width: AbsoluteSize(40)})
+	ui.RenderNow()
+	ui.renderMu.Lock()
+	row, column := -1, -1
+	for index, line := range ui.frame {
+		if at := strings.Index(plainTerminalText(line), "beta model"); at >= 0 {
+			row, column = index, at
+		}
+	}
+	ui.renderMu.Unlock()
+	if row < 0 {
+		t.Fatal("the list item is not on screen")
+	}
+	text, highlighted := dragCopy(t, terminal, ui, copied, mousePoint{row: row, column: column}, mousePoint{row: row, column: 39})
+	if text != "beta model" || highlighted != "beta model" {
+		t.Fatalf("copied %q, highlighted %q, want the label alone", text, highlighted)
+	}
+	select {
+	case value := <-picked:
+		t.Fatalf("a drag picked %q", value)
+	default:
+	}
+	terminal.deliver(sgr(0, column, row, false))
+	terminal.deliver(sgr(0, column, row, true))
+	select {
+	case value := <-picked:
+		if value != "b" {
+			t.Fatalf("a click picked %q", value)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a click did not pick the item")
+	}
+}

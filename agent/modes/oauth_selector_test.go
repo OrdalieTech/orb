@@ -859,7 +859,7 @@ func TestAClickCopiesTheLoginLink(t *testing.T) {
 	}
 	url := "https://claude.ai/oauth/authorize?code=true&client_id=x&state=" + strings.Repeat("s", 90)
 	dialog.showAuth(url, "")
-	if !dialog.HandleMouse(tui.MouseEvent{Type: tui.MousePress}) || copied != url {
+	if !click(dialog, 0, 1) || copied != url {
 		t.Fatalf("copied %q", copied)
 	}
 	if !strings.Contains(strings.Join(dialog.Render(60), "\n"), "Link copied") {
@@ -898,7 +898,7 @@ func TestLoginCodePromptStaysInTheDialog(t *testing.T) {
 	restore := copyAuthLink
 	copyAuthLink = func(text string) error { copied = text; return nil }
 	defer func() { copyAuthLink = restore }()
-	if dialog.HandleMouse(tui.MouseEvent{Type: tui.MousePress}); copied != link {
+	if click(dialog, 0, 1); copied != link {
 		t.Fatalf("a click copied %q", copied)
 	}
 	dialog.HandleInput(tui.KeyEvent{Raw: "\r"})
@@ -917,5 +917,64 @@ func TestLoginCodePromptStaysInTheDialog(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("the typed code was not submitted")
+	}
+}
+
+// The login dialog takes presses (a click copies its link), yet a drag over
+// the wrapped link selects exactly the URL.
+func TestLoginDialogLinkSelectsByDragAndCopiesByClick(t *testing.T) {
+	terminal := &mouseTerminal{fakeTerminalImpl: newFakeTerminal(40, 20)}
+	mode := newAuthFlowTestMode(&authFlowHost{})
+	mode.ui = tui.NewTUI(terminal)
+	mode.ui.SetViewport(&tui.Container{}, mode.editorContainer)
+	selected := make(chan string, 1)
+	mode.ui.SetSelectionHandler(func(text string) { selected <- text })
+	if err := mode.ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mode.ui.Stop() })
+	dialog := newLoginAuthDialogComponent("Login to Example", nil)
+	mode.mountLoginAuthDialog(dialog)
+	link := "https://example.test/oauth/authorize?code=true&client_id=orb&state=abc123"
+	dialog.showInfo("Open this link, then paste the code it shows.", []aiauth.AuthInfoLink{{URL: link, Label: "Sign-in page"}})
+	mode.ui.RenderNow()
+	lines := dialog.Render(40)
+	first, last := -1, -1
+	for index, line := range lines {
+		if plain := tui.StripANSI(line); strings.Contains(plain, "https://") || first >= 0 && last == index-1 && strings.TrimSpace(plain) != "" && !strings.Contains(plain, "Click") {
+			if first < 0 {
+				first = index
+			}
+			last = index
+		}
+	}
+	top := 20 - len(lines)
+	mouse := func(code, column, row int, release bool) {
+		suffix := "M"
+		if release {
+			suffix = "m"
+		}
+		terminal.input(fmt.Sprintf("\x1b[<%d;%d;%d%s", code, column+1, top+row+1, suffix))
+	}
+	mouse(0, 1, first, false)
+	mouse(32, 20, first+1, false)
+	mouse(32, 39, last, false)
+	mouse(0, 39, last, true)
+	select {
+	case text := <-selected:
+		if text != link {
+			t.Fatalf("a drag over the link copied %q", text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a drag over the link copied nothing")
+	}
+	var copied string
+	restore := copyAuthLink
+	copyAuthLink = func(text string) error { copied = text; return nil }
+	defer func() { copyAuthLink = restore }()
+	mouse(0, 5, first, false)
+	mouse(0, 5, first, true)
+	if copied != link {
+		t.Fatalf("a click copied %q", copied)
 	}
 }

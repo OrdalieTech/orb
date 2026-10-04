@@ -135,6 +135,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   the abort to finish or overwriting what you type meanwhile.
 - Every account in `/login` can be renamed, including ambient logins and command-line API keys; names
   persist, and an empty name restores the default label.
+- Dragging over any text selects it, in lists and dialogs too, and copies it without padding, borders
+  or wrap breaks; a click still picks or copies, now on release.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

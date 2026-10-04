@@ -357,10 +357,6 @@ func (body questionBody) Render(width int) []string {
 }
 func (body questionBody) HandleMouse(event tui.MouseEvent) bool {
 	p := body.p
-	if event.Type == tui.MouseDrag {
-		p.pressed = -1
-		return true
-	}
 	if !p.review() && (event.Type == tui.MouseWheelUp || event.Type == tui.MouseWheelDown) {
 		delta := 1
 		if event.Type == tui.MouseWheelUp {

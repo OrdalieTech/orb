@@ -267,7 +267,7 @@ func TestNarrowPanelPaddingAndMouseStayAligned(t *testing.T) {
 		if strings.Index(StripANSI(lines[1]), ">") != inset {
 			t.Fatalf("width %d: %q", width, lines[1])
 		}
-		frame.HandleMouse(MouseEvent{Type: MousePress, Row: 1, Column: inset, Clicks: 1})
+		clickAt(frame, MouseEvent{Row: 1, Column: inset, Clicks: 1})
 		if !clicked {
 			t.Fatalf("width %d: mouse missed visible choice", width)
 		}

@@ -95,10 +95,11 @@ func (widget *taskWidget) Render(width int) []string {
 }
 
 func (widget *taskWidget) HandleMouse(event tui.MouseEvent) bool {
-	if event.Type != tui.MousePress || event.Button != 0 {
+	if event.Type != tui.MousePress && event.Type != tui.MouseRelease || event.Button != 0 {
 		return false
 	}
-	if event.Clicks > 1 {
+	// A click toggles on release; a drag from the press selects text instead.
+	if event.Type == tui.MousePress || event.Clicks > 1 {
 		return true
 	}
 	widget.mu.Lock()

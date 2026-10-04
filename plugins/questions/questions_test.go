@@ -195,8 +195,12 @@ func TestQuestionPanelMouseTabsChoicesAndDrag(t *testing.T) {
 			t.Fatalf("target %d not visible", target)
 		}
 		panel.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: column})
+		// The TUI turns a drag the panel declines into a text selection; the release never comes.
 		if drag {
-			panel.HandleMouse(tui.MouseEvent{Type: tui.MouseDrag, Row: row, Column: column + 1})
+			if panel.HandleMouse(tui.MouseEvent{Type: tui.MouseDrag, Row: row, Column: column + 1}) {
+				t.Fatal("the panel kept a drag")
+			}
+			return
 		}
 		panel.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: row, Column: column})
 	}
