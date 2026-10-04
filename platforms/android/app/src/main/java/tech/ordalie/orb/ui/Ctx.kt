@@ -75,6 +75,7 @@ class Ctx(
 
     /** Opens a thread where it lives: the Orb that has it open, or one started on it. */
     fun openThread(peer: Peer, t: Thread) {
+        rt.tab(peer.id, t.id)?.let { return nav.show(it) }
         peer.instances.firstOrNull { it.session == t.id }?.let { nav.show(rt.open(it)) } ?: start(peer, session = t.id)
     }
 

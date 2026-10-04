@@ -31,7 +31,7 @@ fun ColumnScope.Home(c: Ctx) {
         val phone = peer.id == rt.bridge.self
         threads.map { t ->
             val i = peer.instances.firstOrNull { it.session == t.id }
-            val s = i?.let { rt.opened(it.id) }
+            val s = rt.tab(peer.id, t.id) ?: i?.let { rt.opened(it.id) }
             val live = s?.busy ?: i?.busy == true
             Entry("t:${peer.id}:${t.id}", t.title, peer, phone, if (live) now else t.modified, live, s?.ask != null, s != null,
                 rename = { c.renameThread(peer, t, delete = if (phone && i == null) ({ rt.forget(t.id) }) else null) }) { c.openThread(peer, t) }

@@ -70,6 +70,8 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     BackHandler(nav.stack.size > 1 || picker != null || deck != null || renaming != null) {
         if (renaming != null) renaming = null else if (picker != null) picker = null else if (deck != null) deck = null else nav.back()
     }
+    // A notification asked for a conversation: show its tab.
+    LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }) { picker = it }
     Box(Modifier.fillMaxSize().background(p.bg)) {
         val top = nav.stack.last()
@@ -122,7 +124,7 @@ private fun TopBar(c: Ctx, open: Session?) = Column(Modifier.statusBarsPadding()
     Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (open == null) p.fg else p.meta) }
         Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()).padding(start = 10.dp)) {
-            if (tabs.size > 1) tabs.forEach { s ->
+            if (tabs.size > 1 || open == null && tabs.isNotEmpty()) tabs.forEach { s ->
                 Tab(s, s == open, onLong = { c.tabMenu(s) }) { c.nav.show(s, forward = open == null || tabs.indexOf(s) > tabs.indexOf(open)) }
             } else if (open != null) Box(Modifier.fillMaxHeight().press(onLong = { c.tabMenu(open) }) {}.padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
                 T(open.title.ifEmpty { "New session" }, size = 15.sp, weight = Strong, lines = 1)

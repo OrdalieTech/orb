@@ -46,6 +46,11 @@ class Orb(private val context: Context) {
         .mapNotNull { l -> l.split('\t').takeIf { it.size >= 3 }?.let { Plugin(it[0], it[1] == "on", it[2]) } }
     fun plugin(name: String, on: Boolean) = run("plugins", if (on) "enable" else "disable", name).first == 0
 
+    /** The open conversations (the tabs) as JSON, kept so they come back when the app restarts. */
+    var tabs: String
+        get() = prefs.getString("tabs", "[]") ?: "[]"
+        set(value) = prefs.edit().putString("tabs", value).apply()
+
     /** The permissions plugin's mode: auto approves quietly, enforce asks through an interrupt. */
     var permissions: String
         get() = prefs.getString("permissions", "auto") ?: "auto"

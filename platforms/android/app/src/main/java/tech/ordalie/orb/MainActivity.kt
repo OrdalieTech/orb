@@ -32,10 +32,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); runtime.orb.linux.linkStorage() }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); receive(intent) }
+    override fun onStart() { super.onStart(); runtime.visible = true }
+    override fun onStop() { runtime.visible = false; super.onStop() }
 
     private fun receive(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND) shared.value = intent.getStringExtra(Intent.EXTRA_TEXT)
         if (intent?.action == Intent.ACTION_VIEW) shared.value = intent.dataString
+        intent?.getStringExtra(OrbService.SESSION)?.let { id -> runtime.show = runtime.sessions.firstOrNull { it.id == id } }
     }
 
     private fun cite(uri: Uri) {

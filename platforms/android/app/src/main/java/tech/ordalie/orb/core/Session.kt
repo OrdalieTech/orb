@@ -46,7 +46,7 @@ data class Command(val name: String, val hint: String)
  * calls `orb bridge view` makes and followed by long polls. The phone is a peer of itself, so this
  * is the only conversation the app knows.
  */
-class Session(private val scope: CoroutineScope, private val bridge: Bridge, val peer: String, instance: String, val where: String) {
+class Session(private val scope: CoroutineScope, private val bridge: Bridge, val peer: String, instance: String, val where: String, resume: String = "") {
     val remote get() = peer != bridge.self
     val transcript = Transcript()
     var title by mutableStateOf("")
@@ -61,7 +61,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     /** Reasoning levels the current model accepts, lowest first; empty when it has none. */
     var levels by mutableStateOf(emptyList<String>())
     var commands by mutableStateOf(emptyList<Command>())
-    var id by mutableStateOf("")
+    var id by mutableStateOf(resume)
     var cwd by mutableStateOf("")
 
     private var info = JSONObject()
@@ -73,7 +73,9 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     private var gone = false // the Orb ended there; the thread reopens with the next message
     private var queued: String? = null // a message waiting for the Orb (a new or reopened thread) to be ready
     private var queuedFrom = "" // ...and for its session to differ from this one
-    /** The Orb serving this thread; a reopened thread gets a new one. */
+    private var nextTry = 0L // when to try reopening again after a failure
+    private var reopening = false
+    /** The Orb serving this thread, empty until one does (a tab the app restored); a reopened thread gets a new one. */
     @Volatile var instance = instance
         private set
     /** Whether a screen shows this session. Unwatched, it only keeps its state fresh, slowly. */
@@ -92,6 +94,8 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     }
 
     private suspend fun step(): Long {
+        // A tab whose Orb is not running (the app restored it, or the Orb ended there) starts one once shown.
+        if (instance.isEmpty() || gone) { if (watched && System.currentTimeMillis() >= nextTry) reopen(); return 1000 }
         val waits = info.optBoolean("waits")
         if (stale || !waits || !watched) { if (!describe()) return if (gone) 5000 else 2000; stale = false }
         if (!watched) { cursor = ""; return 5000 } // the transcript is fetched again when a screen shows it
@@ -179,17 +183,25 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     fun prompt(text: String) {
         transcript.sent += text
         when {
-            gone -> reopen(text)
+            gone || instance.isEmpty() -> reopen(text)
             target == null -> later(text)
             busy -> { call("follow_up", execution(JSONObject().put("text", text))); transcript.waiting(steer = false) }
             else -> call("prompt", JSONObject().put("text", text))
         }
     }
 
-    /** Starts Orb on this thread again over there, then sends [text] once it is on Bridge. */
-    private fun reopen(text: String) = scope.launch {
-        status = "reopening the thread…"
-        bridge.launch(peer, session = id).onSuccess { instance = it.id; gone = false; cursor = ""; later(text) }.onFailure { status = it.message.orEmpty() }
+    /** Starts Orb on this thread again over there (or joins the one that has it open), then sends [text] once it is ready. */
+    private fun reopen(text: String? = null) {
+        text?.let { later(it) }
+        if (reopening) return
+        reopening = true
+        scope.launch {
+            status = "opening the thread…"
+            bridge.launch(peer, session = id)
+                .onSuccess { instance = it.id; gone = false; cursor = ""; stale = true; status = "" }
+                .onFailure { status = it.message.orEmpty(); nextTry = System.currentTimeMillis() + 30_000 }
+            reopening = false
+        }
     }
     fun steer(text: String) { transcript.sent += text; call("steer", execution(JSONObject().put("text", text))); transcript.waiting(steer = true) }
     fun abort() = call("cancel", execution())

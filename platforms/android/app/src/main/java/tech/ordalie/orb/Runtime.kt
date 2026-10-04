@@ -14,8 +14,12 @@ class Runtime(context: Context) {
     val orb = Orb(context)
     val scope = MainScope()
     val bridge by lazy { Bridge(scope, orb) }
-    /** The open conversations, in the order they were opened: the tabs. */
+    /** The open conversations, in the order they were opened: the tabs, kept across restarts. */
     val sessions = mutableStateListOf<Session>()
+    /** Whether the app is on screen; a conversation shown there needs no notification. */
+    var visible by mutableStateOf(false)
+    /** A conversation a notification asked to show. */
+    var show by mutableStateOf<Session?>(null)
 
     /** This app's Orb version, and the latest release when it is newer (checked at start, then every six hours). */
     val version: String = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0-dev"
@@ -25,6 +29,14 @@ class Runtime(context: Context) {
     fun start() {
         if (started) return
         started = true
+        // The tabs of the last run come back; each starts its Orb again only once shown.
+        runCatching { org.json.JSONArray(orb.tabs) }.getOrNull()?.let { a ->
+            for (i in 0 until a.length()) a.getJSONObject(i).let { t -> sessions += Session(scope, bridge, t.getString("peer"), "", t.optString("where"), t.getString("session")).apply { title = t.optString("title") } }
+        }
+        scope.launch {
+            snapshotFlow { sessions.filter { it.id.isNotEmpty() }.map { org.json.JSONObject().put("peer", it.peer).put("session", it.id).put("title", it.title).put("where", it.where) } }
+                .collect { orb.tabs = org.json.JSONArray(it).toString() }
+        }
         scope.launch { while (true) { Release.latest()?.let { latest = it }; delay(6 * 3600_000L) } }
         bridge.up // the pipe starts this phone's Bridge
         scope.launch { withContext(Dispatchers.IO) { orb.seed() }; setupLinux() }
@@ -41,15 +53,12 @@ class Runtime(context: Context) {
     fun forget(id: String) = scope.launch { withContext(Dispatchers.IO) { orb.run("storage", "delete", id) }; reload() }
 
     /** Every machine's threads, refreshed when Home shows and after each turn. */
-    fun reload() {
-        bridge.peers.forEach { peer -> scope.launch { runCatching { bridge.loadThreads(peer.id) } } }
-        // A conversation whose Orb ended on a reachable machine, or whose machine was forgotten, stops being followed.
-        val peers = bridge.peers.associateBy { it.id }
-        sessions.filter { s -> !s.watched && peers[s.peer]?.let { p -> p.connected && p.instances.none { it.id == s.instance } } != false }.forEach(::close)
-    }
+    fun reload() = bridge.peers.forEach { peer -> scope.launch { runCatching { bridge.loadThreads(peer.id) } } }
 
     // Looked up by the Orb a conversation follows now: a reopened thread moves to a new one.
     fun open(i: Instance): Session = opened(i.id) ?: Session(scope, bridge, i.peer, i.id, bridge.peers.firstOrNull { it.id == i.peer }?.name ?: "").also { sessions += it }
+    /** The tab of a thread, open or restored. */
+    fun tab(peer: String, session: String): Session? = sessions.firstOrNull { it.peer == peer && it.id == session }
     /** Stops following a conversation (its tab closes); it runs on where it is. */
     fun close(s: Session) { sessions.remove(s); s.close() }
     fun opened(instance: String): Session? = sessions.firstOrNull { it.instance == instance }
