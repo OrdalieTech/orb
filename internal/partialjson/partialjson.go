@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 // Allow controls which incomplete JSON values Parse may return.
@@ -508,18 +509,7 @@ func writeEscapedControl(output *strings.Builder, char byte) {
 }
 
 func trimSpace(input string) string {
-	return strings.TrimFunc(input, isECMAScriptWhitespace)
-}
-
-func isECMAScriptWhitespace(char rune) bool {
-	switch char {
-	case '\u0009', '\u000b', '\u000c', '\u0020', '\u00a0', '\u1680',
-		'\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff',
-		'\u000a', '\u000d':
-		return true
-	default:
-		return '\u2000' <= char && char <= '\u200a'
-	}
+	return strings.TrimFunc(input, jstrim.IsSpace)
 }
 
 func emptyObject() map[string]any {

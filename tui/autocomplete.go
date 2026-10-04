@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/localecompare"
 )
 
@@ -75,16 +76,7 @@ func isCJKPunctuation(r rune) bool {
 	return (unicode.IsPunct(r) && isCJKBreakGrapheme(string(r))) || strings.ContainsRune("，．：；！？（）［］｛｝“”‘’…—", r)
 }
 
-func isECMAScriptWhitespace(r rune) bool {
-	switch r {
-	case '\t', '\n', '\v', '\f', '\r', ' ', '\u00A0', '\u1680', '\u2028', '\u2029', '\u202F', '\u205F', '\u3000', '\uFEFF':
-		return true
-	default:
-		return r >= '\u2000' && r <= '\u200A'
-	}
-}
-
-func isAutocompleteSeparator(r rune) bool { return isECMAScriptWhitespace(r) || isCJKPunctuation(r) }
+func isAutocompleteSeparator(r rune) bool { return jstrim.IsSpace(r) || isCJKPunctuation(r) }
 
 func isAutocompleteBoundary(runes []rune, index int) bool {
 	return index == 0 || (index > 0 && index <= len(runes) && isAutocompleteSeparator(runes[index-1]))
