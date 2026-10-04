@@ -137,6 +137,9 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   persist, and an empty name restores the default label.
 - Dragging over any text selects it, in lists and dialogs too, and copies it without padding, borders
   or wrap breaks; a click still picks or copies, now on release.
+- Codex CLI threads open as Orb conversations with `orb --session <thread-id>` (codex-sessions plugin,
+  on by default): text, images, reasoning, tools and compaction come along, and turns added in Codex
+  since are taken in when reopened.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

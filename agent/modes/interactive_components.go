@@ -1012,7 +1012,7 @@ type toolActivityRow struct {
 func fallbackToolTitle(name string, args any) (string, int) {
 	title := theme.FG("accent", theme.Bold(name))
 	values, _ := args.(map[string]any)
-	for _, key := range []string{"file_path", "path", "command", "url", "urls", "query", "pattern", "description"} {
+	for _, key := range []string{"file_path", "path", "command", "url", "urls", "query", "pattern", "description", "input"} {
 		value, more := values[key], 0
 		if list, ok := value.([]any); ok && len(list) > 0 {
 			value, more = list[0], len(list)-1

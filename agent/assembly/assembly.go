@@ -49,6 +49,7 @@ type Options struct {
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
 	ClaudeSessions   extensions.Factory
+	CodexSessions    extensions.Factory
 	Bash             jobs.Bash
 	CWD              string
 	AgentDir         string
@@ -78,7 +79,7 @@ func Rows(options Options) []Row {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions, Bash: options.Bash})
+	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions, CodexSessions: options.CodexSessions, Bash: options.Bash})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: Description(name),

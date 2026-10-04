@@ -16,9 +16,35 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
+	"github.com/OrdalieTech/orb/plugins/codexsessions"
 )
 
 var errNoSessionSelected = errors.New("no session selected")
+
+// importers open another agent's session as an Orb conversation, each with
+// its plugin enabled; notFound is the error for an ID the agent doesn't know.
+var importers = []struct {
+	plugin   string
+	open     func(id string, env []string, create func(cwd string) (*session.SessionManager, error)) (*session.SessionManager, error)
+	notFound error
+}{
+	{claudesessions.Name, claudesessions.ImportClaudeCode, claudesessions.ErrNoClaudeCodeSession},
+	{codexsessions.Name, codexsessions.ImportCodex, codexsessions.ErrNoCodexSession},
+}
+
+// importSession opens id through the first enabled importer that knows it,
+// and returns no manager when none does.
+func importSession(settings *config.SettingsManager, id string, create func(cwd string) (*session.SessionManager, error)) (*session.SessionManager, error) {
+	for _, importer := range importers {
+		if !settings.GetPlugins()[importer.plugin] {
+			continue
+		}
+		if manager, err := importer.open(id, os.Environ(), create); !errors.Is(err, importer.notFound) {
+			return manager, err
+		}
+	}
+	return nil, nil
+}
 
 type SessionListLoader func(session.SessionListProgress) []session.SessionInfo
 
@@ -151,17 +177,14 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 		}
 		switch resolved.kind {
 		case "not_found":
-			// A Claude Code session opens as an Orb conversation, with Claude Sessions enabled.
-			if settings.GetPlugins()[claudesessions.Name] {
-				manager, err = claudesessions.ImportClaudeCode(resolved.arg, os.Environ(), func(dir string) (*session.SessionManager, error) {
-					return session.Create(dir, sessionDir, session.WithAgentDir(agentDir), session.WithSessionID(resolved.arg))
-				})
-				if err == nil {
-					break
-				}
-				if !errors.Is(err, claudesessions.ErrNoClaudeCodeSession) {
-					return nil, session.SessionContext{}, err
-				}
+			manager, err = importSession(settings, resolved.arg, func(dir string) (*session.SessionManager, error) {
+				return session.Create(dir, sessionDir, session.WithAgentDir(agentDir), session.WithSessionID(resolved.arg))
+			})
+			if err != nil {
+				return nil, session.SessionContext{}, err
+			}
+			if manager != nil {
+				break
 			}
 			return nil, session.SessionContext{}, fmt.Errorf("No session found matching '%s'", resolved.arg) //nolint:staticcheck // Upstream error capitalization is observable.
 		case "global":
@@ -355,23 +378,22 @@ func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector 
 	if reference != "" {
 		opened, err = repo.OpenPath(ctx, reference)
 	}
-	// A Claude Code session opens as an Orb conversation, with Claude Sessions enabled.
-	if settings, settingsErr := args.native.settings(cwd, args.native.agentDir); hasCLIValue(args.Session) && errors.Is(err, fs.ErrNotExist) && settingsErr == nil && settings.GetPlugins()[claudesessions.Name] {
-		manager, importErr := claudesessions.ImportClaudeCode(*args.Session, os.Environ(), func(dir string) (*session.SessionManager, error) {
+	if settings, settingsErr := args.native.settings(cwd, args.native.agentDir); hasCLIValue(args.Session) && errors.Is(err, fs.ErrNotExist) && settingsErr == nil {
+		manager, importErr := importSession(settings, *args.Session, func(dir string) (*session.SessionManager, error) {
 			created, err := repo.Create(ctx, harness.SessionCreateOptions{CWD: dir, ID: *args.Session})
 			if err != nil {
 				return nil, err
 			}
 			return session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir))
 		})
-		if importErr == nil {
+		if importErr != nil {
+			return nil, session.SessionContext{}, importErr
+		}
+		if manager != nil {
 			if err = args.native.bindSession(manager); err != nil {
 				return nil, session.SessionContext{}, err
 			}
 			return manager, manager.BuildSessionContext(), nil
-		}
-		if !errors.Is(importErr, claudesessions.ErrNoClaudeCodeSession) {
-			return nil, session.SessionContext{}, importErr
 		}
 	}
 	if err != nil && (args.SessionID == nil || hasCLIValue(args.Fork) || hasCLIValue(args.Session) || !errors.Is(err, fs.ErrNotExist)) {

@@ -442,6 +442,10 @@ func TestToolsWithoutRendererShowTheirMainArgument(t *testing.T) {
 	if got, from := fallbackToolTitle("fetch", map[string]any{"urls": []any{"https://a.dev/x", "https://b.dev"}}); tui.StripANSI(got) != "fetch https://a.dev/x +1" || from != 6 {
 		t.Fatalf("title %q from %d", got, from)
 	}
+	// A custom (freeform) tool's argument, as Orb's Responses providers name it.
+	if got, _ := fallbackToolTitle("apply_patch", map[string]any{"input": "*** Begin Patch\n*** Add File: a.go"}); tui.StripANSI(got) != "apply_patch *** Begin Patch *** Add File: a.go" {
+		t.Fatalf("title %q", got)
+	}
 	// A long URL keeps its host and its last part on one line.
 	url := "https://code.claude.com/docs/en/agent-sdk/very/long/path/to/the/tools-reference"
 	tool := NewToolExecutionComponent("fetch_content", "f", map[string]any{"url": url}, false, nil, &toolOutputRenderRequester{}, "/")

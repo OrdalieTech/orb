@@ -33,11 +33,13 @@ type CatalogOptions struct {
 	AgentDir         string
 	// ClaudeSessions is host-supplied: it runs processes the SDK layer never owns.
 	ClaudeSessions extensions.Factory
+	// CodexSessions is host-supplied: it reads the user's Codex home.
+	CodexSessions extensions.Factory
 	// Bash builds the host's bash tool, which background jobs run through.
 	Bash jobs.Bash
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
 	"questions":          "Ask the user questions with choices and custom answers",
@@ -51,6 +53,7 @@ var descriptions = map[string]string{
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
+	"codex-sessions":     "Open Codex CLI threads as Orb conversations with orb --session <id>",
 	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
 }
 
@@ -87,11 +90,14 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 	if options.ClaudeSessions == nil {
 		options.ClaudeSessions = func(extensions.API) error { return fmt.Errorf("claude sessions require host assembly") }
 	}
+	if options.CodexSessions == nil {
+		options.CodexSessions = func(extensions.API) error { return fmt.Errorf("codex sessions require host assembly") }
+	}
 	if options.BridgeAgentCalls == nil {
 		options.BridgeAgentCalls = func(extensions.API) error { return fmt.Errorf("bridge agent calls require host assembly") }
 	}
 	return map[string]extensions.Factory{
-		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions,
+		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions, "codex-sessions": options.CodexSessions,
 		"questions":      questions.Extension(),
 		"tasks":          tasks.Extension(),
 		"titles":         titles.Extension(),

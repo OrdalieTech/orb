@@ -54,7 +54,7 @@ func TestRowsEnumerateInBootOrder(t *testing.T) {
 		CWD: root, AgentDir: agentDir, Settings: settings,
 		Compiled: compiled("alpha", "beta"), MCP: true,
 	})
-	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls", "tool-search", "mcp"}
+	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls", "tool-search", "mcp"}
 	got := rowIDs(rows)
 	if len(got) != len(want) {
 		t.Fatalf("row ids = %v, want %v", got, want)
