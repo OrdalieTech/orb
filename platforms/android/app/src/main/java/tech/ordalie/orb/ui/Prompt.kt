@@ -1,7 +1,5 @@
 package tech.ordalie.orb.ui
 
-import android.os.Build
-import android.view.RoundedCorner
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -15,7 +13,6 @@ import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.input.*
@@ -57,23 +54,12 @@ fun PromptBox(
         value = TextFieldValue(""); cites.clear()
         return text
     }
-    // Resting, the box floats concentric with the screen's corners. With the keyboard up it becomes a
-    // sheet: full width, sides and bottom bleeding past the edges, round only where it meets the content.
-    val keyboard = WindowInsets.ime.getBottom(density) > 0
-    val k by animateFloatAsState(if (keyboard) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 380f), label = "sheet")
-    val rest = (screenCorner() - 10.dp).coerceAtLeast(22.dp)
-    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = rest * (1 - k), bottomEnd = rest * (1 - k))
-    val bleed = with(density) { (2.dp * k).roundToPx() }
     Column(
-        modifier.fillMaxWidth().padding(start = 10.dp * (1 - k), end = 10.dp * (1 - k), bottom = 10.dp * (1 - k))
-            .layout { m, c ->
-                val placeable = m.measure(c.copy(minWidth = c.maxWidth + 2 * bleed, maxWidth = c.maxWidth + 2 * bleed))
-                layout(c.maxWidth, placeable.height - bleed) { placeable.place(-bleed, 0) }
-            }
-            .clip(shape).background(p.raised).border(1.dp, p.fg.copy(alpha = 0.85f), shape).animateContentSize(spring(stiffness = 500f)),
+        modifier.fillMaxWidth().navigationBarsPadding().padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+            .clip(Pane).background(p.raised).border(1.dp, p.rule, Pane).animateContentSize(spring(stiffness = 500f)),
     ) {
         // The top edge is a handle, unmarked until used: drag it to give the draft more room.
-        Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp).pointerInput(Unit) {
+        Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).pointerInput(Unit) {
             detectVerticalDragGestures { _, dy -> extra = (extra - dy / density.density).coerceIn(0f, 320f) }
         }, contentAlignment = Alignment.Center) { Box(Modifier.size(36.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(if (extra > 0f) p.fg else Color.Transparent)) }
         if (cites.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -95,16 +81,16 @@ fun PromptBox(
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().heightIn(min = ((if (matches.isEmpty()) 72 else 48) + extra).dp, max = (240 + extra).dp).padding(horizontal = 18.dp, vertical = 10.dp)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = ((if (matches.isEmpty()) 52 else 40) + extra).dp, max = (240 + extra).dp).padding(horizontal = 14.dp, vertical = 6.dp)) {
             BasicTextField(
-                value, { value = it }, Modifier.fillMaxWidth(), textStyle = type(17.sp, p.fg), cursorBrush = SolidColor(p.fg),
+                value, { value = it }, Modifier.fillMaxWidth(), textStyle = type(16.sp, p.fg), cursorBrush = SolidColor(p.fg),
                 visualTransformation = tokens,
-                decorationBox = { inner -> if (value.text.isEmpty()) T(if (busy) "steer or queue a message" else placeholder, size = 17.sp, color = p.meta); inner() },
+                decorationBox = { inner -> if (value.text.isEmpty()) T(if (busy) "steer or queue a message" else placeholder, size = 16.sp, color = p.meta); inner() },
             )
         }
         Row(
-            Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 4.dp, bottom = 10.dp).windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Where(session?.remote == true, phone = p.fg); Spacer(Modifier.width(7.dp))
@@ -133,12 +119,4 @@ fun PromptBox(
             }
         }
     }
-}
-
-/** The display's own bottom corner radius, where the platform reports it. */
-@Composable
-fun screenCorner(): Dp {
-    val view = LocalView.current
-    val px = if (Build.VERSION.SDK_INT >= 31) view.rootWindowInsets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0 else 0
-    return with(LocalDensity.current) { px.toDp() }
 }

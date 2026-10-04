@@ -119,8 +119,8 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
 @Composable
 private fun TopBar(c: Ctx, open: Session?) = Column(Modifier.statusBarsPadding()) {
     val tabs = c.rt.sessions
-    Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 22.dp, if (open == null) p.fg else p.meta) }
+    Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (open == null) p.fg else p.meta) }
         Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()).padding(start = 10.dp)) {
             if (tabs.size > 1) tabs.forEach { s ->
                 Tab(s, s == open, onLong = { c.tabMenu(s) }) { c.nav.show(s, forward = open == null || tabs.indexOf(s) > tabs.indexOf(open)) }
@@ -163,8 +163,8 @@ fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Sheet
     LazyColumn(Modifier.heightIn(max = 440.dp), state = rememberLazyListState((pk.options.indexOf(pk.selected) - 2).coerceAtLeast(0))) {
         itemsIndexed(pk.options) { n, o ->
             val sel = o == pk.selected
-            Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { pk.pick(o); dismiss() }.padding(horizontal = Margin, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                T(o, Modifier.weight(1f), size = 17.sp, weight = if (sel) Strong else Regular, lines = 1)
+            Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { pk.pick(o); dismiss() }.padding(horizontal = Margin, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                T(o, Modifier.weight(1f), size = 16.sp, weight = if (sel) Strong else Regular, lines = 1)
                 if (sel) Dot(p.fg)
             }
         }

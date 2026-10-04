@@ -6,7 +6,6 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -70,7 +69,7 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
 /** Under the bar, what matters while reading: the device when it is not this phone, its state, how full its context is, what it cost; at right, the terminal where it runs. */
 @Composable
 private fun Strip(s: Session, terminal: () -> Unit) =
-    Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         val state = when { s.busy -> "working"; !s.online -> "offline"; else -> "" }
         T(listOfNotNull(s.where.takeIf { s.remote }, state.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (s.busy) p.fg else p.meta, lines = 1)
         if (s.context > 0f) T("${(s.context * 100).roundToInt()}% context", size = 13.sp, color = if (s.context > 0.8f) Ink.Rupture else p.meta)
@@ -78,14 +77,15 @@ private fun Strip(s: Session, terminal: () -> Unit) =
         Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong) }
     }
 
-/** The person is labelled; Orb just speaks, full width, its tools inline. */
+/** What the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb
+ *  just speaks, full width, its tools inline. */
 @Composable
 private fun Block(items: List<Item>, first: Boolean) {
     val you = items.singleOrNull() as? You
-    if (you != null) Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = if (first) 16.dp else 28.dp, bottom = 8.dp)) {
-        Box(Modifier.width(54.dp).padding(top = 2.dp)) { if (you.via != null) Chip("peer", ChipKind.Blue) else Chip("you", ChipKind.Inverted) }
-        BasicText(tokens(you.text, p.fg, p.bg), Modifier.weight(1f).copyable(you.text), type(SIZE.sp, p.fg, Medium))
-    } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 4.dp, bottom = 8.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (you != null) Column(Modifier.fillMaxWidth().padding(start = 48.dp, end = Margin, top = if (first) 12.dp else 20.dp, bottom = 6.dp), horizontalAlignment = Alignment.End) {
+        if (you.via != null) T("from a peer", Modifier.padding(bottom = 4.dp), size = Size.Label, color = Ink.Blue)
+        BasicText(tokens(you.text, p.fg, p.bg), Modifier.background(p.fg.copy(alpha = 0.07f), Pane).padding(horizontal = 12.dp, vertical = 8.dp).copyable(you.text), type(SIZE.sp, p.fg))
+    } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 2.dp, bottom = 6.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         runs(items).forEach { run ->
             when (val one = run.singleOrNull()) {
                 null -> Worked(run)
@@ -176,7 +176,7 @@ private fun ToolView(t: Tool) {
 /** What an action line opens onto: a raised, outlined surface under it. */
 @Composable
 private fun Panel(content: @Composable ColumnScope.() -> Unit) = Column(
-    Modifier.padding(start = 16.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp),
+    Modifier.padding(start = 16.dp, top = 4.dp).fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(12.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp), content = content,
 )
 

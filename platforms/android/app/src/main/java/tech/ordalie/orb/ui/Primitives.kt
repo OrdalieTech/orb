@@ -27,7 +27,7 @@ import tech.ordalie.orb.core.Tool
 @Composable
 fun Rule(modifier: Modifier = Modifier, color: Color = p.rule) = Box(modifier.fillMaxWidth().height(1.dp).background(color))
 
-enum class ChipKind { Inverted, Outline, Quiet, Blue }
+enum class ChipKind { Inverted, Outline, Quiet }
 
 @Composable
 fun Chip(label: String, kind: ChipKind = ChipKind.Outline, modifier: Modifier = Modifier, caps: Boolean = true) {
@@ -35,9 +35,8 @@ fun Chip(label: String, kind: ChipKind = ChipKind.Outline, modifier: Modifier = 
         ChipKind.Inverted -> Triple(p.fg, p.bg, p.fg)
         ChipKind.Outline -> Triple(Color.Transparent, p.fg, p.fg)
         ChipKind.Quiet -> Triple(Color.Transparent, p.mute, p.rule)
-        ChipKind.Blue -> Triple(Ink.Blue, Ink.Texte, Ink.Blue)
     }
-    Box(modifier.clip(CircleShape).background(bg).border(1.dp, edge, CircleShape).padding(horizontal = 9.dp, vertical = 2.dp)) {
+    Box(modifier.clip(Soft).background(bg).border(1.dp, edge, Soft).padding(horizontal = 8.dp, vertical = 2.dp)) {
         if (caps) T(label, label = true, color = fg) else T(label, size = 13.sp, color = fg, weight = Medium)
     }
 }
@@ -57,14 +56,14 @@ fun Modifier.press(enabled: Boolean = true, onLong: (() -> Unit)? = null, onClic
 
 @Composable
 fun Btn(label: String, inverted: Boolean = false, modifier: Modifier = Modifier, color: Color = p.fg, on: Color = p.bg, onClick: () -> Unit) =
-    Box(modifier.press(onClick = onClick).clip(CircleShape).background(if (inverted) color else Color.Transparent).border(1.dp, color, CircleShape).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-        T(label, size = 14.sp, weight = Strong, color = if (inverted) on else color)
+    Box(modifier.press(onClick = onClick).clip(Soft).background(if (inverted) color else Color.Transparent).border(1.dp, color, Soft).padding(horizontal = 14.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+        T(label, size = 13.sp, weight = Strong, color = if (inverted) on else color)
     }
 
 /** The one text field: a round outline that firms up once it holds something. */
 @Composable
 fun Field(value: String, hint: String, modifier: Modifier = Modifier, secret: Boolean = false, set: (String) -> Unit) =
-    Box(modifier.clip(CircleShape).border(1.dp, if (value.isEmpty()) p.rule else p.fg, CircleShape).padding(horizontal = 18.dp, vertical = 11.dp)) {
+    Box(modifier.clip(Soft).border(1.dp, if (value.isEmpty()) p.rule else p.fg, Soft).padding(horizontal = 12.dp, vertical = 9.dp)) {
         BasicTextField(value, set, Modifier.fillMaxWidth(), textStyle = type(15.sp, p.fg), cursorBrush = SolidColor(p.fg), singleLine = true,
             visualTransformation = if (secret) PasswordVisualTransformation('·') else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri))
@@ -77,7 +76,7 @@ fun AnimatedVisibilityScope.Sheet(dismiss: () -> Unit, modifier: Modifier = Modi
     Box(Modifier.fillMaxSize().background(Color(0x66000000)).press(onClick = dismiss), contentAlignment = Alignment.BottomCenter) {
         Column(
             Modifier.animateEnterExit(enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 420f)) { it }, exit = slideOutVertically(tween(220)) { it })
-                .fillMaxWidth().padding(10.dp).then(modifier).clip(RoundedCornerShape(Radius.Card)).background(p.bg).border(1.dp, p.fg, RoundedCornerShape(Radius.Card))
+                .fillMaxWidth().padding(8.dp).then(modifier).clip(Pane).background(p.bg).border(1.dp, p.rule, Pane)
                 .navigationBarsPadding().imePadding().press {},
             content = content,
         )
@@ -142,15 +141,15 @@ fun ToolLine(t: Tool, open: Boolean? = null) = ActionLine(t.verb, t.target, t.re
 @Composable
 fun Slot(name: String, state: String = "", modifier: Modifier = Modifier, body: @Composable () -> Unit) = Column(modifier) {
     Rule()
-    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp)) { T(name, Modifier.weight(1f), label = true, color = p.mute); T(state, size = Size.Label, color = p.meta) }
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp)) { T(name, Modifier.weight(1f), label = true, color = p.mute); T(state, size = Size.Label, color = p.meta) }
     body()
 }
 
 /** The bar of every screen below Home and its conversations: back, the name, what it shows, an action at right. */
 @Composable
 fun Header(title: String, sub: String = "", back: () -> Unit, right: @Composable RowScope.() -> Unit = {}) =
-    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.press(onClick = back).padding(horizontal = 10.dp, vertical = 4.dp)) { T("‹", size = 30.sp, color = p.fg) }
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.press(onClick = back).padding(horizontal = 10.dp, vertical = 2.dp)) { T("‹", size = 28.sp, color = p.fg) }
         Column(Modifier.weight(1f)) {
             T(title, size = Size.Title, weight = Strong, lines = 1)
             if (sub.isNotEmpty()) T(sub, size = 13.sp, color = p.meta, lines = 1)

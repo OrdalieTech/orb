@@ -113,7 +113,7 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String) {
 
 @Composable
 private fun MethodCard(m: Method, ready: Boolean, go: () -> Unit) = Column(
-    Modifier.fillMaxWidth().press(onClick = go).clip(RoundedCornerShape(Radius.Card)).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(18.dp),
+    Modifier.fillMaxWidth().press(onClick = go).clip(Pane).border(1.dp, p.fg, Pane).padding(18.dp),
 ) {
     T(if (m.account) "account" else "api key", label = true, color = p.meta)
     T(m.label, Modifier.padding(top = 6.dp), size = 18.sp, weight = Strong)
@@ -182,7 +182,7 @@ private fun Answer(question: String, hint: String, secret: Boolean, send: (Strin
     var text by remember(question) { mutableStateOf("") }
     var shown by remember { mutableStateOf(false) }
     T(question, size = 14.sp, color = p.mute)
-    Row(Modifier.fillMaxWidth().clip(CircleShape).border(1.dp, if (text.isEmpty()) p.rule else p.fg, CircleShape).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(Soft).border(1.dp, if (text.isEmpty()) p.rule else p.fg, Soft).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) {
             BasicTextField(text, { text = it }, Modifier.fillMaxWidth(), textStyle = type(15.sp, p.fg), cursorBrush = SolidColor(p.fg), singleLine = true,
                 visualTransformation = if (secret && !shown) PasswordVisualTransformation('·') else VisualTransformation.None,

@@ -2,7 +2,6 @@ package tech.ordalie.orb.ui
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -39,7 +38,7 @@ fun Interrupt(a: Ask, answer: (String?) -> Unit) {
             }
         }
         if (a.free) Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f).border(1.dp, ink, CircleShape).padding(horizontal = 18.dp, vertical = 12.dp)) {
+            Box(Modifier.weight(1f).border(1.dp, ink, Soft).padding(horizontal = 18.dp, vertical = 12.dp)) {
                 BasicTextField(text, { text = it }, Modifier.fillMaxWidth(), textStyle = type(color = ink), cursorBrush = SolidColor(ink))
                 if (text.isEmpty()) T("type an answer", color = ink.copy(alpha = 0.6f))
             }

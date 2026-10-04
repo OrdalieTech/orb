@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
@@ -58,7 +57,7 @@ private fun Reasoning(levels: List<String>, level: String, pick: (String) -> Uni
         T("reasoning", Modifier.weight(1f), label = true, color = p.meta)
         T(REASONING[level] ?: level, size = 13.sp, color = p.mute)
     }
-    Row(Modifier.padding(top = 8.dp).fillMaxWidth().clip(CircleShape).border(1.dp, p.fg, CircleShape)) {
+    Row(Modifier.padding(top = 8.dp).fillMaxWidth().clip(Soft).border(1.dp, p.fg, Soft)) {
         levels.forEach { l ->
             val on = l == level
             val fill by animateColorAsState(if (on) p.fg else Color.Transparent, tween(160), label = "level")

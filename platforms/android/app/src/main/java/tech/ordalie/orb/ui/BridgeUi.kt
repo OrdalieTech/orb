@@ -7,7 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -39,10 +38,10 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
         item {
             // One gesture pairs a computer: it shows a QR code, this phone photographs it, the computer says yes.
             Column(Modifier.fillMaxWidth().padding(bottom = 18.dp).press { context.scan { c.nav.go(Screen.Join(it)) } }
-                .border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
+                .border(1.dp, p.fg, Pane).padding(16.dp)) {
                 T("Pair a computer", size = Size.Title, weight = Strong)
                 T("On the computer, run", Modifier.padding(top = 10.dp), color = p.mute)
-                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", weight = Strong) }
+                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, Soft).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", weight = Strong) }
                 T("then photograph its QR code. It asks you to approve this phone there.", size = 13.sp, color = p.meta)
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("scan", inverted = true) { context.scan { c.nav.go(Screen.Join(it)) } }
@@ -97,7 +96,7 @@ fun ColumnScope.InviteScreen(c: Ctx) {
     Header("Invite a computer", back = c.nav::back)
     Column(Modifier.weight(1f).padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row { T("on the computer, run", Modifier.weight(1f), label = true); T(if (inv == null) "creating" else "%d:%02d · single use".format(left / 60, left % 60), size = Size.Label, color = p.meta) }
-        Box(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(16.dp)).padding(14.dp)) {
+        Box(Modifier.fillMaxWidth().border(1.dp, p.fg, Pane).padding(14.dp)) {
             T("orb bridge join " + code.ifEmpty { "…" }, size = 12.sp, color = if (left > 0) p.fg else p.meta)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -129,7 +128,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                 if (!editing && inviter.isNotEmpty()) {
                     // A valid code reads as what it is: an invitation from one machine, for a while.
                     val left = ((Bridge.parse(value)?.optLong("expires") ?: 0) - System.currentTimeMillis() / 1000).coerceAtLeast(0)
-                    Column(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
+                    Column(Modifier.fillMaxWidth().border(1.dp, p.fg, Pane).padding(16.dp)) {
                         T("invitation from", label = true, color = p.meta)
                         T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, weight = Strong)
                         T(inviter, size = Size.Label, color = p.meta)
@@ -141,7 +140,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                     T("Pairing lets this device read and drive the phone's conversations. Once it approves the phone, the phone gets its conversations and can start Orb in its folders. Pair only with a device you know.", size = Size.Label, color = p.meta)
                 } else {
                     T("Paste the code from  orb bridge pair,  or scan its QR code.", color = p.mute)
-                    Box(Modifier.fillMaxWidth().heightIn(min = 120.dp).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(16.dp)) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 120.dp).border(1.dp, p.fg, Pane).padding(16.dp)) {
                         BasicTextField(value, { value = it; error = "" }, Modifier.fillMaxWidth(), textStyle = type(12.sp, p.fg), cursorBrush = SolidColor(p.fg))
                         if (value.isEmpty()) T("orb-bridge:v1:…", color = p.meta, size = 12.sp)
                     }

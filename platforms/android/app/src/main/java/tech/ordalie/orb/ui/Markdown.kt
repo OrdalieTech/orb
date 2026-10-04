@@ -2,7 +2,6 @@ package tech.ordalie.orb.ui
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -81,7 +80,7 @@ fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f) = C
                 BasicText(inline(b.text, p.mute, p.raised), Modifier.weight(1f), body)
             }
             is Quote -> Row { Box(Modifier.width(2.dp).height(22.dp).background(p.rule)); BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(start = 12.dp), body.copy(color = p.mute)) }
-            is Code -> Column(Modifier.fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp)) {
+            is Code -> Column(Modifier.fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(14.dp)) {
                 if (b.lang.isNotEmpty()) T(b.lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
                 Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg), softWrap = false) }
             }

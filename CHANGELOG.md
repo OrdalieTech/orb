@@ -14,7 +14,8 @@ shown by `/changelog`.
   conversation is an Orb its Bridge launches, so several run at once, and server conversations
   get `/compact`, `!commands` and every slash command. Sign-ins, the terminal and the thread list
   work the same on the phone as on a server; a sign-in ends that machine's idle Orbs so they
-  reopen with the new account. The app is about a sixth smaller.
+  reopen with the new account. The app is about a sixth smaller, more compact, with calmer corners,
+  and what you write sits at right on a soft ground.
 - Pairing a machine (`orb bridge pair`, `join`, `trust`, `connect-ssh`) turns its `bridge` plugin
   on unless its owner set it, so the Orbs opened there in a terminal can be followed and driven
   from the paired devices too.

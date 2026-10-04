@@ -3,7 +3,6 @@ package tech.ordalie.orb.ui
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
@@ -46,10 +45,10 @@ fun ColumnScope.Home(c: Ctx) {
     // conversations start from the prompt box, which also chooses where.
     var device by rememberSaveable { mutableStateOf("") }
     val devices = peers.filter { p -> entries.any { it.peer.id == p.id } }
-    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         (listOf<Peer?>(null) + devices).forEach { d ->
             val on = device == d?.id.orEmpty()
-            Box(Modifier.press { device = d?.id.orEmpty() }.clip(CircleShape).background(if (on) p.fg else Color.Transparent).padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Box(Modifier.press { device = d?.id.orEmpty() }.clip(Soft).background(if (on) p.fg else Color.Transparent).padding(horizontal = 10.dp, vertical = 5.dp)) {
                 T(d?.name ?: "all", size = 14.sp, weight = if (on) Strong else Medium, color = if (on) p.bg else p.mute)
             }
         }
@@ -120,9 +119,9 @@ private fun Notice(c: Ctx) {
  *  or how long ago. No rules between rows: the space and the weight of the open one are enough. */
 @Composable
 fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, rename: (() -> Unit)? = null, open: () -> Unit) =
-    Row(modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Where(remote, live, asks)
-        T(title, Modifier.weight(1f), size = 16.sp, weight = if (current || live) Strong else Regular, lines = 1)
+        T(title, Modifier.weight(1f), size = 15.sp, weight = if (current || live) Strong else Regular, lines = 1)
         T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = if (asks) Ink.Rupture else p.meta, lines = 1)
     }
 

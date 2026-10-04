@@ -2,6 +2,7 @@ package tech.ordalie.orb.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,9 +38,10 @@ val Regular = FontWeight.Normal
 val Medium = FontWeight.Medium
 val Strong = FontWeight.SemiBold
 
-/** Two radii: fully round for what you press, 28 for what you hold. */
-object Radius { val Card = 28.dp }
-val Margin = 20.dp
+/** Two calm radii: 6 for what you press or type in, 10 for what holds something. */
+val Soft = RoundedCornerShape(6.dp)
+val Pane = RoundedCornerShape(10.dp)
+val Margin = 16.dp
 
 @Composable
 fun OrbTheme(content: @Composable () -> Unit) =
