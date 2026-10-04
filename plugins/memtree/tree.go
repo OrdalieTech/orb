@@ -1,14 +1,11 @@
 package memtree
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -34,12 +31,9 @@ const (
 type message struct {
 	key  string // entryID/part, the same on every branch through the entry
 	at   int    // index of its entry on the branch
-	kind string
-	text string
+	line string // "kind: text"
 	time string
 }
-
-func (m message) line() string { return m.kind + ": " + m.text }
 
 // nodeKey names node (level, i) by its last message, which fixes the whole branch before it.
 type nodeKey struct {
@@ -58,7 +52,7 @@ type ask func(context.Context, ai.MessageList) (*ai.AssistantMessage, error)
 type tree struct {
 	sessions extensions.ReadonlySessionManager
 	id       string
-	file     string // node store; empty keeps nodes in memory
+	save     func(nodeKey, string) // persists a built node
 	ctx      context.Context
 	stop     context.CancelFunc
 
@@ -67,10 +61,10 @@ type tree struct {
 	budget   int
 	status   func(string)
 	nodes    map[nodeKey]string
+	pending  []nodeKey // built, not yet saved
 	busy     map[nodeKey]bool
 	failing  map[nodeKey]bool
-	entries  map[string][]message // per entry ID, decoded once
-	at       map[string]int       // entry ID → branch index
+	path     []string // entry IDs of the folded branch
 	log      []message
 	view     []part
 	size     int
@@ -78,119 +72,71 @@ type tree struct {
 	progress chan struct{}
 }
 
-func newTree(sessions extensions.ReadonlySessionManager, file string) (*tree, error) {
+// newTree opens a session's tree with the nodes its memtree entries hold, on every branch.
+func newTree(sessions extensions.ReadonlySessionManager, save func(nodeKey, string)) *tree {
 	ctx, stop := context.WithCancel(context.Background())
 	t := &tree{
-		sessions: sessions, id: sessions.GetSessionID(), file: file, ctx: ctx, stop: stop, budget: viewBytes, status: func(string) {},
-		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]bool{}, entries: map[string][]message{},
-		progress: make(chan struct{}),
+		sessions: sessions, id: sessions.GetSessionID(), save: save, ctx: ctx, stop: stop, budget: viewBytes, status: func(string) {},
+		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]bool{}, progress: make(chan struct{}),
 	}
-	if err := t.load(); err != nil {
-		stop()
-		return nil, err
-	}
-	return t, nil
-}
-
-func (t *tree) load() error {
-	if t.file == "" {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(t.file), 0o700); err != nil {
-		return fmt.Errorf("memtree: %w", err)
-	}
-	data, err := os.ReadFile(t.file)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("memtree: %w", err)
-	}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(nil, 1<<20)
-	for scanner.Scan() {
-		var line struct {
-			nodeKey
-			Text string `json:"t"`
-		}
-		// A torn last line (a crash mid-write) is skipped.
-		if json.Unmarshal(scanner.Bytes(), &line) == nil && line.Text != "" {
-			t.nodes[line.nodeKey] = line.Text
+	for _, entry := range sessions.GetEntries() {
+		var node savedNode
+		if entry.Type == "custom" && entry.CustomType == nodeType && json.Unmarshal(entry.Data, &node) == nil && node.Text != "" {
+			t.nodes[node.nodeKey] = node.Text
 		}
 	}
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		return t.write([]byte("\n"))
-	}
-	return nil
+	return t
 }
 
-func (t *tree) write(data []byte) error {
-	file, err := os.OpenFile(t.file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("memtree: %w", err)
-	}
-	_, err = file.Write(data)
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return fmt.Errorf("memtree: %w", err)
-	}
-	return nil
+// savedNode is a memtree session entry: the tree is a cache of model calls, kept with the session
+// so it follows it to every host, fork and export.
+type savedNode struct {
+	nodeKey
+	Text string `json:"t"`
 }
+
+const nodeType = "memtree"
 
 func (t *tree) saveLocked(key nodeKey, text string) {
 	t.nodes[key] = text
-	if t.file == "" {
-		return
-	}
-	line, _ := json.Marshal(struct {
-		nodeKey
-		Text string `json:"t"`
-	}{key, text})
-	if err := t.write(append(line, '\n')); err != nil {
-		t.status(err.Error())
-	}
+	t.pending = append(t.pending, key)
 }
 
-// syncLocked reads the branch into the log and folds new messages into the view. A branch that
-// no longer extends the folded one (a /tree move, a rewound prompt) is folded again from message 0.
+// syncLocked folds the entries added to the branch since the last call, walking back from the
+// leaf to the folded branch's last entry. A branch that does not extend the folded one (a /tree
+// move, a rewound prompt) is folded again from message 0.
 func (t *tree) syncLocked() {
 	if t.sessions.GetSessionID() != t.id {
 		return
 	}
-	branch := t.sessions.GetBranch()
-	log := make([]message, 0, len(t.log)+4)
-	t.at = make(map[string]int, len(branch))
-	for at, entry := range branch {
-		t.at[entry.ID] = at
-		messages, ok := t.entries[entry.ID]
-		if !ok {
-			messages = entryMessages(entry)
-			t.entries[entry.ID] = messages
+	var added []session.SessionEntry // newest first
+	id := t.sessions.GetLeafID()
+	for id != nil && (len(t.path) == 0 || *id != t.path[len(t.path)-1]) {
+		entry := t.sessions.GetEntry(*id)
+		if entry == nil {
+			id = nil
+			break
 		}
-		for _, message := range messages {
-			message.at = at
-			log = append(log, message)
-		}
+		added, id = append(added, *entry), entry.ParentID
 	}
-	if folded := len(t.log); folded > 0 && (folded > len(log) || log[folded-1].key != t.log[folded-1].key) {
-		t.view, t.size, t.next, t.log = nil, 0, nil, nil
+	if id == nil && len(t.path) > 0 {
+		t.path, t.log, t.view, t.size, t.next = nil, nil, nil, 0, nil
 	}
 	if len(t.next) == 0 {
 		t.next = []int{0}
 	}
-	for m := len(t.log); m < len(log); m++ {
-		t.log = append(t.log, log[m])
-		t.view = append(t.view, part{0, m})
-		t.size += t.partSizeLocked(part{0, m})
-		for t.next[0] < len(t.log) && t.builtLocked(0, t.next[0]) {
-			t.next[0]++
+	for k := len(added) - 1; k >= 0; k-- {
+		t.path = append(t.path, added[k].ID)
+		for _, message := range entryMessages(added[k]) {
+			message.at = len(t.path) - 1
+			t.log = append(t.log, message)
+			t.view = append(t.view, part{0, len(t.log) - 1})
+			t.size += t.partSizeLocked(part{0, len(t.log) - 1})
+			for t.next[0] < len(t.log) && t.builtLocked(0, t.next[0]) {
+				t.next[0]++
+			}
+			t.fitLocked()
 		}
-		t.fitLocked()
 	}
 }
 
@@ -228,8 +174,8 @@ func (t *tree) keyLocked(l, i int) nodeKey {
 
 // textLocked is node (l, i), or "" when it is not built. A message that fits is its own node.
 func (t *tree) textLocked(l, i int) string {
-	if l == 0 && len(t.log[i].line()) <= nodeBytes {
-		return t.log[i].line()
+	if l == 0 && len(t.log[i].line) <= nodeBytes {
+		return t.log[i].line
 	}
 	return t.nodes[t.keyLocked(l, i)]
 }
@@ -243,6 +189,14 @@ func (t *tree) partSizeLocked(p part) int {
 	return len(unbuilt)
 }
 
+// endLocked is where node (l, i)'s context ends: before a message, or after a merged stretch.
+func (t *tree) endLocked(l, i int) int {
+	if l == 0 {
+		return i
+	}
+	return (i + 1) << l
+}
+
 func (t *tree) frontierLocked() int {
 	if len(t.next) == 0 {
 		return 0
@@ -250,18 +204,28 @@ func (t *tree) frontierLocked() int {
 	return t.next[0]
 }
 
-// pump starts every node whose sources are built and whose context is summarized: messages
-// are compressed one at a time, in order, while merges of finished stretches run alongside.
+// pump starts every node whose sources are built and whose context is summarized: messages are
+// compressed one at a time, in order, while merges of finished stretches run alongside, so the
+// compactor never sees a line that is not a summary.
 func (t *tree) pump() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.ctx.Err() != nil {
+		t.mu.Unlock()
 		return
 	}
 	t.pumpLocked()
 	// Wake settle: the frontier may have moved over messages short enough to be their own lines.
 	close(t.progress)
 	t.progress = make(chan struct{})
+	saved := make([]savedNode, len(t.pending))
+	for index, key := range t.pending {
+		saved[index] = savedNode{key, t.nodes[key]}
+	}
+	t.pending = nil
+	t.mu.Unlock()
+	for _, node := range saved {
+		t.save(node.nodeKey, node.Text)
+	}
 }
 
 func (t *tree) pumpLocked() {
@@ -275,11 +239,7 @@ func (t *tree) pumpLocked() {
 			t.next[l]++
 		}
 		for i := t.next[l]; i < total>>l && len(t.busy) < jobs; i++ {
-			end := (i + 1) << l
-			if l == 0 {
-				end = i
-			}
-			if end > t.frontierLocked() {
+			if t.endLocked(l, i) > t.frontierLocked() {
 				break
 			}
 			key := t.keyLocked(l, i)
@@ -289,35 +249,31 @@ func (t *tree) pumpLocked() {
 			t.startLocked(l, i, key)
 		}
 	}
+	t.fitLocked() // free merges may have built parents
 }
 
 func (t *tree) startLocked(l, i int, key nodeKey) {
 	var step string
 	if l == 0 {
-		step = "Compress this message into one line, in at most 512 bytes:\n" + t.log[i].line()
+		step = "Compress this message into one line, in at most 512 bytes:\n" + t.log[i].line
 	} else {
 		a, b := flat(t.textLocked(l-1, 2*i)), flat(t.textLocked(l-1, 2*i+1))
 		if len(a)+1+len(b) <= nodeBytes {
 			t.saveLocked(key, a+"\n"+b)
-			t.fitLocked()
 			return
 		}
 		step = "Merge these two lines into one, in at most 512 bytes:\n" + a + "\n" + b
 	}
-	end := (i + 1) << l
-	if l == 0 {
-		end = i
-	}
 	var chat strings.Builder
 	for _, p := range t.view {
-		if p.start() >= end {
+		if p.start() >= t.endLocked(l, i) {
 			break
 		}
 		chat.WriteString(flat(t.textLocked(p.l, p.i)) + "\n")
 	}
 	request := ai.MessageList{&ai.UserMessage{Content: ai.UserContent{Blocks: ai.UserContentBlocks{
 		&ai.TextContent{Text: "<chat>\n" + chat.String() + "</chat>"},
-		&ai.TextContent{Text: "For scale, this line is exactly 512 bytes:\n" + scale + "\n\n" + step},
+		&ai.TextContent{Text: step},
 	}}}}
 	t.busy[key] = true
 	go t.build(key, t.ask, request)
@@ -386,10 +342,9 @@ func compress(ctx context.Context, ask ask, request ai.MessageList) (string, err
 	return best, nil
 }
 
-// settle waits until every message before n is summarized, so no call sees a placeholder.
-func (t *tree) settle(ctx context.Context, n int, wait time.Duration) bool {
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
+// settle waits until every message before n is summarized, so no call sees a placeholder; it
+// reports false when ctx ends first.
+func (t *tree) settle(ctx context.Context, n int) bool {
 	for waited := false; ; waited = true {
 		t.mu.Lock()
 		frontier, progress, status := t.frontierLocked(), t.progress, t.status
@@ -406,8 +361,6 @@ func (t *tree) settle(ctx context.Context, n int, wait time.Duration) bool {
 		case <-ctx.Done():
 			return false
 		case <-t.ctx.Done():
-			return false
-		case <-timer.C:
 			return false
 		}
 	}
@@ -447,8 +400,8 @@ func (t *tree) before(id string) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.syncLocked()
-	at, ok := t.at[id]
-	if !ok {
+	at := slices.Index(t.path, id)
+	if at < 0 {
 		return len(t.log)
 	}
 	for m, message := range t.log {
@@ -467,7 +420,7 @@ func (t *tree) zoom(id, n int) string {
 		return fmt.Sprintf("No line %d+%d.", id, n)
 	}
 	if n == 1 {
-		return fmt.Sprintf("%d+0|%s", id, t.log[id].line())
+		return fmt.Sprintf("%d+0|%s", id, t.log[id].line)
 	}
 	l := 0
 	for 2<<l < n {
@@ -495,7 +448,7 @@ func entryMessages(entry session.SessionEntry) []message {
 	var out []message
 	add := func(kind, text string) {
 		if text = strings.TrimSpace(text); text != "" {
-			out = append(out, message{key: fmt.Sprintf("%s/%d", entry.ID, len(out)), kind: kind, text: text, time: entry.Timestamp})
+			out = append(out, message{key: fmt.Sprintf("%s/%d", entry.ID, len(out)), line: kind + ": " + text, time: entry.Timestamp})
 		}
 	}
 	switch entry.Type {

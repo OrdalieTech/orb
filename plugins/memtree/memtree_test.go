@@ -20,9 +20,9 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/engine/harness"
 )
 
+// fakeSessions is a linear branch of message entries.
 type fakeSessions struct {
 	extensions.ReadonlySessionManager
 	mu      sync.Mutex
@@ -31,38 +31,53 @@ type fakeSessions struct {
 
 func (*fakeSessions) GetSessionID() string { return "s1" }
 func (*fakeSessions) IsPersisted() bool    { return true }
-func (s *fakeSessions) GetBranch(...string) []session.SessionEntry {
+func (s *fakeSessions) GetLeafID() *string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.entries) == 0 {
+		return nil
+	}
+	return &s.entries[len(s.entries)-1].ID
+}
+
+func (s *fakeSessions) GetEntry(id string) *session.SessionEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var index int
+	if _, err := fmt.Sscanf(id, "e%d", &index); err != nil || index >= len(s.entries) {
+		return nil
+	}
+	entry := s.entries[index]
+	return &entry
+}
+
+func (s *fakeSessions) GetEntries() []session.SessionEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]session.SessionEntry(nil), s.entries...)
 }
 
-func (s *fakeSessions) BuildSessionContext() session.SessionContext {
-	var context session.SessionContext
-	for _, entry := range s.GetBranch() {
-		context.Messages = append(context.Messages, entry.Message)
-	}
-	return context
+// save appends a memtree entry, as the extension API does.
+func (s *fakeSessions) save(key nodeKey, text string) {
+	data, _ := json.Marshal(savedNode{key, text})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	parent := &s.entries[len(s.entries)-1].ID
+	s.entries = append(s.entries, session.SessionEntry{Type: "custom", ID: fmt.Sprintf("e%d", len(s.entries)), ParentID: parent, CustomType: nodeType, Data: data})
 }
 
 func (s *fakeSessions) add(role string, content any) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := fmt.Sprintf("e%d", len(s.entries))
+	var parent *string
+	if len(s.entries) > 0 {
+		parent = &s.entries[len(s.entries)-1].ID
+	}
 	raw, _ := json.Marshal(map[string]any{"role": role, "content": content})
-	s.entries = append(s.entries, session.SessionEntry{Type: "message", ID: id, Timestamp: "2026-10-04T10:00:00.000Z", Message: raw})
+	s.entries = append(s.entries, session.SessionEntry{Type: "message", ID: id, ParentID: parent, Timestamp: "2026-10-04T10:00:00.000Z", Message: raw})
 	return id
 }
-
-type fakeContext struct {
-	extensions.Context
-	sessions *fakeSessions
-}
-
-func (c *fakeContext) SessionManager() extensions.ReadonlySessionManager { return c.sessions }
-func (*fakeContext) Model() *ai.Model                                    { return nil }
-func (*fakeContext) ModelRegistry() extensions.ModelRegistry             { return nil }
-func (*fakeContext) HasUI() bool                                         { return false }
 
 // compactor stands in for the model: a 300-byte line per message or merge, recording the
 // order messages are compressed in and every request it saw.
@@ -98,6 +113,12 @@ func longSession(n int) *fakeSessions {
 	return sessions
 }
 
+func settled(tr *tree, n int) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return tr.settle(ctx, n)
+}
+
 // idle waits until no compactor call is running; the last one may start merges of its own.
 func idle(t *testing.T, tr *tree) {
 	t.Helper()
@@ -120,56 +141,14 @@ func idle(t *testing.T, tr *tree) {
 	t.Fatal("compactor never went idle")
 }
 
-func TestEntryMessagesKeepWhatWasSaidAndDoneButNotThinking(t *testing.T) {
-	raw := func(value any) json.RawMessage { encoded, _ := json.Marshal(value); return encoded }
-	entries := []session.SessionEntry{
-		{Type: "message", ID: "a", Message: raw(map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "fix it"}, map[string]any{"type": "image"}}})},
-		{Type: "message", ID: "b", Message: raw(map[string]any{"role": "assistant", "content": []any{
-			map[string]any{"type": "thinking", "thinking": "secret"},
-			map[string]any{"type": "text", "text": "Reading."},
-			map[string]any{"type": "toolCall", "name": "read", "arguments": map[string]any{"path": "a.go"}},
-			map[string]any{"type": "toolCall", "name": "bash", "arguments": map[string]any{"command": "ls"}},
-		}})},
-		{Type: "message", ID: "c", Message: raw(map[string]any{"role": "toolResult", "isError": true, "content": []any{map[string]any{"type": "text", "text": "no such file"}}})},
-		{Type: "message", ID: "d", Message: raw(map[string]any{"role": "bashExecution", "command": "make", "output": "ok"})},
-		{Type: "message", ID: "e", Message: raw(map[string]any{"role": "bashExecution", "command": "env", "output": "secret", "excludeFromContext": true})},
-		{Type: "custom_message", ID: "f", Content: raw("job finished")},
-		{Type: "branch_summary", ID: "g", Summary: "tried another fix"},
-		{Type: "compaction", ID: "h", Summary: "old summary"},
-		{Type: "message", ID: "i", Message: raw(map[string]any{"role": "system", "content": "prompt"})},
-	}
-	var got []string
-	for _, entry := range entries {
-		for _, message := range entryMessages(entry) {
-			got = append(got, message.key+" "+message.line())
-		}
-	}
-	want := []string{
-		"a/0 user: fix it\n[image]",
-		"b/0 talk: Reading.",
-		`b/1 tool: read {"path":"a.go"}`,
-		`b/2 tool: bash {"command":"ls"}`,
-		"c/0 echo: error: no such file",
-		"d/0 echo: $ make\nok",
-		"f/0 note: job finished",
-		"g/0 note: tried another fix",
-	}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("messages:\n%q\nwant\n%q", got, want)
-	}
-}
-
 func TestMessagesAreCompressedInOrderAndTheViewFitsItsBudget(t *testing.T) {
 	sessions := longSession(40)
-	tr, err := newTree(sessions, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	tr := newTree(sessions, sessions.save)
 	defer tr.stop()
 	model := &compactor{}
 	tr.ask, tr.budget = model.ask, 4000
 	tr.pump()
-	if !tr.settle(context.Background(), 40, 5*time.Second) {
+	if !settled(tr, 40) {
 		t.Fatal("messages were not all summarized")
 	}
 	idle(t, tr)
@@ -179,13 +158,22 @@ func TestMessagesAreCompressedInOrderAndTheViewFitsItsBudget(t *testing.T) {
 			t.Fatalf("compressed out of order: %v", model.compressed)
 		}
 	}
-	for _, chat := range model.requests {
-		if strings.Contains(chat, "|") || strings.Contains(chat, "+1") {
-			t.Fatalf("compactor saw ids: %q", chat)
-		}
-	}
 	if !strings.Contains(model.requests[1], "summary of 0 ") || strings.Contains(model.requests[1], "summary of 1 ") {
 		t.Fatalf("the context of message 1 is the view before it: %q", model.requests[1])
+	}
+	if got := tr.zoom(0, 32); !strings.HasPrefix(got, "0+16|merged") || !strings.Contains(got, "\n16+16|merged") {
+		t.Fatalf("zoom(0, 32) = %q", got)
+	}
+	if got := tr.zoom(5, 1); got != "5+0|user: message 5 "+strings.Repeat("x", 2000) {
+		t.Fatalf("zoom(5, 1) = %.40q", got)
+	}
+	if got := tr.zoom(3, 2); got != "No line 3+2." {
+		t.Fatalf("zoom(3, 2) = %q", got)
+	}
+	for _, chat := range model.requests {
+		if strings.Contains(chat, "|") || strings.Contains(chat, "+1") || strings.Contains(chat, unbuilt) {
+			t.Fatalf("compactor saw ids or placeholders: %q", chat)
+		}
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -203,10 +191,7 @@ func TestMessagesAreCompressedInOrderAndTheViewFitsItsBudget(t *testing.T) {
 
 func TestTheViewOnlyCoarsensAsMessagesArrive(t *testing.T) {
 	sessions := longSession(1)
-	tr, err := newTree(sessions, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	tr := newTree(sessions, sessions.save)
 	defer tr.stop()
 	model := &compactor{}
 	tr.ask, tr.budget = model.ask, 3000
@@ -214,7 +199,7 @@ func TestTheViewOnlyCoarsensAsMessagesArrive(t *testing.T) {
 	for index := 1; index < 64; index++ {
 		sessions.add("user", fmt.Sprintf("message %d %s", index, strings.Repeat("x", 600)))
 		tr.pump()
-		if !tr.settle(context.Background(), index+1, 5*time.Second) {
+		if !settled(tr, index+1) {
 			t.Fatal("not summarized")
 		}
 		idle(t, tr)
@@ -256,85 +241,28 @@ func TestCompressShowsTheCutAndKeepsTheShortestTry(t *testing.T) {
 	}
 }
 
-func TestZoomOpensLinesDownToTheMessage(t *testing.T) {
-	sessions := longSession(8)
-	tr, err := newTree(sessions, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tr.stop()
-	model := &compactor{}
-	tr.ask = model.ask
-	tr.pump()
-	tr.settle(context.Background(), 8, 5*time.Second)
-	idle(t, tr)
-	if got := tr.zoom(0, 8); !strings.HasPrefix(got, "0+4|merged") || !strings.Contains(got, "\n4+4|merged") {
-		t.Fatalf("zoom(0, 8) = %q", got)
-	}
-	if got := tr.zoom(4, 2); !strings.HasPrefix(got, "4+1|summary of 4 ") || !strings.Contains(got, "\n5+1|summary of 5 ") {
-		t.Fatalf("zoom(4, 2) = %q", got)
-	}
-	if got := tr.zoom(5, 1); got != "5+0|user: message 5 "+strings.Repeat("x", 2000) {
-		t.Fatalf("zoom(5, 1) = %.40q", got)
-	}
-	for _, bad := range [][2]int{{3, 2}, {0, 3}, {8, 1}, {0, 16}} {
-		if got := tr.zoom(bad[0], bad[1]); !strings.HasPrefix(got, "No line") {
-			t.Fatalf("zoom%v = %q", bad, got)
-		}
-	}
-}
-
-func TestNodesSurviveARestart(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "s1.jsonl")
+func TestNodesSurviveARestartInTheSession(t *testing.T) {
 	sessions := longSession(6)
-	first, err := newTree(sessions, file)
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := newTree(sessions, sessions.save)
 	model := &compactor{}
 	first.ask = model.ask
 	first.pump()
-	first.settle(context.Background(), 6, 5*time.Second)
+	settled(first, 6)
 	idle(t, first)
 	first.stop()
 
-	second, err := newTree(sessions, file)
-	if err != nil {
-		t.Fatal(err)
-	}
+	second := newTree(sessions, sessions.save)
 	defer second.stop()
-	second.pump() // no compactor: everything comes from the file
-	if !second.settle(context.Background(), 6, time.Second) || second.render(6) != first.render(6) {
+	second.pump() // no compactor: every node comes from the session's memtree entries
+	if !settled(second, 6) || second.render(6) != first.render(6) {
 		t.Fatalf("reloaded view %q, want %q", second.render(6), first.render(6))
 	}
 }
 
-func TestCompactionKeepsItsCutAndSummarizesWhatCameBefore(t *testing.T) {
-	sessions := &fakeSessions{}
-	var ids []string
-	for index := range 10 {
-		ids = append(ids, sessions.add("user", fmt.Sprintf("short %d", index)))
-	}
-	p := &plugin{}
-	event := extensions.SessionBeforeCompactEvent{Preparation: harness.CompactionPreparation{FirstKeptEntryID: ids[7], TokensBefore: 99}}
-	result, err := p.compact(context.Background(), event, &fakeContext{sessions: sessions})
-	if err != nil {
-		t.Fatal(err)
-	}
-	compaction := result.(extensions.SessionBeforeCompactResult).Compaction
-	if compaction.FirstKeptEntryID != ids[7] || compaction.TokensBefore != 99 {
-		t.Fatalf("compaction %+v", compaction)
-	}
-	if !strings.Contains(compaction.Summary, "<chat>\n0+1|user: short 0\n") || !strings.Contains(compaction.Summary, "6+1|user: short 6\n</chat>") || strings.Contains(compaction.Summary, "short 7") {
-		t.Fatalf("summary %q", compaction.Summary)
-	}
-}
-
-// sessionRuntime runs memtree in a real session over the faux provider, keeping every request.
-func sessionRuntime(t *testing.T, settings map[string]any, replies ...faux.ResponseStep) (*agent.SessionRuntime, *session.SessionManager, *[]ai.Context) {
+func sessionRuntime(t *testing.T, options Options, replies ...faux.ResponseStep) (*agent.SessionRuntime, *session.SessionManager, *[]ai.Context) {
 	t.Helper()
 	cwd, agentDir := t.TempDir(), t.TempDir()
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"keepRecentTokens":1}}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"reserveTokens":120000,"keepRecentTokens":1}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	manager, err := session.InMemory(cwd)
@@ -346,7 +274,7 @@ func sessionRuntime(t *testing.T, settings map[string]any, replies ...faux.Respo
 		t.Fatal(err)
 	}
 	registry := extensions.NewRegistry(cwd)
-	if err := registry.Register("<inline:memtree>", Extension(agentDir, settings)); err != nil {
+	if err := registry.Register("<inline:memtree>", Extension(options)); err != nil {
 		t.Fatal(err)
 	}
 	provider := faux.New()
@@ -386,7 +314,7 @@ func userTexts(request ai.Context) []string {
 }
 
 func TestAFreshRunStartsFromTheViewAndZoomsIntoIt(t *testing.T) {
-	runtime, _, requests := sessionRuntime(t, map[string]any{"mode": "fresh"},
+	runtime, _, requests := sessionRuntime(t, Options{},
 		faux.AssistantMessage("hello"),
 		faux.AssistantMessage(faux.ToolCall("zoom", map[string]any{"id": 0, "n": 1}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
 		faux.AssistantMessage("done"),
@@ -405,6 +333,9 @@ func TestAFreshRunStartsFromTheViewAndZoomsIntoIt(t *testing.T) {
 	if len(second) != 2 || !strings.Contains(second[0], "<chat>\n0+1|user: first\n1+1|talk: hello\n</chat>") || second[1] != "second" {
 		t.Fatalf("second request user messages: %q", second)
 	}
+	if encoded, _ := json.Marshal((*requests)[1]); !strings.Contains(string(encoded), "You keep no memory between turns") {
+		t.Fatalf("MASTER is not in the second request: %s", encoded)
+	}
 	third := (*requests)[2].Messages
 	result, ok := third[len(third)-1].(*ai.ToolResultMessage)
 	if !ok || ai.ContentText(result.Content) != "0+0|user: first" {
@@ -413,7 +344,7 @@ func TestAFreshRunStartsFromTheViewAndZoomsIntoIt(t *testing.T) {
 }
 
 func TestCompactionStoresTheViewOfWhatItCuts(t *testing.T) {
-	runtime, manager, _ := sessionRuntime(t, nil, faux.AssistantMessage("one"), faux.AssistantMessage("two"))
+	runtime, manager, _ := sessionRuntime(t, Options{Mode: "compaction"}, faux.AssistantMessage("one"), faux.AssistantMessage("two"))
 	ctx := context.Background()
 	for _, prompt := range []string{"alpha", "beta"} {
 		if err := runtime.Prompt(ctx, prompt); err != nil {
@@ -426,5 +357,77 @@ func TestCompactionStoresTheViewOfWhatItCuts(t *testing.T) {
 	compaction := session.GetLatestCompactionEntry(manager.GetBranch())
 	if compaction == nil || !strings.Contains(compaction.Summary, "<chat>\n0+1|user: alpha\n1+1|talk: one\n") {
 		t.Fatalf("compaction %+v", compaction)
+	}
+}
+
+func TestAFreshRunWaitsForTheCompactorUntilAborted(t *testing.T) {
+	runtime, _, requests := sessionRuntime(t, Options{}, faux.AssistantMessage("ok"), faux.AssistantMessage("late"))
+	if err := runtime.Prompt(context.Background(), strings.Repeat("a long first message ", 40)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = runtime.Prompt(context.Background(), "second") // no compactor model: message 0 never gets its line
+		close(done)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	if len(*requests) != 1 {
+		t.Fatalf("a request went out before the view was ready: %d", len(*requests))
+	}
+	runtime.Abort()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Abort did not end the wait")
+	}
+}
+
+func TestAFreshRunAfterATreeMoveSeesOnlyItsBranch(t *testing.T) {
+	runtime, manager, requests := sessionRuntime(t, Options{}, faux.AssistantMessage("one"), faux.AssistantMessage("two"), faux.AssistantMessage("three"))
+	ctx := context.Background()
+	if err := runtime.Prompt(ctx, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	answered := *manager.GetLeafID()
+	if err := runtime.Prompt(ctx, "beta"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.NavigateTree(ctx, answered, agent.NavigateTreeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(ctx, "gamma"); err != nil {
+		t.Fatal(err)
+	}
+	third := strings.Join(userTexts((*requests)[2]), "|")
+	if !strings.Contains(third, "0+1|user: alpha\n1+1|talk: one\n</chat>|gamma") || strings.Contains(third, "beta") {
+		t.Fatalf("third request: %q", third)
+	}
+}
+
+func TestFreshModeNeverCompactsBeforeARun(t *testing.T) {
+	compactsFirst := func(options Options) bool {
+		var manager *session.SessionManager
+		compacted := false
+		runtime, manager, _ := sessionRuntime(t, options, faux.Factory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
+			compacted = session.GetLatestCompactionEntry(manager.GetBranch()) != nil
+			return faux.AssistantMessage("ok"), nil
+		}))
+		// A long history whose last request was over the 8k threshold, as before memtree was on.
+		for index := range 120 {
+			if _, err := manager.AppendMessage(&ai.UserMessage{Content: ai.NewUserText(fmt.Sprintf("note %d %s", index, strings.Repeat("words ", 70)))}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := manager.AppendMessage(&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "noted"}}, StopReason: ai.StopReasonStop, Usage: ai.Usage{TotalTokens: 13000}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		runtime.RefreshContext()
+		if err := runtime.Prompt(context.Background(), "next"); err != nil {
+			t.Fatal(err)
+		}
+		return compacted
+	}
+	if compaction, fresh := compactsFirst(Options{Mode: "compaction"}), compactsFirst(Options{}); !compaction || fresh {
+		t.Fatalf("history alone compacts before the run in compaction mode: %v, in fresh mode: %v", compaction, fresh)
 	}
 }

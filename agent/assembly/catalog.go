@@ -107,7 +107,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 		"jobs":           jobs.Extension(options.Bash),
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
-		"memtree":        memtreeExtension(options.AgentDir, options.Settings),
+		"memtree":        memtreeExtension(options.Settings),
 		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}),
 	}
 }

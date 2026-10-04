@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/rpc"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -56,6 +59,9 @@ type Options struct {
 	StreamFn engine.StreamFn
 	// Tools adds tools to every session the object starts.
 	Tools ToolsFunc
+	// Extensions picks the extensions every session the object starts loads, by name, from its
+	// settings; the assembly supplies them, so the host links no capability.
+	Extensions func(*config.SettingsManager) map[string]extensions.Factory
 }
 
 // Instance is one Durable Object's Orb: a Host over the object's storage and
@@ -73,6 +79,7 @@ type Instance struct {
 	model    *ai.Model
 	streamFn engine.StreamFn
 	tools    ToolsFunc
+	extend   func(*config.SettingsManager) map[string]extensions.Factory
 
 	mu           sync.Mutex
 	session      *agent.AgentSession
@@ -109,7 +116,7 @@ func Open(ctx context.Context, options Options) (*Instance, error) {
 		defaults[path.Join(AgentDir, "models.json")] = options.Models
 	}
 	instance := &Instance{
-		Files: files, documents: documents, model: options.Model, streamFn: options.StreamFn, tools: options.Tools,
+		Files: files, documents: documents, model: options.Model, streamFn: options.StreamFn, tools: options.Tools, extend: options.Extensions,
 		repo: harness.NewJSONLSessionRepo(files, path.Join(AgentDir, "sessions")),
 	}
 	instance.Host = &host.Host{AgentDir: AgentDir, FS: files, Store: NewStore(documents, defaults), Env: options.Env, Sessions: instance.repo}
@@ -159,11 +166,22 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 		CWD: Workspace, Host: instance.Host, SessionManager: manager, Model: instance.model, StreamFn: instance.streamFn,
 		Resources: &agent.Resources{}, DeferExtensionStart: true, ModelRegistry: instance.registry,
 	}
+	settings, err := instance.settings()
+	if err != nil {
+		return nil, err
+	}
 	if instance.tools != nil {
-		if options.Settings, err = instance.settings(); err != nil {
-			return nil, err
+		options.Settings, options.CustomTools = settings, instance.tools(settings)
+	}
+	if instance.extend != nil {
+		if chosen := instance.extend(settings); len(chosen) > 0 {
+			options.ExtensionRegistry = extensions.NewRegistry(Workspace)
+			for _, name := range slices.Sorted(maps.Keys(chosen)) {
+				if err := options.ExtensionRegistry.Register(name, chosen[name]); err != nil {
+					return nil, err
+				}
+			}
 		}
-		options.CustomTools = instance.tools(options.Settings)
 	}
 	result, err := agent.NewAgentSession(options)
 	if err != nil {
