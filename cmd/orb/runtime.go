@@ -352,6 +352,8 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	}
 	if model == nil {
 		thinking = ai.ModelThinkingOff
+	} else {
+		thinking = ai.ClampThinkingLevel(model, thinking)
 	}
 	transport := settings.GetTransport()
 	providerRetry := settings.GetProviderRetrySettings()

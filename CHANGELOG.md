@@ -115,6 +115,7 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   Claude account asks for the code it always needs and ignores an empty submit.
 - Context estimates count the system prompt and declared tools, as pi does, so the footer and
   auto-compaction see the real context size instead of leaving the prompt out.
+- A model that can't reason starts with thinking off instead of the default medium, as in pi.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
