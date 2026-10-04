@@ -165,10 +165,9 @@ EOF
 
 ## Limits
 
-- **Size.** With the Bridge peer, `orb.wasm` is 54.8 MB raw and 9.93 MB gzip.
-  Wrangler reports a total upload of 9,876 KiB gzip, 1.2% under the 10 MB
-  compressed limit of the paid plan. The free plan allows 3 MB, so it cannot
-  host Orb.
+- **Size.** With the Bridge peer, `orb.wasm` is 34.7 MB raw and 8.1 MB gzip,
+  about 20% under the 10 MB compressed limit of the paid plan. The free plan
+  allows 3 MB, so it cannot host Orb.
 - **Memory.** Cloudflare gives each isolate 128 MB. After a tool-using turn, one
   object uses 36–38 MB of Wasm linear memory, of which 3–6 MB is Go heap. Linear
   memory only grows, so this figure is also the peak. Several objects can share

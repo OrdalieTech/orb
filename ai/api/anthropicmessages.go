@@ -19,9 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
-	anthropic "github.com/anthropics/anthropic-sdk-go"
 	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
-	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 const (
@@ -31,7 +29,7 @@ const (
 	defaultAnthropicThinkingBudget        float64 = 1024
 )
 
-var anthropicHTTPClient option.HTTPClient = http.DefaultClient
+var anthropicHTTPClient openAIHTTPDoer = http.DefaultClient
 
 type AnthropicEffort string
 
@@ -74,7 +72,6 @@ type AnthropicMessagesOptions struct {
 	ThinkingDisplay      *AnthropicThinkingDisplay `json:"thinkingDisplay,omitempty"`
 	InterleavedThinking  *bool                     `json:"interleavedThinking,omitempty"`
 	ToolChoice           *AnthropicToolChoice      `json:"toolChoice,omitempty"`
-	Client               *anthropic.Client         `json:"-"`
 }
 
 type AnthropicMessagesPayload struct {
@@ -211,24 +208,12 @@ func StreamSimpleAnthropicMessages(
 	requestContext ai.Context,
 	options *ai.SimpleStreamOptions,
 ) (ai.AssistantMessageEventStream, error) {
-	return streamSimpleAnthropicMessages(ctx, model, requestContext, options, nil)
-}
-
-func streamSimpleAnthropicMessages(
-	ctx context.Context,
-	model *ai.Model,
-	requestContext ai.Context,
-	options *ai.SimpleStreamOptions,
-	client *anthropic.Client,
-) (ai.AssistantMessageEventStream, error) {
 	if model == nil {
 		return nil, errors.New("ai/api: Anthropic Messages model is nil")
 	}
 	base := buildBaseStreamOptions(model, requestContext, options)
-	if client == nil {
-		if err := assertAnthropicAuth(model, &base); err != nil {
-			return nil, err
-		}
+	if err := assertAnthropicAuth(model, &base); err != nil {
+		return nil, err
 	}
 	toolChoice := simpleToolChoice(options, "any")
 	var anthropicToolChoice *AnthropicToolChoice
@@ -241,7 +226,6 @@ func streamSimpleAnthropicMessages(
 			StreamOptions:   base,
 			ThinkingEnabled: &disabled,
 			ToolChoice:      anthropicToolChoice,
-			Client:          client,
 		})
 	}
 
@@ -257,7 +241,6 @@ func streamSimpleAnthropicMessages(
 			ThinkingEnabled: &enabled,
 			Effort:          &effort,
 			ToolChoice:      anthropicToolChoice,
-			Client:          client,
 		})
 	}
 
@@ -274,7 +257,6 @@ func streamSimpleAnthropicMessages(
 		ThinkingEnabled:      &enabled,
 		ThinkingBudgetTokens: &budget,
 		ToolChoice:           anthropicToolChoice,
-		Client:               client,
 	})
 }
 
@@ -305,11 +287,9 @@ func StreamAnthropicMessagesWithOptions(
 			clearAnthropicStreamingFields(output)
 			sink(anthropicStreamFailure(ctx, output, err))
 		}
-		if options == nil || options.Client == nil {
-			if err := assertAnthropicAuth(model, streamOptions); err != nil {
-				fail(err)
-				return
-			}
+		if err := assertAnthropicAuth(model, streamOptions); err != nil {
+			fail(err)
+			return
 		}
 		payload, isOAuth, err := buildAnthropicMessagesPayload(model, requestContext, options)
 		if err != nil {
@@ -560,7 +540,7 @@ func buildAnthropicMessagesPayload(
 	streamOptions := anthropicStreamOptions(options)
 	cacheControl := anthropicCacheControlFor(model, streamOptions, compat)
 	apiKey := anthropicAPIKey(streamOptions)
-	isOAuth := (options == nil || options.Client == nil) && strings.Contains(apiKey, "sk-ant-oat")
+	isOAuth := strings.Contains(apiKey, "sk-ant-oat")
 	transformed := transformMessages(requestContext.Messages, model, normalizeAnthropicToolCallID)
 	normalizeName := func(name string) string { return name }
 	if isOAuth {
@@ -1213,129 +1193,48 @@ func postAnthropicStream(
 	if err != nil {
 		return nil, err
 	}
-	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
-	// owns retrying, so the backoff honours the abort signal.
-	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
-	if len(fields.Betas) > 0 {
-		requestOptions = append(requestOptions, option.WithHeader("anthropic-beta", strings.Join(fields.Betas, ",")))
+	headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, requestContext, options, anthropicOptions))
+	if err != nil {
+		return nil, err
 	}
-	var client *anthropic.Client
-	if anthropicOptions != nil {
-		client = anthropicOptions.Client
-	}
-	if client != nil {
-		// Upstream forwards timeoutMs per request even for caller-supplied
-		// clients; middleware wraps the client's own transport instead of
-		// replacing it.
-		requestOptions = append(requestOptions, option.WithMiddleware(func(request *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-			doer, err := openAIHeaderTimeoutClient(openAIDoerFunc(next), streamTimeoutMS(options), nil)
-			if err != nil {
-				return nil, err
+	// The Anthropic SDK's defaults and auth come first, the request's headers
+	// over them, and the payload's betas last.
+	defaults := http.Header{"Content-Type": {"application/json"}, "Accept": {"application/json"}, "Anthropic-Version": {"2023-06-01"}}
+	betas := fields.Betas
+	apiKey := anthropicAPIKey(options)
+	switch {
+	case oauth || model.Provider == "github-copilot":
+		defaults.Set("Authorization", "Bearer "+apiKey)
+	case apiKey != "":
+		defaults.Set("X-Api-Key", apiKey)
+	default:
+		if federation := anthropicFederation(model, options); federation != nil {
+			exchangeClient := options.HTTPClient
+			if exchangeClient == nil {
+				exchangeClient, _ = anthropicHTTPClient.(*http.Client)
 			}
-			return doer.Do(request)
-		}))
-	}
-	if client == nil {
-		headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, requestContext, options, anthropicOptions))
-		if err != nil {
-			return nil, err
-		}
-		// TimeoutMS deadlines only the header phase, like the pinned JS SDK's
-		// fetch timeout; the streamed body is never raced (OA-M1).
-		baseClient := option.HTTPClient(anthropicHTTPClient)
-		if options != nil && options.HTTPClient != nil {
-			baseClient = options.HTTPClient
-		}
-		httpClient, err := openAIHeaderTimeoutClient(baseClient, streamTimeoutMS(options), headers)
-		if err != nil {
-			return nil, err
-		}
-		clientOptions := []option.RequestOption{
-			option.WithoutEnvironmentDefaults(),
-			option.WithBaseURL(model.BaseURL),
-			option.WithHTTPClient(httpClient),
-			option.WithAPIKey(""),
-			option.WithAuthToken(""),
-			option.WithHeaderDel("X-Api-Key"),
-			option.WithHeaderDel("Authorization"),
-		}
-		apiKey := anthropicAPIKey(options)
-		if oauth || model.Provider == "github-copilot" {
-			clientOptions = append(clientOptions, option.WithAuthToken(apiKey))
-		} else if apiKey != "" {
-			clientOptions = append(clientOptions, option.WithAPIKey(apiKey))
-		} else if federation := anthropicFederation(model, options); federation != nil {
-			exchangeClient, _ := baseClient.(*http.Client)
 			token, err := federation.accessToken(ctx, model.BaseURL, exchangeClient)
 			if err != nil {
 				return nil, err
 			}
-			clientOptions = append(clientOptions, option.WithAuthToken(token))
-			if !slices.Contains(fields.Betas, anthropicOAuthBeta) {
-				requestOptions = append(requestOptions, option.WithHeader("anthropic-beta", strings.Join(append(fields.Betas, anthropicOAuthBeta), ",")))
+			defaults.Set("Authorization", "Bearer "+token)
+			if !slices.Contains(betas, anthropicOAuthBeta) {
+				betas = append(betas, anthropicOAuthBeta)
 			}
 		}
-		for name, values := range headers {
-			if len(values) == 0 {
-				clientOptions = append(clientOptions, option.WithHeaderDel(name))
-			} else {
-				clientOptions = append(clientOptions, option.WithHeader(name, values[len(values)-1]))
-			}
-		}
-		created := anthropic.NewClient(clientOptions...)
-		client = &created
 	}
-	var lastResponse *http.Response
-	response, err := retryProviderRequest(ctx, options, func() (*http.Response, error) {
-		var attempt *http.Response
-		postErr := client.Post(ctx, "v1/messages?beta=true", json.RawMessage(body), &attempt, requestOptions...)
-		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
-			_ = lastResponse.Body.Close()
-		}
-		lastResponse = attempt
-		return attempt, postErr
-	})
-	if err != nil {
-		err = normalizeAnthropicRequestError(response, err)
-		// The header-timeout doer's body wrapper releases its context cancel
-		// only on Close, so the failed response must still be closed.
-		if response != nil && response.Body != nil {
-			_ = response.Body.Close()
-		}
-		return response, err
+	if len(betas) > 0 {
+		headers = headers.Clone()
+		headers.Set("anthropic-beta", strings.Join(betas, ","))
 	}
-	if response == nil {
-		return nil, errors.New("anthropic API returned no HTTP response")
-	}
-	if options != nil && options.OnResponse != nil {
-		if err := options.OnResponse(ctx, providerResponse(response), model); err != nil {
-			_ = response.Body.Close()
-			return nil, err
-		}
-	}
-	return response, nil
+	return postProviderJSON(ctx, model, options, anthropicHTTPClient, strings.TrimRight(model.BaseURL, "/")+"/v1/messages?beta=true", defaults, headers, body, anthropicResponseError)
 }
 
-func normalizeAnthropicRequestError(response *http.Response, err error) error {
-	if err == nil || response == nil {
-		return err
-	}
-	var apiError *anthropic.Error
-	if errors.As(err, &apiError) && strings.TrimSpace(apiError.RawJSON()) != "" {
-		return fmt.Errorf("%d %s", response.StatusCode, strings.TrimSpace(apiError.RawJSON()))
-	}
-	contents, readErr := io.ReadAll(response.Body)
-	if readErr != nil {
-		return err
-	}
-	// Close the replaced body: the header-timeout doer's wrapper releases its
-	// context cancel only on Close.
-	_ = response.Body.Close()
-	response.Body = io.NopCloser(strings.NewReader(string(contents)))
+func anthropicResponseError(status int, contents []byte) error {
 	if len(contents) == 0 {
-		return fmt.Errorf("%d status code (no body)", response.StatusCode)
+		return fmt.Errorf("%d status code (no body)", status)
 	}
-	return fmt.Errorf("%d %s", response.StatusCode, strings.TrimSpace(string(contents)))
+	return fmt.Errorf("%d %s", status, strings.TrimSpace(string(contents)))
 }
 
 func anthropicHeaders(

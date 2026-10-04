@@ -11,24 +11,22 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
-	anthropic "github.com/anthropics/anthropic-sdk-go"
-	openai "github.com/openai/openai-go/v3"
 )
 
-// Mirrors upstream utils/provider-retry.ts (7af8533c). The pinned SDKs' own
-// retry timers ignore the request's abort signal, so every SDK call runs with
-// maxRetries 0 and this wrapper owns retrying: the backoff sleep honours the
-// context, the classification mirrors the SDKs (x-should-retry, 408/409/429,
-// 5xx, connection errors), and a server-requested delay above maxRetryDelayMs
-// fails instead of being clamped (60 seconds by default, zero disables).
+// Mirrors upstream utils/provider-retry.ts (7af8533c), which runs the
+// provider SDKs with maxRetries 0 and owns retrying: the backoff sleep honours
+// the context, the classification mirrors the SDKs (x-should-retry,
+// 408/409/429, 5xx, connection errors), and a server-requested delay above
+// maxRetryDelayMs fails instead of being clamped (60 seconds by default, zero
+// disables).
 
 const defaultMaxProviderRetryDelayMS = 60_000
 
 // providerRetryJitter mirrors Math.random in the upstream backoff formula.
 var providerRetryJitter = rand.Float64
 
-// retryableHTTPStatusError adapts a hand-rolled HTTP surface (Azure) to the
-// classification below; the wrapped error is what callers observe.
+// retryableHTTPStatusError carries a failed response's status and headers to
+// the classification below; the wrapped error is what callers observe.
 type retryableHTTPStatusError struct {
 	status  int
 	headers http.Header
@@ -38,27 +36,13 @@ type retryableHTTPStatusError struct {
 func (statusError *retryableHTTPStatusError) Error() string { return statusError.inner.Error() }
 func (statusError *retryableHTTPStatusError) Unwrap() error { return statusError.inner }
 
-// providerErrorParts mirrors isProviderError: SDK errors expose their status
-// and headers, and anything else thrown by a request is the connection-error
-// class whose status is undefined (retryable). Context cancellation is the
-// abort path and never classifies.
+// providerErrorParts mirrors isProviderError: status errors expose their
+// status and headers, and anything else a request returns is the
+// connection-error class whose status is undefined (retryable). Context
+// cancellation is the abort path and never classifies.
 func providerErrorParts(err error) (status *int, headers http.Header, isProviderError bool) {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, nil, false
-	}
-	var openaiError *openai.Error
-	if errors.As(err, &openaiError) {
-		if openaiError.Response != nil {
-			headers = openaiError.Response.Header
-		}
-		return &openaiError.StatusCode, headers, true
-	}
-	var anthropicError *anthropic.Error
-	if errors.As(err, &anthropicError) {
-		if anthropicError.Response != nil {
-			headers = anthropicError.Response.Header
-		}
-		return &anthropicError.StatusCode, headers, true
 	}
 	var statusError *retryableHTTPStatusError
 	if errors.As(err, &statusError) {
@@ -67,8 +51,7 @@ func providerErrorParts(err error) (status *int, headers http.Header, isProvider
 	return nil, nil, true
 }
 
-// isRetryableProviderError mirrors the pinned OpenAI/Anthropic SDK retry
-// policy; review when either SDK is upgraded.
+// isRetryableProviderError mirrors the OpenAI/Anthropic SDK retry policy.
 func isRetryableProviderError(status *int, headers http.Header) bool {
 	switch headers.Get("x-should-retry") {
 	case "true":
@@ -123,7 +106,7 @@ func createProviderAbortError() error {
 }
 
 // retryProviderRequest reproduces retryProviderRequest: each retry is a fresh
-// SDK request, and the sleep between attempts aborts with the context.
+// request, and the sleep between attempts aborts with the context.
 func retryProviderRequest[T any](ctx context.Context, options *ai.StreamOptions, request func() (T, error)) (T, error) {
 	maxRetries := 0
 	var maxRetryDelayMS *int64

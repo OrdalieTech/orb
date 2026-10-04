@@ -40,6 +40,10 @@ Mermaid diagrams render. Bridge followers long-poll, open long conversations at 
 - Turns no longer slow down as a conversation grows: the session keeps the model context decoded
   and extends it as entries are appended, instead of re-reading the whole journal on every append
   and request. After 80 turns a turn costs a tenth of the CPU it did on the Worker host.
+- Provider requests go through one small stdlib HTTP client instead of the OpenAI and Anthropic
+  Go SDKs, which only sent bodies Orb had built: the Worker bundle shrinks from 55.4 MB to
+  34.7 MB (8.1 MB gzip) and the CLI from 57.6 MB to 47.5 MB. Go embedders:
+  `AnthropicMessagesOptions.Client` is removed.
 
 ## [0.14.1] - 2026-10-04
 
