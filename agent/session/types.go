@@ -54,8 +54,9 @@ type SessionEntry struct {
 	Name         string
 
 	object *orderedObject
-	// decoded is Message decoded when the entry was read or appended, before
-	// it was shared; nil when not decoded or invalid. Never modified.
+	// decoded is Message decoded when the entry was read, or the message
+	// appended, before the entry was shared; nil when not decoded or invalid.
+	// Never modified.
 	decoded ai.Message
 }
 

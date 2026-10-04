@@ -153,6 +153,12 @@ type SessionManager struct {
 	// generation counts wholesale index replacements, which invalidate projection.
 	generation uint64
 	projection contextProjection
+	// appended is the entry being appended and its message, while the harness
+	// refresh reads it back.
+	appended struct {
+		id      string
+		message ai.Message
+	}
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
@@ -672,13 +678,17 @@ func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, er
 		if err := manager.harnessStorage.AppendEntry(harnessEntry); err != nil {
 			return "", err
 		}
-		if err := manager.refreshHarnessLocked(); err != nil {
+		// The refresh reads the entry back; its message is the one appended.
+		manager.appended.id, manager.appended.message = id, entry.decoded
+		err = manager.refreshHarnessLocked()
+		manager.appended.id, manager.appended.message = "", nil
+		if err != nil {
 			return "", err
 		}
 		return id, nil
 	}
 	record := newEntryRecord(entry)
-	if entry.Type == "message" {
+	if entry.Type == "message" && record.Entry.decoded == nil {
 		record.Entry.decoded, _ = ai.UnmarshalMessage(record.Entry.Message)
 	}
 	manager.fileEntries = append(manager.fileEntries, record)
@@ -729,7 +739,33 @@ func (manager *SessionManager) AppendMessage(message any) (string, error) {
 		return "", err
 	}
 	entry.Message = raw
+	entry.decoded = appendedMessage(message)
 	return manager.appendEntryLocked(entry)
+}
+
+// appendedMessage is message when it has a type UnmarshalMessage decodes:
+// its entry shares it, as upstream's entries share their messages, instead of
+// decoding the copy just encoded.
+func appendedMessage(message any) ai.Message {
+	switch typed := message.(type) {
+	case *ai.SystemMessage:
+		if typed != nil {
+			return typed
+		}
+	case *ai.UserMessage:
+		if typed != nil {
+			return typed
+		}
+	case *ai.AssistantMessage:
+		if typed != nil {
+			return typed
+		}
+	case *ai.ToolResultMessage:
+		if typed != nil {
+			return typed
+		}
+	}
+	return nil
 }
 
 func (manager *SessionManager) AppendThinkingLevelChange(level string) (string, error) {
@@ -1273,7 +1309,11 @@ func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *Sess
 	}
 	converted := sessionEntryFromHarness(entry)
 	if converted.Type == "message" {
-		converted.decoded, _ = ai.UnmarshalMessage(converted.Message)
+		if entry.ID == manager.appended.id && manager.appended.message != nil {
+			converted.decoded = manager.appended.message
+		} else {
+			converted.decoded, _ = ai.UnmarshalMessage(converted.Message)
+		}
 	}
 	manager.parsedMu.Lock()
 	defer manager.parsedMu.Unlock()
