@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/cjksegment"
 	"github.com/rivo/uniseg"
@@ -21,16 +22,32 @@ func runeLen(value string) int { return len([]rune(value)) }
 
 // runeSlice is the rune-index analog of JS String.prototype.slice.
 func runeSlice(value string, from, to int) string {
-	runes := []rune(value)
-	from = max(0, min(from, len(runes)))
-	to = max(from, min(to, len(runes)))
-	return string(runes[from:to])
+	if !utf8.ValidString(value) {
+		value = string([]rune(value))
+	}
+	from = max(0, from)
+	to = max(from, to)
+	return value[runeByteOffset(value, from):runeByteOffset(value, to)]
 }
 
 func runeSliceFrom(value string, from int) string {
-	runes := []rune(value)
-	from = max(0, min(from, len(runes)))
-	return string(runes[from:])
+	if !utf8.ValidString(value) {
+		value = string([]rune(value))
+	}
+	return value[runeByteOffset(value, from):]
+}
+
+func runeByteOffset(value string, index int) int {
+	if index <= 0 {
+		return 0
+	}
+	for offset := range value {
+		if index == 0 {
+			return offset
+		}
+		index--
+	}
+	return len(value)
 }
 
 func runeIndexFromUTF16(value string, offset int) int {

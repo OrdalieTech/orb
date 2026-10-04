@@ -2822,25 +2822,27 @@ func (mode *InteractiveMode) abortAndRestore(answered bool) {
 	if !answered {
 		unsentID = mode.pendingPromptEntryID()
 	}
+	var unsent *string
+	if entry := mode.session.Manager().GetEntry(unsentID); entry != nil {
+		_, text := sessionMessageRoleText(entry.Message)
+		unsent = &text
+	}
+	mode.restoreToEditor(unsent, queued)
 	mode.session.Abort()
 	if unsentID == "" {
-		mode.restoreToEditor(nil, queued)
 		return
 	}
-	// The rewind has to wait for the aborted run to settle: NavigateTree
-	// re-syncs the agent's messages from the branch.
+	// Only the branch rewind waits for cancellation: NavigateTree re-syncs
+	// agent messages, while abort completion must not overwrite the draft.
 	go func() {
 		if err := mode.session.WaitForIdle(context.Background()); err != nil {
-			mode.restoreToEditor(nil, queued)
 			return
 		}
 		result, err := mode.session.NavigateTree(context.Background(), unsentID, agent.NavigateTreeOptions{})
 		if err != nil || result.Cancelled {
-			mode.restoreToEditor(nil, queued)
 			return
 		}
 		mode.renderInitialMessages()
-		mode.restoreToEditor(&result.EditorText, queued)
 	}()
 }
 
