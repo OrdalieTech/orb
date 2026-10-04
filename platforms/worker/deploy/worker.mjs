@@ -111,11 +111,20 @@ export class OrbAgent {
     this.settle(new Error(`orb-worker stopped with exit code ${code}`));
   }
 
-  frame(text) {
-    let frame = {};
-    try {
-      frame = JSON.parse(text);
-    } catch {}
+  // frame takes one encoded frame, LF included. Frames name their type first
+  // (after a response's id), and responses their command and success next:
+  // reading them from the head spares decoding and parsing frames that carry
+  // a whole transcript, which streams pass on as bytes.
+  frame(bytes) {
+    const head = /^\{(?:"id":"(?:[^"\\]|\\.)*",)?"type":"([a-z_]+)"(?:,"command":"([^"\\]*)","success":(true|false))?/.exec(decoder.decode(bytes.subarray(0, 512)));
+    let frame = head ? { type: head[1], command: head[2], success: head[3] === "true" } : {};
+    let text;
+    if (!head) {
+      text = decoder.decode(bytes.subarray(0, -1));
+      try {
+        frame = JSON.parse(text);
+      } catch {}
+    }
     if (frame.type === "response") {
       this.pending = Math.max(0, this.pending - 1);
       if (frame.success && frame.command === "prompt") this.busy = true;
@@ -124,12 +133,14 @@ export class OrbAgent {
     } else if (frame.type === "agent_settled") {
       this.busy = false;
     }
-    for (const socket of this.ctx.getWebSockets()) {
+    const sockets = this.ctx.getWebSockets();
+    if (sockets.length > 0) text ??= decoder.decode(bytes.subarray(0, -1));
+    for (const socket of sockets) {
       try {
         socket.send(text);
       } catch {}
     }
-    for (const stream of this.streams) stream(text);
+    for (const stream of this.streams) stream(bytes);
     if (this.pending === 0 && !this.busy) this.settle();
   }
 
@@ -192,10 +203,10 @@ export class OrbAgent {
         output = controller;
       },
     });
-    const sink = text => output.enqueue(encoder.encode(`${text}\n`));
+    const sink = bytes => output.enqueue(bytes);
     this.streams.add(sink);
     this.dispatch(commands)
-      .catch(error => sink(JSON.stringify({ type: "worker_error", error: error.message })))
+      .catch(error => sink(encoder.encode(`${JSON.stringify({ type: "worker_error", error: error.message })}\n`)))
       .finally(() => {
         this.streams.delete(sink);
         output.close();
