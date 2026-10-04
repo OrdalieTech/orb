@@ -396,14 +396,14 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	}
 	messages := make(engine.AgentMessages, 0, historyEnd-boundaryStart)
 	for index := boundaryStart; index < historyEnd; index++ {
-		if message := compactionMessage(entries[index], false); message != nil {
+		if message := compactionMessage(entries[index], false); message != nil && messageRole(message) != "system" {
 			messages = append(messages, message)
 		}
 	}
 	prefix := engine.AgentMessages{}
 	if cut.IsSplitTurn {
 		for index := cut.TurnStartIndex; index < cut.FirstKeptEntryIndex; index++ {
-			if message := compactionMessage(entries[index], false); message != nil {
+			if message := compactionMessage(entries[index], false); message != nil && messageRole(message) != "system" {
 				prefix = append(prefix, message)
 			}
 		}

@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 )
 
@@ -47,6 +49,35 @@ func prepareProjected(t *testing.T, manager *sessionstore.SessionManager) *harne
 
 func projectedEstimate(manager *sessionstore.SessionManager) harness.ContextUsageEstimate {
 	return harness.EstimateProjectedContextTokens(projectSessionEntries(manager.GetBranch()))
+}
+
+func TestCompactionExcludesSystemHistoryAndPreservesPromptState(t *testing.T) {
+	manager, must := projectionSession(t), mustOf(t)
+	must(manager.AppendMessage(&ai.SystemMessage{Content: "initial instructions", ToolsAdded: []ai.Tool{{Name: "read"}}}))
+	must(manager.AppendMessage(userMessage("repair the evaluator")))
+	must(manager.AppendMessage(&ai.SystemMessage{Content: "additional instructions", ToolsRemoved: []ai.ToolReference{{Name: "read"}}, ToolsAdded: []ai.Tool{{Name: "bash"}}}))
+	must(manager.AppendMessage(usageAssistant(strings.Repeat("probe findings ", 100), ai.Usage{TotalTokens: 1000})))
+	latest := must(manager.AppendMessage(usageAssistant("latest step", ai.Usage{TotalTokens: 10})))
+	preparation := prepareProjected(t, manager)
+	if preparation == nil || !preparation.IsSplitTurn || preparation.FirstKeptEntryID != latest ||
+		len(preparation.MessagesToSummarize) != 0 || len(preparation.TurnPrefixMessages) != 2 {
+		t.Fatalf("preparation = %#v", preparation)
+	}
+	must(manager.AppendCompaction("checkpoint", preparation.FirstKeptEntryID, preparation.TokensBefore))
+	var messages engine.AgentMessages
+	for _, raw := range manager.BuildSessionContext().Messages {
+		messages = append(messages, decodeSessionMessage(raw))
+	}
+	replay, err := ConvertToLLM(context.Background(), messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt := ai.CurrentSystemPrompt(replay); prompt != "initial instructions\n\nadditional instructions" {
+		t.Fatalf("replayed prompt = %q", prompt)
+	}
+	if tools := ai.CurrentTools(replay); len(tools) != 1 || tools[0].Name != "bash" {
+		t.Fatalf("replayed tools = %#v", tools)
+	}
 }
 
 func TestProjectedEstimateDoesNotTrustPreEditUsage(t *testing.T) {

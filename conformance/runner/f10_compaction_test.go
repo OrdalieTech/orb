@@ -165,6 +165,7 @@ type f10CompactPromptCase struct {
 }
 
 type f10CompactPromptInput struct {
+	Entries             []f10Entry                 `json:"entries"`
 	FirstKeptEntryID    string                     `json:"firstKeptEntryId"`
 	MessagesToSummarize []json.RawMessage          `json:"messagesToSummarize"`
 	TurnPrefixMessages  []json.RawMessage          `json:"turnPrefixMessages"`
@@ -369,11 +370,14 @@ func TestF10BranchAndSplitTurnPromptsMatchUpstream(t *testing.T) {
 		fixtureCase := fixtureCase
 		t.Run("compact/"+fixtureCase.Name, func(t *testing.T) {
 			captures := make([]f10ActualCapture, 0, 2)
-			outputs := []string{"history summary", "prefix summary"}
 			complete := func(_ context.Context, _ *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
 				capture := f10Capture(request, options)
 				captures = append(captures, capture)
-				return f10Response(outputs[len(captures)-1]), nil
+				output := "history summary"
+				if strings.HasPrefix(capture.Prompt, "# Conversation\n") {
+					output = "prefix summary"
+				}
+				return f10Response(output), nil
 			}
 			prepared := &harness.CompactionPreparation{
 				FirstKeptEntryID: fixtureCase.Input.FirstKeptEntryID, MessagesToSummarize: f10Messages(t, fixtureCase.Input.MessagesToSummarize),
@@ -381,6 +385,19 @@ func TestF10BranchAndSplitTurnPromptsMatchUpstream(t *testing.T) {
 				TokensBefore: fixtureCase.Input.TokensBefore, PreviousSummary: fixtureCase.Input.PreviousSummary,
 				FileOps:  harness.FileOperations{Read: map[string]struct{}{}, Written: map[string]struct{}{}, Edited: map[string]struct{}{}},
 				Settings: fixtureCase.Input.Settings,
+			}
+			if len(fixtureCase.Input.Entries) > 0 {
+				want := prepared
+				var err error
+				prepared, err = harness.PrepareLegacyCompaction(f10Entries(t, fixtureCase.Input.Entries), fixtureCase.Input.Settings)
+				if err != nil || prepared == nil {
+					t.Fatalf("prepare compaction = %#v, %v", prepared, err)
+				}
+				if prepared.FirstKeptEntryID != want.FirstKeptEntryID || prepared.IsSplitTurn != want.IsSplitTurn ||
+					!reflect.DeepEqual(f10Roles(t, prepared.MessagesToSummarize), f10Roles(t, want.MessagesToSummarize)) ||
+					!reflect.DeepEqual(f10Roles(t, prepared.TurnPrefixMessages), f10Roles(t, want.TurnPrefixMessages)) {
+					t.Fatalf("compaction partitions differ from upstream: %#v", prepared)
+				}
 			}
 			routing := "00000000-0000-7000-8000-000000000000"
 			got, err := harness.CompactProduct(context.Background(), prepared, model, complete, "", ai.ModelThinkingHigh, &routing)
@@ -413,8 +430,8 @@ func loadF10Fixture(t testing.TB) f10Fixture {
 	}
 	var fixture f10Fixture
 	runner.LoadJSON(t, "F10", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.TokenCases) != 8 || len(fixture.CutCases) != 6 || len(fixture.SummaryPromptCases) != 3 {
-		t.Fatalf("unexpected F10 fixture header: version=%d token=%d cut=%d prompts=%d", fixture.SchemaVersion, len(fixture.TokenCases), len(fixture.CutCases), len(fixture.SummaryPromptCases))
+	if fixture.SchemaVersion != 1 || len(fixture.TokenCases) != 8 || len(fixture.CutCases) != 6 || len(fixture.SummaryPromptCases) != 3 || len(fixture.CompactPromptCases) != 2 {
+		t.Fatalf("unexpected F10 fixture header: version=%d token=%d cut=%d prompts=%d compact=%d", fixture.SchemaVersion, len(fixture.TokenCases), len(fixture.CutCases), len(fixture.SummaryPromptCases), len(fixture.CompactPromptCases))
 	}
 	return fixture
 }

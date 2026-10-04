@@ -103,6 +103,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   points to exist, so standalone installs and dev builds no longer send the model to missing paths.
 - The footer's hover label disappears on its own after two seconds, since terminals never report the
   pointer leaving the pane.
+- Compaction no longer sends an extra summary request for an empty conversation when the only
+  history before the first user message is the system prompt; it summarizes as pi 1.0 does.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

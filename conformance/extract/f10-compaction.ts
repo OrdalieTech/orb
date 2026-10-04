@@ -173,7 +173,40 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
       return { result: async () => completionResponse(text) };
     },
   );
-  const compactPromptCases = [{ name: "split-turn-two-stage-prompts", input: compactPromptInput, expected: { captured: compactCaptures, output: compactOutput } }];
+  const compactPromptCases: any[] = [{ name: "split-turn-two-stage-prompts", input: compactPromptInput, expected: { captured: compactCaptures, output: compactOutput } }];
+
+  const systemEntries = [
+    messageEntry("system", null, { role: "system", content: "system instructions", timestamp: millis(40) }, 40),
+    messageEntry("user", "system", user("repair the evaluator", 41), 41),
+    messageEntry("prefix-system", "user", { role: "system", content: "updated instructions", timestamp: millis(42) }, 42),
+    messageEntry("early", "prefix-system", assistant([{ type: "text", text: "probe findings ".repeat(100) }], 43, usage(1000, 0, 0, 0, 1000)), 43),
+    messageEntry("latest", "early", assistant([{ type: "text", text: "latest step" }], 44, usage(10, 0, 0, 0, 10)), 44),
+  ];
+  const systemSettings = { enabled: true, reserveTokens: 100, keepRecentTokens: 2 };
+  const systemPreparation = codingCompaction.prepareCompaction(systemEntries, systemSettings);
+  if (!systemPreparation?.isSplitTurn) throw new Error("system-only history did not produce a split preparation");
+  const systemCaptures: any[] = [];
+  const systemOutput = await codingCompaction.compact(
+    systemPreparation, model, undefined, undefined, undefined, undefined, "high",
+    (_model: any, context: any, options: any) => {
+      systemCaptures.push(capturedRequest(context, options));
+      return { result: async () => completionResponse("prefix summary") };
+    },
+  );
+  compactPromptCases.push({
+    name: "system-only-history-first-split-turn",
+    input: {
+      entries: systemEntries,
+      firstKeptEntryId: systemPreparation.firstKeptEntryId,
+      messagesToSummarize: systemPreparation.messagesToSummarize,
+      turnPrefixMessages: systemPreparation.turnPrefixMessages,
+      isSplitTurn: systemPreparation.isSplitTurn,
+      tokensBefore: systemPreparation.tokensBefore,
+      previousSummary: null,
+      settings: systemSettings,
+    },
+    expected: { captured: systemCaptures, output: systemOutput },
+  });
 
   const productSummaryCases = [];
   for (const mode of ["summary", "prefix", "branch"]) {
