@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/rpc"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -66,9 +67,12 @@ type Instance struct {
 
 	documents *FileSystem
 	repo      *harness.JSONLSessionRepo
-	model     *ai.Model
-	streamFn  engine.StreamFn
-	tools     ToolsFunc
+	// registry is built by the first session and shared by the next ones:
+	// rebuilding it merged and cloned the whole model catalog every time.
+	registry *config.ModelRegistry
+	model    *ai.Model
+	streamFn engine.StreamFn
+	tools    ToolsFunc
 
 	mu           sync.Mutex
 	session      *agent.AgentSession
@@ -153,7 +157,7 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 	}
 	options := agent.AgentSessionOptions{
 		CWD: Workspace, Host: instance.Host, SessionManager: manager, Model: instance.model, StreamFn: instance.streamFn,
-		Resources: &agent.Resources{}, DeferExtensionStart: true,
+		Resources: &agent.Resources{}, DeferExtensionStart: true, ModelRegistry: instance.registry,
 	}
 	if instance.tools != nil {
 		if options.Settings, err = instance.settings(); err != nil {
@@ -165,6 +169,7 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 	if err != nil {
 		return nil, err
 	}
+	instance.registry = result.Services.ModelRegistry
 	if err := instance.documents.WriteFile(ctx, currentSession, []byte(manager.GetSessionFile())); err != nil {
 		result.Session.Dispose()
 		return nil, err
