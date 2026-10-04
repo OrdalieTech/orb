@@ -162,7 +162,23 @@ func MarshalAgentEvent(event AgentEvent) ([]byte, error) {
 	if event == nil {
 		return nil, errors.New("agent: nil event")
 	}
+	// Every event type encodes itself into compact wire JSON.
+	if marshaler, ok := event.(json.Marshaler); ok {
+		return marshaler.MarshalJSON()
+	}
 	return ai.Marshal(event)
+}
+
+// marshalMessageEvent writes {"type":kind,"message":message} from the
+// message's own encoding instead of re-encoding it inside a struct.
+func marshalMessageEvent(kind AgentEventType, message AgentMessage) ([]byte, error) {
+	encoded, err := ai.Marshal(message)
+	if err != nil {
+		return nil, err
+	}
+	output := make([]byte, 0, len(encoded)+len(kind)+24)
+	output = append(append(append(output, `{"type":"`...), kind...), `","message":`...)
+	return append(append(output, encoded...), '}'), nil
 }
 
 func (AgentStartEvent) MarshalJSON() ([]byte, error) {
@@ -172,10 +188,31 @@ func (AgentStartEvent) MarshalJSON() ([]byte, error) {
 }
 
 func (event AgentEndEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type     AgentEventType `json:"type"`
-		Messages AgentMessages  `json:"messages"`
-	}{Type: EventAgentEnd, Messages: event.Messages})
+	output, err := appendMessageList([]byte(`{"type":"agent_end","messages":`), event.Messages)
+	if err != nil {
+		return nil, err
+	}
+	return append(output, '}'), nil
+}
+
+// appendMessageList appends messages as a JSON array (null when nil) from
+// each message's own encoding.
+func appendMessageList[T any](output []byte, messages []T) ([]byte, error) {
+	if messages == nil {
+		return append(output, "null"...), nil
+	}
+	output = append(output, '[')
+	for index, message := range messages {
+		if index > 0 {
+			output = append(output, ',')
+		}
+		encoded, err := ai.Marshal(message)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, encoded...)
+	}
+	return append(output, ']'), nil
 }
 
 func (TurnStartEvent) MarshalJSON() ([]byte, error) {
@@ -185,18 +222,19 @@ func (TurnStartEvent) MarshalJSON() ([]byte, error) {
 }
 
 func (event TurnEndEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type        AgentEventType          `json:"type"`
-		Message     AgentMessage            `json:"message"`
-		ToolResults []*ai.ToolResultMessage `json:"toolResults"`
-	}{Type: EventTurnEnd, Message: event.Message, ToolResults: event.ToolResults})
+	output, err := marshalMessageEvent(EventTurnEnd, event.Message)
+	if err != nil {
+		return nil, err
+	}
+	output, err = appendMessageList(append(output[:len(output)-1], `,"toolResults":`...), event.ToolResults)
+	if err != nil {
+		return nil, err
+	}
+	return append(output, '}'), nil
 }
 
 func (event MessageStartEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type    AgentEventType `json:"type"`
-		Message AgentMessage   `json:"message"`
-	}{Type: EventMessageStart, Message: event.Message})
+	return marshalMessageEvent(EventMessageStart, event.Message)
 }
 
 func (event MessageUpdateEvent) MarshalJSON() ([]byte, error) {
@@ -235,10 +273,7 @@ func (event MessageUpdateEvent) MarshalJSON() ([]byte, error) {
 }
 
 func (event MessageEndEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type    AgentEventType `json:"type"`
-		Message AgentMessage   `json:"message"`
-	}{Type: EventMessageEnd, Message: event.Message})
+	return marshalMessageEvent(EventMessageEnd, event.Message)
 }
 
 func (event ToolExecutionStartEvent) MarshalJSON() ([]byte, error) {
