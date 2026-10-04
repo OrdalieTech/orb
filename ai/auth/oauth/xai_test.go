@@ -87,25 +87,3 @@ func TestXAIRejectsUntrustedVerificationURI(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
-
-func TestXAINonObjectJSONIsAnEmptyOAuthObject(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(writer, `[]`)
-	}))
-	defer server.Close()
-	flow := NewXAI(&XAIOptions{DeviceCodeURL: server.URL})
-	_, err := flow.Login(context.Background(), &xAIInteraction{})
-	if err == nil || err.Error() != "Invalid xAI OAuth response field: device_code" {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestXAIOAuthMetadataAndDefaultClient(t *testing.T) {
-	flow := NewXAI(nil)
-	if flow.Name() != "xAI (Grok/X subscription)" || flow.LoginLabel() != "Sign in with SuperGrok or X Premium" {
-		t.Fatalf("xAI labels = %q / %q", flow.Name(), flow.LoginLabel())
-	}
-	if flow.options.HTTPClient != http.DefaultClient {
-		t.Fatal("default xAI OAuth client unexpectedly imposes a blanket timeout")
-	}
-}

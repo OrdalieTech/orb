@@ -17,5 +17,3 @@ var xAIProvider = Provider{
 		OAuth: oauth.NewXAI(nil),
 	},
 }
-
-func XAI() Provider { return registered("xai") }

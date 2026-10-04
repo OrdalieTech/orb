@@ -17,5 +17,3 @@ var kimiCodingProvider = Provider{
 		OAuth: oauth.NewKimiCoding(nil),
 	},
 }
-
-func KimiCoding() Provider { return registered("kimi-coding") }

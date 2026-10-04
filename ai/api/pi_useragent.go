@@ -20,14 +20,3 @@ func piNodeArchitecture(goarch string) string {
 	}
 	return goarch
 }
-
-// piNodePlatform maps Go platform names onto Node os.platform() values.
-func piNodePlatform(goos string) string {
-	switch goos {
-	case "windows":
-		return "win32"
-	case "solaris", "illumos":
-		return "sunos"
-	}
-	return goos
-}

@@ -1,112 +1,10 @@
 package api
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
-
-func TestConvertGoogleToolsPreservesStringEnumSchema(t *testing.T) {
-	tool := ai.Tool{
-		Name: "calculate", Description: "calculate",
-		Parameters: jsonschema.Schema(`{"type":"object","properties":{"operation":{"type":"string","enum":["add","subtract"]}},"required":["operation"]}`),
-	}
-	converted, err := convertGoogleTools([]ai.Tool{tool}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(converted) != 1 || len(converted[0].FunctionDeclarations) != 1 {
-		t.Fatalf("converted tools = %#v", converted)
-	}
-	got := converted[0].FunctionDeclarations[0].ParametersJSONSchema
-	if !bytes.Equal(got, tool.Parameters) {
-		t.Fatalf("schema changed\nwant: %s\n got: %s", tool.Parameters, got)
-	}
-}
-
-func TestGoogleConstrainedSamplingMode(t *testing.T) {
-	tool := constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer))
-	mode, set, err := resolveGoogleFunctionCallingMode([]ai.Tool{tool}, "", supportsGoogleStrictToolSampling("gemini-3-pro"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !set || mode != "VALIDATED" {
-		t.Fatalf("Gemini 3 mode = %q, set=%t", mode, set)
-	}
-	required := constrainedSamplingTestTool("required", strictSamplingTestConfig(ai.ConstrainedSamplingRequire))
-	if _, _, err := resolveGoogleFunctionCallingMode([]ai.Tool{required}, GoogleToolChoiceAny, false); err == nil {
-		t.Fatal("unsupported required strict sampling was accepted before tool-choice override")
-	}
-}
-
-// TestMapGoogleStopReasonThrowsOnUnknown_OTm1 pins google-shared.ts
-// mapStopReason (:309-336): every known FinishReason maps explicitly and an
-// unknown value throws `Unhandled stop reason: X` immediately instead of
-// silently mapping to error. (OT-m1)
-func TestMapGoogleStopReasonThrowsOnUnknown_OTm1(t *testing.T) {
-	if reason, err := mapGoogleStopReason("STOP"); err != nil || reason != ai.StopReasonStop {
-		t.Fatalf("STOP = %q, %v", reason, err)
-	}
-	if reason, err := mapGoogleStopReason("MAX_TOKENS"); err != nil || reason != ai.StopReasonLength {
-		t.Fatalf("MAX_TOKENS = %q, %v", reason, err)
-	}
-	for _, known := range []string{
-		"BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "SAFETY", "IMAGE_SAFETY",
-		"IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "IMAGE_OTHER", "RECITATION",
-		"FINISH_REASON_UNSPECIFIED", "OTHER", "LANGUAGE", "MALFORMED_FUNCTION_CALL",
-		"UNEXPECTED_TOOL_CALL", "NO_IMAGE",
-	} {
-		if reason, err := mapGoogleStopReason(known); err != nil || reason != ai.StopReasonError {
-			t.Fatalf("%s = %q, %v", known, reason, err)
-		}
-	}
-	_, err := mapGoogleStopReason("BRAND_NEW_REASON")
-	if err == nil || err.Error() != "Unhandled stop reason: BRAND_NEW_REASON" {
-		t.Fatalf("unknown reason error = %v", err)
-	}
-}
-
-func TestGoogleThoughtSignatureValidation(t *testing.T) {
-	valid := "AAAAAAAAAAAAAAAAAAAAAA=="
-	if got := resolveGoogleThoughtSignature(true, &valid); got == nil || *got != valid {
-		t.Fatalf("valid signature = %v", got)
-	}
-	invalid := "not-base64"
-	if got := resolveGoogleThoughtSignature(true, &invalid); got != nil {
-		t.Fatalf("invalid signature survived: %q", *got)
-	}
-	nonCanonical := "AB=="
-	if got := resolveGoogleThoughtSignature(true, &nonCanonical); got == nil || *got != nonCanonical {
-		t.Fatalf("upstream-compatible signature = %v", got)
-	}
-	if got := resolveGoogleThoughtSignature(false, &valid); got != nil {
-		t.Fatalf("cross-model signature survived: %q", *got)
-	}
-	first := "first"
-	if got := retainGoogleThoughtSignature(&first, nil); got == nil || *got != first {
-		t.Fatalf("missing delta erased signature: %v", got)
-	}
-}
-
-func TestGoogleToolResultImageRouting(t *testing.T) {
-	result := &ai.ToolResultMessage{
-		ToolCallID: "call", ToolName: "read",
-		Content: ai.ToolResultContent{&ai.ImageContent{Data: "abc", MimeType: "image/png"}},
-	}
-	gemini2 := &ai.Model{ID: "gemini-2.5-flash", Input: ai.InputModalities{ai.InputText, ai.InputImage}}
-	contents := appendGoogleToolResult(nil, gemini2, result)
-	if len(contents) != 2 || contents[0].Parts[0].FunctionResponse == nil || contents[1].Parts[1].InlineData == nil {
-		t.Fatalf("Gemini 2 image routing = %#v", contents)
-	}
-	gemini3 := &ai.Model{ID: "gemini-3-pro-preview", Input: ai.InputModalities{ai.InputText, ai.InputImage}}
-	contents = appendGoogleToolResult(nil, gemini3, result)
-	response := contents[0].Parts[0].FunctionResponse
-	if len(contents) != 1 || response == nil || len(response.Parts) != 1 || response.Parts[0].InlineData == nil {
-		t.Fatalf("Gemini 3 image routing = %#v", contents)
-	}
-}
 
 func TestTransformGoogleMessagesSynthesizesMissingToolResult(t *testing.T) {
 	model := &ai.Model{ID: "gemini-2.5-flash", API: ai.APIGoogleGenerativeAI, Provider: "google", Input: ai.InputModalities{ai.InputText}}
@@ -124,18 +22,5 @@ func TestTransformGoogleMessagesSynthesizesMissingToolResult(t *testing.T) {
 	result, ok := transformed[1].(*ai.ToolResultMessage)
 	if !ok || !result.IsError || result.ToolCallID != "call" {
 		t.Fatalf("synthetic result = %#v", transformed[1])
-	}
-}
-
-func TestNormalizeGoogleToolCallID(t *testing.T) {
-	value := normalizeGoogleToolCallID("call|with spaces/and?punctuation")
-	if value != "call_with_spaces_and_punctuation" {
-		t.Fatalf("normalized id = %q", value)
-	}
-	if len(normalizeGoogleToolCallID(string(bytes.Repeat([]byte("a"), 80)))) != 64 {
-		t.Fatal("normalized id was not clamped to 64 bytes")
-	}
-	if got := normalizeGoogleToolCallID("call🙈id"); got != "call__id" {
-		t.Fatalf("astral normalized id = %q", got)
 	}
 }

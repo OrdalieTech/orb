@@ -203,17 +203,6 @@ type responsesToolSearchOutput struct {
 	Tools     []OpenAIResponsesTool `json:"tools"`
 }
 
-func StreamOpenAIResponses(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: OpenAI Responses model is nil")
-	}
-	options := &OpenAIResponsesOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamOpenAIResponsesWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleOpenAIResponses(
 	ctx context.Context,
 	model *ai.Model,

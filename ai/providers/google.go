@@ -13,5 +13,3 @@ var googleProvider = Provider{
 		EnvVars:     []string{"GEMINI_API_KEY"},
 	}},
 }
-
-func Google() Provider { return registered("google") }

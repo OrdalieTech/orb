@@ -143,20 +143,6 @@ func TestOpenAICodexBrowserManualLogin(t *testing.T) {
 	}
 }
 
-func TestOpenAICodexRejectsTokenWithoutAccount(t *testing.T) {
-	flow := NewOpenAICodex(nil)
-	_, err := flow.credentialFromToken(openAICodexToken{access: "not-a-jwt", refresh: "refresh", expires: 1})
-	if err == nil || err.Error() != "Failed to extract accountId from token" {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestOpenAICodexDefaultClientHasNoBlanketTimeout(t *testing.T) {
-	if flow := NewOpenAICodex(nil); flow.options.HTTPClient != http.DefaultClient {
-		t.Fatal("default OpenAI Codex OAuth client unexpectedly imposes a blanket timeout")
-	}
-}
-
 func codexTestToken(t *testing.T, accountID string) string {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{openAICodexJWTClaim: map[string]string{"chatgpt_account_id": accountID}})

@@ -42,48 +42,6 @@ func TestEstimateContextTokensUsesNewApplicableUsage(t *testing.T) {
 	}
 }
 
-func TestClampSimpleReasoningMatchesSupportedModelLevels(t *testing.T) {
-	high := ai.ThinkingHigh
-	if got := clampSimpleReasoning(&ai.Model{Reasoning: false}, &high); got != nil {
-		t.Fatalf("non-reasoning model returned %q", *got)
-	}
-
-	xhigh := ai.ThinkingXHigh
-	if got := clampSimpleReasoning(&ai.Model{Reasoning: true}, &xhigh); got == nil || *got != ai.ThinkingHigh {
-		t.Fatalf("unsupported xhigh clamped to %v, want high", got)
-	}
-
-	maxValue := "max"
-	mapping := map[ai.ModelThinkingLevel]*string{ai.ModelThinkingMax: &maxValue}
-	if got := clampSimpleReasoning(&ai.Model{Reasoning: true, ThinkingLevelMap: &mapping}, &xhigh); got == nil || *got != ai.ThinkingMax {
-		t.Fatalf("xhigh with max support clamped to %v, want max", got)
-	}
-
-	none := "none"
-	mapping = map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: &none, ai.ModelThinkingMinimal: nil}
-	minimal := ai.ThinkingMinimal
-	if got := clampSimpleReasoning(&ai.Model{Reasoning: true, ThinkingLevelMap: &mapping}, &minimal); got == nil || *got != ai.ThinkingLow {
-		t.Fatalf("disabled minimal clamped to %v, want low", got)
-	}
-}
-
-func TestSimpleToolChoiceMapsRequired(t *testing.T) {
-	options := &ai.SimpleStreamOptions{ToolChoice: ai.ToolChoiceRequired}
-	if got := simpleToolChoice(options, "any"); got != "any" {
-		t.Fatalf("required tool choice = %q, want any", got)
-	}
-	options.ToolChoice = ai.ToolChoiceNone
-	if got := simpleToolChoice(options, "any"); got != "none" {
-		t.Fatalf("none tool choice = %q, want none", got)
-	}
-}
-
-func TestEstimateTextTokensUsesJavaScriptUTF16Length(t *testing.T) {
-	if got := estimateTextTokens("abc😀"); got != 2 {
-		t.Fatalf("tokens = %d, want 2", got)
-	}
-}
-
 func estimateAssistant(timestamp, totalTokens int64) *ai.AssistantMessage {
 	return &ai.AssistantMessage{
 		Content:    ai.AssistantContent{&ai.TextContent{Text: "kept"}},

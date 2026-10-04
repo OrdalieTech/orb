@@ -237,11 +237,7 @@ func StreamOpenAICodexResponsesWithOptions(
 			startEmitted = true
 			return sink(ai.StartEvent{Partial: output})
 		}
-		webSocketDisabled := transport != ai.TransportSSE && openAICodexWebSocketFallbackActive(sessionID)
-		if webSocketDisabled {
-			recordOpenAICodexSSEFallback(sessionID)
-		}
-		if transport != ai.TransportSSE && !webSocketDisabled {
+		if transport != ai.TransportSSE && !openAICodexWebSocketFallbackActive(sessionID) {
 			requestID, err := codexWebSocketRequestID(streamOptions)
 			if err != nil {
 				fail(err)
@@ -296,12 +292,11 @@ func StreamOpenAICodexResponsesWithOptions(
 					fail(err)
 					return
 				}
-				recordOpenAICodexWebSocketFailure(sessionID, webSocketErr)
+				recordOpenAICodexWebSocketFailure(sessionID)
 				if started {
 					fail(webSocketErr)
 					return
 				}
-				recordOpenAICodexSSEFallback(sessionID)
 				break
 			}
 		}

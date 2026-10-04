@@ -17,5 +17,3 @@ var openRouterProvider = Provider{
 		OAuth: oauth.NewOpenRouter(nil),
 	},
 }
-
-func OpenRouter() Provider { return registered("openrouter") }

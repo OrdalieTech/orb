@@ -13,5 +13,3 @@ var azureOpenAIResponsesProvider = Provider{
 		EnvVars:     []string{"AZURE_OPENAI_API_KEY"},
 	}},
 }
-
-func AzureOpenAIResponses() Provider { return registered("azure-openai-responses") }

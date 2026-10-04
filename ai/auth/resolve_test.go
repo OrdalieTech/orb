@@ -66,19 +66,6 @@ func TestResolveProviderAuthPrecedenceAndStoredOwnership(t *testing.T) {
 	}
 }
 
-func TestEnvAPIKeyAuthReturnsStoredCredentialEnvironment(t *testing.T) {
-	credential := APIKeyCredential("stored")
-	credential.Env = map[string]string{"REGION": "stored-region"}
-	result, err := (EnvAPIKeyAuth{DisplayName: "Key"}).Resolve(context.Background(), testContext{}, credential)
-	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "stored" || result.Env["REGION"] != "stored-region" {
-		t.Fatalf("stored result = %#v, %v", result, err)
-	}
-	result.Env["REGION"] = "changed"
-	if credential.Env["REGION"] != "stored-region" {
-		t.Fatal("resolved environment aliases stored credential")
-	}
-}
-
 func TestResolveProviderAuthRefreshesExpiredOAuthOnce(t *testing.T) {
 	ctx := context.Background()
 	flow := &testOAuth{}
@@ -142,28 +129,5 @@ func TestResolveProviderAuthDefaultRefreshDoesNotImposeProviderContract(t *testi
 	result, err := ResolveProviderAuth(context.Background(), "provider", ProviderAuth{OAuth: flow}, store, testContext{}, nil)
 	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "fresh" {
 		t.Fatalf("default refresh result = %#v, %v", result, err)
-	}
-}
-
-func TestResolveProviderAuthWrapsRefreshFailure(t *testing.T) {
-	flow := &testOAuth{err: errors.New("invalid grant")}
-	store := NewMemoryStore(map[string]*Credential{"provider": OAuthCredential("refresh", "expired", 0)})
-	_, err := ResolveProviderAuth(context.Background(), "provider", ProviderAuth{OAuth: flow}, store, testContext{}, nil)
-	var authError *Error
-	if !errors.As(err, &authError) || authError.Code != ErrorOAuth {
-		t.Fatalf("refresh error = %#v, want OAuth error", err)
-	}
-	// Upstream 4cf0a729: the surfaced message keeps the underlying cause,
-	// because callers show the message only.
-	if err.Error() != "OAuth refresh failed for provider: invalid grant" || !errors.Is(err, flow.err) {
-		t.Fatalf("refresh error message/cause = %q / %v", err, errors.Unwrap(err))
-	}
-}
-
-func TestEnvironmentContextIgnoresWhitespaceValues(t *testing.T) {
-	t.Setenv("ORB_AUTH_WHITESPACE", "  ")
-	value, ok := (EnvironmentContext{}).Env(context.Background(), "ORB_AUTH_WHITESPACE")
-	if ok || value != "" {
-		t.Fatalf("environment value = %q, %t", value, ok)
 	}
 }

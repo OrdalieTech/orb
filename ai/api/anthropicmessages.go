@@ -205,17 +205,6 @@ type resolvedAnthropicCompat struct {
 	supportsMidConvoToolChanges     bool
 }
 
-func StreamAnthropicMessages(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: Anthropic Messages model is nil")
-	}
-	options := &AnthropicMessagesOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamAnthropicMessagesWithOptions(ctx, request.Model, request.Context, options)
-}
-
 func StreamSimpleAnthropicMessages(
 	ctx context.Context,
 	model *ai.Model,
@@ -223,18 +212,6 @@ func StreamSimpleAnthropicMessages(
 	options *ai.SimpleStreamOptions,
 ) (ai.AssistantMessageEventStream, error) {
 	return streamSimpleAnthropicMessages(ctx, model, requestContext, options, nil)
-}
-
-// StreamSimpleAnthropicMessagesWithClient preserves simple-call semantics while
-// letting hosts supply an upstream Anthropic client such as AnthropicVertex.
-func StreamSimpleAnthropicMessagesWithClient(
-	ctx context.Context,
-	model *ai.Model,
-	requestContext ai.Context,
-	options *ai.SimpleStreamOptions,
-	client *anthropic.Client,
-) (ai.AssistantMessageEventStream, error) {
-	return streamSimpleAnthropicMessages(ctx, model, requestContext, options, client)
 }
 
 func streamSimpleAnthropicMessages(

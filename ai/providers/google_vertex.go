@@ -139,5 +139,3 @@ var googleVertexProvider = Provider{
 	Auth:    AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: googleVertexAuth{}},
 }
-
-func GoogleVertex() Provider { return registered("google-vertex") }

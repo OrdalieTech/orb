@@ -83,19 +83,6 @@ type completionsStreamState struct {
 	hasFinishReason            bool
 }
 
-// StreamOpenAICompletions adapts the provider-neutral request to OpenAI Chat
-// Completions. Provider failures are represented by the terminal error event.
-func StreamOpenAICompletions(ctx context.Context, request ai.Request) (ai.AssistantMessageEventStream, error) {
-	if request.Model == nil {
-		return nil, errors.New("ai/api: OpenAI completions model is nil")
-	}
-	options := &OpenAICompletionsOptions{}
-	if request.Options != nil {
-		options.StreamOptions = *request.Options
-	}
-	return StreamOpenAICompletionsWithOptions(ctx, request.Model, request.Context, options)
-}
-
 // StreamSimpleOpenAICompletions applies the provider-neutral context and
 // options before entering the specialized Chat Completions path.
 func StreamSimpleOpenAICompletions(

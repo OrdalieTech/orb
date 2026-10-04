@@ -78,5 +78,3 @@ var anthropicProvider = Provider{
 		OAuth:  oauth.NewAnthropic(nil),
 	},
 }
-
-func Anthropic() Provider { return registered("anthropic") }

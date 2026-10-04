@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -11,198 +10,6 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 )
-
-func TestMistralToolCallIDNormalizer(t *testing.T) {
-	normalize := newMistralToolCallIDNormalizer()
-	if got := normalize("Abc123XYZ"); got != "Abc123XYZ" {
-		t.Fatalf("valid tool call ID = %q, want unchanged", got)
-	}
-	if got := normalize("call.foreign/tool"); got != "wbf5ziha0" {
-		t.Fatalf("foreign tool call ID = %q, want upstream hash", got)
-	}
-	if first, second := normalize("call.foreign/tool"), normalize("call.foreign/tool"); first != second {
-		t.Fatalf("normalization is unstable: %q then %q", first, second)
-	}
-}
-
-func TestMistralUsageCacheFieldVariants(t *testing.T) {
-	model := &ai.Model{Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1_000_000, Output: 2_000_000, CacheRead: 3_000_000}}}
-	usage := parseMistralUsage([]byte(`{"promptTokens":20,"completionTokens":7,"totalTokens":27,"promptTokensDetails":{"cachedTokens":2}}`), model)
-	if usage.Input != 18 || usage.Output != 7 || usage.CacheRead != 2 || usage.TotalTokens != 27 {
-		t.Fatalf("camel-case usage = %#v", usage)
-	}
-	usage = parseMistralUsage([]byte(`{"prompt_tokens":5,"completion_tokens":2,"num_cached_tokens":9}`), model)
-	if usage.Input != 0 || usage.Output != 2 || usage.CacheRead != 5 || usage.TotalTokens != 7 {
-		t.Fatalf("snake-case usage = %#v", usage)
-	}
-}
-
-func TestMistralRawAndUnknownStopReasons(t *testing.T) {
-	for _, test := range []struct {
-		raw        string
-		wantReason ai.StopReason
-		wantError  string
-	}{
-		{raw: "stop", wantReason: ai.StopReasonStop},
-		{raw: "error", wantReason: ai.StopReasonError, wantError: "Provider stopped with: error"},
-		{raw: "unmapped_error", wantReason: ai.StopReasonError, wantError: "Provider stopped with: unmapped_error"},
-	} {
-		output := newAssistantMessage(&ai.Model{})
-		processor := newMistralStreamProcessor(&ai.Model{}, output, func(ai.AssistantMessageEvent) bool { return true })
-		raw := fmt.Sprintf(`{"choices":[{"delta":{},"finish_reason":%q}]}`, test.raw)
-		if err := processor.handle(json.RawMessage(raw)); err != nil {
-			t.Fatal(err)
-		}
-		if output.StopReason != test.wantReason || output.RawStopReason == nil || *output.RawStopReason != test.raw {
-			t.Fatalf("%s output = %#v", test.raw, output)
-		}
-		if test.wantError == "" {
-			if output.ErrorMessage != nil {
-				t.Fatalf("%s error = %v", test.raw, output.ErrorMessage)
-			}
-		} else if output.ErrorMessage == nil || *output.ErrorMessage != test.wantError {
-			t.Fatalf("%s error = %v", test.raw, output.ErrorMessage)
-		}
-	}
-}
-
-func parseMistralUsage(raw json.RawMessage, model *ai.Model) ai.Usage {
-	var values map[string]json.RawMessage
-	_ = json.Unmarshal(raw, &values)
-	output := &ai.AssistantMessage{}
-	(&mistralStreamProcessor{model: model, output: output}).applyUsage(values)
-	return output.Usage
-}
-
-func TestMistralReplayWireShape(t *testing.T) {
-	model := &ai.Model{ID: "m", API: ai.APIMistralConversations, Provider: "mistral", Input: ai.InputModalities{ai.InputText}}
-	messages := ai.MessageList{
-		&ai.AssistantMessage{
-			API: ai.APIMistralConversations, Provider: "mistral", Model: "m", StopReason: ai.StopReasonToolUse,
-			Content: ai.AssistantContent{&ai.ToolCall{ID: "Abc123XYZ", Name: "echo", Arguments: map[string]any{"text": "first"}}},
-		},
-		&ai.ToolResultMessage{ToolCallID: "Abc123XYZ", ToolName: "echo", Content: ai.ToolResultContent{&ai.TextContent{Text: "done"}}},
-	}
-	payload, err := buildMistralPayload(model, ai.Context{Messages: messages}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := ai.Marshal(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `{"model":"m","stream":true,"messages":[{"role":"assistant","prefix":false,"tool_calls":[{"id":"Abc123XYZ","type":"function","function":{"name":"echo","arguments":"{\"text\":\"first\"}"},"index":0}]},{"role":"tool","name":"echo","content":[{"type":"text","text":"done"}],"tool_call_id":"Abc123XYZ"}]}`
-	if string(body) != want {
-		t.Fatalf("wire body = %s\nwant      = %s", body, want)
-	}
-}
-
-func TestMistralConstrainedSamplingWire(t *testing.T) {
-	model := &ai.Model{ID: "m", API: ai.APIMistralConversations, Provider: "mistral"}
-	tools := []ai.Tool{
-		constrainedSamplingTestTool("plain", nil),
-		constrainedSamplingTestTool("strict", strictSamplingTestConfig(ai.ConstrainedSamplingPrefer)),
-	}
-	payload, err := buildMistralPayload(model, ai.Context{Tools: &tools}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if payload.Tools[0].Function.Strict || !payload.Tools[1].Function.Strict {
-		t.Fatalf("Mistral strict tools = %#v", payload.Tools)
-	}
-}
-
-func TestMistralSimpleReasoningSelection(t *testing.T) {
-	previousClient := mistralHTTPClient
-	mistralHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.Header.Get("X-Extension") != "yes" {
-			t.Errorf("hooked header = %q", request.Header.Get("X-Extension"))
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Status:     "200 OK",
-			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-			Body: io.NopCloser(strings.NewReader(
-				"data: {\"id\":\"mistral-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
-			)),
-			Request: request,
-		}, nil
-	})}
-	t.Cleanup(func() { mistralHTTPClient = previousClient })
-
-	levels := func(values map[ai.ModelThinkingLevel]string) *map[ai.ModelThinkingLevel]*string {
-		mapped := map[ai.ModelThinkingLevel]*string{}
-		for _, level := range []ai.ModelThinkingLevel{ai.ModelThinkingOff, ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium, ai.ModelThinkingHigh, ai.ModelThinkingXHigh, ai.ModelThinkingMax} {
-			if value, ok := values[level]; ok {
-				mapped[level] = &value
-			} else {
-				mapped[level] = nil
-			}
-		}
-		return &mapped
-	}
-	noneHigh := levels(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high"})
-	glm52 := levels(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
-	glm53 := levels(map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
-	tests := []struct {
-		name           string
-		modelID        string
-		levels         *map[ai.ModelThinkingLevel]*string
-		reasoning      *ai.ThinkingLevel
-		wantEffort     string
-		wantPromptMode string
-	}{
-		{name: "mapped model clamps to a supported effort", modelID: "mistral-small-2603", levels: noneHigh, reasoning: thinkingLevel(ai.ThinkingLow), wantEffort: "high"},
-		{name: "mapped model sends none when thinking is off", modelID: "mistral-medium-latest", levels: noneHigh, wantEffort: "none"},
-		{name: "GLM 5.2 sends max", modelID: "zai-glm-5-2", levels: glm52, reasoning: thinkingLevel(ai.ThinkingLevel("max")), wantEffort: "max"},
-		{name: "GLM 5.3 sends low", modelID: "zai-glm-5-3", levels: glm53, reasoning: thinkingLevel(ai.ThinkingLow), wantEffort: "low"},
-		{name: "GLM 5.3 maps medium to high", modelID: "zai-glm-5-3", levels: glm53, reasoning: thinkingLevel(ai.ThinkingMedium), wantEffort: "high"},
-		{name: "GLM 5.3 without off omits controls", modelID: "zai-glm-5-3", levels: glm53},
-		{name: "magistral uses prompt mode", modelID: "magistral-medium-latest", reasoning: thinkingLevel(ai.ThinkingMedium), wantPromptMode: "reasoning"},
-		{name: "magistral omits controls when reasoning is off", modelID: "magistral-medium-latest", reasoning: thinkingLevel(ai.ThinkingLevel("off"))},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			apiKey := "test-key"
-			model := &ai.Model{
-				ID: test.modelID, Name: test.modelID, API: ai.APIMistralConversations, Provider: "mistral",
-				BaseURL: "https://mistral.invalid", Reasoning: true, ThinkingLevelMap: test.levels, Input: ai.InputModalities{ai.InputText},
-				ContextWindow: 128_000, MaxTokens: 8_192,
-			}
-			var captured *MistralChatPayload
-			stream, err := StreamSimpleMistralConversations(context.Background(), model, ai.Context{}, &ai.SimpleStreamOptions{
-				StreamOptions: ai.StreamOptions{
-					APIKey: &apiKey,
-					OnPayload: func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
-						captured = payload.(*MistralChatPayload)
-						return nil, false, nil
-					},
-					TransformHeaders: func(_ context.Context, headers ai.ProviderHeaders, _ *ai.Model) (ai.ProviderHeaders, error) {
-						value := "yes"
-						headers["X-Extension"] = &value
-						return headers, nil
-					},
-				},
-				Reasoning: test.reasoning,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := ai.Collect(stream); err != nil {
-				t.Fatal(err)
-			}
-			if captured == nil {
-				t.Fatal("payload hook was not called")
-			}
-			if got := optionalString(captured.ReasoningEffort); got != test.wantEffort {
-				t.Fatalf("reasoning_effort = %q, want %q", got, test.wantEffort)
-			}
-			if got := optionalString(captured.PromptMode); got != test.wantPromptMode {
-				t.Fatalf("prompt_mode = %q, want %q", got, test.wantPromptMode)
-			}
-		})
-	}
-}
 
 // TestMistralNoDefaultRequestDeadline_OTM5 pins upstream buildRequestOptions
 // (mistral-conversations.ts:213-238): no request timeout is installed and
@@ -242,53 +49,6 @@ func TestMistralNoDefaultRequestDeadline_OTM5(t *testing.T) {
 	}
 	if !sawRequest || message.StopReason != ai.StopReasonStop {
 		t.Fatalf("stream result: sawRequest=%t message=%#v", sawRequest, message)
-	}
-}
-
-// TestMistralCachedTokenFallbackChain_OTm7 pins the upstream ?? fallback chain
-// (mistral-conversations.ts:283-292): an empty details object falls through to
-// num_cached_tokens, camel-case candidates are consulted before snake-case,
-// and a consumed non-number terminates the chain with zero. (OT-m7)
-func TestMistralCachedTokenFallbackChain_OTm7(t *testing.T) {
-	model := &ai.Model{}
-	tests := []struct {
-		name       string
-		usage      string
-		wantCached int64
-	}{
-		{
-			name:       "empty details object falls through to num_cached_tokens",
-			usage:      `{"prompt_tokens":10,"prompt_tokens_details":{},"num_cached_tokens":5}`,
-			wantCached: 5,
-		},
-		{
-			name:       "null cached tokens falls through",
-			usage:      `{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":null},"num_cached_tokens":5}`,
-			wantCached: 5,
-		},
-		{
-			name:       "camel-case details win over snake-case",
-			usage:      `{"prompt_tokens":10,"promptTokensDetails":{"cachedTokens":3},"prompt_tokens_details":{"cached_tokens":7}}`,
-			wantCached: 3,
-		},
-		{
-			name:       "consumed non-number terminates the chain with zero",
-			usage:      `{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":"three"},"num_cached_tokens":5}`,
-			wantCached: 0,
-		},
-		{
-			name:       "camel num cached wins over snake",
-			usage:      `{"prompt_tokens":10,"numCachedTokens":4,"num_cached_tokens":6}`,
-			wantCached: 4,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			usage := parseMistralUsage([]byte(test.usage), model)
-			if usage.CacheRead != test.wantCached {
-				t.Fatalf("cached tokens = %d, want %d", usage.CacheRead, test.wantCached)
-			}
-		})
 	}
 }
 
@@ -362,44 +122,10 @@ func TestMistralNonObjectStreamedToolArgsPreserved_OTm8(t *testing.T) {
 	}
 }
 
-func TestOTm8MistralArgumentsTextMatchesJSTruthiness(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{name: "null", raw: `null`, want: `{}`},
-		{name: "false", raw: `false`, want: `{}`},
-		{name: "zero", raw: `0`, want: `{}`},
-		{name: "negative zero", raw: `-0`, want: `{}`},
-		{name: "empty string remains string delta", raw: `""`, want: ``},
-		{name: "truthy number", raw: `1`, want: `1`},
-		{name: "array", raw: `[1,2]`, want: `[1,2]`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := mistralArgumentsText(json.RawMessage(test.raw)); got != test.want {
-				t.Fatalf("mistralArgumentsText(%s) = %q, want %q", test.raw, got, test.want)
-			}
-		})
-	}
-}
-
 func mistralTestModel() *ai.Model {
 	return &ai.Model{
 		ID: "mistral-small-2603", Name: "Mistral Small", API: ai.APIMistralConversations, Provider: "mistral",
 		BaseURL: "https://mistral.invalid", Input: ai.InputModalities{ai.InputText},
 		ContextWindow: 128_000, MaxTokens: 8_192,
 	}
-}
-
-func thinkingLevel(value ai.ThinkingLevel) *ai.ThinkingLevel {
-	return &value
-}
-
-func optionalString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
 }

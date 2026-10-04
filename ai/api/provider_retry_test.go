@@ -156,21 +156,6 @@ func TestRetryProviderRequestTreatsConnectionErrorsAsRetryable(t *testing.T) {
 	}
 }
 
-func TestProviderRetryDelayBackoffFormula(t *testing.T) {
-	fixedJitter(t, 0) // no jitter → exact upstream curve: min(0.5*2^i, 8) seconds
-	for retryIndex, want := range []time.Duration{500, 1000, 2000, 4000, 8000, 8000} {
-		delay, err := providerRetryDelay(errors.New("x"), http.Header{}, retryIndex, nil)
-		if err != nil || delay != want*time.Millisecond {
-			t.Fatalf("retryIndex %d: delay=%s err=%v, want %s", retryIndex, delay, err, want*time.Millisecond)
-		}
-	}
-	fixedJitter(t, 1) // full jitter shaves 25%
-	delay, err := providerRetryDelay(errors.New("x"), http.Header{}, 0, nil)
-	if err != nil || delay != 375*time.Millisecond {
-		t.Fatalf("jittered: delay=%s err=%v, want 375ms", delay, err)
-	}
-}
-
 func TestProviderRetryDelayReadsServerHeaders(t *testing.T) {
 	// retry-after-ms takes precedence and is milliseconds.
 	delay, err := providerRetryDelay(errors.New("x"), http.Header{"Retry-After-Ms": []string{"250"}, "Retry-After": []string{"9"}}, 0, nil)

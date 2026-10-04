@@ -351,10 +351,6 @@ func storeFreshAt(path string, now time.Time, documents ...document.Document) bo
 	return latest != 0 && now.UnixMilli()-latest < remoteCatalogRefreshInterval.Milliseconds()
 }
 
-func writeStore(path string, catalog *Catalog, checkedAt int64, lastModified *int64) (err error) {
-	return writeStoreResponse(path, catalog, checkedAt, lastModified, "")
-}
-
 func updateStore(path string, documents []document.Document, change func(*orderedStore)) (err error) {
 	update := func(data []byte) ([]byte, error) {
 		stored := orderedStore{entries: make(map[string]storedProvider)}

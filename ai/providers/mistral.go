@@ -13,5 +13,3 @@ var mistralProvider = Provider{
 		EnvVars:     []string{"MISTRAL_API_KEY"},
 	}},
 }
-
-func Mistral() Provider { return registered("mistral") }

@@ -305,10 +305,6 @@ func (*ImageContent) isImagesContentBlock() {}
 
 type ImagesContent []ImagesContentBlock
 
-type ImagesContext struct {
-	Input ImagesContent `json:"input"`
-}
-
 type AssistantImages struct {
 	API          ImagesAPI        `json:"api"`
 	Provider     ImagesProviderID `json:"provider"`

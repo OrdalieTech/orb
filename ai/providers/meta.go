@@ -14,5 +14,3 @@ var metaProvider = Provider{
 		OAuth:  oauth.NewMeta(nil),
 	},
 }
-
-func Meta() Provider { return registered("meta") }

@@ -27,14 +27,10 @@ func openAICompletionsRawStream(t *testing.T, body string) ai.AssistantMessageEv
 	t.Cleanup(func() { openAIHTTPClient = previousClient })
 
 	key := "fixture-key"
-	stream, err := StreamOpenAICompletions(context.Background(), ai.Request{
-		Model: &ai.Model{
-			ID: "vendor/model", API: ai.APIOpenAICompletions, Provider: "tensorx",
-			BaseURL: "https://fixture.invalid/v1/", Input: ai.InputModalities{ai.InputText},
-		},
-		Context: ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("test")}}},
-		Options: &ai.StreamOptions{APIKey: &key},
-	})
+	stream, err := StreamOpenAICompletionsWithOptions(context.Background(), &ai.Model{
+		ID: "vendor/model", API: ai.APIOpenAICompletions, Provider: "tensorx",
+		BaseURL: "https://fixture.invalid/v1/", Input: ai.InputModalities{ai.InputText},
+	}, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("test")}}}, &OpenAICompletionsOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
 	if err != nil {
 		t.Fatal(err)
 	}

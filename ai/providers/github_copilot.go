@@ -17,5 +17,3 @@ var githubCopilotProvider = Provider{
 		OAuth: oauth.NewGitHubCopilot(nil),
 	},
 }
-
-func GitHubCopilot() Provider { return registered("github-copilot") }

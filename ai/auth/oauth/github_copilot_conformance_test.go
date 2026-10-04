@@ -5,14 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/conformance/runner"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 func TestF2GitHubCopilotAccountPolicy(t *testing.T) {

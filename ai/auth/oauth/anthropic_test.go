@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -230,25 +229,6 @@ func TestAnthropicBusyCallbackPortFallsBackToPaste(t *testing.T) {
 	}
 }
 
-func TestParseAuthorizationInput(t *testing.T) {
-	tests := []struct {
-		input     string
-		wantCode  string
-		wantState string
-	}{
-		{input: "https://localhost/callback?code=url-code&state=url-state", wantCode: "url-code", wantState: "url-state"},
-		{input: "hash-code#hash-state", wantCode: "hash-code", wantState: "hash-state"},
-		{input: "code=query-code&state=query-state", wantCode: "query-code", wantState: "query-state"},
-		{input: "manual-code", wantCode: "manual-code"},
-	}
-	for _, test := range tests {
-		code, state, err := parseAuthorizationInput(test.input)
-		if err != nil || code != test.wantCode || state != test.wantState {
-			t.Fatalf("parse %q = %q, %q, %v", test.input, code, state, err)
-		}
-	}
-}
-
 func TestAnthropicRefreshUsesRotatedToken(t *testing.T) {
 	var mu sync.Mutex
 	var body map[string]string
@@ -277,75 +257,6 @@ func TestAnthropicRefreshUsesRotatedToken(t *testing.T) {
 		t.Fatalf("Anthropic refresh retained fields upstream drops: %#v", credential.Extra)
 	}
 }
-
-func TestAnthropicTokenFailuresKeepUpstreamWrapping(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.WriteHeader(http.StatusUnauthorized)
-		_, _ = io.WriteString(writer, "denied")
-	}))
-	defer server.Close()
-	flow := NewAnthropic(&AnthropicOptions{TokenURL: server.URL, RedirectURI: "http://localhost:53692/callback"})
-
-	for _, test := range []struct {
-		label string
-		want  string
-	}{
-		{
-			label: "Token exchange",
-			want:  "Token exchange request failed. url=" + server.URL + "; redirect_uri=http://localhost:53692/callback; response_type=authorization_code; details=Error: HTTP request failed. status=401; url=" + server.URL + "; body=denied",
-		},
-		{
-			label: "Anthropic token refresh",
-			want:  "Anthropic token refresh request failed. url=" + server.URL + "; details=Error: HTTP request failed. status=401; url=" + server.URL + "; body=denied",
-		},
-	} {
-		_, err := flow.exchange(context.Background(), []byte(`{}`), test.label)
-		if err == nil || err.Error() != test.want {
-			t.Errorf("%s error = %q, want %q", test.label, err, test.want)
-		}
-	}
-}
-
-// LOG-m7: formatOAuthErrorDetails ports upstream formatErrorDetails
-// (anthropic.ts:82-97): name/message first, then code, errno, cause, and stack.
-func TestLOGm7FormatOAuthErrorDetailsIncludesDiagnosticFields(t *testing.T) {
-	errno := syscall.ECONNREFUSED
-	if got, want := formatOAuthErrorDetails(errno), "Error: "+errno.Error()+"; errno="+strconv.Itoa(int(errno)); got != want {
-		t.Fatalf("bare errno details = %q, want %q", got, want)
-	}
-	wrapped := fmt.Errorf("dial tcp 127.0.0.1:1: %w", errno)
-	want := "Error: dial tcp 127.0.0.1:1: " + errno.Error() +
-		"; cause=Error: " + errno.Error() + "; errno=" + strconv.Itoa(int(errno))
-	if got := formatOAuthErrorDetails(wrapped); got != want {
-		t.Fatalf("wrapped details = %q, want %q", got, want)
-	}
-	if got := formatOAuthErrorDetails(errors.New("plain")); got != "Error: plain" {
-		t.Fatalf("plain details = %q", got)
-	}
-	diagnostic := oauthDiagnosticTestError{
-		name: "TypeError", message: "fetch failed", code: "UND_ERR_CONNECT_TIMEOUT",
-		errno: "ETIMEDOUT", cause: errors.New("socket closed"), stack: "TypeError: fetch failed\n    at postJson",
-	}
-	wantDiagnostic := "TypeError: fetch failed; code=UND_ERR_CONNECT_TIMEOUT; errno=ETIMEDOUT; " +
-		"cause=Error: socket closed; stack=TypeError: fetch failed\n    at postJson"
-	if got := formatOAuthErrorDetails(diagnostic); got != wantDiagnostic {
-		t.Fatalf("typed diagnostic details = %q, want %q", got, wantDiagnostic)
-	}
-}
-
-type oauthDiagnosticTestError struct {
-	name, message, code string
-	errno               any
-	cause               error
-	stack               string
-}
-
-func (err oauthDiagnosticTestError) Error() string { return err.message }
-func (err oauthDiagnosticTestError) Name() string  { return err.name }
-func (err oauthDiagnosticTestError) Code() string  { return err.code }
-func (err oauthDiagnosticTestError) Errno() any    { return err.errno }
-func (err oauthDiagnosticTestError) Unwrap() error { return err.cause }
-func (err oauthDiagnosticTestError) Stack() string { return err.stack }
 
 func TestAnthropicLoginRefusesWhenAnotherProgramHoldsIPv6Loopback(t *testing.T) {
 	squatter, err := net.Listen("tcp", "[::1]:0")

@@ -33,12 +33,6 @@ func NewRegistry(providers ...Provider) *Registry {
 	return registry
 }
 
-// Has reports whether api is registered.
-func (registry *Registry) Has(api ai.API) bool {
-	_, ok := registry.providers[api]
-	return ok
-}
-
 // StreamSimple dispatches a model to its registered wire-shape adapter.
 func (registry *Registry) StreamSimple(
 	ctx context.Context,

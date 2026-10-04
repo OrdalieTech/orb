@@ -37,8 +37,6 @@ var openAI = Provider{
 	},
 }
 
-func OpenAI() Provider { return registered("openai") }
-
 func cloneProvider(provider Provider) Provider {
 	provider.Env = append([]string(nil), provider.Env...)
 	if method, ok := provider.Methods.APIKey.(auth.EnvAPIKeyAuth); ok {

@@ -147,6 +147,14 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   `extensions.{Bash,Read,Edit,Write,Grep,Find,Ls}ToolCall`/`…ToolResult`,
   `config.ReadStoredCredential`, `agent.LoadSkillsFromDir`, `tools.ExpandPath` and
   `session.WithParentSession`.
+- Go embedders: image generation is removed (`ai.CreateImagesModels`, `ai.CreateImagesProvider`,
+  `ai.ImagesOptions`/`ImagesRequest`/`ImagesFunction`/`ImagesContext`, `api.GenerateImages`,
+  `api.GenerateOpenRouterImages`, `models.BuiltinImages`, `providers.BuiltinImages*`,
+  `providers.OpenRouterImages`), as are `api.StreamAnthropicMessages`,
+  `api.StreamSimpleAnthropicMessagesWithClient`, `api.StreamOpenAICompletions`,
+  `api.StreamOpenAIResponses` (use the `…WithOptions` forms), `api.Registry.Has`, the Codex
+  WebSocket debug-stats API and the per-provider constructors such as `providers.Anthropic()`
+  (use `providers.Get`).
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

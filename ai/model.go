@@ -532,27 +532,3 @@ type Request struct {
 	Context Context
 	Options *StreamOptions
 }
-
-type ImagesPayloadHook func(ctx context.Context, payload any, model *ImagesModel) (replacement any, replace bool, err error)
-type ImagesResponseHook func(ctx context.Context, response ProviderResponse, model *ImagesModel) error
-
-type ImagesOptions struct {
-	APIKey          *string            `json:"apiKey,omitempty"`
-	HTTPClient      *http.Client       `json:"-"`
-	Env             ProviderEnv        `json:"env,omitempty"`
-	OnPayload       ImagesPayloadHook  `json:"-"`
-	OnResponse      ImagesResponseHook `json:"-"`
-	Headers         ProviderHeaders    `json:"headers,omitempty"`
-	TimeoutMS       *int64             `json:"timeoutMs,omitempty"`
-	MaxRetries      *int               `json:"maxRetries,omitempty"`
-	MaxRetryDelayMS *int64             `json:"maxRetryDelayMs,omitempty"`
-	Metadata        map[string]any     `json:"metadata,omitempty"`
-}
-
-type ImagesRequest struct {
-	Model   *ImagesModel
-	Context ImagesContext
-	Options *ImagesOptions
-}
-
-type ImagesFunction func(ctx context.Context, request ImagesRequest) (*AssistantImages, error)

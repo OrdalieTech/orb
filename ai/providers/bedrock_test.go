@@ -2,10 +2,7 @@ package providers_test
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -56,106 +53,9 @@ func (authContext bedrockAuthContext) Env(_ context.Context, name string) (strin
 
 func (bedrockAuthContext) FileExists(context.Context, string) bool { return false }
 
-type bedrockInteraction struct {
-	responses []string
-	prompts   []auth.AuthPrompt
-	events    []auth.AuthEvent
-}
-
-func (interaction *bedrockInteraction) Prompt(_ context.Context, prompt auth.AuthPrompt) (string, error) {
-	interaction.prompts = append(interaction.prompts, prompt)
-	response := interaction.responses[0]
-	interaction.responses = interaction.responses[1:]
-	return response, nil
-}
-
-func (interaction *bedrockInteraction) Notify(event auth.AuthEvent) {
-	interaction.events = append(interaction.events, event)
-}
-
-func TestAmazonBedrockProvider(t *testing.T) {
-	fixture := loadBedrockProviderFixture(t)
-	if len(fixture.APIs) != 1 {
-		t.Fatalf("upstream Bedrock provider API shapes = %v, want exactly one", fixture.APIs)
-	}
-	provider, ok := providers.Get(fixture.ID)
-	if !ok {
-		t.Fatalf("%s provider is not registered", fixture.ID)
-	}
-	if provider.ID != fixture.ID || provider.Name != fixture.Name || provider.API != fixture.APIs[0] || provider.BaseURL != fixture.BaseURL {
-		t.Fatalf("unexpected provider: %#v", provider)
-	}
-	registryFixture := findProviderFixture(t, fixture.ID)
-	if provider.Auth != fixture.Auth.Kind || !slices.Equal(provider.Env, registryFixture.Auth.Env) {
-		t.Fatalf("unexpected auth metadata: %#v", provider)
-	}
-	if provider.Methods.APIKey == nil || provider.Methods.APIKey.Name() != fixture.Auth.Name {
-		t.Fatalf("unexpected auth methods: %#v", provider.Methods)
-	}
-
-	provider.Env[0] = "changed"
-	if fresh := providers.AmazonBedrock(); !slices.Equal(fresh.Env, registryFixture.Auth.Env) {
-		t.Fatal("AmazonBedrock returned mutable registry storage")
-	}
-}
-
-func TestAmazonBedrockLoginMatchesUpstream(t *testing.T) {
-	fixture := loadBedrockProviderFixture(t)
-	method := providers.AmazonBedrock().Methods.APIKey
-	login, ok := method.(auth.APIKeyLogin)
-	if !ok {
-		t.Fatal("Amazon Bedrock auth does not implement login")
-	}
-	info := auth.AuthEvent{
-		Type:    auth.EventInfo,
-		Message: "Amazon Bedrock supports AWS profiles, IAM credentials, and role-based credentials.",
-		Links: []auth.AuthInfoLink{{
-			Label: "AWS credential provider chain",
-			URL:   "https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html",
-		}},
-	}
-	if len(fixture.Auth.Login) != 3 {
-		t.Fatalf("upstream login cases = %d, want 3", len(fixture.Auth.Login))
-	}
-	for _, fixtureCase := range fixture.Auth.Login {
-		t.Run(fixtureCase.Name, func(t *testing.T) {
-			interaction := &bedrockInteraction{responses: append([]string(nil), fixtureCase.Responses...)}
-			credential, err := login.Login(context.Background(), interaction)
-			if err != nil {
-				t.Fatal(err)
-			}
-			encoded, err := json.Marshal(credential)
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantEncoded, err := json.Marshal(fixtureCase.Credential)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(encoded) != string(wantEncoded) {
-				t.Fatalf("credential = %s, want %s", encoded, wantEncoded)
-			}
-			eventsEqual := slices.EqualFunc(interaction.events, fixtureCase.Notifications, func(left, right auth.AuthEvent) bool {
-				return reflect.DeepEqual(left, right)
-			})
-			if !reflect.DeepEqual(interaction.prompts, fixtureCase.Prompts) || !eventsEqual {
-				t.Fatalf("interaction = prompts %#v, events %#v", interaction.prompts, interaction.events)
-			}
-		})
-	}
-
-	interaction := &bedrockInteraction{responses: []string{"unknown"}}
-	if _, err := login.Login(context.Background(), interaction); err == nil || !strings.Contains(err.Error(), "Unknown Amazon Bedrock auth method: unknown") {
-		t.Fatalf("unknown login error = %v", err)
-	}
-	if !reflect.DeepEqual(interaction.events, []auth.AuthEvent{info}) {
-		t.Fatalf("unknown login notifications = %#v", interaction.events)
-	}
-}
-
 func TestAmazonBedrockAuthResolutionMatchesUpstreamFixture(t *testing.T) {
 	fixture := loadBedrockProviderFixture(t)
-	provider := providers.AmazonBedrock()
+	provider := mustProvider(t, "amazon-bedrock")
 	for _, fixtureCase := range fixture.Auth.Cases {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			result, err := auth.ResolveProviderAuth(
@@ -182,7 +82,7 @@ func TestAmazonBedrockAuthResolutionMatchesUpstreamFixture(t *testing.T) {
 }
 
 func TestAmazonBedrockStoredAuthFeedsRequestEnvironment(t *testing.T) {
-	provider := providers.AmazonBedrock()
+	provider := mustProvider(t, "amazon-bedrock")
 	profileCredential := auth.APIKeyEnvCredential(map[string]string{"AWS_PROFILE": "stored-profile"}, "AWS_PROFILE")
 	store := auth.NewMemoryStore(map[string]*auth.Credential{string(provider.ID): profileCredential})
 	result, err := auth.ResolveProviderAuth(

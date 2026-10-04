@@ -12,5 +12,3 @@ var openAICodexProvider = Provider{
 	Auth:    AuthOAuth,
 	Methods: auth.ProviderAuth{OAuth: oauth.NewOpenAICodex(nil)},
 }
-
-func OpenAICodex() Provider { return registered("openai-codex") }

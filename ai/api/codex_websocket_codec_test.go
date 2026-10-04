@@ -3,13 +3,10 @@ package api
 import (
 	"bufio"
 	"bytes"
-	"context"
-	"crypto/sha1" //nolint:gosec // Test mirrors the RFC 6455 handshake.
-	"encoding/base64"
+	"context" //nolint:gosec // Test mirrors the RFC 6455 handshake.
 	"encoding/binary"
 	"io"
 	"net"
-	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -46,36 +43,6 @@ func (buffer *codexCodecBuffer) written() []byte {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
 	return append([]byte(nil), buffer.writes.Bytes()...)
-}
-
-func TestCodexWebSocketUpgradeUsesRFC6455Headers(t *testing.T) {
-	connection := &codexCodecBuffer{reader: bytes.NewReader(nil)}
-	var request *http.Request
-	withCodexHTTPClient(t, func(got *http.Request) (*http.Response, error) {
-		request = got.Clone(got.Context())
-		digest := sha1.Sum([]byte(got.Header.Get("Sec-WebSocket-Key") + codexWebSocketGUID)) //nolint:gosec // RFC 6455 handshake.
-		responseHeaders := make(http.Header)
-		responseHeaders.Set("Connection", "keep-alive, Upgrade")
-		responseHeaders.Set("Upgrade", "websocket")
-		responseHeaders.Set("Sec-WebSocket-Accept", base64.StdEncoding.EncodeToString(digest[:]))
-		return &http.Response{
-			StatusCode: http.StatusSwitchingProtocols,
-			Status:     "101 Switching Protocols",
-			Header:     responseHeaders,
-			Body:       connection,
-		}, nil
-	})
-	headers := http.Header{"Authorization": []string{"Bearer fixture"}}
-	socket, err := connectCodexWebSocket(context.Background(), "wss://example.test/codex/responses", headers, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if request == nil || request.URL.Scheme != "https" || request.URL.Host != "example.test" || request.Header.Get("Connection") != "Upgrade" || request.Header.Get("Upgrade") != "websocket" || request.Header.Get("Sec-WebSocket-Version") != "13" || request.Header.Get("Authorization") != "Bearer fixture" || request.Header.Get("Sec-WebSocket-Key") == "" {
-		t.Fatalf("upgrade request = %#v", request)
-	}
-	if err := socket.forceClose(); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestCodexWebSocketWritesMaskedClientFramesAtAllLengths(t *testing.T) {

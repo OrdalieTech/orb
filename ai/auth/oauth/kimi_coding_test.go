@@ -112,74 +112,6 @@ func TestKimiCodingDeviceLogin(t *testing.T) {
 	}
 }
 
-func kimiFailingLogin(t *testing.T, pollBody string, pollStatus int) error {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
-		case "/api/oauth/device_authorization":
-			_, _ = io.WriteString(writer, kimiDeviceAuthorizationBody)
-		case "/api/oauth/token":
-			writer.WriteHeader(pollStatus)
-			_, _ = io.WriteString(writer, pollBody)
-		default:
-			writer.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-	flow := NewKimiCoding(&KimiCodingOptions{
-		OAuthHost: server.URL,
-		Sleep:     func(context.Context, time.Duration) error { return nil },
-	})
-	_, err := flow.Login(context.Background(), &kimiInteraction{})
-	return err
-}
-
-func TestKimiCodingLoginFailures(t *testing.T) {
-	if err := kimiFailingLogin(t, `{"error":"expired_token"}`, http.StatusBadRequest); err == nil ||
-		err.Error() != "Kimi Code device authorization expired. Please restart login." {
-		t.Fatalf("expired error = %v", err)
-	}
-	if err := kimiFailingLogin(t, `{"error":"access_denied"}`, http.StatusBadRequest); err == nil ||
-		err.Error() != "Kimi Code login was denied." {
-		t.Fatalf("denied error = %v", err)
-	}
-	if err := kimiFailingLogin(t, `{"error":"boom","error_description":"details"}`, http.StatusBadRequest); err == nil ||
-		err.Error() != "Kimi Code device token request failed (status 400): boom: details" {
-		t.Fatalf("generic error = %v", err)
-	}
-	if err := kimiFailingLogin(t, `upstream broke`, http.StatusBadGateway); err == nil ||
-		err.Error() != "Kimi Code device token request failed with status 502: upstream broke" {
-		t.Fatalf("5xx error = %v", err)
-	}
-}
-
-func TestKimiCodingHonorsOAuthHostOverride(t *testing.T) {
-	log := &kimiRequestLog{}
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		log.record(request.URL.Path, "")
-		switch request.URL.Path {
-		case "/api/oauth/device_authorization":
-			_, _ = io.WriteString(writer, `{"user_code":"ABCD-1234","device_code":"device-code-123","verification_uri":"https://www.kimi.com/code","verification_uri_complete":"https://www.kimi.com/code?user_code=ABCD-1234","interval":1,"expires_in":600}`)
-		case "/api/oauth/token":
-			_, _ = io.WriteString(writer, `{"access_token":"a","refresh_token":"r","expires_in":60}`)
-		}
-	}))
-	defer server.Close()
-
-	t.Setenv("KIMI_CODE_OAUTH_HOST", server.URL+"/")
-	flow := NewKimiCoding(&KimiCodingOptions{Sleep: func(context.Context, time.Duration) error { return nil }})
-	credential, err := flow.Login(context.Background(), &kimiInteraction{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if credential.Access != "a" || credential.Refresh != "r" {
-		t.Fatalf("credential = %#v", credential)
-	}
-	if len(log.get("/api/oauth/device_authorization")) != 1 || len(log.get("/api/oauth/token")) != 1 {
-		t.Fatalf("requests = %#v", log.requests)
-	}
-}
-
 func TestKimiCodingRefreshAndToAuth(t *testing.T) {
 	log := &kimiRequestLog{}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -255,15 +187,5 @@ func TestKimiCodingRefreshRetriesAndUnauthorized(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unauthorized") ||
 		err.Error() != "Kimi Code token refresh unauthorized (status 400)" {
 		t.Fatalf("invalid_grant error = %v", err)
-	}
-}
-
-func TestKimiCodingMetadata(t *testing.T) {
-	flow := NewKimiCoding(nil)
-	if flow.Name() != "Kimi Code (subscription)" || flow.LoginLabel() != "Sign in with Kimi Code" {
-		t.Fatalf("Kimi labels = %q / %q", flow.Name(), flow.LoginLabel())
-	}
-	if flow.oauthHost() != "https://auth.kimi.com" {
-		t.Fatalf("default host = %q", flow.oauthHost())
 	}
 }

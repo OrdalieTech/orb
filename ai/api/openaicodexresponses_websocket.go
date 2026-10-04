@@ -46,27 +46,9 @@ func init() {
 	})
 }
 
-type OpenAICodexWebSocketDebugStats struct {
-	Requests                int
-	ConnectionsCreated      int
-	ConnectionsReused       int
-	CachedContextRequests   int
-	StoreTrueRequests       int
-	FullContextRequests     int
-	DeltaRequests           int
-	LastInputItems          int
-	LastDeltaInputItems     *int
-	LastPreviousResponseID  *string
-	WebSocketFailures       int
-	SSEFallbacks            int
-	WebSocketFallbackActive bool
-	LastWebSocketError      *string
-}
-
 type openAICodexWebSocketState struct {
 	mu        sync.Mutex
 	sessions  map[string]*openAICodexWebSocketEntry
-	stats     map[string]*OpenAICodexWebSocketDebugStats
 	fallbacks map[string]bool
 }
 
@@ -95,35 +77,8 @@ type openAICodexWebSocketLease struct {
 func newOpenAICodexWebSocketState() *openAICodexWebSocketState {
 	return &openAICodexWebSocketState{
 		sessions:  make(map[string]*openAICodexWebSocketEntry),
-		stats:     make(map[string]*OpenAICodexWebSocketDebugStats),
 		fallbacks: make(map[string]bool),
 	}
-}
-
-func GetOpenAICodexWebSocketDebugStats(sessionID string) *OpenAICodexWebSocketDebugStats {
-	openAICodexWebSockets.mu.Lock()
-	defer openAICodexWebSockets.mu.Unlock()
-	stats := openAICodexWebSockets.stats[sessionID]
-	if stats == nil {
-		return nil
-	}
-	copy := *stats
-	copy.LastDeltaInputItems = clonePointer(stats.LastDeltaInputItems)
-	copy.LastPreviousResponseID = clonePointer(stats.LastPreviousResponseID)
-	copy.LastWebSocketError = clonePointer(stats.LastWebSocketError)
-	return &copy
-}
-
-func ResetOpenAICodexWebSocketDebugStats(sessionID ...string) {
-	openAICodexWebSockets.mu.Lock()
-	defer openAICodexWebSockets.mu.Unlock()
-	if len(sessionID) > 0 && sessionID[0] != "" {
-		delete(openAICodexWebSockets.stats, sessionID[0])
-		delete(openAICodexWebSockets.fallbacks, sessionID[0])
-		return
-	}
-	clear(openAICodexWebSockets.stats)
-	clear(openAICodexWebSockets.fallbacks)
 }
 
 func CloseOpenAICodexWebSocketSessions(sessionID ...string) {
@@ -153,13 +108,6 @@ func CloseOpenAICodexWebSocketSessions(sessionID ...string) {
 	}
 }
 
-func clonePointer[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
-}
-
 func openAICodexWebSocketFallbackActive(sessionID string) bool {
 	if sessionID == "" {
 		return false
@@ -169,38 +117,13 @@ func openAICodexWebSocketFallbackActive(sessionID string) bool {
 	return openAICodexWebSockets.fallbacks[sessionID]
 }
 
-func recordOpenAICodexWebSocketFailure(sessionID string, failure error) {
+func recordOpenAICodexWebSocketFailure(sessionID string) {
 	if sessionID == "" {
 		return
 	}
-	message := failure.Error()
 	openAICodexWebSockets.mu.Lock()
 	defer openAICodexWebSockets.mu.Unlock()
 	openAICodexWebSockets.fallbacks[sessionID] = true
-	stats := openAICodexWebSocketStatsLocked(sessionID)
-	stats.WebSocketFailures++
-	stats.LastWebSocketError = &message
-	stats.WebSocketFallbackActive = true
-}
-
-func recordOpenAICodexSSEFallback(sessionID string) {
-	if sessionID == "" {
-		return
-	}
-	openAICodexWebSockets.mu.Lock()
-	defer openAICodexWebSockets.mu.Unlock()
-	stats := openAICodexWebSocketStatsLocked(sessionID)
-	stats.SSEFallbacks++
-	stats.WebSocketFallbackActive = openAICodexWebSockets.fallbacks[sessionID]
-}
-
-func openAICodexWebSocketStatsLocked(sessionID string) *OpenAICodexWebSocketDebugStats {
-	stats := openAICodexWebSockets.stats[sessionID]
-	if stats == nil {
-		stats = &OpenAICodexWebSocketDebugStats{}
-		openAICodexWebSockets.stats[sessionID] = stats
-	}
-	return stats
 }
 
 func acquireOpenAICodexWebSocket(
@@ -379,7 +302,6 @@ func processOpenAICodexWebSocket(
 	if useCachedContext {
 		wireBody = buildOpenAICodexCachedRequest(requestBody, lease.continuation())
 	}
-	recordOpenAICodexWebSocketRequest(sessionID, lease.reused, useCachedContext, wireBody)
 	if err := lease.socket.WriteText(openAICodexWebSocketEnvelope(wireBody)); err != nil {
 		return false, err
 	}
@@ -435,45 +357,6 @@ func processOpenAICodexWebSocket(
 		lease.setContinuation(continuation)
 	}
 	return started, nil
-}
-
-func recordOpenAICodexWebSocketRequest(sessionID string, reused, cached bool, body []byte) {
-	if sessionID == "" {
-		return
-	}
-	_, input, _ := openAICodexBodySnapshot(body)
-	var fields map[string]json.RawMessage
-	_ = json.Unmarshal(body, &fields)
-	_, hasPrevious := fields["previous_response_id"]
-	storeTrue := bytes.Equal(bytes.TrimSpace(fields["store"]), []byte("true"))
-	openAICodexWebSockets.mu.Lock()
-	defer openAICodexWebSockets.mu.Unlock()
-	stats := openAICodexWebSocketStatsLocked(sessionID)
-	stats.Requests++
-	if reused {
-		stats.ConnectionsReused++
-	} else {
-		stats.ConnectionsCreated++
-	}
-	if cached {
-		stats.CachedContextRequests++
-	}
-	if storeTrue {
-		stats.StoreTrueRequests++
-	}
-	stats.LastInputItems = len(input)
-	if hasPrevious {
-		stats.DeltaRequests++
-		count := len(input)
-		stats.LastDeltaInputItems = &count
-		var previous string
-		_ = json.Unmarshal(fields["previous_response_id"], &previous)
-		stats.LastPreviousResponseID = &previous
-	} else {
-		stats.FullContextRequests++
-		stats.LastDeltaInputItems = nil
-		stats.LastPreviousResponseID = nil
-	}
 }
 
 func makeOpenAICodexContinuation(

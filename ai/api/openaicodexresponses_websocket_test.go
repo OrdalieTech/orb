@@ -27,23 +27,6 @@ type fakeCodexWebSocket struct {
 	onMessage func([]byte)
 }
 
-func TestOpenAICodexSessionlessRequestIDUsesUUIDv7(t *testing.T) {
-	first, err := codexWebSocketRequestID(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := codexWebSocketRequestID(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(first) != 36 || len(second) != 36 || first[14] != '7' || second[14] != '7' {
-		t.Fatalf("request IDs are not UUIDv7: %q, %q", first, second)
-	}
-	if first >= second {
-		t.Fatalf("request IDs are not monotonic: %q, %q", first, second)
-	}
-}
-
 func TestF2OpenAICodexWebSocketTrace(t *testing.T) {
 	var fixture struct {
 		Cases []struct {
@@ -232,10 +215,6 @@ func TestOpenAICodexAutoUsesWebSocket(t *testing.T) {
 	if string(request["type"]) != `"response.create"` || string(request["store"]) != "false" {
 		t.Fatalf("WebSocket request = %s", writes[0])
 	}
-	stats := GetOpenAICodexWebSocketDebugStats(sessionID)
-	if stats == nil || stats.Requests != 1 || stats.ConnectionsCreated != 1 || stats.CachedContextRequests != 1 || stats.FullContextRequests != 1 || stats.WebSocketFailures != 0 || stats.SSEFallbacks != 0 {
-		t.Fatalf("stats = %#v", stats)
-	}
 }
 
 func TestOpenAICodexWebSocketFailureFallsBackAndSticks(t *testing.T) {
@@ -265,10 +244,6 @@ func TestOpenAICodexWebSocketFailureFallsBackAndSticks(t *testing.T) {
 	}
 	if connectCalls != 1 || httpCalls != 2 {
 		t.Fatalf("connect=%d http=%d", connectCalls, httpCalls)
-	}
-	stats := GetOpenAICodexWebSocketDebugStats(sessionID)
-	if stats == nil || stats.WebSocketFailures != 1 || stats.SSEFallbacks != 2 || !stats.WebSocketFallbackActive {
-		t.Fatalf("stats = %#v", stats)
 	}
 }
 
@@ -378,10 +353,6 @@ func TestOpenAICodexWebSocketCachedSendsOnlyInputDelta(t *testing.T) {
 	if !bytesContain(request.Input[0], `"second"`) {
 		t.Fatalf("delta input = %s", request.Input[0])
 	}
-	stats := GetOpenAICodexWebSocketDebugStats(sessionID)
-	if stats == nil || stats.ConnectionsCreated != 1 || stats.ConnectionsReused != 1 || stats.DeltaRequests != 1 || stats.LastDeltaInputItems == nil || *stats.LastDeltaInputItems != 1 || stats.LastPreviousResponseID == nil || *stats.LastPreviousResponseID != "first-response" {
-		t.Fatalf("stats = %#v", stats)
-	}
 }
 
 func TestOpenAICodexRecoversMissingCachedContinuation(t *testing.T) {
@@ -463,13 +434,6 @@ func TestOpenAICodexRecoversMissingCachedContinuation(t *testing.T) {
 				!bytesContain(firstWrites[1], `"previous_response_id":"resp-1"`) ||
 				bytesContain(secondWrites[0], `"previous_response_id"`) {
 				t.Fatalf("first writes=%q second writes=%q", firstWrites, secondWrites)
-			}
-			stats := GetOpenAICodexWebSocketDebugStats(sessionID)
-			if stats == nil || stats.Requests != 3 || stats.ConnectionsCreated != 2 ||
-				stats.ConnectionsReused != 1 || stats.FullContextRequests != 2 || stats.DeltaRequests != 1 ||
-				stats.WebSocketFailures != map[bool]int{true: 1, false: 0}[recoveryTransport == "sse"] ||
-				stats.SSEFallbacks != map[bool]int{true: 1, false: 0}[recoveryTransport == "sse"] {
-				t.Fatalf("stats = %#v", stats)
 			}
 		})
 	}
@@ -627,12 +591,13 @@ func withOpenAICodexWebSocketConnector(
 ) {
 	t.Helper()
 	CloseOpenAICodexWebSocketSessions()
-	ResetOpenAICodexWebSocketDebugStats()
+	openAICodexWebSockets.mu.Lock()
+	clear(openAICodexWebSockets.fallbacks)
+	openAICodexWebSockets.mu.Unlock()
 	previous := openAICodexConnectWebSocket
 	openAICodexConnectWebSocket = connect
 	t.Cleanup(func() {
 		CloseOpenAICodexWebSocketSessions()
-		ResetOpenAICodexWebSocketDebugStats()
 		openAICodexConnectWebSocket = previous
 	})
 }

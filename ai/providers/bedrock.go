@@ -105,5 +105,3 @@ var amazonBedrockProvider = Provider{
 	Auth:    AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: bedrockAuth{}},
 }
-
-func AmazonBedrock() Provider { return registered("amazon-bedrock") }

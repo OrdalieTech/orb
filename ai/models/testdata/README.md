@@ -2,10 +2,6 @@
 
 `api.json` starts from `https://models.dev/api.json`, fetched on 2026-07-26 UTC. To preserve the 0.82.1 extraction state after models.dev moved ahead, `amazon-bedrock/anthropic.claude-opus-5` was removed and `fireworks-ai/accounts/fireworks/models/minimax-m3` input was reduced to `["text"]`. Its SHA-256 is `f062d5cd193bd3fcc0f37ef223db5e3fcf685c50f944452eccb69de18caca4d8`.
 
-`v0.82.1-model-deltas.json` contains 12 representative normalized models extracted from the published `@earendil-works/pi-ai@0.82.1` package. The npm tarball SHA-256 is recorded inside the fixture; the fixture SHA-256 is `260ac7080813d9c0e6f2f9bba58dc1077f881717895bd49cd32416acbbc95ad6`.
-
-`fireworks-ai/accounts/fireworks/models/minimax-m3` is excluded from the parity sample because the upstream source tree at the v0.82.1 tag records input `["text"]`, which F2 pins, while the published npm package records `["text","image"]`; upstream regenerated between tag and publish, and orb follows the extraction contract.
-
 The provider listings back the NVIDIA intersection and the OpenRouter/Vercel catalogs (upstream generate-models.ts), all captured by 2026-10-03T18:21:06Z:
 
 NVIDIA/Vercel and the published pi 0.82.1 OpenRouter parity input stay frozen at their 2026-07-26 captures:

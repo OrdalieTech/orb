@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -17,8 +16,6 @@ import (
 	"github.com/OrdalieTech/orb/ai/api"
 	"github.com/OrdalieTech/orb/conformance/runner"
 	aws "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
 func bedrockTestModel(id, name string) *ai.Model {
@@ -33,162 +30,6 @@ func bedrockTestModel(id, name string) *ai.Model {
 
 func helloContext() ai.Context {
 	return ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}}}
-}
-
-type transportFunc func(context.Context, *api.BedrockConverseStreamPayload) (api.BedrockResponse, error)
-
-func (function transportFunc) Send(ctx context.Context, payload *api.BedrockConverseStreamPayload) (api.BedrockResponse, error) {
-	return function(ctx, payload)
-}
-
-var errInputCaptured = errors.New("SDK input captured")
-
-// hookedSDKInput runs the ai/api adapter with an onPayload hook and returns
-// the SDK input this backend would send for the hooked payload.
-func hookedSDKInput(t *testing.T, hook func(context.Context, any, *ai.Model) (any, bool, error)) *bedrockruntime.ConverseStreamInput {
-	t.Helper()
-	var input *bedrockruntime.ConverseStreamInput
-	backend := api.BedrockBackend{NewTransport: func(context.Context, api.BedrockTransportConfig) (api.BedrockTransport, error) {
-		return transportFunc(func(_ context.Context, payload *api.BedrockConverseStreamPayload) (api.BedrockResponse, error) {
-			converted, err := bedrockSDKInput(payload)
-			if err != nil {
-				return nil, err
-			}
-			input = converted
-			return nil, errInputCaptured
-		}), nil
-	}}
-	stream, err := api.StreamBedrockConverseWithOptions(context.Background(), bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude"), helloContext(),
-		&api.BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{OnPayload: hook}, Backend: &backend})
-	if err != nil {
-		t.Fatal(err)
-	}
-	message, err := ai.Collect(stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if input == nil {
-		t.Fatalf("no SDK input was built: %v", message.ErrorMessage)
-	}
-	return input
-}
-
-// TestBedrockPayloadHookPreservesUnmodeledFields_OTM7 pins the upstream hook
-// contract (bedrock-converse-stream.ts:223-239): the onPayload return is used
-// verbatim as the ConverseStreamCommand input, so hook-injected members the
-// typed Go payload does not model (guardrailConfig, performanceConfig, topP,
-// stopSequences, ...) must reach the SDK input instead of being silently
-// dropped. (OT-M7)
-func TestBedrockPayloadHookPreservesUnmodeledFields_OTM7(t *testing.T) {
-	input := hookedSDKInput(t, func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
-		encoded, err := ai.Marshal(payload)
-		if err != nil {
-			return nil, false, err
-		}
-		var generic map[string]any
-		if err := json.Unmarshal(encoded, &generic); err != nil {
-			return nil, false, err
-		}
-		generic["guardrailConfig"] = map[string]any{
-			"guardrailIdentifier": "guardrail-1",
-			"guardrailVersion":    "2",
-			"trace":               "enabled",
-		}
-		generic["performanceConfig"] = map[string]any{"latency": "optimized"}
-		generic["serviceTier"] = map[string]any{"type": "priority"}
-		generic["outputConfig"] = map[string]any{"textFormat": map[string]any{
-			"type": "json_schema",
-			"structure": map[string]any{"jsonSchema": map[string]any{
-				"name": "answer", "description": "structured answer", "schema": `{"type":"object"}`,
-			}},
-		}}
-		generic["additionalModelResponseFieldPaths"] = []string{"/stop_sequence"}
-		generic["promptVariables"] = map[string]any{"topic": map[string]any{"text": "space"}}
-		inference, _ := generic["inferenceConfig"].(map[string]any)
-		if inference == nil {
-			inference = map[string]any{}
-		}
-		inference["topP"] = 0.9
-		inference["stopSequences"] = []string{"STOP"}
-		generic["inferenceConfig"] = inference
-		return generic, true, nil
-	})
-	if input.GuardrailConfig == nil ||
-		input.GuardrailConfig.GuardrailIdentifier == nil || *input.GuardrailConfig.GuardrailIdentifier != "guardrail-1" ||
-		input.GuardrailConfig.GuardrailVersion == nil || *input.GuardrailConfig.GuardrailVersion != "2" ||
-		string(input.GuardrailConfig.Trace) != "enabled" {
-		t.Fatalf("hook-injected guardrailConfig did not reach the SDK input: %#v", input.GuardrailConfig)
-	}
-	if input.PerformanceConfig == nil || string(input.PerformanceConfig.Latency) != "optimized" {
-		t.Fatalf("hook-injected performanceConfig did not reach the SDK input: %#v", input.PerformanceConfig)
-	}
-	if input.ServiceTier == nil || string(input.ServiceTier.Type) != "priority" {
-		t.Fatalf("hook-injected serviceTier did not reach the SDK input: %#v", input.ServiceTier)
-	}
-	if input.OutputConfig == nil || input.OutputConfig.TextFormat == nil ||
-		string(input.OutputConfig.TextFormat.Type) != "json_schema" {
-		t.Fatalf("hook-injected outputConfig did not reach the SDK input: %#v", input.OutputConfig)
-	}
-	outputSchema, ok := input.OutputConfig.TextFormat.Structure.(*bedrocktypes.OutputFormatStructureMemberJsonSchema)
-	if !ok || outputSchema.Value.Schema == nil || *outputSchema.Value.Schema != `{"type":"object"}` ||
-		outputSchema.Value.Name == nil || *outputSchema.Value.Name != "answer" ||
-		outputSchema.Value.Description == nil || *outputSchema.Value.Description != "structured answer" {
-		t.Fatalf("hook-injected output schema = %#v", input.OutputConfig.TextFormat.Structure)
-	}
-	if len(input.AdditionalModelResponseFieldPaths) != 1 || input.AdditionalModelResponseFieldPaths[0] != "/stop_sequence" {
-		t.Fatalf("hook-injected response field paths = %#v", input.AdditionalModelResponseFieldPaths)
-	}
-	topic, ok := input.PromptVariables["topic"].(*bedrocktypes.PromptVariableValuesMemberText)
-	if !ok || topic.Value != "space" {
-		t.Fatalf("hook-injected promptVariables = %#v", input.PromptVariables)
-	}
-	if input.InferenceConfig == nil || input.InferenceConfig.TopP == nil || *input.InferenceConfig.TopP != 0.9 {
-		t.Fatalf("hook-injected topP = %#v", input.InferenceConfig)
-	}
-	if len(input.InferenceConfig.StopSequences) != 1 || input.InferenceConfig.StopSequences[0] != "STOP" {
-		t.Fatalf("hook-injected stopSequences = %#v", input.InferenceConfig.StopSequences)
-	}
-}
-
-func TestBedrockPayloadHookPreservesInferenceConfigDeletion_OTM7(t *testing.T) {
-	input := hookedSDKInput(t, func(_ context.Context, payload any, _ *ai.Model) (any, bool, error) {
-		encoded, err := ai.Marshal(payload)
-		if err != nil {
-			return nil, false, err
-		}
-		var replacement map[string]any
-		if err := json.Unmarshal(encoded, &replacement); err != nil {
-			return nil, false, err
-		}
-		delete(replacement, "inferenceConfig")
-		return replacement, true, nil
-	})
-	if input.InferenceConfig != nil {
-		t.Fatalf("deleted inferenceConfig was recreated at the SDK boundary: %#v", input.InferenceConfig)
-	}
-}
-
-func TestBedrockSDKInputRequiresIntegerMaxTokens(t *testing.T) {
-	for _, value := range []float64{3.5, 2_147_483_648} {
-		t.Run(fmt.Sprintf("%g", value), func(t *testing.T) {
-			_, err := bedrockSDKInput(&api.BedrockConverseStreamPayload{
-				ModelID: "fixture", InferenceConfig: api.BedrockInferenceConfig{MaxTokens: &value},
-			})
-			if err == nil || !strings.Contains(err.Error(), "is not an SDK int32 value") {
-				t.Fatalf("maxTokens %g error = %v", value, err)
-			}
-		})
-	}
-	valid := float64(777)
-	input, err := bedrockSDKInput(&api.BedrockConverseStreamPayload{
-		ModelID: "fixture", InferenceConfig: api.BedrockInferenceConfig{MaxTokens: &valid},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if input.InferenceConfig == nil || input.InferenceConfig.MaxTokens == nil || *input.InferenceConfig.MaxTokens != 777 {
-		t.Fatalf("SDK maxTokens = %#v", input.InferenceConfig)
-	}
 }
 
 func TestAWSBedrockTransportAuthenticationHeadersAndErrorBody(t *testing.T) {

@@ -116,15 +116,6 @@ func providerRetryDelay(err error, headers http.Header, retryIndex int, maxRetry
 	return time.Duration(exponential * (1 - providerRetryJitter()*0.25) * float64(time.Millisecond)), nil
 }
 
-// imagesStreamOptions views the images options' retry fields through the
-// StreamOptions shape the wrapper reads.
-func imagesStreamOptions(options *ai.ImagesOptions) *ai.StreamOptions {
-	if options == nil {
-		return nil
-	}
-	return &ai.StreamOptions{MaxRetries: options.MaxRetries, MaxRetryDelayMS: options.MaxRetryDelayMS}
-}
-
 // createProviderAbortError mirrors createAbortError: aborts surface a plain
 // error whose message replaces whatever the request failed with.
 func createProviderAbortError() error {
