@@ -14,8 +14,11 @@ import (
 	"runtime"
 	"syscall/js"
 
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/platforms/worker/peer"
+	"github.com/OrdalieTech/orb/plugins/memtree"
 )
 
 func main() {
@@ -76,6 +79,12 @@ func main() {
 			KV: worker.NewDurableKV(boot.Get("storage")), Env: lookup,
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
 			Tools: peer.AgentCalls(bridge.open),
+			Extensions: func(settings *config.SettingsManager) map[string]extensions.Factory {
+				if !settings.GetPlugins()["memtree"] {
+					return nil
+				}
+				return map[string]extensions.Factory{"builtin:memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree")))}
+			},
 		})
 		if err != nil {
 			boot.Call("reject", err.Error())

@@ -328,6 +328,20 @@ Passing an `ExtensionRegistry` directly remains useful for hosts that already
 own one, but `DefaultResourceLoader.ExtensionFactories` matches the upstream
 inline-extension path and keeps extension lifecycle coupled to resource reloads.
 
+### Memtree
+
+`plugins/memtree` gives a session OptChat's memory: a tree of one-line summaries over its whole
+history, a fixed-size view of it at every prompt and `zoom`/`date` tools (`docs/plugins.md`). It
+needs no host port, since it keeps its summaries as custom entries in the session itself, so it
+runs wherever the session does, Wasm and Durable Objects included:
+
+```go
+loader, _ := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
+    CWD: cwd,
+    ExtensionFactories: []extensions.Factory{memtree.Extension(memtree.Options{Model: "openai-codex/gpt-6-luna"})},
+})
+```
+
 ### MemoryStore
 
 `memory.Store` from `github.com/OrdalieTech/orb/plugins/memory` is the tenant-scoped durable seam.

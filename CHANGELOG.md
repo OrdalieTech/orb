@@ -8,6 +8,11 @@ shown by `/changelog`.
 - A message can invoke several skills: `/skill:a … /skill:b` sends both, each skill's block
   after the other, instead of being refused. The transcript chips each one in place, with a
   footer line per skill, and the session list, queue and HTML export show them all.
+- `memtree` now follows OptChat by default: each prompt starts from the view, the system prompt
+  explains it, turns wait for every earlier message to be summarized (Escape ends the wait), and a
+  long history alone no longer compacts. Summaries live in the session as hidden entries, so the
+  plugin needs no files and runs in SDK embeddings and on the Worker and Celld host
+  (`plugins.memtree` in its settings). Go embedders: `memtree.Extension` takes `memtree.Options`.
 
 ## [0.15.0] - 2026-10-04
 

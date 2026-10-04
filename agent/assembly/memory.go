@@ -34,19 +34,11 @@ func memoryExtension(store memory.Store, agentDir string) extensions.Factory {
 	}
 }
 
-// memtreeExtension keeps one node file per session under the agent dir.
-func memtreeExtension(agentDir string, settings *config.SettingsManager) extensions.Factory {
-	return func(api extensions.API) error {
-		if agentDir == "" {
-			var err error
-			if agentDir, err = config.GetAgentDir(); err != nil {
-				return err
-			}
-		}
-		var configured map[string]any
-		if settings != nil {
-			configured = settings.GetPluginSettings("memtree")
-		}
-		return memtree.Extension(filepath.Join(agentDir, "memtree"), configured)(api)
+// memtreeExtension reads memtree's settings; the plugin keeps its summaries in the session.
+func memtreeExtension(settings *config.SettingsManager) extensions.Factory {
+	var configured map[string]any
+	if settings != nil {
+		configured = settings.GetPluginSettings("memtree")
 	}
+	return memtree.Extension(memtree.OptionsFrom(configured))
 }

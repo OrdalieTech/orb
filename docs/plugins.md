@@ -135,21 +135,24 @@ view of it, recent messages one line each and older ones many per line, stays un
 message with `zoom(id, n)`, and `date(id)` dates a message.
 
 ```json
-{ "plugins": { "memtree": { "mode": "compaction", "model": "provider/model-id" } } }
+{ "plugins": { "memtree": { "mode": "fresh", "model": "provider/model-id" } } }
 ```
 
-- `mode: "compaction"` (default): sessions run as usual, and when Orb compacts, the summary is the
-  view of everything before the kept messages: no model call, and nothing summarized twice.
-- `mode: "fresh"`: each prompt starts a new context, the view and then the prompt; earlier
-  messages are a zoom away. A compaction inside a long run rebases it on a newer view.
+- `mode: "fresh"` (default, OptChat's loop): each prompt starts a new context, the view and then
+  the prompt, and earlier messages are a zoom away; the system prompt tells the agent so. A run that
+  outgrows the context window is compacted onto a newer view.
+- `mode: "compaction"`: sessions run as usual, and when Orb compacts, the summary is the view of
+  everything before the kept messages: no model call, and nothing summarized twice.
 - `model`: the compactor, as `provider/id`; the session's model when unset. It runs at medium
-  effort about once or twice per message, each call reading the view as context, so pick a cheap
-  model. Anthropic models reuse no cache across these calls.
+  effort about once or twice per message, each call reading the view as context, so pick a cheap,
+  fast model: messages are summarized one at a time, and turns wait for them. Anthropic models
+  reuse no cache across these calls.
 
-A turn (fresh mode) or a compaction waits up to a minute for the compactor to catch up, showing
-`memtree: summarizing N messages`; past that it goes ahead as plain Orb. Summaries are kept in
-`memtree/<session id>.jsonl` under the agent dir; deleting one only costs rebuilding it. Claude
-and Codex sessions run their own loop and bypass the plugin.
+A turn, or a compaction, waits until every earlier message is summarized, showing
+`memtree: summarizing N messages`; Escape ends the wait. Summaries are kept in the session as
+hidden `memtree` entries, so they follow it across forks, exports and hosts (the Worker and Celld
+host turns the plugin on from `plugins.memtree` in its settings). Claude and Codex sessions run
+their own loop and bypass the plugin.
 
 ### memory, tasks, websearch
 
