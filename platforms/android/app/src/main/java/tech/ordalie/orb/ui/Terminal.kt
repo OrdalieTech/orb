@@ -28,27 +28,33 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import tech.ordalie.orb.R
-import tech.ordalie.orb.core.Linux
+import tech.ordalie.orb.core.Orb
+import tech.ordalie.orb.core.RemoteSession
+import tech.ordalie.orb.core.Session
 import java.util.Properties
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 /**
- * The terminal on Orb's Linux: the same shell the agent's bash tool runs, for the owner. One
- * session lives as long as the app does, so leaving the screen never ends what runs in it.
+ * The terminal where a conversation runs: on this phone, Orb's Linux — the shell the agent's bash
+ * tool runs; on a paired machine, its owner's shell there (`orb bridge shell`). Each lives as long
+ * as the app does, so leaving the screen never ends what runs in it.
  */
 private object Shell : TerminalSessionClient, TerminalViewClient {
-    var session: TerminalSession? = null
+    private val sessions = HashMap<Pair<String, String>, TerminalSession>() // by peer ("" here) and folder
+    var session: TerminalSession? = null // the one on screen
     var view: TerminalView? = null
     var ctrl by mutableStateOf(false)
     var alt by mutableStateOf(false)
     var size = 0 // pixels; 13sp until pinched
 
-    fun session(linux: Linux): TerminalSession = session?.takeIf { it.isRunning } ?: run {
-        val env = System.getenv() + linux.env() + mapOf("TERM" to "xterm-256color")
-        TerminalSession(linux.launcher, linux.home.apply { mkdirs() }.path, arrayOf("liblinux.so", "-l"), env.map { (k, v) -> "$k=$v" }.toTypedArray(), 5000, this)
-            .also { session = it }
-    }
+    fun session(orb: Orb, peer: String, cwd: String): TerminalSession = sessions[peer to cwd]?.takeIf { it.isRunning } ?: run {
+        val linux = orb.linux
+        val (program, args, env) = if (peer.isEmpty()) Triple(linux.launcher, arrayOf("liblinux.so", "-l"), linux.env())
+            else Triple(orb.binary, arrayOf("liborb.so", "bridge", "shell", peer, cwd), orb.env())
+        TerminalSession(program, linux.home.apply { mkdirs() }.path, args, (System.getenv() + env + ("TERM" to "xterm-256color")).map { (k, v) -> "$k=$v" }.toTypedArray(), 5000, this)
+            .also { sessions[peer to cwd] = it }
+    }.also { session = it }
 
     private fun keyboard(show: Boolean) {
         val v = view ?: return
@@ -59,7 +65,7 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
     // TerminalSessionClient: what the shell does, shown or handed to Android.
     override fun onTextChanged(s: TerminalSession) { view?.onScreenUpdated() }
     override fun onTitleChanged(s: TerminalSession) {}
-    override fun onSessionFinished(s: TerminalSession) { if (session == s) session = null }
+    override fun onSessionFinished(s: TerminalSession) { sessions.values.remove(s) }
     override fun onCopyTextToClipboard(s: TerminalSession, text: String?) {
         view?.context?.copy(text.orEmpty())
     }
@@ -103,10 +109,11 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
 }
 
 @Composable
-fun ColumnScope.TerminalScreen(c: Ctx) {
+fun ColumnScope.TerminalScreen(c: Ctx, on: Session?) {
     val linux = c.rt.orb.linux
-    Header("Terminal", sub = "Orb's Linux · pkg install to add tools", back = c.nav::back)
-    if (!linux.ready) {
+    val remote = on as? RemoteSession
+    Header("Terminal", sub = remote?.let { it.where + " · " + it.cwd.replace(Regex("^/(Users|home)/[^/]+"), "~") } ?: "Orb's Linux · pkg install to add tools", back = c.nav::back)
+    if (remote == null && !linux.ready) {
         T(linux.state.ifEmpty { "Linux is not set up yet: it installs by itself when Orb starts." }, Modifier.padding(horizontal = Margin), color = p.mute)
         return
     }
@@ -124,7 +131,7 @@ fun ColumnScope.TerminalScreen(c: Ctx) {
                 ResourcesCompat.getFont(context, R.font.ubuntu_sans_mono)?.let(::setTypeface)
                 isFocusable = true; isFocusableInTouchMode = true
                 Shell.view = this
-                attachSession(Shell.session(linux))
+                attachSession(Shell.session(c.rt.orb, remote?.peer.orEmpty(), remote?.cwd.orEmpty()))
                 post { requestFocus(); context.getSystemService(InputMethodManager::class.java).showSoftInput(this, 0) }
             }
         }, modifier = Modifier.fillMaxWidth(), update = { Shell.view = it })

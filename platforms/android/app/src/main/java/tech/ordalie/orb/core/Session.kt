@@ -283,6 +283,9 @@ class RemoteSession(private val scope: CoroutineScope, private val bridge: Bridg
 
     private suspend fun remote(method: String, params: JSONObject) = bridge.remote(peer, method, params)
 
+    /** The folder it runs in on its machine. */
+    val cwd: String get() = info.optString("cwd")
+
     /** Whether a screen shows this session. Unwatched, it only keeps its state fresh, slowly. */
     @Volatile var watched = false
 

@@ -195,7 +195,10 @@ explicitly and in two separate kinds:
   one. That Orb is ephemeral; it retires when it exits or when the machine's Bridge stops. The same
   access signs the machine in to providers (`host.login.*`): its sign-in link, device code and
   questions come to the controller (the Android app's device → providers), and answers go back, so a
-  headless Orb is signed in from the phone, with copy-code login or a pasted redirect URL.
+  headless Orb is signed in from the phone, with copy-code login or a pasted redirect URL. It
+  also opens a terminal there (`host.terminal.*`, `orb bridge shell <peer> [folder]`): the
+  owner's login shell in a pseudo-terminal, which the Android app shows for a device's
+  conversation. Nothing is reachable through it that starting Orb there could not already run.
 - **Agents** are Orbs acting on their own. With the opt-in `bridge_call` tool, one Orb's agent can
   call another Orb, but only under an instance subject with its own grants. A person's controller
   access never passes to their agent.

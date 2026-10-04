@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
+	"golang.org/x/term"
 )
 
 // remoteTranscript draws text a peer sent; tui.Text caches its wrapped lines.
@@ -299,6 +300,74 @@ func runBridgeView(parent context.Context, profile, peer, instance string, strea
 	}
 	defer func() { _ = ui.Stop() }()
 	<-ctx.Done()
+	return 0
+}
+
+// runBridgeShell opens a terminal on a paired machine (host.terminal.*) and joins this one to it:
+// keys go there as they are typed, its output comes back by long polls, and a change of this
+// terminal's size follows. It ends when the remote shell does.
+func runBridgeShell(parent context.Context, profile, peer, cwd string, streams cliStreams) int {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return reportCLIError(streams.Stderr, errors.New("orb bridge shell requires a terminal"))
+	}
+	admin, err := bridgeAdmin(parent, profile)
+	if err != nil {
+		return reportCLIError(streams.Stderr, errors.New("bridge unavailable; run orb bridge start"))
+	}
+	defer func() { _ = admin.Close() }()
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	call := func(method string, params, result any) error {
+		return admin.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": method, "params": params}, result)
+	}
+	cols, rows, _ := term.GetSize(fd)
+	var opened struct {
+		ID string `json:"terminal_id"`
+	}
+	if err = call("host.terminal.open", map[string]any{"cwd": cwd, "cols": cols, "rows": rows}, &opened); err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	defer func() {
+		_ = admin.Call(context.Background(), "remote", map[string]any{"peer_id": peer, "method": "host.terminal.close", "params": map[string]string{"terminal_id": opened.ID}}, nil)
+	}()
+	if old, err := term.MakeRaw(fd); err == nil {
+		defer func() { _ = term.Restore(fd, old) }()
+	}
+	go func() { // keys, in order: each write waits for the one before
+		buf := make([]byte, 4096)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 && call("host.terminal.write", map[string]any{"terminal_id": opened.ID, "data": buf[:n]}, nil) != nil || err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+	go func() { // a resized window, checked twice a second: no signal to wait for on every system
+		for ctx.Err() == nil {
+			time.Sleep(500 * time.Millisecond)
+			if c, r, err := term.GetSize(fd); err == nil && (c != cols || r != rows) {
+				cols, rows = c, r
+				_ = call("host.terminal.resize", map[string]any{"terminal_id": opened.ID, "cols": c, "rows": r}, nil)
+			}
+		}
+	}()
+	var out struct {
+		Data   []byte `json:"data"`
+		Offset int64  `json:"offset"`
+		Done   bool   `json:"done"`
+	}
+	for !out.Done {
+		out.Data = nil // a read that timed out carries none
+		if err = call("host.terminal.read", map[string]any{"terminal_id": opened.ID, "offset": out.Offset}, &out); err != nil {
+			if ctx.Err() != nil {
+				return 0
+			}
+			return reportCLIError(streams.Stderr, err)
+		}
+		_, _ = streams.Stdout.Write(out.Data)
+	}
 	return 0
 }
 

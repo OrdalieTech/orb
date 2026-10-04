@@ -5,11 +5,17 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb bridge shell <peer> [folder]` opens a terminal on a paired machine that lets this Orb
+  start Orb there (`host.terminal.*`): its owner's login shell, in that folder. The Android app's
+  terminal follows the open conversation, on the phone's Linux or on the device it runs on.
+- Opening a thread from a paired device while another Orb on that machine has it open (a terminal
+  one, say) now says so, instead of failing as unavailable.
 - The Android app is simpler and easier to move around: one bar holds the wordmark (Home), a tab
   per open session once several are open on the phone or paired devices, and the menu; a
   conversation shows its context use and cost under it. Text is set in the variable Ubuntu Sans
-  Mono, slightly tighter and with real weights, and rules have more contrast. Keys the app kept in its
-  own preferences move into Orb's store; the custom endpoint form and the text-size pinch are gone.
+  Mono, slightly tighter and with real weights, and rules have more contrast. Keys the app kept
+  in its own preferences move into Orb's store; the custom endpoint form and the text-size pinch
+  are gone.
 - New `memtree` plugin, off by default: a zoomable tree of one-line summaries over each session's
   whole history. In compaction mode the compaction summary is the tree's view, so nothing is
   summarized twice and every message stays reachable with `zoom`; in fresh mode every prompt

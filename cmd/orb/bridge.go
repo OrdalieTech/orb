@@ -186,6 +186,8 @@ type bridgeService struct {
 	launched map[string]*launched
 	// logins: sign-ins this machine runs for a peer (host.login.*).
 	logins map[string]*hostLogin
+	// terminals: shells this machine runs for a peer (host.terminal.*).
+	terminals map[string]*hostTerminal
 	// restart ends the service so its process can exec the binary at path (host.update).
 	restart func(path string)
 	ctx     context.Context
@@ -276,7 +278,7 @@ func (s *bridgeService) remote(ctx context.Context, id, method string, p any) (j
 	// this one; one retry reaches the peer's fresh channel or redials. Only calls safe to repeat
 	// are retried: reads, and instances.call, which the peer deduplicates by operation id.
 	retries := 1
-	if method == "host.launch" {
+	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" {
 		retries = 0
 	}
 	for attempt := 0; ; attempt++ {
@@ -519,7 +521,7 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		defer func() { _ = server.Close() }()
 		go func() { _ = server.Serve(listener); stop() }()
 	}
-	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, joining: map[string]string{}, launched: map[string]*launched{}, logins: map[string]*hostLogin{}, ctx: serviceCtx}
+	service := &bridgeService{profile: profile, webURL: web.URL, b: b, node: node, peers: map[string]*protocol.Conn{}, joining: map[string]string{}, launched: map[string]*launched{}, logins: map[string]*hostLogin{}, terminals: map[string]*hostTerminal{}, ctx: serviceCtx}
 	b.SetHost(service.host)
 	defer service.stopLaunched()
 	reexec := ""
@@ -734,7 +736,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair   (show a QR code, then approve the device that scans it)\norb bridge join <code>   (pair with an Orb that ran orb bridge pair)\norb bridge service install|remove   (Linux: keep Bridge running across logouts and reboots)\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge pipe   (owner API as JSON lines on stdin/stdout)\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb bridge run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb bridge pair   (show a QR code, then approve the device that scans it)\norb bridge join <code>   (pair with an Orb that ran orb bridge pair)\norb bridge service install|remove   (Linux: keep Bridge running across logouts and reboots)\norb bridge pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb bridge grant|revoke|scope|group|assign|takeover|publish < request.json\norb bridge remote <peer-id> <method> < params.json\norb bridge view <peer-id> <instance-id>\norb bridge shell <peer-id> [folder]   (a terminal on a machine that lets this one start Orb there)\norb bridge pipe   (owner API as JSON lines on stdin/stdout)\norb bridge trust <peer-id>\norb bridge connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
@@ -837,6 +839,9 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	if args[0] == "view" && len(args) == 3 {
 		return runBridgeView(ctx, profile, args[1], args[2], streams)
+	}
+	if args[0] == "shell" && (len(args) == 2 || len(args) == 3) {
+		return runBridgeShell(ctx, profile, args[1], strings.Join(args[2:], ""), streams)
 	}
 	if args[0] == "pair" && len(args) == 1 {
 		return runBridgePair(ctx, profile, streams)

@@ -126,6 +126,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
                 "unauthorized" -> "this device does not let this phone start Orb · on it, run  orb bridge trust $self"
                 "not_found" -> "no such folder or thread there"
                 "resource_exhausted" -> "too many Orbs started there already"
+                "busy" -> "this thread is open in another Orb on that device · continue it there, or turn on its bridge plugin to follow it here"
                 else -> e.optString("message")
             }))
         }

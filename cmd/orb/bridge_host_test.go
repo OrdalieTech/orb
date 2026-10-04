@@ -68,6 +68,15 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	if _, err := s.host(t.Context(), p, "host.launch", bridge.JSON(map[string]string{"session_id": "unknown"})); bridge.Code(err) != "not_found" {
 		t.Fatalf("unknown thread: %v", err)
 	}
+	// A thread open in another Orb here (a terminal one) is busy, not an Orb that dies unseen.
+	lock, err := state.ownerLock("11111111-2222-4333-8444-555555555555")
+	if err != nil || lock.Lock() != nil {
+		t.Fatal("lock:", err)
+	}
+	if _, err := s.host(t.Context(), p, "host.launch", bridge.JSON(map[string]string{"session_id": "11111111-2222-4333-8444-555555555555"})); bridge.Code(err) != "busy" {
+		t.Fatalf("launched a thread open elsewhere: %v", err)
+	}
+	_ = lock.Close()
 	for i := range maxLaunched {
 		s.launched[string(rune('a'+i))] = &launched{input: io.NopCloser(nil)}
 	}
@@ -160,5 +169,46 @@ func TestHostLoginRelaysSignInToThePeer(t *testing.T) {
 	}
 	if _, err := s.login(t.Context(), "host.login.start", bridge.JSON(map[string]string{"provider": "anthropic", "method": "browser"})); bridge.Code(err) != "invalid_params" {
 		t.Fatalf("unknown method: %v", err)
+	}
+}
+
+// A peer allowed on the machine gets its shell in a folder: what it types runs there, the output
+// comes back by offset until the shell ends, and a closed terminal is gone.
+func TestHostTerminalRunsAShellInTheFolder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no pseudo-terminals on Windows")
+	}
+	t.Setenv("SHELL", "/bin/sh")
+	dir := t.TempDir()
+	s := &bridgeService{terminals: map[string]*hostTerminal{}, ctx: t.Context()}
+	call := func(method string, params any, result any) {
+		t.Helper()
+		raw, err := s.terminal(t.Context(), method, bridge.JSON(params))
+		if err != nil || result != nil && json.Unmarshal(raw, result) != nil {
+			t.Fatalf("%s: %s %v", method, raw, err)
+		}
+	}
+	var opened struct {
+		ID string `json:"terminal_id"`
+	}
+	call("host.terminal.open", map[string]any{"cwd": dir, "cols": 80, "rows": 24}, &opened)
+	call("host.terminal.write", map[string]any{"terminal_id": opened.ID, "data": []byte("pwd; exit\n")}, nil)
+	var out []byte
+	var r struct {
+		Data   []byte `json:"data"`
+		Offset int64  `json:"offset"`
+		Done   bool   `json:"done"`
+	}
+	for deadline := time.Now().Add(10 * time.Second); !r.Done && time.Now().Before(deadline); {
+		r.Data = nil
+		call("host.terminal.read", map[string]any{"terminal_id": opened.ID, "offset": r.Offset}, &r)
+		out = append(out, r.Data...)
+	}
+	if !r.Done || !bytes.Contains(out, []byte(filepath.Base(dir))) {
+		t.Fatalf("shell output %q, done %v", out, r.Done)
+	}
+	call("host.terminal.close", map[string]any{"terminal_id": opened.ID}, nil)
+	if _, err := s.terminal(t.Context(), "host.terminal.read", bridge.JSON(map[string]any{"terminal_id": opened.ID})); bridge.Code(err) != "not_found" {
+		t.Fatalf("a closed terminal still answers: %v", err)
 	}
 }

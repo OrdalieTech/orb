@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
+	"github.com/creack/pty"
 )
 
 // maxLaunched bounds the Orbs one Bridge starts for its peers; each is a full agent process.
@@ -118,6 +120,8 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 		return s.update(ctx), nil
 	case "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel":
 		return s.login(ctx, method, params)
+	case "host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
+		return s.terminal(ctx, method, params)
 	}
 	return nil, bridge.Fail("method_not_found")
 }
@@ -294,6 +298,138 @@ func (s *bridgeService) endLogin(id string) {
 	s.mu.Unlock()
 }
 
+// A peer reaching the machine (host.launch) may also open a terminal on it: its owner's login
+// shell in a pseudo-terminal, in a folder, as Orb's own bash runs there. The output is kept as a
+// window the peer reads by offset, waiting up to terminalPoll for more; one left unread ends.
+const (
+	maxTerminals   = 4
+	terminalPoll   = 15 * time.Second // under the 20 s a peer gives any call
+	terminalIdle   = 30 * time.Minute
+	terminalWindow = 256 << 10
+)
+
+type hostTerminal struct {
+	pty  *os.File
+	idle *time.Timer
+	mu   sync.Mutex
+	out  []byte // the last terminalWindow bytes of output
+	end  int64  // the offset just past out
+	done bool
+	wake chan struct{}
+}
+
+func (s *bridgeService) terminal(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	var q struct {
+		ID     string `json:"terminal_id,omitempty"`
+		CWD    string `json:"cwd,omitempty"`
+		Cols   uint16 `json:"cols,omitempty"`
+		Rows   uint16 `json:"rows,omitempty"`
+		Offset int64  `json:"offset,omitempty"`
+		Data   []byte `json:"data,omitempty"`
+	}
+	if err := protocol.Decode(params, &q); err != nil {
+		return nil, err
+	}
+	size := &pty.Winsize{Cols: max(q.Cols, 20), Rows: max(q.Rows, 5)}
+	if method == "host.terminal.open" {
+		cwd, err := launchFolder(cmp.Or(q.CWD, "~"))
+		if err != nil {
+			return nil, err
+		}
+		return s.openTerminal(cwd, size)
+	}
+	s.mu.Lock()
+	t := s.terminals[q.ID]
+	s.mu.Unlock()
+	if t == nil {
+		return nil, bridge.Fail("not_found")
+	}
+	t.idle.Reset(terminalIdle)
+	switch method {
+	case "host.terminal.write":
+		if _, err := t.pty.Write(q.Data); err != nil {
+			return nil, bridge.Fail("unavailable")
+		}
+		return bridge.JSON(struct{}{}), nil
+	case "host.terminal.resize":
+		_ = pty.Setsize(t.pty, size)
+		return bridge.JSON(struct{}{}), nil
+	case "host.terminal.close":
+		s.endTerminal(q.ID)
+		return bridge.JSON(struct{}{}), nil
+	}
+	timer := time.NewTimer(terminalPoll)
+	defer timer.Stop()
+	for {
+		t.mu.Lock()
+		start := t.end - int64(len(t.out))
+		data := slices.Clone(t.out[min(max(q.Offset, start), t.end)-start:])
+		end, done, wake := t.end, t.done, t.wake
+		t.mu.Unlock()
+		if len(data) > 0 || done {
+			return bridge.JSON(map[string]any{"data": data, "offset": end, "done": done}), nil
+		}
+		select {
+		case <-wake:
+		case <-timer.C:
+			return bridge.JSON(map[string]any{"offset": end, "done": false}), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (s *bridgeService) openTerminal(cwd string, size *pty.Winsize) (json.RawMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.terminals) >= maxTerminals {
+		return nil, bridge.Fail("resource_exhausted")
+	}
+	command := exec.Command(cmp.Or(os.Getenv("SHELL"), "/bin/sh"), "-l")
+	command.Dir, command.Env = cwd, append(os.Environ(), "TERM=xterm-256color")
+	f, err := pty.StartWithSize(command, size)
+	if err != nil {
+		return nil, bridge.Fail("unavailable")
+	}
+	id := protocol.NewID()
+	t := &hostTerminal{pty: f, wake: make(chan struct{})}
+	t.idle = time.AfterFunc(terminalIdle, func() { s.endTerminal(id) })
+	s.terminals[id] = t
+	go func() {
+		buf := make([]byte, 32<<10)
+		for {
+			n, err := f.Read(buf)
+			t.mu.Lock()
+			t.out = append(t.out, buf[:n]...)
+			t.out = t.out[max(len(t.out)-terminalWindow, 0):]
+			t.end += int64(n)
+			t.done = err != nil
+			close(t.wake)
+			t.wake = make(chan struct{})
+			t.mu.Unlock()
+			if err != nil {
+				break
+			}
+		}
+		_ = command.Wait()
+		// The last output and the end wait a minute for their peer's read.
+		time.AfterFunc(time.Minute, func() { s.endTerminal(id) })
+	}()
+	return bridge.JSON(map[string]string{"terminal_id": id}), nil
+}
+
+// endTerminal hangs up a terminal: closing its side of the pty ends the shell and what it started.
+func (s *bridgeService) endTerminal(id string) {
+	s.mu.Lock()
+	t := s.terminals[id]
+	delete(s.terminals, id)
+	s.mu.Unlock()
+	if t != nil {
+		t.idle.Stop()
+		_ = t.pty.Close()
+	}
+}
+
 // update brings this machine's orb to the latest release, as `orb update` does, then restarts
 // the Bridge on the new binary; peers see it back within seconds. The answer says what happened.
 func (s *bridgeService) update(ctx context.Context) json.RawMessage {
@@ -369,6 +505,18 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 		s.mu.Lock()
 		delete(s.launched, l.alias)
 		s.mu.Unlock()
+	}
+	// A thread open in another Orb on this machine, one in a terminal say, cannot open twice: the
+	// peer hears so at once instead of an Orb that exits before it is on Bridge.
+	if state := stateFromContext(s.ctx); session != "" && state != nil {
+		if lock, err := state.ownerLock(session); err == nil {
+			free, _ := lock.TryLock()
+			_ = lock.Close()
+			if !free {
+				release()
+				return nil, bridge.Fail("busy")
+			}
+		}
 	}
 	exe, err := os.Executable()
 	if err != nil {

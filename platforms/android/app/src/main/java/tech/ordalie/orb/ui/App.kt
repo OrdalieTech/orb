@@ -56,7 +56,8 @@ sealed interface Screen {
     data object Plugins : Screen
     data class Device(val peer: String) : Screen
     data class Folder(val peer: String, val cwd: String) : Screen
-    data object Terminal : Screen
+    /** The terminal where [on] runs: this phone's Linux, or its machine over Bridge. */
+    data class Terminal(val on: Session? = null) : Screen
 }
 
 class Nav {
@@ -120,7 +121,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                         Screen.Plugins -> PluginsScreen(ctx)
                         is Screen.Device -> DeviceScreen(ctx, s.peer)
                         is Screen.Folder -> FolderScreen(ctx, s.peer, s.cwd)
-                        Screen.Terminal -> TerminalScreen(ctx)
+                        is Screen.Terminal -> TerminalScreen(ctx, s.on)
                     }
                 }
             }
@@ -251,7 +252,7 @@ class Ctx(
         else { if ((nav.stack.last() as? Screen.Chat)?.session == s) nav.home(); rt.close(s as RemoteSession) }
     })
 
-    fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) { nav.go(when (it) { "terminal" -> Screen.Terminal; "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers() }) })
+    fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) { nav.go(when (it) { "terminal" -> Screen.Terminal((nav.stack.last() as? Screen.Chat)?.session); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers() }) })
 }
 
 /** Keeps the last value on screen while it animates away; interrupts rise, sheets fade their scrim. */
@@ -366,7 +367,7 @@ fun ColumnScope.Home(c: Ctx) {
             }
         }
         items(shown, key = { it.key }) { e ->
-            SessionRow(e.title, e.meta, e.age ?: ago(e.modified), e.live, e.asks, e.current, Modifier.animateItem(), e.remote, e.rename, e.open)
+            SessionRow(e.title, e.meta.takeIf { device.isEmpty() }.orEmpty(), e.age ?: ago(e.modified), e.live, e.asks, e.current, remote = e.remote, rename = e.rename, open = e.open)
         }
         if (peers.isEmpty()) item(key = "pair") {
             Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("No paired devices", Modifier.weight(1f), color = p.mute); T("Pair ›", weight = Medium) }

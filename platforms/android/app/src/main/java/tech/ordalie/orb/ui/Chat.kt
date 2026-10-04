@@ -57,7 +57,7 @@ private fun blocks(items: List<Item>): List<List<Item>> = buildList {
 
 @Composable
 fun ColumnScope.Chat(c: Ctx, s: Session) {
-    Strip(s) { c.nav.go(Screen.Terminal) }
+    Strip(s) { c.nav.go(Screen.Terminal(s)) }
     AnimatedVisibility(!s.remote && c.rt.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue(s::abort) }
     // A peer's session follows its transcript only while shown here.
     if (s is RemoteSession) DisposableEffect(s) { s.watched = true; onDispose { s.watched = false } }
@@ -88,7 +88,7 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     PromptBox(s, c.cites, c.onCite, { c.chooseWhere { c.nav.show(it) } }, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
 }
 
-/** Under the bar, what matters while reading: the device when it is not this phone, its state, how full its context is, what it cost; the phone's terminal at right. */
+/** Under the bar, what matters while reading: the device when it is not this phone, its state, how full its context is, what it cost; at right, the terminal where it runs. */
 @Composable
 private fun Strip(s: Session, terminal: () -> Unit) =
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -96,7 +96,7 @@ private fun Strip(s: Session, terminal: () -> Unit) =
         T(listOfNotNull(s.where.takeIf { s.remote }, state.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (s.busy) p.fg else p.meta, lines = 1)
         if (s.context > 0f) T("${(s.context * 100).roundToInt()}% context", size = 13.sp, color = if (s.context > 0.8f) Ink.Rupture else p.meta)
         if (s.cost > 0.0) T("$" + "%.2f".format(java.util.Locale.ROOT, s.cost), size = 13.sp, color = p.meta)
-        if (!s.remote) Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong) }
+        Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong) }
     }
 
 /** The person is labelled; Orb just speaks, full width, its tools inline. */
