@@ -1,11 +1,9 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,11 +13,7 @@ import (
 
 const defaultAzureOpenAIAPIVersion = "v1"
 
-type azureOpenAIHTTPDoer interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-var azureOpenAIHTTPClient azureOpenAIHTTPDoer = http.DefaultClient
+var azureOpenAIHTTPClient openAIHTTPDoer = http.DefaultClient
 
 type AzureOpenAIResponsesOptions struct {
 	ai.StreamOptions
@@ -117,12 +111,6 @@ func StreamAzureOpenAIResponsesWithOptions(
 			return
 		}
 		defer func() { _ = response.Body.Close() }()
-		if streamOptions != nil && streamOptions.OnResponse != nil {
-			if err := streamOptions.OnResponse(ctx, providerResponse(response), model); err != nil {
-				fail(err)
-				return
-			}
-		}
 		if !sink(ai.StartEvent{Partial: output}) {
 			return
 		}
@@ -403,56 +391,5 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
-	baseClient := azureOpenAIHTTPClient
-	if options != nil && options.HTTPClient != nil {
-		baseClient = options.HTTPClient
-	}
-	httpClient, err := openAIHeaderTimeoutClient(baseClient, streamTimeoutMS(options), headers)
-	if err != nil {
-		return nil, err
-	}
-	// Upstream 7af8533c: the bespoke retry loop is replaced by the shared
-	// wrapper, which owns classification, backoff and the abort signal.
-	var lastResponse *http.Response
-	response, err := retryProviderRequest(ctx, options, func() (*http.Response, error) {
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		for name, values := range headers {
-			request.Header[name] = append([]string(nil), values...)
-		}
-		attempt, requestErr := httpClient.Do(request)
-		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
-			_ = lastResponse.Body.Close()
-		}
-		lastResponse = attempt
-		if requestErr != nil {
-			return attempt, requestErr
-		}
-		if attempt == nil {
-			return nil, errors.New("ai/api: Azure OpenAI API returned no HTTP response")
-		}
-		if attempt.StatusCode >= http.StatusBadRequest {
-			contents, readErr := io.ReadAll(attempt.Body)
-			_ = attempt.Body.Close()
-			if readErr != nil {
-				return attempt, readErr
-			}
-			return attempt, &retryableHTTPStatusError{
-				status:  attempt.StatusCode,
-				headers: attempt.Header,
-				inner:   newOpenAIStatusError(attempt.StatusCode, contents),
-			}
-		}
-		return attempt, nil
-	})
-	if err != nil {
-		var statusError *retryableHTTPStatusError
-		if errors.As(err, &statusError) {
-			return response, statusError.inner
-		}
-		return response, err
-	}
-	return response, nil
+	return postProviderJSON(ctx, model, options, azureOpenAIHTTPClient, endpoint.String(), http.Header{}, headers, body, newOpenAIStatusError)
 }

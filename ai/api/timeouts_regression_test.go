@@ -18,8 +18,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
-	anthropic "github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 func TestAnthropicTimeoutMSDoesNotKillStreamAfterHeaders(t *testing.T) {
@@ -106,67 +104,6 @@ func TestAnthropicTimeoutMSStillBoundsHeaderPhase(t *testing.T) {
 	}
 }
 
-func TestAnthropicInjectedClientTimeoutMSDoesNotRaceBody(t *testing.T) {
-	client := anthropic.NewClient(
-		option.WithAPIKey("client-owned-key"),
-		option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-				Body:       &contextGatedBody{ctx: request.Context(), delay: 200 * time.Millisecond, reader: strings.NewReader(minimalF2SSE(ai.APIAnthropicMessages, "claude-test"))},
-				Request:    request,
-			}, nil
-		})}),
-	)
-	timeout := int64(50)
-	stream, err := StreamAnthropicMessagesWithOptions(context.Background(), anthropicTestModel(), ai.Context{}, &AnthropicMessagesOptions{
-		StreamOptions: ai.StreamOptions{TimeoutMS: &timeout},
-		Client:        &client,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	message, err := ai.Collect(stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if message.StopReason != ai.StopReasonStop || message.ErrorMessage != nil {
-		t.Fatalf("message = %#v, want a clean stop past TimeoutMS", message)
-	}
-}
-
-func TestAnthropicInjectedClientTimeoutMSStillBoundsHeaderPhase(t *testing.T) {
-	client := anthropic.NewClient(
-		option.WithAPIKey("client-owned-key"),
-		option.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-			select {
-			case <-request.Context().Done():
-				return nil, request.Context().Err()
-			case <-time.After(5 * time.Second):
-				return nil, errors.New("header-phase timeout never fired")
-			}
-		})}),
-	)
-	timeout := int64(50)
-	stream, err := StreamAnthropicMessagesWithOptions(context.Background(), anthropicTestModel(), ai.Context{}, &AnthropicMessagesOptions{
-		StreamOptions: ai.StreamOptions{TimeoutMS: &timeout},
-		Client:        &client,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	message, err := ai.Collect(stream)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if message.StopReason != ai.StopReasonError {
-		t.Fatalf("stop reason = %q, want error before headers", message.StopReason)
-	}
-	if message.ErrorMessage == nil || *message.ErrorMessage != "Request timed out." {
-		t.Fatalf("errorMessage = %v, want the pinned SDK timeout text", message.ErrorMessage)
-	}
-}
-
 // closeRecordingBody records whether Close ran; the header-timeout doer's body
 // wrapper releases its context cancel only on Close, so an unclosed error-path
 // body leaks that cancel until the caller context ends.
@@ -178,30 +115,6 @@ type closeRecordingBody struct {
 func (body *closeRecordingBody) Close() error {
 	body.closed.Store(true)
 	return nil
-}
-
-func TestNormalizeRequestErrorsCloseTheReplacedBody(t *testing.T) {
-	openAIBody := &closeRecordingBody{Reader: strings.NewReader(`{"error":{"message":"boom"}}`)}
-	if err := normalizeOpenAIRequestError(&http.Response{
-		StatusCode: http.StatusInternalServerError,
-		Body:       openAIBody,
-	}, errors.New("500 boom")); err == nil {
-		t.Fatal("want a normalized error")
-	}
-	if !openAIBody.closed.Load() {
-		t.Fatal("normalizeOpenAIRequestError left the replaced body open")
-	}
-
-	anthropicBody := &closeRecordingBody{Reader: strings.NewReader(`{"type":"error"}`)}
-	if err := normalizeAnthropicRequestError(&http.Response{
-		StatusCode: http.StatusInternalServerError,
-		Body:       anthropicBody,
-	}, errors.New("500 boom")); err == nil {
-		t.Fatal("want a normalized error")
-	}
-	if !anthropicBody.closed.Load() {
-		t.Fatal("normalizeAnthropicRequestError left the replaced body open")
-	}
 }
 
 func TestAnthropicRequestErrorClosesResponseBody(t *testing.T) {

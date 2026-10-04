@@ -821,8 +821,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 
 | Dependency | Where | Why |
 |---|---|---|
-| openai/openai-go/v3 | ai/api | OpenAI responses+completions (D10) |
-| anthropics/anthropic-sdk-go | ai/api | Anthropic messages + caching (D10) |
+| anthropics/anthropic-sdk-go (`config` only) | ai/api | Anthropic workload-identity federation token exchange (D10) |
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api/bedrock | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
@@ -841,8 +840,10 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `platforms/native/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
 Rejected on measurement: `invopop/jsonschema` (`internal/jsonschema` emits TypeBox-style inline
-schemas directly; the probe added five packages and 640 KiB) and `google.golang.org/genai` (+8.5 MB
-and +35 modules; Gemini and Vertex use stdlib REST/SSE with pure-Go ADC). Explicitly rejected: TUI
+schemas directly; the probe added five packages and 640 KiB), `google.golang.org/genai` (+8.5 MB
+and +35 modules; Gemini and Vertex use stdlib REST/SSE with pure-Go ADC), and the `openai-go/v3`
+and Anthropic clients (20.7 MB of the Worker bundle to post bodies Orb builds itself; one stdlib
+client serves OpenAI-compatible, Azure and Anthropic requests). Explicitly rejected: TUI
 frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10), and cgo bindings of any kind
 (P2), including v8go/quickjs and native SQLite.
 

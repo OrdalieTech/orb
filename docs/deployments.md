@@ -112,7 +112,7 @@ evictions; its model calls go out through `fetch`, and provider keys come from W
 through the `Env` port. It is driven with RPC frames over a hibernatable WebSocket or a streamed
 HTTP POST (NDJSON), behind a bearer token (`ORB_TOKEN`), so any RPC client can use it. There is no
 shell. One turn leaves about 38 MB of Wasm memory in use, within the 128 MB object limit; the
-bundle is 9.9 MB gzip, inside Cloudflare's 10 MB paid-plan limit and gated below it. On Cloudflare (2026-09-23), a
+bundle is 8.1 MB gzip, inside Cloudflare's 10 MB paid-plan limit and gated below it. On Cloudflare (2026-09-23), a
 tool-using turn streamed its first frame in 1.8 s, and after a redeploy restarted the object its
 files and history were intact.
 

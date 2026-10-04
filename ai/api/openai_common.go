@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,9 +20,6 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
-	openai "github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/packages/ssestream"
 )
 
 const (
@@ -31,10 +29,10 @@ const (
 )
 
 var (
-	errStopSSE                               = errors.New("ai/api: stop SSE stream")
-	errOpenAIHeaderTimeout                   = errors.New("Request timed out.") //nolint:staticcheck // Exact upstream SDK error text is observable.
-	openAIHTTPClient       option.HTTPClient = http.DefaultClient
-	openAINowUnixMilli                       = func() int64 { return time.Now().UnixMilli() }
+	errStopSSE                            = errors.New("ai/api: stop SSE stream")
+	errOpenAIHeaderTimeout                = errors.New("Request timed out.") //nolint:staticcheck // Exact upstream SDK error text is observable.
+	openAIHTTPClient       openAIHTTPDoer = http.DefaultClient
+	openAINowUnixMilli                    = func() int64 { return time.Now().UnixMilli() }
 )
 
 type eventSink func(ai.AssistantMessageEvent) bool
@@ -489,46 +487,68 @@ func postOpenAIStream(
 	if err != nil {
 		return nil, fmt.Errorf("encode OpenAI request: %w", err)
 	}
-	baseClient := option.HTTPClient(openAIHTTPClient)
-	if options != nil && options.HTTPClient != nil {
-		baseClient = options.HTTPClient
+	defaults := http.Header{"Content-Type": {"application/json"}, "Accept": {"application/json"}, "Authorization": {"Bearer " + apiKey}}
+	return postProviderJSON(ctx, model, options, openAIHTTPClient, strings.TrimRight(model.BaseURL, "/")+"/"+path, defaults, headers, body, openAIResponseError)
+}
+
+// postProviderJSON posts body with the default headers, then headers over
+// them (an empty value removes one), under the provider retry policy. A status
+// of 400 or more is read into errorFor's error.
+func postProviderJSON(
+	ctx context.Context,
+	model *ai.Model,
+	options *ai.StreamOptions,
+	client openAIHTTPDoer,
+	endpoint string,
+	defaults, headers http.Header,
+	body []byte,
+	errorFor func(status int, body []byte) error,
+) (*http.Response, error) {
+	for name, values := range headers {
+		if len(values) == 0 {
+			defaults.Del(name)
+		} else {
+			defaults.Set(name, values[len(values)-1])
+		}
 	}
-	httpClient, err := openAIHeaderTimeoutClient(baseClient, streamTimeoutMS(options), headers)
+	if options != nil && options.HTTPClient != nil {
+		client = options.HTTPClient
+	}
+	doer, err := openAIHeaderTimeoutClient(client, streamTimeoutMS(options), headers)
 	if err != nil {
 		return nil, err
 	}
-
-	client := openai.NewClient(
-		option.WithAPIKey(apiKey),
-		option.WithBaseURL(model.BaseURL),
-		option.WithHTTPClient(httpClient),
-	)
-	// Upstream 7af8533c: the SDK runs with maxRetries 0 and retryProviderRequest
-	// owns retrying, so the backoff honours the abort signal.
-	requestOptions := []option.RequestOption{option.WithMaxRetries(0)}
-	for name, values := range headers {
-		if len(values) == 0 {
-			requestOptions = append(requestOptions, option.WithHeaderDel(name))
-			continue
-		}
-		requestOptions = append(requestOptions, option.WithHeader(name, values[len(values)-1]))
-	}
-
-	var lastResponse *http.Response
+	var last *http.Response
 	response, err := retryProviderRequest(ctx, options, func() (*http.Response, error) {
-		var attempt *http.Response
-		postErr := client.Post(ctx, path, json.RawMessage(body), &attempt, requestOptions...)
-		if lastResponse != nil && lastResponse != attempt && lastResponse.Body != nil {
-			_ = lastResponse.Body.Close()
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
 		}
-		lastResponse = attempt
-		return attempt, postErr
+		request.Header = defaults.Clone()
+		attempt, err := doer.Do(request)
+		if last != nil && last != attempt && last.Body != nil {
+			_ = last.Body.Close()
+		}
+		last = attempt
+		if err != nil || attempt == nil || attempt.StatusCode < http.StatusBadRequest {
+			return attempt, err
+		}
+		contents, err := io.ReadAll(attempt.Body)
+		// The header-timeout doer's body wrapper releases its context only on Close.
+		_ = attempt.Body.Close()
+		if err != nil {
+			return attempt, err
+		}
+		return attempt, &retryableHTTPStatusError{status: attempt.StatusCode, headers: attempt.Header, inner: errorFor(attempt.StatusCode, contents)}
 	})
+	if statusError, ok := errors.AsType[*retryableHTTPStatusError](err); ok {
+		return response, statusError.inner
+	}
 	if err != nil {
-		return response, normalizeOpenAIRequestError(response, err)
+		return response, err
 	}
 	if response == nil {
-		return nil, errors.New("OpenAI API returned no HTTP response")
+		return nil, errors.New("ai/api: provider returned no HTTP response")
 	}
 	if options != nil && options.OnResponse != nil {
 		if err := options.OnResponse(ctx, providerResponse(response), model); err != nil {
@@ -542,10 +562,6 @@ func postOpenAIStream(
 type openAIHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
-
-type openAIDoerFunc func(*http.Request) (*http.Response, error)
-
-func (do openAIDoerFunc) Do(request *http.Request) (*http.Response, error) { return do(request) }
 
 type openAIHeaderTimeoutDoer struct {
 	base             openAIHTTPDoer
@@ -640,22 +656,48 @@ func providerResponse(response *http.Response) ai.ProviderResponse {
 	return ai.ProviderResponse{Status: response.StatusCode, Headers: headers}
 }
 
+// readSSE hands each event's data to handle, as the OpenAI SDK's stream did:
+// "[DONE]" ends the stream, and a top-level "error" member fails it.
 func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
-	closer, ok := body.(io.ReadCloser)
-	if !ok {
-		closer = io.NopCloser(body)
-	}
-	response := &http.Response{
-		Header: http.Header{"Content-Type": []string{"text/event-stream"}},
-		Body:   closer,
-	}
-	stream := ssestream.NewStream[json.RawMessage](ssestream.NewDecoder(response), nil)
-	for stream.Next() {
-		if err := handle(stream.Current()); err != nil {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(nil, bufio.MaxScanTokenSize<<9)
+	var data []byte
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) > 0 {
+			if name, value, _ := bytes.Cut(line, []byte(":")); string(name) == "data" {
+				data = append(append(data, bytes.TrimPrefix(value, []byte(" "))...), '\n')
+			}
+			continue
+		}
+		if len(data) == 0 {
+			continue
+		}
+		if bytes.HasPrefix(data, []byte("[DONE]")) {
+			return nil
+		}
+		var event struct {
+			Error json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal(data, &event) == nil && len(event.Error) > 0 {
+			message := string(event.Error)
+			if text, err := jsonwire.UnmarshalString(event.Error); err == nil {
+				message = text
+			} else if message == "null" {
+				message = ""
+			}
+			return fmt.Errorf("received error while streaming: %s", message)
+		}
+		var raw json.RawMessage
+		if err := json.Unmarshal(data, &raw); err != nil {
 			return err
 		}
+		if err := handle(raw); err != nil {
+			return err
+		}
+		data = data[:0]
 	}
-	return stream.Err()
+	return scanner.Err()
 }
 
 func calculateCost(model *ai.Model, usage *ai.Usage) { ai.CalculateCost(model, usage) }
@@ -674,22 +716,15 @@ func formatOpenAIError(err error, prefix string) string {
 		}
 		return statusError.message
 	}
-	var apiError *openai.Error
-	if !errors.As(err, &apiError) {
+	bodyError, ok := errors.AsType[*openAIBodyError](err)
+	if !ok {
 		return err.Error()
 	}
-	body := extractOpenAIErrorBody(apiError.RawJSON())
-	if body == "" {
-		if prefix != "" {
-			return fmt.Sprintf("%s (%d): %s", prefix, apiError.StatusCode, err)
-		}
-		return err.Error()
-	}
-	body = truncateOpenAIErrorText(body)
+	body := truncateOpenAIErrorText(extractOpenAIErrorBody(bodyError.raw))
 	if prefix != "" {
-		return fmt.Sprintf("%s (%d): %s", prefix, apiError.StatusCode, body)
+		return fmt.Sprintf("%s (%d): %s", prefix, bodyError.status, body)
 	}
-	return fmt.Sprintf("%d: %s", apiError.StatusCode, body)
+	return fmt.Sprintf("%d: %s", bodyError.status, body)
 }
 
 // openRouterErrorMetadataRaw extracts error.metadata.raw from the parsed
@@ -701,10 +736,8 @@ func openRouterErrorMetadataRaw(err error) string {
 	if errors.As(err, &statusError) {
 		return openRouterMetadataFromErrorBody([]byte(statusError.body))
 	}
-	var apiError *openai.Error
-	if errors.As(err, &apiError) {
-		// The SDK already unwraps the body's "error" member into RawJSON.
-		return openRouterMetadataFromErrorBody([]byte(apiError.RawJSON()))
+	if bodyError, ok := errors.AsType[*openAIBodyError](err); ok {
+		return openRouterMetadataFromErrorBody([]byte(bodyError.raw))
 	}
 	return ""
 }
@@ -768,26 +801,27 @@ type openAIStatusError struct {
 
 func (err *openAIStatusError) Error() string { return err.message }
 
-func normalizeOpenAIRequestError(response *http.Response, err error) error {
-	var apiError *openai.Error
-	if response == nil || response.Body == nil || response.StatusCode < http.StatusBadRequest {
-		return err
-	}
-	if errors.As(err, &apiError) && extractOpenAIErrorBody(apiError.RawJSON()) != "" {
-		return err
-	}
-	contents, readErr := io.ReadAll(response.Body)
-	if readErr != nil {
-		return err
-	}
-	// Close the replaced body: the header-timeout doer's wrapper releases its
-	// context cancel only on Close.
-	_ = response.Body.Close()
-	response.Body = io.NopCloser(bytes.NewReader(contents))
-	return newOpenAIStatusError(response.StatusCode, contents)
+// openAIBodyError is a response whose body held an "error" object.
+type openAIBodyError struct {
+	status int
+	raw    string
 }
 
-func newOpenAIStatusError(status int, contents []byte) *openAIStatusError {
+func (err *openAIBodyError) Error() string { return fmt.Sprintf("%d %s", err.status, err.raw) }
+
+// openAIResponseError keeps an "error" object apart, as the OpenAI SDK did,
+// and gives every other body the status error.
+func openAIResponseError(status int, contents []byte) error {
+	var envelope struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(contents, &envelope) == nil && bytes.HasPrefix(envelope.Error, []byte("{")) && extractOpenAIErrorBody(string(envelope.Error)) != "" {
+		return &openAIBodyError{status: status, raw: string(envelope.Error)}
+	}
+	return newOpenAIStatusError(status, contents)
+}
+
+func newOpenAIStatusError(status int, contents []byte) error {
 	statusOnly := fmt.Sprintf("%d status code (no body)", status)
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(contents, &envelope); err != nil {

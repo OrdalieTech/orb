@@ -136,11 +136,14 @@ Each holds until changed by owner-signed decision.
 
 ### Providers and models
 
-- **D10 — SDK-preferring provider layer.** Official Go SDKs where they exist and are sound
-  (`openai-go/v3`, `anthropic-sdk-go`, `aws-sdk-go-v2` bedrockruntime). `google.golang.org/genai`
-  was rejected on measured weight (+8.5 MB, +35 modules), so Gemini and Vertex use hand-rolled
-  JSON/SSE. Hand-roll where no sound SDK exists (mistral-conversations, pi-messages, OAuth
-  device/PKCE flows). No kitchen sinks.
+- **D10 — Lean provider layer.** Wire codecs are Orb's own, and an official Go SDK stays only
+  where it carries protocol work: `aws-sdk-go-v2` bedrockruntime (credential chain, SigV4, event
+  streams) and `anthropic-sdk-go/config` (workload-identity federation). The `openai-go/v3` and
+  Anthropic clients only posted bodies Orb had built, yet weighed 20.7 MB of the 55.4 MB Worker
+  bundle, so requests go through one stdlib client under the shared retry policy (owner,
+  2026-10-04). `google.golang.org/genai` was rejected on measured weight (+8.5 MB, +35 modules),
+  so Gemini and Vertex use hand-rolled JSON/SSE. Hand-roll where no sound SDK exists
+  (mistral-conversations, pi-messages, OAuth device/PKCE flows). No kitchen sinks.
 - **D12 — Model catalog from direct authoritative sources.** Build-time generation uses
   `models.dev/api.json` for the baseline, intersects NVIDIA's manifest with the live NIM listing,
   and uses the live OpenRouter and Vercel AI Gateway APIs for those catalogs. Runtime refresh is a
