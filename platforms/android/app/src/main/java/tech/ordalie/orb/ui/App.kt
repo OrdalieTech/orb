@@ -136,19 +136,20 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
 }
 
 /**
- * The wordmark, which is Home; a tab per open session — this phone's, then each one followed on a
- * paired device — and the menu. A square says where a session runs, as in the prompt box; it
- * turns red when the session asks something and pulses while it works.
+ * The wordmark, which is Home; then, once more than one session is open — this phone's and those
+ * followed on paired devices — a tab for each, else the open conversation's name; the menu. A tab's
+ * square says where it runs, as in the prompt box: red when it asks, pulsing while it works.
  */
 @Composable
 private fun TopBar(c: Ctx, open: Session?) = Column(Modifier.statusBarsPadding()) {
     val tabs = c.rt.sessions
-    val scroll = rememberScrollState()
-    Row(Modifier.fillMaxWidth().height(54.dp).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 22.dp, if (open == null) p.fg else p.meta) }
-        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll).padding(start = 10.dp)) {
-            tabs.forEach { s ->
+        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()).padding(start = 10.dp)) {
+            if (tabs.size > 1) tabs.forEach { s ->
                 Tab(s, s == open, onLong = { c.tabMenu(s) }) { c.nav.show(s, forward = open == null || tabs.indexOf(s) > tabs.indexOf(open)) }
+            } else if (open != null) Box(Modifier.fillMaxHeight().press(onLong = { c.tabMenu(open) }) {}.padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+                T(open.title.ifEmpty { "New session" }, size = 15.sp, weight = Strong, lines = 1)
             }
         }
         MenuMark(c::menu)
@@ -158,11 +159,11 @@ private fun TopBar(c: Ctx, open: Session?) = Column(Modifier.statusBarsPadding()
 
 @Composable
 private fun Tab(s: Session, on: Boolean, onLong: () -> Unit, open: () -> Unit) =
-    Column(Modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onLong = onLong, onClick = open).padding(horizontal = 8.dp), verticalArrangement = Arrangement.Bottom) {
+    Column(Modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onLong = onLong, onClick = open).padding(horizontal = 8.dp)) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Dot(when { s.ask != null -> Ink.Rupture; s.remote -> Ink.Blue; else -> if (on) p.fg else p.mute }, 6.dp, pulse = s.busy, square = true)
             Spacer(Modifier.width(7.dp))
-            T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 140.dp), size = 14.sp, weight = if (on) Strong else Medium, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
+            T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 150.dp), size = 14.sp, weight = if (on) Strong else Regular, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(if (on) p.fg else Color.Transparent))
     }

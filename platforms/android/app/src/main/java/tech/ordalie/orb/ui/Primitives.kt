@@ -94,12 +94,12 @@ fun Btn(label: String, inverted: Boolean = false, modifier: Modifier = Modifier,
 
 /** The one text field: a round outline that firms up once it holds something. */
 @Composable
-fun Field(value: String, hint: String, modifier: Modifier = Modifier, mono: Boolean = false, secret: Boolean = false, set: (String) -> Unit) =
+fun Field(value: String, hint: String, modifier: Modifier = Modifier, secret: Boolean = false, set: (String) -> Unit) =
     Box(modifier.clip(CircleShape).border(1.dp, if (value.isEmpty()) p.rule else p.fg, CircleShape).padding(horizontal = 18.dp, vertical = 11.dp)) {
-        BasicTextField(value, set, Modifier.fillMaxWidth(), textStyle = type(15.sp, p.fg, mono = mono), cursorBrush = SolidColor(p.fg), singleLine = true,
+        BasicTextField(value, set, Modifier.fillMaxWidth(), textStyle = type(15.sp, p.fg), cursorBrush = SolidColor(p.fg), singleLine = true,
             visualTransformation = if (secret) PasswordVisualTransformation('·') else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri))
-        if (value.isEmpty()) T(hint, size = 15.sp, color = p.meta, lines = 1, mono = mono)
+        if (value.isEmpty()) T(hint, size = 15.sp, color = p.meta, lines = 1)
     }
 
 /** A card rising from the bottom over a dimmed screen; a tap outside closes it. */
@@ -135,10 +135,10 @@ fun MenuMark(onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).paddin
     }
 }
 
-/** The EVA title card: Ubuntu Sans Bold stretched ×1.9 tall, squeezed as needed. Reserved for events and identities. */
+/** The EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed. Reserved for events and identities. */
 @Composable
 fun Stretch(text: String, height: Dp, color: Color = p.fg, squeeze: Float = 1f, modifier: Modifier = Modifier) {
-    val size = (height.value / 1.9f / 0.7f).sp // cap height of Ubuntu Sans ≈ 0.7em
+    val size = (height.value / 1.9f / 0.7f).sp // cap height of Ubuntu Sans Mono ≈ 0.7em
     BasicText(
         text, modifier
             .layout { m, c ->
@@ -157,11 +157,11 @@ fun Stretch(text: String, height: Dp, color: Color = p.fg, squeeze: Float = 1f, 
  * on, what came of it. Live actions get the dot; ones that open show › or ⌄. Every action aligns.
  */
 @Composable
-fun ActionLine(verb: String, target: String, result: String, live: Boolean = false, failed: Boolean = false, open: Boolean? = null, code: Boolean = true) =
+fun ActionLine(verb: String, target: String, result: String, live: Boolean = false, failed: Boolean = false, open: Boolean? = null) =
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(16.dp)) { if (live) Dot(pulse = true, size = 6.dp) else if (open != null) T(if (open) "⌄" else "›", size = 14.sp, color = p.meta) }
         T(verb, Modifier.width(72.dp), size = 14.sp, weight = Medium, color = if (live) p.fg else p.mute, lines = 1)
-        T(target, Modifier.weight(1f), size = 14.sp, color = if (live) p.fg else p.mute, lines = 1, mono = code)
+        T(target, Modifier.weight(1f), size = 14.sp, color = if (live) p.fg else p.mute, lines = 1)
         Spacer(Modifier.width(8.dp))
         T(result, Modifier.fillMaxWidth(0.3f), size = 13.sp, color = if (failed) Ink.Rupture else p.meta, lines = 1)
     }

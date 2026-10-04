@@ -37,13 +37,11 @@ val DarkPalette = Palette(Color(0xFF1C201E), Color(0xFFDADFD8), Color(0xFFA8AEA9
 val LocalPalette = staticCompositionLocalOf { LightPalette }
 val p: Palette @Composable get() = LocalPalette.current
 
-/** Ubuntu Sans for words, Ubuntu Sans Mono for what a machine reads; both variable, so weights are real. */
-private fun variable(res: Int, vararg weights: Int) = FontFamily(weights.map { Font(res, FontWeight(it), variationSettings = FontVariation.Settings(FontVariation.weight(it))) })
-val Sans = variable(R.font.ubuntu_sans, 400, 500, 600, 700)
-val Mono = variable(R.font.ubuntu_sans_mono, 400, 600)
+/** Ubuntu Sans Mono, variable, so its weights are real; set a touch tight, as words rather than a grid. */
+val Mono = FontFamily(listOf(400, 500, 600, 700).map { Font(R.font.ubuntu_sans_mono, FontWeight(it), variationSettings = FontVariation.Settings(FontVariation.weight(it))) })
 
-/** One scale — title 20 · body 16 · label 12 — and three weights: regular reads, medium marks, semibold names. */
-object Size { val Title = 20.sp; val Body = 16.sp; val Label = 12.sp }
+/** One scale — title 19 · body 15 · label 11 — and three weights: regular reads, medium marks, semibold names. */
+object Size { val Title = 19.sp; val Body = 15.sp; val Label = 11.sp }
 val Regular = FontWeight.Normal
 val Medium = FontWeight.Medium
 val Strong = FontWeight.SemiBold
@@ -56,16 +54,16 @@ val Margin = 20.dp
 fun OrbTheme(content: @Composable () -> Unit) =
     CompositionLocalProvider(LocalPalette provides if (isSystemInDarkTheme()) DarkPalette else LightPalette, content = content)
 
-fun type(size: TextUnit = Size.Body, color: Color = Color.Unspecified, weight: FontWeight = FontWeight.Normal, mono: Boolean = false) =
-    TextStyle(fontFamily = if (mono) Mono else Sans, fontSize = size, color = color, fontWeight = weight, letterSpacing = if (mono) (-0.02).em else 0.sp, lineHeight = 1.4.em)
+fun type(size: TextUnit = Size.Body, color: Color = Color.Unspecified, weight: FontWeight = FontWeight.Normal) =
+    TextStyle(fontFamily = Mono, fontSize = size, color = color, fontWeight = weight, letterSpacing = (-0.03).em, lineHeight = 1.4.em)
 
 /** The only text primitive. Labels are small caps in medium weight; everything else is sentence case. */
 @Composable
 fun T(
     text: String, modifier: Modifier = Modifier, size: TextUnit = Size.Body, color: Color = p.fg, bold: Boolean = false,
-    weight: FontWeight = if (bold) Strong else Regular, label: Boolean = false, mono: Boolean = false, lines: Int = Int.MAX_VALUE,
+    weight: FontWeight = if (bold) Strong else Regular, label: Boolean = false, lines: Int = Int.MAX_VALUE,
 ) = BasicText(
     if (label) text.uppercase() else text, modifier,
-    if (label) type(11.sp, color, Medium).copy(letterSpacing = 0.06.em) else type(size, color, weight, mono),
+    if (label) type(Size.Label, color, Medium).copy(letterSpacing = 0.02.em) else type(size, color, weight),
     overflow = TextOverflow.Ellipsis, maxLines = lines,
 )

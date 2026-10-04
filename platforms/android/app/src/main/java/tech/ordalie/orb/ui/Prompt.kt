@@ -132,7 +132,7 @@ fun PromptBox(
                     if (cmd.name in NOW) { value = TextFieldValue(""); onSend("/" + cmd.name) }
                     else ("/" + cmd.name + " ").let { value = TextFieldValue(it, TextRange(it.length)) }
                 }.padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T("/" + cmd.name, size = 15.sp, weight = Strong, lines = 1, mono = true)
+                    T("/" + cmd.name, size = 15.sp, weight = Strong, lines = 1)
                     Spacer(Modifier.width(12.dp))
                     T(cmd.hint, Modifier.weight(1f), size = 13.sp, color = p.meta, lines = 1)
                 }
@@ -152,7 +152,7 @@ fun PromptBox(
             Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(if (session?.remote == true) Ink.Blue else p.fg)); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
-                T((session?.where ?: "this phone").let { if (it.length > 14) it.take(13) + "…" else it } + " ▾", size = 14.sp, weight = Strong, lines = 1)
+                T((session?.where?.takeIf { session.remote } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + " ▾", size = 14.sp, weight = Strong, lines = 1)
             }
             Row(Modifier.weight(1f).press(onClick = onModel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 T((session?.model?.substringAfter('/')?.ifEmpty { null } ?: "model") + " ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)

@@ -48,7 +48,7 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
     }
     Column(Modifier.padding(horizontal = Margin)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Field(path, "another folder · ~/code/project", Modifier.weight(1f), mono = true) { path = it }
+            Field(path, "another folder · ~/code/project", Modifier.weight(1f)) { path = it }
             Spacer(Modifier.width(8.dp))
             Btn("open", inverted = true) { if (path.isNotBlank()) c.nav.go(Screen.Folder(peer.id, path.trim())) }
         }

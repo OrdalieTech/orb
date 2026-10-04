@@ -44,7 +44,7 @@ import tech.ordalie.orb.core.You
 import kotlin.math.roundToInt
 
 /** Conversation text, in sp. */
-private const val SIZE = 16f
+private const val SIZE = 15f
 
 /** A block is one speaker's run: a YOU message, or everything Orb said and did until the next one. */
 private fun blocks(items: List<Item>): List<List<Item>> = buildList {
@@ -88,15 +88,15 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     PromptBox(s, c.cites, c.onCite, { c.chooseWhere { c.nav.show(it) } }, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
 }
 
-/** Under the tabs, what the conversation runs on: where, its state, how full its context is, what it cost; the phone's terminal at right. */
+/** Under the bar, what matters while reading: the device when it is not this phone, its state, how full its context is, what it cost; the phone's terminal at right. */
 @Composable
 private fun Strip(s: Session, terminal: () -> Unit) =
-    Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         val state = when { s.busy -> "working"; !s.online -> "offline"; else -> "" }
-        T(listOf(s.where, state).filter(String::isNotEmpty).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (s.busy) p.fg else p.meta, lines = 1)
+        T(listOfNotNull(s.where.takeIf { s.remote }, state.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (s.busy) p.fg else p.meta, lines = 1)
         if (s.context > 0f) T("${(s.context * 100).roundToInt()}% context", size = 13.sp, color = if (s.context > 0.8f) Ink.Rupture else p.meta)
         if (s.cost > 0.0) T("$" + "%.2f".format(java.util.Locale.ROOT, s.cost), size = 13.sp, color = p.meta)
-        if (!s.remote) Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong, mono = true) }
+        if (!s.remote) Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong) }
     }
 
 /** The person is labelled; Orb just speaks, full width, its tools inline. */
@@ -158,7 +158,7 @@ private fun Worked(run: List<Act>) = Column(Modifier.fillMaxWidth().animateConte
         "$n " + if (n == 1) k else if (k == "search") "searches" else k + "s"
     }
     val failed = run.count { it is Act.Call && it.tool.failed }
-    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", what, if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open, code = false) }
+    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", what, if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open) }
     run.filter { open || it is Act.Call && it.tool.live }.forEach {
         Box(Modifier.padding(start = 16.dp)) { if (it is Act.Call) ToolView(it.tool) else if (it is Act.Thought) Thought(it.said) }
     }
@@ -169,7 +169,7 @@ private fun Worked(run: List<Act>) = Column(Modifier.fillMaxWidth().animateConte
 private fun Thought(s: Said) = Column(Modifier.fillMaxWidth().animateContentSize()) {
     var open by remember { mutableStateOf(false) }
     Box(Modifier.press { open = !open }) {
-        ActionLine("thought", s.thinking.trim().lineSequence().first().removePrefix("**").substringBefore("**"), "${s.thinking.length / 4} tok", live = s.live && s.text.isBlank(), open = open, code = false)
+        ActionLine("thought", s.thinking.trim().lineSequence().first().removePrefix("**").substringBefore("**"), "${s.thinking.length / 4} tok", live = s.live && s.text.isBlank(), open = open)
     }
     if (open) Panel { BasicText(s.thinking.trim(), Modifier.copyable(s.thinking), type((SIZE - 2).sp, p.mute)) }
 }
@@ -187,9 +187,9 @@ private fun ToolView(t: Tool) {
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Box(Modifier.press { open = !open }) { ToolLine(t, open) }
         if (open) Panel {
-            if (t.args.isNotBlank()) { T("input", label = true, color = p.meta); BasicText(t.args, Modifier.copyable(t.args), type(12.sp, p.mute, mono = true)) }
+            if (t.args.isNotBlank()) { T("input", label = true, color = p.meta); BasicText(t.args, Modifier.copyable(t.args), type(12.sp, p.mute)) }
             T("output", label = true, color = p.meta)
-            BasicText(t.output.ifBlank { if (t.live) "running…" else "no output" }, Modifier.copyable(t.output), type(12.sp, if (t.failed) Ink.Rupture else p.fg, mono = true))
+            BasicText(t.output.ifBlank { if (t.live) "running…" else "no output" }, Modifier.copyable(t.output), type(12.sp, if (t.failed) Ink.Rupture else p.fg))
         }
     }
 }

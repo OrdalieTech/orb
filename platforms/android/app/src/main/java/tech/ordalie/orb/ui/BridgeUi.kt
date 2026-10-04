@@ -70,7 +70,7 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
                 .border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
                 T("Pair a computer", size = Size.Title, weight = Strong)
                 T("On the computer, run", Modifier.padding(top = 10.dp), color = p.mute)
-                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", weight = Strong, mono = true) }
+                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", weight = Strong) }
                 T("then photograph its QR code. It asks you to approve this phone there.", size = 13.sp, color = p.meta)
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("scan", inverted = true) { context.scan { c.nav.go(Screen.Join(it)) } }
@@ -82,7 +82,7 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
         items(b.peers, key = { it.id }) { PeerRow(it, c) }
         item {
             Slot("this phone", modifier = Modifier.padding(top = 18.dp)) {
-                T(b.self, size = 13.sp, color = p.mute, mono = true)
+                T(b.self, size = 13.sp, color = p.mute)
                 Row(Modifier.padding(vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("invite a computer") { c.nav.go(Screen.Invite) } }
                 T("Each device is approved by fingerprint on its own screen. Pairs stay paired and reconnect by themselves; forget revokes one.", Modifier.padding(bottom = 24.dp), size = Size.Label, color = p.meta)
             }
@@ -125,7 +125,7 @@ fun ColumnScope.InviteScreen(c: Ctx) {
     Column(Modifier.weight(1f).padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row { T("on the computer, run", Modifier.weight(1f), label = true); T(if (inv == null) "creating" else "%d:%02d · single use".format(left / 60, left % 60), size = Size.Label, color = p.meta) }
         Box(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(16.dp)).padding(14.dp)) {
-            T("orb bridge join " + code.ifEmpty { "…" }, size = 12.sp, color = if (left > 0) p.fg else p.meta, mono = true)
+            T("orb bridge join " + code.ifEmpty { "…" }, size = 12.sp, color = if (left > 0) p.fg else p.meta)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Btn("share", inverted = true) { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "orb bridge join $code"), "Orb invitation")) }
@@ -158,7 +158,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                     val left = ((Bridge.parse(value)?.optLong("expires") ?: 0) - System.currentTimeMillis() / 1000).coerceAtLeast(0)
                     Column(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
                         T("invitation from", label = true, color = p.meta)
-                        T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, weight = Strong, mono = true)
+                        T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, weight = Strong)
                         T(inviter, size = Size.Label, color = p.meta)
                         Row(Modifier.padding(top = 12.dp)) {
                             T(if (left > 0) "valid %d:%02d · single use".format(left / 60, left % 60) else "expired", Modifier.weight(1f), size = 13.sp, color = if (left > 0) p.mute else Ink.Rupture)
@@ -169,7 +169,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                 } else {
                     T("Paste the code from  orb bridge pair,  or scan its QR code.", color = p.mute)
                     Box(Modifier.fillMaxWidth().heightIn(min = 120.dp).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(16.dp)) {
-                        BasicTextField(value, { value = it; error = "" }, Modifier.fillMaxWidth(), textStyle = type(12.sp, p.fg, mono = true), cursorBrush = SolidColor(p.fg))
+                        BasicTextField(value, { value = it; error = "" }, Modifier.fillMaxWidth(), textStyle = type(12.sp, p.fg), cursorBrush = SolidColor(p.fg))
                         if (value.isEmpty()) T("orb-bridge:v1:…", color = p.meta, size = 12.sp)
                     }
                     if (inviter.isNotEmpty()) T("from " + inviter.substringAfterLast(':').take(8), size = Size.Label, color = p.meta)
@@ -185,8 +185,8 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                 T(if (state == "paired") "The computer said yes. Its sessions appear on Home." else "On the computer, answer y. It shows this phone as", color = p.mute)
                 if (state != "paired") {
                     // The fingerprint exactly as the terminal prints it, its start large enough to compare at a glance.
-                    T(b.self.substringAfterLast(':').take(8), size = 28.sp, weight = Strong, mono = true)
-                    T(b.self, size = 13.sp, color = p.meta, mono = true)
+                    T(b.self.substringAfterLast(':').take(8), size = 28.sp, weight = Strong)
+                    T(b.self, size = 13.sp, color = p.meta)
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(if (state == "claiming") "reaching the computer" else "waiting for the yes", Modifier.weight(1f), color = p.mute)
                         Btn("cancel") { b.cancelJoin() }

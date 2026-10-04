@@ -25,7 +25,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 /** Markdown blocks a model actually writes. Anything else stays a paragraph. */
@@ -74,7 +73,7 @@ fun inline(text: String, code: Color, codeBg: Color): AnnotatedString = buildAnn
     while (i < text.length) {
         when {
             text.startsWith("**", i) && text.indexOf("**", i + 2) > i + 1 -> { val e = text.indexOf("**", i + 2); withStyle(SpanStyle(fontWeight = Strong)) { append(text, i + 2, e) }; i = e + 2 }
-            text[i] == '`' && text.indexOf('`', i + 1) > i -> { val e = text.indexOf('`', i + 1); withStyle(SpanStyle(fontFamily = Mono, fontSize = 0.92.em, color = code, background = codeBg)) { append(" "); append(text, i + 1, e); append(" ") }; i = e + 1 }
+            text[i] == '`' && text.indexOf('`', i + 1) > i -> { val e = text.indexOf('`', i + 1); withStyle(SpanStyle(color = code, background = codeBg)) { append(" "); append(text, i + 1, e); append(" ") }; i = e + 1 }
             text[i] == '[' && text.indexOf("](", i) > i && text.indexOf(')', text.indexOf("](", i)) > 0 -> {
                 val mid = text.indexOf("](", i); val end = text.indexOf(')', mid)
                 withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) { append(text, i + 1, mid) }; i = end + 1
@@ -99,7 +98,7 @@ fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f) = C
             is Quote -> Row { Box(Modifier.width(2.dp).height(22.dp).background(p.rule)); BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(start = 12.dp), body.copy(color = p.mute)) }
             is Code -> Column(Modifier.fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp)) {
                 if (b.lang.isNotEmpty()) T(b.lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
-                Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg, mono = true), softWrap = false) }
+                Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg), softWrap = false) }
             }
             Break -> Spacer(Modifier.height(4.dp))
         }

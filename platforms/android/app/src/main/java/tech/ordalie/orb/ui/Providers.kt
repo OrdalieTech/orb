@@ -198,7 +198,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
             // The code rides the clipboard to the page, which opens by itself.
             LaunchedEffect(code) { context.copy(code, "code copied"); f.url?.let { context.browse(it, tint) } }
             T("enter this code", label = true, color = p.meta)
-            Box(Modifier.press { context.copy(code, "code copied") }) { T(code, size = 34.sp, weight = Strong, mono = true) }
+            Box(Modifier.press { context.copy(code, "code copied") }) { T(code, size = 34.sp, weight = Strong) }
             T("It is on your clipboard. The page is " + f.url.orEmpty().removePrefix("https://"), size = 13.sp, color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open page", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
             if (f.detail.isNotEmpty()) T(f.detail, size = 13.sp, color = p.meta)
