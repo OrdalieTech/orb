@@ -76,10 +76,7 @@ func (state *sessionStorageState) leafValue() (*string, error) {
 
 func (state *sessionStorageState) createEntryID() (string, error) {
 	for attempt := 0; attempt < 100; attempt++ {
-		id, err := uuidv7.EntryCandidate()
-		if err != nil {
-			return "", err
-		}
+		id := uuidv7.EntryCandidate()
 		if _, exists := state.byID[id]; !exists {
 			return id, nil
 		}

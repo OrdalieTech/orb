@@ -23,7 +23,7 @@ func randomUUIDv7(now time.Time) (string, error) {
 }
 
 func randomEntryCandidate() (string, error) {
-	return uuidv7.EntryCandidate()
+	return uuidv7.EntryCandidate(), nil
 }
 
 func formatUUID(value [16]byte) string {
