@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -1507,15 +1505,8 @@ func (state *completionsStreamState) consumeChunk(
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{' {
 		return nil
 	}
-	var chunk struct {
-		ID      json.RawMessage `json:"id"`
-		Model   json.RawMessage `json:"model"`
-		Usage   json.RawMessage `json:"usage"`
-		Choices json.RawMessage `json:"choices"`
-	}
-	if err := unmarshalExactMembers(trimmed, &chunk); err != nil {
-		return err
-	}
+	var chunk struct{ ID, Model, Usage, Choices json.RawMessage }
+	readMembers(trimmed, rawMember{"id", &chunk.ID}, rawMember{"model", &chunk.Model}, rawMember{"usage", &chunk.Usage}, rawMember{"choices", &chunk.Choices})
 	if state.output.ResponseID == nil {
 		if id, ok := rawJSONString(chunk.ID); ok && id != "" {
 			state.output.ResponseID = &id
@@ -1533,14 +1524,8 @@ func (state *completionsStreamState) consumeChunk(
 	if len(choices) == 0 {
 		return nil
 	}
-	var choice struct {
-		Delta        json.RawMessage `json:"delta"`
-		FinishReason json.RawMessage `json:"finish_reason"`
-		Usage        json.RawMessage `json:"usage"`
-	}
-	if err := unmarshalExactMembers(choices[0], &choice); err != nil {
-		return nil
-	}
+	var choice struct{ Delta, FinishReason, Usage json.RawMessage }
+	readMembers(choices[0], rawMember{"delta", &choice.Delta}, rawMember{"finish_reason", &choice.FinishReason}, rawMember{"usage", &choice.Usage})
 	if !rawJSTruthy(chunk.Usage) && rawJSTruthy(choice.Usage) {
 		state.output.Usage = parseOpenAICompletionsUsage(choice.Usage, model)
 	}
@@ -1580,9 +1565,9 @@ func (state *completionsStreamState) consumeDelta(
 		return nil
 	}
 	var delta openAICompletionsDelta
-	if err := unmarshalExactMembers(trimmed, &delta); err != nil {
-		return err
-	}
+	readMembers(trimmed, rawMember{"content", &delta.Content}, rawMember{"reasoning_content", &delta.ReasoningContent},
+		rawMember{"reasoning", &delta.Reasoning}, rawMember{"reasoning_text", &delta.ReasoningText},
+		rawMember{"tool_calls", &delta.ToolCalls}, rawMember{"reasoning_details", &delta.ReasoningDetails})
 	if content, ok := rawJSONString(delta.Content); ok && content != "" {
 		if state.text == nil {
 			state.text = &ai.TextContent{}
@@ -1630,12 +1615,7 @@ func (state *completionsStreamState) consumeDelta(
 }
 
 type openAICompletionsDelta struct {
-	Content          json.RawMessage `json:"content"`
-	ReasoningContent json.RawMessage `json:"reasoning_content"`
-	Reasoning        json.RawMessage `json:"reasoning"`
-	ReasoningText    json.RawMessage `json:"reasoning_text"`
-	ToolCalls        json.RawMessage `json:"tool_calls"`
-	ReasoningDetails json.RawMessage `json:"reasoning_details"`
+	Content, ReasoningContent, Reasoning, ReasoningText, ToolCalls, ReasoningDetails json.RawMessage
 }
 
 func firstOpenAICompletionsReasoning(delta openAICompletionsDelta) (string, string) {
@@ -1650,27 +1630,41 @@ func firstOpenAICompletionsReasoning(delta openAICompletionsDelta) (string, stri
 	return "", ""
 }
 
-// unmarshalExactMembers reads an object's members into target's fields by
-// exact name, like a map decode keeping the last duplicate, without the map.
-func unmarshalExactMembers(data []byte, target any) error {
-	return jsonv2.Unmarshal(data, target, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+// rawMember names a member readMembers reads into value.
+type rawMember struct {
+	name  string
+	value *json.RawMessage
+}
+
+// readMembers reads the members of the JSON object data, which readSSE has
+// validated, by exact name, keeping the last duplicate as a map decode does.
+func readMembers(data []byte, members ...rawMember) {
+	jsonwire.EachMember(data, func(name, value []byte) bool {
+		for _, member := range members {
+			if string(name) == member.name {
+				*member.value = value
+			}
+		}
+		return true
+	})
 }
 
 func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit func(ai.AssistantMessageEvent) error) error {
-	var delta map[string]json.RawMessage
-	if json.Unmarshal(raw, &delta) != nil {
+	// A call that is not an object, or null, is skipped as a failed map decode.
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' && string(trimmed) != "null" {
 		return nil
 	}
-	streamIndex, hasIndex := rawJSONInt(delta["index"])
-	id, _ := rawJSONString(delta["id"])
-	var function map[string]json.RawMessage
-	hasFunction := json.Unmarshal(delta["function"], &function) == nil && function != nil
-	name, _ := rawJSONString(function["name"])
-	arguments, _ := rawJSONString(function["arguments"])
-	var custom map[string]json.RawMessage
-	hasCustom := json.Unmarshal(delta["custom"], &custom) == nil && custom != nil
-	customName, _ := rawJSONString(custom["name"])
-	customInput, _ := rawJSONString(custom["input"])
+	var rawIndex, rawID, rawFunction, rawCustom, rawName, rawArguments, rawCustomName, rawCustomInput json.RawMessage
+	readMembers(raw, rawMember{"index", &rawIndex}, rawMember{"id", &rawID}, rawMember{"function", &rawFunction}, rawMember{"custom", &rawCustom})
+	readMembers(rawFunction, rawMember{"name", &rawName}, rawMember{"arguments", &rawArguments})
+	readMembers(rawCustom, rawMember{"name", &rawCustomName}, rawMember{"input", &rawCustomInput})
+	streamIndex, hasIndex := rawJSONInt(rawIndex)
+	id, _ := rawJSONString(rawID)
+	hasFunction, hasCustom := len(rawFunction) > 0 && rawFunction[0] == '{', len(rawCustom) > 0 && rawCustom[0] == '{'
+	name, _ := rawJSONString(rawName)
+	arguments, _ := rawJSONString(rawArguments)
+	customName, _ := rawJSONString(rawCustomName)
+	customInput, _ := rawJSONString(rawCustomInput)
 	if name == "" {
 		name = customName
 	}
@@ -2038,13 +2032,8 @@ func mapOpenAICompletionsStopReason(reason string) (ai.StopReason, *string) {
 	}
 }
 
-func rawJSONArray(raw json.RawMessage) []json.RawMessage {
-	var values []json.RawMessage
-	if len(raw) == 0 || json.Unmarshal(raw, &values) != nil {
-		return nil
-	}
-	return values
-}
+// rawJSONArray is the elements of an array readSSE has validated.
+func rawJSONArray(raw json.RawMessage) []json.RawMessage { return jsonwire.Elements(raw) }
 
 func rawJSONString(raw json.RawMessage) (string, bool) {
 	// A string without escapes decodes to its bytes when they are valid UTF-8.
