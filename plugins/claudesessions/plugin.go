@@ -353,7 +353,7 @@ func oneShot(ctx context.Context, options Options, cwd string, request map[strin
 		return err
 	}
 	cmd := exec.CommandContext(ctx, options.Node, "--input-type=module", "-e", hostSource)
-	cmd.Env, cmd.Dir, cmd.Stdin = options.Env, cwd, bytes.NewReader(append(data, '\n'))
+	cmd.Env, cmd.Dir, cmd.Stdin = hostEnv(options.Env), cwd, bytes.NewReader(append(data, '\n'))
 	kill := isolate(cmd)
 	defer func() { _ = kill() }()
 	cmd.WaitDelay = time.Second

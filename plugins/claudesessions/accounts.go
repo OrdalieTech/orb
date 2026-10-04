@@ -103,6 +103,12 @@ func withConfigDir(env []string, dir string) []string {
 	return append(env, "CLAUDE_CONFIG_DIR="+dir)
 }
 
+// hostEnv hides the Herdr pane from the Claude host: Orb owns that pane, and
+// Claude Code's Herdr hook would otherwise claim it as a Claude session.
+func hostEnv(env []string) []string {
+	return slices.DeleteFunc(slices.Clone(env), func(item string) bool { return strings.HasPrefix(item, "HERDR_PANE_ID=") })
+}
+
 // prepareAccount links the shared configuration into an account directory
 // and copies the user's MCP servers into its state; both are cheap no-ops once
 // in place, so every session start keeps them current.

@@ -98,6 +98,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Inside Herdr, an interactive Orb lets Herdr's pi integration own its lifecycle and shows itself as
   Orb, so `herdr agent prompt` works on Orb panes; without that integration Orb reports its own
   status as before, and headless runs never claim the pane.
+- Inside Herdr, a Claude conversation (or Orb asking Claude for its models at startup) no longer
+  lets Claude Code's own Herdr hook claim Orb's pane, which froze the pane's status at idle.
 - The working indicator comes back when automatic compaction continues a run.
 - The system prompt's documentation section appears only when the README, docs and examples it
   points to exist, so standalone installs and dev builds no longer send the model to missing paths.

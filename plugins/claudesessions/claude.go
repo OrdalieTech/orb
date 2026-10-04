@@ -230,7 +230,7 @@ func (h *host) close() {
 
 func (d *Driver) spawn(start map[string]any, env []string) (*host, error) {
 	process := exec.Command(d.options.Node, "--input-type=module", "-e", hostSource)
-	process.Dir, process.Env, process.Stderr = d.options.Manager.GetCWD(), env, io.Discard
+	process.Dir, process.Env, process.Stderr = d.options.Manager.GetCWD(), hostEnv(env), io.Discard
 	input, err := process.StdinPipe()
 	if err != nil {
 		return nil, err

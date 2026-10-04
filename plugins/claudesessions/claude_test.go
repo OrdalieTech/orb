@@ -40,7 +40,7 @@ export function query({prompt,options:o}) {
  })();
  const abort = new AbortController();
  const gen = (async function*(){
-  if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged') throw new Error('options or environment lost');
+  if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged'||process.env.HERDR_PANE_ID) throw new Error('options or environment lost');
   const id=o.resume??o.sessionId??crypto.randomUUID();
   // Like the CLI: a resumed session is the chain back from its resume point,
   // and what Claude writes chains on from there. This reports what Claude reads.
@@ -165,7 +165,7 @@ func fixture(t *testing.T, policy ...*plugins.Policy) (*agent.AgentSessionRuntim
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := Options{RenderText: func(text string) extensions.Component { return testText(text) }, Node: node, Claude: filepath.Join(dir, "unused-native"), SDK: sdk, Env: []string{"SDK_TEST_KEY=unchanged", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude")}, Manager: manager}
+	options := Options{RenderText: func(text string) extensions.Component { return testText(text) }, Node: node, Claude: filepath.Join(dir, "unused-native"), SDK: sdk, Env: []string{"SDK_TEST_KEY=unchanged", "HERDR_PANE_ID=w1:p1", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude")}, Manager: manager}
 	registry := extensions.NewRegistry(dir)
 	if len(policy) > 0 {
 		if err := registry.Register("permissions", plugins.Extension(policy[0], nil, nil)); err != nil {
