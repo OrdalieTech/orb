@@ -79,6 +79,8 @@ func shortDescription(name string) string {
 		return "rules, audit, and sandbox"
 	case "memory":
 		return "persistent memory tools"
+	case "memtree":
+		return "zoomable session history"
 	}
 	return descriptions[name]
 }
@@ -118,6 +120,8 @@ func pluginConfigSummary(name string, settings *config.SettingsManager) string {
 			slices.Sort(external)
 			return strings.Join(external, " · ")
 		}
+	case "memtree":
+		return text("mode")
 	case "permissions":
 		sandboxMode := text("sandbox")
 		if sandboxMode == "" && text("preset") == "workspace-write" {

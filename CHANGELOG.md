@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- New `memtree` plugin, off by default: a zoomable tree of one-line summaries over each session's
+  whole history. In compaction mode the compaction summary is the tree's view, so nothing is
+  summarized twice and every message stays reachable with `zoom`; in fresh mode every prompt
+  starts a new context from that view.
+
 ## [0.14.0] - 2026-10-04
 
 The CLI's first request declares every tool again, context estimates and compaction count the

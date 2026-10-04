@@ -39,7 +39,7 @@ type CatalogOptions struct {
 	Bash jobs.Bash
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
 	"questions":          "Ask the user questions with choices and custom answers",
@@ -52,6 +52,7 @@ var descriptions = map[string]string{
 	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
+	"memtree":            "Zoomable summary tree of each session for lossless compaction or fresh turns",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
 	"codex-sessions":     "Open Codex CLI threads as Orb conversations with orb --session <id>",
 	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
@@ -106,6 +107,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 		"jobs":           jobs.Extension(options.Bash),
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
+		"memtree":        memtreeExtension(options.AgentDir, options.Settings),
 		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}),
 	}
 }

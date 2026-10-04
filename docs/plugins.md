@@ -125,6 +125,32 @@ subagents inherit containment; external CLIs retain their own internal tool poli
 use `plugins/permissions/native.ToolOptions` explicitly for local tools; browser/VFS hosts
 supply their own operations. Reads and network access are not restricted.
 
+### memtree
+
+A tree of one-line summaries over each session's whole history, after
+[OptChat](https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449): every message
+gets a line (a short message is its own line), adjacent lines merge in pairs up the tree, and a
+view of it, recent messages one line each and older ones many per line, stays under a fixed budget
+(128 KB, or half the model's context window in bytes). The agent opens any line back down to its
+message with `zoom(id, n)`, and `date(id)` dates a message.
+
+```json
+{ "plugins": { "memtree": { "mode": "compaction", "model": "provider/model-id" } } }
+```
+
+- `mode: "compaction"` (default): sessions run as usual, and when Orb compacts, the summary is the
+  view of everything before the kept messages: no model call, and nothing summarized twice.
+- `mode: "fresh"`: each prompt starts a new context, the view and then the prompt; earlier
+  messages are a zoom away. A compaction inside a long run rebases it on a newer view.
+- `model`: the compactor, as `provider/id`; the session's model when unset. It runs at medium
+  effort about once or twice per message, each call reading the view as context, so pick a cheap
+  model. Anthropic models reuse no cache across these calls.
+
+A turn (fresh mode) or a compaction waits up to a minute for the compactor to catch up, showing
+`memtree: summarizing N messages`; past that it goes ahead as plain Orb. Summaries are kept in
+`memtree/<session id>.jsonl` under the agent dir; deleting one only costs rebuilding it. Claude
+and Codex sessions run their own loop and bypass the plugin.
+
 ### memory, tasks, websearch
 
 Boolean gates. `memory` persists bounded remember/recall/replace/forget notes
