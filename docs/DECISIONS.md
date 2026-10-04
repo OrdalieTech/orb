@@ -115,7 +115,7 @@ kernel. Kernel surfaces:
 
 - `~/.pi/agent/` layout and files: `settings.json` (global + project merge semantics),
   `models.json`, `auth.json` (0600), `trust.json`, `keybindings.json`.
-- Product session JSONL v3 (+ v1/v2 migration) and harness session v4.
+- Product session JSONL v3 (+ v1/v2 migration).
 - Agent event JSON taxonomy and payloads (load-bearing for trace conformance).
 - RPC-mode frames and print/JSON output shapes.
 - Provider request/stream wire shapes, including `pi-messages`.
@@ -293,7 +293,7 @@ Each holds until changed by owner-signed decision.
 | Anthropic sign-in holds both loopback addresses | security adaptation | with the default `127.0.0.1` callback host Orb also binds `[::1]` and refuses to start when another program answers there, since the OAuth state carries the PKCE verifier. Nothing on the wire changes |
 | Bundled MCP extension | addition | owner requirement; kept out of core |
 | No codemode | not yet adopted | no `codemode` tool, script `models` API, classifier models or Jev; the system prompt's docs line names MCP but not `docs/codemode.md`, and tool `exposure: "codemode"` is treated as `deferred` |
-| Experimental harness is Orb-owned | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`) in v1.0.0; `engine/harness` is Orb's own, and its `F6Harness*` fixtures and the harness parts of F8/F10 are carried from the committed tree instead of extracted |
+| Experimental harness is Orb-owned | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`) in v1.0.0; `engine/harness` keeps only what Orb uses (JSONL v3 session storage, compaction, branch summaries, host ports), and the harness parts of F10 are carried from the committed tree instead of extracted. Session v4 is not supported |
 | Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb starts the run and reports `started` |
 | `packages/server`, `packages/{client,protocol}`, `packages/session-backends` | removed | experimental remote-session server, client, CBOR protocol and sqlite backend; outside Orb's product boundary |
 | `packages/telemetry`, telemetry/analytics settings | removed | unknown settings keys tolerated on parse, nothing sent, no plumbing |

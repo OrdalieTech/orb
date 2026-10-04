@@ -10,71 +10,6 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 )
 
-func TestCompactionTokenAccountingAndThreshold(t *testing.T) {
-	usage := ai.Usage{Input: 1000, Output: 500, CacheRead: 200, CacheWrite: 100, TotalTokens: 1800}
-	if got := CalculateContextTokens(usage); got != 1800 {
-		t.Fatalf("context tokens = %d", got)
-	}
-	usage.TotalTokens = 0
-	if got := CalculateContextTokens(usage); got != 1800 {
-		t.Fatalf("fallback context tokens = %d", got)
-	}
-	settings := CompactionSettings{Enabled: true, ReserveTokens: 10000, KeepRecentTokens: 20000}
-	if !ShouldCompact(90001, 100000, settings) {
-		t.Fatal("strictly over threshold did not compact")
-	}
-	if ShouldCompact(90000, 100000, settings) {
-		t.Fatal("threshold equality compacted")
-	}
-	settings.Enabled = false
-	if ShouldCompact(95000, 100000, settings) {
-		t.Fatal("disabled settings compacted")
-	}
-}
-
-func TestEstimateContextTokensUsesLastValidUsageAndTrailingEstimate(t *testing.T) {
-	errorText := "overloaded"
-	messages := engine.AgentMessages{
-		user("hello"),
-		assistant("first", 120),
-		user("😀tail"),
-		&ai.AssistantMessage{StopReason: ai.StopReasonError, ErrorMessage: &errorText, Usage: ai.Usage{}, Content: ai.AssistantContent{}},
-	}
-	estimate := EstimateContextTokens(messages)
-	if estimate.LastUsageIndex == nil || *estimate.LastUsageIndex != 1 || estimate.UsageTokens != 120 {
-		t.Fatalf("estimate anchor = %#v", estimate)
-	}
-	wantTrailing := EstimateTokens(messages[2]) + EstimateTokens(messages[3])
-	if estimate.TrailingTokens != wantTrailing || estimate.Tokens != 120+wantTrailing {
-		t.Fatalf("estimate = %#v, trailing want %d", estimate, wantTrailing)
-	}
-	image := &ai.ToolResultMessage{Content: ai.ToolResultContent{&ai.TextContent{Text: "text"}, &ai.ImageContent{MimeType: "image/png"}}}
-	if got := EstimateTokens(image); got <= 1000 {
-		t.Fatalf("image estimate = %d", got)
-	}
-}
-
-func TestFindCutPointAndPrepareCompaction(t *testing.T) {
-	entries := linearEntries(
-		user("old request that is long enough to summarize"), assistant("old answer that is long enough to summarize", 60),
-		user("recent request"), assistant("recent answer", 100),
-	)
-	cut := FindCutPoint(entries, 0, len(entries), 5)
-	if cut.FirstKeptEntryIndex != 2 || cut.TurnStartIndex != -1 || cut.IsSplitTurn {
-		t.Fatalf("cut = %#v", cut)
-	}
-	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prepared == nil || len(prepared.MessagesToSummarize) != 2 || len(prepared.RetainedTail) != 2 {
-		t.Fatalf("preparation = %#v", prepared)
-	}
-	if prepared.TokensBefore != 100 {
-		t.Fatalf("tokens before = %d", prepared.TokensBefore)
-	}
-}
-
 func TestPrepareTreeCompaction(t *testing.T) {
 	entries := []SessionTreeEntry{
 		{Type: "message", ID: "old-user", Timestamp: timestamp(1), Message: json.RawMessage(`{"role":"user","content":"old request that is long enough to summarize","timestamp":1}`)},
@@ -146,47 +81,6 @@ func TestV081CompactPropagatesRetainedTail(t *testing.T) {
 	}
 }
 
-func TestV081PublicCompactionResultWirePreservesEmptyRetainedTail(t *testing.T) {
-	withTail, err := json.Marshal(CompactionResult{
-		Summary: "summary", TokensBefore: 12, RetainedTail: engine.AgentMessages{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(withTail), `{"summary":"summary","tokensBefore":12,"retainedTail":[]}`; got != want {
-		t.Fatalf("public compaction result = %s, want %s", got, want)
-	}
-	withoutTail, err := json.Marshal(CompactionResult{Summary: "summary", TokensBefore: 12})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(withoutTail), `{"summary":"summary","tokensBefore":12}`; got != want {
-		t.Fatalf("legacy public compaction result = %s, want %s", got, want)
-	}
-}
-
-func TestPrepareLegacyCompactionRejectsSessionWithNoDiscardableMessages(t *testing.T) {
-	entries := linearEntries(user("short request"), assistant("short answer", 10))
-	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 16384, KeepRecentTokens: 20000})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prepared != nil {
-		t.Fatalf("preparation = %#v, want nil", prepared)
-	}
-}
-
-func TestPrepareLegacyCompactionRejectsSingleUserMessage(t *testing.T) {
-	entries := linearEntries(user("only request"))
-	prepared, err := PrepareLegacyCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 20_000})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prepared != nil {
-		t.Fatalf("preparation = %#v, want nil", prepared)
-	}
-}
-
 func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
 	call := &ai.ToolCall{ID: "call", Name: "write", Arguments: map[string]any{"path": "new.go"}}
 	entries := linearEntries(user("old"), &ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)})
@@ -217,16 +111,6 @@ func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
 	}
 }
 
-func TestSerializeConversationSkipsUnprojectableCustomMessage(t *testing.T) {
-	messages := engine.AgentMessages{
-		&CustomMessage{Role: "custom", CustomType: "broken", Content: 42},
-		user("kept"),
-	}
-	if got := SerializeConversation(messages); got != "[User]: kept" {
-		t.Fatalf("serialized = %q", got)
-	}
-}
-
 func TestPrepareLegacyCompactionReportsNothingToCompactForUnmigratedEntry(t *testing.T) {
 	entries := linearEntries(user("old request"), assistant(strings.Repeat("old answer ", 30), 80), user("recent"))
 	entries[2].ID = ""
@@ -237,34 +121,6 @@ func TestPrepareLegacyCompactionReportsNothingToCompactForUnmigratedEntry(t *tes
 	// Harness >=0.84 no longer resolves entry ids and accepts unmigrated entries.
 	if harnessPrepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1}); err != nil || harnessPrepared == nil {
 		t.Fatalf("harness prepared = %#v, err = %v", harnessPrepared, err)
-	}
-}
-
-func TestSummaryPromptStructureAndReasoning(t *testing.T) {
-	model := &ai.Model{Reasoning: true, MaxTokens: 128, ContextWindow: 1000}
-	previous := "old summary"
-	var seen ai.Context
-	var seenOptions ai.SimpleStreamOptions
-	complete := func(_ context.Context, _ *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
-		seen = request
-		seenOptions = *options
-		return assistant("## Goal\nDone", 10), nil
-	}
-	summary, err := GenerateSummary(context.Background(), engine.AgentMessages{user("work")}, model, complete, 1000, "focus", &previous, ai.ModelThinkingMedium)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary != "## Goal\nDone" || seen.SystemPrompt == nil || *seen.SystemPrompt != SummarizationSystemPrompt {
-		t.Fatalf("summary=%q context=%#v", summary, seen)
-	}
-	prompt := userMessageTextForTest(seen.Messages[0])
-	for _, required := range []string{"<conversation>", "<previous-summary>\nold summary", UpdateSummarizationPrompt, "Additional focus: focus"} {
-		if !strings.Contains(prompt, required) {
-			t.Fatalf("prompt missing %q", required)
-		}
-	}
-	if seenOptions.MaxTokens == nil || *seenOptions.MaxTokens != 128 || seenOptions.Reasoning == nil || *seenOptions.Reasoning != ai.ThinkingMedium {
-		t.Fatalf("options = %#v", seenOptions)
 	}
 }
 
@@ -301,35 +157,6 @@ func TestSummaryRequestsUseFreshSessionsWithoutCacheRetention(t *testing.T) {
 	}
 	if len(sessionIDs) != len(seen) {
 		t.Fatalf("summary session IDs were reused: %#v", seen)
-	}
-}
-
-func TestBranchPreparationAndPrompt(t *testing.T) {
-	read := &ai.ToolCall{ID: "read", Name: "read", Arguments: map[string]any{"path": "a.go"}}
-	entries := linearEntries(user("branch request"), &ai.AssistantMessage{Content: ai.AssistantContent{read}, StopReason: ai.StopReasonStop, Usage: usage(20)})
-	prepared := PrepareBranchEntries(entries, 1000)
-	if len(prepared.Messages) != 2 || prepared.TotalTokens == 0 {
-		t.Fatalf("prepared = %#v", prepared)
-	}
-	model := &ai.Model{ContextWindow: 1000, MaxTokens: 100}
-	var prompt string
-	complete := func(_ context.Context, _ *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
-		prompt = userMessageTextForTest(request.Messages[0])
-		if options.MaxTokens == nil || *options.MaxTokens != 2048 {
-			t.Fatalf("max tokens = %#v", options.MaxTokens)
-		}
-		return assistant("## Goal\nBranch", 10), nil
-	}
-	reserveTokens := int64(100)
-	result, err := GenerateBranchSummary(context.Background(), entries, GenerateBranchSummaryOptions{Model: model, Complete: complete, ReserveTokens: &reserveTokens})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(result.Summary, BranchSummaryPreamble) || !strings.Contains(prompt, BranchSummaryPrompt) {
-		t.Fatalf("result=%#v prompt=%q", result, prompt)
-	}
-	if len(result.ReadFiles) != 1 || result.ReadFiles[0] != "a.go" {
-		t.Fatalf("read files = %#v", result.ReadFiles)
 	}
 }
 

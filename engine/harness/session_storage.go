@@ -412,9 +412,6 @@ func rehydrateJSONLSessionWithHeader(
 	if len(lines) == 0 {
 		return nil, invalidHarnessSession(filePath, "missing session header")
 	}
-	if isV4HarnessHeaderLine(lines[0]) {
-		return rehydrateV4JSONLSession(content, filePath, appendLine)
-	}
 	header, err := parseHeader(lines[0], filePath)
 	if err != nil {
 		return nil, err

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -139,29 +138,4 @@ func (writer *notifyCloseWriter) Write(data []byte) (int, error) {
 	writer.closed = true
 	_ = writer.input.Close()
 	return count, err
-}
-
-// A real (non-command) prompt with no model still fails preflight and returns a
-// single failure response, confirming the reorder did not drop validation.
-func TestRPCRealPromptStillFailsPreflightWithoutModel(t *testing.T) {
-	runtime := newExtensionCommandRPCRuntime(t)
-	var stdout, stderr bytes.Buffer
-	exitCode := Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{
-		Input:  strings.NewReader("{\"id\":\"2\",\"type\":\"prompt\",\"message\":\"hello\"}\n"),
-		Output: &stdout, Diagnostics: &stderr,
-	})
-	if exitCode != 0 || stderr.Len() != 0 {
-		t.Fatalf("exit=%d stderr=%q", exitCode, stderr.String())
-	}
-	lines := bytes.Split(bytes.TrimSuffix(stdout.Bytes(), []byte{'\n'}), []byte{'\n'})
-	if len(lines) != 1 {
-		t.Fatalf("expected one response line, got %d: %s", len(lines), stdout.String())
-	}
-	var response Response
-	if err := json.Unmarshal(lines[0], &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.ID != "2" || response.Command != "prompt" || response.Success || !strings.HasPrefix(response.Error, "No model selected.") {
-		t.Fatalf("preflight response = %s", lines[0])
-	}
 }

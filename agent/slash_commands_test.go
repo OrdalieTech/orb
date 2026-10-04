@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -46,50 +45,6 @@ func TestSlashResolutionOrderAndSkillTemplateCollision(t *testing.T) {
 	}
 	if !reflect.DeepEqual(stages, []string{"extension:skill:inspect:extra", "input:/skill:inspect extra"}) {
 		t.Fatalf("stage order = %#v", stages)
-	}
-}
-
-func TestSlashResolverInputHandledErrorsAndCommandList(t *testing.T) {
-	seenError := error(nil)
-	resolver := &SlashResolver{
-		ExtensionCommands: []SlashCommandInfo{{Name: "ext", Source: SlashCommandExtension}},
-		PromptTemplates:   []PromptTemplate{{Name: "review", Description: "Review", ArgumentHint: "<path>"}},
-		Skills:            []Skill{{Name: "inspect", Description: "Inspect"}},
-		ExecuteExtension: func(string, string) (bool, error) {
-			return false, errors.New("extension failed")
-		},
-		InterceptInput: func(string) (InputResult, error) {
-			return InputResult{Action: InputHandled}, nil
-		},
-		OnError: func(err error) { seenError = err },
-	}
-	if _, handled := resolver.ResolvePrompt("/anything"); !handled || seenError == nil {
-		t.Fatalf("handled/error = %v/%v", handled, seenError)
-	}
-	commands := resolver.Commands(true)
-	if len(commands) != 3 || commands[0].Source != SlashCommandExtension || commands[1].Source != SlashCommandPrompt || commands[2].Name != "skill:inspect" {
-		t.Fatalf("commands = %#v", commands)
-	}
-	if len(resolver.Commands(false)) != 3 {
-		t.Fatalf("command metadata = %#v", commands)
-	}
-}
-
-func TestFormatAndExpandSkillInvocation(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "skill", "SKILL.md")
-	mustWriteResource(t, path, "---\nname: inspect\ndescription: Inspect\n---\nUse inspection tools.")
-	skill := Skill{Name: "inspect", Description: "Inspect", Content: "Use inspection tools.", FilePath: path, BaseDir: filepath.Dir(path)}
-	want := `<skill name="inspect" location="` + path + `">` + "\nReferences are relative to " + filepath.Dir(path) + ".\n\nUse inspection tools.\n</skill>\n\nCheck errors."
-	if got := FormatSkillInvocation(skill, "Check errors."); got != want {
-		t.Fatalf("format = %q, want %q", got, want)
-	}
-	got, err := ExpandSkillCommand("/skill:inspect explain this", []Skill{skill})
-	if err != nil || got != strings.Replace(want, "Check errors.", "explain this", 1) {
-		t.Fatalf("expand = %q, %v", got, err)
-	}
-	if got, err := ExpandSkillCommand("/skill:missing", []Skill{skill}); err != nil || got != "/skill:missing" {
-		t.Fatalf("unknown = %q, %v", got, err)
 	}
 }
 

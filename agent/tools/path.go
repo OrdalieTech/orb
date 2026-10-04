@@ -21,11 +21,6 @@ const narrowNoBreakSpace = "\u202f"
 
 var macOSScreenshotTime = regexp.MustCompile(` (?i:(AM|PM))\.`)
 
-// ExpandPath applies the path-input normalization used by the built-in tools.
-func ExpandPath(filePath string) (string, error) {
-	return expandPath(filePath, true, true)
-}
-
 func expandPath(filePath string, normalizeSpaces, stripAtPrefix bool) (string, error) {
 	if normalizeSpaces {
 		filePath = nodepath.NormalizeUnicodeSpaces(filePath)

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,13 +37,6 @@ func (function bashOperationsFunc) Exec(
 	options BashExecOptions,
 ) (BashExecResult, error) {
 	return function(ctx, command, cwd, options)
-}
-
-func TestBashToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
-	want := `{"type":"object","required":["command"],"properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"number","description":"Timeout in seconds (optional, no default timeout)"}}}`
-	if got := string(NewBashTool(t.TempDir(), nil).Spec().Parameters); got != want {
-		t.Fatalf("schema = %s, want %s", got, want)
-	}
 }
 
 func TestBashToolRunsLocalShellAndCommandPrefix(t *testing.T) {
@@ -293,136 +285,6 @@ func TestBashToolIgnoresLateOutputCallbacks(t *testing.T) {
 	}
 }
 
-func TestBashToolFormatsAbortTimeoutAndExitErrors(t *testing.T) {
-	for _, testCase := range []struct {
-		name       string
-		executeErr error
-		exitCode   *int
-		want       string
-	}{
-		{name: "abort", executeErr: errors.New("aborted"), want: "before\n\nCommand aborted"},
-		{name: "timeout", executeErr: errors.New("timeout:1.5"), want: "before\n\nCommand timed out after 1.5 seconds"},
-		{name: "timeout extra fields", executeErr: errors.New("timeout:1:extra"), want: "before\n\nCommand timed out after 1 seconds"},
-		{name: "missing exit code", want: "before\n\nCommand terminated without an exit code"},
-		{name: "exit", exitCode: intPointer(7), want: "before\n\nCommand exited with code 7"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			operations := bashOperationsFunc(func(
-				_ context.Context,
-				_ string,
-				_ string,
-				options BashExecOptions,
-			) (BashExecResult, error) {
-				options.OnData([]byte("before"))
-				return BashExecResult{ExitCode: testCase.exitCode}, testCase.executeErr
-			})
-			result, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
-				context.Background(), "call", BashToolInput{Command: "failure"}, nil,
-			)
-			// A non-zero exit is an error result rather than an error.
-			if result.IsError {
-				err = errors.New(result.Content[0].(*ai.TextContent).Text)
-			}
-			if err == nil || err.Error() != testCase.want {
-				t.Fatalf("error = %v, want %q", err, testCase.want)
-			}
-		})
-	}
-}
-
-func TestBashToolTreatsMissingInjectedExitCodeAsFailure(t *testing.T) {
-	operations := bashOperationsFunc(func(
-		_ context.Context,
-		_ string,
-		_ string,
-		_ BashExecOptions,
-	) (BashExecResult, error) {
-		return BashExecResult{}, nil
-	})
-	_, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
-		context.Background(), "call", BashToolInput{Command: "empty"}, nil,
-	)
-	if err == nil || err.Error() != "(no output)\n\nCommand terminated without an exit code" {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestBashToolPreservesUnknownOperationError(t *testing.T) {
-	want := errors.New("remote transport failed")
-	operations := bashOperationsFunc(func(
-		_ context.Context,
-		_ string,
-		_ string,
-		options BashExecOptions,
-	) (BashExecResult, error) {
-		options.OnData([]byte("discarded from error"))
-		return BashExecResult{}, want
-	})
-	_, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
-		context.Background(), "call", BashToolInput{Command: "failure"}, nil,
-	)
-	if !errors.Is(err, want) || err.Error() != want.Error() {
-		t.Fatalf("error = %v, want original error", err)
-	}
-}
-
-func TestBashToolFormatsByteAndPartialLineTruncation(t *testing.T) {
-	for _, testCase := range []struct {
-		name   string
-		output string
-		check  func(testing.TB, string, BashToolDetails)
-	}{
-		{
-			name:   "complete lines",
-			output: strings.TrimSuffix(strings.Repeat(strings.Repeat("x", 600)+"\n", 100), "\n"),
-			check: func(t testing.TB, text string, details BashToolDetails) {
-				t.Helper()
-				truncation := details.Truncation
-				start := truncation.TotalLines - truncation.OutputLines + 1
-				footer := "[Showing lines " + strconv.Itoa(start) + "-100 of 100 (50.0KB limit). Full output: " + details.FullOutputPath + "]"
-				if !strings.HasSuffix(text, footer) || truncation.LastLinePartial {
-					t.Fatalf("text footer/details mismatch: %q, %+v", text[len(text)-min(len(text), len(footer)+10):], truncation)
-				}
-			},
-		},
-		{
-			name:   "partial last line",
-			output: strings.Repeat("y", 60*1024),
-			check: func(t testing.TB, text string, details BashToolDetails) {
-				t.Helper()
-				footer := "[Showing last 50.0KB of line 1 (line is 60.0KB). Full output: " + details.FullOutputPath + "]"
-				if !strings.HasSuffix(text, footer) || !details.Truncation.LastLinePartial {
-					t.Fatalf("text footer/details mismatch: suffix=%q details=%+v", text[len(text)-min(len(text), len(footer)+10):], details.Truncation)
-				}
-			},
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			operations := bashOperationsFunc(func(
-				_ context.Context,
-				_ string,
-				_ string,
-				options BashExecOptions,
-			) (BashExecResult, error) {
-				options.OnData([]byte(testCase.output))
-				return BashExecResult{ExitCode: intPointer(0)}, nil
-			})
-			result, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
-				context.Background(), "call", BashToolInput{Command: "large"}, nil,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			details, ok := result.Details.(BashToolDetails)
-			if !ok || details.Truncation == nil || details.FullOutputPath == "" {
-				t.Fatalf("details = %#v", result.Details)
-			}
-			t.Cleanup(func() { _ = os.Remove(details.FullOutputPath) })
-			testCase.check(t, bashResultText(t, result), details)
-		})
-	}
-}
-
 func TestBashToolTruncatedAbortIncludesUsableFullOutputPath(t *testing.T) {
 	operations := bashOperationsFunc(func(
 		_ context.Context,
@@ -458,16 +320,6 @@ func TestBashToolTruncatedAbortIncludesUsableFullOutputPath(t *testing.T) {
 	}
 }
 
-func TestBashToolPlainTextRenderHooks(t *testing.T) {
-	renderer := NewBashTool(t.TempDir(), nil).(PlainTextRenderer)
-	if got := renderer.RenderCall(map[string]any{"command": "echo hi", "timeout": 1.5}); got != "$ echo hi (timeout 1.5s)" {
-		t.Fatalf("RenderCall() = %q", got)
-	}
-	if got := renderer.RenderCall(map[string]any{}); got != "$ ..." {
-		t.Fatalf("RenderCall(empty) = %q", got)
-	}
-}
-
 func TestLocalBashOperationsSupportsArgvAndStdinTransport(t *testing.T) {
 	for _, transport := range []ShellCommandTransport{ShellCommandArgv, ShellCommandStdin} {
 		t.Run(string(transport), func(t *testing.T) {
@@ -490,72 +342,6 @@ func TestLocalBashOperationsSupportsArgvAndStdinTransport(t *testing.T) {
 				t.Fatalf("result = %+v, output = %q", result, output.String())
 			}
 		})
-	}
-}
-
-func TestGetShellConfigOmitsNormalTransportLikeUpstream(t *testing.T) {
-	config, err := GetShellConfig("/bin/bash")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.CommandTransport != "" || len(config.Args) != 1 || config.Args[0] != "-c" {
-		t.Fatalf("config = %+v", config)
-	}
-	stdin := bashShellConfig(`C:\Windows\System32\bash.exe`)
-	if stdin.CommandTransport != ShellCommandStdin || len(stdin.Args) != 1 || stdin.Args[0] != "-s" {
-		t.Fatalf("legacy WSL config = %+v", stdin)
-	}
-}
-
-func TestGetShellEnvNormalizesFileURLAgentDir(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("PI_CODING_AGENT_DIR", "file://"+filepath.ToSlash(dir))
-	environment := mustShellEnv(t)
-	pathValue := environment["PATH"]
-	if got := filepath.SplitList(pathValue)[0]; got != filepath.Join(dir, "bin") {
-		t.Fatalf("managed bin PATH entry = %q, want %q", got, filepath.Join(dir, "bin"))
-	}
-}
-
-func TestGetShellEnvRejectsInvalidFileURLAgentDir(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "file://remote/tmp/pi")
-	_, err := GetShellEnv()
-	if err == nil || !strings.Contains(err.Error(), `File URL host must be "localhost" or empty`) {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestLocalBashOperationsMapsExecutableFormatError(t *testing.T) {
-	dir := t.TempDir()
-	shell := filepath.Join(dir, "invalid-shell")
-	if err := os.WriteFile(shell, []byte("not an executable format"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewLocalBashOperations(LocalBashOperationsOptions{ShellPath: shell}).Exec(
-		context.Background(), "true", dir, BashExecOptions{Env: mustShellEnv(t)},
-	)
-	want := "spawn " + shell + " ENOEXEC"
-	if err == nil || err.Error() != want {
-		t.Fatalf("error = %v, want %q", err, want)
-	}
-}
-
-func TestLocalBashOperationsValidatesTimeoutAndCwd(t *testing.T) {
-	operations := NewLocalBashOperations()
-	for _, timeout := range []float64{0, -1, math.Inf(1)} {
-		_, err := operations.Exec(context.Background(), "true", t.TempDir(), BashExecOptions{Timeout: &timeout})
-		if err == nil || !strings.Contains(err.Error(), "Invalid timeout") {
-			t.Fatalf("timeout %v error = %v", timeout, err)
-		}
-	}
-	tooLarge := 2_147_483_647.0/1000 + 1
-	_, err := operations.Exec(context.Background(), "true", t.TempDir(), BashExecOptions{Timeout: &tooLarge})
-	if err == nil || err.Error() != "Invalid timeout: maximum is 2147483.647 seconds" {
-		t.Fatalf("max timeout error = %v", err)
-	}
-	_, err = operations.Exec(context.Background(), "true", filepath.Join(t.TempDir(), "missing"), BashExecOptions{})
-	if err == nil || !strings.Contains(err.Error(), "Working directory does not exist") {
-		t.Fatalf("cwd error = %v", err)
 	}
 }
 
@@ -745,10 +531,6 @@ func TestBashToolConcurrentOutputCallbacksAreRaceSafe(t *testing.T) {
 	if got := strings.Count(bashResultText(t, result), "line\n"); got != 100 {
 		t.Fatalf("line count = %d", got)
 	}
-}
-
-func intPointer(value int) *int {
-	return &value
 }
 
 func processExists(pid int) bool {

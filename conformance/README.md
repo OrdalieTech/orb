@@ -12,9 +12,7 @@ they are excluded from upstream extraction and from the `fixtures-check` diff, g
 comparison tests, and regenerated only by `make fixtures-tui` (`ORB_UPDATE_F12=1`), which rewrites
 presentation values (frames, highlight output, theme colors, layout) in place while behavior-shaped
 values in the same files stay frozen upstream captures. Their `manifest.json` files keep the
-provenance of the original capture. The harness session families (`F6Harness*`) are Orb-owned too,
-since upstream deleted its harness in v1.0.0. Every other family is an upstream-extracted pi-parity
-gate.
+provenance of the original capture. Every other family is an upstream-extracted pi-parity gate.
 
 A fixture change is accepted only when the upstream behavior changed, a case was deliberately
 added, or (render goldens only) an Orb presentation change was deliberately regenerated. A failing
@@ -43,8 +41,7 @@ fixed or canonicalized at extraction time so goldens stay machine-independent.
 - **F5** — truncation helpers and the streaming output accumulator; spilled bytes compare as
   base64 so invalid UTF-8 stays observable.
 - **F6** — session tree, branch persistence, fork wire, listing and HTML export (complete hash,
-  embedded payload and a DOM projection); `F6Harness*` covers the harness session, repositories
-  and execution environment.
+  embedded payload and a DOM projection).
 - **F7** — a strict-LF bidirectional RPC transcript replayed through the Go mode and a built
   `orb --mode rpc`. `make upstream-rpc-tests` also runs upstream's RPC test files unmodified
   against the Go binary through upstream's `RpcClient`.

@@ -32,7 +32,7 @@ func TestEmptyAuthFileSelfHeals(t *testing.T) {
 	if saved == nil || saved.Key == nil || *saved.Key != "sk-test" {
 		t.Fatalf("saved credential = %#v", saved)
 	}
-	credential := ReadStoredCredential("anthropic", path)
+	credential, _ := storage.Read(context.Background(), "anthropic")
 	if credential == nil || credential.Key == nil || *credential.Key != "sk-test" {
 		t.Fatalf("re-read credential = %#v", credential)
 	}

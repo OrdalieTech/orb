@@ -268,33 +268,6 @@ func TestJSONLRuntimeDelayedFlushUsesExclusiveCreate(t *testing.T) {
 	}
 }
 
-func TestRepoBoundHarnessRuntimeUnsavedForkMatchesUpstreamError(t *testing.T) {
-	ctx := context.Background()
-	cwd := t.TempDir()
-	runtime, _ := newFidelityHarnessRepoRuntime(t, cwd, nil)
-	path := filepath.Join(filepath.Dir(runtime.Session().Manager().GetSessionFile()), "unsaved-fork.jsonl")
-	if result, err := runtime.SwitchSession(ctx, path, nil); err != nil || result.Cancelled {
-		t.Fatalf("switch missing session path = %#v, %v", result, err)
-	}
-	active := runtime.Session()
-	userID, err := active.Manager().AppendMessage(map[string]any{"role": "user", "content": "fork before save", "timestamp": int64(1)})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := runtime.Fork(ctx, userID, &extensions.ForkOptions{Position: extensions.ForkAt})
-	const want = "This session has not been saved yet. Wait for the first assistant response before cloning or forking it."
-	if err == nil || err.Error() != want {
-		t.Fatalf("unsaved fork = %#v, %v, want exact error %q", result, err, want)
-	}
-	if result.Cancelled {
-		t.Fatal("unsaved fork was reported as cancelled")
-	}
-	if runtime.Session() != active {
-		t.Fatal("failed unsaved fork replaced the active runtime")
-	}
-}
-
 func futureHarnessSessionJSONL(cwd, id, userID string) []byte {
 	return []byte(
 		`{"type":"session","version":999,"id":"` + id + `","timestamp":"2026-07-18T00:00:00.000Z","cwd":` + jsonText(cwd) + `}` + "\n" +

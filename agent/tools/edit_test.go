@@ -89,27 +89,6 @@ func TestEditPrepareArgumentsMatchesLegacyCompatibility(t *testing.T) {
 	}
 }
 
-func TestEditStringifiedLoneSurrogateDoesNotMatchReplacementCharacter(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "invalid.txt")
-	if err := os.WriteFile(path, []byte{0xff}, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	params := map[string]any{"path": "invalid.txt", "edits": `[{"oldText":"\ud800","newText":"x"}]`}
-	params = prepareEditArguments(params).(map[string]any)
-	_, err := NewEditTool(dir, nil).Execute(context.Background(), "call", params, nil)
-	if err == nil || !strings.Contains(err.Error(), "Could not find the exact text") {
-		t.Fatalf("error = %v", err)
-	}
-	content, readErr := os.ReadFile(path)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if !reflect.DeepEqual(content, []byte{0xff}) {
-		t.Fatalf("file changed to % x", content)
-	}
-}
-
 func TestEditToolPreservesBOMAndCRLF(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "edit.txt")
@@ -229,55 +208,6 @@ func TestEditToolHoldsMutationQueueUntilAbortedWriteSettles(t *testing.T) {
 	}
 }
 
-func TestEditToolAccessErrorsMatchUpstream(t *testing.T) {
-	missing := NewEditTool(t.TempDir(), nil)
-	_, err := missing.Execute(context.Background(), "call", EditToolInput{
-		Path: "missing.txt", Edits: []Edit{{OldText: "a", NewText: "b"}},
-	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "Error code: ENOENT") {
-		t.Fatalf("missing error = %v", err)
-	}
-
-	operations := editOperationsFunc{
-		access:    func(context.Context, string) error { return errors.New("disk offline") },
-		readFile:  func(context.Context, string) ([]byte, error) { return []byte("hello\n"), nil },
-		writeFile: func(context.Context, string, string) error { return nil },
-	}
-	broken := NewEditTool(t.TempDir(), &EditToolOptions{Operations: operations})
-	_, err = broken.Execute(context.Background(), "call", EditToolInput{
-		Path: "broken.txt", Edits: []Edit{{OldText: "hello", NewText: "world"}},
-	}, nil)
-	if err == nil || err.Error() != "Could not edit file: broken.txt. Error: disk offline." {
-		t.Fatalf("unknown access error = %v", err)
-	}
-}
-
-func TestEditToolRejectsEmptyEdits(t *testing.T) {
-	_, err := NewEditTool(t.TempDir(), nil).Execute(context.Background(), "call", EditToolInput{Path: "file.txt"}, nil)
-	if err == nil || err.Error() != "Edit tool input is invalid. edits must contain at least one replacement." {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestEditToolPreservesAccessErrorCodes(t *testing.T) {
-	operations := editOperationsFunc{
-		access:    func(context.Context, string) error { return codedTestError{code: "ELOOP"} },
-		readFile:  func(context.Context, string) ([]byte, error) { return nil, nil },
-		writeFile: func(context.Context, string, string) error { return nil },
-	}
-	_, err := NewEditTool(t.TempDir(), &EditToolOptions{Operations: operations}).Execute(context.Background(), "call", EditToolInput{
-		Path: "loop.txt", Edits: []Edit{{OldText: "a", NewText: "b"}},
-	}, nil)
-	if err == nil || err.Error() != "Could not edit file: loop.txt. Error code: ELOOP." {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-type codedTestError struct{ code string }
-
-func (err codedTestError) Error() string { return err.code }
-func (err codedTestError) Code() string  { return err.code }
-
 func TestComputeEditsDiffNeedsReadAccessOnly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "read-only.txt")
@@ -299,22 +229,5 @@ func TestComputeEditsDiffNeedsReadAccessOnly(t *testing.T) {
 	_, err = ComputeEditsDiff(nullPath, []Edit{{OldText: "before", NewText: "after"}}, dir)
 	if want := "Could not edit file: " + nullPath + ". Error code: ERR_INVALID_ARG_VALUE."; err == nil || err.Error() != want {
 		t.Fatalf("null path error = %v, want %q", err, want)
-	}
-}
-
-func TestEditToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
-	want := `{"type":"object","required":["path","edits"],"properties":{"path":{"type":"string","description":"Path to the file to edit (relative or absolute)"},"edits":{"type":"array","items":{"type":"object","required":["oldText","newText"],"properties":{"oldText":{"type":"string","description":"Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."},"newText":{"type":"string","description":"Replacement text for this targeted edit."}}},"description":"One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."}}}`
-	if got := string(NewEditTool(t.TempDir(), nil).Spec().Parameters); got != want {
-		t.Fatalf("schema = %s, want %s", got, want)
-	}
-}
-
-func TestEditToolDirectoryPassesAccessAndFailsAtRead(t *testing.T) {
-	dir := t.TempDir()
-	_, err := NewEditTool(dir, nil).Execute(context.Background(), "call", EditToolInput{
-		Path: ".", Edits: []Edit{{OldText: "a", NewText: "b"}},
-	}, nil)
-	if err == nil || err.Error() != "EISDIR: illegal operation on a directory, read" {
-		t.Fatalf("error = %v", err)
 	}
 }

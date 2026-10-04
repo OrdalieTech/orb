@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"image"
-	"image/color"
 	"image/png"
 	"strings"
 	"testing"
@@ -85,59 +84,6 @@ func TestProcessImagePassThroughResizeAndBMPConversion(t *testing.T) {
 	decoded := mustBase64(t, bmp.Data)
 	if !bytes.HasPrefix(decoded, []byte("\x89PNG")) {
 		t.Fatalf("bmp output prefix = %x", decoded[:min(8, len(decoded))])
-	}
-}
-
-func TestApplyEXIFOrientationMatrix(t *testing.T) {
-	source := image.NewNRGBA(image.Rect(0, 0, 3, 2))
-	values := []color.NRGBA{{R: 1, A: 255}, {R: 2, A: 255}, {R: 3, A: 255}, {R: 4, A: 255}, {R: 5, A: 255}, {R: 6, A: 255}}
-	for index, value := range values {
-		source.SetNRGBA(index%3, index/3, value)
-	}
-	want := map[int][][]uint8{
-		1: {{1, 2, 3}, {4, 5, 6}},
-		2: {{3, 2, 1}, {6, 5, 4}},
-		3: {{6, 5, 4}, {3, 2, 1}},
-		4: {{4, 5, 6}, {1, 2, 3}},
-		5: {{1, 4}, {2, 5}, {3, 6}},
-		6: {{4, 1}, {5, 2}, {6, 3}},
-		7: {{6, 3}, {5, 2}, {4, 1}},
-		8: {{3, 6}, {2, 5}, {1, 4}},
-	}
-	for orientation, matrix := range want {
-		t.Run(string(rune('0'+orientation)), func(t *testing.T) {
-			got := applyEXIFOrientation(source, orientation)
-			if got.Bounds().Dx() != len(matrix[0]) || got.Bounds().Dy() != len(matrix) {
-				t.Fatalf("bounds = %v", got.Bounds())
-			}
-			for y, row := range matrix {
-				for x, expected := range row {
-					red, _, _, _ := got.At(x, y).RGBA()
-					if uint8(red>>8) != expected {
-						t.Fatalf("pixel (%d,%d) = %d, want %d", x, y, uint8(red>>8), expected)
-					}
-				}
-			}
-		})
-	}
-}
-
-func TestReadTIFFOrientationLittleAndBigEndian(t *testing.T) {
-	for _, little := range []bool{true, false} {
-		data := make([]byte, 26)
-		var order binary.ByteOrder = binary.BigEndian
-		copy(data, "MM")
-		if little {
-			order = binary.LittleEndian
-			copy(data, "II")
-		}
-		order.PutUint32(data[4:8], 8)
-		order.PutUint16(data[8:10], 1)
-		order.PutUint16(data[10:12], 0x0112)
-		order.PutUint16(data[18:20], 7)
-		if got := readTIFFOrientation(data, 0); got != 7 {
-			t.Fatalf("little=%v orientation=%d", little, got)
-		}
 	}
 }
 

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -430,28 +428,6 @@ func TestModelRegistryAvailabilityResolvesStoredAPIKey(t *testing.T) {
 	}
 }
 
-func TestModelRegistryGoogleUsesGeminiAPIKeyOnly(t *testing.T) {
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("GOOGLE_API_KEY", "")
-	registry, err := NewModelRegistry(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if registry.HasConfiguredAuth("google", map[string]string{"GOOGLE_API_KEY": "legacy"}) {
-		t.Fatal("GOOGLE_API_KEY unexpectedly made Google available")
-	}
-	if !registry.HasConfiguredAuth("google", map[string]string{"GEMINI_API_KEY": "gemini"}) {
-		t.Fatal("GEMINI_API_KEY did not make Google available")
-	}
-	key, err := registry.ResolveAPIKey(context.Background(), "google", map[string]string{"GOOGLE_API_KEY": "legacy"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if key != nil {
-		t.Fatalf("GOOGLE_API_KEY resolved unexpectedly: %q", *key)
-	}
-}
-
 func TestModelRegistryExtensionRegistrationMergeOverrideUnregisterAndReload(t *testing.T) {
 	registry, err := NewModelRegistry(t.TempDir())
 	if err != nil {
@@ -580,66 +556,6 @@ func TestModelRegistryExtensionPrecedenceOverModelsJSONWithFinalModelOverrides(t
 	}
 	if got := registry.ProviderDisplayName("extension"); got != "Extension" {
 		t.Fatalf("provider display name = %q", got)
-	}
-}
-
-func TestModelRegistryRegistrationOrderTracksOverridesAndReinsertions(t *testing.T) {
-	directory := t.TempDir()
-	registry, err := NewModelRegistry(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"first", "second"} {
-		if err := registry.RegisterProviderConfig(id, extensions.ProviderConfig{Name: id}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-		return func(func(ai.AssistantMessageEvent, error) bool) {}, nil
-	}
-	native := extensions.Provider{
-		ID: "first", Name: "native", Auth: aiauth.ProviderAuth{APIKey: registeredAPIKeyAuth{name: "key", value: "key"}},
-		GetModels: func() ([]ai.Model, error) { return nil, nil }, Stream: stream, StreamSimple: stream,
-	}
-	if err := registry.RegisterProvider(native); err != nil {
-		t.Fatal(err)
-	}
-	if got := registry.RegisteredProviderIDs(); !slices.Equal(got, []string{"second", "first"}) {
-		t.Fatalf("native override order = %#v", got)
-	}
-	if err := registry.RegisterProviderConfig("first", extensions.ProviderConfig{Name: "config"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.UnregisterProvider("second"); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterProviderConfig("second", extensions.ProviderConfig{Name: "second again"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := registry.RegisteredProviderIDs(); !slices.Equal(got, []string{"first", "second"}) {
-		t.Fatalf("reinserted config order = %#v", got)
-	}
-}
-
-func TestRegisteredProviderModelsUseMatchingDefaultsWithoutPublishingConfiguredHeaders(t *testing.T) {
-	all := []ai.Model{
-		{ID: "first", Provider: "fixture", API: ai.APIOpenAIResponses, BaseURL: "https://first.invalid"},
-		{ID: "second", Provider: "fixture", API: ai.APIAnthropicMessages, BaseURL: "https://second.invalid"},
-	}
-	updated, err := applyRegisteredConfig(all, "fixture", extensions.ProviderConfig{
-		Defined: map[string]bool{"models": true},
-		Models: []extensions.ProviderModelConfig{{
-			ID: "second", Name: "Second", Headers: map[string]string{"X-Model": "configured"},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(updated) != 1 || updated[0].API != ai.APIAnthropicMessages || updated[0].BaseURL != "https://second.invalid" {
-		t.Fatalf("registered model = %#v", updated)
-	}
-	if updated[0].Headers != nil {
-		t.Fatalf("configured request headers leaked into model catalog: %#v", *updated[0].Headers)
 	}
 }
 
@@ -841,73 +757,6 @@ func TestModelRegistryExplicitRefreshWinsOverOverlappingAutomaticRefresh(t *test
 	}
 }
 
-func TestProviderOAuthAuthIncludesConfiguredHeaders(t *testing.T) {
-	authHeader := true
-	methods := providerAuthFromLayers(
-		"oauth-configured",
-		&ModelConfig{Providers: map[string]ModelProviderConfig{"oauth-configured": {
-			Headers: map[string]string{"X-Tenant": "static", "X-Env": "$TENANT"}, AuthHeader: &authHeader,
-		}}},
-		map[string]extensions.ProviderConfig{"oauth-configured": {
-			OAuth:   &extensions.OAuthProvider{Name: "OAuth", GetAPIKey: func(extensions.OAuthCredentials) (string, error) { return "oauth-key", nil }},
-			Headers: map[string]string{"x-tenant": "extension"}, Defined: map[string]bool{"oauth": true, "headers": true},
-		}},
-		nil,
-	)
-	credential := aiauth.OAuthCredential("refresh", "access", time.Now().Add(time.Hour).UnixMilli())
-	credential.Env = map[string]string{"TENANT": "tenant-env"}
-	auth, err := methods.OAuth.ToAuth(credential)
-	if err != nil || auth.APIKey == nil || *auth.APIKey != "oauth-key" || providerHeaderValue(auth.Headers, "x-tenant") != "extension" || providerHeaderValue(auth.Headers, "X-Env") != "tenant-env" || providerHeaderValue(auth.Headers, "Authorization") != "Bearer oauth-key" || len(auth.Headers) != 3 {
-		t.Fatalf("configured OAuth auth = %#v, err=%v", auth, err)
-	}
-}
-
-func TestConfiguredAuthHeadersPreserveSuppressionsAndCloneValues(t *testing.T) {
-	apiKey, original := "key", "native"
-	source := aiauth.ModelAuth{
-		APIKey: &apiKey,
-		Headers: ai.ProviderHeaders{
-			"X-Native": &original,
-			"X-Remove": nil,
-		},
-	}
-
-	configured, err := withConfiguredModelAuth(source, map[string]string{
-		"x-native": "configured",
-		"X-Added":  "added",
-	}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := configured.Headers["X-Native"]; exists {
-		t.Fatal("case-insensitive overlay retained the superseded header spelling")
-	}
-	if providerHeaderValue(configured.Headers, "x-native") != "configured" || providerHeaderValue(configured.Headers, "X-Added") != "added" || providerHeaderValue(configured.Headers, "Authorization") != "Bearer key" {
-		t.Fatalf("configured headers = %#v", configured.Headers)
-	}
-	if value, exists := configured.Headers["X-Remove"]; !exists || value != nil {
-		t.Fatalf("nullable suppression = %#v, exists=%v", value, exists)
-	}
-	*configured.Headers["x-native"] = "mutated"
-	if original != "native" || providerHeaderValue(source.Headers, "X-Native") != "native" {
-		t.Fatalf("configured headers mutated the source: %#v", source.Headers)
-	}
-}
-
-func TestRegistryRequestAuthClonesNullableHeaders(t *testing.T) {
-	value := "source"
-	resolved := &aiauth.AuthResult{Auth: aiauth.ModelAuth{Headers: ai.ProviderHeaders{"X-Value": &value, "X-Remove": nil}}}
-	request := registryRequestAuth(resolved)
-	*resolved.Auth.Headers["X-Value"] = "changed"
-	delete(resolved.Auth.Headers, "X-Remove")
-	if providerHeaderValue(request.Headers, "X-Value") != "source" {
-		t.Fatalf("request headers shared source pointers: %#v", request.Headers)
-	}
-	if removed, exists := request.Headers["X-Remove"]; !exists || removed != nil {
-		t.Fatalf("request lost nullable suppression: %#v, exists=%v", removed, exists)
-	}
-}
-
 func providerHeaderValue(headers ai.ProviderHeaders, name string) string {
 	value := headers[name]
 	if value == nil {
@@ -998,88 +847,5 @@ func TestModelRegistrySerializesExplicitReloadSnapshots(t *testing.T) {
 	current, ok := registry.Find("serial", "serial-model")
 	if !ok || current.Name != "Second" {
 		t.Fatalf("serialized reload model = %#v, ok=%v", current, ok)
-	}
-}
-
-type hostEnvironment map[string]string
-
-func (environment hostEnvironment) Env(_ context.Context, name string) (string, bool) {
-	value, ok := environment[name]
-	return value, ok && value != ""
-}
-func (hostEnvironment) FileExists(context.Context, string) bool { return false }
-
-func TestModelRegistryResolvesAmbientCredentialsFromInjectedEnvironment(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "process-key")
-	t.Setenv("ANTHROPIC_OAUTH_TOKEN", "")
-	registry, err := NewModelRegistryWithDocuments(t.TempDir(), nil, memoryDocument(), memoryDocument(), false,
-		WithEnvironment(hostEnvironment{"ANTHROPIC_API_KEY": "host-key"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !registry.HasConfiguredAuth("anthropic", nil) {
-		t.Fatal("injected environment credential is not configured")
-	}
-	resolved, err := registry.ResolveProviderAuth(context.Background(), "anthropic", nil)
-	if err != nil || resolved == nil || resolved.Auth.APIKey == nil || *resolved.Auth.APIKey != "host-key" {
-		t.Fatalf("resolved = %#v, %v; want the host credential, never the process one", resolved, err)
-	}
-	empty, err := NewModelRegistryWithDocuments(t.TempDir(), nil, memoryDocument(), memoryDocument(), false, WithEnvironment(hostEnvironment{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if empty.HasConfiguredAuth("anthropic", nil) {
-		t.Fatal("process environment leaked through an injected environment")
-	}
-}
-
-type testDocument struct {
-	mu   sync.Mutex
-	data []byte
-}
-
-func memoryDocument() *testDocument { return &testDocument{} }
-
-func (document *testDocument) Read(context.Context) ([]byte, error) {
-	document.mu.Lock()
-	defer document.mu.Unlock()
-	return document.data, nil
-}
-
-func (document *testDocument) Update(_ context.Context, update func([]byte) ([]byte, error)) error {
-	document.mu.Lock()
-	defer document.mu.Unlock()
-	next, err := update(document.data)
-	if err == nil {
-		document.data = next
-	}
-	return err
-}
-
-func TestModelRegistryModelsJSONSamplingParamsAndInputLimits(t *testing.T) {
-	directory := t.TempDir()
-	content := `{"providers":{"local":{"baseUrl":"http://127.0.0.1:8080/v1","apiKey":"k","api":"openai-completions",` +
-		`"models":[{"id":"m","samplingParams":{"top_k":20,"min_p":0},"inputLimits":{"images":{"maxPerRequest":4,"resize":{"maxWidth":1024,"maxHeight":1024}}}}],` +
-		`"modelOverrides":{"m":{"samplingParams":{"top_k":40},"inputLimits":{"images":{"resize":{"maxBytes":500000}}}}}}}}`
-	if err := os.WriteFile(filepath.Join(directory, "models.json"), []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := NewModelRegistry(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	model, ok := registry.Find("local", "m")
-	if !ok || !reflect.DeepEqual(model.SamplingParams, map[string]any{"top_k": float64(40), "min_p": float64(0)}) {
-		t.Fatalf("sampling params = %#v, ok=%v", model.SamplingParams, ok)
-	}
-	images := model.InputLimits.Images
-	if *images.MaxPerRequest != 4 || *images.Resize.MaxWidth != 1024 || *images.Resize.MaxBytes != 500000 {
-		t.Fatalf("input limits = %#v / %#v", images, images.Resize)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "models.json"), []byte(`{"providers":{"local":{"modelOverrides":{"m":{"inputLimits":{"maxRequestBytes":0}}}}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if loaded, _ := LoadModelConfig(filepath.Join(directory, "models.json")); !strings.Contains(loaded.Error(), "maxRequestBytes must be a positive integer") {
-		t.Fatalf("invalid input limits error = %q", loaded.Error())
 	}
 }

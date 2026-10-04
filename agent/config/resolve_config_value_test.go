@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -29,20 +28,6 @@ func TestResolveConfigValueTemplates(t *testing.T) {
 		if got != test.want || ok != test.wantOK {
 			t.Errorf("ResolveConfigValue(%q) = %q, %t; want %q, %t", test.value, got, ok, test.want, test.wantOK)
 		}
-	}
-}
-
-func TestConfigValueInspectionAndStrictResolution(t *testing.T) {
-	t.Setenv("PRESENT", "value")
-	if names := GetConfigValueEnvVarNames("$PRESENT/${MISSING}/$PRESENT"); !reflect.DeepEqual(names, []string{"PRESENT", "MISSING"}) {
-		t.Fatalf("env names = %#v", names)
-	}
-	if _, err := ResolveConfigValueOrThrow("$PRESENT/$MISSING", "test value", nil); err == nil || err.Error() != "failed to resolve test value from environment variable: MISSING" {
-		t.Fatalf("strict error = %v", err)
-	}
-	resolved, err := ResolveHeadersOrThrow(map[string]string{"x-key": "$PRESENT"}, "provider", nil)
-	if err != nil || !reflect.DeepEqual(resolved, map[string]string{"x-key": "value"}) {
-		t.Fatalf("headers = %#v, %v", resolved, err)
 	}
 }
 

@@ -8,22 +8,6 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 )
 
-// Skill is the harness-level, execution-environment-neutral Agent Skills shape.
-type Skill struct {
-	Name                   string
-	Description            string
-	Content                string
-	FilePath               string
-	DisableModelInvocation bool
-}
-
-// PromptTemplate is the harness-level explicit prompt expansion resource.
-type PromptTemplate struct {
-	Name        string
-	Description string
-	Content     string
-}
-
 type FileKind string
 
 const (
@@ -75,14 +59,6 @@ type FileInfo struct {
 	Kind    FileKind
 	Size    int64
 	MTimeMS float64
-}
-
-// ResourceFileSystem is the read-only filesystem slice used by resource discovery.
-type ResourceFileSystem interface {
-	ResourceFileInfo(path string) (FileInfo, error)
-	ResourceListDir(path string) ([]FileInfo, error)
-	ResourceReadTextFile(path string) (string, error)
-	ResourceCanonicalPath(path string) (string, error)
 }
 
 type ExecutionErrorCode string

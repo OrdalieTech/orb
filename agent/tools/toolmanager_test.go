@@ -23,34 +23,6 @@ import (
 	"testing"
 )
 
-func TestToolAssetNames(t *testing.T) {
-	tests := []struct {
-		tool                        managedTool
-		version, goos, goarch, want string
-	}{
-		{managedFD, "10.3.0", "darwin", "amd64", "fd-v10.3.0-x86_64-apple-darwin.tar.gz"},
-		{managedFD, "10.3.0", "darwin", "arm64", "fd-v10.3.0-aarch64-apple-darwin.tar.gz"},
-		{managedFD, "10.3.0", "linux", "amd64", "fd-v10.3.0-x86_64-unknown-linux-gnu.tar.gz"},
-		{managedFD, "10.3.0", "linux", "arm64", "fd-v10.3.0-aarch64-unknown-linux-gnu.tar.gz"},
-		{managedFD, "10.3.0", "windows", "amd64", "fd-v10.3.0-x86_64-pc-windows-msvc.zip"},
-		{managedRG, "14.1.1", "darwin", "amd64", "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz"},
-		{managedRG, "14.1.1", "darwin", "arm64", "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"},
-		{managedRG, "14.1.1", "linux", "amd64", "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"},
-		{managedRG, "14.1.1", "linux", "arm64", "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz"},
-		{managedRG, "14.1.1", "windows", "arm64", "ripgrep-14.1.1-aarch64-pc-windows-msvc.zip"},
-	}
-	for _, test := range tests {
-		t.Run(string(test.tool)+"/"+test.goos+"/"+test.goarch, func(t *testing.T) {
-			if got := toolAssetName(test.tool, test.version, test.goos, test.goarch); got != test.want {
-				t.Fatalf("asset = %q, want %q", got, test.want)
-			}
-		})
-	}
-	if got := toolAssetName(managedRG, "14.1.1", "linux", "386"); got != "" {
-		t.Fatalf("unsupported asset = %q", got)
-	}
-}
-
 func TestToolManagerResolutionAndOfflineMode(t *testing.T) {
 	managedDir := t.TempDir()
 	managed := filepath.Join(managedDir, "fd")

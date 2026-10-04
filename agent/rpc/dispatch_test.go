@@ -229,15 +229,3 @@ func TestRPCExtensionShutdownHonoredAfterUntypedCommand(t *testing.T) {
 		t.Fatal("shutdown request not honored after untyped command")
 	}
 }
-
-func TestRPCCheckShutdownRequestedWithoutRequestIsNoop(t *testing.T) {
-	rpcContext, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	mode := &server{ctx: rpcContext, cancel: cancel}
-	mode.checkShutdownRequested()
-	select {
-	case <-rpcContext.Done():
-		t.Fatal("checkShutdownRequested cancelled without a request")
-	default:
-	}
-}

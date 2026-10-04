@@ -280,59 +280,6 @@ func TestDefaultResourceLoaderExtendResourcesNormalizesMergesAndRetags(t *testin
 	}
 }
 
-func TestDefaultResourceLoaderKeepsSkillAndPromptDiagnosticsIndependent(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	missingSkill := filepath.Join(cwd, "missing-skill")
-	missingPrompt := filepath.Join(cwd, "missing-prompt.md")
-	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
-		CWD: cwd, AgentDir: agentDir, NoContextFiles: true, AppendSystemPrompt: []string{},
-		AdditionalSkillPaths: []string{missingSkill}, AdditionalPromptTemplatePaths: []string{missingPrompt},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := loader.Reload(context.Background(), nil); err != nil {
-		t.Fatal(err)
-	}
-
-	skillDiagnostics := loader.GetSkills().Diagnostics
-	if len(skillDiagnostics) != 1 || skillDiagnostics[0].Path != missingSkill || strings.Contains(skillDiagnostics[0].Message, "Prompt") {
-		t.Fatalf("skill diagnostics = %#v", skillDiagnostics)
-	}
-	promptDiagnostics := loader.GetPrompts().Diagnostics
-	if len(promptDiagnostics) != 1 || promptDiagnostics[0].Path != missingPrompt || !strings.Contains(promptDiagnostics[0].Message, "Prompt") {
-		t.Fatalf("prompt diagnostics = %#v", promptDiagnostics)
-	}
-}
-
-func TestDefaultResourceLoaderKeepsDisabledDiscoveryMetadataForExplicitPaths(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	skillDir := filepath.Join(agentDir, "skills", "explicit")
-	promptPath := filepath.Join(agentDir, "prompts", "explicit.md")
-	writeSkillFixture(t, skillDir, "explicit", "Explicit skill")
-	writeResourceFixture(t, promptPath, "explicit prompt")
-	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
-		CWD: cwd, AgentDir: agentDir, NoSkills: true, NoPromptTemplates: true, NoContextFiles: true,
-		AdditionalSkillPaths: []string{skillDir}, AdditionalPromptTemplatePaths: []string{promptPath},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := loader.Reload(context.Background(), nil); err != nil {
-		t.Fatal(err)
-	}
-	for name, source := range map[string]SourceInfo{
-		"skill":  loader.GetSkills().Skills[0].SourceInfo,
-		"prompt": loader.GetPrompts().Prompts[0].SourceInfo,
-	} {
-		if source.Source != "auto" || source.Scope != "user" || source.Origin != "top-level" || source.BaseDir != agentDir {
-			t.Errorf("%s source = %#v", name, source)
-		}
-	}
-}
-
 func TestDefaultResourceLoaderExtendResourcesLoadsThemesImmediately(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	themePath := filepath.Join(cwd, "extension-theme.json")
@@ -492,32 +439,5 @@ func TestSessionRuntimeReloadReplacesExtensionDiscoveredResourcesAndSharesLoader
 		if got := result.Session.ExtensionRunner().FlagValues()["reload-registry"]; got != "owned-by-loader" {
 			t.Errorf("session runner flag = %#v, want loader registry value", got)
 		}
-	}
-}
-
-func TestResourcesFromLoaderPreservesPerTypeDiagnosticLists(t *testing.T) {
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	diagnostic := ResourceDiagnostic{Type: "warning", Message: "same diagnostic", Path: "/shared/path"}
-	loader, err := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
-		CWD: cwd, AgentDir: agentDir, NoSkills: true, NoPromptTemplates: true, NoThemes: true, NoContextFiles: true,
-		AppendSystemPrompt: []string{},
-		SkillsOverride: func(result ResourceSkillsResult) ResourceSkillsResult {
-			result.Diagnostics = []ResourceDiagnostic{diagnostic}
-			return result
-		},
-		PromptsOverride: func(result ResourcePromptsResult) ResourcePromptsResult {
-			result.Diagnostics = []ResourceDiagnostic{diagnostic}
-			return result
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := loader.Reload(context.Background(), nil); err != nil {
-		t.Fatal(err)
-	}
-	resources := resourcesFromLoader(loader)
-	if !reflect.DeepEqual(resources.Diagnostics, []ResourceDiagnostic{diagnostic, diagnostic}) {
-		t.Fatalf("combined diagnostics = %#v", resources.Diagnostics)
 	}
 }

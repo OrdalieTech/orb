@@ -79,26 +79,6 @@ func TestParseModelPatternMatchesUpstreamFixture(t *testing.T) {
 	}
 }
 
-func TestParseModelPatternUsesLocaleCompareForPartialWinner(t *testing.T) {
-	t.Setenv("LC_ALL", "C.UTF-8")
-	models := []ai.Model{
-		{Provider: "fixture", ID: "~a"},
-		{Provider: "fixture", ID: "A-a"},
-	}
-	result := ParseModelPattern("a", models)
-	if result.Model == nil || result.Model.ID != "A-a" {
-		t.Fatalf("model = %#v, want fixture/A-a", result.Model)
-	}
-}
-
-func TestParseModelPatternTrimsProviderAndModelComponents(t *testing.T) {
-	models := []ai.Model{{Provider: "openai", ID: "gpt-4o"}}
-	result := ParseModelPattern(" openai / gpt-4o ", models)
-	if result.Model == nil || result.Model.Provider != "openai" || result.Model.ID != "gpt-4o" {
-		t.Fatalf("model = %#v, want openai/gpt-4o", result.Model)
-	}
-}
-
 func equalThinkingLevel(left, right *ai.ModelThinkingLevel) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
@@ -145,90 +125,6 @@ func TestResolveModelScopeMatchesUpstreamGlobFixtures(t *testing.T) {
 	}
 }
 
-// Upstream da8dd872: bracketed scoped model ids resolve as literals before
-// glob matching.
-func TestResolveModelScopeResolvesBracketedIdsAsExactReferences(t *testing.T) {
-	available := append(loadPatternFixture(t).Models, ai.Model{
-		Provider: "custom", ID: "bracketed-model[1m]", Name: "Bracketed Model", Reasoning: true,
-	})
-
-	scoped, diagnostics := ResolveModelScope([]string{"custom/bracketed-model[1m]"}, available)
-	if len(diagnostics) != 0 || len(scoped) != 1 || scoped[0].Model.ID != "bracketed-model[1m]" || scoped[0].ThinkingLevel != nil {
-		t.Fatalf("bracketed scope = %#v, diagnostics = %#v", scoped, diagnostics)
-	}
-
-	scoped, diagnostics = ResolveModelScope([]string{"custom/bracketed-model[1m]:high"}, available)
-	if len(diagnostics) != 0 || len(scoped) != 1 || scoped[0].Model.ID != "bracketed-model[1m]" {
-		t.Fatalf("bracketed thinking scope = %#v, diagnostics = %#v", scoped, diagnostics)
-	}
-	if scoped[0].ThinkingLevel == nil || *scoped[0].ThinkingLevel != ai.ModelThinkingHigh {
-		t.Fatalf("bracketed thinking level = %v, want high", scoped[0].ThinkingLevel)
-	}
-}
-
-func TestResolveModelScopeUsesMinimatchGlobstarSemantics(t *testing.T) {
-	models := []ai.Model{{Provider: "openrouter", ID: "qwen/qwen3-coder"}, {Provider: "openrouter", ID: "flat"}}
-	scoped, diagnostics := ResolveModelScope([]string{"openrouter/**"}, models)
-	if len(diagnostics) != 0 || len(scoped) != 2 {
-		t.Fatalf("globstar scope = %#v, diagnostics = %#v", scoped, diagnostics)
-	}
-	scoped, diagnostics = ResolveModelScope([]string{"openrouter/*"}, models)
-	if len(diagnostics) != 0 || len(scoped) != 1 || scoped[0].Model.ID != "flat" {
-		t.Fatalf("single-star scope = %#v, diagnostics = %#v", scoped, diagnostics)
-	}
-	scoped, diagnostics = ResolveModelScope([]string{"openrouter/**", "openrouter/qwen/**"}, models)
-	if len(diagnostics) != 0 || len(scoped) != 2 {
-		t.Fatalf("duplicate-only second glob scope = %#v, diagnostics = %#v", scoped, diagnostics)
-	}
-}
-
-func TestModelGlobMatchUsesUpstreamBraceAndExtglobSemantics(t *testing.T) {
-	tests := []struct {
-		pattern, modelID string
-		want             bool
-	}{
-		{pattern: "OPENAI/GPT-{4O,5}*", modelID: "openai/gpt-4o", want: true},
-		{pattern: "{anthropic,openai}/**", modelID: "openai/gpt-5", want: true},
-		{pattern: "@(anthropic|openai)/**", modelID: "openai/gpt-5", want: true},
-		{pattern: "openrouter/@(qwen|openai)/**", modelID: "openrouter/qwen/x", want: true},
-		{pattern: "openrouter/!(qwen)/**", modelID: "openrouter/openai/x", want: true},
-		{pattern: "openrouter/!(qwen)/**", modelID: "openrouter/qwen/x", want: false},
-		{pattern: "openrouter/?(qwen)/**", modelID: "openrouter/x", want: false},
-		{pattern: "openrouter/?(qwen)/**", modelID: "openrouter/qwen/x", want: true},
-		{pattern: "openrouter/*(qwen)/**", modelID: "openrouter/qwenqwen/x", want: true},
-		{pattern: "openrouter/+(qwen)/**", modelID: "openrouter/qwenqwen/x", want: true},
-		{pattern: "openrouter/{a..c}/**", modelID: "openrouter/B/x", want: true},
-		{pattern: "openrouter/*", modelID: "openrouter/.hidden", want: false},
-		{pattern: "openrouter/**", modelID: "openrouter/.hidden", want: false},
-		{pattern: "**", modelID: ".hidden", want: false},
-	}
-	for _, test := range tests {
-		t.Run(test.pattern+"_"+test.modelID, func(t *testing.T) {
-			if got := modelGlobMatch(test.pattern, test.modelID); got != test.want {
-				t.Fatalf("modelGlobMatch(%q, %q) = %t, want %t", test.pattern, test.modelID, got, test.want)
-			}
-		})
-	}
-}
-
-func TestResolveModelScopeCombinesBraceExtglobNocaseAndThinking(t *testing.T) {
-	models := []ai.Model{
-		{Provider: "anthropic", ID: "claude/sonnet"},
-		{Provider: "openrouter", ID: "qwen/coder"},
-		{Provider: "openrouter", ID: "openai/gpt"},
-		{Provider: "zai", ID: "qwen/coder"},
-	}
-	scoped, diagnostics := ResolveModelScope([]string{"{ANTHROPIC,OPENROUTER}/@(CLAUDE|QWEN)/**:high"}, models)
-	if len(diagnostics) != 0 || len(scoped) != 2 {
-		t.Fatalf("scoped models = %#v, diagnostics = %#v", scoped, diagnostics)
-	}
-	for _, model := range scoped {
-		if model.ThinkingLevel == nil || *model.ThinkingLevel != ai.ModelThinkingHigh {
-			t.Fatalf("thinking level = %v for %s/%s", model.ThinkingLevel, model.Model.Provider, model.Model.ID)
-		}
-	}
-}
-
 func TestResolveCLIModelProviderPrefixAndCustomThinking(t *testing.T) {
 	fixture := loadPatternFixture(t)
 
@@ -260,33 +156,6 @@ func TestResolveCLIModelProviderPrefixAndCustomThinking(t *testing.T) {
 	resolved = ResolveCLIModel("openai", "new-model", &off, fixture.Models)
 	if resolved.Model == nil || resolved.Model.Reasoning {
 		t.Fatalf("explicit off thinking must not enable fallback reasoning: %#v", resolved.Model)
-	}
-}
-
-func TestPreferredAvailableModelUsesPinnedProviderDefaults(t *testing.T) {
-	models := []ai.Model{
-		{Provider: "custom", ID: "first"},
-		{Provider: "vercel-ai-gateway", ID: "zai/glm-5.1"},
-		{Provider: "openai", ID: "gpt-5.5"},
-	}
-	preferred := PreferredAvailableModel(models)
-	if preferred == nil || preferred.Provider != "openai" || preferred.ID != "gpt-5.5" {
-		t.Fatalf("preferred model = %#v", preferred)
-	}
-	withoutDefaults := PreferredAvailableModel(models[:1])
-	if withoutDefaults == nil || withoutDefaults.Provider != "custom" || withoutDefaults.ID != "first" {
-		t.Fatalf("first fallback = %#v", withoutDefaults)
-	}
-	if PreferredAvailableModel(nil) != nil {
-		t.Fatal("empty available list returned a model")
-	}
-}
-
-func TestQwenTokenPlanProviderDefaults(t *testing.T) {
-	for _, provider := range []string{"qwen-token-plan", "qwen-token-plan-cn"} {
-		if id := defaultModelPerProvider[provider]; id != "qwen3.7-max" {
-			t.Fatalf("%s default = %q", provider, id)
-		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -243,24 +244,6 @@ func TestForkFromReplacesOnlyHeaderAndCreatesExclusively(t *testing.T) {
 	}
 }
 
-func TestForkFromErrorsMatchUpstream(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	missing := filepath.Join(root, "missing.jsonl")
-	if _, err := ForkFrom(missing, root, filepath.Join(root, "sessions")); err == nil ||
-		err.Error() != "Cannot fork: source session file is empty or invalid: "+missing {
-		t.Fatalf("missing source error = %v", err)
-	}
-	invalid := filepath.Join(root, "invalid.jsonl")
-	if err := os.WriteFile(invalid, []byte(`{"type":"message","id":"orphan"}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ForkFrom(invalid, root, filepath.Join(root, "sessions")); err == nil ||
-		err.Error() != "Cannot fork: source session file is empty or invalid: "+invalid {
-		t.Fatalf("invalid source error = %v", err)
-	}
-}
-
 func TestListBuildsSearchMetadataAndUsesLatestNameClear(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -279,7 +262,7 @@ func TestListBuildsSearchMetadataAndUsesLatestNameClear(t *testing.T) {
 	if err := os.Chtimes(path, time.UnixMilli(99_000), time.UnixMilli(99_000)); err != nil {
 		t.Fatal(err)
 	}
-	info := buildSessionInfo(path)
+	info := buildSessionInfoContext(context.Background(), sessionFileCandidate{path: path})
 	if info == nil {
 		t.Fatal("valid session was rejected")
 	}
@@ -449,7 +432,7 @@ func TestListModifiedFallbackPrecedence(t *testing.T) {
 			if err := os.Chtimes(path, time.UnixMilli(test.mtime), time.UnixMilli(test.mtime)); err != nil {
 				t.Fatal(err)
 			}
-			info := buildSessionInfo(path)
+			info := buildSessionInfoContext(context.Background(), sessionFileCandidate{path: path})
 			if info == nil || info.Modified.UnixMilli() != test.wantMilli {
 				t.Fatalf("session info = %+v, want modified %d", info, test.wantMilli)
 			}

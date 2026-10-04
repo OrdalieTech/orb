@@ -8,17 +8,6 @@ import (
 	"testing"
 )
 
-func TestMaterializeDependenciesSkipsSatisfiedNodeModules(t *testing.T) {
-	root := t.TempDir()
-	entry := filepath.Join(root, "extension.mjs")
-	writeFile(t, entry, "export default () => {};\n", 0o600)
-	writeFile(t, filepath.Join(root, "package.json"), `{"dependencies":{"already-here":"1.0.0"}}`, 0o600)
-	writeFile(t, filepath.Join(root, "node_modules", "already-here", "package.json"), `{"name":"already-here"}`, 0o600)
-	if err := materializeDependencies(context.Background(), Runtime{Name: "node", Path: filepath.Join(root, "missing-node")}, entry, []string{"PATH="}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestDependenciesSatisfiedRejectsEscapingPackageNames(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "outside", "package.json"), `{"name":"outside"}`, 0o600)
@@ -26,56 +15,6 @@ func TestDependenciesSatisfiedRejectsEscapingPackageNames(t *testing.T) {
 		if dependenciesSatisfied(root, map[string]string{name: "file:anywhere"}) {
 			t.Fatalf("dependency %q escaped node_modules", name)
 		}
-	}
-}
-
-func TestDependenciesSatisfiedFindsHoistedNodeModules(t *testing.T) {
-	root := t.TempDir()
-	packageDir := filepath.Join(root, "node_modules", "extension")
-	writeFile(t, filepath.Join(packageDir, "package.json"), `{"dependencies":{"hoisted":"1.0.0"}}`, 0o600)
-	writeFile(t, filepath.Join(root, "node_modules", "hoisted", "package.json"), `{"name":"hoisted"}`, 0o600)
-	if !dependenciesSatisfied(packageDir, map[string]string{"hoisted": "1.0.0"}) {
-		t.Fatal("hoisted dependency was not resolved from an ancestor node_modules")
-	}
-}
-
-// Bun reaches the embedded SDK through NODE_PATH wrapper packages: one
-// directory per legacy name, whose exports map mirrors the loader's alias
-// table and whose modules re-export the materialized SDK files by URL.
-func TestPrepareRuntimeAliasesWritesEmbeddedSDKWrappers(t *testing.T) {
-	agentDir, sdkRoot := t.TempDir(), t.TempDir()
-	environment, err := prepareRuntimeAliases(agentDir, []string{extensionSDKRootEnv + "=" + sdkRoot})
-	if err != nil {
-		t.Fatal(err)
-	}
-	aliasDir := filepath.Join(agentDir, "host", "aliases")
-	if got := environmentValue(environment, "NODE_PATH"); !strings.HasPrefix(got, aliasDir) {
-		t.Fatalf("NODE_PATH = %q, want prefix %q", got, aliasDir)
-	}
-	manifest, err := os.ReadFile(filepath.Join(aliasDir, "@earendil-works", "pi-ai", "package.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, fragment := range []string{`"name":"@earendil-works/pi-ai"`, `"./providers/all":"./providers-all.mjs"`, `"./compat":"./compat.mjs"`} {
-		if !strings.Contains(string(manifest), fragment) {
-			t.Fatalf("wrapper manifest %s does not contain %q", manifest, fragment)
-		}
-	}
-	wrapper, err := os.ReadFile(filepath.Join(aliasDir, "@mariozechner", "pi-tui", "index.mjs"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(wrapper), "tui.mjs") || !strings.Contains(string(wrapper), "file://") {
-		t.Fatalf("wrapper module %q does not re-export the SDK by file URL", wrapper)
-	}
-
-	// Without a materialized SDK root there is nothing to link.
-	unchanged, err := prepareRuntimeAliases(t.TempDir(), []string{"PATH=/bin"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if value := environmentValue(unchanged, "NODE_PATH"); value != "" {
-		t.Fatalf("NODE_PATH = %q, want empty without an SDK root", value)
 	}
 }
 

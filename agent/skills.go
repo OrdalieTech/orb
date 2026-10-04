@@ -54,11 +54,6 @@ type LoadSkillsResult struct {
 	Diagnostics []ResourceDiagnostic
 }
 
-type LoadSkillsFromDirOptions struct {
-	Dir    string
-	Source string
-}
-
 type LoadSkillsOptions struct {
 	CWD             string
 	AgentDir        string
@@ -340,15 +335,6 @@ func loadSkillsFromDirInternal(dir, source string, includeRootFiles bool, matche
 		}
 	}
 	return result
-}
-
-// LoadSkillsFromDir follows upstream's root-file and recursive SKILL.md discovery rules.
-func LoadSkillsFromDir(options LoadSkillsFromDirOptions) LoadSkillsResult {
-	dir := resolveResourcePath(options.Dir)
-	if _, err := os.Stat(dir); err != nil {
-		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
-	}
-	return loadSkillsFromDirInternal(dir, options.Source, true, &skillIgnoreMatcher{}, dir, map[string]bool{})
 }
 
 func canonicalResourcePath(path string) string {

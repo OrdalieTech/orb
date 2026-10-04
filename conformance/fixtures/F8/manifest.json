@@ -12,11 +12,6 @@
     "packages/coding-agent/src/modes/interactive/theme/dark.json",
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
   ],
-  "orbOwned": [
-    "invocationCases",
-    "harnessSubstitutionCases",
-    "harnessPrompts"
-  ],
   "files": [
     "cases.json"
   ]

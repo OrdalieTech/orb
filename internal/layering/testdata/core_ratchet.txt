@@ -13,7 +13,7 @@ agent	os.ReadDir	4
 agent	os.ReadFile	12
 agent	os.RemoveAll	7
 agent	os.Rename	1
-agent	os.Stat	21
+agent	os.Stat	20
 agent	os.Stderr	1
 agent	os.Stdout	1
 agent	os.UserHomeDir	4
@@ -30,7 +30,7 @@ agent/config	os.LookupEnv	2
 agent/config	os.Mkdir	1
 agent/config	os.MkdirAll	5
 agent/config	os.OpenFile	2
-agent/config	os.ReadFile	10
+agent/config	os.ReadFile	9
 agent/config	os.Remove	4
 agent/config	os.Rename	2
 agent/config	os.SameFile	1

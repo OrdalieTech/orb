@@ -135,9 +135,7 @@ fixtures-tui:
 # distinct files, which a case-insensitive macOS volume collapses.
 # The Orb-owned render snapshots (P6) are excluded from the upstream
 # extraction diff and guarded by their Go comparison tests instead: snapshot
-# drift fails here, regeneration is the explicit `make fixtures-tui`. The
-# harness session families (F6Harness*) are Orb-owned since upstream v1.0.0
-# deleted their source.
+# drift fails here, regeneration is the explicit `make fixtures-tui`.
 fixtures-check: ensure-upstream-fixture-tools
 	@ORB_F6_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./conformance/runner -run TestF6SessionWriteAndProjectionMatchUpstream
 	@ORB_AUTH_TS_VERIFY=1 $(GO_ENV) CGO_ENABLED=1 go test -race ./agent/config -run TestAuthStorageConformance
@@ -147,7 +145,7 @@ fixtures-check: ensure-upstream-fixture-tools
 	@fixture_tmp=$$(mktemp -d); \
 		trap 'rm -rf "$$fixture_tmp"' EXIT; \
 		cd "$(UPSTREAM_DIR)" && node --import tsx "$(CURDIR)/conformance/extract/generate.ts" "$$fixture_tmp" $(UPSTREAM_COMMIT); \
-		diff -ru -x 'F12*' -x 'WP450*' -x 'F6Harness*' "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
+		diff -ru -x 'F12*' -x 'WP450*' "$(CURDIR)/conformance/fixtures" "$$fixture_tmp"
 
 upstream-rpc-tests: ensure-upstream-fixture-tools
 	@mkdir -p .tools/bin

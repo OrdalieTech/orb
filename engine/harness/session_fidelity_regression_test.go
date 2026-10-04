@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
 )
 
@@ -170,30 +169,6 @@ func TestSessionMoveToKeepsRequestedBranchSummaryParentAcrossConcurrentAppend(t 
 	}
 }
 
-func TestEmptySessionContextKeepsMessagesAsAnEmptyArray(t *testing.T) {
-	storage, err := harness.NewInMemorySessionStorage(nil, harness.SessionMetadata{
-		ID: "empty-context", CreatedAt: "2026-07-18T00:00:00.000Z",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	contextState, err := harness.NewSession(storage).Context()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if contextState.Messages == nil {
-		t.Fatal("empty context messages are nil, want an explicit empty array")
-	}
-	encoded, err := json.Marshal(contextState)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const want = `{"thinkingLevel":"off","model":null,"activeToolNames":null,"messages":[]}`
-	if string(encoded) != want {
-		t.Fatalf("empty context JSON = %s, want %s", encoded, want)
-	}
-}
-
 func TestSessionJSONLAppendsUseJSONStringifyForNonFiniteNumbers(t *testing.T) {
 	const header = `{"type":"session","version":3,"id":"non-finite","timestamp":"2026-07-18T00:00:00.000Z","cwd":"/tmp"}` + "\n"
 
@@ -235,37 +210,6 @@ func TestSessionJSONLAppendsUseJSONStringifyForNonFiniteNumbers(t *testing.T) {
 			t.Fatalf("JSONL compaction = %s, want details:null", content)
 		}
 	})
-}
-
-func TestSessionContextProjectsStandardMessagesAsAIMessages(t *testing.T) {
-	contextState := harness.BuildSessionContext([]harness.SessionTreeEntry{{
-		Type: "message", ID: "user", Timestamp: "2026-07-18T00:00:00.000Z",
-		Message: json.RawMessage(`{"role":"user","content":"hello","timestamp":1}`),
-	}})
-	if len(contextState.Messages) != 1 {
-		t.Fatalf("context messages = %d, want 1", len(contextState.Messages))
-	}
-	if _, ok := contextState.Messages[0].(ai.Message); !ok {
-		t.Fatalf("context message type = %T, want ai.Message", contextState.Messages[0])
-	}
-}
-
-func TestSessionContextOmitsEmptyBranchSummaries(t *testing.T) {
-	contextState := harness.BuildSessionContext([]harness.SessionTreeEntry{{
-		Type: "branch_summary", ID: "empty-summary", Timestamp: "2026-07-18T00:00:00.000Z",
-		FromID: "root", Summary: "",
-	}})
-	if len(contextState.Messages) != 0 {
-		t.Errorf("session context messages = %d, want empty branch summary omitted", len(contextState.Messages))
-	}
-
-	compactionMessages := harness.ContextMessages([]harness.SessionEntry{{
-		Type: "branch_summary", ID: "empty-summary", Timestamp: "2026-07-18T00:00:00.000Z",
-		FromID: "root", Summary: "",
-	}})
-	if len(compactionMessages) != 0 {
-		t.Fatalf("compaction context messages = %d, want empty branch summary omitted", len(compactionMessages))
-	}
 }
 
 func fidelityStringPointer(value string) *string {

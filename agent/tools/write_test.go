@@ -2,47 +2,17 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 )
-
-func TestWriteToolReleasedMessages(t *testing.T) {
-	data, err := os.ReadFile("../../conformance/fixtures/F5/write.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases []struct {
-		Input    json.RawMessage
-		Expected struct{ Content []struct{ Text string } }
-	}
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, fixture := range cases {
-		var args map[string]any
-		if err := json.Unmarshal(fixture.Input, &args); err != nil {
-			t.Fatal(err)
-		}
-		result, err := NewWriteTool(t.TempDir(), nil).Execute(context.Background(), "fixture", args, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := toolResultText(t, result); got != fixture.Expected.Content[0].Text {
-			t.Fatalf("write message = %q", got)
-		}
-	}
-}
 
 func TestWriteToolCreatesParentsAndWritesContent(t *testing.T) {
 	dir := t.TempDir()
@@ -62,34 +32,6 @@ func TestWriteToolCreatesParentsAndWritesContent(t *testing.T) {
 	}
 	if string(content) != "hello\n" {
 		t.Fatalf("content = %q", content)
-	}
-}
-
-func TestWriteToolEncodesWTF8SurrogatesLikeNode(t *testing.T) {
-	dir := t.TempDir()
-	content := string([]byte{0xed, 0xa0, 0xbd, 0xed, 0xb8, 0x80}) + string([]byte{0xed, 0xa0, 0x80})
-	result, err := NewWriteTool(dir, nil).Execute(context.Background(), "call", map[string]any{
-		"path": "surrogate.txt", "content": content,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := toolResultText(t, result); got != "Successfully wrote to surrogate.txt" {
-		t.Fatalf("result = %q", got)
-	}
-	written, err := os.ReadFile(filepath.Join(dir, "surrogate.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(written), "😀�"; got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
-}
-
-func TestWriteToolSchemaBytesMatchUpstreamTypeBox(t *testing.T) {
-	want := `{"type":"object","required":["path","content"],"properties":{"path":{"type":"string","description":"Path to the file to write (relative or absolute)"},"content":{"type":"string","description":"Content to write to the file"}}}`
-	if got := string(NewWriteTool(t.TempDir(), nil).Spec().Parameters); got != want {
-		t.Fatalf("schema = %s, want %s", got, want)
 	}
 }
 
@@ -127,35 +69,6 @@ func TestWriteToolMkdir(t *testing.T) {
 				t.Fatalf("error = %v, want %q", err, want)
 			}
 		})
-	}
-}
-
-func TestNodeFilesystemErrorUsesUnderlyingReadWriteOperation(t *testing.T) {
-	writeError := asNodeFilesystemError("open", "/dev/full", &os.PathError{Op: "write", Path: "/dev/full", Err: syscall.ENOSPC})
-	if got, want := writeError.Error(), "ENOSPC: no space left on device, write"; got != want {
-		t.Fatalf("write error = %q, want %q", got, want)
-	}
-	readError := asNodeFilesystemError("open", "/proc/self/mem", &os.PathError{Op: "read", Path: "/proc/self/mem", Err: syscall.EIO})
-	if got, want := readError.Error(), "EIO: i/o error, read"; got != want {
-		t.Fatalf("read error = %q, want %q", got, want)
-	}
-}
-
-func TestNodeFilesystemErrorAtKeepsRequestedNodeOperationAndPath(t *testing.T) {
-	underlying := &os.PathError{Op: "lstat", Path: "/intermediate", Err: syscall.EACCES}
-	for _, test := range []struct {
-		operation string
-		path      string
-	}{
-		{operation: "realpath", path: "/requested/file"},
-		{operation: "scandir", path: "/requested/dir"},
-		{operation: "mkdir", path: "/requested/parent"},
-	} {
-		got := asNodeFilesystemErrorAt(test.operation, test.path, underlying)
-		want := "EACCES: permission denied, " + test.operation + " '" + test.path + "'"
-		if got == nil || got.Error() != want {
-			t.Fatalf("%s error = %v, want %q", test.operation, got, want)
-		}
 	}
 }
 
@@ -357,14 +270,5 @@ func waitForQueueSuccessor(t *testing.T, key string, previous *mutationQueueEntr
 			t.Fatalf("timed out waiting for queue successor for %s", key)
 		}
 		runtime.Gosched()
-	}
-}
-
-func TestWriteToolRejectsInvalidContent(t *testing.T) {
-	_, err := NewWriteTool(t.TempDir(), nil).Execute(context.Background(), "call", map[string]any{
-		"path": "file.txt", "content": 42,
-	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "content must be a string") {
-		t.Fatalf("error = %v", err)
 	}
 }

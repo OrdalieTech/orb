@@ -276,8 +276,7 @@ checking that legacy Orb processes have stopped. To include additional session r
 first startup, run `orb storage migrate /absolute/legacy/root ...`. Originals are retained and
 must not be reopened for writing by old binaries. Failed migrations leave them intact; resume
 with the same inventory and source bytes. A changed source after admission is rejected, not
-silently overwritten. Harness v4 remains available through its existing SDK APIs, but v4 journals
-are not admitted by the native v3 adapter.
+silently overwritten.
 
 Use `orb storage import file.jsonl`, `orb storage export <id> file.jsonl`, and
 `orb storage backup /private/directory/backup.db`. `orb storage restore backup.db` recovers

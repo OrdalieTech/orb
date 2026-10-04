@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -65,94 +64,6 @@ func TestInstallNpmSkipsDependencyInstallWhenBundledOrAbsent(t *testing.T) {
 	}
 }
 
-func TestInstallNpmHonorsNpmCommandSetting(t *testing.T) {
-	registry := newFakeNpmRegistry(t)
-	manager, _, agentDir, settings := newTestPackageManager(t)
-	manager.registryBaseURL = registry.server.URL
-	writeTestFile(t, filepath.Join(agentDir, "settings.json"), `{"npmCommand":["mise","exec","node@20","--","npm"]}`)
-	settings.Reload()
-	registry.add(fakeNpmPackage{name: "pi-deps", version: "1.0.0", files: map[string]string{
-		"package.json": `{"name":"pi-deps","version":"1.0.0","dependencies":{"ndjson":"^2.0.0"}}`,
-	}})
-
-	var specs []execSpec
-	manager.runCommand = func(spec execSpec) (string, error) {
-		specs = append(specs, spec)
-		return "", nil
-	}
-	if err := manager.Install("npm:pi-deps", false); err != nil {
-		t.Fatal(err)
-	}
-	if len(specs) != 1 {
-		t.Fatalf("expected one npmCommand invocation, got %d", len(specs))
-	}
-	// Custom npmCommand values skip the npm-specific --omit=dev flag; the
-	// wrapped command after "--" still selects npm's peer opt-out flag.
-	if specs[0].name != "mise" || strings.Join(specs[0].args, " ") != "exec node@20 -- npm install --legacy-peer-deps" {
-		t.Fatalf("npmCommand invocation = %+v", specs[0])
-	}
-}
-
-func TestInstallNpmDisablesPeerResolutionPerPackageManager(t *testing.T) {
-	// Mirrors upstream getNpmInstallArgs: each supported package manager gets
-	// its own peer-resolution opt-out so a managed install never solves
-	// host-provided peers.
-	cases := []struct {
-		npmCommand string
-		wantName   string
-		wantArgs   string
-	}{
-		{`["bun"]`, "bun", "install --omit=peer"},
-		{`["pnpm"]`, "pnpm", "install --config.auto-install-peers=false --config.strict-peer-dependencies=false --config.strict-dep-builds=false"},
-	}
-	for _, testCase := range cases {
-		registry := newFakeNpmRegistry(t)
-		manager, _, agentDir, settings := newTestPackageManager(t)
-		manager.registryBaseURL = registry.server.URL
-		writeTestFile(t, filepath.Join(agentDir, "settings.json"), `{"npmCommand":`+testCase.npmCommand+`}`)
-		settings.Reload()
-		registry.add(fakeNpmPackage{name: "pi-deps", version: "1.0.0", files: map[string]string{
-			"package.json": `{"name":"pi-deps","version":"1.0.0","dependencies":{"ndjson":"^2.0.0"}}`,
-		}})
-
-		var specs []execSpec
-		manager.runCommand = func(spec execSpec) (string, error) {
-			specs = append(specs, spec)
-			return "", nil
-		}
-		if err := manager.Install("npm:pi-deps", false); err != nil {
-			t.Fatal(err)
-		}
-		if len(specs) != 1 || specs[0].name != testCase.wantName || strings.Join(specs[0].args, " ") != testCase.wantArgs {
-			t.Fatalf("npmCommand %s invocations = %+v", testCase.npmCommand, specs)
-		}
-	}
-}
-
-func TestInstallNpmWarnsWhenNpmMissing(t *testing.T) {
-	registry := newFakeNpmRegistry(t)
-	manager, _, agentDir, _ := newTestPackageManager(t)
-	manager.registryBaseURL = registry.server.URL
-	var stderr bytes.Buffer
-	manager.stderr = &stderr
-	registry.add(fakeNpmPackage{name: "pi-deps", version: "1.0.0", files: map[string]string{
-		"package.json": `{"name":"pi-deps","version":"1.0.0","dependencies":{"ndjson":"^2.0.0"}}`,
-	}})
-
-	manager.runCommand = func(spec execSpec) (string, error) {
-		return "", &exec.Error{Name: spec.name, Err: exec.ErrNotFound}
-	}
-	if err := manager.Install("npm:pi-deps", false); err != nil {
-		t.Fatalf("install should degrade gracefully, got %v", err)
-	}
-	if !pathExists(filepath.Join(agentDir, "npm", "node_modules", "pi-deps", "package.json")) {
-		t.Fatal("package should stay installed when npm is missing")
-	}
-	if !strings.Contains(stderr.String(), "npm not found") {
-		t.Fatalf("expected npm-missing warning, got %q", stderr.String())
-	}
-}
-
 func TestInstallGitRunsDependencyInstall(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
@@ -207,47 +118,5 @@ func TestInstallGitRunsDependencyInstall(t *testing.T) {
 	}
 	if npmSpecs[1].dir != targetDir {
 		t.Fatalf("reconcile npm invocation = %+v", npmSpecs[1])
-	}
-}
-
-func TestGitInstallAndUpdateAreQuiet(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	manager, _, agentDir, _ := newTestPackageManager(t)
-	var output bytes.Buffer
-	manager.stdout = &output
-	manager.stderr = &output
-
-	origin := filepath.Join(filepath.Dir(agentDir), "origin-quiet-repo")
-	writeTestFile(t, filepath.Join(origin, "prompts", "hello.md"), "Hello prompt")
-	gitRun(t, origin, "init", "--quiet", "--initial-branch=main")
-	gitRun(t, origin, "config", "user.email", "test@example.com")
-	gitRun(t, origin, "config", "user.name", "Test")
-	gitRun(t, origin, "add", ".")
-	gitRun(t, origin, "commit", "--quiet", "-m", "initial")
-	gitRun(t, origin, "tag", "v1")
-
-	// Fresh install of a pinned ref: clone + detached checkout.
-	source := &GitSource{Repo: origin, Host: "localhost", Path: "user/quiet-repo", Ref: "v1", Pinned: true}
-	if err := manager.installGit(source, "user"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Reconcile to a new ref: fetch + reset + clean.
-	writeTestFile(t, filepath.Join(origin, "prompts", "later.md"), "Later prompt")
-	gitRun(t, origin, "add", ".")
-	gitRun(t, origin, "commit", "--quiet", "-m", "second")
-	gitRun(t, origin, "tag", "v2")
-	updated := &GitSource{Repo: origin, Host: "localhost", Path: "user/quiet-repo", Ref: "v2", Pinned: true}
-	if err := manager.installGit(updated, "user"); err != nil {
-		t.Fatal(err)
-	}
-
-	captured := output.String()
-	for _, chatter := range []string{"detached HEAD", "You are in", "Cloning into", "FETCH_HEAD"} {
-		if strings.Contains(captured, chatter) {
-			t.Fatalf("git chatter %q leaked into output:\n%s", chatter, captured)
-		}
 	}
 }

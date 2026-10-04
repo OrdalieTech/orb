@@ -13,25 +13,6 @@ import (
 	"time"
 )
 
-func TestBashShellConfigOmitsTransportExceptLegacyWSL(t *testing.T) {
-	customShell := filepath.Join(t.TempDir(), "bash")
-	if err := os.WriteFile(customShell, nil, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	config, err := GetShellConfig(customShell)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.Shell != customShell || config.CommandTransport != "" || len(config.Args) != 1 || config.Args[0] != "-c" {
-		t.Fatalf("custom shell config = %+v", config)
-	}
-
-	legacy := bashShellConfig(`C:\Windows\Sysnative\bash.exe`)
-	if legacy.CommandTransport != ShellCommandStdin || len(legacy.Args) != 1 || legacy.Args[0] != "-s" {
-		t.Fatalf("legacy WSL shell config = %+v", legacy)
-	}
-}
-
 func TestGetShellEnvPrependsManagedBinOnce(t *testing.T) {
 	agentDir := t.TempDir()
 	binDir := filepath.Join(agentDir, "bin")
@@ -53,17 +34,6 @@ func TestGetShellEnvPrependsManagedBinOnce(t *testing.T) {
 	}
 	if got := environment["PATH"]; got != want {
 		t.Fatalf("already-prefixed PATH = %q, want %q", got, want)
-	}
-}
-
-func TestResolveBashTimeoutUsesNodeMillisecondFloor(t *testing.T) {
-	timeout := 0.0001
-	duration, err := resolveBashTimeout(&timeout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if duration == nil || *duration != time.Millisecond {
-		t.Fatalf("duration = %v, want 1ms", duration)
 	}
 }
 

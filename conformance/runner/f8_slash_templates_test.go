@@ -13,7 +13,6 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	modetheme "github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/conformance/runner"
-	agentharness "github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
@@ -22,9 +21,6 @@ type f8Fixture struct {
 	ArgumentCases       []f8ArgumentCase     `json:"argumentCases"`
 	SubstitutionCases   []f8SubstitutionCase `json:"substitutionCases"`
 	TemplateCases       []f8TemplateCase     `json:"templateCases"`
-	InvocationCases     []f8InvocationCase   `json:"invocationCases"`
-	HarnessSubstitution []f8SubstitutionCase `json:"harnessSubstitutionCases"`
-	HarnessPrompts      f8HarnessPrompts     `json:"harnessPrompts"`
 	Discovery           f8Discovery          `json:"discovery"`
 	ResourceLoader      f8ResourceLoader     `json:"resourceLoader"`
 	ResourceFiltering   f8ResourceFiltering  `json:"resourceFiltering"`
@@ -51,30 +47,6 @@ type f8TemplateCase struct {
 	Text      string             `json:"text"`
 	Templates []f8PromptTemplate `json:"templates"`
 	Expected  string             `json:"expected"`
-}
-
-type f8InvocationCase struct {
-	Name                   string `json:"name"`
-	AdditionalInstructions string `json:"additionalInstructions"`
-	Expected               string `json:"expected"`
-}
-
-type f8HarnessPrompts struct {
-	PromptTemplates []f8HarnessPrompt `json:"promptTemplates"`
-	Diagnostics     []any             `json:"diagnostics"`
-	DirectPrompt    f8HarnessResult   `json:"directPrompt"`
-	Invocation      string            `json:"invocation"`
-}
-
-type f8HarnessResult struct {
-	PromptTemplates []f8HarnessPrompt `json:"promptTemplates"`
-	Diagnostics     []any             `json:"diagnostics"`
-}
-
-type f8HarnessPrompt struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Content     string `json:"content"`
 }
 
 type f8FixtureFile struct {
@@ -329,51 +301,6 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 	if !reflect.DeepEqual(gotCommands, fixture.Discovery.Commands) {
 		t.Fatalf("commands mismatch\nwant: %+v\n got: %+v", fixture.Discovery.Commands, gotCommands)
 	}
-
-	harnessResult := agentharness.LoadSkills(&agentharness.LocalExecutionEnv{CWD: fixtureRoot}, skillsDir)
-	var inspect *agentharness.Skill
-	for index := range harnessResult.Skills {
-		if harnessResult.Skills[index].Name == "inspect" {
-			inspect = &harnessResult.Skills[index]
-			break
-		}
-	}
-	if inspect == nil {
-		t.Fatal("harness did not load inspect skill")
-	}
-	for _, fixtureCase := range fixture.InvocationCases {
-		got := agentharness.FormatSkillInvocation(*inspect, fixtureCase.AdditionalInstructions)
-		got = runner.NormalizeFixturePath(got, fixtureRoot)
-		if got != fixtureCase.Expected {
-			t.Fatalf("%s invocation mismatch:\n%s", fixtureCase.Name, runner.ByteDiff([]byte(fixtureCase.Expected), []byte(got)))
-		}
-	}
-	harnessPrompts := agentharness.LoadPromptTemplates(&agentharness.LocalExecutionEnv{CWD: fixtureRoot}, promptsDir)
-	gotHarnessPrompts := make([]f8HarnessPrompt, len(harnessPrompts.PromptTemplates))
-	for index, template := range harnessPrompts.PromptTemplates {
-		gotHarnessPrompts[index] = f8HarnessPrompt{Name: template.Name, Description: template.Description, Content: template.Content}
-	}
-	// The Orb-owned harness expectations predate prompts/malformed.md, which
-	// tests the product loader's warning; leave its diagnostic out here.
-	harnessDiagnostics := 0
-	for _, diagnostic := range harnessPrompts.Diagnostics {
-		if !strings.HasSuffix(diagnostic.Path, "malformed.md") {
-			harnessDiagnostics++
-		}
-	}
-	if harnessDiagnostics != len(fixture.HarnessPrompts.Diagnostics) || !reflect.DeepEqual(gotHarnessPrompts, fixture.HarnessPrompts.PromptTemplates) {
-		t.Fatalf("harness prompts mismatch\nwant: %+v / %+v\n got: %+v / %+v", fixture.HarnessPrompts.PromptTemplates, fixture.HarnessPrompts.Diagnostics, gotHarnessPrompts, harnessPrompts.Diagnostics)
-	}
-	var review agentharness.PromptTemplate
-	for _, template := range harnessPrompts.PromptTemplates {
-		if template.Name == "review" {
-			review = template
-			break
-		}
-	}
-	if got := agentharness.FormatPromptTemplateInvocation(review, []string{"file.go", "focus", "errors"}); got != fixture.HarnessPrompts.Invocation {
-		t.Fatalf("harness prompt invocation mismatch:\n%s", runner.ByteDiff([]byte(fixture.HarnessPrompts.Invocation), []byte(got)))
-	}
 }
 
 func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
@@ -614,38 +541,6 @@ func TestF8ResourceLoaderExtensionsMatchUpstreamImmediately(t *testing.T) {
 	})
 }
 
-func TestF8HarnessSubstitutionMatchesUpstream(t *testing.T) {
-	fixture := loadF8Fixture(t)
-	for _, fixtureCase := range fixture.HarnessSubstitution {
-		fixtureCase := fixtureCase
-		t.Run(fixtureCase.Name, func(t *testing.T) {
-			template := agentharness.PromptTemplate{Name: fixtureCase.Name, Content: fixtureCase.Content}
-			got := agentharness.FormatPromptTemplateInvocation(template, fixtureCase.Args)
-			if got != fixtureCase.Expected {
-				t.Fatalf("harness substitution mismatch:\n%s", runner.ByteDiff([]byte(fixtureCase.Expected), []byte(got)))
-			}
-		})
-	}
-}
-
-func TestF8HarnessDirectPromptMatchesUpstream(t *testing.T) {
-	fixture := loadF8Fixture(t)
-	fixtureRoot := t.TempDir()
-	writeF8Tree(t, fixtureRoot, fixture.Discovery.Files)
-	result := agentharness.LoadPromptTemplates(
-		&agentharness.LocalExecutionEnv{CWD: fixtureRoot},
-		filepath.Join(fixtureRoot, "prompts", "empty.md"),
-	)
-	got := f8HarnessResult{Diagnostics: []any{}}
-	got.PromptTemplates = make([]f8HarnessPrompt, len(result.PromptTemplates))
-	for index, template := range result.PromptTemplates {
-		got.PromptTemplates[index] = f8HarnessPrompt{Name: template.Name, Description: template.Description, Content: template.Content}
-	}
-	if len(result.Diagnostics) != 0 || !reflect.DeepEqual(got, fixture.HarnessPrompts.DirectPrompt) {
-		t.Fatalf("direct harness prompt\nwant: %+v\n got: %+v diagnostics=%+v", fixture.HarnessPrompts.DirectPrompt, got, result.Diagnostics)
-	}
-}
-
 func TestF8SlashResolutionMatchesUpstream(t *testing.T) {
 	fixture := loadF8Fixture(t)
 	fixtureRoot := t.TempDir()
@@ -733,14 +628,12 @@ func loadF8Fixture(t testing.TB) f8Fixture {
 func f8OmitNTFSUnrepresentableFiles(t testing.TB, fixture *f8Fixture) {
 	t.Helper()
 	omittedPaths := map[string]bool{}
-	omittedNames := map[string]bool{}
 	fixture.Discovery.Files = slices.DeleteFunc(fixture.Discovery.Files, func(file f8FixtureFile) bool {
 		name := path.Base(file.Path)
 		if !strings.Contains(name, ":") {
 			return false
 		}
 		omittedPaths["<fixture>/"+file.Path] = true
-		omittedNames[strings.TrimSuffix(name, ".md")] = true
 		return true
 	})
 	if len(omittedPaths) == 0 {
@@ -752,9 +645,6 @@ func f8OmitNTFSUnrepresentableFiles(t testing.TB, fixture *f8Fixture) {
 	omitCommand := func(command f8Command) bool { return omittedPaths[command.SourceInfo.Path] }
 	fixture.Discovery.Commands = slices.DeleteFunc(fixture.Discovery.Commands, omitCommand)
 	fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled = slices.DeleteFunc(fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled, omitCommand)
-	fixture.HarnessPrompts.PromptTemplates = slices.DeleteFunc(fixture.HarnessPrompts.PromptTemplates, func(prompt f8HarnessPrompt) bool {
-		return omittedNames[prompt.Name]
-	})
 }
 
 func writeF8Tree(t testing.TB, root string, files []f8FixtureFile) {

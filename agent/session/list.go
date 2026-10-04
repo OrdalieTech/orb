@@ -390,10 +390,6 @@ func buildSessionInfosContext(ctx context.Context, files []sessionFileCandidate,
 	return sessions, nil
 }
 
-func buildSessionInfo(path string) *SessionInfo {
-	return buildSessionInfoContext(context.Background(), sessionFileCandidate{path: path})
-}
-
 func buildSessionInfoContext(ctx context.Context, candidate sessionFileCandidate) *SessionInfo {
 	stat := candidate.info
 	var err error

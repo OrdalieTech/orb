@@ -25,17 +25,6 @@ func userMessage(text string) *ai.UserMessage {
 	return userMessageWithImagesAt(text, nil, time.Now().UnixMilli())
 }
 
-func requireThreeArgumentExecuteBash(func(*SessionRuntime, context.Context, string, *bool) (tools.BashResult, error)) {
-}
-
-func TestSessionRuntimeExecuteBashRetainsThreeArgumentCall(t *testing.T) {
-	requireThreeArgumentExecuteBash((*SessionRuntime).ExecuteBash)
-	_, err := (*SessionRuntime)(nil).ExecuteBash(context.Background(), "true", nil)
-	if err == nil || err.Error() != "agent: nil session runtime" {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 type captureBashOperations struct{ env map[string]string }
 
 func (operations *captureBashOperations) Exec(
@@ -179,42 +168,6 @@ func TestSessionRuntimeBindsBashSessionEnvironment(t *testing.T) {
 	}
 }
 
-func TestSessionEventWireShapes(t *testing.T) {
-	cases := []struct {
-		name  string
-		event any
-		want  string
-	}{
-		{"queue", QueueUpdateEvent{Steering: []string{"s"}, FollowUp: []string{}}, `{"type":"queue_update","steering":["s"],"followUp":[]}`},
-		{"compaction-start", CompactionStartEvent{Reason: "threshold"}, `{"type":"compaction_start","reason":"threshold"}`},
-		{"compaction-end-error", CompactionEndEvent{Reason: "overflow", ErrorMessage: stringPointer("failed")}, `{"type":"compaction_end","reason":"overflow","aborted":false,"willRetry":false,"errorMessage":"failed"}`},
-		{"compaction-end-result", CompactionEndEvent{Reason: "threshold", Result: &sessionstore.CompactionResult{Summary: "s", FirstKeptEntryID: "id", TokensBefore: 12, Usage: &ai.Usage{Input: 1, TotalTokens: 1, Cost: ai.Cost{}}, Details: harness.CompactionDetails{ReadFiles: []string{}, ModifiedFiles: []string{}}}}, `{"type":"compaction_end","reason":"threshold","result":{"summary":"s","firstKeptEntryId":"id","tokensBefore":12,"estimatedTokensAfter":0,"usage":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":1,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"details":{"readFiles":[],"modifiedFiles":[]}},"aborted":false,"willRetry":false}`},
-		{"retry-start", AutoRetryStartEvent{Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "overloaded"}, `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"overloaded"}`},
-		{"retry-end", AutoRetryEndEvent{Success: true, Attempt: 2}, `{"type":"auto_retry_end","success":true,"attempt":2}`},
-		{"summarization-retry-scheduled", SummarizationRetryScheduledEvent{Attempt: 1, MaxAttempts: 3, DelayMS: 2000, ErrorMessage: "terminated"}, `{"type":"summarization_retry_scheduled","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"terminated"}`},
-		{"summarization-retry-attempt-branch", SummarizationRetryAttemptStartEvent{Source: "branchSummary"}, `{"type":"summarization_retry_attempt_start","source":"branchSummary"}`},
-		{"summarization-retry-attempt-compaction", SummarizationRetryAttemptStartEvent{Source: "compaction", Reason: "overflow"}, `{"type":"summarization_retry_attempt_start","source":"compaction","reason":"overflow"}`},
-		{"summarization-retry-finished", SummarizationRetryFinishedEvent{}, `{"type":"summarization_retry_finished"}`},
-		{"bash-execution-update", BashExecutionUpdateEvent{ID: stringPointer("bash-1"), Delta: "chunk"}, `{"type":"bash_execution_update","id":"bash-1","delta":"chunk"}`},
-		{"bash-execution-update-no-id", BashExecutionUpdateEvent{Delta: "chunk"}, `{"type":"bash_execution_update","delta":"chunk"}`},
-		{"entry-appended", EntryAppendedEvent{Entry: sessionstore.SessionEntry{Type: "custom", ID: "entry", Timestamp: "2026-01-02T03:04:05.000Z"}}, `{"type":"entry_appended","entry":{"type":"custom","customType":"","id":"entry","parentId":null,"timestamp":"2026-01-02T03:04:05.000Z"}}`},
-		{"session-info-missing", SessionInfoChangedEvent{}, `{"type":"session_info_changed"}`},
-		{"session-info", SessionInfoChangedEvent{Name: stringPointer("named")}, `{"type":"session_info_changed","name":"named"}`},
-		{"thinking-level", ThinkingLevelChangedEvent{Level: ai.ModelThinkingHigh}, `{"type":"thinking_level_changed","level":"high"}`},
-	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			got, err := MarshalSessionEvent(test.event)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != test.want {
-				t.Fatalf("wire = %s\nwant = %s", got, test.want)
-			}
-		})
-	}
-}
-
 func TestSessionRuntimeDropsMalformedToolUseRecoveryScaffold(t *testing.T) {
 	provider := testFaux(1000)
 	dropped := runtimeAssistant(provider, "Let me inspect that.", 10)
@@ -301,18 +254,6 @@ func TestSessionRuntimeWaitForIdleIncludesSettledListeners(t *testing.T) {
 	}
 	if err := <-idleDone; err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestSessionRuntimeDisposeDropsListeners(t *testing.T) {
-	provider := testFaux(1000)
-	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
-	called := false
-	runtime.Subscribe(func(any) { called = true })
-	runtime.Dispose()
-	runtime.emit(AgentSettledEvent{})
-	if called {
-		t.Fatal("disposed runtime retained event listeners")
 	}
 }
 

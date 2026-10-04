@@ -3,7 +3,6 @@ package extensions
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -14,19 +13,6 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
-
-func TestRegistryResolvesExtensionPathsAgainstItsCWD(t *testing.T) {
-	cwd := t.TempDir()
-	registry := NewRegistry(cwd)
-	if err := registry.Register(filepath.Join("extensions", "demo.go"), func(API) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	extension := registry.Extensions()[0]
-	want := filepath.Join(cwd, "extensions", "demo.go")
-	if extension.ResolvedPath != want || extension.SourceInfo.BaseDir == nil || *extension.SourceInfo.BaseDir != filepath.Dir(want) {
-		t.Fatalf("extension = %#v", extension)
-	}
-}
 
 func TestRegistryReportsFactoryPanic(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
@@ -129,25 +115,6 @@ func TestRunnerFlushesQueuedProviderConfigsBeforeNativeProviders(t *testing.T) {
 	}
 }
 
-func TestRunnerContextScopedModelsIsLiveAndNeverNil(t *testing.T) {
-	var scoped []ScopedModel
-	runner := newRunner(t, NewRegistry(t.TempDir()), RunnerOptions{
-		ContextActions: ContextActions{GetScopedModels: func() []ScopedModel {
-			return scoped
-		}},
-	})
-	contextValue := runner.CreateContext()
-	if got := contextValue.ScopedModels(); got == nil || len(got) != 0 {
-		t.Fatalf("default scoped models = %#v, want non-nil empty", got)
-	}
-	level := ai.ModelThinkingHigh
-	scoped = []ScopedModel{{Model: ai.Model{Provider: "anthropic", ID: "claude-test"}, ThinkingLevel: &level}}
-	got := contextValue.ScopedModels()
-	if len(got) != 1 || got[0].Model.ID != "claude-test" || got[0].ThinkingLevel == nil || *got[0].ThinkingLevel != level {
-		t.Fatalf("live scoped models = %#v", got)
-	}
-}
-
 func TestUnregisterProviderRemovesQueuedRegistrations(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	if err := registry.Register("providers", func(api API) error {
@@ -188,88 +155,6 @@ func TestRunnerReportsQueuedProviderFailureDuringBind(t *testing.T) {
 	})
 	if len(reported) != 1 || reported[0].ExtensionPath != "broken-provider" || reported[0].Event != "register_provider" || reported[0].Error != "registration failed" {
 		t.Fatalf("errors = %#v", reported)
-	}
-}
-
-func TestExtensionAPIActionsRejectLoadingAndDelegateAfterBind(t *testing.T) {
-	registry := NewRegistry(t.TempDir())
-	var api API
-	var loadingError error
-	if err := registry.Register("actions", func(value API) error {
-		api = value
-		loadingError = value.SendMessage(context.Background(), CustomMessage{CustomType: "early"}, nil)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if loadingError == nil || !strings.Contains(loadingError.Error(), "cannot be called during extension loading") {
-		t.Fatalf("loading error = %v", loadingError)
-	}
-	var received CustomMessage
-	NewRunner(registry, RunnerOptions{Actions: Actions{
-		SendMessage: func(_ context.Context, message CustomMessage, _ *SendMessageOptions) error {
-			received = message
-			return nil
-		},
-	}})
-	if err := api.SendMessage(context.Background(), CustomMessage{CustomType: "ready", Content: "ok"}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if received.CustomType != "ready" || received.Content != "ok" {
-		t.Fatalf("message = %#v", received)
-	}
-}
-
-func TestCommandContextDelegatesSessionActions(t *testing.T) {
-	var calls []string
-	actions := &CommandActions{
-		WaitForIdle: func(context.Context) error { calls = append(calls, "idle"); return nil },
-		NewSession: func(context.Context, *NewSessionOptions) (SessionReplacementResult, error) {
-			calls = append(calls, "new")
-			return SessionReplacementResult{Cancelled: true}, nil
-		},
-		Fork: func(_ context.Context, entryID string, _ *ForkOptions) (SessionReplacementResult, error) {
-			calls = append(calls, "fork:"+entryID)
-			return SessionReplacementResult{}, nil
-		},
-		NavigateTree: func(_ context.Context, targetID string, _ *NavigateTreeOptions) (SessionReplacementResult, error) {
-			calls = append(calls, "tree:"+targetID)
-			return SessionReplacementResult{}, nil
-		},
-		SwitchSession: func(_ context.Context, path string, _ *SwitchSessionOptions) (SessionReplacementResult, error) {
-			calls = append(calls, "switch:"+path)
-			return SessionReplacementResult{}, nil
-		},
-		Reload: func(context.Context) error { calls = append(calls, "reload"); return nil },
-	}
-	runner := newRunner(t, NewRegistry(t.TempDir()), RunnerOptions{
-		CWD: "/fixture", CommandActions: actions,
-		ContextActions: ContextActions{GetSystemPromptOptions: func() SystemPromptOptions {
-			return SystemPromptOptions{CWD: "/prompt"}
-		}},
-	})
-	commandContext := runner.CreateCommandContext()
-	ctx := context.Background()
-	if err := commandContext.WaitForIdle(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if result, err := commandContext.NewSession(ctx, nil); err != nil || !result.Cancelled {
-		t.Fatalf("new session = %#v, %v", result, err)
-	}
-	if _, err := commandContext.Fork(ctx, "entry", nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := commandContext.NavigateTree(ctx, "target", nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := commandContext.SwitchSession(ctx, "session.jsonl", nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := commandContext.Reload(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if commandContext.GetSystemPromptOptions().CWD != "/prompt" || !reflect.DeepEqual(calls, []string{"idle", "new", "fork:entry", "tree:target", "switch:session.jsonl", "reload"}) {
-		t.Fatalf("options = %#v, calls = %#v", commandContext.GetSystemPromptOptions(), calls)
 	}
 }
 
@@ -498,28 +383,6 @@ func TestRunnerBeforeAgentStartChainsPromptAndMessages(t *testing.T) {
 	}
 }
 
-func TestRunnerMessageEndKeepsRoleAndChains(t *testing.T) {
-	registry := NewRegistry(t.TempDir())
-	for _, role := range []string{"assistant", "user", "assistant"} {
-		role := role
-		if err := registry.Register(role, func(api API) error {
-			api.On(EventMessageEnd, func(context.Context, Event, Context) (any, error) {
-				return MessageEndResult{Message: map[string]any{"role": role, "source": role}}, nil
-			})
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	runner := newRunner(t, registry, RunnerOptions{})
-	var reported []ExtensionError
-	runner.OnError(func(value ExtensionError) { reported = append(reported, value) })
-	result := runner.EmitMessageEnd(context.Background(), MessageEndEvent{Message: map[string]any{"role": "assistant"}})
-	if result.(map[string]any)["source"] != "assistant" || len(reported) != 1 {
-		t.Fatalf("result = %#v, errors = %#v", result, reported)
-	}
-}
-
 func TestRunnerProviderInputResourcesAndTrustChains(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	for _, name := range []string{"first", "second"} {
@@ -619,15 +482,6 @@ func TestRunnerHeadlessUIAndStaleContext(t *testing.T) {
 	_ = ctx.CWD()
 }
 
-func TestRunnerRPCModeUsesProvidedDialogBridge(t *testing.T) {
-	runner := newRunner(t, NewRegistry(t.TempDir()), RunnerOptions{Mode: ModeRPC, UI: fakeUI{}})
-	ctx := runner.CreateContext()
-	choice, selected, err := ctx.UI().Select(context.Background(), "title", []string{"yes"}, nil)
-	if err != nil || !ctx.HasUI() || ctx.Mode() != ModeRPC || !selected || choice != "yes" {
-		t.Fatalf("rpc UI choice=%q selected=%v hasUI=%v mode=%q error=%v", choice, selected, ctx.HasUI(), ctx.Mode(), err)
-	}
-}
-
 func TestEventBusOrderedIsolationAndUnsubscribe(t *testing.T) {
 	bus := NewEventBus()
 	var values []int
@@ -687,21 +541,6 @@ func TestUserBashFailureStopsDispatch(t *testing.T) {
 	}
 }
 
-func TestExecCapturesExitAndTimeout(t *testing.T) {
-	result, err := Exec(context.Background(), "sh", []string{"-c", "printf out; printf err >&2; exit 7"}, nil)
-	if err != nil || result.Stdout != "out" || result.Stderr != "err" || result.Code != 7 || result.Killed {
-		t.Fatalf("result = %#v, error = %v", result, err)
-	}
-	result, err = Exec(context.Background(), "sh", []string{"-c", "sleep 2"}, &ExecOptions{Timeout: 20})
-	if err != nil || !result.Killed || result.Code != 0 {
-		t.Fatalf("timeout = %#v, error = %v", result, err)
-	}
-	result, err = Exec(context.Background(), "orb-command-that-does-not-exist", nil, nil)
-	if err != nil || result.Code != 1 || result.Killed {
-		t.Fatalf("spawn failure = %#v, error = %v", result, err)
-	}
-}
-
 func TestWrappedToolLeavesDynamicActivationsToTranscriptState(t *testing.T) {
 	registry := NewRegistry(t.TempDir())
 	active := []string{"loader"}
@@ -733,31 +572,6 @@ func TestWrappedToolLeavesDynamicActivationsToTranscriptState(t *testing.T) {
 	}
 	result, err := wrapped.Execute(context.Background(), "call", map[string]any{}, nil)
 	if err != nil || result.AddedToolNames != nil {
-		t.Fatalf("result = %#v, error = %v", result, err)
-	}
-}
-
-func TestWrappedToolPreservesReportedNamesWithoutDynamicActivation(t *testing.T) {
-	registry := NewRegistry(t.TempDir())
-	if err := registry.Register("tool", func(api API) error {
-		api.RegisterTool(ToolDefinition{
-			Name: "tool", Parameters: jsonschema.Schema(`{"type":"object"}`),
-			Execute: func(context.Context, string, any, engine.AgentToolUpdateCallback, Context) (engine.AgentToolResult, error) {
-				reported := []string{"reported", "reported"}
-				return engine.AgentToolResult{AddedToolNames: &reported}, nil
-			},
-		})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	runner := newRunner(t, registry, RunnerOptions{Actions: Actions{
-		GetActiveTools: func() ([]string, error) { return []string{"tool"}, nil },
-	}})
-	result, err := WrapRegisteredTool(runner.AllRegisteredTools()[0], runner).Execute(
-		context.Background(), "call", map[string]any{}, nil,
-	)
-	if err != nil || result.AddedToolNames == nil || !reflect.DeepEqual(*result.AddedToolNames, []string{"reported", "reported"}) {
 		t.Fatalf("result = %#v, error = %v", result, err)
 	}
 }

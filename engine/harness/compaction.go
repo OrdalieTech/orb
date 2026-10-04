@@ -465,11 +465,6 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	return preparation, nil
 }
 
-func ContextMessages(entries []SessionEntry) engine.AgentMessages {
-	messages, _ := contextMessages(entries)
-	return messages
-}
-
 // EstimateProjectedContextTokens estimates a branch's projected context
 // without trusting usage recorded before a later context edit or compaction.
 func EstimateProjectedContextTokens(entries []SessionEntry) ContextUsageEstimate {

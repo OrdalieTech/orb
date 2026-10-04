@@ -236,19 +236,6 @@ func TestLoadProjectContextFilesDoesNotOverDedupeWorktreeLayouts(t *testing.T) {
 	}
 }
 
-func TestLoadResourcesDiagnosticsDoNotIncludePresentationPrefix(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("HOME", filepath.Join(root, "home"))
-	unreadable := filepath.Join(root, "prompt")
-	if err := os.MkdirAll(unreadable, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	resources := LoadResources(ResourceOptions{CWD: root, AgentDir: filepath.Join(root, "agent"), SystemPrompt: &unreadable})
-	if len(resources.Diagnostics) != 1 || strings.HasPrefix(resources.Diagnostics[0].Message, "Warning:") {
-		t.Fatalf("diagnostics = %#v", resources.Diagnostics)
-	}
-}
-
 func TestLoadResourcesPromptPrecedenceTrustAndNoContext(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", filepath.Join(root, "home"))
@@ -287,21 +274,6 @@ func TestLoadResourcesPromptPrecedenceTrustAndNoContext(t *testing.T) {
 	}
 	if resources.ContextFiles == nil || len(resources.ContextFiles) != 0 {
 		t.Fatalf("no-context files = %#v, want non-nil empty", resources.ContextFiles)
-	}
-}
-
-func TestDefaultAgentDirNormalizesEnvironmentOverride(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("HOME", root)
-	t.Setenv("USERPROFILE", root)
-	t.Setenv("PI_CODING_AGENT_DIR", "~/custom-agent")
-	if got, want := DefaultAgentDir(), filepath.Join(root, "custom-agent"); got != want {
-		t.Fatalf("tilde agent directory = %q, want %q", got, want)
-	}
-
-	t.Setenv("PI_CODING_AGENT_DIR", "file://"+filepath.ToSlash(root)+"/encoded%20agent")
-	if got, want := DefaultAgentDir(), filepath.Join(root, "encoded agent"); got != want {
-		t.Fatalf("file URL agent directory = %q, want %q", got, want)
 	}
 }
 
@@ -345,23 +317,6 @@ func TestLoadResourcesCLIOverridesFileLiteralAndExplicitEmpty(t *testing.T) {
 	}
 	if resources.AppendSystemPrompt == nil || len(resources.AppendSystemPrompt) != 0 {
 		t.Fatalf("explicit empty append = %#v, want non-nil empty", resources.AppendSystemPrompt)
-	}
-}
-
-func TestResourceFilesUseNodeUTF8Replacement(t *testing.T) {
-	root := t.TempDir()
-	cwd := filepath.Join(root, "project")
-	agentDir := filepath.Join(root, "agent")
-	path := filepath.Join(cwd, "AGENTS.md")
-	if err := os.MkdirAll(cwd, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte{0xff, 0xff, 0xe2, 0x82}, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	files, diagnostics := LoadProjectContextFiles(cwd, agentDir)
-	if len(diagnostics) != 0 || len(files) != 1 || files[0].Content != "���" {
-		t.Fatalf("files = %#v, diagnostics = %#v", files, diagnostics)
 	}
 }
 

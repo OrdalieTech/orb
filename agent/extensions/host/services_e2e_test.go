@@ -169,25 +169,6 @@ func TestRealHostContextModelRuntimeFacade(t *testing.T) {
 	}
 }
 
-func TestRealHostAgentSessionStubReportsNotWired(t *testing.T) {
-	_, runner, _, _ := startServicesFixture(t)
-	var result struct {
-		Created bool   `json:"created"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	runServiceTool(t, runner, "svc_session_stub", map[string]any{}, &result)
-	if result.Created {
-		t.Fatal("stub service created a session")
-	}
-	if result.Code != "agent_session_unimplemented" {
-		t.Fatalf("stub error code = %q", result.Code)
-	}
-	if !strings.Contains(result.Message, "not wired") || !strings.Contains(result.Message, "SetAgentSessionService") {
-		t.Fatalf("stub error message is not the precise not-yet-wired diagnostic: %q", result.Message)
-	}
-}
-
 // fakeAgentSessionService drives the protocol layer the way the runner lane
 // will: mirrors emitted during Prompt, a JS tool callback, and a blocking
 // prompt for cancellation.

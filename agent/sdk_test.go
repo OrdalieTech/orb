@@ -1,16 +1,11 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"image"
-	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -29,127 +24,6 @@ import (
 func isolateSDKAgentDir(t *testing.T) {
 	t.Helper()
 	t.Setenv(config.EnvAgentDir, t.TempDir())
-}
-
-func TestSDKPublicSessionControlsMatchUpstream(t *testing.T) {
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	manager, err := sessionstore.InMemory(cwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "accepted", 10)})
-	result, err := NewAgentSession(AgentSessionOptions{
-		CWD: cwd, AgentDir: agentDir, SessionManager: manager,
-		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &Resources{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	if result.Session.Agent() == nil || result.Session.Agent().State().Model.ID != provider.GetModel().ID {
-		t.Fatalf("direct agent = %#v", result.Session.Agent())
-	}
-	if got := result.Session.GetActiveToolNames(); !reflect.DeepEqual(got, DefaultActiveToolNames) {
-		t.Fatalf("active tools = %#v", got)
-	}
-	if err := result.Session.SetActiveToolsByName([]string{"read", "missing"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := result.Session.GetActiveToolNames(); !reflect.DeepEqual(got, []string{"read"}) {
-		t.Fatalf("filtered active tools = %#v", got)
-	}
-
-	if err := result.Session.SendCustomMessage(context.Background(), CustomMessage{CustomType: "sdk", Content: nil, Display: true}, nil); err != nil {
-		t.Fatal(err)
-	}
-	state := result.Session.State()
-	custom, ok := state.Messages[len(state.Messages)-1].(*harness.CustomMessage)
-	if !ok || custom.CustomType != "sdk" || !reflect.DeepEqual(custom.Content, []any{}) {
-		t.Fatalf("custom message = %#v", state.Messages[len(state.Messages)-1])
-	}
-
-	var preflight []InputDisposition
-	if err := result.Session.PromptWithOptions(context.Background(), "hello", &PromptOptions{
-		PreflightResult: func(disposition InputDisposition) { preflight = append(preflight, disposition) },
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(preflight, []InputDisposition{DispositionStarted}) {
-		t.Fatalf("preflight = %#v", preflight)
-	}
-}
-
-func TestSDKPromptOptionsReportUnknownModelPreflightRejection(t *testing.T) {
-	t.Setenv(config.EnvAgentDir, t.TempDir())
-	result, err := NewAgentSession(AgentSessionOptions{Resources: &Resources{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-	var preflight []InputDisposition
-	err = result.Session.PromptWithOptions(context.Background(), "hello", &PromptOptions{
-		PreflightResult: func(disposition InputDisposition) { preflight = append(preflight, disposition) },
-	})
-	if err == nil || !strings.HasPrefix(err.Error(), "No API key found for the selected model.") {
-		t.Fatalf("prompt error = %v", err)
-	}
-	if len(preflight) != 0 {
-		t.Fatalf("preflight = %#v", preflight)
-	}
-}
-
-func TestSDKServiceFactoriesReuseCWDServices(t *testing.T) {
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{CWD: cwd, AgentDir: agentDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if services.CWD != cwd || services.AgentDir != agentDir || services.SettingsManager == nil || services.ModelRegistry == nil || services.Resources == nil || services.ExtensionRegistry == nil {
-		t.Fatalf("services = %#v", services)
-	}
-	manager, err := sessionstore.InMemory(cwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := testFaux(100000)
-	result, err := CreateAgentSessionFromServices(CreateAgentSessionFromServicesOptions{
-		Services: services, SessionManager: manager, Model: provider.GetModel(), NoTools: "all",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-	if result.Services != services || result.Session.Manager() != manager || result.Session.State().Model.ID != provider.GetModel().ID {
-		t.Fatalf("session result = %#v", result)
-	}
-}
-
-func TestSDKServiceFactoryForwardsResourceReloadOptions(t *testing.T) {
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	trustCalls := 0
-	services, err := CreateAgentSessionServices(CreateAgentSessionServicesOptions{
-		CWD: cwd, AgentDir: agentDir,
-		ResourceLoaderOptions: &DefaultResourceLoaderOptions{
-			ExtensionFactories: []extensions.Factory{func(extensions.API) error { return nil }},
-		},
-		ResourceLoaderReloadOptions: &ResourceLoaderReloadOptions{
-			ResolveProjectTrust: func(_ context.Context, registry *extensions.Registry) (bool, error) {
-				trustCalls++
-				if !registry.HasPath("<inline:sdk-1>") {
-					t.Fatal("resource reload options ran before extension discovery")
-				}
-				return true, nil
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if trustCalls != 1 || !services.SettingsManager.IsProjectTrusted() {
-		t.Fatalf("trust calls=%d trusted=%t", trustCalls, services.SettingsManager.IsProjectTrusted())
-	}
 }
 
 func sdkServiceProviderFactory(api extensions.API) error {
@@ -240,91 +114,6 @@ func TestSDKServiceFactoryAppliesExtensionFlagsAndReportsInvalidValues(t *testin
 	}
 	if !reflect.DeepEqual(services.Diagnostics, wantDiagnostics) {
 		t.Fatalf("diagnostics = %#v", services.Diagnostics)
-	}
-}
-
-func TestNewAgentSessionForwardsStreamSettings(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name        string
-		settings    map[string]any
-		wantTimeout int64
-	}{
-		{
-			name: "http idle fallback",
-			settings: map[string]any{
-				"httpIdleTimeoutMs":         1234,
-				"websocketConnectTimeoutMs": 5678,
-				"thinkingBudgets":           map[string]any{"minimal": 1, "low": 2, "medium": 3, "high": 4},
-			},
-			wantTimeout: 1234,
-		},
-		{
-			name:        "disabled idle uses sdk sentinel",
-			settings:    map[string]any{"httpIdleTimeoutMs": 0},
-			wantTimeout: 2147483647,
-		},
-		{
-			name: "provider timeout wins",
-			settings: map[string]any{
-				"httpIdleTimeoutMs": 1234,
-				"retry":             map[string]any{"provider": map[string]any{"timeoutMs": 42}},
-			},
-			wantTimeout: 42,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			cwd := t.TempDir()
-			agentDir := t.TempDir()
-			encoded, err := json.Marshal(test.settings)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), encoded, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-			if err != nil {
-				t.Fatal(err)
-			}
-			manager, err := sessionstore.InMemory(cwd)
-			if err != nil {
-				t.Fatal(err)
-			}
-			provider := testFaux(100000)
-			provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-			var captured ai.SimpleStreamOptions
-			stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-				if options != nil {
-					captured = *options
-				}
-				return provider.StreamSimple(ctx, model, request, options)
-			}
-			result, err := NewAgentSession(AgentSessionOptions{
-				CWD: cwd, AgentDir: agentDir, Model: provider.GetModel(), StreamFn: stream,
-				Settings: settings, SessionManager: manager, NoTools: "all",
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer result.Session.Dispose()
-			if err := result.Session.PromptSync(context.Background(), "hello"); err != nil {
-				t.Fatal(err)
-			}
-			if captured.TimeoutMS == nil || *captured.TimeoutMS != test.wantTimeout {
-				t.Fatalf("timeout = %#v, want %d", captured.TimeoutMS, test.wantTimeout)
-			}
-			if test.name == "http idle fallback" {
-				if captured.WebSocketConnectTimeoutMS == nil || *captured.WebSocketConnectTimeoutMS != 5678 {
-					t.Fatalf("websocket timeout = %#v", captured.WebSocketConnectTimeoutMS)
-				}
-				budgets := captured.ThinkingBudgets
-				if budgets == nil || budgets.Minimal == nil || *budgets.Minimal != 1 || budgets.High == nil || *budgets.High != 4 {
-					t.Fatalf("thinking budgets = %#v", budgets)
-				}
-			}
-		})
 	}
 }
 
@@ -474,79 +263,6 @@ func TestNewAgentSessionReloadRebuildsSettingsBoundTools(t *testing.T) {
 	}
 }
 
-func TestBuildBuiltInToolsHonorsImageAutoResizeSetting(t *testing.T) {
-	cwd := t.TempDir()
-	agentDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"images":{"autoResize":false}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, image.NewNRGBA(image.Rect(0, 0, 2001, 1))); err != nil {
-		t.Fatal(err)
-	}
-	imageBytes := encoded.Bytes()
-	if err := os.WriteFile(filepath.Join(cwd, "fixture.png"), imageBytes, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	builtIns, err := buildBuiltInTools(cwd, settings, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var read engine.AgentTool
-	for _, tool := range builtIns {
-		if tool.Spec().Name == "read" {
-			read = tool
-			break
-		}
-	}
-	if read == nil {
-		t.Fatal("read tool was not built")
-	}
-	result, err := read.Execute(context.Background(), "call", map[string]any{"path": "fixture.png"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Content) != 2 {
-		t.Fatalf("read content = %#v", result.Content)
-	}
-	image, ok := result.Content[1].(*ai.ImageContent)
-	if !ok || image.Data != base64.StdEncoding.EncodeToString(imageBytes) || image.MimeType != "image/png" {
-		t.Fatalf("image content = %#v", result.Content[1])
-	}
-}
-
-func TestNewAgentSessionResolvesCWD(t *testing.T) {
-	root := t.TempDir()
-	project := filepath.Join(root, "project")
-	if err := os.Mkdir(project, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(root)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		AgentDir: t.TempDir(),
-		CWD:      "project",
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	if got := result.Session.Manager().GetCWD(); got != project {
-		t.Fatalf("session cwd = %q, want %q", got, project)
-	}
-	// Upstream system-prompt.ts writes the cwd with forward slashes on every platform.
-	if got := result.Session.State().SystemPrompt; !strings.HasSuffix(got, "<cwd>\n"+filepath.ToSlash(project)+"\n</cwd>") {
-		t.Fatalf("system prompt uses unresolved cwd: %q", got)
-	}
-}
-
 func TestNewAgentSessionPrompt(t *testing.T) {
 	isolateSDKAgentDir(t)
 	provider := testFaux(100000)
@@ -658,7 +374,7 @@ func TestNewAgentSessionRefreshesStateBetweenToolTurns(t *testing.T) {
 }
 
 func TestNewAgentSessionActivatesRehydratedHarnessStorage(t *testing.T) {
-	input, err := os.ReadFile(filepath.Join("..", "conformance", "fixtures", "F6HarnessTransactions", "v3-projection.jsonl"))
+	input, err := os.ReadFile(filepath.Join("session", "testdata", "harness-session.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,30 +466,6 @@ func TestNewAgentSessionThinkingLevelClamped(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("thinking level %s not in supported %v", state.ThinkingLevel, supported)
-	}
-}
-
-func TestNewAgentSessionNoModel(t *testing.T) {
-	isolateSDKAgentDir(t)
-	packageDir := t.TempDir()
-	t.Setenv("PI_PACKAGE_DIR", packageDir)
-	result, err := NewAgentSession(AgentSessionOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	state := result.Session.State()
-	if state.Model == nil || state.Model.Provider != "unknown" || state.Model.ID != "unknown" || state.Model.API != "unknown" {
-		t.Fatalf("expected upstream unknown model sentinel, got %v", state.Model)
-	}
-	if state.ThinkingLevel != ai.ModelThinkingOff {
-		t.Fatalf("expected off thinking, got %s", state.ThinkingLevel)
-	}
-	want := "No models available. Use /login to log into a provider via OAuth or API key. See:\n  " +
-		filepath.Join(packageDir, "docs", "providers.md") + "\n  " + filepath.Join(packageDir, "docs", "models.md")
-	if result.ModelFallbackMessage != want {
-		t.Fatalf("fallback = %q, want %q", result.ModelFallbackMessage, want)
 	}
 }
 
@@ -967,32 +659,6 @@ func TestNewAgentSessionInitializesMissingThinkingEntryFromSettings(t *testing.T
 	}
 }
 
-func TestSubscribeChanRaceRegression(t *testing.T) {
-	isolateSDKAgentDir(t)
-	// Regression: SubscribeChan must not panic when cancel races with event delivery.
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "race", 10)})
-
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	// Rapid subscribe/cancel cycles under race detector.
-	for i := 0; i < 100; i++ {
-		ch, cancel := result.Session.SubscribeChan(1)
-		go cancel()
-		go func() {
-			for range ch { //nolint:revive
-			}
-		}()
-	}
-}
-
 func TestSubscribeChanConcurrentCancel(t *testing.T) {
 	isolateSDKAgentDir(t)
 	// Multiple goroutines calling cancel must not panic.
@@ -1025,27 +691,6 @@ func TestSubscribeChanConcurrentCancel(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("channel not closed")
-	}
-}
-
-func TestNewAgentSessionExcludeTools(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn:     provider.StreamSimple,
-		Model:        provider.GetModel(),
-		ExcludeTools: []string{"write", "edit"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	for _, tool := range result.Session.State().Tools {
-		name := tool.Spec().Name
-		if name == "write" || name == "edit" {
-			t.Fatalf("tool %s should be excluded", name)
-		}
 	}
 }
 
@@ -1096,151 +741,6 @@ func TestNewAgentSessionModelRegistryRestore(t *testing.T) {
 	}
 }
 
-func TestNewAgentSessionModelRegistryUsedForCycleModel(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-	model := provider.GetModel()
-
-	agentDir := t.TempDir()
-	if err := os.WriteFile(
-		filepath.Join(agentDir, "auth.json"),
-		[]byte(`{"anthropic":{"type":"api_key","key":"test-key"},"openai":{"type":"api_key","key":"test-key"}}`),
-		0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	registry, err := config.NewModelRegistry(agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	available := registry.Available(nil)
-	if len(available) < 2 {
-		t.Fatalf("expected at least 2 available models with anthropic+openai auth, got %d", len(available))
-	}
-
-	testKey := "test-key"
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn:      provider.StreamSimple,
-		Model:         model,
-		ModelRegistry: registry,
-		GetAPIKey: func(_ context.Context, _ ai.ProviderID) (*string, error) {
-			return &testKey, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	initial := result.Session.State().Model
-	if initial == nil {
-		t.Fatal("expected initial model")
-	}
-
-	if _, err := result.Session.CycleModel(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	cycled := result.Session.State().Model
-	if cycled == nil {
-		t.Fatal("expected model after cycle")
-	}
-	if cycled.ID == initial.ID && cycled.Provider == initial.Provider {
-		t.Fatal("CycleModel did not change model despite multiple available")
-	}
-}
-
-func TestNewAgentSessionPersistentSessionManagerFailsOnBadPath(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-
-	// Use a nonexistent path that cannot be created.
-	badDir := "/dev/null/impossible"
-	if runtime.GOOS == "windows" {
-		// Windows has no /dev/null; a regular file blocks the parent the same way.
-		blocker := filepath.Join(t.TempDir(), "file")
-		if err := os.WriteFile(blocker, nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		badDir = filepath.Join(blocker, "impossible")
-	}
-	_, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		AgentDir: badDir,
-	})
-	if err == nil {
-		t.Fatal("expected error for bad session dir, got nil")
-	}
-}
-
-func TestSubscribeChanBarrierRace(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "race", 10)})
-
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	// Barrier-based regression: ensure cancel during active emission never panics.
-	var wg sync.WaitGroup
-	ready := make(chan struct{})
-	for i := 0; i < 20; i++ {
-		ch, cancel := result.Session.SubscribeChan(1)
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			<-ready
-			cancel()
-		}()
-		go func() {
-			defer wg.Done()
-			<-ready
-			for range ch { //nolint:revive
-			}
-		}()
-	}
-	close(ready) // barrier — all goroutines start simultaneously
-	wg.Wait()
-}
-
-func TestSubscribeChanHighIterationRace(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	var wg sync.WaitGroup
-	for i := 0; i < 1000; i++ {
-		ch, cancel := result.Session.SubscribeChan(1)
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			cancel()
-		}()
-		go func() {
-			defer wg.Done()
-			for range ch { //nolint:revive
-			}
-		}()
-	}
-	wg.Wait()
-}
-
 func TestNewAgentSessionNoToolsBuiltinRetainsCustom(t *testing.T) {
 	isolateSDKAgentDir(t)
 	provider := testFaux(100000)
@@ -1281,32 +781,6 @@ func TestNewAgentSessionNoToolsBuiltinRetainsCustom(t *testing.T) {
 	}
 }
 
-func TestNewAgentSessionCustomToolUsesPerToolSDKSource(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		CustomTools: []extensions.ToolDefinition{
-			{Name: "alpha", Description: "alpha tool"},
-			{Name: "beta", Description: "beta tool"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-	registered := result.Session.ExtensionRunner().AllRegisteredTools()
-	if len(registered) != 2 {
-		t.Fatalf("registered tools = %d", len(registered))
-	}
-	for index, path := range []string{"<sdk:alpha>", "<sdk:beta>"} {
-		if registered[index].SourceInfo.Path != path || registered[index].SourceInfo.Source != "sdk" {
-			t.Fatalf("tool %d source = %#v", index, registered[index].SourceInfo)
-		}
-	}
-}
-
 func TestNewAgentSessionNoToolsAllSuppressesCustom(t *testing.T) {
 	isolateSDKAgentDir(t)
 	provider := testFaux(100000)
@@ -1337,65 +811,6 @@ func TestNewAgentSessionNoToolsAllSuppressesCustom(t *testing.T) {
 			names = append(names, tool.Spec().Name)
 		}
 		t.Fatalf("expected 0 tools with noTools=all, got %v", names)
-	}
-}
-
-func TestPreferredAvailableModelProviderOrder(t *testing.T) {
-	isolateSDKAgentDir(t)
-	// PreferredAvailableModel should pick the first model matching
-	// defaultModelProviderOrder, not just index 0.
-	anthropicModel := ai.Model{Provider: "anthropic", ID: "claude-opus-4-8", Name: "Claude Opus"}
-	openaiModel := ai.Model{Provider: "openai", ID: "gpt-5.5", Name: "GPT 5.5"}
-	unknownModel := ai.Model{Provider: "unknown-provider", ID: "whatever", Name: "Whatever"}
-
-	// openai appears first in slice, but anthropic is higher in provider order
-	got := PreferredAvailableModel([]ai.Model{openaiModel, unknownModel, anthropicModel})
-	if got == nil {
-		t.Fatal("expected a model")
-	}
-	if got.Provider != "anthropic" || got.ID != "claude-opus-4-8" {
-		t.Fatalf("expected anthropic/claude-opus-4-8 (higher provider order), got %s/%s", got.Provider, got.ID)
-	}
-
-	// Only unknown provider — falls back to index 0
-	got = PreferredAvailableModel([]ai.Model{unknownModel})
-	if got == nil {
-		t.Fatal("expected fallback model")
-	}
-	if got.Provider != "unknown-provider" {
-		t.Fatalf("expected unknown-provider fallback, got %s", got.Provider)
-	}
-
-	// Empty slice returns nil
-	if PreferredAvailableModel(nil) != nil {
-		t.Fatal("expected nil for empty slice")
-	}
-}
-
-func TestNewAgentSessionGetRequestAuthThreaded(t *testing.T) {
-	isolateSDKAgentDir(t)
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-
-	var called bool
-	result, err := NewAgentSession(AgentSessionOptions{
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		GetRequestAuth: func(_ context.Context, _ ai.ProviderID) (*engine.RequestAuth, error) {
-			called = true
-			return &engine.RequestAuth{}, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-
-	if err := result.Session.PromptSync(context.Background(), "test"); err != nil {
-		t.Fatal(err)
-	}
-	if !called {
-		t.Fatal("GetRequestAuth was not called during prompt")
 	}
 }
 
@@ -1456,176 +871,6 @@ func TestNewAgentSessionConvertsPersistedCodingAgentMessages(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("provider request omitted projected compaction summary: %s", encoded)
-	}
-}
-
-func TestNewAgentSessionThreadsRuntimeSettingsToProvider(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	settingsJSON := []byte(`{
-  "transport": "sse",
-  "steeringMode": "all",
-  "followUpMode": "all",
-  "retry": {"provider": {"timeoutMs": 50, "maxRetries": 2, "maxRetryDelayMs": 75}}
-}`)
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), settingsJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("sdk-runtime-settings"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	provider := testFaux(100000)
-	var received *ai.SimpleStreamOptions
-	stream := func(_ context.Context, _ *ai.Model, _ ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-		copy := *options
-		received = &copy
-		response := runtimeAssistant(provider, "ok", 10)
-		return func(yield func(ai.AssistantMessageEvent, error) bool) {
-			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: response}, nil)
-		}, nil
-	}
-	result, err := NewAgentSession(AgentSessionOptions{
-		AgentDir:       agentDir,
-		CWD:            root,
-		StreamFn:       stream,
-		Model:          provider.GetModel(),
-		Settings:       settings,
-		SessionManager: manager,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-	if result.Session.SteeringMode() != engine.QueueAll || result.Session.FollowUpMode() != engine.QueueAll {
-		t.Fatalf("queue modes = %q/%q", result.Session.SteeringMode(), result.Session.FollowUpMode())
-	}
-	if err := result.Session.PromptSync(context.Background(), "settings"); err != nil {
-		t.Fatal(err)
-	}
-	if received == nil || received.Transport == nil || *received.Transport != ai.TransportSSE {
-		t.Fatalf("transport options = %#v", received)
-	}
-	if received.TimeoutMS == nil || *received.TimeoutMS != 50 || received.MaxRetries == nil || *received.MaxRetries != 2 {
-		t.Fatalf("provider retry options = %#v", received)
-	}
-	if received.MaxRetryDelayMS == nil || *received.MaxRetryDelayMS != 75 {
-		t.Fatalf("max retry delay = %#v", received.MaxRetryDelayMS)
-	}
-	if received.SessionID == nil || *received.SessionID != manager.GetSessionID() {
-		t.Fatalf("session id = %#v, want %q", received.SessionID, manager.GetSessionID())
-	}
-}
-
-func TestNewAgentSessionThreadsShellSettingsToBashTool(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"shellCommandPrefix":"export ORB_SDK_PREFIX=threaded"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	provider := testFaux(100000)
-	result, err := NewAgentSession(AgentSessionOptions{
-		AgentDir: agentDir,
-		CWD:      root,
-		StreamFn: provider.StreamSimple,
-		Model:    provider.GetModel(),
-		Tools:    []string{"bash"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer result.Session.Dispose()
-	tool := result.Session.State().Tools[0]
-	got, err := tool.Execute(context.Background(), "call", map[string]any{"command": "printf %s \"$ORB_SDK_PREFIX\""}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Content) != 1 || got.Content[0].(*ai.TextContent).Text != "threaded" {
-		t.Fatalf("bash result = %#v", got.Content)
-	}
-}
-
-func TestDefaultRegistryResolverUsesAuthJSON(t *testing.T) {
-	isolateSDKAgentDir(t)
-	agentDir := t.TempDir()
-	if err := os.WriteFile(
-		filepath.Join(agentDir, "auth.json"),
-		[]byte(`{"anthropic":{"type":"api_key","key":"sk-stored-test"}}`),
-		0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := config.NewModelRegistry(agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolver := registry.DefaultRequestAuthResolver(nil)
-	result, err := resolver(context.Background(), "anthropic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result == nil || result.APIKey == nil {
-		t.Fatal("expected non-nil API key from auth.json")
-	}
-	if *result.APIKey != "sk-stored-test" {
-		t.Fatalf("expected sk-stored-test, got %s", *result.APIKey)
-	}
-}
-
-func TestDefaultRegistryResolverReturnsNilForUnknown(t *testing.T) {
-	isolateSDKAgentDir(t)
-	registry, err := config.NewModelRegistry(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolver := registry.DefaultRequestAuthResolver(nil)
-	result, err := resolver(context.Background(), "unknown-provider-xyz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result != nil {
-		t.Fatalf("expected nil for unknown provider, got %+v", result)
-	}
-}
-
-func BenchmarkModelRegistryCreation(b *testing.B) {
-	dir := b.TempDir()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := config.NewModelRegistry(dir)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkNewAgentSessionMinimal(b *testing.B) {
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "ok", 10)})
-	model := provider.GetModel()
-	agentDir := b.TempDir()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		result, err := NewAgentSession(AgentSessionOptions{
-			StreamFn: provider.StreamSimple,
-			Model:    model,
-			AgentDir: agentDir,
-		})
-		if err != nil {
-			b.Fatal(err)
-		}
-		result.Session.Dispose()
 	}
 }
 

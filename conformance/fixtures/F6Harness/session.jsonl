@@ -1,3 +1,0 @@
-{"v":4,"kind":"header","id":"session","storageVersion":1,"createdAt":1770091506789,"cwd":"/fixture"}
-[{"kind":"entry","id":"a","parentId":null,"type":"message","message":{"role":"user","content":[{"type":"text","text":"<>&"}],"timestamp":1},"seq":1,"timestamp":1770091506789},{"kind":"entry","id":"b","parentId":"a","type":"custom","customType":"test","data":null,"seq":2,"timestamp":1770091506789}]
-[{"kind":"value","op":"set","seq":3,"namespace":"session","key":"name","value":"sample"},{"kind":"list","op":"append","seq":4,"namespace":"lane","key":"inbox","value":{"entryId":"a","kind":"steer"}},{"kind":"value","op":"delete","seq":5,"namespace":"session","key":"name"},{"kind":"list","op":"delete","seq":6,"namespace":"lane","key":"inbox"}]

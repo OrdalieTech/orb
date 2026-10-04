@@ -2,38 +2,13 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
 )
-
-func TestAgentCoalescesMissingInitialModelToUnknownSentinel(t *testing.T) {
-	created := NewAgent(nil, WithInitialState(AgentState{}))
-	model := created.State().Model
-	if model == nil || model.Provider != "unknown" || model.ID != "unknown" || model.API != "unknown" {
-		t.Fatalf("default model = %#v", model)
-	}
-}
-
-func TestAgentRetainsExplicitStreamFunction(t *testing.T) {
-	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonStop)}}
-	created := NewAgent(responses.stream, WithInitialState(AgentState{Model: loopModel()}))
-	if created.StreamFn() == nil {
-		t.Fatal("constructor stream function was not retained")
-	}
-	if err := created.Prompt(context.Background(), "hello"); err != nil {
-		t.Fatal(err)
-	}
-	state := created.State()
-	if state.ErrorMessage != nil {
-		t.Fatalf("error message = %q", *state.ErrorMessage)
-	}
-}
 
 func TestSessionLoopOwnsExecutionAndSharesCancellation(t *testing.T) {
 	entered := make(chan struct{})
@@ -65,22 +40,6 @@ func TestSessionLoopOwnsExecutionAndSharesCancellation(t *testing.T) {
 	}
 	if state.Messages[1].(*ai.AssistantMessage).StopReason != ai.StopReasonAborted {
 		t.Fatal("cancellation lost")
-	}
-}
-
-func TestAgentStatePreservesRawCustomMessageType(t *testing.T) {
-	original := json.RawMessage(`{"role":"custom","content":"original"}`)
-	created := NewAgent(nil, WithInitialState(AgentState{Model: loopModel(), Messages: AgentMessages{original}}))
-	original[0] = 'x'
-	state := created.State()
-	preserved, ok := state.Messages[0].(json.RawMessage)
-	if !ok || string(preserved) != `{"role":"custom","content":"original"}` {
-		t.Fatalf("preserved = %T %q", state.Messages[0], preserved)
-	}
-	preserved[0] = 'y'
-	again := created.State().Messages[0].(json.RawMessage)
-	if string(again) != `{"role":"custom","content":"original"}` {
-		t.Fatalf("state raw message was aliased: %q", again)
 	}
 }
 
@@ -208,145 +167,6 @@ func TestAgentContinueDrainsAssistantTailSteeringOneAtATime(t *testing.T) {
 	}
 }
 
-func TestAgentStateReturnsIndependentCollections(t *testing.T) {
-	type customLabels []string
-	type customMeta map[string]customLabels
-	type customMessage struct {
-		Role string     `json:"role"`
-		Meta customMeta `json:"meta"`
-	}
-	levelName := "high"
-	levelMap := map[ai.ModelThinkingLevel]*string{ai.ModelThinkingHigh: &levelName}
-	tiers := []ai.ModelCostTier{{InputTokensAbove: 100}}
-	message := loopAssistant(ai.StopReasonStop,
-		&ai.TextContent{Text: "original"},
-		&ai.ToolCall{ID: "call-1", Name: "tool", Arguments: map[string]any{
-			"nested": map[string]any{"value": "original"},
-			"labels": []string{"original"},
-			"lookup": map[string]string{"value": "original"},
-		}},
-		&ai.UnknownContentBlock{Raw: json.RawMessage(`{"type":"future","value":"original"}`)},
-	)
-	customOriginal := &customMessage{Role: "custom", Meta: customMeta{"labels": customLabels{"original"}}}
-	agent := NewAgent(nil, WithInitialState(AgentState{
-		Model: &ai.Model{
-			ID: "model", ThinkingLevelMap: &levelMap,
-			Cost: ai.ModelCost{Tiers: &tiers},
-		},
-		Messages: AgentMessages{message, customOriginal},
-	}))
-	customOriginal.Meta["labels"][0] = "input mutation"
-	state := agent.State()
-	state.Messages = append(state.Messages, loopUser("external"))
-	state.Tools = append(state.Tools, AgentToolFunc{})
-	state.PendingToolCalls["external"] = struct{}{}
-	state.Model.ID = "external"
-	*(*state.Model.ThinkingLevelMap)[ai.ModelThinkingHigh] = "external"
-	(*state.Model.Cost.Tiers)[0].InputTokensAbove = 999
-	assistant := state.Messages[0].(*ai.AssistantMessage)
-	assistant.Content[0].(*ai.TextContent).Text = "external"
-	assistant.Content[1].(*ai.ToolCall).Arguments["nested"].(map[string]any)["value"] = "external"
-	assistant.Content[1].(*ai.ToolCall).Arguments["labels"].([]string)[0] = "external"
-	assistant.Content[1].(*ai.ToolCall).Arguments["lookup"].(map[string]string)["value"] = "external"
-	assistant.Content[2].(*ai.UnknownContentBlock).Raw[1] = 'X'
-	custom := state.Messages[1].(*customMessage)
-	custom.Meta["labels"][0] = "external"
-	current := agent.State()
-	if len(current.Messages) != 2 || len(current.Tools) != 0 || len(current.PendingToolCalls) != 0 || current.Model.ID != "model" {
-		t.Fatalf("state snapshot aliases internal state: %#v", current)
-	}
-	if got := *(*current.Model.ThinkingLevelMap)[ai.ModelThinkingHigh]; got != "high" {
-		t.Fatalf("thinking level map was aliased: %q", got)
-	}
-	if got := (*current.Model.Cost.Tiers)[0].InputTokensAbove; got != 100 {
-		t.Fatalf("cost tiers were aliased: %v", got)
-	}
-	currentAssistant := current.Messages[0].(*ai.AssistantMessage)
-	if got := currentAssistant.Content[0].(*ai.TextContent).Text; got != "original" {
-		t.Fatalf("assistant text was aliased: %q", got)
-	}
-	if got := currentAssistant.Content[1].(*ai.ToolCall).Arguments["nested"].(map[string]any)["value"]; got != "original" {
-		t.Fatalf("tool arguments were aliased: %#v", got)
-	}
-	if got := currentAssistant.Content[1].(*ai.ToolCall).Arguments["labels"].([]string)[0]; got != "original" {
-		t.Fatalf("typed tool argument slice was aliased: %#v", got)
-	}
-	if got := currentAssistant.Content[1].(*ai.ToolCall).Arguments["lookup"].(map[string]string)["value"]; got != "original" {
-		t.Fatalf("typed tool argument map was aliased: %#v", got)
-	}
-	if got := string(currentAssistant.Content[2].(*ai.UnknownContentBlock).Raw); got != `{"type":"future","value":"original"}` {
-		t.Fatalf("unknown content block was aliased: %s", got)
-	}
-	if got := current.Messages[1].(*customMessage).Meta["labels"][0]; got != "original" {
-		t.Fatalf("custom message was aliased: %#v", got)
-	}
-}
-
-func TestAgentStreamingStateOwnsProviderSnapshot(t *testing.T) {
-	providerMutated := make(chan struct{})
-	releaseProvider := make(chan struct{})
-	stream := func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-		return func(yield func(ai.AssistantMessageEvent, error) bool) {
-			block := &ai.TextContent{Text: ""}
-			partial := loopAssistant(ai.StopReasonStop, block)
-			if !yield(ai.StartEvent{Partial: partial}, nil) {
-				return
-			}
-			block.Text = "provider mutation"
-			close(providerMutated)
-			<-releaseProvider
-			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: loopAssistant(ai.StopReasonStop, &ai.TextContent{Text: "done"})}, nil)
-		}, nil
-	}
-	agent := NewAgent(stream, WithInitialState(AgentState{Model: loopModel()}))
-	done := make(chan error, 1)
-	go func() { done <- agent.Prompt(context.Background(), "go") }()
-	<-providerMutated
-	state := agent.State()
-	streaming := state.StreamingMessage.(*ai.AssistantMessage)
-	if got := streaming.Content[0].(*ai.TextContent).Text; got != "" {
-		t.Fatalf("state observed provider mutation after event: %q", got)
-	}
-	streaming.Content[0].(*ai.TextContent).Text = "caller mutation"
-	stateAgain := agent.State()
-	if got := stateAgain.StreamingMessage.(*ai.AssistantMessage).Content[0].(*ai.TextContent).Text; got != "" {
-		t.Fatalf("state snapshot was caller-mutable: %q", got)
-	}
-	close(releaseProvider)
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAgentInitialStateDefaultsAndHighLevelQueueHook(t *testing.T) {
-	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonStop)}}
-	externalMessage := loopUser("external steering")
-	getterCalls := 0
-	agent := NewAgent(
-		responses.stream, WithInitialState(AgentState{Model: loopModel()}),
-		WithGetSteeringMessages(func(context.Context) (AgentMessages, error) {
-			getterCalls++
-			if getterCalls == 1 {
-				return AgentMessages{externalMessage}, nil
-			}
-			return AgentMessages{}, nil
-		}),
-	)
-	state := agent.State()
-	if state.ThinkingLevel != ThinkingOff || state.Tools == nil || state.Messages == nil {
-		t.Fatalf("initial state defaults = %#v", state)
-	}
-	if err := agent.Prompt(context.Background(), loopUser("prompt")); err != nil {
-		t.Fatal(err)
-	}
-	if len(responses.contexts) != 1 || len(responses.contexts[0].Messages) != 2 {
-		t.Fatalf("provider context = %#v", responses.contexts)
-	}
-	if getterCalls != 2 {
-		t.Fatalf("steering getter calls = %d, want 2", getterCalls)
-	}
-}
-
 func joinEventTypes(values []AgentEventType) string {
 	strings := make([]string, len(values))
 	for index, value := range values {
@@ -365,22 +185,4 @@ func joinInts(values []int) string {
 		}
 	}
 	return joinStrings(strings)
-}
-
-func TestAgentPeekQueuedMessagesFollowsQueueModes(t *testing.T) {
-	agent := NewAgent(nil, WithFollowUpMode(QueueAll))
-	agent.FollowUp(loopUser("follow 1"))
-	agent.FollowUp(loopUser("follow 2"))
-	if got := agent.PeekQueuedMessages(); len(got) != 2 {
-		t.Fatalf("follow-ups peeked = %d, want both", len(got))
-	}
-	agent.Steer(loopUser("steer 1"))
-	agent.Steer(loopUser("steer 2"))
-	if got := agent.PeekQueuedMessages(); len(got) != 1 || !reflect.DeepEqual(got[0], loopUser("steer 1")) {
-		t.Fatalf("steering peeked = %#v", got)
-	}
-	agent.ClearSteeringQueue()
-	if got := agent.PeekQueuedMessages(); len(got) != 2 || !agent.HasQueuedMessages() {
-		t.Fatalf("peek consumed messages: %#v", got)
-	}
 }

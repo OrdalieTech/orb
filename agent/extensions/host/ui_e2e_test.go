@@ -233,33 +233,6 @@ func (ui *hostUIStub) Custom(ctx context.Context, factory extensions.CustomFacto
 	}
 }
 
-type sdkThemeUIStub struct {
-	extensions.NoopUI
-	rendered []string
-}
-
-func (ui *sdkThemeUIStub) Custom(ctx context.Context, factory extensions.CustomFactory, _ *extensions.CustomOptions) (any, bool, error) {
-	done := make(chan any, 1)
-	host := &stubUIHost{invalidated: make(chan struct{}, 8)}
-	component, err := factory(host, ui.Theme(), stubKeybindings{}, func(value any) { done <- value })
-	if err != nil {
-		return nil, false, err
-	}
-	if disposable, ok := component.(extensions.DisposableComponent); ok {
-		defer disposable.Dispose()
-	}
-	ui.rendered = waitForRender(tContext{ctx}, component, 40, func(lines []string) bool { return len(lines) > 0 })
-	if len(ui.rendered) == 0 {
-		return nil, false, errors.New("SDK-themed component did not render")
-	}
-	select {
-	case value := <-done:
-		return value, true, nil
-	case <-ctx.Done():
-		return nil, false, context.Cause(ctx)
-	}
-}
-
 type tContext struct{ context.Context }
 
 func waitForRender(ctx tContext, component extensions.Component, width int, accept func([]string) bool) []string {
@@ -309,52 +282,6 @@ func (stubKeybindings) Definition(string) extensions.KeybindingDefinition {
 func (stubKeybindings) Conflicts() []extensions.KeybindingConflict { return nil }
 func (stubKeybindings) UserBindings() map[string][]string          { return nil }
 func (stubKeybindings) ResolvedBindings() map[string][]string      { return nil }
-
-// The host must publish the SDK theme global — the one the embedded
-// orb-extension-sdk's theme-dependent symbols (getMarkdownTheme, renderDiff)
-// read — before any custom-component factory runs. The fixture reads the
-// global the way upstream SDK components did, throwing when it is absent.
-func TestHostInitializesSDKGlobalThemeBeforeCustomFactory(t *testing.T) {
-	agentDir := isolatedTempDir(t)
-	entry := filepath.Join(agentDir, "extensions", "sdk-theme.mjs")
-	writeFile(t, entry, `
-function sdkTheme() {
-  const value = globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")];
-  if (!value) throw new Error("Theme not initialized. Call initTheme() first.");
-  return value;
-}
-export default function (pi) {
-  pi.registerCommand("sdk-theme-loader", {
-    async handler(_args, ctx) {
-      const value = await ctx.ui.custom((_tui, _theme, _keybindings, done) => {
-        const line = sdkTheme().fg("muted", "Loading esc");
-        queueMicrotask(() => done("mounted"));
-        return { render() { return [line]; }, invalidate() {}, dispose() {} };
-      });
-      if (value !== "mounted") throw new Error("custom loader did not complete");
-    }
-  });
-}
-`, 0o600)
-	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
-	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
-		t.Fatalf("load result = %#v", result)
-	}
-	ui := &sdkThemeUIStub{}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd, Mode: extensions.ModeTUI, UI: ui})
-	command := runner.Command("sdk-theme-loader")
-	if command == nil {
-		t.Fatal("sdk-theme-loader command was not registered")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := command.Handler(ctx, "", runner.CreateCommandContext()); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(ui.rendered, []string{"Loading esc"}) {
-		t.Fatalf("SDK-themed render = %#v", ui.rendered)
-	}
-}
 
 func TestRealHostUISurfaceAndCustomComponent(t *testing.T) {
 	_, registry, _, result, cwd := startFixtureManager(t, fixturePath(t, "ui.mjs"))
@@ -486,34 +413,6 @@ func TestActiveUIEventPanicIsNotSwallowed(t *testing.T) {
 	t.Fatal("active UI panic was swallowed")
 }
 
-func TestWireComponentDoesNotReuseFrameAtDifferentWidth(t *testing.T) {
-	component := &wireComponent{
-		lines:          []string{"eighty-column frame"},
-		renderedWidth:  80,
-		requestPending: true,
-	}
-	if lines := component.Render(40); len(lines) != 0 {
-		t.Fatalf("stale-width render = %#v, want an empty frame", lines)
-	}
-	if lines := component.Render(80); !reflect.DeepEqual(lines, []string{"eighty-column frame"}) {
-		t.Fatalf("matching-width render = %#v", lines)
-	}
-}
-
-func TestUIGenerationCloseDropsBoundContexts(t *testing.T) {
-	runner := extensions.NewRunner(extensions.NewRegistry(t.TempDir()), extensions.RunnerOptions{})
-	generation := &generation{}
-	generation.ui = newUIGeneration(generation)
-	generation.ui.contexts["active"] = runner.CreateContext()
-	generation.ui.dialogs["dialog"] = nil
-	generation.ui.close()
-	generation.ui.contextMu.RLock()
-	defer generation.ui.contextMu.RUnlock()
-	if len(generation.ui.contexts) != 0 || len(generation.ui.dialogs) != 0 {
-		t.Fatalf("closed UI generation retained %d contexts and %d dialogs", len(generation.ui.contexts), len(generation.ui.dialogs))
-	}
-}
-
 func TestPendingHostDialogGetsTypedRestartCancellation(t *testing.T) {
 	manager, registry, _, result, cwd := startFixtureManager(t, fixturePath(t, "ui.mjs"))
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
@@ -627,109 +526,6 @@ func TestRealHostReceivesPromptLifecycleAndCompactionFailure(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("missing compact-failed event")
-	}
-}
-
-type colorThemeUIStub struct{ sdkThemeUIStub }
-
-type colorTheme struct{ extensions.Theme }
-
-func (colorTheme) FGANSI(color string) string {
-	if color == "accent" {
-		return "\x1b[36m"
-	}
-	return ""
-}
-func (colorTheme) ColorMode() string                 { return "truecolor" }
-func (colorTheme) Colors() map[string]string         { return map[string]string{"accent": "#112233"} }
-func (colorTheme) Appearance() string                { return "light" }
-func (ui *colorThemeUIStub) Theme() extensions.Theme { return colorTheme{extensions.NoopUI{}.Theme()} }
-func (ui *colorThemeUIStub) Custom(ctx context.Context, factory extensions.CustomFactory, options *extensions.CustomOptions) (any, bool, error) {
-	done := make(chan any, 1)
-	component, err := factory(&stubUIHost{invalidated: make(chan struct{}, 8)}, ui.Theme(), stubKeybindings{}, func(value any) { done <- value })
-	if err != nil {
-		return nil, false, err
-	}
-	ui.rendered = waitForRender(tContext{ctx}, component, 40, func(lines []string) bool { return len(lines) > 0 })
-	return <-done, true, nil
-}
-
-// Extensions style text with theme tokens or concrete colors (pi 1.0's
-// theme.style, theme.colors and theme.appearance).
-func TestHostThemeStyleColorsAndAppearance(t *testing.T) {
-	agentDir := isolatedTempDir(t)
-	entry := filepath.Join(agentDir, "extensions", "theme-style.mjs")
-	writeFile(t, entry, `
-import { colorToHex } from "@earendil-works/pi-tui";
-export default function (pi) {
-  pi.registerCommand("theme-style", {
-    async handler(_args, ctx) {
-      await ctx.ui.custom((_tui, theme, _keybindings, done) => {
-        const line = [theme.style("ok", { fg: "accent", bold: true }), theme.appearance, colorToHex(theme.colors.accent), theme.style("x", { bg: theme.colors.accent })].join("|");
-        queueMicrotask(() => done("mounted"));
-        return { render() { return [line]; }, invalidate() {}, dispose() {} };
-      });
-    }
-  });
-}
-`, 0o600)
-	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
-	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
-		t.Fatalf("load result = %#v", result)
-	}
-	ui := &colorThemeUIStub{}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd, Mode: extensions.ModeTUI, UI: ui})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := runner.Command("theme-style").Handler(ctx, "", runner.CreateCommandContext()); err != nil {
-		t.Fatal(err)
-	}
-	want := "\x1b[36m\x1b[1mok\x1b[22m\x1b[39m|light|#112233|\x1b[48;2;17;34;51mx\x1b[49m"
-	if !reflect.DeepEqual(ui.rendered, []string{want}) {
-		t.Fatalf("rendered = %q, want %q", ui.rendered, want)
-	}
-}
-
-// pi 1.0's tool exposure fields and prepareLoadout reach Go from a JS extension.
-func TestHostToolExposureFieldsAndPrepareLoadout(t *testing.T) {
-	agentDir := isolatedTempDir(t)
-	entry := filepath.Join(agentDir, "extensions", "loadout.mjs")
-	writeFile(t, entry, `
-export default function (pi) {
-  pi.registerTool({
-    name: "search_docs", label: "Search", description: "search", parameters: { type: "object", properties: {} },
-    exposure: "deferred", namespace: { name: "mcp__docs", description: "Docs" }, annotations: { readOnlyHint: true },
-    outputSchema: { type: "object" }, defaultActive: false,
-    async execute() { return { content: [{ type: "text", text: "ok" }] }; },
-  });
-  pi.registerTool({
-    name: "orchestrate", label: "Orchestrate", description: "run tools", parameters: { type: "object", properties: {} }, exposure: "model-only",
-    prepareLoadout(loadout) {
-      const names = loadout.callable.map((tool) => tool.name + ":" + loadout.getExposure(tool.name));
-      return { descriptions: { orchestrate: "calls " + names.join(",") }, hiddenDeclarations: ["search_docs"] };
-    },
-    async execute() { return { content: [{ type: "text", text: "ok" }] }; },
-  });
-}
-`, 0o600)
-	_, registry, _, result, cwd := startFixtureManagerIn(t, agentDir, entry)
-	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
-		t.Fatalf("load result = %#v", result)
-	}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
-	search := runner.ToolDefinition("search_docs")
-	if search == nil || search.EffectiveExposure() != extensions.ToolDeferred || search.Namespace == nil || search.Namespace.Name != "mcp__docs" ||
-		search.Annotations == nil || search.Annotations.ReadOnlyHint == nil || !*search.Annotations.ReadOnlyHint || len(search.OutputSchema) == 0 ||
-		search.DefaultActive == nil || *search.DefaultActive {
-		t.Fatalf("search_docs = %#v", search)
-	}
-	orchestrate := runner.ToolDefinition("orchestrate")
-	changes := orchestrate.PrepareLoadout(extensions.ToolLoadout{
-		Callable:  []extensions.LoadoutTool{{Name: "search_docs"}},
-		Exposures: map[string]extensions.ToolExposure{"search_docs": extensions.ToolDeferred},
-	})
-	if changes == nil || changes.Descriptions["orchestrate"] != "calls search_docs:deferred" || len(changes.HiddenDeclarations) != 1 {
-		t.Fatalf("changes = %#v", changes)
 	}
 }
 

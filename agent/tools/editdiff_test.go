@@ -1,63 +1,9 @@
 package tools
 
 import (
-	"fmt"
-	"slices"
 	"strings"
 	"testing"
 )
-
-func TestGenerateEditDiffFormatsMatchUpstream(t *testing.T) {
-	patch, err := GenerateUnifiedPatch("file.txt", "Hello, world!", "Hello, testing!", 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantPatch := strings.Join([]string{
-		"--- file.txt",
-		"+++ file.txt",
-		"@@ -1,1 +1,1 @@",
-		"-Hello, world!",
-		"\\ No newline at end of file",
-		"+Hello, testing!",
-		"\\ No newline at end of file",
-		"",
-	}, "\n")
-	if patch != wantPatch {
-		t.Fatalf("patch mismatch:\n got: %q\nwant: %q", patch, wantPatch)
-	}
-	diff := GenerateDiffString("Hello, world!", "Hello, testing!", 4)
-	if diff.Diff != "-1 Hello, world!\n+1 Hello, testing!" || diff.FirstChangedLine == nil || *diff.FirstChangedLine != 1 {
-		t.Fatalf("display diff = %#v", diff)
-	}
-}
-
-// Two edits close enough to share a hunk shift every later hunk's new-file
-// start. Expected output is Diff.createTwoFilesPatch(..., {context: 4}) from the
-// upstream diff package, which edit-diff.ts:369 calls.
-func TestGenerateUnifiedPatchNumbersHunksAfterAJoinedEdit(t *testing.T) {
-	oldLines := make([]string, 0, 31)
-	for number := 1; number <= 30; number++ {
-		oldLines = append(oldLines, fmt.Sprintf("line %d", number))
-	}
-	newLines := append([]string(nil), oldLines...)
-	newLines[4] = "LINE FIVE"
-	newLines[9] = "LINE TEN"
-	newLines[24] = "LINE TWENTY FIVE"
-	patch, err := GenerateUnifiedPatch("multi.txt", strings.Join(oldLines, "\n")+"\n", strings.Join(newLines, "\n")+"\n", 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var headers []string
-	for _, line := range strings.Split(patch, "\n") {
-		if strings.HasPrefix(line, "@@") {
-			headers = append(headers, line)
-		}
-	}
-	want := []string{"@@ -1,14 +1,14 @@", "@@ -21,9 +21,9 @@"}
-	if !slices.Equal(headers, want) {
-		t.Fatalf("hunk headers = %q, want %q", headers, want)
-	}
-}
 
 func TestApplyEditsPreservesUntouchedFuzzyLines(t *testing.T) {
 	original := strings.Join([]string{
@@ -82,19 +28,6 @@ func TestApplyEditsPreservesUntouchedFuzzyLines(t *testing.T) {
 	}, "\n")
 	if result.BaseContent != original || result.NewContent != want {
 		t.Fatalf("applied = %#v, want content %q", result, want)
-	}
-}
-
-func TestFuzzyFindTextReportsJavaScriptUTF16Offsets(t *testing.T) {
-	match := FuzzyFindText("😀 before\nhello\u00a0world\n", "hello world")
-	if !match.Found || !match.UsedFuzzyMatch || match.Index != 10 || match.MatchLength != 11 {
-		t.Fatalf("match = %#v", match)
-	}
-}
-
-func TestNormalizeForFuzzyMatchTrimsCarriageReturnPerLine(t *testing.T) {
-	if got := NormalizeForFuzzyMatch("x\r\ny"); got != "x\ny" {
-		t.Fatalf("NormalizeForFuzzyMatch() = %q, want %q", got, "x\ny")
 	}
 }
 

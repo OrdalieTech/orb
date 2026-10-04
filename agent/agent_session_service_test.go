@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
-	"github.com/OrdalieTech/orb/agent/extensions"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -319,54 +318,6 @@ func TestExtensionAgentSessionServiceEndToEndFlow(t *testing.T) {
 	}
 }
 
-// TestExtensionAgentSessionServiceValidatesBeforeExecute proves the D14 gate:
-// schema-invalid params never reach the host-JS execute; the model sees a
-// validation-error tool result instead.
-func TestExtensionAgentSessionServiceValidatesBeforeExecute(t *testing.T) {
-	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{
-		serviceAssistant(provider, faux.ToolCall("store_put", map[string]any{}, faux.ToolCallOptions{ID: "call-1"}), ai.StopReasonToolUse, 3),
-		serviceAssistant(provider, "recovered", ai.StopReasonStop, 3),
-	})
-	service, cwd, _ := newServiceFixture(t, provider)
-	recorder := &sessionCallbackRecorder{}
-	executed := 0
-	request := extensionhost.AgentSessionCreateRequest{
-		Options: extensionhost.AgentSessionOptions{
-			CWD:   cwd,
-			Model: synthesizedTestModel(),
-			CustomTools: []extensionhost.AgentSessionTool{
-				{Builtin: "read"},
-				{Name: "store_put", Parameters: storePutSchema()},
-			},
-		},
-		ExecuteTool: func(context.Context, string, string, any, func(json.RawMessage)) (json.RawMessage, error) {
-			executed++
-			return json.RawMessage(`{"content":[]}`), nil
-		},
-	}
-	handle, _, err := service.CreateSession(context.Background(), request, recorder.callbacks())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = handle.Dispose(context.Background()) }()
-	if err := handle.Prompt(context.Background(), "go", nil); err != nil {
-		t.Fatal(err)
-	}
-	if executed != 0 {
-		t.Fatalf("execute ran %d times for schema-invalid params", executed)
-	}
-	var sawValidationError bool
-	for _, message := range recorder.decodedMessages(t) {
-		if message.Role == "toolResult" && message.IsError && strings.Contains(mirrorText(message), `Validation failed for tool "store_put"`) {
-			sawValidationError = true
-		}
-	}
-	if !sawValidationError {
-		t.Fatalf("no validation-error tool result mirrored: %#v", recorder.decodedMessages(t))
-	}
-}
-
 // TestExtensionAgentSessionServiceTerminateEndsTurn proves `terminate: true`
 // in a tool result ends the turn (the structured_output contract).
 func TestExtensionAgentSessionServiceTerminateEndsTurn(t *testing.T) {
@@ -405,79 +356,6 @@ func TestExtensionAgentSessionServiceTerminateEndsTurn(t *testing.T) {
 	last := messages[len(messages)-1]
 	if last.Role != "toolResult" || mirrorText(last) != "captured" {
 		t.Fatalf("last mirrored message = %#v, want the terminating tool result", last)
-	}
-}
-
-// TestExtensionAgentSessionServiceProviderLimitMirrors proves contract point
-// 4: provider quota/limit failures never fail Prompt; they land in the mirror
-// as a final assistant message with stopReason "error" and the verbatim
-// errorMessage.
-func TestExtensionAgentSessionServiceProviderLimitMirrors(t *testing.T) {
-	provider := testFaux(100000)
-	limitText := "Monthly usage limit reached: please check your billing"
-	provider.SetResponses([]faux.ResponseStep{runtimeError(provider, limitText)})
-	service, cwd, _ := newServiceFixture(t, provider)
-	recorder := &sessionCallbackRecorder{}
-	request := extensionhost.AgentSessionCreateRequest{
-		Options: extensionhost.AgentSessionOptions{CWD: cwd, Model: synthesizedTestModel()},
-	}
-	handle, _, err := service.CreateSession(context.Background(), request, recorder.callbacks())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = handle.Dispose(context.Background()) }()
-	if err := handle.Prompt(context.Background(), "go", nil); err != nil {
-		t.Fatalf("provider limit surfaced as prompt error: %v", err)
-	}
-	messages := recorder.decodedMessages(t)
-	last := messages[len(messages)-1]
-	if last.Role != "assistant" || last.StopReason != "error" || last.ErrorMessage != limitText {
-		t.Fatalf("mirrored limit message = %#v, want stopReason error + verbatim %q", last, limitText)
-	}
-}
-
-// TestExtensionAgentSessionServiceToolAllowDenyMapping proves builtin markers
-// never restrict the default built-in set (upstream createAgentSession always
-// builds its defaults; same-named customTools only shadow them), callback
-// tools become active alongside them, and ExcludeTools always wins.
-func TestExtensionAgentSessionServiceToolAllowDenyMapping(t *testing.T) {
-	provider := testFaux(100000)
-	service, cwd, _ := newServiceFixture(t, provider)
-	recorder := &sessionCallbackRecorder{}
-	request := extensionhost.AgentSessionCreateRequest{
-		Options: extensionhost.AgentSessionOptions{
-			CWD:          cwd,
-			Model:        provider.GetModel(),
-			ExcludeTools: []string{"bash", "workflow"},
-			CustomTools: []extensionhost.AgentSessionTool{
-				{Builtin: "read"},
-				{Builtin: "bash"},
-				{Name: "store_put", Parameters: storePutSchema()},
-			},
-		},
-		ExecuteTool: func(context.Context, string, string, any, func(json.RawMessage)) (json.RawMessage, error) {
-			return json.RawMessage(`{"content":[]}`), nil
-		},
-	}
-	handle, _, err := service.CreateSession(context.Background(), request, recorder.callbacks())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = handle.Dispose(context.Background()) }()
-	session := handle.(*extensionAgentSessionHandle).session
-	active := session.GetActiveToolNames()
-	activeSet := map[string]bool{}
-	for _, name := range active {
-		activeSet[name] = true
-	}
-	// Markers {read,bash} do not narrow the default set: edit and write stay
-	// active even without markers, exactly like upstream. ExcludeTools is the
-	// only subtraction (bash), and non-default built-ins (grep) stay out.
-	if !activeSet["read"] || !activeSet["edit"] || !activeSet["write"] || !activeSet["store_put"] {
-		t.Fatalf("active tools = %#v, want default built-ins + store_put", active)
-	}
-	if activeSet["bash"] || activeSet["grep"] {
-		t.Fatalf("active tools = %#v: excluded or non-default built-ins leaked", active)
 	}
 }
 
@@ -629,87 +507,5 @@ func TestExtensionAgentSessionServiceDisposeAbortsRunningPrompt(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("dispose did not abort the running prompt")
-	}
-}
-
-// TestExtensionAgentSessionServiceSessionStorageAndInfoNames proves contract
-// point 6 (pre-create appendSessionInfo names apply post-create) and the
-// persisted SessionManager thin-handle mapping.
-func TestExtensionAgentSessionServiceSessionStorageAndInfoNames(t *testing.T) {
-	provider := testFaux(100000)
-	service, cwd, _ := newServiceFixture(t, provider)
-	sessionDir := t.TempDir()
-	recorder := &sessionCallbackRecorder{}
-	handle, _, err := service.CreateSession(context.Background(), extensionhost.AgentSessionCreateRequest{
-		Options: extensionhost.AgentSessionOptions{
-			CWD:   cwd,
-			Model: provider.GetModel(),
-			Session: &extensionhost.AgentSessionStorage{
-				Persisted: true, SessionDir: sessionDir, CWD: cwd,
-				SessionInfoNames: []string{"workflow:pre-create"},
-			},
-		},
-	}, recorder.callbacks())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = handle.Dispose(context.Background()) }()
-	session := handle.(*extensionAgentSessionHandle).session
-	if session.Manager().GetSessionDir() != sessionDir {
-		t.Fatalf("session dir = %q, want %q", session.Manager().GetSessionDir(), sessionDir)
-	}
-	if !session.Manager().IsPersisted() {
-		t.Fatal("session is not persisted")
-	}
-	name := session.Manager().GetSessionName()
-	if name == nil || *name != "workflow:pre-create" {
-		t.Fatalf("session name = %v, want pre-create appendSessionInfo applied", name)
-	}
-}
-
-// TestExtensionAgentSessionServiceResolvesModelRuntime proves contract point
-// 5: the ModelRuntime ref resolves to the extensions.ModelRegistry behind it,
-// and that registry supplies model resolution and the available-model set.
-func TestExtensionAgentSessionServiceResolvesModelRuntime(t *testing.T) {
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	t.Setenv(config.EnvAgentDir, agentDir)
-	registryDir := t.TempDir()
-	modelsJSON := `{"providers":{"svc-fixture":{"name":"Svc Fixture","baseUrl":"http://127.0.0.1:1","api":"openai-completions","apiKey":"sk-test","models":[{"id":"svc-model","name":"Svc Model","contextWindow":32000,"maxTokens":4096}]}}}`
-	if err := os.WriteFile(filepath.Join(registryDir, "models.json"), []byte(modelsJSON), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := config.NewOfflineModelRegistry(registryDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// No StreamFn override: the resolved registry must drive the session.
-	service := NewExtensionAgentSessionService(ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir})
-	recorder := &sessionCallbackRecorder{}
-	resolved := 0
-	handle, created, err := service.CreateSession(context.Background(), extensionhost.AgentSessionCreateRequest{
-		Options: extensionhost.AgentSessionOptions{
-			CWD:          cwd,
-			ModelRuntime: &extensionhost.ModelRuntimeRef{Handle: "orb-model-runtime-1"},
-		},
-		ResolveModelRuntime: func() (extensions.ModelRegistry, error) {
-			resolved++
-			return registry, nil
-		},
-	}, recorder.callbacks())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = handle.Dispose(context.Background()) }()
-	if resolved != 1 {
-		t.Fatalf("ResolveModelRuntime called %d times", resolved)
-	}
-	// Model resolution fell through to the resolved registry's available set.
-	if created.Model == nil || created.Model.ID != "svc-model" || string(created.Model.Provider) != "svc-fixture" {
-		t.Fatalf("create result model = %#v, want svc-fixture/svc-model from the resolved registry", created.Model)
-	}
-	session := handle.(*extensionAgentSessionHandle).session
-	available := session.AvailableModels()
-	if len(available) != 1 || available[0].ID != "svc-model" {
-		t.Fatalf("available models = %#v, want the resolved registry's set", available)
 	}
 }

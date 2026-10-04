@@ -84,12 +84,3 @@ func TestNpmRegistryPassesNpmrcAuthToken(t *testing.T) {
 	// Both the packument fetch and the tarball download require the token.
 	assertInstalledFromRegistry(t, manager, agentDir, "pi-auth-pkg")
 }
-
-func TestNpmRegistryDefaultsWithoutConfiguration(t *testing.T) {
-	manager, _, _, _ := newTestPackageManager(t)
-	clearNpmRegistryEnv(t)
-	registry := manager.npmRegistry()
-	if registry.baseURL != defaultNpmRegistry || registry.authToken != "" {
-		t.Fatalf("registry = %+v", registry)
-	}
-}

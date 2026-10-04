@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,15 +12,6 @@ import (
 	"time"
 )
 
-func requireFileErrorCode(t testing.TB, err error, code FileErrorCode) *FileError {
-	t.Helper()
-	var typed *FileError
-	if !errors.As(err, &typed) || typed.Code != code {
-		t.Fatalf("error = %v, want FileError(%s)", err, code)
-	}
-	return typed
-}
-
 func requireExecutionErrorCode(t testing.TB, err error, code ExecutionErrorCode) *ExecutionError {
 	t.Helper()
 	var typed *ExecutionError
@@ -29,93 +19,6 @@ func requireExecutionErrorCode(t testing.TB, err error, code ExecutionErrorCode)
 		t.Fatalf("error = %v, want ExecutionError(%s)", err, code)
 	}
 	return typed
-}
-
-func TestNodeExecutionEnvFileSystemParity(t *testing.T) {
-	root := t.TempDir()
-	processCWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if volume := filepath.VolumeName(processCWD); !strings.EqualFold(volume, filepath.VolumeName(root)) {
-		// A relative CWD cannot cross win32 drives; t.TempDir and the package can differ.
-		if root, err = os.MkdirTemp(volume+string(filepath.Separator), "orb-harness-parity-"); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.RemoveAll(root) })
-	}
-	relativeRoot, err := filepath.Rel(processCWD, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	env := NodeExecutionEnv{CWD: relativeRoot}
-	ctx := context.Background()
-
-	absolute, err := env.AbsolutePath(ctx, "nested/../file.txt")
-	if err != nil || absolute != filepath.Join(root, "file.txt") || !filepath.IsAbs(absolute) {
-		t.Fatalf("AbsolutePath = %q, %v", absolute, err)
-	}
-	joined, err := env.JoinPath(ctx, root, "nested", "..", "file.txt")
-	if err != nil || joined != filepath.Join(root, "file.txt") {
-		t.Fatalf("JoinPath = %q, %v", joined, err)
-	}
-	if err := env.WriteFile(ctx, "nested/file.txt", []byte("one\r\ntwo\nthree\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.AppendFile(ctx, "nested/file.txt", []byte("four")); err != nil {
-		t.Fatal(err)
-	}
-	text, err := env.ReadTextFile(ctx, "nested/file.txt")
-	if err != nil || text != "one\r\ntwo\nthree\nfour" {
-		t.Fatalf("ReadTextFile = %q, %v", text, err)
-	}
-	lines, err := env.ReadTextLines(ctx, "nested/file.txt", 2)
-	if err != nil || len(lines) != 2 || lines[0] != "one" || lines[1] != "two" {
-		t.Fatalf("ReadTextLines = %#v, %v", lines, err)
-	}
-	if noLines, err := env.ReadTextLines(ctx, "nested/file.txt", 0); err != nil || len(noLines) != 0 {
-		t.Fatalf("ReadTextLines(max=0) = %#v, %v", noLines, err)
-	}
-	binary, err := env.ReadBinaryFile(ctx, "nested/file.txt")
-	if err != nil || string(binary) != text {
-		t.Fatalf("ReadBinaryFile = %q, %v", binary, err)
-	}
-	info, err := env.FileInfo(ctx, "nested/file.txt")
-	if err != nil || info.Kind != FileKindFile || info.Name != "file.txt" || info.Size != int64(len(binary)) || !filepath.IsAbs(info.Path) {
-		t.Fatalf("FileInfo = %#v, %v", info, err)
-	}
-	entries, err := env.ListDir(ctx, "nested")
-	if err != nil || len(entries) != 1 || entries[0].Name != "file.txt" {
-		t.Fatalf("ListDir = %#v, %v", entries, err)
-	}
-	exists, err := env.Exists(ctx, "nested/file.txt")
-	if err != nil || !exists {
-		t.Fatalf("Exists = %v, %v", exists, err)
-	}
-	missing, err := env.Exists(ctx, "missing")
-	if err != nil || missing {
-		t.Fatalf("Exists(missing) = %v, %v", missing, err)
-	}
-	if err := env.CreateDir(ctx, "missing/child", false); err == nil {
-		t.Fatal("non-recursive CreateDir below a missing parent succeeded")
-	} else {
-		_ = requireFileErrorCode(t, err, FileErrorNotFound)
-	}
-	if err := env.CreateDir(ctx, "tree/child", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.Remove(ctx, "tree", false, false); err == nil {
-		t.Fatal("non-recursive Remove of a non-empty directory succeeded")
-	}
-	if err := env.Remove(ctx, "tree", true, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.Remove(ctx, "missing", false, true); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.Remove(ctx, "missing", false, false); err == nil {
-		t.Fatal("non-forced Remove of a missing path succeeded")
-	}
 }
 
 func TestNodeExecutionEnvShellParityAndFailures(t *testing.T) {
@@ -192,60 +95,6 @@ func TestNodeExecutionEnvShellParityAndFailures(t *testing.T) {
 		t.Fatal("non-executable shell succeeded")
 	} else {
 		_ = requireExecutionErrorCode(t, err, ExecutionErrorSpawn)
-	}
-}
-
-func TestNodeExecutionEnvExpandsHomeRelativePathsAndFileURLs(t *testing.T) {
-	root := t.TempDir()
-	env := NodeExecutionEnv{CWD: root}
-	ctx := context.Background()
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved, resolveErr := env.AbsolutePath(ctx, "~/pi-node-env-test"); resolveErr != nil || resolved != filepath.Join(home, "pi-node-env-test") {
-		t.Fatalf("AbsolutePath(~/pi-node-env-test) = %q, %v", resolved, resolveErr)
-	}
-	if resolved, resolveErr := env.AbsolutePath(ctx, "~"); resolveErr != nil || resolved != filepath.Clean(home) {
-		t.Fatalf("AbsolutePath(~) = %q, %v", resolved, resolveErr)
-	}
-	filePath := filepath.Join(root, "file with spaces.txt")
-	fileURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filePath)}).String()
-	if resolved, resolveErr := env.AbsolutePath(ctx, fileURL); resolveErr != nil || resolved != filePath {
-		t.Fatalf("AbsolutePath(%q) = %q, %v", fileURL, resolved, resolveErr)
-	}
-	// Malformed URLs stay ordinary paths instead of failing; on win32 Node's
-	// fileURLToPath accepts a host as a UNC server.
-	malformed := "file://remote-host/target.txt"
-	wantMalformed := filepath.Clean(filepath.Join(root, malformed))
-	if runtime.GOOS == "windows" {
-		wantMalformed = `\\remote-host\target.txt`
-	}
-	if resolved, resolveErr := env.AbsolutePath(ctx, malformed); resolveErr != nil || resolved != wantMalformed {
-		t.Fatalf("AbsolutePath(file URL with host) = %q, %v; want %q", resolved, resolveErr, wantMalformed)
-	}
-	// Node's path.resolve roots a drive-less absolute path on the process drive.
-	wantRooted, err := filepath.Abs(filepath.FromSlash("/b"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved, resolveErr := env.AbsolutePath(ctx, "/a/../b"); resolveErr != nil || resolved != wantRooted {
-		t.Fatalf("AbsolutePath(/a/../b) = %q, %v; want %q", resolved, resolveErr, wantRooted)
-	}
-}
-
-func TestNodeExecutionEnvCanReplaceInheritedShellEnvironment(t *testing.T) {
-	RequireProcesses(t)
-	root := t.TempDir()
-	t.Setenv("PI_NODE_ENV_INHERITED_TEST", "host")
-	env := NodeExecutionEnv{CWD: root, ShellEnv: map[string]string{"PI_NODE_ENV_CONFIGURED_TEST": "configured"}}
-	inherit := false
-	result, err := env.Exec(context.Background(), `printf '%s:%s:%s' "${PI_NODE_ENV_INHERITED_TEST-}" "${PI_NODE_ENV_CONFIGURED_TEST-}" "${PI_NODE_ENV_EXPLICIT_TEST-}"`, ExecOptions{
-		InheritEnv: &inherit,
-		Env:        map[string]string{"PI_NODE_ENV_EXPLICIT_TEST": "explicit"},
-	})
-	if err != nil || result.Stdout != "::explicit" {
-		t.Fatalf("Exec(inheritEnv=false) = %#v, %v", result, err)
 	}
 }
 

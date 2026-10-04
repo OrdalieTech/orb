@@ -335,8 +335,8 @@ would stop.
 returned error ⇒ error tool-result (upstream throw ⇒ error result), `Terminate`/`AddedToolNames`
 result fields, per-tool execution-mode override.
 
-**Harness.** Port of `packages/agent/src/harness/`: session repositories (JSONL + in-memory),
-compaction + branch summarization, skills loading, prompt-template plumbing, system-prompt assembly,
+**Harness.** Orb-owned since upstream deleted `packages/agent/src/harness/` in v1.0.0: JSONL session
+storage and repository, compaction + branch summarization,
 execution-env abstraction (`env` interface — the seam later used by SSH/sandbox extensions). The
 `agent` layer's `AgentSession` (upstream `packages/coding-agent/src/core/agent-session.ts`,
 spec `packages/coding-agent/docs/sdk.md`) is the high-level embedding API and the thing the SDK

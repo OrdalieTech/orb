@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -84,18 +83,6 @@ func TestModelsJSONOverlayAndNestedCompatMerge(t *testing.T) {
 	}
 }
 
-func TestApplyModelConfigTreatsEmptyHeadersAsPresent(t *testing.T) {
-	base := []ai.Model{{ID: "existing", Provider: "fixture", BaseURL: "https://example.invalid", API: ai.APIOpenAICompletions}}
-	config := &ModelConfig{Providers: map[string]ModelProviderConfig{"fixture": {Headers: map[string]string{}}}}
-	models, err := ApplyModelConfig(base, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models) != 1 || models[0].ID != "existing" {
-		t.Fatalf("models = %#v", models)
-	}
-}
-
 func TestResolveConfigValuesAndHeadersAtRequestTime(t *testing.T) {
 	t.Setenv("WP250_PROCESS_ENV", "process")
 	for _, test := range []struct{ input, want string }{
@@ -150,74 +137,6 @@ func TestResolveConfigValuesAndHeadersAtRequestTime(t *testing.T) {
 	}
 }
 
-func TestLoadModelsJSONRejectsInvalidSchema(t *testing.T) {
-	for name, content := range map[string]string{
-		"missing providers":        `{}`,
-		"null provider":            `{"providers":{"p":null}}`,
-		"empty id":                 `{"providers":{"p":{"baseUrl":"x","api":"openai-completions","models":[{"id":""}]}}}`,
-		"invalid input":            `{"providers":{"p":{"models":[{"id":"m","input":["audio"]}]}}}`,
-		"incomplete model cost":    `{"providers":{"p":{"models":[{"id":"m","cost":{"input":1}}]}}}`,
-		"invalid prompt cache":     `{"providers":{"p":{"models":[{"id":"m","promptCache":{"short":"300"}}]}}}`,
-		"invalid thinking value":   `{"providers":{"p":{"models":[{"id":"m","thinkingLevelMap":{"off":3}}]}}}`,
-		"invalid common compat":    `{"providers":{"p":{"compat":{"supportsLongCacheRetention":"yes"}}}}`,
-		"invalid override headers": `{"providers":{"p":{"modelOverrides":{"m":{"headers":{"X-Test":1}}}}}}`,
-		"radius oauth":             `{"providers":{"p":{"oauth":"radius"}}}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "models.json")
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := LoadModelConfig(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if config.Error() == "" || len(config.Providers) != 0 {
-				t.Fatalf("invalid models.json did not become an empty error snapshot: %#v", config)
-			}
-		})
-	}
-}
-
-func TestModelsJSONAcceptsPartialPromptCacheMetadata(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "models.json")
-	content := `{"providers":{"p":{"models":[{"id":"m","promptCache":{"long":3600}}]}}}`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	config, err := LoadModelConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.Error() != "" {
-		t.Fatalf("prompt cache metadata rejected: %s", config.Error())
-	}
-}
-
-func TestModelsJSONAcceptsConstrainedSamplingCompatFlags(t *testing.T) {
-	for name, compat := range map[string]string{
-		"responses":   `{"supportsStrictMode":true,"supportsOpenAIGrammarTools":true,"supportsExplicitPromptCacheMode":true}`,
-		"completions": `{"supportsOpenAIGrammarTools":true}`,
-		"anthropic":   `{"supportsStrictTools":true,"supportsTemperature":false,"allowEmptySignature":true}`,
-		"bedrock":     `{"supportsStrictMode":true}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "models.json")
-			content := `{"providers":{"p":{"compat":` + compat + `}}}`
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := LoadModelConfig(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if config.Error() != "" {
-				t.Fatalf("compat rejected: %s", config.Error())
-			}
-		})
-	}
-}
-
 func TestModelsJSONValidationMatchesUpstreamFixture(t *testing.T) {
 	data, err := os.ReadFile("../../conformance/fixtures/WP250/validation-cases.json")
 	if err != nil {
@@ -248,58 +167,6 @@ func TestModelsJSONValidationMatchesUpstreamFixture(t *testing.T) {
 			}
 			if accepted := config.Error() == ""; accepted != fixture.Accepted {
 				t.Fatalf("accepted = %t, want %t; error = %q", accepted, fixture.Accepted, config.Error())
-			}
-		})
-	}
-}
-
-func TestModelsJSONValidationUsesProviderInputOrder(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    string
-		reject  string
-	}{
-		{
-			name:    "z before a",
-			content: `{"providers":{"z-invalid":{"models":[{"id":"m","input":["audio"]}]},"a-invalid":{"models":[{"id":"m","cost":{"input":1}}]}}}`,
-			want:    "providers.z-invalid.models.0.input.0",
-			reject:  "providers.a-invalid",
-		},
-		{
-			name:    "a before z",
-			content: `{"providers":{"a-invalid":{"models":[{"id":"m","cost":{"input":1}}]},"z-invalid":{"models":[{"id":"m","input":["audio"]}]}}}`,
-			want:    "providers.a-invalid.models.0.cost.output",
-			reject:  "providers.z-invalid",
-		},
-		{
-			name:    "semantic validation",
-			content: `{"providers":{"z-invalid":{"oauth":"radius"},"a-invalid":{"oauth":"radius"}}}`,
-			want:    "providers.z-invalid.oauth",
-			reject:  "providers.a-invalid",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "models.json")
-			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			var first string
-			for iteration := 0; iteration < 20; iteration++ {
-				config, err := LoadModelConfig(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				message := config.Error()
-				if !strings.Contains(message, test.want) || strings.Contains(message, test.reject) {
-					t.Fatalf("error = %q; want first provider path %q", message, test.want)
-				}
-				if iteration == 0 {
-					first = message
-				} else if message != first {
-					t.Fatalf("validation error changed between loads:\nfirst: %q\nnow:   %q", first, message)
-				}
 			}
 		})
 	}

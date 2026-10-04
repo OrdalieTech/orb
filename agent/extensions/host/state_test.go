@@ -295,32 +295,6 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	}
 }
 
-func TestStateModelAuthPreservesExplicitEmptyMaps(t *testing.T) {
-	registry := emptyStateAuthRegistry{}
-	resolved, err := resolveStateModelAuth(context.Background(), registry, ai.Model{Provider: "empty", ID: "model"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(resolved)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(encoded), `{"ok":true,"headers":{},"env":{}}`; got != want {
-		t.Fatalf("request auth = %s, want %s", got, want)
-	}
-	provider, err := registry.ResolveProviderAuth(context.Background(), "empty", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err = json.Marshal(wireStateProviderAuth(provider))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(encoded), `{"auth":{"headers":{}},"env":{}}`; got != want {
-		t.Fatalf("provider auth = %s, want %s", got, want)
-	}
-}
-
 func TestStateSnapshotKeepsLargeSessionManagerUsable(t *testing.T) {
 	orbExecutable := writeFakeCommand(t, filepath.Join(t.TempDir(), "orb"),
 		"printf '%s\\n' 'orb fixture-version'\n", "echo orb fixture-version\n")
@@ -468,16 +442,6 @@ func userText(message engine.AgentMessage) string {
 }
 
 func stringPointer(value string) *string { return &value }
-
-type emptyStateAuthRegistry struct{ extensions.ModelRegistry }
-
-func (emptyStateAuthRegistry) ResolveProviderAuth(context.Context, string, map[string]string) (*aiauth.AuthResult, error) {
-	return &aiauth.AuthResult{Auth: aiauth.ModelAuth{Headers: ai.ProviderHeaders{}}, Env: map[string]string{}}, nil
-}
-
-func (emptyStateAuthRegistry) ResolveModelHeaders(context.Context, ai.Model, map[string]string, ...*string) (*map[string]string, error) {
-	return nil, nil
-}
 
 type stateAuthRegistry struct {
 	extensions.ModelRegistry

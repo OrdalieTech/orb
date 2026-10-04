@@ -4,7 +4,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { generateCommandMetadata } from "./f8-command-metadata.ts";
-import { committedFixture } from "./orb-owned.ts";
 
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
 
@@ -1057,7 +1056,6 @@ export async function generateF8(
 			promptPaths: [promptsDir],
 			includeDefaults: false,
 		});
-		const owned = await committedFixture("F8");
 		const normalizedSkills = skillResult.skills.map((skill) =>
 			normalizeSkill(skill, fixtureRoot),
 		);
@@ -1110,7 +1108,6 @@ export async function generateF8(
 				"packages/coding-agent/src/modes/interactive/theme/dark.json",
 				"packages/coding-agent/src/modes/interactive/interactive-mode.ts",
 			],
-			orbOwned: ["invocationCases", "harnessSubstitutionCases", "harnessPrompts"],
 			files: ["cases.json"],
 		};
 		const fixture = {
@@ -1118,9 +1115,6 @@ export async function generateF8(
 			argumentCases,
 			substitutionCases,
 			templateCases,
-			invocationCases: owned.invocationCases,
-			harnessSubstitutionCases: owned.harnessSubstitutionCases,
-			harnessPrompts: owned.harnessPrompts,
 			discovery: {
 				files: discoveryFiles,
 				skills: normalizedSkills,

@@ -77,7 +77,6 @@ type managerOptions struct {
 	agentDir           string
 	cwdOverride        string
 	initialID          *string
-	parentSession      *string
 	harnessRepo        harness.SessionRepo
 	entries            []*FileEntry
 }
@@ -123,10 +122,6 @@ func WithCwdOverride(path string) Option {
 
 func WithSessionID(id string) Option {
 	return func(options *managerOptions) { options.initialID = &id }
-}
-
-func WithParentSession(path string) Option {
-	return func(options *managerOptions) { options.parentSession = &path }
 }
 
 type SessionManager struct {
@@ -202,7 +197,7 @@ func Create(cwd, sessionDir string, options ...Option) (*SessionManager, error) 
 		}
 	}
 	manager := newManager(resolvedCWD, sessionDir, true, resolved)
-	if _, err := manager.newSessionLocked(&NewSessionOptions{ID: resolved.initialID, ParentSession: resolved.parentSession}); err != nil {
+	if _, err := manager.newSessionLocked(&NewSessionOptions{ID: resolved.initialID}); err != nil {
 		return nil, err
 	}
 	return manager, nil
@@ -313,7 +308,7 @@ func InMemory(cwd string, options ...Option) (*SessionManager, error) {
 			return manager, nil
 		}
 	}
-	if _, err := manager.newSessionLocked(&NewSessionOptions{ID: resolved.initialID, ParentSession: resolved.parentSession}); err != nil {
+	if _, err := manager.newSessionLocked(&NewSessionOptions{ID: resolved.initialID}); err != nil {
 		return nil, err
 	}
 	if len(resolved.entries) > 0 {

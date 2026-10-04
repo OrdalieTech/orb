@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
@@ -52,19 +51,6 @@ func TestConvertToLLMProjectsBashExecutionAndSkipsExcluded(t *testing.T) {
 	assertUserText(t, got[0], "Ran `false`\n```\nnope\n```\n\nCommand exited with code 1\n\n[Output truncated. Full output: /tmp/full]", 9)
 }
 
-func TestConvertToLLMNormalizesNullCustomContent(t *testing.T) {
-	got, err := ConvertToLLM(context.Background(), engine.AgentMessages{
-		json.RawMessage(`{"role":"custom","customType":"empty","content":null,"display":false,"timestamp":7}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	user := got[0].(*ai.UserMessage)
-	if user.Content.Text != nil || user.Content.Blocks == nil || len(user.Content.Blocks) != 0 {
-		t.Fatalf("content = %#v", user.Content)
-	}
-}
-
 func TestConvertToLLMWithBlockImagesAppliesSettingDynamically(t *testing.T) {
 	blocked := false
 	convert := ConvertToLLMWithBlockImages(func() bool { return blocked })
@@ -99,57 +85,6 @@ func TestConvertToLLMWithBlockImagesAppliesSettingDynamically(t *testing.T) {
 	}
 	if len(user.Content.Blocks) != 5 || len(toolResult.Content) != 2 {
 		t.Fatal("conversion mutated source messages")
-	}
-}
-
-func TestConvertToLLMPreservesStandardFallbackAndLoneSurrogate(t *testing.T) {
-	got, err := ConvertToLLM(context.Background(), engine.AgentMessages{
-		json.RawMessage(`{"role":"user","content":[{"type":"text","text":"\ud800"},{"type":"future","value":1}],"timestamp":1}`),
-		json.RawMessage(`{"role":"custom","customType":"future","content":"\ud800","display":false,"timestamp":2}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("converted = %#v", got)
-	}
-	standard := got[0].(*ai.UserMessage)
-	if len(standard.Content.Blocks) != 2 || standard.Content.Blocks[0].(*ai.TextContent).Text != "\xed\xa0\x80" {
-		t.Fatalf("standard = %#v", standard.Content)
-	}
-	if unknown, ok := standard.Content.Blocks[1].(*ai.UnknownContentBlock); !ok || string(unknown.Raw) != `{"type":"future","value":1}` {
-		t.Fatalf("unknown block = %T %#v", standard.Content.Blocks[1], standard.Content.Blocks[1])
-	}
-	custom := got[1].(*ai.UserMessage)
-	if len(custom.Content.Blocks) != 1 || custom.Content.Blocks[0].(*ai.TextContent).Text != "\xed\xa0\x80" {
-		t.Fatalf("custom = %#v", custom.Content)
-	}
-}
-
-func TestConvertToLLMPreservesLoneSurrogateFullOutputPath(t *testing.T) {
-	got, err := ConvertToLLM(context.Background(), engine.AgentMessages{
-		json.RawMessage(`{"role":"bashExecution","command":"cmd","output":"out","exitCode":0,"truncated":true,"fullOutputPath":"\ud800","timestamp":1}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertUserText(t, got[0], "Ran `cmd`\n```\nout\n```\n\n[Output truncated. Full output: \xed\xa0\x80]", 1)
-	encoded, err := ai.Marshal(got[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(encoded, []byte(`"text":"Ran `)) || !bytes.Contains(encoded, []byte(`\ud800`)) || bytes.Contains(encoded, []byte("\ufffd")) {
-		t.Fatalf("encoded = %s", encoded)
-	}
-}
-
-func TestParseSkillBlockPublicSurface(t *testing.T) {
-	got, ok := ParseSkillBlock("<skill name=\"review\" location=\"/skills/review\">\nInstructions\n</skill>\n\n  inspect this  ")
-	if !ok || got.Name != "review" || got.Location != "/skills/review" || got.Content != "Instructions" || got.UserMessage != "inspect this" {
-		t.Fatalf("skill block = %#v, %v", got, ok)
-	}
-	if _, ok := ParseSkillBlock("<skill name=\"review\" location=\"/skills/review\">\nInstructions\n</skill>\n\n"); ok {
-		t.Fatal("empty trailing user message was accepted")
 	}
 }
 

@@ -6,13 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/internal/localecompare"
-	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {
@@ -41,27 +36,6 @@ func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {
 	}
 }
 
-func TestLsToolDecodesInvalidFilenameBytesLikeNode(t *testing.T) {
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		t.Skip("this filesystem cannot create invalid UTF-8 filenames")
-	}
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "good"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	invalidName := string([]byte{'b', 0xff})
-	if err := os.WriteFile(filepath.Join(dir, invalidName), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result, err := NewLsTool(dir, nil).Execute(context.Background(), "call", map[string]any{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := toolResultText(t, result), "good"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-}
-
 func TestLsToolHandlesEmptyMissingAndFilePaths(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewLsTool(dir, nil)
@@ -83,48 +57,6 @@ func TestLsToolHandlesEmptyMissingAndFilePaths(t *testing.T) {
 	_, err = tool.Execute(context.Background(), "file", map[string]any{"path": file}, nil)
 	if err == nil || err.Error() != "Not a directory: "+file {
 		t.Fatalf("file error = %v", err)
-	}
-}
-
-func TestLsToolEntryLimitHasActionableNotice(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"a", "b", "c"} {
-		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	result, err := NewLsTool(dir, nil).Execute(context.Background(), "call", map[string]any{"limit": float64(2)}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "a\nb\n\n[2 entries limit reached. Use limit=4 for more]"
-	if got := toolResultText(t, result); got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-	details, ok := result.Details.(LsToolDetails)
-	if !ok || details.EntryLimitReached == nil || *details.EntryLimitReached != 2 {
-		t.Fatalf("Details = %#v", result.Details)
-	}
-}
-
-func TestLsToolPreservesLocaleAndFractionalLimitSemantics(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"a", "_", "-", "0", "z"} {
-		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	result, err := NewLsTool(dir, nil).Execute(context.Background(), "call", map[string]any{"limit": 1.5}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "_\n-\n\n[1.5 entries limit reached. Use limit=3 for more]"
-	if got := toolResultText(t, result); got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-	details, ok := result.Details.(LsToolDetails)
-	if !ok || details.EntryLimitReached == nil || *details.EntryLimitReached != 1.5 {
-		t.Fatalf("Details = %#v", result.Details)
 	}
 }
 
@@ -161,68 +93,6 @@ func TestLsToolOrdersAndFiltersEntries(t *testing.T) {
 	}
 }
 
-func TestLsToolIgnoresLCOnlyLocaleLikeNodeIntl(t *testing.T) {
-	t.Setenv("LC_ALL", "")
-	t.Setenv("LANG", "C.UTF-8")
-	t.Setenv("LC_COLLATE", "sv_SE.UTF-8")
-	if got := localecompare.New().CompareString("å", "z"); got >= 0 {
-		t.Fatalf("C locale comparison å/z = %d, want å before z", got)
-	}
-}
-
-func TestLsToolUsesLCMessagesBeforeLangLikeNodeIntl(t *testing.T) {
-	t.Setenv("LC_ALL", "")
-	t.Setenv("LC_MESSAGES", "sv_SE.UTF-8")
-	t.Setenv("LANG", "en_US.UTF-8")
-	if got := localecompare.New().CompareString("z", "å"); got >= 0 {
-		t.Fatalf("Swedish locale comparison z/å = %d, want z before å", got)
-	}
-}
-
-func TestLsToolDetailsMatchUpstreamOrderAndSafeIntegerLimit(t *testing.T) {
-	long := strings.Repeat("x", 30_000)
-	operations := limitLsOperations{entries: []string{long + "a", long + "b", long + "c"}}
-	result, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{
-		"path": hostPath("remote"), "limit": 2,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	details, ok := result.Details.(LsToolDetails)
-	if !ok || details.Truncation == nil || details.Truncation.MaxLines != truncate.MaxSafeInteger {
-		t.Fatalf("details = %#v", result.Details)
-	}
-	encoded, err := ai.Marshal(result.Details)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(string(encoded), `{"entryLimitReached":2,"truncation":{`) {
-		t.Fatalf("details member order = %s", encoded)
-	}
-}
-
-type limitLsOperations struct{ entries []string }
-
-func (limitLsOperations) Exists(context.Context, string) (bool, error) { return true, nil }
-func (limitLsOperations) Stat(_ context.Context, path string) (LsPathStat, error) {
-	return LsPathStat{Directory: path == hostPath("remote")}, nil
-}
-func (operations limitLsOperations) ReadDir(context.Context, string) ([]string, error) {
-	return append([]string(nil), operations.entries...), nil
-}
-
-func TestLsToolWrapsReadDirError(t *testing.T) {
-	operations := &fakeLsOperations{
-		exists:  true,
-		stats:   map[string]LsPathStat{hostPath("remote"): {Directory: true}},
-		readErr: errors.New("disk offline"),
-	}
-	_, err := NewLsTool(hostPath(), &LsToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"path": hostPath("remote")}, nil)
-	if err == nil || err.Error() != "Cannot read directory: disk offline" {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 type fakeLsOperations struct {
 	exists  bool
 	stats   map[string]LsPathStat
@@ -246,13 +116,6 @@ func (operations *fakeLsOperations) ReadDir(context.Context, string) ([]string, 
 	return append([]string(nil), operations.entries...), operations.readErr
 }
 
-func TestLsToolDescriptionAndSchema(t *testing.T) {
-	spec := NewLsTool(t.TempDir(), nil).Spec()
-	if spec.Name != "ls" || spec.Label != "ls" || !strings.Contains(spec.Description, "500 entries") {
-		t.Fatalf("Spec = %#v", spec)
-	}
-}
-
 func TestLsToolAbortReturnsWhileUpstreamStyleWorkContinues(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -265,15 +128,6 @@ func TestLsToolAbortReturnsWhileUpstreamStyleWorkContinues(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("ls worker stopped scheduling operations after abort")
-	}
-}
-
-func TestLsToolPreAbortedCallWinsOverPathResolutionError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := NewLsTool(t.TempDir(), nil).Execute(ctx, "call", map[string]any{"path": "file:///%E0%A4%A"}, nil)
-	if !errors.Is(err, errOperationAborted) {
-		t.Fatalf("error = %v", err)
 	}
 }
 

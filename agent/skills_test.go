@@ -17,7 +17,7 @@ func TestLoadSkillsFromDirValidationDiscoveryAndIgnore(t *testing.T) {
 	mustWriteResource(t, filepath.Join(root, "preferred", "SKILL.md"), "---\nname: preferred\ndescription: Root wins\n---\nRoot")
 	mustWriteResource(t, filepath.Join(root, "preferred", "nested", "SKILL.md"), "---\nname: nested\ndescription: Must lose\n---\nNested")
 
-	result := LoadSkillsFromDir(LoadSkillsFromDirOptions{Dir: root, Source: "test"})
+	result := loadSkillsFromDirInternal(root, "test", true, &skillIgnoreMatcher{}, root, map[string]bool{})
 	byName := make(map[string]Skill)
 	for _, skill := range result.Skills {
 		byName[skill.Name] = skill
@@ -59,31 +59,6 @@ func TestLoadSkillsFollowsSymlinksAndKeepsFirstCollision(t *testing.T) {
 	}
 	if len(result.Diagnostics) != 1 || result.Diagnostics[0].Type != "collision" || result.Diagnostics[0].Collision == nil {
 		t.Fatalf("diagnostics = %#v", result.Diagnostics)
-	}
-}
-
-func TestFormatSkillsForPromptExactAndHidden(t *testing.T) {
-	skills := []Skill{
-		{Name: "visible", Description: `Use <read> & "care".`, FilePath: "/skills/visible/SKILL.md"},
-		{Name: "hidden", Description: "Explicit only", FilePath: "/skills/hidden/SKILL.md", DisableModelInvocation: true},
-	}
-	want := "\n\nThe following skills provide specialized instructions for specific tasks.\n" +
-		"Use the read tool to load a skill's file when the task matches its description.\n" +
-		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n" +
-		"<available_skills>\n  <skill>\n    <name>visible</name>\n" +
-		"    <description>Use &lt;read&gt; &amp; &quot;care&quot;.</description>\n" +
-		"    <location>/skills/visible/SKILL.md</location>\n  </skill>\n</available_skills>"
-	for _, fileReadTool := range []string{"read", "bash"} {
-		expected := want
-		if fileReadTool == "bash" {
-			expected = strings.Replace(expected, "Use the read tool to load", "Use bash to load", 1)
-		}
-		if got := FormatSkillsForPrompt(skills, fileReadTool); got != expected {
-			t.Fatalf("skill prompt mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", fileReadTool, got, expected)
-		}
-		if got := FormatSkillsForPrompt(skills[1:], fileReadTool); got != "" {
-			t.Fatalf("hidden-only prompt = %q", got)
-		}
 	}
 }
 

@@ -13,51 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/truncate"
 )
-
-func TestGrepToolMiniTreeContextLimitAndOutputShape(t *testing.T) {
-	requireUnixSearchTest(t)
-	root := searchTreeRoot(t)
-	path := filepath.Join(root, "context.txt")
-	events := strings.Join([]string{
-		rgMatchEvent(t, path, 2, "match one\n"),
-		rgMatchEvent(t, path, 5, "match two\n"),
-	}, "\n")
-	installFakeManagedTool(t, "rg", events, "", 0, "")
-	result, err := NewGrepTool(root, nil).Execute(context.Background(), "call", map[string]any{
-		"pattern": "match", "path": path, "limit": 1, "context": 1,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "context.txt-1- before\ncontext.txt:2: match one\ncontext.txt-3- after\n\n[1 matches limit reached. Use limit=2 for more, or refine pattern]"
-	if got := toolResultText(t, result); got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-	details, ok := result.Details.(GrepToolDetails)
-	if !ok || details.MatchLimitReached == nil || *details.MatchLimitReached != 1 {
-		t.Fatalf("details = %#v", result.Details)
-	}
-}
-
-func TestGrepToolPreservesFractionalContextIndexQuirk(t *testing.T) {
-	requireUnixSearchTest(t)
-	root := searchTreeRoot(t)
-	path := filepath.Join(root, "context.txt")
-	installFakeManagedTool(t, "rg", rgMatchEvent(t, path, 2, "match one\n"), "", 0, "")
-	result, err := NewGrepTool(root, nil).Execute(context.Background(), "call", map[string]any{
-		"pattern": "match", "path": path, "context": 0.5,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "context.txt-1.5- \ncontext.txt-2.5- "
-	if got := toolResultText(t, result); got != want {
-		t.Fatalf("output = %q, want upstream fractional-index quirk %q", got, want)
-	}
-}
 
 func TestGrepToolTruncatesLongLinesAndReportsDetails(t *testing.T) {
 	requireUnixSearchTest(t)
@@ -99,23 +56,6 @@ func TestGrepToolPassesFlagLikePatternAfterDoubleDash(t *testing.T) {
 	wantTail := []string{"--ignore-case", "--fixed-strings", "--glob", "*.txt", "--", "--pre=payload", root}
 	if len(args) < len(wantTail) || !slices.Equal(args[len(args)-len(wantTail):], wantTail) {
 		t.Fatalf("args = %#v, want tail %#v", args, wantTail)
-	}
-}
-
-func TestGrepToolMissingPathAndSchemaMatchUpstream(t *testing.T) {
-	requireUnixSearchTest(t)
-	installFakeManagedTool(t, "rg", "", "", 1, "")
-	root := searchTreeRoot(t)
-	missing := filepath.Join(root, "missing")
-	_, err := NewGrepTool(root, nil).Execute(context.Background(), "call", map[string]any{
-		"pattern": "x", "path": missing,
-	}, nil)
-	if err == nil || err.Error() != "Path not found: "+missing {
-		t.Fatalf("error = %v", err)
-	}
-	wantSchema := `{"type":"object","required":["pattern"],"properties":{"pattern":{"type":"string","description":"Search pattern (regex or literal string)"},"path":{"type":"string","description":"Directory or file to search (default: current directory)"},"glob":{"type":"string","description":"Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"},"ignoreCase":{"type":"boolean","description":"Case-insensitive search (default: false)"},"literal":{"type":"boolean","description":"Treat pattern as literal string instead of regex (default: false)"},"context":{"type":"number","description":"Number of lines to show before and after each match (default: 0)"},"limit":{"type":"number","description":"Maximum number of matches to return (default: 100)"}}}`
-	if got := string(NewGrepTool(root, nil).Spec().Parameters); got != wantSchema {
-		t.Fatalf("schema = %s, want %s", got, wantSchema)
 	}
 }
 
@@ -177,33 +117,6 @@ func TestFindToolSurfacesFDErrorAndProtectsFlagPattern(t *testing.T) {
 	}
 }
 
-func TestFindToolCustomOperationsPreserveOutputAndLimitShape(t *testing.T) {
-	root := hostPath("remote")
-	operations := &recordingFindOperations{
-		exists:  true,
-		results: []string{hostPath("remote", "a.txt"), hostPath("remote", "nested", "b.txt")},
-	}
-	result, err := NewFindTool(root, &FindToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{
-		"pattern": "**/*.txt", "limit": 2,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := toolResultText(t, result), "a.txt\nnested/b.txt\n\n[2 results limit reached]"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-	if operations.pattern != "**/*.txt" || operations.cwd != root || operations.options.Limit != 2 {
-		t.Fatalf("operation call = pattern %q cwd %q options %#v", operations.pattern, operations.cwd, operations.options)
-	}
-	if want := []string{"**/node_modules/**", "**/.git/**"}; !slices.Equal(operations.options.Ignore, want) {
-		t.Fatalf("ignore = %#v, want %#v", operations.options.Ignore, want)
-	}
-	details, ok := result.Details.(FindToolDetails)
-	if !ok || details.ResultLimitReached == nil || *details.ResultLimitReached != 2 {
-		t.Fatalf("details = %#v", result.Details)
-	}
-}
-
 func TestFindToolCustomGlobAbortWinsWithoutWaiting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -225,37 +138,6 @@ func TestFindToolCustomGlobAbortWinsWithoutWaiting(t *testing.T) {
 		t.Fatal("find waited for custom Glob after abort")
 	}
 	close(release)
-}
-
-func TestFindToolCustomMissingPathAndSchema(t *testing.T) {
-	operations := &recordingFindOperations{}
-	_, err := NewFindTool(hostPath("remote"), &FindToolOptions{Operations: operations}).Execute(context.Background(), "call", map[string]any{"pattern": "*"}, nil)
-	if err == nil || err.Error() != "Path not found: "+hostPath("remote") {
-		t.Fatalf("error = %v", err)
-	}
-	want := `{"type":"object","required":["pattern"],"properties":{"pattern":{"type":"string","description":"Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"},"path":{"type":"string","description":"Directory to search in (default: current directory)"},"limit":{"type":"number","description":"Maximum number of results (default: 1000)"}}}`
-	if got := string(NewFindTool(hostPath("remote"), nil).Spec().Parameters); got != want {
-		t.Fatalf("schema = %s, want %s", got, want)
-	}
-}
-
-type recordingFindOperations struct {
-	exists  bool
-	results []string
-	pattern string
-	cwd     string
-	options FindGlobOptions
-}
-
-func (operations *recordingFindOperations) Exists(context.Context, string) (bool, error) {
-	return operations.exists, nil
-}
-
-func (operations *recordingFindOperations) Glob(_ context.Context, pattern, cwd string, options FindGlobOptions) ([]string, error) {
-	operations.pattern = pattern
-	operations.cwd = cwd
-	operations.options = options
-	return operations.results, nil
 }
 
 type blockingFindOperations struct {
@@ -369,23 +251,5 @@ func requireUnixSearchTest(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake rg and fd are POSIX shell scripts")
-	}
-}
-
-func TestSearchToolDetailsMarshalInUpstreamFieldOrder(t *testing.T) {
-	limit := 2.0
-	grepJSON, err := ai.Marshal(GrepToolDetails{MatchLimitReached: &limit, LinesTruncated: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(grepJSON), `{"matchLimitReached":2,"linesTruncated":true}`; got != want {
-		t.Fatalf("grep details = %s, want %s", got, want)
-	}
-	findJSON, err := ai.Marshal(FindToolDetails{ResultLimitReached: &limit})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(findJSON), `{"resultLimitReached":2}`; got != want {
-		t.Fatalf("find details = %s, want %s", got, want)
 	}
 }

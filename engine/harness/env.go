@@ -482,22 +482,6 @@ func (env *NodeExecutionEnv) untrackChild(process *os.Process) {
 	env.childrenMu.Unlock()
 }
 
-func (env *NodeExecutionEnv) ResourceFileInfo(path string) (FileInfo, error) {
-	return env.FileInfo(context.Background(), path)
-}
-
-func (env *NodeExecutionEnv) ResourceListDir(path string) ([]FileInfo, error) {
-	return env.ListDir(context.Background(), path)
-}
-
-func (env *NodeExecutionEnv) ResourceReadTextFile(path string) (string, error) {
-	return env.ReadTextFile(context.Background(), path)
-}
-
-func (env *NodeExecutionEnv) ResourceCanonicalPath(path string) (string, error) {
-	return env.CanonicalPath(context.Background(), path)
-}
-
 func (env *NodeExecutionEnv) shell() (string, error) {
 	if env.ShellPath != "" {
 		info, err := os.Stat(env.ShellPath)
@@ -801,4 +785,3 @@ func (env *NodeExecutionEnv) Exec(ctx context.Context, command string, options E
 }
 
 var _ ExecutionEnv = (*NodeExecutionEnv)(nil)
-var _ ResourceFileSystem = (*NodeExecutionEnv)(nil)

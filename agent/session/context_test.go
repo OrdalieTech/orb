@@ -34,11 +34,3 @@ func TestBuildSessionContextProjectsCompactionAwareCodingMessages(t *testing.T) 
 		t.Fatalf("roles = %#v, want %#v", roles, want)
 	}
 }
-
-func TestBuildSessionContextOmitsEmptyBranchSummary(t *testing.T) {
-	id := "branch"
-	context := BuildSessionContext([]SessionEntry{{Type: "branch_summary", ID: id}}, &id)
-	if len(context.Messages) != 0 {
-		t.Fatalf("messages = %#v", context.Messages)
-	}
-}

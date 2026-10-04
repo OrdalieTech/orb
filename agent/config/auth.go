@@ -171,22 +171,6 @@ func (storage *AuthStorage) Delete(ctx context.Context, provider string) error {
 	})
 }
 
-func ReadStoredCredential(provider, path string) *aiauth.Credential {
-	resolved, err := NormalizePath(path)
-	if err != nil {
-		return nil
-	}
-	contents, err := os.ReadFile(resolved)
-	if err != nil {
-		return nil
-	}
-	document, err := parseAuthDocument(contents)
-	if err != nil {
-		return nil
-	}
-	return document.credentials[provider].Clone()
-}
-
 func readStoredCredentials(path string) map[string]*aiauth.Credential {
 	contents, err := os.ReadFile(path)
 	if err != nil {

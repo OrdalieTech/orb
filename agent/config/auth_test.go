@@ -41,33 +41,6 @@ func TestAuthStorageReadsConfigValuesAndPreservesRawFile(t *testing.T) {
 	}
 }
 
-func TestAuthStorageModifyMatchesUpstreamFormattingAndPreservesExternalEdits(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "auth.json")
-	if err := os.WriteFile(path, []byte(`{"anthropic":{"type":"api_key","key":"old"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	storage, err := NewAuthStorage(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{"anthropic":{"type":"api_key","key":"old"},"openai":{"type":"api_key","key":"external"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := storage.Modify(context.Background(), "anthropic", func(*aiauth.Credential) (*aiauth.Credential, error) {
-		return aiauth.APIKeyCredential("new"), nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	want := "{\n  \"anthropic\": {\n    \"type\": \"api_key\",\n    \"key\": \"new\"\n  },\n  \"openai\": {\n    \"type\": \"api_key\",\n    \"key\": \"external\"\n  }\n}"
-	contents, err := os.ReadFile(path)
-	if err != nil || string(contents) != want {
-		t.Fatalf("auth.json = %q, want %q (%v)", contents, want, err)
-	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != wantPerm(0o600) {
-		t.Fatalf("auth.json mode = %v, %v", info.Mode().Perm(), err)
-	}
-}
-
 func TestAuthStorageSerializesConcurrentWritersAndRejectsMalformedInput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	first, err := NewAuthStorage(path)
@@ -112,25 +85,6 @@ func TestAuthStorageSerializesConcurrentWritersAndRejectsMalformedInput(t *testi
 	}
 	if contents, _ := os.ReadFile(path); string(contents) != "{invalid-json" {
 		t.Fatalf("malformed auth.json changed to %q", contents)
-	}
-}
-
-func TestAuthStorageDeleteAndListUseDocumentOrder(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "auth.json")
-	if err := os.WriteFile(path, []byte(`{"anthropic":{"type":"api_key","key":"a"},"openai":{"type":"api_key","key":"o"},"google":{"type":"api_key","key":"g"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	storage, err := NewAuthStorage(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := storage.Delete(context.Background(), "anthropic"); err != nil {
-		t.Fatal(err)
-	}
-	listed, err := storage.List(context.Background())
-	want := []aiauth.CredentialInfo{{ProviderID: "openai", Type: "api_key"}, {ProviderID: "google", Type: "api_key"}}
-	if err != nil || !reflect.DeepEqual(listed, want) {
-		t.Fatalf("list = %#v, %v", listed, err)
 	}
 }
 

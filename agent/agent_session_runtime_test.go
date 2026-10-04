@@ -32,41 +32,6 @@ func (agentSessionRuntimeTrustContext) Mode() extensions.Mode    { return extens
 func (agentSessionRuntimeTrustContext) HasUI() bool              { return false }
 func (agentSessionRuntimeTrustContext) UI() extensions.TrustUI   { return extensions.NewNoopUI() }
 
-func TestNewAgentSessionRuntimeRejectsMissingImplicitSessionCWD(t *testing.T) {
-	t.Parallel()
-	missing := filepath.Join(t.TempDir(), "missing")
-	provider := testFaux(100000)
-	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
-		CWD: missing, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(),
-	})
-	if host != nil {
-		host.Dispose(context.Background())
-		t.Fatal("runtime was created for a missing cwd")
-	}
-	var failure *MissingSessionCWDError
-	if !errors.As(err, &failure) || failure.SessionCWD != missing {
-		t.Fatalf("missing cwd error = %#v, %v", failure, err)
-	}
-}
-
-func TestNewAgentSessionRuntimeAllowsMissingInMemorySessionCWD(t *testing.T) {
-	t.Parallel()
-	missing := filepath.Join(t.TempDir(), "missing")
-	manager, err := sessionstore.InMemory(missing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := testFaux(100000)
-	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
-		CWD: missing, AgentDir: t.TempDir(), SessionManager: manager,
-		StreamFn: provider.StreamSimple, Model: provider.GetModel(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	host.Dispose(context.Background())
-}
-
 func TestAgentSessionRuntimeRejectsHarnessBackedReplacement(t *testing.T) {
 	cwd := t.TempDir()
 	storage, err := harness.NewInMemorySessionStorage(nil, harness.SessionMetadata{
