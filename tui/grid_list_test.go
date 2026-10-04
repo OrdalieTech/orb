@@ -90,7 +90,7 @@ func TestFrameChromeAndPadding(t *testing.T) {
 	if len(lines) != 7 {
 		t.Fatalf("lines = %d: %q", len(lines), lines)
 	}
-	if strings.Trim(lines[0], "╭─╮") != "" || strings.Trim(lines[6], "╰─╯") != "" {
+	if strings.Trim(StripANSI(lines[0]), "╭─╮") != "" || strings.Trim(StripANSI(lines[6]), "╰─╯") != "" {
 		t.Fatalf("borders are broken: %q / %q", lines[0], lines[6])
 	}
 	if !strings.Contains(lines[1], "Plugins") || !strings.Contains(lines[3], "body") || !strings.Contains(lines[5], "esc close") {

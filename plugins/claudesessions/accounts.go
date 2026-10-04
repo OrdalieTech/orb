@@ -214,7 +214,7 @@ func login(ctx context.Context, claude string, env []string, another bool, inter
 					Links:   []aiauth.AuthInfoLink{{URL: url, Label: "Sign-in page"}},
 				})
 				go func() {
-					code, err := interaction.Prompt(ctx, aiauth.AuthPrompt{Type: aiauth.PromptManualCode, Message: "Code from the sign-in page (only if asked)", Placeholder: "code"})
+					code, err := interaction.Prompt(ctx, aiauth.AuthPrompt{Type: aiauth.PromptManualCode, Message: "Paste the code shown after signing in", Placeholder: "code"})
 					if err == nil && strings.TrimSpace(code) != "" {
 						_, _ = io.WriteString(stdin, strings.TrimSpace(code)+"\n")
 					}

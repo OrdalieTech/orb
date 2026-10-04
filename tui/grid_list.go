@@ -469,14 +469,15 @@ func (frame *Frame) Render(width int) []string {
 	}
 	interior := width - 2*frame.innerInset
 	padding := strings.Repeat(" ", frame.innerInset-1)
-	side := frame.style(frame.Border, "│")
+	// A border is presentation a selection must skip; a plain panel's blank sides already are.
+	side, open, close := frame.style(frame.Border, "│"), contentStart, contentEnd
 	if frame.Plain {
-		side = " "
+		side, open, close = " ", "", ""
 	}
 	wrap := func(content string) string {
-		return side + padding + TruncateToWidth(content, interior, "…", true) + padding + side
+		return side + padding + open + TruncateToWidth(content, interior, "…", true) + close + padding + side
 	}
-	lines := []string{frame.style(frame.Border, "╭"+strings.Repeat("─", width-2)+"╮")}
+	lines := []string{open + close + frame.style(frame.Border, "╭"+strings.Repeat("─", width-2)+"╮")}
 	if frame.Plain {
 		lines[0] = strings.Repeat(" ", width)
 	}
@@ -521,7 +522,7 @@ func (frame *Frame) Render(width int) []string {
 	if frame.Footer != "" {
 		lines = append(lines, wrap(""), wrap(frame.style(frame.Hint, frame.Footer)))
 	}
-	lines = append(lines, frame.style(frame.Border, "╰"+strings.Repeat("─", width-2)+"╯"))
+	lines = append(lines, open+close+frame.style(frame.Border, "╰"+strings.Repeat("─", width-2)+"╯"))
 	if frame.Plain {
 		lines[len(lines)-1] = strings.Repeat(" ", width)
 	}

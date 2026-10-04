@@ -428,3 +428,88 @@ func TestSelectionE2EDragInsideADialogCopiesTheDialog(t *testing.T) {
 		t.Fatal("a drag in a dialog copied nothing")
 	}
 }
+
+// dragCopy drags from one screen cell to another and returns the copy and
+// the highlighted cells as painted, in order.
+func dragCopy(t *testing.T, terminal *trackingTerminal, ui *TUI, copied chan string, from, to mousePoint) (text, highlighted string) {
+	t.Helper()
+	terminal.deliver(sgr(0, from.column, from.row, false))
+	terminal.deliver(sgr(32, to.column, to.row, false))
+	terminal.deliver(sgr(0, to.column, to.row, true))
+	select {
+	case text = <-copied:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the drag copied nothing")
+	}
+	ui.renderMu.Lock()
+	defer ui.renderMu.Unlock()
+	for _, line := range ui.renderSelection(ui.frame) {
+		for _, run := range strings.Split(line, "\x1b[7m")[1:] {
+			run, _, _ = strings.Cut(run, segmentReset)
+			highlighted += plainTerminalText(run)
+		}
+	}
+	return text, highlighted
+}
+
+const wrappedLoginURL = "https://auth.example.test/oauth/authorize?client_id=orb&state=abc123xyz"
+
+// A drag over a link the dialog wrapped over three lines copies the link and
+// highlights it alone: no border glyphs, padding or wrap breaks, from any
+// start cell inside the dialog.
+func TestSelectionE2EDragInADialogCopiesItsWrappedContent(t *testing.T) {
+	terminal := newTrackingTerminal(60, 16)
+	ui := NewTUI(terminal)
+	ui.SetViewport(&mutableLines{lines: []string{"transcript"}}, &Container{})
+	copied := make(chan string, 1)
+	ui.SetSelectionHandler(func(text string) { copied <- text })
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ui.Stop() })
+	frame := NewFrame("", "", nil, nil, NewText(wrappedLoginURL+"\nnext line", 1, 0, nil))
+	ui.ShowOverlay(frame, OverlayOptions{Anchor: OverlayTopLeft, Width: AbsoluteSize(30)})
+	ui.RenderNow()
+	ui.renderMu.Lock()
+	rows := ui.frame[1:5]
+	ui.renderMu.Unlock()
+	if plain := plainTerminalText(rows[2]); !strings.HasPrefix(plain, "│ ") || !strings.Contains(plain, " │") || len(rows) != 4 {
+		t.Fatalf("fixture is not a bordered, padded dialog wrapping the link over three rows: %q", rows)
+	}
+	for _, from := range []mousePoint{{row: 1, column: 0}, {row: 1, column: 3}} {
+		text, highlighted := dragCopy(t, terminal, ui, copied, from, mousePoint{row: 3, column: 29})
+		if text != wrappedLoginURL || highlighted != wrappedLoginURL {
+			t.Fatalf("from %v: copied %q, highlighted %q, want the link alone", from, text, highlighted)
+		}
+	}
+	// A real line break stays one.
+	if text, _ := dragCopy(t, terminal, ui, copied, mousePoint{row: 3, column: 3}, mousePoint{row: 4, column: 29}); text != wrappedLoginURL[48:]+"\nnext line" {
+		t.Fatalf("copied %q across a real line break", text)
+	}
+}
+
+// The login dialog's layout, rules around padded text in the editor area,
+// copies its wrapped link exactly.
+func TestSelectionE2EDragInChromeJoinsSoftWraps(t *testing.T) {
+	terminal := newTrackingTerminal(30, 12)
+	ui := NewTUI(terminal)
+	chrome := &Container{}
+	for _, child := range []Component{&mutableLines{lines: []string{strings.Repeat("─", 30)}}, NewText("Login to Example", 1, 0, nil), NewText(wrappedLoginURL, 1, 0, nil), NewText("Click to copy", 1, 0, nil)} {
+		chrome.AddChild(child)
+	}
+	ui.SetViewport(&mutableLines{lines: []string{"transcript"}}, chrome)
+	copied := make(chan string, 1)
+	ui.SetSelectionHandler(func(text string) { copied <- text })
+	if err := ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ui.Stop() })
+	ui.RenderNow()
+	ui.renderMu.Lock()
+	top := len(ui.frame) - 6
+	ui.renderMu.Unlock()
+	text, highlighted := dragCopy(t, terminal, ui, copied, mousePoint{row: top + 2, column: 0}, mousePoint{row: top + 4, column: 29})
+	if text != wrappedLoginURL || highlighted != wrappedLoginURL {
+		t.Fatalf("copied %q, highlighted %q, want the link alone", text, highlighted)
+	}
+}

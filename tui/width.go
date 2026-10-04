@@ -644,6 +644,11 @@ func WrapTextWithANSI(text string, width int) []string {
 // Like CursorMarker it is zero-width and removed before terminal output.
 const softWrapMarker = "\x1b_orb:w"
 
+// A container that draws presentation around its rows (a border and its
+// padding) brackets each row's content between these, so a selection copies
+// and highlights the content alone; a row with nothing between holds none.
+const contentStart, contentEnd = "\x1b_orb:[\a", "\x1b_orb:]\a"
+
 func wrapTextWithANSI(text string, width int, selection bool) []string {
 	if text == "" {
 		return []string{""}

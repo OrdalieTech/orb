@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -910,19 +911,6 @@ func (ui *TUI) extendScreenSelectionLocked(event MouseEvent) {
 	ui.selection.moved = ui.selection.moved || focus != ui.selection.anchor
 }
 
-// screenSelectedTextLocked is the selected cells of the last frame, one line per row.
-func (ui *TUI) screenSelectedTextLocked() string {
-	start, end := ui.selection.bounds()
-	rows := []string{}
-	for row := start.row; row <= end.row && row < len(ui.frame); row++ {
-		line := ui.frame[row]
-		from, to := selectionColumns(row, start, end, VisibleWidth(line))
-		from = selectionColumnStart(line, from)
-		rows = append(rows, strings.TrimRight(plainTerminalText(SliceByColumn(line, from, max(0, to-from), false)), " "))
-	}
-	return strings.Join(rows, "\n")
-}
-
 func (ui *TUI) clearSelectionLocked() {
 	ui.stopSelectionScrollLocked()
 	ui.selection = mouseSelection{}
@@ -1026,15 +1014,30 @@ func (selection mouseSelection) bounds() (mousePoint, mousePoint) {
 	return start, end
 }
 
-func selectionColumns(row int, start, end mousePoint, width int) (int, int) {
-	from, to := 0, width
+// contentColumns is a row's content area: the innermost one a container
+// bracketed on it, or the whole row.
+func contentColumns(line string) (first, last int) {
+	first, last = 0, VisibleWidth(line)
+	if open := strings.LastIndex(line, contentStart); open >= 0 {
+		first = VisibleWidth(line[:open])
+		if close := strings.Index(line[open:], contentEnd); close >= 0 {
+			last = VisibleWidth(line[:open+close])
+		}
+	}
+	return first, last
+}
+
+// selectionColumns is the selected part of a row's content area.
+func selectionColumns(line string, row int, start, end mousePoint) (int, int) {
+	first, last := contentColumns(line)
+	from, to := first, last
 	if row == start.row {
-		from = start.column
+		from = max(first, start.column)
 	}
 	if row == end.row {
-		to = end.column + 1
+		to = min(last, end.column+1)
 	}
-	return min(from, width), min(to, width)
+	return min(from, last), to
 }
 
 func selectionColumnStart(line string, column int) int {
@@ -1090,16 +1093,26 @@ func plainTerminalText(text string) string {
 // scrollbar column can't leak in) and strips presentation decoration so the
 // clipboard receives clean message text.
 func (ui *TUI) selectedTextLocked() string {
+	start, end := ui.selection.bounds()
+	// A screen selection reads the cells as drawn, with the same wrap and content metadata.
 	if ui.selection.screen {
-		return ui.screenSelectedTextLocked()
+		end.row = min(end.row, len(ui.frame)-1)
+		if start.row > end.row {
+			return ""
+		}
+		return selectedContent(ui.frame[start.row:end.row+1], start, end)
 	}
 	if ui.viewportBody == nil || ui.viewportBodyLines <= 0 {
 		return ""
 	}
-	start, end := ui.selection.bounds()
 	start.row = max(0, min(start.row, ui.viewportBodyLines-1))
 	end.row = max(start.row, min(end.row, ui.viewportBodyLines-1))
-	lines := componentLines(ui.viewportBody, ui.viewportBodyWidth, start.row, end.row+1)
+	return selectedContent(componentLines(ui.viewportBody, ui.viewportBodyWidth, start.row, end.row+1), start, end)
+}
+
+// selectedContent is the clean text of selected rows, lines being rows
+// start.row through end.row: soft wraps join as written, presentation drops.
+func selectedContent(lines []string, start, end mousePoint) string {
 	rows := make([]string, 0, len(lines))
 	joins := make([]string, len(lines))
 	firstFull := true
@@ -1112,15 +1125,15 @@ func (ui *TUI) selectedTextLocked() string {
 			}
 		}
 		row := start.row + index
-		width := VisibleWidth(line)
-		from, to := selectionColumns(row, start, end, width)
+		from, to := selectionColumns(line, row, start, end)
+		if row == start.row {
+			first, _ := contentColumns(line)
+			firstFull = from == first
+		}
 		if index > 0 && marker >= 0 {
 			from = max(from, VisibleWidth(line[:marker]))
 		}
 		from = selectionColumnStart(line, from)
-		if row == start.row {
-			firstFull = from == 0
-		}
 		rows = append(rows, plainTerminalText(SliceByColumn(line, from, max(0, to-from), false)))
 	}
 	return joinSelectedContent(rows, firstFull, joins)
@@ -1315,7 +1328,7 @@ func applyLineResets(lines []string) []string {
 	for index, line := range lines {
 		if !IsImageLine(line) {
 			for {
-				start := strings.Index(line, softWrapMarker)
+				start := strings.Index(line, "\x1b_orb:")
 				if start < 0 {
 					break
 				}
@@ -1441,7 +1454,8 @@ func (ui *TUI) RenderNow() {
 	if ui.overlayCount() > 0 {
 		newLines = ui.compositeOverlays(newLines, width, height)
 	}
-	ui.frame = newLines
+	// The terminal pass below strips metadata in place; selection reads it from the frame.
+	ui.frame = slices.Clone(newLines)
 	newLines = ui.renderSelection(newLines)
 	cursorRow, cursorColumn, hasCursor := ui.extractCursor(newLines, height)
 	newLines = applyLineResets(newLines)
@@ -1762,7 +1776,7 @@ func (ui *TUI) renderSelection(lines []string) []string {
 		start, end := ui.selection.bounds()
 		result := append([]string(nil), lines...)
 		for row := start.row; row <= end.row && row < len(result); row++ {
-			if from, to := selectionColumns(row, start, end, VisibleWidth(result[row])); to > from && !IsImageLine(result[row]) {
+			if from, to := highlightColumns(result[row], row, start, end); to > from && !IsImageLine(result[row]) {
 				result[row] = highlightSelection(result[row], from, to, ui.selectionStyle)
 			}
 		}
@@ -1783,12 +1797,7 @@ func (ui *TUI) renderSelection(lines []string) []string {
 		line := result[screen]
 		hasThumb := strings.Contains(line, scrollbarThumb)
 		line = strings.Replace(line, scrollbarThumb, "", 1)
-		width := VisibleWidth(line)
-		from, to := selectionColumns(row, start, end, width)
-		plain := plainTerminalText(line)
-		from = max(from, selectionMarginWidth(plain))
-		to = min(to, VisibleWidth(strings.TrimRight(plain, " \t")))
-		if to > from && !IsImageLine(line) {
+		if from, to := highlightColumns(line, row, start, end); to > from && !IsImageLine(line) {
 			line = highlightSelection(line, from, to, ui.selectionStyle)
 		}
 		if hasThumb {
@@ -1797,6 +1806,15 @@ func (ui *TUI) renderSelection(lines []string) []string {
 		result[screen] = line
 	}
 	return result
+}
+
+// highlightColumns is the part of a selected row its copy keeps: its content
+// past the margin, before trailing blanks.
+func highlightColumns(line string, row int, start, end mousePoint) (int, int) {
+	from, to := selectionColumns(line, row, start, end)
+	first, last := contentColumns(line)
+	plain := plainTerminalText(SliceByColumn(line, first, last-first, false))
+	return max(from, first+selectionMarginWidth(plain)), min(to, first+VisibleWidth(strings.TrimRight(plain, " \t")))
 }
 
 // Visit source cells once: slicing each segment independently duplicates wide

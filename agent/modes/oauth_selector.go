@@ -277,15 +277,14 @@ type loginAuthDialogComponent struct {
 	title     string
 	lines     []authDialogLine
 	onCancel  func()
-	link      string // the URL a click copies
+	link      string     // the URL a click copies
+	input     *tui.Input // while a prompt waits for an answer
 }
 
 // copyAuthLink is swappable for tests.
 var copyAuthLink = clipboard.CopyToClipboard
 
-// HandleMouse copies the link on a click: a drag in a dialog selects the transcript behind it,
-// and a long URL wraps or clips in the box, so copying by hand does not work.
-// ponytail: the link only; general text selection inside overlays is a TUI-wide change.
+// HandleMouse copies the link on a click; a drag selects it as any wrapped text.
 func (component *loginAuthDialogComponent) HandleMouse(event tui.MouseEvent) bool {
 	if event.Type != tui.MousePress || event.Button != 0 {
 		return false
@@ -334,6 +333,11 @@ func (component *loginAuthDialogComponent) replace(lines ...authDialogLine) {
 
 func (component *loginAuthDialogComponent) append(lines ...authDialogLine) {
 	component.mu.Lock()
+	for _, line := range lines {
+		if line.hint {
+			component.link = line.url
+		}
+	}
 	component.lines = append(component.lines, lines...)
 	component.rebuildLocked()
 	component.mu.Unlock()
@@ -358,6 +362,45 @@ func (component *loginAuthDialogComponent) rebuildLocked() {
 			text = theme.FG("text", text)
 		}
 		component.content.AddChild(tui.NewText(text, 1, 0, nil))
+	}
+	if component.input != nil {
+		component.content.AddChild(component.input)
+		component.content.AddChild(tui.NewText("("+KeyHint("tui.select.cancel", "to cancel,")+" "+KeyHint("tui.select.confirm", "to submit")+")", 1, 0, nil))
+	}
+}
+
+// prompt asks under what the dialog shows and waits for the answer; a
+// required one waits past a blank submit.
+func (component *loginAuthDialogComponent) prompt(ctx context.Context, message string, required bool, render func()) (string, error) {
+	answer := make(chan string, 1)
+	input := tui.NewInput()
+	input.SetFocused(true)
+	input.OnSubmit = func(value string) {
+		if !required || strings.TrimSpace(value) != "" {
+			select {
+			case answer <- value:
+			default:
+			}
+		}
+	}
+	component.mu.Lock()
+	component.input = input
+	component.lines = append(component.lines, authDialogLine{style: "spacer"}, authDialogLine{text: message})
+	component.rebuildLocked()
+	component.mu.Unlock()
+	render()
+	defer func() {
+		component.mu.Lock()
+		component.input = nil
+		component.rebuildLocked()
+		component.mu.Unlock()
+		render()
+	}()
+	select {
+	case value := <-answer:
+		return value, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
 }
 
@@ -399,13 +442,16 @@ func (component *loginAuthDialogComponent) showDeviceCode(verificationURI, userC
 }
 
 func (component *loginAuthDialogComponent) showInfo(message string, links []aiauth.AuthInfoLink) {
+	// Each link stands alone on its lines, so a drag over it copies the URL only.
 	lines := []authDialogLine{{style: "spacer"}, {text: message}}
 	for _, link := range links {
-		label := link.URL
 		if link.Label != "" {
-			label = link.Label + ": " + link.URL
+			lines = append(lines, authDialogLine{text: link.Label, style: "dim"})
 		}
-		lines = append(lines, authDialogLine{text: authDialogHyperlink(link.URL, label), style: "accent"})
+		lines = append(lines, authDialogLine{text: authDialogHyperlink(link.URL, link.URL), style: "accent"})
+	}
+	if len(links) > 0 {
+		lines = append(lines, authDialogLine{text: authDialogHyperlink(links[0].URL, clickHint()), style: "dim", hint: true, url: links[0].URL})
 	}
 	component.append(lines...)
 }
@@ -422,23 +468,18 @@ func (component *loginAuthDialogComponent) showDetails(lines ...string) {
 	component.replace(entries...)
 }
 
-func (component *loginAuthDialogComponent) promptTitle(message string) string {
-	component.mu.Lock()
-	defer component.mu.Unlock()
-	lines := []string{component.title}
-	for _, line := range component.lines {
-		if line.style == "spacer" || line.text == "" {
-			continue
-		}
-		lines = append(lines, line.text)
-	}
-	lines = append(lines, "", message)
-	return strings.Join(lines, "\n")
-}
-
 func (component *loginAuthDialogComponent) HandleInput(event tui.KeyEvent) {
-	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") && component.onCancel != nil {
-		component.onCancel()
+	if tui.GetKeybindings().Matches(event.Raw, "tui.select.cancel") {
+		if component.onCancel != nil {
+			component.onCancel()
+		}
+		return
+	}
+	component.mu.Lock()
+	input := component.input
+	component.mu.Unlock()
+	if input != nil {
+		input.HandleInput(event)
 	}
 }
 

@@ -108,6 +108,9 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Claude Code sessions opened in Orb keep their reasoning, images, usage and timestamps, and show
   compactions, background tasks and commands as Orb does live; catching up turns added in Claude Code
   keeps the model chosen in Orb.
+- Sign-in shows its link once, with the code field in the same dialog, and a drag over a link or any
+  wrapped text in a dialog copies exactly that text, without padding, borders or wrap breaks. Adding a
+  Claude account asks for the code it always needs and ignores an empty submit.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

@@ -3716,10 +3716,14 @@ type tuiAuthInteraction struct {
 }
 
 func (interaction tuiAuthInteraction) Prompt(ctx context.Context, prompt aiauth.AuthPrompt) (string, error) {
+	mounted := interaction.dialog != nil && interaction.mounted
+	// As upstream: typed answers go in the login dialog, under the link they follow.
+	// ponytail: API keys keep their own input for now.
+	if mounted && (prompt.Type == aiauth.PromptText || prompt.Type == aiauth.PromptManualCode) {
+		return interaction.dialog.prompt(ctx, prompt.Message, prompt.Type == aiauth.PromptManualCode, interaction.mode.ui.RequestRender)
+	}
 	title := prompt.Message
-	if interaction.dialog != nil && interaction.mounted {
-		title = interaction.dialog.promptTitle(prompt.Message)
-	} else if interaction.details != "" {
+	if !mounted && interaction.details != "" {
 		title = interaction.details + "\n\n" + title
 	}
 	defer interaction.restoreDialog()

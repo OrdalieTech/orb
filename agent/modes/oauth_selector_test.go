@@ -830,3 +830,56 @@ func TestAClickCopiesTheLoginLink(t *testing.T) {
 		t.Fatal("no feedback after copying")
 	}
 }
+
+// A code asked for after a sign-in link is typed in the login dialog under
+// that link: one surface, the link shown once and copied on a click, and a
+// blank code is not an answer.
+func TestLoginCodePromptStaysInTheDialog(t *testing.T) {
+	mode := newAuthFlowTestMode(&authFlowHost{})
+	mode.interactiveUI = NewInteractiveUI(mode)
+	dialog := newLoginAuthDialogComponent("Login to Example", nil)
+	interaction := tuiAuthInteraction{mode: mode, dialog: dialog, ctx: t.Context(), mounted: mode.mountLoginAuthDialog(dialog)}
+	link := "https://example.test/oauth/authorize?code=true&state=abc"
+	interaction.Notify(aiauth.AuthEvent{Type: aiauth.EventInfo, Message: "Open this link, then paste the code it shows.", Links: []aiauth.AuthInfoLink{{URL: link, Label: "Sign-in page"}}})
+	answer := make(chan string, 1)
+	go func() {
+		code, err := interaction.Prompt(t.Context(), aiauth.AuthPrompt{Type: aiauth.PromptManualCode, Message: "Paste the code shown after signing in", Placeholder: "code"})
+		if err != nil {
+			code = "error: " + err.Error()
+		}
+		answer <- code
+	}()
+	var rendered string
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if rendered = tui.StripANSI(strings.Join(dialog.Render(120), "\n")); strings.Contains(rendered, "Paste the code") {
+			break
+		}
+	}
+	if strings.Count(rendered, link) != 1 || !strings.Contains(rendered, "Click to copy") || !strings.Contains(rendered, "Paste the code shown after signing in") || len(mode.ui.VisibleOverlayComponents()) != 0 {
+		t.Fatalf("login dialog is not the one surface for the link and the code (%d overlays):\n%s", len(mode.ui.VisibleOverlayComponents()), rendered)
+	}
+	var copied string
+	restore := copyAuthLink
+	copyAuthLink = func(text string) error { copied = text; return nil }
+	defer func() { copyAuthLink = restore }()
+	if dialog.HandleMouse(tui.MouseEvent{Type: tui.MousePress}); copied != link {
+		t.Fatalf("a click copied %q", copied)
+	}
+	dialog.HandleInput(tui.KeyEvent{Raw: "\r"})
+	select {
+	case code := <-answer:
+		t.Fatalf("a blank code was submitted: %q", code)
+	case <-time.After(50 * time.Millisecond):
+	}
+	for _, key := range []string{"a", "b", "c", "\r"} {
+		dialog.HandleInput(tui.KeyEvent{Raw: key})
+	}
+	select {
+	case code := <-answer:
+		if code != "abc" {
+			t.Fatalf("code = %q", code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the typed code was not submitted")
+	}
+}
