@@ -140,10 +140,11 @@ func TestHerdrHostOnlyReceivesInteractiveHint(t *testing.T) {
 	t.Setenv("HERDR_PANE_ID", "w1:p1")
 	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(t.TempDir(), "socket"))
 	t.Setenv("HERDR_AGENT", "")
-	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 	for _, interactive := range []bool{true, false} {
 		t.Run(map[bool]string{true: "interactive", false: "headless"}[interactive], func(t *testing.T) {
 			cwd, agentDir := t.TempDir(), t.TempDir()
+			// Stopped before the temp dirs go: Windows can't remove a directory the host still holds.
+			t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 			path := filepath.Join(cwd, "herdr.mjs")
 			source := `// installed by herdr
 // HERDR_INTEGRATION_ID=pi
