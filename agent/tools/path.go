@@ -86,11 +86,17 @@ func PathExists(filePath string) bool {
 
 // ResolveReadPath adds the filename fallbacks used for macOS-generated files.
 func ResolveReadPath(filePath, cwd string) (string, error) {
+	return resolveReadPath(filePath, cwd, PathExists)
+}
+
+// resolveReadPath checks the fallbacks with exists, the filesystem the read
+// itself goes through.
+func resolveReadPath(filePath, cwd string, exists func(string) bool) (string, error) {
 	resolved, err := ResolveToCwd(filePath, cwd)
 	if err != nil {
 		return "", err
 	}
-	if PathExists(resolved) {
+	if exists(resolved) {
 		return resolved, nil
 	}
 
@@ -101,7 +107,7 @@ func ResolveReadPath(filePath, cwd string) (string, error) {
 	}
 	variants = append(variants, strings.ReplaceAll(variants[1], "'", "\u2019"))
 	for _, variant := range variants {
-		if variant != resolved && PathExists(variant) {
+		if variant != resolved && exists(variant) {
 			return variant, nil
 		}
 	}

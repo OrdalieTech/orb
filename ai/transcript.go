@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"reflect"
+	"strings"
 )
 
 // TranscriptContext is the normalized provider request context. Context is
@@ -305,7 +306,7 @@ func systemContentText(content any) string {
 		for _, block := range value {
 			parts = append(parts, block.Text)
 		}
-		return joinWith(parts, "\n")
+		return strings.Join(parts, "\n")
 	case []*TextContent:
 		parts := make([]string, 0, len(value))
 		for _, block := range value {
@@ -313,24 +314,13 @@ func systemContentText(content any) string {
 				parts = append(parts, block.Text)
 			}
 		}
-		return joinWith(parts, "\n")
+		return strings.Join(parts, "\n")
 	default:
 		return ""
 	}
 }
 
-func joinNonEmpty(parts []string) string { return joinWith(parts, "\n\n") }
-
-func joinWith(parts []string, separator string) string {
-	var output bytes.Buffer
-	for index, part := range parts {
-		if index > 0 {
-			output.WriteString(separator)
-		}
-		output.WriteString(part)
-	}
-	return output.String()
-}
+func joinNonEmpty(parts []string) string { return strings.Join(parts, "\n\n") }
 
 func cloneTools(tools []Tool) []Tool { return append([]Tool(nil), tools...) }
 
@@ -355,5 +345,6 @@ func toolDeclaration(tool Tool) Tool {
 }
 
 func toolDeclarationsEqual(left, right Tool) bool {
-	return reflect.DeepEqual(toolDeclaration(left), toolDeclaration(right))
+	return left.Name == right.Name && left.Description == right.Description &&
+		bytes.Equal(left.Parameters, right.Parameters) && reflect.DeepEqual(left.ConstrainedSampling, right.ConstrainedSampling)
 }

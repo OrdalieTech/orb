@@ -114,7 +114,7 @@ func (tool *readTool) Execute(
 		return engine.AgentToolResult{}, err
 	}
 	absolutePath, err := runCancelable(ctx, func() (string, error) {
-		return ResolveReadPath(input.Path, tool.cwd)
+		return resolveReadPath(input.Path, tool.cwd, func(path string) bool { return tool.operations.Access(ctx, path) == nil })
 	})
 	if err != nil {
 		return engine.AgentToolResult{}, err

@@ -1276,7 +1276,10 @@ func loopNow(config AgentLoopConfig) int64 {
 func upstreamError(message string) error { return errors.New(message) }
 
 type eventEmitter struct {
-	sink    EventSink
+	sink EventSink
+	// The update queue and its drain goroutine start with the first tool
+	// update: most runs have none.
+	start   sync.Once
 	updates chan queuedUpdate
 	drained chan struct{}
 }
@@ -1298,8 +1301,9 @@ type queuedUpdate struct {
 // toolUpdateState collects sink failures per tool call, matching upstream's
 // per-call updateEvents array (agent-loop.ts:673).
 type toolUpdateState struct {
-	mu  sync.Mutex
-	err error
+	mu       sync.Mutex
+	err      error
+	enqueued bool
 }
 
 func (state *toolUpdateState) record(err error) {
@@ -1317,15 +1321,16 @@ func (state *toolUpdateState) failure() error {
 }
 
 func newEventEmitter(sink EventSink) *eventEmitter {
-	emitter := &eventEmitter{
-		sink:    sink,
-		updates: make(chan queuedUpdate, toolUpdateQueueDepth),
-		drained: make(chan struct{}),
-	}
-	// One drain goroutine per run: upstream's emit call is synchronous but its
-	// subscriber runs on the event loop, so updates stay totally ordered and
-	// never overlap while a slow sink cannot block the tool
-	// (agent-loop.ts:679-692).
+	return &eventEmitter{sink: sink}
+}
+
+// startDrain runs one drain goroutine per run: upstream's emit call is
+// synchronous but its subscriber runs on the event loop, so updates stay
+// totally ordered and never overlap while a slow sink cannot block the tool
+// (agent-loop.ts:679-692).
+func (emitter *eventEmitter) startDrain() {
+	emitter.updates = make(chan queuedUpdate, toolUpdateQueueDepth)
+	emitter.drained = make(chan struct{})
 	go func() {
 		defer close(emitter.drained)
 		for item := range emitter.updates {
@@ -1338,22 +1343,38 @@ func newEventEmitter(sink EventSink) *eventEmitter {
 			}
 		}
 	}()
-	return emitter
 }
 
 // close stops the drain goroutine after every queued update has been delivered.
 func (emitter *eventEmitter) close() {
-	close(emitter.updates)
-	<-emitter.drained
+	started := true
+	emitter.start.Do(func() { started = false })
+	if started {
+		close(emitter.updates)
+		<-emitter.drained
+	}
 }
 
 func (emitter *eventEmitter) enqueueUpdate(ctx context.Context, event AgentEvent, state *toolUpdateState) {
+	emitter.start.Do(emitter.startDrain)
+	if emitter.updates == nil {
+		panic("engine: tool update after its run ended")
+	}
+	state.mu.Lock()
+	state.enqueued = true
+	state.mu.Unlock()
 	emitter.updates <- queuedUpdate{ctx: ctx, event: event, state: state}
 }
 
 // flushUpdates returns once every update this call enqueued has been delivered,
 // so a tool's updates always precede its tool_execution_end.
 func (emitter *eventEmitter) flushUpdates(state *toolUpdateState) error {
+	state.mu.Lock()
+	enqueued := state.enqueued
+	state.mu.Unlock()
+	if !enqueued {
+		return state.failure()
+	}
 	barrier := make(chan struct{})
 	emitter.updates <- queuedUpdate{flush: barrier}
 	<-barrier
