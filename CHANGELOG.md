@@ -5,6 +5,14 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Pairing a machine (`orb bridge pair`, `join`, `trust`, `connect-ssh`) turns its `bridge` plugin
+  on unless its owner set it, so the Orbs opened there in a terminal can be followed and driven
+  from the paired devices too.
+
+- Turns no longer slow down as a conversation grows: the session keeps the model context decoded
+  and extends it as entries are appended, instead of re-reading the whole journal on every append
+  and request. After 80 turns a turn costs a tenth of the CPU it did on the Worker host.
+
 ## [0.14.1] - 2026-10-04
 
 The Android app is simpler: one bar with a tab per open session, monospace type with real weights,

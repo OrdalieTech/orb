@@ -62,6 +62,7 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 		return reportCLIError(streams.Stderr, err)
 	}
 	_, _ = fmt.Fprintln(streams.Stdout, "Paired. The device reconnects on its own from now on; orb bridge block <fingerprint> revokes it.")
+	shareOrbsOnBridge(ctx)
 	// On a server, pairing is only half the job: the Bridge has to outlive this SSH session.
 	if runtime.GOOS == "linux" && !bridgeServiceInstalled(profile) {
 		if _, err := exec.LookPath("systemctl"); err == nil {
@@ -147,6 +148,24 @@ func runBridgeJoin(ctx context.Context, profile string, args []string, streams c
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "Paired with %s\n", inv.PeerID)
 	return 0
+}
+
+// shareOrbsOnBridge turns the bridge plugin on once this machine pairs, unless its owner set it
+// either way: a paired machine is one whose Orbs its owner means to reach from the others, the
+// Orbs opened in a terminal there included.
+func shareOrbsOnBridge(ctx context.Context) {
+	cwd, agentDir, err := packageCommandDirs()
+	if err != nil {
+		return
+	}
+	settings, _, err := createCommandSettingsManager(ctx, cwd, agentDir, nil, false)
+	if err != nil {
+		return
+	}
+	if _, set := settings.GetPlugins()["bridge"]; !set {
+		settings.SetPluginEnabled("bridge", true)
+		_ = settings.DrainErrors()
+	}
 }
 
 func startedBridgeAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {

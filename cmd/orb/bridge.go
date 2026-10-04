@@ -1135,6 +1135,7 @@ func conversationBridgeGrant(peer string) bridge.Grant {
 // trustBridgePeer grants peer control of this Orb's conversations, and of the machine too when
 // machine is set (`orb bridge trust`, the owner's explicit choice).
 func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string, machine bool) error {
+	shareOrbsOnBridge(ctx)
 	g := conversationBridgeGrant(peer)
 	if machine {
 		g = fullBridgeGrant(peer)

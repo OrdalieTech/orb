@@ -577,6 +577,9 @@ func fakeBridgeOwner(t *testing.T, handle func(method string, params json.RawMes
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	t.Setenv("ORB_BRIDGE_HOME", root)
+	// Pairing writes this machine's settings (the bridge plugin): never the developer's own.
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
 	dir := filepath.Join(root, "personal")
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
@@ -677,6 +680,11 @@ func TestBridgeJoinTrustsTheInviterOnceItApproves(t *testing.T) {
 	// The inviter gets the conversations back, never the machine: that is the owner's own call.
 	if polls != 2 || !strings.Contains(granted, inv.PeerID) || strings.Contains(granted, "host.launch") || !strings.Contains(out.String(), "Paired with "+inv.PeerID) {
 		t.Fatalf("polls %d granted %q output %s", polls, granted, out.String())
+	}
+	// A paired machine shares its Orbs, terminal ones included, unless its owner said otherwise.
+	out.Reset()
+	if runNativeCLI(t.Context(), []string{"plugins", "list"}, cliStreams{Stdout: &out, Stderr: &errs}) != 0 || !strings.Contains(out.String(), "bridge\ton") {
+		t.Fatalf("bridge plugin after pairing: %s %s", out.String(), errs.String())
 	}
 }
 
