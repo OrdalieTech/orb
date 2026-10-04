@@ -560,14 +560,15 @@ func (storage *JSONLSessionStorage) appendLockedWithLabel(entry SessionTreeEntry
 	if err != nil {
 		return err
 	}
-	line := append(append([]byte(nil), encoded...), '\n')
+	// encoded is a fresh buffer: the line and the entry's raw JSON share it.
+	line := append(encoded, '\n')
 	if storage.append != nil {
 		if err := storage.append(line); err != nil {
 			return newSessionError(SessionErrorStorage, "Failed to append %s %s: %v", label, entry.ID, err)
 		}
 	}
 	storage.content = append(storage.content, line...)
-	entry.raw = append(json.RawMessage(nil), encoded...)
+	entry.raw = line[: len(line)-1 : len(line)-1]
 	storage.state.append(entry)
 	return nil
 }

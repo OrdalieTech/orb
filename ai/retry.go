@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"regexp"
+	"sync"
 	"time"
 )
 
@@ -72,7 +73,9 @@ var overflowPatterns = compilePatterns([]string{
 	`context[_ ]length[_ ]exceeded`, `too many tokens`, `token limit exceeded`,
 })
 
-var cerebrasBodylessOverflowPattern = regexp.MustCompile(`(?i)^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
+var cerebrasBodylessOverflowPattern = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`(?i)^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
+})
 
 var nonOverflowPatterns = compilePatterns([]string{
 	`^(Throttling error|Service unavailable):`, `rate limit`, `too many requests`,
@@ -85,7 +88,7 @@ func IsRetryableAssistantError(message *AssistantMessage) bool {
 		return false
 	}
 	text := *message.ErrorMessage
-	return !matchesAny(nonRetryableProviderLimitPatterns, text) && matchesAny(retryableProviderPatterns, text)
+	return !matchesAny(nonRetryableProviderLimitPatterns(), text) && matchesAny(retryableProviderPatterns(), text)
 }
 
 // RetryAssistantCall runs produce once and retries transient assistant errors
@@ -211,11 +214,11 @@ func IsContextOverflow(message *AssistantMessage, contextWindow float64) bool {
 	}
 	if message.StopReason == StopReasonError && message.ErrorMessage != nil {
 		text := *message.ErrorMessage
-		if !matchesAny(nonOverflowPatterns, text) {
-			if matchesAny(overflowPatterns, text) {
+		if !matchesAny(nonOverflowPatterns(), text) {
+			if matchesAny(overflowPatterns(), text) {
 				return true
 			}
-			if message.Provider == "cerebras" && cerebrasBodylessOverflowPattern.MatchString(text) {
+			if message.Provider == "cerebras" && cerebrasBodylessOverflowPattern().MatchString(text) {
 				return true
 			}
 		}
@@ -227,12 +230,16 @@ func IsContextOverflow(message *AssistantMessage, contextWindow float64) bool {
 	return contextWindow > 0 && message.StopReason == StopReasonLength && message.Usage.Output == 0 && float64(inputTokens) >= contextWindow*0.99
 }
 
-func compilePatterns(patterns []string) []*regexp.Regexp {
-	compiled := make([]*regexp.Regexp, len(patterns))
-	for index, pattern := range patterns {
-		compiled[index] = regexp.MustCompile(`(?i)` + pattern)
-	}
-	return compiled
+// compilePatterns compiles patterns on first use: package init runs on every
+// Worker activation, and only failed messages are matched.
+func compilePatterns(patterns []string) func() []*regexp.Regexp {
+	return sync.OnceValue(func() []*regexp.Regexp {
+		compiled := make([]*regexp.Regexp, len(patterns))
+		for index, pattern := range patterns {
+			compiled[index] = regexp.MustCompile(`(?i)` + pattern)
+		}
+		return compiled
+	})
 }
 
 func matchesAny(patterns []*regexp.Regexp, value string) bool {

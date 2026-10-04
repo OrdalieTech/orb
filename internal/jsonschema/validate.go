@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -143,7 +145,20 @@ func hasSchemaRef(schema any) bool {
 	return isString
 }
 
+// decodedSchemas keeps decoded schemas, which nothing modifies, by their
+// bytes: tool calls validate against the same few schemas, and decoding one
+// again cost more than validating. At most maxDecodedSchemas are kept.
+var (
+	decodedSchemas    sync.Map
+	decodedSchemaKept atomic.Int32
+)
+
+const maxDecodedSchemas = 512
+
 func decodeSchema(schema Schema) (any, error) {
+	if decoded, ok := decodedSchemas.Load(string(schema)); ok {
+		return decoded, nil
+	}
 	data, err := schema.MarshalJSON()
 	if err != nil {
 		return nil, err
@@ -153,6 +168,9 @@ func decodeSchema(schema Schema) (any, error) {
 	decoded, err := decodeSchemaValue(decoder)
 	if err != nil {
 		return nil, fmt.Errorf("jsonschema: decode schema: %w", err)
+	}
+	if decodedSchemaKept.Add(1) <= maxDecodedSchemas {
+		decodedSchemas.Store(string(schema), decoded)
 	}
 	return decoded, nil
 }
