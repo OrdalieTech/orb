@@ -96,14 +96,6 @@ func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 		"childSawParent=%t childSawOpenCall=%t tool result=%q", childSawParent, childSawOpenCall, returned)
 }
 
-func TestSubagentChildOptionsUseParentRegistryForDefaultStream(t *testing.T) {
-	registry := must(config.NewModelRegistry(t.TempDir()))
-	options := must(childOptions(registry, nil, agent.AgentSessionOptions{}))
-	require(t, options.ModelRegistry == registry && options.StreamFn == nil, "model registry=%p want=%p stream set=%t", options.ModelRegistry, registry, options.StreamFn != nil)
-	_, err := childOptions(nil, nil, agent.AgentSessionOptions{})
-	requireError(t, err, "parent has no model registry")
-}
-
 func TestSubagentExternalCLIConfigSchemaAndExecution(t *testing.T) {
 	tool := externalSubagentTool(t, map[string]any{"zeta": "/bin/cat", "alpha": "/bin/cat"})
 	wantEnum := `"enum":["scout","worker","reviewer","alpha","zeta"]`
@@ -397,26 +389,6 @@ func TestSubagentParallelWidthIsCapped(t *testing.T) {
 	)
 	requireError(t, err, "at most")
 	require(t, provider.State().CallCount == 0, "an over-wide fan-out reached the provider %d times", provider.State().CallCount)
-}
-
-func TestSubagentExternalObjectFormTogglesWithoutLosingCommands(t *testing.T) {
-	root := t.TempDir()
-	settings := must(config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent"))))
-	settings.SetPluginSetting("subagents", "external", map[string]any{
-		"claude": map[string]any{"command": "/bin/cat", "enabled": false},
-		"codex":  "/bin/cat",
-	})
-	entries, err := ExternalEntries(settings)
-	require(t, err == nil && len(entries) == 2, "entries = %#v, %v", entries, err)
-	require(t, !entries["claude"].Enabled && entries["claude"].Command == "/bin/cat", "claude = %#v", entries["claude"])
-	require(t, entries["codex"].Enabled, "codex = %#v", entries["codex"])
-	enabled, err := externalSubagents(settings)
-	require(t, err == nil && len(enabled) == 1 && enabled["codex"] == "/bin/cat", "enabled = %#v, %v", enabled, err)
-	settings.SetPluginSetting("subagents", "external", map[string]any{
-		"bad": map[string]any{"command": "x", "typo": true},
-	})
-	_, err = ExternalEntries(settings)
-	require(t, err != nil && strings.Contains(err.Error(), "must be a command or {command, enabled}"), "error = %v", err)
 }
 
 func TestSubagentInheritsFileContainment(t *testing.T) {

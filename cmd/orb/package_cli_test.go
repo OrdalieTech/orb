@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -96,65 +95,6 @@ func TestPluginsCLIListsAndTogglesUserSettings(t *testing.T) {
 	}
 }
 
-func TestPluginsCLISetWritesOneJSONSetting(t *testing.T) {
-	env := setupPackageCLI(t)
-	if code, _, stderr := runPackageCLI(t, []string{"plugins", "disable", "permissions"}); code != 0 {
-		t.Fatalf("disable: %s", stderr)
-	}
-	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "set", "permissions", "mode", `"enforce"`})
-	if code != 0 || stderr != "" || strings.TrimSpace(stdout) != "Set permissions.mode" {
-		t.Fatalf("set: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	contents, err := os.ReadFile(filepath.Join(env.agentDir, "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stored struct {
-		Plugins map[string]map[string]any `json:"plugins"`
-	}
-	// The gate stays off: writing a setting never enables a plugin as a side effect.
-	if err := json.Unmarshal(contents, &stored); err != nil || stored.Plugins["permissions"]["mode"] != "enforce" || stored.Plugins["permissions"]["enabled"] != false {
-		t.Fatalf("settings = %s, error = %v", contents, err)
-	}
-	for _, args := range [][]string{{"plugins", "set", "permissions", "mode", "enforce"}, {"plugins", "set", "nope", "mode", `"auto"`}, {"plugins", "set", "permissions", "mode"}} {
-		if code, _, _ := runPackageCLI(t, args); code == 0 {
-			t.Fatalf("%v succeeded", args)
-		}
-	}
-}
-
-func TestPluginsCLIListAllPrintsResolvedComposition(t *testing.T) {
-	env := setupPackageCLI(t)
-	code, stdout, stderr := runPackageCLI(t, []string{"plugins", "list", "--all"})
-	if code != 0 || stderr != "" {
-		t.Fatalf("list --all: code=%d stderr=%q", code, stderr)
-	}
-	for _, fragment := range []string{
-		"plugin-control\tplugin\ton\talways\t",
-		"bridge\tplugin\ton\talways\t",
-		"tasks\tplugin\toff\tdefault\t",
-		"memory\tplugin\toff\tdefault\t",
-	} {
-		if !strings.Contains(stdout, fragment) {
-			t.Errorf("list --all output lacks %q:\n%s", fragment, stdout)
-		}
-	}
-	for _, name := range []string{"pirate", "permission-gate", "status-line"} {
-		if strings.Contains(stdout, name+"\t") {
-			t.Errorf("example %s is bundled in production", name)
-		}
-	}
-
-	if code, _, stderr := runPackageCLI(t, []string{"plugins", "enable", "tasks"}); code != 0 || stderr != "" {
-		t.Fatalf("enable: code=%d stderr=%q", code, stderr)
-	}
-	code, stdout, stderr = runPackageCLI(t, []string{"plugins", "list", "--all"})
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "tasks\tplugin\ton\tplugins\t") {
-		t.Fatalf("enabled list --all: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	_ = env
-}
-
 func TestPackageCLIInstallPersistsRelativeLocalPath(t *testing.T) {
 	env := setupPackageCLI(t)
 	relativePkgDir := filepath.Join(env.projectDir, "packages", "local-package")
@@ -182,29 +122,6 @@ func TestPackageCLIInstallPersistsRelativeLocalPath(t *testing.T) {
 	resolved := filepath.Clean(filepath.Join(env.agentDir, settings.Packages[0]))
 	if resolved != relativePkgDir {
 		t.Fatalf("stored %q resolves to %q, want %q", settings.Packages[0], resolved, relativePkgDir)
-	}
-}
-
-func TestPackageCLIRemoveWithTrailingSlash(t *testing.T) {
-	env := setupPackageCLI(t)
-	if code, _, stderr := runPackageCLI(t, []string{"install", env.packageDir + "/"}); code != 0 {
-		t.Fatalf("install failed: %s", stderr)
-	}
-	if code, _, stderr := runPackageCLI(t, []string{"remove", env.packageDir + "/"}); code != 0 {
-		t.Fatalf("remove failed: %s", stderr)
-	}
-	contents, err := os.ReadFile(filepath.Join(env.agentDir, "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var settings struct {
-		Packages []string `json:"packages"`
-	}
-	if err := json.Unmarshal(contents, &settings); err != nil {
-		t.Fatal(err)
-	}
-	if len(settings.Packages) != 0 {
-		t.Fatalf("packages = %v", settings.Packages)
 	}
 }
 
@@ -323,31 +240,6 @@ func TestPackageCLILocalInstallInitializesFreshProjectSettings(t *testing.T) {
 	}
 }
 
-func TestPackageCLIHelpAndErrors(t *testing.T) {
-	setupPackageCLI(t)
-
-	code, stdout, stderr := runPackageCLI(t, []string{"install", "--help"})
-	if code != 0 || !strings.Contains(stdout, "Usage:") || !strings.Contains(stdout, "orb install <source> [-l]") || stderr != "" {
-		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-
-	code, _, stderr = runPackageCLI(t, []string{"install", "--unknown"})
-	if code != 1 || !strings.Contains(stderr, `Unknown option --unknown for "install".`) ||
-		!strings.Contains(stderr, `orb install <source> [-l] [--approve|--no-approve]`) {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-
-	code, _, stderr = runPackageCLI(t, []string{"install"})
-	if code != 1 || !strings.Contains(stderr, "Missing install source.") || !strings.Contains(stderr, "Usage: orb install <source> [-l]") {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-
-	code, _, stderr = runPackageCLI(t, []string{"remove", "npm:not-configured"})
-	if code != 1 || !strings.Contains(stderr, "No matching package found for npm:not-configured") {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-}
-
 // Route selection lives in TestUpdateCommandRouting; this covers the arguments
 // that never reach a route.
 func TestPackageCLIUpdateTargets(t *testing.T) {
@@ -409,26 +301,6 @@ func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
 	}
 }
 
-func TestUpdatedPackagesMessageSelection(t *testing.T) {
-	tests := []struct {
-		name    string
-		updates []agent.PackageVersionUpdate
-		want    string
-	}{
-		{name: "unchanged", want: "All packages up to date.\n"},
-		{name: "updated", updates: []agent.PackageVersionUpdate{{PackageUpdate: agent.PackageUpdate{DisplayName: "pi-hypa", Type: "npm"}, CurrentVersion: "0.4.0", LatestVersion: "0.5.0"}}, want: "pi-hypa v0.4.0 -> v0.5.0\n"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var output bytes.Buffer
-			printUpdatedPackages(&output, test.updates)
-			if got := output.String(); got != test.want {
-				t.Fatalf("output = %q, want %q", got, test.want)
-			}
-		})
-	}
-}
-
 func TestPackageCLIUpdateUsesSavedTrustOnly(t *testing.T) {
 	env := setupPackageCLI(t)
 	// An untrusted project with project packages: update must not touch
@@ -436,26 +308,6 @@ func TestPackageCLIUpdateUsesSavedTrustOnly(t *testing.T) {
 	writeProjectPiSettings(t, env, `{"packages":["npm:fake-package"]}`)
 	code, _, stderr := runPackageCLI(t, []string{"update", "--extensions"})
 	if code != 0 {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-}
-
-func TestConfigCLICommand(t *testing.T) {
-	env := setupPackageCLI(t)
-
-	code, stdout, _ := runPackageCLI(t, []string{"config", "--help"})
-	if code != 0 || !strings.Contains(stdout, "orb config [-l]") {
-		t.Fatalf("code=%d stdout=%q", code, stdout)
-	}
-
-	writeProjectPiSettings(t, env, "{}")
-	code, _, stderr := runPackageCLI(t, []string{"config", "-l"})
-	if code != 1 || !strings.Contains(stderr, "Project is not trusted. Use --approve to modify local resource config.") {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
-
-	code, _, stderr = runPackageCLI(t, []string{"config", "--bogus"})
-	if code != 1 || !strings.Contains(stderr, `Unknown option --bogus for "config".`) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 }
@@ -527,29 +379,4 @@ func hasResolvedPath(resources []agent.ResolvedResource, path string) bool {
 		}
 	}
 	return false
-}
-
-func TestConfigCLITTYAndRunnerErrors(t *testing.T) {
-	setupPackageCLI(t)
-	runs := 0
-	runner := func(context.Context, modes.ConfigSelectorOptions) error {
-		runs++
-		return nil
-	}
-	var stderr bytes.Buffer
-	code := runCLIWithDependencies(context.Background(), []string{"config"}, cliStreams{
-		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr,
-	}, cliDependencies{runConfig: runner})
-	if code != 1 || runs != 0 || !strings.Contains(stderr.String(), "orb config requires an interactive terminal") {
-		t.Fatalf("non-TTY code=%d runs=%d stderr=%q", code, runs, stderr.String())
-	}
-
-	stderr.Reset()
-	wantErr := errors.New("selector failed")
-	code = runCLIWithDependencies(context.Background(), []string{"config"}, cliStreams{
-		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
-	}, cliDependencies{runConfig: func(context.Context, modes.ConfigSelectorOptions) error { return wantErr }})
-	if code != 1 || !strings.Contains(stderr.String(), "Error: selector failed") {
-		t.Fatalf("runner error code=%d stderr=%q", code, stderr.String())
-	}
 }

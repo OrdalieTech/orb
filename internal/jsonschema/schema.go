@@ -33,19 +33,6 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// StringEnum builds the enum form accepted by Google and the other providers:
-// {"type":"string","enum":[...]}.
-func StringEnum(values ...string) Schema {
-	b, err := jsonwire.Marshal(orderedObject{
-		{Name: "type", Value: "string"},
-		{Name: "enum", Value: values},
-	})
-	if err != nil {
-		panic(err) // strings are always JSON-marshalable
-	}
-	return Schema(b)
-}
-
 type orderedMember = jsonwire.OrderedMember
 
 type orderedObject = jsonwire.OrderedObject

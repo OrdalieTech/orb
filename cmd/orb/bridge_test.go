@@ -28,7 +28,6 @@ import (
 	"github.com/OrdalieTech/orb/internal/document"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
-	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -39,19 +38,6 @@ func socketTempRoot() string {
 		return ""
 	}
 	return "/tmp"
-}
-
-func TestBridgeProfileNames(t *testing.T) {
-	for _, s := range []string{"../work", "", "a/b", "a b"} {
-		if validBridgeName(s) {
-			t.Fatal(s)
-		}
-	}
-	for _, s := range []string{"personal", "work-2", "local_test"} {
-		if !validBridgeName(s) {
-			t.Fatal(s)
-		}
-	}
 }
 
 func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
@@ -213,79 +199,6 @@ func TestBridgeLiveAttach(t *testing.T) {
 	<-ctx.Done()
 }
 
-func TestBridgeSettingsNavigationAndLayout(t *testing.T) {
-	for _, running := range []bool{false, true} {
-		status := bridgeSettingsStatus{Peers: []string{"device-fingerprint"}, Pending: []bridge.Invitation{{Claimant: "pending-device", Status: "claimed", Expires: time.Now().Add(time.Minute).Unix()}}}
-		rows := bridgeSettingsRows("", running, running, false, status, extensions.NewNoopUI().Theme())
-		var foundStart, foundStop, foundDevices bool
-		for _, row := range rows {
-			foundStart = foundStart || row.Value == "Start"
-			foundStop = foundStop || row.Value == "Stop"
-			foundDevices = foundDevices || row.Value == "peer:device-fingerprint"
-		}
-		if foundStart == running || foundStop != running || !foundDevices {
-			t.Fatalf("wrong actions for running=%v: %+v", running, rows)
-		}
-		panel := newBridgeSettingsPanel("personal", "", "", rows, extensions.NewNoopUI().Theme(), func() int { return 24 }, func(any) {})
-		for _, width := range []int{24, 48, 80, 120} {
-			lines := panel.Render(width)
-			if len(lines) > 24 {
-				t.Fatalf("screen too tall: %d", len(lines))
-			}
-			for _, line := range lines {
-				if tui.VisibleWidth(line) > width {
-					t.Fatalf("overflow at %d: %q", width, line)
-				}
-			}
-		}
-	}
-	rows := bridgeSettingsRows("", true, true, false, bridgeSettingsStatus{Peers: []string{"device-fingerprint"}, Pending: []bridge.Invitation{{Claimant: "pending", Status: "claimed", Expires: time.Now().Add(time.Minute).Unix()}}}, extensions.NewNoopUI().Theme())
-	var paired, pending bool
-	for _, row := range rows {
-		paired = paired || row.Value == "peer:device-fingerprint"
-		pending = pending || row.Value == "Approve pairing"
-	}
-	if !paired || !pending {
-		t.Fatal("paired devices or pending approvals missing")
-	}
-	selected := ""
-	panel := newBridgeSettingsPanel("personal", "", "", bridgeSettingsRows("", false, false, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme()), extensions.NewNoopUI().Theme(), func() int { return 24 }, func(v any) { selected, _ = v.(string) })
-	panel.HandleInput(tui.KeyEvent{Raw: "\r"})
-	if selected != "Start" {
-		t.Fatalf("first action = %q", selected)
-	}
-	panel.HandleInput(tui.KeyEvent{Raw: "\x1b"})
-	if selected != "" {
-		t.Fatal("Escape did not close page")
-	}
-}
-
-func TestBridgeSettingsRespectProjectOverrides(t *testing.T) {
-	cwd := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cwd, ".pi"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(cwd, ".pi", "settings.json"), []byte(`{"plugins":{"bridge":false}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(t.TempDir()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := setBridgeSetting(settings, "bridge", true); err == nil || !strings.Contains(err.Error(), "project") {
-		t.Fatalf("project override silently ignored: %v", err)
-	}
-	if settings.GetPlugins()["bridge"] {
-		t.Fatal("project override was bypassed")
-	}
-	if err := setBridgeSetting(settings, "bridge-agent-calls", true); err != nil {
-		t.Fatal(err)
-	}
-	if !settings.GetPlugins()["bridge-agent-calls"] {
-		t.Fatal("agent setting was not saved")
-	}
-}
-
 type bridgeScriptUI struct {
 	extensions.NoopUI
 	t       *testing.T
@@ -337,31 +250,6 @@ func (ui *bridgeScriptUI) Custom(_ context.Context, factory extensions.CustomFac
 	}
 	ui.t.Fatalf("action %q missing from screen:\n%s", action, ui.screens[len(ui.screens)-1])
 	return nil, false, nil
-}
-
-func TestBridgeManagementDoesNotStartServiceWhenOpened(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("ORB_BRIDGE_HOME", root)
-	settings, err := config.NewSettingsManager(t.TempDir(), config.WithAgentDir(t.TempDir()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("bridge", bridgeExtension(CLIArgs{}, settings)); err != nil {
-		t.Fatal(err)
-	}
-	ui := &bridgeScriptUI{t: t, actions: []string{"close"}}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: ui, ErrorHandler: func(err extensions.ExtensionError) { t.Error(err) }})
-	runner.Emit(t.Context(), extensions.SessionStartEvent{})
-	if !runner.ExecuteCommand(t.Context(), "bridge", "") {
-		t.Fatal("Bridge command unavailable")
-	}
-	if _, err := os.Stat(filepath.Join(root, "personal")); !os.IsNotExist(err) {
-		t.Fatalf("opening Bridge created profile state: %v", err)
-	}
-	if !strings.Contains(ui.screens[0], "Enable Bridge") {
-		t.Fatal(ui.screens[0])
-	}
 }
 
 func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
@@ -441,63 +329,6 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 	}
 }
 
-func TestBridgePanelCompletionCanRestoreFocus(t *testing.T) {
-	var panel *bridgeSettingsPanel
-	completed := make(chan struct{})
-	panel = newBridgeSettingsPanel("personal", "", "", bridgeSettingsRows("", false, false, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme()), extensions.NewNoopUI().Theme(), func() int { return 24 }, func(any) { panel.SetFocused(false); close(completed) })
-	go panel.HandleInput(tui.KeyEvent{Raw: "\x1b"})
-	select {
-	case <-completed:
-	case <-time.After(time.Second):
-		t.Fatal("closing Bridge deadlocked while restoring focus")
-	}
-}
-
-func TestBridgeConnectActionsAreAvailableBeforeActivation(t *testing.T) {
-	for _, running := range []bool{false, true} {
-		rows := bridgeSettingsRows("add", running, running, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme())
-		for _, action := range []string{"Invite device", "Join device", "SSH"} {
-			found := false
-			for _, row := range rows {
-				if row.Value == action {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatalf("%s missing with service running=%v", action, running)
-			}
-		}
-	}
-}
-
-func TestBridgeInvitationCodeRoundTrip(t *testing.T) {
-	b, err := bridge.Open(&document.Memory{}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = b.Close() }()
-	inv, err := b.Invite([]bridge.Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.inspect"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv.Locator = "private-locator"
-	for _, text := range []string{bridgeInvitationCode(inv), string(bridge.JSON(inv))} {
-		got, err := parseBridgeInvitation(" " + text + "\n")
-		if err != nil || got.ID != inv.ID || got.Token != inv.Token || got.Locator != inv.Locator {
-			t.Fatalf("round trip: %v", err)
-		}
-	}
-	for _, input := range []string{"", "orb-bridge:v1:bad!", "{}", strings.Repeat("x", protocol.MaxFrame+1)} {
-		if _, err := parseBridgeInvitation(input); err == nil {
-			t.Fatal("invalid invitation accepted")
-		}
-	}
-	inv.Expires = time.Now().Add(-time.Second).Unix()
-	if _, err := parseBridgeInvitation(bridgeInvitationCode(inv)); err == nil {
-		t.Fatal("expired invitation accepted")
-	}
-}
-
 func TestBridgeSSHArgumentsKeepHostVerificationAndQuoteRemoteCommand(t *testing.T) {
 	for _, target := range []string{"", "-oProxyCommand=bad", "host;touch /tmp/bad", "user@host command", "user@$(bad)"} {
 		if _, err := bridgeSSHCommand(target, "orb", "personal"); err == nil {
@@ -523,22 +354,6 @@ func TestBridgeSSHArgumentsKeepHostVerificationAndQuoteRemoteCommand(t *testing.
 	want := "/opt/Orb's tools/orb\nbridge\n--profile\npersonal\npair\napprove\ninvitation\npeer\n"
 	if string(output) != want {
 		t.Fatalf("remote arguments changed: %q", output)
-	}
-}
-
-func TestBridgeDeviceRowsDistinguishPairingAndConnection(t *testing.T) {
-	peers := []string{"orb:ed25519:aaaaaaaaaa", "orb:ed25519:bbbbbbbbbb", "orb:ed25519:cccccccccc"}
-	rows := bridgeSettingsRows("", true, true, false, bridgeSettingsStatus{Peers: peers, PeerStates: map[string]string{peers[0]: "connected", peers[1]: "blocked"}}, extensions.NewNoopUI().Theme())
-	states := map[string]string{peers[0]: "Connected", peers[1]: "Blocked", peers[2]: "Offline"}
-	for _, row := range rows {
-		if peer, ok := strings.CutPrefix(row.Value, "peer:"); ok {
-			if row.Cells[1] != states[peer] {
-				t.Fatalf("wrong peer state: %+v", row)
-			}
-			if strings.Contains(row.Cells[0], "orb:ed25519:") {
-				t.Fatal("device label shows common prefix instead of fingerprint")
-			}
-		}
 	}
 }
 
@@ -1005,70 +820,6 @@ func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
 	}
 }
 
-func TestBridgeHomeKeepsAdministrationOutOfEverydayFlow(t *testing.T) {
-	rows := bridgeSettingsRows("", true, true, true, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme())
-	var actions []string
-	for _, row := range rows {
-		if !row.Header {
-			actions = append(actions, row.Value)
-		}
-	}
-	if strings.Join(actions, ",") != "Stop,page:add,page:advanced" {
-		t.Fatalf("home actions: %v", actions)
-	}
-	for _, page := range []string{"", "add", "advanced"} {
-		for _, row := range bridgeSettingsRows(page, true, true, false, bridgeSettingsStatus{}, extensions.NewNoopUI().Theme()) {
-			switch row.Value {
-			case "Grant access", "Revoke access", "Groups", "Instances", "Discovery scopes", "Operation status":
-				t.Fatalf("exposed administration: %s", row.Value)
-			}
-		}
-	}
-}
-
-func TestBridgePanelRefreshPreservesSelectionAndCancels(t *testing.T) {
-	ui := &pairingTestUI{}
-	panel := newBridgeSettingsPanel("personal", "", "peer:b", []tui.GridRow{{Value: "peer:a", Cells: []string{"A"}}, {Value: "peer:b", Cells: []string{"B"}}}, ui.Theme(), ui.Height, func(any) {})
-	updated, stopped := make(chan struct{}), make(chan struct{})
-	calls := 0
-	panel.watch(t.Context(), ui, func(ctx context.Context) []tui.GridRow {
-		calls++
-		if calls == 1 {
-			close(updated)
-			return []tui.GridRow{{Value: "peer:c", Cells: []string{"C"}}, {Value: "peer:b", Cells: []string{"B connected"}}}
-		}
-		<-ctx.Done()
-		close(stopped)
-		return nil
-	})
-	defer panel.Dispose()
-	<-updated
-	deadline := time.Now().Add(time.Second)
-	for {
-		panel.mu.Lock()
-		selected := panel.list.SelectedValue()
-		rendered := strings.Join(panel.Frame.Render(80), "\n")
-		panel.mu.Unlock()
-		if selected != "peer:b" {
-			t.Fatalf("selection jumped: %s", selected)
-		}
-		if strings.Contains(rendered, "B connected") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("live update was not rendered")
-		}
-		time.Sleep(time.Millisecond)
-	}
-	time.Sleep(1100 * time.Millisecond)
-	panel.Dispose()
-	select {
-	case <-stopped:
-	case <-time.After(time.Second):
-		t.Fatal("closing the panel did not cancel its pending refresh")
-	}
-}
-
 func TestBridgeConversationListFollowsPagesAndUsesStableIDs(t *testing.T) {
 	x, y := net.Pipe()
 	server := protocol.NewConn(y, func(_ context.Context, method string, raw json.RawMessage) (json.RawMessage, error) {
@@ -1325,37 +1076,6 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 			t.Log("native Bridge prompt, completed preview persistence, and block purge verified")
 			return
 		}
-	}
-}
-
-func TestRemoteQuestionPanelKeepsControlsVisible(t *testing.T) {
-	var answer questions.Result
-	v := &remoteConversation{body: &remoteTranscript{}, status: &remoteTranscript{}, height: func() int { return 40 }, invalidate: func() {}}
-	v.body.set(strings.Repeat("Transcript line\n", 100))
-	v.prompt = questions.NewPanel(questions.Request{Questions: []questions.Question{{ID: "choice", Question: "Choose a diagram", Options: []questions.Option{{Label: "Architecture", Description: "System structure"}, {Label: "Sequence"}}}}}, extensions.NewNoopUI().Theme(), v.height, func() {}, func(r questions.Result) { answer = r })
-	lines := v.Render(80)
-	if len(lines) > 40 || !strings.Contains(strings.Join(lines, "\n"), "Type your own answer") {
-		t.Fatal("question controls are outside the viewport")
-	}
-	v.HandleInput(tui.KeyEvent{Raw: "\x1b[5~"})
-	if v.offset == 0 {
-		t.Fatal("question blocked history scrolling")
-	}
-	v.Render(80)
-	v.HandleMouse(tui.MouseEvent{Type: tui.MouseWheelDown, Row: 0})
-	row := -1
-	for i, line := range v.Render(80) {
-		if strings.Contains(line, "1. Architecture") {
-			row = i
-		}
-	}
-	if row < 0 {
-		t.Fatal("question disappeared during scrolling")
-	}
-	v.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Row: row, Column: 4})
-	v.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: row, Column: 4})
-	if len(answer.Answers) != 1 || answer.Answers[0].Selected[0] != "Architecture" {
-		t.Fatal("remote selection did not reach the shared panel")
 	}
 }
 

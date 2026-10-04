@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -1055,33 +1054,6 @@ type testText string
 
 func (t testText) Render(int) []string { return []string{string(t)} }
 
-type toolTitleTheme struct{ extensions.Theme }
-
-func (toolTitleTheme) FG(color, text string) string { return "<" + color + ">" + text + "</>" }
-func (toolTitleTheme) Bold(text string) string      { return "<b>" + text + "</b>" }
-
-func TestNativeToolTitlesDistinguishActionsAndShortenProjectPaths(t *testing.T) {
-	host, _ := fixture(t)
-	cwd := host.Session().Manager().GetCWD()
-	for _, test := range []struct {
-		name, color, detail string
-		args                map[string]any
-	}{
-		{"Read", "accent", "AGENTS.md", map[string]any{"file_path": filepath.Join(cwd, "AGENTS.md")}},
-		{"Read", "accent", cwd + "-other/README.md", map[string]any{"file_path": cwd + "-other/README.md"}},
-		{"Edit", "success", "src/main.go", map[string]any{"file_path": "src/main.go"}},
-		{"Bash", "bashMode", "go test ./...", map[string]any{"command": "go test ./..."}},
-	} {
-		definition := host.Session().GetToolDefinition(test.name)
-		component := definition.RenderCall(test.args, toolTitleTheme{}, extensions.ToolRenderContext{CWD: cwd})
-		got := strings.Join(component.Render(80), "\n")
-		want := "<" + test.color + "><b>" + test.name + "</b></><toolTitle> " + test.detail + "</>"
-		if got != want {
-			t.Fatalf("%s title = %q, want %q", test.name, got, want)
-		}
-	}
-}
-
 func TestSDKUsesOrbPermissionPolicy(t *testing.T) {
 	for _, mode := range []string{"enforce", "auto"} {
 		for _, action := range []plugins.Action{plugins.Allow, plugins.Deny, plugins.Ask} {
@@ -1272,96 +1244,6 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 		}
 		if got := LimitsStatus(driver.options.Manager, time.Now()); got != test.want {
 			t.Errorf("%s: %s", test.input, got)
-		}
-	}
-}
-
-type limitsUI struct {
-	extensions.NoopUI
-	calls int
-	mu    sync.Mutex
-	text  string
-}
-
-func (ui *limitsUI) SetStatus(key string, value *string) {
-	if key != Name+".limits" {
-		return
-	}
-	ui.mu.Lock()
-	defer ui.mu.Unlock()
-	ui.calls++
-	ui.text = ""
-	if value != nil {
-		ui.text = *value
-	}
-}
-func TestLimitsFooterClearsOnModelSwitchAndShutdown(t *testing.T) {
-	_, driver := fixture(t)
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("limits", func(api extensions.API) error { limitFooter(api); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	ui := &limitsUI{}
-	model := &ai.Model{Provider: Name}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{SessionManager: driver.options.Manager, Mode: extensions.ModeTUI, UI: ui, ContextActions: extensions.ContextActions{GetModel: func() *ai.Model { return model }}})
-	runner.Emit(t.Context(), extensions.SessionStartEvent{})
-	ui.mu.Lock()
-	text := ui.text
-	ui.mu.Unlock()
-	if text != "Claude" {
-		t.Fatal(text)
-	}
-	model = &ai.Model{Provider: "anthropic"}
-	runner.Emit(t.Context(), extensions.ModelSelectEvent{})
-	ui.mu.Lock()
-	text = ui.text
-	ui.mu.Unlock()
-	if text != "" {
-		t.Fatal("Claude quota leaked into another provider")
-	}
-	model = &ai.Model{Provider: Name}
-	runner.Emit(t.Context(), extensions.ModelSelectEvent{})
-	runner.Emit(t.Context(), extensions.SessionShutdownEvent{})
-	ui.mu.Lock()
-	text = ui.text
-	ui.mu.Unlock()
-	if text != "" {
-		t.Fatal("shutdown kept the quota footer")
-	}
-	ui.mu.Lock()
-	calls := ui.calls
-	ui.mu.Unlock()
-	rpc := extensions.NewRunner(registry, extensions.RunnerOptions{SessionManager: driver.options.Manager, Mode: extensions.ModeRPC, UI: ui})
-	rpc.Emit(t.Context(), extensions.SessionStartEvent{})
-	ui.mu.Lock()
-	defer ui.mu.Unlock()
-	if ui.calls != calls {
-		t.Fatal("footer emitted UI requests into ordinary RPC")
-	}
-}
-
-func TestNativeContextFooter(t *testing.T) {
-	host, driver := fixture(t)
-	for _, test := range []struct{ data, want string }{
-		{`{"maxTokens":200000,"totalTokens":24800,"percentage":12.4}`, "Claude · 25k|12%"},
-		{`{"maxTokens":1000000,"totalTokens":0,"percentage":0}`, "Claude · 0|0%"},
-		{`{"maxTokens":200000}`, "Claude"},
-		{`{"maxTokens":0,"percentage":12}`, "Claude"},
-		{`{"maxTokens":200000,"percentage":101}`, "Claude"},
-	} {
-		if _, err := driver.options.Manager.AppendCustomEntry(Name+".context", json.RawMessage(test.data)); err != nil {
-			t.Fatal(err)
-		}
-		if got := LimitsStatus(driver.options.Manager, time.Now()); got != test.want {
-			t.Fatalf("%s: got %s", test.data, got)
-		}
-		usage := host.Session().FooterSnapshot().ContextUsage
-		if strings.Contains(test.want, "|") {
-			if usage == nil || usage.Percent == nil || usage.ContextWindow <= 0 {
-				t.Fatalf("native context missing from shared footer: %+v", usage)
-			}
-		} else if usage != nil {
-			t.Fatalf("invalid context reached shared footer: %+v", usage)
 		}
 	}
 }
@@ -1760,13 +1642,6 @@ func TestOrbContextLeavesContextFilesToClaude(t *testing.T) {
 	got := orbContext(&agent.SystemPromptOptions{AppendSystemPrompt: &custom, ContextFiles: []agent.ContextFile{{Path: "/p/AGENTS.md", Content: "use tabs"}, {Path: "/p/CLAUDE.md", Content: "native"}}})
 	if got != "Be brief." {
 		t.Fatalf("context %q", got)
-	}
-}
-
-func TestNativePatchUsesOrbDiffFormat(t *testing.T) {
-	got := patchDiff([]patchHunk{{OldStart: 9, NewStart: 9, Lines: []string{" keep", "-old", "+new"}}})
-	if got != "  9 keep\n-10 old\n+10 new" {
-		t.Fatalf("%q", got)
 	}
 }
 

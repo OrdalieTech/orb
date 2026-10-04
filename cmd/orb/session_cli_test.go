@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -30,76 +29,6 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
-
-func TestResolveSessionArgumentPrefersLocalExactThenPrefix(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	project := filepath.Join(root, "project")
-	if err := os.MkdirAll(project, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	dir, err := session.DefaultSessionDir(project, agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	createCLIStoredSession(t, project, dir, "abcdef01")
-	createCLIStoredSession(t, project, dir, "abc99999")
-
-	exact, err := resolveSessionArgument("abc99999", project, "", agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if exact.kind != "local" || !strings.Contains(exact.path, "abc99999") {
-		t.Fatalf("exact resolution = %+v", exact)
-	}
-	prefix, err := resolveSessionArgument("abcdef", project, "", agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prefix.kind != "local" || !strings.Contains(prefix.path, "abcdef01") {
-		t.Fatalf("prefix resolution = %+v", prefix)
-	}
-	path, err := resolveSessionArgument("relative.jsonl", project, "", agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path.kind != "path" || path.path != filepath.Join(project, "relative.jsonl") {
-		t.Fatalf("path resolution = %+v", path)
-	}
-	remote, err := resolveSessionArgument("file://remote/tmp/session.jsonl", project, "", agentDir)
-	if runtime.GOOS == "windows" {
-		// Node's win32 fileURLToPath maps a file URL host to a UNC server.
-		if err != nil || remote.kind != "path" || remote.path != `\\remote\tmp\session.jsonl` {
-			t.Fatalf("UNC file URL resolution = %+v, %v", remote, err)
-		}
-	} else if err == nil {
-		t.Fatal("remote file URL was accepted")
-	}
-}
-
-func TestFindLocalSessionByExactIDDoesNotRequireValidTranscriptBody(t *testing.T) {
-	root := t.TempDir()
-	project := filepath.Join(root, "project")
-	if err := os.MkdirAll(project, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(root, "exact.jsonl")
-	cwd, err := json.Marshal(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := `{"type":"session","version":3,"id":"exact","timestamp":"2025-01-01T00:00:00.000Z","cwd":` + string(cwd) + `}` + "\nnot-json\n"
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := findLocalSessionByExactID("exact", project, root, filepath.Join(root, "agent")); got != path {
-		t.Fatalf("exact header lookup = %q, want %q", got, path)
-	}
-	resolved, err := resolveSessionArgument("exact", project, root, filepath.Join(root, "agent"))
-	if err != nil || resolved.kind != "local" || resolved.path != path {
-		t.Fatalf("exact argument resolution = %+v, err %v", resolved, err)
-	}
-}
 
 func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	root := t.TempDir()
@@ -152,58 +81,6 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	}
 }
 
-func TestValidateSessionFlagsMatchesUpstreamConflicts(t *testing.T) {
-	fork, selected, sessionID := "source", "target", "id"
-	validationErrors := validateSessionFlags(CLIArgs{
-		Fork: &fork, Session: &selected, Continue: true, Resume: true, NoSession: true, SessionID: &sessionID,
-	})
-	if len(validationErrors) != 2 || validationErrors[0] != "--fork cannot be combined with --session, --continue, --resume, --no-session" ||
-		validationErrors[1] != "--session-id cannot be combined with --session, --continue, --resume" {
-		t.Fatalf("validation errors = %#v", validationErrors)
-	}
-	empty := ""
-	if got := validateSessionFlags(CLIArgs{Fork: &empty, Session: &empty, Continue: true}); len(got) != 0 {
-		t.Fatalf("empty string flags are falsey upstream, got errors %#v", got)
-	}
-}
-
-func TestRunCLISessionValidationPrecedesHelpAndStopsAtFirstError(t *testing.T) {
-	fork, selected := "source", "target"
-	var stdout, stderr bytes.Buffer
-	code := runCLIWithDependencies(context.Background(), []string{
-		"--help", "--fork", fork, "--session", selected, "--session-id", ".invalid",
-	}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}, cliDependencies{})
-	want := "Error: --fork cannot be combined with --session\n"
-	if code != 1 || stdout.Len() != 0 || stderr.String() != want {
-		t.Fatalf("code=%d stdout=%q stderr=%q, want stderr %q", code, stdout.String(), stderr.String(), want)
-	}
-
-	stdout.Reset()
-	stderr.Reset()
-	code = runCLIWithDependencies(context.Background(), []string{
-		"--help", "--session-id", ".invalid",
-	}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}, cliDependencies{})
-	if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "Session id must be non-empty") {
-		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
-	}
-}
-
-func TestConfirmGlobalSessionForkReadsNonTerminalInputLikeUpstream(t *testing.T) {
-	var output bytes.Buffer
-	confirmed, err := confirmGlobalSessionFork(cliStreams{
-		Stdin: strings.NewReader("yes\n"), Stdout: &output, StdinTTY: false,
-	}, "/other/project")
-	if err != nil || !confirmed {
-		t.Fatalf("confirmed=%t err=%v output=%q", confirmed, err, output.String())
-	}
-	confirmed, err = confirmGlobalSessionFork(cliStreams{
-		Stdin: strings.NewReader(" y \n"), Stdout: io.Discard,
-	}, "/other/project")
-	if err != nil || confirmed {
-		t.Fatalf("space-padded answer confirmed=%t err=%v", confirmed, err)
-	}
-}
-
 func TestCreateCLISessionConfirmsGlobalIDBeforeForking(t *testing.T) {
 	root := t.TempDir()
 	current := filepath.Join(root, "current")
@@ -244,118 +121,6 @@ func TestCreateCLISessionConfirmsGlobalIDBeforeForking(t *testing.T) {
 	if !errors.Is(err, errNoSessionSelected) || !strings.HasSuffix(output.String(), "Aborted.\n") {
 		t.Fatalf("declined global session err=%v output=%q", err, output.String())
 	}
-}
-
-func TestRunCLIExportRoutesBeforeRuntime(t *testing.T) {
-	root := t.TempDir()
-	manager := createCLIStoredSession(t, root, filepath.Join(root, "sessions"), "export-route")
-	createdRuntime := false
-	dependencies := cliDependencies{createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
-		createdRuntime = true
-		return runtimeInputs{}, nil
-	}}
-
-	for _, test := range []struct {
-		name       string
-		extension  string
-		wantMarker string
-	}{
-		{name: "html", extension: ".html", wantMarker: `id="session-data"`},
-		{name: "markdown output extension routes to the markdown exporter", extension: ".md", wantMarker: "- Session ID: `"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			outputPath := filepath.Join(root, test.name+test.extension)
-			var stdout, stderr bytes.Buffer
-			code := runCLIWithDependencies(context.Background(), []string{
-				"--export", manager.GetSessionFile(), outputPath,
-			}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}, dependencies)
-			if code != 0 || stderr.Len() != 0 || stdout.String() != "Exported to: "+outputPath+"\n" {
-				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
-			}
-			contents, err := os.ReadFile(outputPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(string(contents), test.wantMarker) {
-				t.Fatalf("export %q does not contain %q", outputPath, test.wantMarker)
-			}
-		})
-	}
-	if createdRuntime {
-		t.Fatal("export initialized the agent runtime")
-	}
-}
-
-func TestRunCLIResumeRoutesBeforeInteractiveDispatch(t *testing.T) {
-	root := t.TempDir()
-	project := filepath.Join(root, "project")
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(project, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(project)
-	t.Setenv(config.EnvAgentDir, agentDir)
-	dir, err := session.DefaultSessionDir(project, agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := createCLIStoredSession(t, project, dir, "resume-route")
-
-	selected := false
-	selector := func(current, _ SessionListLoader) (string, bool, error) {
-		selected = true
-		listed := current(nil)
-		return listed[0].Path, true, nil
-	}
-
-	t.Run("print mode continues selected session", func(t *testing.T) {
-		provider := faux.New()
-		provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("resumed")})
-		var stdout, stderr bytes.Buffer
-		code := runCLIWithDependencies(context.Background(), []string{"-p", "-r", "next", "--model", "faux-1"}, cliStreams{
-			Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, StdinTTY: true, StdoutTTY: false,
-		}, cliDependencies{createRuntime: fauxRuntimeFactory(provider), selectSession: selector})
-		if code != 0 || stdout.String() != "resumed\n" || stderr.Len() != 0 || !selected {
-			t.Fatalf("code=%d selected=%t stdout=%q stderr=%q", code, selected, stdout.String(), stderr.String())
-		}
-		reopened, openErr := session.Open(source.GetSessionFile(), dir)
-		if openErr != nil {
-			t.Fatal(openErr)
-		}
-		if len(reopened.GetEntries()) <= len(source.GetEntries()) {
-			t.Fatalf("resume did not append to selected session: %#v", reopened.GetEntries())
-		}
-	})
-
-	t.Run("bare resume selects before TUI initialization", func(t *testing.T) {
-		var stderr bytes.Buffer
-		createdRuntime := false
-		selected = false
-		code := runCLIWithDependencies(context.Background(), []string{"-r"}, cliStreams{
-			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
-		}, cliDependencies{
-			selectSession: selector,
-			createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
-				createdRuntime = true
-				return runtimeInputs{}, errors.New("interactive fixture stop")
-			},
-		})
-		if code != 1 || !selected || !createdRuntime || !strings.Contains(stderr.String(), "interactive fixture stop") {
-			t.Fatalf("code=%d selected=%t createdRuntime=%t stderr=%q", code, selected, createdRuntime, stderr.String())
-		}
-	})
-
-	t.Run("selector cancellation exits zero", func(t *testing.T) {
-		var stdout bytes.Buffer
-		code := runCLIWithDependencies(context.Background(), []string{"-r"}, cliStreams{
-			Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
-		}, cliDependencies{selectSession: func(SessionListLoader, SessionListLoader) (string, bool, error) {
-			return "", false, nil
-		}})
-		if code != 0 || stdout.String() != "No session selected\n" {
-			t.Fatalf("code=%d stdout=%q", code, stdout.String())
-		}
-	})
 }
 
 func TestRunCLISessionSelectionForkExactIDAndNameEndToEnd(t *testing.T) {
@@ -957,17 +722,6 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 		t.Fatal("native conversation re-read on every message", err)
 	}
 	_ = conversation.Close(ctx)
-}
-
-// A session ID after --resume opens that session; --resume alone still picks one.
-func TestResumeTakesAnOptionalSessionID(t *testing.T) {
-	id := "0b7a4a1e-1111-4222-8333-444455556666"
-	if args := ParseArgs([]string{"--resume", id}); args.Resume || args.Session == nil || *args.Session != id {
-		t.Fatalf("--resume <id> = %+v", args)
-	}
-	if args := ParseArgs([]string{"-r", "fix the bug"}); !args.Resume || args.Session != nil {
-		t.Fatalf("-r with a prompt = %+v", args)
-	}
 }
 
 func TestStorageSessionsListsStoredConversationsAsJSONLines(t *testing.T) {

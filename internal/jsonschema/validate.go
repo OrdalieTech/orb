@@ -55,16 +55,6 @@ func Validate(schema Schema, value any) (any, error) {
 	return coerced, nil
 }
 
-// ValidateToolArguments formats failures like the upstream TypeBox adapter so
-// loop-generated error tool results remain trace-compatible.
-func ValidateToolArguments(toolName string, schema Schema, arguments any) (any, error) {
-	validated, err := Validate(schema, arguments)
-	if err == nil {
-		return validated, nil
-	}
-	return nil, formatToolValidationError(toolName, err, indentJSON(arguments))
-}
-
 // ValidateToolArgumentsJSON preserves the provider's argument member order in
 // the diagnostic's pretty-printed input. Callers with a retained raw tool call
 // should prefer this form over re-encoding its arguments map.
@@ -816,17 +806,6 @@ func requiredPath(parent, required string) string {
 		return required
 	}
 	return parent + "." + required
-}
-
-func indentJSON(value any) string {
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
-		return "null"
-	}
-	return strings.TrimSuffix(buffer.String(), "\n")
 }
 
 func indentRawJSON(value []byte) string {

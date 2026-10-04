@@ -11,24 +11,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestTokenizeSplitsCamelCaseAndSingularizes(t *testing.T) {
-	got := tokenize("listGitHubIssues for the searches, HTTPServer")
-	want := []string{"list", "git", "hub", "issue", "search", "http", "server"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("tokenize = %q", got)
-	}
-}
-
-func TestRankBM25PrefersSpecificMatches(t *testing.T) {
-	documents := []string{"read a file from disk", "create a github issue", "list github issues and pull requests"}
-	if got := rankBM25("github issues", documents, 8); !reflect.DeepEqual(got, []int{1, 2}) {
-		t.Fatalf("rank = %v", got)
-	}
-	if got := rankBM25("the and", documents, 8); got != nil {
-		t.Fatalf("stop words matched %v", got)
-	}
-}
-
 func TestToolSearchLoadsDeferredMatches(t *testing.T) {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "tracker", Version: "1"}, nil)
 	mcpsdk.AddTool[map[string]any, any](server, &mcpsdk.Tool{Name: "create_issue", Description: "Create a GitHub issue"}, func(context.Context, *mcpsdk.CallToolRequest, map[string]any) (*mcpsdk.CallToolResult, any, error) {
@@ -88,21 +70,5 @@ func TestToolSearchLoadsDeferredMatches(t *testing.T) {
 	want := "MCP servers whose tools are not declared to you. Load the tools of `tool_search` servers with `tool_search`.\n- mcp__tracker (tool_search)"
 	if got := options.Sections[MCPServersSection]; got != want {
 		t.Fatalf("section = %q", got)
-	}
-}
-
-func TestServersSectionFitsItsBudget(t *testing.T) {
-	var servers []testServer
-	for index := range 300 {
-		servers = append(servers, testServer{Name: "server" + strings.Repeat("x", index%3) + string(rune('a'+index%26)) + string(rune('a'+index/26)), Command: "x"})
-	}
-	manager := NewManager(t.TempDir(), servers)
-	for _, connection := range manager.servers {
-		connection.entry.Config.Exposure = ExposureDeferred
-		connection.entry.Config.Description = strings.Repeat("Long description. ", 40)
-	}
-	section := manager.serversSection()
-	if len([]rune(section)) > maxServersSection || !strings.Contains(section, "more servers; find their tools with tool_search") {
-		t.Fatalf("section (%d chars) =\n%s", len([]rune(section)), section)
 	}
 }

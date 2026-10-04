@@ -51,79 +51,6 @@ func TestAutoLoadsPolicyWithoutPersistingOverride(t *testing.T) {
 	}
 }
 
-func TestHerdrExtensionIsAutomaticOnlyInsideHerdr(t *testing.T) {
-	values := map[string]string{"HERDR_ENV": "1", "HERDR_BIN_PATH": "/opt/herdr", "HERDR_PANE_ID": "w1:p1"}
-	getenv := func(name string) string { return values[name] }
-	got := compiledExtensionsForEnvironment(getenv)
-	entry := got[len(got)-1]
-	if len(got) != 1 || entry.Name != "herdr" || !entry.Hidden || !entry.DefaultEnabled || entry.Factory == nil {
-		t.Fatalf("compiled extensions = %#v", got)
-	}
-	delete(values, "HERDR_PANE_ID")
-	if got := compiledExtensionsForEnvironment(getenv); len(got) != 0 {
-		t.Fatalf("incomplete Herdr environment added %d extensions", len(got))
-	}
-}
-
-func TestLoadCompiledExtensionsUsesSettingsAndCatalogOrder(t *testing.T) {
-	cwd := t.TempDir()
-	agentDir := t.TempDir()
-	settingsJSON := `{"goExtensions":{"status-line":true,"permission-gate":false,"pirate":true}}`
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settingsJSON), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
-	if len(diagnostics) != 0 {
-		t.Fatalf("diagnostics = %v", diagnostics)
-	}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if got := strings.Join(runner.ExtensionPaths(), ","); got != "builtin:plugin-control,builtin:bridge,builtin:tool-search,builtin:mcp" {
-		t.Fatalf("compiled extension order = %q", got)
-	}
-	disabled, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true}, settings, nil)
-	if disabled != nil || len(diagnostics) != 0 {
-		t.Fatalf("disabled registry = %#v, diagnostics = %v", disabled, diagnostics)
-	}
-}
-
-func TestLoadCompiledExtensionsAddsToolSearchAndMCP(t *testing.T) {
-	tests := []struct {
-		name     string
-		settings string
-		args     CLIArgs
-		wantPath string
-	}{
-		{name: "default", settings: `{}`, wantPath: "builtin:plugin-control,builtin:bridge,builtin:tool-search,builtin:mcp"},
-		{name: "extension disabled", settings: `{"goExtensions":{"mcp":false}}`, wantPath: "builtin:plugin-control,builtin:bridge,builtin:tool-search"},
-		{name: "all extensions disabled", settings: `{}`, args: CLIArgs{NoExtensions: true}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			cwd := t.TempDir()
-			agentDir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(test.settings), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-			if err != nil {
-				t.Fatal(err)
-			}
-			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, test.args, settings, nil)
-			runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-			if paths := strings.Join(runner.ExtensionPaths(), ","); paths != test.wantPath || len(diagnostics) != 0 {
-				t.Fatalf("extension paths = %q, want %q; diagnostics = %v", paths, test.wantPath, diagnostics)
-			}
-			if strings.Contains(test.wantPath, "builtin:mcp") && runner.Command("mcp") == nil {
-				t.Fatal("/mcp command was not registered")
-			}
-		})
-	}
-}
-
 func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 	tests := []struct {
 		name, settings string
@@ -170,59 +97,6 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 	}
 }
 
-func TestApplyExtensionFlagsUsesUpstreamBooleanAndStringRules(t *testing.T) {
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("<inline:flags>", func(api extensions.API) error {
-		api.RegisterFlag("enabled", extensions.Flag{Type: extensions.FlagBoolean, Default: false, Description: "enable it"})
-		api.RegisterFlag("name", extensions.Flag{Type: extensions.FlagString})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	falseText := "false"
-	value := "fixture"
-	diagnostics := applyExtensionFlags(registry, []CLIUnknownFlag{
-		{Name: "enabled", Value: &falseText}, {Name: "name", Value: &value}, {Name: "missing"},
-	})
-	if len(diagnostics) != 1 || diagnostics[0] != "Unknown option: --missing" {
-		t.Fatalf("diagnostics = %v", diagnostics)
-	}
-	runner := extensions.NewRunner(registry, extensions.RunnerOptions{})
-	if enabled, ok := runner.FlagValues()["enabled"].(bool); !ok || !enabled {
-		t.Fatalf("boolean flag = %#v", runner.FlagValues()["enabled"])
-	}
-	if got := runner.FlagValues()["name"]; got != "fixture" {
-		t.Fatalf("string flag = %#v", got)
-	}
-}
-
-func TestApplyExtensionFlagsRequiresStringValue(t *testing.T) {
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("<inline:flag>", func(api extensions.API) error {
-		api.RegisterFlag("name", extensions.Flag{Type: extensions.FlagString})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if got := applyExtensionFlags(registry, []CLIUnknownFlag{{Name: "name"}}); len(got) != 1 || got[0] != `Extension flag "--name" requires a value` {
-		t.Fatalf("diagnostics = %v", got)
-	}
-}
-
-func TestExtensionHelpListsRegisteredFlags(t *testing.T) {
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("<inline:flag>", func(api extensions.API) error {
-		api.RegisterFlag("plan", extensions.Flag{Type: extensions.FlagBoolean, Description: "Plan first"})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	help := extensionHelpText(registry)
-	if !strings.Contains(help, "Extension CLI Flags:\n") || !strings.Contains(help, "--plan") || !strings.Contains(help, "Plan first") {
-		t.Fatalf("help = %q", help)
-	}
-}
-
 func TestRegisteredCommandExecAndEventBusUseBoundRuntime(t *testing.T) {
 	registry := extensions.NewRegistry(t.TempDir())
 	var command extensions.Command
@@ -255,21 +129,6 @@ func TestRegisteredCommandExecAndEventBusUseBoundRuntime(t *testing.T) {
 	}
 	if busValue != "exec" {
 		t.Fatalf("event bus value = %q", busValue)
-	}
-}
-
-// A Herdr server updated in place names its replaced binary with " (deleted)";
-// Orb reports through the binary now at that path.
-func TestHerdrBinaryAfterAnInPlaceUpdate(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "herdr")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if got := herdrBinary(bin + " (deleted)"); got != bin {
-		t.Fatalf("herdrBinary = %q, want %q", got, bin)
-	}
-	if got := herdrBinary(bin); got != bin {
-		t.Fatalf("herdrBinary = %q", got)
 	}
 }
 

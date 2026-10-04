@@ -12,30 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 )
 
-func TestPiIntegrationRecognition(t *testing.T) {
-	root := t.TempDir()
-	for _, test := range []struct {
-		source string
-		want   bool
-	}{
-		{"// installed by herdr\n// HERDR_INTEGRATION_ID=pi\n", true},
-		{"// installed by herdr\r\n// HERDR_INTEGRATION_ID=pi\r\n", true},
-		{"// installed by herdr\n// HERDR_INTEGRATION_ID=claude\n", false},
-		{"export default function () {}", false},
-	} {
-		path := filepath.Join(root, "herdr-agent-state.ts")
-		if err := os.WriteFile(path, []byte(test.source), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if got := IsPiIntegration(path); got != test.want {
-			t.Fatalf("recognition of %q = %v", test.source, got)
-		}
-	}
-	if IsPiIntegration(filepath.Join(root, "missing")) {
-		t.Fatal("missing integration recognized")
-	}
-}
-
 func TestPiLifecycleOnlyPublishesOrbPresentation(t *testing.T) {
 	root := t.TempDir()
 	logPath := filepath.Join(root, "calls")

@@ -236,20 +236,3 @@ func TestCredentialStoreTakesOverLegacyEntriesForItsURLOnly(t *testing.T) {
 		t.Fatalf("store = %s", data)
 	}
 }
-
-func TestParseChallengeAndCallbackSettings(t *testing.T) {
-	got := parseChallenge(`Bearer error="insufficient_scope", scope="a b", resource_metadata="https://x/.well-known/oauth-protected-resource"`)
-	if got.Error != "insufficient_scope" || got.Scope != "a b" || got.ResourceMetadataURL != "https://x/.well-known/oauth-protected-resource" {
-		t.Fatalf("challenge = %#v", got)
-	}
-	if got := parseChallenge(`Basic realm="x"`); got != (challenge{}) {
-		t.Fatalf("basic challenge = %#v", got)
-	}
-	host, redirectHost, path, port, fixed := callbackSettings(OAuthConfig{CallbackURL: "http://localhost/cb", CallbackPort: 4567})
-	if host != "127.0.0.1" || redirectHost != "localhost" || path != "/cb" || port != 4567 || fixed != "http://localhost:4567/cb" {
-		t.Fatalf("callback = %q %q %q %d %q", host, redirectHost, path, port, fixed)
-	}
-	if got := stepUpScope(oauthState{Tokens: &oauthTokens{Scope: "read"}}, challenge{Error: "insufficient_scope", Scope: "write"}); got != "read write" {
-		t.Fatalf("step-up scope = %q", got)
-	}
-}

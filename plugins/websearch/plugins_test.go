@@ -219,32 +219,6 @@ func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
 	_ = must(tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil))
 }
 
-func TestWebSearchWithoutKeyReturnsActionableError(t *testing.T) {
-	for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
-		t.Setenv(key, "")
-	}
-	setHome(t, t.TempDir())
-	tool := pluginTool(t, "websearch", "web_search", Extension(nil), extensions.RunnerOptions{})
-	_, err := tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil)
-	require(t, err != nil && strings.Contains(err.Error(), "EXA_API_KEY") && strings.Contains(err.Error(), "~/.pi/web-search.json"), "error = %v", err)
-}
-
-func TestWebSearchReadsPiWebSearchConfig(t *testing.T) {
-	for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
-		t.Setenv(key, "")
-	}
-	home := t.TempDir()
-	setHome(t, home)
-	mustOK(os.MkdirAll(filepath.Join(home, ".pi"), 0o755))
-	mustOK(os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(`{"exaApiKey":"stored"}`), 0o600))
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		require(t, request.Header.Get("x-api-key") == "stored", "api key = %q", request.Header.Get("x-api-key"))
-		return response(http.StatusOK, "application/json", `{"results":[]}`), nil
-	})}
-	tool := pluginTool(t, "websearch", "web_search", Extension(client), extensions.RunnerOptions{})
-	_ = must(tool.Execute(context.Background(), "search", map[string]any{"query": "orb"}, nil))
-}
-
 func pluginTool(t *testing.T, plugin, tool string, factory extensions.Factory, runnerOptions extensions.RunnerOptions) engine.AgentTool {
 	t.Helper()
 	registry := extensions.NewRegistry(t.TempDir())

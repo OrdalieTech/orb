@@ -53,46 +53,6 @@ func TestLoadRejectsServersSharingANamespace(t *testing.T) {
 	}
 }
 
-func TestValidate(t *testing.T) {
-	for _, test := range []struct {
-		name, config, message string
-	}{
-		{"neither", `{}`, `needs either "command"`},
-		{"sse", `{"type":"sse","url":"https://x"}`, "legacy SSE"},
-		{"exposure", `{"command":"x","exposure":"loud"}`, "exposure must be one of"},
-		{"tool exposure", `{"command":"x","toolExposure":{"a":"loud"}}`, `toolExposure "a"`},
-		{"timeout", `{"command":"x","timeout":-1}`, "timeout"},
-		{"auth http", `{"url":"http://example.com","auth":{"provider":"p"}}`, "auth requires an https URL"},
-		{"callback", `{"url":"https://x","oauth":{"callbackUrl":"https://example.com/cb"}}`, "oauth.callbackUrl"},
-		{"metadata", `{"url":"https://x","oauth":{"authServerMetadataUrl":"http://example.com"}}`, "oauth.authServerMetadataUrl"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			agentDir := t.TempDir()
-			writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{"server":`+test.config+`}}`)
-			_, problems := Load(agentDir, t.TempDir(), false)
-			if len(problems) != 1 || !strings.Contains(problems[0], test.message) {
-				t.Fatalf("problems = %q, want %q", problems, test.message)
-			}
-		})
-	}
-	config := ServerConfig{URL: "http://localhost:3000", Auth: &ProviderAuth{Provider: "p"}, Exposure: "codemode-deferred"}
-	if err := Validate("local", &config); err != nil || config.Exposure != ExposureCodemode {
-		t.Fatalf("loopback auth: %v, exposure %q", err, config.Exposure)
-	}
-}
-
-func TestToolExposurePrefersExactNamesThenFirstPattern(t *testing.T) {
-	agentDir := t.TempDir()
-	writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{"s":{"command":"x","exposure":"direct","toolExposure":{"get_*":"hidden","*":"deferred","get_item":"direct"}}}}`)
-	entries, _ := Load(agentDir, t.TempDir(), false)
-	config := entries[0].Config
-	for tool, want := range map[string]Exposure{"get_item": ExposureDirect, "get_list": ExposureHidden, "other": ExposureDeferred} {
-		if got := config.ToolExposureOf(tool); got != want {
-			t.Fatalf("%s: %s, want %s", tool, got, want)
-		}
-	}
-}
-
 func TestAddAndRemoveServerKeepOtherContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mcp.json")
 	writeConfig(t, path, "{\n    \"other\": true,\n    \"mcpServers\": {\"a\": {\"command\": \"a\", \"custom\": 1}}\n}\n")

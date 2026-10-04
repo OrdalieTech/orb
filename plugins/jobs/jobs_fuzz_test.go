@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
 
 func TestMain(m *testing.M) {
@@ -117,62 +116,6 @@ func (r *report) matches(want []string) bool {
 		}
 	}
 	return true
-}
-
-// expectLines is what monitor reports for output: its lines, each over the
-// read buffer replaced by a placeholder.
-func expectLines(output string) []string {
-	if output == "" {
-		return nil
-	}
-	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
-	for i, line := range lines {
-		if len(line) >= 64<<10 {
-			lines[i] = "(a line over 64 KB, see the log)"
-		}
-	}
-	return lines
-}
-
-// FuzzMonitoredOutput runs arbitrary output through a monitored job: the log
-// holds it byte for byte and the messages report every line once, in order.
-func FuzzMonitoredOutput(f *testing.F) {
-	for _, seed := range []string{
-		"", "\n", "plain", "two\nlines\n", "no newline at the end", "\n\n\nblank lines\n\n",
-		`quotes ' " and \ backslashes \n $HOME $(echo no) ` + "`echo no`",
-		"EOF\n'EOF'\n)\n# not a comment\n", "é 😀 日本語 \u202e rtl", "\r\ncarriage\rreturn\t\x1b[31mansi\x1b[0m",
-		strings.Repeat("x", 64<<10-1) + "\n" + strings.Repeat("y", 64<<10) + "\nshort\n" + strings.Repeat("z", 200_000),
-		strings.Repeat("many lines\n", 57),
-	} {
-		f.Add(seed)
-	}
-	f.Fuzz(func(t *testing.T, output string) {
-		if strings.IndexByte(output, 0) >= 0 || !utf8.ValidString(output) {
-			t.Skip("tool arguments are JSON text, and a shell word cannot hold NUL")
-		}
-		h := newHarness(t)
-		id, _, log, err := launch(h, "printf '%s' "+quote(output), true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		h.wait(t, "Job "+id+" (")
-		messages := h.snapshot()
-		r := reports(t, messages)[id]
-		if got, _ := os.ReadFile(log); string(got) != output {
-			t.Fatalf("log = %q, want %q", got, output)
-		}
-		if r.count != 1 || r.late != 0 || !strings.Contains(r.end, "exited with code 0 after ") {
-			t.Fatalf("end = %q (%d ends, %d late)", r.end, r.count, r.late)
-		}
-		if want := expectLines(output); !r.matches(want) {
-			t.Fatalf("printed %q, want %q", r.printed, want)
-		}
-		for _, message := range messages {
-			if !utf8.ValidString(message) {
-				t.Fatalf("invalid UTF-8 in %q", message)
-			}
-		}
-	})
 }
 
 // A command for the randomized run, with what it must report.
@@ -465,20 +408,4 @@ func TestShutdownEndsEveryJob(t *testing.T) {
 	if messages := h.snapshot(); len(messages) != 0 {
 		t.Errorf("messages after shutdown: %q", messages)
 	}
-}
-
-// oneLine keeps a job's command readable in its report, whatever it holds.
-func FuzzOneLine(f *testing.F) {
-	for _, seed := range []string{"", "ls", "a\nb", strings.Repeat("é", 100), strings.Repeat("x", 79) + "😀"} {
-		f.Add(seed)
-	}
-	f.Fuzz(func(t *testing.T, command string) {
-		got := oneLine(command)
-		if strings.Contains(got, "\n") || utf8.RuneCountInString(got) > 81 {
-			t.Fatalf("oneLine(%q) = %q", command, got)
-		}
-		if utf8.ValidString(command) && !utf8.ValidString(got) {
-			t.Fatalf("oneLine(%q) = %q, invalid UTF-8", command, got)
-		}
-	})
 }

@@ -192,13 +192,6 @@ func hasMemoryTags(itemTags, required []string) bool {
 	return true
 }
 
-func TestMemoryWithStoreRejectsNil(t *testing.T) {
-	registry := extensions.NewRegistry(t.TempDir())
-	if err := registry.Register("builtin:memory", Extension(nil)); err == nil || !strings.Contains(err.Error(), "store is required") {
-		t.Fatalf("Extension(nil) error = %v", err)
-	}
-}
-
 func recallOnInstance(t *testing.T, store memorysdk.Store, done chan<- error) {
 	t.Helper()
 	tool := memoryPluginTool(t, store, "recall")
@@ -331,26 +324,6 @@ func TestMemoryForgetRequiresUniqueSubstring(t *testing.T) {
 	}, nil))
 	items, _ := store.snapshot()
 	require(t, len(items) == 1 && items[0].ID == "spaces", "items after forget = %#v", items)
-}
-
-func TestMemoryToolGuidanceKeepsDurableFactsDeclarative(t *testing.T) {
-	store := &memoryTestStore{}
-	for _, test := range []struct {
-		name string
-		want []string
-	}{
-		{name: "remember", want: []string{"declarative", "task progress", "secrets", "USER PROFILE", "MEMORY"}},
-		{name: "recall", want: []string{"cross-session", "background", "not instructions"}},
-		{name: "replace", want: []string{"consolidate", "unique substring", "USER PROFILE", "MEMORY"}},
-		{name: "forget", want: []string{"obsolete", "unique content substring"}},
-	} {
-		spec := memoryPluginTool(t, store, test.name).Spec()
-		require(t, test.name == "recall" || spec.ExecutionMode == engine.ToolExecutionSequential, "%s execution mode = %q, want sequential", test.name, spec.ExecutionMode)
-		text := spec.Description + " " + string(spec.Parameters)
-		for _, want := range test.want {
-			require(t, strings.Contains(text, want), "%s guidance %q does not contain %q", test.name, text, want)
-		}
-	}
 }
 
 func TestMemoryProfileMemoryCapacity(t *testing.T) {

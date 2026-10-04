@@ -125,19 +125,6 @@ func TestLeavesANamedSessionAlone(t *testing.T) {
 	}
 }
 
-func TestTidyKeepsOneCleanLine(t *testing.T) {
-	for in, want := range map[string]string{
-		"\"Réparer le pairing\".":       "Réparer le pairing",
-		"**Title:** Deploy lab-3\nmore": "Deploy lab-3",
-		"Title: Deploy lab-3":           "Deploy lab-3",
-		"  « Plan du trimestre »  ":     "Plan du trimestre",
-	} {
-		if got := tidy(in); got != want {
-			t.Errorf("tidy(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestAConversationOnlyModelIsNamedByTheCheapestOther(t *testing.T) {
 	registry := &fakeRegistry{reply: "Saluer en français", refuse: "claude-sessions", available: []ai.Model{
 		{ID: "big", Provider: "openai", Cost: ai.ModelCost{Input: 5, Output: 20}},

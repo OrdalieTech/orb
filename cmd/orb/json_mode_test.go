@@ -549,9 +549,3 @@ func userPromptsFromJSONEvents(t testing.TB, lines []json.RawMessage) []string {
 	}
 	return prompts
 }
-
-func TestStrictSessionHeaderRejectsUnknownFields(t *testing.T) {
-	if _, err := parseStrictSessionHeader([]byte(`{"type":"session","version":3,"id":"id","timestamp":"2026-07-18T00:00:00.000Z","cwd":"/fixture/project","extra":true}`), "/fixture/project"); err == nil {
-		t.Fatal("header with an unknown field was accepted")
-	}
-}

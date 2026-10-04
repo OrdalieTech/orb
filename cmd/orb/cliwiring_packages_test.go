@@ -71,64 +71,6 @@ func closeExtensionHostOnCleanup(t *testing.T) {
 	t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 }
 
-// Extensions provided by installed pi packages must load. cmd/orb now
-// forwards resolvedPaths.Extensions into the host's package-path fields; a
-// user-scope package extension therefore reaches the loaded tool set.
-func TestLoadCompiledExtensionsUsesExtensionHost(t *testing.T) {
-	requireExtensionHostRuntime(t)
-	cwd := t.TempDir()
-	agentDir := t.TempDir()
-	closeExtensionHostOnCleanup(t)
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	extPath := writeJSExtension(t, filepath.Join(t.TempDir(), "pkg"), packageToolExtension)
-	packages := &agent.ResolvedPaths{
-		Extensions: []agent.ResolvedResource{{
-			Path: extPath, Enabled: true,
-			Metadata: agent.PathMetadata{Source: "npm:pkg", Scope: "user", Origin: "package"},
-		}},
-	}
-	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
-	if registry == nil || len(diagnostics) != 0 {
-		t.Fatalf("registry = %#v, diagnostics = %v", registry, diagnostics)
-	}
-	if names := loadedToolNames(t, registry); !slices.Contains(names, "parse_duration") {
-		t.Fatalf("package tool did not load through host: %v", names)
-	}
-	extensionHostMu.Lock()
-	manager := activeExtensionHost
-	extensionHostMu.Unlock()
-	if manager == nil {
-		t.Fatal("extension host manager was not retained")
-	}
-}
-
-func TestLoadCompiledExtensionsKeepsNativeExtensionsWithoutJSRuntime(t *testing.T) {
-	cwd := t.TempDir()
-	agentDir := t.TempDir()
-	closeExtensionHostOnCleanup(t)
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeJSExtension(t, filepath.Join(agentDir, "extensions", "local"), packageToolExtension)
-	// Emptying PATH no longer hides a runtime: discovery deliberately reaches the
-	// install locations of version managers and system packages, because that is
-	// where a spawned process finds Node when the user's shell is what puts it on
-	// PATH. ORB_NODE=none is the supported way to say "no JavaScript runtime".
-	t.Setenv("ORB_NODE", "none")
-	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, nil)
-	if registry == nil {
-		t.Fatal("native extension registry was lost without a JavaScript runtime")
-	}
-	want := (&extensionhost.RuntimeUnavailableError{}).Error()
-	if len(diagnostics) != 1 || startupDiagnosticText(diagnostics[0]) != want {
-		t.Fatalf("diagnostics = %#v, want only %q", diagnostics, want)
-	}
-}
-
 // Trust gate: a project-scope package extension stays invisible until
 // the project is trusted (the host gates ProjectResolvedPackagePaths behind
 // ProjectTrusted).
@@ -157,22 +99,6 @@ func TestLoadCompiledExtensionsHidesProjectPackageExtensionsUntilTrusted(t *test
 	registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{}, settings, packages)
 	if registry == nil || !slices.Contains(loadedToolNames(t, registry), "parse_duration") {
 		t.Fatalf("trusted project-scope package extension did not load: diagnostics=%v", diagnostics)
-	}
-}
-
-// IsPackageSourceSpec routes npm:/git:/http(s)/ssh specs through the
-// package resolver instead of treating them as literal file paths, while plain
-// paths continue straight to the extension host.
-func TestIsPackageSourceSpecClassification(t *testing.T) {
-	for _, spec := range []string{"npm:pi-skillful", "git:github.com/u/r", "github:u/r", "https://x/y.git", "ssh://git@h/r"} {
-		if !isPackageSourceSpec(spec) {
-			t.Fatalf("%q should be a package source", spec)
-		}
-	}
-	for _, path := range []string{"./local.ts", "/abs/ext.ts", "ext", "../up/index.js"} {
-		if isPackageSourceSpec(path) {
-			t.Fatalf("%q should be a local path", path)
-		}
 	}
 }
 

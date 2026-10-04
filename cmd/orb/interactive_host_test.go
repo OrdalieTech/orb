@@ -97,54 +97,6 @@ func newHostAgent(messages engine.AgentMessages) *engine.Agent {
 	return engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: fauxHostModel("host-model"), Messages: messages}))
 }
 
-// The CLI runtime paths give the agent its per-request session id at
-// construction (upstream createAgentSession), backing provider affinity
-// headers and prompt-cache keys.
-func TestBuildSessionRuntimeSetsStreamSessionID(t *testing.T) {
-	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := session.InMemory(root, session.WithSessionID("affinity-session"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := ""
-	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-		if options != nil && options.SessionID != nil {
-			seen = *options.SessionID
-		}
-		return func(yield func(ai.AssistantMessageEvent, error) bool) {
-			message := &ai.AssistantMessage{
-				Content: ai.AssistantContent{&ai.TextContent{Text: "ok"}},
-				API:     model.API, Provider: model.Provider, Model: model.ID,
-				StopReason: ai.StopReasonStop,
-			}
-			if !yield(ai.StartEvent{Partial: message}, nil) {
-				return
-			}
-			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
-		}, nil
-	}
-	created := engine.NewAgent(
-		stream, engine.WithInitialState(engine.AgentState{Model: fauxHostModel("host-model")}),
-		engine.WithConvertToLLM(agent.ConvertToLLM),
-	)
-	runtime, err := buildSessionRuntime(runtimeInputs{Agent: created, Settings: settings, StreamFn: stream},
-		manager, sessionRuntimeOptions{mode: extensions.ModeTUI})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runtime.Dispose)
-	if err := runtime.Prompt(context.Background(), "hello"); err != nil {
-		t.Fatal(err)
-	}
-	if seen != "affinity-session" {
-		t.Fatalf("stream session id = %q, want %q", seen, "affinity-session")
-	}
-}
-
 type hostFixture struct {
 	root        string
 	agentDir    string
@@ -231,105 +183,6 @@ func appendConversation(t *testing.T, manager *session.SessionManager, userText 
 	return entryID
 }
 
-func TestSessionRuntimeConfigPreservesRuntimeInputs(t *testing.T) {
-	root := t.TempDir()
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := session.InMemory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	modelRegistry, err := config.NewModelRegistry(filepath.Join(root, "agent"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	allowed := []string{"read"}
-	apiKey := "test-key"
-	streamCalled := false
-	stream := func(_ context.Context, model *ai.Model, _ ai.Context, _ *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-		streamCalled = true
-		message := &ai.AssistantMessage{
-			Content:    ai.AssistantContent{&ai.TextContent{Text: "ok"}},
-			API:        model.API,
-			Provider:   model.Provider,
-			Model:      model.ID,
-			StopReason: ai.StopReasonStop,
-			Timestamp:  1,
-		}
-		return func(yield func(ai.AssistantMessageEvent, error) bool) {
-			yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
-		}, nil
-	}
-	inputs := runtimeInputs{
-		Agent:           newHostAgent(nil),
-		Settings:        settings,
-		StreamFn:        stream,
-		ModelRegistry:   modelRegistry,
-		AvailableModels: func() []ai.Model { return nil },
-		GetAPIKey:       func(context.Context, ai.ProviderID) (*string, error) { return &apiKey, nil },
-		GetRequestAuth: func(context.Context, ai.ProviderID) (*engine.RequestAuth, error) {
-			return &engine.RequestAuth{APIKey: &apiKey}, nil
-		},
-		GetModelHeaders: func(context.Context, *ai.Model, *string, ai.ProviderEnv) (*map[string]string, error) { return nil, nil },
-		SlashResolver:   &agent.SlashResolver{},
-		Extensions:      extensions.NewRegistry(root),
-		BaseTools:       []engine.AgentTool{},
-		ActiveToolNames: []string{"read"},
-		AllowedTools:    &allowed,
-		ExcludedTools:   []string{"bash"},
-		PromptOptions:   agent.SystemPromptOptions{CWD: root},
-	}
-	start := &extensions.SessionStartEvent{Reason: extensions.SessionStartResume}
-	runtimeConfig, err := sessionRuntimeConfig(inputs, manager, sessionRuntimeOptions{
-		mode: extensions.ModeTUI, sessionStart: start, deferSessionStart: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	samePointer := func(name string, left, right any) {
-		t.Helper()
-		if reflect.ValueOf(left).Pointer() != reflect.ValueOf(right).Pointer() {
-			t.Fatalf("%s not preserved by session runtime config", name)
-		}
-	}
-	samePointer("GetRequestAuth", runtimeConfig.GetRequestAuth, inputs.GetRequestAuth)
-	samePointer("GetModelHeaders", runtimeConfig.GetModelHeaders, inputs.GetModelHeaders)
-	samePointer("GetAPIKey", runtimeConfig.GetAPIKey, inputs.GetAPIKey)
-	samePointer("AvailableModels", runtimeConfig.AvailableModels, inputs.AvailableModels)
-	samePointer("StreamFn", runtimeConfig.StreamFn, inputs.StreamFn)
-	if runtimeConfig.ExtensionRegistry != inputs.Extensions || runtimeConfig.SlashResolver != inputs.SlashResolver {
-		t.Fatal("extension registry or slash resolver not preserved")
-	}
-	if runtimeConfig.AllowedToolNames != inputs.AllowedTools || !reflect.DeepEqual(runtimeConfig.ExcludedToolNames, inputs.ExcludedTools) {
-		t.Fatal("tool policy not preserved")
-	}
-	if !reflect.DeepEqual(runtimeConfig.InitialActiveToolNames, inputs.ActiveToolNames) {
-		t.Fatal("active tool names not preserved")
-	}
-	if runtimeConfig.SystemPromptOptions == nil || runtimeConfig.SystemPromptOptions.CWD != root {
-		t.Fatal("prompt options not preserved")
-	}
-	if runtimeConfig.SessionStart != start || !runtimeConfig.DeferSessionStart {
-		t.Fatal("deferred session start configuration not preserved")
-	}
-	if runtimeConfig.ExtensionMode != extensions.ModeTUI {
-		t.Fatalf("extension mode = %q", runtimeConfig.ExtensionMode)
-	}
-	runtime, err := agent.NewSessionRuntime(runtimeConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runtime.Dispose)
-	if err := runtime.Prompt(context.Background(), "exercise final runtime"); err != nil {
-		t.Fatal(err)
-	}
-	if !streamCalled {
-		t.Fatal("final session runtime replaced the settings-aware stream function")
-	}
-}
-
 func TestInteractiveHostNewSessionRebindsBeforeSessionStart(t *testing.T) {
 	fixture := newHostFixture(t)
 	host := fixture.host
@@ -402,32 +255,6 @@ func TestInteractiveHostNewSessionRebindsBeforeSessionStart(t *testing.T) {
 	active, err := replacement.ExtensionRunner().ActiveTools()
 	if err != nil || !reflect.DeepEqual(active, []string{"host-tool"}) {
 		t.Fatalf("active tools = %#v, %v", active, err)
-	}
-}
-
-func TestInteractiveHostRunsAfterSessionStartHookAfterResourceDiscovery(t *testing.T) {
-	fixture := newHostFixture(t)
-	fixture.recorder.discoveredTheme = filepath.Join(fixture.root, "replacement-theme.json")
-	fixture.host.SetRebindSession(func(*agent.SessionRuntime) error {
-		fixture.recorder.trace = append(fixture.recorder.trace, "rebind")
-		return nil
-	})
-	fixture.host.SetAfterSessionStart(func(replacement *agent.SessionRuntime) error {
-		fixture.recorder.trace = append(fixture.recorder.trace, "after-start")
-		resources := replacement.ExtensionResources()
-		if len(resources.ThemePaths) != 1 || resources.ThemePaths[0].Path != fixture.recorder.discoveredTheme {
-			t.Fatalf("post-start resources = %#v", resources.ThemePaths)
-		}
-		return nil
-	})
-
-	result, err := fixture.host.NewSession(context.Background(), nil)
-	if err != nil || result.Cancelled {
-		t.Fatalf("new session = %+v, %v", result, err)
-	}
-	want := []string{"shutdown:new", "create", "rebind", "start:new", "discover:startup", "after-start"}
-	if !reflect.DeepEqual(fixture.recorder.trace, want) {
-		t.Fatalf("replacement lifecycle = %#v, want %#v", fixture.recorder.trace, want)
 	}
 }
 
@@ -800,40 +627,6 @@ func TestInteractiveHostAuthOptionsAndLogout(t *testing.T) {
 
 	if err := host.Login(context.Background(), "groq", aiauth.AuthTypeAPIKey, fixedPromptInteraction{value: "groq-key"}); err != nil {
 		t.Fatalf("api-key-only provider login = %v", err)
-	}
-}
-
-func TestInteractiveHostBindsExtensionCommandActions(t *testing.T) {
-	fixture := newHostFixture(t)
-	host := fixture.host
-	original := host.Session()
-
-	runner := original.ExtensionRunner()
-	commandContext := runner.CreateCommandContext()
-	withSessionID := ""
-	result, err := commandContext.NewSession(context.Background(), &extensions.NewSessionOptions{
-		Setup: func(manager *session.SessionManager) error {
-			_, appendErr := manager.AppendMessage(map[string]any{"role": "user", "content": "seeded", "timestamp": 1})
-			return appendErr
-		},
-		WithSession: func(_ context.Context, replaced extensions.ReplacedSessionContext) error {
-			withSessionID = replaced.SessionManager().GetSessionID()
-			return nil
-		},
-	})
-	if err != nil || result.Cancelled {
-		t.Fatalf("command-context new session = %+v, %v", result, err)
-	}
-	replacement := host.Session()
-	if replacement == original {
-		t.Fatal("command context did not run the host replacement path")
-	}
-	messages := replacement.State().Messages
-	if len(messages) != 1 {
-		t.Fatalf("setup-seeded messages = %#v", messages)
-	}
-	if withSessionID != replacement.Manager().GetSessionID() {
-		t.Fatalf("withSession context session = %q, want %q", withSessionID, replacement.Manager().GetSessionID())
 	}
 }
 

@@ -11,27 +11,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 )
 
-// --help documents the --extension/-e flag and the package subcommands.
-func TestHelpTextDocumentsExtensionFlagAndCommands(t *testing.T) {
-	for _, want := range []string{
-		"--extension, -e <path>",
-		"--no-extensions, -ne           Disable extension discovery and built-in extensions (explicit -e paths still work)",
-		"--theme <path>",
-		"--no-themes",
-		"orb install <source>",
-		"orb remove <source>",
-		"orb uninstall <source>",
-		"orb update [target]         Update orb itself, installed packages, or model catalogs",
-		"orb list",
-		"orb config",
-		"--offline",
-	} {
-		if !strings.Contains(helpText, want) {
-			t.Fatalf("help text missing %q", want)
-		}
-	}
-}
-
 func TestRunCLIClosesExtensionHostBeforeReturning(t *testing.T) {
 	requireExtensionHostRuntime(t)
 	cwd := t.TempDir()

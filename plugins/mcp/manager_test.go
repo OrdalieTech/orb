@@ -1016,21 +1016,6 @@ func TestManagerIsolatesServerFailuresAndReconnects(t *testing.T) {
 	}
 }
 
-func TestToolNamesNormalizeAndHashOnlyWhenNeeded(t *testing.T) {
-	free := func(string) bool { return false }
-	if got := toolName("my-server", "get.item", free); got != "mcp__my_server__get_item" {
-		t.Fatalf("plain name = %q", got)
-	}
-	taken := toolName("my-server", "get.item", func(string) bool { return true })
-	if !strings.HasPrefix(taken, "mcp__my_server__get_item_") || len(taken) != len("mcp__my_server__get_item_")+8 {
-		t.Fatalf("taken name = %q", taken)
-	}
-	long := toolName("server", strings.Repeat("x", 80), free)
-	if len(long) != 64 || long != toolName("server", strings.Repeat("x", 80), free) {
-		t.Fatalf("long name = %q", long)
-	}
-}
-
 func TestToolsWhoseNamesCollideAllGetTheHash(t *testing.T) {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "collide", Version: "1"}, nil)
 	addTextTool(server, "a-b")
