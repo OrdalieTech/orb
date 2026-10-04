@@ -45,7 +45,7 @@ fun ColumnScope.Home(c: Ctx) {
     // Machines narrow the list: all of them or one (whose folders open from here). New
     // conversations start from the prompt box, which also chooses where.
     var device by rememberSaveable { mutableStateOf("") }
-    val devices = entries.map { it.peer }.distinct()
+    val devices = peers.filter { p -> entries.any { it.peer.id == p.id } }
     if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         (listOf<Peer?>(null) + devices).forEach { d ->
             val on = device == d?.id.orEmpty()
@@ -61,8 +61,8 @@ fun ColumnScope.Home(c: Ctx) {
     var browsed by remember { mutableStateOf(false) } // the reader scrolled down on purpose
     LaunchedEffect(list) { snapshotFlow { list.isScrollInProgress }.collect { if (!it) browsed = list.firstVisibleItemIndex > 0 } }
     LaunchedEffect(shown.firstOrNull()?.key) { if (!browsed) list.scrollToItem(0) }
+    Box(Modifier.padding(horizontal = Margin)) { Launching(c) }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin), state = list) {
-        item(key = "status") { Launching(c) }
         browsable?.let { peer ->
             item(key = "folders") {
                 Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Device(peer.id)) }.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {

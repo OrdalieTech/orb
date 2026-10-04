@@ -620,7 +620,8 @@ type restartInto string
 
 func (r restartInto) Error() string { return "restarting into " + string(r) }
 
-// greet runs once at startup: it clears what the previous run left, then dials every known peer.
+// greet runs at startup: it clears what the previous run left, then dials every known peer, and
+// keeps dialling those without a channel.
 // Their connections to that run are half-open; a fresh channel from this side becomes their
 // newest, so their next call lands at once instead of waiting out a timeout on the dead one.
 // retireAfter is how long a restarted Bridge waits before retiring throwaway registrations no Orb
@@ -655,15 +656,29 @@ func (s *bridgeService) greet() {
 			_, _ = s.b.Admin(s.ctx, "retire", bridge.JSON(struct{}{}))
 		}
 	})
-	for _, peer := range status.Peers {
-		if status.States[peer] == "blocked" || peer == s.b.PeerID() {
-			continue
+	// A peer that restarted behind a NAT cannot always dial back (a phone after an app update):
+	// every known peer without a channel is dialled again until one opens.
+	for {
+		for _, peer := range status.Peers {
+			if status.States[peer] == "blocked" || peer == s.b.PeerID() || s.b.Connection(peer) != nil {
+				continue
+			}
+			go func() {
+				ctx, cancel := context.WithTimeout(s.ctx, 20*time.Second)
+				defer cancel()
+				_, _ = s.peer(ctx, peer, "")
+			}()
 		}
-		go func() {
-			ctx, cancel := context.WithTimeout(s.ctx, 20*time.Second)
-			defer cancel()
-			_, _ = s.peer(ctx, peer, "")
-		}()
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+		raw, err := s.b.Admin(s.ctx, "status", bridge.JSON(struct{}{}))
+		if err != nil {
+			return
+		}
+		_ = json.Unmarshal(raw, &status)
 	}
 }
 
