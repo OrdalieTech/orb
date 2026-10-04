@@ -1047,6 +1047,11 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engin
 }
 
 func (runtime *SessionRuntime) persistMessage(message engine.AgentMessage) error {
+	switch message.(type) {
+	case *ai.SystemMessage, *ai.UserMessage, *ai.AssistantMessage, *ai.ToolResultMessage:
+		_, err := runtime.manager.AppendMessage(message)
+		return err
+	}
 	encoded, err := ai.Marshal(message)
 	if err != nil {
 		return err
