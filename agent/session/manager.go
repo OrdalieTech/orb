@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1072,6 +1073,26 @@ func (manager *SessionManager) GetEntries() []SessionEntry {
 		}
 	}
 	return entries
+}
+
+// CustomData yields the id and data of every custom entry of customType in
+// session order. The data is shared with the session and must not be modified.
+func (manager *SessionManager) CustomData(customType string) iter.Seq2[string, json.RawMessage] {
+	manager.mu.RLock()
+	var matches []*SessionEntry
+	for _, fileEntry := range manager.fileEntries {
+		if fileEntry != nil && fileEntry.Entry != nil && fileEntry.Type == "custom" && fileEntry.Entry.CustomType == customType {
+			matches = append(matches, fileEntry.Entry)
+		}
+	}
+	manager.mu.RUnlock()
+	return func(yield func(string, json.RawMessage) bool) {
+		for _, entry := range matches {
+			if !yield(entry.ID, entry.Data) {
+				return
+			}
+		}
+	}
 }
 
 func (manager *SessionManager) AggregateStats() (AggregateStats, uint64) {

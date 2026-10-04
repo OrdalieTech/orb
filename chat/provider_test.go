@@ -85,7 +85,7 @@ func TestLocalProviderResumesMostRecentSessionFile(t *testing.T) {
 	if got := second.Manager.GetSessionFile(); got != sessionFile {
 		t.Fatalf("resumed session file %q, want %q", got, sessionFile)
 	}
-	if ledger := scanTurnLedger(second.Manager, "ev-resume"); ledger.started == nil {
+	if ledger := scanTurnLedger(second.Manager, "ev-resume"); ledger.startedID == "" {
 		t.Fatal("prior ledger marker lost on resume")
 	}
 
@@ -189,7 +189,7 @@ func TestLocalProviderReusesSessionManagerUntilTheFileChanges(t *testing.T) {
 	if third.Manager == first.Manager {
 		t.Fatal("an externally modified session file was served from cache")
 	}
-	if ledger := scanTurnLedger(third.Manager, "ev-cached"); ledger.started == nil {
+	if ledger := scanTurnLedger(third.Manager, "ev-cached"); ledger.startedID == "" {
 		t.Fatal("re-parsed session lost its ledger markers")
 	}
 }

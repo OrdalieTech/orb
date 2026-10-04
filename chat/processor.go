@@ -268,12 +268,11 @@ func (p *Processor) runTurn(ctx context.Context, adapter Adapter, key Conversati
 		return p.recoverSettled(ctx, adapter, conv, key, m, ledger)
 	}
 
-	var startedID string
-	if ledger.started != nil {
+	startedID := ledger.startedID
+	if startedID != "" {
 		// Crashed mid-turn: re-anchor the leaf on the started marker so the
 		// partial turn becomes an orphaned branch, resync the live agent,
 		// and continue without a second started marker.
-		startedID = ledger.started.entryID
 		if branchErr := conv.Manager.Branch(startedID); branchErr != nil {
 			return fmt.Errorf("chat: orphan partial turn: %w", branchErr)
 		}
@@ -297,10 +296,10 @@ const recoveredReplyPrefix = "♻ recovered reply\n\n"
 // recoverSettled replays delivery for a turn that settled before the
 // delivered marker was written.
 func (p *Processor) recoverSettled(ctx context.Context, adapter Adapter, conv *Conversation, key ConversationKey, m Message, ledger turnLedger) error {
-	marker := ledger.settled.marker
+	marker := ledger.settled
 	resumePreviewID := ""
 	if ledger.preview != nil {
-		resumePreviewID = ledger.preview.marker.PreviewID
+		resumePreviewID = ledger.preview.PreviewID
 	}
 	delivery := adapter.NewDelivery(key, m.EventID, resumePreviewID)
 	receipt := Receipt{At: time.Now().UTC()}
@@ -309,7 +308,7 @@ func (p *Processor) recoverSettled(ctx context.Context, adapter Adapter, conv *C
 		// switch, whose assistant entries stayed behind in the old session.
 		text := marker.RecoveredText
 		if text == "" {
-			text = assistantText(recoveredAssistant(conv.Manager, marker.AssistantEntryID, ledger.settled.entryID))
+			text = assistantText(decodeAssistantEntry(conv.Manager.GetEntry(marker.AssistantEntryID)))
 		}
 		delivered, err := p.finalizeWithRetry(ctx, delivery, recoveredReplyPrefix+text)
 		if err != nil {
@@ -411,18 +410,24 @@ func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Co
 	return err
 }
 
-// settleTurn derives the turn outcome from the assistant entry appended after
-// the started marker on the current branch.
+// settleTurn derives the turn outcome from the newest assistant entry after
+// the started marker, walking up from the leaf so history length costs nothing.
 func settleTurn(manager *sessionstore.SessionManager, startedID string, promptErr error) (outcome, finalText, assistantEntryID, notice string) {
-	entry := assistantEntryAfter(manager, startedID)
-	if entry == nil {
+	var assistant *ai.AssistantMessage
+	entry := manager.GetLeafEntry()
+	for entry != nil && entry.ID != startedID {
+		if assistant = decodeAssistantEntry(entry); assistant != nil || entry.ParentID == nil {
+			break
+		}
+		entry = manager.GetEntry(*entry.ParentID)
+	}
+	if assistant == nil {
 		reason := "no assistant reply"
 		if promptErr != nil {
 			reason = promptErr.Error()
 		}
 		return outcomeError, "", "", outcomeNotice(outcomeError, reason)
 	}
-	assistant := decodeAssistantEntry(entry)
 	switch assistant.StopReason {
 	case ai.StopReasonAborted:
 		return outcomeAborted, "", entry.ID, outcomeNotice(outcomeAborted, "")

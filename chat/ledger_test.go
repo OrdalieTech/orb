@@ -5,17 +5,35 @@ import (
 	"time"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
+// The native chat gateway keeps sessions in harness journals, so the ledger
+// must read the same over both backends.
 func TestTurnLedgerRoundTrip(t *testing.T) {
-	manager, err := sessionstore.InMemory(t.TempDir())
+	file, err := sessionstore.InMemory(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	journal, err := harness.OpenSessionJournal([]byte(`{"type":"session","version":3,"id":"s","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/"}`+"\n"), func([]byte) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, err := sessionstore.FromHarnessStorage(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, manager := range []*sessionstore.SessionManager{file, native} {
+		assertTurnLedgerRoundTrip(t, manager)
+	}
+}
+
+func assertTurnLedgerRoundTrip(t *testing.T, manager *sessionstore.SessionManager) {
+	t.Helper()
 	receipt := Receipt{MessageIDs: []string{"a", "b"}, At: time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)}
 	startedID := mustAppendMarker(t, manager, turnMarker{EventID: "ev", Phase: phaseStarted})
 	mustAppendMarker(t, manager, turnMarker{EventID: "ev", Phase: phasePreview, PreviewID: "pv-7"})
-	settledID := mustAppendMarker(t, manager, turnMarker{
+	mustAppendMarker(t, manager, turnMarker{
 		EventID: "ev", Phase: phaseSettled, Outcome: outcomeOK, AssistantEntryID: "entry-9",
 	})
 	mustAppendMarker(t, manager, turnMarker{EventID: "ev", Phase: phaseDelivered, Receipt: &receipt})
@@ -23,29 +41,25 @@ func TestTurnLedgerRoundTrip(t *testing.T) {
 	mustAppendMarker(t, manager, turnMarker{EventID: "other", Phase: phaseStarted})
 
 	ledger := scanTurnLedger(manager, "ev")
-	if ledger.started == nil || ledger.started.entryID != startedID {
-		t.Fatalf("started = %+v", ledger.started)
+	if ledger.startedID != startedID {
+		t.Fatalf("startedID = %q, want %q", ledger.startedID, startedID)
 	}
-	if ledger.preview == nil || ledger.preview.marker.PreviewID != "pv-7" {
+	if ledger.preview == nil || ledger.preview.PreviewID != "pv-7" {
 		t.Fatalf("preview = %+v", ledger.preview)
 	}
-	if ledger.settled == nil || ledger.settled.entryID != settledID ||
-		ledger.settled.marker.Outcome != outcomeOK || ledger.settled.marker.AssistantEntryID != "entry-9" {
+	if ledger.settled == nil || ledger.settled.Outcome != outcomeOK || ledger.settled.AssistantEntryID != "entry-9" {
 		t.Fatalf("settled = %+v", ledger.settled)
 	}
-	if ledger.delivered == nil || ledger.delivered.marker.Receipt == nil {
-		t.Fatalf("delivered = %+v", ledger.delivered)
-	}
-	got := ledger.delivered.marker.Receipt
-	if len(got.MessageIDs) != 2 || got.MessageIDs[0] != "a" || !got.At.Equal(receipt.At) {
+	got := ledger.delivered.Receipt
+	if got == nil || len(got.MessageIDs) != 2 || got.MessageIDs[0] != "a" || !got.At.Equal(receipt.At) {
 		t.Fatalf("receipt round-trip = %+v", got)
 	}
 
 	other := scanTurnLedger(manager, "other")
-	if other.started == nil || other.settled != nil || other.delivered != nil {
+	if other.startedID == "" || other.settled != nil || other.delivered != nil {
 		t.Fatalf("other event ledger = %+v", other)
 	}
-	if missing := scanTurnLedger(manager, "absent"); missing.started != nil || missing.delivered != nil {
+	if missing := scanTurnLedger(manager, "absent"); missing != (turnLedger{}) {
 		t.Fatalf("absent event ledger = %+v", missing)
 	}
 }
