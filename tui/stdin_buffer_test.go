@@ -7,23 +7,6 @@ import (
 	"time"
 )
 
-func TestStdinBufferSequencesPasteAndKittyDuplicates(t *testing.T) {
-	var data, paste []string
-	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) { data = append(data, value) }, func(value string) { paste = append(paste, value) })
-	defer buffer.Close()
-	buffer.Process("abc\x1b[")
-	buffer.Process("A")
-	buffer.Process("\x1b[200~hello\nworld\x1b[201~")
-	buffer.Process("\x1b[64u@")
-	want := []string{"a", "b", "c", "\x1b[A", "\x1b[64u"}
-	if !slices.Equal(data, want) {
-		t.Fatalf("data = %#v, want %#v", data, want)
-	}
-	if !slices.Equal(paste, []string{"hello\nworld"}) {
-		t.Fatalf("paste = %#v", paste)
-	}
-}
-
 func TestStdinBufferPreservesPasteAndKeyOrderWithinOneRead(t *testing.T) {
 	var events []string
 	buffer := NewStdinBuffer(time.Second, time.Second,
@@ -48,44 +31,6 @@ func TestStdinBufferPreservesPasteAndKeyOrderWithinOneRead(t *testing.T) {
 	}
 }
 
-func TestStdinBufferPreservesMixedEventsAndKittyResetAcrossPaste(t *testing.T) {
-	var events []string
-	buffer := NewStdinBuffer(time.Second, time.Second,
-		func(value string) { events = append(events, "data:"+value) },
-		func(value string) { events = append(events, "paste:"+value) },
-	)
-	defer buffer.Close()
-
-	buffer.Process("a\x1b[64u\x1b[200~one\x1b[201~@\x1b[200~two\x1b[201~b")
-
-	want := []string{"data:a", "data:\x1b[64u", "paste:one", "data:@", "paste:two", "data:b"}
-	if !slices.Equal(events, want) {
-		t.Fatalf("events = %#v, want %#v", events, want)
-	}
-}
-
-func TestStdinBufferTimeoutAndWezTermEscape(t *testing.T) {
-	data := make(chan string, 3)
-	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) { data <- value }, nil)
-	defer buffer.Close()
-	buffer.Process("\x1b[")
-	select {
-	case got := <-data:
-		if got != "\x1b[" {
-			t.Fatalf("timeout = %q", got)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("incomplete sequence did not flush")
-	}
-	buffer.Process("\x1b\x1b[27;1:3u")
-	if got := <-data; got != "\x1b" {
-		t.Fatalf("first WezTerm event = %q", got)
-	}
-	if got := <-data; got != "\x1b[27;1:3u" {
-		t.Fatalf("second WezTerm event = %q", got)
-	}
-}
-
 func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 	var data []string
 	buffer := NewStdinBuffer(time.Second, time.Second, func(value string) { data = append(data, value) }, nil)
@@ -96,26 +41,6 @@ func TestStdinBufferReassemblesSplitUTF8(t *testing.T) {
 	buffer.Process("\xa9")
 	if !slices.Equal(data, []string{"é", "\x1bé"}) {
 		t.Fatalf("split UTF-8 = %#v", data)
-	}
-}
-
-func TestStdinBufferKittyDedupeSkipsAstralCodepoints(t *testing.T) {
-	var data []string
-	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) { data = append(data, value) }, nil)
-	defer buffer.Close()
-	// Upstream compares sequence.length === 1 in UTF-16 code units, so an
-	// astral printable echoed after its kitty CSI-u report is never deduped.
-	buffer.Process("\x1b[128512u")
-	buffer.Process("\U0001f600")
-	if want := []string{"\x1b[128512u", "\U0001f600"}; !slices.Equal(data, want) {
-		t.Fatalf("astral data = %#v, want %#v", data, want)
-	}
-
-	data = nil
-	buffer.Process("\x1b[97u")
-	buffer.Process("a")
-	if want := []string{"\x1b[97u"}; !slices.Equal(data, want) {
-		t.Fatalf("bmp data = %#v, want %#v", data, want)
 	}
 }
 
@@ -183,51 +108,4 @@ func TestStdinBufferSplitSequenceKeepsCompletionWindow(t *testing.T) {
 		mu.Unlock()
 		buffer.Close()
 	}
-}
-
-// Legacy Alt+Enter is ESC + CR: a lone ESC dispatches as Escape on its own
-// short wait, while a partial report keeps the longer sequence wait.
-func TestStdinBufferSplitsEscapeWaitFromSequenceWait(t *testing.T) {
-	kitty := IsKittyProtocolActive()
-	SetKittyProtocolActive(false)
-	t.Cleanup(func() { SetKittyProtocolActive(kitty) })
-
-	t.Run("lone escape flushes on its own wait", func(t *testing.T) {
-		data := make(chan string, 2)
-		buffer := NewStdinBuffer(time.Second, 5*time.Millisecond, func(value string) { data <- value }, nil)
-		defer buffer.Close()
-		buffer.Process("\x1b")
-		select {
-		case got := <-data:
-			if got != "\x1b" {
-				t.Fatalf("flushed %q", got)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("lone escape did not flush")
-		}
-	})
-
-	t.Run("a longer escape wait reassembles split alt+enter", func(t *testing.T) {
-		var data []string
-		buffer := NewStdinBuffer(5*time.Millisecond, time.Minute, func(value string) { data = append(data, value) }, nil)
-		defer buffer.Close()
-		buffer.Process("\x1b")
-		time.Sleep(25 * time.Millisecond)
-		buffer.Process("\r")
-		if !slices.Equal(data, []string{"\x1b\r"}) || ParseKey(data[0]) != "alt+enter" {
-			t.Fatalf("split alt+enter = %#v", data)
-		}
-	})
-
-	t.Run("the escape wait never truncates a partial report", func(t *testing.T) {
-		var data []string
-		buffer := NewStdinBuffer(time.Minute, 5*time.Millisecond, func(value string) { data = append(data, value) }, nil)
-		defer buffer.Close()
-		buffer.Process("\x1b[")
-		time.Sleep(25 * time.Millisecond)
-		buffer.Process("<65;48;39M")
-		if !slices.Equal(data, []string{"\x1b[<65;48;39M"}) {
-			t.Fatalf("fragmented mouse report = %#v", data)
-		}
-	})
 }

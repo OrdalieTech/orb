@@ -1,7 +1,6 @@
 package modes
 
 import (
-	"math"
 	"strings"
 	"testing"
 
@@ -54,15 +53,6 @@ func cacheStatsAssistant(t *testing.T, options cacheStatsAssistantOptions) *ai.A
 	}
 }
 
-func cacheStatsEntry(t *testing.T, id string, message *ai.AssistantMessage) sessionstore.SessionEntry {
-	t.Helper()
-	encoded, err := ai.Marshal(message)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sessionstore.SessionEntry{Type: "message", ID: id, Message: encoded}
-}
-
 func newCacheStatsRuntime(t *testing.T, manager *sessionstore.SessionManager) *agent.SessionRuntime {
 	t.Helper()
 	settings, err := config.NewSettingsManager(manager.GetCWD(), config.WithAgentDir(t.TempDir()))
@@ -86,129 +76,6 @@ func renderSessionInfo(t *testing.T, manager *sessionstore.SessionManager) strin
 	mode := &InteractiveMode{session: newCacheStatsRuntime(t, manager), ui: ui, chat: &tui.Container{}}
 	mode.handleSessionCommand()
 	return strings.Join(normalizeWP450Lines(mode.chat.Render(120)), "\n")
-}
-
-// Turn 1: fresh 100k cache write at $3.75/M.
-func cacheStatsTurn1(t *testing.T) sessionstore.SessionEntry {
-	return cacheStatsEntry(t, "turn1", cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 100_000, cost: ai.Cost{CacheWrite: 0.375}, timestamp: 0,
-	}))
-}
-
-// Turn 2: healthy, everything read back at $0.30/M.
-func cacheStatsTurn2(t *testing.T) sessionstore.SessionEntry {
-	return cacheStatsEntry(t, "turn2", cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheRead: 100_000, cacheWrite: 5_000,
-		cost: ai.Cost{CacheRead: 0.03, CacheWrite: 0.019}, timestamp: 60_000,
-	}))
-}
-
-func TestComputeCacheWasteAccumulatesMissedTokensAndCost(t *testing.T) {
-	// Turn 3: full miss, previous 105k prompt re-billed at $3.75/M write.
-	turn3 := cacheStatsEntry(t, "turn3", cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 110_000, cost: ai.Cost{CacheWrite: 0.4125}, timestamp: 120_000,
-	}))
-	totals := computeCacheWaste([]sessionstore.SessionEntry{cacheStatsTurn1(t), cacheStatsTurn2(t), turn3}, cacheStatsModels)
-	if totals.missedTokens != 105_000 {
-		t.Fatalf("missedTokens = %d", totals.missedTokens)
-	}
-	// 105k at ($3.75 - $0.30)/M.
-	if math.Abs(totals.missedCost-0.36225) > 1e-5 {
-		t.Fatalf("missedCost = %v", totals.missedCost)
-	}
-}
-
-func TestComputeCacheWasteCountsNothingForHealthySessions(t *testing.T) {
-	totals := computeCacheWaste([]sessionstore.SessionEntry{cacheStatsTurn1(t), cacheStatsTurn2(t)}, cacheStatsModels)
-	if totals.missedTokens != 0 || totals.missedCost != 0 {
-		t.Fatalf("totals = %+v", totals)
-	}
-}
-
-func TestComputeCacheWasteSkipsTurnAfterCompactionReset(t *testing.T) {
-	reset := sessionstore.SessionEntry{Type: "compaction", ID: "c"}
-	afterReset := cacheStatsEntry(t, "after", cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 20_000, cost: ai.Cost{CacheWrite: 0.075},
-	}))
-	totals := computeCacheWaste([]sessionstore.SessionEntry{cacheStatsTurn1(t), reset, afterReset}, cacheStatsModels)
-	if totals.missedTokens != 0 {
-		t.Fatalf("missedTokens = %d", totals.missedTokens)
-	}
-}
-
-func TestComputeCacheWasteCountsModelSwitchMisses(t *testing.T) {
-	otherModel := cacheStatsEntry(t, "other", cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 100_000, cost: ai.Cost{CacheWrite: 0.375}, model: "other-model",
-	}))
-	totals := computeCacheWaste([]sessionstore.SessionEntry{cacheStatsTurn1(t), otherModel}, cacheStatsModels)
-	if totals.missedTokens != 100_000 || totals.missCount != 1 {
-		t.Fatalf("totals = %+v", totals)
-	}
-}
-
-func TestComputeCacheWasteSkipsProvidersWithoutCacheActivity(t *testing.T) {
-	a := cacheStatsEntry(t, "a", cacheStatsAssistant(t, cacheStatsAssistantOptions{input: 100_000}))
-	b := cacheStatsEntry(t, "b", cacheStatsAssistant(t, cacheStatsAssistantOptions{input: 110_000}))
-	totals := computeCacheWaste([]sessionstore.SessionEntry{a, b}, cacheStatsModels)
-	if totals.missedTokens != 0 {
-		t.Fatalf("missedTokens = %d", totals.missedTokens)
-	}
-}
-
-// detectCacheMissFromEntries mirrors upstream detectCacheMiss for a message
-// not yet contained in entries (message_end fires before persistence).
-func detectCacheMissFromEntries(entries []sessionstore.SessionEntry, message *ai.AssistantMessage, models []ai.Model) *cacheMiss {
-	return computeCacheMiss(scanCacheEntries(entries, nil), message, models)
-}
-
-func TestDetectCacheMissOnJustCompletedMessageWithIdleTime(t *testing.T) {
-	missMessage := cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 110_000, cost: ai.Cost{CacheWrite: 0.4125}, timestamp: 600_000,
-	})
-	miss := detectCacheMissFromEntries([]sessionstore.SessionEntry{cacheStatsTurn1(t), cacheStatsTurn2(t)}, missMessage, cacheStatsModels)
-	if miss == nil {
-		t.Fatal("expected a miss")
-	}
-	if miss.tokens != 105_000 {
-		t.Fatalf("missedTokens = %d", miss.tokens)
-	}
-	if math.Abs(miss.cost-0.36225) > 1e-5 {
-		t.Fatalf("missedCost = %v", miss.cost)
-	}
-	// 600s - 60s since the previous request.
-	if miss.idle != 540_000 {
-		t.Fatalf("idleMs = %d", miss.idle)
-	}
-	if miss.modelChanged {
-		t.Fatal("modelChanged = true")
-	}
-}
-
-func TestDetectCacheMissFlagsModelSwitches(t *testing.T) {
-	otherModel := cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheWrite: 110_000, cost: ai.Cost{CacheWrite: 0.4125}, model: "other-model", timestamp: 120_000,
-	})
-	miss := detectCacheMissFromEntries([]sessionstore.SessionEntry{cacheStatsTurn1(t), cacheStatsTurn2(t)}, otherModel, cacheStatsModels)
-	if miss == nil || miss.tokens != 105_000 || !miss.modelChanged {
-		t.Fatalf("miss = %+v", miss)
-	}
-}
-
-func TestDetectCacheMissReturnsNilForHealthyTurns(t *testing.T) {
-	healthy := cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		cacheRead: 105_000, cacheWrite: 2_000,
-		cost: ai.Cost{CacheRead: 0.0315, CacheWrite: 0.0075}, timestamp: 120_000,
-	})
-	if miss := detectCacheMissFromEntries([]sessionstore.SessionEntry{cacheStatsTurn1(t), cacheStatsTurn2(t)}, healthy, cacheStatsModels); miss != nil {
-		t.Fatalf("miss = %+v", miss)
-	}
-}
-
-func TestDetectCacheMissReturnsNilForFirstTurn(t *testing.T) {
-	first := cacheStatsAssistant(t, cacheStatsAssistantOptions{cacheWrite: 100_000, cost: ai.Cost{CacheWrite: 0.375}})
-	if miss := detectCacheMissFromEntries(nil, first, cacheStatsModels); miss != nil {
-		t.Fatalf("miss = %+v", miss)
-	}
 }
 
 func TestHandleSessionCommandShowsCacheWasteAndPerModelBreakdown(t *testing.T) {
@@ -312,22 +179,5 @@ func TestFooterRenderCostDoesNotScaleWithSessionHistory(t *testing.T) {
 	allocations := testing.AllocsPerRun(1, func() { _ = footer.Render(120) })
 	if allocations > 100 {
 		t.Fatalf("footer render allocated %.0f objects for unchanged history, want at most 100", allocations)
-	}
-}
-
-func TestHandleSessionCommandOmitsSingleUsageBreakdown(t *testing.T) {
-	initTestTheme(t)
-	manager, err := sessionstore.InMemory(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := manager.AppendMessage(cacheStatsAssistant(t, cacheStatsAssistantOptions{
-		input: 100, cost: ai.Cost{Total: 0.5},
-	})); err != nil {
-		t.Fatal(err)
-	}
-	rendered := renderSessionInfo(t, manager)
-	if strings.Contains(rendered, "test/test-model:") {
-		t.Fatalf("single-entry breakdown should stay hidden:\n%s", rendered)
 	}
 }

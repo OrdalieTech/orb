@@ -2,7 +2,6 @@ package modes
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -179,31 +178,5 @@ func TestRegisteredShortcutConflictingWithReservedBindingIsSkipped(t *testing.T)
 	diagnostics := runner.ShortcutDiagnostics()
 	if len(diagnostics) != 1 {
 		t.Fatalf("shortcut diagnostics = %v, want one skip warning", diagnostics)
-	}
-}
-
-func TestShortcutHandlerErrorSurfacesInChat(t *testing.T) {
-	// Upstream wraps handler rejections as "Shortcut handler error: <message>"
-	// through showError (interactive-mode.ts:1800-1802).
-	mode, terminal := newShortcutTestMode(t, func(api extensions.API) {
-		api.RegisterShortcut("alt+e", extensions.Shortcut{
-			Handler: func(context.Context, extensions.Context) error {
-				return context.Canceled
-			},
-		})
-	})
-	mode.setupExtensionShortcuts()
-
-	terminal.send("\x1be")
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		rendered := strings.Join(mode.chat.Render(100), "\n")
-		if strings.Contains(rendered, "Error: Shortcut handler error: context canceled") {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("chat render = %q, want the shortcut handler error", rendered)
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }

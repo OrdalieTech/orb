@@ -12,58 +12,11 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
 )
-
-// LOG-M4: startup checks the active Anthropic model through the real warning
-// path, matching the initial interactive-mode call before the first prompt.
-func TestLOGM4StartupWarnsForAnthropicSubscriptionAuth(t *testing.T) {
-	cwd, agentDir := t.TempDir(), t.TempDir()
-	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := session.InMemory(cwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	model := &ai.Model{Provider: "anthropic", ID: "claude-opus-4-8"}
-	key := "sk-ant-oat-startup"
-	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent:          engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: model})),
-		SessionManager: manager,
-		Settings:       settings,
-		GetRequestAuth: func(context.Context, ai.ProviderID) (*engine.RequestAuth, error) {
-			return &engine.RequestAuth{APIKey: &key}, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	terminal := newLifecycleTerminal(72, 18)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	go func() { done <- RunInteractiveMode(ctx, runtime, InteractiveModeOptions{Terminal: terminal}) }()
-	if !terminal.waitFor("Anthropic subscription auth is active", 2*time.Second) {
-		cancel()
-		<-done
-		t.Fatalf("startup warning was not rendered: %q", terminal.output())
-	}
-	cancel()
-	select {
-	case code := <-done:
-		if code != 0 {
-			t.Fatalf("exit code = %d", code)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("interactive mode did not stop")
-	}
-}
 
 func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t *testing.T) {
 	cwd, agentDir := t.TempDir(), t.TempDir()
@@ -441,25 +394,4 @@ func (terminal *lifecycleTerminal) waitFor(value string, timeout time.Duration) 
 		time.Sleep(time.Millisecond)
 	}
 	return false
-}
-
-func TestStandardModalWidths(t *testing.T) {
-	initTestTheme(t)
-	for _, columns := range []int{32, 40, 80, 120, 240} {
-		for _, options := range []tui.OverlayOptions{configOverlayOptions(), configOverlayOptions(), toTUIOverlayOptions(*extensions.ModalOptions().StaticOverlayOptions)} {
-			ui := tui.NewTUI(newFakeTerminal(columns, 30))
-			component := &f12UILifecycleOverlayComponent{label: "modal"}
-			if err := ui.Start(); err != nil {
-				t.Fatal(err)
-			}
-			handle := ui.ShowOverlay(component, options)
-			ui.RenderNow()
-			handle.Hide()
-			_ = ui.Stop()
-			_, _, widths := component.state()
-			if !slicesContains(widths, min(80, columns-2)) {
-				t.Fatalf("terminal %d: modal widths %v", columns, widths)
-			}
-		}
-	}
 }

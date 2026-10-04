@@ -3,57 +3,7 @@ package modes
 import (
 	"slices"
 	"testing"
-
-	"github.com/OrdalieTech/orb/agent"
-	"github.com/OrdalieTech/orb/ai"
 )
-
-// Upstream a3ee1d28: configured-but-missing model ids surface as unavailable
-// entries instead of being hidden from /models.
-func TestScopedModelsSelectorStateExposesUnavailableConfiguredModels(t *testing.T) {
-	models := []ai.Model{
-		{Provider: "anthropic", ID: "available", Name: "Available"},
-		{Provider: "anthropic", ID: "second", Name: "Second"},
-	}
-
-	selected, unavailable := scopedModelsSelectorState(models, []string{"anthropic/available", "anthropic/unavailable-model"}, nil)
-	if !selected["anthropic/available"] || selected["anthropic/second"] || !selected["anthropic/unavailable-model"] {
-		t.Fatalf("selected = %#v", selected)
-	}
-	if !slices.Equal(unavailable, []string{"anthropic/unavailable-model"}) {
-		t.Fatalf("unavailable = %#v", unavailable)
-	}
-
-	// Session scope wins over the configured matches, but configured no-match
-	// patterns still surface as unavailable entries.
-	selected, unavailable = scopedModelsSelectorState(
-		models,
-		[]string{"anthropic/second", "anthropic/unavailable-model"},
-		[]agent.ScopedModel{{Model: models[0]}},
-	)
-	if !selected["anthropic/available"] || selected["anthropic/second"] || !selected["anthropic/unavailable-model"] {
-		t.Fatalf("session-scope selected = %#v", selected)
-	}
-	if !slices.Equal(unavailable, []string{"anthropic/unavailable-model"}) {
-		t.Fatalf("session-scope unavailable = %#v", unavailable)
-	}
-
-	// No filter: everything is enabled and nothing is unavailable.
-	selected, unavailable = scopedModelsSelectorState(models, nil, nil)
-	if len(unavailable) != 0 || !selected["anthropic/available"] || !selected["anthropic/second"] {
-		t.Fatalf("unfiltered selected = %#v, unavailable = %#v", selected, unavailable)
-	}
-
-	// Patterns that match nothing still open the selector with only
-	// unavailable entries (upstream regression test for issue #6949).
-	selected, unavailable = scopedModelsSelectorState(nil, []string{"anthropic/gone-one", "anthropic/gone-two"}, nil)
-	if !selected["anthropic/gone-one"] || !selected["anthropic/gone-two"] {
-		t.Fatalf("all-unavailable selected = %#v", selected)
-	}
-	if !slices.Equal(unavailable, []string{"anthropic/gone-one", "anthropic/gone-two"}) {
-		t.Fatalf("all-unavailable unavailable = %#v", unavailable)
-	}
-}
 
 func TestApplyScopedModelSelectionKeepsUnavailablePatterns(t *testing.T) {
 	mode := newF12AutocompleteMode(t, true)

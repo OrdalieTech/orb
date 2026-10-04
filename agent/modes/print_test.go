@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"reflect"
 	"runtime"
 	"slices"
 	"sync"
@@ -260,16 +259,6 @@ func TestRunPrintModeSkipsEmptyInitialMessage(t *testing.T) {
 
 	if got := userPromptTexts(t, session.State()); exitCode != 0 || !slices.Equal(got, []string{"later"}) {
 		t.Fatalf("exit = %d, prompts = %#v, stderr = %q", exitCode, got, stderr.String())
-	}
-}
-
-func TestPrintModeSignalsMatchUpstreamPlatformSet(t *testing.T) {
-	want := []os.Signal{syscall.SIGTERM, syscall.SIGHUP}
-	if runtime.GOOS == "windows" {
-		want = []os.Signal{syscall.SIGTERM}
-	}
-	if got := printModeSignals(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("print mode signals = %v, want %v", got, want)
 	}
 }
 

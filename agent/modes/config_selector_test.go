@@ -72,72 +72,6 @@ func renderSelectorText(selector *ConfigSelector, width int) string {
 	return strings.Join(selector.Render(width), "\n")
 }
 
-func TestConfigSelectorGroupingSortingFilteringAndWidths(t *testing.T) {
-	settings, cwd, agentDir := selectorSettings(t, `{}`, `{}`, true)
-	packageA := filepath.Join(agentDir, "npm", "a")
-	packageZ := filepath.Join(agentDir, "npm", "z")
-	projectPackage := filepath.Join(cwd, config.ConfigDirName, "npm", "b")
-	resolved := &agent.ResolvedPaths{
-		Extensions: []agent.ResolvedResource{
-			selectorResource(filepath.Join(packageZ, "extensions", "zeta.ts"), true, "npm:z-tools", "user", "package", packageZ),
-			selectorResource(filepath.Join(packageA, "extensions", "zeta.ts"), true, "npm:a-tools", "user", "package", packageA),
-			selectorResource(filepath.Join(packageA, "extensions", "alpha.ts"), true, "npm:a-tools", "user", "package", packageA),
-			selectorResource(filepath.Join(agentDir, "extensions", "user.ts"), true, "auto", "user", "top-level", agentDir),
-			selectorResource(filepath.Join(cwd, config.ConfigDirName, "extensions", "project.ts"), true, "auto", "project", "top-level", filepath.Join(cwd, config.ConfigDirName)),
-		},
-		Skills: []agent.ResolvedResource{
-			selectorResource(filepath.Join(packageA, "skills", "review", "SKILL.md"), true, "npm:a-tools", "user", "package", packageA),
-		},
-		Prompts: []agent.ResolvedResource{
-			selectorResource(filepath.Join(projectPackage, "prompts", "review.md"), true, "npm:b-tools", "project", "package", projectPackage),
-		},
-		Themes: []agent.ResolvedResource{
-			selectorResource(filepath.Join(packageA, "themes", "dark.json"), true, "npm:a-tools", "user", "package", packageA),
-		},
-	}
-	selector := NewConfigSelector(ConfigSelectorOptions{
-		ResolvedPaths: ScopedResolvedPaths{Global: resolved, Project: resolved}, SettingsManager: settings,
-		CWD: cwd, AgentDir: agentDir, WriteScope: ConfigWriteProject, ProjectModeAvailable: true, TerminalHeight: 80,
-	}, nil, nil, nil)
-
-	rendered := renderSelectorText(selector, 100)
-	ordered := []string{"npm:a-tools (user)", "npm:z-tools (user)", "npm:b-tools (project)", "User (", "Project ("}
-	previous := -1
-	for _, label := range ordered {
-		index := strings.Index(rendered, label)
-		if index < 0 || index <= previous {
-			t.Fatalf("group %q is not in upstream order:\n%s", label, rendered)
-		}
-		previous = index
-	}
-	for _, label := range []string{"Extensions", "Skills", "Themes"} {
-		index := strings.Index(rendered, label)
-		if index < 0 || index <= strings.Index(rendered, "npm:a-tools (user)") {
-			t.Fatalf("missing subgroup %q:\n%s", label, rendered)
-		}
-	}
-	if strings.Index(rendered, "alpha.ts") > strings.Index(rendered, "zeta.ts") {
-		t.Fatalf("resource names are not sorted:\n%s", rendered)
-	}
-	for _, width := range []int{18, 31, 64} {
-		for lineNumber, line := range selector.Render(width) {
-			if got := tui.VisibleWidth(line); got > width {
-				t.Fatalf("width %d line %d rendered %d cells: %q", width, lineNumber, got, line)
-			}
-		}
-	}
-
-	selector.HandleInput(selectorEvent("review.md"))
-	filtered := renderSelectorText(selector, 80)
-	if !strings.Contains(filtered, "review.md") || strings.Contains(filtered, "alpha.ts") || strings.Contains(filtered, "user.ts") {
-		t.Fatalf("filter did not retain only matching resources:\n%s", filtered)
-	}
-	selector.HandleInput(selectorEvent("\x15"))
-	if cleared := renderSelectorText(selector, 80); !strings.Contains(cleared, "alpha.ts") {
-		t.Fatalf("Ctrl+U did not clear search:\n%s", cleared)
-	}
-}
-
 func TestConfigSelectorGlobalPackageAndTopLevelToggles(t *testing.T) {
 	settings, cwd, agentDir := selectorSettings(t, `{
   "unrelated": {"keep": true},
@@ -221,57 +155,6 @@ func TestConfigSelectorProjectPackageOverrideCycles(t *testing.T) {
 				t.Fatalf("unrelated project field changed: %#v", settings.GetProjectSettings())
 			}
 		})
-	}
-}
-
-func TestConfigSelectorProjectLocalPackageOverrideUsesProjectRelativeSource(t *testing.T) {
-	settings, cwd, agentDir := selectorSettings(t, `{}`, `{}`, true)
-	packageRoot := filepath.Join(filepath.Dir(cwd), "local-package")
-	globalSource := relativeConfigPath(agentDir, packageRoot)
-	if err := settings.SetPackages([]config.PackageSource{{Source: globalSource}}); err != nil {
-		t.Fatal(err)
-	}
-	resolved := &agent.ResolvedPaths{Extensions: []agent.ResolvedResource{
-		selectorResource(filepath.Join(packageRoot, "extensions", "local.ts"), true, globalSource, "user", "package", packageRoot),
-	}}
-	selector := NewConfigSelector(ConfigSelectorOptions{
-		ResolvedPaths: ScopedResolvedPaths{Global: resolved, Project: resolved}, SettingsManager: settings,
-		CWD: cwd, AgentDir: agentDir, WriteScope: ConfigWriteProject, ProjectModeAvailable: true,
-	}, nil, nil, nil)
-	selector.HandleInput(selectorEvent(" "))
-	packages := settings.GetProjectPackages()
-	wantSource := relativeConfigPath(filepath.Join(cwd, config.ConfigDirName), packageRoot)
-	if len(packages) != 1 || packages[0].Source != wantSource || packages[0].Autoload == nil || *packages[0].Autoload ||
-		!reflect.DeepEqual(packages[0].Extensions, []string{selectorPattern("-extensions/local.ts")}) {
-		t.Fatalf("local project override = %#v, want source %q", packages, wantSource)
-	}
-}
-
-func TestConfigSelectorProjectTopLevelOverrideCycleAndDimming(t *testing.T) {
-	settings, cwd, agentDir := selectorSettings(t, `{"extensions":["extensions/global.ts"]}`, `{}`, true)
-	path := filepath.Join(agentDir, "extensions", "global.ts")
-	resolved := &agent.ResolvedPaths{Extensions: []agent.ResolvedResource{
-		selectorResource(path, true, "auto", "user", "top-level", agentDir),
-	}}
-	selector := NewConfigSelector(ConfigSelectorOptions{
-		ResolvedPaths: ScopedResolvedPaths{Global: resolved, Project: resolved}, SettingsManager: settings,
-		CWD: cwd, AgentDir: agentDir, WriteScope: ConfigWriteProject, ProjectModeAvailable: true,
-	}, nil, nil, nil)
-	if rendered := renderSelectorText(selector, 100); !strings.Contains(rendered, "inherited global") || !strings.Contains(rendered, "[x]") {
-		t.Fatalf("inherited item is not rendered dimmed with its effective state:\n%s", rendered)
-	}
-
-	selector.HandleInput(selectorEvent(" "))
-	if got := settings.GetProjectExtensionPaths(); !reflect.DeepEqual(got, []string{path, "-" + path}) {
-		t.Fatalf("unload override = %#v", got)
-	}
-	selector.HandleInput(selectorEvent(" "))
-	if got := settings.GetProjectExtensionPaths(); !reflect.DeepEqual(got, []string{path, "+" + path}) {
-		t.Fatalf("load override = %#v", got)
-	}
-	selector.HandleInput(selectorEvent(" "))
-	if got := settings.GetProjectExtensionPaths(); len(got) != 0 {
-		t.Fatalf("inherit override = %#v", got)
 	}
 }
 

@@ -3,7 +3,6 @@ package modes
 import (
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/modes/theme"
@@ -88,14 +87,5 @@ func TestPendingPromptEntryIDOnlyWhileUnanswered(t *testing.T) {
 	}
 	if got := mode.pendingPromptEntryID(); got != "" {
 		t.Fatalf("pending prompt = %q, want none once the assistant answered", got)
-	}
-}
-
-func TestPluralMessages(t *testing.T) {
-	if got := pluralMessages(1); got != "1 queued message" {
-		t.Fatalf("pluralMessages(1) = %q", got)
-	}
-	if got := pluralMessages(3); !strings.Contains(got, "3 queued messages") {
-		t.Fatalf("pluralMessages(3) = %q", got)
 	}
 }

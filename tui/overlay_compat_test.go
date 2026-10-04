@@ -49,7 +49,3 @@ func (ui *TUI) AddOverlay(component Component, layout func(width, height int) Ov
 	}
 	return &Overlay{handle: ui.showOverlay(component, nil, resolve, false)}
 }
-
-func (ui *TUI) renderWithOverlays(width, height int) []string {
-	return ui.compositeOverlays(append([]string(nil), ui.Render(width)...), width, height)
-}

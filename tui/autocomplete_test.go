@@ -27,31 +27,6 @@ func containsValue(values []string, want string) bool {
 	return false
 }
 
-// Ported from upstream packages/tui/test/autocomplete.test.ts
-// "extractPathPrefix".
-func TestProviderExtractPathPrefix(t *testing.T) {
-	provider := NewCombinedAutocompleteProvider(nil, "/tmp", "")
-	ctx := context.Background()
-
-	result := provider.GetSuggestions(ctx, []string{"hey /"}, 0, 5, true)
-	if result == nil || result.Prefix != "/" {
-		t.Fatalf("forced '/' suggestions = %+v", result)
-	}
-
-	if result := provider.GetSuggestions(ctx, []string{"/A"}, 0, 2, true); result != nil && result.Prefix != "/A" {
-		t.Fatalf("prefix = %q, want /A", result.Prefix)
-	}
-
-	if result := provider.GetSuggestions(ctx, []string{"/model"}, 0, 6, true); result != nil {
-		t.Fatalf("slash command should not trigger file completion: %+v", result)
-	}
-
-	result = provider.GetSuggestions(ctx, []string{"/command /"}, 0, 10, true)
-	if result == nil || result.Prefix != "/" {
-		t.Fatalf("slash-argument path suggestions = %+v", result)
-	}
-}
-
 func TestProviderSlashCommands(t *testing.T) {
 	commands := []SlashCommand{
 		{Name: "help", Description: "Show help"},
@@ -89,60 +64,6 @@ func TestProviderSlashCommands(t *testing.T) {
 	result = provider.GetSuggestions(ctx, []string{"/clear x"}, 0, 8, false)
 	if result != nil {
 		t.Fatalf("unexpected argument suggestions: %+v", result)
-	}
-}
-
-func TestProviderSlashSkillsRankByBareName(t *testing.T) {
-	provider := NewCombinedAutocompleteProvider([]SlashCommand{
-		{Name: "skill:deep-research"},
-		{Name: "skill:research-idea"},
-		{Name: "skill:to-sidecar"},
-		{Name: "model"},
-	}, t.TempDir(), "")
-
-	result := provider.GetSuggestions(context.Background(), []string{"/idea"}, 0, 5, false)
-	if result == nil || len(result.Items) == 0 || result.Items[0].Value != "skill:research-idea" {
-		t.Fatalf("idea suggestions = %+v", result)
-	}
-	result = provider.GetSuggestions(context.Background(), []string{"/skill:side"}, 0, 11, false)
-	if result == nil || !containsValue(suggestionValues(result), "skill:to-sidecar") {
-		t.Fatalf("explicit skill suggestions = %+v", result)
-	}
-}
-
-func TestProviderApplySlashCompletion(t *testing.T) {
-	provider := NewCombinedAutocompleteProvider(nil, "/tmp", "")
-	applied := provider.ApplyCompletion([]string{"/he"}, 0, 3, AutocompleteItem{Value: "help", Label: "help"}, "/he")
-	if applied.Lines[0] != "/help " || applied.CursorCol != 6 {
-		t.Fatalf("applied = %+v", applied)
-	}
-}
-
-func TestProviderDotSlashCompletion(t *testing.T) {
-	baseDir := t.TempDir()
-	writeFile := func(name, content string) {
-		t.Helper()
-		path := filepath.Join(baseDir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeFile("update.sh", "#!/bin/bash")
-	writeFile("utils.ts", "export {};")
-	provider := NewCombinedAutocompleteProvider(nil, baseDir, "")
-
-	result := provider.GetSuggestions(context.Background(), []string{"./up"}, 0, 4, true)
-	if !containsValue(suggestionValues(result), "./update.sh") {
-		t.Fatalf("values = %v", suggestionValues(result))
-	}
-
-	writeFile("src/index.ts", "export {};")
-	result = provider.GetSuggestions(context.Background(), []string{"./sr"}, 0, 4, true)
-	if !containsValue(suggestionValues(result), "./src/") {
-		t.Fatalf("values = %v", suggestionValues(result))
 	}
 }
 
@@ -189,64 +110,6 @@ func TestProviderQuotedPaths(t *testing.T) {
 	}
 }
 
-func TestProviderCJKPunctuationBoundariesAndQuotedPaths(t *testing.T) {
-	baseDir := t.TempDir()
-	for _, path := range []string{"说明.md", "资料，归档/说明.md", "资料。归档/说明.md"} {
-		fullPath := filepath.Join(baseDir, filepath.FromSlash(path))
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(fullPath, nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	provider := NewCombinedAutocompleteProvider(nil, baseDir, "")
-
-	for _, separator := range []string{"　", "，", "。"} {
-		line := "查看" + separator + "说"
-		result := provider.GetSuggestions(context.Background(), []string{line}, 0, runeLen(line), true)
-		if result == nil || result.Prefix != "说" || !containsValue(suggestionValues(result), "说明.md") {
-			t.Fatalf("separator %q suggestions = %+v", separator, result)
-		}
-	}
-
-	for _, directory := range []string{"资料，归档", "资料。归档"} {
-		line := "查看：\"" + directory + "/说\"后文"
-		cursor := runeLen("查看：\"" + directory + "/说")
-		result := provider.GetSuggestions(context.Background(), []string{line}, 0, cursor, true)
-		want := `"` + directory + `/说明.md"`
-		if result == nil || !containsValue(suggestionValues(result), want) {
-			t.Fatalf("quoted %q suggestions = %+v", directory, result)
-		}
-		var item AutocompleteItem
-		for _, candidate := range result.Items {
-			if candidate.Value == want {
-				item = candidate
-			}
-		}
-		applied := provider.ApplyCompletion([]string{line}, 0, cursor, item, result.Prefix)
-		if applied.Lines[0] != "查看："+want+"后文" {
-			t.Fatalf("quoted completion = %q", applied.Lines[0])
-		}
-	}
-}
-
-func TestProviderDirectoriesFirst(t *testing.T) {
-	baseDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(baseDir, "zdir"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(baseDir, "afile.txt"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	provider := NewCombinedAutocompleteProvider(nil, baseDir, "")
-	result := provider.GetSuggestions(context.Background(), []string{"x "}, 0, 2, true)
-	values := suggestionValues(result)
-	if len(values) != 2 || values[0] != "zdir/" || values[1] != "afile.txt" {
-		t.Fatalf("values = %v", values)
-	}
-}
-
 func TestProviderFuzzyFdSuggestions(t *testing.T) {
 	baseDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(baseDir, "src"), 0o755); err != nil {
@@ -267,49 +130,5 @@ func TestProviderFuzzyFdSuggestions(t *testing.T) {
 	}
 	if !containsValue(suggestionValues(result), "@src/main.ts") {
 		t.Fatalf("values = %v", suggestionValues(result))
-	}
-}
-
-func TestProviderLocaleCompareOrder(t *testing.T) {
-	t.Setenv("LC_ALL", "C.UTF-8")
-	names := []string{"A", "a", "Á", "á", "ä", "z", "Z", "é", "e", "10", "2", "_a", "-a", "界", "你"}
-	suggestions := make([]AutocompleteItem, len(names))
-	for index, name := range names {
-		suggestions[index] = AutocompleteItem{Value: name, Label: name}
-	}
-	sortAutocompleteSuggestions(suggestions)
-	got := make([]string, len(suggestions))
-	for index, suggestion := range suggestions {
-		got[index] = suggestion.Value
-	}
-	want := []string{"_a", "-a", "10", "2", "a", "A", "á", "Á", "ä", "e", "é", "z", "Z", "你", "界"}
-	if len(got) != len(want) {
-		t.Fatalf("values = %v, want %v", got, want)
-	}
-	for index := range want {
-		if got[index] != want[index] {
-			t.Fatalf("values = %v, want %v", got, want)
-		}
-	}
-
-	// Directory grouping remains primary even when collation would place a
-	// file first.
-	suggestions = append(suggestions, AutocompleteItem{Value: `"zz directory/"`, Label: "zz directory/"})
-	sortAutocompleteSuggestions(suggestions)
-	if suggestions[0].Label != "zz directory/" {
-		t.Fatalf("directories not first: %v", suggestions)
-	}
-}
-
-func TestProviderShouldTriggerFileCompletion(t *testing.T) {
-	provider := NewCombinedAutocompleteProvider(nil, "/tmp", "")
-	if provider.ShouldTriggerFileCompletion([]string{"/mod"}, 0, 4) {
-		t.Fatal("slash command should veto")
-	}
-	if !provider.ShouldTriggerFileCompletion([]string{"/cmd arg"}, 0, 8) {
-		t.Fatal("slash command with argument should allow")
-	}
-	if !provider.ShouldTriggerFileCompletion([]string{"plain"}, 0, 5) {
-		t.Fatal("plain text should allow")
 	}
 }

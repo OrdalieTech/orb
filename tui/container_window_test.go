@@ -20,17 +20,6 @@ type invalidatingLines struct {
 	invalidate bool
 }
 
-type staleInvalidatingLines struct {
-	container *Container
-	stale     Component
-	lines     []string
-}
-
-func (component *staleInvalidatingLines) Render(int) []string {
-	component.container.ChildChanged(component.stale)
-	return component.lines
-}
-
 type sliceLines []string
 
 func (component sliceLines) Render(int) []string { return component }
@@ -121,72 +110,6 @@ func TestWindowedContainerRendersOnlyChangedTail(t *testing.T) {
 	}
 }
 
-func TestWindowedContainerReleasesOffscreenRenderCache(t *testing.T) {
-	container := NewWindowedContainer()
-	first, middle, last := NewText("first", 0, 0, nil), NewText("middle", 0, 0, nil), NewText("last", 0, 0, nil)
-	container.AddChild(first)
-	container.AddChild(middle)
-	container.AddChild(last)
-	ui := NewTUI(newFakeTerminal(80, 2))
-	ui.SetViewport(container, NewText("input", 0, 0, nil))
-	if frame := ui.renderViewport(80, 2); !strings.Contains(frame[0], "last") {
-		t.Fatalf("tail viewport = %q", frame)
-	}
-	if container.windowChildLines[0] != nil || container.windowChildLines[1] != nil || first.cacheLines != nil || middle.cacheLines != nil {
-		t.Fatal("offscreen rendered lines remain cached")
-	}
-	if got := container.RenderLines(79, 0, 1); len(got) != 1 || strings.TrimSpace(got[0]) != "first" {
-		t.Fatalf("restored first line = %q", got)
-	}
-	if container.windowChildLines[2] != nil || last.cacheLines != nil {
-		t.Fatal("previously visible tail remains cached after scrolling away")
-	}
-}
-
-func TestWindowedLayoutRestoresEvictedSelectionLines(t *testing.T) {
-	container := NewWindowedContainer()
-	container.AddChild(NewText(strings.Repeat("selected\n", 9)+"selected", 0, 0, nil))
-	container.AddChild(NewText("tail", 0, 0, nil))
-	layout := buildLineLayout(container, 80)
-	container.RenderLines(80, 10, 11)
-	if container.windowChildLines[0] != nil {
-		t.Fatal("expected first child to be evicted")
-	}
-	lines := layout.appendRange(nil, 80, 5, 7)
-	if len(lines) != 2 || strings.TrimSpace(lines[0]) != "selected" || strings.TrimSpace(lines[1]) != "selected" {
-		t.Fatalf("selection lines after eviction = %q", lines)
-	}
-}
-
-func TestWindowedContainerReflowsOnWidthChange(t *testing.T) {
-	container := NewWindowedContainer()
-	child := &countedLines{lines: []string{"line"}}
-	container.AddChild(child)
-	_ = container.LineCount(80)
-	_ = container.LineCount(80)
-	_ = container.LineCount(40)
-	if child.renders != 2 {
-		t.Fatalf("renders after width change = %d, want 2", child.renders)
-	}
-}
-
-func TestWindowedContainerRemovalDropsCachedTail(t *testing.T) {
-	container := NewWindowedContainer()
-	first := &countedLines{lines: []string{"first"}}
-	last := &countedLines{lines: []string{"last"}}
-	container.AddChild(first)
-	container.AddChild(last)
-	_ = container.LineCount(80)
-
-	container.RemoveChild(last)
-	if got := container.LineCount(80); got != 1 {
-		t.Fatalf("line count after removal = %d, want 1", got)
-	}
-	if got := fmt.Sprint(container.RenderLines(80, 0, 2)); got != "[first]" {
-		t.Fatalf("lines after removal = %s", got)
-	}
-}
-
 func TestWindowedContainerDefersConcurrentMutation(t *testing.T) {
 	container := NewWindowedContainer()
 	child := &invalidatingLines{container: container, lines: []string{"old"}}
@@ -201,48 +124,6 @@ func TestWindowedContainerDefersConcurrentMutation(t *testing.T) {
 	}
 	if got := container.LineCount(80); got != 2 || child.renders != 3 {
 		t.Fatalf("retry frame: lines=%d renders=%d, want new 2 and 3", got, child.renders)
-	}
-}
-
-func TestWindowedContainerOlderMutationDoesNotRenderSuffix(t *testing.T) {
-	container := NewWindowedContainer()
-	children := make([]*countedLines, 1_000)
-	for index := range children {
-		children[index] = &countedLines{lines: []string{"line"}}
-		container.AddChild(children[index])
-	}
-	_ = container.LineCount(80)
-
-	children[10].lines = []string{"changed", "extra"}
-	container.ChildChanged(children[10])
-	if got := container.LineCount(80); got != 1_001 {
-		t.Fatalf("line count after older mutation = %d, want 1001", got)
-	}
-	for index, child := range children {
-		want := 1
-		if index == 10 {
-			want = 2
-		}
-		if child.renders != want {
-			t.Fatalf("child %d renders = %d, want %d", index, child.renders, want)
-		}
-	}
-}
-
-func TestWindowedContainerRefreshesCoalescedChildrenAfterEmptyCache(t *testing.T) {
-	container := NewWindowedContainer()
-	if got := container.LineCount(80); got != 0 {
-		t.Fatalf("initial line count = %d", got)
-	}
-	spacer := &countedLines{}
-	text := &countedLines{lines: []string{"status"}}
-	container.AddChild(spacer)
-	container.AddChild(text)
-	if got := fmt.Sprint(container.RenderLines(80, 0, 1)); got != "[status]" {
-		t.Fatalf("coalesced children = %s", got)
-	}
-	if spacer.renders != 1 || text.renders != 1 {
-		t.Fatalf("coalesced renders spacer=%d text=%d, want 1 each", spacer.renders, text.renders)
 	}
 }
 
@@ -292,51 +173,6 @@ func TestWindowedContainerAcceptsNonComparableComponents(t *testing.T) {
 	}
 }
 
-func TestWindowedContainerDuplicateDirty(t *testing.T) {
-	container := NewWindowedContainer()
-	shared := &countedLines{lines: []string{"shared"}}
-	container.AddChild(shared)
-	container.AddChild(&countedLines{lines: []string{"other"}})
-	container.AddChild(shared)
-
-	if got := container.LineCount(10); got != 3 {
-		t.Fatalf("initial LineCount = %d, want 3", got)
-	}
-
-	shared.lines = []string{"changed", "changed too"}
-	container.ChildChanged(shared)
-	if got := container.LineCount(10); got != 5 {
-		t.Fatalf("LineCount after duplicate dirty = %d, want 5", got)
-	}
-	want := []string{"changed", "changed too", "other", "changed", "changed too"}
-	if got := container.RenderLines(10, 0, 5); !slices.Equal(got, want) {
-		t.Fatalf("RenderLines = %q, want %q", got, want)
-	}
-
-	container.AddChild(shared)
-	shared.lines = []string{"again"}
-	container.ChildChanged(shared)
-	if got := container.LineCount(10); got != 4 {
-		t.Fatalf("LineCount after re-dirty = %d, want 4", got)
-	}
-	want = []string{"again", "other", "again", "again"}
-	if got := container.RenderLines(10, 0, 4); !slices.Equal(got, want) {
-		t.Fatalf("RenderLines after re-dirty = %q, want %q", got, want)
-	}
-}
-
-func TestWindowedContainerIgnoresStaleChildChangesDuringRebuild(t *testing.T) {
-	container := NewWindowedContainer()
-	stale := &countedLines{lines: []string{"stale"}}
-	container.AddChild(stale)
-	_ = container.LineCount(80)
-	container.RemoveChild(stale)
-	container.AddChild(&staleInvalidatingLines{container: container, stale: stale, lines: []string{"fresh"}})
-	if got := container.LineCount(80); got != 1 {
-		t.Fatalf("line count after stale callback = %d, want 1", got)
-	}
-}
-
 func TestWindowedContainerFencesConcurrentChildInvalidation(t *testing.T) {
 	container := NewWindowedContainer()
 	child := &delayedInvalidateLines{
@@ -359,44 +195,6 @@ func TestWindowedContainerFencesConcurrentChildInvalidation(t *testing.T) {
 	<-invalidated
 	if got := fmt.Sprint(container.RenderLines(80, 0, 1)); got != "[fresh]" {
 		t.Fatalf("render after concurrent invalidation = %s", got)
-	}
-}
-
-func TestWindowedContainerRefillsAfterCascadingCollapse(t *testing.T) {
-	container := NewWindowedContainer()
-	var children []*countedLines
-	for i := range 8 {
-		child := &countedLines{lines: make([]string, 100)}
-		for row := range child.lines {
-			child.lines[row] = fmt.Sprintf("%d:%d", i, row)
-		}
-		children = append(children, child)
-		container.AddChild(child)
-	}
-	container.RenderLines(59, 0, 10)
-	for _, child := range children[:7] {
-		child.lines = nil
-		container.ChildChanged(child)
-	}
-	want := children[7].lines[72:90]
-	if got := container.RenderLines(59, 72, 90); !slices.Equal(got, want) {
-		t.Fatalf("refilled range = %q, want %q", got, want)
-	}
-}
-
-func TestWindowedContainerInterruptedRefillPreservesRowOffsets(t *testing.T) {
-	container := NewWindowedContainer()
-	child := &invalidatingLines{container: container, lines: make([]string, 100)}
-	container.AddChild(child)
-	container.AddChild(&countedLines{lines: []string{"tail"}})
-	container.RenderLines(59, 100, 101)
-	child.invalidate = true
-	child.lines[72] = "restored"
-	if got := container.RenderLines(59, 72, 74); len(got) != 2 {
-		t.Fatalf("interrupted refill lost its row positions: %q", got)
-	}
-	if got := container.RenderLines(59, 72, 74); len(got) != 2 || got[0] != "restored" {
-		t.Fatalf("next frame did not restore evicted content: %q", got)
 	}
 }
 

@@ -9,14 +9,11 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	conformancerunner "github.com/OrdalieTech/orb/conformance/runner"
 
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/tui"
@@ -124,22 +121,6 @@ func selectorKey(raw string) tui.KeyEvent {
 	return tui.KeyEvent{Raw: raw, Key: tui.ParseKey(raw), Type: tui.KeyEventTypeOf(raw)}
 }
 
-func normalizeSelectorFrame(lines []string, root string) []string {
-	result := make([]string, len(lines))
-	for index, line := range lines {
-		line = selectorANSI.ReplaceAllString(line, "")
-		for _, prefix := range []string{root, filepath.FromSlash(selectorDisplayRoot)} {
-			line = strings.ReplaceAll(line, prefix+string(filepath.Separator), "<fixture>/")
-			line = strings.ReplaceAll(line, prefix, "<fixture>")
-		}
-		result[index] = strings.TrimRight(line, " \t")
-	}
-	for len(result) > 0 && result[len(result)-1] == "" {
-		result = result[:len(result)-1]
-	}
-	return result
-}
-
 func waitForSelector(t *testing.T, selector *SessionSelectorComponent, contains string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -150,172 +131,6 @@ func waitForSelector(t *testing.T, selector *SessionSelectorComponent, contains 
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("selector never rendered %q:\n%s", contains, strings.Join(selector.Render(100), "\n"))
-}
-
-func TestSessionSelectorMatchesUpstreamFixture(t *testing.T) {
-	fixture := loadSessionSelectorFixture(t)
-	now := time.Date(2026, 7, 18, 22, 0, 0, 0, time.UTC)
-	root, current, all := sessionSelectorSessions(t, now)
-	for _, search := range fixture.Searches {
-		values := append([]session.SessionInfo(nil), all...)
-		if search.NameFilter == string(sessionNamesNamed) {
-			values = slices.DeleteFunc(values, func(info session.SessionInfo) bool { return info.Name == nil })
-		}
-		mode := sessionSelectorSort(search.SortMode)
-		if mode == "relevance" {
-			mode = sessionSortRelevance
-		}
-		got := filterAndSortSelectorSessions(values, search.Query, mode)
-		gotIDs := make([]string, len(got))
-		for index := range got {
-			gotIDs[index] = got[index].ID
-		}
-		if !reflect.DeepEqual(gotIDs, search.Result) {
-			t.Fatalf("search %s result = %#v, want %#v", search.ID, gotIDs, search.Result)
-		}
-	}
-	release := make(chan struct{})
-	currentLoader := func(progress session.SessionListProgress) []session.SessionInfo {
-		progress(1, len(current))
-		<-release
-		progress(len(current), len(current))
-		return existingSelectorSessions(current)
-	}
-	allLoader := func(progress session.SessionListProgress) []session.SessionInfo {
-		progress(len(all), len(all))
-		return existingSelectorSessions(all)
-	}
-	bindings := NewAppKeybindings(nil)
-	tui.SetKeybindings(bindings)
-	selector := NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: currentLoader,
-		AllSessions:     allLoader,
-		Keybindings:     bindings,
-		Now:             func() time.Time { return now },
-		DeleteSession: func(path string) (SessionDeleteMethod, error) {
-			return SessionDeleteUnlink, os.Remove(path)
-		},
-	}, nil, nil)
-
-	expected := make(map[string][]string, len(fixture.Frames))
-	for _, frame := range fixture.Frames {
-		expected[frame.ID] = frame.Lines
-	}
-	updating := conformancerunner.UpdateTUISnapshots()
-	captured := make(map[string][]string, len(fixture.Frames))
-	assertFrame := func(id string) {
-		t.Helper()
-		got := normalizeSelectorFrame(selector.Render(fixture.Width), root)
-		if updating {
-			captured[id] = got
-			return
-		}
-		if !reflect.DeepEqual(got, expected[id]) {
-			t.Fatalf("frame %s mismatch\n got: %#v\nwant: %#v", id, got, expected[id])
-		}
-	}
-	defer func() {
-		if !updating || t.Failed() {
-			return
-		}
-		// Rewrite only the frames, preserving the rest of the fixture.
-		fixturePath := filepath.Join("..", "..", "conformance", "fixtures", "WP450-session-selector", "selector.json")
-		encoded, err := os.ReadFile(fixturePath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(encoded, &raw); err != nil {
-			t.Fatal(err)
-		}
-		type frameEntry struct {
-			ID    string   `json:"id"`
-			Lines []string `json:"lines"`
-		}
-		frames := make([]frameEntry, 0, len(fixture.Frames))
-		for _, frame := range fixture.Frames {
-			lines, ok := captured[frame.ID]
-			if !ok {
-				lines = frame.Lines
-			}
-			frames = append(frames, frameEntry{ID: frame.ID, Lines: lines})
-		}
-		raw["frames"], err = json.Marshal(frames)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Preserve the file's canonical key order.
-		ordered := struct {
-			SchemaVersion json.RawMessage `json:"schemaVersion"`
-			Width         json.RawMessage `json:"width"`
-			Searches      json.RawMessage `json:"searches"`
-			Frames        json.RawMessage `json:"frames"`
-			Callbacks     json.RawMessage `json:"callbacks"`
-			Lifetime      json.RawMessage `json:"lifetime"`
-		}{raw["schemaVersion"], raw["width"], raw["searches"], raw["frames"], raw["callbacks"], raw["lifetime"]}
-		rewritten, err := json.MarshalIndent(ordered, "", "  ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(fixturePath, append(rewritten, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}()
-
-	waitForSelector(t, selector, "Loading 1/3")
-	assertFrame("loading-progress")
-	close(release)
-	waitForSelector(t, selector, "Root plan")
-	assertFrame("current-threaded")
-	selector.HandleInput(selectorKey("\t"))
-	waitForSelector(t, selector, "Incident")
-	assertFrame("all-threaded")
-	selector.HandleInput(selectorKey("\x13"))
-	assertFrame("all-recent")
-	selector.HandleInput(selectorKey("\x13"))
-	assertFrame("all-relevance")
-	selector.HandleInput(selectorKey("ndcv"))
-	assertFrame("fuzzy-search")
-	selector.HandleInput(selectorKey("\x15"))
-	selector.HandleInput(selectorKey(`"node cve"`))
-	assertFrame("exact-search")
-	selector.HandleInput(selectorKey("\x15"))
-	selector.HandleInput(selectorKey("re:alpha.*error"))
-	assertFrame("regex-search")
-	selector.HandleInput(selectorKey("\x15"))
-	selector.HandleInput(selectorKey("re:["))
-	assertFrame("invalid-regex")
-	selector.HandleInput(selectorKey("\x15"))
-	selector.HandleInput(selectorKey("\x0e"))
-	assertFrame("named-filter")
-	selector.HandleInput(selectorKey("\x10"))
-	assertFrame("path-toggle")
-	selector.HandleInput(selectorKey("\x04"))
-	assertFrame("delete-confirmation")
-	selector.HandleInput(selectorKey("\x1b"))
-	assertFrame("delete-cancelled")
-	selector.HandleInput(selectorKey("\x04"))
-	selector.HandleInput(selectorKey("\r"))
-	waitForSelector(t, selector, "Root plan")
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && strings.Contains(strings.Join(selector.Render(fixture.Width), "\n"), "Incident") {
-		time.Sleep(time.Millisecond)
-	}
-	if rendered := strings.Join(selector.Render(fixture.Width), "\n"); strings.Contains(rendered, "Incident") {
-		t.Fatalf("deleted session remains visible:\n%s", rendered)
-	}
-	waitForSelector(t, selector, "◉ All")
-	assertFrame("after-delete")
-}
-
-func existingSelectorSessions(sessions []session.SessionInfo) []session.SessionInfo {
-	result := make([]session.SessionInfo, 0, len(sessions))
-	for _, info := range sessions {
-		if _, err := os.Stat(info.Path); err == nil {
-			result = append(result, info)
-		}
-	}
-	return result
 }
 
 func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {

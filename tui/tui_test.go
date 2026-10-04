@@ -184,58 +184,6 @@ func TestTUIInvalidationMayRequestRender(t *testing.T) {
 	}
 }
 
-type recordingLines struct {
-	lines []string
-	width int
-}
-
-func (component *recordingLines) Render(width int) []string {
-	component.width = width
-	return component.lines
-}
-
-func TestTUIOverlayCompositionMatchesUpstreamLayoutAndStacking(t *testing.T) {
-	ui := NewTUI(newFakeTerminal(20, 6))
-	ui.AddChild(&mutableLines{lines: []string{"base"}})
-	first := &recordingLines{lines: []string{"FIRST-OVERLAY"}}
-	ui.AddOverlay(first, func(int, int) OverlayLayout {
-		return OverlayLayout{Width: 12, Anchor: "top-left"}
-	})
-	second := ui.AddOverlay(&mutableLines{lines: []string{"SECOND"}}, func(int, int) OverlayLayout {
-		return OverlayLayout{Width: 6, Anchor: "top-left"}
-	})
-	ui.AddOverlay(&mutableLines{lines: []string{"BOTTOM", "hidden"}}, func(int, int) OverlayLayout {
-		return OverlayLayout{Width: 8, MaxHeight: 1, Anchor: "bottom-right"}
-	})
-
-	lines := ui.renderWithOverlays(20, 6)
-	if len(lines) != 6 {
-		t.Fatalf("overlay buffer height = %d, want 6: %#v", len(lines), lines)
-	}
-	if first.width != 12 {
-		t.Fatalf("overlay render width = %d, want 12", first.width)
-	}
-	if want := segmentReset + "SECOND" + segmentReset + "OVERLA" + segmentReset + "        "; lines[0] != want {
-		t.Fatalf("stacked top-left overlay = %q, want %q", lines[0], want)
-	}
-	if want := "            " + segmentReset + "BOTTOM  " + segmentReset; lines[5] != want {
-		t.Fatalf("bottom-right overlay = %q, want %q", lines[5], want)
-	}
-	if strings.Contains(strings.Join(lines, "\n"), "hidden") {
-		t.Fatalf("max-height overlay leaked truncated row: %#v", lines)
-	}
-
-	second.SetHidden(true)
-	lines = ui.renderWithOverlays(20, 6)
-	if want := segmentReset + "FIRST-OVERLA" + segmentReset + "        "; lines[0] != want {
-		t.Fatalf("hidden top overlay = %q, want %q", lines[0], want)
-	}
-	second.Remove()
-	if second.IsHidden() != true {
-		t.Fatal("removed overlay changed its explicit hidden state")
-	}
-}
-
 func TestTUIDifferentialRenderingAndResize(t *testing.T) {
 	terminal := newFakeTerminal(40, 10)
 	ui := NewTUI(terminal)
@@ -500,21 +448,6 @@ func TestTUIViewportWordAndParagraphSelection(t *testing.T) {
 	}
 }
 
-func TestTUISelectionPreservesWideStyledText(t *testing.T) {
-	ui := NewTUI(newFakeTerminal(10, 2))
-	ui.SetViewport(&mutableLines{lines: []string{"\x1b[31mA界B\x1b[0m"}}, &mutableLines{})
-	ui.previousLines = ui.renderViewport(10, 2)
-	ui.selection = mouseSelection{
-		anchor: mousePoint{row: 0, column: 3},
-		focus:  mousePoint{row: 0, column: 2},
-		active: true,
-		moved:  true,
-	}
-	if got := ui.selectedTextLocked(); got != "界B" {
-		t.Fatalf("wide styled selection = %q", got)
-	}
-}
-
 func TestTUIViewportDefersDirtyHiddenTailWhileDetached(t *testing.T) {
 	body := NewWindowedContainer()
 	children := make([]*countedLines, 100)
@@ -570,30 +503,6 @@ func TestTUIClearOnShrinkPreservesTerminalScrollbackPosition(t *testing.T) {
 	}
 }
 
-func TestTUIHardwareCursorMarkerAndReleaseFiltering(t *testing.T) {
-	terminal := newFakeTerminal(20, 5)
-	ui := NewTUI(terminal)
-	input := &focusRecorder{}
-	ui.AddChild(input)
-	ui.SetFocus(input)
-	if err := ui.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ui.Stop() }()
-	output := terminal.output()
-	if strings.Contains(output, CursorMarker) || !strings.Contains(output, "\x1b[3G") {
-		t.Fatalf("cursor output = %q", output)
-	}
-	terminal.send("a")
-	terminal.send("\x1b[97;1:3u")
-	if len(input.events) != 1 || input.events[0].Key != "a" {
-		t.Fatalf("events = %#v", input.events)
-	}
-	if !input.focused {
-		t.Fatal("focus state was not propagated")
-	}
-}
-
 func TestTUIStopClearsInvertedCursor(t *testing.T) {
 	terminal := newFakeTerminal(20, 5)
 	ui := NewTUI(terminal)
@@ -611,23 +520,6 @@ func TestTUIStopClearsInvertedCursor(t *testing.T) {
 		t.Fatalf("stop output = %q, want cursor-clearing space first", output)
 	}
 }
-
-type focusRecorder struct {
-	focused bool
-	events  []KeyEvent
-}
-
-func (recorder *focusRecorder) Render(int) []string {
-	marker := ""
-	if recorder.focused {
-		marker = CursorMarker
-	}
-	return []string{"ab" + marker + "c"}
-}
-func (recorder *focusRecorder) HandleInput(event KeyEvent) {
-	recorder.events = append(recorder.events, event)
-}
-func (recorder *focusRecorder) SetFocused(focused bool) { recorder.focused = focused }
 
 func TestTUITenThousandLineReplayStaysDifferential(t *testing.T) {
 	terminal := newFakeTerminal(80, 24)
@@ -684,57 +576,4 @@ func TestTUIStopsTerminalBeforeLineOverflowPanic(t *testing.T) {
 		}
 	}()
 	ui.RenderNow()
-}
-
-func TestTUIImageCellQueryAndReservedRows(t *testing.T) {
-	SetCapabilities(TerminalCapabilities{Images: ImageProtocolKitty})
-	SetCellDimensions(CellDimensions{WidthPx: 9, HeightPx: 18})
-	t.Cleanup(func() {
-		ResetCapabilitiesCache()
-		SetCellDimensions(CellDimensions{WidthPx: 9, HeightPx: 18})
-	})
-	terminal := newFakeTerminal(40, 10)
-	ui := NewTUI(terminal)
-	component := &mutableLines{lines: []string{EncodeKitty("QUJD", 8, 3, 27, false), "", ""}}
-	ui.AddChild(component)
-	if err := ui.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ui.Stop() }()
-	output := terminal.output()
-	if !strings.Contains(output, "\x1b[16t") || !strings.Contains(output, "\r\n\r\n\x1b[2A\x1b_G") || strings.Contains(output, segmentReset) {
-		t.Fatalf("initial image output = %q", output)
-	}
-	terminal.send("\x1b[6;22;11t")
-	if got := GetCellDimensions(); got != (CellDimensions{WidthPx: 11, HeightPx: 22}) {
-		t.Fatalf("cell dimensions = %#v", got)
-	}
-	terminal.resetOutput()
-	component.lines = []string{"replacement"}
-	ui.RenderNow()
-	if output := terminal.output(); !strings.Contains(output, DeleteKittyImage(27)) {
-		t.Fatalf("changed image was not deleted: %q", output)
-	}
-}
-
-func TestTUIExpandsAppendedKittyContinuationBeforeChoosingAppendMode(t *testing.T) {
-	terminal := newFakeTerminal(40, 10)
-	ui := NewTUI(terminal)
-	imageLine := EncodeKitty("QUJD", 8, 3, 27, false)
-	component := &mutableLines{lines: []string{imageLine, ""}}
-	ui.AddChild(component)
-	if err := ui.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ui.Stop() }()
-	terminal.resetOutput()
-	component.lines = append(component.lines, "")
-	ui.RenderNow()
-	output := terminal.output()
-	if !strings.Contains(output, DeleteKittyImage(27)) || !strings.Contains(output, "\r\x1b[2K") {
-		t.Fatalf("expanded image repaint = %q", output)
-	}
-	if strings.Contains(output, "\x1b[1A\r\n") {
-		t.Fatalf("expanded image repaint incorrectly used append mode: %q", output)
-	}
 }

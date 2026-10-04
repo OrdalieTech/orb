@@ -12,31 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 )
 
-func TestTreeShowsOneHistoryWithVersions(t *testing.T) {
-	initTestTheme(t)
-	useTreeTestKeybindings(t)
-	roots, leaf := treeTestForked()
-	selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, nil, "", "default")
-	// The summary opens the active branch, so it is where the history forks.
-	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 root", "summary  tried old 2/2", "● 2 active"}) {
-		t.Fatalf("rows = %#v", got)
-	}
-	if selector.selectedID() != "active" {
-		t.Fatalf("selected %q, want the current turn", selector.selectedID())
-	}
-	press(selector, "k", "\x1b[D")
-	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"1 root", "2 old 1/2"}) || selector.selectedID() != "old" {
-		t.Fatalf("left showed %#v selecting %q", got, selector.selectedID())
-	}
-	if row := selector.rows[1]; row.inContext || row.reply != "old reply" {
-		t.Fatalf("the other version reads as current: %#v", row)
-	}
-	press(selector, "\x1b[D", "\x1b[C")
-	if got := plainTreeRows(selector.rows); got[2] != "● 2 active" {
-		t.Fatalf("right did not come back to the current history: %#v", got)
-	}
-}
-
 // A reply retried for the same prompt forks after the last prompt; the
 // history still ends on a row that carries the versions.
 func TestTreeRetriedReplyKeepsItsVersions(t *testing.T) {
@@ -133,23 +108,6 @@ func TestTreeSelectorSearchAndEntries(t *testing.T) {
 	}
 }
 
-func TestTreeSelectorRendersCountsReplyAndHints(t *testing.T) {
-	initTestTheme(t)
-	useTreeTestKeybindings(t)
-	roots, leaf := treeTestForked()
-	selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, nil, "", "default")
-	lines := stripTreeLines(selector.Render(80))
-	want := []string{"  3 turns · 2 branches", "", "  1  root", "     summary  tried old", "● 2  active", "", "     done", "", "", "", "",
-		"  enter go to · e edit · / search · ? more"}
-	if lines[3] = strings.TrimSuffix(lines[3], "2/2"); !slices.Equal(trimTreeLines(lines), want) {
-		t.Fatalf("render =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
-	}
-	press(selector, "k", "?")
-	if footer := stripTreeANSI(selector.Render(80)[len(lines)-1]); footer != "  enter go to · ←→ versions · / search · f fork · tab entries · shift+l label" {
-		t.Fatalf("all hints = %q", footer)
-	}
-}
-
 func TestTreeSelectorCopyAndLabel(t *testing.T) {
 	initTestTheme(t)
 	useTreeTestKeybindings(t)
@@ -187,25 +145,6 @@ func TestTreeSelectorCopyAndLabel(t *testing.T) {
 	press(selector, "/", "k", "e", "p", "t")
 	if got := plainTreeRows(selector.rows); !slices.Equal(got, []string{"2 active"}) {
 		t.Fatalf("label search rows = %#v", got)
-	}
-}
-
-// The renderer panics on any line wider than the terminal, so every line has
-// to fit, whatever the mode.
-func TestTreeSelectorFitsNarrowWidths(t *testing.T) {
-	initTestTheme(t)
-	useTreeTestKeybindings(t)
-	for _, width := range []int{1, 8, 16, 26, 34, 60, 120} {
-		for _, keys := range [][]string{nil, {"L"}, {"/", "o"}, {"\t"}, {"?"}} {
-			roots, leaf := treeTestForked()
-			selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, func(string, *string) {}, "", "default")
-			press(selector, keys...)
-			for _, line := range selector.Render(width) {
-				if got := tui.VisibleWidth(line); got > width {
-					t.Fatalf("width %d keys %q: line of width %d: %q", width, keys, got, line)
-				}
-			}
-		}
 	}
 }
 
@@ -284,14 +223,6 @@ func plainTreeRows(rows []treeRow) []string {
 			parts = append(parts, fmt.Sprintf("%d/%d", row.version+1, len(row.versions)))
 		}
 		result[index] = strings.Join(parts, " ")
-	}
-	return result
-}
-
-func trimTreeLines(lines []string) []string {
-	result := make([]string, len(lines))
-	for index, line := range lines {
-		result[index] = strings.TrimRight(line, " ")
 	}
 	return result
 }

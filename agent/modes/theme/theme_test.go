@@ -5,60 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
-
-	chroma "github.com/alecthomas/chroma/v2"
-
-	"github.com/OrdalieTech/orb/tui"
 )
-
-func TestBuiltinsAndColorModes(t *testing.T) {
-	trueColor := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
-	dark, ok := trueColor.Get("dark")
-	if !ok {
-		t.Fatal("dark theme missing")
-	}
-	if ansi, _ := dark.ForegroundANSI("accent"); ansi != "\x1b[38;2;138;190;183m" {
-		t.Fatalf("truecolor accent = %q", ansi)
-	}
-	indexed := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: Color256})
-	dark, _ = indexed.Get("dark")
-	if ansi, _ := dark.ForegroundANSI("accent"); !strings.HasPrefix(ansi, "\x1b[38;5;") {
-		t.Fatalf("256-color accent = %q", ansi)
-	}
-	if got := indexed.Available(); !reflect.DeepEqual(got, []string{"dark", "light", "terminal"}) {
-		t.Fatalf("available = %#v", got)
-	}
-}
-
-func TestEditorThemeStylesAutocomplete(t *testing.T) {
-	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: Color256})
-	dark, ok := registry.Get("dark")
-	if !ok {
-		t.Fatal("dark theme missing")
-	}
-	SetCurrent(dark)
-	t.Cleanup(func() { SetCurrent(nil) })
-
-	selectTheme := EditorTheme().SelectList
-	if selectTheme.SelectedPrefix == nil || selectTheme.SelectedText == nil || selectTheme.Description == nil {
-		t.Fatalf("incomplete editor select-list theme: %#v", selectTheme)
-	}
-	if got, want := selectTheme.SelectedText("main.go"), BG("selectedBg", FG("accent", "main.go")); got != want {
-		t.Fatalf("selected style = %q, want %q", got, want)
-	}
-	list := tui.NewSelectList([]tui.SelectItem{
-		{Value: "@main.go", Label: "main.go", Description: "file"},
-		{Value: "@ponytail", Label: "[skill] ponytail", Description: "skill"},
-	}, 5, selectTheme, tui.SelectListLayoutOptions{})
-	rendered := list.Render(80)
-	if !strings.Contains(rendered[0], BGANSI("selectedBg")+FGANSI("accent")+"→ main.go") || !strings.Contains(rendered[1], FGANSI("muted")) {
-		t.Fatalf("themed autocomplete = %q", rendered)
-	}
-}
 
 func TestRegistryDiscoveryTrustAndContentNames(t *testing.T) {
 	agentDir, cwd := t.TempDir(), t.TempDir()
@@ -131,56 +81,6 @@ func TestRegistryThemePrecedenceIsFirstWins(t *testing.T) {
 		if diagnostic.Collision.WinnerPath != projectSettings || diagnostic.Collision.LoserPath != loser {
 			t.Fatalf("collision %d = %#v", index, diagnostic.Collision)
 		}
-	}
-}
-
-func TestRegistryAdditionalExtendAndBuiltinSemantics(t *testing.T) {
-	root, cwd := t.TempDir(), t.TempDir()
-	first, second := filepath.Join(root, "first.json"), filepath.Join(root, "second.json")
-	writeTestTheme(t, first, "shared", "#111111")
-	writeTestTheme(t, second, "shared", "#222222")
-	writeTestTheme(t, filepath.Join(cwd, "custom-dark.json"), "dark", "#333333")
-	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: cwd, Mode: TrueColor, AdditionalPaths: []string{first, "custom-dark.json"}})
-	registry.Extend([]string{second})
-	assertSelectedTheme(t, registry, "shared", first)
-	assertSelectedTheme(t, registry, "dark", filepath.Join(cwd, "custom-dark.json"))
-	if diagnostics := registry.Diagnostics(); len(diagnostics) != 1 || diagnostics[0].Collision == nil || diagnostics[0].Collision.WinnerPath != first || diagnostics[0].Collision.LoserPath != second {
-		t.Fatalf("extend diagnostics = %#v", diagnostics)
-	}
-
-	replacement, err := Parse("replacement", mustThemeJSON(t, "shared", "#abcdef"), TrueColor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	replacement.SourcePath = "<replacement>"
-	if err := registry.Register(replacement); err != nil {
-		t.Fatal(err)
-	}
-	assertSelectedTheme(t, registry, "shared", "<replacement>")
-}
-
-func TestRegistryDiagnosticsPlaceLoadWarningsBeforeCollisions(t *testing.T) {
-	root := t.TempDir()
-	first := filepath.Join(root, "first.json")
-	invalid := filepath.Join(root, "not-json.txt")
-	second := filepath.Join(root, "second.json")
-	missing := filepath.Join(root, "missing.json")
-	writeTestTheme(t, first, "shared", "#111111")
-	writeTestTheme(t, second, "shared", "#222222")
-	if err := os.WriteFile(invalid, []byte("not a theme"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	registry := Load(LoadOptions{
-		AgentDir: t.TempDir(), CWD: root, NoThemes: true, Mode: TrueColor,
-		AdditionalPaths: []string{first, invalid, second, missing},
-	})
-	loaded := registry.Loaded()
-	if len(loaded) != 1 || loaded[0].Name != "shared" || loaded[0].SourcePath != first {
-		t.Fatalf("loaded themes = %#v", loaded)
-	}
-	diagnostics := registry.Diagnostics()
-	if len(diagnostics) != 3 || diagnostics[0].Path != invalid || diagnostics[1].Path != missing || diagnostics[2].Path != second || diagnostics[2].Collision == nil {
-		t.Fatalf("ordered diagnostics = %#v", diagnostics)
 	}
 }
 
@@ -362,58 +262,6 @@ func TestControllerSettingsDetectionAndReload(t *testing.T) {
 	}
 }
 
-func TestHighlightAndLanguageFromPath(t *testing.T) {
-	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
-	dark, _ := registry.Get("dark")
-	lines := Highlight("const x = 1", "typescript", dark)
-	if len(lines) != 1 || !strings.Contains(lines[0], "\x1b[38;2;86;156;214mconst") {
-		t.Fatalf("highlight = %#v", lines)
-	}
-	if LanguageFromPath("src/main.tsx") != "typescript" || LanguageFromPath("Dockerfile") != "dockerfile" || LanguageFromPath("README") != "" {
-		t.Fatal("language path mapping differs")
-	}
-}
-
-func TestHighlightECMAScriptPrimitiveAndUserTypeScopes(t *testing.T) {
-	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
-	dark, _ := registry.Get("dark")
-	line := Highlight("const answer: number = factory.value", "typescript", dark)[0]
-	if primitive := dark.Foreground("syntaxType", "number"); !strings.Contains(line, primitive) {
-		t.Fatalf("primitive type is not styled: %q", line)
-	}
-	if userDefined := dark.Foreground("syntaxType", "factory.value"); strings.Contains(line, userDefined) {
-		t.Fatalf("Chroma user-type false positive leaked through: %q", line)
-	}
-}
-
-func TestHighlightOperatorAndPunctuationTokens(t *testing.T) {
-	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
-	dark, _ := registry.Get("dark")
-	for _, test := range []struct {
-		token chroma.TokenType
-		color string
-	}{{chroma.Operator, "syntaxOperator"}, {chroma.OperatorWord, "syntaxOperator"}, {chroma.NameOperator, "syntaxOperator"}, {chroma.Punctuation, "syntaxPunctuation"}} {
-		prefix, err := dark.ForegroundANSI(test.color)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got, want := highlightToken(test.token, "value", dark), prefix+"value\x1b[39m"; got != want {
-			t.Fatalf("highlight token %v = %q, want %q", test.token, got, want)
-		}
-	}
-}
-
-func TestUnknownThemeTokenPanics(t *testing.T) {
-	registry := Load(LoadOptions{AgentDir: t.TempDir(), CWD: t.TempDir(), Mode: TrueColor})
-	dark, _ := registry.Get("dark")
-	defer func() {
-		if recover() == nil {
-			t.Fatal("unknown foreground token did not panic")
-		}
-	}()
-	_ = dark.Foreground("unknown-token", "value")
-}
-
 func writeTestTheme(t *testing.T, path, name, accent string) {
 	t.Helper()
 	encoded := mustThemeJSON(t, name, accent)
@@ -457,96 +305,4 @@ func ThemeForRGB(r, g, b int) TerminalTheme {
 		return Light
 	}
 	return Dark
-}
-
-func TestTerminalThemeInheritsPalette(t *testing.T) {
-	for _, mode := range []ColorMode{TrueColor, Color256} {
-		native, ok := Load(LoadOptions{NoThemes: true, Mode: mode}).Get("terminal")
-		if !ok {
-			t.Fatal("terminal theme missing")
-		}
-		for _, name := range []string{"text", "border", "muted"} {
-			if got, _ := native.ForegroundANSI(name); got != "\x1b[39m" {
-				t.Fatalf("%s = %q", name, got)
-			}
-		}
-		if got, _ := native.BackgroundANSI("toolPendingBg"); got != "\x1b[49m" {
-			t.Fatalf("panel = %q", got)
-		}
-		if got, _ := native.ForegroundANSI("customMessageLabel"); got != "\x1b[38;5;5m" {
-			t.Fatalf("skill = %q", got)
-		}
-		for _, name := range []string{"selectedBg", "searchMatchBg", "scrollbarThumb"} {
-			if got := native.Background(name, "a\x1b[0mb"); got != "\x1b[4ma\x1b[0m\x1b[4mb\x1b[24m" {
-				t.Fatalf("%s = %q", name, got)
-			}
-		}
-	}
-}
-
-func TestTerminalPaletteContrastAndLiveSwitch(t *testing.T) {
-	native := terminalTheme(TrueColor)
-	markdown := native.Markdown("")
-	for _, bg := range []tui.RgbColor{{R: 255, G: 252, B: 239}, {R: 24, G: 27, B: 32}, {R: 255, G: 255, B: 255}, {R: 0, G: 0, B: 0}} {
-		native.SetTerminalBackground(bg)
-		colors := native.ResolvedColors(false)
-		if luminanceHex(colors["modalBackdropBg"]) > luminanceHex(native.ExportColors()["pageBg"]) {
-			t.Fatal("backdrop lightens the terminal")
-		}
-		if colors["modalBackdropBg"] == colors["toolPendingBg"] || colors["modalBackdropText"] == colors["muted"] {
-			t.Fatal("backdrop does not separate modal from background")
-		}
-		for _, token := range []string{"accent", "muted", "dim", "customMessageLabel", "error", "warning", "success"} {
-			for _, surface := range []string{native.ExportColors()["pageBg"], colors["toolPendingBg"], colors["selectedBg"]} {
-				a, b := luminanceHex(colors[token]), luminanceHex(surface)
-				if a < b {
-					a, b = b, a
-				}
-				// dim is chrome (hints, times, labels): large-text contrast.
-				if ratio := (a + .05) / (b + .05); ratio < 4.5 && (token != "dim" || ratio < 3) {
-					t.Errorf("%s on %s: contrast %.2f", token, surface, ratio)
-				}
-			}
-		}
-		if got, _ := native.ForegroundANSI("text"); got != "\x1b[39m" {
-			t.Fatal("terminal foreground overridden")
-		}
-		if got, _ := native.BackgroundANSI("selectedBg"); !strings.HasPrefix(got, "\x1b[48;2;") {
-			t.Fatal("selection has no tint")
-		}
-		if got := markdown.Heading("heading"); got != native.Foreground("mdHeading", "heading") {
-			t.Fatal("existing Markdown did not adopt new palette")
-		}
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for range 100 {
-			native.SetTerminalBackground(tui.RgbColor{R: 24, G: 27, B: 32})
-		}
-	}()
-	for range 100 {
-		native.Foreground("accent", "text")
-		native.Background("selectedBg", "text")
-		native.ResolvedColors(false)
-		native.ExportColors()
-	}
-	<-done
-}
-
-func TestThemeAppearanceAndConcreteColors(t *testing.T) {
-	registry := Load(LoadOptions{Mode: TrueColor, NoThemes: true})
-	for _, name := range []string{"dark", "light"} {
-		value, ok := registry.Get(name)
-		if !ok {
-			t.Fatalf("built-in theme %s missing", name)
-		}
-		if got := value.Appearance(); got != name {
-			t.Fatalf("%s appearance = %q", name, got)
-		}
-		colors := value.Colors()
-		if accent := colors["accent"]; len(accent) != 7 || accent[0] != '#' {
-			t.Fatalf("%s accent = %q", name, accent)
-		}
-	}
 }

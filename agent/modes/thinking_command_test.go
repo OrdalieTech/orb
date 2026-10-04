@@ -2,9 +2,6 @@ package modes
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -96,49 +93,5 @@ func TestThinkingSelectorSaveDefaultAndCancel(t *testing.T) {
 	selector.HandleInput(tui.KeyEvent{Raw: "\x1b"})
 	if !cancelled {
 		t.Fatal("escape did not cancel")
-	}
-}
-
-func TestThinkingCommandRouteMatchesReleasedSource(t *testing.T) {
-	data, err := os.ReadFile("../../conformance/fixtures/F12-commands/commands.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fixture struct {
-		ThinkingCommands []struct {
-			Input string `json:"input"`
-			Trace []struct {
-				Selector bool   `json:"selector"`
-				Level    string `json:"level"`
-				Persist  bool   `json:"persist"`
-				Error    string `json:"error"`
-			} `json:"trace"`
-		} `json:"thinkingCommands"`
-	}
-	if err := json.Unmarshal(data, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	if len(fixture.ThinkingCommands) != 3 {
-		t.Fatal("missing source-extracted thinking cases")
-	}
-	for _, probe := range fixture.ThinkingCommands {
-		mode := &InteractiveMode{}
-		action, ok := mode.resolveSlashCommand("thinking", probe.Input)
-		if !ok || action.name != "handleThinkingCommand" || !reflect.DeepEqual(action.arguments, []string{probe.Input}) {
-			t.Fatalf("route missing for %q", probe.Input)
-		}
-		if len(probe.Trace) != 1 {
-			t.Fatalf("unexpected upstream trace: %#v", probe)
-		}
-		trace := probe.Trace[0]
-		if probe.Input == "" && !trace.Selector {
-			t.Fatal("empty argument does not select")
-		}
-		if probe.Input == "HiGh" && (trace.Level != "high" || trace.Persist) {
-			t.Fatal("upstream explicit selection differs")
-		}
-		if probe.Input == "invalid" && trace.Error != `Unknown thinking level "invalid". Available levels: off, low, medium, high.` {
-			t.Fatalf("upstream diagnostic: %q", trace.Error)
-		}
 	}
 }

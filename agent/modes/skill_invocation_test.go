@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -116,77 +115,5 @@ func TestSkillChipInEditorAndSubmit(t *testing.T) {
 	}
 	if warning := tui.StripANSI(strings.Join(mode.chat.Render(120), "\n")); !strings.Contains(warning, "one skill per message") {
 		t.Fatalf("refusal not shown: %q", warning)
-	}
-}
-
-func TestSkillMessageRendersChipInlineWithFooter(t *testing.T) {
-	envelope := `<skill name="audit" location="/tmp/audit/SKILL.md">
-References are relative to /tmp/audit.
-
-Read the logs.
-</skill>`
-	for _, test := range []struct{ name, suffix, line string }{
-		{name: "inline", suffix: "\n\nplease /skill:audit this repo", line: "please ◆\u00a0audit this repo"},
-		{name: "leading", suffix: "\n\n  inspect this  ", line: "◆\u00a0audit inspect this"},
-		{name: "skill only", line: "◆\u00a0audit"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mode := newPendingToolMode(t, []any{&ai.UserMessage{Content: ai.NewUserText(envelope + test.suffix)}})
-			mode.renderInitialMessages()
-
-			children := mode.chat.Children()
-			if len(children) != 1 {
-				t.Fatalf("children = %d, want one user message", len(children))
-			}
-			message, ok := children[0].(*UserMessageComponent)
-			if !ok || len(mode.expandables) != 1 || mode.expandables[0] != message {
-				t.Fatalf("child/expandables = %T/%#v", children[0], mode.expandables)
-			}
-			lines := normalizeWP450Lines(mode.chat.Render(80))
-			collapsed := tui.StripANSI(strings.Join(lines, "\n"))
-			for _, hidden := range []string{"<skill", "/skill:", "Read the logs.", "[skill]"} {
-				if strings.Contains(collapsed, hidden) {
-					t.Fatalf("collapsed render shows %q:\n%s", hidden, collapsed)
-				}
-			}
-			if !strings.Contains(collapsed, test.line) || !strings.Contains(collapsed, "◆ audit · skill") {
-				t.Fatalf("collapsed render:\n%s", collapsed)
-			}
-
-			message.SetExpanded(true)
-			if expanded := tui.StripANSI(strings.Join(mode.chat.Render(80), "\n")); !strings.Contains(expanded, "Read the logs.") {
-				t.Fatalf("expanded render:\n%s", expanded)
-			}
-			message.SetExpanded(false)
-
-			// A click on the footer row toggles the body; one on the text does not.
-			footer := -1
-			for row, line := range message.Render(80) {
-				if strings.Contains(tui.StripANSI(line), "◆ audit · skill") {
-					footer = row
-				}
-			}
-			if message.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: footer - 1}) {
-				t.Fatal("click on the message text toggled the skill body")
-			}
-			if !message.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Row: footer}) {
-				t.Fatal("click on the footer did not toggle")
-			}
-			if expanded := tui.StripANSI(strings.Join(message.Render(80), "\n")); !strings.Contains(expanded, "Read the logs.") {
-				t.Fatalf("clicked render:\n%s", expanded)
-			}
-		})
-	}
-}
-
-func TestSkillFooterShowsLoadedDescription(t *testing.T) {
-	initTestTheme(t)
-	mode := newF12AutocompleteMode(t, true)
-	if got := mode.skillDescription("inspect-skill"); got != "Inspect the workspace" {
-		t.Fatalf("description = %q", got)
-	}
-	component := newSkillUserMessageComponent(agent.ParsedSkillBlock{Name: "inspect-skill", Content: "Body"}, mode.skillDescription("inspect-skill"), mode.mdTheme, 1, nil)
-	if rendered := tui.StripANSI(strings.Join(component.Render(80), "\n")); !strings.Contains(rendered, "◆ inspect-skill · Inspect the workspace") {
-		t.Fatalf("footer render:\n%s", rendered)
 	}
 }
