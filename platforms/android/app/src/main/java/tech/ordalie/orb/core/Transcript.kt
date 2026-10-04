@@ -1,11 +1,7 @@
 package tech.ordalie.orb.core
 
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import org.json.JSONArray
-import org.json.JSONObject
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
+import org.json.*
 
 /** The primitives a conversation is drawn from. */
 sealed class Item(val key: String)
@@ -24,8 +20,8 @@ class Tool(key: String, val verb: String, val target: String, val args: String =
 class Note(key: String, val text: String, val alarm: Boolean = false) : Item(key)
 
 /**
- * Orb's agent events → items. The same events arrive from `orb --mode rpc` and from a Bridge
- * peer's `events.subscribe`, so local and remote sessions share this reducer.
+ * Orb's agent events → items, as a Bridge instance's `events.subscribe` streams them and its
+ * snapshots replay them.
  */
 class Transcript {
     val items = mutableStateListOf<Item>()
@@ -81,9 +77,8 @@ class Transcript {
         retry = next.takeUnless { alarm }
     }
 
-    /** A `!command` the owner ran: live until [settle] gives it its output. */
-    fun shell(command: String): Tool = Tool(key(), "bash", command.lineSequence().first().take(120), command).also { items += it }
-    fun settle(t: Tool, output: String, code: Int) { t.output = output.takeLast(OUTPUT); t.result = summary("bash", t.output); t.failed = code != 0; t.live = false }
+    /** A `!command` the owner ran: live until the conversation, reloaded, holds its output. */
+    fun shell(command: String) { items += Tool(key(), "bash", command.lineSequence().first().take(120), command) }
 
     fun load(messages: JSONArray) {
         replaying = true

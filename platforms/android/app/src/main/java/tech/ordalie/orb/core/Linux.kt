@@ -3,15 +3,12 @@ package tech.ordalie.orb.core
 import android.content.Context
 import android.os.Environment
 import android.system.Os
-import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import androidx.compose.runtime.*
 import java.io.File
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import kotlinx.coroutines.*
+import org.json.JSONObject
 
 /**
  * Orb's Linux: Termux's base system unpacked in the app's files and run through proot, which ships
@@ -31,8 +28,8 @@ class Linux(private val context: Context) {
     /** Whether the phone's files are there, as ~/storage/shared. */
     var storage by mutableStateOf(shared())
 
-    /** The environment every process that starts the launcher needs. */
-    fun env(): Map<String, String> = if (ready) mapOf("ORB_LINUX" to root.path) else emptyMap()
+    /** What a process needs to start the launcher, which is also the shell a terminal opens here. */
+    fun env(): Map<String, String> = if (ready) mapOf("ORB_LINUX" to root.path, "SHELL" to launcher) else emptyMap()
 
     /** Tells the agent where it is, in Orb's global AGENTS.md, unless the owner wrote their own there. */
     fun brief(agentDir: File) {

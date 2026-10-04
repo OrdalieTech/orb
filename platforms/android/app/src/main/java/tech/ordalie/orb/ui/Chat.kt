@@ -1,47 +1,26 @@
 package tech.ordalie.orb.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.*
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.flow.first
-import tech.ordalie.orb.core.Item
-import tech.ordalie.orb.core.Note
-import tech.ordalie.orb.core.RemoteSession
-import tech.ordalie.orb.core.Said
-import tech.ordalie.orb.core.Session
-import tech.ordalie.orb.core.Tool
-import tech.ordalie.orb.core.You
+import androidx.compose.ui.unit.*
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.first
+import tech.ordalie.orb.core.*
 
 /** Conversation text, in sp. */
 private const val SIZE = 15f
@@ -60,7 +39,7 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     Strip(s) { c.nav.go(Screen.Terminal(s)) }
     AnimatedVisibility(!s.remote && c.rt.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue(s::abort) }
     // A peer's session follows its transcript only while shown here.
-    if (s is RemoteSession) DisposableEffect(s) { s.watched = true; onDispose { s.watched = false } }
+    DisposableEffect(s) { s.watched = true; onDispose { s.watched = false } }
     val blocks = blocks(s.transcript.items)
     val list = rememberLazyListState()
     val tail = (s.transcript.items.lastOrNull() as? Said)?.text?.length ?: 0
@@ -85,7 +64,7 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     AnimatedVisibility(s.status.isNotBlank(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         T(s.status, Modifier.padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = 13.sp, color = p.meta, lines = 1)
     }
-    PromptBox(s, c.cites, c.onCite, { c.chooseWhere { c.nav.show(it) } }, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
+    PromptBox(s, c.cites, c.onCite, c::chooseWhere, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
 }
 
 /** Under the bar, what matters while reading: the device when it is not this phone, its state, how full its context is, what it cost; at right, the terminal where it runs. */

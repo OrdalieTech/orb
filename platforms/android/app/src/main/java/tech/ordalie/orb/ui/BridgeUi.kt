@@ -1,51 +1,23 @@
 package tech.ordalie.orb.ui
 
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import android.widget.Toast
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import tech.ordalie.orb.core.Bridge
-import tech.ordalie.orb.core.Release
-import tech.ordalie.orb.core.Peer
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import com.google.mlkit.vision.codescanner.*
+import kotlinx.coroutines.*
+import tech.ordalie.orb.core.*
 
 /** Photographs a QR code with Play services' scanner: the camera never belongs to this app. */
 fun Context.scan(found: (String) -> Unit) {
@@ -62,7 +34,7 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
     Header("Bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back)
     // Each device's thread list carries its name and Orb version, which its row and update show.
     LaunchedEffect(b.peers.size) { c.rt.reload() }
-    if (c.rt.acting) PatternBlue { c.rt.local?.abort() }
+    if (c.rt.acting) PatternBlue { c.rt.sessions.filter { !it.remote && it.busy }.forEach { it.abort() } }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         item {
             // One gesture pairs a computer: it shows a QR code, this phone photographs it, the computer says yes.
@@ -78,8 +50,9 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
                 }
             }
         }
-        item { Slot("devices", if (b.peers.isEmpty()) "none yet" else "${b.peers.count { it.connected }} / ${b.peers.size} connected") {} }
-        items(b.peers, key = { it.id }) { PeerRow(it, c) }
+        val devices = b.peers.filter { it.id != b.self }
+        item { Slot("devices", if (devices.isEmpty()) "none yet" else "${devices.count { it.connected }} / ${devices.size} connected") {} }
+        items(devices, key = { it.id }) { PeerRow(it, c) }
         item {
             Slot("this phone", modifier = Modifier.padding(top = 18.dp)) {
                 T(b.self, size = 13.sp, color = p.mute)
@@ -101,7 +74,7 @@ private fun PeerRow(peer: Peer, c: Ctx) = Column(Modifier.animateContentSize()) 
         Dot(if (peer.connected) p.fg else p.rule, 8.dp, pulse = peer.instances.any { it.busy })
         Column(Modifier.weight(1f)) {
             T(peer.name, size = 17.sp, weight = if (peer.connected) Strong else Regular, color = if (peer.connected) p.fg else p.meta)
-            T(listOfNotNull(if (peer.connected) "${peer.instances.size} session" + (if (peer.instances.size == 1) "" else "s") else peer.state, peer.short, peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), size = Size.Label, color = p.meta)
+            T(listOfNotNull(if (peer.connected) "${peer.instances.size} session" + (if (peer.instances.size == 1) "" else "s") else peer.state, peer.id.substringAfterLast(":").take(6), peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), size = Size.Label, color = p.meta)
             if (updating.isNotEmpty()) T(updating, size = Size.Label, color = p.mute)
         }
         // A device behind the latest release updates from here (its Orb swaps itself and restarts Bridge).

@@ -1,47 +1,28 @@
 package tech.ordalie.orb.ui
 
-import android.view.KeyEvent
-import android.view.MotionEvent
+import android.view.*
 import android.view.inputmethod.InputMethodManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.res.ResourcesCompat
-import com.termux.terminal.TerminalColors
-import com.termux.terminal.TerminalSession
-import com.termux.terminal.TerminalSessionClient
-import com.termux.view.TerminalView
-import com.termux.view.TerminalViewClient
-import tech.ordalie.orb.R
-import tech.ordalie.orb.core.Orb
-import tech.ordalie.orb.core.RemoteSession
-import tech.ordalie.orb.core.Session
+import com.termux.terminal.*
+import com.termux.view.*
 import java.util.Properties
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import tech.ordalie.orb.R
+import tech.ordalie.orb.core.*
 
 /**
- * The terminal where a conversation runs: on this phone, Orb's Linux — the shell the agent's bash
- * tool runs; on a paired machine, its owner's shell there (`orb bridge shell`). Each lives as long
- * as the app does, so leaving the screen never ends what runs in it.
+ * The terminal where a conversation runs, through `orb bridge shell` on its machine: this phone's
+ * is Orb's Linux, the shell its agent's bash tool runs; a paired machine's is its owner's shell.
+ * Each lives as long as the app does, so leaving the screen never ends what runs in it.
  */
 private object Shell : TerminalSessionClient, TerminalViewClient {
-    private val sessions = HashMap<Pair<String, String>, TerminalSession>() // by peer ("" here) and folder
+    private val sessions = HashMap<Pair<String, String>, TerminalSession>() // by machine and folder
     var session: TerminalSession? = null // the one on screen
     var view: TerminalView? = null
     var ctrl by mutableStateOf(false)
@@ -49,10 +30,7 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
     var size = 0 // pixels; 13sp until pinched
 
     fun session(orb: Orb, peer: String, cwd: String): TerminalSession = sessions[peer to cwd]?.takeIf { it.isRunning } ?: run {
-        val linux = orb.linux
-        val (program, args, env) = if (peer.isEmpty()) Triple(linux.launcher, arrayOf("liblinux.so", "-l"), linux.env())
-            else Triple(orb.binary, arrayOf("liborb.so", "bridge", "shell", peer, cwd), orb.env())
-        TerminalSession(program, linux.home.apply { mkdirs() }.path, args, (System.getenv() + env + ("TERM" to "xterm-256color")).map { (k, v) -> "$k=$v" }.toTypedArray(), 5000, this)
+        TerminalSession(orb.binary, orb.cwd.path, arrayOf("liborb.so", "bridge", "shell", peer, cwd), (System.getenv() + orb.env() + ("TERM" to "xterm-256color")).map { (k, v) -> "$k=$v" }.toTypedArray(), 5000, this)
             .also { sessions[peer to cwd] = it }
     }.also { session = it }
 
@@ -111,9 +89,10 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
 @Composable
 fun ColumnScope.TerminalScreen(c: Ctx, on: Session?) {
     val linux = c.rt.orb.linux
-    val remote = on as? RemoteSession
-    Header("Terminal", sub = remote?.let { it.where + " · " + it.cwd.replace(Regex("^/(Users|home)/[^/]+"), "~") } ?: "Orb's Linux · pkg install to add tools", back = c.nav::back)
-    if (remote == null && !linux.ready) {
+    val peer = on?.peer ?: c.rt.bridge.self
+    val cwd = on?.cwd?.ifEmpty { null } ?: c.rt.orb.cwd.path
+    Header("Terminal", sub = (on?.where ?: "this phone") + " · " + cwd.replace(Regex("^/(Users|home)/[^/]+"), "~"), back = c.nav::back)
+    if (peer == c.rt.bridge.self && !linux.ready) {
         T(linux.state.ifEmpty { "Linux is not set up yet: it installs by itself when Orb starts." }, Modifier.padding(horizontal = Margin), color = p.mute)
         return
     }
@@ -131,7 +110,7 @@ fun ColumnScope.TerminalScreen(c: Ctx, on: Session?) {
                 ResourcesCompat.getFont(context, R.font.ubuntu_sans_mono)?.let(::setTypeface)
                 isFocusable = true; isFocusableInTouchMode = true
                 Shell.view = this
-                attachSession(Shell.session(c.rt.orb, remote?.peer.orEmpty(), remote?.cwd.orEmpty()))
+                attachSession(Shell.session(c.rt.orb, peer, cwd))
                 post { requestFocus(); context.getSystemService(InputMethodManager::class.java).showSoftInput(this, 0) }
             }
         }, modifier = Modifier.fillMaxWidth(), update = { Shell.view = it })

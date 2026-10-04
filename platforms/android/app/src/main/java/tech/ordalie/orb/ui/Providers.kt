@@ -1,74 +1,33 @@
 package tech.ordalie.orb.ui
 
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import android.net.Uri
-import androidx.browser.customtabs.CustomTabColorSchemeParams
-import androidx.browser.customtabs.CustomTabsIntent
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
+import androidx.browser.customtabs.*
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.text.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.input.*
+import androidx.compose.ui.unit.*
+import kotlinx.coroutines.*
 import tech.ordalie.orb.MainActivity
-import tech.ordalie.orb.core.LocalSignIn
-import tech.ordalie.orb.core.Login
-import tech.ordalie.orb.core.Method
-import tech.ordalie.orb.core.RemoteSignIn
-import tech.ordalie.orb.core.Provider
-import tech.ordalie.orb.core.providers
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import tech.ordalie.orb.core.*
 
 /** The last listing per machine ("" is this phone), so the screen opens full and refreshes in place. */
 private val listings = mutableStateMapOf<String, List<Provider>>()
 
-private fun known(peer: String?) = listings[peer.orEmpty()].orEmpty()
+private fun known(peer: String) = listings[peer].orEmpty()
 
-private suspend fun Ctx.reload(peer: String?) {
-    listings[peer.orEmpty()] = if (peer == null) withContext(Dispatchers.IO) { rt.orb.providers() } else rt.bridge.providers(peer)
+private suspend fun Ctx.reload(peer: String) {
+    listings[peer] = rt.bridge.providers(peer)
 }
 
 /** Opens a page in a Custom Tab tinted like the app, or the browser when there is none. */
@@ -79,12 +38,12 @@ fun Context.browse(url: String, tint: androidx.compose.ui.graphics.Color) = runC
 }.getOrElse { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 
 @Composable
-fun ColumnScope.ProvidersScreen(c: Ctx, peer: String? = null) {
+fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
     var query by remember { mutableStateOf("") }
     LaunchedEffect(peer) { c.reload(peer) }
     val known = known(peer)
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
-    val device = peer?.let { id -> c.rt.bridge.peers.firstOrNull { it.id == id }?.name ?: "that device" }
+    val device = c.rt.bridge.peers.firstOrNull { it.id == peer }?.name ?: "that device"
     Header("Providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready }} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
     Field(query, "Anthropic, OpenAI, Groq…", Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth()) { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
@@ -117,7 +76,7 @@ private fun Line(name: String, sub: String, state: String, on: Boolean, modifier
 
 /** One provider: its sign-in methods exactly as /login offers them, the flow running, and what it unlocked. */
 @Composable
-fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String? = null) {
+fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tint = p.bg
@@ -127,11 +86,11 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String? = null) {
     LaunchedEffect(Unit) { if (known(peer).none { it.id == id }) c.reload(peer) }
     DisposableEffect(Unit) { onDispose { flow?.takeIf { it.state != "done" }?.cancel() } }
     // Signed in: this phone's core restarts with the credential and the listing says what it unlocked.
-    LaunchedEffect(flow?.state) { if (flow?.state == "done") { if (peer == null) c.rt.restart(); c.reload(peer); note = "" } }
+    LaunchedEffect(flow?.state) { if (flow?.state == "done") { c.reload(peer); note = "" } }
     fun start(m: Method) {
         note = ""
         val app = context.applicationContext
-        flow = Login(scope, if (peer == null) LocalSignIn(c.rt.orb, m) else RemoteSignIn(c.rt.bridge, peer, m), m) { ok ->
+        flow = Login(scope, SignIn(c.rt.bridge, peer, m), m) { ok ->
             // The browser is in front: bring the app back the moment Orb has the credential.
             if (ok) app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
@@ -144,8 +103,8 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String? = null) {
             if (state.isEmpty() || f == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (f?.state == "failed") T(f.detail.ifEmpty { "sign-in failed" }, color = Ink.Rupture)
                 pr.methods.forEach { m -> MethodCard(m, pr.ready) { start(m) } }
-                if (pr.ready && peer == null) SignOut(c, pr) { note = it; scope.launch { c.rt.restart(); c.reload(null) } }
-            } else Flow(f, state, tint, remote = peer != null) { flow = null }
+                if (pr.ready && peer == c.rt.bridge.self) SignOut(c, pr) { note = it; scope.launch { c.reload(peer) } }
+            } else Flow(f, state, tint, remote = peer != c.rt.bridge.self) { flow = null }
         }
         if (note.isNotEmpty()) T(note, color = p.mute)
         Spacer(Modifier.height(20.dp))

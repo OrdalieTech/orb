@@ -1,15 +1,12 @@
 package tech.ordalie.orb.core
 
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import androidx.core.content.FileProvider
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
+import java.net.*
 import java.security.MessageDigest
+import kotlinx.coroutines.*
+import org.json.JSONObject
 
 /**
  * The app is Orb, so it updates from Orb's GitHub releases like `orb update` does: the release

@@ -1,33 +1,14 @@
 package tech.ordalie.orb.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.compose.ui.unit.*
+import kotlinx.coroutines.*
 import tech.ordalie.orb.core.Plugin
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 /** The app manages Bridge itself, and these read a computer's Claude Code, Codex or footer: none belongs on a phone. */
 private val MANAGED = setOf("bridge", "bridge-agent-calls", "claude-sessions", "codex-sessions", "provider-usage")
@@ -68,7 +49,7 @@ fun ColumnScope.PluginsScreen(c: Ctx) {
         }
     }
     Column(Modifier.padding(20.dp)) {
-        if (dirty) Btn("apply · restart core", inverted = true) { c.rt.restart(); c.nav.back() }
+        if (dirty) Btn("apply · restart Orbs", inverted = true) { c.rt.scope.launch { c.rt.bridge.restart() }; c.nav.back() }
         else T("Toggles write Orb's own settings, the same as orb plugins enable.", size = Size.Label, color = p.meta)
     }
 }

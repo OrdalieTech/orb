@@ -2,13 +2,10 @@ package tech.ordalie.orb.core
 
 import android.content.Context
 import android.os.Build
-import kotlinx.coroutines.CoroutineScope
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
 
 data class Plugin(val name: String, val on: Boolean, val about: String)
-
-/** A stored conversation on this phone, as `orb storage sessions` lists it. */
-data class Past(val id: String, val title: String, val modified: Long)
 
 /** Where the Orb core lives on this device and how it is started. Everything else is Orb's own CLI. */
 class Orb(private val context: Context) {
@@ -22,17 +19,7 @@ class Orb(private val context: Context) {
     val device: String = (Build.MODEL ?: "android").lowercase().replace(Regex("[^a-z0-9-]"), "-").take(24)
     private val prefs = context.getSharedPreferences("orb", Context.MODE_PRIVATE)
 
-    /** Small facts the app learns and keeps, like what a Bridge peer is called. */
-    fun recall(key: String): String = prefs.getString("k:$key", "") ?: ""
-    fun remember(key: String, value: String) = prefs.edit().putString("k:$key", value).apply()
-    /** The model and reasoning last chosen on this phone: every new session starts with them. */
-    var model: String
-        get() = prefs.getString("model", "") ?: ""
-        set(value) = prefs.edit().putString("model", value).apply()
-    var thinking: String
-        get() = prefs.getString("thinking", "") ?: ""
-        set(value) = prefs.edit().putString("thinking", value).apply()
-
+    /** The environment of every orb the app starts, its Bridge and the Orbs that Bridge starts included. */
     fun env(): Map<String, String> = buildMap {
         put("HOME", home.path)
         put("TMPDIR", context.cacheDir.path)
@@ -54,13 +41,6 @@ class Orb(private val context: Context) {
         return p.waitFor() to out
     }
 
-    /** This phone's conversations, newest first. */
-    fun sessions(): List<Past> = run("storage", "sessions").second.lineSequence().mapNotNull { line ->
-        runCatching { org.json.JSONObject(line) }.getOrNull()?.takeIf { it.optInt("messages") > 0 }?.let {
-            Past(it.getString("id"), it.optString("name").ifBlank { it.optString("first").lineSequence().firstOrNull().orEmpty() }.take(80).ifBlank { "untitled" }, it.optLong("modified"))
-        }
-    }.toList()
-
     /** Orb's bundled plugins, straight from `orb plugins list`. */
     fun plugins(): List<Plugin> = run("plugins", "list").second.lines()
         .mapNotNull { l -> l.split('\t').takeIf { it.size >= 3 }?.let { Plugin(it[0], it[1] == "on", it[2]) } }
@@ -81,29 +61,19 @@ class Orb(private val context: Context) {
         return run("storage", "config", "import", name, file.path).let { (code, out) -> file.delete(); if (code == 0) null else out.trim() }
     }
 
-    /** Runs a setup step until it succeeds once, so the owner's later choices stand. */
-    private fun once(name: String, step: () -> Boolean) { if (!prefs.getBoolean(name, false) && step()) prefs.edit().putBoolean(name, true).apply() }
-
-    /** A phone starts with the plugins that make a conversation interactive; the owner changes them in Plugins. */
+    /**
+     * A phone starts with the plugins that make a conversation interactive (the owner changes them
+     * in Plugins) and keeps retrying a provider for about four minutes rather than the desktop's
+     * fourteen seconds: it loses its network for minutes at a time, in tunnels and lifts.
+     */
     fun seed() {
-        once("seeded") { listOf("questions", "tasks", "permissions").all { plugin(it, true) } }
-        once("seeded:titles") { plugin("titles", true) }
+        if (!prefs.getBoolean("seeded", false) && listOf("questions", "tasks", "permissions", "titles").all { plugin(it, true) } &&
+            config("settings.json") { it.put("retry", org.json.JSONObject().put("enabled", true).put("maxRetries", 8).put("baseDelayMs", 2000)) } == null)
+            prefs.edit().putBoolean("seeded", true).apply()
         // The agent's bash tool runs in the Linux: its launcher is the shell Orb starts for commands.
         // It moves with every app update (the lib directory does), so it is written again then.
         if (linux.ready && prefs.getString("seeded:shell", "") != linux.launcher &&
             config("settings.json") { it.put("shellPath", linux.launcher) } == null) prefs.edit().putString("seeded:shell", linux.launcher).apply()
         if (linux.ready) linux.brief(File(home, ".pi/agent"))
-        // A phone loses its network for minutes at a time (tunnels, lifts): provider calls keep
-        // retrying for about four minutes instead of the desktop's fourteen seconds.
-        once("seeded:retry") { config("settings.json") { it.put("retry", org.json.JSONObject().put("enabled", true).put("maxRetries", 8).put("baseDelayMs", 2000)) } == null }
-        // Keys early versions kept in the app's own preferences move into Orb's store, where /login keeps them.
-        LEGACY.forEach { (env, provider) ->
-            val key = prefs.getString(env, null) ?: return@forEach
-            if (key.isBlank() || run("login", "--json", provider, "api_key", stdin = key + "\n").first == 0) prefs.edit().remove(env).apply()
-        }
-    }
-
-    private companion object {
-        val LEGACY = listOf("ANTHROPIC_API_KEY" to "anthropic", "OPENAI_API_KEY" to "openai", "GEMINI_API_KEY" to "google", "OPENROUTER_API_KEY" to "openrouter", "XAI_API_KEY" to "xai", "MISTRAL_API_KEY" to "mistral")
     }
 }

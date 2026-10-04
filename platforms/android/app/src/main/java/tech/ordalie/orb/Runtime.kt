@@ -2,97 +2,62 @@ package tech.ordalie.orb
 
 import android.app.Application
 import android.content.Context
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import tech.ordalie.orb.core.Bridge
-import tech.ordalie.orb.core.Instance
-import tech.ordalie.orb.core.LocalSession
-import tech.ordalie.orb.core.Orb
-import tech.ordalie.orb.core.Release
-import tech.ordalie.orb.core.RemoteSession
-import tech.ordalie.orb.core.Session
-import tech.ordalie.orb.core.You
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
+import kotlinx.coroutines.*
+import tech.ordalie.orb.core.*
 
-/** The app's whole model: this phone's Orb, its Bridge, and the peer sessions opened through it. */
+/**
+ * The app's whole model: this phone's Orb setup, its Bridge, and the conversations opened through
+ * it. Every conversation is an Orb on Bridge, this phone's own included.
+ */
 class Runtime(context: Context) {
     val orb = Orb(context)
     val scope = MainScope()
     val bridge by lazy { Bridge(scope, orb) }
-    var local by mutableStateOf<LocalSession?>(null)
-        private set
-    /** Peer sessions this phone follows, in the order they were opened: the tabs after this phone's own. */
-    private val remotes = mutableStateListOf<RemoteSession>()
+    /** The open conversations, in the order they were opened: the tabs. */
+    val sessions = mutableStateListOf<Session>()
 
     /** This app's Orb version, and the latest release when it is newer (checked at start, then every six hours). */
     val version: String = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0-dev"
     var latest by mutableStateOf<String?>(null)
         private set
-    private var checking = false
-
-    private var starting = false
+    private var started = false
     fun start() {
-        if (!checking) {
-            checking = true
-            scope.launch { while (true) { Release.latest()?.let { latest = it }; kotlinx.coroutines.delay(6 * 3600_000L) } }
-        }
-        if (local != null || starting) return
-        starting = true
-        bridge.up // the pipe starts the Bridge service before the session attaches to it
-        scope.launch {
-            try { withContext(Dispatchers.IO) { orb.seed() }; local = LocalSession(scope, orb) } finally { starting = false }
-            setupLinux()
-        }
+        if (started) return
+        started = true
+        scope.launch { while (true) { Release.latest()?.let { latest = it }; delay(6 * 3600_000L) } }
+        bridge.up // the pipe starts this phone's Bridge
+        scope.launch { withContext(Dispatchers.IO) { orb.seed() }; setupLinux() }
     }
 
-    /** The first start installs the Linux in the background (a failed one again on a tap); the core then moves into it. */
+    /** The first start installs the Linux in the background (a failed one again on a tap); Orbs started after it run there. */
     fun setupLinux() = scope.launch {
         if (orb.linux.ready || !orb.linux.install()) return@launch
         withContext(Dispatchers.IO) { orb.seed() }
-        local?.restart()
+        bridge.restart()
     }
 
-    /** A new core, which reads the credentials and settings just changed. */
-    fun restart() { local?.restart() }
+    /** Deletes one of this phone's stored conversations (one no Orb has open). */
+    fun forget(id: String) = scope.launch { withContext(Dispatchers.IO) { orb.run("storage", "delete", id) }; reload() }
 
-    /** This phone's stored conversations, refreshed when Home shows and after each turn. */
-    var history by mutableStateOf(emptyList<tech.ordalie.orb.core.Past>())
-        private set
-    /** Deletes one of this phone's stored conversations; the open one is left for a new one first, or its core would write it back. */
-    fun forget(id: String) = scope.launch {
-        local?.takeIf { it.id == id }?.let { l -> l.newSession(); var n = 0; while (l.id == id && n++ < 50) kotlinx.coroutines.delay(100) }
-        if (id == local?.id) return@launch
-        withContext(Dispatchers.IO) { orb.run("storage", "delete", id) }
-        reload()
-    }
-
+    /** Every machine's threads, refreshed when Home shows and after each turn. */
     fun reload() {
-        scope.launch { history = withContext(Dispatchers.IO) { orb.sessions() } }
         bridge.peers.forEach { peer -> scope.launch { runCatching { bridge.loadThreads(peer.id) } } }
-        // A session whose Orb ended on a reachable device, or whose device was forgotten, stops being followed.
+        // A conversation whose Orb ended on a reachable machine, or whose machine was forgotten, stops being followed.
         val peers = bridge.peers.associateBy { it.id }
-        remotes.filter { s -> !s.watched && peers[s.peer]?.let { p -> p.connected && p.instances.none { it.id == s.instance } } != false }.forEach(::close)
+        sessions.filter { s -> !s.watched && peers[s.peer]?.let { p -> p.connected && p.instances.none { it.id == s.instance } } != false }.forEach(::close)
     }
 
-    // Looked up by the Orb a session follows now: a reopened thread moves to a new one.
-    // A remote session is named by where it runs, the device; its folder is in its title until it has one.
-    fun open(i: Instance): RemoteSession = opened(i.id) ?: RemoteSession(scope, bridge, i.peer, i.id,
-        bridge.peers.firstOrNull { it.id == i.peer }?.name ?: i.cwd.substringAfterLast('/').ifEmpty { i.alias }).also { remotes += it }
-    /** Stops following a peer session (its tab closes); it runs on over there. */
-    fun close(s: RemoteSession) { remotes.remove(s); s.close() }
-    /** What starting Orb on a device is doing ("starting Orb on lab-3…", or why it failed); empty when idle. */
+    // Looked up by the Orb a conversation follows now: a reopened thread moves to a new one.
+    fun open(i: Instance): Session = opened(i.id) ?: Session(scope, bridge, i.peer, i.id, bridge.peers.firstOrNull { it.id == i.peer }?.name ?: "").also { sessions += it }
+    /** Stops following a conversation (its tab closes); it runs on where it is. */
+    fun close(s: Session) { sessions.remove(s); s.close() }
+    fun opened(instance: String): Session? = sessions.firstOrNull { it.instance == instance }
+    /** What starting Orb on a machine is doing ("starting Orb on lab-3…", or why it failed); empty when idle. */
     var launching by mutableStateOf("")
-    fun opened(instance: String): RemoteSession? = remotes.firstOrNull { it.instance == instance }
-
-    val sessions: List<Session> get() = listOfNotNull(local) + remotes
 
     /** Pattern blue: a peer's prompt is running on this phone. */
-    val acting: Boolean get() = local?.let { l -> l.busy && (l.transcript.items.lastOrNull { it is You } as? You)?.via != null } == true
+    val acting: Boolean get() = sessions.any { s -> !s.remote && s.busy && (s.transcript.items.lastOrNull { it is You } as? You)?.via != null }
 }
 
 class OrbApp : Application() {

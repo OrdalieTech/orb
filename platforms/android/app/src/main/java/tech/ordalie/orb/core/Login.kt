@@ -1,14 +1,8 @@
 package tech.ordalie.orb.core
 
-import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.*
+import kotlinx.coroutines.*
 import org.json.JSONObject
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 /** One way to sign in to a provider, as `orb login --json` lists it: the TUI's /login, row for row. */
 data class Method(val id: String, val auth: String, val label: String, val about: String) {
@@ -37,47 +31,20 @@ data class Provider(val id: String, val name: String, val methods: List<Method>,
     }
 }
 
-/** Every provider Orb can sign in to, with its status: `orb login --json`. */
-fun Orb.providers(): List<Provider> = Provider.parse(run("login", "--json").second)
-
 /** What a sign-in is asking for: a menu, a line of text, a secret, or a pasted code or redirect URL. */
 data class Prompt(val kind: String, val message: String, val placeholder: String, val options: List<Pair<String, String>>)
 
-/** Where a sign-in runs: `orb login --json <provider> <method>` here, or on a Bridge peer that relays it. */
-interface SignIn {
-    /** Starts the flow; each JSON line it reports goes to [line], then [end] once it stopped. */
-    fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit)
-    fun answer(text: String)
-    fun cancel()
-}
-
-/** A sign-in by this phone's Orb. A browser sign-in redirects to its listener on localhost, so it completes in place. */
-class LocalSignIn(private val orb: Orb, private val method: Method) : SignIn {
-    private lateinit var process: Process
-    private val input by lazy { process.outputStream.bufferedWriter() }
-    override fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit) {
-        process = ProcessBuilder(orb.binary, "login", "--json", method.id, method.auth).directory(orb.workspace).redirectErrorStream(true)
-            .apply { environment().putAll(orb.env()) }.start()
-        scope.launch(Dispatchers.IO) {
-            runCatching { process.inputStream.bufferedReader().forEachLine(line) }
-            process.waitFor()
-            end()
-        }
-    }
-    override fun answer(text: String) { runCatching { synchronized(input) { input.write(text.replace('\n', ' ')); input.newLine(); input.flush() } } }
-    override fun cancel() { runCatching { input.close() }; process.destroy() }
-}
-
 /**
- * A sign-in a Bridge peer runs for this phone (host.login.*), so a headless Orb is signed in from
- * here: its link, device code and questions come to the phone, and the answers go back.
+ * A sign-in a machine runs for this phone (host.login.*), this phone's own included: its link,
+ * device code and questions come here, and the answers go back.
  */
-class RemoteSignIn(private val bridge: Bridge, private val peer: String, private val method: Method) : SignIn {
+class SignIn(private val bridge: Bridge, private val peer: String, private val method: Method) {
     @Volatile private var id = ""
     private var job: Job? = null
     private lateinit var scope: CoroutineScope
 
-    override fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit) {
+    /** Starts the flow; each JSON line it reports goes to [line], then [end] once it stopped. */
+    fun start(scope: CoroutineScope, line: (String) -> Unit, end: () -> Unit) {
         this.scope = scope
         val failed = { message: String -> line(JSONObject().put("type", "error").put("message", message).toString()) }
         job = scope.launch(Dispatchers.IO) {
@@ -99,11 +66,11 @@ class RemoteSignIn(private val bridge: Bridge, private val peer: String, private
         }
     }
 
-    override fun answer(text: String) {
+    fun answer(text: String) {
         scope.launch(Dispatchers.IO) { bridge.remote(peer, "host.login.answer", JSONObject().put("login_id", id).put("value", text)) }
     }
 
-    override fun cancel() {
+    fun cancel() {
         job?.cancel()
         scope.launch(Dispatchers.IO) { bridge.remote(peer, "host.login.cancel", JSONObject().put("login_id", id)) }
     }

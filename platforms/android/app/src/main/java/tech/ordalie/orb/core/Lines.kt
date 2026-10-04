@@ -1,25 +1,16 @@
 package tech.ordalie.orb.core
 
 import android.util.Log
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.*
+import org.json.JSONObject
 
 /**
- * One long-lived orb process speaking JSON lines — `orb --mode rpc` or `orb bridge pipe`.
- * Lines carrying an id this side issued resolve [call]; every other line is an event.
- * The process is supervised: when it dies it starts again (backing off to 30 s, with a fresh
- * [env]), and the owner hears an `exit` event, then a `restart` event once it is back.
+ * One long-lived orb process answering JSON lines — `orb bridge pipe`: a line carrying an id
+ * this side issued resolves [call]. The process is supervised: when it dies it starts again
+ * (backing off to 30 s, with a fresh [env]).
  */
 class Lines(scope: CoroutineScope, private val args: List<String>, private val env: () -> Map<String, String>, private val dir: () -> File, private val tag: String) {
     @Volatile private var process = spawn()
@@ -27,8 +18,6 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
     @Volatile private var soon = false // an asked-for restart comes back at once
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
     private val ids = AtomicLong()
-    val events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 1024)
-    val errors = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
     private fun spawn(): Process = ProcessBuilder(args).directory(dir()).apply { environment().putAll(env()) }.start()
 
@@ -38,24 +27,20 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
             while (true) {
                 val p = process
                 val began = System.currentTimeMillis()
-                launch { runCatching { p.errorStream.bufferedReader().forEachLine { Log.i(tag, it); errors.tryEmit(it) } } }
+                launch { runCatching { p.errorStream.bufferedReader().forEachLine { Log.i(tag, it) } } }
                 runCatching {
                     p.inputStream.bufferedReader().forEachLine { line ->
-                        val o = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                        // Only an answer resolves a call: RPC streams progress events (bash output) under the call's id too.
-                        val answer = o.optString("type").let { it.isEmpty() || it == "response" }
-                        (if (answer) pending.remove(o.optString("id")) else null)?.complete(o) ?: events.tryEmit(o)
+                        runCatching { JSONObject(line) }.getOrNull()?.let { pending.remove(it.optString("id"))?.complete(it) }
                     }
                 }
                 runCatching { p.waitFor() }
                 pending.values.forEach { it.complete(failure("unavailable", "orb exited")) }
-                events.tryEmit(JSONObject().put("type", "exit"))
                 if (closed) break
                 if (System.currentTimeMillis() - began > 60_000) backoff = 1000L
                 if (!soon) delay(backoff).also { backoff = (backoff * 2).coerceAtMost(30_000) }
                 soon = false
                 if (closed) break
-                runCatching { spawn() }.onSuccess { process = it; events.tryEmit(JSONObject().put("type", "restart")) }
+                runCatching { spawn() }.onSuccess { process = it }
                     .onFailure { Log.w(tag, "restart failed", it) }
             }
         }
@@ -87,8 +72,7 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
     }
 
     companion object {
-        /** An answer in both shapes the owners read: RPC's `success` and the pipe's `error`. */
-        fun failure(code: String, message: String): JSONObject =
-            JSONObject().put("success", false).put("error", JSONObject().put("code", code).put("message", message))
+        /** An answer in the pipe's shape. */
+        fun failure(code: String, message: String): JSONObject = JSONObject().put("error", JSONObject().put("code", code).put("message", message))
     }
 }

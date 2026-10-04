@@ -1,27 +1,12 @@
 package tech.ordalie.orb.core
 
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
+import kotlinx.coroutines.*
+import org.json.*
 
-data class Peer(val id: String, val state: String, val instances: List<Instance>, val known: String = "", val version: String = "") {
-    val short get() = id.substringAfterLast(":").take(6)
-    /** Peers have no names on the wire; the home directory of their sessions says whose machine it is. */
-    val named: String? get() = instances.firstNotNullOfOrNull { i ->
-        Regex("^/(Users|home)/([^/]+)").find(i.cwd)?.let { m -> m.groupValues[2] + if (m.groupValues[1] == "Users") "'s mac" else "'s linux" }
-            ?: i.cwd.takeIf { it.startsWith("/data/") }?.let { "android · " + i.alias }
-    }
-    /** The machine's own name once it said it (host.sessions), else a guess from its sessions. */
-    val name: String get() = known.takeUnless { it.isEmpty() || it == "localhost" } ?: named ?: short
+/** A machine on Bridge — this phone first, as a peer of itself — named as it calls itself (host.sessions). */
+data class Peer(val id: String, val state: String, val instances: List<Instance>, val host: String = "", val version: String = "") {
+    val name: String get() = host.takeUnless { it.isEmpty() || it == "localhost" } ?: id.substringAfterLast(":").take(6)
     val connected get() = state == "connected"
 }
 data class Instance(val peer: String, val id: String, val alias: String, val title: String = "", val cwd: String = "", val busy: Boolean = false, val session: String = "")
@@ -51,13 +36,14 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         val s = call("status").optJSONObject("result") ?: run { up = false; return }
         up = true
         self = s.optString("peer_id")
-        val states = s.optJSONObject("peer_states") ?: JSONObject()
+        val states = s.optJSONObject("peer_states") ?: JSONObject().put(self, "connected")
         // Publish peers at once; their instances follow as each peer answers (a dial can take seconds).
-        val next = (s.optJSONArray("peers") ?: JSONArray()).let { a -> (0 until a.length()).map(a::getString) }
+        val next = (listOf(self) + (s.optJSONArray("peers") ?: JSONArray()).let { a -> (0 until a.length()).map(a::getString) })
             .filter { states.optString(it) != "blocked" } // a forgotten peer is gone from this phone's view
             .map { id ->
-            Peer(id, states.optString(id, "disconnected"), peers.firstOrNull { it.id == id }?.instances ?: emptyList(), orb.recall("peer:$id"), orb.recall("version:$id"))
-        }
+                val known = peers.firstOrNull { it.id == id }
+                Peer(id, if (id == self) "connected" else states.optString(id, "disconnected"), known?.instances ?: emptyList(), if (id == self) "this phone" else known?.host.orEmpty(), known?.version.orEmpty())
+            }
         peers.clear(); peers.addAll(next)
         coroutineScope {
             next.forEach { peer ->
@@ -65,7 +51,6 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
                     val found = runCatching { instances(peer.id) }.getOrNull() ?: return@launch
                     val at = peers.indexOfFirst { it.id == peer.id }
                     if (at >= 0) peers[at] = peers[at].copy(instances = found, state = if (found.isNotEmpty()) "connected" else peers[at].state)
-                        .also { p -> if (p.known.isEmpty()) p.named?.let { orb.remember("peer:${p.id}", it) } }
                 }
             }
         }
@@ -101,10 +86,8 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         for (page in 0 until 32) {
             val r = remote(peer, "host.sessions", JSONObject().apply { if (cursor.isNotEmpty()) put("cursor", cursor) })
             val result = r.optJSONObject("result") ?: run { if (r.optJSONObject("error")?.optString("code") == "unauthorized") threads.remove(peer); return }
-            result.optString("host").takeIf { it.isNotBlank() }?.let { host ->
-                orb.remember("peer:$peer", host)
-                orb.remember("version:$peer", result.optString("version"))
-                peers.indexOfFirst { it.id == peer }.takeIf { it >= 0 }?.let { peers[it] = peers[it].copy(known = host, version = result.optString("version")) }
+            result.optString("host").takeIf { it.isNotBlank() && peer != self }?.let { host ->
+                peers.indexOfFirst { it.id == peer }.takeIf { it >= 0 }?.let { peers[it] = peers[it].copy(host = host, version = result.optString("version")) }
             }
             result.optJSONArray("items")?.let { a ->
                 (0 until a.length()).map(a::getJSONObject).mapTo(found) { t ->
@@ -134,10 +117,6 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         refresh()
         return Result.success(peers.firstOrNull { it.id == peer }?.instances?.firstOrNull { it.id == id } ?: Instance(peer, id, r.optJSONObject("result")?.optString("alias").orEmpty(), cwd = cwd.orEmpty(), session = session.orEmpty()))
     }
-
-    /** The model and reasoning last chosen for threads on this device. */
-    fun preferred(peer: String) = orb.recall("model:$peer") to orb.recall("thinking:$peer")
-    fun prefer(peer: String, model: String, thinking: String) { orb.remember("model:$peer", model); orb.remember("thinking:$peer", thinking) }
 
     /** A peer's providers and its sign-in status, as `orb login --json` lists them there (host.providers). */
     suspend fun providers(peer: String): List<Provider> {
@@ -209,6 +188,10 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
     }
 
     suspend fun forget(peer: String) { call("block", JSONObject().put("peer_id", peer)); refresh() }
+
+    /** Stops this phone's Bridge: the pipe starts it again with the current environment, and the
+     *  Orbs it started end, to reopen with what changed (the Linux, plugins) at their next message. */
+    suspend fun restart() { call("stop"); pipe.restart() }
 
 
     /** The code other Orbs show and accept: `orb-bridge:v1:` + base64url of the invitation. */

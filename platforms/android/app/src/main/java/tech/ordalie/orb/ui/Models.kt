@@ -1,24 +1,17 @@
 package tech.ordalie.orb.ui
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.unit.*
 import tech.ordalie.orb.core.Session
 
 /**
@@ -51,7 +44,7 @@ fun AnimatedVisibilityScope.ModelSheet(session: Session, c: Ctx, dismiss: () -> 
             }
         }
         item(key = "add") {
-            Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers()) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ Provider", weight = Medium, color = p.mute) }
+            Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(session.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ Provider", weight = Medium, color = p.mute) }
         }
     }
     // Reasoning is what changes most often: it sits last, where the thumb already is.

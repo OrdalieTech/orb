@@ -1,17 +1,10 @@
 package tech.ordalie.orb
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
+import android.app.*
+import android.content.*
 import android.content.pm.ServiceInfo
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 
 /** Keeps the core and its Bridge alive while the screen is off; the notification is the lock-screen slot. */
 class OrbService : Service() {
@@ -26,12 +19,13 @@ class OrbService : Service() {
         watch?.cancel()
         watch = rt.scope.launch {
             snapshotFlow {
-                val l = rt.local
+                val asking = rt.sessions.firstOrNull { it.ask != null }
+                val working = rt.sessions.firstOrNull { it.busy }
                 when {
-                    l?.ask != null -> "needs you · " + l.ask!!.title.take(48)
+                    asking != null -> "needs you · " + asking.ask!!.title.take(48)
                     rt.acting -> "a peer is acting here"
-                    l?.busy == true -> "working · " + (l.transcript.items.lastOrNull()?.let { (it as? tech.ordalie.orb.core.Tool)?.let { t -> t.verb + " " + t.target } } ?: l.title)
-                    else -> rt.bridge.peers.count { it.connected }.let { "ready · $it peer" + if (it == 1) "" else "s" }
+                    working != null -> "working · " + working.title
+                    else -> (rt.bridge.peers.count { it.connected } - 1).coerceAtLeast(0).let { "ready · $it peer" + if (it == 1) "" else "s" }
                 }
             }.collect { getSystemService(NotificationManager::class.java).notify(1, note(it)) }
         }

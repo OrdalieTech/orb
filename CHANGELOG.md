@@ -5,6 +5,16 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Bridge followers long-poll: `events.subscribe` with `wait` answers as soon as there are events
+  or the instance's state moves, instead of every poll answering at once, so remote conversations
+  stream smoothly. Instances also report their reasoning level, usage and slash commands, and
+  take `session.compact` and `shell`. The owner reaches its own machine with the calls it makes on
+  peers, and opening a thread another Orb on Bridge has open joins that Orb.
+- The Android app drives every conversation through Bridge, the phone's own included: each phone
+  conversation is an Orb its Bridge launches, so several run at once, and server conversations
+  get `/compact`, `!commands` and every slash command. Sign-ins, the terminal and the thread list
+  work the same on the phone as on a server; a sign-in ends that machine's idle Orbs so they
+  reopen with the new account. The app is about a sixth smaller.
 - Pairing a machine (`orb bridge pair`, `join`, `trust`, `connect-ssh`) turns its `bridge` plugin
   on unless its owner set it, so the Orbs opened there in a terminal can be followed and driven
   from the paired devices too.
@@ -30,10 +40,11 @@ opens that terminal from a computer, and a thread already open elsewhere on a ma
   Mono, slightly tighter and with real weights, and rules have more contrast. Keys the app kept
   in its own preferences move into Orb's store; the custom endpoint form and the text-size pinch
   are gone.
-- New `memtree` plugin, off by default: a zoomable tree of one-line summaries over each session's
-  whole history. In compaction mode the compaction summary is the tree's view, so nothing is
-  summarized twice and every message stays reachable with `zoom`; in fresh mode every prompt
-  starts a new context from that view.
+- New `memtree` plugin, off by default: OptChat's memory for a session. A cheap model keeps a
+  zoomable tree of one-line summaries over the whole history, and every prompt starts a new
+  context from a fixed-size view of it, so long sessions neither rot nor lose detail; any message
+  stays a few `zoom` calls away. In `compaction` mode the view replaces Orb's compaction summary
+  instead.
 
 ## [0.14.0] - 2026-10-04
 

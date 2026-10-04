@@ -3,18 +3,14 @@ package tech.ordalie.orb
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
+import android.os.*
 import android.provider.OpenableColumns
-import androidx.activity.ComponentActivity
+import androidx.activity.*
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import tech.ordalie.orb.ui.App
-import tech.ordalie.orb.ui.OrbTheme
+import androidx.compose.runtime.*
 import java.io.File
+import tech.ordalie.orb.ui.*
 
 class MainActivity : ComponentActivity() {
     private val cites = mutableStateListOf<String>()
