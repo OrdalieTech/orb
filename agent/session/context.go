@@ -52,7 +52,10 @@ func buildSessionPath(entries []SessionEntry, leafID *string) []SessionEntry {
 }
 
 func BuildContextEntries(entries []SessionEntry, leafID *string) []SessionEntry {
-	path := buildSessionPath(entries, leafID)
+	return contextEntries(buildSessionPath(entries, leafID))
+}
+
+func contextEntries(path []SessionEntry) []SessionEntry {
 	var compaction *SessionEntry
 	for index := range path {
 		if path[index].Type == "compaction" {
@@ -88,35 +91,45 @@ func BuildContextEntries(entries []SessionEntry, leafID *string) []SessionEntry 
 }
 
 func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext {
+	projection := buildContextProjection(entries, leafID)
+	return projection.context
+}
+
+// contextProjection is BuildSessionContext for one leaf with every message
+// decoded once. An entry appended on that leaf extends it in place; any other
+// change rebuilds it, so a turn costs the new entries, not the history.
+type contextProjection struct {
+	context SessionContext
+	// decoded holds context.Messages through ai.UnmarshalMessage, the raw
+	// message for other roles. It is shared with callers and never modified.
+	decoded   []any
+	system    ai.MessageList
+	pathTools []string
+	// compaction is the timestamp of the path's latest compaction, if any.
+	compaction    string
+	hasCompaction bool
+	edits         bool
+	leaf          *string
+	// records and generation pin the manager state the projection covers.
+	records    int
+	generation uint64
+	valid      bool
+}
+
+func buildContextProjection(entries []SessionEntry, leafID *string) contextProjection {
 	path := buildSessionPath(entries, leafID)
-	context := SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}
-	for _, entry := range path {
-		switch entry.Type {
-		case "thinking_level_change":
-			context.ThinkingLevel = entry.ThinkingLevel
-		case "model_change":
-			context.Model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
-		case "active_tools_change":
-			context.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
-		case "message":
-			var header struct {
-				Role     string `json:"role"`
-				Provider string `json:"provider"`
-				Model    string `json:"model"`
-			}
-			if json.Unmarshal(entry.Message, &header) == nil && header.Role == "assistant" {
-				context.Model = &SessionModel{Provider: header.Provider, ModelID: header.Model}
-			}
-		}
+	projection := contextProjection{context: SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}, leaf: cloneString(leafID)}
+	for index := range path {
+		projection.addFields(&path[index])
 	}
-	contextEntries := BuildContextEntries(entries, leafID)
+	kept := contextEntries(path)
 	edits := map[string]json.RawMessage{}
-	for _, entry := range contextEntries {
+	for _, entry := range kept {
 		if entry.Type == "context_edit" {
 			edits[entry.TargetID] = entry.Replacement
 		}
 	}
-	for index, entry := range contextEntries {
+	for index, entry := range kept {
 		// An older compaction retained inside the newest kept range contributes
 		// nothing; only the newest one, at index zero, adds its summary.
 		if entry.Type == "compaction" && index > 0 {
@@ -126,21 +139,82 @@ func BuildSessionContext(entries []SessionEntry, leafID *string) SessionContext 
 		if replacement, edited := edits[entry.ID]; edited {
 			messages = applyContextEdit(messages, replacement)
 		}
-		context.Messages = append(context.Messages, messages...)
+		projection.addMessages(messages)
 	}
-	transcript := make(ai.MessageList, 0, len(context.Messages))
-	for _, raw := range context.Messages {
-		if message, err := ai.UnmarshalMessage(raw); err == nil {
-			transcript = append(transcript, message)
+	projection.settleTools()
+	return projection
+}
+
+// extend appends entry, whose parent is the projection's leaf. It reports
+// false for entries that change earlier context, which need a rebuild.
+func (projection *contextProjection) extend(entry *SessionEntry) bool {
+	switch entry.Type {
+	case "compaction", "branch_summary", "context_edit", "leaf":
+		return false
+	}
+	systems := len(projection.system)
+	projection.addFields(entry)
+	projection.addMessages(entryContextMessages(*entry))
+	if entry.Type == "active_tools_change" || len(projection.system) != systems {
+		projection.settleTools()
+	}
+	projection.leaf = &entry.ID
+	return true
+}
+
+func (projection *contextProjection) addFields(entry *SessionEntry) {
+	switch entry.Type {
+	case "thinking_level_change":
+		projection.context.ThinkingLevel = entry.ThinkingLevel
+	case "model_change":
+		projection.context.Model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
+	case "active_tools_change":
+		projection.pathTools = slices.Clone(entry.ActiveToolNames)
+	case "compaction":
+		projection.compaction, projection.hasCompaction = entry.Timestamp, true
+	case "context_edit":
+		projection.edits = true
+	case "message":
+		var header struct {
+			Role     string `json:"role"`
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+		}
+		if json.Unmarshal(entry.Message, &header) == nil && header.Role == "assistant" {
+			projection.context.Model = &SessionModel{Provider: header.Provider, ModelID: header.Model}
 		}
 	}
-	if current := ai.CurrentSystemMessage(transcript); current != nil {
-		context.ActiveToolNames = context.ActiveToolNames[:0]
+}
+
+func (projection *contextProjection) addMessages(messages []json.RawMessage) {
+	for _, raw := range messages {
+		projection.context.Messages = append(projection.context.Messages, raw)
+		var decoded any
+		if len(raw) > 0 {
+			if message, err := ai.UnmarshalMessage(raw); err == nil {
+				decoded = message
+				if system, ok := message.(*ai.SystemMessage); ok {
+					projection.system = append(projection.system, system)
+				}
+			} else {
+				decoded = raw
+			}
+		}
+		projection.decoded = append(projection.decoded, decoded)
+	}
+}
+
+// settleTools applies the path's tool selection, which the transcript's
+// current system message overrides when there is one.
+func (projection *contextProjection) settleTools() {
+	names := slices.Clone(projection.pathTools)
+	if current := ai.CurrentSystemMessage(projection.system); current != nil {
+		names = names[:0]
 		for _, tool := range current.ToolsAdded {
-			context.ActiveToolNames = append(context.ActiveToolNames, tool.Name)
+			names = append(names, tool.Name)
 		}
 	}
-	return context
+	projection.context.ActiveToolNames = names
 }
 
 func entryContextMessages(entry SessionEntry) []json.RawMessage {
@@ -272,25 +346,27 @@ func isSystemMessageEntry(entry SessionEntry) bool {
 	return json.Unmarshal(entry.Message, &header) == nil && header.Role == "system"
 }
 
+// normalizeMessageContent gives a message without content an empty one. An
+// unchanged message keeps sharing its entry's bytes, which are never modified.
 func normalizeMessageContent(message json.RawMessage) json.RawMessage {
 	var header struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	}
 	if json.Unmarshal(message, &header) != nil || (header.Role != "user" && header.Role != "assistant" && header.Role != "toolResult") {
-		return cloneRaw(message)
+		return message
 	}
 	if len(header.Content) > 0 && !bytes.Equal(bytes.TrimSpace(header.Content), []byte("null")) {
-		return cloneRaw(message)
+		return message
 	}
 	var object map[string]json.RawMessage
 	if json.Unmarshal(message, &object) != nil {
-		return cloneRaw(message)
+		return message
 	}
 	object["content"] = json.RawMessage("[]")
 	encoded, err := ai.Marshal(object)
 	if err != nil {
-		return cloneRaw(message)
+		return message
 	}
 	return encoded
 }
@@ -315,14 +391,87 @@ func (manager *SessionManager) BuildContextEntries() []SessionEntry {
 }
 
 func (manager *SessionManager) BuildSessionContext() SessionContext {
-	if manager.harnessStorage != nil {
-		branch := manager.GetBranch()
-		leaf := manager.GetLeafID()
-		return BuildSessionContext(branch, leaf)
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	context := manager.projectionLocked().context
+	messages := make([]json.RawMessage, len(context.Messages))
+	for index, raw := range context.Messages {
+		messages[index] = cloneRaw(raw)
 	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	return BuildSessionContext(manager.entriesLocked(), manager.leafID)
+	context.Messages = messages
+	context.ActiveToolNames = slices.Clone(context.ActiveToolNames)
+	if context.Model != nil {
+		model := *context.Model
+		context.Model = &model
+	}
+	return context
+}
+
+// ContextMessages returns BuildSessionContext's messages decoded: standard
+// roles as ai messages, other roles as their raw JSON. The messages are shared
+// with the session and must not be modified.
+func (manager *SessionManager) ContextMessages() []any {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	decoded := manager.projectionLocked().decoded
+	return append(make([]any, 0, len(decoded)), decoded...)
+}
+
+// HasContextEdits reports whether the current branch holds a context edit.
+func (manager *SessionManager) HasContextEdits() bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	return manager.projectionLocked().edits
+}
+
+// projectionLocked brings the cached context projection to the current leaf,
+// extending it with the entries appended since when they continue its leaf.
+func (manager *SessionManager) projectionLocked() *contextProjection {
+	projection := &manager.projection
+	if manager.refreshHarnessLocked() != nil {
+		*projection = contextProjection{context: SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}}
+		return projection
+	}
+	if projection.valid && projection.generation == manager.generation && projection.records <= len(manager.fileEntries) {
+		for _, record := range manager.fileEntries[projection.records:] {
+			if record == nil || record.Entry == nil || record.Type == "session" ||
+				!sameID(record.Entry.ParentID, projection.leaf) || !projection.extend(record.Entry) {
+				projection.valid = false
+				break
+			}
+		}
+		if projection.valid && sameID(projection.leaf, manager.leafID) {
+			projection.records = len(manager.fileEntries)
+			return projection
+		}
+	}
+	if manager.harnessStorage != nil {
+		*projection = buildContextProjection(manager.harnessBranchLocked(), manager.leafID)
+	} else {
+		*projection = buildContextProjection(manager.entriesLocked(), manager.leafID)
+	}
+	projection.valid, projection.generation, projection.records = true, manager.generation, len(manager.fileEntries)
+	return projection
+}
+
+func sameID(left, right *string) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
+// harnessBranchLocked is GetBranch over the index refreshHarnessLocked keeps
+// in step with the store: a missing ancestor empties the branch.
+func (manager *SessionManager) harnessBranchLocked() []SessionEntry {
+	path := []SessionEntry{}
+	for id := manager.leafID; id != nil && *id != ""; {
+		entry := manager.byID[*id]
+		if entry == nil || len(path) > len(manager.byID) {
+			return []SessionEntry{}
+		}
+		path = append(path, *cloneEntry(entry))
+		id = entry.ParentID
+	}
+	slices.Reverse(path)
+	return path
 }
 
 func (manager *SessionManager) entriesLocked() []SessionEntry {

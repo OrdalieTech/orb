@@ -143,7 +143,7 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 	if runtime.agent.UsesSessionLoop() {
 		return nil
 	}
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	if state.Model == nil || (IsUnknownModel(state.Model) && runtime.getRequestAuth == nil && runtime.getAPIKey == nil) {
 		return noModelSelectedError()
 	}
@@ -154,8 +154,9 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 	if !hasAuth {
 		return errors.New(formatNoAPIKeyFoundMessage(state.Model.Provider))
 	}
-	for index := len(state.Messages) - 1; index >= 0; index-- {
-		if assistant := asAssistant(state.Messages[index]); assistant != nil {
+	messages := runtime.agent.Messages()
+	for index := len(messages) - 1; index >= 0; index-- {
+		if assistant := asAssistant(messages[index]); assistant != nil {
 			_, _ = runtime.checkCompaction(ctx, assistant, false)
 			break
 		}

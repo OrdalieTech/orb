@@ -510,7 +510,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	}
 	var a *engine.Agent
 	agentOpts = append(agentOpts, engine.WithPrepareNextTurnContext(func(_ context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
-		state := a.State()
+		state := a.StateWithoutMessages()
 		next := *turn.Context
 		next.SystemPrompt, next.Tools = state.SystemPrompt, state.Tools
 		return &engine.AgentLoopTurnUpdate{Context: &next, Model: state.Model, ThinkingLevel: &state.ThinkingLevel}, nil

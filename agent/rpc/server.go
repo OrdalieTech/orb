@@ -347,8 +347,7 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 			return failure(errors.New("prompt requires a message"))
 		}
 		mode.promptMu.Lock()
-		state := session.State()
-		if state.IsStreaming || mode.prompting {
+		if session.IsStreaming() || mode.prompting {
 			switch command.StreamingBehavior {
 			case "steer":
 				if err := session.SteerImages(command.Message, command.Images); err != nil {

@@ -522,11 +522,38 @@ func (agent *Agent) State() AgentState {
 	return state
 }
 
+// Messages returns the transcript without copying its messages, which stay
+// shared with the agent and must not be modified.
+func (agent *Agent) Messages() AgentMessages {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return append(AgentMessages(nil), agent.state.Messages...)
+}
+
+// StateWithoutMessages is State without the transcript (Messages and
+// StreamingMessage stay empty), for reads that need only the configuration:
+// copying every message made each of them O(history).
+func (agent *Agent) StateWithoutMessages() AgentState {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	state := agent.state
+	state.Messages, state.StreamingMessage = nil, nil
+	state = copyAgentState(state)
+	state.SystemPrompt = agent.systemPromptLocked()
+	return state
+}
+
 // systemPromptLocked is the transcript's prompt, or the initial state's when
 // the transcript has no system message.
 func (agent *Agent) systemPromptLocked() string {
-	if messages := agentMessagesToAI(agent.state.Messages); ai.CurrentSystemMessage(messages) != nil {
-		return ai.CurrentSystemPrompt(messages)
+	var systems ai.MessageList
+	for _, message := range agent.state.Messages {
+		if system, ok := message.(*ai.SystemMessage); ok {
+			systems = append(systems, system)
+		}
+	}
+	if current := ai.CurrentSystemMessage(systems); current != nil {
+		return ai.SystemMessageText(current)
 	}
 	return agent.state.SystemPrompt
 }

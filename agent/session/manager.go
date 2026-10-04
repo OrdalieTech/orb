@@ -150,6 +150,9 @@ type SessionManager struct {
 	parsed             map[string]*SessionEntry
 	revision           uint64
 	aggregate          AggregateStats
+	// generation counts wholesale index replacements, which invalidate projection.
+	generation uint64
+	projection contextProjection
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
@@ -465,6 +468,7 @@ func (manager *SessionManager) newSessionLocked(options *NewSessionOptions) (str
 	manager.leafID = nil
 	manager.aggregate = AggregateStats{}
 	manager.revision++
+	manager.generation++
 	manager.flushed = false
 	if manager.persist {
 		filenameTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
@@ -511,6 +515,7 @@ func (manager *SessionManager) buildIndexLocked() {
 	}
 	manager.rebuildAggregateLocked()
 	manager.revision++
+	manager.generation++
 }
 
 func (manager *SessionManager) rebuildAggregateLocked() {
@@ -764,10 +769,9 @@ func (manager *SessionManager) AppendCompaction(
 	tokensBefore int64,
 	options ...OptionalEntryFields,
 ) (string, error) {
-	contextState := manager.BuildSessionContext()
-	messages := make(ai.MessageList, 0, len(contextState.Messages))
-	for _, raw := range contextState.Messages {
-		if message, decodeErr := ai.UnmarshalMessage(raw); decodeErr == nil {
+	var messages ai.MessageList
+	for _, message := range manager.ContextMessages() {
+		if message, ok := message.(ai.Message); ok {
 			messages = append(messages, message)
 		}
 	}
@@ -1275,28 +1279,10 @@ func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *Sess
 }
 
 func (manager *SessionManager) GetLatestCompactionTimestamp() (string, bool) {
-	if manager.harnessStorage != nil {
-		latest := GetLatestCompactionEntry(manager.GetBranch())
-		if latest != nil {
-			return latest.Timestamp, true
-		}
-		return "", false
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	if manager.leafID == nil {
-		return "", false
-	}
-	for current := manager.byID[*manager.leafID]; current != nil; {
-		if current.Type == "compaction" {
-			return current.Timestamp, true
-		}
-		if current.ParentID == nil {
-			break
-		}
-		current = manager.byID[*current.ParentID]
-	}
-	return "", false
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	projection := manager.projectionLocked()
+	return projection.compaction, projection.hasCompaction
 }
 
 func (manager *SessionManager) getBranchLocked(fromID ...string) []SessionEntry {

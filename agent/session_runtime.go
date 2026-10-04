@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -303,17 +302,16 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	runtime.agent.SetToolCallHooks(nil, runtime.afterExtensionToolCall)
 	var previousPrepare engine.PrepareNextTurnFunc
 	previousPrepare = runtime.agent.SwapPrepareNextTurnContext(func(ctx context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
-		snapshot := runtime.agent.State()
 		runtime.mu.Lock()
 		customContextDirty := runtime.customContextDirty
 		runtime.customContextDirty = false
 		runtime.mu.Unlock()
 		if customContextDirty && turn.Context != nil {
 			next := *turn.Context
-			next.Messages = snapshot.Messages
+			next.Messages = runtime.agent.State().Messages
 			turn.Context = &next
 		}
-		model := snapshot.Model
+		model := runtime.agent.StateWithoutMessages().Model
 		settings := runtime.settings.GetCompactionSettingsForModel(model)
 		if turn.Context != nil && model != nil && model.ContextWindow > 0 && harness.ShouldCompact(harness.EstimateContextTokens(turn.Context.Messages).Tokens, model.ContextWindow, harness.CompactionSettings{Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens}) {
 			if _, err := runtime.runAutoCompaction(ctx, "threshold", false); err != nil {
@@ -336,7 +334,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		if update.Context == nil {
 			update.Context = turn.Context
 		}
-		current := runtime.agent.State()
+		current := runtime.agent.StateWithoutMessages()
 		if update.Context != nil {
 			next := *update.Context
 			next.SystemPrompt, next.Tools = current.SystemPrompt, current.Tools
@@ -767,6 +765,11 @@ func (runtime *SessionRuntime) State() engine.AgentState {
 	return state
 }
 
+// IsStreaming reports whether the agent is producing a response.
+func (runtime *SessionRuntime) IsStreaming() bool {
+	return runtime != nil && runtime.agent != nil && runtime.agent.StateWithoutMessages().IsStreaming
+}
+
 func (runtime *SessionRuntime) Abort() {
 	if runtime == nil {
 		return
@@ -1156,7 +1159,7 @@ func (runtime *SessionRuntime) willRetry(messages engine.AgentMessages) bool {
 }
 
 func (runtime *SessionRuntime) isRetryable(message *ai.AssistantMessage) bool {
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	contextWindow := float64(0)
 	if state.Model != nil {
 		contextWindow = state.Model.ContextWindow
@@ -1198,7 +1201,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 	if !runtime.autoCompactionEnabled() || (skipAbortedCheck && message.StopReason == ai.StopReasonAborted) {
 		return false, nil
 	}
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	if state.Model == nil || IsUnknownModel(state.Model) {
 		return false, nil
 	}
@@ -1230,11 +1233,11 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 	}
 	direct := harness.CalculateContextTokens(message.Usage)
 	contextTokens := direct
-	branch := runtime.manager.GetBranch()
-	if slices.ContainsFunc(branch, func(entry sessionstore.SessionEntry) bool { return entry.Type == "context_edit" }) {
+	if runtime.manager.HasContextEdits() {
 		// The response's usage predates edits made since; estimate what the model sees now.
-		contextTokens = harness.EstimateProjectedContextTokens(projectSessionEntries(branch)).Tokens
+		contextTokens = harness.EstimateProjectedContextTokens(projectSessionEntries(runtime.manager.GetBranch())).Tokens
 	} else if message.StopReason == ai.StopReasonError || direct == 0 {
+		state.Messages = runtime.agent.State().Messages
 		estimate := harness.EstimateContextTokens(state.Messages)
 		if estimate.LastUsageIndex == nil {
 			return false, nil
@@ -1885,14 +1888,10 @@ func (runtime *SessionRuntime) trailingTurnEntryIDs() (string, []string) {
 	return "", nil
 }
 
-// sessionMessages decodes the session's context projection.
+// sessionMessages is the session's context projection, decoded once per entry
+// and shared: the messages must not be modified.
 func (runtime *SessionRuntime) sessionMessages() engine.AgentMessages {
-	context := runtime.manager.BuildSessionContext()
-	messages := make(engine.AgentMessages, 0, len(context.Messages))
-	for _, raw := range context.Messages {
-		messages = append(messages, decodeSessionMessage(raw))
-	}
-	return messages
+	return runtime.manager.ContextMessages()
 }
 
 // projectSessionEntries converts a branch for compaction, with its context
@@ -1959,7 +1958,7 @@ func asAssistant(message engine.AgentMessage) *ai.AssistantMessage {
 // model's limits; images that cannot be processed become notes in the text.
 func (runtime *SessionRuntime) userMessage(text string, images []*ai.ImageContent) *ai.UserMessage {
 	autoResize := runtime.settings.GetImageAutoResize()
-	resize := tools.ModelResizeOptions(runtime.agent.State().Model)
+	resize := tools.ModelResizeOptions(runtime.agent.StateWithoutMessages().Model)
 	normalized := make([]*ai.ImageContent, 0, len(images))
 	var hints []string
 	for _, image := range images {

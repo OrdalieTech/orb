@@ -120,11 +120,14 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 	if manager.harnessStorage == nil {
 		return nil
 	}
-	// Native journals and in-memory stores are append-only. Refresh only their
-	// tail; rescanning a long transcript here made every message O(history).
-	jsonl, native := manager.harnessStorage.(*harness.JSONLSessionStorage)
-	native = native && jsonl.IsPersistent() && jsonl.Metadata().Path == ""
-	if _, inMemory := manager.harnessStorage.(*harness.InMemorySessionStorage); (native || inMemory) && len(manager.fileEntries) > 0 {
+	// Orb's own stores are append-only. Refresh only their tail; rescanning a
+	// long transcript here made every message O(history).
+	var appendOnly bool
+	switch manager.harnessStorage.(type) {
+	case *harness.JSONLSessionStorage, *harness.InMemorySessionStorage:
+		appendOnly = true
+	}
+	if appendOnly && len(manager.fileEntries) > 0 {
 		journal := manager.harnessStorage
 		entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
 		for _, entry := range entries {
