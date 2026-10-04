@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
@@ -183,7 +185,7 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		docsPath := filepath.Join(packageDir, "docs")
 		examplesPath := filepath.Join(packageDir, "examples")
 		// These instructions require the complete bundle, which standalone installs don't ship.
-		if pathExists(readmePath) && pathExists(docsPath) && pathExists(examplesPath) {
+		if hasPromptDocs(packageDir, readmePath, docsPath, examplesPath) {
 			docs := fmt.Sprintf(`Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: %s
 - Additional docs: %s
@@ -264,6 +266,25 @@ func DiffSystemPromptSections(previous, current ai.SystemPromptSections) ai.Syst
 		return nil
 	}
 	return patch
+}
+
+// promptDocs remembers, by package directory, whether it ships the
+// documentation bundle: checking it on every prompt cost three stats, each a
+// call into JavaScript on js/wasm.
+var promptDocs sync.Map
+
+func hasPromptDocs(packageDir string, paths ...string) bool {
+	// A js/wasm host ships no package directory; its os.Stat only calls into
+	// JavaScript to fail.
+	if runtime.GOOS == "js" {
+		return false
+	}
+	if known, ok := promptDocs.Load(packageDir); ok {
+		return known.(bool)
+	}
+	found := !slices.ContainsFunc(paths, func(path string) bool { return !pathExists(path) })
+	promptDocs.Store(packageDir, found)
+	return found
 }
 
 func resolvePromptPackageDir(packageDir string) string {

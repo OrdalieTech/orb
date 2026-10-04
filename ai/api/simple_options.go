@@ -3,7 +3,6 @@ package api
 import (
 	"math"
 	"slices"
-	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
 )
@@ -205,8 +204,16 @@ func estimateTextTokens(text string) int64 {
 	return (length + charsPerToken - 1) / charsPerToken
 }
 
+// jsStringLength counts value's UTF-16 code units, an invalid byte as one.
 func jsStringLength(value string) int64 {
-	return int64(len(utf16.Encode([]rune(value))))
+	var length int64
+	for _, char := range value {
+		length++
+		if char >= 0x10000 {
+			length++
+		}
+	}
+	return length
 }
 
 func messageTimestamp(message ai.Message) int64 {

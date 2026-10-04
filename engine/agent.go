@@ -980,7 +980,11 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	if prepare != nil {
 		config.PrepareNextTurn = func(ctx context.Context, turn PrepareNextTurnContext) (*AgentLoopTurnUpdate, error) {
 			update, err := prepare(ctx, turn)
-			if err != nil || update == nil || update.Context == nil || update.Context.SystemPrompt == "" || ai.CurrentSystemMessage(agentMessagesToAI(update.Context.Messages)) != nil {
+			// A transcript with a system message has a current one.
+			if err != nil || update == nil || update.Context == nil || update.Context.SystemPrompt == "" || slices.ContainsFunc(update.Context.Messages, func(message AgentMessage) bool {
+				_, system := message.(*ai.SystemMessage)
+				return system
+			}) {
 				return update, err
 			}
 			contextCopy := copyAgentContext(*update.Context)
