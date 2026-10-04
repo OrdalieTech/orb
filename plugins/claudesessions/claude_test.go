@@ -464,6 +464,31 @@ func TestInterruptedTurnSettlesLikeOrb(t *testing.T) {
 	}
 }
 
+// Redacted reasoning streams in as Orb's Anthropic provider reads it, so a
+// native reply and an imported one hold the same blocks.
+func TestStreamKeepsRedactedThinking(t *testing.T) {
+	_, driver := fixture(t)
+	var reply *ai.AssistantMessage
+	tr := translation{driver: driver, ctx: t.Context(), tools: map[string]string{}, emit: func(_ context.Context, event engine.AgentEvent) error {
+		if end, ok := event.(engine.MessageEndEvent); ok {
+			reply, _ = end.Message.(*ai.AssistantMessage)
+		}
+		return nil
+	}}
+	for _, raw := range []string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"m"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"opaque"}}}`,
+		`{"type":"stream_event","event":{"type":"message_stop"}}`,
+	} {
+		if err := tr.event([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if raw, _ := json.Marshal(reply.Content); string(raw) != `[{"type":"thinking","thinking":"[Reasoning redacted]","thinkingSignature":"opaque","redacted":true}]` {
+		t.Fatalf("reply content = %s", raw)
+	}
+}
+
 func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
 	host, _ := fixture(t)
 	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})

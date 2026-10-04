@@ -666,8 +666,28 @@ func (u nativeUsage) apply(usage *ai.Usage) {
 }
 
 type nativeBlock struct {
-	Type, Text, Thinking, Signature, ID, Name string
-	Input                                     map[string]any
+	Type, Text, Thinking, Signature, Data, ID, Name string
+	Input                                           map[string]any
+}
+
+// replyBlock reads a native content block as Orb's Anthropic provider does.
+func replyBlock(b nativeBlock) ai.AssistantContentBlock {
+	switch b.Type {
+	case "text":
+		return &ai.TextContent{Text: b.Text}
+	case "thinking":
+		thinking := &ai.ThinkingContent{Thinking: b.Thinking}
+		if b.Signature != "" {
+			thinking.ThinkingSignature = &b.Signature
+		}
+		return thinking
+	case "redacted_thinking":
+		redacted := true
+		return &ai.ThinkingContent{Thinking: "[Reasoning redacted]", ThinkingSignature: &b.Data, Redacted: &redacted}
+	case "tool_use":
+		return &ai.ToolCall{ID: b.ID, Name: b.Name, Arguments: b.Input}
+	}
+	return nil
 }
 
 type nativeMessage struct {
@@ -765,11 +785,7 @@ func (t *translation) event(raw json.RawMessage) error {
 			if _, err := t.driver.options.Manager.AppendCustomEntry(Name+".context", nil); err != nil {
 				return err
 			}
-			text := fmt.Sprintf("Claude compacted context from %d tokens", activity.Compact.Pre)
-			if activity.Compact.Post != nil {
-				text += fmt.Sprintf(" to %d", *activity.Compact.Post)
-			}
-			return t.notice(text)
+			return t.notice(compactNotice(activity.Compact.Pre, activity.Compact.Post))
 		case "informational", "local_command_output":
 			return t.notice(activity.Content)
 		case "api_retry":
@@ -1149,17 +1165,8 @@ func (t *translation) message(m nativeMessage) *ai.AssistantMessage {
 		out.ResponseID = &m.ID
 	}
 	for _, b := range m.Content {
-		switch b.Type {
-		case "text":
-			out.Content = append(out.Content, &ai.TextContent{Text: b.Text})
-		case "thinking":
-			thinking := &ai.ThinkingContent{Thinking: b.Thinking}
-			if b.Signature != "" {
-				thinking.ThinkingSignature = &b.Signature
-			}
-			out.Content = append(out.Content, thinking)
-		case "tool_use":
-			out.Content = append(out.Content, &ai.ToolCall{ID: b.ID, Name: b.Name, Arguments: b.Input})
+		if block := replyBlock(b); block != nil {
+			out.Content = append(out.Content, block)
 		}
 	}
 	if m.Stop == "max_tokens" {
@@ -1173,10 +1180,8 @@ func (t *translation) stream(raw json.RawMessage) error {
 		Type    string        `json:"type"`
 		Index   int           `json:"index"`
 		Message nativeMessage `json:"message"`
-		Block   struct {
-			Type, ID, Name string
-		} `json:"content_block"`
-		Delta struct {
+		Block   nativeBlock   `json:"content_block"`
+		Delta   struct {
 			Type, Text, Thinking, Signature string
 			JSON                            string `json:"partial_json"`
 			Stop                            string `json:"stop_reason"`
@@ -1194,17 +1199,12 @@ func (t *translation) stream(raw json.RawMessage) error {
 	}
 	switch e.Type {
 	case "content_block_start":
-		var block ai.AssistantContentBlock
-		switch e.Block.Type {
-		case "text":
-			block = &ai.TextContent{}
-		case "thinking":
-			block = &ai.ThinkingContent{}
-		case "tool_use":
-			block = &ai.ToolCall{ID: e.Block.ID, Name: e.Block.Name, Arguments: map[string]any{}}
-			t.args[e.Index] = &strings.Builder{}
-		default:
+		block := replyBlock(e.Block)
+		if block == nil {
 			return nil
+		}
+		if call, ok := block.(*ai.ToolCall); ok {
+			call.Arguments, t.args[e.Index] = map[string]any{}, &strings.Builder{}
 		}
 		t.blocks[e.Index] = len(t.partial.Content)
 		t.partial.Content = append(t.partial.Content, block)
@@ -1300,11 +1300,23 @@ func (t *translation) toolProgress(id string, elapsed float64, text string) erro
 }
 
 func (t *translation) notice(text string) error {
-	message := &harness.CustomMessage{Role: "custom", CustomType: Name + ".activity", Content: fmt.Sprintf("%.512s", strings.Join(strings.Fields(text), " ")), Display: true, Timestamp: time.Now().UnixMilli()}
+	message := activity(text, time.Now().UnixMilli())
 	if err := t.emit(t.ctx, engine.MessageStartEvent{Message: message}); err != nil {
 		return err
 	}
 	return t.emit(t.ctx, engine.MessageEndEvent{Message: message})
+}
+
+func activity(text string, at int64) *harness.CustomMessage {
+	return &harness.CustomMessage{Role: "custom", CustomType: Name + ".activity", Content: fmt.Sprintf("%.512s", strings.Join(strings.Fields(text), " ")), Display: true, Timestamp: at}
+}
+
+func compactNotice(pre int64, post *int64) string {
+	text := fmt.Sprintf("Claude compacted context from %d tokens", pre)
+	if post != nil {
+		text += fmt.Sprintf(" to %d", *post)
+	}
+	return text
 }
 
 // Elicitation answers stay on the request pipe, never in Orb's transcript metadata.

@@ -105,6 +105,9 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   pointer leaving the pane.
 - Compaction no longer sends an extra summary request for an empty conversation when the only
   history before the first user message is the system prompt; it summarizes as pi 1.0 does.
+- Claude Code sessions opened in Orb keep their reasoning, images, usage and timestamps, and show
+  compactions, background tasks and commands as Orb does live; catching up turns added in Claude Code
+  keeps the model chosen in Orb.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

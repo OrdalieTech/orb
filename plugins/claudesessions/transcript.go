@@ -15,12 +15,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 // Orb holds each conversation's Claude transcript. Claude's own records are
@@ -491,79 +493,171 @@ func branchOf(data []byte) []json.RawMessage {
 	return chain
 }
 
-// claudeMessages reads Claude Code records as Orb messages, in the directory
-// they were written in.
-func claudeMessages(lines []json.RawMessage) (messages []ai.Message, cwd string) {
+// claudeMessages reads Claude Code records as Orb shows Claude's turns under
+// model, in the directory they were written in: messages, and notices for what
+// Orb shows as activity. What Claude Code hides stays hidden.
+func claudeMessages(lines []json.RawMessage, model string) (messages []any, cwd string) {
 	var reply *ai.AssistantMessage
 	tools := map[string]string{}
+	translator := translation{model: model}
 	for _, line := range lines {
-		var record map[string]any
-		if json.Unmarshal(line, &record) != nil {
+		var record struct {
+			Type, Subtype, CWD string
+			Timestamp          time.Time
+			Meta               bool `json:"isMeta"`
+			Summary            bool `json:"isCompactSummary"`
+			Failed             bool `json:"isApiErrorMessage"`
+			Compact            struct {
+				Pre  int64  `json:"preTokens"`
+				Post *int64 `json:"postTokens"`
+			} `json:"compactMetadata"`
+			Message json.RawMessage
+		}
+		// A compaction's summary is the boundary's notice: the records it summarizes are read too.
+		if json.Unmarshal(line, &record) != nil || record.Meta || record.Summary {
 			continue
 		}
-		kind, _ := record["type"].(string)
-		if cwd == "" {
-			cwd, _ = record["cwd"].(string)
+		cwd = cmp.Or(cwd, record.CWD)
+		var at int64
+		if !record.Timestamp.IsZero() {
+			at = record.Timestamp.UnixMilli()
 		}
-		raw, _ := json.Marshal(record["message"])
-		var m struct {
-			ID, Model string
-			Content   json.RawMessage
-		}
-		if meta, _ := record["isMeta"].(bool); meta || json.Unmarshal(raw, &m) != nil {
-			continue
-		}
-		var blocks []struct {
-			Type, Text, ID, Name string
-			Input                map[string]any
-			ToolUseID            string          `json:"tool_use_id"`
-			Content              json.RawMessage `json:"content"`
-			IsError              bool            `json:"is_error"`
-		}
-		if json.Unmarshal(m.Content, &blocks) != nil {
-			var text string
-			if json.Unmarshal(m.Content, &text) == nil && kind == "user" {
+		switch record.Type {
+		case "system":
+			if record.Subtype == "compact_boundary" {
 				reply = nil
-				messages = append(messages, &ai.UserMessage{Content: ai.NewUserText(text)})
+				messages = append(messages, activity(compactNotice(record.Compact.Pre, record.Compact.Post), at))
 			}
-			continue
-		}
-		switch kind {
 		case "assistant":
+			var m nativeMessage
+			if json.Unmarshal(record.Message, &m) != nil {
+				continue
+			}
+			next := translator.message(m)
+			next.Timestamp = at
 			// The CLI records one line per content block of the same API message.
-			if reply == nil || reply.ResponseID == nil || *reply.ResponseID != m.ID {
-				responseID := m.ID
-				reply = &ai.AssistantMessage{API: Name, Provider: Name, Model: m.Model, ResponseID: &responseID, StopReason: ai.StopReasonStop}
+			if reply != nil && reply.ResponseID != nil && next.ResponseID != nil && *reply.ResponseID == *next.ResponseID {
+				reply.Content = append(reply.Content, next.Content...)
+				m.Usage.apply(&reply.Usage)
+				if next.StopReason == ai.StopReasonLength {
+					reply.StopReason = next.StopReason
+				}
+			} else {
+				reply = next
 				messages = append(messages, reply)
 			}
-			for _, block := range blocks {
-				switch block.Type {
-				case "text":
-					reply.Content = append(reply.Content, &ai.TextContent{Text: block.Text})
-				case "tool_use":
-					tools[block.ID] = block.Name
-					reply.Content = append(reply.Content, &ai.ToolCall{ID: block.ID, Name: block.Name, Arguments: block.Input})
-					reply.StopReason = ai.StopReasonToolUse
+			if record.Failed {
+				var text []string
+				for _, block := range reply.Content {
+					if content, ok := block.(*ai.TextContent); ok {
+						text = append(text, content.Text)
+					}
+				}
+				reason := strings.Join(text, "\n")
+				reply.Content, reply.StopReason, reply.ErrorMessage = ai.AssistantContent{}, ai.StopReasonError, &reason
+			}
+			for _, block := range next.Content {
+				if call, ok := block.(*ai.ToolCall); ok {
+					tools[call.ID] = call.Name
+					if reply.StopReason == ai.StopReasonStop {
+						reply.StopReason = ai.StopReasonToolUse
+					}
 				}
 			}
 		case "user":
 			reply = nil
-			var text []string
-			for _, block := range blocks {
-				switch block.Type {
-				case "text":
-					text = append(text, block.Text)
-				case "tool_result":
-					content, _ := toolResultContent(block.Content)
-					messages = append(messages, &ai.ToolResultMessage{ToolCallID: block.ToolUseID, ToolName: tools[block.ToolUseID], Content: content, IsError: block.IsError})
+			var m struct {
+				Content json.RawMessage
+			}
+			_ = json.Unmarshal(record.Message, &m)
+			var text string
+			if json.Unmarshal(m.Content, &text) == nil {
+				messages = append(messages, prompt(text, at)...)
+				continue
+			}
+			var blocks []struct {
+				Type, Text string
+				ToolUseID  string          `json:"tool_use_id"`
+				Content    json.RawMessage `json:"content"`
+				IsError    bool            `json:"is_error"`
+				Source     struct {
+					MediaType string `json:"media_type"`
+					Data      string
 				}
 			}
-			if len(text) > 0 {
-				messages = append(messages, &ai.UserMessage{Content: ai.NewUserText(strings.Join(text, "\n"))})
+			_ = json.Unmarshal(m.Content, &blocks)
+			var texts []string
+			var input []ai.UserContentBlock
+			for _, block := range blocks {
+				switch block.Type {
+				case "tool_result":
+					content, _ := toolResultContent(block.Content)
+					messages = append(messages, &ai.ToolResultMessage{ToolCallID: block.ToolUseID, ToolName: tools[block.ToolUseID], Content: content, IsError: block.IsError, Timestamp: at})
+				case "text":
+					// Orb shows an interrupted turn by its aborted reply, not by Claude Code's marker.
+					if !strings.HasPrefix(block.Text, "[Request interrupted by user") {
+						texts, input = append(texts, block.Text), append(input, &ai.TextContent{Text: block.Text})
+					}
+				case "image":
+					input = append(input, &ai.ImageContent{Data: block.Source.Data, MimeType: block.Source.MediaType})
+				}
 			}
+			if len(input) == 0 {
+				continue
+			}
+			message := &ai.UserMessage{Content: ai.NewUserContent(input...), Timestamp: at}
+			if len(texts) == len(input) {
+				message.Content = ai.NewUserText(strings.Join(texts, "\n"))
+			}
+			messages = append(messages, message)
 		}
 	}
 	return messages, cwd
+}
+
+// prompt reads a prompt the CLI recorded as text: what Orb shows as activity
+// (task notifications, local command output) becomes a notice, and a typed
+// command reads as typed.
+func prompt(text string, at int64) []any {
+	tag := func(name string) string {
+		_, rest, _ := strings.Cut(text, "<"+name+">")
+		inner, _, _ := strings.Cut(rest, "</"+name+">")
+		return strings.TrimSpace(inner)
+	}
+	notice := func(text string) []any {
+		if text == "" {
+			return nil
+		}
+		return []any{activity(text, at)}
+	}
+	switch trimmed := strings.TrimSpace(text); {
+	case strings.HasPrefix(trimmed, "<task-notification>"):
+		return notice("Claude task " + tag("status") + ": " + tag("summary"))
+	case strings.HasPrefix(trimmed, "<local-command-stdout>"):
+		return notice(tag("local-command-stdout"))
+	case strings.HasPrefix(trimmed, "<bash-stdout>"):
+		return notice(strings.TrimSpace(tag("bash-stdout") + "\n" + tag("bash-stderr")))
+	case strings.HasPrefix(trimmed, "<command-"):
+		text = strings.TrimSpace(tag("command-name") + " " + tag("command-args"))
+	case strings.HasPrefix(trimmed, "<bash-input>"):
+		text = "!" + tag("bash-input")
+	}
+	return []any{&ai.UserMessage{Content: ai.NewUserText(text), Timestamp: at}}
+}
+
+func appendMessages(manager *session.SessionManager, messages []any) error {
+	for _, message := range messages {
+		var err error
+		if notice, ok := message.(*harness.CustomMessage); ok {
+			_, err = manager.AppendCustomMessageEntry(notice.CustomType, notice.Content, notice.Display)
+		} else {
+			_, err = manager.AppendMessage(message)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // catchUp takes into an Orb conversation the turns its Claude Code session
@@ -599,11 +693,13 @@ func catchUp(manager *session.SessionManager, env []string) (added bool, err err
 			continue
 		}
 		records := chain[i+1:]
-		messages, _ := claudeMessages(records)
-		for _, message := range messages {
-			if _, err := manager.AppendMessage(message); err != nil {
-				return false, err
-			}
+		model := "default"
+		if current := manager.BuildSessionContext().Model; current != nil && current.Provider == Name {
+			model = current.ModelID
+		}
+		messages, _ := claudeMessages(records, model)
+		if err := appendMessages(manager, messages); err != nil {
+			return false, err
 		}
 		_, err = manager.AppendCustomEntry(transcriptEntry, records)
 		return err == nil, err
@@ -626,7 +722,7 @@ func ImportClaudeCode(id string, env []string, create func(cwd string) (*session
 		return nil, err
 	}
 	records := branchOf(data)
-	messages, cwd := claudeMessages(records)
+	messages, cwd := claudeMessages(records, "default")
 	if len(records) == 0 {
 		return nil, errors.New("Claude Code session " + id + " is empty") //nolint:staticcheck // Product name.
 	}
@@ -637,10 +733,8 @@ func ImportClaudeCode(id string, env []string, create func(cwd string) (*session
 	if _, err := manager.AppendModelChange(Name, "default"); err != nil {
 		return nil, err
 	}
-	for _, message := range messages {
-		if _, err := manager.AppendMessage(message); err != nil {
-			return nil, err
-		}
+	if err := appendMessages(manager, messages); err != nil {
+		return nil, err
 	}
 	_, err = manager.AppendCustomEntry(transcriptEntry, records)
 	return manager, err

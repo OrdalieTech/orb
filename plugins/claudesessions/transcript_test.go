@@ -110,6 +110,79 @@ func TestImportClaudeCodeSession(t *testing.T) {
 	}
 }
 
+// An imported session reads as a native Claude turn in Orb: signed reasoning
+// (an empty block stays invisible but keeps its signature), images, usage,
+// timestamps, and as notices what Orb shows as activity; what Claude Code
+// hides stays hidden.
+func TestImportShowsClaudeTurnsAsOrbDoes(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "projects", "-work")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		`{"type":"user","uuid":"u1","parentUuid":null,"cwd":"/work","timestamp":"2026-10-01T10:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"text","text":"look [Image #1]"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBO"}}]}}`,
+		`{"type":"user","uuid":"m0","parentUuid":"u1","isMeta":true,"message":{"role":"user","content":"<system-reminder>hidden</system-reminder>"}}`,
+		`{"type":"assistant","uuid":"a1","parentUuid":"m0","timestamp":"2026-10-01T10:00:01.000Z","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"thinking","thinking":"","signature":"sig-empty"}],"usage":{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"thinking","thinking":"Read it first.","signature":"sig-text"}],"usage":{"input_tokens":10,"output_tokens":20}}}`,
+		`{"type":"assistant","uuid":"a3","parentUuid":"a2","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"redacted_thinking","data":"opaque"}]}}`,
+		`{"type":"assistant","uuid":"a4","parentUuid":"a3","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.go"}}],"usage":{"input_tokens":10,"output_tokens":40}}}`,
+		`{"type":"user","uuid":"u2","parentUuid":"a4","timestamp":"2026-10-01T10:00:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"package a"}]}]}}`,
+		`{"type":"user","uuid":"u3","parentUuid":"u2","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}`,
+		`{"type":"system","subtype":"compact_boundary","uuid":"c1","parentUuid":null,"logicalParentUuid":"u3","compactMetadata":{"trigger":"auto","preTokens":9000,"postTokens":1200}}`,
+		`{"type":"user","uuid":"s1","parentUuid":"c1","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"role":"user","content":"This session is being continued from a previous conversation."}}`,
+		`{"type":"user","uuid":"u4","parentUuid":"s1","message":{"role":"user","content":"<command-message>model</command-message>\n<command-name>/model</command-name>\n<command-args>opus</command-args>"}}`,
+		`{"type":"user","uuid":"u5","parentUuid":"u4","message":{"role":"user","content":"<local-command-stdout>Set model to opus</local-command-stdout>"}}`,
+		`{"type":"user","uuid":"u6","parentUuid":"u5","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command \"make\" completed (exit code 0)</summary>\n</task-notification>"}}`,
+		`{"type":"assistant","uuid":"a5","parentUuid":"u6","message":{"id":"m2","model":"claude-opus-5-5","content":[{"type":"text","text":"Build passed."}],"stop_reason":"max_tokens"}}`,
+		`{"type":"assistant","uuid":"a6","parentUuid":"a5","isApiErrorMessage":true,"error":"unknown","message":{"id":"m3","model":"<synthetic>","content":[{"type":"text","text":"API Error: overloaded"}]}}`,
+	}
+	if err := os.WriteFile(filepath.Join(project, "0b7a4a1e-1111-4222-8333-444455556666.jsonl"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := ImportClaudeCode("0b7a4a1e-1111-4222-8333-444455556666", []string{"CLAUDE_CONFIG_DIR=" + base}, func(dir string) (*session.SessionManager, error) {
+		return session.InMemory(dir)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, entry := range manager.GetBranch() {
+		if entry.Type == "custom_message" {
+			var text string
+			_ = json.Unmarshal(entry.Content, &text)
+			got = append(got, "notice "+text)
+		}
+		if entry.Type != "message" {
+			continue
+		}
+		message, err := ai.UnmarshalMessage(entry.Message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(message)
+		got = append(got, string(raw))
+	}
+	want := []string{
+		`{"role":"user","content":[{"type":"text","text":"look [Image #1]"},{"type":"image","data":"iVBO","mimeType":"image/png"}],"timestamp":1790848800000}`,
+		`{"role":"assistant","content":[{"type":"thinking","thinking":"","thinkingSignature":"sig-empty"},{"type":"thinking","thinking":"Read it first.","thinkingSignature":"sig-text"},{"type":"thinking","thinking":"[Reasoning redacted]","thinkingSignature":"opaque","redacted":true},{"type":"toolCall","id":"t1","name":"Read","arguments":{"file_path":"a.go"}}],"api":"claude-sessions","provider":"claude-sessions","model":"default","usage":{"input":10,"output":40,"cacheRead":100,"cacheWrite":5,"totalTokens":155,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1790848801000,"responseId":"m1","responseModel":"claude-opus-5-5"}`,
+		`{"role":"toolResult","toolCallId":"t1","toolName":"Read","content":[{"type":"text","text":"package a"}],"isError":false,"timestamp":1790848802000}`,
+		`notice Claude compacted context from 9000 tokens to 1200`,
+		`{"role":"user","content":"/model opus","timestamp":0}`,
+		`notice Set model to opus`,
+		`notice Claude task completed: Background command "make" completed (exit code 0)`,
+		`{"role":"assistant","content":[{"type":"text","text":"Build passed."}],"api":"claude-sessions","provider":"claude-sessions","model":"default","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"length","timestamp":0,"responseId":"m2","responseModel":"claude-opus-5-5"}`,
+		`{"role":"assistant","content":[],"api":"claude-sessions","provider":"claude-sessions","model":"default","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":0,"responseId":"m3","responseModel":"\u003csynthetic\u003e","errorMessage":"API Error: overloaded"}`,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("imported:\n%s", strings.Join(got, "\n"))
+	}
+	// Claude resumes from its own records, signatures and all.
+	if records := rebuild(manager, 0); len(records) != len(lines) || !strings.Contains(string(records[2].raw), `"sig-empty"`) {
+		t.Fatalf("resume records = %d", len(records))
+	}
+}
+
 // Orb names a session's transcript directory as the CLI does; the expected
 // names come from the SDK's own function.
 func TestProjectDirMatchesClaudeCode(t *testing.T) {
@@ -277,6 +350,10 @@ func TestCatchUpTakesTurnsAddedInClaudeCode(t *testing.T) {
 		}
 		return got
 	}
+	// The Claude model chosen in Orb stays chosen.
+	if _, err := manager.AppendModelChange(Name, "opus"); err != nil {
+		t.Fatal(err)
+	}
 	write(`{"type":"user","uuid":"u2","parentUuid":"a1","cwd":"/work","message":{"role":"user","content":"from claude code"}}`,
 		`{"type":"assistant","uuid":"a2","parentUuid":"u2","message":{"id":"m2","model":"claude","content":[{"type":"text","text":"noted"}]}}`)
 	for range 2 {
@@ -286,6 +363,9 @@ func TestCatchUpTakesTurnsAddedInClaudeCode(t *testing.T) {
 	}
 	if got := strings.Join(texts(), "|"); got != "hello|hi|from claude code|noted" {
 		t.Fatalf("messages = %s", got)
+	}
+	if model := manager.BuildSessionContext().Model; model == nil || model.ModelID != "opus" {
+		t.Fatalf("model after catch-up = %+v", model)
 	}
 	if records := rebuild(manager, 0); records[len(records)-1].UUID != "a2" {
 		t.Fatalf("Claude would resume at %v", records[len(records)-1].UUID)
