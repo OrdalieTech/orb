@@ -1,11 +1,8 @@
 package tech.ordalie.orb.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.AnimatedContent
@@ -30,19 +27,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,9 +57,10 @@ import tech.ordalie.orb.core.LocalSignIn
 import tech.ordalie.orb.core.Login
 import tech.ordalie.orb.core.Method
 import tech.ordalie.orb.core.RemoteSignIn
-import tech.ordalie.orb.core.Orb
 import tech.ordalie.orb.core.Provider
 import tech.ordalie.orb.core.providers
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** The last listing per machine ("" is this phone), so the screen opens full and refreshes in place. */
 private val listings = mutableStateMapOf<String, List<Provider>>()
@@ -82,22 +78,15 @@ fun Context.browse(url: String, tint: androidx.compose.ui.graphics.Color) = runC
         .launchUrl(this, Uri.parse(url))
 }.getOrElse { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 
-private fun Context.copy(text: String, what: String) {
-    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("orb", text))
-    Toast.makeText(this, "$what copied", Toast.LENGTH_SHORT).show()
-}
-
 @Composable
 fun ColumnScope.ProvidersScreen(c: Ctx, peer: String? = null) {
     var query by remember { mutableStateOf("") }
     LaunchedEffect(peer) { c.reload(peer) }
     val known = known(peer)
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
-    // Endpoints added through models.json have no sign-in; they show with what they unlocked.
-    val custom = if (peer != null) emptyMap() else c.rt.local?.models().orEmpty().groupBy { it.substringBefore('/') }.filterKeys { id -> known.none { it.id == id } }
     val device = peer?.let { id -> c.rt.bridge.peers.firstOrNull { it.id == id }?.name ?: "that device" }
-    Header("providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready } + custom.size} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
-    Search(query, "anthropic, openai, groq…") { query = it }
+    Header("Providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready }} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
+    Field(query, "Anthropic, OpenAI, Groq…", Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth()) { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         fun section(name: String, rows: List<Provider>) {
             if (rows.isEmpty()) return
@@ -107,17 +96,6 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String? = null) {
         section("ready", shown.filter { it.ready })
         section("your subscription", shown.filter { !it.ready && it.methods.any(Method::account) })
         section("api key", shown.filter { !it.ready && it.methods.none(Method::account) })
-        if (custom.isNotEmpty()) item(key = "custom") {
-            Column(Modifier.animateItem()) {
-                T("endpoints", Modifier.padding(top = 22.dp, bottom = 4.dp), label = true, color = p.meta)
-                custom.forEach { (id, models) -> Line(id, "models.json", "${models.size} models", true) {} }
-            }
-        }
-        if (peer == null) item(key = "add") {
-            Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Provider) }.padding(vertical = 22.dp)) {
-                T("+ endpoint", label = true); Spacer(Modifier.weight(1f)); T("any OpenAI, Anthropic or Google-shaped API", size = Size.Label, color = p.meta)
-            }
-        }
     }
 }
 
@@ -131,18 +109,11 @@ private fun ProviderRow(pr: Provider, modifier: Modifier, open: () -> Unit) = Li
 private fun Line(name: String, sub: String, state: String, on: Boolean, modifier: Modifier = Modifier, open: () -> Unit) = Column(modifier) {
     Row(Modifier.fillMaxWidth().press(onClick = open).padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Dot(if (on) p.fg else p.rule, 8.dp)
-        Column(Modifier.weight(1f)) { T(name, size = 17.sp, bold = on, lines = 1); T(sub, size = Size.Label, color = p.meta, lines = 1) }
-        T(state, size = 13.sp, color = if (on) p.fg else p.mute)
+        Column(Modifier.weight(1f)) { T(name, size = 17.sp, weight = if (on) Strong else Regular, lines = 1); T(sub, size = 13.sp, color = p.meta, lines = 1) }
+        T(state, size = 14.sp, weight = Medium, color = if (on) p.fg else p.mute)
     }
     Rule()
 }
-
-@Composable
-private fun Search(value: String, hint: String, set: (String) -> Unit) =
-    Box(Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth().clip(CircleShape).border(1.dp, if (value.isEmpty()) p.rule else p.fg, CircleShape).padding(horizontal = 18.dp, vertical = 11.dp)) {
-        BasicTextField(value, set, Modifier.fillMaxWidth(), textStyle = mono(15.sp, p.fg), cursorBrush = SolidColor(p.fg), singleLine = true)
-        if (value.isEmpty()) T(hint, color = p.meta, size = 15.sp)
-    }
 
 /** One provider: its sign-in methods exactly as /login offers them, the flow running, and what it unlocked. */
 @Composable
@@ -167,10 +138,7 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String? = null) {
     }
     Header(pr.name, sub = pr.methods.joinToString(" · ") { it.about }, back = c.nav::back)
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Margin).animateContentSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-            Reading("status", if (pr.ready) "ready" else "off"); Reading("models", pr.models.toString())
-            if (pr.ready) Reading("through", pr.holds)
-        }
+        T(if (pr.ready) "Ready through ${pr.holds} · ${pr.models} models" else "Not signed in", size = 15.sp, weight = Medium, color = if (pr.ready) p.fg else p.mute)
         val f = flow
         AnimatedContent(f?.state?.takeUnless { it == "failed" } ?: "", transitionSpec = { (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 6 }) togetherWith fadeOut(tween(160)) }, label = "flow") { state ->
             if (state.isEmpty() || f == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -185,23 +153,23 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String? = null) {
 }
 
 @Composable
-private fun MethodCard(m: Method, ready: Boolean, go: () -> Unit) = Card(Modifier.fillMaxWidth().press(onClick = go)) {
+private fun MethodCard(m: Method, ready: Boolean, go: () -> Unit) = Column(
+    Modifier.fillMaxWidth().press(onClick = go).clip(RoundedCornerShape(Radius.Card)).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(18.dp),
+) {
     T(if (m.account) "account" else "api key", label = true, color = p.meta)
-    T(m.label, Modifier.padding(top = 6.dp), size = 18.sp, bold = true)
-    T(m.about, Modifier.padding(top = 2.dp), size = 13.sp, color = p.meta)
+    T(m.label, Modifier.padding(top = 6.dp), size = 18.sp, weight = Strong)
+    T(m.about, Modifier.padding(top = 2.dp), size = 14.sp, color = p.meta)
     Row(Modifier.padding(top = 14.dp)) { Btn(if (m.account) (if (ready) "sign in again" else "sign in") else (if (ready) "replace key" else "add key"), inverted = !ready, onClick = go) }
 }
 
-/** Removes the credential where it lives: Orb's store (an account or a key) or the app's own environment. */
+/** Removes the credential from Orb's store, as `orb logout` does; one configured elsewhere is changed there. */
 @Composable
 private fun SignOut(c: Ctx, pr: Provider, done: (String) -> Unit) {
     val scope = rememberCoroutineScope()
-    val env = Orb.PROVIDERS.firstOrNull { (e, id) -> id == pr.id && pr.source.contains(e) }?.first
-    val stored = pr.status == "oauth" || pr.source == "stored"
-    if (!stored && env == null) return T("Configured outside the app (${pr.source}); change it there.", size = 13.sp, color = p.meta)
+    if (pr.status != "oauth" && pr.source != "stored") return T("Configured outside the app (${pr.source}); change it there.", size = 13.sp, color = p.meta)
     Row { Btn(if (pr.status == "oauth") "sign out" else "remove key") {
         scope.launch {
-            if (stored) withContext(Dispatchers.IO) { c.rt.orb.run("logout", pr.id) } else c.rt.orb.setKey(env!!, "")
+            withContext(Dispatchers.IO) { c.rt.orb.run("logout", pr.id) }
             done(if (pr.status == "oauth") "signed out of ${pr.name}" else "key removed")
         }
     } }
@@ -215,7 +183,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
         "starting" -> Row(verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(f.detail.ifEmpty { "starting…" }, color = p.mute) }
         "browser" -> {
             LaunchedEffect(f.url) { f.url?.let { context.browse(it, tint) } }
-            T("Continue in the browser", size = 22.sp, bold = true)
+            T("Continue in the browser", size = Size.Title, weight = Strong)
             // A device signing in over Bridge listens on its own localhost: the code or final URL comes back by paste.
             T(if (remote) "Finish on the page that opened, then paste the code it shows or the final redirect URL here." else "Finish on the page that opened. It redirects to Orb on this phone, which brings you back here.", color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open again", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
@@ -228,9 +196,9 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
         "code" -> {
             val code = f.code.orEmpty()
             // The code rides the clipboard to the page, which opens by itself.
-            LaunchedEffect(code) { context.copy(code, "code"); f.url?.let { context.browse(it, tint) } }
+            LaunchedEffect(code) { context.copy(code, "code copied"); f.url?.let { context.browse(it, tint) } }
             T("enter this code", label = true, color = p.meta)
-            Box(Modifier.press { context.copy(code, "code") }) { T(code, size = 34.sp, bold = true) }
+            Box(Modifier.press { context.copy(code, "code copied") }) { T(code, size = 34.sp, weight = Strong, mono = true) }
             T("It is on your clipboard. The page is " + f.url.orEmpty().removePrefix("https://"), size = 13.sp, color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open page", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
             if (f.detail.isNotEmpty()) T(f.detail, size = 13.sp, color = p.meta)
@@ -243,7 +211,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
             Btn("cancel") { f.cancel(); close() }
         }
         "done" -> {
-            T("Signed in", size = 22.sp, bold = true)
+            T("Signed in", size = Size.Title, weight = Strong)
             T(if (remote) "That device holds the new credential; its sessions can use the models now." else "The core restarted with the new credential; its models are in the model deck.", color = p.mute)
             Btn("done", inverted = true, onClick = close)
         }
@@ -257,7 +225,7 @@ private fun Answer(question: String, hint: String, secret: Boolean, send: (Strin
     T(question, size = 14.sp, color = p.mute)
     Row(Modifier.fillMaxWidth().clip(CircleShape).border(1.dp, if (text.isEmpty()) p.rule else p.fg, CircleShape).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) {
-            BasicTextField(text, { text = it }, Modifier.fillMaxWidth(), textStyle = mono(15.sp, p.fg), cursorBrush = SolidColor(p.fg), singleLine = true,
+            BasicTextField(text, { text = it }, Modifier.fillMaxWidth(), textStyle = type(15.sp, p.fg), cursorBrush = SolidColor(p.fg), singleLine = true,
                 visualTransformation = if (secret && !shown) PasswordVisualTransformation('·') else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri))
             if (text.isEmpty()) T(hint.ifEmpty { if (secret) "paste it here" else "" }, size = 15.sp, color = p.meta, lines = 1)
@@ -265,5 +233,5 @@ private fun Answer(question: String, hint: String, secret: Boolean, send: (Strin
         if (secret) Box(Modifier.press { shown = !shown }.padding(horizontal = 8.dp)) { T(if (shown) "hide" else "show", size = Size.Label, color = p.meta) }
         Btn("save", inverted = true) { if (text.isNotBlank()) send(text.trim()) }
     }
-    if (secret) BasicText("Orb stores it in its own credential store on this phone, as /login does.", style = mono(12.sp, p.meta))
+    if (secret) T("Orb stores it in its own credential store on this phone, as /login does.", size = 13.sp, color = p.meta)
 }

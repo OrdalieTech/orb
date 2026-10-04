@@ -17,11 +17,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import tech.ordalie.orb.core.Ask
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** A plugin stopping the world: the only place red fills space. The word names who is asking. */
 @Composable
@@ -60,7 +60,7 @@ fun Interrupt(a: Ask, answer: (String?) -> Unit) {
         }
         if (a.free) Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f).border(1.dp, ink, CircleShape).padding(horizontal = 18.dp, vertical = 12.dp)) {
-                BasicTextField(text, { text = it }, Modifier.fillMaxWidth(), textStyle = mono(color = ink), cursorBrush = SolidColor(ink))
+                BasicTextField(text, { text = it }, Modifier.fillMaxWidth(), textStyle = type(color = ink), cursorBrush = SolidColor(ink))
                 if (text.isEmpty()) T("type an answer", color = ink.copy(alpha = 0.6f))
             }
             Spacer(Modifier.width(8.dp))

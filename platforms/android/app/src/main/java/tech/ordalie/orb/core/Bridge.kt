@@ -1,10 +1,8 @@
 package tech.ordalie.orb.core
 
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -12,6 +10,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 data class Peer(val id: String, val state: String, val instances: List<Instance>, val known: String = "", val version: String = "") {
     val short get() = id.substringAfterLast(":").take(6)
@@ -24,10 +24,10 @@ data class Peer(val id: String, val state: String, val instances: List<Instance>
     val name: String get() = known.takeUnless { it.isEmpty() || it == "localhost" } ?: named ?: short
     val connected get() = state == "connected"
 }
-data class Instance(val peer: String, val id: String, val alias: String, val available: Boolean, val title: String = "", val cwd: String = "", val busy: Boolean = false, val session: String = "")
+data class Instance(val peer: String, val id: String, val alias: String, val title: String = "", val cwd: String = "", val busy: Boolean = false, val session: String = "")
 
 /** A thread stored on a peer, open or not: what the peer's `host.sessions` lists. */
-data class Thread(val peer: String, val id: String, val title: String, val cwd: String, val modified: Long, val messages: Int)
+data class Thread(val peer: String, val id: String, val title: String, val cwd: String, val modified: Long)
 
 /** Bridge through `orb bridge pipe`: the same owner API the CLI's bridge commands call. */
 class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
@@ -88,7 +88,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
             val id = it.optString("instance_id")
             val d = remote(peer, "instances.describe", JSONObject().put("instance_id", id)).optJSONObject("result") ?: JSONObject()
             val target = d.optJSONObject("target")
-            Instance(peer, id, it.optString("alias"), true, d.optString("name"), d.optString("cwd"), target?.optString("execution_id").orEmpty().isNotEmpty(), target?.optString("session_id").orEmpty())
+            Instance(peer, id, it.optString("alias"), d.optString("name"), d.optString("cwd"), target?.optString("execution_id").orEmpty().isNotEmpty(), target?.optString("session_id").orEmpty())
         }
     }
 
@@ -109,7 +109,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
             result.optJSONArray("items")?.let { a ->
                 (0 until a.length()).map(a::getJSONObject).mapTo(found) { t ->
                     Thread(peer, t.optString("session_id"), t.optString("name").takeIf { it.isNotBlank() && it != "null" } ?: t.optString("first").lineSequence().first().ifBlank { t.optString("cwd").substringAfterLast('/') },
-                        t.optString("cwd"), t.optLong("modified"), t.optInt("messages"))
+                        t.optString("cwd"), t.optLong("modified"))
                 }
             }
             cursor = result.optString("cursor")
@@ -131,7 +131,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         }
         val id = r.optJSONObject("result")?.optString("instance_id").orEmpty()
         refresh()
-        return Result.success(peers.firstOrNull { it.id == peer }?.instances?.firstOrNull { it.id == id } ?: Instance(peer, id, r.optJSONObject("result")?.optString("alias").orEmpty(), true, cwd = cwd.orEmpty(), session = session.orEmpty()))
+        return Result.success(peers.firstOrNull { it.id == peer }?.instances?.firstOrNull { it.id == id } ?: Instance(peer, id, r.optJSONObject("result")?.optString("alias").orEmpty(), cwd = cwd.orEmpty(), session = session.orEmpty()))
     }
 
     /** The model and reasoning last chosen for threads on this device. */

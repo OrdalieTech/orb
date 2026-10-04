@@ -1,15 +1,14 @@
 package tech.ordalie.orb.core
 
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** One way to sign in to a provider, as `orb login --json` lists it: the TUI's /login, row for row. */
 data class Method(val id: String, val auth: String, val label: String, val about: String) {

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="fond">#12151A</color>
-    <color name="texte">#FAF9F6</color>
     <style name="Orb" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/fond</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

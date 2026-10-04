@@ -3,17 +3,15 @@ package tech.ordalie.orb.core
 import android.content.Context
 import android.os.Environment
 import android.system.Os
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * Orb's Linux: Termux's base system unpacked in the app's files and run through proot, which ships
@@ -121,16 +119,6 @@ class Linux(private val context: Context) {
             }
         }
         links.forEach { (target, path) -> File(into, path).let { it.parentFile?.mkdirs(); Os.symlink(target, it.path) } }
-    }
-
-    private fun fetch(url: String): ByteArray {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 15_000; c.readTimeout = 120_000
-        c.setRequestProperty("User-Agent", "orb-android")
-        try {
-            check(c.responseCode == 200) { "GitHub returned ${c.responseCode}" }
-            return c.inputStream.use { it.readBytes() }
-        } finally { c.disconnect() }
     }
 
     companion object {

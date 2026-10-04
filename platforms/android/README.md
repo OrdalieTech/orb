@@ -17,8 +17,9 @@ Bridge ────────────────────────�
 - `core/Session` holds the interrupts (`Ask`): approvals, questions (walked and answered with
   the plugin's JSON `Result`) and Bridge pairing.
 - `ui/` draws six primitives — session row, turn, tool line, prompt box, slot, interrupt — in
-  Ubuntu Mono on Ordalie's palette. Plugins toggle through `orb plugins`, keys are passed as the
-  environment variables Orb already reads.
+  Ubuntu Sans, with Ubuntu Sans Mono for what a machine reads, on Ordalie's palette. One bar
+  holds the wordmark (Home), a tab per open session and the menu. Plugins toggle through
+  `orb plugins`; sign-ins and keys go through `orb login --json` into Orb's own store, as `/login`.
 
 The Gradle task `orbCore` cross-compiles `./cmd/orb` (`GOOS=android GOARCH=arm64 CGO_ENABLED=0`)
 into `liborb.so`; the APK installs it extracted because Android executes only files in

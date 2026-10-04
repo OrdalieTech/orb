@@ -2,10 +2,8 @@ package tech.ordalie.orb
 
 import android.app.Application
 import android.content.Context
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
@@ -18,6 +16,8 @@ import tech.ordalie.orb.core.Release
 import tech.ordalie.orb.core.RemoteSession
 import tech.ordalie.orb.core.Session
 import tech.ordalie.orb.core.You
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** The app's whole model: this phone's Orb, its Bridge, and the peer sessions opened through it. */
 class Runtime(context: Context) {
@@ -26,7 +26,8 @@ class Runtime(context: Context) {
     val bridge by lazy { Bridge(scope, orb) }
     var local by mutableStateOf<LocalSession?>(null)
         private set
-    private val remotes = mutableStateMapOf<String, RemoteSession>()
+    /** Peer sessions this phone follows, in the order they were opened: the tabs after this phone's own. */
+    private val remotes = mutableStateListOf<RemoteSession>()
 
     /** This app's Orb version, and the latest release when it is newer (checked at start, then every six hours). */
     val version: String = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0-dev"
@@ -56,7 +57,7 @@ class Runtime(context: Context) {
         local?.restart()
     }
 
-    /** Provider keys are process environment: a new core picks them up. */
+    /** A new core, which reads the credentials and settings just changed. */
     fun restart() { local?.restart() }
 
     /** This phone's stored conversations, refreshed when Home shows and after each turn. */
@@ -73,20 +74,22 @@ class Runtime(context: Context) {
     fun reload() {
         scope.launch { history = withContext(Dispatchers.IO) { orb.sessions() } }
         bridge.peers.forEach { peer -> scope.launch { runCatching { bridge.loadThreads(peer.id) } } }
-        // Sessions of instances that are gone stop following them.
-        val live = bridge.peers.flatMap { it.instances }.map { it.id }.toSet()
-        remotes.entries.filter { (_, s) -> s.instance !in live && !s.watched }.map { it.key }.forEach { remotes.remove(it)?.close() }
+        // A session whose Orb ended on a reachable device, or whose device was forgotten, stops being followed.
+        val peers = bridge.peers.associateBy { it.id }
+        remotes.filter { s -> !s.watched && peers[s.peer]?.let { p -> p.connected && p.instances.none { it.id == s.instance } } != false }.forEach(::close)
     }
 
     // Looked up by the Orb a session follows now: a reopened thread moves to a new one.
     // A remote session is named by where it runs, the device; its folder is in its title until it has one.
     fun open(i: Instance): RemoteSession = opened(i.id) ?: RemoteSession(scope, bridge, i.peer, i.id,
-        bridge.peers.firstOrNull { it.id == i.peer }?.name ?: i.cwd.substringAfterLast('/').ifEmpty { i.alias }).also { remotes[i.id] = it }
+        bridge.peers.firstOrNull { it.id == i.peer }?.name ?: i.cwd.substringAfterLast('/').ifEmpty { i.alias }).also { remotes += it }
+    /** Stops following a peer session (its tab closes); it runs on over there. */
+    fun close(s: RemoteSession) { remotes.remove(s); s.close() }
     /** What starting Orb on a device is doing ("starting Orb on lab-3…", or why it failed); empty when idle. */
     var launching by mutableStateOf("")
-    fun opened(instance: String): RemoteSession? = remotes.values.firstOrNull { it.instance == instance }
+    fun opened(instance: String): RemoteSession? = remotes.firstOrNull { it.instance == instance }
 
-    val sessions: List<Session> get() = listOfNotNull(local) + remotes.values
+    val sessions: List<Session> get() = listOfNotNull(local) + remotes
 
     /** Pattern blue: a peer's prompt is running on this phone. */
     val acting: Boolean get() = local?.let { l -> l.busy && (l.transcript.items.lastOrNull { it is You } as? You)?.via != null } == true

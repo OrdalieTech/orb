@@ -21,10 +21,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 /** Markdown blocks a model actually writes. Anything else stays a paragraph. */
@@ -72,13 +73,13 @@ fun inline(text: String, code: Color, codeBg: Color): AnnotatedString = buildAnn
     var i = 0
     while (i < text.length) {
         when {
-            text.startsWith("**", i) && text.indexOf("**", i + 2) > i + 1 -> { val e = text.indexOf("**", i + 2); withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text, i + 2, e) }; i = e + 2 }
-            text[i] == '`' && text.indexOf('`', i + 1) > i -> { val e = text.indexOf('`', i + 1); withStyle(SpanStyle(color = code, background = codeBg)) { append(" "); append(text, i + 1, e); append(" ") }; i = e + 1 }
+            text.startsWith("**", i) && text.indexOf("**", i + 2) > i + 1 -> { val e = text.indexOf("**", i + 2); withStyle(SpanStyle(fontWeight = Strong)) { append(text, i + 2, e) }; i = e + 2 }
+            text[i] == '`' && text.indexOf('`', i + 1) > i -> { val e = text.indexOf('`', i + 1); withStyle(SpanStyle(fontFamily = Mono, fontSize = 0.92.em, color = code, background = codeBg)) { append(" "); append(text, i + 1, e); append(" ") }; i = e + 1 }
             text[i] == '[' && text.indexOf("](", i) > i && text.indexOf(')', text.indexOf("](", i)) > 0 -> {
                 val mid = text.indexOf("](", i); val end = text.indexOf(')', mid)
                 withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) { append(text, i + 1, mid) }; i = end + 1
             }
-            text[i] == '*' && i + 1 < text.length && text[i + 1] != ' ' && text.indexOf('*', i + 1) > i -> { val e = text.indexOf('*', i + 1); withStyle(SpanStyle(color = code)) { append(text, i + 1, e) }; i = e + 1 }
+            text[i] == '*' && i + 1 < text.length && text[i + 1] != ' ' && text.indexOf('*', i + 1) > i -> { val e = text.indexOf('*', i + 1); withStyle(SpanStyle(color = code, fontStyle = FontStyle.Italic)) { append(text, i + 1, e) }; i = e + 1 }
             else -> { append(text[i]); i++ }
         }
     }
@@ -86,19 +87,19 @@ fun inline(text: String, code: Color, codeBg: Color): AnnotatedString = buildAnn
 
 @Composable
 fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f) = Column(modifier, verticalArrangement = Arrangement.spacedBy((size * 0.6f).dp)) {
-    val body = mono(size.sp, p.fg)
+    val body = type(size.sp, p.fg)
     blocks(text).forEach { b ->
         when (b) {
             is Para -> BasicText(inline(b.text, p.mute, p.raised), style = body)
-            is Head -> BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(top = 4.dp), mono(if (b.level <= 2) (size + 3).sp else (size + 1).sp, p.fg, bold = true))
+            is Head -> BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(top = 4.dp), type(if (b.level <= 2) (size + 3).sp else (size + 1).sp, p.fg, Strong))
             is Item -> Row(Modifier.padding(start = (b.depth * 18).dp)) {
-                T(b.mark, Modifier.width(if (b.mark == "·") (size + 1).dp else (size * 1.8f).dp), size = size.sp, color = p.meta)
+                T(b.mark, Modifier.width(if (b.mark == "·") (size + 1).dp else (size * 1.8f).dp), size = size.sp, color = p.meta, weight = Medium)
                 BasicText(inline(b.text, p.mute, p.raised), Modifier.weight(1f), body)
             }
             is Quote -> Row { Box(Modifier.width(2.dp).height(22.dp).background(p.rule)); BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(start = 12.dp), body.copy(color = p.mute)) }
             is Code -> Column(Modifier.fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp)) {
                 if (b.lang.isNotEmpty()) T(b.lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
-                Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = mono((size - 3).sp, p.fg).copy(lineHeight = (size + 2).sp), softWrap = false) }
+                Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg, mono = true), softWrap = false) }
             }
             Break -> Spacer(Modifier.height(4.dp))
         }

@@ -40,11 +40,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,7 +53,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
@@ -66,6 +63,8 @@ import androidx.compose.ui.unit.sp
 import tech.ordalie.orb.core.Command
 import tech.ordalie.orb.core.Session
 import androidx.compose.ui.text.TextRange
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Tokens stay plain text on the wire; the box only draws them as chips while you write. */
 private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTransformation {
@@ -73,9 +72,9 @@ private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTran
         append(text)
         TOKEN.findAll(text).forEach { m ->
             val style = when (m.value[0]) {
-                '/' -> SpanStyle(color = bg, background = fg, fontWeight = FontWeight.Bold)
-                '@' -> SpanStyle(fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)
-                else -> SpanStyle(color = meta, fontWeight = FontWeight.Bold)
+                '/' -> SpanStyle(color = bg, background = fg, fontWeight = Strong)
+                '@' -> SpanStyle(fontWeight = Medium, textDecoration = TextDecoration.Underline)
+                else -> SpanStyle(color = meta, fontWeight = Medium)
             }
             addStyle(style, m.range.first, m.range.last + 1)
         }
@@ -133,15 +132,15 @@ fun PromptBox(
                     if (cmd.name in NOW) { value = TextFieldValue(""); onSend("/" + cmd.name) }
                     else ("/" + cmd.name + " ").let { value = TextFieldValue(it, TextRange(it.length)) }
                 }.padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T("/" + cmd.name, size = 15.sp, bold = true, lines = 1)
+                    T("/" + cmd.name, size = 15.sp, weight = Strong, lines = 1, mono = true)
                     Spacer(Modifier.width(12.dp))
-                    T(cmd.hint, Modifier.weight(1f), size = Size.Label, color = p.meta, lines = 1)
+                    T(cmd.hint, Modifier.weight(1f), size = 13.sp, color = p.meta, lines = 1)
                 }
             }
         }
         Box(Modifier.fillMaxWidth().heightIn(min = ((if (matches.isEmpty()) 72 else 48) + extra).dp, max = (240 + extra).dp).padding(horizontal = 18.dp, vertical = 10.dp)) {
             BasicTextField(
-                value, { value = it }, Modifier.fillMaxWidth(), textStyle = mono(17.sp, p.fg), cursorBrush = SolidColor(p.fg),
+                value, { value = it }, Modifier.fillMaxWidth(), textStyle = type(17.sp, p.fg), cursorBrush = SolidColor(p.fg),
                 visualTransformation = tokens,
                 decorationBox = { inner -> if (value.text.isEmpty()) T(if (busy) "steer or queue a message" else placeholder, size = 17.sp, color = p.meta); inner() },
             )
@@ -153,10 +152,10 @@ fun PromptBox(
             Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(if (session?.remote == true) Ink.Blue else p.fg)); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
-                T((session?.where ?: "this phone").let { if (it.length > 12) it.take(11) + "…" else it }.uppercase() + " ▾", size = 13.sp, bold = true, lines = 1)
+                T((session?.where ?: "this phone").let { if (it.length > 14) it.take(13) + "…" else it } + " ▾", size = 14.sp, weight = Strong, lines = 1)
             }
             Row(Modifier.weight(1f).press(onClick = onModel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                T((session?.model?.substringAfter('/')?.ifEmpty { null } ?: "model") + " ▾", Modifier.weight(1f, fill = false), size = 13.sp, bold = true, color = p.mute, lines = 1)
+                T((session?.model?.substringAfter('/')?.ifEmpty { null } ?: "model") + " ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)
                 // Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
                 val levels = session?.levels.orEmpty()
                 val at = levels.indexOf(session?.thinking)

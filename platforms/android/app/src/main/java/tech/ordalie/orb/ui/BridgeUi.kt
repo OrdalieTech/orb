@@ -1,7 +1,5 @@
 package tech.ordalie.orb.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -25,16 +23,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -49,6 +44,8 @@ import kotlinx.coroutines.launch
 import tech.ordalie.orb.core.Bridge
 import tech.ordalie.orb.core.Release
 import tech.ordalie.orb.core.Peer
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Photographs a QR code with Play services' scanner: the camera never belongs to this app. */
 fun Context.scan(found: (String) -> Unit) {
@@ -62,7 +59,7 @@ fun Context.scan(found: (String) -> Unit) {
 fun ColumnScope.BridgeScreen(c: Ctx) {
     val b = c.rt.bridge
     val context = LocalContext.current
-    Header("bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back)
+    Header("Bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back)
     // Each device's thread list carries its name and Orb version, which its row and update show.
     LaunchedEffect(b.peers.size) { c.rt.reload() }
     if (c.rt.acting) PatternBlue { c.rt.local?.abort() }
@@ -71,9 +68,9 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
             // One gesture pairs a computer: it shows a QR code, this phone photographs it, the computer says yes.
             Column(Modifier.fillMaxWidth().padding(bottom = 18.dp).press { context.scan { c.nav.go(Screen.Join(it)) } }
                 .border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
-                T("Pair a computer", size = 22.sp, bold = true)
+                T("Pair a computer", size = Size.Title, weight = Strong)
                 T("On the computer, run", Modifier.padding(top = 10.dp), color = p.mute)
-                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", bold = true) }
+                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb bridge pair", weight = Strong, mono = true) }
                 T("then photograph its QR code. It asks you to approve this phone there.", size = 13.sp, color = p.meta)
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("scan", inverted = true) { context.scan { c.nav.go(Screen.Join(it)) } }
@@ -85,7 +82,7 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
         items(b.peers, key = { it.id }) { PeerRow(it, c) }
         item {
             Slot("this phone", modifier = Modifier.padding(top = 18.dp)) {
-                BasicText(b.self, style = mono(13.sp, p.mute))
+                T(b.self, size = 13.sp, color = p.mute, mono = true)
                 Row(Modifier.padding(vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("invite a computer") { c.nav.go(Screen.Invite) } }
                 T("Each device is approved by fingerprint on its own screen. Pairs stay paired and reconnect by themselves; forget revokes one.", Modifier.padding(bottom = 24.dp), size = Size.Label, color = p.meta)
             }
@@ -103,7 +100,7 @@ private fun PeerRow(peer: Peer, c: Ctx) = Column(Modifier.animateContentSize()) 
     ) {
         Dot(if (peer.connected) p.fg else p.rule, 8.dp, pulse = peer.instances.any { it.busy })
         Column(Modifier.weight(1f)) {
-            T(peer.name, size = 17.sp, bold = peer.connected, color = if (peer.connected) p.fg else p.meta)
+            T(peer.name, size = 17.sp, weight = if (peer.connected) Strong else Regular, color = if (peer.connected) p.fg else p.meta)
             T(listOfNotNull(if (peer.connected) "${peer.instances.size} session" + (if (peer.instances.size == 1) "" else "s") else peer.state, peer.short, peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), size = Size.Label, color = p.meta)
             if (updating.isNotEmpty()) T(updating, size = Size.Label, color = p.mute)
         }
@@ -124,11 +121,11 @@ fun ColumnScope.InviteScreen(c: Ctx) {
     LaunchedEffect(Unit) { if (inv == null) inv = c.rt.bridge.invite(); while (true) { delay(1000); now = System.currentTimeMillis() / 1000 } }
     val left = ((inv?.optLong("expires") ?: now) - now).coerceAtLeast(0)
     val code = inv?.let(c.rt.bridge::code).orEmpty()
-    Header("invite a computer", back = c.nav::back)
+    Header("Invite a computer", back = c.nav::back)
     Column(Modifier.weight(1f).padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row { T("on the computer, run", Modifier.weight(1f), label = true); T(if (inv == null) "creating" else "%d:%02d · single use".format(left / 60, left % 60), size = Size.Label, color = p.meta) }
         Box(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(16.dp)).padding(14.dp)) {
-            BasicText("orb bridge join " + code.ifEmpty { "…" }, style = mono(12.sp, if (left > 0) p.fg else p.meta))
+            T("orb bridge join " + code.ifEmpty { "…" }, size = 12.sp, color = if (left > 0) p.fg else p.meta, mono = true)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Btn("share", inverted = true) { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "orb bridge join $code"), "Orb invitation")) }
@@ -151,7 +148,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
     val inviter = Bridge.parse(value)?.optString("peer_id").orEmpty()
     fun pair() { error = ""; scope.launch { b.join(value)?.let { error = it } } }
     LaunchedEffect(b.joining) { if (b.joining == "paired") { delay(1100); b.cancelJoin(); while (c.nav.stack.size > 1) c.nav.back() } }
-    Header("pair", back = { b.cancelJoin(); c.nav.back() })
+    Header("Pair", back = { b.cancelJoin(); c.nav.back() })
     AnimatedContent(b.joining, Modifier.weight(1f), transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(160)) }, label = "join") { state ->
         Column(Modifier.padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.isEmpty()) {
@@ -161,7 +158,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                     val left = ((Bridge.parse(value)?.optLong("expires") ?: 0) - System.currentTimeMillis() / 1000).coerceAtLeast(0)
                     Column(Modifier.fillMaxWidth().border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(22.dp)) {
                         T("invitation from", label = true, color = p.meta)
-                        T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, bold = true)
+                        T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, weight = Strong, mono = true)
                         T(inviter, size = Size.Label, color = p.meta)
                         Row(Modifier.padding(top = 12.dp)) {
                             T(if (left > 0) "valid %d:%02d · single use".format(left / 60, left % 60) else "expired", Modifier.weight(1f), size = 13.sp, color = if (left > 0) p.mute else Ink.Rupture)
@@ -172,7 +169,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                 } else {
                     T("Paste the code from  orb bridge pair,  or scan its QR code.", color = p.mute)
                     Box(Modifier.fillMaxWidth().heightIn(min = 120.dp).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).padding(16.dp)) {
-                        BasicTextField(value, { value = it; error = "" }, Modifier.fillMaxWidth(), textStyle = mono(12.sp, p.fg), cursorBrush = SolidColor(p.fg))
+                        BasicTextField(value, { value = it; error = "" }, Modifier.fillMaxWidth(), textStyle = type(12.sp, p.fg, mono = true), cursorBrush = SolidColor(p.fg))
                         if (value.isEmpty()) T("orb-bridge:v1:…", color = p.meta, size = 12.sp)
                     }
                     if (inviter.isNotEmpty()) T("from " + inviter.substringAfterLast(':').take(8), size = Size.Label, color = p.meta)
@@ -184,12 +181,12 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                 }
                 if (error.isNotEmpty()) T(error, color = Ink.Rupture)
             } else {
-                T(if (state == "paired") "Paired" else "Approve on the computer", Modifier.padding(top = 12.dp), size = 26.sp, bold = true)
+                T(if (state == "paired") "Paired" else "Approve on the computer", Modifier.padding(top = 12.dp), size = 24.sp, weight = Strong)
                 T(if (state == "paired") "The computer said yes. Its sessions appear on Home." else "On the computer, answer y. It shows this phone as", color = p.mute)
                 if (state != "paired") {
                     // The fingerprint exactly as the terminal prints it, its start large enough to compare at a glance.
-                    T(b.self.substringAfterLast(':').take(8), size = 28.sp, bold = true)
-                    BasicText(b.self, style = mono(13.sp, p.meta))
+                    T(b.self.substringAfterLast(':').take(8), size = 28.sp, weight = Strong, mono = true)
+                    T(b.self, size = 13.sp, color = p.meta, mono = true)
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(if (state == "claiming") "reaching the computer" else "waiting for the yes", Modifier.weight(1f), color = p.mute)
                         Btn("cancel") { b.cancelJoin() }
@@ -200,5 +197,3 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
     }
 }
 
-private fun Context.copy(text: String) = getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("orb", text))
-private fun Context.paste(): String = getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()

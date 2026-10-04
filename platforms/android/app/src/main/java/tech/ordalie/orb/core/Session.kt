@@ -1,8 +1,6 @@
 package tech.ordalie.orb.core
 
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -14,6 +12,8 @@ import org.json.JSONObject
 import android.util.Base64
 import java.security.SecureRandom
 import java.util.UUID
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** An error reply's words: RPC puts a string, Bridge and [Lines] an object with a message. */
 fun JSONObject.problem(): String = optJSONObject("error")?.optString("message") ?: optString("error")
@@ -87,7 +87,7 @@ abstract class Session(val where: String, val remote: Boolean) {
 }
 
 /** This phone's own Orb: `orb --mode rpc`, attached to Bridge so peers see and drive it too. */
-class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Session(orb.device, remote = false) {
+class LocalSession(private val scope: CoroutineScope, private val orb: Orb) : Session("this phone", remote = false) {
     // --continue: a restarted core (new keys, app relaunch) resumes the same conversation.
     private val rpc = orb.lines(scope, "orb-rpc", "--mode", "rpc", "--continue", "--bridge", "personal", "--instance", orb.device)
     private var available = emptyList<String>()

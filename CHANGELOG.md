@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The Android app is simpler and easier to move around: one bar holds the wordmark (Home), a tab
+  per open session on the phone or a paired device, and the menu; a conversation shows where it
+  runs, its context use and its cost under it. Text is set in Ubuntu Sans with real weights,
+  Ubuntu Sans Mono for code and commands, and rules have more contrast. Keys the app kept in its
+  own preferences move into Orb's store; the custom endpoint form and the text-size pinch are gone.
 - New `memtree` plugin, off by default: a zoomable tree of one-line summaries over each session's
   whole history. In compaction mode the compaction summary is the tree's view, so nothing is
   summarized twice and every message stays reachable with `zoom`; in fresh mode every prompt

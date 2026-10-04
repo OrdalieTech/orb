@@ -46,14 +46,15 @@ object Release {
         context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+}
 
-    private fun fetch(url: String): ByteArray {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 15_000; c.readTimeout = 60_000
-        c.setRequestProperty("User-Agent", "orb-android")
-        try {
-            check(c.responseCode == 200) { "GitHub returned ${c.responseCode} for ${url.substringAfterLast('/')}" }
-            return c.inputStream.use { it.readBytes() }
-        } finally { c.disconnect() }
-    }
+/** GET over HTTPS, the whole body; Orb's releases and the Linux come from GitHub. */
+fun fetch(url: String): ByteArray {
+    val c = URL(url).openConnection() as HttpURLConnection
+    c.connectTimeout = 15_000; c.readTimeout = 120_000
+    c.setRequestProperty("User-Agent", "orb-android")
+    try {
+        check(c.responseCode == 200) { "GitHub returned ${c.responseCode} for ${url.substringAfterLast('/')}" }
+        return c.inputStream.use { it.readBytes() }
+    } finally { c.disconnect() }
 }

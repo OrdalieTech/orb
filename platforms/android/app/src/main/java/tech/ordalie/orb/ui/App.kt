@@ -1,66 +1,24 @@
 package tech.ordalie.orb.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,7 +28,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -83,9 +40,9 @@ import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.Command
 import tech.ordalie.orb.core.Peer
 import tech.ordalie.orb.core.Release
+import tech.ordalie.orb.core.RemoteSession
 import tech.ordalie.orb.core.Session
 import tech.ordalie.orb.core.Thread
-import tech.ordalie.orb.core.Tool
 
 sealed interface Screen {
     data object Home : Screen
@@ -97,7 +54,6 @@ sealed interface Screen {
     data class Providers(val peer: String? = null) : Screen
     data class Vendor(val id: String, val peer: String? = null) : Screen
     data object Plugins : Screen
-    data object Provider : Screen
     data class Device(val peer: String) : Screen
     data class Folder(val peer: String, val cwd: String) : Screen
     data object Terminal : Screen
@@ -108,12 +64,18 @@ class Nav {
     var forward by mutableStateOf(true) // which way the last move went, so screens slide the right way
     fun go(s: Screen) { forward = true; stack += s }
     fun back() { if (stack.size > 1) { forward = false; stack.removeAt(stack.lastIndex) } }
+    fun home() { forward = false; while (stack.size > 1) stack.removeAt(stack.lastIndex) }
+    /** Shows a session in place of the one on screen: tabs switch, they do not stack. */
+    fun show(s: Session, forward: Boolean = true) {
+        this.forward = forward
+        if (stack.last() is Screen.Chat) stack[stack.lastIndex] = Screen.Chat(s) else stack += Screen.Chat(s)
+    }
 }
 
 /** A name to change, rising from the bottom with the current one ready to edit. */
 class Rename(val title: String, val delete: (() -> Unit)? = null, val apply: (String) -> Unit)
 
-/** A choice list rising from the bottom — models, instances, the menu all use it. */
+/** A choice list rising from the bottom — places, menus, confirmations all use it. */
 class Picker(val title: String, val options: List<String>, val selected: String = "", val pick: (String) -> Unit)
 
 @Composable
@@ -134,38 +96,76 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }) { picker = it }
     Box(Modifier.fillMaxSize().background(p.bg)) {
-        AnimatedContent(nav.stack.last(), transitionSpec = {
-            val d = if (nav.forward) 1 else -1
-            (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { d * it / 3 } + fadeIn(tween(220, 60))) togetherWith
-                (slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -d * it / 6 } + fadeOut(tween(140)))
-        }, label = "screen") { s ->
-            val boxed = s is Screen.Home || s is Screen.Chat // the prompt box handles the bottom edge itself
-            Column(Modifier.fillMaxSize().statusBarsPadding().then(if (boxed) Modifier else Modifier.navigationBarsPadding()).imePadding()) {
-                when (s) {
-                    Screen.Home -> Home(ctx)
-                    is Screen.Chat -> Chat(ctx, s.session)
-                    Screen.Bridge -> BridgeScreen(ctx)
-                    Screen.Invite -> InviteScreen(ctx)
-                    is Screen.Join -> JoinScreen(ctx, s.text)
-                    is Screen.Providers -> ProvidersScreen(ctx, s.peer)
-                    is Screen.Vendor -> VendorScreen(ctx, s.id, s.peer)
-                    Screen.Plugins -> PluginsScreen(ctx)
-                    Screen.Provider -> ProviderScreen(ctx)
-                    is Screen.Device -> DeviceScreen(ctx, s.peer)
-                    is Screen.Folder -> FolderScreen(ctx, s.peer, s.cwd)
-                    Screen.Terminal -> TerminalScreen(ctx)
+        val top = nav.stack.last()
+        Column(Modifier.fillMaxSize()) {
+            // Home and every conversation share one bar: switching sessions never leaves it.
+            AnimatedVisibility(top is Screen.Home || top is Screen.Chat, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                TopBar(ctx, (top as? Screen.Chat)?.session)
+            }
+            AnimatedContent(top, Modifier.weight(1f), transitionSpec = {
+                val d = if (nav.forward) 1 else -1
+                (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { d * it / 4 } + fadeIn(tween(200, 40))) togetherWith
+                    (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -d * it / 8 } + fadeOut(tween(120)))
+            }, label = "screen") { s ->
+                val boxed = s is Screen.Home || s is Screen.Chat // the bar above and the prompt box below handle the edges
+                Column(Modifier.fillMaxSize().then(if (boxed) Modifier else Modifier.statusBarsPadding().navigationBarsPadding()).imePadding()) {
+                    when (s) {
+                        Screen.Home -> Home(ctx)
+                        is Screen.Chat -> Chat(ctx, s.session)
+                        Screen.Bridge -> BridgeScreen(ctx)
+                        Screen.Invite -> InviteScreen(ctx)
+                        is Screen.Join -> JoinScreen(ctx, s.text)
+                        is Screen.Providers -> ProvidersScreen(ctx, s.peer)
+                        is Screen.Vendor -> VendorScreen(ctx, s.id, s.peer)
+                        Screen.Plugins -> PluginsScreen(ctx)
+                        is Screen.Device -> DeviceScreen(ctx, s.peer)
+                        is Screen.Folder -> FolderScreen(ctx, s.peer, s.cwd)
+                        Screen.Terminal -> TerminalScreen(ctx)
+                    }
                 }
             }
         }
         // Interrupts belong to their owner and stop the world wherever you are.
-        val asking = (nav.stack.last() as? Screen.Chat)?.session ?: rt.local?.takeIf { it.ask != null }
-        Rising(asking?.ask) { Interrupt(it) { v -> asking?.answer(v) } }
-        Rising(rt.bridge.claim) { PairRequest(it, ctx) }
-        Sheet(picker) { pk -> PickerSheet(pk) { picker = null } }
-        Sheet(deck) { s -> ModelSheet(s, ctx) { deck = null } }
-        Sheet(renaming) { r -> RenameSheet(r) { renaming = null } }
+        val asking = (top as? Screen.Chat)?.session ?: rt.local?.takeIf { it.ask != null }
+        Overlay(asking?.ask, rise = true) { Interrupt(it) { v -> asking?.answer(v) } }
+        Overlay(rt.bridge.claim, rise = true) { PairRequest(it, ctx) }
+        Overlay(picker) { pk -> PickerSheet(pk) { picker = null } }
+        Overlay(deck) { s -> ModelSheet(s, ctx) { deck = null } }
+        Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
     }
 }
+
+/**
+ * The wordmark, which is Home; a tab per open session — this phone's, then each one followed on a
+ * paired device — and the menu. A square says where a session runs, as in the prompt box; it
+ * turns red when the session asks something and pulses while it works.
+ */
+@Composable
+private fun TopBar(c: Ctx, open: Session?) = Column(Modifier.statusBarsPadding()) {
+    val tabs = c.rt.sessions
+    val scroll = rememberScrollState()
+    Row(Modifier.fillMaxWidth().height(54.dp).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 22.dp, if (open == null) p.fg else p.meta) }
+        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll).padding(start = 10.dp)) {
+            tabs.forEach { s ->
+                Tab(s, s == open, onLong = { c.tabMenu(s) }) { c.nav.show(s, forward = open == null || tabs.indexOf(s) > tabs.indexOf(open)) }
+            }
+        }
+        MenuMark(c::menu)
+    }
+    Rule()
+}
+
+@Composable
+private fun Tab(s: Session, on: Boolean, onLong: () -> Unit, open: () -> Unit) =
+    Column(Modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onLong = onLong, onClick = open).padding(horizontal = 8.dp), verticalArrangement = Arrangement.Bottom) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Dot(when { s.ask != null -> Ink.Rupture; s.remote -> Ink.Blue; else -> if (on) p.fg else p.mute }, 6.dp, pulse = s.busy, square = true)
+            Spacer(Modifier.width(7.dp))
+            T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 140.dp), size = 14.sp, weight = if (on) Strong else Medium, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
+        }
+        Box(Modifier.fillMaxWidth().height(2.dp).background(if (on) p.fg else Color.Transparent))
+    }
 
 /** What every screen needs, passed as one value. */
 class Ctx(
@@ -183,20 +183,15 @@ class Ctx(
         val name = text.drop(1).substringBefore(' ')
         val arg = text.substringAfter(' ', "").trim()
         when (name) {
-            "new" -> { s?.newSession(arg.ifEmpty { null }); s?.let { if (nav.stack.last() !is Screen.Chat) nav.go(Screen.Chat(it)) } }
+            "new" -> { s?.newSession(arg.ifEmpty { null }); s?.let { nav.show(it) } }
             "compact" -> s?.compact(arg)
             "name" -> if (arg.isNotEmpty()) s?.rename(arg) else return false
-            "model", "reasoning" -> chooseModel(s)
-            "copy" -> rt.scope.launch {
-                val text = s?.lastText() ?: return@launch
-                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("orb", text))
-                Toast.makeText(context, "copied the last answer", Toast.LENGTH_SHORT).show()
-            }
-            "sessions", "resume" -> { while (nav.stack.size > 1) nav.back() }
+            "model" -> chooseModel(s)
+            "copy" -> rt.scope.launch { s?.lastText()?.let { context.copy(it, "copied the last answer") } }
+            "sessions", "resume" -> nav.home()
             "bridge", "pair" -> nav.go(Screen.Bridge)
             "login", "providers" -> nav.go(Screen.Providers())
             "plugins" -> nav.go(Screen.Plugins)
-            "text" -> rt.orb.chatSize = when (arg) { "small" -> 13f; "large" -> 17f; "" , "medium" -> 15f; else -> arg.toFloatOrNull() ?: return false }
             else -> return false
         }
         return true
@@ -224,21 +219,20 @@ class Ctx(
         })
     }
     fun chooseModel(s: Session?) {
-        val models = s?.models().orEmpty()
-        if (models.isEmpty()) nav.go(Screen.Providers()) else deck(s!!)
+        if (s?.models().isNullOrEmpty()) nav.go(Screen.Providers()) else deck(s)
     }
     /** Renames a thread of a paired device through the Orb that has it open, starting one if none does. */
     fun renameThread(peer: Peer, t: Thread) = rename(Rename(t.title) { name ->
         rt.scope.launch {
             val i = peer.instances.firstOrNull { it.session == t.id } ?: rt.bridge.launch(peer.id, session = t.id).getOrNull() ?: return@launch
             rt.open(i).rename(name)
-            kotlinx.coroutines.delay(1500); rt.reload()
+            delay(1500); rt.reload()
         }
     })
 
     /** Opens a thread where it lives: its running Orb, or Orb started on it again. */
     fun openThread(peer: Peer, t: Thread) {
-        peer.instances.firstOrNull { it.session == t.id }?.let { nav.go(Screen.Chat(rt.open(it))) } ?: start(peer, session = t.id)
+        peer.instances.firstOrNull { it.session == t.id }?.let { nav.show(rt.open(it)) } ?: start(peer, session = t.id)
     }
 
     /** Starts Orb on a device, in a folder or on a thread, and opens it; [Runtime.launching] says how it goes. */
@@ -246,69 +240,60 @@ class Ctx(
         rt.launching = "starting Orb on ${peer.name}…"
         rt.bridge.launch(peer.id, cwd, session).onSuccess {
             rt.launching = ""
-            nav.go(Screen.Chat(rt.open(it).also { s -> if (session == null) s.takePreferred() }))
+            nav.show(rt.open(it).also { s -> if (session == null) s.takePreferred() })
         }.onFailure { rt.launching = it.message.orEmpty() }
     }
+
+    /** A tab held down: rename its conversation, or stop following a device's session. */
+    fun tabMenu(s: Session) = pick(Picker(s.title.ifEmpty { "new session" }, listOfNotNull("rename", "close tab".takeIf { s is RemoteSession })) {
+        if (it == "rename") rename(Rename(s.title) { name -> s.rename(name) })
+        else { if ((nav.stack.last() as? Screen.Chat)?.session == s) nav.home(); rt.close(s as RemoteSession) }
+    })
 
     fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) { nav.go(when (it) { "terminal" -> Screen.Terminal; "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers() }) })
 }
 
-/** Keeps the last value on screen while it animates away. */
+/** Keeps the last value on screen while it animates away; interrupts rise, sheets fade their scrim. */
 @Composable
-private fun <V : Any> Rising(value: V?, content: @Composable (V) -> Unit) {
+private fun <V : Any> Overlay(value: V?, rise: Boolean = false, content: @Composable AnimatedVisibilityScope.(V) -> Unit) {
     var last by remember { mutableStateOf(value) }
     if (value != null) last = value
-    AnimatedVisibility(value != null, enter = slideInVertically(tween(360, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(200)), exit = slideOutVertically(tween(260)) { it / 4 } + fadeOut(tween(200))) {
-        last?.let { content(it) }
-    }
-}
-
-/** A bottom sheet: the scrim fades, the sheet rises and sinks. */
-@Composable
-private fun <V : Any> Sheet(value: V?, content: @Composable AnimatedVisibilityScope.(V) -> Unit) {
-    var last by remember { mutableStateOf(value) }
-    if (value != null) last = value
-    AnimatedVisibility(value != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(220))) { last?.let { content(it) } }
+    AnimatedVisibility(value != null,
+        enter = if (rise) slideInVertically(tween(360, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(200)) else fadeIn(tween(180)),
+        exit = if (rise) slideOutVertically(tween(260)) { it / 4 } + fadeOut(tween(200)) else fadeOut(tween(220))) { last?.let { content(it) } }
 }
 
 @Composable
-fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Box(Modifier.fillMaxSize().background(Color(0x66000000)).press(onClick = dismiss), contentAlignment = Alignment.BottomCenter) {
+fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Sheet(dismiss) {
     // A choice needs the whole sheet: the keyboard goes away when one opens.
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { keyboard?.hide() }
-    Column(Modifier.animateEnterExit(enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 420f)) { it }, exit = slideOutVertically(tween(220)) { it }).fillMaxWidth().padding(10.dp).clip(RoundedCornerShape(Radius.Card)).background(p.bg).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).navigationBarsPadding().press {}) {
-        Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) { Box(Modifier.width(36.dp).height(3.dp).clip(CircleShape).background(p.rule)) }
-        T(pk.title, Modifier.padding(start = Margin, top = 14.dp, bottom = 8.dp), label = true, color = p.meta)
-        LazyColumn(Modifier.heightIn(max = 440.dp), state = rememberLazyListState((pk.options.indexOf(pk.selected) - 2).coerceAtLeast(0))) {
-            itemsIndexed(pk.options) { n, o ->
-                val sel = o == pk.selected
-                Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { pk.pick(o); dismiss() }.padding(horizontal = Margin, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T(o, Modifier.weight(1f), size = 17.sp, bold = sel, lines = 1)
-                    if (sel) Dot(p.fg)
-                }
-                Rule(Modifier.padding(horizontal = Margin))
+    T(pk.title, Modifier.padding(start = Margin, end = Margin, top = 18.dp, bottom = 6.dp), label = true, color = p.meta, lines = 1)
+    LazyColumn(Modifier.heightIn(max = 440.dp), state = rememberLazyListState((pk.options.indexOf(pk.selected) - 2).coerceAtLeast(0))) {
+        itemsIndexed(pk.options) { n, o ->
+            val sel = o == pk.selected
+            Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { pk.pick(o); dismiss() }.padding(horizontal = Margin, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                T(o, Modifier.weight(1f), size = 17.sp, weight = if (sel) Strong else Regular, lines = 1)
+                if (sel) Dot(p.fg)
             }
         }
-        Spacer(Modifier.height(12.dp))
     }
+    Spacer(Modifier.height(10.dp))
 }
 
 /** A long-pressed row's name, in a field over the list; done saves it, outside or back leaves it. */
 @Composable
-fun AnimatedVisibilityScope.RenameSheet(r: Rename, dismiss: () -> Unit) = Box(Modifier.fillMaxSize().background(Color(0x66000000)).press(onClick = dismiss), contentAlignment = Alignment.BottomCenter) {
+fun AnimatedVisibilityScope.RenameSheet(r: Rename, dismiss: () -> Unit) = Sheet(dismiss) {
     var value by remember { mutableStateOf(TextFieldValue(r.title, TextRange(0, r.title.length))) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     fun done() { value.text.trim().takeIf { it.isNotEmpty() && it != r.title }?.let(r.apply); dismiss() }
-    Column(Modifier.animateEnterExit(enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 420f)) { it }, exit = slideOutVertically(tween(220)) { it }).fillMaxWidth().imePadding().padding(10.dp)
-        .clip(RoundedCornerShape(Radius.Card)).background(p.bg).border(1.dp, p.fg, RoundedCornerShape(Radius.Card)).press {}.padding(Margin)) {
-        T("rename", label = true, color = p.meta)
-        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(value, { value = it }, Modifier.weight(1f).focusRequester(focus), textStyle = mono(18.sp, p.fg), singleLine = true, cursorBrush = SolidColor(p.fg),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { done() }))
-            r.delete?.let { Spacer(Modifier.width(8.dp)); Btn("delete", color = Ink.Rupture) { it(); dismiss() } }
-            Spacer(Modifier.width(8.dp)); Btn("save", inverted = true) { done() }
-        }
+    T("rename", Modifier.padding(start = Margin, top = 18.dp), label = true, color = p.meta)
+    Row(Modifier.padding(start = Margin, end = 12.dp, top = 10.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        BasicTextField(value, { value = it }, Modifier.weight(1f).focusRequester(focus), textStyle = type(18.sp, p.fg, Medium), singleLine = true, cursorBrush = SolidColor(p.fg),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { done() }))
+        r.delete?.let { Spacer(Modifier.width(8.dp)); Btn("delete", color = Ink.Rupture) { it(); dismiss() } }
+        Spacer(Modifier.width(8.dp)); Btn("save", inverted = true) { done() }
     }
 }
 
@@ -321,19 +306,17 @@ fun ColumnScope.Home(c: Ctx) {
     LaunchedEffect(local?.busy, local?.id, peers.map { it.id to it.connected }) { if (local?.busy != true) rt.reload() }
     // Other devices work too: their threads refresh while Home is on screen.
     LaunchedEffect(Unit) { while (true) { delay(20_000); rt.reload() } }
-    // Only the wordmark: the Bridge is mentioned when it is not up yet.
-    Header("Orb", sub = if (rt.bridge.up) "" else "bridge starting") { MenuMark(c::menu) }
     Notice(c)
     // Every thread on every device in one list, newest first: where it lives is a detail of the row.
     val now = System.currentTimeMillis()
     val entries = buildList {
         if (local != null && rt.history.none { it.id == local.id } && local.transcript.items.isNotEmpty())
-            add(Entry("current", local.title.ifEmpty { "this conversation" }, "", now, local.busy, local.ask != null, current = true, rename = { c.rename(Rename(local.title) { local.rename(it) }) }) { c.nav.go(Screen.Chat(local)) })
+            add(Entry("current", local.title.ifEmpty { "this conversation" }, "", now, local.busy, local.ask != null, current = true, rename = { c.rename(Rename(local.title) { local.rename(it) }) }) { c.nav.show(local) })
         rt.history.forEach { past ->
             val on = local != null && past.id == local.id
-            add(Entry("p:" + past.id, past.title, "", past.modified, on && local!!.busy, on && local!!.ask != null, current = on,
-                rename = { c.rename(Rename(past.title, delete = { rt.forget(past.id) }) { name -> local?.rename(past.id, name); rt.scope.launch { kotlinx.coroutines.delay(800); rt.reload() } }) }) {
-                local?.let { l -> l.switchTo(past.id); c.nav.go(Screen.Chat(l)) }
+            add(Entry("p:" + past.id, past.title, "", past.modified, on && local.busy, on && local.ask != null, current = on,
+                rename = { c.rename(Rename(past.title, delete = { rt.forget(past.id) }) { name -> local?.rename(past.id, name); rt.scope.launch { delay(800); rt.reload() } }) }) {
+                local?.let { l -> l.switchTo(past.id); c.nav.show(l) }
             })
         }
         peers.forEach { peer ->
@@ -348,7 +331,7 @@ fun ColumnScope.Home(c: Ctx) {
             peer.instances.filter { i -> threads.none { it.id == i.session } }.forEach { i ->
                 val s = rt.opened(i.id)
                 add(Entry("i:" + i.id, s?.title?.ifEmpty { null } ?: i.title.ifEmpty { null } ?: i.cwd.substringAfterLast('/').ifEmpty { i.alias }, peer.name,
-                    now, s?.busy ?: i.busy, s?.ask != null, remote = true, age = "open", device = peer.id) { c.nav.go(Screen.Chat(rt.open(i))) })
+                    now, s?.busy ?: i.busy, s?.ask != null, remote = true, age = "open", device = peer.id) { c.nav.show(rt.open(i)) })
             }
         }
     }.sortedByDescending { it.modified }
@@ -356,10 +339,13 @@ fun ColumnScope.Home(c: Ctx) {
     // New sessions start from the prompt box, which also chooses the device.
     var device by rememberSaveable { mutableStateOf("") }
     val devices = listOf("phone") + peers.filter { p -> p.instances.isNotEmpty() || rt.bridge.threads.containsKey(p.id) }.map { it.id }
-    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Margin, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         (listOf("") + devices).forEach { d ->
             val name = when (d) { "" -> "all"; "phone" -> "this phone"; else -> peers.firstOrNull { it.id == d }?.name ?: d }
-            Box(Modifier.press { device = d }.padding(vertical = 6.dp)) { T(name, size = 14.sp, color = if (device == d) p.fg else p.meta, bold = device == d) }
+            val on = device == d
+            Box(Modifier.press { device = d }.clip(CircleShape).background(if (on) p.fg else Color.Transparent).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                T(name, size = 14.sp, weight = if (on) Strong else Medium, color = if (on) p.bg else p.mute)
+            }
         }
     }
     val shown = if (device.isEmpty()) entries else entries.filter { it.device == device }
@@ -374,7 +360,7 @@ fun ColumnScope.Home(c: Ctx) {
         browsable?.let { peer ->
             item(key = "folders") {
                 Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Device(peer.id)) }.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T("folders on ${peer.name}", Modifier.weight(1f), bold = true); T("›", size = 20.sp, color = p.mute)
+                    T("Folders on ${peer.name}", Modifier.weight(1f), weight = Medium); T("›", size = 20.sp, color = p.mute)
                 }
             }
         }
@@ -382,15 +368,15 @@ fun ColumnScope.Home(c: Ctx) {
             SessionRow(e.title, e.meta, e.age ?: ago(e.modified), e.live, e.asks, e.current, Modifier.animateItem(), e.remote, e.rename, e.open)
         }
         if (peers.isEmpty()) item(key = "pair") {
-            Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("no paired devices", Modifier.weight(1f), color = p.mute); T("pair ›") }
+            Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("No paired devices", Modifier.weight(1f), color = p.mute); T("Pair ›", weight = Medium) }
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
-    PromptBox(local, c.cites, c.onCite, { c.chooseWhere { c.nav.go(Screen.Chat(it)) } }, { c.chooseModel(local) }, c.palette(local), placeholder = "new session") { text ->
+    PromptBox(local, c.cites, c.onCite, { c.chooseWhere { c.nav.show(it) } }, { c.chooseModel(local) }, c.palette(local), placeholder = "New session") { text ->
         local ?: return@PromptBox
         if (c.command(local, text)) return@PromptBox
         if (local.transcript.items.isNotEmpty()) local.newSession(text) else local.prompt(text)
-        c.nav.go(Screen.Chat(local))
+        c.nav.show(local)
     }
 }
 
@@ -427,29 +413,27 @@ private fun Notice(c: Ctx) {
         }
         else -> return
     }
-    Row(Modifier.fillMaxWidth().press(onClick = act).padding(start = Margin, end = Margin, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().press(onClick = act).padding(start = Margin, end = Margin, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Dot(if (failed || next != null) Ink.Rupture else p.mute, pulse = !failed && (linux.state.isNotEmpty() || updating.startsWith("downloading"))); Spacer(Modifier.width(10.dp))
-        T(text, Modifier.weight(1f), size = 13.sp, color = if (failed) Ink.Rupture else p.mute, lines = 2)
+        T(text, Modifier.weight(1f), size = 14.sp, weight = Medium, color = if (failed) Ink.Rupture else p.mute, lines = 2)
     }
 }
 
 /** One line per session: its title, then where it lives and its condition in words — live, asking,
- *  or how long ago. No rules between rows: the space and the bold of the open one are enough. */
+ *  or how long ago. No rules between rows: the space and the weight of the open one are enough. */
 @Composable
-fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, rename: (() -> Unit)? = null, open: () -> Unit) = Column(modifier) {
-    Row(Modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        T(title, Modifier.weight(1f), size = 16.sp, bold = current || live, lines = 1)
-        if (live) Dot(if (remote) Ink.Blue else Ink.Rupture, pulse = true)
-        T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = Size.Label, color = if (asks) Ink.Rupture else p.meta, lines = 1)
+fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, rename: (() -> Unit)? = null, open: () -> Unit) =
+    Row(modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        T(title, Modifier.weight(1f), size = 16.sp, weight = if (current || live) Strong else Regular, lines = 1)
+        if (live) Dot(if (remote) Ink.Blue else Ink.Rupture, 6.dp, pulse = true)
+        T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = if (asks) Ink.Rupture else p.meta, lines = 1)
     }
-}
 
 /** The app's commands, named like the TUI's. Those in [NOW] run on tap; the rest take an argument. */
 val BUILTINS = listOf(
     Command("new", "fresh session · optional first message"), Command("compact", "summarize to free context · optional focus"),
-    Command("name", "name this session"), Command("model", "choose model and reasoning"), Command("reasoning", "reasoning level"),
-    Command("copy", "copy the last answer"), Command("sessions", "all sessions"), Command("pair", "Bridge: scan or share a code"),
-    Command("text", "chat text size · small, medium, large (or pinch)"), Command("login", "providers and keys"), Command("plugins", "turn plugins on and off"),
+    Command("name", "name this session"), Command("model", "model and reasoning"), Command("copy", "copy the last answer"),
+    Command("sessions", "all sessions"), Command("pair", "Bridge: scan or share a code"), Command("login", "providers and accounts"), Command("plugins", "turn plugins on and off"),
 )
-val NOW = setOf("model", "reasoning", "copy", "sessions", "pair", "login", "plugins")
-private val REMOTE = setOf("new", "model", "reasoning", "copy", "sessions", "pair")
+val NOW = setOf("model", "copy", "sessions", "pair", "login", "plugins")
+private val REMOTE = setOf("new", "model", "copy", "sessions", "pair")

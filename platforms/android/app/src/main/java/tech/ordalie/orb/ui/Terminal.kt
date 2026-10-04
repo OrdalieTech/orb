@@ -1,7 +1,5 @@
 package tech.ordalie.orb.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
@@ -16,9 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -34,6 +30,8 @@ import com.termux.view.TerminalViewClient
 import tech.ordalie.orb.R
 import tech.ordalie.orb.core.Linux
 import java.util.Properties
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * The terminal on Orb's Linux: the same shell the agent's bash tool runs, for the owner. One
@@ -63,13 +61,10 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
     override fun onTitleChanged(s: TerminalSession) {}
     override fun onSessionFinished(s: TerminalSession) { if (session == s) session = null }
     override fun onCopyTextToClipboard(s: TerminalSession, text: String?) {
-        val v = view ?: return
-        v.context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("terminal", text ?: ""))
+        view?.context?.copy(text.orEmpty())
     }
     override fun onPasteTextFromClipboard(s: TerminalSession?) {
-        val v = view ?: return
-        val text = v.context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(v.context)?.toString() ?: return
-        v.mEmulator?.paste(text)
+        view?.let { v -> v.mEmulator?.paste(v.context.paste()) }
     }
     override fun onBell(s: TerminalSession) {}
     override fun onColorsChanged(s: TerminalSession) { view?.invalidate() }
@@ -124,9 +119,9 @@ fun ColumnScope.TerminalScreen(c: Ctx) {
             TerminalView(context, null).apply {
                 setBackgroundColor(bg)
                 setTerminalViewClient(Shell)
-                if (Shell.size == 0) Shell.size = (13 * resources.displayMetrics.scaledDensity).toInt()
+                if (Shell.size == 0) Shell.size = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics).toInt()
                 setTextSize(Shell.size)
-                ResourcesCompat.getFont(context, R.font.ubuntu_mono_regular)?.let(::setTypeface)
+                ResourcesCompat.getFont(context, R.font.ubuntu_sans_mono)?.let(::setTypeface)
                 isFocusable = true; isFocusableInTouchMode = true
                 Shell.view = this
                 attachSession(Shell.session(linux))

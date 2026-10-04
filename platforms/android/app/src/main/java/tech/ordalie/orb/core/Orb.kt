@@ -8,7 +8,7 @@ import java.io.File
 data class Plugin(val name: String, val on: Boolean, val about: String)
 
 /** A stored conversation on this phone, as `orb storage sessions` lists it. */
-data class Past(val id: String, val title: String, val modified: Long, val messages: Int)
+data class Past(val id: String, val title: String, val modified: Long)
 
 /** Where the Orb core lives on this device and how it is started. Everything else is Orb's own CLI. */
 class Orb(private val context: Context) {
@@ -21,15 +21,6 @@ class Orb(private val context: Context) {
     val cwd: File get() = if (linux.ready) linux.home else workspace
     val device: String = (Build.MODEL ?: "android").lowercase().replace(Regex("[^a-z0-9-]"), "-").take(24)
     private val prefs = context.getSharedPreferences("orb", Context.MODE_PRIVATE)
-
-    /** Provider keys stay in the app sandbox and reach Orb as the environment variables it already reads. */
-    fun key(env: String): String = prefs.getString(env, "") ?: ""
-    fun setKey(env: String, value: String) = prefs.edit().putString(env, value.trim()).apply()
-    /** Conversation text size in sp: pinch the chat or /text to change it; it stays. */
-    private val chat = androidx.compose.runtime.mutableFloatStateOf(prefs.getFloat("chat", 15f))
-    var chatSize: Float
-        get() = chat.floatValue
-        set(value) { chat.floatValue = value.coerceIn(12f, 21f); prefs.edit().putFloat("chat", chat.floatValue).apply() }
 
     /** Small facts the app learns and keeps, like what a Bridge peer is called. */
     fun recall(key: String): String = prefs.getString("k:$key", "") ?: ""
@@ -49,7 +40,6 @@ class Orb(private val context: Context) {
         put("TERM", "dumb")
         put("ORB_CLIENT", "android")
         putAll(linux.env())
-        PROVIDERS.forEach { (env, _) -> key(env).takeIf { it.isNotEmpty() }?.let { put(env, it) } }
     }
 
     fun lines(scope: CoroutineScope, tag: String, vararg args: String) =
@@ -67,7 +57,7 @@ class Orb(private val context: Context) {
     /** This phone's conversations, newest first. */
     fun sessions(): List<Past> = run("storage", "sessions").second.lineSequence().mapNotNull { line ->
         runCatching { org.json.JSONObject(line) }.getOrNull()?.takeIf { it.optInt("messages") > 0 }?.let {
-            Past(it.getString("id"), it.optString("name").ifBlank { it.optString("first").lineSequence().firstOrNull().orEmpty() }.take(80).ifBlank { "untitled" }, it.optLong("modified"), it.optInt("messages"))
+            Past(it.getString("id"), it.optString("name").ifBlank { it.optString("first").lineSequence().firstOrNull().orEmpty() }.take(80).ifBlank { "untitled" }, it.optLong("modified"))
         }
     }.toList()
 
@@ -81,19 +71,6 @@ class Orb(private val context: Context) {
         get() = prefs.getString("permissions", "auto") ?: "auto"
         set(value) { if (run("plugins", "set", "permissions", "mode", "\"$value\"").first == 0) prefs.edit().putString("permissions", value).apply() }
 
-    /** Adds a provider through Orb's own models.json document (`orb storage config export|import`). */
-    fun addProvider(name: String, api: String, baseUrl: String, apiKey: String, models: List<String>): String? = config("models.json") { doc ->
-        val providers = doc.optJSONObject("providers") ?: org.json.JSONObject().also { doc.put("providers", it) }
-        providers.put(name, org.json.JSONObject().put("api", api).put("baseUrl", baseUrl).apply {
-            if (apiKey.isNotEmpty()) put("apiKey", apiKey)
-            // Third-party OpenAI-compatible endpoints (Google, Mistral, local servers…) reject OpenAI's `store`.
-            if (api == "openai-completions") put("compat", org.json.JSONObject().put("supportsStore", false))
-        }
-            .put("models", org.json.JSONArray(models.map { id ->
-                org.json.JSONObject().put("id", id).put("name", id).put("reasoning", false).put("input", org.json.JSONArray(listOf("text"))).put("contextWindow", 128000).put("maxTokens", 8192)
-            })))
-    }
-
     /** Edits one of Orb's config documents (`orb storage config export|import`); an error's text, or null. */
     private fun config(name: String, edit: (org.json.JSONObject) -> Unit): String? {
         val file = File(context.cacheDir, name)
@@ -104,14 +81,13 @@ class Orb(private val context: Context) {
         return run("storage", "config", "import", name, file.path).let { (code, out) -> file.delete(); if (code == 0) null else out.trim() }
     }
 
+    /** Runs a setup step until it succeeds once, so the owner's later choices stand. */
+    private fun once(name: String, step: () -> Boolean) { if (!prefs.getBoolean(name, false) && step()) prefs.edit().putBoolean(name, true).apply() }
+
     /** A phone starts with the plugins that make a conversation interactive; the owner changes them in Plugins. */
     fun seed() {
-        if (!prefs.getBoolean("seeded", false)) {
-            listOf("questions", "tasks", "permissions").forEach { plugin(it, true) }
-            prefs.edit().putBoolean("seeded", true).apply()
-        }
-        // Sessions name themselves after their first exchange (added after the first seed; asked once too).
-        if (!prefs.getBoolean("seeded:titles", false)) { plugin("titles", true); prefs.edit().putBoolean("seeded:titles", true).apply() }
+        once("seeded") { listOf("questions", "tasks", "permissions").all { plugin(it, true) } }
+        once("seeded:titles") { plugin("titles", true) }
         // The agent's bash tool runs in the Linux: its launcher is the shell Orb starts for commands.
         // It moves with every app update (the lib directory does), so it is written again then.
         if (linux.ready && prefs.getString("seeded:shell", "") != linux.launcher &&
@@ -119,14 +95,15 @@ class Orb(private val context: Context) {
         if (linux.ready) linux.brief(File(home, ".pi/agent"))
         // A phone loses its network for minutes at a time (tunnels, lifts): provider calls keep
         // retrying for about four minutes instead of the desktop's fourteen seconds.
-        if (!prefs.getBoolean("seeded:retry", false) && config("settings.json") { it.put("retry", org.json.JSONObject().put("enabled", true).put("maxRetries", 8).put("baseDelayMs", 2000)) } == null)
-            prefs.edit().putBoolean("seeded:retry", true).apply()
+        once("seeded:retry") { config("settings.json") { it.put("retry", org.json.JSONObject().put("enabled", true).put("maxRetries", 8).put("baseDelayMs", 2000)) } == null }
+        // Keys early versions kept in the app's own preferences move into Orb's store, where /login keeps them.
+        LEGACY.forEach { (env, provider) ->
+            val key = prefs.getString(env, null) ?: return@forEach
+            if (key.isBlank() || run("login", "--json", provider, "api_key", stdin = key + "\n").first == 0) prefs.edit().remove(env).apply()
+        }
     }
 
-    companion object {
-        val PROVIDERS = listOf(
-            "ANTHROPIC_API_KEY" to "anthropic", "OPENAI_API_KEY" to "openai", "GEMINI_API_KEY" to "google",
-            "OPENROUTER_API_KEY" to "openrouter", "XAI_API_KEY" to "xai", "MISTRAL_API_KEY" to "mistral",
-        )
+    private companion object {
+        val LEGACY = listOf("ANTHROPIC_API_KEY" to "anthropic", "OPENAI_API_KEY" to "openai", "GEMINI_API_KEY" to "google", "OPENROUTER_API_KEY" to "openrouter", "XAI_API_KEY" to "xai", "MISTRAL_API_KEY" to "mistral")
     }
 }

@@ -14,11 +14,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,9 +26,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tech.ordalie.orb.core.Plugin
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
-/** The app manages Bridge itself; these stay out of the list. */
-private val MANAGED = setOf("bridge", "claude-sessions", "provider-usage")
+/** The app manages Bridge itself, and these read a computer's Claude Code, Codex or footer: none belongs on a phone. */
+private val MANAGED = setOf("bridge", "bridge-agent-calls", "claude-sessions", "codex-sessions", "provider-usage")
 
 /** Orb's bundled plugins. Each one only ever renders into a slot or raises an interrupt. */
 @Composable
@@ -40,7 +40,7 @@ fun ColumnScope.PluginsScreen(c: Ctx) {
     var dirty by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(c.rt.orb.permissions) }
     LaunchedEffect(Unit) { list = withContext(Dispatchers.IO) { c.rt.orb.plugins() }.filter { it.name !in MANAGED } }
-    Header("plugins", sub = if (list.isEmpty()) "reading" else "${list.count { it.on }} of ${list.size} on", back = c.nav::back)
+    Header("Plugins", sub = if (list.isEmpty()) "reading" else "${list.count { it.on }} of ${list.size} on", back = c.nav::back)
     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
         items(list, key = { it.name }) { pl ->
             Row(
@@ -57,8 +57,8 @@ fun ColumnScope.PluginsScreen(c: Ctx) {
                     if (pl.on) T("x", size = 14.sp, bold = true, color = p.bg)
                 }
                 Column(Modifier.weight(1f)) {
-                    T(pl.name, size = 17.sp, bold = pl.on, color = if (pl.on) p.fg else p.mute)
-                    T(pl.about, size = Size.Label, color = p.meta)
+                    T(pl.name, size = 17.sp, weight = if (pl.on) Strong else Regular, color = if (pl.on) p.fg else p.mute)
+                    T(pl.about, size = 13.sp, color = p.meta)
                 }
                 if (pl.name == "permissions" && pl.on) Box(Modifier.press {
                     scope.launch { withContext(Dispatchers.IO) { c.rt.orb.permissions = if (mode == "auto") "enforce" else "auto" }; mode = c.rt.orb.permissions; dirty = true }

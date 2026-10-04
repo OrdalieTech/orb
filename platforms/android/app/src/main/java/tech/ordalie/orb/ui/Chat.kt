@@ -1,13 +1,5 @@
 package tech.ordalie.orb.ui
 
-import tech.ordalie.orb.core.RemoteSession
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -17,59 +9,42 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.core.Item
 import tech.ordalie.orb.core.Note
+import tech.ordalie.orb.core.RemoteSession
 import tech.ordalie.orb.core.Said
 import tech.ordalie.orb.core.Session
 import tech.ordalie.orb.core.Tool
 import tech.ordalie.orb.core.You
+import kotlin.math.roundToInt
+
+/** Conversation text, in sp. */
+private const val SIZE = 16f
 
 /** A block is one speaker's run: a YOU message, or everything Orb said and did until the next one. */
 private fun blocks(items: List<Item>): List<List<Item>> = buildList {
@@ -82,17 +57,7 @@ private fun blocks(items: List<Item>): List<List<Item>> = buildList {
 
 @Composable
 fun ColumnScope.Chat(c: Ctx, s: Session) {
-    Header(s.title.ifEmpty { "New session" }, sub = listOf(s.where, s.model.substringAfter('/')).filter(String::isNotEmpty).joinToString(" · "), back = c.nav::back) {
-        // The phone's Linux, where this conversation's commands run: one tap from the talk about them.
-        if (!s.remote) Box(Modifier.press { c.nav.go(Screen.Terminal) }.padding(horizontal = 8.dp, vertical = 6.dp)) { T(">_", size = 17.sp, bold = true) }
-        AnimatedContent(if (s.busy) "live" else if (!s.online) "offline" else "", transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) }, label = "state") { st ->
-            when (st) {
-                "live" -> Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) { Dot(pulse = true); Spacer(Modifier.width(6.dp)); T("live", label = true) }
-                "offline" -> T("offline", Modifier.padding(end = 8.dp), label = true, color = p.meta)
-                else -> Spacer(Modifier.width(1.dp))
-            }
-        }
-    }
+    Strip(s) { c.nav.go(Screen.Terminal) }
     AnimatedVisibility(!s.remote && c.rt.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue(s::abort) }
     // A peer's session follows its transcript only while shown here.
     if (s is RemoteSession) DisposableEffect(s) { s.watched = true; onDispose { s.watched = false } }
@@ -101,61 +66,53 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     val tail = (s.transcript.items.lastOrNull() as? Said)?.text?.length ?: 0
     // Open on the latest turn, then follow new output while the reader stays at the bottom.
     LaunchedEffect(s) { snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }.let { list.scrollToItem(it - 1, Int.MAX_VALUE) } }
-    // Follow new output unless the reader has scrolled up to read.
     var follow by remember { mutableStateOf(true) }
     LaunchedEffect(list) { snapshotFlow { list.isScrollInProgress }.collect { if (!it) follow = !list.canScrollForward } }
     LaunchedEffect(s.transcript.items.size, tail) {
         val n = list.layoutInfo.totalItemsCount
         if (follow && n > 0) list.animateScrollToItem(n - 1, Int.MAX_VALUE)
     }
-    // Two fingers resize the conversation's text; the size is kept for every chat.
-    val orb = c.rt.orb
-    var size by remember { mutableFloatStateOf(orb.chatSize) }
-    Box(Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) {
-        awaitEachGesture {
-            awaitFirstDown(requireUnconsumed = false)
-            var pinched = false
-            do {
-                val e = awaitPointerEvent(PointerEventPass.Initial)
-                if (e.changes.count { it.pressed } >= 2) {
-                    val zoom = e.calculateZoom()
-                    if (zoom != 1f) { size = (size * zoom).coerceIn(12f, 21f); pinched = true; e.changes.forEach { it.consume() } }
-                }
-            } while (e.changes.any { it.pressed })
-            if (pinched) orb.chatSize = size
-        }
-    }) {
-        LaunchedEffect(orb.chatSize) { size = orb.chatSize }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
         val ghost by animateFloatAsState(if (blocks.isEmpty()) 1f else 0f, tween(400), label = "standby")
-        if (ghost > 0f) Box(Modifier.alpha(ghost)) { Standby() }
+        if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T("standby", label = true, color = p.meta) }
         LazyColumn(Modifier.fillMaxSize(), state = list) {
             itemsIndexed(blocks, key = { _, b -> b.first().key }) { i, b ->
-                // No rules between turns: the YOU mark is the turn.
-                Column(Modifier.animateItem(fadeInSpec = tween(280), fadeOutSpec = tween(160))) { Block(b, size, first = i == 0) }
+                Column(Modifier.animateItem(fadeInSpec = tween(280), fadeOutSpec = tween(160))) { Block(b, first = i == 0) }
             }
             item { Spacer(Modifier.height(12.dp)) }
         }
     }
     AnimatedVisibility(s.status.isNotBlank(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-        T(s.status, Modifier.padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = Size.Label, color = p.meta, lines = 1)
+        T(s.status, Modifier.padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = 13.sp, color = p.meta, lines = 1)
     }
-    PromptBox(s, c.cites, c.onCite, { c.chooseWhere { c.nav.go(Screen.Chat(it)) } }, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
+    PromptBox(s, c.cites, c.onCite, { c.chooseWhere { c.nav.show(it) } }, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
 }
+
+/** Under the tabs, what the conversation runs on: where, its state, how full its context is, what it cost; the phone's terminal at right. */
+@Composable
+private fun Strip(s: Session, terminal: () -> Unit) =
+    Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        val state = when { s.busy -> "working"; !s.online -> "offline"; else -> "" }
+        T(listOf(s.where, state).filter(String::isNotEmpty).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (s.busy) p.fg else p.meta, lines = 1)
+        if (s.context > 0f) T("${(s.context * 100).roundToInt()}% context", size = 13.sp, color = if (s.context > 0.8f) Ink.Rupture else p.meta)
+        if (s.cost > 0.0) T("$" + "%.2f".format(java.util.Locale.ROOT, s.cost), size = 13.sp, color = p.meta)
+        if (!s.remote) Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong, mono = true) }
+    }
 
 /** The person is labelled; Orb just speaks, full width, its tools inline. */
 @Composable
-private fun Block(items: List<Item>, size: Float, first: Boolean) {
+private fun Block(items: List<Item>, first: Boolean) {
     val you = items.singleOrNull() as? You
-    if (you != null) Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = if (first) 14.dp else 30.dp, bottom = 8.dp)) {
-        Box(Modifier.width(58.dp).padding(top = 1.dp)) { if (you.via != null) Chip("peer", ChipKind.Blue) else Chip("you", ChipKind.Inverted) }
-        BasicText(tokens(you.text, p.fg, p.bg), Modifier.weight(1f).copyable(you.text), mono(size.sp, p.fg, bold = true))
+    if (you != null) Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = if (first) 16.dp else 28.dp, bottom = 8.dp)) {
+        Box(Modifier.width(54.dp).padding(top = 2.dp)) { if (you.via != null) Chip("peer", ChipKind.Blue) else Chip("you", ChipKind.Inverted) }
+        BasicText(tokens(you.text, p.fg, p.bg), Modifier.weight(1f).copyable(you.text), type(SIZE.sp, p.fg, Medium))
     } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 4.dp, bottom = 8.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         runs(items).forEach { run ->
             when (val one = run.singleOrNull()) {
-                null -> Worked(run, size)
-                is Act.Thought -> Thought(one.said, size)
+                null -> Worked(run)
+                is Act.Thought -> Thought(one.said)
                 is Act.Call -> ToolView(one.tool)
-                is Act.Prose -> Said(one.said, size)
+                is Act.Prose -> Said(one.said)
                 is Act.Aside -> Folded(one.note.text, if (one.note.alarm) Ink.Rupture else p.meta)
             }
         }
@@ -193,7 +150,7 @@ private val KIND = mapOf("bash" to "command", "read" to "read", "grep" to "searc
  * 3 commands", failures counted at its end. It opens to the actions; running ones stay in view.
  */
 @Composable
-private fun Worked(run: List<Act>, size: Float) = Column(Modifier.fillMaxWidth().animateContentSize()) {
+private fun Worked(run: List<Act>) = Column(Modifier.fillMaxWidth().animateContentSize()) {
     var open by remember { mutableStateOf(false) }
     val live = run.any { it is Act.Call && it.tool.live || it is Act.Thought && it.said.live }
     val kinds = run.map { if (it is Act.Call) KIND[it.tool.verb] ?: it.tool.verb else "thought" }
@@ -201,28 +158,26 @@ private fun Worked(run: List<Act>, size: Float) = Column(Modifier.fillMaxWidth()
         "$n " + if (n == 1) k else if (k == "search") "searches" else k + "s"
     }
     val failed = run.count { it is Act.Call && it.tool.failed }
-    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", what, if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open) }
+    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", what, if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open, code = false) }
     run.filter { open || it is Act.Call && it.tool.live }.forEach {
-        Box(Modifier.padding(start = 16.dp)) { if (it is Act.Call) ToolView(it.tool) else if (it is Act.Thought) Thought(it.said, size) }
+        Box(Modifier.padding(start = 16.dp)) { if (it is Act.Call) ToolView(it.tool) else if (it is Act.Thought) Thought(it.said) }
     }
 }
 
 /** A thought is an action like the tools around it: same line, same columns, opens the same way. */
 @Composable
-private fun Thought(s: Said, size: Float) = Column(Modifier.fillMaxWidth().animateContentSize()) {
+private fun Thought(s: Said) = Column(Modifier.fillMaxWidth().animateContentSize()) {
     var open by remember { mutableStateOf(false) }
     Box(Modifier.press { open = !open }) {
-        ActionLine("thought", s.thinking.trim().lineSequence().first().removePrefix("**").substringBefore("**"), "${s.thinking.length / 4} tok", live = s.live && s.text.isBlank(), open = open)
+        ActionLine("thought", s.thinking.trim().lineSequence().first().removePrefix("**").substringBefore("**"), "${s.thinking.length / 4} tok", live = s.live && s.text.isBlank(), open = open, code = false)
     }
-    if (open) Box(Modifier.padding(start = 16.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp)) {
-        BasicText(s.thinking.trim(), Modifier.copyable(s.thinking), mono((size - 3).sp, p.mute).copy(lineHeight = (size + 2).sp))
-    }
+    if (open) Panel { BasicText(s.thinking.trim(), Modifier.copyable(s.thinking), type((SIZE - 2).sp, p.mute)) }
 }
 
 @Composable
-private fun Said(s: Said, size: Float) = Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    if (s.text.isNotBlank()) Markdown(s.text, Modifier.copyable(s.text), size)
-    if (s.live) Caret(Ink.Rupture, (size * 0.55f).dp, (size * 1.1f).dp)
+private fun Said(s: Said) = Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    if (s.text.isNotBlank()) Markdown(s.text, Modifier.copyable(s.text), SIZE)
+    if (s.live) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp)
 }
 
 /** A tool line opens into what it was given and what it returned. */
@@ -231,19 +186,26 @@ private fun ToolView(t: Tool) {
     var open by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Box(Modifier.press { open = !open }) { ToolLine(t, open) }
-        if (open) Column(Modifier.padding(start = 16.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (t.args.isNotBlank()) { T("input", label = true, color = p.meta); BasicText(t.args, Modifier.copyable(t.args), mono(12.sp, p.mute).copy(lineHeight = 17.sp)) }
+        if (open) Panel {
+            if (t.args.isNotBlank()) { T("input", label = true, color = p.meta); BasicText(t.args, Modifier.copyable(t.args), type(12.sp, p.mute, mono = true)) }
             T("output", label = true, color = p.meta)
-            BasicText(t.output.ifBlank { if (t.live) "running…" else "no output" }, Modifier.copyable(t.output), mono(12.sp, if (t.failed) Ink.Rupture else p.fg).copy(lineHeight = 17.sp))
+            BasicText(t.output.ifBlank { if (t.live) "running…" else "no output" }, Modifier.copyable(t.output), type(12.sp, if (t.failed) Ink.Rupture else p.fg, mono = true))
         }
     }
 }
+
+/** What an action line opens onto: a raised, outlined surface under it. */
+@Composable
+private fun Panel(content: @Composable ColumnScope.() -> Unit) = Column(
+    Modifier.padding(start = 16.dp, top = 6.dp).fillMaxWidth().background(p.raised, RoundedCornerShape(16.dp)).border(1.dp, p.rule, RoundedCornerShape(16.dp)).padding(14.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp), content = content,
+)
 
 /** Long errors fold to three lines; a tap opens them. */
 @Composable
 private fun Folded(text: String, color: Color) {
     var open by remember { mutableStateOf(false) }
-    Box(Modifier.press { open = !open }.animateContentSize()) { T(text, size = 13.sp, color = color, lines = if (open) Int.MAX_VALUE else 3) }
+    Box(Modifier.press { open = !open }.animateContentSize()) { T(text, size = 14.sp, color = color, lines = if (open) Int.MAX_VALUE else 3) }
 }
 
 /** Long press copies, with a tick and a word — the only confirmation a copy needs. */
@@ -252,11 +214,7 @@ private fun Modifier.copyable(text: String): Modifier {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     return pointerInput(text) {
-        detectTapGestures(onLongPress = {
-            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("orb", text))
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            Toast.makeText(context, "copied", Toast.LENGTH_SHORT).show()
-        })
+        detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); context.copy(text) })
     }
 }
 
@@ -264,21 +222,16 @@ private fun Modifier.copyable(text: String): Modifier {
 private fun tokens(text: String, fg: Color, bg: Color): AnnotatedString = buildAnnotatedString {
     append(text)
     Regex("""(?<=^|\s)(/skill:[\w.-]+|@[^\s]+|#[\w-]+)""").findAll(text).forEach { m ->
-        addStyle(if (m.value[0] == '/') SpanStyle(color = bg, background = fg) else SpanStyle(fontWeight = FontWeight.Normal, textDecoration = TextDecoration.Underline), m.range.first, m.range.last + 1)
+        addStyle(if (m.value[0] == '/') SpanStyle(color = bg, background = fg) else SpanStyle(textDecoration = TextDecoration.Underline), m.range.first, m.range.last + 1)
     }
-}
-
-@Composable
-private fun Standby() = Box(Modifier.fillMaxSize().padding(Margin), contentAlignment = Alignment.Center) {
-    T("standby", label = true, color = p.meta)
 }
 
 /** Another Orb is driving this phone. Blue fills space here and nowhere else. */
 @Composable
 fun PatternBlue(stop: () -> Unit) = Column(Modifier.fillMaxWidth().background(Ink.Blue).padding(horizontal = Margin, vertical = 14.dp)) {
-    T("PATTERN BLUE", size = 20.sp, bold = true, color = Ink.Texte)
+    Stretch("PATTERN BLUE", 30.dp, Ink.Texte)
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        T("a peer is prompting this phone", Modifier.weight(1f), color = Ink.Texte)
+        T("A peer is prompting this phone", Modifier.weight(1f), color = Ink.Texte, weight = Medium)
         Btn("stop", inverted = true, color = Ink.Texte, on = Ink.Blue, onClick = stop)
     }
 }
