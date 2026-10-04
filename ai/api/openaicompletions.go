@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
 )
@@ -325,6 +326,20 @@ func appendOpenAICompletionsValue(dst []byte, value any) ([]byte, error) {
 		return append(dst, ']'), nil
 	case bool:
 		return strconv.AppendBool(dst, typed), nil
+	case jsonschema.Schema:
+		// A schema encodes as its compacted bytes, {} when empty; ai.Marshal
+		// reports an invalid one.
+		if len(typed) == 0 {
+			typed = jsonschema.Schema("{}")
+		}
+		if encoded, err := jsonwire.AppendCompact(dst, typed); err == nil {
+			return encoded, nil
+		}
+		encoded, err := ai.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		return append(dst, encoded...), nil
 	default:
 		encoded, err := ai.Marshal(value)
 		if err != nil {

@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
@@ -227,29 +229,87 @@ func (sections *SystemPromptSections) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (message SystemMessage) MarshalJSON() ([]byte, error) {
-	content := message.Content
-	if content == nil {
-		content = ""
+func (message SystemMessage) MarshalJSON() ([]byte, error) { return marshalWire(message) }
+
+func (message SystemMessage) appendWire(dst []byte) ([]byte, error) {
+	dst = append(dst, `{"role":"system","content":`...)
+	if text, ok := message.Content.(string); ok && utf8.ValidString(text) {
+		dst = jsonwire.AppendString(dst, text)
+	} else if message.Content == nil {
+		dst = append(dst, `""`...)
+	} else {
+		// Blocks, and strings encoding/json coerces to valid UTF-8.
+		content, err := marshalJSON(message.Content)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(dst, content...)
+	}
+	if len(message.Sections) > 0 {
+		sections, err := message.Sections.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		dst = append(append(dst, `,"sections":`...), sections...)
+	}
+	timestamp := func(dst []byte) []byte {
+		return strconv.AppendInt(append(dst, `,"timestamp":`...), message.Timestamp, 10)
 	}
 	if message.toolFieldsAfterTimestamp {
-		return marshalJSON(struct {
-			Role         string               `json:"role"`
-			Content      any                  `json:"content"`
-			Sections     SystemPromptSections `json:"sections,omitempty"`
-			Timestamp    int64                `json:"timestamp"`
-			ToolsAdded   []Tool               `json:"toolsAdded,omitempty"`
-			ToolsRemoved []ToolReference      `json:"toolsRemoved,omitempty"`
-		}{"system", content, message.Sections, message.Timestamp, message.ToolsAdded, message.ToolsRemoved})
+		dst = timestamp(dst)
 	}
-	return marshalJSON(struct {
-		Role         string               `json:"role"`
-		Content      any                  `json:"content"`
-		Sections     SystemPromptSections `json:"sections,omitempty"`
-		ToolsAdded   []Tool               `json:"toolsAdded,omitempty"`
-		ToolsRemoved []ToolReference      `json:"toolsRemoved,omitempty"`
-		Timestamp    int64                `json:"timestamp"`
-	}{"system", content, message.Sections, message.ToolsAdded, message.ToolsRemoved, message.Timestamp})
+	if len(message.ToolsAdded) > 0 {
+		dst = append(dst, `,"toolsAdded":[`...)
+		for index, tool := range message.ToolsAdded {
+			if index > 0 {
+				dst = append(dst, ',')
+			}
+			var err error
+			if dst, err = tool.appendWire(dst); err != nil {
+				return nil, err
+			}
+		}
+		dst = append(dst, ']')
+	}
+	if len(message.ToolsRemoved) > 0 {
+		removed, err := marshalJSON(message.ToolsRemoved)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(append(dst, `,"toolsRemoved":`...), removed...)
+	}
+	if !message.toolFieldsAfterTimestamp {
+		dst = timestamp(dst)
+	}
+	return append(dst, '}'), nil
+}
+
+// appendWire appends tool as encoding/json and Marshal's fixes encode it.
+func (tool Tool) appendWire(dst []byte) ([]byte, error) {
+	parameters := []byte(tool.Parameters)
+	if len(parameters) == 0 {
+		parameters = []byte("{}")
+	}
+	encoded, err := jsonwire.AppendCompact(nil, parameters)
+	if err != nil || !utf8.ValidString(tool.Name) || !utf8.ValidString(tool.Label) || !utf8.ValidString(tool.Description) {
+		// encoding/json coerces invalid UTF-8 and reports an invalid schema.
+		encoded, err := marshalJSON(tool)
+		return append(dst, encoded...), err
+	}
+	dst = jsonwire.AppendString(append(dst, `{"name":`...), tool.Name)
+	if tool.Label != "" {
+		dst = jsonwire.AppendString(append(dst, `,"label":`...), tool.Label)
+	}
+	dst = jsonwire.AppendString(append(dst, `,"description":`...), tool.Description)
+	dst = append(append(dst, `,"parameters":`...), encoded...)
+	if tool.ConstrainedSampling != nil {
+		config, err := marshalJSON(tool.ConstrainedSampling)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(append(dst, `,"constrainedSampling":`...), config...)
+	}
+	return append(dst, '}'), nil
 }
 
 func (message *SystemMessage) UnmarshalJSON(data []byte) error {
@@ -281,7 +341,7 @@ func (message *SystemMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (message UserMessage) MarshalJSON() ([]byte, error) { return message.appendWire(nil) }
+func (message UserMessage) MarshalJSON() ([]byte, error) { return marshalWire(message) }
 
 func (message UserMessage) appendWire(dst []byte) ([]byte, error) {
 	dst, err := message.Content.appendWire(append(dst, `{"role":"user","content":`...))
@@ -290,7 +350,7 @@ func (message UserMessage) appendWire(dst []byte) ([]byte, error) {
 	}
 	return append(strconv.AppendInt(append(dst, `,"timestamp":`...), message.Timestamp, 10), '}'), nil
 }
-func (message AssistantMessage) MarshalJSON() ([]byte, error) { return message.appendWire(nil) }
+func (message AssistantMessage) MarshalJSON() ([]byte, error) { return marshalWire(message) }
 
 // assistantMemberOrders are the orders of the members after "model": pi's,
 // then the ones its error paths write, with errorMessage before timestamp or
@@ -492,7 +552,7 @@ func SetAssistantMessageErrorBeforeResponseID(message *AssistantMessage, enabled
 	}
 }
 
-func (message ToolResultMessage) MarshalJSON() ([]byte, error) { return message.appendWire(nil) }
+func (message ToolResultMessage) MarshalJSON() ([]byte, error) { return marshalWire(message) }
 
 func (message ToolResultMessage) appendWire(dst []byte) ([]byte, error) {
 	dst = jsonwire.AppendString(append(dst, `{"role":"toolResult","toolCallId":`...), message.ToolCallID)
@@ -1034,6 +1094,25 @@ func (content UserContent) appendWire(dst []byte) ([]byte, error) {
 		return jsonwire.AppendString(dst, *content.Text), nil
 	}
 	return appendWireBlocks(dst, content.Blocks)
+}
+
+// wireBuffers lends scratch buffers to the message encoders, which return an
+// exact copy: grown from nothing, an encoding allocated about twice its size.
+var wireBuffers = sync.Pool{New: func() any { return new([]byte) }}
+
+func marshalWire[T wireAppender](value T) ([]byte, error) {
+	buffer := wireBuffers.Get().(*[]byte)
+	encoded, err := value.appendWire((*buffer)[:0])
+	if err != nil {
+		wireBuffers.Put(buffer)
+		return nil, err
+	}
+	result := bytes.Clone(encoded)
+	if cap(encoded) <= 1<<20 {
+		*buffer = encoded
+		wireBuffers.Put(buffer)
+	}
+	return result, nil
 }
 
 // wireAppender is implemented by the message and content types, which append
