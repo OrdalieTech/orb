@@ -119,6 +119,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - An explicitly empty tool selection stays empty instead of falling back to the default tools.
 - Go embedders: the process RPC client (`agent/modes.NewRPCClient` and its types) is removed;
   drive `orb --mode rpc` over stdio, or use hosted RPC.
+- Borders read more clearly: the input field's border with thinking off and dialog rules use a darker
+  gray in the light theme and a lighter one in the dark theme.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

@@ -141,6 +141,9 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	custom := strings.Replace(string(source), `"name": "dark"`, `"name": "custom-export"`, 1)
+	// Orb's raised border contrast (docs/DECISIONS.md) is undone so the theme matches upstream's dark.
+	custom = strings.Replace(custom, `"borderMuted": "#707070"`, `"borderMuted": "darkGray"`, 1)
+	custom = strings.Replace(custom, `"thinkingOff": "#707070"`, `"thinkingOff": "darkGray"`, 1)
 	custom = strings.Replace(custom, `"userMsgBg": "#343541"`, `"userMsgBg": "#204060", "pageDeep": "#112233", "pageAlias": "pageDeep", "cardIndex": 24`, 1)
 	custom = strings.Replace(custom, `"export": { "pageBg": "#18181e", "cardBg": "#1e1e24", "infoBg": "#28323c" }`, `"export": { "pageBg": "pageAlias", "cardBg": "cardIndex", "infoBg": "" }`, 1)
 	if err := os.WriteFile(filepath.Join(themeDir, "custom-export.json"), []byte(custom), 0o600); err != nil {

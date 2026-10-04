@@ -66,6 +66,10 @@ type f12ThemeCollision struct {
 	LoserPath    string `json:"loserPath"`
 }
 
+// orbThemeColors are the built-in theme roles Orb deliberately departs from
+// (docs/DECISIONS.md, "Higher-contrast muted borders").
+var orbThemeColors = map[string]bool{"borderMuted": true, "thinkingOff": true}
+
 func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 	var fixture f12ThemeFixture
 	runner.LoadJSON(t, "F12", "themes.json", &fixture)
@@ -84,6 +88,9 @@ func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 				t.Fatalf("color mode = %q, want %q", selected.ColorMode(), fixtureCase.Mode)
 			}
 			for name, expected := range fixtureCase.Foreground {
+				if orbThemeColors[name] {
+					continue
+				}
 				actual, err := selected.ForegroundANSI(name)
 				if err != nil {
 					t.Fatalf("foreground %s: %v", name, err)
