@@ -120,16 +120,25 @@ func (reader *commandReader) Read(buffer []byte) (int, error) {
 	return written, nil
 }
 
-// frameWriter hands each complete output frame, without its LF, to the shim.
+// frameWriter hands each complete output frame, LF included, to the shim as
+// a Uint8Array, which it streams as it is.
 type frameWriter struct {
 	emit    js.Value
 	partial []byte
 }
 
+var uint8Array = js.Global().Get("Uint8Array")
+
+func (writer *frameWriter) emitFrame(frame []byte) {
+	array := uint8Array.New(len(frame))
+	js.CopyBytesToJS(array, frame)
+	writer.emit.Invoke(array)
+}
+
 func (writer *frameWriter) Write(data []byte) (int, error) {
 	// agent/rpc writes each frame whole, LF included.
 	if end := bytes.IndexByte(data, '\n'); len(writer.partial) == 0 && end == len(data)-1 {
-		writer.emit.Invoke(string(data[:end]))
+		writer.emitFrame(data)
 		return len(data), nil
 	}
 	writer.partial = append(writer.partial, data...)
@@ -138,7 +147,7 @@ func (writer *frameWriter) Write(data []byte) (int, error) {
 		if end < 0 {
 			return len(data), nil
 		}
-		writer.emit.Invoke(string(writer.partial[:end]))
+		writer.emitFrame(writer.partial[:end+1])
 		writer.partial = writer.partial[end+1:]
 	}
 }
