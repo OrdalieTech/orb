@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -190,6 +191,12 @@ type Agent struct {
 	mu           sync.Mutex
 
 	state AgentState
+	// prompt caches systemPromptLocked's text and the system messages it was
+	// built from: State is read several times a turn.
+	prompt struct {
+		systems ai.MessageList
+		text    string
+	}
 
 	convertToLLM                ConvertToLLMFunc
 	transformContext            TransformContextFunc
@@ -552,10 +559,13 @@ func (agent *Agent) systemPromptLocked() string {
 			systems = append(systems, system)
 		}
 	}
-	if current := ai.CurrentSystemMessage(systems); current != nil {
-		return ai.SystemMessageText(current)
+	if len(systems) == 0 {
+		return agent.state.SystemPrompt
 	}
-	return agent.state.SystemPrompt
+	if !slices.Equal(systems, agent.prompt.systems) {
+		agent.prompt.systems, agent.prompt.text = systems, ai.SystemMessageText(ai.CurrentSystemMessage(systems))
+	}
+	return agent.prompt.text
 }
 
 func (agent *Agent) DisplayState() AgentDisplayState {
