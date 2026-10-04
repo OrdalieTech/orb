@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,38 +61,39 @@ const (
 	usageOptionalsAfterCost
 )
 
-func (usage Usage) MarshalJSON() ([]byte, error) {
+func (usage Usage) MarshalJSON() ([]byte, error) { return usage.appendWire(nil) }
+
+func (usage Usage) appendWire(dst []byte) ([]byte, error) {
 	beforeTotals := usage.optionalOrder == usageOptionalsBeforeTotals ||
 		usage.optionalOrder == usageOptionalsDefault && usage.CacheWrite1h == nil
-	if beforeTotals {
-		return marshalJSON(struct {
-			Input        int64  `json:"input"`
-			Output       int64  `json:"output"`
-			CacheRead    int64  `json:"cacheRead"`
-			CacheWrite   int64  `json:"cacheWrite"`
-			CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
-			Reasoning    *int64 `json:"reasoning,omitempty"`
-			TotalTokens  int64  `json:"totalTokens"`
-			Cost         Cost   `json:"cost"`
-		}{
-			Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
-			CacheWrite1h: usage.CacheWrite1h, Reasoning: usage.Reasoning, TotalTokens: usage.TotalTokens, Cost: usage.Cost,
-		})
+	dst = strconv.AppendInt(append(dst, `{"input":`...), usage.Input, 10)
+	dst = strconv.AppendInt(append(dst, `,"output":`...), usage.Output, 10)
+	dst = strconv.AppendInt(append(dst, `,"cacheRead":`...), usage.CacheRead, 10)
+	dst = strconv.AppendInt(append(dst, `,"cacheWrite":`...), usage.CacheWrite, 10)
+	optionals := func(dst []byte) []byte {
+		dst = appendOptionalInt(dst, `,"cacheWrite1h":`, usage.CacheWrite1h)
+		return appendOptionalInt(dst, `,"reasoning":`, usage.Reasoning)
 	}
-	return marshalJSON(struct {
-		Input        int64  `json:"input"`
-		Output       int64  `json:"output"`
-		CacheRead    int64  `json:"cacheRead"`
-		CacheWrite   int64  `json:"cacheWrite"`
-		TotalTokens  int64  `json:"totalTokens"`
-		Cost         Cost   `json:"cost"`
-		CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
-		Reasoning    *int64 `json:"reasoning,omitempty"`
-	}{
-		Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
-		TotalTokens: usage.TotalTokens, Cost: usage.Cost, CacheWrite1h: usage.CacheWrite1h, Reasoning: usage.Reasoning,
-	})
+	if beforeTotals {
+		dst = optionals(dst)
+	}
+	dst = strconv.AppendInt(append(dst, `,"totalTokens":`...), usage.TotalTokens, 10)
+	cost := usage.Cost
+	for index, value := range [...]float64{cost.Input, cost.Output, cost.CacheRead, cost.CacheWrite, cost.Total} {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			_, err := marshalJSON(cost)
+			return nil, err
+		}
+		dst = jsonwire.AppendFloat(append(dst, costMembers[index]...), value)
+	}
+	dst = append(dst, '}')
+	if !beforeTotals {
+		dst = optionals(dst)
+	}
+	return append(dst, '}'), nil
 }
+
+var costMembers = [...]string{`,"cost":{"input":`, `,"output":`, `,"cacheRead":`, `,"cacheWrite":`, `,"total":`}
 
 func (usage *Usage) UnmarshalJSON(data []byte) error {
 	type plainUsage Usage
@@ -266,200 +268,80 @@ func (message *SystemMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (message UserMessage) MarshalJSON() ([]byte, error) {
-	type payload UserMessage
-	return marshalJSON(struct {
-		Role string `json:"role"`
-		payload
-	}{Role: "user", payload: payload(message)})
+func (message UserMessage) MarshalJSON() ([]byte, error) { return message.appendWire(nil) }
+
+func (message UserMessage) appendWire(dst []byte) ([]byte, error) {
+	dst, err := message.Content.appendWire(append(dst, `{"role":"user","content":`...))
+	if err != nil {
+		return nil, err
+	}
+	return append(strconv.AppendInt(append(dst, `,"timestamp":`...), message.Timestamp, 10), '}'), nil
+}
+func (message AssistantMessage) MarshalJSON() ([]byte, error) { return message.appendWire(nil) }
+
+// assistantMemberOrders are the orders of the members after "model": pi's,
+// then the ones its error paths write, with errorMessage before timestamp or
+// before responseId.
+var assistantMemberOrders = [...][]string{
+	{"usage", "stopReason", "timestamp", "responseId", "providerThinkingLevel", "responseModel", "diagnostics", "endTurn", "rawStopReason", "errorMessage", "thinkingLevel"},
+	{"usage", "stopReason", "errorMessage", "responseId", "providerThinkingLevel", "responseModel", "diagnostics", "timestamp", "endTurn", "rawStopReason", "thinkingLevel"},
+	{"usage", "stopReason", "timestamp", "endTurn", "rawStopReason", "errorMessage", "responseId", "providerThinkingLevel", "responseModel", "diagnostics", "thinkingLevel"},
 }
 
-func (message AssistantMessage) MarshalJSON() (encoded []byte, err error) {
-	defer func() {
-		if err != nil || (!message.providerThinkingLevelBeforeUsage && !message.rawStopBeforeDiagnostics) {
-			return
+func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
+	dst, err := appendWireBlocks(append(dst, `{"role":"assistant","content":`...), message.Content)
+	if err != nil {
+		return nil, err
+	}
+	dst = jsonwire.AppendString(append(dst, `,"api":`...), string(message.API))
+	dst = jsonwire.AppendString(append(dst, `,"provider":`...), string(message.Provider))
+	if !message.modelOmitted {
+		dst = jsonwire.AppendString(append(dst, `,"model":`...), message.Model)
+	}
+	usage, err := message.Usage.appendWire(nil)
+	if err != nil {
+		return nil, err
+	}
+	var diagnostics []byte
+	if message.Diagnostics != nil {
+		if diagnostics, err = marshalJSON(message.Diagnostics); err != nil {
+			return nil, err
 		}
-		members, parseErr := openRouterRoutingMembers(encoded)
-		if parseErr != nil {
-			err = parseErr
-			return
+	}
+	values := map[string][]byte{
+		"usage": usage, "stopReason": jsonwire.AppendString(nil, string(message.StopReason)),
+		"timestamp": strconv.AppendInt(nil, message.Timestamp, 10), "responseId": appendOptionalString(nil, "", message.ResponseID),
+		"providerThinkingLevel": appendOptionalString(nil, "", message.ProviderThinkingLevel),
+		"responseModel":         appendOptionalString(nil, "", message.ResponseModel), "diagnostics": diagnostics,
+		"endTurn": appendOptionalBool(nil, "", message.EndTurn), "rawStopReason": appendOptionalString(nil, "", message.RawStopReason),
+		"errorMessage": appendOptionalString(nil, "", message.ErrorMessage), "thinkingLevel": appendOptionalString(nil, "", (*string)(message.ThinkingLevel)),
+	}
+	order := assistantMemberOrders[0]
+	if message.ErrorMessage != nil && message.errorBeforeTimestamp {
+		order = assistantMemberOrders[1]
+	} else if message.ErrorMessage != nil && message.errorBeforeResponseID {
+		order = assistantMemberOrders[2]
+	}
+	// Moves recorded from a decoded message apply when both members are present.
+	moveBefore := func(name, before string) {
+		from, to := slices.Index(order, name), slices.Index(order, before)
+		if values[name] != nil && values[before] != nil && from > to {
+			order = slices.Insert(slices.Delete(slices.Clone(order), from, from+1), to, name)
 		}
-		moveBefore := func(name, before string) {
-			index, target := -1, -1
-			for i, m := range members {
-				if m.name == name {
-					index = i
-				}
-				if m.name == before {
-					target = i
-				}
-			}
-			if index < 0 || target < 0 || index < target {
-				return
-			}
-			field := members[index]
-			copy(members[target+1:index+1], members[target:index])
-			members[target] = field
+	}
+	if message.providerThinkingLevelBeforeUsage {
+		moveBefore("providerThinkingLevel", "usage")
+	}
+	if message.rawStopBeforeDiagnostics {
+		moveBefore("rawStopReason", "diagnostics")
+	}
+	for _, name := range order {
+		if value := values[name]; value != nil {
+			dst = append(append(append(append(dst, ',', '"'), name...), '"', ':'), value...)
 		}
-		if message.providerThinkingLevelBeforeUsage {
-			moveBefore("providerThinkingLevel", "usage")
-		}
-		if message.rawStopBeforeDiagnostics {
-			moveBefore("rawStopReason", "diagnostics")
-		}
-		var output bytes.Buffer
-		output.WriteByte('{')
-		for i, m := range members {
-			if i > 0 {
-				output.WriteByte(',')
-			}
-			name, _ := jsonwire.MarshalString(m.name)
-			output.Write(name)
-			output.WriteByte(':')
-			output.Write(m.value)
-		}
-		output.WriteByte('}')
-		encoded = output.Bytes()
-	}()
-
-	api, err := jsonwire.MarshalString(string(message.API))
-	if err != nil {
-		return nil, err
 	}
-	provider, err := jsonwire.MarshalString(string(message.Provider))
-	if err != nil {
-		return nil, err
-	}
-	model, err := jsonwire.MarshalString(message.Model)
-	if err != nil {
-		return nil, err
-	}
-	if message.modelOmitted {
-		model = nil
-	}
-	stopReason, err := jsonwire.MarshalString(string(message.StopReason))
-	if err != nil {
-		return nil, err
-	}
-	errorMessage, err := marshalOptionalWireString(message.ErrorMessage)
-	if err != nil {
-		return nil, err
-	}
-	rawStopReason, err := marshalOptionalWireString(message.RawStopReason)
-	if err != nil {
-		return nil, err
-	}
-	providerThinkingLevel, err := marshalOptionalWireString(message.ProviderThinkingLevel)
-	if err != nil {
-		return nil, err
-	}
-	responseID, err := marshalOptionalWireString(message.ResponseID)
-	if err != nil {
-		return nil, err
-	}
-	responseModel, err := marshalOptionalWireString(message.ResponseModel)
-	if err != nil {
-		return nil, err
-	}
-	if message.errorBeforeTimestamp && message.ErrorMessage != nil {
-		return marshalJSON(struct {
-			Role                  string                        `json:"role"`
-			Content               AssistantContent              `json:"content"`
-			API                   json.RawMessage               `json:"api"`
-			Provider              json.RawMessage               `json:"provider"`
-			Model                 json.RawMessage               `json:"model,omitempty"`
-			Usage                 Usage                         `json:"usage"`
-			StopReason            json.RawMessage               `json:"stopReason"`
-			ErrorMessage          json.RawMessage               `json:"errorMessage"`
-			ResponseID            json.RawMessage               `json:"responseId,omitempty"`
-			ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
-			ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
-			Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-			Timestamp             int64                         `json:"timestamp"`
-			EndTurn               *bool                         `json:"endTurn,omitempty"`
-			RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
-			ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel,omitempty"`
-		}{
-			Role:                  "assistant",
-			Content:               message.Content,
-			API:                   api,
-			Provider:              provider,
-			Model:                 model,
-			Usage:                 message.Usage,
-			StopReason:            stopReason,
-			ErrorMessage:          errorMessage,
-			ResponseID:            responseID,
-			ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel,
-			Diagnostics:   message.Diagnostics,
-			Timestamp:     message.Timestamp,
-			EndTurn:       message.EndTurn,
-			RawStopReason: rawStopReason,
-			ThinkingLevel: message.ThinkingLevel,
-		})
-	}
-	if message.errorBeforeResponseID && message.ErrorMessage != nil {
-		return marshalJSON(struct {
-			Role                  string                        `json:"role"`
-			Content               AssistantContent              `json:"content"`
-			API                   json.RawMessage               `json:"api"`
-			Provider              json.RawMessage               `json:"provider"`
-			Model                 json.RawMessage               `json:"model,omitempty"`
-			Usage                 Usage                         `json:"usage"`
-			StopReason            json.RawMessage               `json:"stopReason"`
-			Timestamp             int64                         `json:"timestamp"`
-			EndTurn               *bool                         `json:"endTurn,omitempty"`
-			RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
-			ErrorMessage          json.RawMessage               `json:"errorMessage"`
-			ResponseID            json.RawMessage               `json:"responseId,omitempty"`
-			ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
-			ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
-			Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-			ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel,omitempty"`
-		}{
-			Role: "assistant", Content: message.Content, API: api, Provider: provider, Model: model,
-			Usage: message.Usage, StopReason: stopReason, Timestamp: message.Timestamp,
-			EndTurn:       message.EndTurn,
-			RawStopReason: rawStopReason, ErrorMessage: errorMessage, ResponseID: responseID,
-			ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel, Diagnostics: message.Diagnostics,
-			ThinkingLevel: message.ThinkingLevel,
-		})
-	}
-	return marshalJSON(struct {
-		Role                  string                        `json:"role"`
-		Content               AssistantContent              `json:"content"`
-		API                   json.RawMessage               `json:"api"`
-		Provider              json.RawMessage               `json:"provider"`
-		Model                 json.RawMessage               `json:"model,omitempty"`
-		Usage                 Usage                         `json:"usage"`
-		StopReason            json.RawMessage               `json:"stopReason"`
-		Timestamp             int64                         `json:"timestamp"`
-		ResponseID            json.RawMessage               `json:"responseId,omitempty"`
-		ProviderThinkingLevel json.RawMessage               `json:"providerThinkingLevel,omitempty"`
-		ResponseModel         json.RawMessage               `json:"responseModel,omitempty"`
-		Diagnostics           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-		EndTurn               *bool                         `json:"endTurn,omitempty"`
-		RawStopReason         json.RawMessage               `json:"rawStopReason,omitempty"`
-		ErrorMessage          json.RawMessage               `json:"errorMessage,omitempty"`
-		ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel,omitempty"`
-	}{
-		Role:                  "assistant",
-		Content:               message.Content,
-		API:                   api,
-		Provider:              provider,
-		Model:                 model,
-		Usage:                 message.Usage,
-		StopReason:            stopReason,
-		Timestamp:             message.Timestamp,
-		ResponseID:            responseID,
-		ProviderThinkingLevel: providerThinkingLevel, ResponseModel: responseModel,
-		Diagnostics:   message.Diagnostics,
-		EndTurn:       message.EndTurn,
-		RawStopReason: rawStopReason,
-		ErrorMessage:  errorMessage,
-		ThinkingLevel: message.ThinkingLevel,
-	})
+	return append(dst, '}'), nil
 }
-
 func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Content               AssistantContent              `json:"content"`
@@ -662,44 +544,44 @@ func SetAssistantMessageErrorBeforeResponseID(message *AssistantMessage, enabled
 	}
 }
 
-func (message ToolResultMessage) MarshalJSON() ([]byte, error) {
-	toolCallID, err := jsonwire.MarshalString(message.ToolCallID)
-	if err != nil {
-		return nil, err
-	}
-	toolName, err := jsonwire.MarshalString(message.ToolName)
-	if err != nil {
-		return nil, err
-	}
-	addedToolNames, err := marshalOptionalWireStringSlice(message.AddedToolNames)
-	if err != nil {
-		return nil, err
-	}
-	return marshalJSON(struct {
-		Role           string            `json:"role"`
-		ToolCallID     json.RawMessage   `json:"toolCallId"`
-		ToolName       json.RawMessage   `json:"toolName"`
-		Content        ToolResultContent `json:"content"`
-		Details        json.RawMessage   `json:"details,omitempty"`
-		Usage          *Usage            `json:"usage,omitempty"`
-		AddedToolNames json.RawMessage   `json:"addedToolNames,omitempty"`
-		IsError        bool              `json:"isError"`
-		Timestamp      int64             `json:"timestamp"`
-		NestedCalls    *NestedToolCalls  `json:"nestedCalls,omitempty"`
-	}{
-		Role:           "toolResult",
-		ToolCallID:     toolCallID,
-		ToolName:       toolName,
-		Content:        message.Content,
-		Details:        message.Details,
-		Usage:          message.Usage,
-		AddedToolNames: addedToolNames,
-		IsError:        message.IsError,
-		Timestamp:      message.Timestamp,
-		NestedCalls:    message.NestedCalls,
-	})
-}
+func (message ToolResultMessage) MarshalJSON() ([]byte, error) { return message.appendWire(nil) }
 
+func (message ToolResultMessage) appendWire(dst []byte) ([]byte, error) {
+	dst = jsonwire.AppendString(append(dst, `{"role":"toolResult","toolCallId":`...), message.ToolCallID)
+	dst = jsonwire.AppendString(append(dst, `,"toolName":`...), message.ToolName)
+	dst, err := appendWireBlocks(append(dst, `,"content":`...), message.Content)
+	if err == nil && len(message.Details) > 0 {
+		dst, err = jsonwire.AppendCompact(append(dst, `,"details":`...), message.Details)
+	}
+	if err == nil && message.Usage != nil {
+		dst, err = message.Usage.appendWire(append(dst, `,"usage":`...))
+	}
+	if err != nil {
+		return nil, err
+	}
+	if names := message.AddedToolNames; names != nil && *names == nil {
+		dst = append(dst, `,"addedToolNames":null`...)
+	} else if names != nil {
+		dst = append(dst, `,"addedToolNames":[`...)
+		for index, name := range *names {
+			if index > 0 {
+				dst = append(dst, ',')
+			}
+			dst = jsonwire.AppendString(dst, name)
+		}
+		dst = append(dst, ']')
+	}
+	dst = strconv.AppendBool(append(dst, `,"isError":`...), message.IsError)
+	dst = strconv.AppendInt(append(dst, `,"timestamp":`...), message.Timestamp, 10)
+	if message.NestedCalls != nil {
+		nested, err := marshalJSON(message.NestedCalls)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(append(dst, `,"nestedCalls":`...), nested...)
+	}
+	return append(dst, '}'), nil
+}
 func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		ToolCallID     json.RawMessage   `json:"toolCallId"`
@@ -840,23 +722,13 @@ func (diagnostic *AssistantMessageDiagnostic) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (content TextContent) MarshalJSON() ([]byte, error) {
-	text, err := jsonwire.MarshalString(content.Text)
-	if err != nil {
-		return nil, err
-	}
-	signature, err := marshalOptionalWireString(content.TextSignature)
-	if err != nil {
-		return nil, err
-	}
-	return marshalJSON(struct {
-		Type          string          `json:"type"`
-		Text          json.RawMessage `json:"text"`
-		TextSignature json.RawMessage `json:"textSignature,omitempty"`
-		Index         *int            `json:"index,omitempty"`
-	}{Type: "text", Text: text, TextSignature: signature, Index: content.Index})
-}
+func (content TextContent) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
 
+func (content TextContent) appendWire(dst []byte) ([]byte, error) {
+	dst = jsonwire.AppendString(append(dst, `{"type":"text","text":`...), content.Text)
+	dst = appendOptionalString(dst, `,"textSignature":`, content.TextSignature)
+	return append(appendOptionalInt(dst, `,"index":`, content.Index), '}'), nil
+}
 func (content *TextContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Text          json.RawMessage `json:"text"`
@@ -878,40 +750,28 @@ func (content *TextContent) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (content ThinkingContent) MarshalJSON() ([]byte, error) {
-	thinking, err := jsonwire.MarshalString(content.Thinking)
-	if err != nil {
-		return nil, err
-	}
-	signature, err := marshalOptionalWireString(content.ThinkingSignature)
-	if err != nil {
-		return nil, err
-	}
-	if len(content.RedactedChunks) > 0 {
-		return marshalJSON(struct {
-			Type              string            `json:"type"`
-			Thinking          json.RawMessage   `json:"thinking"`
-			ThinkingSignature json.RawMessage   `json:"thinkingSignature,omitempty"`
-			Index             *int              `json:"index,omitempty"`
-			Redacted          *bool             `json:"redacted,omitempty"`
-			RedactedChunks    []json.RawMessage `json:"redactedChunks,omitempty"`
-		}{"thinking", thinking, signature, content.Index, content.Redacted, content.RedactedChunks})
-	}
-	return marshalJSON(struct {
-		Type              string          `json:"type"`
-		Thinking          json.RawMessage `json:"thinking"`
-		ThinkingSignature json.RawMessage `json:"thinkingSignature,omitempty"`
-		Redacted          *bool           `json:"redacted,omitempty"`
-		Index             *int            `json:"index,omitempty"`
-	}{
-		Type:              "thinking",
-		Thinking:          thinking,
-		ThinkingSignature: signature,
-		Redacted:          content.Redacted,
-		Index:             content.Index,
-	})
-}
+func (content ThinkingContent) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
 
+func (content ThinkingContent) appendWire(dst []byte) ([]byte, error) {
+	dst = jsonwire.AppendString(append(dst, `{"type":"thinking","thinking":`...), content.Thinking)
+	dst = appendOptionalString(dst, `,"thinkingSignature":`, content.ThinkingSignature)
+	if len(content.RedactedChunks) == 0 {
+		dst = appendOptionalBool(dst, `,"redacted":`, content.Redacted)
+		return append(appendOptionalInt(dst, `,"index":`, content.Index), '}'), nil
+	}
+	dst = appendOptionalInt(dst, `,"index":`, content.Index)
+	dst = append(appendOptionalBool(dst, `,"redacted":`, content.Redacted), `,"redactedChunks":[`...)
+	for index, chunk := range content.RedactedChunks {
+		if index > 0 {
+			dst = append(dst, ',')
+		}
+		var err error
+		if dst, err = jsonwire.AppendCompact(dst, chunk); err != nil {
+			return nil, err
+		}
+	}
+	return append(dst, ']', '}'), nil
+}
 func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		RedactedChunks    []json.RawMessage `json:"redactedChunks"`
@@ -935,22 +795,12 @@ func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (content ImageContent) MarshalJSON() ([]byte, error) {
-	data, err := jsonwire.MarshalString(content.Data)
-	if err != nil {
-		return nil, err
-	}
-	mimeType, err := jsonwire.MarshalString(content.MimeType)
-	if err != nil {
-		return nil, err
-	}
-	return marshalJSON(struct {
-		Type     string          `json:"type"`
-		Data     json.RawMessage `json:"data"`
-		MimeType json.RawMessage `json:"mimeType"`
-	}{Type: "image", Data: data, MimeType: mimeType})
-}
+func (content ImageContent) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
 
+func (content ImageContent) appendWire(dst []byte) ([]byte, error) {
+	dst = jsonwire.AppendString(append(dst, `{"type":"image","data":`...), content.Data)
+	return append(jsonwire.AppendString(append(dst, `,"mimeType":`...), content.MimeType), '}'), nil
+}
 func (content *ImageContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Data     json.RawMessage `json:"data"`
@@ -978,77 +828,26 @@ func (content UnknownContentBlock) MarshalJSON() ([]byte, error) {
 	return NormalizeJSONStringifyJSON(content.Raw)
 }
 
-func (content ToolCall) MarshalJSON() ([]byte, error) {
+func (content ToolCall) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
+
+func (content ToolCall) appendWire(dst []byte) ([]byte, error) {
 	arguments, err := MarshalToolCallArguments(&content)
 	if err != nil {
 		return nil, err
 	}
-	id, err := jsonwire.MarshalString(content.ID)
-	if err != nil {
+	dst = jsonwire.AppendString(append(dst, `{"type":"toolCall","id":`...), content.ID)
+	dst = jsonwire.AppendString(append(dst, `,"name":`...), content.Name)
+	if dst, err = jsonwire.AppendCompact(append(dst, `,"arguments":`...), arguments); err != nil {
 		return nil, err
 	}
-	name, err := jsonwire.MarshalString(content.Name)
-	if err != nil {
-		return nil, err
-	}
-	thoughtSignature, err := marshalOptionalWireString(content.ThoughtSignature)
-	if err != nil {
-		return nil, err
-	}
-	partialJSON, err := marshalOptionalWireString(content.PartialJSON)
-	if err != nil {
-		return nil, err
-	}
-	partialArgs, err := marshalOptionalWireString(content.PartialArgs)
-	if err != nil {
-		return nil, err
-	}
-	namespace, err := marshalOptionalWireString(content.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	if content.PartialJSON != nil || content.PartialArgs != nil || content.StreamIndex != nil || content.Index != nil {
-		return marshalJSON(struct {
-			Type             string          `json:"type"`
-			ID               json.RawMessage `json:"id"`
-			Name             json.RawMessage `json:"name"`
-			Arguments        json.RawMessage `json:"arguments"`
-			Namespace        json.RawMessage `json:"namespace,omitempty"`
-			PartialJSON      json.RawMessage `json:"partialJson,omitempty"`
-			PartialArgs      json.RawMessage `json:"partialArgs,omitempty"`
-			StreamIndex      *int            `json:"streamIndex,omitempty"`
-			Index            *int            `json:"index,omitempty"`
-			ThoughtSignature json.RawMessage `json:"thoughtSignature,omitempty"`
-		}{
-			Type:             "toolCall",
-			ID:               id,
-			Name:             name,
-			Arguments:        arguments,
-			Namespace:        namespace,
-			PartialJSON:      partialJSON,
-			PartialArgs:      partialArgs,
-			StreamIndex:      content.StreamIndex,
-			Index:            content.Index,
-			ThoughtSignature: thoughtSignature,
-		})
-	}
-	return marshalJSON(struct {
-		Type             string          `json:"type"`
-		ID               json.RawMessage `json:"id"`
-		Name             json.RawMessage `json:"name"`
-		Arguments        json.RawMessage `json:"arguments"`
-		Namespace        json.RawMessage `json:"namespace,omitempty"`
-		ThoughtSignature json.RawMessage `json:"thoughtSignature,omitempty"`
-	}{
-		Type:             "toolCall",
-		ID:               id,
-		Name:             name,
-		Arguments:        arguments,
-		Namespace:        namespace,
-		ThoughtSignature: thoughtSignature,
-	})
+	// The streaming members are set together or not at all.
+	dst = appendOptionalString(dst, `,"namespace":`, content.Namespace)
+	dst = appendOptionalString(dst, `,"partialJson":`, content.PartialJSON)
+	dst = appendOptionalString(dst, `,"partialArgs":`, content.PartialArgs)
+	dst = appendOptionalInt(dst, `,"streamIndex":`, content.StreamIndex)
+	dst = appendOptionalInt(dst, `,"index":`, content.Index)
+	return append(appendOptionalString(dst, `,"thoughtSignature":`, content.ThoughtSignature), '}'), nil
 }
-
 func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		ID               json.RawMessage `json:"id"`
@@ -1277,19 +1076,68 @@ func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 	return marshalJSON(stringifyJSONObject(arguments))
 }
 
-func (content UserContent) MarshalJSON() ([]byte, error) {
+func (content UserContent) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
+
+func (content UserContent) appendWire(dst []byte) ([]byte, error) {
 	if content.Text != nil {
 		if content.Blocks != nil {
 			return nil, errors.New("ai: user content has both text and blocks")
 		}
-		return jsonwire.MarshalString(*content.Text)
+		return jsonwire.AppendString(dst, *content.Text), nil
 	}
-	if content.Blocks == nil {
-		return []byte("[]"), nil
-	}
-	return marshalJSON(content.Blocks)
+	return appendWireBlocks(dst, content.Blocks)
 }
 
+// wireAppender is implemented by the message and content types, which append
+// their compact wire JSON: encoding/json made every nesting level validate
+// its children's encoding again.
+type wireAppender interface {
+	appendWire(dst []byte) ([]byte, error)
+}
+
+// appendWireBlocks appends a content block list; nil encodes as [] like an
+// empty list.
+func appendWireBlocks[T any](dst []byte, blocks []T) ([]byte, error) {
+	dst = append(dst, '[')
+	for index, block := range blocks {
+		if index > 0 {
+			dst = append(dst, ',')
+		}
+		var err error
+		if appender, ok := any(block).(wireAppender); ok && !reflect.ValueOf(appender).IsNil() {
+			dst, err = appender.appendWire(dst)
+		} else {
+			var encoded []byte
+			encoded, err = marshalJSON(block)
+			dst = append(dst, encoded...)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return append(dst, ']'), nil
+}
+
+func appendOptionalString(dst []byte, member string, value *string) []byte {
+	if value == nil {
+		return dst
+	}
+	return jsonwire.AppendString(append(dst, member...), *value)
+}
+
+func appendOptionalInt[T int | int64](dst []byte, member string, value *T) []byte {
+	if value == nil {
+		return dst
+	}
+	return strconv.AppendInt(append(dst, member...), int64(*value), 10)
+}
+
+func appendOptionalBool(dst []byte, member string, value *bool) []byte {
+	if value == nil {
+		return dst
+	}
+	return strconv.AppendBool(append(dst, member...), *value)
+}
 func (content *UserContent) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) > 0 && data[0] == '"' {
@@ -1326,29 +1174,6 @@ func marshalOptionalWireString(value *string) (json.RawMessage, error) {
 	return json.RawMessage(encoded), err
 }
 
-func marshalOptionalWireStringSlice(values *[]string) (json.RawMessage, error) {
-	if values == nil {
-		return nil, nil
-	}
-	if *values == nil {
-		return json.RawMessage("null"), nil
-	}
-	var output bytes.Buffer
-	output.WriteByte('[')
-	for index, value := range *values {
-		if index > 0 {
-			output.WriteByte(',')
-		}
-		encoded, err := jsonwire.MarshalString(value)
-		if err != nil {
-			return nil, err
-		}
-		output.Write(encoded)
-	}
-	output.WriteByte(']')
-	return output.Bytes(), nil
-}
-
 func unmarshalOptionalWireStringSlice(data json.RawMessage) (*[]string, error) {
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
@@ -1381,21 +1206,13 @@ func unmarshalOptionalWireString(data json.RawMessage) (*string, error) {
 	return &value, nil
 }
 
-func (blocks UserContentBlocks) MarshalJSON() ([]byte, error) {
-	return marshalRequiredSlice(blocks)
-}
+func (blocks UserContentBlocks) MarshalJSON() ([]byte, error) { return appendWireBlocks(nil, blocks) }
 
-func (blocks AssistantContent) MarshalJSON() ([]byte, error) {
-	return marshalRequiredSlice(blocks)
-}
+func (blocks AssistantContent) MarshalJSON() ([]byte, error) { return appendWireBlocks(nil, blocks) }
 
-func (blocks ToolResultContent) MarshalJSON() ([]byte, error) {
-	return marshalRequiredSlice(blocks)
-}
+func (blocks ToolResultContent) MarshalJSON() ([]byte, error) { return appendWireBlocks(nil, blocks) }
 
-func (blocks ImagesContent) MarshalJSON() ([]byte, error) {
-	return marshalRequiredSlice(blocks)
-}
+func (blocks ImagesContent) MarshalJSON() ([]byte, error) { return appendWireBlocks(nil, blocks) }
 
 var textImageBlockFactories = map[string]func() any{
 	"text":  func() any { return &TextContent{} },
