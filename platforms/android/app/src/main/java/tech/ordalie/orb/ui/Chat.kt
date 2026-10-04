@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.*
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import tech.ordalie.orb.core.*
 
 /** Conversation text, in sp. */
@@ -54,6 +55,13 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
         val ghost by animateFloatAsState(if (blocks.isEmpty()) 1f else 0f, tween(400), label = "standby")
         if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T("standby", label = true, color = p.meta) }
         LazyColumn(Modifier.fillMaxSize(), state = list) {
+            if (s.earlier) item(key = "earlier") {
+                // Older messages load on demand; the ones read so far stay where they are.
+                val shown = blocks.size
+                Box(Modifier.fillMaxWidth().press { s.loadEarlier(); c.rt.scope.launch { snapshotFlow { blocks(s.transcript.items).size }.first { it != shown }.let { list.scrollToItem((it - shown).coerceAtLeast(0)) } } }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                    T("earlier messages", size = 13.sp, weight = Medium, color = p.meta)
+                }
+            }
             itemsIndexed(blocks, key = { _, b -> b.first().key }) { i, b ->
                 Column(Modifier.animateItem(fadeInSpec = tween(280), fadeOutSpec = tween(160))) { Block(b, first = i == 0) }
             }
@@ -155,7 +163,7 @@ private fun Thought(s: Said) = Column(Modifier.fillMaxWidth().animateContentSize
 
 @Composable
 private fun Said(s: Said) = Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    if (s.text.isNotBlank()) Markdown(s.text, Modifier.copyable(s.text), SIZE)
+    if (s.text.isNotBlank()) Markdown(s.text, Modifier.copyable(s.text), SIZE, done = !s.live)
     if (s.live) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp)
 }
 

@@ -98,8 +98,8 @@ fun Caret(color: Color = p.fg, width: Dp = 8.dp, height: Dp = 16.dp) {
 @Composable
 fun MenuMark(onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).padding(10.dp)) {
     val ink = p.fg
-    Canvas(Modifier.size(22.dp, 14.dp)) {
-        listOf(0f, 0.5f, 1f).forEach { f -> drawLine(ink, Offset(0f, size.height * f), Offset(size.width, size.height * f), 1.6.dp.toPx(), StrokeCap.Round) }
+    Canvas(Modifier.size(16.dp, 11.dp)) {
+        listOf(0f, 0.5f, 1f).forEach { f -> drawLine(ink, Offset(0f, size.height * f), Offset(size.width, size.height * f), 1.4.dp.toPx(), StrokeCap.Round) }
     }
 }
 

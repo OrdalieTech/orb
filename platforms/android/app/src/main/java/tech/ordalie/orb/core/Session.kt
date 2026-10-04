@@ -62,10 +62,14 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     var levels by mutableStateOf(emptyList<String>())
     var commands by mutableStateOf(emptyList<Command>())
     var id by mutableStateOf(resume)
+    /** Whether older messages than those shown exist: a long conversation opens at its end. */
+    var earlier by mutableStateOf(false)
     var cwd by mutableStateOf("")
 
     private var info = JSONObject()
     private var cursor = ""
+    private var poll: Deferred<JSONObject>? = null // the long poll under way, which a request cuts short
+    private var from = -1 // the first message shown, once known: reloads keep the window, so rows keep their keys
     private var pulse = "" // the Orb's pulse when last described: a new one means describe again
     private var stale = true
     private var asked = ""
@@ -88,7 +92,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     /** Follows the Orb until closed; no failure ends it, the next round simply tries again. */
     private suspend fun follow() {
         while (scope.isActive) {
-            val wait = try { step() } catch (e: CancellationException) { throw e } catch (e: Exception) { online = false; status = "reconnecting"; 2000L }
+            val wait = try { step() } catch (e: CancellationException) { if (!currentCoroutineContext().isActive) throw e; 0L } catch (e: Exception) { online = false; status = "reconnecting"; 2000L }
             delay(wait)
         }
     }
@@ -113,7 +117,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
             return false
         }
         val session = next.optJSONObject("target")?.optString("session_id").orEmpty()
-        if (session != target?.optString("session_id")) { cursor = ""; transcript.clear() }
+        if (session != target?.optString("session_id")) { cursor = ""; from = -1; transcript.clear() }
         info = next; online = true; gone = false
         if (status.startsWith("offline") || status.startsWith("ended") || status == "reconnecting") status = ""
         id = session; cwd = next.optString("cwd")
@@ -139,12 +143,18 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         return true
     }
 
-    /** Reads the whole conversation, then swaps it in at once: the screen never shows it half loaded. */
+    /**
+     * Reads the conversation from the first message shown — its last [TAIL] when it opens, all of it
+     * on an Orb that cannot start there — then swaps it in at once: never half loaded on screen.
+     */
     private suspend fun snapshot() {
-        var snap = ""; var offset = ""
+        var snap = ""; var offset = if (from > 0) from.toString() else ""
         val messages = JSONArray()
         repeat(64) {
-            val r = remote("events.subscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap).put("offset", offset)).optJSONObject("result") ?: return
+            val p = JSONObject().put("instance_id", instance).put("snapshot_id", snap).put("offset", offset)
+            if (snap.isEmpty() && from < 0 && info.optBoolean("waits")) p.put("tail", TAIL)
+            val r = remote("events.subscribe", p).optJSONObject("result") ?: run { from = -1; return } // a compacted conversation may be shorter now
+            if (snap.isEmpty()) { from = r.optInt("from"); earlier = from > 0 }
             r.optJSONArray("messages")?.let { a -> for (i in 0 until a.length()) messages.put(a.get(i)) }
             snap = r.optString("snapshot_id"); offset = r.optString("offset")
             if (offset.isEmpty()) {
@@ -157,7 +167,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
 
     private suspend fun events(waits: Boolean) {
         val p = JSONObject().put("instance_id", instance).put("cursor", cursor).apply { if (waits) put("wait", true).put("state", pulse) }
-        val r = remote("events.subscribe", p).optJSONObject("result") ?: run { cursor = ""; return }
+        val r = coroutineScope { async { remote("events.subscribe", p) }.also { poll = it }.await() }.optJSONObject("result") ?: run { cursor = ""; return }
         val events = r.optJSONArray("events") ?: JSONArray()
         for (i in 0 until events.length()) events.optJSONObject(i)?.optJSONObject("data")?.let { e ->
             if (e.optString("type") == "session_info_changed") e.optString("name").takeIf { it.isNotBlank() && it != "null" }?.let { title = it }
@@ -230,5 +240,9 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     /** Starts a fresh conversation in this Orb, then sends [first] into it once it exists. */
     fun newSession(first: String? = null) { call("session.new"); first?.let { later(it, id) } }
     fun switchTo(session: String) { if (session != id) call("session.switch", JSONObject().put("session_id", session)) }
+    /** Shows a hundred more of the older messages. */
+    fun loadEarlier() { from = (from - 100).coerceAtLeast(0); cursor = ""; poll?.cancel() }
     fun close() = job.cancel()
+
+    private companion object { const val TAIL = 80 }
 }

@@ -3,7 +3,11 @@ package tech.ordalie.orb.ui
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import tech.ordalie.orb.runtime
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.*
@@ -18,9 +22,12 @@ private data class Head(val text: String, val level: Int) : Block
 private data class Item(val mark: String, val text: String, val depth: Int) : Block
 private data class Quote(val text: String) : Block
 private data class Code(val lang: String, val text: String) : Block
+private data class Table(val rows: List<List<String>>) : Block // the first row is the header
 private data object Break : Block
 
 private val ITEM = Regex("""^(\s*)([-*+]|\d+[.)])\s+(.*)$""")
+private val RULER = Regex("""^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$""")
+private fun cells(line: String) = line.trim().removePrefix("|").removeSuffix("|").split('|').map(String::trim)
 
 private fun blocks(md: String): List<Block> = buildList {
     val lines = md.lines()
@@ -38,6 +45,14 @@ private fun blocks(md: String): List<Block> = buildList {
                 i++
                 while (i < lines.size && !lines[i].trimStart().startsWith("```")) { body.appendLine(lines[i]); i++ }
                 add(Code(lang, body.toString().trimEnd('\n')))
+            }
+            t.startsWith("|") && i + 1 < lines.size && RULER.matches(lines[i + 1].trim()) -> {
+                flush()
+                val rows = mutableListOf(cells(t))
+                i += 2
+                while (i < lines.size && lines[i].trimStart().startsWith("|")) rows += cells(lines[i++])
+                add(Table(rows))
+                i--
             }
             t.startsWith("#") -> { flush(); add(Head(t.trimStart('#').trim(), t.takeWhile { it == '#' }.length)) }
             t.startsWith(">") -> { flush(); add(Quote(t.removePrefix(">").trim())) }
@@ -68,8 +83,47 @@ fun inline(text: String, code: Color, codeBg: Color): AnnotatedString = buildAnn
     }
 }
 
+/** Mermaid art by source, drawn by this phone's orb (`orb mermaid`), the TUI's renderer; null when not a diagram. */
+private val drawings = object : LinkedHashMap<String, String?>(16, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>) = size > 32
+}
+
+/** A Mermaid block as the TUI draws it, once its message is done; the code until then, or when it does not parse. */
 @Composable
-fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f) = Column(modifier, verticalArrangement = Arrangement.spacedBy((size * 0.6f).dp)) {
+private fun Diagram(source: String, done: Boolean, size: Float) {
+    val orb = LocalContext.current.runtime.orb
+    val art by produceState(drawings[source], source, done) {
+        if (done && !drawings.containsKey(source)) value = withContext(Dispatchers.IO) { orb.run("mermaid", stdin = source).let { (code, out) -> out.trimEnd().takeIf { code == 0 } } }.also { drawings[source] = it }
+    }
+    CodeBox(if (art == null) "mermaid" else "", art ?: source, size, art != null)
+}
+
+@Composable
+private fun CodeBox(lang: String, text: String, size: Float, drawing: Boolean = false) = Column(Modifier.fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(12.dp)) {
+    if (lang.isNotEmpty()) T(lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
+    // Box-drawing lines join only when lines sit flush.
+    Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(text, style = type((size - 3).sp, p.fg).let { if (drawing) it.copy(lineHeight = 1.1.em, letterSpacing = 0.sp) else it }, softWrap = false) }
+}
+
+/** A table as wide as its cells (each column up to 28 characters, wrapping beyond); a wide one scrolls sideways. */
+@Composable
+private fun Grid(rows: List<List<String>>, size: Float) {
+    val cols = rows.maxOf { it.size }
+    val widths = (0 until cols).map { c -> ((rows.maxOf { it.getOrNull(c)?.length ?: 0 }.coerceIn(3, 28)) * (size - 1) * 0.58f + 16).dp }
+    Column(Modifier.horizontalScroll(rememberScrollState()).border(1.dp, p.rule, Soft)) {
+        rows.forEachIndexed { r, row ->
+            if (r > 0) Box(Modifier.width(widths.fold(0.dp) { a, w -> a + w }).height(1.dp).background(p.rule))
+            Row(Modifier.background(if (r == 0) p.raised else Color.Transparent)) {
+                for (c in 0 until cols) BasicText(inline(row.getOrNull(c).orEmpty(), p.mute, p.raised), Modifier.width(widths[c]).padding(horizontal = 8.dp, vertical = 6.dp),
+                    type((size - 1).sp, p.fg, if (r == 0) Strong else Regular))
+            }
+        }
+    }
+}
+
+/** [done] once the message is complete: diagrams are drawn then, not at every streamed token. */
+@Composable
+fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f, done: Boolean = true) = Column(modifier, verticalArrangement = Arrangement.spacedBy((size * 0.6f).dp)) {
     val body = type(size.sp, p.fg)
     blocks(text).forEach { b ->
         when (b) {
@@ -80,10 +134,8 @@ fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f) = C
                 BasicText(inline(b.text, p.mute, p.raised), Modifier.weight(1f), body)
             }
             is Quote -> Row { Box(Modifier.width(2.dp).height(22.dp).background(p.rule)); BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(start = 12.dp), body.copy(color = p.mute)) }
-            is Code -> Column(Modifier.fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(14.dp)) {
-                if (b.lang.isNotEmpty()) T(b.lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
-                Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg), softWrap = false) }
-            }
+            is Code -> if (b.lang == "mermaid") Diagram(b.text, done, size) else CodeBox(b.lang, b.text, size)
+            is Table -> Grid(b.rows, size)
             Break -> Spacer(Modifier.height(4.dp))
         }
     }

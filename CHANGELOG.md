@@ -5,6 +5,13 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb mermaid < diagram.mmd` draws a Mermaid diagram as the TUI shows it, for clients with no
+  renderer of their own. A Bridge snapshot can start at a conversation's last `tail` messages and
+  says where it starts, so a follower opens a long conversation at its end and pages back.
+- The Android app renders Markdown tables and Mermaid diagrams (through `orb mermaid`, with the
+  box and shape glyphs the diagrams use drawn into its font), opens long conversations at their
+  last 80 messages with earlier ones on demand, and starts a conversation's Orb without waiting
+  for every paired machine to answer first.
 - Bridge followers long-poll: `events.subscribe` with `wait` answers as soon as there are events
   or the instance's state moves, instead of every poll answering at once, so remote conversations
   stream smoothly. Instances also report their reasoning level, usage and slash commands, and

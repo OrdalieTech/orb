@@ -20,6 +20,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
     var self by mutableStateOf("")
     var up by mutableStateOf(false)
     val peers = mutableStateListOf<Peer>()
+    private val fetching = mutableSetOf<String>() // machines whose Orbs are being read
     var claim by mutableStateOf<JSONObject?>(null) // an invitation someone claimed, awaiting approval
     var invitation by mutableStateOf<JSONObject?>(null)
 
@@ -45,13 +46,14 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
                 Peer(id, if (id == self) "connected" else states.optString(id, "disconnected"), known?.instances ?: emptyList(), if (id == self) "this phone" else known?.host.orEmpty(), known?.version.orEmpty())
             }
         peers.clear(); peers.addAll(next)
-        coroutineScope {
-            next.forEach { peer ->
-                launch {
+        // Each machine answers in its own time: a slow or unreachable one never holds the others up.
+        next.filter { fetching.add(it.id) }.forEach { peer ->
+            scope.launch {
+                try {
                     val found = runCatching { instances(peer.id) }.getOrNull() ?: return@launch
                     val at = peers.indexOfFirst { it.id == peer.id }
                     if (at >= 0) peers[at] = peers[at].copy(instances = found, state = if (found.isNotEmpty()) "connected" else peers[at].state)
-                }
+                } finally { fetching.remove(peer.id) }
             }
         }
         claim = (s.optJSONArray("pending") ?: JSONArray()).let { a -> (0 until a.length()).map(a::getJSONObject) }
@@ -113,9 +115,10 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
                 else -> e.optString("message")
             }))
         }
-        val id = r.optJSONObject("result")?.optString("instance_id").orEmpty()
-        refresh()
-        return Result.success(peers.firstOrNull { it.id == peer }?.instances?.firstOrNull { it.id == id } ?: Instance(peer, id, r.optJSONObject("result")?.optString("alias").orEmpty(), cwd = cwd.orEmpty(), session = session.orEmpty()))
+        // Returned at once: the session describes itself, and peers' lists refresh on their own (a
+        // refresh here would wait for the slowest machine, a reconnecting one up to its timeout).
+        val result = r.optJSONObject("result")
+        return Result.success(Instance(peer, result?.optString("instance_id").orEmpty(), result?.optString("alias").orEmpty(), cwd = cwd.orEmpty(), session = session.orEmpty()))
     }
 
     /** A peer's providers and its sign-in status, as `orb login --json` lists them there (host.providers). */
