@@ -106,7 +106,7 @@ func chunkText(text string, limit int) []string {
 				emit(append(append([]string{}, current...), "```"))
 			}
 			current = []string{reopen}
-			currentLen = utf16Len(reopen)
+			currentLen = runechunk.LenUTF16(reopen)
 			return
 		}
 		// Prefer a paragraph boundary: split at the last blank line.
@@ -126,7 +126,7 @@ func chunkText(text string, limit int) []string {
 				currentLen++
 			}
 			current = append(current, line)
-			currentLen += utf16Len(line)
+			currentLen += runechunk.LenUTF16(line)
 		}
 	}
 
@@ -148,13 +148,13 @@ func chunkText(text string, limit int) []string {
 			}
 			// Fence content must also fit after a flush leaves the chunk
 			// holding only the reopened fence marker.
-			pieceBudget = budget - utf16Len("```"+lang) - 1
+			pieceBudget = budget - runechunk.LenUTF16("```"+lang) - 1
 			if pieceBudget < 1 {
 				pieceBudget = 1
 			}
 		}
 		for _, piece := range splitLongLine(line, pieceBudget) {
-			need := utf16Len(piece)
+			need := runechunk.LenUTF16(piece)
 			// Each flush either empties current or strictly shrinks it, so
 			// this loop terminates.
 			for len(current) > 0 && currentLen+1+need > budget {
@@ -184,11 +184,11 @@ func chunkText(text string, limit int) []string {
 }
 
 func splitLongLine(line string, limit int) []string {
-	if utf16Len(line) <= limit {
+	if runechunk.LenUTF16(line) <= limit {
 		return []string{line}
 	}
 	var pieces []string
-	for utf16Len(line) > limit {
+	for runechunk.LenUTF16(line) > limit {
 		cut := cutIndex(line, limit)
 		pieces = append(pieces, strings.TrimRight(line[:cut], " "))
 		line = strings.TrimLeft(line[cut:], " ")
@@ -227,24 +227,4 @@ func cutIndex(line string, limit int) int {
 		}
 		return len(line)
 	}
-}
-
-func utf16Len(s string) int {
-	n := 0
-	for _, r := range s {
-		n += utf16.RuneLen(r)
-	}
-	return n
-}
-
-func utf16Truncate(s string, limit int) string {
-	units := 0
-	for i, r := range s {
-		width := utf16.RuneLen(r)
-		if units+width > limit {
-			return s[:i]
-		}
-		units += width
-	}
-	return s
 }

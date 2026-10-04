@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound event id
@@ -98,7 +99,7 @@ var errPreviewThrottled = errors.New("telegram: preview edit rate limited")
 // rate-limited to one per PreviewMinInterval per chat — a throttled edit
 // returns [errPreviewThrottled] so the caller retries it.
 func (d *delivery) Preview(ctx context.Context, text string) error {
-	text = utf16Truncate(text, textLimit)
+	text = runechunk.TruncateUTF16(text, textLimit)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if text == "" || text == d.previewText {
@@ -199,7 +200,7 @@ func (d *delivery) Notify(ctx context.Context, text string) error {
 	d.stopTyping()
 	_, err := d.adapter.client.sendMessage(ctx, sendMessageParams{
 		ChatID:             d.chatID,
-		Text:               utf16Truncate(text, textLimit),
+		Text:               runechunk.TruncateUTF16(text, textLimit),
 		MessageThreadID:    d.threadID,
 		LinkPreviewOptions: &linkPreviewOptions{IsDisabled: true},
 	})

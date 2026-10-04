@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound activity id
@@ -207,7 +208,7 @@ func (d *delivery) Notify(ctx context.Context, text string) error {
 		return fmt.Errorf("teams: no serviceUrl known for conversation %q", d.convID)
 	}
 	activity := d.outbound("message")
-	activity.Text = utf16Truncate(text, d.adapter.chunkLimit)
+	activity.Text = runechunk.TruncateUTF16(text, d.adapter.chunkLimit)
 	activity.TextFormat = "plain"
 	_, err := d.adapter.client.createActivity(ctx, d.serviceURL, d.convID, activity)
 	if d.markIfDead(err) {

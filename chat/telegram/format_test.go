@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 var updateGoldens = flag.Bool("update", false, "rewrite format golden files")
@@ -31,7 +33,7 @@ func TestFormatGoldens(t *testing.T) {
 			}
 			chunks := formatHTML(string(source), tc.limit)
 			for i, chunk := range chunks {
-				if n := utf16Len(chunk); n > tc.limit {
+				if n := runechunk.LenUTF16(chunk); n > tc.limit {
 					t.Errorf("chunk %d is %d UTF-16 units, limit %d", i, n, tc.limit)
 				}
 			}
@@ -67,21 +69,21 @@ func TestUTF16Len(t *testing.T) {
 		{"👩‍👩‍👧", 8}, // ZWJ family: 3 pairs + 2 joiners
 	}
 	for _, tc := range cases {
-		if got := utf16Len(tc.in); got != tc.want {
-			t.Errorf("utf16Len(%q) = %d, want %d", tc.in, got, tc.want)
+		if got := runechunk.LenUTF16(tc.in); got != tc.want {
+			t.Errorf("LenUTF16(%q) = %d, want %d", tc.in, got, tc.want)
 		}
 	}
 }
 
 func TestUTF16TruncateNeverSplitsSurrogates(t *testing.T) {
 	s := "ab😀cd"
-	if got := utf16Truncate(s, 3); got != "ab" {
+	if got := runechunk.TruncateUTF16(s, 3); got != "ab" {
 		t.Errorf("truncate(3) = %q, want %q (no half surrogate)", got, "ab")
 	}
-	if got := utf16Truncate(s, 4); got != "ab😀" {
+	if got := runechunk.TruncateUTF16(s, 4); got != "ab😀" {
 		t.Errorf("truncate(4) = %q, want %q", got, "ab😀")
 	}
-	if got := utf16Truncate(s, 100); got != s {
+	if got := runechunk.TruncateUTF16(s, 100); got != s {
 		t.Errorf("truncate(100) = %q, want full string", got)
 	}
 }
@@ -99,7 +101,7 @@ func TestChunkingSplitsFencesAcrossChunks(t *testing.T) {
 		if !strings.HasSuffix(chunk, "</code></pre>") {
 			t.Errorf("chunk %d does not close the pre tag: %q", i, chunk)
 		}
-		if n := utf16Len(chunk); n > 120 {
+		if n := runechunk.LenUTF16(chunk); n > 120 {
 			t.Errorf("chunk %d exceeds the limit: %d", i, n)
 		}
 	}
@@ -113,7 +115,7 @@ func TestChunkingCountsEmojiAsTwoUnits(t *testing.T) {
 		t.Fatalf("expected an emoji split under UTF-16 counting, got %d chunk(s)", len(chunks))
 	}
 	for i, chunk := range chunks {
-		if n := utf16Len(chunk); n > 16 {
+		if n := runechunk.LenUTF16(chunk); n > 16 {
 			t.Errorf("chunk %d is %d units", i, n)
 		}
 		if strings.ContainsRune(chunk, 0xFFFD) {
@@ -130,7 +132,7 @@ func TestHardCutsNeverSplitHTMLEscapes(t *testing.T) {
 		t.Fatalf("expected multiple chunks, got %d", len(chunks))
 	}
 	for i, chunk := range chunks {
-		if n := utf16Len(chunk); n > 64 {
+		if n := runechunk.LenUTF16(chunk); n > 64 {
 			t.Errorf("chunk %d is %d units, limit 64", i, n)
 		}
 		if strings.ReplaceAll(chunk, "&amp;", "") != "" {

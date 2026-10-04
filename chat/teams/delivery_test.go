@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 func deliveryKey(chatID string) chat.ConversationKey {
@@ -227,7 +228,7 @@ func TestRetryPolicy(t *testing.T) {
 			t.Fatalf("calls = %d, want the oversize send plus >=2 halved pieces", len(calls))
 		}
 		for _, call := range calls[1:] {
-			if n := utf16Len(call.activity["text"].(string)); n > 2*minChunkLimit {
+			if n := runechunk.LenUTF16(call.activity["text"].(string)); n > 2*minChunkLimit {
 				t.Fatalf("re-chunked piece is %d units, want <= %d", n, 2*minChunkLimit)
 			}
 		}

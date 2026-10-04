@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -237,7 +238,7 @@ func preClose(lang string) string {
 // joined by blank lines, splitting oversize blocks as needed.
 func chunkBlocks(blocks []htmlBlock, limit int) []string {
 	const separator = "\n\n"
-	separatorLen := utf16Len(separator)
+	separatorLen := runechunk.LenUTF16(separator)
 	var chunks []string
 	var current []string
 	currentLen := 0
@@ -250,7 +251,7 @@ func chunkBlocks(blocks []htmlBlock, limit int) []string {
 	}
 	for _, block := range blocks {
 		for _, piece := range splitBlock(block, limit) {
-			need := utf16Len(piece)
+			need := runechunk.LenUTF16(piece)
 			if len(current) > 0 && currentLen+separatorLen+need > limit {
 				flush()
 			}
@@ -272,7 +273,7 @@ func splitBlock(block htmlBlock, limit int) []string {
 	if block.pre {
 		return splitPreBlock(block, limit)
 	}
-	if utf16Len(block.html) <= limit {
+	if runechunk.LenUTF16(block.html) <= limit {
 		return []string{block.html}
 	}
 	var pieces []string
@@ -287,7 +288,7 @@ func splitBlock(block htmlBlock, limit int) []string {
 	}
 	for _, line := range strings.Split(block.html, "\n") {
 		for _, part := range splitLongLine(line, limit) {
-			need := utf16Len(part)
+			need := runechunk.LenUTF16(part)
 			if len(current) > 0 && currentLen+1+need > limit {
 				flush()
 			}
@@ -306,10 +307,10 @@ func splitBlock(block htmlBlock, limit int) []string {
 // including its open and close tags, fits the limit.
 func splitPreBlock(block htmlBlock, limit int) []string {
 	whole := renderPre(block.lang, block.code)
-	if utf16Len(whole) <= limit {
+	if runechunk.LenUTF16(whole) <= limit {
 		return []string{whole}
 	}
-	overhead := utf16Len(preOpen(block.lang)) + utf16Len(preClose(block.lang))
+	overhead := runechunk.LenUTF16(preOpen(block.lang)) + runechunk.LenUTF16(preClose(block.lang))
 	budget := max(limit-overhead, 1)
 	var pieces []string
 	var current []string
@@ -323,7 +324,7 @@ func splitPreBlock(block htmlBlock, limit int) []string {
 	}
 	for _, line := range strings.Split(block.code, "\n") {
 		for _, part := range splitLongLine(line, budget) {
-			need := utf16Len(part)
+			need := runechunk.LenUTF16(part)
 			if len(current) > 0 && currentLen+1+need > budget {
 				flush()
 			}
@@ -344,11 +345,11 @@ func splitPreBlock(block htmlBlock, limit int) []string {
 // ponytail: hard cuts may still unbalance inline formatting tags on
 // pathological single-line input; the plain-text resend fallback covers it.
 func splitLongLine(line string, limit int) []string {
-	if utf16Len(line) <= limit {
+	if runechunk.LenUTF16(line) <= limit {
 		return []string{line}
 	}
 	var pieces []string
-	for utf16Len(line) > limit {
+	for runechunk.LenUTF16(line) > limit {
 		cut := cutIndex(line, limit)
 		pieces = append(pieces, strings.TrimRight(line[:cut], " "))
 		line = strings.TrimLeft(line[cut:], " ")
@@ -419,26 +420,4 @@ func cutIndex(line string, limit int) int {
 		}
 		return len(line)
 	}
-}
-
-// utf16Len counts s in UTF-16 code units, the unit of Telegram's limits.
-func utf16Len(s string) int {
-	n := 0
-	for _, r := range s {
-		n += utf16.RuneLen(r)
-	}
-	return n
-}
-
-// utf16Truncate cuts s to at most limit UTF-16 code units at a rune boundary.
-func utf16Truncate(s string, limit int) string {
-	units := 0
-	for i, r := range s {
-		width := utf16.RuneLen(r)
-		if units+width > limit {
-			return s[:i]
-		}
-		units += width
-	}
-	return s
 }

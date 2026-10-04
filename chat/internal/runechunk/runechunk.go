@@ -3,6 +3,7 @@ package runechunk
 
 import (
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -66,6 +67,28 @@ func Truncate(s string, limit int) string {
 		return s
 	}
 	return string([]rune(s)[:limit])
+}
+
+// LenUTF16 counts text in UTF-16 code units, as required by platform limits.
+func LenUTF16(s string) int {
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
+}
+
+// TruncateUTF16 cuts at a rune boundary within limit UTF-16 code units.
+func TruncateUTF16(s string, limit int) string {
+	units := 0
+	for i, r := range s {
+		width := utf16.RuneLen(r)
+		if units+width > limit {
+			return s[:i]
+		}
+		units += width
+	}
+	return s
 }
 
 // IsFence reports whether trimmed is a pure code-fence marker: bare ```

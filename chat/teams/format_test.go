@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 var updateGoldens = flag.Bool("update", false, "rewrite format golden files")
@@ -31,7 +33,7 @@ func TestFormatGoldens(t *testing.T) {
 			}
 			chunks := chunkText(formatText(string(source)), tc.limit)
 			for i, chunk := range chunks {
-				if n := utf16Len(chunk); n > tc.limit {
+				if n := runechunk.LenUTF16(chunk); n > tc.limit {
 					t.Errorf("chunk %d is %d UTF-16 units, limit %d", i, n, tc.limit)
 				}
 			}
@@ -68,13 +70,13 @@ func TestChunkTextNeverSplitsInsideFence(t *testing.T) {
 }
 
 func TestUTF16Helpers(t *testing.T) {
-	if got := utf16Len("a😀b"); got != 4 {
-		t.Fatalf("utf16Len = %d, want 4", got)
+	if got := runechunk.LenUTF16("a😀b"); got != 4 {
+		t.Fatalf("LenUTF16 = %d, want 4", got)
 	}
-	if got := utf16Truncate("ab😀cd", 3); got != "ab" {
-		t.Fatalf("utf16Truncate = %q, want %q (no half surrogate)", got, "ab")
+	if got := runechunk.TruncateUTF16("ab😀cd", 3); got != "ab" {
+		t.Fatalf("TruncateUTF16 = %q, want %q (no half surrogate)", got, "ab")
 	}
-	if got := utf16Truncate("abc", 10); got != "abc" {
-		t.Fatalf("utf16Truncate = %q, want unchanged", got)
+	if got := runechunk.TruncateUTF16("abc", 10); got != "abc" {
+		t.Fatalf("TruncateUTF16 = %q, want unchanged", got)
 	}
 }
