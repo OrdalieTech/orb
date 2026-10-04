@@ -54,6 +54,17 @@ type SessionEntry struct {
 	Name         string
 
 	object *orderedObject
+	// decoded is Message decoded when the entry was read or appended, before
+	// it was shared; nil when not decoded or invalid. Never modified.
+	decoded ai.Message
+}
+
+// decodedMessage is Message decoded, reusing the entry's decode when it has one.
+func (entry *SessionEntry) decodedMessage() (ai.Message, error) {
+	if entry.decoded != nil {
+		return entry.decoded, nil
+	}
+	return ai.UnmarshalMessage(entry.Message)
 }
 
 // FileEntry is either a session header, an ordinary tree entry, or another

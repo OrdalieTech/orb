@@ -537,7 +537,7 @@ func (manager *SessionManager) addAggregateEntryLocked(entry *SessionEntry) {
 	if entry.Type != "message" {
 		return
 	}
-	message, err := ai.UnmarshalMessage(entry.Message)
+	message, err := entry.decodedMessage()
 	if err != nil {
 		return
 	}
@@ -678,6 +678,9 @@ func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, er
 		return id, nil
 	}
 	record := newEntryRecord(entry)
+	if entry.Type == "message" {
+		record.Entry.decoded, _ = ai.UnmarshalMessage(record.Entry.Message)
+	}
 	manager.fileEntries = append(manager.fileEntries, record)
 	manager.byID[entry.ID] = record.Entry
 	id := entry.ID
@@ -1269,6 +1272,9 @@ func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *Sess
 		return cached
 	}
 	converted := sessionEntryFromHarness(entry)
+	if converted.Type == "message" {
+		converted.decoded, _ = ai.UnmarshalMessage(converted.Message)
+	}
 	manager.parsedMu.Lock()
 	defer manager.parsedMu.Unlock()
 	if manager.parsed == nil {
