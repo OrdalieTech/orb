@@ -676,21 +676,29 @@ func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
 		if bytes.HasPrefix(data, []byte("[DONE]")) {
 			return nil
 		}
-		var event struct {
-			Error json.RawMessage `json:"error"`
+		var raw json.RawMessage
+		if json.Valid(data) {
+			raw = bytes.Clone(bytes.TrimSpace(data))
+		} else if err := json.Unmarshal(data, &raw); err != nil {
+			return err
 		}
-		if json.Unmarshal(data, &event) == nil && len(event.Error) > 0 {
-			message := string(event.Error)
-			if text, err := jsonwire.UnmarshalString(event.Error); err == nil {
+		// An error member, matched as encoding/json matches a struct field,
+		// fails the stream.
+		var streamError []byte
+		jsonwire.EachMember(raw, func(name, value []byte) bool {
+			if bytes.EqualFold(name, []byte("error")) {
+				streamError = value
+			}
+			return true
+		})
+		if streamError != nil {
+			message := string(streamError)
+			if text, err := jsonwire.UnmarshalString(streamError); err == nil {
 				message = text
 			} else if message == "null" {
 				message = ""
 			}
 			return fmt.Errorf("received error while streaming: %s", message)
-		}
-		var raw json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return err
 		}
 		if err := handle(raw); err != nil {
 			return err

@@ -122,14 +122,27 @@ func UnmarshalMessage(data []byte) (Message, error) {
 	var header struct {
 		Role string `json:"role"`
 	}
-	var ok bool
-	if header.Role, ok = plainRole(data); !ok {
+	role, plain := plainRole(data)
+	if !plain {
 		if err := json.Unmarshal(data, &header); err != nil {
 			return nil, fmt.Errorf("ai: decode message role: %w", err)
 		}
+		role = header.Role
 	}
+	message, err := unmarshalMessageAs(role, data)
+	if err != nil && plain {
+		// plainRole read the role without validating data: invalid JSON
+		// fails as decoding the role did.
+		if roleErr := json.Unmarshal(data, &header); roleErr != nil {
+			return nil, fmt.Errorf("ai: decode message role: %w", roleErr)
+		}
+	}
+	return message, err
+}
+
+func unmarshalMessageAs(role string, data []byte) (Message, error) {
 	var message Message
-	switch header.Role {
+	switch role {
 	case "system":
 		message = &SystemMessage{}
 	case "user":
@@ -139,10 +152,10 @@ func UnmarshalMessage(data []byte) (Message, error) {
 	case "toolResult":
 		message = &ToolResultMessage{}
 	default:
-		return nil, fmt.Errorf("%w %q", errUnknownMessageRole, header.Role)
+		return nil, fmt.Errorf("%w %q", errUnknownMessageRole, role)
 	}
 	if err := json.Unmarshal(data, message); err != nil {
-		return nil, fmt.Errorf("ai: decode %s message: %w", header.Role, err)
+		return nil, fmt.Errorf("ai: decode %s message: %w", role, err)
 	}
 	return message, nil
 }
@@ -428,17 +441,14 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 }
 
 // topLevelMemberBefore reports whether member first precedes member second in
-// the JSON object data.
+// the JSON object data, which has been validated.
 func topLevelMemberBefore(data []byte, first, second string) bool {
 	seenFirst, before := false, false
-	eachTopLevelMember(data, func(rawName, _ []byte) bool {
-		name, err := jsonwire.UnmarshalString(rawName)
-		switch {
-		case err != nil:
-			return false
-		case name == first:
+	jsonwire.EachMember(data, func(name, _ []byte) bool {
+		switch string(name) {
+		case first:
 			seenFirst = true
-		case name == second:
+		case second:
 			before = seenFirst
 			return false
 		}
@@ -449,16 +459,14 @@ func topLevelMemberBefore(data []byte, first, second string) bool {
 
 // plainRole is the role of the JSON object data when it has one "role"
 // member holding an unescaped string, the shape Orb and pi write; anything
-// else is left to encoding/json.
+// else is left to encoding/json. data is not validated.
 func plainRole(data []byte) (string, bool) {
 	var role []byte
 	roles := 0
-	eachTopLevelMember(data, func(name, value []byte) bool {
-		if len(name) == 6 && strings.EqualFold(string(name[1:5]), "role") {
+	jsonwire.EachMember(data, func(name, value []byte) bool {
+		if strings.EqualFold(string(name), "role") {
 			roles++
-			if string(name) == `"role"` {
-				role = value
-			}
+			role = value
 		}
 		return true
 	})
@@ -466,66 +474,6 @@ func plainRole(data []byte) (string, bool) {
 		return "", false
 	}
 	return string(role[1 : len(role)-1]), true
-}
-
-// eachTopLevelMember calls visit with the raw name and value of each member
-// of the JSON object data, which is assumed valid, until visit returns false.
-// Decoding data again for these lookups dominated message decoding.
-func eachTopLevelMember(data []byte, visit func(name, value []byte) bool) {
-	index := skipJSONSpace(data, 0)
-	if index >= len(data) || data[index] != '{' {
-		return
-	}
-	for index = skipJSONSpace(data, index+1); index < len(data) && data[index] == '"'; {
-		nameEnd := skipJSONValue(data, index)
-		valueStart := skipJSONSpace(data, skipJSONSpace(data, nameEnd)+1)
-		valueEnd := skipJSONValue(data, valueStart)
-		if valueEnd > len(data) || !visit(data[index:nameEnd], data[valueStart:valueEnd]) {
-			return
-		}
-		if index = skipJSONSpace(data, valueEnd); index < len(data) && data[index] == ',' {
-			index = skipJSONSpace(data, index+1)
-		}
-	}
-}
-
-func skipJSONSpace(data []byte, index int) int {
-	for index < len(data) && (data[index] == ' ' || data[index] == '\t' || data[index] == '\n' || data[index] == '\r') {
-		index++
-	}
-	return index
-}
-
-// skipJSONValue returns the index just past the value starting at index.
-func skipJSONValue(data []byte, index int) int {
-	depth := 0
-	for ; index < len(data); index++ {
-		switch data[index] {
-		case '"':
-			for index++; index < len(data) && data[index] != '"'; index++ {
-				if data[index] == '\\' {
-					index++
-				}
-			}
-			if depth == 0 {
-				return index + 1
-			}
-		case '{', '[':
-			depth++
-		case '}', ']':
-			if depth--; depth == 0 {
-				return index + 1
-			}
-			if depth < 0 {
-				return index
-			}
-		case ',', ' ', '\t', '\n', '\r':
-			if depth == 0 {
-				return index
-			}
-		}
-	}
-	return index
 }
 
 // SetAssistantMessageErrorBeforeTimestamp preserves the member order of
