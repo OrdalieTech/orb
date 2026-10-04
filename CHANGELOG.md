@@ -5,6 +5,15 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-04
+
+The CLI's first request declares every tool again, context estimates and compaction count the
+system prompt, and `--mode json`/`rpc` exit cleanly on SIGTERM and SIGHUP.
+Claude Code sessions open with their reasoning and images, Codex CLI threads open as Orb
+conversations, every account can be renamed, and dragging selects any text, dialogs and lists
+included. Inside Herdr, Orb panes report their state and accept `herdr agent prompt`. Go embedders:
+`SetSystemPrompt`, harness session v4, image generation and the process RPC client are removed.
+
 Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 
 - Context edits: a retried or recovered response stays in the session's history but leaves the
