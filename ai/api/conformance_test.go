@@ -10,9 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
-
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
@@ -738,6 +735,14 @@ func f2HeaderValue(headers http.Header, name string) string {
 	return strings.Join(values, ", ")
 }
 
+// fixtureAWSException is a modeled exception as the Bedrock transport
+// reports it: ai/api reads its code and message.
+type fixtureAWSException struct{ code, message string }
+
+func (err *fixtureAWSException) Error() string        { return err.code + ": " + err.message }
+func (err *fixtureAWSException) ErrorCode() string    { return err.code }
+func (err *fixtureAWSException) ErrorMessage() string { return err.message }
+
 type fixtureBedrockTransport struct{ response BedrockResponse }
 
 func (transport *fixtureBedrockTransport) Send(context.Context, *BedrockConverseStreamPayload) (BedrockResponse, error) {
@@ -774,7 +779,7 @@ func fixtureBedrockItems(values []bedrockFixtureItem) ([]BedrockStreamItem, erro
 		if value.ThrottlingException != nil {
 			// The SDK ends the event stream at an exception member and reports
 			// it through Err(); later fixture items are unreachable (G8).
-			return result, &bedrocktypes.ThrottlingException{Message: aws.String(value.ThrottlingException.Message)}
+			return result, &fixtureAWSException{code: "ThrottlingException", message: value.ThrottlingException.Message}
 		}
 		item := BedrockStreamItem{}
 		switch {

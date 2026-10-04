@@ -280,7 +280,9 @@ plus a `Collect` helper folding a stream into the final `AssistantMessage`. An `
 maps each `ai.API` to its family (`api.NewRegistry(api.OpenAICompletions(), …)`); `ai/api/all`
 holds every family and its `StreamSimple` adapts the common options, including
 `auto|none|required` tool choice, with `Registry.CompleteSimple` as the collected form. Bedrock's
-AWS client lives in `ai/api/bedrock`, so only assemblies selecting Bedrock link the AWS SDK. Tool-call args stream through `internal/partialjson` exactly as upstream uses
+transport lives in `ai/api/bedrock`: SigV4 or bearer requests over net/http, the AWS event stream
+framing and the SDK's retry policy are Orb's own, and only native hosts link the AWS shared config
+chain, for the regions and credentials the options leave open. Tool-call args stream through `internal/partialjson` exactly as upstream uses
 `partial-json`.
 
 **API shapes** (one file each under `ai/api/`): openai-responses, openai-completions,
@@ -823,7 +825,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 |---|---|---|
 | anthropics/anthropic-sdk-go (`config` only) | ai/api | Anthropic workload-identity federation token exchange (D10) |
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
-| aws-sdk-go-v2, aws-sdk-go-v2/{config,credentials,service/bedrockruntime}, smithy-go | ai/api/bedrock | Official Bedrock client, credential chain, SigV4/bearer auth, and converse-stream (D10) |
+| aws-sdk-go-v2/config | ai/api/bedrock (native hosts) | AWS shared config and credential chain for Bedrock (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
 | yuin/goldmark | tui, chat | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |

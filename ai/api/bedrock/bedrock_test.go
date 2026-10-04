@@ -15,7 +15,6 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/api"
 	"github.com/OrdalieTech/orb/conformance/runner"
-	aws "github.com/aws/aws-sdk-go-v2/aws"
 )
 
 func bedrockTestModel(id, name string) *ai.Model {
@@ -97,7 +96,7 @@ func runBedrockHTTPFailure(t *testing.T, options *api.BedrockConverseStreamOptio
 		_, _ = io.WriteString(response, "denied by fixture gateway")
 	})
 	var server *httptest.Server
-	var client aws.HTTPClient
+	var client *http.Client
 	if options.BearerToken != "" {
 		server = httptest.NewTLSServer(handler)
 		client = server.Client()

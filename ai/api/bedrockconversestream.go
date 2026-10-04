@@ -100,6 +100,9 @@ type BedrockTransportConfig struct {
 	BearerToken string
 	Proxy       *url.URL
 	ForceHTTP1  bool
+	// UseFIPS and UseDualStack pick those endpoints, as AWS_USE_FIPS_ENDPOINT
+	// and AWS_USE_DUALSTACK_ENDPOINT ask.
+	UseFIPS, UseDualStack bool
 	// Headers are the caller headers to send; reserved AWS names are already removed.
 	Headers map[string]string
 }
@@ -1424,6 +1427,8 @@ func resolveBedrockTransportConfig(model *ai.Model, options *BedrockConverseStre
 	}
 	config.Proxy = proxyURL
 	config.ForceHTTP1 = providerEnvValue("AWS_BEDROCK_FORCE_HTTP1", streamOptions) == "1"
+	config.UseFIPS = strings.EqualFold(providerEnvValue("AWS_USE_FIPS_ENDPOINT", streamOptions), "true")
+	config.UseDualStack = strings.EqualFold(providerEnvValue("AWS_USE_DUALSTACK_ENDPOINT", streamOptions), "true")
 	if shouldUseExplicitBedrockEndpoint(model.BaseURL, configuredBedrockRegion(options), os.Getenv("AWS_PROFILE") != "") {
 		endpoint := model.BaseURL
 		config.Endpoint = &endpoint
