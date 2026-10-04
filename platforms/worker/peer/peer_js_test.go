@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
 
@@ -68,7 +69,7 @@ func TestPeerOverDurableObjectPorts(t *testing.T) {
 	if err != nil || self.PeerID() != peerID {
 		t.Fatalf("restarted peer = %v, %v; want %s", self, err, peerID)
 	}
-	laptop, err := bridge.Open(&memoryStore{}, true)
+	laptop, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

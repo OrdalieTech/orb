@@ -504,8 +504,9 @@ owner, and construct `agent/bridge.Attach(ctx, runtime, Options{InstanceID: inst
 Store: ledgerStore, Authorize: bridge.Authorize})`. Register
 `bridge.NewLocal(attachment.Invoke)` with `(*bridge.Bridge).Attach`, then give the returned generation
 to `attachment.SetGeneration` before exposing the bridge. Keep metadata and ledger stores
-separate. `bridge.Store` is the host-supplied persistence boundary; a successful `Save` must
-mean durable replacement. The native implementation is `platforms/native/bridge.OpenStore`.
+separate. Both are `host.Document` values, the same port as every other Store document; a
+successful `Update` must mean durable replacement. The native implementation is
+`platforms/native/bridge.OpenStore`, which adds the profile's single-owner lock and quota.
 
 `bridge.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
 negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `bridge` and

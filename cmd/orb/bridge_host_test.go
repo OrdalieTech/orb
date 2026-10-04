@@ -15,6 +15,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
@@ -40,7 +41,7 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = state.close() }() // Windows cannot remove the temp dir around an open database
-	b, err := bridge.Open(&testBridgeStore{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

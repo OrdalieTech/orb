@@ -25,6 +25,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/document"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/questions"
@@ -56,13 +57,13 @@ func TestBridgeProfileNames(t *testing.T) {
 func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	bStore := &testBridgeStore{}
+	bStore := &document.Memory{}
 	b, err := bridge.Open(bStore, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = b.Close() }()
-	phone, err := bridge.Open(&testBridgeStore{}, true)
+	phone, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,7 @@ func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := attach.Attach(ctx, host, attach.Options{InstanceID: enrolled.ID, Store: &testBridgeStore{}, Authorize: b.Authorize})
+	a, err := attach.Attach(ctx, host, attach.Options{InstanceID: enrolled.ID, Store: &document.Memory{}, Authorize: b.Authorize})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,11 +151,6 @@ func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 		t.Fatal("bridge owned runtime", err)
 	}
 }
-
-type testBridgeStore struct{ data []byte }
-
-func (s *testBridgeStore) Load() ([]byte, error) { return append([]byte(nil), s.data...), nil }
-func (s *testBridgeStore) Save(b []byte) error   { s.data = append([]byte(nil), b...); return nil }
 
 // This separate live fixture uses no model credentials and never touches the
 // owner's profiles. Run the compiled test binary with an isolated bridge home.
@@ -383,7 +379,7 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "admin.token"), []byte(token), 0600); err != nil {
 		t.Fatal(err)
 	}
-	b, err := bridge.Open(&testBridgeStore{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +471,7 @@ func TestBridgeConnectActionsAreAvailableBeforeActivation(t *testing.T) {
 }
 
 func TestBridgeInvitationCodeRoundTrip(t *testing.T) {
-	b, err := bridge.Open(&testBridgeStore{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,12 +637,12 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 	t.Setenv("DISPLAY", ":test")
 	for _, approve := range []bool{false, true} {
 		t.Run(fmt.Sprint(approve), func(t *testing.T) {
-			b, err := bridge.Open(&testBridgeStore{}, true)
+			b, err := bridge.Open(&document.Memory{}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = b.Close() }()
-			other, err := bridge.Open(&testBridgeStore{}, true)
+			other, err := bridge.Open(&document.Memory{}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -825,7 +821,7 @@ func TestBridgePairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
 }
 
 func TestBridgeJoinTrustsTheInviterOnceItApproves(t *testing.T) {
-	b, err := bridge.Open(&testBridgeStore{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1143,7 +1139,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 			if phase.Load() == 3 {
 				id = "another-session"
 			}
-			descriptor := remoteDescriptor{Status: "Claude 5h 75% left", Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt", "input.reply"}}
+			descriptor := attach.Descriptor{Status: "Claude 5h 75% left", Name: "Remote title", CWD: "/remote/project", Generation: "1", Target: agent.ControlTarget{SessionID: id, Revision: revision}, Methods: []string{"prompt", "input.reply"}}
 			if phase.Load() == 6 {
 				descriptor.Input = &agent.InputRequest{ID: "question", Title: "Allow this action?", Choices: []string{"Deny", "Allow once"}}
 				descriptor.Target.ExecutionID = "execution"
@@ -1178,9 +1174,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	wait := func(contains string) {
 		t.Helper()
 		for {
-			status.mu.Lock()
-			text := status.text
-			status.mu.Unlock()
+			text := strings.Join(status.Render(400), "\n")
 			if strings.Contains(text, contains) {
 				return
 			}
@@ -1239,10 +1233,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	if err != nil || len(rows) != 0 {
 		t.Fatal("revoked cache retained", err)
 	}
-	body.mu.Lock()
-	remaining := body.text
-	body.mu.Unlock()
-	if remaining != "" {
+	if len(body.Render(80)) != 0 {
 		t.Fatal("revoked transcript remained visible")
 	}
 }
@@ -1314,9 +1305,7 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 			t.Fatal("live preview timeout")
 		case <-ticker.C:
 		}
-		status.mu.Lock()
-		state := status.text
-		status.mu.Unlock()
+		state := strings.Join(status.Render(400), "\n")
 		if !sent && strings.HasPrefix(state, "idle") {
 			requests <- remoteRequest{text: "Please answer for the isolated preview cache check."}
 			sent = true
@@ -1399,7 +1388,7 @@ func TestKeepaliveClosesAPeerThatStoppedAnswering(t *testing.T) {
 }
 
 func TestAnInviterBecomesAKnownPeerOnlyOnceTrusted(t *testing.T) {
-	b, err := bridge.Open(&testBridgeStore{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

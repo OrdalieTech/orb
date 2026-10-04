@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 // The ChatGPT backend hides models whose minimum Codex client version exceeds
@@ -74,7 +75,7 @@ func RefreshCodex(ctx context.Context, options RefreshOptions, token, accountID 
 	if len(models) == 0 {
 		return nil
 	}
-	var documents []StoreDocument
+	var documents []document.Document
 	if options.StoreDocument != nil {
 		documents = append(documents, options.StoreDocument)
 	}

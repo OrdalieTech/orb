@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 type Grant struct {
@@ -76,7 +77,7 @@ type registration struct {
 }
 type Bridge struct {
 	mu             sync.Mutex
-	store          Store
+	store          document.Document
 	state          state
 	active         map[string]registration
 	channels       map[string]map[*protocol.Conn]uint64 // value: arrival order, newest highest
@@ -124,12 +125,12 @@ func ParsePeerID(id string) (ed25519.PublicKey, error) {
 	}
 	return ed25519.PublicKey(b), nil
 }
-func Open(store Store, create bool) (*Bridge, error) {
+func Open(store document.Document, create bool) (*Bridge, error) {
 	if store == nil {
 		return nil, errors.New("bridge requires explicit storage")
 	}
 	b := &Bridge{changes: make(chan struct{}, 1), store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, boot: protocol.NewID()}
-	raw, err := store.Load()
+	raw, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +200,7 @@ func (b *Bridge) save() error {
 		b.failed = true
 		return Fail("resource_exhausted")
 	}
-	if err := b.store.Save(raw); err != nil {
+	if err := document.Replace(context.Background(), b.store, raw); err != nil {
 		b.failed = true
 		return err
 	}

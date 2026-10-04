@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 func TestRejectNonTailcatAndEmbeddedRelay(t *testing.T) {
@@ -35,7 +36,7 @@ func TestLiveNativePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := bridge.Open(&liveStore{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +81,3 @@ func TestLiveNativePath(t *testing.T) {
 		t.Fatal("native direct path not established")
 	}
 }
-
-type liveStore struct{ data []byte }
-
-func (s *liveStore) Load() ([]byte, error) { return s.data, nil }
-func (s *liveStore) Save(b []byte) error   { s.data = append([]byte(nil), b...); return nil }

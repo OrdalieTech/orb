@@ -13,6 +13,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
 
@@ -57,11 +58,6 @@ func (kv *mapKV) Write(_ context.Context, put map[string][]byte, del []string) e
 	}
 	return nil
 }
-
-type memoryStore struct{ data []byte }
-
-func (s *memoryStore) Load() ([]byte, error) { return s.data, nil }
-func (s *memoryStore) Save(b []byte) error   { s.data = bytes.Clone(b); return nil }
 
 // object opens a Worker object with bridge_call enabled, its peer opened lazily.
 func object(t *testing.T, kv worker.KV, provider *faux.Provider) (*worker.Instance, func(context.Context) (*Peer, error)) {
@@ -117,7 +113,7 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	laptop, err := bridge.Open(&memoryStore{}, true)
+	laptop, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +247,7 @@ func TestPeerIdentitySurvivesRestart(t *testing.T) {
 	if _, ok := kv.data[StateKey]; !ok {
 		t.Fatalf("no %s after opening the peer", StateKey)
 	}
-	laptop, _ := bridge.Open(&memoryStore{}, true)
+	laptop, _ := bridge.Open(&document.Memory{}, true)
 	defer func() { _ = laptop.Close() }()
 	admin(t, self, "trust", map[string]string{"peer_id": laptop.PeerID()})
 	admin(t, self, "trust", map[string]string{"peer_id": laptop.PeerID()})

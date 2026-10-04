@@ -5,20 +5,17 @@
 package host
 
 import (
-	"context"
 	"path"
 	"path/filepath"
 	"strings"
 
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 // Document updates must commit before returning; nil deletes the document.
-type Document interface {
-	Read(context.Context) ([]byte, error)
-	Update(context.Context, func([]byte) ([]byte, error)) error
-}
+type Document = document.Document
 
 // Store is the durable-document port. Paths are the kernel file locations
 // (for example AgentDir/settings.json); backends may map them to files, rows

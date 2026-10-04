@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -751,7 +752,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	bridgePath := filepath.Join(dir, "state.json")
-	store, err := nativebridge.OpenStore(bridgePath, protocol.MaxFrame)
+	store, err := nativebridge.OpenStore(bridgePath, protocol.MaxFrame, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -837,7 +838,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err != nil || b.PeerID() != peer {
 		t.Fatal("pairing identity changed", err)
 	}
-	remote, err := bridge.Open(&testBridgeStore{}, true)
+	remote, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

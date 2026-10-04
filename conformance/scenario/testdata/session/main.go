@@ -10,41 +10,20 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/memory"
 )
 
-type document struct {
-	mu   sync.Mutex
-	data []byte
-}
-
-func (d *document) Read(context.Context) ([]byte, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.data, nil
-}
-
-func (d *document) Update(_ context.Context, update func([]byte) ([]byte, error)) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	next, err := update(d.data)
-	if err == nil {
-		d.data = next
-	}
-	return err
-}
-
-type store map[string]*document
+type store map[string]*document.Memory
 
 func (s store) Document(path string) host.Document {
 	if s[path] == nil {
-		s[path] = &document{}
+		s[path] = &document.Memory{}
 	}
 	return s[path]
 }

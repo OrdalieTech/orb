@@ -6,12 +6,8 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 )
-
-type memStore struct{ data []byte }
-
-func (s *memStore) Load() ([]byte, error) { return s.data, nil }
-func (s *memStore) Save(b []byte) error   { s.data = append([]byte(nil), b...); return nil }
 
 type endpoint struct{ closed bool }
 
@@ -21,7 +17,7 @@ func (e *endpoint) Invoke(_ context.Context, _ string, _ json.RawMessage) (json.
 func (e *endpoint) Close() error { e.closed = true; return nil }
 func newBridge(t *testing.T) *Bridge {
 	t.Helper()
-	b, err := Open(&memStore{}, true)
+	b, err := Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

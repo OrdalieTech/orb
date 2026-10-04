@@ -22,7 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
-	orbhost "github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
 
@@ -37,18 +37,6 @@ const (
 // StateKey is present once the object has a Bridge identity; the shim serves
 // the unauthenticated stream route only then.
 var StateKey = worker.DocumentKey(StateDocument)
-
-// DocumentStore is a bridge.Store over one Store document.
-type DocumentStore struct{ Document orbhost.Document }
-
-func (s DocumentStore) Load() ([]byte, error) { return s.Document.Read(context.Background()) }
-
-func (s DocumentStore) Save(data []byte) error {
-	if len(data) == 0 {
-		return errors.New("peer: refusing to save an empty document")
-	}
-	return s.Document.Update(context.Background(), func([]byte) ([]byte, error) { return slices.Clone(data), nil })
-}
 
 type identity struct {
 	Version    int    `json:"version"`
@@ -66,12 +54,12 @@ type Peer struct {
 // Orb once under alias, and attaches it for this runtime's lifetime.
 func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	store := instance.Host.Store
-	b, err := bridge.Open(DocumentStore{store.Document(StateDocument)}, true)
+	b, err := bridge.Open(store.Document(StateDocument), true)
 	if err != nil {
 		return nil, err
 	}
-	enrolled := DocumentStore{store.Document(instanceDocument)}
-	raw, err := enrolled.Load()
+	enrolled := store.Document(instanceDocument)
+	raw, err := enrolled.Read(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -82,14 +70,14 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 			return nil, err
 		}
 		self = identity{1, registration.ID, credential}
-		if err = enrolled.Save(bridge.JSON(self)); err != nil {
+		if err = document.Replace(context.Background(), enrolled, bridge.JSON(self)); err != nil {
 			return nil, err
 		}
 	} else if err = protocol.Decode(raw, &self); err != nil || self.Version != 1 || !protocol.ValidID(self.InstanceID) {
 		return nil, errors.New("peer: corrupt instance registration")
 	}
 	attachment, err := attach.Attach(context.Background(), host{instance}, attach.Options{
-		InstanceID: self.InstanceID, Store: DocumentStore{store.Document(ledgerDocument)}, Authorize: b.Authorize,
+		InstanceID: self.InstanceID, Store: store.Document(ledgerDocument), Authorize: b.Authorize,
 	})
 	if err != nil {
 		return nil, err

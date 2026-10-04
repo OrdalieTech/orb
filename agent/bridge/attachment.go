@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
@@ -36,7 +37,7 @@ type Host interface {
 type Options struct {
 	Status      func(*runtime.AgentSession) string
 	InstanceID  string
-	Store       bridge.Store
+	Store       document.Document
 	Authorize   func(bridge.Request) bool
 	LedgerQuota int
 }
@@ -244,6 +245,22 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 		return nil, bridge.Fail("not_found")
 	}
 }
+
+// Descriptor is what instances.describe reports about the attached runtime.
+type Descriptor struct {
+	Status     string                `json:"status,omitempty"`
+	Model      string                `json:"model,omitempty"`
+	Models     []bridge.Model        `json:"models,omitempty"`
+	Name       string                `json:"name,omitempty"`
+	CWD        string                `json:"cwd,omitempty"`
+	InstanceID string                `json:"instance_id"`
+	Service    string                `json:"service"`
+	Generation string                `json:"registration_generation"`
+	Target     runtime.ControlTarget `json:"target"`
+	Methods    []string              `json:"methods"`
+	Input      *runtime.InputRequest `json:"input,omitempty"`
+}
+
 func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
@@ -274,19 +291,7 @@ func (a *Attachment) inspect() json.RawMessage {
 			name = *title
 		}
 	}
-	return bridge.JSON(struct {
-		Status     string                `json:"status,omitempty"`
-		Model      string                `json:"model,omitempty"`
-		Models     []bridge.Model        `json:"models,omitempty"`
-		Name       string                `json:"name,omitempty"`
-		CWD        string                `json:"cwd,omitempty"`
-		InstanceID string                `json:"instance_id"`
-		Service    string                `json:"service"`
-		Generation string                `json:"registration_generation"`
-		Target     runtime.ControlTarget `json:"target"`
-		Methods    []string              `json:"methods"`
-		Input      *runtime.InputRequest `json:"input,omitempty"`
-	}{status, modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name"}, input})
+	return bridge.JSON(Descriptor{status, modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name"}, input})
 }
 func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessage, error) {
 	if err := bridge.ValidateCall(r.Call); err != nil {
@@ -651,7 +656,7 @@ func (a *Attachment) observe(cursor, id, offset string, limits ...int) (json.Raw
 			return nil, bridge.Fail("resource_exhausted")
 		}
 		id = protocol.NewID()
-		a.snapshots[id] = frozen{partial: append(json.RawMessage(nil), a.partial...), messages: append([]json.RawMessage(nil), a.messages...), cursor: a.stream.Snapshot().Cursor, expires: time.Now().Add(time.Minute)}
+		a.snapshots[id] = frozen{partial: append(json.RawMessage(nil), a.partial...), messages: append([]json.RawMessage(nil), a.messages...), cursor: a.stream.Cursor(), expires: time.Now().Add(time.Minute)}
 	}
 	snap, ok := a.snapshots[id]
 	if !ok {

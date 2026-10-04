@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,13 +13,15 @@ type memoryStore struct {
 	fail bool
 }
 
-func (s *memoryStore) Load() ([]byte, error) { return append([]byte(nil), s.data...), nil }
-func (s *memoryStore) Save(b []byte) error {
+func (s *memoryStore) Read(context.Context) ([]byte, error) {
+	return append([]byte(nil), s.data...), nil
+}
+func (s *memoryStore) Update(_ context.Context, change func([]byte) ([]byte, error)) (err error) {
 	if s.fail {
 		return errors.New("disk failure")
 	}
-	s.data = append([]byte(nil), b...)
-	return nil
+	s.data, err = change(s.data)
+	return err
 }
 
 func TestLedgerAcceptanceAndRecovery(t *testing.T) {
@@ -62,20 +65,20 @@ func TestLedgerAcceptanceAndRecovery(t *testing.T) {
 func TestObservationBoundsAndSnapshots(t *testing.T) {
 	s := NewStream(2, 1024)
 	s.Publish(json.RawMessage(`{"n":1}`))
-	first := s.Snapshot()
+	first := s.Cursor()
 	s.Publish(json.RawMessage(`{"n":2}`))
-	events, err := s.Replay(first.Cursor)
+	events, err := s.Replay(first)
 	if err != nil || len(events) != 1 {
 		t.Fatal(events, err)
 	}
+	second := s.Cursor()
 	s.Publish(json.RawMessage(`{"n":3}`))
 	s.Publish(json.RawMessage(`{"n":4}`))
-	if _, err = s.Replay(first.Cursor); Code(err) != "cursor_expired" {
+	if _, err = s.Replay(first); Code(err) != "cursor_expired" {
 		t.Fatal(err)
 	}
-	snap := s.Snapshot()
-	if len(snap.Events) != 2 {
-		t.Fatal(snap)
+	if events, err = s.Replay(second); err != nil || len(events) != 2 {
+		t.Fatal(events, err)
 	}
 }
 
@@ -120,8 +123,8 @@ type lostAcknowledgmentStore struct {
 	lose bool
 }
 
-func (s *lostAcknowledgmentStore) Save(b []byte) error {
-	if err := s.memoryStore.Save(b); err != nil {
+func (s *lostAcknowledgmentStore) Update(ctx context.Context, change func([]byte) ([]byte, error)) error {
+	if err := s.memoryStore.Update(ctx, change); err != nil {
 		return err
 	}
 	if s.lose {

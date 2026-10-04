@@ -492,9 +492,9 @@ func authStorageLocation(ctx context.Context, agentDir string, auth *config.Auth
 
 func (state *nativeState) bridgeStore(path string, quota int) (*nativebridge.Store, error) {
 	if state == nil {
-		return nativebridge.OpenStore(path, quota)
+		return nativebridge.OpenStore(path, quota, nil)
 	}
-	return nativebridge.OpenStoreWithDocument(path, quota, state.document(path))
+	return nativebridge.OpenStore(path, quota, state.document(path))
 }
 func (state *nativeState) read(ctx context.Context, path string) ([]byte, error) {
 	if state == nil {

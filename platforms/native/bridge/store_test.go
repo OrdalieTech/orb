@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,28 +13,29 @@ import (
 
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 func TestStoreLockAndDurability(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "profile", "state.json")
-	s, err := OpenStore(path, 4096)
+	s, err := OpenStore(path, 4096, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if other, err := OpenStore(path, 4096); err == nil {
+	if other, err := OpenStore(path, 4096, nil); err == nil {
 		_ = other.Close()
 		t.Fatal("second writer")
 	}
-	if err = s.Save([]byte(`{"version":1}`)); err != nil {
+	if err = document.Replace(t.Context(), s, []byte(`{"version":1}`)); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	s, err = OpenStore(path, 4096)
+	s, err = OpenStore(path, 4096, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	b, err := s.Load()
+	b, err := s.Read(t.Context())
 	if err != nil || !bytes.Equal(b, []byte(`{"version":1}`)) {
 		t.Fatal(string(b), err)
 	}
@@ -46,8 +48,14 @@ func TestStoreLockAndDurability(t *testing.T) {
 	if info.Mode().Perm() != want {
 		t.Fatal(info.Mode())
 	}
-	if err = s.Save(make([]byte, 4097)); err == nil {
+	if err = document.Replace(t.Context(), s, make([]byte, 4097)); err == nil {
 		t.Fatal("quota bypass")
+	}
+	if err = document.Replace(t.Context(), s, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("nil kept the document", err)
 	}
 }
 
@@ -57,7 +65,7 @@ func TestIPCSeparatesOwnerAndAttachmentCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	store, err := OpenStore(filepath.Join(dir, "state.json"), protocol.MaxFrame)
+	store, err := OpenStore(filepath.Join(dir, "state.json"), protocol.MaxFrame, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
@@ -491,7 +492,7 @@ func TestStreamKeepsRedactedThinking(t *testing.T) {
 
 func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
 	host, _ := fixture(t)
-	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})
+	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,11 +541,6 @@ func TestModelSelectionKeepsExistingProvider(t *testing.T) {
 		t.Fatal("ordinary launch implicitly selected Claude")
 	}
 }
-
-type testStore struct{ data []byte }
-
-func (s *testStore) Load() ([]byte, error) { return s.data, nil }
-func (s *testStore) Save(b []byte) error   { s.data = append([]byte(nil), b...); return nil }
 
 // Opt-in: uses the executing user's official Claude login and subscription limits.
 func TestSDKLiveSession(t *testing.T) {
@@ -600,7 +596,7 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	id := protocol.NewID()
-	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})
+	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,12 +730,12 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	server, err := bridge.Open(&testStore{}, true)
+	server, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = server.Close() }()
-	client, err := bridge.Open(&testStore{}, true)
+	client, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +755,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: instance.ID, Store: &testStore{}, Authorize: func(r bridge.Request) bool {
+	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: instance.ID, Store: &document.Memory{}, Authorize: func(r bridge.Request) bool {
 		permission := "instance." + r.Call.Method
 		if strings.HasPrefix(r.Call.Method, "session.") {
 			permission = "instance.session.manage"
@@ -1251,7 +1247,7 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 		t.Fatal(got)
 	}
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1446,7 +1442,7 @@ func TestNativeContextModelAndCompactionInvalidation(t *testing.T) {
 func TestSDKElicitationUsesBridgeQuestionsAndValidation(t *testing.T) {
 	host, _ := fixture(t)
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &testStore{}, Authorize: func(bridge.Request) bool { return true }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}

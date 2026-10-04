@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/gofrs/flock"
 )
 
@@ -21,16 +22,22 @@ func groupOrOtherAccess(mode os.FileMode) bool {
 	return runtime.GOOS != "windows" && mode.Perm()&0o077 != 0
 }
 
+// Store is one Bridge document behind the profile's single-owner lock: the
+// supplied document when native storage is open, else a private file. The
+// lock makes this process the only writer, so the last value read or written
+// stays authoritative and is served from memory.
 type Store struct {
-	document       host.Document
-	mu             sync.Mutex
-	path           string
-	quota          int
-	lock           *flock.Flock
-	closed, failed bool
+	document               host.Document
+	mu                     sync.Mutex
+	path                   string
+	quota                  int
+	lock                   *flock.Flock
+	cached                 []byte
+	loaded, closed, failed bool
 }
 
-func OpenStore(path string, quota int) (*Store, error) {
+// OpenStore takes the lock beside path; closing the store never closes document.
+func OpenStore(path string, quota int, document host.Document) (*Store, error) {
 	if !filepath.IsAbs(path) || quota < 1 {
 		return nil, errors.New("absolute store path and positive quota required")
 	}
@@ -62,63 +69,71 @@ func OpenStore(path string, quota int) (*Store, error) {
 	if !ok {
 		return nil, errors.New("bridge profile already in use")
 	}
-	return &Store{path: path, quota: quota, lock: lock}, nil
+	return &Store{document: document, path: path, quota: quota, lock: lock}, nil
 }
 
-// OpenStoreWithDocument keeps native single-owner locking and quotas while
-// the supplied document owns persistence. Closing it never closes the database.
-func OpenStoreWithDocument(path string, quota int, document host.Document) (*Store, error) {
-	if document == nil {
-		return nil, errors.New("bridge document required")
-	}
-	store, err := OpenStore(path, quota)
-	if err == nil {
-		store.document = document
-	}
-	return store, err
-}
-func (s *Store) Load() ([]byte, error) {
+func (s *Store) Read(ctx context.Context) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.readLocked(ctx)
+}
+
+func (s *Store) readLocked(ctx context.Context) ([]byte, error) {
 	if s.closed || s.failed {
 		return nil, errors.New("store unavailable")
 	}
+	if s.loaded {
+		return s.cached, nil
+	}
+	var b []byte
+	var err error
 	if s.document != nil {
-		data, err := s.document.Read(context.Background())
-		if len(data) > s.quota {
-			return nil, errors.New("store quota exceeded")
-		}
-		return data, err
+		b, err = s.document.Read(ctx)
+	} else if f, openErr := os.Open(s.path); openErr == nil {
+		b, err = io.ReadAll(io.LimitReader(f, int64(s.quota)+1))
+		_ = f.Close()
+	} else if !errors.Is(openErr, os.ErrNotExist) {
+		return nil, openErr
 	}
-	f, err := os.Open(s.path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, int64(s.quota)+1))
 	if len(b) > s.quota {
 		return nil, errors.New("store quota exceeded")
 	}
+	s.cached, s.loaded = b, err == nil
 	return b, err
 }
-func (s *Store) Save(b []byte) (err error) {
+
+// Update commits change's result; nil removes the document. A failed write
+// refuses all later access until a new owner reopens and reconciles the store.
+func (s *Store) Update(ctx context.Context, change func([]byte) ([]byte, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || s.failed {
-		return errors.New("store unavailable")
+	current, err := s.readLocked(ctx)
+	if err != nil {
+		return err
+	}
+	b, err := change(current)
+	if err != nil {
+		return err
 	}
 	if len(b) > s.quota {
 		return errors.New("store quota exceeded")
 	}
 	if s.document != nil {
-		err = s.document.Update(context.Background(), func([]byte) ([]byte, error) { return b, nil })
-		if err != nil {
-			s.failed = true
+		err = document.Replace(ctx, s.document, b)
+	} else {
+		err = s.writeFile(b)
+	}
+	s.failed = err != nil
+	s.cached = b
+	return err
+}
+
+func (s *Store) writeFile(b []byte) error {
+	if b == nil {
+		if err := os.Remove(s.path); !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
-		return err
+		return nil
 	}
 	dir := filepath.Dir(s.path)
 	f, err := os.CreateTemp(dir, ".bridge-")
@@ -145,35 +160,15 @@ func (s *Store) Save(b []byte) (err error) {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	// After rename, a failed barrier has an ambiguous durable outcome. Refuse
-	// all subsequent access until a new owner reopens and reconciles the store.
 	d, err := os.Open(dir)
 	if err != nil {
-		s.failed = true
 		return err
 	}
 	err = d.Sync()
-	closeErr := d.Close()
-	if err == nil {
+	if closeErr := d.Close(); err == nil {
 		err = closeErr
 	}
-	if err != nil {
-		s.failed = true
-	}
 	return err
-}
-
-// Remove deletes the stored document; the store stays locked until Close.
-func (s *Store) Remove() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.document != nil {
-		return s.document.Update(context.Background(), func([]byte) ([]byte, error) { return nil, nil })
-	}
-	if err := os.Remove(s.path); !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
 }
 
 func (s *Store) Close() error {

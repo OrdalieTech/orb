@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
@@ -124,7 +125,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 		return nil, err
 	}
 	cleanup := func() { _ = stateStore.Close() }
-	raw, err := stateStore.Load()
+	raw, err := stateStore.Read(lifetime)
 	if err != nil {
 		cleanup()
 		return nil, err
@@ -153,7 +154,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 			return nil, err
 		}
 		identity = attachmentIdentity{1, status.PeerID, enrolled.Instance.ID, enrolled.Credential}
-		if err = stateStore.Save(bridge.JSON(identity)); err != nil {
+		if err = document.Replace(lifetime, stateStore, bridge.JSON(identity)); err != nil {
 			cleanup()
 			return nil, err
 		}
@@ -232,9 +233,9 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 				_ = admin.Call(ctx, "retire", map[string][]string{"instance_ids": {identity.InstanceID}}, nil)
 				_ = admin.Close()
 			}
+			_ = document.Replace(ctx, ledger, nil)
+			_ = document.Replace(ctx, stateStore, nil)
 			stop()
-			_ = ledger.Remove()
-			_ = stateStore.Remove()
 		}
 		_ = ledger.Close()
 		cleanup()

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 func TestPinnedTLSAndWrongIdentity(t *testing.T) {
@@ -77,7 +78,7 @@ func TestReconnectingPeerEvictsItsOldestChannel(t *testing.T) {
 }
 
 func TestPeerConnectionStateDoesNotPersistAcrossRestart(t *testing.T) {
-	store := &memStore{}
+	store := &document.Memory{}
 	server, err := Open(store, true)
 	if err != nil {
 		t.Fatal(err)

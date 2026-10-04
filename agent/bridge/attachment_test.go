@@ -3,10 +3,12 @@ package bridge
 import (
 	"context"
 	"encoding/json"
-	"github.com/OrdalieTech/orb/ai"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/document"
 
 	runtime "github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/session"
@@ -15,10 +17,6 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 )
 
-type store struct{ b []byte }
-
-func (s *store) Load() ([]byte, error) { return s.b, nil }
-func (s *store) Save(b []byte) error   { s.b = append([]byte(nil), b...); return nil }
 func TestCloseAttachmentKeepsRuntime(t *testing.T) {
 	cwd := t.TempDir()
 	manager, _ := session.InMemory(cwd)
@@ -28,7 +26,7 @@ func TestCloseAttachmentKeepsRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(context.Background())
-	a, err := Attach(context.Background(), host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(bridge.Request) bool { return true }})
+	a, err := Attach(context.Background(), host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +53,7 @@ func TestAcceptedWorkOutlivesConnectionAndAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(bridge.Request) bool { return true }})
+	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +109,7 @@ func TestSnapshotExpiresWhenLocalTranscriptResets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(bridge.Request) bool { return true }})
+	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +155,7 @@ func BenchmarkBridgeStreaming(b *testing.B) {
 			defer host.Dispose(ctx)
 			var attachment *Attachment
 			if attached {
-				attachment, err = Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(bridge.Request) bool { return true }})
+				attachment, err = Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -195,7 +193,7 @@ func TestAPeerRenamesTheSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &store{}, Authorize: func(bridge.Request) bool { return true }})
+	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}

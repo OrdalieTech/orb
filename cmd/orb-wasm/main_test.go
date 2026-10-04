@@ -6,15 +6,17 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
-	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
+	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 )
 
 func TestBrowserWasmLifecycle(t *testing.T) {
@@ -28,7 +30,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := bridge.Open(&bridgeMemory{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +65,6 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 		t.Fatalf("Wasm lifecycle: %v\n%s", err, output)
 	}
 }
-
-type bridgeMemory struct{ data []byte }
-
-func (m *bridgeMemory) Load() ([]byte, error) { return m.data, nil }
-func (m *bridgeMemory) Save(b []byte) error   { m.data = append([]byte(nil), b...); return nil }
 
 func TestBrowserBridgeController(t *testing.T) {
 	run := exec.CommandContext(t.Context(), "node", "testdata/bridge-ui.mjs")

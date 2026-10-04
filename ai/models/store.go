@@ -17,15 +17,10 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/models/internal/cataloggen"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
-
-// StoreDocument supplies host-owned atomic catalog persistence.
-type StoreDocument interface {
-	Read(context.Context) ([]byte, error)
-	Update(context.Context, func([]byte) ([]byte, error)) error
-}
 
 const ModelsDevURL = "https://models.dev/api.json"
 
@@ -78,16 +73,16 @@ func (store orderedStore) MarshalJSON() ([]byte, error) {
 // build time (upstream remote-catalog-provider.ts remoteModels).
 func LoadStore(path string) (*Catalog, error) { return loadStore(path, nil) }
 
-func LoadStoreDocument(document StoreDocument) (*Catalog, error) { return loadStore("", document) }
+func LoadStoreDocument(document document.Document) (*Catalog, error) { return loadStore("", document) }
 
-func readStore(path string, document StoreDocument) ([]byte, error) {
+func readStore(path string, document document.Document) ([]byte, error) {
 	if document != nil {
 		return document.Read(context.Background())
 	}
 	return os.ReadFile(path)
 }
 
-func loadStore(path string, document StoreDocument) (*Catalog, error) {
+func loadStore(path string, document document.Document) (*Catalog, error) {
 	data, err := readStore(path, document)
 	if errors.Is(err, os.ErrNotExist) || (err == nil && len(data) == 0) {
 		return &Catalog{providers: make(map[string]map[string]ai.Model)}, nil
@@ -132,7 +127,7 @@ var builtinProviderIDs = sync.OnceValue(func() map[string]bool {
 })
 
 type RefreshOptions struct {
-	StoreDocument StoreDocument
+	StoreDocument document.Document
 	URL           string
 	StorePath     string
 	Client        *http.Client
@@ -303,8 +298,8 @@ func refresh(ctx context.Context, options RefreshOptions, endpoint string) (*Cat
 	return catalog, nil
 }
 
-func storeValidator(path string, documents ...StoreDocument) (string, bool) {
-	var document StoreDocument
+func storeValidator(path string, documents ...document.Document) (string, bool) {
+	var document document.Document
 	if len(documents) > 0 {
 		document = documents[0]
 	}
@@ -333,8 +328,8 @@ func storeValidator(path string, documents ...StoreDocument) (string, bool) {
 
 // storeFreshAt reports whether a models.dev refresh with both upstream
 // freshness fields completed within the gating interval.
-func storeFreshAt(path string, now time.Time, documents ...StoreDocument) bool {
-	var document StoreDocument
+func storeFreshAt(path string, now time.Time, documents ...document.Document) bool {
+	var document document.Document
 	if len(documents) > 0 {
 		document = documents[0]
 	}
@@ -360,7 +355,7 @@ func writeStore(path string, catalog *Catalog, checkedAt int64, lastModified *in
 	return writeStoreResponse(path, catalog, checkedAt, lastModified, "")
 }
 
-func updateStore(path string, documents []StoreDocument, change func(*orderedStore)) (err error) {
+func updateStore(path string, documents []document.Document, change func(*orderedStore)) (err error) {
 	update := func(data []byte) ([]byte, error) {
 		stored := orderedStore{entries: make(map[string]storedProvider)}
 		var err error
@@ -399,7 +394,7 @@ func updateStore(path string, documents []StoreDocument, change func(*orderedSto
 	return writeOrderedStore(path, stored)
 }
 
-func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModified *int64, etag string, documents ...StoreDocument) error {
+func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModified *int64, etag string, documents ...document.Document) error {
 	return updateStore(path, documents, func(stored *orderedStore) {
 		providerIDs := make([]string, 0, len(catalog.providers))
 		for id := range catalog.providers {
@@ -415,7 +410,7 @@ func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModi
 	})
 }
 
-func stampStoreResponse(path string, checkedAt int64, unavailable bool, documents ...StoreDocument) error {
+func stampStoreResponse(path string, checkedAt int64, unavailable bool, documents ...document.Document) error {
 	return updateStore(path, documents, func(stored *orderedStore) {
 		ids := make([]string, 0, len(builtinProviderIDs()))
 		for id := range builtinProviderIDs() {

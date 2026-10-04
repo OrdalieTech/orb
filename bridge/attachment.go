@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/document"
 )
 
 type Model struct {
@@ -20,11 +22,6 @@ type Model struct {
 	Provider string   `json:"provider"`
 	Name     string   `json:"name"`
 	Thinking []string `json:"thinking,omitempty"`
-}
-
-type Store interface {
-	Load() ([]byte, error)
-	Save([]byte) error
 }
 
 // Endpoint is implemented by in-process attachments and native IPC clients.
@@ -101,7 +98,7 @@ func JSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 type Ledger struct {
 	poisoned bool
 	mu       sync.Mutex
-	store    Store
+	store    document.Document
 	quota    int
 	entries  map[string]Receipt
 }
@@ -110,12 +107,12 @@ type ledgerFile struct {
 	Entries map[string]Receipt `json:"entries"`
 }
 
-func OpenLedger(store Store, quota int) (*Ledger, error) {
+func OpenLedger(store document.Document, quota int) (*Ledger, error) {
 	if store == nil || quota < 1024 {
 		return nil, errors.New("ledger requires storage and quota")
 	}
 	l := &Ledger{store: store, quota: quota, entries: map[string]Receipt{}}
-	b, err := store.Load()
+	b, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +237,7 @@ func (l *Ledger) persist() error {
 	if len(b) > l.quota {
 		return Fail("resource_exhausted")
 	}
-	if err := l.store.Save(b); err != nil {
+	if err := document.Replace(context.Background(), l.store, b); err != nil {
 		l.poisoned = true
 		return err
 	}
@@ -250,10 +247,6 @@ func (l *Ledger) persist() error {
 type Event struct {
 	Cursor string          `json:"cursor"`
 	Data   json.RawMessage `json:"data"`
-}
-type Snapshot struct {
-	Cursor string  `json:"cursor"`
-	Events []Event `json:"events"`
 }
 type Stream struct {
 	mu                  sync.Mutex
@@ -270,6 +263,13 @@ func NewStream(limit, quota int) *Stream {
 	return &Stream{epoch: protocol.NewID(), limit: limit, quota: quota}
 }
 func (s *Stream) cursor() string { return s.epoch + ":" + strconv.FormatUint(s.sequence, 10) }
+
+// Cursor names the position after the last published event.
+func (s *Stream) Cursor() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cursor()
+}
 func (s *Stream) Publish(data json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -292,18 +292,6 @@ func (s *Stream) Publish(data json.RawMessage) {
 	s.events = append(s.events, Event{Cursor: s.cursor(), Data: append(json.RawMessage(nil), data...)})
 	s.bytes += len(data)
 }
-func copyEvents(events []Event) []Event {
-	out := make([]Event, len(events))
-	for i, e := range events {
-		out[i] = Event{Cursor: e.Cursor, Data: append(json.RawMessage(nil), e.Data...)}
-	}
-	return out
-}
-func (s *Stream) Snapshot() Snapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return Snapshot{Cursor: s.cursor(), Events: copyEvents(s.events)}
-}
 func (s *Stream) Replay(cursor string) ([]Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -312,7 +300,8 @@ func (s *Stream) Replay(cursor string) ([]Event, error) {
 	if !ok || err != nil || epoch != s.epoch || seq > s.sequence || s.sequence-seq > uint64(len(s.events)) {
 		return nil, Fail("cursor_expired")
 	}
-	return copyEvents(s.events[len(s.events)-int(s.sequence-seq):]), nil
+	// Published data is never mutated, so replays share it.
+	return slices.Clone(s.events[len(s.events)-int(s.sequence-seq):]), nil
 }
 
 func ValidateCall(c Call) error {

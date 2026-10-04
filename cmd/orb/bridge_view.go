@@ -19,27 +19,17 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 
 	"github.com/OrdalieTech/orb/agent"
+	attach "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
 )
 
-type remoteTranscript struct {
-	mu   sync.Mutex
-	text string
-}
+// remoteTranscript draws text a peer sent; tui.Text caches its wrapped lines.
+type remoteTranscript struct{ tui.Text }
 
-func (v *remoteTranscript) Render(width int) []string {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return tui.NewText(v.text, 0, 0, nil).Render(width)
-}
-func (v *remoteTranscript) set(s string) {
-	v.mu.Lock()
-	v.text = peerText(s, true)
-	v.mu.Unlock()
-}
+func (v *remoteTranscript) set(s string) { v.SetText(peerText(s, true)) }
 
 // peerText is text a peer sent, safe to draw: no escape sequences (a peer could otherwise write
 // the clipboard or forge links) and no control characters; lines only when a transcript keeps them.
@@ -83,18 +73,6 @@ func remoteMessage(raw json.RawMessage) string {
 		return ""
 	}
 	return m.Role + ": " + out.String() + "\n\n"
-}
-
-type remoteDescriptor struct {
-	Status     string              `json:"status,omitempty"`
-	Model      string              `json:"model,omitempty"`
-	Models     []bridge.Model      `json:"models,omitempty"`
-	Input      *agent.InputRequest `json:"input,omitempty"`
-	Name       string              `json:"name"`
-	CWD        string              `json:"cwd"`
-	Target     agent.ControlTarget `json:"target"`
-	Generation string              `json:"registration_generation"`
-	Methods    []string            `json:"methods"`
 }
 
 type remoteRequest struct{ text, inputID string }
@@ -330,7 +308,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			showInput[0](input)
 		}
 	}
-	var info remoteDescriptor
+	var info attach.Descriptor
 	var err error
 	cursor := ""
 	partial := ""
@@ -496,7 +474,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			invalidate()
 		case <-tick.C:
 			previous := info.Target.SessionID
-			var next remoteDescriptor
+			var next attach.Descriptor
 			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &next); err != nil {
 				connected = false
 				updateInput(nil)
@@ -611,7 +589,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			}
 			// A session transition during snapshot paging must never label the
 			// new conversation with the previous session's identity.
-			var current remoteDescriptor
+			var current attach.Descriptor
 			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &current); err != nil || current.Target.SessionID != info.Target.SessionID || current.Target.Revision != info.Target.Revision || current.Generation != info.Generation {
 				cursor = ""
 				updateInput(nil)

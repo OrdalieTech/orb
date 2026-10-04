@@ -13,20 +13,17 @@ import (
 	"testing"
 	"time"
 
+	ws "github.com/coder/websocket"
+
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
-	ws "github.com/coder/websocket"
+	"github.com/OrdalieTech/orb/internal/document"
 )
-
-type memory struct{ data []byte }
-
-func (m *memory) Load() ([]byte, error) { return m.data, nil }
-func (m *memory) Save(b []byte) error   { m.data = append([]byte(nil), b...); return nil }
 
 func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	b, err := bridge.Open(&memory{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +140,7 @@ func TestOriginsAndURLs(t *testing.T) {
 	if err := ValidateOrigins([]string{"*"}); err == nil {
 		t.Fatal("wildcard origin accepted")
 	}
-	b, err := bridge.Open(&memory{}, true)
+	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -121,6 +121,12 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
   drive `orb --mode rpc` over stdio, or use hosted RPC.
 - Borders read more clearly: the input field's border with thinking off and dialog rules use a darker
   gray in the light theme and a lighter one in the dark theme.
+- Go embedders: Bridge, its operation ledger and model-catalog persistence take `host.Document`
+  (Read/Update), now defined once in `internal/document`; `bridge.Store`, `models.StoreDocument`,
+  `platforms/worker/peer.DocumentStore`, `nativebridge.OpenStoreWithDocument`,
+  `(*nativebridge.Store).Remove`, `bridge.Snapshot` and `(*bridge.Stream).Snapshot` are removed,
+  `nativebridge.OpenStore` takes an optional document, and `agent/bridge.Descriptor` names the
+  `instances.describe` shape.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
