@@ -3,10 +3,12 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"io"
 	"math"
 	"strconv"
+	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -21,45 +23,43 @@ type orderedObject struct {
 	members []jsonMember
 }
 
+// orderedDecoders keeps decoders and their buffers across records.
+var orderedDecoders = sync.Pool{New: func() any { return new(jsontext.Decoder) }}
+
+// parseOrderedObject keeps a record's members in order with their exact
+// bytes, scanning it once with jsontext: the token API of encoding/json
+// allocated for every member.
 func parseOrderedObject(data []byte) (*orderedObject, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	token, err := decoder.Token()
-	if err != nil {
+	decoder := orderedDecoders.Get().(*jsontext.Decoder)
+	defer orderedDecoders.Put(decoder)
+	decoder.Reset(bytes.NewReader(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+	if token, err := decoder.ReadToken(); err != nil {
 		return nil, err
-	}
-	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+	} else if token.Kind() != '{' {
 		return nil, fmt.Errorf("session: JSON record is not an object")
 	}
-
 	object := &orderedObject{}
-	for decoder.More() {
-		nameStart := decoder.InputOffset()
-		nameToken, err := decoder.Token()
+	for decoder.PeekKind() == '"' {
+		rawName, err := decoder.ReadValue()
 		if err != nil {
 			return nil, err
 		}
-		_, ok := nameToken.(string)
-		if !ok {
-			return nil, fmt.Errorf("session: JSON object member name is not a string")
-		}
-		name, err := jsonwire.UnmarshalStringToken(data[nameStart:decoder.InputOffset()])
+		name, err := jsonwire.UnmarshalString(rawName)
 		if err != nil {
 			return nil, err
 		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
+		value, err := decoder.ReadValue()
+		if err != nil {
 			return nil, err
 		}
-		// Decode already produced a detached RawMessage; setOwned skips the
-		// defensive clone set() makes for caller-owned buffers.
-		object.setOwned(name, value)
+		object.setOwned(name, bytes.Clone(value))
 	}
-	if _, err := decoder.Token(); err != nil {
+	if token, err := decoder.ReadToken(); err != nil {
 		return nil, err
+	} else if token.Kind() != '}' {
+		return nil, fmt.Errorf("session: JSON object member name is not a string")
 	}
-	var extra json.RawMessage
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if _, err := decoder.ReadToken(); err != io.EOF {
 		if err == nil {
 			return nil, fmt.Errorf("session: multiple JSON values in one record")
 		}
