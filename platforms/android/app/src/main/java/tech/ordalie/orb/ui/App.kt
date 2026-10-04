@@ -162,7 +162,7 @@ private fun TopBar(c: Ctx, open: Session?) = Column(Modifier.statusBarsPadding()
 private fun Tab(s: Session, on: Boolean, onLong: () -> Unit, open: () -> Unit) =
     Column(Modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onLong = onLong, onClick = open).padding(horizontal = 8.dp)) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Dot(when { s.ask != null -> Ink.Rupture; s.remote -> Ink.Blue; else -> if (on) p.fg else p.mute }, 6.dp, pulse = s.busy, square = true)
+            Where(s.remote, s.busy, s.ask != null, if (on) p.fg else p.mute)
             Spacer(Modifier.width(7.dp))
             T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 150.dp), size = 14.sp, weight = if (on) Strong else Regular, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
         }
@@ -426,10 +426,16 @@ private fun Notice(c: Ctx) {
 @Composable
 fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Boolean, current: Boolean = false, modifier: Modifier = Modifier, remote: Boolean = false, rename: (() -> Unit)? = null, open: () -> Unit) =
     Row(modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Where(remote, live, asks)
         T(title, Modifier.weight(1f), size = 16.sp, weight = if (current || live) Strong else Regular, lines = 1)
-        if (live) Dot(if (remote) Ink.Blue else Ink.Rupture, 6.dp, pulse = true)
         T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = if (asks) Ink.Rupture else p.meta, lines = 1)
     }
+
+/** Where a session runs, as a square: the ink for this phone, blue for a paired device, red while
+ *  it asks you something; it pulses while it works. Tabs, rows and the prompt box share it. */
+@Composable
+fun Where(remote: Boolean, live: Boolean = false, asks: Boolean = false, phone: Color = p.mute) =
+    Dot(when { asks -> Ink.Rupture; remote -> Ink.Blue; else -> phone }, 7.dp, pulse = live, square = true)
 
 /** The app's commands, named like the TUI's. Those in [NOW] run on tap; the rest take an argument. */
 val BUILTINS = listOf(

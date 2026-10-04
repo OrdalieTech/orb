@@ -150,7 +150,7 @@ fun PromptBox(
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).background(if (session?.remote == true) Ink.Blue else p.fg)); Spacer(Modifier.width(7.dp))
+                Where(session?.remote == true, phone = p.fg); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
                 T((session?.where?.takeIf { session.remote } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + " ▾", size = 14.sp, weight = Strong, lines = 1)
             }
