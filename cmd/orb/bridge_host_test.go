@@ -99,7 +99,7 @@ func (c *closeFlag) Close() error { c.closed.Store(true); return nil }
 func TestALaunchedOrbEndsWhenQuietOutsideATurn(t *testing.T) {
 	events, write := io.Pipe()
 	input := &closeFlag{}
-	go idle(events, input, 200*time.Millisecond)
+	go idle(events, &launched{input: input}, 200*time.Millisecond)
 	_, _ = write.Write([]byte(`{"type":"agent_start"}` + "\n"))
 	time.Sleep(500 * time.Millisecond)
 	if input.closed.Load() {
@@ -128,7 +128,11 @@ func TestHostLoginRelaysSignInToThePeer(t *testing.T) {
 	previous := loginExecutable
 	loginExecutable = func() (string, error) { return script, nil }
 	t.Cleanup(func() { loginExecutable = previous })
-	s := &bridgeService{logins: map[string]*hostLogin{}, ctx: t.Context()}
+	// A sign-in ends the launched Orbs between turns, so they reopen with the new credential.
+	quiet, working := &closeFlag{}, &closeFlag{}
+	busy := &launched{input: working}
+	busy.turn.Store(true)
+	s := &bridgeService{logins: map[string]*hostLogin{}, launched: map[string]*launched{"quiet": {input: quiet}, "busy": busy}, ctx: t.Context()}
 	call := func(method string, params any) map[string]json.RawMessage {
 		t.Helper()
 		raw, err := s.login(t.Context(), method, bridge.JSON(params))
@@ -163,6 +167,9 @@ func TestHostLoginRelaysSignInToThePeer(t *testing.T) {
 	}
 	if len(events) != 3 || !strings.Contains(string(events[2]), `"code":"the-code"`) {
 		t.Fatalf("events = %s", events)
+	}
+	if !quiet.closed.Load() || working.closed.Load() {
+		t.Fatalf("after sign-in: quiet ended %v, working ended %v", quiet.closed.Load(), working.closed.Load())
 	}
 	if _, err := s.login(t.Context(), "host.login.poll", bridge.JSON(map[string]any{"login_id": id})); bridge.Code(err) != "not_found" {
 		t.Fatalf("finished sign-in still polled: %v", err)

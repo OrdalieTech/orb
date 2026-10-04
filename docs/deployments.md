@@ -199,6 +199,11 @@ explicitly and in two separate kinds:
   also opens a terminal there (`host.terminal.*`, `orb bridge shell <peer> [folder]`): the
   owner's login shell in a pseudo-terminal, which the Android app shows for a device's
   conversation. Nothing is reachable through it that starting Orb there could not already run.
+- **The owner** reaches its own machine with the same calls, by its own peer id, with no grant:
+  the Android app drives the phone's Orbs exactly as it drives a server's. A follower long-polls
+  `events.subscribe` (`wait`, with the last `state` it saw) and gets an answer as soon as there are
+  events or the instance's pulse moves (a turn, a question, a rename); instances also take
+  `session.compact` and `shell` (a `!command` in the conversation).
 - **Agents** are Orbs acting on their own. With the opt-in `bridge_call` tool, one Orb's agent can
   call another Orb, but only under an instance subject with its own grants. A person's controller
   access never passes to their agent.

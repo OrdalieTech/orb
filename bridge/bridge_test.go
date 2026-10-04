@@ -333,3 +333,33 @@ func TestRetireRemovesGoneThrowawayInstances(t *testing.T) {
 		t.Fatalf("retired %d, %v", removed, err)
 	}
 }
+
+// The owner calls its own Bridge as a peer would and reaches everything there, the machine
+// included, with no grant; a stranger reaches nothing, and the owner's agents nothing either.
+func TestTheOwnerReachesItsOwnMachineWithoutGrants(t *testing.T) {
+	b, stranger := newBridge(t), newBridge(t)
+	instance, _, err := b.Enroll("phone", b.PersonalGroup())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosted := ""
+	b.SetHost(func(_ context.Context, _ Principal, method string, _ json.RawMessage) (json.RawMessage, error) {
+		hosted = method
+		return JSON(struct{}{}), nil
+	})
+	raw, err := b.Handle(t.Context(), b.PeerID(), "instances.list", JSON(struct{}{}))
+	if err != nil || !json.Valid(raw) || len(b.Catalog(b.Principal())) != 1 || !b.Allowed(b.Principal(), instance.ID, "instance.prompt") {
+		t.Fatalf("owner catalog: %s %v", raw, err)
+	}
+	if _, err = b.Handle(t.Context(), b.PeerID(), "host.sessions", JSON(struct{}{})); err != nil || hosted != "host.sessions" {
+		t.Fatalf("owner host call: %v", err)
+	}
+	if _, err = b.Handle(t.Context(), stranger.PeerID(), "instances.list", JSON(struct{}{})); Code(err) != "unauthorized" {
+		t.Fatalf("stranger: %v", err)
+	}
+	agent := b.Principal()
+	agent.Subject = Subject{Kind: "instance", InstanceID: instance.ID}
+	if b.Allowed(agent, instance.ID, "instance.prompt") {
+		t.Fatal("the owner's authority passed to an agent")
+	}
+}

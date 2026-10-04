@@ -40,7 +40,8 @@ type launched struct {
 	input   io.Closer
 	session string
 	alias   string
-	id      string // its instance, once on Bridge
+	id      string      // its instance, once on Bridge
+	turn    atomic.Bool // a turn is running
 }
 
 // host serves a peer's machine-level calls. host.sessions pages the threads stored on this
@@ -283,7 +284,11 @@ func (s *bridgeService) startLogin(exe, provider, method string) (json.RawMessag
 				l.add(append(json.RawMessage(nil), line...), false)
 			}
 		}
-		_ = command.Wait()
+		// An Orb reads its accounts when it starts: the idle ones end, and reopen with the new
+		// credential at their next message.
+		if command.Wait() == nil {
+			s.endLaunched(false)
+		}
 		cancel()
 		l.add(nil, true)
 		// The outcome waits a minute for its peer's poll.
@@ -514,6 +519,10 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 			_ = lock.Close()
 			if !free {
 				release()
+				// Open in an Orb on Bridge (a terminal one, say): the peer joins it there.
+				if open := s.holding(ctx, p, session); open != nil {
+					return open, nil
+				}
 				return nil, bridge.Fail("busy")
 			}
 		}
@@ -546,7 +555,7 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 	s.mu.Lock()
 	l.input = input
 	s.mu.Unlock()
-	go idle(output, input, launchedIdle)
+	go idle(output, l, launchedIdle)
 	go func() {
 		_ = cmd.Wait()
 		release()
@@ -559,11 +568,29 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 	return result, err
 }
 
+// holding is the Orb on Bridge that has the thread open, as host.launch answers it, or nil.
+func (s *bridgeService) holding(ctx context.Context, p bridge.Principal, session string) json.RawMessage {
+	for _, i := range s.b.Catalog(p) {
+		if !i.Available {
+			continue
+		}
+		raw, err := s.b.Handle(ctx, p.PeerID, "instances.describe", bridge.JSON(map[string]string{"instance_id": i.ID}))
+		var d struct {
+			Target struct {
+				SessionID string `json:"session_id"`
+			} `json:"target"`
+		}
+		if err == nil && json.Unmarshal(raw, &d) == nil && d.Target.SessionID == session {
+			return bridge.JSON(map[string]string{"instance_id": i.ID, "alias": i.Alias})
+		}
+	}
+	return nil
+}
+
 // idle reads a launched Orb's RPC events and closes its input — which ends it — once it has been
 // quiet for limit outside a turn. Reading also keeps its output from filling up and blocking it.
-func idle(events io.Reader, input io.Closer, limit time.Duration) {
+func idle(events io.Reader, l *launched, limit time.Duration) {
 	var last atomic.Int64
-	var turn atomic.Bool
 	last.Store(time.Now().UnixNano())
 	done := make(chan struct{})
 	go func() {
@@ -576,9 +603,9 @@ func idle(events io.Reader, input io.Closer, limit time.Duration) {
 			}
 			last.Store(time.Now().UnixNano())
 			if bytes.Contains(line, []byte(`"type":"agent_start"`)) {
-				turn.Store(true)
+				l.turn.Store(true)
 			} else if bytes.Contains(line, []byte(`"type":"agent_end"`)) {
-				turn.Store(false)
+				l.turn.Store(false)
 			}
 		}
 	}()
@@ -589,8 +616,8 @@ func idle(events io.Reader, input io.Closer, limit time.Duration) {
 		case <-done:
 			return
 		case <-tick.C:
-			if !turn.Load() && time.Since(time.Unix(0, last.Load())) > limit {
-				_ = input.Close()
+			if !l.turn.Load() && time.Since(time.Unix(0, last.Load())) > limit {
+				_ = l.input.Close()
 				return
 			}
 		}
@@ -629,10 +656,16 @@ func (s *bridgeService) launchedInstance(ctx context.Context, p bridge.Principal
 
 // stopLaunched ends every Orb this Bridge started by closing its input, and retires their
 // registrations here: with the Bridge going away, they cannot retire themselves.
-func (s *bridgeService) stopLaunched() {
+func (s *bridgeService) stopLaunched() { s.endLaunched(true) }
+
+// endLaunched ends the Orbs this Bridge started, or only those between turns, and retires them.
+func (s *bridgeService) endLaunched(busy bool) {
 	s.mu.Lock()
 	ids := []string{}
 	for _, l := range s.launched {
+		if !busy && l.turn.Load() {
+			continue
+		}
 		if l.input != nil {
 			_ = l.input.Close()
 		}

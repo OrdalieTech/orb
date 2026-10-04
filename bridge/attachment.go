@@ -310,7 +310,7 @@ func ValidateCall(c Call) error {
 	}
 	switch c.Method {
 	case "inspect", "session.list":
-	case "input.reply", "prompt", "steer", "follow_up", "cancel", "session.new", "session.switch", "session.fork", "session.model", "session.name":
+	case "input.reply", "prompt", "steer", "follow_up", "cancel", "session.new", "session.switch", "session.fork", "session.model", "session.name", "session.compact", "shell":
 		if _, err := protocol.Counter(c.Expected.Generation); err != nil {
 			return Fail("stale_target")
 		}

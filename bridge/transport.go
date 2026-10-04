@@ -269,7 +269,7 @@ func page[T any](items []T, cursor string, limits ...int) (pageResult[T], error)
 func (b *Bridge) Known(peer string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.state.Peers[peer] != "" {
+	if b.state.Peers[peer] != "" || b.owner(Principal{PeerID: peer, Subject: Subject{Kind: "controller"}}) {
 		return true
 	}
 	for _, g := range b.state.Grants {
@@ -364,6 +364,8 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 			Cursor      string `json:"cursor,omitempty"`
 			SnapshotID  string `json:"snapshot_id,omitempty"`
 			Offset      string `json:"offset,omitempty"`
+			Wait        bool   `json:"wait,omitempty"`
+			State       string `json:"state,omitempty"`
 		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err

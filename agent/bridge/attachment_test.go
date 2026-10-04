@@ -3,6 +3,8 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	goruntime "runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,112 +18,104 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 )
 
-func TestCloseAttachmentKeepsRuntime(t *testing.T) {
+// attached is a faux-model runtime with an attachment at generation 1.
+func attached(t *testing.T, steps ...faux.ResponseStep) (*Attachment, *runtime.AgentSessionRuntime) {
+	t.Helper()
+	ctx := t.Context()
 	cwd := t.TempDir()
 	manager, _ := session.InMemory(cwd)
 	provider := faux.New(faux.Options{})
-	host, err := runtime.NewAgentSessionRuntime(context.Background(), runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+	provider.SetResponses(steps)
+	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer host.Dispose(context.Background())
-	a, err := Attach(context.Background(), host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = a.Close() })
+	if err = a.SetGeneration("1"); err != nil {
+		t.Fatal(err)
+	}
+	return a, host
+}
+
+var peer = bridge.Principal{PeerID: "peer", Subject: bridge.Subject{Kind: "controller"}}
+
+// request is a call on the attached instance's current session.
+func request(a *Attachment, method string, args any) bridge.Request {
+	target := a.control.Target()
+	return bridge.Request{Principal: peer, Generation: "1", Call: bridge.Call{InstanceID: a.options.InstanceID, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: bridge.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(args)}}
+}
+
+// settle waits for a call's receipt to leave accepted and running.
+func settle(t *testing.T, a *Attachment, r bridge.Request) bridge.Receipt {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+		receipt, err := a.ledger.Get(r.Principal, r.Call.InstanceID, r.Call.OperationID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receipt.Status != "accepted" && receipt.Status != "running" || time.Now().After(deadline) {
+			return receipt
+		}
+	}
+}
+
+// call sends a call and waits for its outcome; a call refused up front reports its error code.
+func call(t *testing.T, a *Attachment, method string, args any) (bridge.Receipt, string) {
+	t.Helper()
+	r := request(a, method, args)
+	if _, err := a.Invoke(t.Context(), "call", bridge.JSON(r)); err != nil {
+		return bridge.Receipt{}, bridge.Code(err)
+	}
+	return settle(t, a, r), ""
+}
+
+func TestCloseAttachmentKeepsRuntime(t *testing.T) {
+	a, host := attached(t)
 	_ = a.Close()
-	if _, err = host.NewSession(context.Background(), nil); err != nil {
+	if _, err := host.NewSession(context.Background(), nil); err != nil {
 		t.Fatal("attachment disposed runtime", err)
 	}
 }
 
 func TestAcceptedWorkOutlivesConnectionAndAttachment(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cwd := t.TempDir()
-	manager, _ := session.InMemory(cwd)
 	started, release := make(chan struct{}), make(chan struct{})
-	provider := faux.New(faux.Options{})
-	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
+	a, host := attached(t, faux.Factory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
 		close(started)
 		<-release
 		return faux.AssistantMessage("finished independently"), nil
-	})})
-	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer host.Dispose(ctx)
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = a.Close() }()
-	if err = a.SetGeneration("1"); err != nil {
-		t.Fatal(err)
-	}
-	target := a.control.Target()
-	request := bridge.Request{Principal: bridge.Principal{PeerID: "peer", Subject: bridge.Subject{Kind: "controller"}}, Generation: "1", Call: bridge.Call{InstanceID: a.options.InstanceID, Service: protocol.Service, Method: "prompt", SessionID: target.SessionID, Expected: bridge.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(map[string]string{"text": "work"})}}
-	connection, disconnect := context.WithCancel(ctx)
-	raw, err := a.Invoke(connection, "call", bridge.JSON(request))
-	if err != nil {
-		t.Fatal(err)
-	}
+	}))
+	r := request(a, "prompt", map[string]string{"text": "work"})
+	connection, disconnect := context.WithCancel(t.Context())
+	raw, err := a.Invoke(connection, "call", bridge.JSON(r))
 	var receipt bridge.Receipt
-	if err = json.Unmarshal(raw, &receipt); err != nil || receipt.Status != "accepted" {
+	if err != nil || json.Unmarshal(raw, &receipt) != nil || receipt.Status != "accepted" {
 		t.Fatal(receipt, err)
 	}
-	select {
-	case <-started:
-	case <-ctx.Done():
-		t.Fatal("dispatch did not start")
-	}
+	<-started
 	disconnect()
 	_ = a.Close()
 	close(release)
-	for {
-		receipt, err = a.ledger.Get(request.Principal, request.Call.InstanceID, request.Call.OperationID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if receipt.Status == "succeeded" {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal(receipt)
-		case <-time.After(time.Millisecond):
-		}
+	if receipt = settle(t, a, r); receipt.Status != "succeeded" {
+		t.Fatal(receipt)
 	}
-	if _, err = host.NewSession(ctx, nil); err != nil {
+	if _, err = host.NewSession(t.Context(), nil); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestSnapshotExpiresWhenLocalTranscriptResets(t *testing.T) {
-	ctx := context.Background()
-	cwd := t.TempDir()
-	manager, _ := session.InMemory(cwd)
-	provider := faux.New(faux.Options{})
-	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer host.Dispose(ctx)
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = a.Close() }()
+	a, host := attached(t)
 	raw, err := a.observe("", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var snapshot struct {
 		ID     string `json:"snapshot_id"`
 		Cursor string `json:"cursor"`
 	}
-	if err = json.Unmarshal(raw, &snapshot); err != nil {
+	if err != nil || json.Unmarshal(raw, &snapshot) != nil {
 		t.Fatal(err)
 	}
 	host.Session().Agent().SetMessages(nil)
@@ -134,48 +128,66 @@ func TestSnapshotExpiresWhenLocalTranscriptResets(t *testing.T) {
 }
 
 func TestAPeerRenamesTheSession(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cwd := t.TempDir()
-	manager, _ := session.InMemory(cwd)
-	provider := faux.New(faux.Options{})
-	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer host.Dispose(ctx)
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = a.Close() }()
-	if err = a.SetGeneration("1"); err != nil {
-		t.Fatal(err)
-	}
-	call := func(name string) bridge.Receipt {
-		target := a.control.Target()
-		request := bridge.Request{Principal: bridge.Principal{PeerID: "peer", Subject: bridge.Subject{Kind: "controller"}}, Generation: "1", Call: bridge.Call{InstanceID: a.options.InstanceID, Service: protocol.Service, Method: "session.name", SessionID: target.SessionID, Expected: bridge.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(map[string]string{"name": name})}}
-		raw, err := a.Invoke(ctx, "call", bridge.JSON(request))
-		var receipt bridge.Receipt
-		if err == nil {
-			err = json.Unmarshal(raw, &receipt)
-		}
-		for err == nil && receipt.Status != "succeeded" && receipt.Status != "failed" && receipt.Status != "rejected" {
-			time.Sleep(time.Millisecond)
-			receipt, err = a.ledger.Get(request.Principal, request.Call.InstanceID, request.Call.OperationID)
-		}
-		if err != nil && bridge.Code(err) != "invalid_params" {
-			t.Fatal(err)
-		}
-		return receipt
-	}
-	if receipt := call("  Pairing race  "); receipt.Status != "succeeded" {
+	a, host := attached(t)
+	if receipt, _ := call(t, a, "session.name", map[string]string{"name": "  Pairing race  "}); receipt.Status != "succeeded" {
 		t.Fatal(receipt)
 	}
 	if name := host.Session().Manager().GetSessionName(); name == nil || *name != "Pairing race" {
 		t.Fatalf("name = %v", name)
 	}
-	if receipt := call("   "); receipt.Status == "succeeded" {
-		t.Fatal("blank name accepted")
+	if _, code := call(t, a, "session.name", map[string]string{"name": "   "}); code != "invalid_params" {
+		t.Fatal("blank name accepted:", code)
+	}
+}
+
+// A follower long-polls: the call waits while nothing happens, and answers at once when the
+// conversation changes, with the stream's events and the instance's new pulse.
+func TestAFollowerWaitsForTheConversationToChange(t *testing.T) {
+	a, host := attached(t)
+	raw, _ := a.observe("", "", "")
+	var first struct {
+		Cursor string `json:"cursor"`
+	}
+	_ = json.Unmarshal(raw, &first)
+	start, _ := a.replay(first.Cursor, protocol.MaxPage)
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = host.Session().SetSessionName("renamed")
+	}()
+	began := time.Now()
+	raw, err := a.Invoke(t.Context(), "events.subscribe", bridge.JSON(map[string]any{"principal": peer, "params": map[string]any{"instance_id": a.options.InstanceID, "cursor": first.Cursor, "wait": true, "state": start.State}}))
+	var got page
+	if err != nil || json.Unmarshal(raw, &got) != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(began); waited < 200*time.Millisecond || waited > 5*time.Second {
+		t.Fatalf("answered after %v", waited)
+	}
+	if got.State == start.State || len(got.Events) != 1 || !strings.Contains(string(got.Events[0].Data), `"session_info_changed"`) {
+		t.Fatalf("after a rename: %+v", got)
+	}
+}
+
+// A controller compacts and runs a shell command as RPC's compact and bash would; the command
+// and its output join the conversation, and the descriptor offers both with the instance's
+// commands, reasoning and usage.
+func TestAControllerRunsAShellCommandInTheConversation(t *testing.T) {
+	a, host := attached(t)
+	var d Descriptor
+	if json.Unmarshal(a.inspect(), &d) != nil || !d.Waits || d.Stats == nil || d.Thinking == "" || !strings.Contains(strings.Join(d.Methods, " "), "session.compact shell") {
+		t.Fatalf("descriptor = %+v", d)
+	}
+	if goruntime.GOOS == "js" || goruntime.GOOS == "wasip1" {
+		t.Skip("no processes to run a shell in")
+	}
+	if receipt, _ := call(t, a, "shell", map[string]string{"command": "echo from-the-phone"}); receipt.Status != "succeeded" || !strings.Contains(string(receipt.Result), "from-the-phone") {
+		t.Fatal(receipt)
+	}
+	messages, _ := json.Marshal(host.Session().State().Messages)
+	if !strings.Contains(string(messages), `"bashExecution"`) {
+		t.Fatalf("messages = %s", messages)
+	}
+	if _, code := call(t, a, "shell", map[string]string{"command": " "}); code != "invalid_params" {
+		t.Fatal("blank command accepted:", code)
 	}
 }

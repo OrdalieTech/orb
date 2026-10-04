@@ -98,10 +98,20 @@ func (b *Bridge) SetHost(h Host) {
 	b.mu.Unlock()
 }
 
+// owner: a call as this Bridge's own peer, which only its owner can make, in process (a peer
+// proves its identity with its key, so none arrives as this one). The owner reaches everything
+// here as a full controller would, the way the owner API already administers it.
+func (b *Bridge) owner(p Principal) bool {
+	return p.Subject.Kind == "controller" && p.PeerID == b.PeerID()
+}
+
 // hostAllowed: only a controller grant over every instance, current and future, reaches the machine.
 func (b *Bridge) hostAllowed(p Principal) bool {
 	if b.failed || b.closed || b.state.Blocked[p.PeerID] || p.Subject.Kind != "controller" {
 		return false
+	}
+	if b.owner(p) {
+		return true
 	}
 	for _, g := range b.state.Grants {
 		if g.Principal == p && g.Destination == "" && g.GroupID == "*" && g.IncludeFuture && slices.Contains(g.Permissions, "host.launch") {
@@ -322,8 +332,8 @@ func (b *Bridge) allowed(p Principal, id, permission, destination string) bool {
 		return false
 	}
 	r, ok := b.state.Instances[id]
-	if destination == "" && !ok {
-		return false
+	if destination == "" && (!ok || b.owner(p)) {
+		return ok
 	}
 	for _, g := range b.state.Grants {
 		if g.Principal != p || g.Destination != destination || !slices.Contains(g.Permissions, permission) {
@@ -617,8 +627,10 @@ func permission(method string) string {
 	switch method {
 	case "inspect":
 		return "instance.inspect"
-	case "session.list", "session.new", "session.switch", "session.fork", "session.model", "session.name":
+	case "session.list", "session.new", "session.switch", "session.fork", "session.model", "session.name", "session.compact":
 		return "instance.session.manage"
+	case "shell": // a command in the conversation's shell is what a prompt can already have run
+		return "instance.prompt"
 	default:
 		return "instance." + method
 	}

@@ -3,6 +3,8 @@ package bridge
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -97,7 +99,7 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 	if closed {
 		return
 	}
-	stop = s.ObserveState(func(state engine.AgentState) {
+	stopState := s.ObserveState(func(state engine.AgentState) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		a.stream = bridge.NewStream(2048, 4<<20)
@@ -149,6 +151,23 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		}
 		a.stream.Publish(b)
 	})
+	// Session events a follower draws (compaction, retries, a new name) ride the same stream;
+	// the rest repeat engine events or change nothing on screen.
+	stopSession := s.Subscribe(func(event any) {
+		switch event.(type) {
+		case runtime.CompactionStartEvent, runtime.CompactionEndEvent, runtime.AutoRetryStartEvent, runtime.AutoRetryEndEvent, runtime.SessionInfoChangedEvent:
+		default:
+			return
+		}
+		if b, err := runtime.MarshalSessionEvent(event); err == nil {
+			a.mu.Lock()
+			if !a.closed && a.stream != nil {
+				a.stream.Publish(b)
+			}
+			a.mu.Unlock()
+		}
+	})
+	stop = func() { stopState(); stopSession() }
 	a.mu.Lock()
 	closed = a.closed
 	if !closed {
@@ -216,6 +235,8 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 			Cursor      string `json:"cursor,omitempty"`
 			SnapshotID  string `json:"snapshot_id,omitempty"`
 			Offset      string `json:"offset,omitempty"`
+			Wait        bool   `json:"wait,omitempty"`
+			State       string `json:"state,omitempty"`
 		} `json:"params"`
 	}
 	if err := protocol.Decode(params, &p); err != nil {
@@ -235,6 +256,9 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 		receipt, err := a.ledger.Get(p.Principal, p.Params.InstanceID, p.Params.OperationID)
 		return bridge.JSON(receipt), err
 	case "events.subscribe":
+		if p.Params.Wait && p.Params.Cursor != "" {
+			return a.await(ctx, p.Params.Cursor, p.Params.State, positivePage(p.Limit))
+		}
 		return a.observe(p.Params.Cursor, p.Params.SnapshotID, p.Params.Offset, p.Limit)
 	case "events.unsubscribe":
 		a.mu.Lock()
@@ -250,6 +274,10 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 type Descriptor struct {
 	Status     string                `json:"status,omitempty"`
 	Model      string                `json:"model,omitempty"`
+	Thinking   string                `json:"thinking,omitempty"`
+	Stats      *runtime.SessionStats `json:"stats,omitempty"`
+	Commands   []Command             `json:"commands,omitempty"`
+	Waits      bool                  `json:"waits"` // events.subscribe takes wait: a follower long-polls
 	Models     []bridge.Model        `json:"models,omitempty"`
 	Name       string                `json:"name,omitempty"`
 	CWD        string                `json:"cwd,omitempty"`
@@ -261,37 +289,50 @@ type Descriptor struct {
 	Input      *runtime.InputRequest `json:"input,omitempty"`
 }
 
+// Command is a slash command the instance runs: an extension's, a prompt template or a skill.
+type Command struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// methods are the calls an instance takes, before each principal's permissions filter them.
+var methods = []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name", "session.compact", "shell"}
+
 func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
-	name, cwd, modelName, status := "", "", "", ""
-	var models []bridge.Model
-	var input *runtime.InputRequest
+	d := Descriptor{InstanceID: a.options.InstanceID, Service: protocol.Service, Generation: generation, Target: a.control.Target(), Methods: methods, Waits: true}
 	if session := a.host.Session(); session != nil {
-		cwd = session.Manager().GetCWD()
-		if model := session.State().Model; model != nil {
-			modelName = model.Name
+		d.CWD = session.Manager().GetCWD()
+		state := session.State()
+		if state.Model != nil {
+			d.Model = state.Model.Name
+		}
+		d.Thinking = string(state.ThinkingLevel)
+		stats := session.GetSessionStats()
+		d.Stats = &stats
+		for _, c := range session.Commands() {
+			d.Commands = append(d.Commands, Command{c.Name, c.Description})
 		}
 		for _, model := range session.AvailableModels() {
 			row := bridge.Model{ID: model.ID, Provider: string(model.Provider), Name: model.Name}
 			for _, level := range ai.SupportedThinkingLevels(&model) {
 				row.Thinking = append(row.Thinking, string(level))
 			}
-			models = append(models, row)
+			d.Models = append(d.Models, row)
 		}
 		if a.options.Status != nil {
-			status = a.options.Status(session)
-			if len(status) > 1024 {
-				status = ""
+			if d.Status = a.options.Status(session); len(d.Status) > 1024 {
+				d.Status = ""
 			}
 		}
-		input = session.PendingInput()
+		d.Input = session.PendingInput()
 		if title := session.Manager().GetSessionName(); title != nil {
-			name = *title
+			d.Name = *title
 		}
 	}
-	return bridge.JSON(Descriptor{status, modelName, models, name, cwd, a.options.InstanceID, protocol.Service, generation, a.control.Target(), []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name"}, input})
+	return bridge.JSON(d)
 }
 func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessage, error) {
 	if err := bridge.ValidateCall(r.Call); err != nil {
@@ -363,6 +404,12 @@ type forkArgs struct {
 }
 type nameArgs struct {
 	Name string `json:"name"`
+}
+type compactArgs struct {
+	Instructions string `json:"instructions,omitempty"`
+}
+type shellArgs struct {
+	Command string `json:"command"`
 }
 
 func (a *Attachment) validateArgs(c bridge.Call) error {
@@ -437,6 +484,22 @@ func (a *Attachment) validateArgs(c bridge.Call) error {
 			return err
 		}
 		if strings.TrimSpace(p.Name) == "" || len(p.Name) > 512 {
+			return bridge.Fail("invalid_params")
+		}
+	case "session.compact":
+		var p compactArgs
+		if err := protocol.Decode(c.Args, &p); err != nil {
+			return err
+		}
+		if len(p.Instructions) > 64<<10 {
+			return bridge.Fail("invalid_params")
+		}
+	case "shell":
+		var p shellArgs
+		if err := protocol.Decode(c.Args, &p); err != nil {
+			return err
+		}
+		if strings.TrimSpace(p.Command) == "" || len(p.Command) > 64<<10 {
 			return bridge.Fail("invalid_params")
 		}
 	}
@@ -545,6 +608,23 @@ func (a *Attachment) dispatch(r bridge.Request) {
 		var p forkArgs
 		_ = json.Unmarshal(r.Call.Args, &p)
 		result, err = a.host.Fork(ctx, p.EntryID, &extensions.ForkOptions{Position: extensions.ForkBefore})
+	case "session.compact", "shell":
+		s := a.host.Session()
+		if s == nil {
+			err = runtime.ErrSessionDisposed
+			break
+		}
+		// The same calls RPC's compact and bash make: a command's output joins the conversation.
+		var p struct {
+			compactArgs
+			shellArgs
+		}
+		_ = json.Unmarshal(r.Call.Args, &p)
+		if r.Call.Method == "shell" {
+			result, err = s.ExecuteUserBashWithID(ctx, p.Command, nil, nil)
+		} else {
+			result, err = s.Compact(ctx, p.Instructions)
+		}
 	default:
 		err = bridge.Fail("not_found")
 	}
@@ -618,33 +698,17 @@ func (a *Attachment) observe(cursor, id, offset string, limits ...int) (json.Raw
 	if len(limits) > 0 {
 		limit = positivePage(limits[0])
 	}
+	if cursor != "" {
+		out, err := a.replay(cursor, limit)
+		if err != nil {
+			return nil, err
+		}
+		return bridge.JSON(out), nil
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.stream == nil {
 		return nil, bridge.Fail("unavailable")
-	}
-	if cursor != "" {
-		events, err := a.stream.Replay(cursor)
-		if err != nil {
-			return nil, err
-		}
-		out := struct {
-			Events []bridge.Event `json:"events"`
-			Cursor string         `json:"cursor"`
-		}{Events: []bridge.Event{}, Cursor: cursor}
-		size := 0
-		for _, e := range events {
-			if len(out.Events) >= limit || size+len(e.Data) > protocol.MaxFrame/2 {
-				break
-			}
-			out.Events = append(out.Events, e)
-			out.Cursor = e.Cursor
-			size += len(e.Data)
-		}
-		if len(events) > 0 && len(out.Events) == 0 {
-			return nil, bridge.Fail("cursor_expired")
-		}
-		return bridge.JSON(out), nil
 	}
 	for key, s := range a.snapshots {
 		if time.Now().After(s.expires) {
@@ -694,6 +758,80 @@ func (a *Attachment) observe(cursor, id, offset string, limits ...int) (json.Raw
 		out.Offset = strconv.FormatUint(n, 10)
 	}
 	return bridge.JSON(out), nil
+}
+
+// page is a stretch of the event stream after a cursor, with the instance's pulse: a digest of
+// what its descriptor says changes (session, turn, pending input, name, model, reasoning).
+type page struct {
+	Events []bridge.Event `json:"events"`
+	Cursor string         `json:"cursor"`
+	State  string         `json:"state"`
+}
+
+func (a *Attachment) replay(cursor string, limit int) (page, error) {
+	out := page{Events: []bridge.Event{}, Cursor: cursor, State: a.pulse()}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stream == nil {
+		return out, bridge.Fail("unavailable")
+	}
+	events, err := a.stream.Replay(cursor)
+	if err != nil {
+		return out, err
+	}
+	size := 0
+	for _, e := range events {
+		if len(out.Events) >= limit || size+len(e.Data) > protocol.MaxFrame/2 {
+			break
+		}
+		out.Events = append(out.Events, e)
+		out.Cursor = e.Cursor
+		size += len(e.Data)
+	}
+	if len(events) > 0 && len(out.Events) == 0 {
+		return out, bridge.Fail("cursor_expired")
+	}
+	return out, nil
+}
+
+// waitLimit keeps a long poll under the 20 s a peer gives any call.
+const waitLimit = 15 * time.Second
+
+// await answers once the stream has events after cursor, the pulse moved from state (a question
+// asked, a turn begun, a rename), or waitLimit passed: a follower needs no timer of its own.
+func (a *Attachment) await(ctx context.Context, cursor, state string, limit int) (json.RawMessage, error) {
+	deadline := time.Now().Add(waitLimit)
+	for {
+		out, err := a.replay(cursor, limit)
+		if err != nil || len(out.Events) > 0 || out.State != state || time.Now().After(deadline) {
+			return bridge.JSON(out), err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (a *Attachment) pulse() string {
+	s := a.host.Session()
+	if s == nil {
+		return ""
+	}
+	t, state, input, name := a.control.Target(), s.State(), "", ""
+	if in := s.PendingInput(); in != nil {
+		input = in.ID
+	}
+	if n := s.Manager().GetSessionName(); n != nil {
+		name = *n
+	}
+	model := ""
+	if state.Model != nil {
+		model = string(state.Model.Provider) + "/" + state.Model.ID
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel)}, "\x00")))
+	return base64.RawURLEncoding.EncodeToString(sum[:12])
 }
 
 func positivePage(n int) int {
