@@ -133,6 +133,8 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Long pasted inputs submit promptly: typing no longer copies the whole line for every character.
 - Esc puts an unanswered prompt and queued messages back in the editor at once, without waiting for
   the abort to finish or overwriting what you type meanwhile.
+- Every account in `/login` can be renamed, including ambient logins and command-line API keys; names
+  persist, and an empty name restores the default label.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,

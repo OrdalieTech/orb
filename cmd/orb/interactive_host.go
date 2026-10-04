@@ -1210,7 +1210,7 @@ func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]acc
 		}
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Provider < rows[j].Provider })
-	return rows, nil
+	return rows, store.ApplyNames(rows)
 }
 
 // ProviderName is a provider's display name, as /login shows it.

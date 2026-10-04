@@ -812,6 +812,42 @@ func TestProviderMenuAlwaysOffersAddAccountPerProvider(t *testing.T) {
 	}
 }
 
+func TestAccountMenuOffersRenameForEveryIdentity(t *testing.T) {
+	initTestTheme(t)
+	for _, id := range []string{"ambient", "runtime", accounts.DefaultID, "stored"} {
+		t.Run(id, func(t *testing.T) {
+			mode := newAuthFlowTestMode(&authFlowHost{})
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				mode.manageProviderAccount(ctx, nil, accounts.Account{ID: id, Provider: "example", Name: "Personal", Active: true})
+			}()
+			t.Cleanup(func() { cancel(); <-done })
+			var overlays []tui.Component
+			for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+				overlays = mode.ui.VisibleOverlayComponents()
+				if len(overlays) != 0 {
+					break
+				}
+			}
+			if len(overlays) == 0 {
+				t.Fatal("account menu did not open")
+			}
+			text := renderPlain(t, overlays[0], 80)
+			if !strings.Contains(text, "Rename account") {
+				t.Errorf("rename missing for %s:\n%s", id, text)
+			}
+			stored := id != "ambient" && id != "runtime"
+			for _, action := range []string{"Reconnect", "Disconnect"} {
+				if strings.Contains(text, action) != stored {
+					t.Errorf("%s availability is wrong for %s", action, id)
+				}
+			}
+		})
+	}
+}
+
 func TestAClickCopiesTheLoginLink(t *testing.T) {
 	copied := ""
 	restore := copyAuthLink

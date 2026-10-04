@@ -775,8 +775,8 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 		add("select", "Use this account")
 	}
 	add("add", "Add another account")
+	add("rename", "Rename account")
 	if mutable {
-		add("rename", "Rename account")
 		add("reconnect", "Reconnect")
 		add("remove", "Disconnect")
 	}
@@ -803,7 +803,7 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	}
 	name := ""
 	if action == "rename" {
-		value, ok, err := mode.interactiveUI.Input(ctx, "Account name", nil, nil)
+		value, ok, err := mode.interactiveUI.Input(ctx, "Account name · empty to reset", nil, nil)
 		if err != nil || !ok {
 			return
 		}

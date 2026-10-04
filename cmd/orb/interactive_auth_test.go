@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/platforms/native/accounts"
@@ -417,4 +418,49 @@ func TestProviderAccountsSwitchWithoutReplacingCompatibilityCredential(t *testin
 	check("explicit-key")
 	credentials.RemoveRuntimeAPIKey("groq")
 	check("personal-key")
+}
+
+func TestProviderAccountNamesPersistForSynthesizedAndStoredRows(t *testing.T) {
+	fixture := newHostFixture(t)
+	t.Setenv("GROQ_API_KEY", "scratch-ambient-key")
+	base := aiauth.NewMemoryStore(map[string]*aiauth.Credential{"mistral": aiauth.APIKeyCredential("scratch-default-key")})
+	path := filepath.Join(fixture.agentDir, "accounts.json")
+	store := accounts.NewStore(path, base)
+	added, err := store.Add(t.Context(), "mistral", "Work", aiauth.APIKeyCredential("scratch-stored-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials := newRuntimeCredentials(store)
+	credentials.SetRuntimeAPIKey("openrouter", "scratch-runtime-key")
+	registry, err := config.NewModelRegistryWithCredentials(fixture.agentDir, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.host.inputs.Accounts = store
+	fixture.host.inputs.RuntimeAuth = credentials
+	fixture.host.inputs.ModelRegistry = registry
+	wanted := map[string]string{"groq/ambient": "Ambient renamed", "openrouter/runtime": "Runtime renamed", "mistral/default": "Default renamed", "mistral/" + added.ID: "Stored renamed"}
+	for key, name := range wanted {
+		provider, id, _ := strings.Cut(key, "/")
+		if err := fixture.host.ChangeAccount(t.Context(), provider, id, "rename", name); err != nil {
+			t.Errorf("rename %s: %v", key, err)
+		}
+	}
+	fixture.host.inputs.Accounts = accounts.NewStore(path, base)
+	rows, err := fixture.host.ProviderAccounts(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		key := row.Provider + "/" + row.ID
+		if name, ok := wanted[key]; ok {
+			if row.Name != name {
+				t.Errorf("%s name = %q, want %q", key, row.Name, name)
+			}
+			delete(wanted, key)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("missing account rows: %v", wanted)
+	}
 }

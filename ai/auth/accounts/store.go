@@ -189,33 +189,56 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 	return result, err
 }
 
+// ApplyNames overlays stored display names on accounts synthesized by a host.
+func (s *Store) ApplyNames(rows []Account) error {
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	for i, row := range rows {
+		if name := d.Names[accountNameKey(row.Provider, row.ID)]; name != "" {
+			rows[i].Name = name
+		}
+	}
+	return nil
+}
+
+func accountNameKey(provider, id string) string {
+	// Existing default overrides use the provider alone.
+	if id == DefaultID {
+		return provider
+	}
+	return provider + "\x00" + id
+}
+
 func (s *Store) Rename(ctx context.Context, provider, id, name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 128 {
-		return errors.New("use an account name between 1 and 128 bytes")
+	if len(name) > 128 {
+		return errors.New("account name is too long")
+	}
+	if provider == "" || id == "" || strings.ContainsRune(provider+id, '\x00') {
+		return errors.New("invalid account identity")
 	}
 	return s.update(ctx, func(d *document) error {
-		if id == DefaultID {
-			current, err := s.base.Read(ctx, provider)
-			if err != nil {
-				return err
-			}
-			if current == nil {
-				return errors.New("account no longer exists")
-			}
-			if d.Names == nil {
-				d.Names = map[string]string{}
-			}
-			d.Names[provider] = name
-			return nil
-		}
 		for i, a := range d.Accounts {
 			if a.Provider == provider && a.ID == id {
+				if name == "" {
+					name = credentialName(a.Credential)
+				}
 				d.Accounts[i].Name = name
 				return nil
 			}
 		}
-		return errors.New("account no longer exists")
+		key := accountNameKey(provider, id)
+		if name == "" {
+			delete(d.Names, key)
+		} else {
+			if d.Names == nil {
+				d.Names = map[string]string{}
+			}
+			d.Names[key] = name
+		}
+		return nil
 	})
 }
 
