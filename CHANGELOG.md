@@ -5,6 +5,13 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-04
+
+The Android app becomes a daily driver: every conversation runs through Bridge, the phone's own
+included, tabs survive restarts, a notification says when a turn ends, and Markdown tables and
+Mermaid diagrams render. Bridge followers long-poll, open long conversations at their end, and get
+`/compact` and `!commands`; `orb mermaid` draws a diagram for any client.
+
 - `orb mermaid < diagram.mmd` draws a Mermaid diagram as the TUI shows it, for clients with no
   renderer of their own. A Bridge snapshot can start at a conversation's last `tail` messages and
   says where it starts, so a follower opens a long conversation at its end and pages back.
@@ -26,7 +33,6 @@ shown by `/changelog`.
 - Pairing a machine (`orb bridge pair`, `join`, `trust`, `connect-ssh`) turns its `bridge` plugin
   on unless its owner set it, so the Orbs opened there in a terminal can be followed and driven
   from the paired devices too.
-
 - Turns no longer slow down as a conversation grows: the session keeps the model context decoded
   and extends it as entries are appended, instead of re-reading the whole journal on every append
   and request. After 80 turns a turn costs a tenth of the CPU it did on the Worker host.
