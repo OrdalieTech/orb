@@ -6,7 +6,6 @@ package titles
 import (
 	"cmp"
 	"context"
-	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 )
 
 const prompt = "Name this conversation for a list of conversations: at most six words, in the language " +
@@ -95,22 +95,7 @@ func ask(ctx context.Context, registry extensions.ModelRegistry, model *ai.Model
 
 // askWith reports false when the model could not be asked at all, so another can be.
 func askWith(ctx context.Context, registry extensions.ModelRegistry, model *ai.Model, exchange string) (string, bool) {
-	request := *model
-	options := &ai.SimpleStreamOptions{}
-	if resolved, err := registry.ResolveProviderAuth(ctx, string(model.Provider), nil); err == nil && resolved != nil {
-		options.APIKey, options.Headers, options.Env = resolved.Auth.APIKey, ai.ProviderHeaders(resolved.Auth.Headers), ai.ProviderEnv(resolved.Env)
-		if resolved.Auth.BaseURL != nil {
-			request.BaseURL = *resolved.Auth.BaseURL
-		}
-	}
-	if headers, err := registry.ResolveModelHeaders(ctx, request, map[string]string(options.Env), options.APIKey); err == nil && headers != nil {
-		merged := map[string]string{}
-		if request.Headers != nil {
-			maps.Copy(merged, *request.Headers)
-		}
-		maps.Copy(merged, *headers)
-		request.Headers = &merged
-	}
+	request, options := toolutil.ModelRequest(ctx, registry, model)
 	if model.Reasoning {
 		low := ai.ThinkingLow
 		options.Reasoning = &low
