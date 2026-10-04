@@ -139,7 +139,7 @@ func buildContextProjection(entries []SessionEntry, leafID *string) contextProje
 		if replacement, edited := edits[entry.ID]; edited {
 			messages = applyContextEdit(messages, replacement)
 		}
-		projection.addMessages(messages)
+		projection.addMessages(&entry, messages)
 	}
 	projection.settleTools()
 	return projection
@@ -154,7 +154,7 @@ func (projection *contextProjection) extend(entry *SessionEntry) bool {
 	}
 	systems := len(projection.system)
 	projection.addFields(entry)
-	projection.addMessages(entryContextMessages(*entry))
+	projection.addMessages(entry, entryContextMessages(*entry))
 	if entry.Type == "active_tools_change" || len(projection.system) != systems {
 		projection.settleTools()
 	}
@@ -186,12 +186,18 @@ func (projection *contextProjection) addFields(entry *SessionEntry) {
 	}
 }
 
-func (projection *contextProjection) addMessages(messages []json.RawMessage) {
+// addMessages adds entry's context messages; one that is the entry's own
+// message reuses the entry's decode.
+func (projection *contextProjection) addMessages(entry *SessionEntry, messages []json.RawMessage) {
 	for _, raw := range messages {
 		projection.context.Messages = append(projection.context.Messages, raw)
 		var decoded any
 		if len(raw) > 0 {
-			if message, err := ai.UnmarshalMessage(raw); err == nil {
+			decode := ai.UnmarshalMessage
+			if len(raw) == len(entry.Message) && &raw[0] == &entry.Message[0] {
+				decode = func([]byte) (ai.Message, error) { return entry.decodedMessage() }
+			}
+			if message, err := decode(raw); err == nil {
 				decoded = message
 				if system, ok := message.(*ai.SystemMessage); ok {
 					projection.system = append(projection.system, system)
