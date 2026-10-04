@@ -4,7 +4,7 @@ package api
 
 import "runtime"
 
-func piUserAgent() string {
+func readPIUserAgent() string {
 	return "pi (" + piNodePlatform(runtime.GOOS) + " unknown; " + piArchitecture() + ")"
 }
 

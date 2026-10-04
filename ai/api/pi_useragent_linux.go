@@ -6,7 +6,7 @@ import (
 	"syscall"
 )
 
-func piUserAgent() string {
+func readPIUserAgent() string {
 	release := "unknown"
 	var name syscall.Utsname
 	if syscall.Uname(&name) == nil {

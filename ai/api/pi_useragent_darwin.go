@@ -4,7 +4,7 @@ package api
 
 import "syscall"
 
-func piUserAgent() string {
+func readPIUserAgent() string {
 	release, err := syscall.Sysctl("kern.osrelease")
 	if err != nil {
 		release = "unknown"

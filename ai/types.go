@@ -96,6 +96,9 @@ type ToolCall struct {
 	// loaded or namespaced tools.
 	Namespace    *string `json:"namespace,omitempty"`
 	rawArguments []byte
+	// rawValue is rawArguments decoded, kept apart from Arguments so a replay
+	// can tell whether Arguments changed without parsing rawArguments again.
+	rawValue any
 	// Provider adapters clear streaming scratch fields before a terminal message is persisted.
 	PartialJSON *string `json:"partialJson,omitempty"`
 	PartialArgs *string `json:"partialArgs,omitempty"`

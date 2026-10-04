@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -288,77 +289,75 @@ func openAICompletionsWireValue(value any, compat resolvedOpenAICompletionsCompa
 }
 
 func (payload openAICompletionsWirePayload) MarshalJSON() ([]byte, error) {
-	return marshalOpenAICompletionsObject(payload.value, true)
+	return appendOpenAICompletionsObject(nil, payload.value, openAICompletionsObjectKeys(payload.value, true))
 }
 
 func (object openAICompletionsWireObject) MarshalJSON() ([]byte, error) {
-	return marshalOpenAICompletionsObjectWithKeys(
-		object.value,
-		orderedOpenAICompletionsKeys(object.value, object.preferred),
-	)
-}
-
-func marshalOpenAICompletionsValue(value any) ([]byte, error) {
-	switch typed := value.(type) {
-	case string:
-		return jsonwire.MarshalString(typed)
-	case map[string]any:
-		return marshalOpenAICompletionsObject(typed, false)
-	case []any:
-		var output bytes.Buffer
-		output.WriteByte('[')
-		for index, item := range typed {
-			if index > 0 {
-				output.WriteByte(',')
-			}
-			encoded, err := marshalOpenAICompletionsValue(item)
-			if err != nil {
-				return nil, err
-			}
-			output.Write(encoded)
-		}
-		output.WriteByte(']')
-		return output.Bytes(), nil
-	default:
-		return ai.Marshal(value)
-	}
-}
-
-func marshalOpenAICompletionsObject(object map[string]any, root bool) ([]byte, error) {
-	return marshalOpenAICompletionsObjectWithKeys(object, openAICompletionsObjectKeys(object, root))
+	return appendOpenAICompletionsObject(nil, object.value, orderedOpenAICompletionsKeys(object.value, object.preferred))
 }
 
 func marshalOpenAICompletionsObjectWithKeys(object map[string]any, keys []string) ([]byte, error) {
-	var output bytes.Buffer
-	output.WriteByte('{')
-	for index, key := range keys {
-		if index > 0 {
-			output.WriteByte(',')
+	return appendOpenAICompletionsObject(nil, object, keys)
+}
+
+// appendOpenAICompletionsValue encodes into one buffer: per-value encoding
+// allocated for every string and re-validated every nested object.
+func appendOpenAICompletionsValue(dst []byte, value any) ([]byte, error) {
+	switch typed := value.(type) {
+	case string:
+		return jsonwire.AppendString(dst, typed), nil
+	case map[string]any:
+		return appendOpenAICompletionsObject(dst, typed, openAICompletionsObjectKeys(typed, false))
+	case openAICompletionsWireObject:
+		return appendOpenAICompletionsObject(dst, typed.value, orderedOpenAICompletionsKeys(typed.value, typed.preferred))
+	case []any:
+		dst = append(dst, '[')
+		for index, item := range typed {
+			if index > 0 {
+				dst = append(dst, ',')
+			}
+			var err error
+			if dst, err = appendOpenAICompletionsValue(dst, item); err != nil {
+				return nil, err
+			}
 		}
-		encodedKey, err := ai.Marshal(key)
+		return append(dst, ']'), nil
+	case bool:
+		return strconv.AppendBool(dst, typed), nil
+	default:
+		encoded, err := ai.Marshal(value)
 		if err != nil {
 			return nil, err
 		}
-		encodedValue, err := marshalOpenAICompletionsValue(object[key])
-		if err != nil {
+		return append(dst, encoded...), nil
+	}
+}
+
+func appendOpenAICompletionsObject(dst []byte, object map[string]any, keys []string) ([]byte, error) {
+	dst = append(dst, '{')
+	for index, key := range keys {
+		if index > 0 {
+			dst = append(dst, ',')
+		}
+		dst = append(jsonwire.AppendString(dst, key), ':')
+		var err error
+		if dst, err = appendOpenAICompletionsValue(dst, object[key]); err != nil {
 			return nil, fmt.Errorf("encode OpenAI completions field %q: %w", key, err)
 		}
-		output.Write(encodedKey)
-		output.WriteByte(':')
-		output.Write(encodedValue)
 	}
-	output.WriteByte('}')
-	return output.Bytes(), nil
+	return append(dst, '}'), nil
+}
+
+var openAICompletionsRootKeys = []string{
+	"model", "messages", "stream", "prompt_cache_key", "prompt_cache_retention",
+	"stream_options", "store", "max_tokens", "max_completion_tokens", "temperature",
+	"tools", "tool_stream", "tool_choice", "priority", "thinking", "enable_thinking",
+	"chat_template_kwargs", "chat_template_args", "reasoning", "reasoning_effort", "thinking_token_budget", "thinking_budget", "thinking_budget_tokens", "provider", "providerOptions",
 }
 
 func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 	if root {
-		return orderedOpenAICompletionsKeys(object, []string{
-			"model", "messages", "stream", "prompt_cache_key", "prompt_cache_retention",
-			"stream_options", "store", "max_tokens", "max_completion_tokens", "temperature",
-			"tools", "tool_stream", "tool_choice", "priority", "thinking", "enable_thinking",
-			"chat_template_kwargs", "chat_template_args", "reasoning", "reasoning_effort", "thinking_token_budget", "thinking_budget", "thinking_budget_tokens", "provider", "providerOptions",
-		})
+		return orderedOpenAICompletionsKeys(object, openAICompletionsRootKeys)
 	}
 	if role, ok := object["role"].(string); ok {
 		switch role {
@@ -367,13 +366,11 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 			if reasoning, ok := object["reasoning_content"].(string); ok && reasoning != "" {
 				preferred = append(preferred, "reasoning_content")
 			}
-			reserved := map[string]bool{
-				"role": true, "content": true, "tool_calls": true,
-				"reasoning_details": true, "reasoning_content": true,
-			}
 			dynamic := make([]string, 0)
 			for key := range object {
-				if !reserved[key] {
+				switch key {
+				case "role", "content", "tool_calls", "reasoning_details", "reasoning_content":
+				default:
 					dynamic = append(dynamic, key)
 				}
 			}
@@ -437,23 +434,23 @@ func openAICompletionsObjectKeys(object map[string]any, root bool) []string {
 	return orderedOpenAICompletionsKeys(object, nil)
 }
 
+// orderedOpenAICompletionsKeys lists the preferred keys present, then the
+// rest sorted. Preferred lists are short, so membership is a linear scan.
 func orderedOpenAICompletionsKeys(object map[string]any, preferred []string) []string {
 	keys := make([]string, 0, len(object))
-	seen := make(map[string]bool, len(preferred))
 	for _, key := range preferred {
-		if _, exists := object[key]; exists && !seen[key] {
+		if _, exists := object[key]; exists && !slices.Contains(keys, key) {
 			keys = append(keys, key)
-			seen[key] = true
 		}
 	}
-	remainder := make([]string, 0, len(object)-len(keys))
+	listed := len(keys)
 	for key := range object {
-		if !seen[key] {
-			remainder = append(remainder, key)
+		if !slices.Contains(keys[:listed], key) {
+			keys = append(keys, key)
 		}
 	}
-	sort.Strings(remainder)
-	return append(keys, remainder...)
+	sort.Strings(keys[listed:])
+	return keys
 }
 
 func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsCompat, error) {

@@ -479,7 +479,13 @@ func postOpenAIStream(
 	if err != nil {
 		return nil, err
 	}
-	body, err := ai.Marshal(payload)
+	var body []byte
+	if wire, ok := payload.(openAICompletionsWirePayload); ok {
+		// Already compact JSON.stringify output; a second encoder pass only revalidated it.
+		body, err = wire.MarshalJSON()
+	} else {
+		body, err = ai.Marshal(payload)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("encode OpenAI request: %w", err)
 	}
