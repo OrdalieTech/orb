@@ -26,9 +26,10 @@ type KV interface {
 }
 
 // chunkSize bounds one stored value well under the Durable Object value
-// limits (128 KiB key-value backend, 2 MB SQLite backend), and keeps the
-// rewrite of a file's last chunk cheap on every journal append.
-const chunkSize = 64 << 10
+// limits (128 KiB key-value backend, 2 MB SQLite backend). Every journal
+// append rewrites the file's last chunk, so it stays small: 64 KiB chunks made
+// each turn store about 180 KB for a few KB of new entries.
+const chunkSize = 4 << 10
 
 // Keys within a namespace: "m"+path holds an entry's metadata and
 // "c"+path+"#"+index its content chunks. Paths are absolute and never contain

@@ -281,12 +281,13 @@ func (b *batch) appended(ctx context.Context, name string, previous *entry, cont
 			return &harness.FileError{Code: harness.FileErrorUnknown, Path: name, Err: errors.New("worker: stored tail chunk does not match its metadata")}
 		}
 	}
-	data := append(slices.Clip(tail), content...)
+	// Stored chunks are only read back as copies, so the tail grows in place.
+	data := append(tail, content...)
 	for offset := 0; offset < len(data); offset += chunkSize {
 		b.set(chunkKey(b.fsys.namespace, name, first+offset/chunkSize), data[offset:min(len(data), offset+chunkSize)])
 	}
 	next := &entry{Size: previous.Size + int64(len(content)), MTime: info.MTimeMS}
-	next.tail = slices.Clone(data[len(data)-len(data)%chunkSize:])
+	next.tail = data[len(data)-len(data)%chunkSize:]
 	b.meta(name, next)
 	return nil
 }

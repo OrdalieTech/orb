@@ -40,7 +40,7 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
 
 | Port | Worker host |
 | --- | --- |
-| FS | A `platforms/memory` tree rooted at `/`, with the workspace at `/workspace` and the agent directory at `/agent`. Every mutation is written through to Durable Object storage before it returns (keys `fs/…`, 64 KiB chunks). A restart restores the tree, including modification times. The default budget is 32 MiB, held in memory. |
+| FS | A `platforms/memory` tree rooted at `/`, with the workspace at `/workspace` and the agent directory at `/agent`. Every mutation is written through to Durable Object storage before it returns (keys `fs/…`, 4 KiB chunks). A restart restores the tree, including modification times. The default budget is 32 MiB, held in memory. |
 | Store | `settings.json`, `models.json` and `auth.json` live in storage under `doc/…`, outside the tools' reach. `ORB_SETTINGS` and `ORB_MODELS` supply the defaults until an object writes its own. |
 | Sessions | JSONL journals live under `/agent/sessions`. The object resumes its current session. `new_session` and `switch_session` work; `fork` and `clone` return an error. |
 | Env | Worker secrets and vars, looked up by their standard names (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, …). There are no credential files and no interactive OAuth logins. |

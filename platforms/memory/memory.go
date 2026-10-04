@@ -278,7 +278,9 @@ func (fsys *FileSystem) write(ctx context.Context, name string, content []byte, 
 	bytes, files := fsys.bytes+int64(len(content)), fsys.files+1
 	if existing != nil {
 		if appendMode {
-			data = append(slices.Clone(existing.data), content...)
+			// Reads return copies, so the stored array is extended in place:
+			// copying it made every append O(file).
+			data = append(existing.data, content...)
 		} else {
 			bytes -= int64(len(existing.data))
 		}
