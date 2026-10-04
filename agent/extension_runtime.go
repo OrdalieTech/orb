@@ -963,7 +963,7 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 		return
 	}
 	options := cloneSystemPromptOptions(*state.promptOptions)
-	options.SelectedTools = append([]string(nil), valid...)
+	options.SelectedTools = slices.Clone(valid)
 	snippets := make(map[string]string)
 	var guidelines []string
 	for _, name := range valid {
@@ -1347,7 +1347,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptions() extensions.SystemP
 	}
 	options := state.promptOptions
 	return extensions.SystemPromptOptions{
-		CustomPrompt: options.CustomPrompt, SelectedTools: append([]string(nil), options.SelectedTools...),
+		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools),
 		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}
@@ -1518,7 +1518,7 @@ func uniqueStrings(values []string) []string {
 }
 
 func cloneSystemPromptOptions(options SystemPromptOptions) SystemPromptOptions {
-	options.SelectedTools = append([]string(nil), options.SelectedTools...)
+	options.SelectedTools = slices.Clone(options.SelectedTools)
 	options.ToolSnippets = maps.Clone(options.ToolSnippets)
 	options.PromptGuidelines = append([]string(nil), options.PromptGuidelines...)
 	options.ContextFiles = append([]ContextFile(nil), options.ContextFiles...)
@@ -1890,7 +1890,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptionsLocked(state *extensi
 	}
 	options := state.promptOptions
 	return extensions.SystemPromptOptions{
-		CustomPrompt: options.CustomPrompt, SelectedTools: append([]string(nil), options.SelectedTools...),
+		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools),
 		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}

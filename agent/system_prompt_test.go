@@ -145,6 +145,21 @@ func TestBuildSystemPromptNormalizesPackageDirectoryEnvironment(t *testing.T) {
 	}
 }
 
+func TestCloneSystemPromptOptionsPreservesEmptyToolSelection(t *testing.T) {
+	for _, tools := range [][]string{nil, {}, {"bash"}} {
+		options := cloneSystemPromptOptions(SystemPromptOptions{SelectedTools: tools})
+		if (options.SelectedTools == nil) != (tools == nil) {
+			t.Fatalf("selected tools changed from %#v to %#v", tools, options.SelectedTools)
+		}
+		if len(tools) > 0 {
+			options.SelectedTools[0] = "changed"
+			if tools[0] != "bash" {
+				t.Fatal("tool selection clone aliases its input")
+			}
+		}
+	}
+}
+
 func TestSystemPromptGuidelinesUseJavaScriptTrimSet(t *testing.T) {
 	prompt := BuildSystemPrompt(SystemPromptOptions{
 		SelectedTools:    []string{},

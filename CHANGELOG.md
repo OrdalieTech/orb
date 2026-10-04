@@ -116,6 +116,7 @@ Orb now tracks Pi **v1.0.0** (codemode and what only it uses stay out for now).
 - Context estimates count the system prompt and declared tools, as pi does, so the footer and
   auto-compaction see the real context size instead of leaving the prompt out.
 - A model that can't reason starts with thinking off instead of the default medium, as in pi.
+- An explicitly empty tool selection stays empty instead of falling back to the default tools.
 - Fixes from Pi 1.0: image-only messages no longer carry an empty text part, Responses streams that
   end with an unfinished tool call fail instead of running it, replayed grammar tool calls drop
   mismatched item ids, Mistral GLM models keep one thinking block and receive the requested effort,
