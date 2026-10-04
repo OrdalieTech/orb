@@ -84,7 +84,8 @@ function capturedRequest(context: any, options: any, hasSignal = false) {
 export async function generateF10(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const compactionSource = "packages/coding-agent/src/core/compaction/compaction.ts";
   const branchSource = "packages/coding-agent/src/core/compaction/branch-summarization.ts";
-  const { codingCompaction, codingBranch } = await withUpstreamModelData(upstreamRoot, async () => ({
+  const { codingCompaction, codingBranch, sessionManager } = await withUpstreamModelData(upstreamRoot, async () => ({
+    sessionManager: await import(pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/core/session-manager.ts")).href) as any,
     codingCompaction: await import(pathToFileURL(path.join(upstreamRoot, compactionSource)).href) as any,
     codingBranch: await import(pathToFileURL(path.join(upstreamRoot, branchSource)).href) as any,
   }));
@@ -238,6 +239,35 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     productSummaryCases.push({mode:"branch-limit",stop:"stop",modelMaxTokens,expected:{maxTokens:captured.options.maxTokens}});
   }
 
+  const systemMessage = {
+    role: "system", content: "initial 😀", sections: { preamble: "long prompt ".repeat(40), removed: null },
+    toolsAdded: [{ name: "read", description: "Read 😀", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+    timestamp: millis(1),
+  };
+  const productTokenCases = [
+    { name: "system-content-utf16", message: { role: "system", content: "😀abc", timestamp: millis(1) } },
+    { name: "system-sections-tools", message: systemMessage },
+    { name: "system-empty-tools", message: { role: "system", content: "", toolsAdded: [], timestamp: millis(1) } },
+    { name: "system-content-blocks", message: { role: "system", content: [{ type: "text", text: "hello 😀" }], timestamp: millis(1) } },
+  ].map((input) => ({ ...input, expected: codingCompaction.estimateTokens(input.message) }));
+  const initialContext = [
+    messageEntry("system-context", null, systemMessage, 1),
+    messageEntry("context-user", "system-context", user("next request", 2), 2),
+  ];
+  const validUsage: any = messageEntry("context-answer", "context-user", assistant([{ type: "text", text: "answer" }], 3, usage(400, 20, 10, 5, 435)), 3);
+  const updatedSystem = messageEntry("context-system-update", "context-answer", {
+    role: "system", content: "additional", sections: { preamble: "updated 😀", removed: null },
+    toolsRemoved: [{ name: "read" }], toolsAdded: [], timestamp: millis(4),
+  }, 4);
+  const projectedContextCases = [
+    { name: "prompt-tools-before-first-usage", entries: initialContext },
+    { name: "error-does-not-anchor-zero-usage", entries: [...initialContext, { ...validUsage, message: { ...validUsage.message, stopReason: "error", usage: usage() } }] },
+    { name: "usage-anchor-plus-system-delta", entries: [...initialContext, validUsage, updatedSystem] },
+    { name: "edited-context-invalidates-usage", entries: [...initialContext, validUsage, updatedSystem,
+      { type: "context_edit", id: "edit-context", parentId: "context-system-update", timestamp: iso(5), targetId: "context-user", replacement: { content: "next request" } },
+    ] },
+  ].map((input) => ({ ...input, expected: codingCompaction.estimateProjectedContextTokens(sessionManager.buildSessionProjection(input.entries), input.entries) }));
+
   const familyDir = path.join(outputRoot, "F10");
   await mkdir(familyDir, { recursive: true });
   const manifest = {
@@ -255,6 +285,8 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     tokenCases: owned.tokenCases,
     conversationCases: owned.conversationCases,
     contextCases: owned.contextCases,
+    productTokenCases,
+    projectedContextCases,
     cutCases,
     prepareCases: owned.prepareCases,
     branchCases: owned.branchCases,

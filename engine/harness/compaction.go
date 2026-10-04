@@ -165,6 +165,22 @@ func ShouldCompact(contextTokens int64, contextWindow float64, settings Compacti
 
 func EstimateTokens(message engine.AgentMessage) int64 {
 	switch typed := message.(type) {
+	case *ai.SystemMessage:
+		chars := contentChars(typed.Content)
+		for _, section := range typed.Sections {
+			if section.Text != nil {
+				chars += jsLength(*section.Text)
+			}
+		}
+		if typed.ToolsAdded != nil {
+			encoded, err := ai.Marshal(typed.ToolsAdded)
+			if err == nil {
+				chars += jsLength(string(encoded))
+			}
+		}
+		return ceilQuarter(chars)
+	case ai.SystemMessage:
+		return EstimateTokens(&typed)
 	case *ai.UserMessage:
 		return ceilQuarter(userContentChars(typed.Content))
 	case ai.UserMessage:
@@ -1133,6 +1149,11 @@ func estimateRawMessage(raw []byte) int64 {
 		return 0
 	}
 	switch envelope.Role {
+	case "system":
+		var system ai.SystemMessage
+		if json.Unmarshal(raw, &system) == nil {
+			return EstimateTokens(&system)
+		}
 	case "user", "custom", "toolResult":
 		var text string
 		if json.Unmarshal(envelope.Content, &text) == nil {

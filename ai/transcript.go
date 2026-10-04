@@ -212,6 +212,9 @@ func CurrentSystemMessage(messages MessageList) *SystemMessage {
 		}
 	}
 	tools := CurrentTools(messages)
+	if len(tools) == 0 {
+		tools = nil
+	}
 	if timestamp == nil && len(tools) == 0 {
 		return nil
 	}

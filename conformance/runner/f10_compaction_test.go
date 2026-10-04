@@ -30,8 +30,14 @@ type f10Fixture struct {
 			MaxTokens float64 `json:"maxTokens"`
 		} `json:"expected"`
 	} `json:"productSummaryCases"`
-	SchemaVersion      int                    `json:"schemaVersion"`
-	TokenCases         []f10TokenCase         `json:"tokenCases"`
+	SchemaVersion         int            `json:"schemaVersion"`
+	TokenCases            []f10TokenCase `json:"tokenCases"`
+	ProductTokenCases     []f10TokenCase `json:"productTokenCases"`
+	ProjectedContextCases []struct {
+		Name     string                       `json:"name"`
+		Entries  []f10Entry                   `json:"entries"`
+		Expected harness.ContextUsageEstimate `json:"expected"`
+	} `json:"projectedContextCases"`
 	ConversationCases  []f10ConversationCase  `json:"conversationCases"`
 	ContextCases       []f10ContextCase       `json:"contextCases"`
 	CutCases           []f10CutCase           `json:"cutCases"`
@@ -75,6 +81,8 @@ type f10Entry struct {
 	CustomType       string          `json:"customType"`
 	Content          json.RawMessage `json:"content"`
 	Display          bool            `json:"display"`
+	TargetID         string          `json:"targetId"`
+	Replacement      json.RawMessage `json:"replacement"`
 }
 
 type f10CutCase struct {
@@ -217,12 +225,19 @@ type f10ActualCapture struct {
 
 func TestF10TokenAndConversationFixturesMatchUpstream(t *testing.T) {
 	fixture := loadF10Fixture(t)
-	for _, fixtureCase := range fixture.TokenCases {
+	for _, fixtureCase := range append(fixture.TokenCases, fixture.ProductTokenCases...) {
 		fixtureCase := fixtureCase
 		t.Run("tokens/"+fixtureCase.Name, func(t *testing.T) {
-			got := harness.EstimateTokens(f10Message(t, fixtureCase.Message))
-			if got != fixtureCase.Expected {
+			message := f10Message(t, fixtureCase.Message)
+			if got := harness.EstimateTokens(message); got != fixtureCase.Expected {
 				t.Fatalf("token estimate = %d, want %d", got, fixtureCase.Expected)
+			}
+			if system, ok := message.(*ai.SystemMessage); ok {
+				for _, variant := range []engine.AgentMessage{*system, fixtureCase.Message, []byte(fixtureCase.Message)} {
+					if got := harness.EstimateTokens(variant); got != fixtureCase.Expected {
+						t.Fatalf("%T system estimate = %d, want %d", variant, got, fixtureCase.Expected)
+					}
+				}
 			}
 		})
 	}
@@ -245,6 +260,14 @@ func TestF10ContextAndCutBoundariesMatchUpstream(t *testing.T) {
 			got := harness.EstimateContextTokens(f10Messages(t, fixtureCase.Messages))
 			if !reflect.DeepEqual(got, fixtureCase.Expected) {
 				t.Fatalf("context estimate = %+v, want %+v", got, fixtureCase.Expected)
+			}
+		})
+	}
+	for _, fixtureCase := range fixture.ProjectedContextCases {
+		t.Run("projected-context/"+fixtureCase.Name, func(t *testing.T) {
+			got := harness.EstimateProjectedContextTokens(f10Entries(t, fixtureCase.Entries))
+			if !reflect.DeepEqual(got, fixtureCase.Expected) {
+				t.Fatalf("projected context = %+v, want %+v", got, fixtureCase.Expected)
 			}
 		})
 	}
@@ -430,7 +453,7 @@ func loadF10Fixture(t testing.TB) f10Fixture {
 	}
 	var fixture f10Fixture
 	runner.LoadJSON(t, "F10", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.TokenCases) != 8 || len(fixture.CutCases) != 6 || len(fixture.SummaryPromptCases) != 3 || len(fixture.CompactPromptCases) != 2 {
+	if fixture.SchemaVersion != 1 || len(fixture.TokenCases) != 8 || len(fixture.CutCases) != 6 || len(fixture.SummaryPromptCases) != 3 || len(fixture.CompactPromptCases) != 2 || len(fixture.ProductTokenCases) != 4 || len(fixture.ProjectedContextCases) != 4 {
 		t.Fatalf("unexpected F10 fixture header: version=%d token=%d cut=%d prompts=%d compact=%d", fixture.SchemaVersion, len(fixture.TokenCases), len(fixture.CutCases), len(fixture.SummaryPromptCases), len(fixture.CompactPromptCases))
 	}
 	return fixture
@@ -505,7 +528,7 @@ func f10Entries(t testing.TB, entries []f10Entry) []harness.SessionEntry {
 			Type: entry.Type, ID: entry.ID, ParentID: entry.ParentID, Timestamp: entry.Timestamp, Message: message,
 			Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: float64(entry.TokensBefore),
 			Details: details, FromHook: entry.FromHook, FromID: entry.FromID, CustomType: entry.CustomType,
-			Content: content, Display: entry.Display,
+			Content: content, Display: entry.Display, TargetID: entry.TargetID, Replaces: len(entry.Replacement) > 0 && string(entry.Replacement) != "null",
 		}
 	}
 	return converted

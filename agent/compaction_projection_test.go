@@ -80,6 +80,29 @@ func TestCompactionExcludesSystemHistoryAndPreservesPromptState(t *testing.T) {
 	}
 }
 
+func TestContextEstimateIncludesPromptAndToolDeclarations(t *testing.T) {
+	provider := testFaux(200)
+	runtime, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	must := mustOf(t)
+	prompt := strings.Repeat("p", 400)
+	tool := ai.Tool{Name: "read", Description: "Read", Parameters: ai.JSONSchema(`{"type":"object"}`)}
+	must(manager.AppendMessage(&ai.SystemMessage{Content: prompt, ToolsAdded: []ai.Tool{tool}}))
+	must(manager.AppendMessage(userMessage("next")))
+	encoded, err := ai.Marshal([]ai.Tool{tool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := int64((len(prompt)+len(encoded)+3)/4 + 1)
+	usage := runtime.GetContextUsage()
+	stats := runtime.GetSessionStats()
+	if usage == nil || usage.Tokens == nil || *usage.Tokens != want || stats.ContextUsage == nil || stats.ContextUsage.Tokens == nil || *stats.ContextUsage.Tokens != want {
+		t.Fatalf("context usage = %#v, stats = %#v, want %d", usage, stats.ContextUsage, want)
+	}
+	if !harness.ShouldCompact(*usage.Tokens, provider.GetModel().ContextWindow, harness.CompactionSettings{Enabled: true, ReserveTokens: 100}) {
+		t.Fatal("prompt/tool tokens did not contribute to the compaction threshold")
+	}
+}
+
 func TestProjectedEstimateDoesNotTrustPreEditUsage(t *testing.T) {
 	manager, must := projectionSession(t), mustOf(t)
 	large := must(manager.AppendMessage(userMessage(strings.Repeat("large ", 2000))))

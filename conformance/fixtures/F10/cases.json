@@ -365,6 +365,448 @@
       }
     }
   ],
+  "productTokenCases": [
+    {
+      "name": "system-content-utf16",
+      "message": {
+        "role": "system",
+        "content": "😀abc",
+        "timestamp": 1767225601000
+      },
+      "expected": 2
+    },
+    {
+      "name": "system-sections-tools",
+      "message": {
+        "role": "system",
+        "content": "initial 😀",
+        "sections": {
+          "preamble": "long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt ",
+          "removed": null
+        },
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read 😀",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "timestamp": 1767225601000
+      },
+      "expected": 151
+    },
+    {
+      "name": "system-empty-tools",
+      "message": {
+        "role": "system",
+        "content": "",
+        "toolsAdded": [],
+        "timestamp": 1767225601000
+      },
+      "expected": 1
+    },
+    {
+      "name": "system-content-blocks",
+      "message": {
+        "role": "system",
+        "content": [
+          {
+            "type": "text",
+            "text": "hello 😀"
+          }
+        ],
+        "timestamp": 1767225601000
+      },
+      "expected": 2
+    }
+  ],
+  "projectedContextCases": [
+    {
+      "name": "prompt-tools-before-first-usage",
+      "entries": [
+        {
+          "type": "message",
+          "id": "system-context",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "message": {
+            "role": "system",
+            "content": "initial 😀",
+            "sections": {
+              "preamble": "long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt ",
+              "removed": null
+            },
+            "toolsAdded": [
+              {
+                "name": "read",
+                "description": "Read 😀",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            ],
+            "timestamp": 1767225601000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-user",
+          "parentId": "system-context",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "next request"
+              }
+            ],
+            "timestamp": 1767225602000
+          }
+        }
+      ],
+      "expected": {
+        "tokens": 154,
+        "usageTokens": 0,
+        "trailingTokens": 154,
+        "lastUsageIndex": null
+      }
+    },
+    {
+      "name": "error-does-not-anchor-zero-usage",
+      "entries": [
+        {
+          "type": "message",
+          "id": "system-context",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "message": {
+            "role": "system",
+            "content": "initial 😀",
+            "sections": {
+              "preamble": "long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt ",
+              "removed": null
+            },
+            "toolsAdded": [
+              {
+                "name": "read",
+                "description": "Read 😀",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            ],
+            "timestamp": 1767225601000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-user",
+          "parentId": "system-context",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "next request"
+              }
+            ],
+            "timestamp": 1767225602000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-answer",
+          "parentId": "context-user",
+          "timestamp": "2026-01-01T00:00:03.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1767225603000
+          }
+        }
+      ],
+      "expected": {
+        "tokens": 156,
+        "usageTokens": 0,
+        "trailingTokens": 156,
+        "lastUsageIndex": null
+      }
+    },
+    {
+      "name": "usage-anchor-plus-system-delta",
+      "entries": [
+        {
+          "type": "message",
+          "id": "system-context",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "message": {
+            "role": "system",
+            "content": "initial 😀",
+            "sections": {
+              "preamble": "long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt ",
+              "removed": null
+            },
+            "toolsAdded": [
+              {
+                "name": "read",
+                "description": "Read 😀",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            ],
+            "timestamp": 1767225601000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-user",
+          "parentId": "system-context",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "next request"
+              }
+            ],
+            "timestamp": 1767225602000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-answer",
+          "parentId": "context-user",
+          "timestamp": "2026-01-01T00:00:03.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 400,
+              "output": 20,
+              "cacheRead": 10,
+              "cacheWrite": 5,
+              "totalTokens": 435,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225603000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-system-update",
+          "parentId": "context-answer",
+          "timestamp": "2026-01-01T00:00:04.000Z",
+          "message": {
+            "role": "system",
+            "content": "additional",
+            "sections": {
+              "preamble": "updated 😀",
+              "removed": null
+            },
+            "toolsRemoved": [
+              {
+                "name": "read"
+              }
+            ],
+            "toolsAdded": [],
+            "timestamp": 1767225604000
+          }
+        }
+      ],
+      "expected": {
+        "tokens": 441,
+        "usageTokens": 435,
+        "trailingTokens": 6,
+        "lastUsageIndex": 2
+      }
+    },
+    {
+      "name": "edited-context-invalidates-usage",
+      "entries": [
+        {
+          "type": "message",
+          "id": "system-context",
+          "parentId": null,
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "message": {
+            "role": "system",
+            "content": "initial 😀",
+            "sections": {
+              "preamble": "long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt long prompt ",
+              "removed": null
+            },
+            "toolsAdded": [
+              {
+                "name": "read",
+                "description": "Read 😀",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            ],
+            "timestamp": 1767225601000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-user",
+          "parentId": "system-context",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "next request"
+              }
+            ],
+            "timestamp": 1767225602000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-answer",
+          "parentId": "context-user",
+          "timestamp": "2026-01-01T00:00:03.000Z",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture-model",
+            "usage": {
+              "input": 400,
+              "output": 20,
+              "cacheRead": 10,
+              "cacheWrite": 5,
+              "totalTokens": 435,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1767225603000
+          }
+        },
+        {
+          "type": "message",
+          "id": "context-system-update",
+          "parentId": "context-answer",
+          "timestamp": "2026-01-01T00:00:04.000Z",
+          "message": {
+            "role": "system",
+            "content": "additional",
+            "sections": {
+              "preamble": "updated 😀",
+              "removed": null
+            },
+            "toolsRemoved": [
+              {
+                "name": "read"
+              }
+            ],
+            "toolsAdded": [],
+            "timestamp": 1767225604000
+          }
+        },
+        {
+          "type": "context_edit",
+          "id": "edit-context",
+          "parentId": "context-system-update",
+          "timestamp": "2026-01-01T00:00:05.000Z",
+          "targetId": "context-user",
+          "replacement": {
+            "content": "next request"
+          }
+        }
+      ],
+      "expected": {
+        "tokens": 13,
+        "usageTokens": 0,
+        "trailingTokens": 13,
+        "lastUsageIndex": null
+      }
+    }
+  ],
   "cutCases": [
     {
       "name": "whole-turn-boundary-with-metadata",
