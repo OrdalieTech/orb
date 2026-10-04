@@ -451,7 +451,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		sessionContext = manager.BuildSessionContext()
 	}
-	if len(manager.GetEntries()) > 0 {
+	if len(sessionContext.Messages) > 0 {
 		applySessionDefaults(&args, sessionContext, manager.GetBranch())
 	}
 	if isInteractive {

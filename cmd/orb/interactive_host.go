@@ -108,7 +108,7 @@ func createReplacementRuntime(
 	options sessionRuntimeOptions,
 ) (*agent.SessionRuntime, runtimeInputs, error) {
 	contextState := manager.BuildSessionContext()
-	if len(manager.GetEntries()) > 0 {
+	if len(contextState.Messages) > 0 {
 		applySessionDefaults(&args, contextState, manager.GetBranch())
 	}
 	if args.extensionsLoaded && args.extensionRegistry != nil {

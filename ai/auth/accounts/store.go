@@ -14,19 +14,13 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai/auth"
+	docport "github.com/OrdalieTech/orb/internal/document"
 )
 
 const DefaultID = "default"
 
 // MaxSize bounds the accounts document in every backend.
 const MaxSize = 1 << 20
-
-// Document is the host.Document port, restated because ai sits below host.
-// Updates must commit before returning.
-type Document interface {
-	Read(context.Context) ([]byte, error)
-	Update(context.Context, func([]byte) ([]byte, error)) error
-}
 
 type Account struct {
 	ID, Provider, Name string
@@ -49,12 +43,12 @@ type document struct {
 }
 
 type Store struct {
-	document Document
+	document docport.Document
 	base     auth.CredentialStore
 }
 
 // NewStoreWithDocument performs no I/O; an unused capability creates no documents.
-func NewStoreWithDocument(document Document, base auth.CredentialStore) *Store {
+func NewStoreWithDocument(document docport.Document, base auth.CredentialStore) *Store {
 	if base == nil {
 		base = auth.NewMemoryStore(nil)
 	}

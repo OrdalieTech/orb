@@ -938,11 +938,11 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 	if err := conversation.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err = newProvider().Acquire(ctx, key)
+	provider := newProvider()
+	conversation, err = provider.Acquire(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = conversation.Close(ctx) }()
 	if conversation.Manager.GetSessionID() != newID {
 		t.Fatal("reopened old session")
 	}
@@ -950,6 +950,13 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 	if err != nil || !bytes.Contains(data, []byte("already-delivered")) {
 		t.Fatal("reset lost delivery tombstone", err)
 	}
+	// The next message reuses the released journal instead of re-reading it.
+	reopened := conversation.Manager
+	_ = conversation.Close(ctx)
+	if conversation, err = provider.Acquire(ctx, key); err != nil || conversation.Manager != reopened {
+		t.Fatal("native conversation re-read on every message", err)
+	}
+	_ = conversation.Close(ctx)
 }
 
 // A session ID after --resume opens that session; --resume alone still picks one.

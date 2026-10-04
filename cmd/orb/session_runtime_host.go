@@ -120,7 +120,7 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 			return nil, err
 		}
 		contextState := manager.BuildSessionContext()
-		if len(manager.GetEntries()) > 0 {
+		if len(contextState.Messages) > 0 {
 			applySessionDefaults(&args, contextState, manager.GetBranch())
 		}
 		if runtimeOptions.ExtensionRegistry != nil {

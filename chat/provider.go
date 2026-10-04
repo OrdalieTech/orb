@@ -72,8 +72,8 @@ type LocalProvider struct {
 }
 
 // cachedSession keeps a released conversation's SessionManager hot. Re-opening
-// re-parsed the whole session JSONL on every inbound message, which dominated
-// both time and allocations per turn.
+// re-parsed the whole session (JSONL file or native journal) on every inbound
+// message, which dominated both time and allocations per turn.
 //
 // ponytail: unbounded — one live manager per conversation ever acquired. Add
 // an idle TTL or LRU when a deployment holds more conversations than memory.
@@ -178,7 +178,11 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 	}
 
 	var manager *sessionstore.SessionManager
-	if p.repo != nil {
+	if p.repo != nil && cached != nil {
+		// The local provider is single-process (D27), and a write from a stale
+		// handle fails on the journal's revision fence instead of diverging.
+		manager = cached.manager
+	} else if p.repo != nil {
 		repo := p.repo(key)
 		entries, err := repo.List(ctx, harness.SessionListOptions{})
 		var stored *harness.Session

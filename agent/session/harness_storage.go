@@ -120,10 +120,12 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 	if manager.harnessStorage == nil {
 		return nil
 	}
-	// Native journals are append-only. Refresh only their tail; rescanning a
-	// long transcript here made every persisted message O(history).
-	if journal, ok := manager.harnessStorage.(*harness.JSONLSessionStorage); ok &&
-		journal.IsPersistent() && journal.Metadata().Path == "" && len(manager.fileEntries) > 0 {
+	// Native journals and in-memory stores are append-only. Refresh only their
+	// tail; rescanning a long transcript here made every message O(history).
+	jsonl, native := manager.harnessStorage.(*harness.JSONLSessionStorage)
+	native = native && jsonl.IsPersistent() && jsonl.Metadata().Path == ""
+	if _, inMemory := manager.harnessStorage.(*harness.InMemorySessionStorage); (native || inMemory) && len(manager.fileEntries) > 0 {
+		journal := manager.harnessStorage
 		entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
 		for _, entry := range entries {
 			// The index shares the manager's parse: entries are never changed in place.
