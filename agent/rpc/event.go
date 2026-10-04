@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -28,12 +29,14 @@ func marshalJSONEvent(event any) ([]byte, error) {
 	if !ok || message == nil {
 		return nil, errors.New("message_update message is not an assistant message")
 	}
-	encoded, err := ai.MarshalAssistantMessageEvent(update.AssistantMessageEvent)
+	encoded, err := ai.MarshalAssistantMessageEvent(withoutPartial(update.AssistantMessageEvent))
 	if err != nil {
 		return nil, err
 	}
-	delta, err := deleteObjectMember(encoded, "partial")
-	if err != nil {
+	delta, cut := bytes.CutSuffix(encoded, []byte(`,"partial":null}`))
+	if cut {
+		delta = append(delta, '}')
+	} else if delta, err = deleteObjectMember(encoded, "partial"); err != nil {
 		return nil, err
 	}
 	var toolStart *ai.ToolCallStartEvent
@@ -67,6 +70,23 @@ func marshalJSONEvent(event any) ([]byte, error) {
 		Usage                 ai.Usage              `json:"usage"`
 		AssistantMessageEvent json.RawMessage       `json:"assistantMessageEvent"`
 	}{engine.EventMessageUpdate, message.Usage, delta})
+}
+
+// withoutPartial copies a stream event with its partial message cleared. The
+// event types encode it last, so the delta is cut from a small encoding
+// instead of re-parsing one that holds the whole message so far.
+func withoutPartial(event ai.AssistantMessageEvent) ai.AssistantMessageEvent {
+	value := reflect.ValueOf(event)
+	if value.Kind() != reflect.Struct {
+		return event
+	}
+	if partial := value.FieldByName("Partial"); !partial.IsValid() || partial.IsNil() {
+		return event
+	}
+	cleared := reflect.New(value.Type()).Elem()
+	cleared.Set(value)
+	cleared.FieldByName("Partial").SetZero()
+	return cleared.Interface().(ai.AssistantMessageEvent)
 }
 
 // deleteObjectMember removes one member from an encoded JSON object while
