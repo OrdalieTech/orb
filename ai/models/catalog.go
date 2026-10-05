@@ -16,6 +16,8 @@ import (
 // Catalog is an immutable-by-convention provider/model lookup.
 type Catalog struct {
 	providers map[string]map[string]ai.Model
+	base      sync.Once
+	models    []ai.Model // BaseModels without an overlay
 }
 
 // Builtin loads the catalog generated from the committed models.dev snapshot.
@@ -176,6 +178,17 @@ func (catalog *Catalog) MergedModels(overlay *Catalog) []ai.Model {
 		}
 	}
 	return result
+}
+
+// BaseModels is MergedModels for callers that do not modify the models or
+// anything they point to: without an overlay, they all share one sorted copy,
+// so each model registry need not clone and sort the catalog again.
+func (catalog *Catalog) BaseModels(overlay *Catalog) []ai.Model {
+	if catalog == nil || overlay != nil && len(overlay.providers) > 0 {
+		return catalog.MergedModels(overlay)
+	}
+	catalog.base.Do(func() { catalog.models = catalog.MergedModels(nil) })
+	return catalog.models
 }
 
 func (catalog *Catalog) MarshalJSON() ([]byte, error) {
