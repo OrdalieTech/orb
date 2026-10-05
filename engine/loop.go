@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -302,12 +303,17 @@ func streamAssistantResponse(
 	}
 
 	llmContext := ai.Context{Messages: llmMessages}
-	if current := ai.CurrentSystemMessage(llmMessages); current != nil {
-		prompt := ai.SystemMessageText(current)
-		tools := ai.CurrentTools(llmMessages)
+	var systems ai.MessageList
+	for _, message := range llmMessages {
+		if _, system := message.(*ai.SystemMessage); system {
+			systems = append(systems, message)
+		}
+	}
+	if len(systems) > 0 {
+		prompt, tools := config.system.derive(systems)
 		llmContext.SystemPrompt = &prompt
 		llmContext.Tools = &tools
-		llmContext.Messages = make(ai.MessageList, 0, len(llmMessages))
+		llmContext.Messages = make(ai.MessageList, 0, len(llmMessages)-len(systems))
 		for _, message := range llmMessages {
 			if _, system := message.(*ai.SystemMessage); !system {
 				llmContext.Messages = append(llmContext.Messages, message)
@@ -1215,6 +1221,29 @@ func firstNonSystemIndex(messages AgentMessages) int {
 		}
 	}
 	return len(messages)
+}
+
+// requestSystem remembers the prompt and tools derived from a transcript's
+// system messages, which an agent's requests share until it declares new ones.
+type requestSystem struct {
+	mu      sync.Mutex
+	systems ai.MessageList
+	prompt  string
+	tools   []ai.Tool
+}
+
+// derive returns the request prompt and tools of systems, the transcript's
+// system messages in order; a nil memo derives them every time.
+func (memo *requestSystem) derive(systems ai.MessageList) (string, []ai.Tool) {
+	if memo == nil {
+		return ai.SystemMessageText(ai.CurrentSystemMessage(systems)), ai.CurrentTools(systems)
+	}
+	memo.mu.Lock()
+	defer memo.mu.Unlock()
+	if !slices.Equal(systems, memo.systems) {
+		memo.systems, memo.prompt, memo.tools = systems, ai.SystemMessageText(ai.CurrentSystemMessage(systems)), ai.CurrentTools(systems)
+	}
+	return memo.prompt, slices.Clone(memo.tools)
 }
 
 // systemMessages collects the system messages of transcripts, which are all

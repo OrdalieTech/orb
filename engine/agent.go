@@ -197,6 +197,7 @@ type Agent struct {
 		systems ai.MessageList
 		text    string
 	}
+	request requestSystem
 
 	convertToLLM                ConvertToLLMFunc
 	transformContext            TransformContextFunc
@@ -940,6 +941,7 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 		FinishTurn:          agent.finishTurn,
 		PrepareRequest:      agent.prepareRequest,
 		Now:                 agent.now,
+		system:              &agent.request,
 	}
 	prepare := agent.prepareNextTurn
 	externalSteering := agent.getSteeringMessages
