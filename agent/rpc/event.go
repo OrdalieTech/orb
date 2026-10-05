@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
+	"strconv"
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // marshalJSONEvent ports upstream toJsonEvent (modes/json-event.ts): the
@@ -54,15 +55,9 @@ func marshalJSONEvent(event any) ([]byte, error) {
 		if toolCall == nil {
 			return nil, fmt.Errorf("toolcall_start content at index %d is not a tool call", toolStart.ContentIndex)
 		}
-		delta, err = ai.Marshal(struct {
-			Type         string `json:"type"`
-			ContentIndex int    `json:"contentIndex"`
-			ID           string `json:"id"`
-			ToolName     string `json:"toolName"`
-		}{"toolcall_start", toolStart.ContentIndex, toolCall.ID, toolCall.Name})
-		if err != nil {
-			return nil, err
-		}
+		delta = strconv.AppendInt([]byte(`{"type":"toolcall_start","contentIndex":`), int64(toolStart.ContentIndex), 10)
+		delta = jsonwire.AppendString(append(delta, `,"id":`...), toolCall.ID)
+		delta = append(jsonwire.AppendString(append(delta, `,"toolName":`...), toolCall.Name), '}')
 	}
 	// Member order matches upstream's object literal: type, usage, assistantMessageEvent.
 	usage, err := message.Usage.MarshalJSON()
@@ -77,17 +72,42 @@ func marshalJSONEvent(event any) ([]byte, error) {
 // event types encode it last, so the delta is cut from a small encoding
 // instead of re-parsing one that holds the whole message so far.
 func withoutPartial(event ai.AssistantMessageEvent) ai.AssistantMessageEvent {
-	value := reflect.ValueOf(event)
-	if value.Kind() != reflect.Struct {
-		return event
+	switch typed := event.(type) {
+	case ai.StartEvent:
+		typed.Partial = nil
+		return typed
+	case ai.TextStartEvent:
+		typed.Partial = nil
+		return typed
+	case ai.TextDeltaEvent:
+		typed.Partial = nil
+		return typed
+	case ai.TextEndEvent:
+		typed.Partial = nil
+		return typed
+	case ai.ThinkingStartEvent:
+		typed.Partial = nil
+		return typed
+	case ai.ThinkingDeltaEvent:
+		typed.Partial = nil
+		return typed
+	case ai.ThinkingEndEvent:
+		typed.Partial = nil
+		return typed
+	case ai.ToolCallStartEvent:
+		typed.Partial = nil
+		return typed
+	case ai.ToolCallDeltaEvent:
+		typed.Partial = nil
+		return typed
+	case ai.ToolCallEndEvent:
+		typed.Partial = nil
+		return typed
+	case ai.RawAssistantMessageEvent:
+		typed.Partial = nil
+		return typed
 	}
-	if partial := value.FieldByName("Partial"); !partial.IsValid() || partial.IsNil() {
-		return event
-	}
-	cleared := reflect.New(value.Type()).Elem()
-	cleared.Set(value)
-	cleared.FieldByName("Partial").SetZero()
-	return cleared.Interface().(ai.AssistantMessageEvent)
+	return event
 }
 
 // deleteObjectMember removes one member from an encoded JSON object while
