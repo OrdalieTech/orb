@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"net/url"
+	"strings"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -17,6 +18,10 @@ import (
 const opencodeHost = "opencode.ai"
 
 func matchesHost(baseURL, expectedHost string) bool {
+	// Without escapes, the host is part of the URL as written.
+	if !strings.Contains(baseURL, expectedHost) && !strings.Contains(baseURL, "%") {
+		return false
+	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return false

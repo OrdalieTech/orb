@@ -298,8 +298,13 @@ func (payload openAICompletionsWirePayload) MarshalJSON() ([]byte, error) {
 	size := 1024 + len(tools)
 	messages, _ := payload.value["messages"].([]any)
 	for _, message := range messages {
-		encoded, _ := message.(completionsWireJSON)
-		size += len(encoded) + 1
+		switch message := message.(type) {
+		case completionsWireJSON:
+			size += len(message) + 1
+		case map[string]any:
+			content, _ := message["content"].(string)
+			size += len(content) + 64
+		}
 	}
 	return appendOpenAICompletionsObject(make([]byte, 0, size), payload.value, openAICompletionsObjectKeys(payload.value, true))
 }
@@ -2099,24 +2104,25 @@ func parseOpenAICompletionsToolArguments(value string) map[string]any {
 }
 
 func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage {
-	var usage map[string]json.RawMessage
-	_ = json.Unmarshal(raw, &usage)
-	promptTokens, _ := rawJSONInt64(usage["prompt_tokens"])
-	completionTokens, _ := rawJSONInt64(usage["completion_tokens"])
-	promptCacheHit, ok := rawJSONInt64(usage["prompt_cache_hit_tokens"])
+	var rawPrompt, rawCompletion, rawCacheHit, rawCached, rawPromptDetails, rawCompletionDetails, rawCost json.RawMessage
+	readMembers(raw, rawMember{"prompt_tokens", &rawPrompt}, rawMember{"completion_tokens", &rawCompletion},
+		rawMember{"prompt_cache_hit_tokens", &rawCacheHit}, rawMember{"cached_tokens", &rawCached},
+		rawMember{"prompt_tokens_details", &rawPromptDetails}, rawMember{"completion_tokens_details", &rawCompletionDetails}, rawMember{"cost", &rawCost})
+	var rawDetailsCached, rawCacheWrite, rawReasoning json.RawMessage
+	readMembers(rawPromptDetails, rawMember{"cached_tokens", &rawDetailsCached}, rawMember{"cache_write_tokens", &rawCacheWrite})
+	readMembers(rawCompletionDetails, rawMember{"reasoning_tokens", &rawReasoning})
+	promptTokens, _ := rawJSONInt64(rawPrompt)
+	completionTokens, _ := rawJSONInt64(rawCompletion)
+	promptCacheHit, ok := rawJSONInt64(rawCacheHit)
 	if !ok {
-		promptCacheHit, _ = rawJSONInt64(usage["cached_tokens"])
+		promptCacheHit, _ = rawJSONInt64(rawCached)
 	}
-	var promptDetails map[string]json.RawMessage
-	_ = json.Unmarshal(usage["prompt_tokens_details"], &promptDetails)
 	cacheRead := promptCacheHit
-	if value, ok := rawJSONInt64(promptDetails["cached_tokens"]); ok {
+	if value, ok := rawJSONInt64(rawDetailsCached); ok {
 		cacheRead = value
 	}
-	cacheWrite, _ := rawJSONInt64(promptDetails["cache_write_tokens"])
-	var completionDetails map[string]json.RawMessage
-	_ = json.Unmarshal(usage["completion_tokens_details"], &completionDetails)
-	reasoning, _ := rawJSONInt64(completionDetails["reasoning_tokens"])
+	cacheWrite, _ := rawJSONInt64(rawCacheWrite)
+	reasoning, _ := rawJSONInt64(rawReasoning)
 	input := promptTokens - cacheRead - cacheWrite
 	if input < 0 {
 		input = 0
@@ -2133,7 +2139,7 @@ func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage 
 	calculateCost(model, &result)
 	if model.Provider == "openrouter" || openRouterHost(model.BaseURL) {
 		var reportedCost *float64
-		if json.Unmarshal(usage["cost"], &reportedCost) == nil && reportedCost != nil {
+		if json.Unmarshal(rawCost, &reportedCost) == nil && reportedCost != nil {
 			// Component costs remain estimates; the reported total includes routing and discounts.
 			result.Cost.Total = *reportedCost
 		}
@@ -2144,6 +2150,10 @@ func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage 
 // openRouterHost matches the endpoint's host, so a proxy path that merely
 // mentions openrouter.ai can't make its reported cost authoritative.
 func openRouterHost(baseURL string) bool {
+	// Without escapes, the host is part of the URL as written.
+	if !strings.Contains(baseURL, "openrouter.ai") && !strings.Contains(baseURL, "%") {
+		return false
+	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return false
@@ -2187,6 +2197,12 @@ func rawJSONInt(raw json.RawMessage) (int, bool) {
 }
 
 func rawJSONInt64(raw json.RawMessage) (int64, bool) {
+	// A plain JSON integer parses directly; anything else takes the decoder's rules.
+	if digits := bytes.TrimPrefix(raw, []byte("-")); len(digits) > 0 && len(digits) < 19 && (digits[0] != '0' || len(digits) == 1) &&
+		!bytes.ContainsFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) {
+		value, _ := strconv.ParseInt(string(raw), 10, 64)
+		return value, true
+	}
 	var value int64
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &value) != nil {
 		return 0, false
