@@ -53,8 +53,26 @@ func Marshal(value any) ([]byte, error) {
 		if message != nil {
 			return message.MarshalJSON()
 		}
+	case []Tool:
+		if message != nil {
+			return appendTools(nil, message)
+		}
 	}
 	return marshalJSON(value)
+}
+
+func appendTools(dst []byte, tools []Tool) ([]byte, error) {
+	dst = append(dst, '[')
+	for index, tool := range tools {
+		if index > 0 {
+			dst = append(dst, ',')
+		}
+		var err error
+		if dst, err = tool.appendWire(dst); err != nil {
+			return nil, err
+		}
+	}
+	return append(dst, ']'), nil
 }
 
 const (
@@ -259,17 +277,10 @@ func (message SystemMessage) appendWire(dst []byte) ([]byte, error) {
 		dst = timestamp(dst)
 	}
 	if len(message.ToolsAdded) > 0 {
-		dst = append(dst, `,"toolsAdded":[`...)
-		for index, tool := range message.ToolsAdded {
-			if index > 0 {
-				dst = append(dst, ',')
-			}
-			var err error
-			if dst, err = tool.appendWire(dst); err != nil {
-				return nil, err
-			}
+		var err error
+		if dst, err = appendTools(append(dst, `,"toolsAdded":`...), message.ToolsAdded); err != nil {
+			return nil, err
 		}
-		dst = append(dst, ']')
 	}
 	if len(message.ToolsRemoved) > 0 {
 		removed, err := marshalJSON(message.ToolsRemoved)
