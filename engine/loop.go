@@ -1183,8 +1183,7 @@ func declarePromptAndToolChanges(context AgentContext, pending AgentMessages, ti
 			withoutPendingChanges[lastSystem] = &copy
 		}
 	}
-	all := append(append(AgentMessages(nil), context.Messages...), withoutPendingChanges...)
-	previous := ai.CurrentTools(agentMessagesToAI(all))
+	previous := ai.CurrentTools(systemMessages(context.Messages, withoutPendingChanges))
 	current := make([]ai.Tool, 0, len(context.Tools))
 	for _, tool := range context.Tools {
 		spec := tool.Spec()
@@ -1218,14 +1217,18 @@ func firstNonSystemIndex(messages AgentMessages) int {
 	return len(messages)
 }
 
-func agentMessagesToAI(messages AgentMessages) ai.MessageList {
-	result := make(ai.MessageList, 0, len(messages))
-	for _, message := range messages {
-		if typed, ok := message.(ai.Message); ok {
-			result = append(result, typed)
+// systemMessages collects the system messages of transcripts, which are all
+// that CurrentSystemMessage and CurrentTools read.
+func systemMessages(transcripts ...AgentMessages) ai.MessageList {
+	var systems ai.MessageList
+	for _, transcript := range transcripts {
+		for _, message := range transcript {
+			if system, ok := message.(*ai.SystemMessage); ok {
+				systems = append(systems, system)
+			}
 		}
 	}
-	return result
+	return systems
 }
 
 func shallowAssistantCopy(message *ai.AssistantMessage) *ai.AssistantMessage {
