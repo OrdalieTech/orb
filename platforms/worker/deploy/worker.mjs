@@ -63,6 +63,35 @@ function problem(status, error, headers = {}) {
 
 let bootSlots = 0;
 
+// Go's http transport (platforms/worker/fetch_js.go) crosses into JavaScript
+// as little as it can: headers travel as "name\nvalue" lines, a response
+// arrives in one callback, and each read brings one chunk, null at the end or
+// an error message.
+const fetchHelpers = {
+  fetch(url, method, headers, body, done) {
+    const controller = new AbortController();
+    const lines = headers === "" ? [] : headers.split("\n");
+    const pairs = [];
+    for (let index = 0; index + 1 < lines.length; index += 2) pairs.push([lines[index], lines[index + 1]]);
+    fetch(url, { method, headers: pairs, body, signal: controller.signal }).then(
+      response => done(response.status, [...response.headers].flat().join("\n"), response.redirected ? response.url : "", response.body?.getReader() ?? null),
+      error => done(0, `net/http: fetch() failed: ${error}${error?.cause === undefined ? "" : `: ${error.cause}`}`),
+    );
+    return controller;
+  },
+  read(reader, done) {
+    reader.read().then(
+      ({ value }) => done(value ?? null),
+      error => done(String(error?.message ?? error)),
+    );
+  },
+  // A body Go stopped reading: one that has ended needs nothing, and
+  // cancelling it would abort a finished request.
+  release(reader) {
+    reader.read().then(({ done }) => done || reader.cancel(), () => {});
+  },
+};
+
 // start instantiates one Go runtime for one object. Go reads its boot slot
 // synchronously at startup, so the slot is free again by the time the next
 // object in this isolate boots.
@@ -71,7 +100,7 @@ async function start(storage, env, name, emit, exited) {
   const go = new Go();
   const slot = `__orbWorkerBoot${++bootSlots}`;
   const ready = new Promise((resolve, reject) => {
-    globalThis[slot] = { storage, env, name, emit, resolve, reject: message => reject(new Error(message)), exit: exited };
+    globalThis[slot] = { storage, env, name, emit, fetch: fetchHelpers, resolve, reject: message => reject(new Error(message)), exit: exited };
   });
   go.argv = ["orb-worker", slot];
   go.env = {};
