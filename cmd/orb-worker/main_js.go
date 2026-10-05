@@ -128,19 +128,24 @@ func (reader *commandReader) Read(buffer []byte) (int, error) {
 	return written, nil
 }
 
-// frameWriter hands each complete output frame, LF included, to the shim as
-// a Uint8Array, which it streams as it is.
+// frameWriter hands each complete output frame, LF included, to the shim in
+// one Uint8Array it reuses; the shim copies out the frame's bytes.
 type frameWriter struct {
 	emit    js.Value
+	array   js.Value
+	size    int
 	partial []byte
 }
 
 var uint8Array = js.Global().Get("Uint8Array")
 
 func (writer *frameWriter) emitFrame(frame []byte) {
-	array := uint8Array.New(len(frame))
-	js.CopyBytesToJS(array, frame)
-	writer.emit.Invoke(array)
+	if len(frame) > writer.size {
+		writer.size = max(len(frame), 2*writer.size, 1<<14)
+		writer.array = uint8Array.New(writer.size)
+	}
+	js.CopyBytesToJS(writer.array, frame)
+	writer.emit.Invoke(writer.array, len(frame))
 }
 
 func (writer *frameWriter) Write(data []byte) (int, error) {
