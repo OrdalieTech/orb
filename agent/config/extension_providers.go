@@ -119,7 +119,45 @@ func validateProviderConfig(id string, config extensions.ProviderConfig, base []
 	return nil
 }
 
+// composedModels is the last composition made without registered providers.
+// Every object of a Worker isolate composes the same catalog and models
+// document, so they share one list, which nothing changes in place.
+var composedModels struct {
+	sync.Mutex
+	base   []ai.Model
+	key    string
+	all    []ai.Model
+	errors []string
+}
+
 func composeRegisteredProviders(
+	base []ai.Model,
+	modelsConfig *ModelConfig,
+	configs map[string]extensions.ProviderConfig,
+	native map[string]extensions.Provider,
+	configOrder, nativeOrder []string,
+	credentials map[string]*aiauth.Credential,
+) ([]ai.Model, []string) {
+	if len(configs) != 0 || len(native) != 0 || len(base) == 0 {
+		return composeProviders(base, modelsConfig, configs, native, configOrder, nativeOrder, credentials)
+	}
+	key, err := json.Marshal(struct {
+		Order     []string
+		Providers map[string]ModelProviderConfig
+	}{modelsConfig.providerIDs(), modelsConfig.Providers})
+	if err != nil {
+		return composeProviders(base, modelsConfig, configs, native, configOrder, nativeOrder, credentials)
+	}
+	composedModels.Lock()
+	defer composedModels.Unlock()
+	if len(composedModels.base) != len(base) || &composedModels.base[0] != &base[0] || composedModels.key != string(key) {
+		all, errs := composeProviders(base, modelsConfig, configs, native, configOrder, nativeOrder, credentials)
+		composedModels.base, composedModels.key, composedModels.all, composedModels.errors = base, string(key), all, errs
+	}
+	return composedModels.all, slices.Clone(composedModels.errors)
+}
+
+func composeProviders(
 	base []ai.Model,
 	modelsConfig *ModelConfig,
 	configs map[string]extensions.ProviderConfig,
