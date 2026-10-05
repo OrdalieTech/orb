@@ -5,12 +5,17 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-06
+
+Orb runs Ordalie's team agents: `orb --mode acp` speaks the Agent Client Protocol natively, and
+`orb chat buzz telegram --tools` is one agent with one memory on Buzz and Telegram, in one small
+container whose tools never reach its credentials.
+
 - A team agent's tools never see its credentials: `ORB_TOOL_ENV` lists the only variables bash,
   MCP servers, extension hosts and external agents inherit, `orb chat` sets one by default, and an
   Orb with one hides its own environment from them. With `orb chat buzz` the shell's `buzz` is Orb,
   which has the agent run the real CLI with the Buzz key; the image no longer runs buzz-dev-mcp,
   and runs buzz-acp as a second user whose key and keyfile the agent's tools cannot read.
-
 - `orb --mode acp` speaks the Agent Client Protocol natively: Zed, Buzz Desktop or Buzz's
   `buzz-acp` drive any number of Orb sessions in one process, with the client's MCP servers and
   harness prompt, model and reasoning selectors, `session/load` and usage reports.
