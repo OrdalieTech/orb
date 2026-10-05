@@ -369,10 +369,12 @@ type JSONLSessionStorage struct {
 	state   *sessionStorageState
 	version float64
 	header  []byte
+	// content is the JSONL the storage was read from, which held its first
+	// loaded entries; later entries keep their own lines, so appending copies
+	// nothing more.
 	content []byte
+	loaded  int
 	append  func([]byte) error
-	// v4 carries the live mutation-log state for v4-format sessions; the v3
-	// fields above then hold its projection.
 }
 
 // RehydrateJSONLSession opens an upstream v3 JSONL session directly from
@@ -434,7 +436,7 @@ func rehydrateJSONLSessionWithHeader(
 	}
 	return &JSONLSessionStorage{
 		state: state, version: header.Version, header: append([]byte(nil), lines[0]...),
-		content: append([]byte(nil), content...), append: appendLine,
+		content: append([]byte(nil), content...), loaded: len(state.entries), append: appendLine,
 	}, nil
 }
 
@@ -567,7 +569,6 @@ func (storage *JSONLSessionStorage) appendLockedWithLabel(entry SessionTreeEntry
 			return newSessionError(SessionErrorStorage, "Failed to append %s %s: %v", label, entry.ID, err)
 		}
 	}
-	storage.content = append(storage.content, line...)
 	entry = entry.clone()
 	entry.raw = line[: len(line)-1 : len(line)-1]
 	storage.state.append(entry)
@@ -621,7 +622,11 @@ func (storage *JSONLSessionStorage) Entries(options ...SessionEntryCursorOptions
 func (storage *JSONLSessionStorage) Bytes() ([]byte, error) {
 	storage.mu.RLock()
 	defer storage.mu.RUnlock()
-	return append([]byte(nil), storage.content...), nil
+	content := append([]byte(nil), storage.content...)
+	for _, entry := range storage.state.entries[storage.loaded:] {
+		content = append(append(content, entry.raw...), '\n')
+	}
+	return content, nil
 }
 
 func (storage *JSONLSessionStorage) IsPersistent() bool {
