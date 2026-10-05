@@ -131,7 +131,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	}
 	contextActions := extensions.ContextActions{
 		RequestInput: runtime.RequestInput,
-		GetModel:     func() *ai.Model { return runtime.agent.Model() },
+		GetModel:     func() *ai.Model { return runtime.agent.StateWithoutMessages().Model },
 		GetScopedModels: func() []extensions.ScopedModel {
 			scoped := runtime.ScopedModels()
 			result := make([]extensions.ScopedModel, len(scoped))

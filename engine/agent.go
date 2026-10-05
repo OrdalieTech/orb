@@ -538,12 +538,13 @@ func (agent *Agent) Messages() AgentMessages {
 	return append(AgentMessages(nil), agent.state.Messages...)
 }
 
-// Model is a copy of the agent's model, for reads that need nothing else of
-// its state.
+// Model is the agent's model, for reads that need nothing else of its state.
+// It stays shared with the agent, which only ever replaces it, and must not be
+// modified.
 func (agent *Agent) Model() *ai.Model {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
-	return cloneModel(agent.state.Model)
+	return agent.state.Model
 }
 
 // StateWithoutMessages is State without the transcript (Messages and
