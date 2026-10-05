@@ -157,8 +157,11 @@ func NewFrameWriter(writer io.Writer) *FrameWriter {
 
 func (output *FrameWriter) run() {
 	defer close(output.done)
+	// Each frame and its LF go out through one buffer the writer reuses,
+	// since an io.Writer keeps nothing it is handed.
+	var line []byte
 	for {
-		var line []byte
+		var frame []byte
 		select {
 		case <-output.aborted:
 			return
@@ -166,7 +169,7 @@ func (output *FrameWriter) run() {
 			if !open {
 				return
 			}
-			line = value
+			frame = value
 		}
 		// Abort and a queued frame can be ready together; never start a write after Abort.
 		select {
@@ -180,8 +183,12 @@ func (output *FrameWriter) run() {
 		if failed {
 			continue
 		}
+		line = append(append(line[:0], frame...), '\n')
 		if err := writeLine(output.writer, line); err != nil {
 			output.fail(err)
+		}
+		if cap(line) > 1<<20 {
+			line = nil
 		}
 	}
 }
@@ -278,8 +285,7 @@ func (output *FrameWriter) Close() error {
 	return output.err
 }
 
-func writeLine(writer io.Writer, value []byte) error {
-	line := append(value, '\n')
+func writeLine(writer io.Writer, line []byte) error {
 	for len(line) > 0 {
 		written, err := writer.Write(line)
 		if err != nil {
