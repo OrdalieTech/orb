@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/internal/jstrim"
@@ -148,6 +149,7 @@ func (resolver *SlashResolver) ExpandQueued(text string) (string, error) {
 }
 
 // ExpandSkillCommand reads a skill on invocation so edits are visible without resource reload.
+// Orb expands a leading run of distinct invocations (`/skill:a /skill:b …`) into consecutive blocks.
 func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 	if !strings.HasPrefix(text, "/skill:") {
 		return text, nil
@@ -175,6 +177,10 @@ func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 		}
 		body := strings.TrimFunc(parsed.Body, jstrim.IsSpace)
 		block := fmt.Sprintf("<skill name=\"%s\" location=\"%s\">\nReferences are relative to %s.\n\n%s\n</skill>", skill.Name, skill.FilePath, skill.BaseDir, body)
+		others := slices.DeleteFunc(slices.Clone(skills), func(other Skill) bool { return other.Name == name })
+		if args, err = ExpandSkillCommand(args, others); err != nil {
+			return text, err
+		}
 		if args != "" {
 			block += "\n\n" + args
 		}

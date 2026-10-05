@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A message can invoke several skills: `/skill:a … /skill:b` sends both, each skill's block
+  after the other, instead of being refused. The transcript chips each one in place, with a
+  footer line per skill, and the session list, queue and HTML export show them all.
+
 ## [0.15.0] - 2026-10-04
 
 The Android app becomes a daily driver: every conversation runs through Bridge, the phone's own

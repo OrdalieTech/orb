@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/session"
@@ -217,18 +218,22 @@ func renderUserTextMarkdown(text string, images []string) string {
 	}
 	// The message reads as typed, the invocation marked in place; the skill
 	// body folds below it like thinking does.
-	message := ReplaceSkillTokens(skill.InvocationText(), skill.Name, func(name string) string { return "**◆ " + name + "**" })
+	message := ReplaceSkillTokens(skill.InvocationText(), skill.Names(), func(name string) string { return "**◆ " + name + "**" })
 	parts := append([]string{message}, images...)
-	parts = append(parts, "<details><summary>◆ "+skill.Name+" skill</summary>\n\n"+skill.Content+"\n\n</details>")
+	for _, each := range skill.Skills() {
+		parts = append(parts, "<details><summary>◆ "+each.Name+" skill</summary>\n\n"+each.Content+"\n\n</details>")
+	}
 	return strings.Join(parts, "\n\n")
 }
 
-// ParsedSkillBlock is an upstream skill invocation embedded in a user message.
+// ParsedSkillBlock is an upstream skill invocation embedded in a user message;
+// More holds the skills the same message invoked after it, envelope after envelope.
 type ParsedSkillBlock struct {
 	Name        string
 	Location    string
 	Content     string
 	UserMessage string
+	More        []ParsedSkillBlock
 }
 
 var skillBlockPattern = regexp.MustCompile(`(?s)^<skill name="([^"]+)" location="([^"]+)">\n(.*?)\n</skill>(?:\n\n(.+))?$`)
@@ -239,7 +244,27 @@ func ParseSkillBlock(text string) (ParsedSkillBlock, bool) {
 	if match == nil {
 		return ParsedSkillBlock{}, false
 	}
-	return ParsedSkillBlock{Name: match[1], Location: match[2], Content: match[3], UserMessage: strings.TrimSpace(match[4])}, true
+	skill := ParsedSkillBlock{Name: match[1], Location: match[2], Content: match[3], UserMessage: strings.TrimSpace(match[4])}
+	if next, ok := ParseSkillBlock(skill.UserMessage); ok {
+		skill.UserMessage, skill.More = next.UserMessage, next.Skills()
+	}
+	return skill, true
+}
+
+// Skills is every skill the message invoked, in order.
+func (skill ParsedSkillBlock) Skills() []ParsedSkillBlock {
+	first := skill
+	first.More = nil
+	return append([]ParsedSkillBlock{first}, skill.More...)
+}
+
+// Names is the invoked skills' names, in order.
+func (skill ParsedSkillBlock) Names() []string {
+	names := []string{skill.Name}
+	for _, more := range skill.More {
+		names = append(names, more.Name)
+	}
+	return names
 }
 
 // SkillTokenPrefix starts a skill invocation in message text.
@@ -274,12 +299,12 @@ func FindSkillTokens(text string) []SkillToken {
 	return tokens
 }
 
-// ReplaceSkillTokens substitutes every invocation of name.
-func ReplaceSkillTokens(text, name string, chip func(string) string) string {
+// ReplaceSkillTokens substitutes every invocation of the named skills.
+func ReplaceSkillTokens(text string, names []string, chip func(string) string) string {
 	var out strings.Builder
 	position := 0
 	for _, token := range FindSkillTokens(text) {
-		if token.Name != name {
+		if !slices.Contains(names, token.Name) {
 			continue
 		}
 		out.WriteString(text[position:token.Start])
@@ -290,19 +315,18 @@ func ReplaceSkillTokens(text, name string, chip func(string) string) string {
 	return out.String()
 }
 
-// InvocationText is the user's text with the invocation at its original
-// position. Orb's inline form keeps the token in the text after the block;
-// upstream's `/skill:name args` form moved it out, so it leads.
+// InvocationText is the user's text with the invocations at their original
+// position. Orb's inline form keeps the tokens in the text after the blocks;
+// upstream's `/skill:name args` form moved them out, so they lead.
 func (skill ParsedSkillBlock) InvocationText() string {
-	for _, token := range FindSkillTokens(skill.UserMessage) {
-		if token.Name == skill.Name {
-			return skill.UserMessage
+	text := skill.UserMessage
+	names := skill.Names()
+	for index := len(names) - 1; index >= 0; index-- {
+		if !slices.ContainsFunc(FindSkillTokens(text), func(token SkillToken) bool { return token.Name == names[index] }) {
+			text = strings.TrimSpace(SkillTokenPrefix + names[index] + " " + text)
 		}
 	}
-	if skill.UserMessage == "" {
-		return SkillTokenPrefix + skill.Name
-	}
-	return SkillTokenPrefix + skill.Name + " " + skill.UserMessage
+	return text
 }
 
 func renderAssistantContentMarkdown(raw json.RawMessage) string {

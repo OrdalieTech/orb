@@ -1722,12 +1722,7 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		// Normal message submission
 		prompt := text
 		if skills, ok := mode.autocompleteProvider.(*skillAutocompleteProvider); ok {
-			var err error
-			if prompt, err = skillSubmission(text, skills.known); err != nil {
-				mode.editor.SetText(text)
-				mode.showWarning(err.Error())
-				return
-			}
+			prompt = skillSubmission(text, skills.known)
 		}
 		mode.mu.Lock()
 		images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
@@ -4521,7 +4516,7 @@ func (mode *InteractiveMode) showError(err error) {
 
 func (mode *InteractiveMode) addUserMessageToChat(text string) {
 	if skill, ok := agent.ParseSkillBlock(text); ok {
-		component := newSkillUserMessageComponent(skill, mode.skillDescription(skill.Name), mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers)
+		component := newSkillUserMessageComponent(skill, mode.skillDescription, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers)
 		component.onChange = func() { mode.requestChatRender(component) }
 		mode.addExpandable(component)
 		mode.chat.AddChild(component)

@@ -12,7 +12,7 @@ import (
 
 func TestSkillSubmissionKeepsInvocationInPlace(t *testing.T) {
 	known := func(name string) bool { return name == "docx" || name == "pdf" }
-	for _, test := range []struct{ name, text, want, err string }{
+	for _, test := range []struct{ name, text, want string }{
 		{name: "leading keeps upstream form", text: "/skill:docx fix the report", want: "/skill:docx fix the report"},
 		{name: "inline keeps the whole text", text: "fix the report with /skill:docx please", want: "/skill:docx fix the report with /skill:docx please"},
 		{name: "second line", text: "fix the report\n/skill:docx", want: "/skill:docx fix the report\n/skill:docx"},
@@ -20,18 +20,11 @@ func TestSkillSubmissionKeepsInvocationInPlace(t *testing.T) {
 		{name: "unknown skill", text: "try /skill:nope", want: "try /skill:nope"},
 		{name: "not a token", text: "see a/skill:docx", want: "see a/skill:docx"},
 		{name: "unknown leading token", text: "/skill:nope then /skill:docx", want: "/skill:docx /skill:nope then /skill:docx"},
-		{name: "two skills", text: "/skill:docx and /skill:pdf", err: "one skill per message: ◆ docx, ◆ pdf; send them separately"},
+		{name: "two skills", text: "/skill:docx and /skill:pdf", want: "/skill:docx /skill:pdf /skill:docx and /skill:pdf"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := skillSubmission(test.text, known)
-			if test.err != "" {
-				if err == nil || err.Error() != test.err {
-					t.Fatalf("error = %v, want %q", err, test.err)
-				}
-				return
-			}
-			if err != nil || got != test.want {
-				t.Fatalf("submission = %q, %v; want %q", got, err, test.want)
+			if got := skillSubmission(test.text, known); got != test.want {
+				t.Fatalf("submission = %q; want %q", got, test.want)
 			}
 		})
 	}
@@ -45,24 +38,26 @@ func TestInlineSkillExpandsToKernelEnvelopeWithOriginalText(t *testing.T) {
 	if err := os.WriteFile(path, []byte("---\nname: docx\ndescription: Word files\n---\nEdit Word files.\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	skills := []agent.Skill{{Name: "docx", FilePath: path, BaseDir: dir}}
+	pdf := filepath.Join(dir, "pdf.md")
+	if err := os.WriteFile(pdf, []byte("---\nname: pdf\ndescription: PDF files\n---\nRead PDF files.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	skills := []agent.Skill{{Name: "docx", FilePath: path, BaseDir: dir}, {Name: "pdf", FilePath: pdf, BaseDir: dir}}
 	block := "<skill name=\"docx\" location=\"" + path + "\">\nReferences are relative to " + dir + ".\n\nEdit Word files.\n</skill>"
-	known := func(name string) bool { return name == "docx" }
+	pdfBlock := "<skill name=\"pdf\" location=\"" + pdf + "\">\nReferences are relative to " + dir + ".\n\nRead PDF files.\n</skill>"
+	known := func(name string) bool { return name == "docx" || name == "pdf" }
 
-	for _, test := range []struct{ text, after, shown string }{
-		{text: "fix the report with /skill:docx please", after: "fix the report with /skill:docx please", shown: "fix the report with ◆ docx please"},
-		{text: "/skill:docx fix the report", after: "fix the report", shown: "◆ docx fix the report"},
-		{text: "/skill:docx", shown: "◆ docx"},
+	for _, test := range []struct{ text, blocks, after, shown string }{
+		{text: "fix the report with /skill:docx please", blocks: block, after: "fix the report with /skill:docx please", shown: "fix the report with ◆ docx please"},
+		{text: "/skill:docx fix the report", blocks: block, after: "fix the report", shown: "◆ docx fix the report"},
+		{text: "/skill:docx", blocks: block, shown: "◆ docx"},
+		{text: "turn /skill:pdf into /skill:docx", blocks: pdfBlock + "\n\n" + block, after: "turn /skill:pdf into /skill:docx", shown: "turn ◆ pdf into ◆ docx"},
 	} {
-		prompt, err := skillSubmission(test.text, known)
+		expanded, err := agent.ExpandSkillCommand(skillSubmission(test.text, known), skills)
 		if err != nil {
 			t.Fatal(err)
 		}
-		expanded, err := agent.ExpandSkillCommand(prompt, skills)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := block
+		want := test.blocks
 		if test.after != "" {
 			want += "\n\n" + test.after
 		}
@@ -98,7 +93,7 @@ func TestSkillChipInEditorAndSubmit(t *testing.T) {
 		t.Fatalf("backspace after chip = %q", got)
 	}
 
-	// Several distinct skills are refused and the draft is kept.
+	// Several distinct skills go out in one message.
 	mode.autocompleteProvider = newSkillAutocompleteProvider(mode.autocompleteProvider, []tui.AutocompleteItem{
 		{Value: "@inspect-skill", Label: "[skill] inspect-skill"}, {Value: "@other", Label: "[skill] other"},
 	})
@@ -107,13 +102,10 @@ func TestSkillChipInEditorAndSubmit(t *testing.T) {
 	mode.setupEditorSubmitHandler()
 	mode.editor.SetText("/skill:inspect-skill then /skill:other")
 	mode.editor.HandleInput(tui.KeyEvent{Raw: "\r"})
-	if len(mode.inputCh) != 0 {
-		t.Fatalf("two skills were submitted: %q", (<-mode.inputCh).text)
+	if len(mode.inputCh) != 1 {
+		t.Fatal("two skills were not submitted")
 	}
-	if got := mode.editor.GetText(); got != "/skill:inspect-skill then /skill:other" {
-		t.Fatalf("draft after refusal = %q", got)
-	}
-	if warning := tui.StripANSI(strings.Join(mode.chat.Render(120), "\n")); !strings.Contains(warning, "one skill per message") {
-		t.Fatalf("refusal not shown: %q", warning)
+	if got := (<-mode.inputCh).text; got != "/skill:inspect-skill /skill:other /skill:inspect-skill then /skill:other" {
+		t.Fatalf("submitted %q", got)
 	}
 }

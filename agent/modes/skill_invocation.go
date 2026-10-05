@@ -1,7 +1,6 @@
 package modes
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -21,10 +20,10 @@ import (
 // skillSubmission rewrites an interactive message so the kernel's
 // start-of-message expansion sees an inline invocation. A message already
 // starting with the token passes through for upstream's exact expansion;
-// otherwise `/skill:name ` is prepended to the untouched text, so the envelope
-// carries the user's full message, token in place, after the skill block.
-// Several distinct skills are refused: the envelope holds one.
-func skillSubmission(text string, known func(string) bool) (string, error) {
+// otherwise `/skill:name ` is prepended for each skill, in order, to the untouched
+// text, so the envelopes carry the user's full message, tokens in place, after
+// the skill blocks.
+func skillSubmission(text string, known func(string) bool) string {
 	var names []string
 	tokens := exporthtml.FindSkillTokens(text)
 	for _, token := range tokens {
@@ -32,21 +31,10 @@ func skillSubmission(text string, known func(string) bool) (string, error) {
 			names = append(names, token.Name)
 		}
 	}
-	switch len(names) {
-	case 0:
-		return text, nil
-	case 1:
-	default:
-		chips := make([]string, len(names))
-		for index, name := range names {
-			chips[index] = "◆ " + name
-		}
-		return "", fmt.Errorf("one skill per message: %s; send them separately", strings.Join(chips, ", "))
+	if len(names) == 0 || len(names) == 1 && tokens[0].Start == 0 && tokens[0].Name == names[0] {
+		return text
 	}
-	if tokens[0].Start == 0 && tokens[0].Name == names[0] {
-		return text, nil
-	}
-	return exporthtml.SkillTokenPrefix + names[0] + " " + text, nil
+	return exporthtml.SkillTokenPrefix + strings.Join(names, " "+exporthtml.SkillTokenPrefix) + " " + text
 }
 
 // skillChip draws an invocation; the no-break space keeps glyph and name on
@@ -68,7 +56,7 @@ func skillPreview(text string) string {
 		}
 		return text
 	}
-	return exporthtml.ReplaceSkillTokens(skill.InvocationText(), skill.Name, func(name string) string { return "◆ " + name })
+	return exporthtml.ReplaceSkillTokens(skill.InvocationText(), skill.Names(), func(name string) string { return "◆ " + name })
 }
 
 // skillDisplayTokens chips every known skill token in an editor line.
@@ -93,50 +81,55 @@ func skillDisplayTokens(known func(string) bool) func(string) []tui.DisplayToken
 }
 
 // newSkillUserMessageComponent renders a skill envelope as the user's message
-// with the invocation chipped in place and one footer line naming the skill;
-// the expand action (or a click on the footer) reveals the skill body.
-func newSkillUserMessageComponent(skill agent.ParsedSkillBlock, description string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
+// with the invocations chipped in place and a footer line naming each skill;
+// the expand action (or a click on the footers) reveals the skill bodies.
+func newSkillUserMessageComponent(skill agent.ParsedSkillBlock, describe func(string) string, mdTheme tui.MarkdownTheme, outputPad int, transformers []extensions.MarkdownTransformer) *UserMessageComponent {
 	transform := newMarkdownTransform("user", false, transformers)
 	chipped := func(markdown string, width int) string {
 		if transform != nil {
 			markdown = transform(markdown, width)
 		}
 		// The chip closes its own color; reopen the message color after it.
-		return exporthtml.ReplaceSkillTokens(markdown, skill.Name, func(name string) string {
+		return exporthtml.ReplaceSkillTokens(markdown, skill.Names(), func(name string) string {
 			return skillChip(name) + theme.FGANSI("userMessageText")
 		})
 	}
-	body := &skillMessageBody{
-		name:        skill.Name,
-		description: strings.Join(strings.Fields(description), " "),
-		message:     newUserMarkdown(skill.InvocationText(), mdTheme, chipped),
-		content: tui.NewMarkdown(skill.Content, 0, 0, mdTheme, &tui.DefaultTextStyle{
-			Color: func(text string) string { return theme.FG("muted", text) },
-		}, nil),
+	body := &skillMessageBody{message: newUserMarkdown(skill.InvocationText(), mdTheme, chipped)}
+	for _, each := range skill.Skills() {
+		body.skills = append(body.skills, invokedSkill{
+			name:        each.Name,
+			description: strings.Join(strings.Fields(describe(each.Name)), " "),
+			content: tui.NewMarkdown(each.Content, 0, 0, mdTheme, &tui.DefaultTextStyle{
+				Color: func(text string) string { return theme.FG("muted", text) },
+			}, nil),
+		})
 	}
 	component := newUserMessageBand(body, outputPad)
 	component.skill = body
 	return component
 }
 
-// skillMessageBody is the inside of a skill user band: message, footer, and
-// the skill body when expanded.
+// skillMessageBody is the inside of a skill user band: message, a footer per
+// skill, and the skill bodies when expanded.
 type skillMessageBody struct {
-	mu          sync.Mutex
-	name        string
-	description string
-	message     *tui.Markdown
-	content     *tui.Markdown
-	expanded    bool
-	footerRow   int
+	mu        sync.Mutex
+	message   *tui.Markdown
+	skills    []invokedSkill
+	expanded  bool
+	footerRow int
 }
 
-func (body *skillMessageBody) footer(width int) string {
-	detail := body.description
+type invokedSkill struct {
+	name, description string
+	content           *tui.Markdown
+}
+
+func (skill invokedSkill) footer(width int) string {
+	detail := skill.description
 	if detail == "" {
 		detail = "skill"
 	}
-	line := theme.FG("accent", "◆") + theme.FG("dim", " "+body.name+" · "+detail)
+	line := theme.FG("accent", "◆") + theme.FG("dim", " "+skill.name+" · "+detail)
 	return tui.TruncateToWidth(line, width, theme.FG("dim", "…"), false)
 }
 
@@ -145,17 +138,23 @@ func (body *skillMessageBody) Render(width int) []string {
 	body.mu.Lock()
 	defer body.mu.Unlock()
 	body.footerRow = len(lines)
-	lines = append(lines, body.footer(width))
+	for _, skill := range body.skills {
+		lines = append(lines, skill.footer(width))
+	}
 	if body.expanded {
-		lines = append(lines, "")
-		lines = append(lines, body.content.Render(width)...)
+		for _, skill := range body.skills {
+			lines = append(lines, "")
+			lines = append(lines, skill.content.Render(width)...)
+		}
 	}
 	return lines
 }
 
 func (body *skillMessageBody) Invalidate() {
 	body.message.Invalidate()
-	body.content.Invalidate()
+	for _, skill := range body.skills {
+		skill.content.Invalidate()
+	}
 }
 
 func (body *skillMessageBody) setExpanded(expanded bool) {
