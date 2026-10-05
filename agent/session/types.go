@@ -139,8 +139,10 @@ func (entry *FileEntry) Raw() ([]byte, error) {
 }
 
 func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
-	fileEntry := &FileEntry{object: object, raw: cloneRaw(raw)}
+	// An object marshals itself; raw is only kept for other values.
+	fileEntry := &FileEntry{object: object}
 	if object == nil {
+		fileEntry.raw = cloneRaw(raw)
 		return fileEntry
 	}
 	typeRaw, _ := object.get("type")

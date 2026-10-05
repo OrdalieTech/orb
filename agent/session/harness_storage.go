@@ -1,11 +1,13 @@
 package session
 
 import (
+	"bytes"
 	"errors"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/nodepath"
@@ -225,6 +227,13 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 
 func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 	if raw := entry.RawJSON(); len(raw) != 0 {
+		// A record the harness wrote parses from its own copy; anything that
+		// does not yield an entry takes the general path.
+		if utf8.Valid(raw) && bytes.IndexByte(raw, '\n') < 0 {
+			if parsed := parseSessionEntryRaw(raw); parsed != nil && parsed.Entry != nil {
+				return *parsed.Entry
+			}
+		}
 		parsed := ParseSessionEntries(string(raw))
 		if len(parsed) == 1 && parsed[0] != nil && parsed[0].Entry != nil {
 			return *parsed[0].Entry
@@ -246,26 +255,27 @@ func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 	}
 }
 
+// harnessEntryFromSession shares entry's values: the harness stores copies.
 func harnessEntryFromSession(entry SessionEntry) harness.SessionTreeEntry {
 	var targetID *string
 	switch entry.Type {
 	case "leaf":
-		targetID = cloneString(entry.LeafTargetID)
+		targetID = entry.LeafTargetID
 		if targetID == nil && entry.TargetID != "" {
-			targetID = cloneString(&entry.TargetID)
+			targetID = &entry.TargetID
 		}
 	case "label", "context_edit":
-		targetID = cloneString(&entry.TargetID)
+		targetID = &entry.TargetID
 	}
 	return harness.SessionTreeEntry{
-		Type: entry.Type, ID: entry.ID, ParentID: cloneString(entry.ParentID), Timestamp: entry.Timestamp,
-		Message: cloneRaw(entry.Message), ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
-		ModelID: entry.ModelID, ActiveToolNames: slices.Clone(entry.ActiveToolNames),
+		Type: entry.Type, ID: entry.ID, ParentID: entry.ParentID, Timestamp: entry.Timestamp,
+		Message: entry.Message, ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
+		ModelID: entry.ModelID, ActiveToolNames: entry.ActiveToolNames,
 		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
-		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: cloneBool(entry.FromHook), FromID: entry.FromID,
-		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),
+		Details: entry.Details, Usage: entry.Usage, FromHook: entry.FromHook, FromID: entry.FromID,
+		CustomType: entry.CustomType, Data: entry.Data, Content: entry.Content,
 		Display: entry.Display, TargetID: targetID, HasTargetID: entry.Type == "leaf" || entry.Type == "label" || entry.Type == "context_edit",
-		Label: cloneString(entry.Label), Name: entry.Name, Replacement: cloneRaw(entry.Replacement),
+		Label: entry.Label, Name: entry.Name, Replacement: entry.Replacement,
 	}
 }
 

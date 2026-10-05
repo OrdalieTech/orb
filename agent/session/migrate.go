@@ -52,10 +52,11 @@ func parseSessionEntryLine(line string) *FileEntry {
 	if strings.TrimFunc(line, jstrim.IsSpace) == "" {
 		return nil
 	}
-	// ponytail: decodeFileEntry still re-clones members via object.get and
-	// double-decodes typed fields; a single-pass ordered scan is the next
-	// ~2-4x on `--continue` resume but is wire-adjacent, so it waits.
-	raw := json.RawMessage(line)
+	return parseSessionEntryRaw(json.RawMessage(line))
+}
+
+// parseSessionEntryRaw parses one record of valid UTF-8, which it keeps.
+func parseSessionEntryRaw(raw json.RawMessage) *FileEntry {
 	object, err := parseOrderedObject(raw)
 	if err != nil {
 		// parseOrderedObject success implies valid JSON, so the validity scan

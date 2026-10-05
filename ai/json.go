@@ -352,13 +352,27 @@ func (message UserMessage) appendWire(dst []byte) ([]byte, error) {
 }
 func (message AssistantMessage) MarshalJSON() ([]byte, error) { return marshalWire(message) }
 
-// assistantMemberOrders are the orders of the members after "model": pi's,
-// then the ones its error paths write, with errorMessage before timestamp or
-// before responseId.
-var assistantMemberOrders = [...][]string{
-	{"usage", "stopReason", "timestamp", "responseId", "providerThinkingLevel", "responseModel", "diagnostics", "endTurn", "rawStopReason", "errorMessage", "thinkingLevel"},
-	{"usage", "stopReason", "errorMessage", "responseId", "providerThinkingLevel", "responseModel", "diagnostics", "timestamp", "endTurn", "rawStopReason", "thinkingLevel"},
-	{"usage", "stopReason", "timestamp", "endTurn", "rawStopReason", "errorMessage", "responseId", "providerThinkingLevel", "responseModel", "diagnostics", "thinkingLevel"},
+// The members after "model", in the orders assistantMemberOrders lists.
+const (
+	assistantUsage = iota
+	assistantStopReason
+	assistantTimestamp
+	assistantResponseID
+	assistantProviderThinkingLevel
+	assistantResponseModel
+	assistantDiagnostics
+	assistantEndTurn
+	assistantRawStopReason
+	assistantErrorMessage
+	assistantThinkingLevel
+)
+
+// assistantMemberOrders are pi's order, then the ones its error paths write,
+// with errorMessage before timestamp or before responseId.
+var assistantMemberOrders = [...][11]uint8{
+	{assistantUsage, assistantStopReason, assistantTimestamp, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantEndTurn, assistantRawStopReason, assistantErrorMessage, assistantThinkingLevel},
+	{assistantUsage, assistantStopReason, assistantErrorMessage, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantTimestamp, assistantEndTurn, assistantRawStopReason, assistantThinkingLevel},
+	{assistantUsage, assistantStopReason, assistantTimestamp, assistantEndTurn, assistantRawStopReason, assistantErrorMessage, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantThinkingLevel},
 }
 
 func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
@@ -371,24 +385,6 @@ func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
 	if !message.modelOmitted {
 		dst = jsonwire.AppendString(append(dst, `,"model":`...), message.Model)
 	}
-	usage, err := message.Usage.appendWire(nil)
-	if err != nil {
-		return nil, err
-	}
-	var diagnostics []byte
-	if message.Diagnostics != nil {
-		if diagnostics, err = marshalJSON(message.Diagnostics); err != nil {
-			return nil, err
-		}
-	}
-	values := map[string][]byte{
-		"usage": usage, "stopReason": jsonwire.AppendString(nil, string(message.StopReason)),
-		"timestamp": strconv.AppendInt(nil, message.Timestamp, 10), "responseId": appendOptionalString(nil, "", message.ResponseID),
-		"providerThinkingLevel": appendOptionalString(nil, "", message.ProviderThinkingLevel),
-		"responseModel":         appendOptionalString(nil, "", message.ResponseModel), "diagnostics": diagnostics,
-		"endTurn": appendOptionalBool(nil, "", message.EndTurn), "rawStopReason": appendOptionalString(nil, "", message.RawStopReason),
-		"errorMessage": appendOptionalString(nil, "", message.ErrorMessage), "thinkingLevel": appendOptionalString(nil, "", (*string)(message.ThinkingLevel)),
-	}
 	order := assistantMemberOrders[0]
 	if message.ErrorMessage != nil && message.errorBeforeTimestamp {
 		order = assistantMemberOrders[1]
@@ -396,25 +392,79 @@ func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
 		order = assistantMemberOrders[2]
 	}
 	// Moves recorded from a decoded message apply when both members are present.
-	moveBefore := func(name, before string) {
-		from, to := slices.Index(order, name), slices.Index(order, before)
-		if values[name] != nil && values[before] != nil && from > to {
-			order = slices.Insert(slices.Delete(slices.Clone(order), from, from+1), to, name)
+	moveBefore := func(member, before uint8) {
+		from, to := slices.Index(order[:], member), slices.Index(order[:], before)
+		if message.hasMember(member) && message.hasMember(before) && from > to {
+			copy(order[to+1:from+1], order[to:from])
+			order[to] = member
 		}
 	}
 	if message.providerThinkingLevelBeforeUsage {
-		moveBefore("providerThinkingLevel", "usage")
+		moveBefore(assistantProviderThinkingLevel, assistantUsage)
 	}
 	if message.rawStopBeforeDiagnostics {
-		moveBefore("rawStopReason", "diagnostics")
+		moveBefore(assistantRawStopReason, assistantDiagnostics)
 	}
-	for _, name := range order {
-		if value := values[name]; value != nil {
-			dst = append(append(append(append(dst, ',', '"'), name...), '"', ':'), value...)
+	for _, member := range order {
+		switch member {
+		case assistantUsage:
+			if dst, err = message.Usage.appendWire(append(dst, `,"usage":`...)); err != nil {
+				return nil, err
+			}
+		case assistantStopReason:
+			dst = jsonwire.AppendString(append(dst, `,"stopReason":`...), string(message.StopReason))
+		case assistantTimestamp:
+			dst = strconv.AppendInt(append(dst, `,"timestamp":`...), message.Timestamp, 10)
+		case assistantResponseID:
+			dst = appendOptionalString(dst, `,"responseId":`, message.ResponseID)
+		case assistantProviderThinkingLevel:
+			dst = appendOptionalString(dst, `,"providerThinkingLevel":`, message.ProviderThinkingLevel)
+		case assistantResponseModel:
+			dst = appendOptionalString(dst, `,"responseModel":`, message.ResponseModel)
+		case assistantDiagnostics:
+			if message.Diagnostics != nil {
+				diagnostics, err := marshalJSON(message.Diagnostics)
+				if err != nil {
+					return nil, err
+				}
+				dst = append(append(dst, `,"diagnostics":`...), diagnostics...)
+			}
+		case assistantEndTurn:
+			dst = appendOptionalBool(dst, `,"endTurn":`, message.EndTurn)
+		case assistantRawStopReason:
+			dst = appendOptionalString(dst, `,"rawStopReason":`, message.RawStopReason)
+		case assistantErrorMessage:
+			dst = appendOptionalString(dst, `,"errorMessage":`, message.ErrorMessage)
+		case assistantThinkingLevel:
+			dst = appendOptionalString(dst, `,"thinkingLevel":`, (*string)(message.ThinkingLevel))
 		}
 	}
 	return append(dst, '}'), nil
 }
+
+// hasMember reports whether appendWire writes member.
+func (message *AssistantMessage) hasMember(member uint8) bool {
+	switch member {
+	case assistantResponseID:
+		return message.ResponseID != nil
+	case assistantProviderThinkingLevel:
+		return message.ProviderThinkingLevel != nil
+	case assistantResponseModel:
+		return message.ResponseModel != nil
+	case assistantDiagnostics:
+		return message.Diagnostics != nil
+	case assistantEndTurn:
+		return message.EndTurn != nil
+	case assistantRawStopReason:
+		return message.RawStopReason != nil
+	case assistantErrorMessage:
+		return message.ErrorMessage != nil
+	case assistantThinkingLevel:
+		return message.ThinkingLevel != nil
+	}
+	return true
+}
+
 func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Content               AssistantContent              `json:"content"`
@@ -839,13 +889,15 @@ func (content UnknownContentBlock) MarshalJSON() ([]byte, error) {
 func (content ToolCall) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
 
 func (content ToolCall) appendWire(dst []byte) ([]byte, error) {
-	arguments, err := MarshalToolCallArguments(&content)
+	arguments, stringified, err := toolCallArguments(&content)
 	if err != nil {
 		return nil, err
 	}
 	dst = jsonwire.AppendString(append(dst, `{"type":"toolCall","id":`...), content.ID)
 	dst = jsonwire.AppendString(append(dst, `,"name":`...), content.Name)
-	if dst, err = jsonwire.AppendCompact(append(dst, `,"arguments":`...), arguments); err != nil {
+	if stringified {
+		dst = append(append(dst, `,"arguments":`...), arguments...)
+	} else if dst, err = jsonwire.AppendCompact(append(dst, `,"arguments":`...), arguments); err != nil {
 		return nil, err
 	}
 	// The streaming members are set together or not at all.
@@ -1059,6 +1111,18 @@ func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 	if content == nil {
 		return nil, errors.New("ai: nil tool call")
 	}
+	arguments, stringified, err := toolCallArguments(content)
+	if stringified {
+		// The provider-emitted form belongs to the tool call.
+		arguments = bytes.Clone(arguments)
+	}
+	return arguments, err
+}
+
+// toolCallArguments encodes a tool call's arguments; stringified reports
+// output already in JSON.stringify's shape, which compacting leaves as it is.
+// The provider-emitted form is returned without a copy.
+func toolCallArguments(content *ToolCall) (encoded []byte, stringified bool, err error) {
 	arguments := content.Arguments
 	if arguments == nil {
 		arguments = map[string]any{}
@@ -1066,22 +1130,22 @@ func MarshalToolCallArguments(content *ToolCall) ([]byte, error) {
 	if original, ok := content.originalArguments(); ok {
 		if object, ok := original.(map[string]any); ok {
 			if jsonValuesEqual(object, arguments) {
-				return bytes.Clone(content.rawArguments), nil
+				return content.rawArguments, true, nil
 			}
 		} else if len(arguments) == 0 {
-			return bytes.Clone(content.rawArguments), nil
+			return content.rawArguments, true, nil
 		}
 	}
 	for _, partial := range []*string{content.PartialJSON, content.PartialArgs} {
 		if partial == nil {
 			continue
 		}
-		encoded, err := partialjson.StringifyStreamingJSON(*partial)
-		if err == nil {
-			return encoded, nil
+		if encoded, err := partialjson.StringifyStreamingJSON(*partial); err == nil {
+			return encoded, true, nil
 		}
 	}
-	return marshalJSON(stringifyJSONObject(arguments))
+	encoded, err = marshalJSON(stringifyJSONObject(arguments))
+	return encoded, false, err
 }
 
 func (content UserContent) MarshalJSON() ([]byte, error) { return content.appendWire(nil) }
