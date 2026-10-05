@@ -865,8 +865,10 @@ func (agent *Agent) processEvent(ctx context.Context, event AgentEvent) error {
 		agent.state.StreamingMessage = cloneAgentMessage(value.Message)
 	case MessageEndEvent:
 		agent.state.StreamingMessage = nil
+		// The ended message is final, so the transcript shares it with the
+		// loop, as upstream's does; State() hands out copies.
 		if !IsEphemeralAgentEvent(ctx) {
-			agent.state.Messages = append(agent.state.Messages, cloneAgentMessage(value.Message))
+			agent.state.Messages = append(agent.state.Messages, value.Message)
 		}
 	case ToolExecutionStartEvent:
 		pending := copyPendingToolCalls(agent.state.PendingToolCalls)
