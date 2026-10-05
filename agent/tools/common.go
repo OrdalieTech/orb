@@ -18,10 +18,9 @@ import (
 
 var errOperationAborted = upstreamToolError("Operation aborted")
 
-// strictToolSampling matches the built-in tool contract from pi v0.86.
-func strictToolSampling() *ai.ConstrainedSamplingConfig {
-	return &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingPrefer}
-}
+// strictToolSampling matches the built-in tool contract from pi v0.86. Specs
+// share it, as they share their schemas, so it is never modified.
+var strictToolSampling = &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingPrefer}
 
 const (
 	accessWrite = 2

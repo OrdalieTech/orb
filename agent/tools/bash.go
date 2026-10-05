@@ -155,13 +155,15 @@ func (tool *bashTool) sessionEnvironmentInfo() *BashSessionEnvironment {
 	return source()
 }
 
+var bashDescription = fmt.Sprintf("Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last %d lines or %dKB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024)
+
 func (tool *bashTool) Spec() engine.AgentToolSpec {
 	return engine.AgentToolSpec{
 		Name:                "bash",
 		Label:               "bash",
-		Description:         fmt.Sprintf("Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last %d lines or %dKB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024),
+		Description:         bashDescription,
 		Parameters:          bashSchema,
-		ConstrainedSampling: strictToolSampling(),
+		ConstrainedSampling: strictToolSampling,
 	}
 }
 

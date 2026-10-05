@@ -98,11 +98,13 @@ func NewLsTool(cwd string, options *LsToolOptions) engine.AgentTool {
 	return &lsTool{cwd: cwd, operations: operations}
 }
 
+var lsDescription = fmt.Sprintf("List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to %d entries or %dKB (whichever is hit first).", defaultLsLimit, truncate.DefaultMaxBytes/1024)
+
 func (tool *lsTool) Spec() engine.AgentToolSpec {
 	return engine.AgentToolSpec{
 		Name:        "ls",
 		Label:       "ls",
-		Description: fmt.Sprintf("List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to %d entries or %dKB (whichever is hit first).", defaultLsLimit, truncate.DefaultMaxBytes/1024),
+		Description: lsDescription,
 		Parameters:  lsSchema,
 	}
 }
