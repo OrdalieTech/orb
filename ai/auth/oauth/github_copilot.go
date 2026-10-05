@@ -11,7 +11,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai/auth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 
 var (
 	githubCopilotClientID = mustDecodeBase64("SXYxLmI1MDdhMDhjODdlY2ZlOTg=")
-	copilotProxyEndpoint  = regexp.MustCompile(`proxy-ep=([^;]+)`)
+	copilotProxyEndpoint  = lazyregexp.New(`proxy-ep=([^;]+)`)
 )
 
 type GitHubCopilotOptions struct {
@@ -483,7 +483,7 @@ func normalizeGitHubDomain(input string) string {
 }
 
 func GitHubCopilotBaseURL(token, enterpriseDomain string) string {
-	if match := copilotProxyEndpoint.FindStringSubmatch(token); len(match) == 2 {
+	if match := copilotProxyEndpoint().FindStringSubmatch(token); len(match) == 2 {
 		host := match[1]
 		if strings.HasPrefix(host, "proxy.") {
 			host = "api." + strings.TrimPrefix(host, "proxy.")

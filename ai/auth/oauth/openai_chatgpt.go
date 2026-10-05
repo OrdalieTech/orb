@@ -11,12 +11,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 // Sign in with ChatGPT shares a ChatGPT subscription with the OpenAI
@@ -36,7 +36,7 @@ const (
 	openAIChatGPTExpiryMargin = 3 * time.Minute
 )
 
-var uuidPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+var uuidPattern = lazyregexp.New(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // DeviceIDSource is implemented by login interactions that can supply a
 // stable installation ID (a UUID); Sign in with ChatGPT sends it to OpenAI as
@@ -116,7 +116,7 @@ func (flow *OpenAIChatGPT) login(ctx context.Context, interaction auth.AuthInter
 			return nil, err
 		}
 	}
-	if !uuidPattern.MatchString(deviceID) {
+	if !uuidPattern().MatchString(deviceID) {
 		return nil, errors.New("Sign in with ChatGPT requires a device ID (UUID) for this installation") //nolint:staticcheck // Upstream capitalization is observable.
 	}
 	verifier, challenge, err := GeneratePKCE(flow.options.Random)

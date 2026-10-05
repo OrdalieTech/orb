@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 const googleVertexCredentialMarker = "gcp-vertex-credentials"
 
-var googleVertexAPIVersionPattern = regexp.MustCompile(`^v\d+(?:beta\d*)?$`)
+var googleVertexAPIVersionPattern = lazyregexp.New(`^v\d+(?:beta\d*)?$`)
 
 type GoogleVertexOptions struct {
 	ai.StreamOptions
@@ -244,7 +244,7 @@ func googleVertexBaseHasAPIVersion(baseURL string) bool {
 		path = parsed.Path
 	}
 	for _, part := range strings.Split(path, "/") {
-		if googleVertexAPIVersionPattern.MatchString(part) {
+		if googleVertexAPIVersionPattern().MatchString(part) {
 			return true
 		}
 	}

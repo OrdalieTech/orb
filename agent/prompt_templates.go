@@ -3,12 +3,12 @@ package agent
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 // PromptTemplate is a file-backed slash command expanded before a prompt is sent.
@@ -184,7 +184,7 @@ func ParseCommandArgs(argsString string) []string {
 	return args
 }
 
-var promptArgumentPattern = regexp.MustCompile(`\$\{([0-9]+|ARGUMENTS|@):-([^}]*)\}|\$\{@:([0-9]+)(:([0-9]+))?\}|\$(ARGUMENTS|@|[0-9]+)`)
+var promptArgumentPattern = lazyregexp.New(`\$\{([0-9]+|ARGUMENTS|@):-([^}]*)\}|\$\{@:([0-9]+)(:([0-9]+))?\}|\$(ARGUMENTS|@|[0-9]+)`)
 
 func captureString(source string, indexes []int, group int) (string, bool) {
 	startIndex := group * 2
@@ -205,7 +205,7 @@ func parseArgumentIndex(value string) int {
 // SubstituteArgs replaces all placeholders in one pass, so inserted values are never re-expanded.
 func SubstituteArgs(content string, args []string) string {
 	allArgs := strings.Join(args, " ")
-	matches := promptArgumentPattern.FindAllStringSubmatchIndex(content, -1)
+	matches := promptArgumentPattern().FindAllStringSubmatchIndex(content, -1)
 	if len(matches) == 0 {
 		return content
 	}

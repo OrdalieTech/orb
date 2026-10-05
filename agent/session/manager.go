@@ -10,7 +10,6 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 type Clock func() time.Time
@@ -161,10 +161,10 @@ type SessionManager struct {
 	}
 }
 
-var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+var sessionIDPattern = lazyregexp.New(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 
 func AssertValidSessionID(id string) error {
-	if !sessionIDPattern.MatchString(id) {
+	if !sessionIDPattern().MatchString(id) {
 		return errors.New("Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character") //nolint:staticcheck // Upstream error capitalization is observable.
 	}
 	return nil

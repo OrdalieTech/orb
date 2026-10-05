@@ -9,11 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 	googleVertexExternalAccountExecutableMaximumTimeout = 120 * time.Second
 )
 
-var googleVertexExternalAccountCommandPartPattern = regexp.MustCompile(`(?:[^\s"]+|"[^"]*")+`)
+var googleVertexExternalAccountCommandPartPattern = lazyregexp.New(`(?:[^\s"]+|"[^"]*")+`)
 
 type googleVertexExternalAccountExecutableResponse struct {
 	Version        int             `json:"version"`
@@ -191,7 +192,7 @@ func googleVertexExternalAccountExecutableExpired(response googleVertexExternalA
 }
 
 func googleVertexExternalAccountParseCommand(command string) ([]string, error) {
-	components := googleVertexExternalAccountCommandPartPattern.FindAllString(command, -1)
+	components := googleVertexExternalAccountCommandPartPattern().FindAllString(command, -1)
 	if len(components) == 0 {
 		return nil, fmt.Errorf("provided command %q could not be parsed", command)
 	}

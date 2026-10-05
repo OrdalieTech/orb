@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 	googleVertexExternalAccountAuthVersion        = "10.6.2"
 )
 
-var googleVertexExternalAccountWorkforceAudiencePattern = regexp.MustCompile(`//iam\.googleapis\.com/locations/[^/]+/workforcePools/[^/]+/providers/.+`)
+var googleVertexExternalAccountWorkforceAudiencePattern = lazyregexp.New(`//iam\.googleapis\.com/locations/[^/]+/workforcePools/[^/]+/providers/.+`)
 
 type googleVertexExternalAccountConfig struct {
 	Type                           string                                      `json:"type"`
@@ -106,7 +106,7 @@ func (adc *googleVertexADC) externalAccountToken(ctx context.Context, raw json.R
 }
 
 func googleVertexExternalAccountWorkforceAudience(audience string) bool {
-	return googleVertexExternalAccountWorkforceAudiencePattern.MatchString(audience)
+	return googleVertexExternalAccountWorkforceAudiencePattern().MatchString(audience)
 }
 
 func (adc *googleVertexADC) externalAccountSubjectToken(ctx context.Context, config *googleVertexExternalAccountConfig) (string, string, error) {

@@ -3,8 +3,10 @@ package ai
 import (
 	"context"
 	"regexp"
-	"sync"
+	"strings"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 // RetryPolicy applies bounded exponential backoff to assistant-producing calls.
@@ -30,14 +32,14 @@ type RetryCallbacks struct {
 // terminal because upstream retries message-level provider failures, not rejected calls.
 type AssistantCall func() (*AssistantMessage, error)
 
-var nonRetryableProviderLimitPatterns = compilePatterns([]string{
+var nonRetryableProviderLimitPatterns = anyOf([]string{
 	`GoUsageLimitError`, `FreeUsageLimitError`, `Monthly usage limit reached`, `available balance`,
 	`insufficient_quota`, `out of budget`, `quota exceeded`, `billing`,
 	// Sign in with ChatGPT's shared usage limit resets after hours, not seconds.
 	`subscription_sharing_usage_limit_exceeded`,
 })
 
-var retryableProviderPatterns = compilePatterns([]string{
+var retryableProviderPatterns = anyOf([]string{
 	`overloaded`, `currently experiencing high demand`, `rate.?limit`, `too many requests`, `429`, `500`, `502`, `503`, `504`, `520`, `524`,
 	`service.?unavailable`, `server.?error`, `internal.?error`, `provider.?returned.?error`,
 	`exceeded request buffer limit while retrying upstream`,
@@ -58,7 +60,7 @@ var retryableProviderPatterns = compilePatterns([]string{
 	`subscription_sharing_usage_unavailable`, `subscription_sharing_user_unavailable`,
 })
 
-var overflowPatterns = compilePatterns([]string{
+var overflowPatterns = anyOf([]string{
 	`prompt (is )?too long`, `prompt exceeds max length`, `request_too_large`, `input is too long for requested model`,
 	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length( of [0-9,]+ tokens?|[[:space:]]*\([0-9,]+\))`,
 	`input token count.*exceeds the maximum`, `maximum prompt length is [0-9]+`,
@@ -73,11 +75,9 @@ var overflowPatterns = compilePatterns([]string{
 	`context[_ ]length[_ ]exceeded`, `too many tokens`, `token limit exceeded`,
 })
 
-var cerebrasBodylessOverflowPattern = sync.OnceValue(func() *regexp.Regexp {
-	return regexp.MustCompile(`(?i)^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
-})
+var cerebrasBodylessOverflowPattern = lazyregexp.New(`(?i)^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
 
-var nonOverflowPatterns = compilePatterns([]string{
+var nonOverflowPatterns = anyOf([]string{
 	`^(Throttling error|Service unavailable):`, `rate limit`, `too many requests`,
 })
 
@@ -88,7 +88,7 @@ func IsRetryableAssistantError(message *AssistantMessage) bool {
 		return false
 	}
 	text := *message.ErrorMessage
-	return !matchesAny(nonRetryableProviderLimitPatterns(), text) && matchesAny(retryableProviderPatterns(), text)
+	return !nonRetryableProviderLimitPatterns().MatchString(text) && retryableProviderPatterns().MatchString(text)
 }
 
 // RetryAssistantCall runs produce once and retries transient assistant errors
@@ -214,8 +214,8 @@ func IsContextOverflow(message *AssistantMessage, contextWindow float64) bool {
 	}
 	if message.StopReason == StopReasonError && message.ErrorMessage != nil {
 		text := *message.ErrorMessage
-		if !matchesAny(nonOverflowPatterns(), text) {
-			if matchesAny(overflowPatterns(), text) {
+		if !nonOverflowPatterns().MatchString(text) {
+			if overflowPatterns().MatchString(text) {
 				return true
 			}
 			if message.Provider == "cerebras" && cerebrasBodylessOverflowPattern().MatchString(text) {
@@ -230,23 +230,7 @@ func IsContextOverflow(message *AssistantMessage, contextWindow float64) bool {
 	return contextWindow > 0 && message.StopReason == StopReasonLength && message.Usage.Output == 0 && float64(inputTokens) >= contextWindow*0.99
 }
 
-// compilePatterns compiles patterns on first use: package init runs on every
-// Worker activation, and only failed messages are matched.
-func compilePatterns(patterns []string) func() []*regexp.Regexp {
-	return sync.OnceValue(func() []*regexp.Regexp {
-		compiled := make([]*regexp.Regexp, len(patterns))
-		for index, pattern := range patterns {
-			compiled[index] = regexp.MustCompile(`(?i)` + pattern)
-		}
-		return compiled
-	})
-}
-
-func matchesAny(patterns []*regexp.Regexp, value string) bool {
-	for _, pattern := range patterns {
-		if pattern.MatchString(value) {
-			return true
-		}
-	}
-	return false
+// anyOf matches text that any of patterns matches, ignoring case.
+func anyOf(patterns []string) func() *regexp.Regexp {
+	return lazyregexp.New(`(?i)(?:` + strings.Join(patterns, `)|(?:`) + `)`)
 }

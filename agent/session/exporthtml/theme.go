@@ -5,12 +5,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
@@ -153,7 +153,7 @@ func exportThemeFrom(selected *themefile.Theme) exportTheme {
 	return backgrounds
 }
 
-var rgbColorPattern = regexp.MustCompile(`^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$`)
+var rgbColorPattern = lazyregexp.New(`^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$`)
 
 func deriveExportColors(color string) exportTheme {
 	r, g, b, ok := parseCSSColor(color)
@@ -179,7 +179,7 @@ func parseCSSColor(color string) (int, int, int, bool) {
 			return int(value >> 16), int(value>>8) & 255, int(value) & 255, true
 		}
 	}
-	match := rgbColorPattern.FindStringSubmatch(color)
+	match := rgbColorPattern().FindStringSubmatch(color)
 	if len(match) == 4 {
 		r, errR := strconv.Atoi(match[1])
 		g, errG := strconv.Atoi(match[2])

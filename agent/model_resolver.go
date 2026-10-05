@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"maps"
 	"path"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 	"github.com/OrdalieTech/orb/internal/localecompare"
 )
 
 const maxGlobBraceExpansions = 4096
 
-var datedModelSuffix = regexp.MustCompile(`-\d{8}$`)
+var datedModelSuffix = lazyregexp.New(`-\d{8}$`)
 
 type ParsedModel struct {
 	Model         *ai.Model
@@ -83,7 +83,7 @@ func tryMatchModel(pattern string, available []ai.Model) *ai.Model {
 	aliases := make([]ai.Model, 0, len(matches))
 	dated := make([]ai.Model, 0, len(matches))
 	for _, model := range matches {
-		if strings.HasSuffix(model.ID, "-latest") || !datedModelSuffix.MatchString(model.ID) {
+		if strings.HasSuffix(model.ID, "-latest") || !datedModelSuffix().MatchString(model.ID) {
 			aliases = append(aliases, model)
 		} else {
 			dated = append(dated, model)
