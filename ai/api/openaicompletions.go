@@ -782,7 +782,11 @@ func buildOpenAICompletionsPayload(
 	// Hooks and cache anchors edit message objects; otherwise each message
 	// goes out as its remembered encoding.
 	wire := options.OnPayload == nil && cacheControl == nil && len(grammarToolInputProperties) == 0
-	messages, err := convertOpenAICompletionsMessages(model, requestContext, compat, grammarToolInputProperties, wire)
+	var session string
+	if options.SessionID != nil {
+		session = *options.SessionID
+	}
+	messages, err := convertOpenAICompletionsMessages(model, requestContext, compat, grammarToolInputProperties, wire, session)
 	if err != nil {
 		return nil, err
 	}
@@ -929,6 +933,7 @@ func convertOpenAICompletionsMessages(
 	compat resolvedOpenAICompletionsCompat,
 	grammarToolInputProperties map[string]string,
 	wire bool,
+	session string,
 ) ([]any, error) {
 	transformed := transformMessages(requestContext.Messages, model, normalizeOpenAICompletionsToolCallID)
 	messages := make([]any, 0, len(transformed)+1)
@@ -951,7 +956,7 @@ func convertOpenAICompletionsMessages(
 	var previous, current completionsWireMessages
 	if wire {
 		completionsWireLast.Lock()
-		previous = completionsWireLast.completionsWireMessages
+		previous = completionsWireLast.sessions[session]
 		completionsWireLast.Unlock()
 		current = completionsWireMessages{settings, transformed, make([]any, len(transformed))}
 	}
@@ -1059,7 +1064,13 @@ func convertOpenAICompletionsMessages(
 	}
 	if wire {
 		completionsWireLast.Lock()
-		completionsWireLast.completionsWireMessages = current
+		if _, known := completionsWireLast.sessions[session]; !known && len(completionsWireLast.sessions) >= 64 {
+			for evicted := range completionsWireLast.sessions {
+				delete(completionsWireLast.sessions, evicted)
+				break
+			}
+		}
+		completionsWireLast.sessions[session] = current
 		completionsWireLast.Unlock()
 	}
 	return messages, nil
@@ -1082,14 +1093,15 @@ type completionsWireMessages struct {
 	encoded  []any
 }
 
-// completionsWireLast is the last request's messages. A conversation's next
-// request repeats them in order and adds a few; messages are not changed once
-// sent and transformMessages returns those it leaves alone, so a long
-// conversation encodes only what is new.
-var completionsWireLast struct {
+// completionsWireLast is each session's last request. A conversation's next
+// request repeats its messages in order and adds a few; messages are not
+// changed once sent and transformMessages returns those it leaves alone, so a
+// long conversation encodes only what is new. The Worker runs many objects'
+// sessions in one runtime, with their requests interleaved.
+var completionsWireLast = struct {
 	sync.Mutex
-	completionsWireMessages
-}
+	sessions map[string]completionsWireMessages
+}{sessions: map[string]completionsWireMessages{}}
 
 func openAICompletionsImagePart(image *ai.ImageContent) map[string]any {
 	return map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + image.MimeType + ";base64," + image.Data}}
