@@ -93,13 +93,15 @@ func NewReadTool(cwd string, options *ReadToolOptions) engine.AgentTool {
 	return &readTool{cwd: cwd, operations: operations, autoResizeImages: autoResizeImages}
 }
 
+var readDescription = fmt.Sprintf("Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to %d lines or %dKB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024)
+
 func (tool *readTool) Spec() engine.AgentToolSpec {
 	return engine.AgentToolSpec{
 		Name:                "read",
 		Label:               "read",
-		Description:         fmt.Sprintf("Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to %d lines or %dKB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", truncate.DefaultMaxLines, truncate.DefaultMaxBytes/1024),
+		Description:         readDescription,
 		Parameters:          readSchema,
-		ConstrainedSampling: strictToolSampling(),
+		ConstrainedSampling: strictToolSampling,
 	}
 }
 

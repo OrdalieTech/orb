@@ -73,11 +73,13 @@ func NewGrepTool(cwd string, options *GrepToolOptions) engine.AgentTool {
 	return &grepTool{cwd: cwd, operations: operations}
 }
 
+var grepDescription = fmt.Sprintf("Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to %d matches or %dKB (whichever is hit first). Long lines are truncated to %d chars.", defaultGrepLimit, truncate.DefaultMaxBytes/1024, truncate.GrepMaxLineLength)
+
 func (tool *grepTool) Spec() engine.AgentToolSpec {
 	return engine.AgentToolSpec{
 		Name:        "grep",
 		Label:       "grep",
-		Description: fmt.Sprintf("Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to %d matches or %dKB (whichever is hit first). Long lines are truncated to %d chars.", defaultGrepLimit, truncate.DefaultMaxBytes/1024, truncate.GrepMaxLineLength),
+		Description: grepDescription,
 		Parameters:  grepSchema,
 	}
 }

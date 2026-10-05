@@ -54,11 +54,13 @@ func NewFindTool(cwd string, options *FindToolOptions) engine.AgentTool {
 	return &findTool{cwd: cwd, operations: operations}
 }
 
+var findDescription = fmt.Sprintf("Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to %d results or %dKB (whichever is hit first).", defaultFindLimit, truncate.DefaultMaxBytes/1024)
+
 func (tool *findTool) Spec() engine.AgentToolSpec {
 	return engine.AgentToolSpec{
 		Name:        "find",
 		Label:       "find",
-		Description: fmt.Sprintf("Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to %d results or %dKB (whichever is hit first).", defaultFindLimit, truncate.DefaultMaxBytes/1024),
+		Description: findDescription,
 		Parameters:  findSchema,
 	}
 }
