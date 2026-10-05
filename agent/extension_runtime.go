@@ -131,7 +131,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	}
 	contextActions := extensions.ContextActions{
 		RequestInput: runtime.RequestInput,
-		GetModel:     func() *ai.Model { return runtime.agent.StateWithoutMessages().Model },
+		GetModel:     func() *ai.Model { return runtime.agent.Model() },
 		GetScopedModels: func() []extensions.ScopedModel {
 			scoped := runtime.ScopedModels()
 			result := make([]extensions.ScopedModel, len(scoped))
@@ -1178,7 +1178,7 @@ func (runtime *SessionRuntime) afterExtensionToolCall(ctx context.Context, call 
 	if patch != nil && patch.Content != nil {
 		content = patch.Content
 	}
-	normalized, changed := tools.NormalizeToolResultImages(content, runtime.settings.GetImageAutoResize(), tools.ModelResizeOptions(runtime.agent.StateWithoutMessages().Model))
+	normalized, changed := tools.NormalizeToolResultImages(content, runtime.settings.GetImageAutoResize(), tools.ModelResizeOptions(runtime.agent.Model()))
 	if !changed {
 		return patch, nil
 	}
