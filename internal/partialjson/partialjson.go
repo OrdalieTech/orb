@@ -415,6 +415,9 @@ func (p *parser) malformed(message string) error {
 }
 
 func decodeJSON(input string) (any, error) {
+	if value, ok := jsonwire.Decode([]byte(input)); ok {
+		return value, nil
+	}
 	decoder := json.NewDecoder(bytes.NewBufferString(input))
 	decoder.UseNumber()
 	var value any

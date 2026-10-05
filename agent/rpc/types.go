@@ -33,13 +33,16 @@ func (response Response) MarshalJSON() ([]byte, error) {
 	case !response.Success:
 		output = jsonwire.AppendString(append(output, `,"success":false,"error":`...), response.Error)
 	case response.HasData:
-		data, err := ai.Marshal(struct {
-			Data any `json:"data"`
-		}{response.Data})
+		output = append(output, `,"success":true,"data":`...)
+		if data, ok := response.Data.(dispositionData); ok {
+			output = append(jsonwire.AppendString(append(output, `{"disposition":`...), string(data.Disposition)), '}')
+			break
+		}
+		data, err := ai.Marshal(response.Data)
 		if err != nil {
 			return nil, err
 		}
-		output = append(append(output, `,"success":true,`...), data[1:len(data)-1]...)
+		output = append(output, data...)
 	default:
 		output = append(output, `,"success":true`...)
 	}

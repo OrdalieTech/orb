@@ -75,6 +75,9 @@ func parseHarnessObject(data []byte) (map[string]json.RawMessage, error) {
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return nil, fmt.Errorf("harness: JSON record is not an object")
 	}
+	if object, ok := jsonwire.Members(trimmed); ok {
+		return object, nil
+	}
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &object); err != nil || object == nil {
 		if err == nil {
@@ -244,7 +247,7 @@ func MarshalSessionTreeEntry(entry SessionTreeEntry) ([]byte, error) {
 
 func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 	if len(entry.raw) != 0 {
-		if !json.Valid(entry.raw) {
+		if !jsonwire.Valid(entry.raw) {
 			return nil, fmt.Errorf("harness: invalid raw session entry")
 		}
 		return ai.NormalizeJSONStringifyJSON(entry.raw)
@@ -421,7 +424,7 @@ func marshalHarnessMembers(members []harnessJSONMember) ([]byte, error) {
 	}
 	output := append(make([]byte, 0, size), '{')
 	for index, member := range members {
-		if member.raw && !json.Valid(member.value) {
+		if member.raw && !jsonwire.Valid(member.value) {
 			return nil, fmt.Errorf("harness: invalid raw JSON member %s", member.name)
 		}
 		if index > 0 {

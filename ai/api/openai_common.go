@@ -687,7 +687,7 @@ func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
 			return nil
 		}
 		var raw json.RawMessage
-		if json.Valid(data) {
+		if jsonwire.Valid(data) {
 			raw = bytes.Clone(bytes.TrimSpace(data))
 		} else if err := json.Unmarshal(data, &raw); err != nil {
 			return err

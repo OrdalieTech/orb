@@ -15,8 +15,15 @@ import (
 // Marshal follows JSON.stringify's string escaping rather than encoding/json's
 // HTML-safe defaults. JavaScript leaves <, >, &, U+2028, and U+2029 literal.
 func Marshal(value any) ([]byte, error) {
-	if text, ok := value.(string); ok && utf8.ValidString(text) {
-		return AppendString(nil, text), nil
+	switch value := value.(type) {
+	case string:
+		if utf8.ValidString(value) {
+			return AppendString(nil, value), nil
+		}
+	case float64:
+		if !math.IsNaN(value) && !math.IsInf(value, 0) {
+			return AppendFloat(nil, value), nil
+		}
 	}
 	state := encoders.Get().(*pooledEncoder)
 	state.buffer.Reset()
@@ -128,11 +135,15 @@ func AppendCompact(dst, raw []byte) ([]byte, error) {
 		return append(dst, "null"...), nil
 	}
 	start := len(dst)
-	buffer := bytes.NewBuffer(dst)
-	if err := json.Compact(buffer, raw); err != nil {
-		return nil, err
+	if Stringified(raw) {
+		dst = append(dst, raw...)
+	} else {
+		buffer := bytes.NewBuffer(dst)
+		if err := json.Compact(buffer, raw); err != nil {
+			return nil, err
+		}
+		dst = buffer.Bytes()
 	}
-	dst = buffer.Bytes()
 	// Both fixes shorten the value when they change it.
 	if value := normalizeNegativeZeros(restoreLineSeparators(dst[start:])); len(value) < len(dst)-start {
 		dst = append(dst[:start], value...)

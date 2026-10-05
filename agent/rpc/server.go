@@ -234,7 +234,13 @@ func (mode *server) dispose() {
 }
 
 func (mode *server) writeObject(value any) error {
-	encoded, err := ai.Marshal(value)
+	var encoded []byte
+	var err error
+	if response, ok := value.(Response); ok {
+		encoded, err = response.MarshalJSON()
+	} else {
+		encoded, err = ai.Marshal(value)
+	}
 	if err != nil {
 		return err
 	}
@@ -243,10 +249,13 @@ func (mode *server) writeObject(value any) error {
 }
 
 func (mode *server) handleLine(line []byte, commands *sync.WaitGroup) {
-	var raw rawRPCObject
-	if err := json.Unmarshal(line, &raw); err != nil {
-		_ = mode.writeObject(rpcError("", false, "parse", "Failed to parse command: "+javascriptParseError(line, err)))
-		return
+	raw, command, decoded := decodeLine(line)
+	if !decoded {
+		raw = nil
+		if err := json.Unmarshal(line, &raw); err != nil {
+			_ = mode.writeObject(rpcError("", false, "parse", "Failed to parse command: "+javascriptParseError(line, err)))
+			return
+		}
 	}
 	typeRaw, hasType := raw["type"]
 	typeName, err := rawString(typeRaw)
@@ -269,12 +278,14 @@ func (mode *server) handleLine(line []byte, commands *sync.WaitGroup) {
 		}
 		return
 	}
-	var command Command
-	if err := json.Unmarshal(line, &command); err != nil {
-		idRaw, hasID := raw["id"]
-		id, _ := rawString(idRaw)
-		_ = mode.writeObject(rpcError(id, hasID, typeName, err.Error()))
-		return
+	if !decoded {
+		command = Command{}
+		if err := json.Unmarshal(line, &command); err != nil {
+			idRaw, hasID := raw["id"]
+			id, _ := rawString(idRaw)
+			_ = mode.writeObject(rpcError(id, hasID, typeName, err.Error()))
+			return
+		}
 	}
 	_, command.HasID = raw["id"]
 	session := mode.host.Session()
@@ -831,11 +842,44 @@ func rawString(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 {
 		return "", nil
 	}
+	if value, ok := jsonwire.Decode(raw); ok {
+		if text, isString := value.(string); isString || value == nil {
+			return text, nil
+		}
+	}
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return "", err
 	}
 	return value, nil
+}
+
+// decodeLine reads a command line's members and command as json.Unmarshal
+// does, for the lines that carry no more than an id, a type, a message and a
+// streaming behavior, as strings or null: every turn's prompt. Other lines
+// are left to encoding/json.
+func decodeLine(line []byte) (rawRPCObject, Command, bool) {
+	var command Command
+	raw, ok := jsonwire.Members(line)
+	for name, value := range raw {
+		var target *string
+		switch name {
+		case "id":
+			target = &command.ID
+		case "type":
+			target = &command.Type
+		case "message":
+			target = &command.Message
+		case "streamingBehavior":
+			target = &command.StreamingBehavior
+		}
+		decoded, valid := jsonwire.Decode(value)
+		text, isString := decoded.(string)
+		if ok = ok && target != nil && valid && (isString || decoded == nil); ok && isString {
+			*target = text
+		}
+	}
+	return raw, command, ok
 }
 
 // ReadFrames splits reader into LF-terminated frames the way upstream's
