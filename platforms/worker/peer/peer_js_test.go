@@ -13,6 +13,13 @@ import (
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
 
+// The shim's await helper (worker.Bind), which the storage waits through.
+func init() {
+	worker.Bind(js.Global().Get("Function").New(`return { await(promise, id, settle) {
+		promise.then(value => settle(id, value), error => settle(id, undefined, error instanceof Error ? String(error.message) : String(error)));
+	} };`).Invoke())
+}
+
 // fakeDurable returns a Map-backed async stand-in for ctx.storage and two
 // cross-wired fake Worker WebSockets delivering binary messages.
 func fakeDurable() (storage, left, right js.Value) {

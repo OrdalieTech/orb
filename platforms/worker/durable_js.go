@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sync"
 	"syscall/js"
 )
 
@@ -18,7 +19,6 @@ var (
 	jsArray      = js.Global().Get("Array")
 	jsObject     = js.Global().Get("Object")
 	jsUint8Array = js.Global().Get("Uint8Array")
-	jsError      = js.Global().Get("Error")
 )
 
 // NewDurableKV binds the KV port to a Durable Object's ctx.storage, or to any
@@ -28,34 +28,58 @@ func NewDurableKV(storage js.Value) KV { return durableKV{storage} }
 
 type durableKV struct{ storage js.Value }
 
-// await blocks the calling goroutine until promise settles; the Go runtime
-// yields to the JavaScript event loop meanwhile. It never abandons a promise,
-// so its callbacks are always live when they run.
-func await(promise js.Value) (js.Value, error) {
-	type outcome struct {
-		value js.Value
-		err   error
+// helpers are the shim's (deploy/worker.mjs). Each settles a wait on
+// JavaScript by calling settle once with the wait's id and its results.
+var helpers struct{ await, fetch, read, release js.Value }
+
+// Bind hands the package the shim's helpers, through which the Durable Object
+// storage and FetchTransport wait on JavaScript.
+func Bind(shim js.Value) {
+	helpers.await, helpers.fetch, helpers.read, helpers.release = shim.Get("await"), shim.Get("fetch"), shim.Get("read"), shim.Get("release")
+}
+
+// settlements are the waits in flight. One callback settles them all: a pair
+// of js.Func per wait cost a wrapper, a finalizer and two releases each.
+var settlements struct {
+	sync.Mutex
+	next    int
+	waiting map[int]chan []js.Value
+}
+
+var settle = js.FuncOf(func(_ js.Value, args []js.Value) any {
+	id := args[0].Int()
+	settlements.Lock()
+	done := settlements.waiting[id]
+	delete(settlements.waiting, id)
+	settlements.Unlock()
+	done <- args[1:]
+	return nil
+})
+
+// wait registers a wait: its id, and where its results arrive.
+func wait() (int, <-chan []js.Value) {
+	done := make(chan []js.Value, 1)
+	settlements.Lock()
+	defer settlements.Unlock()
+	if settlements.waiting == nil {
+		settlements.waiting = map[int]chan []js.Value{}
 	}
-	settled := make(chan outcome, 1)
-	var resolve, reject js.Func
-	resolve = js.FuncOf(func(_ js.Value, args []js.Value) any {
-		settled <- outcome{value: argument(args)}
-		return nil
-	})
-	reject = js.FuncOf(func(_ js.Value, args []js.Value) any {
-		reason := argument(args)
-		message := reason.Call("toString").String()
-		if reason.InstanceOf(jsError) {
-			message = reason.Get("message").String()
-		}
-		settled <- outcome{err: errors.New(message)}
-		return nil
-	})
-	defer resolve.Release()
-	defer reject.Release()
-	promise.Call("then", resolve, reject)
-	result := <-settled
-	return result.value, result.err
+	settlements.next++
+	settlements.waiting[settlements.next] = done
+	return settlements.next, done
+}
+
+// await blocks the calling goroutine until promise settles; the Go runtime
+// yields to the JavaScript event loop meanwhile. A rejection settles with an
+// undefined value and its reason's message.
+func await(promise js.Value) (js.Value, error) {
+	id, done := wait()
+	helpers.await.Invoke(promise, id, settle)
+	results := <-done
+	if len(results) > 1 {
+		return js.Value{}, errors.New(results[1].String())
+	}
+	return argument(results), nil
 }
 
 func argument(args []js.Value) js.Value {
