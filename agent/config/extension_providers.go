@@ -138,21 +138,16 @@ func composeRegisteredProviders(
 	configOrder, nativeOrder []string,
 	credentials map[string]*aiauth.Credential,
 ) ([]ai.Model, []string) {
-	if len(configs) != 0 || len(native) != 0 || len(base) == 0 {
-		return composeProviders(base, modelsConfig, configs, native, configOrder, nativeOrder, credentials)
-	}
-	key, err := json.Marshal(struct {
-		Order     []string
-		Providers map[string]ModelProviderConfig
-	}{modelsConfig.providerIDs(), modelsConfig.Providers})
-	if err != nil {
+	// A parsed config is keyed by its document; any other has no providers.
+	key := modelsConfig.source
+	if len(configs) != 0 || len(native) != 0 || len(base) == 0 || key == "" && len(modelsConfig.Providers) != 0 {
 		return composeProviders(base, modelsConfig, configs, native, configOrder, nativeOrder, credentials)
 	}
 	composedModels.Lock()
 	defer composedModels.Unlock()
-	if len(composedModels.base) != len(base) || &composedModels.base[0] != &base[0] || composedModels.key != string(key) {
+	if len(composedModels.base) != len(base) || &composedModels.base[0] != &base[0] || composedModels.key != key {
 		all, errs := composeProviders(base, modelsConfig, configs, native, configOrder, nativeOrder, credentials)
-		composedModels.base, composedModels.key, composedModels.all, composedModels.errors = base, string(key), all, errs
+		composedModels.base, composedModels.key, composedModels.all, composedModels.errors = base, key, all, errs
 	}
 	return composedModels.all, slices.Clone(composedModels.errors)
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/OrdalieTech/orb/ai"
 )
@@ -20,6 +21,8 @@ type ModelConfig struct {
 	Providers     map[string]ModelProviderConfig `json:"providers"`
 	loadError     string
 	providerOrder []string
+	// source is the document the config was parsed from.
+	source string
 }
 
 type ModelProviderConfig struct {
@@ -93,6 +96,10 @@ func LoadModelConfig(path string) (*ModelConfig, error) {
 	return ParseModelConfig(data, normalized)
 }
 
+// lastModelConfig is the last valid document parsed: every object of a Worker
+// isolate parses the same one, and nothing changes a parsed config.
+var lastModelConfig atomic.Pointer[ModelConfig]
+
 // ParseModelConfig uses the same codec as file-backed models.json.
 func ParseModelConfig(data []byte, source string) (*ModelConfig, error) {
 	normalized := source
@@ -100,6 +107,9 @@ func ParseModelConfig(data []byte, source string) (*ModelConfig, error) {
 		return &ModelConfig{Providers: map[string]ModelProviderConfig{}}, nil
 	}
 	data = stripJSONComments(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
+	if last := lastModelConfig.Load(); last != nil && last.source == string(data) {
+		return last, nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var raw json.RawMessage
 	if err := decoder.Decode(&raw); err != nil {
@@ -120,10 +130,11 @@ func ParseModelConfig(data []byte, source string) (*ModelConfig, error) {
 	if err := json.Unmarshal(raw, &config); err != nil {
 		return failedModelConfig(fmt.Sprintf("Invalid models.json schema:\n  - %v\n\nFile: %s", err, normalized)), nil
 	}
-	config.providerOrder = providerOrder
+	config.providerOrder, config.source = providerOrder, string(data)
 	if err := validateModelConfig(&config); err != nil {
 		return failedModelConfig(fmt.Sprintf("Invalid models.json schema:\n  - %v\n\nFile: %s", err, normalized)), nil
 	}
+	lastModelConfig.Store(&config)
 	return &config, nil
 }
 
