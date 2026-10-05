@@ -9,12 +9,15 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf16"
 	"unicode/utf8"
+	"weak"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
@@ -308,6 +311,8 @@ func appendOpenAICompletionsValue(dst []byte, value any) ([]byte, error) {
 	switch typed := value.(type) {
 	case string:
 		return jsonwire.AppendString(dst, typed), nil
+	case completionsWireJSON:
+		return append(dst, typed...), nil
 	case map[string]any:
 		return appendOpenAICompletionsObject(dst, typed, openAICompletionsObjectKeys(typed, false))
 	case openAICompletionsWireObject:
@@ -761,7 +766,11 @@ func buildOpenAICompletionsPayload(
 	if err != nil {
 		return nil, err
 	}
-	messages, err := convertOpenAICompletionsMessages(model, requestContext, compat, grammarToolInputProperties)
+	cacheControl := openAICompletionsCacheControl(compat, retention)
+	// Hooks and cache anchors edit message objects; otherwise each message
+	// goes out as its remembered encoding.
+	wire := options.OnPayload == nil && cacheControl == nil && len(grammarToolInputProperties) == 0
+	messages, err := convertOpenAICompletionsMessages(model, requestContext, compat, grammarToolInputProperties, wire)
 	if err != nil {
 		return nil, err
 	}
@@ -807,7 +816,7 @@ func buildOpenAICompletionsPayload(
 		tools = []any{}
 		payload["tools"] = tools
 	}
-	if cacheControl := openAICompletionsCacheControl(compat, retention); cacheControl != nil {
+	if cacheControl != nil {
 		applyOpenAICompletionsCacheControl(messages, tools, cacheControl)
 	}
 	if options.ToolChoice != nil {
@@ -903,6 +912,7 @@ func convertOpenAICompletionsMessages(
 	requestContext ai.Context,
 	compat resolvedOpenAICompletionsCompat,
 	grammarToolInputProperties map[string]string,
+	wire bool,
 ) ([]any, error) {
 	transformed := transformMessages(requestContext.Messages, model, normalizeOpenAICompletionsToolCallID)
 	messages := make([]any, 0, len(transformed)+1)
@@ -912,6 +922,13 @@ func convertOpenAICompletionsMessages(
 			role = "developer"
 		}
 		messages = append(messages, map[string]any{"role": role, "content": sanitizeText(*requestContext.SystemPrompt)})
+	}
+	settings := completionsMessageSettings{
+		assistantAfterToolResult: compat.requiresAssistantAfterToolResult,
+		thinkingAsText:           compat.requiresThinkingAsText,
+		reasoningContent:         compat.requiresReasoningContentOnAssistantMessages && model.Reasoning,
+		toolResultName:           compat.requiresToolResultName,
+		openCodeGo:               model.Provider == "opencode-go",
 	}
 
 	lastRole := ""
@@ -937,16 +954,22 @@ func convertOpenAICompletionsMessages(
 			if compat.requiresAssistantAfterToolResult && lastRole == "toolResult" {
 				messages = append(messages, map[string]any{"role": "assistant", "content": "I have processed the tool results."})
 			}
-			converted, include := convertOpenAICompletionsUserMessage(message)
+			converted, include, err := completionsMessage(wire, message, settings, func() (map[string]any, bool, error) {
+				converted, include := convertOpenAICompletionsUserMessage(message)
+				return converted, include, nil
+			})
+			if err != nil {
+				return nil, err
+			}
 			if !include {
 				continue
 			}
 			messages = append(messages, converted)
 			lastRole = "user"
 		case *ai.AssistantMessage:
-			converted, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(
-				model, message, compat, grammarToolInputProperties,
-			)
+			converted, include, err := completionsMessage(wire, message, settings, func() (map[string]any, bool, error) {
+				return convertOpenAICompletionsAssistantMessageWithGrammar(settings, message, grammarToolInputProperties)
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -963,9 +986,19 @@ func convertOpenAICompletionsMessages(
 				if !ok {
 					break
 				}
-				converted, images := convertOpenAICompletionsToolResult(model, toolResult, compat)
+				converted, _, err := completionsMessage(wire, toolResult, settings, func() (map[string]any, bool, error) {
+					return convertOpenAICompletionsToolResult(settings, toolResult), true, nil
+				})
+				if err != nil {
+					return nil, err
+				}
 				messages = append(messages, converted)
-				imageParts = append(imageParts, images...)
+				// transformMessages left images only for a model that sees them.
+				for _, block := range toolResult.Content {
+					if image, ok := block.(*ai.ImageContent); ok {
+						imageParts = append(imageParts, openAICompletionsImagePart(image))
+					}
+				}
 				end++
 			}
 			index = end - 1
@@ -985,6 +1018,58 @@ func convertOpenAICompletionsMessages(
 	return messages, nil
 }
 
+// completionsMessageSettings is all that converting one message reads besides
+// the message, so a message encodes the same way under equal settings.
+type completionsMessageSettings struct {
+	assistantAfterToolResult, thinkingAsText, reasoningContent, toolResultName, openCodeGo bool
+}
+
+// completionsWireJSON is a message's encoded wire object.
+type completionsWireJSON []byte
+
+type completionsWireEntry struct {
+	settings completionsMessageSettings
+	encoded  completionsWireJSON // nil: the message is left out
+}
+
+// completionsWireMessages remembers each message's encoding while the message
+// lives. Messages are not changed once sent and transformMessages returns
+// those it leaves alone, so a long conversation encodes only what is new.
+var completionsWireMessages sync.Map
+
+// completionsMessage converts one message: to its encoding, remembered, for
+// the wire, or to an object a hook or cache anchor can edit.
+func completionsMessage[T any](
+	wire bool, message *T, settings completionsMessageSettings, convert func() (map[string]any, bool, error),
+) (any, bool, error) {
+	if !wire {
+		return convert()
+	}
+	key := weak.Make(message)
+	if cached, ok := completionsWireMessages.Load(key); ok && cached.(*completionsWireEntry).settings == settings {
+		encoded := cached.(*completionsWireEntry).encoded
+		return encoded, encoded != nil, nil
+	}
+	converted, include, err := convert()
+	if err != nil {
+		return nil, false, err
+	}
+	var encoded completionsWireJSON
+	if include {
+		if encoded, err = appendOpenAICompletionsValue(nil, converted); err != nil {
+			return nil, false, err
+		}
+	}
+	if _, loaded := completionsWireMessages.Swap(key, &completionsWireEntry{settings, encoded}); !loaded {
+		runtime.AddCleanup(message, func(key weak.Pointer[T]) { completionsWireMessages.Delete(key) }, key)
+	}
+	return encoded, include, nil
+}
+
+func openAICompletionsImagePart(image *ai.ImageContent) map[string]any {
+	return map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + image.MimeType + ";base64," + image.Data}}
+}
+
 func convertOpenAICompletionsUserMessage(message *ai.UserMessage) (map[string]any, bool) {
 	if message.Content.Text != nil {
 		return map[string]any{"role": "user", "content": sanitizeText(*message.Content.Text)}, true
@@ -1001,10 +1086,7 @@ func convertOpenAICompletionsUserMessage(message *ai.UserMessage) (map[string]an
 				content = append(content, map[string]any{"type": "text", "text": sanitizeText(block.Text)})
 			}
 		case *ai.ImageContent:
-			content = append(content, map[string]any{
-				"type":      "image_url",
-				"image_url": map[string]any{"url": "data:" + block.MimeType + ";base64," + block.Data},
-			})
+			content = append(content, openAICompletionsImagePart(block))
 		}
 	}
 	if len(content) == 0 {
@@ -1014,13 +1096,12 @@ func convertOpenAICompletionsUserMessage(message *ai.UserMessage) (map[string]an
 }
 
 func convertOpenAICompletionsAssistantMessageWithGrammar(
-	model *ai.Model,
+	settings completionsMessageSettings,
 	message *ai.AssistantMessage,
-	compat resolvedOpenAICompletionsCompat,
 	grammarToolInputProperties map[string]string,
 ) (map[string]any, bool, error) {
 	contentValue := any(nil)
-	if compat.requiresAssistantAfterToolResult {
+	if settings.assistantAfterToolResult {
 		contentValue = ""
 	}
 	converted := map[string]any{"role": "assistant", "content": contentValue}
@@ -1050,7 +1131,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 	}
 	assistantText := strings.Join(textValues, "")
 	if len(thinkingBlocks) > 0 {
-		if compat.requiresThinkingAsText {
+		if settings.thinkingAsText {
 			thinkingValues := make([]string, 0, len(thinkingBlocks))
 			for _, block := range thinkingBlocks {
 				thinkingValues = append(thinkingValues, sanitizeText(block.Thinking))
@@ -1063,7 +1144,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 				converted["content"] = assistantText
 			}
 			signature := thinkingBlocks[0].ThinkingSignature
-			if signature != nil && model.Provider == "opencode-go" && *signature == "reasoning" {
+			if signature != nil && settings.openCodeGo && *signature == "reasoning" {
 				value := "reasoning_content"
 				signature = &value
 			}
@@ -1125,7 +1206,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 	if signedDetails != nil {
 		converted["reasoning_details"] = signedDetails
 	}
-	if compat.requiresReasoningContentOnAssistantMessages && model.Reasoning {
+	if settings.reasoningContent {
 		if _, exists := converted["reasoning_content"]; !exists {
 			converted["reasoning_content"] = ""
 		}
@@ -1141,26 +1222,15 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 	return converted, hasContent || hasToolCalls, nil
 }
 
-func convertOpenAICompletionsToolResult(
-	model *ai.Model,
-	message *ai.ToolResultMessage,
-	compat resolvedOpenAICompletionsCompat,
-) (map[string]any, []any) {
+func convertOpenAICompletionsToolResult(settings completionsMessageSettings, message *ai.ToolResultMessage) map[string]any {
 	texts := make([]string, 0)
 	hasImages := false
-	images := make([]any, 0)
 	for _, rawBlock := range message.Content {
 		switch block := rawBlock.(type) {
 		case *ai.TextContent:
 			texts = append(texts, block.Text)
 		case *ai.ImageContent:
 			hasImages = true
-			if modelSupportsImage(model) {
-				images = append(images, map[string]any{
-					"type":      "image_url",
-					"image_url": map[string]any{"url": "data:" + block.MimeType + ";base64," + block.Data},
-				})
-			}
 		}
 	}
 	text := strings.Join(texts, "\n")
@@ -1172,10 +1242,10 @@ func convertOpenAICompletionsToolResult(
 		}
 	}
 	converted := map[string]any{"role": "tool", "content": sanitizeText(text), "tool_call_id": message.ToolCallID}
-	if compat.requiresToolResultName && message.ToolName != "" {
+	if settings.toolResultName && message.ToolName != "" {
 		converted["name"] = message.ToolName
 	}
-	return converted, images
+	return converted
 }
 
 func activeOpenAICompletionsTools(tools *[]ai.Tool, deferred map[string]bool) []ai.Tool {

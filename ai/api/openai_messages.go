@@ -13,76 +13,42 @@ const (
 
 type toolCallIDNormalizer func(string, *ai.Model, *ai.AssistantMessage) string
 
+// transformMessages adapts a conversation to model: it downgrades images the
+// model cannot see, keeps another model's turns only as text and tool calls,
+// drops failed turns and answers orphaned tool calls. A message needing no
+// change comes back as it is, so providers recognize it across requests.
 func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCallID toolCallIDNormalizer) ai.MessageList {
 	toolCallIDs := make(map[string]string)
 	transformed := make(ai.MessageList, 0, len(messages))
+	images := modelSupportsImage(model)
 
 	for _, message := range messages {
 		switch value := message.(type) {
 		case *ai.SystemMessage:
 			transformed = append(transformed, value)
 		case *ai.UserMessage:
-			transformed = append(transformed, transformUserMessage(value, model))
-		case *ai.ToolResultMessage:
-			clone := *value
-			clone.Content = transformToolResultContent(value.Content, model)
-			if normalized, ok := toolCallIDs[value.ToolCallID]; ok && normalized != value.ToolCallID {
-				clone.ToolCallID = normalized
-			}
-			transformed = append(transformed, &clone)
-		case *ai.AssistantMessage:
-			clone := *value
-			clone.Content = make(ai.AssistantContent, 0, len(value.Content))
-			isSameModel := value.Provider == model.Provider && value.API == model.API && value.Model == model.ID
-
-			for _, content := range value.Content {
-				switch block := content.(type) {
-				case *ai.ThinkingContent:
-					if block.Redacted != nil && *block.Redacted {
-						if isSameModel {
-							copy := *block
-							clone.Content = append(clone.Content, &copy)
-						}
-						continue
-					}
-					// Upstream keeps same-model thinking blocks on a truthy
-					// signature, so an empty string does not count (OA-m3).
-					if isSameModel && block.ThinkingSignature != nil && *block.ThinkingSignature != "" {
-						copy := *block
-						clone.Content = append(clone.Content, &copy)
-						continue
-					}
-					if strings.TrimSpace(block.Thinking) == "" {
-						continue
-					}
-					if isSameModel {
-						copy := *block
-						clone.Content = append(clone.Content, &copy)
-					} else {
-						clone.Content = append(clone.Content, &ai.TextContent{Text: block.Thinking})
-					}
-				case *ai.TextContent:
-					copy := *block
-					if !isSameModel {
-						copy.TextSignature = nil
-					}
-					clone.Content = append(clone.Content, &copy)
-				case *ai.ToolCall:
-					copy := *block
-					if !isSameModel {
-						copy.ThoughtSignature = nil
-						if normalizeToolCallID != nil {
-							normalized := normalizeToolCallID(block.ID, model, value)
-							if normalized != block.ID {
-								toolCallIDs[block.ID] = normalized
-								copy.ID = normalized
-							}
-						}
-					}
-					clone.Content = append(clone.Content, &copy)
+			if value.Content.Text == nil {
+				if blocks, changed := adaptImages(value.Content.Blocks, images, nonVisionUserImagePlaceholder); changed {
+					clone := *value
+					clone.Content = ai.UserContent{Blocks: blocks}
+					value = &clone
 				}
 			}
-			transformed = append(transformed, &clone)
+			transformed = append(transformed, value)
+		case *ai.ToolResultMessage:
+			content, changed := adaptImages(value.Content, images, nonVisionToolImagePlaceholder)
+			normalized, renamed := toolCallIDs[value.ToolCallID]
+			if changed || renamed {
+				clone := *value
+				clone.Content = content
+				if renamed {
+					clone.ToolCallID = normalized
+				}
+				value = &clone
+			}
+			transformed = append(transformed, value)
+		case *ai.AssistantMessage:
+			transformed = append(transformed, transformAssistantMessage(value, model, normalizeToolCallID, toolCallIDs))
 		}
 	}
 
@@ -137,89 +103,101 @@ func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCa
 	return result
 }
 
-func transformUserMessage(message *ai.UserMessage, model *ai.Model) *ai.UserMessage {
+// transformAssistantMessage rewrites another model's thinking as text and
+// drops its signatures, recording the tool call ids it renames.
+func transformAssistantMessage(
+	message *ai.AssistantMessage, model *ai.Model, normalizeToolCallID toolCallIDNormalizer, toolCallIDs map[string]string,
+) *ai.AssistantMessage {
+	isSameModel := message.Provider == model.Provider && message.API == model.API && message.Model == model.ID
+	var content ai.AssistantContent // set once a block changes
+	for index, rawBlock := range message.Content {
+		next := rawBlock
+		switch block := rawBlock.(type) {
+		case *ai.ThinkingContent:
+			switch {
+			case block.Redacted != nil && *block.Redacted:
+				if !isSameModel {
+					next = nil
+				}
+			// Upstream keeps same-model thinking blocks on a truthy
+			// signature, so an empty string does not count (OA-m3).
+			case isSameModel && block.ThinkingSignature != nil && *block.ThinkingSignature != "":
+			case strings.TrimSpace(block.Thinking) == "":
+				next = nil
+			case !isSameModel:
+				next = &ai.TextContent{Text: block.Thinking}
+			}
+		case *ai.TextContent:
+			if !isSameModel && block.TextSignature != nil {
+				copy := *block
+				copy.TextSignature = nil
+				next = &copy
+			}
+		case *ai.ToolCall:
+			if isSameModel {
+				break
+			}
+			copy := *block
+			copy.ThoughtSignature = nil
+			if normalizeToolCallID != nil {
+				if normalized := normalizeToolCallID(block.ID, model, message); normalized != block.ID {
+					toolCallIDs[block.ID] = normalized
+					copy.ID = normalized
+				}
+			}
+			if copy.ID != block.ID || block.ThoughtSignature != nil {
+				next = &copy
+			}
+		default:
+			next = nil
+		}
+		if content == nil && (next != rawBlock || next == nil) {
+			content = append(make(ai.AssistantContent, 0, len(message.Content)), message.Content[:index]...)
+		}
+		if content != nil && next != nil {
+			content = append(content, next)
+		}
+	}
+	if content == nil {
+		return message
+	}
 	clone := *message
-	if message.Content.Text != nil {
-		text := *message.Content.Text
-		clone.Content = ai.NewUserText(text)
-		return &clone
-	}
-	blocks := message.Content.Blocks
-	if blocks == nil {
-		blocks = ai.UserContentBlocks{}
-	}
-	if modelSupportsImage(model) {
-		clone.Content = ai.NewUserContent(cloneUserBlocks(blocks)...)
-		return &clone
-	}
-	clone.Content = ai.NewUserContent(replaceUserImagesWithPlaceholder(blocks, nonVisionUserImagePlaceholder)...)
+	clone.Content = content
 	return &clone
 }
 
-func transformToolResultContent(content ai.ToolResultContent, model *ai.Model) ai.ToolResultContent {
-	if modelSupportsImage(model) {
-		result := make(ai.ToolResultContent, 0, len(content))
-		for _, item := range content {
-			switch block := item.(type) {
-			case *ai.TextContent:
-				copy := *block
-				result = append(result, &copy)
-			case *ai.ImageContent:
-				copy := *block
-				result = append(result, &copy)
-			}
-		}
-		return result
-	}
-
-	result := make(ai.ToolResultContent, 0, len(content))
-	previousWasPlaceholder := false
-	for _, item := range content {
-		switch block := item.(type) {
-		case *ai.ImageContent:
-			if !previousWasPlaceholder {
-				result = append(result, &ai.TextContent{Text: nonVisionToolImagePlaceholder})
-			}
-			previousWasPlaceholder = true
-		case *ai.TextContent:
-			copy := *block
-			result = append(result, &copy)
-			previousWasPlaceholder = block.Text == nonVisionToolImagePlaceholder
-		}
-	}
-	return result
-}
-
-func cloneUserBlocks(blocks ai.UserContentBlocks) []ai.UserContentBlock {
-	result := make([]ai.UserContentBlock, 0, len(blocks))
+// adaptImages returns blocks as they are unless the model cannot see their
+// images, which become one placeholder per run, or they hold unknown blocks,
+// which are dropped.
+func adaptImages[S ~[]E, E any](blocks S, images bool, placeholder string) (S, bool) {
+	changed := false
 	for _, item := range blocks {
-		switch block := item.(type) {
+		switch any(item).(type) {
 		case *ai.TextContent:
-			copy := *block
-			result = append(result, &copy)
 		case *ai.ImageContent:
-			copy := *block
-			result = append(result, &copy)
+			changed = changed || !images
+		default:
+			changed = true
 		}
 	}
-	return result
-}
-
-func replaceUserImagesWithPlaceholder(blocks ai.UserContentBlocks, placeholder string) []ai.UserContentBlock {
-	result := make([]ai.UserContentBlock, 0, len(blocks))
+	if !changed {
+		return blocks, false
+	}
+	result := make(S, 0, len(blocks))
 	previousWasPlaceholder := false
 	for _, item := range blocks {
-		switch block := item.(type) {
+		switch block := any(item).(type) {
 		case *ai.ImageContent:
-			if !previousWasPlaceholder {
-				result = append(result, &ai.TextContent{Text: placeholder})
+			if images {
+				result = append(result, item)
+			} else if !previousWasPlaceholder {
+				result = append(result, any(&ai.TextContent{Text: placeholder}).(E))
 			}
-			previousWasPlaceholder = true
+			previousWasPlaceholder = !images
 		case *ai.TextContent:
-			copy := *block
-			result = append(result, &copy)
+			result = append(result, item)
 			previousWasPlaceholder = block.Text == placeholder
 		}
 	}
-	return result
+	return result, true
 }
