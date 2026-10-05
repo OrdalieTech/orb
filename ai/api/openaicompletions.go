@@ -753,6 +753,28 @@ func buildOpenAICompletionsHeaders(
 	return headers
 }
 
+// plainContext reports a context whose transcript holds no system message
+// and whose tools have distinct names: the transcript projection, which
+// merges system messages and deduplicates tools, changes nothing in it.
+func plainContext(context ai.Context) bool {
+	for _, message := range context.Messages {
+		if _, system := message.(*ai.SystemMessage); system {
+			return false
+		}
+	}
+	if context.Tools != nil {
+		tools := *context.Tools
+		for index := range tools {
+			for _, other := range tools[:index] {
+				if other.Name == tools[index].Name {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 func buildOpenAICompletionsPayload(
 	model *ai.Model,
 	requestContext ai.Context,
@@ -760,20 +782,41 @@ func buildOpenAICompletionsPayload(
 	compat resolvedOpenAICompletionsCompat,
 	retention ai.CacheRetention,
 ) (map[string]any, error) {
-	transcript := ai.NormalizeContext(requestContext)
-	if !compat.supportsMidConvoSystemMessages {
-		transcript = ai.CollapseSystemMessages(transcript)
-	}
-	requestTools, _, anchorsAdditions := transcriptToolPlacement(
-		transcript.Messages, compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions,
-	)
-	requestContext = projectTranscriptContext(transcript, true)
-	if len(requestTools) > 0 {
-		requestContext.Tools = &requestTools
+	if plainContext(requestContext) {
+		// Without system messages in the transcript, normalizing the context
+		// and projecting it back yields its own prompt and tools.
+		prompt := ""
+		if requestContext.SystemPrompt != nil {
+			prompt = *requestContext.SystemPrompt
+		}
+		var tools []ai.Tool
+		if requestContext.Tools != nil {
+			tools = slices.Clone(*requestContext.Tools)
+		}
+		requestContext.SystemPrompt, requestContext.Tools = nil, nil
+		if prompt != "" || len(tools) > 0 {
+			requestContext.SystemPrompt = &prompt
+		}
+		if len(tools) > 0 {
+			requestContext.Tools = &tools
+		}
+		compat.supportsMidConvoToolAdditions = compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions
 	} else {
-		requestContext.Tools = nil
+		transcript := ai.NormalizeContext(requestContext)
+		if !compat.supportsMidConvoSystemMessages {
+			transcript = ai.CollapseSystemMessages(transcript)
+		}
+		requestTools, _, anchorsAdditions := transcriptToolPlacement(
+			transcript.Messages, compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions,
+		)
+		requestContext = projectTranscriptContext(transcript, true)
+		if len(requestTools) > 0 {
+			requestContext.Tools = &requestTools
+		} else {
+			requestContext.Tools = nil
+		}
+		compat.supportsMidConvoToolAdditions = anchorsAdditions
 	}
-	compat.supportsMidConvoToolAdditions = anchorsAdditions
 	grammarToolInputProperties, err := createGrammarToolInputProperties(
 		requestContext.Tools, compat.supportsOpenAIGrammarTools,
 	)

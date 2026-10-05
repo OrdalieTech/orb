@@ -313,10 +313,16 @@ func streamAssistantResponse(
 		prompt, tools := config.system.derive(systems)
 		llmContext.SystemPrompt = &prompt
 		llmContext.Tools = &tools
-		llmContext.Messages = make(ai.MessageList, 0, len(llmMessages)-len(systems))
-		for _, message := range llmMessages {
-			if _, system := message.(*ai.SystemMessage); !system {
-				llmContext.Messages = append(llmContext.Messages, message)
+		// System messages usually all lead the transcript; the rest is then
+		// the conversation as it is.
+		if slices.Equal(llmMessages[:len(systems)], systems) {
+			llmContext.Messages = llmMessages[len(systems):]
+		} else {
+			llmContext.Messages = make(ai.MessageList, 0, len(llmMessages)-len(systems))
+			for _, message := range llmMessages {
+				if _, system := message.(*ai.SystemMessage); !system {
+					llmContext.Messages = append(llmContext.Messages, message)
+				}
 			}
 		}
 	} else if loopContext.Tools != nil {
