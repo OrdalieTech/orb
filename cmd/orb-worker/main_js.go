@@ -2,8 +2,8 @@
 
 // orb-worker is Orb inside Durable Objects. The JavaScript shim
 // (platforms/worker/deploy/worker.mjs) instantiates it once per isolate and
-// names, in argv[1], a one-shot global holding its fetch helpers and the
-// promise callbacks this program settles with the runtime's entry point:
+// names, in argv[1], a one-shot global holding its helpers (worker.Bind) and
+// the promise callbacks this program settles with the runtime's entry point:
 // open starts one object's Orb, over the object's own storage, env bindings,
 // frame sink and exit callback, in this shared runtime.
 package main
@@ -37,7 +37,8 @@ func main() {
 	debug.SetMemoryLimit(96 << 20)
 	boot := js.Global().Get(os.Args[1])
 	js.Global().Delete(os.Args[1])
-	http.DefaultTransport = worker.FetchTransport(boot.Get("fetch"))
+	worker.Bind(boot.Get("helpers"))
+	http.DefaultTransport = worker.FetchTransport()
 	api := js.Global().Get("Object").New()
 	api.Set("open", js.FuncOf(func(_ js.Value, args []js.Value) any { return open(args[0]) }))
 	boot.Call("resolve", api)

@@ -13,23 +13,15 @@ import (
 	"syscall/js"
 )
 
-// FetchTransport sends requests through the shim's fetch helpers
-// (deploy/worker.mjs). net/http's js transport reads the request body into a
-// growing buffer, crosses into JavaScript several times per header and makes
-// two callbacks per body chunk; this one copies the body into JavaScript once,
-// passes headers as one string each way and crosses twice per chunk. A body
-// read also ends when the request's context does, as it would natively.
-func FetchTransport(helpers js.Value) http.RoundTripper {
-	return fetchTransport{fetch: helpers.Get("fetch"), read: helpers.Get("read"), release: helpers.Get("release")}
-}
+// FetchTransport sends requests through the shim's fetch helpers (Bind).
+// net/http's js transport reads the request body into a growing buffer,
+// crosses into JavaScript several times per header and makes two callbacks
+// per body chunk; this one copies the body into JavaScript once, passes
+// headers as one string each way and crosses twice per chunk. A body read
+// also ends when the request's context does, as it would natively.
+func FetchTransport() http.RoundTripper { return fetchTransport{} }
 
-type fetchTransport struct{ fetch, read, release js.Value }
-
-type fetchHead struct {
-	status            int
-	headers, location string // location: the final URL after redirects
-	reader            js.Value
-}
+type fetchTransport struct{}
 
 func (transport fetchTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	body, err := fetchRequestBody(request)
@@ -42,45 +34,39 @@ func (transport fetchTransport) RoundTrip(request *http.Request) (*http.Response
 			lines = append(lines, name, value)
 		}
 	}
-	heads := make(chan fetchHead, 1)
-	var done js.Func
-	done = js.FuncOf(func(_ js.Value, args []js.Value) any {
-		done.Release()
-		head := fetchHead{status: args[0].Int(), headers: args[1].String()}
-		if head.status != 0 {
-			head.location, head.reader = args[2].String(), args[3]
-		}
-		heads <- head
-		return nil
-	})
-	controller := transport.fetch.Invoke(request.URL.String(), request.Method, strings.Join(lines, "\n"), body, done)
-	var head fetchHead
+	// The fetch settles with (status, headers, final URL, reader), or with
+	// status 0 and an error message.
+	id, settled := wait()
+	controller := helpers.fetch.Invoke(request.URL.String(), request.Method, strings.Join(lines, "\n"), body, id, settle)
+	var results []js.Value
 	select {
-	case head = <-heads:
+	case results = <-settled:
 	case <-request.Context().Done():
 		controller.Call("abort")
-		if head := <-heads; head.reader.Truthy() {
-			head.reader.Call("cancel")
+		if results := <-settled; len(results) > 3 && results[3].Truthy() {
+			results[3].Call("cancel")
 		}
 		return nil, request.Context().Err()
 	}
-	if head.status == 0 {
-		return nil, errors.New(head.headers)
+	status := results[0].Int()
+	if status == 0 {
+		return nil, errors.New(results[1].String())
 	}
+	location, reader := results[2].String(), results[3]
 	header := http.Header{}
-	pairs := strings.Split(head.headers, "\n")
+	pairs := strings.Split(results[1].String(), "\n")
 	for index := 0; index+1 < len(pairs); index += 2 {
 		name := http.CanonicalHeaderKey(pairs[index])
 		header[name] = append(header[name], pairs[index+1])
 	}
 	response := &http.Response{
-		Status: strconv.Itoa(head.status) + " " + http.StatusText(head.status), StatusCode: head.status,
+		Status: strconv.Itoa(status) + " " + http.StatusText(status), StatusCode: status,
 		Proto: "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1, Header: header, ContentLength: -1, Request: request, Body: http.NoBody,
 	}
 	if length := header.Get("Content-Length"); length != "" {
 		if response.ContentLength, err = strconv.ParseInt(length, 10, 64); err != nil || response.ContentLength < 0 {
-			if head.reader.Truthy() {
-				head.reader.Call("cancel")
+			if reader.Truthy() {
+				reader.Call("cancel")
 			}
 			return nil, errors.New("net/http: ill-formed Content-Length header: " + length)
 		}
@@ -91,14 +77,14 @@ func (transport fetchTransport) RoundTrip(request *http.Request) (*http.Response
 		header.Del("Content-Length")
 		response.ContentLength, response.Uncompressed = -1, true
 	}
-	if head.location != "" && head.location != request.URL.String() {
-		if location, err := url.Parse(head.location); err == nil {
+	if location != "" && location != request.URL.String() {
+		if final, err := url.Parse(location); err == nil {
 			response.Request = request.Clone(request.Context())
-			response.Request.URL = location
+			response.Request.URL = final
 		}
 	}
-	if head.reader.Truthy() {
-		response.Body = &fetchBody{transport: transport, request: request, controller: controller, reader: head.reader}
+	if reader.Truthy() {
+		response.Body = &fetchBody{request: request, controller: controller, reader: reader}
 	}
 	return response, nil
 }
@@ -146,7 +132,6 @@ func (writer *jsArrayWriter) Write(data []byte) (int, error) {
 }
 
 type fetchBody struct {
-	transport  fetchTransport
 	request    *http.Request
 	controller js.Value
 	reader     js.Value
@@ -169,19 +154,15 @@ func (body *fetchBody) Read(buffer []byte) (int, error) {
 
 // next reads one chunk: bytes, null at the end, or an error message.
 func (body *fetchBody) next() {
-	chunks := make(chan js.Value, 1)
-	done := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		chunks <- args[0]
-		return nil
-	})
-	defer done.Release()
-	body.transport.read.Invoke(body.reader, done)
+	id, settled := wait()
+	helpers.read.Invoke(body.reader, id, settle)
 	var chunk js.Value
 	select {
-	case chunk = <-chunks:
+	case results := <-settled:
+		chunk = results[0]
 	case <-body.request.Context().Done():
 		body.controller.Call("abort")
-		<-chunks
+		<-settled
 		body.err = body.request.Context().Err()
 		return
 	}
@@ -202,7 +183,7 @@ func (body *fetchBody) Close() error {
 	if body.err == nil {
 		// A stream often ends just after its last event; release cancels
 		// only a body that is still arriving.
-		body.transport.release.Invoke(body.reader)
+		helpers.release.Invoke(body.reader)
 	}
 	if body.err == nil || body.err == io.EOF {
 		body.err = errFetchBodyClosed

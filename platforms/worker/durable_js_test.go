@@ -11,6 +11,13 @@ import (
 	"github.com/OrdalieTech/orb/engine/harness/envtest"
 )
 
+// The shim's await helper (deploy/worker.mjs), which the storage waits through.
+func init() {
+	Bind(js.Global().Get("Function").New(`return { await(promise, id, settle) {
+		promise.then(value => settle(id, value), error => settle(id, undefined, error instanceof Error ? String(error.message) : String(error)));
+	} };`).Invoke())
+}
+
 // fakeStorage is a Map-backed stand-in for a Durable Object's ctx.storage:
 // every call settles on a later macrotask, values are structured clones, and
 // the per-call key limit is enforced.
