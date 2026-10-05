@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"syscall/js"
@@ -27,6 +28,9 @@ func (b *bridgePeer) open(context.Context) (*peer.Peer, error) {
 	if b.self != nil {
 		return b.self, nil
 	}
+	if b.instance == nil {
+		return nil, errors.New("orb-worker: the object's Orb has stopped")
+	}
 	self, err := peer.Open(b.instance, b.name)
 	if err == nil {
 		b.self = self
@@ -34,12 +38,12 @@ func (b *bridgePeer) open(context.Context) (*peer.Peer, error) {
 	return self, err
 }
 
-// register adds the shim's Bridge entry points to api:
+// register adds the shim's Bridge entry points through set:
 //
 //	bridgeAccept(socket)                       serve an accepted, non-hibernatable WebSocket
 //	bridgeAdmin(method, paramsJSON, locator)   Promise<resultJSON>, the owner's admin call
-func (b *bridgePeer) register(api js.Value) {
-	api.Set("bridgeAccept", js.FuncOf(func(_ js.Value, args []js.Value) any {
+func (b *bridgePeer) register(set func(string, func(js.Value, []js.Value) any)) {
+	set("bridgeAccept", func(_ js.Value, args []js.Value) any {
 		// The listeners must exist before this JavaScript turn ends.
 		conn := worker.NewSocketConn(args[0])
 		go func() {
@@ -55,22 +59,22 @@ func (b *bridgePeer) register(api js.Value) {
 			}
 		}()
 		return nil
-	}))
-	api.Set("bridgeAdmin", js.FuncOf(func(_ js.Value, args []js.Value) any {
+	})
+	set("bridgeAdmin", func(_ js.Value, args []js.Value) any {
 		method, params, locator := args[0].String(), args[1].String(), args[2].String()
-		return promise(func() (string, error) {
+		return promise(func() (any, error) {
 			self, err := b.open(context.Background())
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			result, err := self.Admin(context.Background(), method, []byte(params), locator)
 			return string(result), err
 		})
-	}))
+	})
 }
 
 // promise runs work on a goroutine and settles a JavaScript promise with it.
-func promise(work func() (string, error)) js.Value {
+func promise(work func() (any, error)) js.Value {
 	var executor js.Func
 	executor = js.FuncOf(func(_ js.Value, args []js.Value) any {
 		resolve, reject := args[0], args[1]

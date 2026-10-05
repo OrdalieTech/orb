@@ -13,9 +13,9 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
                         │  checks the bearer token, then routes /agents/<name>/…
                         ▼  env.ORB_AGENT.idFromName(<name>)
                       Durable Object OrbAgent (one per agent name)
-                        │  first event: instantiate orb.wasm (cmd/orb-worker)
-                        ▼
-                      Go runtime: platforms/worker.Instance
+                        │  first event: open its Orb in the isolate's runtime
+                        ▼  (orb.wasm, cmd/orb-worker, instantiated once per isolate)
+                      Go runtime: one platforms/worker.Instance per object
                         host.Host{FS, Store, Env}  ◀──▶  ctx.storage (SQLite-backed)
                         agent session + agent/rpc  ──▶  provider APIs via fetch
 ```
@@ -31,10 +31,14 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
   deterministic, so the same name always reaches the same object. On Celld, the
   id also depends on the Worker name: renaming the Worker there moves every name
   to a new, empty object.
-- **Lifecycle.** An object boots its Go runtime on its first event after a start,
-  eviction or hibernation. Boot restores the files and documents from storage and
-  resumes the current session. There is no in-memory state that storage does not
-  also hold.
+- **Lifecycle.** An object opens its Orb on its first event after a start,
+  eviction or hibernation. Opening restores the files and documents from storage
+  and resumes the current session. There is no in-memory state that storage does
+  not also hold. The objects of an isolate share one Go runtime: only the first
+  pays for instantiating it and its one-time setup, and each object adds a few
+  megabytes rather than a runtime's worth. An object disposes of its Orb once it
+  is collected, and a runtime that stops, as a panic does, stops its objects
+  until their next event.
 
 ## Capability profile
 
@@ -150,7 +154,7 @@ Every `/agents/<name>/…` route except the Bridge stream requires
 | `GET /health` | `200 ok`, with no authentication. |
 | `GET /agents/<name>/rpc` + `Upgrade: websocket` | A hibernatable WebSocket. Each client message carries one or more pi RPC command frames, separated by LF. Each server message is one output frame: `response`, an agent event or `extension_ui_request`. The object sends its frames to every socket it has open. |
 | `POST /agents/<name>/rpc` | The body is NDJSON command frames. The reply is `200 application/x-ndjson` and streams the object's frames while the request is open. It ends once every command has its `response` and any run a command started has sent `agent_settled`. |
-| `GET /agents/<name>/stats` | JSON: `bootId`, `bootMs`, `wasmMemoryBytes`, Go memory statistics, `busy` and `pending`. |
+| `GET /agents/<name>/stats` | JSON: `bootId`, `bootMs`, `busy` and `pending` for the object, and `wasmMemoryBytes` and Go memory statistics for the isolate's runtime. |
 | `GET /agents/<name>/bridge` + `Upgrade: websocket` | A Bridge stream (binary messages, pinned TLS inside). **No bearer token**: Bridge authenticates the peer. 404 until the object has a Bridge identity. |
 | `POST /agents/<name>/bridge/admin` | `{"method": "…", "params": {…}}`: an owner method of `orb bridge` (see [Bridge peer](#bridge-peer)). Returns the method's JSON result, or 400 with `{"error"}`. |
 
@@ -171,10 +175,11 @@ EOF
 - **Size.** With the Bridge peer, `orb.wasm` is 27.9 MB raw and 7.0 MB gzip,
   about 30% under the 10 MB compressed limit of the paid plan. The free plan
   allows 3 MB, so it cannot host Orb.
-- **Memory.** Cloudflare gives each isolate 128 MB. After a tool-using turn, one
-  object uses 36–38 MB of Wasm linear memory, of which 3–6 MB is Go heap. Linear
-  memory only grows, so this figure is also the peak. Several objects can share
-  an isolate, and each runs its own Go instance.
+- **Memory.** Cloudflare gives each isolate 128 MB. The isolate's objects share
+  one runtime, whose Wasm linear memory is about 21 MB with one object after a
+  tool-using turn and grows by about 1.7 MB per further object, mostly Go heap
+  (89 MB for 40 objects under Node). Linear memory only grows, so this figure is
+  also the peak.
 - **Time.** In local workerd a boot takes 0.3–1.7 s, and the first frame after a
   restart arrives in 0.25–0.75 s. Celld's first activation of a cell also
   compiles the module, which takes about 2.8 s in its isolate log. The Durable
