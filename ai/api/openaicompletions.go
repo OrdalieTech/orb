@@ -321,6 +321,8 @@ func marshalOpenAICompletionsObjectWithKeys(object map[string]any, keys []string
 // allocated for every string and re-validated every nested object.
 func appendOpenAICompletionsValue(dst []byte, value any) ([]byte, error) {
 	switch typed := value.(type) {
+	case nil:
+		return append(dst, "null"...), nil
 	case string:
 		return jsonwire.AppendString(dst, typed), nil
 	case completionsWireJSON:
