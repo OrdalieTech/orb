@@ -8,11 +8,13 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/platforms/memory"
 )
 
@@ -151,7 +153,16 @@ func (b *batch) remove(key string) {
 }
 
 func (b *batch) meta(name string, stored *entry) {
-	data, _ := json.Marshal(stored)
+	// The members json.Marshal would write, without its reflection on every
+	// journal append.
+	data := []byte{'{'}
+	if stored.Dir {
+		data = append(data, `"dir":true,`...)
+	}
+	if stored.Size != 0 {
+		data = append(strconv.AppendInt(append(data, `"size":`...), stored.Size, 10), ',')
+	}
+	data = append(jsonwire.AppendFloat(append(data, `"mtime":`...), stored.MTime), '}')
 	b.set(metaKey(b.fsys.namespace, name), data)
 	b.fsys.entries[name] = stored
 }

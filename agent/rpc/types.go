@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Response is the common response envelope emitted by RPC mode. Field
@@ -21,34 +22,28 @@ type Response struct {
 }
 
 func (response Response) MarshalJSON() ([]byte, error) {
-	var id *string
+	// Members in the order the struct encodings before wrote them.
+	output := []byte{'{'}
 	if response.HasID {
-		id = &response.ID
+		output = append(jsonwire.AppendString(append(output, `"id":`...), response.ID), ',')
 	}
-	if !response.Success {
-		return ai.Marshal(struct {
-			ID      *string `json:"id,omitempty"`
-			Type    string  `json:"type"`
-			Command string  `json:"command"`
-			Success bool    `json:"success"`
-			Error   string  `json:"error"`
-		}{id, response.Type, response.Command, false, response.Error})
+	output = jsonwire.AppendString(append(output, `"type":`...), response.Type)
+	output = jsonwire.AppendString(append(output, `,"command":`...), response.Command)
+	switch {
+	case !response.Success:
+		output = jsonwire.AppendString(append(output, `,"success":false,"error":`...), response.Error)
+	case response.HasData:
+		data, err := ai.Marshal(struct {
+			Data any `json:"data"`
+		}{response.Data})
+		if err != nil {
+			return nil, err
+		}
+		output = append(append(output, `,"success":true,`...), data[1:len(data)-1]...)
+	default:
+		output = append(output, `,"success":true`...)
 	}
-	if response.HasData {
-		return ai.Marshal(struct {
-			ID      *string `json:"id,omitempty"`
-			Type    string  `json:"type"`
-			Command string  `json:"command"`
-			Success bool    `json:"success"`
-			Data    any     `json:"data"`
-		}{id, response.Type, response.Command, true, response.Data})
-	}
-	return ai.Marshal(struct {
-		ID      *string `json:"id,omitempty"`
-		Type    string  `json:"type"`
-		Command string  `json:"command"`
-		Success bool    `json:"success"`
-	}{id, response.Type, response.Command, true})
+	return append(output, '}'), nil
 }
 
 type SessionState struct {
