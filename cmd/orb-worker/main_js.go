@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -33,6 +34,7 @@ func main() {
 	debug.SetMemoryLimit(96 << 20)
 	boot := js.Global().Get(os.Args[1])
 	js.Global().Delete(os.Args[1])
+	http.DefaultTransport = worker.FetchTransport(boot.Get("fetch"))
 	env := boot.Get("env")
 	lookup := func(name string) (string, bool) {
 		switch value := env.Get(name); value.Type() {

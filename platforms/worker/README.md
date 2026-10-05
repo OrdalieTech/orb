@@ -45,7 +45,7 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
 | Sessions | JSONL journals live under `/agent/sessions`. The object resumes its current session. `new_session` and `switch_session` work; `fork` and `clone` return an error. |
 | Env | Worker secrets and vars, looked up by their standard names (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, …). There are no credential files and no interactive OAuth logins. |
 | Exec | None. `bash` is omitted, and so are process MCP servers and JS extensions. `grep` needs ripgrep through Exec, so it fails if a setting enables it. `read`, `write` and `edit` are active; `ls` and `find` run over the FS port. |
-| Net | Outbound HTTP uses the global `fetch` through Go's js/wasm transport, and SSE streams arrive through `ReadableStream`. The object does not listen on any port; the Worker routes requests to it. `nodejs_compat` is not needed. |
+| Net | Outbound HTTP uses the global `fetch` through a transport of the Worker's own (`fetch_js.go` with the shim's fetch helpers), and SSE streams arrive through `ReadableStream`. The object does not listen on any port; the Worker routes requests to it. `nodejs_compat` is not needed. |
 
 The object does not load context files, skills or prompt templates. The resource
 loader reads the process file system, and that is not yet served through the FS
