@@ -40,16 +40,22 @@ func (errors ValidationErrors) Error() string {
 // Validate clones value, applies the same primitive coercions used by
 // upstream tool validation, and validates the converted value against schema.
 func Validate(schema Schema, value any) (any, error) {
+	return validate(schema, value, true)
+}
+
+// validate coerces value in place unless asked to clone it first.
+func validate(schema Schema, value any, clone bool) (any, error) {
 	decodedSchema, err := decodeSchema(schema)
 	if err != nil {
 		return nil, err
 	}
-	cloned, err := cloneJSONValue(value)
-	if err != nil {
-		return nil, fmt.Errorf("jsonschema: clone value: %w", err)
+	if clone {
+		if value, err = cloneJSONValue(value); err != nil {
+			return nil, fmt.Errorf("jsonschema: clone value: %w", err)
+		}
 	}
-	normalizeOptionalNulls(cloned, decodedSchema)
-	coerced := coerceValue(cloned, decodedSchema)
+	normalizeOptionalNulls(value, decodedSchema)
+	coerced := coerceValue(value, decodedSchema)
 	issues := validateValue(coerced, decodedSchema, "")
 	if len(issues) > 0 {
 		return nil, ValidationErrors(issues)
@@ -65,7 +71,8 @@ func ValidateToolArgumentsJSON(toolName string, schema Schema, argumentsJSON []b
 	if err := json.Unmarshal(argumentsJSON, &arguments); err != nil {
 		return nil, fmt.Errorf("jsonschema: decode tool arguments: %w", err)
 	}
-	validated, err := Validate(schema, arguments)
+	// The arguments were just decoded for this call, so they need no clone.
+	validated, err := validate(schema, arguments, false)
 	if err == nil {
 		return validated, nil
 	}
