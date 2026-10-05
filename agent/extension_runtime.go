@@ -1808,6 +1808,17 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		}
 	}
 
+	messages, forcedPrompt := runtime.openingMessages(ctx, state, text, images)
+	runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
+	defer runtime.agent.SetRequestSystemPromptOverride(nil)
+	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, messages) })
+}
+
+// openingMessages prepares a run: it takes what extensions queued for the
+// next turn, emits before_agent_start, and returns the messages the run opens
+// with (the system prompt's change since the transcript's, the user's message,
+// then the queued and injected ones) and any system prompt forced for it.
+func (runtime *SessionRuntime) openingMessages(ctx context.Context, state *extensionRuntimeState, text string, images []*ai.ImageContent) (engine.AgentMessages, *string) {
 	// Lazy prompt guidelines re-read per turn (upstream `get promptGuidelines()`
 	// parity): must run before the base system prompt is captured below.
 	runtime.refreshLazyToolGuidelines(ctx)
@@ -1879,9 +1890,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	messages = append(messages, runtime.userMessage(text, images))
 	messages = append(messages, pending...)
 	messages = append(messages, injected...)
-	runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
-	defer runtime.agent.SetRequestSystemPromptOverride(nil)
-	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, messages) })
+	return messages, forcedPrompt
 }
 
 func (runtime *SessionRuntime) extensionSystemPromptOptionsLocked(state *extensionRuntimeState) extensions.SystemPromptOptions {
