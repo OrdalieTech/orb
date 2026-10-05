@@ -595,11 +595,31 @@ func (state *nativeState) claimSession(manager *session.SessionManager) (func(),
 	}, nil
 }
 func (state *nativeState) close() error {
+	state.release()
+	return state.db.Close()
+}
+
+// conversation shares this state's store with a claim of its own, for a
+// process that keeps several conversations open at once (ACP).
+func (state *nativeState) conversation() *nativeState {
+	if state == nil {
+		return nil
+	}
+	return &nativeState{db: state.db, agentDir: state.agentDir}
+}
+
+// release drops the conversation claim, discarding a conversation left empty.
+func (state *nativeState) release() {
+	if state == nil {
+		return
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	if state.sessionLock != nil {
 		_ = state.sessionLock.Close()
 		state.discardIfEmpty(state.sessionID)
 	}
-	return state.db.Close()
+	state.sessionID, state.sessionLock = "", nil
 }
 
 // discardIfEmpty drops a conversation left without a message, unless an Orb

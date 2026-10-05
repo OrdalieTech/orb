@@ -5,6 +5,16 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb --mode acp` speaks the Agent Client Protocol natively: Zed, Buzz Desktop or Buzz's
+  `buzz-acp` drive any number of Orb sessions in one process, with the client's MCP servers and
+  harness prompt, model and reasoning selectors, `session/load` and usage reports.
+- `orb chat` runs several platforms as one agent with one memory: `orb chat buzz telegram --tools`
+  starts `buzz-acp` for Buzz and reaches it over ACP, answers on Telegram, and with `--tools` gives
+  chat conversations the agent's full sessions (tools, plugins, skills). `platforms/agent` builds
+  one container per team agent.
+- MCP servers started as processes connect again when built on SDKs that predate the 2026-07-28
+  protocol, such as Rust's rmcp; Orb opens them with `initialize`.
+
 ## [0.16.0] - 2026-10-05
 
 Turns cost the same at the eightieth message as at the first, natively and on the Worker host,

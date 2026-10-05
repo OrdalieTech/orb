@@ -143,11 +143,14 @@ type Manager struct {
 }
 
 // Extension is the MCP integration. When a session starts it reads mcp.json
-// (the agent directory's, and the project's once trusted) and connects the
-// servers in the background.
-func Extension(agentDir string) extensions.Factory {
+// (the agent directory's, and the project's once trusted), adds the servers its
+// client supplied, and connects them in the background.
+func Extension(agentDir string, supplied ...Entry) extensions.Factory {
 	return func(api extensions.API) error {
-		manager := newManager(agentDir, func(cwd string, trusted bool) ([]Entry, []string) { return Load(agentDir, cwd, trusted) })
+		manager := newManager(agentDir, func(cwd string, trusted bool) ([]Entry, []string) {
+			entries, problems := Load(agentDir, cwd, trusted)
+			return append(entries, supplied...), problems
+		})
 		manager.register(api)
 		return nil
 	}
@@ -495,7 +498,10 @@ func defaultConnect(
 		command.Dir = config.CWD
 	}
 	command.Env = mergedEnvironment(env)
-	return client.Connect(connectCtx, tracker.wrapTransport(&mcpsdk.CommandTransport{Command: command}), nil)
+	// A process server opens with initialize: SDKs before the 2026-07-28
+	// protocol (rmcp, for one) exit on the server/discover probe the SDK's
+	// default sends first, and a dead process leaves nothing to fall back on.
+	return client.Connect(connectCtx, tracker.wrapTransport(&mcpsdk.CommandTransport{Command: command}), &mcpsdk.ClientSessionOptions{ProtocolVersion: "2025-11-25"})
 }
 
 type progressTransport struct {

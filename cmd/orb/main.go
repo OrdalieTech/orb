@@ -105,6 +105,9 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "mermaid" {
 		os.Exit(runMermaid(os.Stdin, os.Stdout))
 	}
+	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
+		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
+	}
 	// Process markers, entry points only — not set when embedded through the SDK.
 	_ = os.Setenv("AI_AGENT", "orb")
 	_ = os.Setenv("PI_CODING_AGENT", "true")
@@ -218,7 +221,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		return runBridgeCommand(ctx, argv[1:], streams)
 	}
 	if len(argv) > 0 && argv[0] == "chat" {
-		return runChatCommand(ctx, argv[1:], streams)
+		return runChatCommand(ctx, argv[1:], streams, dependencies)
 	}
 	if handled, code := handleCredentialPrintCommand(ctx, argv, streams); handled {
 		return code
@@ -404,6 +407,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		_, _ = io.WriteString(metadataOutput(args, streams), formatModelList(models, *args.ListModels))
 		return 0
+	}
+	if args.Mode == "acp" {
+		return runACP(ctx, args, dependencies, streams)
 	}
 	isInteractive := !args.Print && args.Mode != "json" && args.Mode != "rpc" && streams.StdinTTY && streams.StdoutTTY
 	cwd, err := os.Getwd()
@@ -806,20 +812,39 @@ func reportCLIError(writer io.Writer, err error) int {
 	return 1
 }
 
-func runChatCommand(ctx context.Context, args []string, streams cliStreams) int {
-	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) ||
-		(len(args) == 2 && (args[1] == "--help" || args[1] == "-h")) {
+func runChatCommand(ctx context.Context, args []string, streams cliStreams, dependencies cliDependencies) int {
+	if len(args) == 0 || slices.Contains(args, "--help") || slices.Contains(args, "-h") {
 		_, _ = io.WriteString(streams.Stdout, chatHelpText)
 		return 0
 	}
-	if len(args) != 1 {
-		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>"))
+	tools := false
+	var platforms []string
+	for _, arg := range args {
+		switch arg = strings.ToLower(arg); arg {
+		case "--tools":
+			tools = true
+		case "buzz", "telegram", "discord", "slack", "teams", "whatsapp", "messenger", "googlechat":
+			if !slices.Contains(platforms, arg) {
+				platforms = append(platforms, arg)
+			}
+		default:
+			return reportCLIError(streams.Stderr, fmt.Errorf("unsupported chat platform %q", arg))
+		}
 	}
-	platform := strings.ToLower(args[0])
-	switch platform {
-	case "telegram", "discord", "slack", "teams", "whatsapp", "messenger", "googlechat":
-	default:
-		return reportCLIError(streams.Stderr, fmt.Errorf("unsupported chat platform %q", platform))
+	if len(platforms) == 0 {
+		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>... [--tools]"))
+	}
+	// Every front runs the same agent: sessions built as the CLI builds them.
+	cli := ParseArgs(nil)
+	cli.native, cli.useUnknownModel = stateFromContext(ctx), true
+	agents := acpHost{args: cli, dependencies: dependencies, streams: streams}
+	var fronts []func(context.Context) error
+	if slices.Contains(platforms, "buzz") {
+		fronts = append(fronts, func(ctx context.Context) error { return runBuzz(ctx, agents) })
+	}
+	chats := slices.DeleteFunc(slices.Clone(platforms), func(platform string) bool { return platform == "buzz" })
+	if len(chats) == 0 {
+		return runFronts(ctx, fronts, streams, nil)
 	}
 	authorize, err := chatAuthorizer(os.Getenv("ORB_CHAT_ALLOWED_SENDERS"))
 	if err != nil {
@@ -831,9 +856,44 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams) int 
 	}
 	dataDir := strings.TrimSpace(os.Getenv("ORB_CHAT_DATA_DIR"))
 	if dataDir == "" {
-		dataDir = filepath.Join(agentDir, "chat", platform)
+		dataDir = filepath.Join(agentDir, "chat", strings.Join(chats, "+"))
 	}
+	var adapters []chat.Adapter
+	var ingresses []func(context.Context, func(chat.Message) error) error
+	for _, platform := range chats {
+		adapter, ingress, err := chatAdapter(platform)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		adapters, ingresses = append(adapters, adapter), append(ingresses, ingress)
+	}
+	var workspace []chat.LocalProviderOption
+	if tools {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		workspace = append(workspace, agentWorkspace(agents, cwd))
+	}
+	return runLocalChat(ctx, dataDir, adapters, ingresses, fronts, authorize, workspace, streams)
+}
 
+// agentWorkspace makes chat conversations full sessions of the agent, built as
+// its ACP sessions are, with its tools working in cwd.
+func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
+	return chat.WithWorkspace(cwd, func(ctx context.Context, manager *session.SessionManager) (*agent.AgentSession, func(), error) {
+		args := agents.args
+		args.native = args.native.conversation()
+		runtime, close, err := openHeadless(ctx, args, agents.dependencies, agents.streams, manager)
+		if err != nil {
+			return nil, nil, err
+		}
+		return runtime.Session(), close, nil
+	})
+}
+
+// chatAdapter builds a chat platform's adapter and ingress from its environment.
+func chatAdapter(platform string) (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
 	var adapter chat.Adapter
 	var ingress func(context.Context, func(chat.Message) error) error
 	// ponytail: credentials stay in the process environment; add named account
@@ -842,21 +902,21 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams) int 
 	case "telegram":
 		token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
 		if token == "" {
-			return reportCLIError(streams.Stderr, errors.New("TELEGRAM_BOT_TOKEN is required"))
+			return nil, nil, errors.New("TELEGRAM_BOT_TOKEN is required")
 		}
 		telegramAdapter, createErr := telegram.New(telegram.Options{Token: token})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = telegramAdapter, telegramAdapter.Poll
 	case "discord":
 		token := strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN"))
 		if token == "" {
-			return reportCLIError(streams.Stderr, errors.New("DISCORD_BOT_TOKEN is required"))
+			return nil, nil, errors.New("DISCORD_BOT_TOKEN is required")
 		}
 		discordAdapter, createErr := discord.New(discord.Options{Token: token})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = discordAdapter, discordAdapter.Run
 	case "slack":
@@ -865,7 +925,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams) int 
 			BotUserID: os.Getenv("SLACK_BOT_USER_ID"),
 		})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = slackAdapter, webhookIngress(platform, slackAdapter.Webhook)
 	case "teams":
@@ -874,7 +934,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams) int 
 			TenantID: os.Getenv("TEAMS_TENANT_ID"),
 		})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = teamsAdapter, webhookIngress(platform, teamsAdapter.Webhook)
 	case "whatsapp":
@@ -883,7 +943,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams) int 
 			AppSecret: os.Getenv("WHATSAPP_APP_SECRET"), VerifyToken: os.Getenv("WHATSAPP_VERIFY_TOKEN"),
 		})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = whatsappAdapter, webhookIngress(platform, whatsappAdapter.Webhook)
 	case "messenger":
@@ -892,23 +952,23 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams) int 
 			AppSecret: os.Getenv("MESSENGER_APP_SECRET"), VerifyToken: os.Getenv("MESSENGER_VERIFY_TOKEN"),
 		})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = messengerAdapter, webhookIngress(platform, messengerAdapter.Webhook)
 	case "googlechat":
 		credentials, readErr := os.ReadFile(os.Getenv("GOOGLE_CHAT_CREDENTIALS_FILE"))
 		if readErr != nil {
-			return reportCLIError(streams.Stderr, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", readErr))
+			return nil, nil, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", readErr)
 		}
 		googleAdapter, createErr := googlechat.New(googlechat.Options{
 			ProjectNumber: os.Getenv("GOOGLE_CHAT_PROJECT_NUMBER"), CredentialsJSON: credentials,
 		})
 		if createErr != nil {
-			return reportCLIError(streams.Stderr, createErr)
+			return nil, nil, createErr
 		}
 		adapter, ingress = googleAdapter, webhookIngress(platform, googleAdapter.Webhook)
 	}
-	return runLocalChat(ctx, platform, dataDir, adapter, ingress, authorize, streams)
+	return adapter, ingress, nil
 }
 
 func webhookIngress(
@@ -953,13 +1013,14 @@ func webhookIngress(
 
 func runLocalChat(
 	ctx context.Context,
-	platform, dataDir string,
-	adapter chat.Adapter,
-	ingress func(context.Context, func(chat.Message) error) error,
+	dataDir string,
+	adapters []chat.Adapter,
+	ingresses []func(context.Context, func(chat.Message) error) error,
+	fronts []func(context.Context) error,
 	authorize func(chat.Message) error,
+	providerOptions []chat.LocalProviderOption,
 	streams cliStreams,
 ) int {
-	var providerOptions []chat.LocalProviderOption
 	state := stateFromContext(ctx)
 	if state != nil {
 		settings, err := state.settings(dataDir, state.agentDir)
@@ -983,7 +1044,7 @@ func runLocalChat(
 		return reportCLIError(streams.Stderr, err)
 	}
 	processor, err := chat.New(chat.Options{
-		Sessions: provider, Adapters: []chat.Adapter{adapter}, Authorize: authorize,
+		Sessions: provider, Adapters: adapters, Authorize: authorize,
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -1005,18 +1066,40 @@ func runLocalChat(
 		return reportCLIError(streams.Stderr, err)
 	}
 
-	pollContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	_, _ = fmt.Fprintf(streams.Stderr, "%s gateway running; press Ctrl-C to stop\n", platform)
-	ingressErr := ingress(pollContext, local.Publish)
-	shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	closeErr := errors.Join(local.Close(shutdownContext), processor.Close(shutdownContext))
-	if ingressErr != nil && !errors.Is(ingressErr, context.Canceled) {
-		return reportCLIError(streams.Stderr, ingressErr)
+	for _, ingress := range ingresses {
+		fronts = append(fronts, func(ctx context.Context) error { return ingress(ctx, local.Publish) })
 	}
-	if closeErr != nil {
-		return reportCLIError(streams.Stderr, closeErr)
+	return runFronts(ctx, fronts, streams, func(ctx context.Context) error {
+		return errors.Join(local.Close(ctx), processor.Close(ctx))
+	})
+}
+
+// runFronts runs an agent's fronts until one ends or a signal arrives, stops
+// the others, then closes; the ending front's error is the exit status.
+func runFronts(ctx context.Context, fronts []func(context.Context) error, streams cliStreams, close func(context.Context) error) int {
+	signalled, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	running, cancel := context.WithCancel(signalled)
+	results := make(chan error, len(fronts))
+	for _, front := range fronts {
+		go func() { results <- front(running) }()
+	}
+	_, _ = fmt.Fprintln(streams.Stderr, "agent running; press Ctrl-C to stop")
+	err := <-results
+	if signalled.Err() != nil {
+		err = nil
+	}
+	cancel()
+	for range len(fronts) - 1 {
+		<-results
+	}
+	if close != nil {
+		shutdown, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelShutdown()
+		err = errors.Join(err, close(shutdown))
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return reportCLIError(streams.Stderr, err)
 	}
 	return 0
 }
@@ -1039,12 +1122,19 @@ func chatAuthorizer(allowed string) (func(chat.Message) error, error) {
 	}, nil
 }
 
-const chatHelpText = `Usage: orb chat <platform>
+const chatHelpText = `Usage: orb chat <platform>... [--tools]
 
-Platforms: telegram, discord, slack, teams, whatsapp, messenger, googlechat
+Runs this agent on every platform named, as one process with one memory.
+
+Platforms: buzz, telegram, discord, slack, teams, whatsapp, messenger, googlechat
+
+  buzz     Starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's Buzz identity
+           (BUZZ_PRIVATE_KEY, BUZZ_RELAY_URL, BUZZ_ACP_*) and reaches this agent over ACP.
+  --tools  Gives chat conversations the agent's tools in the working directory.
+           Only for an agent running isolated, such as one container per agent.
 
 Common environment:
-  ORB_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required)
+  ORB_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required for chat platforms)
   ORB_CHAT_DATA_DIR        Session and spool directory (default ~/.pi/agent/chat/<platform>)
   ORB_CHAT_LISTEN          Webhook listen address (default 127.0.0.1:8080)
   ORB_CHAT_PATH            Webhook path (default /<platform>)
@@ -1094,7 +1184,7 @@ Commands:
   --system-prompt <text|file>    Replace the system prompt
   --append-system-prompt <text>  Append text or file contents
   --thinking <level>             off|minimal|low|medium|high|xhigh|max
-  --mode <mode>                  Output mode: text (default), json, or rpc
+  --mode <mode>                  Output mode: text (default), json, rpc, or acp (Agent Client Protocol on stdio)
   --print, -p                    Process prompts and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume

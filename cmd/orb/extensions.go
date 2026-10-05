@@ -122,8 +122,9 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			}
 			return built[0], nil
 		},
-		Compiled: compiledExtensionsForEnvironment(os.Getenv),
-		MCP:      !args.NoExtensions && !args.metadataOnly,
+		Compiled:   compiledExtensionsForEnvironment(os.Getenv),
+		MCP:        !args.NoExtensions && !args.metadataOnly,
+		MCPServers: args.mcpServers,
 	})
 	var diagnostics []modes.StartupDiagnostic
 	resolved := assembly.Resolve(rows, settings, args.NoExtensions)

@@ -27,6 +27,7 @@ orb/
 ├── platforms/native/         native host: sqlite/ explicitly opened adapter, sandbox/, accounts/ sidecar file,
 │                             bridge/ IPC and persistence, tailcat/ network transport
 ├── platforms/websocket/      Bridge's pinned TLS stream over WebSockets (browser, Worker, native listener)
+├── platforms/agent/          container image for one team agent (orb chat buzz telegram)
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -37,6 +38,7 @@ orb/
 │   ├── session/              session manager (JSONL v3 tree, migrations), export-html
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
+│   ├── acp/                  Agent Client Protocol server: one client, many sessions (`orb --mode acp`)
 │   ├── bridge/               runtime attachment, operation ledger adapter, bridge_call extension
 │   │   └── tool/             headless bridge_call tool
 │   └── assembly/             product catalog, enablement and plugin management UI
@@ -591,6 +593,29 @@ expansion (`$1`, `$@`, `${1:-default}`, `${@:N:L}`); themes as data (registerabl
 packages — npm registry tarball fetch + extract (no node at runtime), git clone; storage
 `~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`). Package installation itself
 is native Go; executing package-provided JavaScript requires the D31 Node/Bun runtime.
+
+### ACP and team agents
+
+`agent/acp` serves the Agent Client Protocol over newline-delimited JSON-RPC to any client (Zed,
+Buzz Desktop, Buzz's `buzz-acp` harness). It names no CLI type: a `Host` opens sessions, and
+`cmd/orb` opens each one exactly as the CLI opens its session (settings, plugins, skills, context
+files), adding the client's `mcpServers` and harness prompt. Each session claims its conversation
+separately, so one process holds many; idle ones past eight are disposed and reopen from the store.
+
+A team agent is one process with several fronts, all driving sessions of the same agent dir and
+store, hence one identity, one memory and one tool set:
+
+```
+orb chat buzz telegram --tools           the agent (container PID 1, volume /agent)
+├── telegram    chat adapter → chat.Processor → sessions built as ACP's are (agentWorkspace)
+├── ACP socket  agent/acp, one connection per buzz-acp agent process
+└── buzz-acp    child: Buzz relay identity, author gate, queues, owner commands
+    └── orb chat connect <socket>        byte relay to the parent's ACP socket
+        (the parent spawns buzz-dev-mcp per session, from session/new's mcpServers)
+```
+
+Measured natively (one process, eight sessions): the agent 36 MB PSS, the relay 17 MB, buzz-acp
+4 MB and buzz-dev-mcp 3 MB per session, against about 650 MB per Hermes agent.
 
 ## Native persistence
 

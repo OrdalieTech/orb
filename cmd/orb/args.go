@@ -8,6 +8,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/plugins/mcp"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -87,6 +88,8 @@ type CLIArgs struct {
 	// already made in this process, so the runtime neither re-fires the
 	// project_trust event nor replaces the live extension host.
 	resolvedProjectTrust *bool
+	// mcpServers are the servers an ACP client supplied for this session.
+	mcpServers []mcp.Entry
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -139,7 +142,7 @@ func ParseArgs(argv []string) CLIArgs {
 				continue
 			}
 			index++
-			if mode := argv[index]; mode == "text" || mode == "json" || mode == "rpc" {
+			if mode := argv[index]; mode == "text" || mode == "json" || mode == "rpc" || mode == "acp" {
 				result.Mode = mode
 			} else {
 				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: fmt.Sprintf("Invalid mode %q. Valid values: text, json, rpc", mode)})

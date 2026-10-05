@@ -42,6 +42,16 @@ func WithSessionOptions(hook func(key ConversationKey, o *agent.AgentSessionOpti
 	return func(p *LocalProvider) { p.hook = hook }
 }
 
+// Open builds a conversation's agent session on its manager; close disposes it.
+type Open func(ctx context.Context, manager *sessionstore.SessionManager) (session *agent.AgentSession, close func(), err error)
+
+// WithWorkspace runs conversations as full agents working in cwd, each session
+// built by open: the way to give an isolated deployment its tools. Without it
+// sessions have no tools (D27).
+func WithWorkspace(cwd string, open Open) LocalProviderOption {
+	return func(p *LocalProvider) { p.cwd, p.open = cwd, open }
+}
+
 // WithAgentDir overrides the global agent config directory used for the
 // shared model registry and settings. Defaults to ~/.pi/agent.
 func WithAgentDir(dir string) LocalProviderOption {
@@ -60,6 +70,8 @@ func WithPersistence(repo func(ConversationKey) harness.SessionRepo, settings *c
 type LocalProvider struct {
 	repo     func(ConversationKey) harness.SessionRepo
 	root     string
+	cwd      string
+	open     Open
 	agentDir string
 	hook     func(ConversationKey, *agent.AgentSessionOptions)
 
@@ -190,7 +202,7 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 			if len(entries) > 0 {
 				stored, err = repo.Open(ctx, entries[0])
 			} else {
-				stored, err = repo.Create(ctx, harness.SessionCreateOptions{CWD: p.root})
+				stored, err = repo.Create(ctx, harness.SessionCreateOptions{CWD: p.workspace()})
 			}
 		}
 		if err == nil {
@@ -213,7 +225,7 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 			if recent != "" {
 				manager, err = sessionstore.Open(recent, sessionDir)
 			} else {
-				manager, err = sessionstore.Create(p.root, sessionDir)
+				manager, err = sessionstore.Create(p.workspace(), sessionDir)
 			}
 			if err != nil {
 				release(nil)
@@ -234,7 +246,7 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 	if p.hook != nil {
 		p.hook(key, &options)
 	}
-	result, err := agent.NewAgentSession(options)
+	session, dispose, err := p.session(ctx, options)
 	if err != nil {
 		release(nil)
 		return nil, fmt.Errorf("chat: create agent session: %w", err)
@@ -242,11 +254,11 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 
 	var once sync.Once
 	conversation := &Conversation{
-		Session: result.Session,
+		Session: session,
 		Manager: manager,
 		Close: func(context.Context) error {
 			once.Do(func() {
-				result.Session.Dispose()
+				dispose()
 				release(manager)
 			})
 			return nil
@@ -287,15 +299,35 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 				return err
 			}
 			options.SessionManager = replacement
-			next, err := agent.NewAgentSession(options)
+			next, closeNext, err := p.session(context.Background(), options)
 			if err != nil {
 				return err
 			}
-			conversation.Session.Dispose()
-			result, manager = next, replacement
-			conversation.Session, conversation.Manager = next.Session, replacement
+			dispose()
+			session, dispose, manager = next, closeNext, replacement
+			conversation.Session, conversation.Manager = next, replacement
 			return nil
 		}
 	}
 	return conversation, nil
+}
+
+func (p *LocalProvider) workspace() string {
+	if p.cwd != "" {
+		return p.cwd
+	}
+	return p.root
+}
+
+// session builds a conversation's agent: through the workspace's Open, or as a
+// tool-less SDK session.
+func (p *LocalProvider) session(ctx context.Context, options agent.AgentSessionOptions) (*agent.AgentSession, func(), error) {
+	if p.open != nil {
+		return p.open(ctx, options.SessionManager)
+	}
+	result, err := agent.NewAgentSession(options)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result.Session, result.Session.Dispose, nil
 }

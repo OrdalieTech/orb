@@ -210,6 +210,9 @@ Each holds until changed by owner-signed decision.
   path, where upstream recurses symlink cycles to ELOOP.
 - MCP `"disabled": true` is honored as `"enabled": false`, and config parsing is per-entry
   tolerant: invalid entries warn and are skipped.
+- MCP process servers open with `initialize` at protocol 2025-11-25: servers on SDKs predating
+  2026-07-28 (rmcp, for one) exit on the `server/discover` probe the Go SDK sends first, and a dead
+  process leaves nothing to fall back on. HTTP servers keep the SDK's discovery and fallback.
 - Package dependency installs are Node-optional: the tarball is fetched natively, and `npmCommand`
   (default `npm install --omit=dev`) runs only when `package.json` declares unbundled
   dependencies; a missing npm degrades to a warning. `.npmrc` support is `registry=` and nerf-darted
@@ -254,12 +257,34 @@ Each holds until changed by owner-signed decision.
   `chat → agent`. Delivery state lives in `orb.chat.turn` custom session entries — the session is
   the single durable history; turn finalization keys off `AgentSettledEvent`, and crash recovery
   reads raw entries, never the built context. Tools are off by default and need an injected
-  isolated workspace. The local provider is single-process; clusters supply fenced conversation
+  isolated workspace: `orb chat --tools` is that injection for an agent running isolated (one
+  container per agent), and makes each conversation a full session of the agent, built as its ACP
+  sessions are. The local provider is single-process; clusters supply fenced conversation
   ownership. Chat tests are plain `go test` goldens under `chat/`, never `conformance/`.
 - **D28 — Chat platforms.** Telegram, WhatsApp, Slack, Teams, Discord (hand-rolled RFC 6455),
   Messenger and Google Chat; official platform APIs only, stdlib-only clients, shared helpers in
   `chat/internal/`, zero new go.mod dependencies. Bridge-based platforms and E2EE Matrix stay
   excluded.
+
+### ACP and team agents
+
+- **ACP mode.** `orb --mode acp` serves the Agent Client Protocol natively, without Node: one
+  process drives any number of sessions, and an ACP session id is the Orb session id, so
+  `session/load` or a prompt to a stored id reopens it. Each session is built as the CLI builds
+  one, plus the client's `mcpServers`, declared direct with Buzz's `_*` lifecycle-hook tools
+  hidden. A harness prompt (`systemPrompt`, `_meta.systemPrompt`, or `{append|replace}`) maps to
+  `--system-prompt` and `--append-system-prompt`, as pi-acp maps it. Orb answers protocol version 2
+  when asked, Buzz's provisional version that carries the harness prompt in `session/new` instead
+  of every message. Usage goes out as goose's `_goose/unstable/session/update`, the shape buzz-acp
+  accepts from any agent. No `session/request_permission`: the deployment is the sandbox.
+- **Team agents.** One agent is one process, `orb chat <front>... --tools`: every front drives
+  sessions of the same agent dir and store, so identity, memory (the `memory` plugin) and tools are
+  shared, and each conversation (a Buzz channel or thread, a Telegram chat) is a session. Buzz stays
+  behind `buzz-acp`, which holds the agent's relay identity, author gate, queues and owner
+  commands; the agent starts it and it reaches the agent through an ACP socket, by the
+  `orb chat connect` relay it runs as its agent command. Its exit ends the agent, so an owner's
+  `!shutdown` stays final under the container's restart policy. A Go Nostr front is deferred until
+  buzz-acp gets in the way. Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
 
 ### Storage, release and platforms
 
@@ -329,6 +354,7 @@ Each holds until changed by owner-signed decision.
 | Compact built-in editor chrome | usability adaptation | a fitting one-line transient status moves into the editor's top border and the session name appears as a badge; dialogs, narrow statuses, scrolled drafts and extension editors keep upstream's status lane |
 | Compact task and queue surfaces | usability adaptation | the tasks plugin keeps its schema and details but condenses rendering, adds a click-expandable widget and an unbound `/tasks` command; the queue adds a count to upstream's one-row truncation |
 | `chat/` gateway and platforms | addition | D27/D28; kept out of core, one-way dependency on the SDK |
+| ACP mode (`orb --mode acp`) and team agents (`orb chat buzz …`) | addition | pi has no ACP server (pi-acp is a separate Node adapter over `pi --mode rpc`, one process per session); Orb serves ACP itself, every session in one process. RPC frames are unchanged |
 | `AgentSessionOptions` tool-operations hook | addition | D27; seam for VFS/sandboxed tool operations |
 | Streaming accumulation via append buffers | Go performance adaptation | `x += delta` is an amortized O(1) rope in V8 and an O(n) copy in Go; buffers preserve every byte. Do not restore `+=` |
 | Tool-argument re-parse gated above 8 KB | Go performance adaptation | below the floor streamed `arguments` stay byte-identical; above it only the live preview lags, while `partialJson`/`partialArgs` and the end event stay exact |

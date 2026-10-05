@@ -40,6 +40,7 @@ is tested but is not released or is limited. **In progress** is under active dev
 |---|---|---|---|---|---|
 | macOS, Linux (desktop, server) | Stable | all | SQLite (`~/.orb/state`) | full peer | install script |
 | Containers, headless servers | Stable | all | SQLite or files | full peer | same binary |
+| Team agent container | Preview: Buzz (buzz-acp 0.5.26) and Telegram end-to-end in Docker, not in CI | all | SQLite on the agent's volume | full peer | `docker build platforms/agent` |
 | Go SDK embedding | Stable | host-defined | host-defined (`host.Host`) | library | `go get` |
 | Windows | Preview: full suite green in CI, not released yet | all | SQLite | full peer | build from source |
 | Browser (Wasm worker) | Preview | FS tools | tab memory | outbound client | static files |
@@ -73,6 +74,17 @@ Orb over stdio. `orb bridge run` makes the server reachable by your other device
 `orb bridge connect-ssh user@host` installs or updates Orb on a server over SSH and pairs it.
 Minimal images are supported: without a CA bundle Orb falls back to built-in Mozilla roots, and
 without `ps` it inspects `/proc`. The CGo-free static build needs no libc.
+
+### Team agent container
+
+One container per team agent: `orb chat buzz telegram --tools` runs the agent with both fronts on
+one memory, and starts `buzz-acp` for Buzz (see `platforms/agent/README.md`). The image adds
+buzz-acp, buzz-dev-mcp and the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13)
+and a shell, which the agent's tools and the Buzz CLI need. The volume `/agent` holds config,
+state and workspace; secrets arrive as environment only. Evidence so far: the Go suite drives
+`orb --mode acp` and a Telegram conversation sharing memory with an ACP session, and the image ran
+a real `buzz-acp run --task` against a scripted model with buzz-dev-mcp's tools. Not yet: a relay
+run in CI, a documented removal command.
 
 ### Go SDK embedding
 

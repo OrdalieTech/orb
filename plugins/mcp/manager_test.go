@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -951,9 +953,17 @@ func TestMCPStdioHelper(t *testing.T) {
 	if os.Getenv("ORB_MCP_HELPER") != "1" {
 		return
 	}
+	// Like an rmcp server, it exits unless the first message is initialize.
+	stdin := bufio.NewReader(os.Stdin)
+	first, _ := stdin.ReadBytes('\n')
+	var opening struct{ Method string }
+	if json.Unmarshal(first, &opening) != nil || opening.Method != "initialize" {
+		os.Exit(1)
+	}
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "stdio-helper", Version: "1"}, nil)
 	addTextTool(server, "ping")
-	if err := server.Run(context.Background(), &mcpsdk.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
+	transport := &mcpsdk.IOTransport{Reader: io.NopCloser(io.MultiReader(bytes.NewReader(first), stdin)), Writer: os.Stdout}
+	if err := server.Run(context.Background(), transport); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

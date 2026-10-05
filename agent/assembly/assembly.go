@@ -61,6 +61,8 @@ type Options struct {
 	// MCP includes the mcp.json servers as a hidden row. Leave it off for
 	// metadata-only runs so no configured server is spawned.
 	MCP bool
+	// MCPServers are servers the session's client supplied (an ACP session/new).
+	MCPServers []mcp.Entry
 }
 
 // Rows enumerates the composition in boot order: caller compiled rows,
@@ -97,7 +99,7 @@ func Rows(options Options) []Row {
 		rows = append(rows, Row{
 			ID: "mcp", Description: "MCP servers from mcp.json",
 			Source: SourceMCP, Hidden: true, Replaceable: true, DefaultEnabled: true,
-			Factory: mcp.Extension(options.AgentDir),
+			Factory: mcp.Extension(options.AgentDir, options.MCPServers...),
 		})
 	}
 	return rows
