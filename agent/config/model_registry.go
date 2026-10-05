@@ -136,7 +136,7 @@ func (registry *ModelRegistry) Reload() error {
 	if err != nil {
 		return err
 	}
-	base := builtin.MergedModels(stored)
+	base := builtin.BaseModels(stored)
 	authProviders, err := registry.readCredentials()
 	if err != nil {
 		return err
