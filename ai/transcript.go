@@ -5,6 +5,9 @@ import (
 	"context"
 	"reflect"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // TranscriptContext is the normalized provider request context. Context is
@@ -244,6 +247,55 @@ func SystemMessageText(message *SystemMessage) string {
 		}
 	}
 	return joinNonEmpty(parts)
+}
+
+// CloneSystemMessage returns what decoding message's JSON would, without the
+// encoding, for a message with text content and valid UTF-8 strings; ok is
+// false for any other.
+func CloneSystemMessage(message *SystemMessage) (*SystemMessage, bool) {
+	// Decoding infers the member order from where "timestamp" and
+	// "toolsAdded" first appear, so text written before them must not hold
+	// either word.
+	plain := func(text string) bool {
+		return utf8.ValidString(text) && !strings.Contains(text, "timestamp") && !strings.Contains(text, "toolsAdded")
+	}
+	text, ok := message.Content.(string)
+	if !ok || !plain(text) {
+		return nil, false
+	}
+	clone := &SystemMessage{
+		Content: text, Timestamp: message.Timestamp,
+		toolFieldsAfterTimestamp: message.toolFieldsAfterTimestamp && len(message.ToolsAdded) > 0,
+	}
+	for _, section := range message.Sections {
+		if !plain(section.Name) || section.Text != nil && !plain(*section.Text) {
+			return nil, false
+		}
+		clone.Sections = append(clone.Sections, SystemPromptSection{Name: section.Name, Text: cloneString(section.Text)})
+	}
+	for _, tool := range message.ToolsAdded {
+		parameters := []byte(tool.Parameters)
+		if len(parameters) == 0 {
+			parameters = []byte("{}")
+		}
+		compact, err := jsonwire.AppendCompact(nil, parameters)
+		if err != nil || !utf8.ValidString(tool.Name) || !utf8.ValidString(tool.Label) || !utf8.ValidString(tool.Description) {
+			return nil, false
+		}
+		tool.Parameters = compact
+		if tool.ConstrainedSampling != nil {
+			config := *tool.ConstrainedSampling
+			tool.ConstrainedSampling = &config
+		}
+		clone.ToolsAdded = append(clone.ToolsAdded, tool)
+	}
+	for _, removed := range message.ToolsRemoved {
+		if !utf8.ValidString(removed.Name) {
+			return nil, false
+		}
+		clone.ToolsRemoved = append(clone.ToolsRemoved, removed)
+	}
+	return clone, true
 }
 
 func CollapseSystemMessages(context TranscriptContext) TranscriptContext {
