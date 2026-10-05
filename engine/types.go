@@ -280,4 +280,6 @@ type AgentLoopConfig struct {
 	BeforeToolCall      BeforeToolCallFunc
 	AfterToolCall       AfterToolCallFunc
 	Now                 func() int64
+
+	system *requestSystem
 }
