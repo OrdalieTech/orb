@@ -133,9 +133,11 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 		for _, entry := range entries {
 			// The index shares the manager's parse: entries are never changed in place.
 			converted := manager.parsedEntry(entry)
-			record := newEntryRecord(*converted)
+			var record *FileEntry
 			if converted.object != nil {
 				record = &FileEntry{Type: converted.Type, Entry: converted, object: converted.object}
+			} else {
+				record = newEntryRecord(*converted)
 			}
 			manager.fileEntries = append(manager.fileEntries, record)
 			manager.byID[entry.ID] = record.Entry
