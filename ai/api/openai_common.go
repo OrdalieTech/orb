@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -658,9 +659,18 @@ func providerResponse(response *http.Response) ai.ProviderResponse {
 
 // readSSE hands each event's data to handle, as the OpenAI SDK's stream did:
 // "[DONE]" ends the stream, and a top-level "error" member fails it.
+// sseBuffers keeps the scanners' first line buffers across streams; a
+// stream's events are copied out of the buffer before they are handled.
+var sseBuffers = sync.Pool{New: func() any {
+	buffer := make([]byte, 4096)
+	return &buffer
+}}
+
 func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
+	buffer := sseBuffers.Get().(*[]byte)
+	defer sseBuffers.Put(buffer)
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(nil, bufio.MaxScanTokenSize<<9)
+	scanner.Buffer(*buffer, bufio.MaxScanTokenSize<<9)
 	var data []byte
 	for scanner.Scan() {
 		line := scanner.Bytes()
