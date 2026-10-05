@@ -9,17 +9,21 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/acp"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/telegram"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
 // acpClient drives `orb --mode acp` over its stdio, as Zed or buzz-acp does.
@@ -288,4 +292,105 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	if !strings.Contains(acpPrompt, "The launch is on Tuesday.") {
 		t.Fatalf("the ACP session's prompt lacks the memory: %q", acpPrompt)
 	}
+}
+
+// A team agent's tools never see its credentials, yet its shell still posts on
+// Buzz the way Buzz's harness prompt says: `buzz messages send`.
+func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake buzz CLI is a shell script")
+	}
+	root := t.TempDir()
+	project, bin := filepath.Join(root, "workspace"), filepath.Join(root, "bin")
+	for _, dir := range []string{project, bin} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(project)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	secrets := map[string]string{
+		"OPENROUTER_API_KEY": "sk-or-secret", "TELEGRAM_BOT_TOKEN": "tg-secret",
+		"BUZZ_PRIVATE_KEY": "nostr-secret", "BUZZ_AUTH_TAG": "auth-tag-secret",
+	}
+	for name, value := range secrets {
+		t.Setenv(name, value)
+	}
+	t.Setenv(toolenv.Allow, "")
+	t.Setenv("ORB_BUZZ", "")
+	// The shell's buzz is Orb answering as buzz; the real CLI records its run.
+	shim := "#!/bin/sh\nORB_BUZZ_SHIM_HELPER=1 exec '" + os.Args[0] + "' -test.run='^TestBuzzShimHelper$' -- \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "buzz"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	posted, cli := filepath.Join(root, "posted"), filepath.Join(root, "buzz-cli")
+	real := "#!/bin/sh\n{ echo \"args: $*\"; echo \"input: $(cat)\"; env; } > '" + posted + "'\necho '{\"ok\":true}'\n"
+	if err := os.WriteFile(cli, []byte(real), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ORB_BUZZ_CLI", cli)
+
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("bash", map[string]any{"command": "env"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage(faux.ToolCall("bash", map[string]any{"command": "printf 'Hello team' | buzz messages send --channel c1 --content -"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("Posted."),
+	})
+	agents := teamAgent(context.Background(), scriptedRuntime(provider), cliStreams{Stderr: io.Discard})
+	stop, err := serveBuzzCLI(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
+	go func() {
+		_ = acp.Serve(context.Background(), stdinReader, stdoutWriter, agents, version)
+		_ = stdoutWriter.Close()
+		client.done <- 0
+	}()
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	created, _ := client.call("session/new", map[string]any{"cwd": project, "mcpServers": []any{}})
+	_, notifications := client.call("session/prompt", map[string]any{
+		"sessionId": created["result"].(map[string]any)["sessionId"], "prompt": []any{map[string]any{"type": "text", "text": "Say hello on Buzz."}},
+	})
+	client.close()
+
+	results := updates(notifications, "tool_call_update")
+	if len(results) != 2 {
+		t.Fatalf("tool results = %v", results)
+	}
+	output := func(update map[string]any) string {
+		return update["content"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	}
+	shell, sent := output(results[0]), output(results[1])
+	if !strings.Contains(shell, "PATH=") || !strings.Contains(sent, `{"ok":true}`) {
+		t.Fatalf("env = %q, buzz = %q", shell, sent)
+	}
+	record, err := os.ReadFile(posted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range secrets {
+		if strings.Contains(shell, value) {
+			t.Errorf("the shell saw %s", name)
+		}
+		if leaked := strings.Contains(string(record), value); leaked != strings.HasPrefix(name, "BUZZ_") {
+			t.Errorf("the buzz CLI holds %s: %t", name, leaked)
+		}
+	}
+	if !strings.Contains(string(record), "args: messages send --channel c1 --content -") || !strings.Contains(string(record), "input: Hello team") {
+		t.Fatalf("the buzz CLI ran with %s", record)
+	}
+}
+
+func TestBuzzShimHelper(t *testing.T) {
+	if os.Getenv("ORB_BUZZ_SHIM_HELPER") != "1" {
+		return
+	}
+	args := os.Args[slices.Index(os.Args, "--")+1:]
+	os.Exit(runBuzzShim(args, os.Stdin, os.Stdout, os.Stderr))
 }

@@ -39,6 +39,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/mermaid"
 	"github.com/OrdalieTech/orb/internal/semver"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -105,8 +106,14 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "mermaid" {
 		os.Exit(runMermaid(os.Stdin, os.Stdout))
 	}
+	if filepath.Base(os.Args[0]) == "buzz" {
+		os.Exit(runBuzzShim(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
 		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
+	}
+	if os.Getenv(toolenv.Allow) != "" {
+		hideProcess()
 	}
 	// Process markers, entry points only — not set when embedded through the SDK.
 	_ = os.Setenv("AI_AGENT", "orb")
@@ -834,10 +841,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	if len(platforms) == 0 {
 		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>... [--tools]"))
 	}
-	// Every front runs the same agent: sessions built as the CLI builds them.
-	cli := ParseArgs(nil)
-	cli.native, cli.useUnknownModel = stateFromContext(ctx), true
-	agents := acpHost{args: cli, dependencies: dependencies, streams: streams}
+	agents := teamAgent(ctx, dependencies, streams)
 	var fronts []func(context.Context) error
 	if slices.Contains(platforms, "buzz") {
 		fronts = append(fronts, func(ctx context.Context) error { return runBuzz(ctx, agents) })

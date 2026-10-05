@@ -1,0 +1,18 @@
+#!/bin/bash
+# Runs the agent as `agent` and, for Buzz, buzz-acp as `buzz`, so the agent's
+# tools can read neither buzz-acp's environment nor its signing keyfile. The
+# first to exit ends the container with its status: an owner's !shutdown (a
+# clean buzz-acp exit) stays final under --restart on-failure.
+set -u
+trap 'kill -TERM $(jobs -p) 2>/dev/null' TERM INT
+setpriv --reuid=agent --regid=agent --init-groups orb chat "$@" &
+if [[ " $* " == *" buzz "* ]]; then
+  settings=()
+  while IFS= read -r variable; do settings+=("$variable"); done < <(env | grep -E '^(BUZZ_|RUST_LOG=)')
+  setpriv --reuid=buzz --regid=buzz --init-groups env -i PATH="$PATH" HOME=/home/buzz "${settings[@]}" buzz-acp &
+fi
+wait -n
+status=$?
+kill -TERM $(jobs -p) 2>/dev/null
+wait
+exit "$status"

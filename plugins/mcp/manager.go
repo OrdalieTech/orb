@@ -13,7 +13,6 @@ import (
 	"maps"
 	"mime"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -30,6 +29,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/tui"
 	mcpjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -653,7 +653,7 @@ func (body *progressEventBody) observeEvent() {
 
 func mergedEnvironment(overrides map[string]string) []string {
 	values := make(map[string]string)
-	for _, entry := range os.Environ() {
+	for _, entry := range toolenv.Environ() {
 		if index := strings.IndexByte(entry, '='); index >= 0 {
 			values[entry[:index]] = entry[index+1:]
 		}

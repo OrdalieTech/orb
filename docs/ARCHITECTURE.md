@@ -606,16 +606,20 @@ A team agent is one process with several fronts, all driving sessions of the sam
 store, hence one identity, one memory and one tool set:
 
 ```
-orb chat buzz telegram --tools           the agent (container PID 1, volume /agent)
-├── telegram    chat adapter → chat.Processor → sessions built as ACP's are (agentWorkspace)
-├── ACP socket  agent/acp, one connection per buzz-acp agent process
-└── buzz-acp    child: Buzz relay identity, author gate, queues, owner commands
-    └── orb chat connect <socket>        byte relay to the parent's ACP socket
-        (the parent spawns buzz-dev-mcp per session, from session/new's mcpServers)
+agent-entrypoint (root, PID 1)            starts both, ends with the first to exit
+├── orb chat buzz telegram --tools   user agent: the agent (volume /agent, non-dumpable)
+│   ├── telegram    chat adapter → chat.Processor → sessions built as ACP's are (agentWorkspace)
+│   ├── ACP socket  agent/acp at ORB_ACP_SOCKET, one connection per buzz-acp agent process
+│   └── buzz socket runs the real buzz CLI (execute-only) with the Buzz key for the shell's `buzz`
+└── buzz-acp                         user buzz: relay identity, author gate, queues, owner commands
+    └── orb chat connect <socket>    byte relay to the agent's ACP socket
 ```
 
-Measured natively (one process, eight sessions): the agent 36 MB PSS, the relay 17 MB, buzz-acp
-4 MB and buzz-dev-mcp 3 MB per session, against about 650 MB per Hermes agent.
+Without `ORB_ACP_SOCKET` (development), `orb chat buzz` starts buzz-acp itself, as its own user.
+
+Tools see only the `ORB_TOOL_ENV` allowlist (`internal/toolenv`). Measured natively (one process,
+eight sessions): the agent 36 MB PSS, the relay 17 MB and buzz-acp 4 MB, against about 650 MB per
+Hermes agent.
 
 ## Native persistence
 

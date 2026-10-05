@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
 const exitStdioGrace = 100 * time.Millisecond
@@ -51,7 +53,7 @@ func GetShellEnv() (map[string]string, error) {
 	environment := make(map[string]string)
 	pathKey := "PATH"
 	foundPathKey := false
-	for _, entry := range os.Environ() {
+	for _, entry := range toolenv.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
 		// Windows keeps hidden per-drive cwd variables ("=C:") that Node's process.env omits.
 		if !ok || key == "" {

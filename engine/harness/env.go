@@ -23,6 +23,7 @@ import (
 	textunicode "golang.org/x/text/encoding/unicode"
 
 	"github.com/OrdalieTech/orb/internal/nodepath"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
 const maxExecutionTimeoutSeconds = 2_147_483_647.0 / 1000.0
@@ -631,7 +632,7 @@ func (env *NodeExecutionEnv) Exec(ctx context.Context, command string, options E
 	if options.InheritEnv != nil && !*options.InheritEnv {
 		cmd.Env = mergeExecutionEnvironment(nil, options.Env)
 	} else {
-		cmd.Env = mergeExecutionEnvironment(os.Environ(), env.ShellEnv, options.Env)
+		cmd.Env = mergeExecutionEnvironment(toolenv.Environ(), env.ShellEnv, options.Env)
 	}
 	configureProcessTree(cmd)
 

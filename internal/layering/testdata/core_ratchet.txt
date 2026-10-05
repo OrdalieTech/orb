@@ -63,7 +63,6 @@ agent/tools	import os/exec	6
 agent/tools	import syscall	6
 agent/tools	net/http.DefaultClient	1
 agent/tools	os.Chmod	1
-agent/tools	os.Environ	1
 agent/tools	os.File	6
 agent/tools	os.Getenv	4
 agent/tools	os.LookupEnv	1
@@ -112,7 +111,6 @@ ai/models	os.Rename	1
 engine/harness	import os/exec	4
 engine/harness	import syscall	3
 engine/harness	os.CreateTemp	1
-engine/harness	os.Environ	1
 engine/harness	os.File	1
 engine/harness	os.Getenv	2
 engine/harness	os.Getwd	1

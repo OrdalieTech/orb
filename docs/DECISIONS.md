@@ -271,8 +271,7 @@ Each holds until changed by owner-signed decision.
 - **ACP mode.** `orb --mode acp` serves the Agent Client Protocol natively, without Node: one
   process drives any number of sessions, and an ACP session id is the Orb session id, so
   `session/load` or a prompt to a stored id reopens it. Each session is built as the CLI builds
-  one, plus the client's `mcpServers`, declared direct with Buzz's `_*` lifecycle-hook tools
-  hidden. A harness prompt (`systemPrompt`, `_meta.systemPrompt`, or `{append|replace}`) maps to
+  one, plus the client's `mcpServers`, declared direct. A harness prompt (`systemPrompt`, `_meta.systemPrompt`, or `{append|replace}`) maps to
   `--system-prompt` and `--append-system-prompt`, as pi-acp maps it. Orb answers protocol version 2
   when asked, Buzz's provisional version that carries the harness prompt in `session/new` instead
   of every message. Usage goes out as goose's `_goose/unstable/session/update`, the shape buzz-acp
@@ -285,6 +284,29 @@ Each holds until changed by owner-signed decision.
   `orb chat connect` relay it runs as its agent command. Its exit ends the agent, so an owner's
   `!shutdown` stays final under the container's restart policy. A Go Nostr front is deferred until
   buzz-acp gets in the way. Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
+- **A team agent's tools never hold its credentials.** Tool processes (bash, MCP servers,
+  extension hosts, external agents) inherit only the `ORB_TOOL_ENV` allowlist when it is set, and
+  `orb chat` sets one (`PATH,HOME,USER,SHELL,LANG,LC_ALL,TERM,TZ,TMPDIR`) unless its operator
+  widens it: an allowlist, because a deny-list misses the next secret an operator adds. An Orb
+  with an allowlist marks itself non-dumpable, so its `/proc` entries, environment included, are
+  unreadable to its same-user tools. buzz-acp gets the allowlist plus its `BUZZ_*` settings, never
+  model or chat credentials. Without an allowlist tools inherit everything, as pi's do.
+- **Buzz is reached the way Buzz designed it, and nothing more.** ACP brings messages in, and the
+  agent answers with `buzz messages send` in its shell, as buzz-acp's harness prompt says, unchanged.
+  The shell's `buzz` is Orb answering under that name: it hands the command to the agent over the
+  socket `ORB_BUZZ` names, and the agent runs the real CLI (`ORB_BUZZ_CLI`) with `BUZZ_PRIVATE_KEY`
+  and `BUZZ_AUTH_TAG` added to that child alone; standard input goes along only for a `-`
+  argument, since the bash tool feeds its script on the shell's stdin. No model-facing tool, no
+  buzz-dev-mcp (its tools duplicate Orb's). Orb's only other Buzz code is `orb chat buzz`
+  supervising buzz-acp. Owner, 2026-10-06.
+- **The Nostr key stays out of the tools' reach by user, not by care.** buzz-acp reads the key
+  from its environment and writes a signing keyfile, so it cannot share the tools' user. The team
+  agent image starts as root only to run Orb as `agent` and buzz-acp as `buzz` (`setpriv`), and
+  Orb then serves buzz-acp on a fixed group socket (`ORB_ACP_SOCKET`) instead of starting it. The
+  real buzz CLI, which runs as `agent` with the key, is installed execute-only, so the kernel runs it
+  non-dumpable and its environment stays unreadable. Chosen over a sidecar container: one container,
+  one script. Without `ORB_ACP_SOCKET`, `orb chat buzz` starts buzz-acp as its own user, which
+  leaves the key readable by the agent's tools: fit for development, not for a team agent.
 
 ### Storage, release and platforms
 
@@ -355,6 +377,7 @@ Each holds until changed by owner-signed decision.
 | Compact task and queue surfaces | usability adaptation | the tasks plugin keeps its schema and details but condenses rendering, adds a click-expandable widget and an unbound `/tasks` command; the queue adds a count to upstream's one-row truncation |
 | `chat/` gateway and platforms | addition | D27/D28; kept out of core, one-way dependency on the SDK |
 | ACP mode (`orb --mode acp`) and team agents (`orb chat buzz …`) | addition | pi has no ACP server (pi-acp is a separate Node adapter over `pi --mode rpc`, one process per session); Orb serves ACP itself, every session in one process. RPC frames are unchanged |
+| Tool environment allowlist (`ORB_TOOL_ENV`) | addition | pi's tools inherit the whole environment; unset, Orb's do too. Set (always for `orb chat`), tool processes get only the listed variables |
 | `AgentSessionOptions` tool-operations hook | addition | D27; seam for VFS/sandboxed tool operations |
 | Streaming accumulation via append buffers | Go performance adaptation | `x += delta` is an amortized O(1) rope in V8 and an O(n) copy in Go; buffers preserve every byte. Do not restore `+=` |
 | Tool-argument re-parse gated above 8 KB | Go performance adaptation | below the floor streamed `arguments` stay byte-identical; above it only the live preview lags, while `partialJson`/`partialArgs` and the end event stay exact |

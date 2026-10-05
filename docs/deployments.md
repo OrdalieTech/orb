@@ -79,11 +79,12 @@ without `ps` it inspects `/proc`. The CGo-free static build needs no libc.
 
 One container per team agent: `orb chat buzz telegram --tools` runs the agent with both fronts on
 one memory, and starts `buzz-acp` for Buzz (see `platforms/agent/README.md`). The image adds
-buzz-acp, buzz-dev-mcp and the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13)
-and a shell, which the agent's tools and the Buzz CLI need. The volume `/agent` holds config,
+buzz-acp and the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13) and a shell for
+the agent's bash tool. The shell's `buzz` is Orb, which has the agent run the real CLI with the Buzz
+key, and buzz-acp runs as its own user, so the agent's tools reach none of its credentials. The volume `/agent` holds config,
 state and workspace; secrets arrive as environment only. Evidence so far: the Go suite drives
 `orb --mode acp` and a Telegram conversation sharing memory with an ACP session, and the image ran
-a real `buzz-acp run --task` against a scripted model with buzz-dev-mcp's tools. Not yet: a relay
+a real `buzz-acp run --task` against a scripted model. Not yet: a relay
 run in CI, a documented removal command.
 
 ### Go SDK embedding

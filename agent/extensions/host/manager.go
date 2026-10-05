@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/nodepath"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	"golang.org/x/term"
 )
 
@@ -418,7 +419,7 @@ func (manager *Manager) startLocked(ctx context.Context) (generationLoadResult, 
 		// with scheme "c:", so it is passed as a file URL.
 		commandArgs = append(commandArgs, "--experimental-loader", nodepath.PathToFileURL(loaderPath))
 	}
-	hostEnvironment, err := prepareHostEnvironment(manager.options, os.Environ(), runtime.Path)
+	hostEnvironment, err := prepareHostEnvironment(manager.options, toolenv.Environ(), runtime.Path)
 	if err != nil {
 		return result, err
 	}

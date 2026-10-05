@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -9,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +20,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/acp"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 )
 
@@ -40,12 +45,8 @@ func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.Agent
 	args.mcpServers = nil
 	for _, server := range options.MCPServers {
 		// The client supplied these for this session, so their tools are
-		// declared up front rather than found through tool_search. Tools named
-		// _* are lifecycle hooks by Buzz's convention, never the model's.
-		config := mcp.ServerConfig{
-			Type: server.Type, Command: server.Command, Args: server.Args, URL: server.URL,
-			Exposure: mcp.ExposureDirect, ToolExposure: mcp.ToolExposures{{Tool: "_*", Exposure: mcp.ExposureHidden}},
-		}
+		// declared up front rather than found through tool_search.
+		config := mcp.ServerConfig{Type: server.Type, Command: server.Command, Args: server.Args, URL: server.URL, Exposure: mcp.ExposureDirect}
 		if server.Type == "http" || server.Type == "sse" {
 			config.Type = ""
 		}
@@ -108,16 +109,32 @@ func runACP(ctx context.Context, args CLIArgs, dependencies cliDependencies, str
 
 // runBuzz serves this agent on Buzz: buzz-acp holds the agent's relay identity
 // and reaches this process's sessions through an ACP socket, by the
-// `orb chat connect` relay it runs as its agent. Its exit ends the agent, so a
-// clean exit (an owner's !shutdown) stays final under the container's restart policy.
+// `orb chat connect` relay it runs as its agent. This process starts buzz-acp
+// and ends with it, so a clean exit (an owner's !shutdown) stays final under
+// the container's restart policy, unless ORB_ACP_SOCKET says buzz-acp runs
+// outside it: then it serves that socket, open to its group, and buzz-acp can
+// run as another user, out of the tools' reach.
 func runBuzz(ctx context.Context, host acpHost) error {
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("orb-acp-%d.sock", os.Getpid()))
+	stopCLI, err := serveBuzzCLI(ctx)
+	if err != nil {
+		return err
+	}
+	defer stopCLI()
+	socket, external := os.LookupEnv("ORB_ACP_SOCKET")
+	if !external {
+		socket = filepath.Join(os.TempDir(), fmt.Sprintf("orb-acp-%d.sock", os.Getpid()))
+	}
 	_ = os.Remove(socket)
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = listener.Close() }()
+	if external {
+		if err := os.Chmod(socket, 0o660); err != nil {
+			return err
+		}
+	}
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -130,6 +147,10 @@ func runBuzz(ctx context.Context, host acpHost) error {
 			}()
 		}
 	}()
+	if external {
+		<-ctx.Done()
+		return nil
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -139,7 +160,15 @@ func runBuzz(ctx context.Context, host acpHost) error {
 		harness = "buzz-acp"
 	}
 	command := exec.CommandContext(ctx, harness)
-	command.Env = append(os.Environ(), "BUZZ_ACP_AGENT_COMMAND="+self, "BUZZ_ACP_AGENT_ARGS=chat,connect,"+socket)
+	// buzz-acp gets the tools' environment and its own BUZZ_* settings, never
+	// the agent's model or chat credentials.
+	command.Env = toolenv.Environ()
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "BUZZ_") || strings.HasPrefix(entry, "RUST_LOG=") {
+			command.Env = append(command.Env, entry)
+		}
+	}
+	command.Env = append(command.Env, "BUZZ_ACP_AGENT_COMMAND="+self, "BUZZ_ACP_AGENT_ARGS=chat,connect,"+socket)
 	command.Stdout, command.Stderr = host.streams.Stderr, host.streams.Stderr
 	// buzz-acp removes its signing keyfile on SIGTERM.
 	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
@@ -148,7 +177,9 @@ func runBuzz(ctx context.Context, host acpHost) error {
 }
 
 // runChatConnect relays stdio to a running `orb chat buzz` agent's ACP socket.
+// It inherits buzz-acp's environment, Buzz key included, so it hides it.
 func runChatConnect(socket string, in io.Reader, out io.Writer) int {
+	hideProcess()
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Error: "+err.Error())
@@ -160,4 +191,127 @@ func runChatConnect(socket string, in io.Reader, out io.Writer) int {
 	}()
 	_, _ = io.Copy(out, conn)
 	return 0
+}
+
+// teamTools are the variables a team agent's tools inherit when its operator
+// sets no ORB_TOOL_ENV: none of its credentials.
+const teamTools = "PATH,HOME,USER,SHELL,LANG,LC_ALL,TERM,TZ,TMPDIR"
+
+// teamAgent prepares this process to run an agent on chat platforms: its
+// tools get the teamTools environment and its own environment is hidden from them.
+func teamAgent(ctx context.Context, dependencies cliDependencies, streams cliStreams) acpHost {
+	if os.Getenv(toolenv.Allow) == "" {
+		_ = os.Setenv(toolenv.Allow, teamTools)
+	}
+	hideProcess()
+	args := ParseArgs(nil)
+	args.native, args.useUnknownModel = stateFromContext(ctx), true
+	return acpHost{args: args, dependencies: dependencies, streams: streams}
+}
+
+// buzzRequest is one `buzz` command run from the agent's shell: Buzz's harness
+// tells the agent to post with the buzz CLI, and the shell has no Buzz key.
+type buzzRequest struct {
+	Args  []string `json:"args"`
+	Dir   string   `json:"dir"`
+	Stdin []byte   `json:"stdin,omitempty"`
+}
+
+type buzzResult struct {
+	Stdout []byte `json:"stdout"`
+	Stderr []byte `json:"stderr"`
+	Code   int    `json:"code"`
+}
+
+// serveBuzzCLI runs the real buzz CLI (ORB_BUZZ_CLI) for the agent's shell,
+// with the Buzz credentials added to that child alone. Orb answers as `buzz`
+// (runBuzzShim) and reaches it through the socket ORB_BUZZ names, which joins
+// the tools' environment.
+func serveBuzzCLI(ctx context.Context) (func(), error) {
+	cli := os.Getenv("ORB_BUZZ_CLI")
+	if cli == "" {
+		cli = "buzz"
+	}
+	var credentials []string
+	for _, name := range []string{"BUZZ_PRIVATE_KEY", "BUZZ_AUTH_TAG", "BUZZ_RELAY_URL"} {
+		if value, ok := os.LookupEnv(name); ok {
+			credentials = append(credentials, name+"="+value)
+		}
+	}
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("orb-buzz-%d.sock", os.Getpid()))
+	_ = os.Remove(socket)
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		return nil, err
+	}
+	_ = os.Setenv("ORB_BUZZ", socket)
+	if allowed := os.Getenv(toolenv.Allow); allowed != "" {
+		_ = os.Setenv(toolenv.Allow, allowed+",ORB_BUZZ")
+	}
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				var request buzzRequest
+				if json.NewDecoder(conn).Decode(&request) != nil {
+					return
+				}
+				runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+				defer cancel()
+				command := exec.CommandContext(runCtx, cli, request.Args...)
+				command.Dir, command.Env = request.Dir, append(toolenv.Environ(), credentials...)
+				command.Stdin = bytes.NewReader(request.Stdin)
+				var stdout, stderr bytes.Buffer
+				command.Stdout, command.Stderr = &stdout, &stderr
+				result := buzzResult{}
+				if err := command.Run(); err != nil {
+					result.Code = 1
+					var exit *exec.ExitError
+					if errors.As(err, &exit) {
+						result.Code = exit.ExitCode()
+					} else {
+						stderr.WriteString("buzz: " + err.Error() + "\n")
+					}
+				}
+				result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
+				_ = json.NewEncoder(conn).Encode(result)
+			}()
+		}
+	}()
+	return func() { _ = listener.Close() }, nil
+}
+
+// runBuzzShim is Orb called as `buzz` from the agent's shell: it hands the
+// command to the agent, which runs the real CLI with the Buzz key. Standard
+// input goes along only for a "-" argument (--content -), since the bash tool
+// feeds its script on the shell's stdin.
+func runBuzzShim(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	socket := os.Getenv("ORB_BUZZ")
+	if socket == "" {
+		_, _ = fmt.Fprintln(stderr, "buzz: this shell is not inside an orb chat buzz agent")
+		return 4
+	}
+	request := buzzRequest{Args: args}
+	request.Dir, _ = os.Getwd()
+	if slices.Contains(args, "-") {
+		request.Stdin, _ = io.ReadAll(io.LimitReader(stdin, 1<<20))
+	}
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "buzz: "+err.Error())
+		return 4
+	}
+	defer func() { _ = conn.Close() }()
+	var result buzzResult
+	if err := json.NewEncoder(conn).Encode(request); err != nil || json.NewDecoder(conn).Decode(&result) != nil {
+		_, _ = fmt.Fprintln(stderr, "buzz: the agent did not answer")
+		return 4
+	}
+	_, _ = stdout.Write(result.Stdout)
+	_, _ = stderr.Write(result.Stderr)
+	return result.Code
 }

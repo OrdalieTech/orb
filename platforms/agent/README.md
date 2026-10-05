@@ -1,8 +1,10 @@
 # Team agent container
 
 One Ordalie team agent per container. `orb chat buzz telegram --tools` is the agent: one process,
-one memory, reachable on Buzz and Telegram with the same identity and tools. It starts `buzz-acp`,
-which holds the agent's Buzz identity and reaches the agent over ACP.
+one memory, reachable on Buzz and Telegram with the same identity and tools. Next to it runs
+`buzz-acp`, which holds the agent's Buzz identity and reaches the agent over ACP. The entrypoint
+starts as root only to run the agent as `agent` and buzz-acp as `buzz`, so the agent's tools can
+read neither buzz-acp's environment nor its signing key.
 
 ```sh
 docker build --platform linux/amd64 --build-arg ORB_VERSION=<release> -t orb-agent platforms/agent
@@ -22,7 +24,7 @@ Only the agent's own secrets, as environment:
 | Variable | Front | |
 |---|---|---|
 | `BUZZ_PRIVATE_KEY` | Buzz | the agent's Nostr key |
-| `BUZZ_AUTH_TAG` | Buzz | NIP-OA tag attesting the owner's authorization |
+| `BUZZ_AUTH_TAG` | Buzz | NIP-OA tag attesting the owner's authorization: `python3 sign-auth-tag.py <agent pubkey>`, run by the owner |
 | `BUZZ_RELAY_URL` | Buzz | `wss://chat.ordalie.com` |
 | `BUZZ_ACP_RESPOND_TO`, `BUZZ_ACP_RESPOND_TO_ALLOWLIST` | Buzz | who the agent answers: `allowlist` and team pubkeys |
 | `BUZZ_ACP_SUBSCRIBE`, `BUZZ_ACP_IDLE_TIMEOUT`, other `BUZZ_ACP_*` | Buzz | as for any buzz-acp agent |
@@ -30,8 +32,11 @@ Only the agent's own secrets, as environment:
 | `ORB_CHAT_ALLOWED_SENDERS` | Telegram | Telegram user ids allowed to talk to it |
 | provider key, such as `OPENAI_API_KEY` or `OPENROUTER_API_KEY` | both | the model's |
 
-The image sets `BUZZ_ACP_MCP_COMMAND` (buzz-dev-mcp) and `BUZZ_ACP_NO_MEMORY=true`: the agent's
-memory is Orb's `memory` plugin, shared by both fronts, so Buzz's own is off.
+The agent's tools (bash and the rest) see none of these: `orb chat` gives them only `PATH`, `HOME`
+and a few locale variables (`ORB_TOOL_ENV` widens that) and hides its own environment. The agent
+posts on Buzz with `buzz messages send` as Buzz's prompt tells it; the `buzz` its shell runs is Orb,
+which has the agent run the real CLI with the Buzz key. The image sets `BUZZ_ACP_NO_MEMORY=true`: the agent's memory
+is Orb's `memory` plugin, shared by both fronts, so Buzz's own is off.
 
 ## The volume
 

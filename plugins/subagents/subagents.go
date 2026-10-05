@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -388,7 +389,7 @@ func runExternalChild(ctx context.Context, cwd, name, command, task string, mode
 	processCtx, cancelProcess := context.WithCancel(timeoutCtx)
 	defer cancelProcess()
 	env := map[string]string{}
-	for _, entry := range os.Environ() {
+	for _, entry := range toolenv.Environ() {
 		name, value, _ := strings.Cut(entry, "=")
 		env[name] = value
 	}
