@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"reflect"
 	"strconv"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -117,7 +118,19 @@ func MarshalAssistantMessageEvent(event AssistantMessageEvent) ([]byte, error) {
 	if event == nil {
 		return nil, errors.New("ai: nil assistant message event")
 	}
+	// The events encode themselves as wire JSON, which Marshal would only
+	// check again; a failing one goes through Marshal for its error text.
+	if marshaler, ok := event.(json.Marshaler); ok && !isNilPointer(event) {
+		if encoded, err := marshaler.MarshalJSON(); err == nil {
+			return encoded, nil
+		}
+	}
 	return Marshal(event)
+}
+
+func isNilPointer(value any) bool {
+	reflected := reflect.ValueOf(value)
+	return reflected.Kind() == reflect.Pointer && reflected.IsNil()
 }
 
 func UnmarshalAssistantMessageEvent(data []byte) (AssistantMessageEvent, error) {
