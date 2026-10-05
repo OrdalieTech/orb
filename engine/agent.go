@@ -538,6 +538,14 @@ func (agent *Agent) Messages() AgentMessages {
 	return append(AgentMessages(nil), agent.state.Messages...)
 }
 
+// Model is a copy of the agent's model, for reads that need nothing else of
+// its state.
+func (agent *Agent) Model() *ai.Model {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return cloneModel(agent.state.Model)
+}
+
 // StateWithoutMessages is State without the transcript (Messages and
 // StreamingMessage stay empty), for reads that need only the configuration:
 // copying every message made each of them O(history).

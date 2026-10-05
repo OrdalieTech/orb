@@ -311,7 +311,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 			next.Messages = runtime.agent.State().Messages
 			turn.Context = &next
 		}
-		model := runtime.agent.StateWithoutMessages().Model
+		model := runtime.agent.Model()
 		settings := runtime.settings.GetCompactionSettingsForModel(model)
 		if turn.Context != nil && model != nil && model.ContextWindow > 0 && harness.ShouldCompact(harness.EstimateContextTokens(turn.Context.Messages).Tokens, model.ContextWindow, harness.CompactionSettings{Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens}) {
 			if _, err := runtime.runAutoCompaction(ctx, "threshold", false); err != nil {
@@ -1164,10 +1164,9 @@ func (runtime *SessionRuntime) willRetry(messages engine.AgentMessages) bool {
 }
 
 func (runtime *SessionRuntime) isRetryable(message *ai.AssistantMessage) bool {
-	state := runtime.agent.StateWithoutMessages()
 	contextWindow := float64(0)
-	if state.Model != nil {
-		contextWindow = state.Model.ContextWindow
+	if model := runtime.agent.Model(); model != nil {
+		contextWindow = model.ContextWindow
 	}
 	return !ai.IsContextOverflow(message, contextWindow) && ai.IsRetryableAssistantError(message)
 }
@@ -1206,17 +1205,17 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 	if !runtime.autoCompactionEnabled() || (skipAbortedCheck && message.StopReason == ai.StopReasonAborted) {
 		return false, nil
 	}
-	state := runtime.agent.StateWithoutMessages()
-	if state.Model == nil || IsUnknownModel(state.Model) {
+	model := runtime.agent.Model()
+	if model == nil || IsUnknownModel(model) {
 		return false, nil
 	}
-	settings := runtime.settings.GetCompactionSettingsForModel(state.Model)
+	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	latestTimestamp, hasLatest := runtime.manager.GetLatestCompactionTimestamp()
 	if hasLatest && message.Timestamp <= parseSessionTimestamp(latestTimestamp) {
 		return false, nil
 	}
-	sameModel := string(message.Provider) == string(state.Model.Provider) && message.Model == state.Model.ID
-	if sameModel && ai.IsContextOverflow(message, state.Model.ContextWindow) {
+	sameModel := string(message.Provider) == string(model.Provider) && message.Model == model.ID
+	if sameModel && ai.IsContextOverflow(message, model.ContextWindow) {
 		willRetry := message.StopReason != ai.StopReasonStop
 		if willRetry {
 			runtime.mu.Lock()
@@ -1242,20 +1241,20 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 		// The response's usage predates edits made since; estimate what the model sees now.
 		contextTokens = harness.EstimateProjectedContextTokens(projectSessionEntries(runtime.manager.GetBranch())).Tokens
 	} else if message.StopReason == ai.StopReasonError || direct == 0 {
-		state.Messages = runtime.agent.State().Messages
-		estimate := harness.EstimateContextTokens(state.Messages)
+		messages := runtime.agent.Messages()
+		estimate := harness.EstimateContextTokens(messages)
 		if estimate.LastUsageIndex == nil {
 			return false, nil
 		}
 		if hasLatest {
-			usageMessage := asAssistant(state.Messages[*estimate.LastUsageIndex])
+			usageMessage := asAssistant(messages[*estimate.LastUsageIndex])
 			if usageMessage != nil && usageMessage.Timestamp <= parseSessionTimestamp(latestTimestamp) {
 				return false, nil
 			}
 		}
 		contextTokens = estimate.Tokens
 	}
-	if state.Model.ContextWindow > 0 && harness.ShouldCompact(contextTokens, state.Model.ContextWindow, harness.CompactionSettings{
+	if model.ContextWindow > 0 && harness.ShouldCompact(contextTokens, model.ContextWindow, harness.CompactionSettings{
 		Enabled: runtime.autoCompactionEnabled(), ReserveTokens: settings.ReserveTokens, KeepRecentTokens: settings.KeepRecentTokens,
 	}) {
 		return runtime.runAutoCompaction(ctx, "threshold", false)
@@ -1963,7 +1962,7 @@ func asAssistant(message engine.AgentMessage) *ai.AssistantMessage {
 // model's limits; images that cannot be processed become notes in the text.
 func (runtime *SessionRuntime) userMessage(text string, images []*ai.ImageContent) *ai.UserMessage {
 	autoResize := runtime.settings.GetImageAutoResize()
-	resize := tools.ModelResizeOptions(runtime.agent.StateWithoutMessages().Model)
+	resize := tools.ModelResizeOptions(runtime.agent.Model())
 	normalized := make([]*ai.ImageContent, 0, len(images))
 	var hints []string
 	for _, image := range images {

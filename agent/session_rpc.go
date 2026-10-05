@@ -143,16 +143,16 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 	if runtime.agent.UsesSessionLoop() {
 		return nil
 	}
-	state := runtime.agent.StateWithoutMessages()
-	if state.Model == nil || (IsUnknownModel(state.Model) && runtime.getRequestAuth == nil && runtime.getAPIKey == nil) {
+	model := runtime.agent.Model()
+	if model == nil || (IsUnknownModel(model) && runtime.getRequestAuth == nil && runtime.getAPIKey == nil) {
 		return noModelSelectedError()
 	}
-	hasAuth, err := runtime.hasProviderAuth(ctx, state.Model.Provider)
+	hasAuth, err := runtime.hasProviderAuth(ctx, model.Provider)
 	if err != nil {
 		return err
 	}
 	if !hasAuth {
-		return errors.New(formatNoAPIKeyFoundMessage(state.Model.Provider))
+		return errors.New(formatNoAPIKeyFoundMessage(model.Provider))
 	}
 	messages := runtime.agent.Messages()
 	for index := len(messages) - 1; index >= 0; index-- {
