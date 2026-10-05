@@ -104,11 +104,13 @@ func TestAnthropicWorkloadIdentityFederationExchangesAndCachesToken(t *testing.T
 	}
 	var exchanges int
 	var exchange map[string]string
+	var exchangeAgent, exchangeBeta string
 	var authorizations, betas []string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/v1/oauth/token":
 			exchanges++
+			exchangeAgent, exchangeBeta = request.Header.Get("User-Agent"), request.Header.Get("anthropic-beta")
 			_ = json.NewDecoder(request.Body).Decode(&exchange)
 			_, _ = io.WriteString(writer, `{"access_token":"federated","token_type":"Bearer","expires_in":3600}`)
 		case "/v1/messages":
@@ -139,6 +141,10 @@ func TestAnthropicWorkloadIdentityFederationExchangesAndCachesToken(t *testing.T
 	}
 	if exchanges != 1 || exchange["assertion"] != "identity-jwt" || exchange["federation_rule_id"] != "fdrl_1" || exchange["workspace_id"] != "default" {
 		t.Fatalf("exchanges = %d, body = %v", exchanges, exchange)
+	}
+	// What upstream's TypeScript SDK sends on the exchange.
+	if exchangeAgent != "Anthropic/JS 0.124.0" || exchangeBeta != "oauth-2025-04-20,oidc-federation-2026-04-01" {
+		t.Fatalf("exchange user agent = %q, beta = %q", exchangeAgent, exchangeBeta)
 	}
 	if authorizations[1] != "Bearer federated" || !strings.Contains(betas[1], "oauth-2025-04-20") {
 		t.Fatalf("authorization = %q, beta = %q", authorizations, betas)

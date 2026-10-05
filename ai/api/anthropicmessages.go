@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,11 +22,13 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
-	anthropicconfig "github.com/anthropics/anthropic-sdk-go/config"
 )
 
 const (
-	claudeCodeVersion                             = "2.1.280"
+	claudeCodeVersion = "2.1.280"
+	// anthropicSDKVersion is the Anthropic TypeScript SDK upstream pins; its
+	// token exchanges send it as the user agent.
+	anthropicSDKVersion                           = "0.124.0"
 	anthropicFineGrainedToolStreamingBeta         = "fine-grained-tool-streaming-2025-05-14"
 	anthropicInterleavedThinkingBeta              = "interleaved-thinking-2025-05-14"
 	defaultAnthropicThinkingBudget        float64 = 1024
@@ -1906,17 +1911,140 @@ func (config *anthropicFederationConfig) accessToken(ctx context.Context, baseUR
 	if assertion == "" {
 		return "", fmt.Errorf("Identity token file at %s is empty", config.tokenFile) //nolint:staticcheck // SDK text.
 	}
-	credentials, err := anthropicconfig.ExchangeFederationAssertion(ctx, anthropicconfig.FederationExchangeParams{
-		Assertion: assertion, FederationRuleID: config.ruleID, OrganizationID: config.organizationID,
-		ServiceAccountID: config.serviceAccountID, WorkspaceID: config.workspaceID, BaseURL: baseURL, HTTPClient: client,
-	})
+	token, err := config.exchange(ctx, baseURL, client, assertion)
 	if err != nil {
 		return "", err
 	}
-	token := anthropicFederationToken{value: credentials.AccessToken}
-	if credentials.ExpiresAt != nil {
-		token.expires = *credentials.ExpiresAt
-	}
 	anthropicFederationTokens.byConfig[key] = token
 	return token.value, nil
+}
+
+// exchange trades the identity token for an access token through the RFC 7523
+// jwt-bearer grant, as the TypeScript SDK's oidcFederationProvider does.
+//
+//nolint:staticcheck // The SDK's error texts are observable.
+func (config *anthropicFederationConfig) exchange(ctx context.Context, baseURL string, client *http.Client, assertion string) (anthropicFederationToken, error) {
+	if baseURL != "" {
+		endpoint, err := url.Parse(baseURL)
+		if err != nil {
+			return anthropicFederationToken{}, fmt.Errorf("Invalid token endpoint base URL %q: %w", baseURL, err)
+		}
+		host := strings.ToLower(endpoint.Hostname())
+		if endpoint.Scheme != "https" && (endpoint.Scheme != "http" || host != "localhost" && host != "127.0.0.1" && host != "::1") {
+			return anthropicFederationToken{}, fmt.Errorf("Refusing to send credential over non-https token endpoint %q", baseURL)
+		}
+	}
+	if length := jsStringLength(assertion); length > 16*1024 {
+		return anthropicFederationToken{}, fmt.Errorf("Identity token is %d KiB, exceeds the 16 KiB assertion limit", (length+1023)/1024)
+	}
+	body := jsonwire.AppendString([]byte(`{"grant_type":"urn:ietf:params:oauth:grant-type:jwt-bearer","assertion":`), assertion)
+	body = jsonwire.AppendString(append(body, `,"federation_rule_id":`...), config.ruleID)
+	body = jsonwire.AppendString(append(body, `,"organization_id":`...), config.organizationID)
+	if config.serviceAccountID != "" {
+		body = jsonwire.AppendString(append(body, `,"service_account_id":`...), config.serviceAccountID)
+	}
+	if config.workspaceID != "" {
+		body = jsonwire.AppendString(append(body, `,"workspace_id":`...), config.workspaceID)
+	}
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		base = "https://api.anthropic.com"
+	}
+	endpoint := base + "/v1/oauth/token"
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(append(body, '}')))
+	if err != nil {
+		return anthropicFederationToken{}, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("anthropic-beta", anthropicOAuthBeta+",oidc-federation-2026-04-01")
+	request.Header.Set("User-Agent", "Anthropic/JS "+anthropicSDKVersion)
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return anthropicFederationToken{}, fmt.Errorf("Failed to reach token endpoint %s: %w", endpoint, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	contents, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return anthropicFederationToken{}, err
+	}
+	requestID := ""
+	if id := response.Header.Get("Request-Id"); id != "" {
+		requestID = " (request-id " + id + ")"
+	}
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		hint := ""
+		if response.StatusCode == http.StatusUnauthorized {
+			hint = " Ensure your federation rule matches your identity token. "
+			if config.workspaceID == "" {
+				hint += "If your federation rule is scoped to multiple workspaces, set the ANTHROPIC_WORKSPACE_ID environment variable, the 'workspace_id' config key, or the `workspaceId` option. "
+			}
+			hint += "View your authentication events in the Workload identity page of Claude Console for more details."
+		}
+		return anthropicFederationToken{}, fmt.Errorf("Token exchange failed with status %d%s: %s%s", response.StatusCode, requestID, redactTokenBody(contents), hint)
+	}
+	if !json.Valid(contents) {
+		return anthropicFederationToken{}, fmt.Errorf("Token endpoint returned non-JSON response (status %d)", response.StatusCode)
+	}
+	var fields struct {
+		AccessToken any `json:"access_token"`
+		TokenType   any `json:"token_type"`
+		ExpiresIn   any `json:"expires_in"`
+	}
+	_ = json.Unmarshal(contents, &fields)
+	token, _ := fields.AccessToken.(string)
+	if token == "" {
+		return anthropicFederationToken{}, fmt.Errorf("Token endpoint response missing access_token: %s", redactTokenBody(contents))
+	}
+	if tokenType, _ := fields.TokenType.(string); tokenType != "" && !strings.EqualFold(tokenType, "bearer") {
+		return anthropicFederationToken{}, fmt.Errorf("Token endpoint response: unsupported token_type \"%s\" (want Bearer)", tokenType)
+	}
+	seconds, ok := fields.ExpiresIn.(float64)
+	if text, isText := fields.ExpiresIn.(string); isText {
+		seconds, err = strconv.ParseFloat(strings.TrimSpace(text), 64)
+		ok = err == nil
+	}
+	if !ok || math.IsInf(seconds, 0) || math.IsNaN(seconds) {
+		return anthropicFederationToken{}, fmt.Errorf("Token endpoint response missing required fields: %s", redactTokenBody(contents))
+	}
+	return anthropicFederationToken{value: token, expires: time.Now().Add(time.Duration(seconds * float64(time.Second)))}, nil
+}
+
+// redactTokenBody is a token endpoint body safe to show, as the SDK's
+// redactSensitive makes it: a JSON object keeps only the RFC 6749 §5.2 error
+// members, a JSON string is redacted in turn, other JSON shows as null, and
+// text is truncated.
+func redactTokenBody(contents []byte) string {
+	if !json.Valid(contents) {
+		if text := string(contents); jsStringLength(text) > 2000 {
+			runes := []rune(text)
+			return string(runes[:min(len(runes), 2000)]) + fmt.Sprintf("... <%d more chars>", jsStringLength(text)-2000)
+		}
+		return string(contents)
+	}
+	switch trimmed := bytes.TrimSpace(contents); trimmed[0] {
+	case '{':
+	case '"':
+		text, _ := jsonwire.UnmarshalString(trimmed)
+		return string(jsonwire.AppendString(nil, redactTokenBody([]byte(text))))
+	default:
+		return "null"
+	}
+	kept := []byte{'{'}
+	jsonwire.EachMember(contents, func(name, value []byte) bool {
+		if member := string(name); member == "error" || member == "error_description" || member == "error_uri" {
+			if len(kept) > 1 {
+				kept = append(kept, ',')
+			}
+			kept = append(append(jsonwire.AppendString(kept, member), ':'), value...)
+		}
+		return true
+	})
+	redacted, err := ai.NormalizeJSONStringifyJSON(append(kept, '}'))
+	if err != nil {
+		return "{}"
+	}
+	return string(redacted)
 }

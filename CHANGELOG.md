@@ -48,7 +48,8 @@ Mermaid diagrams render. Bridge followers long-poll, open long conversations at 
 - Provider requests go through one small stdlib HTTP client instead of the OpenAI and Anthropic
   Go SDKs, which only sent bodies Orb had built, and Bedrock no longer uses the AWS SDK's runtime
   client: its SigV4 signing and event streams are Orb's own, and only native hosts read the AWS
-  shared config. The Worker bundle shrinks from 55.4 MB to 27.9 MB (7.0 MB gzip) and activates
+  shared config. Anthropic workload-identity federation exchanges its token as upstream's
+  TypeScript SDK does, with its errors, so a token response without `expires_in` now fails. The Worker bundle shrinks from 55.4 MB to 27.9 MB (7.0 MB gzip) and activates
   faster, and the CLI from 57.6 MB to 46.4 MB. Go embedders: `AnthropicMessagesOptions.Client`
   is removed.
 

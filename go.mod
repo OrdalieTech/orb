@@ -4,7 +4,6 @@ go 1.27.1
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/anthropics/anthropic-sdk-go v1.74.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.5
 	github.com/aymanbagabas/go-udiff v0.2.0
 	github.com/bmatcuk/doublestar/v4 v4.10.2

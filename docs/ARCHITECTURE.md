@@ -823,7 +823,6 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 
 | Dependency | Where | Why |
 |---|---|---|
-| anthropics/anthropic-sdk-go (`config` only) | ai/api | Anthropic workload-identity federation token exchange (D10) |
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2/config | ai/api/bedrock (native hosts) | AWS shared config and credential chain for Bedrock (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
