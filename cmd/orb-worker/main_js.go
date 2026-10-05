@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"syscall/js"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -25,6 +26,11 @@ func main() {
 	if len(os.Args) < 2 {
 		panic("orb-worker: the shim must name its boot slot in argv[1]")
 	}
+	// The live heap is a few megabytes, so collecting at three times it
+	// rather than twice saves a tenth of a turn's CPU; the soft limit keeps a
+	// long session's heap inside the isolate's 128 MB.
+	debug.SetGCPercent(200)
+	debug.SetMemoryLimit(96 << 20)
 	boot := js.Global().Get(os.Args[1])
 	js.Global().Delete(os.Args[1])
 	env := boot.Get("env")
