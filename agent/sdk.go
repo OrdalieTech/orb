@@ -343,93 +343,9 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		return entry.Type == "thinking_level_change"
 	})
 
-	model := opts.Model
-	var fallback string
+	model, thinking, fallback := initialModel(opts, modelRegistry, settings, existing, hasThinkingEntry)
 
-	// Restore saved model from session when no explicit model is provided.
-	if model == nil && hasExisting && existing.Model != nil {
-		restored, found := modelRegistry.Find(existing.Model.Provider, existing.Model.ModelID)
-		if found && modelRegistry.HasConfiguredAuth(existing.Model.Provider, nil) {
-			model = &restored
-		}
-		if model == nil {
-			fallback = "Could not restore model " + existing.Model.Provider + "/" + existing.Model.ModelID
-		}
-	}
-
-	// Fall back to settings default, then first available model.
-	if model == nil {
-		defaultProvider := settings.GetDefaultProvider()
-		defaultModelID := settings.GetDefaultModel()
-		if defaultProvider != "" && defaultModelID != "" {
-			found, ok := modelRegistry.Find(defaultProvider, defaultModelID)
-			if ok && modelRegistry.HasConfiguredAuth(defaultProvider, nil) {
-				model = &found
-			}
-		}
-		if model == nil {
-			model = PreferredAvailableModel(modelRegistry.Available(nil))
-		}
-		if model == nil {
-			fallback = formatNoModelsAvailableMessage()
-		} else if fallback != "" {
-			fallback += ". Using " + string(model.Provider) + "/" + model.ID
-		}
-	}
-
-	thinking := opts.ThinkingLevel
-	if thinking == "" {
-		if hasExisting && hasThinkingEntry {
-			thinking = ai.ModelThinkingLevel(existing.ThinkingLevel)
-		} else {
-			// Upstream order: a new session takes the per-model level before the global default.
-			if !hasExisting && model != nil {
-				thinking = settings.GetModelThinkingLevel(string(model.Provider), model.ID)
-			}
-			if thinking == "" {
-				thinking = settings.GetDefaultThinkingLevel()
-			}
-			if thinking == "" {
-				thinking = ai.ModelThinkingMedium
-			}
-		}
-	}
-	if model != nil {
-		thinking = ai.ClampThinkingLevel(model, thinking)
-	} else {
-		thinking = ai.ModelThinkingOff
-	}
-
-	// Resolve tool allowlist.
-	var allowedToolNames *[]string
-	initialActiveToolNames := resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
-	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
-		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
-	} else if hasExisting && opts.Tools == nil && opts.NoTools == "" {
-		// A resumed session restores the loadout its transcript declares; tools
-		// that register later, such as MCP tools, turn on when they do.
-		var transcript ai.MessageList
-		for _, message := range decoded {
-			if system, ok := message.(*ai.SystemMessage); ok {
-				transcript = append(transcript, system)
-			}
-		}
-		if current := ai.CurrentSystemMessage(transcript); current != nil {
-			names := make([]string, 0, len(current.ToolsAdded))
-			for _, tool := range current.ToolsAdded {
-				names = append(names, tool.Name)
-			}
-			initialActiveToolNames = filterExcluded(names, opts.ExcludeTools)
-		}
-	}
-
-	if opts.Tools != nil {
-		names := filterExcluded(opts.Tools, opts.ExcludeTools)
-		allowedToolNames = &names
-	} else if opts.NoTools == "all" {
-		empty := []string{}
-		allowedToolNames = &empty
-	}
+	initialActiveToolNames, allowedToolNames := initialToolNames(opts, settings, sm, existing, decoded)
 
 	systemPrompt := buildSystemPromptFromResources(resources)
 	systemPrompt = strings.TrimSuffix(systemPrompt, "\nCurrent working directory: "+strings.ReplaceAll(cwd, `\`, "/"))
@@ -466,82 +382,9 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		assembledPrompt = BuildSystemPrompt(*promptOptions)
 	}
 
-	// Resolve auth callbacks. When the caller provides a custom StreamFn
-	// they handle auth themselves (e.g. faux provider). When StreamFn is
-	// nil (defaulting to real HTTP streaming), auto-construct resolvers
-	// from the ModelRegistry so auth.json credentials, models.json
-	// overrides, and built-in provider auth work automatically.
-	getRequestAuth := opts.GetRequestAuth
-	getAPIKey := opts.GetAPIKey
-	getModelHeaders := opts.GetModelHeaders
-	if getRequestAuth == nil && getAPIKey == nil && opts.StreamFn == nil && opts.SessionLoop == nil {
-		registryResolver := modelRegistry.DefaultRequestAuthResolver(nil)
-		getRequestAuth = func(ctx context.Context, provider ai.ProviderID) (*engine.RequestAuth, error) {
-			resolved, err := registryResolver(ctx, provider)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return &engine.RequestAuth{
-				APIKey: resolved.APIKey, Headers: resolved.Headers,
-				Env: resolved.Env, BaseURL: resolved.BaseURL,
-			}, nil
-		}
-		getAPIKey = func(ctx context.Context, provider ai.ProviderID) (*string, error) {
-			resolved, err := getRequestAuth(ctx, provider)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return resolved.APIKey, nil
-		}
-	}
-	if getModelHeaders == nil && opts.StreamFn == nil {
-		getModelHeaders = modelRegistry.DefaultModelHeadersResolver()
-	}
+	opts = withRequestAuth(opts, modelRegistry)
 
-	agentOpts := []engine.AgentOption{
-		engine.WithSessionLoop(opts.SessionLoop),
-		engine.WithInitialState(engine.AgentState{
-			SystemPrompt:  "",
-			Model:         model,
-			ThinkingLevel: thinking,
-			Tools:         []engine.AgentTool{},
-		}),
-		engine.WithConvertToLLM(ConvertToLLMWithBlockImages(settings.GetBlockImages)),
-		engine.WithSteeringMode(engine.QueueMode(settings.GetSteeringMode())),
-		engine.WithFollowUpMode(engine.QueueMode(settings.GetFollowUpMode())),
-	}
-	if opts.Clock != nil {
-		agentOpts = append(agentOpts, engine.WithClock(opts.Clock))
-	}
-	var a *engine.Agent
-	agentOpts = append(agentOpts, engine.WithPrepareNextTurnContext(func(_ context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
-		state := a.StateWithoutMessages()
-		next := *turn.Context
-		next.SystemPrompt, next.Tools = state.SystemPrompt, state.Tools
-		return &engine.AgentLoopTurnUpdate{Context: &next, Model: state.Model, ThinkingLevel: &state.ThinkingLevel}, nil
-	}))
-	providerRetry := settings.GetProviderRetrySettings()
-	maxRetryDelay := providerRetry.MaxRetryDelayMS
-	transport := settings.GetTransport()
-	sessionID := sm.GetSessionID()
-	agentOpts = append(agentOpts, engine.WithSimpleStreamOptions(ai.SimpleStreamOptions{
-		StreamOptions: ai.StreamOptions{
-			Transport:       &transport,
-			SessionID:       &sessionID,
-			MaxRetryDelayMS: &maxRetryDelay,
-		},
-		ThinkingBudgets: settings.GetThinkingBudgets(),
-	}))
-	if getAPIKey != nil {
-		agentOpts = append(agentOpts, engine.WithAPIKeyResolver(getAPIKey))
-	}
-	if getRequestAuth != nil {
-		agentOpts = append(agentOpts, engine.WithRequestAuthResolver(getRequestAuth))
-	}
-	if getModelHeaders != nil {
-		agentOpts = append(agentOpts, engine.WithModelHeadersResolver(getModelHeaders))
-	}
-	a = engine.NewAgent(streamFn, agentOpts...)
+	a := newSessionAgent(opts, settings, sm, streamFn, model, thinking)
 
 	if hasExisting {
 		a.SetMessages(engine.AgentMessages(decoded))
@@ -580,9 +423,9 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		SessionManager:         sm,
 		Settings:               settings,
 		StreamFn:               streamFn,
-		GetAPIKey:              getAPIKey,
-		GetRequestAuth:         getRequestAuth,
-		GetModelHeaders:        getModelHeaders,
+		GetAPIKey:              opts.GetAPIKey,
+		GetRequestAuth:         opts.GetRequestAuth,
+		GetModelHeaders:        opts.GetModelHeaders,
 		AvailableModels:        availableModels,
 		ScopedModels:           opts.ScopedModels,
 		SlashResolver:          slashResolver,
@@ -622,6 +465,185 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		},
 		Diagnostics: diagnostics,
 	}, nil
+}
+
+// newSessionAgent builds the session's engine agent from the options and
+// settings and the resolved model and thinking level.
+func newSessionAgent(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, streamFn engine.StreamFn, model *ai.Model, thinking ai.ModelThinkingLevel) (a *engine.Agent) {
+	agentOpts := []engine.AgentOption{
+		engine.WithSessionLoop(opts.SessionLoop),
+		engine.WithInitialState(engine.AgentState{
+			SystemPrompt:  "",
+			Model:         model,
+			ThinkingLevel: thinking,
+			Tools:         []engine.AgentTool{},
+		}),
+		engine.WithConvertToLLM(ConvertToLLMWithBlockImages(settings.GetBlockImages)),
+		engine.WithSteeringMode(engine.QueueMode(settings.GetSteeringMode())),
+		engine.WithFollowUpMode(engine.QueueMode(settings.GetFollowUpMode())),
+	}
+	if opts.Clock != nil {
+		agentOpts = append(agentOpts, engine.WithClock(opts.Clock))
+	}
+	agentOpts = append(agentOpts, engine.WithPrepareNextTurnContext(func(_ context.Context, turn engine.PrepareNextTurnContext) (*engine.AgentLoopTurnUpdate, error) {
+		state := a.StateWithoutMessages()
+		next := *turn.Context
+		next.SystemPrompt, next.Tools = state.SystemPrompt, state.Tools
+		return &engine.AgentLoopTurnUpdate{Context: &next, Model: state.Model, ThinkingLevel: &state.ThinkingLevel}, nil
+	}))
+	providerRetry := settings.GetProviderRetrySettings()
+	maxRetryDelay := providerRetry.MaxRetryDelayMS
+	transport := settings.GetTransport()
+	sessionID := sm.GetSessionID()
+	agentOpts = append(agentOpts, engine.WithSimpleStreamOptions(ai.SimpleStreamOptions{
+		StreamOptions: ai.StreamOptions{
+			Transport:       &transport,
+			SessionID:       &sessionID,
+			MaxRetryDelayMS: &maxRetryDelay,
+		},
+		ThinkingBudgets: settings.GetThinkingBudgets(),
+	}))
+	if opts.GetAPIKey != nil {
+		agentOpts = append(agentOpts, engine.WithAPIKeyResolver(opts.GetAPIKey))
+	}
+	if opts.GetRequestAuth != nil {
+		agentOpts = append(agentOpts, engine.WithRequestAuthResolver(opts.GetRequestAuth))
+	}
+	if opts.GetModelHeaders != nil {
+		agentOpts = append(agentOpts, engine.WithModelHeadersResolver(opts.GetModelHeaders))
+	}
+	a = engine.NewAgent(streamFn, agentOpts...)
+	return a
+}
+
+// initialModel picks a session's model and thinking level: the session's own
+// when it resumes one, else the settings' defaults, else the first available
+// model; fallback explains a model that could not be restored or found.
+func initialModel(opts AgentSessionOptions, modelRegistry *config.ModelRegistry, settings *config.SettingsManager, existing sessionstore.SessionContext, hasThinkingEntry bool) (model *ai.Model, thinking ai.ModelThinkingLevel, fallback string) {
+	model, hasExisting := opts.Model, len(existing.Messages) > 0
+
+	// Restore saved model from session when no explicit model is provided.
+	if model == nil && hasExisting && existing.Model != nil {
+		restored, found := modelRegistry.Find(existing.Model.Provider, existing.Model.ModelID)
+		if found && modelRegistry.HasConfiguredAuth(existing.Model.Provider, nil) {
+			model = &restored
+		}
+		if model == nil {
+			fallback = "Could not restore model " + existing.Model.Provider + "/" + existing.Model.ModelID
+		}
+	}
+
+	// Fall back to settings default, then first available model.
+	if model == nil {
+		defaultProvider := settings.GetDefaultProvider()
+		defaultModelID := settings.GetDefaultModel()
+		if defaultProvider != "" && defaultModelID != "" {
+			found, ok := modelRegistry.Find(defaultProvider, defaultModelID)
+			if ok && modelRegistry.HasConfiguredAuth(defaultProvider, nil) {
+				model = &found
+			}
+		}
+		if model == nil {
+			model = PreferredAvailableModel(modelRegistry.Available(nil))
+		}
+		if model == nil {
+			fallback = formatNoModelsAvailableMessage()
+		} else if fallback != "" {
+			fallback += ". Using " + string(model.Provider) + "/" + model.ID
+		}
+	}
+
+	thinking = opts.ThinkingLevel
+	if thinking == "" {
+		if hasExisting && hasThinkingEntry {
+			thinking = ai.ModelThinkingLevel(existing.ThinkingLevel)
+		} else {
+			// Upstream order: a new session takes the per-model level before the global default.
+			if !hasExisting && model != nil {
+				thinking = settings.GetModelThinkingLevel(string(model.Provider), model.ID)
+			}
+			if thinking == "" {
+				thinking = settings.GetDefaultThinkingLevel()
+			}
+			if thinking == "" {
+				thinking = ai.ModelThinkingMedium
+			}
+		}
+	}
+	if model != nil {
+		thinking = ai.ClampThinkingLevel(model, thinking)
+	} else {
+		thinking = ai.ModelThinkingOff
+	}
+	return model, thinking, fallback
+}
+
+// initialToolNames resolves the tools a session starts with, and the ones it
+// may ever enable when the options restrict them.
+func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, existing sessionstore.SessionContext, decoded []any) (initialActiveToolNames []string, allowedToolNames *[]string) {
+	hasExisting := len(existing.Messages) > 0
+	initialActiveToolNames = resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
+	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
+		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
+	} else if hasExisting && opts.Tools == nil && opts.NoTools == "" {
+		// A resumed session restores the loadout its transcript declares; tools
+		// that register later, such as MCP tools, turn on when they do.
+		var transcript ai.MessageList
+		for _, message := range decoded {
+			if system, ok := message.(*ai.SystemMessage); ok {
+				transcript = append(transcript, system)
+			}
+		}
+		if current := ai.CurrentSystemMessage(transcript); current != nil {
+			names := make([]string, 0, len(current.ToolsAdded))
+			for _, tool := range current.ToolsAdded {
+				names = append(names, tool.Name)
+			}
+			initialActiveToolNames = filterExcluded(names, opts.ExcludeTools)
+		}
+	}
+
+	if opts.Tools != nil {
+		names := filterExcluded(opts.Tools, opts.ExcludeTools)
+		allowedToolNames = &names
+	} else if opts.NoTools == "all" {
+		empty := []string{}
+		allowedToolNames = &empty
+	}
+	return initialActiveToolNames, allowedToolNames
+}
+
+// withRequestAuth completes the options' request-time auth callbacks. When
+// the caller provides a custom StreamFn they handle auth themselves (e.g. faux
+// provider). When StreamFn is nil (defaulting to real HTTP streaming), the
+// callbacks are built from the ModelRegistry so auth.json credentials,
+// models.json overrides, and built-in provider auth work automatically.
+func withRequestAuth(opts AgentSessionOptions, modelRegistry *config.ModelRegistry) AgentSessionOptions {
+	if opts.GetRequestAuth == nil && opts.GetAPIKey == nil && opts.StreamFn == nil && opts.SessionLoop == nil {
+		registryResolver := modelRegistry.DefaultRequestAuthResolver(nil)
+		getRequestAuth := func(ctx context.Context, provider ai.ProviderID) (*engine.RequestAuth, error) {
+			resolved, err := registryResolver(ctx, provider)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return &engine.RequestAuth{
+				APIKey: resolved.APIKey, Headers: resolved.Headers,
+				Env: resolved.Env, BaseURL: resolved.BaseURL,
+			}, nil
+		}
+		opts.GetRequestAuth = getRequestAuth
+		opts.GetAPIKey = func(ctx context.Context, provider ai.ProviderID) (*string, error) {
+			resolved, err := getRequestAuth(ctx, provider)
+			if err != nil || resolved == nil {
+				return nil, err
+			}
+			return resolved.APIKey, nil
+		}
+	}
+	if opts.GetModelHeaders == nil && opts.StreamFn == nil {
+		opts.GetModelHeaders = modelRegistry.DefaultModelHeadersResolver()
+	}
+	return opts
 }
 
 func resourceRuntimeDiagnostics(resources *Resources) []AgentSessionRuntimeDiagnostic {
