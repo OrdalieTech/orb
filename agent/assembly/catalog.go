@@ -52,7 +52,7 @@ var descriptions = map[string]string{
 	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
-	"memtree":            "Zoomable summary tree of each session for lossless compaction or fresh turns",
+	"memtree":            "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
 	"codex-sessions":     "Open Codex CLI threads as Orb conversations with orb --session <id>",
 	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
