@@ -176,7 +176,7 @@ func newUserMarkdown(text string, mdTheme tui.MarkdownTheme, transform func(stri
 }
 
 func newUserMessageBand(body tui.Component, outputPad int) *UserMessageComponent {
-	box := tui.NewBox(outputPad+1, 0, func(t string) string { return theme.BG("userMessageBg", t) })
+	box := tui.NewBox(outputPad+1, 1, func(t string) string { return theme.BG("userMessageBg", t) })
 	box.AddChild(body)
 	return &UserMessageComponent{box: box}
 }
@@ -190,12 +190,12 @@ func (c *UserMessageComponent) SetExpanded(expanded bool) {
 }
 
 // HandleMouse toggles the skill body on a click at or below the footer. Row 0
-// is the leading blank line and the band has no vertical padding.
+// is the leading blank line and row 1 the band's top padding.
 func (c *UserMessageComponent) HandleMouse(event tui.MouseEvent) bool {
 	if c.skill == nil || event.Type != tui.MouseRelease || event.Button != 0 && event.Button != 3 {
 		return false
 	}
-	if !c.skill.toggleAt(event.Row - 1) {
+	if !c.skill.toggleAt(event.Row - 2) {
 		return false
 	}
 	c.box.Invalidate()
@@ -1128,9 +1128,11 @@ func (group *toolActivityGroup) Render(width int) []string {
 				labels = append(labels, fmt.Sprintf("%d %s", count, kind.plural))
 			}
 		}
+		// An open group needs no marker: its rows show it is open, and the
+		// label keeps the column of theirs.
 		marker, color := "›", "accent"
 		if group.expanded {
-			marker = "⌄"
+			marker = " "
 		}
 		if group.hovered {
 			color = "toolTitle"
