@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -67,9 +66,11 @@ func validate(schema Schema, value any, clone bool) (any, error) {
 // the diagnostic's pretty-printed input. Callers with a retained raw tool call
 // should prefer this form over re-encoding its arguments map.
 func ValidateToolArgumentsJSON(toolName string, schema Schema, argumentsJSON []byte) (any, error) {
-	var arguments any
-	if err := json.Unmarshal(argumentsJSON, &arguments); err != nil {
-		return nil, fmt.Errorf("jsonschema: decode tool arguments: %w", err)
+	arguments, ok := jsonwire.Decode(argumentsJSON)
+	if !ok {
+		if err := json.Unmarshal(argumentsJSON, &arguments); err != nil {
+			return nil, fmt.Errorf("jsonschema: decode tool arguments: %w", err)
+		}
 	}
 	// The arguments were just decoded for this call, so they need no clone.
 	validated, err := validate(schema, arguments, false)
@@ -289,8 +290,7 @@ func coerceValue(value, schema any) any {
 	unionAlreadyMatches := len(types) > 1 && anyTypeMatches(next, types)
 	if len(types) > 0 && !unionAlreadyMatches {
 		for _, schemaType := range types {
-			candidate := coercePrimitive(next, schemaType)
-			if !reflect.DeepEqual(candidate, next) {
+			if candidate, coerced := coercePrimitive(next, schemaType); coerced {
 				next = candidate
 				break
 			}
@@ -361,91 +361,93 @@ func coerceUnion(value any, schemas []any) any {
 	return value
 }
 
-func coercePrimitive(value any, schemaType string) any {
+// coercePrimitive converts value to schemaType when JavaScript would, and
+// reports whether it did.
+func coercePrimitive(value any, schemaType string) (any, bool) {
 	switch schemaType {
 	case "number":
 		switch typed := value.(type) {
 		case nil:
-			return float64(0)
+			return float64(0), true
 		case string:
 			if strings.TrimSpace(typed) != "" {
 				if number, ok := parseJSNumber(typed); ok && !math.IsInf(number, 0) && !math.IsNaN(number) {
-					return number
+					return number, true
 				}
 			}
 		case bool:
 			if typed {
-				return float64(1)
+				return float64(1), true
 			}
-			return float64(0)
+			return float64(0), true
 		}
 	case "integer":
 		switch typed := value.(type) {
 		case nil:
-			return float64(0)
+			return float64(0), true
 		case string:
 			if strings.TrimSpace(typed) != "" {
 				if number, ok := parseJSNumber(typed); ok && !math.IsInf(number, 0) && !math.IsNaN(number) && math.Trunc(number) == number {
-					return number
+					return number, true
 				}
 			}
 		case bool:
 			if typed {
-				return float64(1)
+				return float64(1), true
 			}
-			return float64(0)
+			return float64(0), true
 		}
 	case "boolean":
 		switch typed := value.(type) {
 		case nil:
-			return false
+			return false, true
 		case string:
 			if typed == "true" {
-				return true
+				return true, true
 			}
 			if typed == "false" {
-				return false
+				return false, true
 			}
 		case float64:
 			if typed == 1 {
-				return true
+				return true, true
 			}
 			if typed == 0 {
-				return false
+				return false, true
 			}
 		}
 	case "string":
 		switch typed := value.(type) {
 		case nil:
-			return ""
+			return "", true
 		case bool:
-			return strconv.FormatBool(typed)
+			return strconv.FormatBool(typed), true
 		case float64:
 			if typed == 0 {
-				return "0"
+				return "0", true
 			}
 			encoded, err := jsonwire.Marshal(typed)
 			if err == nil {
-				return string(encoded)
+				return string(encoded), true
 			}
 		}
 	case "null":
 		switch typed := value.(type) {
 		case string:
 			if typed == "" {
-				return nil
+				return nil, true
 			}
 		case float64:
 			if typed == 0 {
-				return nil
+				return nil, true
 			}
 		case bool:
 			if !typed {
-				return nil
+				return nil, true
 			}
 		}
 	}
-	return value
+	return value, false
 }
 
 func parseJSNumber(value string) (float64, bool) {

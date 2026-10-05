@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
@@ -2237,17 +2236,10 @@ func mapOpenAICompletionsStopReason(reason string) (ai.StopReason, *string) {
 func rawJSONArray(raw json.RawMessage) []json.RawMessage { return jsonwire.Elements(raw) }
 
 func rawJSONString(raw json.RawMessage) (string, bool) {
-	// A string of valid UTF-8 decodes to its bytes without escapes, and as
-	// jsonwire decodes it without \u escapes (the only place jsonwire differs:
-	// it keeps lone surrogates).
-	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' && utf8.Valid(raw) {
-		if bytes.IndexByte(raw, '\\') < 0 {
-			return string(raw[1 : len(raw)-1]), true
-		}
-		if !bytes.Contains(raw, []byte(`\u`)) {
-			value, err := jsonwire.UnmarshalString(raw)
-			return value, err == nil
-		}
+	// json.Unmarshal into a string accepts a string or null.
+	if value, ok := jsonwire.Decode(raw); ok {
+		text, isString := value.(string)
+		return text, isString || value == nil
 	}
 	var value string
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {

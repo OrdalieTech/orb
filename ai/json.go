@@ -302,12 +302,25 @@ func (tool Tool) appendWire(dst []byte) ([]byte, error) {
 	}
 	dst = jsonwire.AppendString(append(dst, `,"description":`...), tool.Description)
 	dst = append(append(dst, `,"parameters":`...), encoded...)
-	if tool.ConstrainedSampling != nil {
-		config, err := marshalJSON(tool.ConstrainedSampling)
-		if err != nil {
-			return nil, err
+	if config := tool.ConstrainedSampling; config != nil {
+		dst = jsonwire.AppendString(append(dst, `,"constrainedSampling":{"type":`...), string(config.Type))
+		if config.Strict != "" {
+			dst = jsonwire.AppendString(append(dst, `,"strict":`...), string(config.Strict))
 		}
-		dst = append(append(dst, `,"constrainedSampling":`...), config...)
+		if variants := config.Variants; variants != nil {
+			dst = append(dst, `,"variants":{`...)
+			if variants.OpenAILark != nil {
+				dst = jsonwire.AppendString(append(dst, `"openai_lark":`...), *variants.OpenAILark)
+			}
+			if variants.OpenAIRegex != nil {
+				if variants.OpenAILark != nil {
+					dst = append(dst, ',')
+				}
+				dst = jsonwire.AppendString(append(dst, `"openai_regex":`...), *variants.OpenAIRegex)
+			}
+			dst = append(dst, '}')
+		}
+		dst = append(dst, '}')
 	}
 	return append(dst, '}'), nil
 }
@@ -1422,6 +1435,9 @@ func decodeJSONValue(data []byte) (any, error) {
 	if len(data) == 0 {
 		return nil, errors.New("missing JSON value")
 	}
+	if value, ok := jsonwire.Decode(data); ok {
+		return value, nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var value any
 	if err := decoder.Decode(&value); err != nil {
@@ -1439,6 +1455,9 @@ func decodeJSONValue(data []byte) (any, error) {
 // NormalizeJSONStringifyJSON parses JSON with JavaScript Number semantics and
 // re-emits the same value using JSON.stringify's ordering and scalar spelling.
 func NormalizeJSONStringifyJSON(data []byte) ([]byte, error) {
+	if jsonwire.Stringified(data) {
+		return bytes.Clone(data), nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	source := jsonStringifyDecoder{decoder: decoder, data: data}

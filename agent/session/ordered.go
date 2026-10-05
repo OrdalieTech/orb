@@ -24,7 +24,7 @@ type orderedObject struct {
 // parseOrderedObject keeps a record's members in order with their exact
 // bytes, which share data: raw JSON is replaced, never changed in place.
 func parseOrderedObject(data []byte) (*orderedObject, error) {
-	if !json.Valid(data) {
+	if !jsonwire.Valid(data) {
 		return nil, errors.New("session: invalid JSON record")
 	}
 	if trimmed := bytes.TrimLeft(data, " \t\r\n"); trimmed[0] != '{' {
@@ -146,7 +146,7 @@ func (object *orderedObject) marshal() ([]byte, error) {
 
 func rawValue(value any) (json.RawMessage, error) {
 	if raw, ok := value.(json.RawMessage); ok {
-		if !json.Valid(raw) {
+		if !jsonwire.Valid(raw) {
 			return nil, fmt.Errorf("session: invalid raw JSON")
 		}
 		return cloneRaw(raw), nil
