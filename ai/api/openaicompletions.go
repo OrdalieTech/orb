@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -17,7 +16,6 @@ import (
 	"sync"
 	"unicode/utf16"
 	"unicode/utf8"
-	"weak"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
@@ -294,7 +292,16 @@ func openAICompletionsWireValue(value any, compat resolvedOpenAICompletionsCompa
 }
 
 func (payload openAICompletionsWirePayload) MarshalJSON() ([]byte, error) {
-	return appendOpenAICompletionsObject(nil, payload.value, openAICompletionsObjectKeys(payload.value, true))
+	// Sized for the encoded messages and tools, so the buffer is not regrown
+	// and copied as the conversation lengthens.
+	tools, _ := payload.value["tools"].(completionsWireJSON)
+	size := 1024 + len(tools)
+	messages, _ := payload.value["messages"].([]any)
+	for _, message := range messages {
+		encoded, _ := message.(completionsWireJSON)
+		size += len(encoded) + 1
+	}
+	return appendOpenAICompletionsObject(make([]byte, 0, size), payload.value, openAICompletionsObjectKeys(payload.value, true))
 }
 
 func (object openAICompletionsWireObject) MarshalJSON() ([]byte, error) {
@@ -804,11 +811,15 @@ func buildOpenAICompletionsPayload(
 	activeTools := activeOpenAICompletionsTools(requestContext.Tools, nil)
 	var tools []any
 	if len(activeTools) > 0 {
-		tools, err = convertOpenAICompletionsTools(activeTools, compat)
+		if wire {
+			payload["tools"], err = wireOpenAICompletionsTools(activeTools, compat)
+		} else {
+			tools, err = convertOpenAICompletionsTools(activeTools, compat)
+			payload["tools"] = tools
+		}
 		if err != nil {
 			return nil, err
 		}
-		payload["tools"] = tools
 		if compat.zaiToolStream {
 			payload["tool_stream"] = true
 		}
@@ -930,6 +941,32 @@ func convertOpenAICompletionsMessages(
 		toolResultName:           compat.requiresToolResultName,
 		openCodeGo:               model.Provider == "opencode-go",
 	}
+	// For the wire, a message the last request sent at the same place reuses
+	// that request's encoding.
+	var previous, current completionsWireMessages
+	if wire {
+		completionsWireLast.Lock()
+		previous = completionsWireLast.completionsWireMessages
+		completionsWireLast.Unlock()
+		current = completionsWireMessages{settings, transformed, make([]any, len(transformed))}
+	}
+	encode := func(index int, convert func() (map[string]any, bool, error)) (any, bool, error) {
+		if !wire {
+			return convert()
+		}
+		if previous.settings == settings && index < len(previous.messages) && previous.messages[index] == transformed[index] {
+			current.encoded[index] = previous.encoded[index]
+		} else if converted, include, err := convert(); err != nil || !include {
+			return nil, false, err
+		} else {
+			value, err := appendOpenAICompletionsValue(nil, converted)
+			if err != nil {
+				return nil, false, err
+			}
+			current.encoded[index] = completionsWireJSON(value)
+		}
+		return current.encoded[index], current.encoded[index] != nil, nil
+	}
 
 	lastRole := ""
 	for index := 0; index < len(transformed); index++ {
@@ -954,7 +991,7 @@ func convertOpenAICompletionsMessages(
 			if compat.requiresAssistantAfterToolResult && lastRole == "toolResult" {
 				messages = append(messages, map[string]any{"role": "assistant", "content": "I have processed the tool results."})
 			}
-			converted, include, err := completionsMessage(wire, message, settings, func() (map[string]any, bool, error) {
+			converted, include, err := encode(index, func() (map[string]any, bool, error) {
 				converted, include := convertOpenAICompletionsUserMessage(message)
 				return converted, include, nil
 			})
@@ -967,7 +1004,7 @@ func convertOpenAICompletionsMessages(
 			messages = append(messages, converted)
 			lastRole = "user"
 		case *ai.AssistantMessage:
-			converted, include, err := completionsMessage(wire, message, settings, func() (map[string]any, bool, error) {
+			converted, include, err := encode(index, func() (map[string]any, bool, error) {
 				return convertOpenAICompletionsAssistantMessageWithGrammar(settings, message, grammarToolInputProperties)
 			})
 			if err != nil {
@@ -986,7 +1023,7 @@ func convertOpenAICompletionsMessages(
 				if !ok {
 					break
 				}
-				converted, _, err := completionsMessage(wire, toolResult, settings, func() (map[string]any, bool, error) {
+				converted, _, err := encode(end, func() (map[string]any, bool, error) {
 					return convertOpenAICompletionsToolResult(settings, toolResult), true, nil
 				})
 				if err != nil {
@@ -1015,6 +1052,11 @@ func convertOpenAICompletionsMessages(
 			}
 		}
 	}
+	if wire {
+		completionsWireLast.Lock()
+		completionsWireLast.completionsWireMessages = current
+		completionsWireLast.Unlock()
+	}
 	return messages, nil
 }
 
@@ -1027,43 +1069,21 @@ type completionsMessageSettings struct {
 // completionsWireJSON is a message's encoded wire object.
 type completionsWireJSON []byte
 
-type completionsWireEntry struct {
+// completionsWireMessages are a request's transformed messages and their
+// encodings, nil for a message left out.
+type completionsWireMessages struct {
 	settings completionsMessageSettings
-	encoded  completionsWireJSON // nil: the message is left out
+	messages ai.MessageList
+	encoded  []any
 }
 
-// completionsWireMessages remembers each message's encoding while the message
-// lives. Messages are not changed once sent and transformMessages returns
-// those it leaves alone, so a long conversation encodes only what is new.
-var completionsWireMessages sync.Map
-
-// completionsMessage converts one message: to its encoding, remembered, for
-// the wire, or to an object a hook or cache anchor can edit.
-func completionsMessage[T any](
-	wire bool, message *T, settings completionsMessageSettings, convert func() (map[string]any, bool, error),
-) (any, bool, error) {
-	if !wire {
-		return convert()
-	}
-	key := weak.Make(message)
-	if cached, ok := completionsWireMessages.Load(key); ok && cached.(*completionsWireEntry).settings == settings {
-		encoded := cached.(*completionsWireEntry).encoded
-		return encoded, encoded != nil, nil
-	}
-	converted, include, err := convert()
-	if err != nil {
-		return nil, false, err
-	}
-	var encoded completionsWireJSON
-	if include {
-		if encoded, err = appendOpenAICompletionsValue(nil, converted); err != nil {
-			return nil, false, err
-		}
-	}
-	if _, loaded := completionsWireMessages.Swap(key, &completionsWireEntry{settings, encoded}); !loaded {
-		runtime.AddCleanup(message, func(key weak.Pointer[T]) { completionsWireMessages.Delete(key) }, key)
-	}
-	return encoded, include, nil
+// completionsWireLast is the last request's messages. A conversation's next
+// request repeats them in order and adds a few; messages are not changed once
+// sent and transformMessages returns those it leaves alone, so a long
+// conversation encodes only what is new.
+var completionsWireLast struct {
+	sync.Mutex
+	completionsWireMessages
 }
 
 func openAICompletionsImagePart(image *ai.ImageContent) map[string]any {
@@ -1304,6 +1324,35 @@ func convertOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAIComplet
 		result = append(result, map[string]any{"type": "function", "function": function})
 	}
 	return result, nil
+}
+
+// completionsWireTools is the last tools encoding. Requests repeat the same
+// tools, whose shared fields compare equal without being read.
+var completionsWireTools struct {
+	sync.Mutex
+	tools           []ai.Tool
+	strict, grammar bool
+	encoded         completionsWireJSON
+}
+
+func wireOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAICompletionsCompat) (completionsWireJSON, error) {
+	cache := &completionsWireTools
+	cache.Lock()
+	defer cache.Unlock()
+	if cache.encoded != nil && cache.strict == compat.supportsStrictMode && cache.grammar == compat.supportsOpenAIGrammarTools &&
+		slices.EqualFunc(cache.tools, tools, ai.ToolDeclarationsEqual) {
+		return cache.encoded, nil
+	}
+	converted, err := convertOpenAICompletionsTools(tools, compat)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := appendOpenAICompletionsValue(nil, converted)
+	if err != nil {
+		return nil, err
+	}
+	cache.tools, cache.strict, cache.grammar, cache.encoded = slices.Clone(tools), compat.supportsStrictMode, compat.supportsOpenAIGrammarTools, encoded
+	return encoded, nil
 }
 
 func hasOpenAICompletionsToolHistory(messages ai.MessageList) bool {

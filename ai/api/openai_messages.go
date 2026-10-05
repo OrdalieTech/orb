@@ -19,41 +19,9 @@ type toolCallIDNormalizer func(string, *ai.Model, *ai.AssistantMessage) string
 // change comes back as it is, so providers recognize it across requests.
 func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCallID toolCallIDNormalizer) ai.MessageList {
 	toolCallIDs := make(map[string]string)
-	transformed := make(ai.MessageList, 0, len(messages))
+	result := make(ai.MessageList, 0, len(messages))
 	images := modelSupportsImage(model)
-
-	for _, message := range messages {
-		switch value := message.(type) {
-		case *ai.SystemMessage:
-			transformed = append(transformed, value)
-		case *ai.UserMessage:
-			if value.Content.Text == nil {
-				if blocks, changed := adaptImages(value.Content.Blocks, images, nonVisionUserImagePlaceholder); changed {
-					clone := *value
-					clone.Content = ai.UserContent{Blocks: blocks}
-					value = &clone
-				}
-			}
-			transformed = append(transformed, value)
-		case *ai.ToolResultMessage:
-			content, changed := adaptImages(value.Content, images, nonVisionToolImagePlaceholder)
-			normalized, renamed := toolCallIDs[value.ToolCallID]
-			if changed || renamed {
-				clone := *value
-				clone.Content = content
-				if renamed {
-					clone.ToolCallID = normalized
-				}
-				value = &clone
-			}
-			transformed = append(transformed, value)
-		case *ai.AssistantMessage:
-			transformed = append(transformed, transformAssistantMessage(value, model, normalizeToolCallID, toolCallIDs))
-		}
-	}
-
-	result := make(ai.MessageList, 0, len(transformed))
-	pendingToolCalls := make([]*ai.ToolCall, 0)
+	var pendingToolCalls []*ai.ToolCall
 	existingToolResults := make(map[string]struct{})
 	insertSyntheticToolResults := func() {
 		for _, call := range pendingToolCalls {
@@ -71,31 +39,48 @@ func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCa
 			})
 		}
 		pendingToolCalls = pendingToolCalls[:0]
-		existingToolResults = make(map[string]struct{})
+		clear(existingToolResults)
 	}
 
-	for _, message := range transformed {
+	for _, message := range messages {
 		switch value := message.(type) {
 		case *ai.SystemMessage:
 			result = append(result, value)
+		case *ai.UserMessage:
+			if value.Content.Text == nil {
+				if blocks, changed := adaptImages(value.Content.Blocks, images, nonVisionUserImagePlaceholder); changed {
+					clone := *value
+					clone.Content = ai.UserContent{Blocks: blocks}
+					value = &clone
+				}
+			}
+			insertSyntheticToolResults()
+			result = append(result, value)
+		case *ai.ToolResultMessage:
+			content, changed := adaptImages(value.Content, images, nonVisionToolImagePlaceholder)
+			normalized, renamed := toolCallIDs[value.ToolCallID]
+			if changed || renamed {
+				clone := *value
+				clone.Content = content
+				if renamed {
+					clone.ToolCallID = normalized
+				}
+				value = &clone
+			}
+			existingToolResults[value.ToolCallID] = struct{}{}
+			result = append(result, value)
 		case *ai.AssistantMessage:
+			// A failed turn is dropped, but the ids it renamed still apply.
+			value = transformAssistantMessage(value, model, normalizeToolCallID, toolCallIDs)
 			insertSyntheticToolResults()
 			if value.StopReason == ai.StopReasonError || value.StopReason == ai.StopReasonAborted {
 				continue
 			}
-			pendingToolCalls = pendingToolCalls[:0]
 			for _, content := range value.Content {
 				if call, ok := content.(*ai.ToolCall); ok {
 					pendingToolCalls = append(pendingToolCalls, call)
 				}
 			}
-			existingToolResults = make(map[string]struct{})
-			result = append(result, value)
-		case *ai.ToolResultMessage:
-			existingToolResults[value.ToolCallID] = struct{}{}
-			result = append(result, value)
-		case *ai.UserMessage:
-			insertSyntheticToolResults()
 			result = append(result, value)
 		}
 	}

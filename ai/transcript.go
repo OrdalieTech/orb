@@ -133,7 +133,7 @@ func HasToolRedefinitions(messages MessageList) bool {
 			continue
 		}
 		for _, tool := range message.ToolsAdded {
-			if previous, exists := declared[tool.Name]; exists && !toolDeclarationsEqual(previous, tool) {
+			if previous, exists := declared[tool.Name]; exists && !ToolDeclarationsEqual(previous, tool) {
 				return true
 			}
 			declared[tool.Name] = tool
@@ -268,12 +268,12 @@ func ToolStateChanges(previous, current []Tool) (added []Tool, removed []ToolRef
 	}
 	for _, tool := range current {
 		currentByName[tool.Name] = tool
-		if old, exists := previousByName[tool.Name]; !exists || !toolDeclarationsEqual(old, tool) {
+		if old, exists := previousByName[tool.Name]; !exists || !ToolDeclarationsEqual(old, tool) {
 			added = append(added, toolDeclaration(tool))
 		}
 	}
 	for _, tool := range previous {
-		if next, exists := currentByName[tool.Name]; !exists || !toolDeclarationsEqual(tool, next) {
+		if next, exists := currentByName[tool.Name]; !exists || !ToolDeclarationsEqual(tool, next) {
 			removed = append(removed, ToolReference{Name: tool.Name})
 		}
 	}
@@ -344,7 +344,10 @@ func toolDeclaration(tool Tool) Tool {
 	return Tool{Name: tool.Name, Description: tool.Description, Parameters: append(JSONSchema(nil), tool.Parameters...), ConstrainedSampling: tool.ConstrainedSampling}
 }
 
-func toolDeclarationsEqual(left, right Tool) bool {
+// ToolDeclarationsEqual reports whether two tools declare the same name,
+// description, parameters and constrained sampling.
+func ToolDeclarationsEqual(left, right Tool) bool {
 	return left.Name == right.Name && left.Description == right.Description &&
-		bytes.Equal(left.Parameters, right.Parameters) && reflect.DeepEqual(left.ConstrainedSampling, right.ConstrainedSampling)
+		bytes.Equal(left.Parameters, right.Parameters) &&
+		(left.ConstrainedSampling == right.ConstrainedSampling || reflect.DeepEqual(left.ConstrainedSampling, right.ConstrainedSampling))
 }
