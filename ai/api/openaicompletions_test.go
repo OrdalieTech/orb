@@ -93,7 +93,7 @@ func TestOpenAICompletionsCustomToolCallStreamingRoundTrip(t *testing.T) {
 		t.Fatalf("custom tool call = %#v", output.Content)
 	}
 	replay, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(
-		model, output, resolvedOpenAICompletionsCompat{}, map[string]string{"emit": "payload"},
+		completionsMessageSettings{}, output, map[string]string{"emit": "payload"},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -143,12 +143,7 @@ func TestOpenAICompletionsPreservesStreamedArgumentOrderOnReplay(t *testing.T) {
 		`{"id":"chatcmpl-order","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_order","function":{"name":"echo","arguments":"{\"text\":\"first\",\"mode\":\"plain\",\"metadata\":{\"count\":1}}"}}]},"finish_reason":"tool_calls"}]}`,
 	)
 	message, _ := collectOpenAICompletionsFixture(t, stream)
-	converted, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(
-		&ai.Model{},
-		message,
-		resolvedOpenAICompletionsCompat{},
-		nil,
-	)
+	converted, include, err := convertOpenAICompletionsAssistantMessageWithGrammar(completionsMessageSettings{}, message, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
