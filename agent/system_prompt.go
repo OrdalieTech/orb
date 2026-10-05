@@ -180,12 +180,12 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		addSection("preamble", "You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.")
 		addSection("tools", wrapPromptSection("tools", toolsList+"\n\nIn addition to the tools above, you may have access to other custom tools depending on the project."))
 		addSection("rules", wrapPromptSection("rules", strings.Join(formattedGuidelines, "\n")))
-		packageDir := resolvePromptPackageDir(options.PackageDir)
+		packageDir := promptPackageDir(options.PackageDir)
 		readmePath := filepath.Join(packageDir, "README.md")
 		docsPath := filepath.Join(packageDir, "docs")
 		examplesPath := filepath.Join(packageDir, "examples")
 		// These instructions require the complete bundle, which standalone installs don't ship.
-		if hasPromptDocs(packageDir, readmePath, docsPath, examplesPath) {
+		if packageDir != "" && hasPromptDocs(packageDir, readmePath, docsPath, examplesPath) {
 			docs := fmt.Sprintf(`Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: %s
 - Additional docs: %s
@@ -273,12 +273,17 @@ func DiffSystemPromptSections(previous, current ai.SystemPromptSections) ai.Syst
 // call into JavaScript on js/wasm.
 var promptDocs sync.Map
 
-func hasPromptDocs(packageDir string, paths ...string) bool {
-	// A js/wasm host ships no package directory; its os.Stat only calls into
-	// JavaScript to fail.
+// promptPackageDir is the package directory whose docs the prompt points to,
+// empty on a js/wasm host, which ships none and would only call into
+// JavaScript to find that out.
+func promptPackageDir(packageDir string) string {
 	if runtime.GOOS == "js" {
-		return false
+		return ""
 	}
+	return resolvePromptPackageDir(packageDir)
+}
+
+func hasPromptDocs(packageDir string, paths ...string) bool {
 	if known, ok := promptDocs.Load(packageDir); ok {
 		return known.(bool)
 	}
