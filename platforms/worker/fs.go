@@ -292,8 +292,13 @@ func (b *batch) appended(ctx context.Context, name string, previous *entry, cont
 			return &harness.FileError{Code: harness.FileErrorUnknown, Path: name, Err: errors.New("worker: stored tail chunk does not match its metadata")}
 		}
 	}
-	// Stored chunks are only read back as copies, so the tail grows in place.
-	data := append(tail, content...)
+	// Stored chunks are only read back as copies, so the tail grows in place,
+	// in a buffer that holds its whole chunk.
+	data := tail
+	if cap(data)-len(data) < len(content) {
+		data = append(make([]byte, 0, max(chunkSize, len(tail)+len(content))), tail...)
+	}
+	data = append(data, content...)
 	for offset := 0; offset < len(data); offset += chunkSize {
 		b.set(chunkKey(b.fsys.namespace, name, first+offset/chunkSize), data[offset:min(len(data), offset+chunkSize)])
 	}

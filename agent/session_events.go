@@ -2,7 +2,7 @@ package agent
 
 import (
 	"errors"
-	"fmt"
+	"strconv"
 
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -107,7 +107,7 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return fmt.Appendf(encoded[:len(encoded)-1], `,"willRetry":%t}`, typed.WillRetry), nil
+		return append(strconv.AppendBool(append(encoded[:len(encoded)-1], `,"willRetry":`...), typed.WillRetry), '}'), nil
 	case AgentSettledEvent:
 		return []byte(`{"type":"agent_settled"}`), nil
 	case QueueUpdateEvent:

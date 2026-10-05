@@ -274,7 +274,7 @@ func (fsys *FileSystem) write(ctx context.Context, name string, content []byte, 
 	if code != "" {
 		return fail(code, "mkdir", resolved)
 	}
-	data := slices.Clone(content)
+	var data []byte
 	bytes, files := fsys.bytes+int64(len(content)), fsys.files+1
 	if existing != nil {
 		if appendMode {
@@ -285,6 +285,9 @@ func (fsys *FileSystem) write(ctx context.Context, name string, content []byte, 
 			bytes -= int64(len(existing.data))
 		}
 		files--
+	}
+	if existing == nil || !appendMode {
+		data = slices.Clone(content)
 	}
 	if (fsys.maxBytes > 0 && bytes > fsys.maxBytes) || (fsys.maxFiles > 0 && files > fsys.maxFiles) {
 		return &harness.FileError{Code: harness.FileErrorUnknown, Path: resolved, Err: fmt.Errorf("%w: %d bytes and %d files allowed", ErrLimitExceeded, fsys.maxBytes, fsys.maxFiles)}

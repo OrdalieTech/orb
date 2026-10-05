@@ -169,6 +169,9 @@ func decodeHarnessStringInto(raw []byte, target *string) bool {
 type harnessJSONMember struct {
 	name  string
 	value json.RawMessage
+	// raw marks a value the caller supplied, checked before it is written;
+	// the codec's own encodings are valid by construction.
+	raw bool
 }
 
 func marshalHarnessHeader(metadata SessionMetadata) ([]byte, error) {
@@ -359,7 +362,7 @@ func harnessRawMember(name string, value json.RawMessage) harnessJSONMember {
 	if len(value) == 0 {
 		value = json.RawMessage("null")
 	}
-	return harnessJSONMember{name: name, value: cloneHarnessRaw(value)}
+	return harnessJSONMember{name: name, value: value, raw: true}
 }
 
 func mustHarnessJSON(value any) json.RawMessage {
@@ -409,24 +412,22 @@ func normalizeHarnessJSONStringifyValue(value any) any {
 	}
 }
 
+// marshalHarnessMembers encodes members as one object in a fresh buffer with
+// room for the journal's line feed.
 func marshalHarnessMembers(members []harnessJSONMember) ([]byte, error) {
-	var output bytes.Buffer
-	output.WriteByte('{')
+	size := 3
+	for _, member := range members {
+		size += len(member.name) + len(member.value) + 4
+	}
+	output := append(make([]byte, 0, size), '{')
 	for index, member := range members {
-		if !json.Valid(member.value) {
+		if member.raw && !json.Valid(member.value) {
 			return nil, fmt.Errorf("harness: invalid raw JSON member %s", member.name)
 		}
 		if index > 0 {
-			output.WriteByte(',')
+			output = append(output, ',')
 		}
-		name, err := jsonwire.MarshalString(member.name)
-		if err != nil {
-			return nil, err
-		}
-		output.Write(name)
-		output.WriteByte(':')
-		output.Write(member.value)
+		output = append(append(jsonwire.AppendString(output, member.name), ':'), member.value...)
 	}
-	output.WriteByte('}')
-	return output.Bytes(), nil
+	return append(output, '}'), nil
 }

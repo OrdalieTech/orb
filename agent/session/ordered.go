@@ -3,12 +3,10 @@ package session
 import (
 	"bytes"
 	"encoding/json"
-	"encoding/json/jsontext"
+	"errors"
 	"fmt"
-	"io"
 	"math"
 	"strconv"
-	"sync"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -23,49 +21,38 @@ type orderedObject struct {
 	members []jsonMember
 }
 
-// orderedDecoders keeps decoders and their buffers across records.
-var orderedDecoders = sync.Pool{New: func() any { return new(jsontext.Decoder) }}
-
 // parseOrderedObject keeps a record's members in order with their exact
-// bytes, scanning it once with jsontext: the token API of encoding/json
-// allocated for every member.
+// bytes, which share data: raw JSON is replaced, never changed in place.
 func parseOrderedObject(data []byte) (*orderedObject, error) {
-	decoder := orderedDecoders.Get().(*jsontext.Decoder)
-	defer orderedDecoders.Put(decoder)
-	decoder.Reset(bytes.NewReader(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
-	if token, err := decoder.ReadToken(); err != nil {
-		return nil, err
-	} else if token.Kind() != '{' {
-		return nil, fmt.Errorf("session: JSON record is not an object")
+	if !json.Valid(data) {
+		return nil, errors.New("session: invalid JSON record")
+	}
+	if trimmed := bytes.TrimLeft(data, " \t\r\n"); trimmed[0] != '{' {
+		return nil, errors.New("session: JSON record is not an object")
 	}
 	object := &orderedObject{}
-	for decoder.PeekKind() == '"' {
-		rawName, err := decoder.ReadValue()
-		if err != nil {
-			return nil, err
-		}
-		name, err := jsonwire.UnmarshalString(rawName)
-		if err != nil {
-			return nil, err
-		}
-		value, err := decoder.ReadValue()
-		if err != nil {
-			return nil, err
-		}
-		object.setOwned(name, bytes.Clone(value))
-	}
-	if token, err := decoder.ReadToken(); err != nil {
-		return nil, err
-	} else if token.Kind() != '}' {
-		return nil, fmt.Errorf("session: JSON object member name is not a string")
-	}
-	if _, err := decoder.ReadToken(); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("session: multiple JSON values in one record")
-		}
-		return nil, err
-	}
+	jsonwire.EachMember(data, func(name, value []byte) bool {
+		object.setOwned(memberName(name), value[:len(value):len(value)])
+		return true
+	})
 	return object, nil
+}
+
+// memberName spares an allocation for the members every entry has.
+func memberName(name []byte) string {
+	switch string(name) {
+	case "type":
+		return "type"
+	case "id":
+		return "id"
+	case "parentId":
+		return "parentId"
+	case "timestamp":
+		return "timestamp"
+	case "message":
+		return "message"
+	}
+	return string(name)
 }
 
 func newOrderedObject(members ...jsonMember) *orderedObject {

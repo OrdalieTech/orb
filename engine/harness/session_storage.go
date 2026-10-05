@@ -84,8 +84,8 @@ func (state *sessionStorageState) createEntryID() (string, error) {
 	return uuidv7.Generate(time.Now())
 }
 
+// append stores entry, which the state then owns.
 func (state *sessionStorageState) append(entry SessionTreeEntry) {
-	entry = entry.clone()
 	state.entries = append(state.entries, entry)
 	state.byID[entry.ID] = entry
 	state.updateLabel(entry)
@@ -316,7 +316,7 @@ func (storage *InMemorySessionStorage) CreateEntryID() (string, error) {
 func (storage *InMemorySessionStorage) AppendEntry(entry SessionTreeEntry) error {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	storage.state.append(entry)
+	storage.state.append(entry.clone())
 	return nil
 }
 
@@ -568,6 +568,7 @@ func (storage *JSONLSessionStorage) appendLockedWithLabel(entry SessionTreeEntry
 		}
 	}
 	storage.content = append(storage.content, line...)
+	entry = entry.clone()
 	entry.raw = line[: len(line)-1 : len(line)-1]
 	storage.state.append(entry)
 	return nil
