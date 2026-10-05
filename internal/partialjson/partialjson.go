@@ -421,8 +421,12 @@ func decodeJSON(input string) (any, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	if err := ensureEOF(decoder); err != nil {
-		return nil, err
+	// Whitespace alone may follow the value; anything else gets the
+	// decoder's error, which is costly to build.
+	if strings.Trim(input[decoder.InputOffset():], " \t\r\n") != "" {
+		if err := ensureEOF(decoder); err != nil {
+			return nil, err
+		}
 	}
 	return numbersToFloat64(value)
 }
