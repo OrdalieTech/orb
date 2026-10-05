@@ -127,6 +127,7 @@ supply their own operations. Reads and network access are not restricted.
 
 ### memtree
 
+Experimental, and off unless `plugins.memtree` is set: its behavior and settings may change.
 A tree of one-line summaries over each session's whole history, after
 [OptChat](https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449): every message
 gets a line (a short message is its own line), adjacent lines merge in pairs up the tree, and a
