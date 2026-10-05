@@ -126,7 +126,7 @@ export class OrbAgent {
   }
 
   boot() {
-    this.orb ??= start(this.ctx.storage, this.env, this.ctx.id?.name ?? "", frame => this.frame(frame), code => this.exited(code)).catch(error => {
+    this.orb ??= start(this.ctx.storage, this.env, this.ctx.id?.name ?? "", (array, length) => this.frame(array.slice(0, length)), code => this.exited(code)).catch(error => {
       this.orb = undefined;
       throw error;
     });
