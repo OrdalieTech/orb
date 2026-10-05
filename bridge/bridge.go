@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 type Grant struct {
@@ -367,7 +367,7 @@ func (b *Bridge) Catalog(p Principal) []Instance {
 
 // autoAlias is the name of the throwaway instance an Orb enrolls when started
 // without an alias of its own.
-var autoAlias = regexp.MustCompile(`^instance-[a-z0-9_-]{8}$`)
+var autoAlias = lazyregexp.New(`^instance-[a-z0-9_-]{8}$`)
 
 // Retire removes the named instances or, with none named, every throwaway
 // instance whose Orb has gone: one that attached once, is not attached now, and
@@ -389,7 +389,7 @@ func (b *Bridge) retireLocked(ids []string) (int, error) {
 	removed := 0
 	for id, r := range b.state.Instances {
 		_, active := b.active[id]
-		if slices.Contains(ids, id) || len(ids) == 0 && !active && !granted[id] && r.BootID != "" && autoAlias.MatchString(r.Alias) {
+		if slices.Contains(ids, id) || len(ids) == 0 && !active && !granted[id] && r.BootID != "" && autoAlias().MatchString(r.Alias) {
 			delete(b.state.Instances, id)
 			removed++
 		}

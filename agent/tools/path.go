@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"unicode"
@@ -14,12 +13,13 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 const narrowNoBreakSpace = "\u202f"
 
-var macOSScreenshotTime = regexp.MustCompile(` (?i:(AM|PM))\.`)
+var macOSScreenshotTime = lazyregexp.New(` (?i:(AM|PM))\.`)
 
 func expandPath(filePath string, normalizeSpaces, stripAtPrefix bool) (string, error) {
 	if normalizeSpaces {
@@ -101,7 +101,7 @@ func resolveReadPath(filePath, cwd string, exists func(string) bool) (string, er
 	}
 
 	variants := []string{
-		macOSScreenshotTime.ReplaceAllString(resolved, narrowNoBreakSpace+"$1."),
+		macOSScreenshotTime().ReplaceAllString(resolved, narrowNoBreakSpace+"$1."),
 		norm.NFD.String(resolved),
 		strings.ReplaceAll(resolved, "'", "\u2019"),
 	}

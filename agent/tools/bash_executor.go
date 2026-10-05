@@ -3,10 +3,11 @@ package tools
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 type BashResult struct {
@@ -17,7 +18,7 @@ type BashResult struct {
 	FullOutputPath string `json:"fullOutputPath,omitempty"`
 }
 
-var rpcANSISequence = regexp.MustCompile(`(?:\x1b\][\s\S]*?(?:\x07|\x1b\\|\x{009c}))|(?:[\x1b\x{009b}][[\]()#;?]*(?:[0-9]{1,4}(?:[;:][0-9]{0,4})*)?[0-9A-PR-TZcf-nq-uy=><~])`)
+var rpcANSISequence = lazyregexp.New(`(?:\x1b\][\s\S]*?(?:\x07|\x1b\\|\x{009c}))|(?:[\x1b\x{009b}][[\]()#;?]*(?:[0-9]{1,4}(?:[;:][0-9]{0,4})*)?[0-9A-PR-TZcf-nq-uy=><~])`)
 
 // ExecuteBash mirrors the session-level bash executor rather than the bash
 // tool: a non-zero exit is data in RPC mode, while cancellation is reported in
@@ -89,7 +90,7 @@ func ExecuteBash(ctx context.Context, command, cwd, prefix, shellPath string, on
 }
 
 func sanitizeBashOutput(value string) string {
-	value = rpcANSISequence.ReplaceAllString(value, "")
+	value = rpcANSISequence().ReplaceAllString(value, "")
 	value = strings.ReplaceAll(value, "\r", "")
 	return strings.Map(func(character rune) rune {
 		switch {

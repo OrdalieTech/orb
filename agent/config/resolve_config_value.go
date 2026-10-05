@@ -5,17 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 var (
-	envNamePattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	envPrefixPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*`)
+	envNamePattern   = lazyregexp.New(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	envPrefixPattern = lazyregexp.New(`^[A-Za-z_][A-Za-z0-9_]*`)
 	configValueCache = struct {
 		sync.Mutex
 		values map[string]*string
@@ -183,14 +183,14 @@ func parseConfigTemplate(value string) []configPart {
 			}
 			end += dollar + 2
 			name := value[dollar+2 : end]
-			if envNamePattern.MatchString(name) {
+			if envNamePattern().MatchString(name) {
 				parts = append(parts, configPart{env: true, value: name})
 			} else {
 				appendLiteral(value[dollar : end+1])
 			}
 			index = end + 1
 		default:
-			match := envPrefixPattern.FindString(value[dollar+1:])
+			match := envPrefixPattern().FindString(value[dollar+1:])
 			if match == "" {
 				appendLiteral("$")
 				index = dollar + 1

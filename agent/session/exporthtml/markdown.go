@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 // ExportSessionMarkdown writes the active session branch as portable Markdown.
@@ -236,11 +236,11 @@ type ParsedSkillBlock struct {
 	More        []ParsedSkillBlock
 }
 
-var skillBlockPattern = regexp.MustCompile(`(?s)^<skill name="([^"]+)" location="([^"]+)">\n(.*?)\n</skill>(?:\n\n(.+))?$`)
+var skillBlockPattern = lazyregexp.New(`(?s)^<skill name="([^"]+)" location="([^"]+)">\n(.*?)\n</skill>(?:\n\n(.+))?$`)
 
 // ParseSkillBlock parses the exact upstream skill-message envelope.
 func ParseSkillBlock(text string) (ParsedSkillBlock, bool) {
-	match := skillBlockPattern.FindStringSubmatch(text)
+	match := skillBlockPattern().FindStringSubmatch(text)
 	if match == nil {
 		return ParsedSkillBlock{}, false
 	}

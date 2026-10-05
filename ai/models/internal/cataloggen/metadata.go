@@ -3,16 +3,16 @@ package cataloggen
 import (
 	"bytes"
 	"encoding/json"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 var (
-	gptMajorPattern = regexp.MustCompile(`^gpt-([0-9]+)`)
+	gptMajorPattern = lazyregexp.New(`^gpt-([0-9]+)`)
 )
 
 func applyCatalogMetadata(model *ai.Model) {
@@ -652,7 +652,7 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 	}
 	if slices.Contains([]string{"openai", "openai-codex", "azure-openai-responses", "github-copilot", "opencode", "cloudflare-ai-gateway"}, provider) &&
 		slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses}, model.API) {
-		match := gptMajorPattern.FindStringSubmatch(id)
+		match := gptMajorPattern().FindStringSubmatch(id)
 		if len(match) == 2 {
 			major, _ := strconv.Atoi(match[1])
 			if major >= 5 {
@@ -817,17 +817,17 @@ func effortThinkingLevelMap(options []sourceReasoningOption) *map[ai.ModelThinki
 	return model.ThinkingLevelMap
 }
 
-var anthropicMidConvoPattern = regexp.MustCompile(`^(?:claude-opus-(?:5|5[.-]5)|claude-sonnet-5[.-]5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
-var anthropicMidConvoSystemPattern = regexp.MustCompile(`^(?:claude-opus-(?:4[.-]8|5(?:[.-]5)?)|claude-sonnet-5[.-]5|claude-(?:fable|mythos)-5(?:[.-]1)?)(?:-\d{8})?$`)
+var anthropicMidConvoPattern = lazyregexp.New(`^(?:claude-opus-(?:5|5[.-]5)|claude-sonnet-5[.-]5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
+var anthropicMidConvoSystemPattern = lazyregexp.New(`^(?:claude-opus-(?:4[.-]8|5(?:[.-]5)?)|claude-sonnet-5[.-]5|claude-(?:fable|mythos)-5(?:[.-]1)?)(?:-\d{8})?$`)
 
 func supportsAnthropicMidConvoEffort(id string) bool {
 	id = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(id), "~"), "anthropic/")
-	return anthropicMidConvoPattern.MatchString(id)
+	return anthropicMidConvoPattern().MatchString(id)
 }
 
 func supportsAnthropicMidConvoSystemMessages(id string) bool {
 	id = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(id), "~"), "anthropic/")
-	return anthropicMidConvoSystemPattern.MatchString(id)
+	return anthropicMidConvoSystemPattern().MatchString(id)
 }
 func applyAnthropicFallbackMetadata(models map[string]ai.Model) {
 	for id, targets := range map[string][]string{"claude-fable-5": {"claude-opus-4-8", "claude-opus-5"}, "claude-opus-5": {"claude-opus-4-8"}} {

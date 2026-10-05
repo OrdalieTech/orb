@@ -7,16 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
-	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 const googleVertexDefaultUniverseDomain = "googleapis.com"
 
-var googleVertexImpersonatedPrincipalPattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`([^/]+):(generateAccessToken|generateIdToken)$`) })
+var googleVertexImpersonatedPrincipalPattern = lazyregexp.New(`([^/]+):(generateAccessToken|generateIdToken)$`)
 
 type googleVertexImpersonatedADCFile struct {
 	SourceCredentials              json.RawMessage `json:"source_credentials"`

@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 type GoogleToolChoice string
@@ -55,9 +55,9 @@ var googleGenAIVersionHeader = "google-genai-sdk/1.52.0 gl-go/" + runtime.Versio
 var (
 	googleHTTPClient      = http.DefaultClient
 	googleToolCallCounter atomic.Int64
-	gemma4Pattern         = regexp.MustCompile(`gemma-?4`)
-	gemini3ProPattern     = regexp.MustCompile(`gemini-3(?:\.\d+)?-pro`)
-	gemini3FlashPattern   = regexp.MustCompile(`gemini-3(?:\.\d+)?-flash`)
+	gemma4Pattern         = lazyregexp.New(`gemma-?4`)
+	gemini3ProPattern     = lazyregexp.New(`gemini-3(?:\.\d+)?-pro`)
+	gemini3FlashPattern   = lazyregexp.New(`gemini-3(?:\.\d+)?-flash`)
 )
 
 type googleGenerateContentResponse struct {
@@ -716,16 +716,16 @@ func clampGoogleReasoning(model *ai.Model, requested ai.ThinkingLevel) ai.Thinki
 }
 
 func isGemma4(model *ai.Model) bool {
-	return gemma4Pattern.MatchString(strings.ToLower(model.ID))
+	return gemma4Pattern().MatchString(strings.ToLower(model.ID))
 }
 
 func isGemini3Pro(model *ai.Model) bool {
-	return gemini3ProPattern.MatchString(strings.ToLower(model.ID))
+	return gemini3ProPattern().MatchString(strings.ToLower(model.ID))
 }
 
 func isGemini3Flash(model *ai.Model) bool {
 	id := strings.ToLower(model.ID)
-	return gemini3FlashPattern.MatchString(id) || id == "gemini-flash-latest" || id == "gemini-flash-lite-latest"
+	return gemini3FlashPattern().MatchString(id) || id == "gemini-flash-latest" || id == "gemini-flash-lite-latest"
 }
 
 func usesGoogleThinkingLevel(model *ai.Model) bool {

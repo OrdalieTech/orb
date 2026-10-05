@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 const (
@@ -31,7 +31,7 @@ var (
 	errCodexTerminal = errors.New("ai/api: Codex terminal response")
 	openAICodexSleep = sleepWithContext
 	// Mirrors upstream /rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused/i.
-	codexRetryableTextPattern = regexp.MustCompile(`(?i)rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused`)
+	codexRetryableTextPattern = lazyregexp.New(`(?i)rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused`)
 )
 
 type codexAPIError struct {
@@ -966,7 +966,7 @@ func retryableCodexError(status int, text string) bool {
 	if status == 429 || status == 500 || status == 502 || status == 503 || status == 504 {
 		return true
 	}
-	return codexRetryableTextPattern.MatchString(text)
+	return codexRetryableTextPattern().MatchString(text)
 }
 
 func regexpMatchFold(text string, markers ...string) bool {

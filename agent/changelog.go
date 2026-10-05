@@ -1,19 +1,20 @@
 package agent
 
 import (
-	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
-var changelogRelease = regexp.MustCompile(`^\[?\d+\.\d+\.\d+\]?`)
+var changelogRelease = lazyregexp.New(`^\[?\d+\.\d+\.\d+\]?`)
 
 // FormatChangelog lists a changelog's release sections oldest first, so the
 // newest one ends next to the prompt.
 func FormatChangelog(content string) string {
 	var releases []string
 	for _, section := range strings.Split("\n"+content, "\n## ")[1:] {
-		if changelogRelease.MatchString(section) {
+		if changelogRelease().MatchString(section) {
 			releases = append(releases, "## "+strings.TrimSpace(section))
 		}
 	}

@@ -8,9 +8,10 @@ package themefile
 import (
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 type vector [3]float64
@@ -216,9 +217,9 @@ func oklchToHex(l, c, h float64) string {
 const numberPattern = `[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?`
 
 var (
-	oklchPattern = regexp.MustCompile(`(?i)^oklch\(\s*(` + numberPattern + `)(%)?\s+(` + numberPattern + `)\s+(` + numberPattern + `)(?:deg)?\s*\)$`)
-	okhslPattern = regexp.MustCompile(`(?i)^okhsl\(\s*(` + numberPattern + `)(?:deg)?\s+(` + numberPattern + `)(%)?\s+(` + numberPattern + `)(%)?\s*\)$`)
-	hex3Pattern  = regexp.MustCompile(`(?i)^#[\da-f]{3}$`)
+	oklchPattern = lazyregexp.New(`(?i)^oklch\(\s*(` + numberPattern + `)(%)?\s+(` + numberPattern + `)\s+(` + numberPattern + `)(?:deg)?\s*\)$`)
+	okhslPattern = lazyregexp.New(`(?i)^okhsl\(\s*(` + numberPattern + `)(?:deg)?\s+(` + numberPattern + `)(%)?\s+(` + numberPattern + `)(%)?\s*\)$`)
+	hex3Pattern  = lazyregexp.New(`(?i)^#[\da-f]{3}$`)
 )
 
 // isColorLiteral reports whether a theme string is a color rather than a
@@ -231,11 +232,11 @@ func isColorLiteral(text string) bool {
 // normalizeColor turns #rgb, oklch() and okhsl() into #rrggbb; other text is
 // returned unchanged for ParseHex to validate.
 func normalizeColor(text string) (string, error) {
-	if hex3Pattern.MatchString(text) {
+	if hex3Pattern().MatchString(text) {
 		return fmt.Sprintf("#%c%c%c%c%c%c", text[1], text[1], text[2], text[2], text[3], text[3]), nil
 	}
 	number := func(value string) float64 { parsed, _ := strconv.ParseFloat(value, 64); return parsed }
-	if match := oklchPattern.FindStringSubmatch(text); match != nil {
+	if match := oklchPattern().FindStringSubmatch(text); match != nil {
 		l := number(match[1])
 		if match[2] != "" {
 			l /= 100
@@ -246,7 +247,7 @@ func normalizeColor(text string) (string, error) {
 		}
 		return oklchToHex(l, c, math.Mod(math.Mod(h, 360)+360, 360)), nil
 	}
-	if match := okhslPattern.FindStringSubmatch(text); match != nil {
+	if match := okhslPattern().FindStringSubmatch(text); match != nil {
 		s, l := number(match[2]), number(match[4])
 		if match[3] != "" {
 			s /= 100
