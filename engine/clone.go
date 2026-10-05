@@ -14,6 +14,9 @@ func cloneAgentMessage(message AgentMessage) AgentMessage {
 		if value == nil {
 			return (*ai.SystemMessage)(nil)
 		}
+		if clone, ok := ai.CloneSystemMessage(value); ok {
+			return clone
+		}
 		encoded, err := ai.Marshal(value)
 		if err != nil {
 			copy := *value
