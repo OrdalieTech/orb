@@ -2194,9 +2194,17 @@ func mapOpenAICompletionsStopReason(reason string) (ai.StopReason, *string) {
 func rawJSONArray(raw json.RawMessage) []json.RawMessage { return jsonwire.Elements(raw) }
 
 func rawJSONString(raw json.RawMessage) (string, bool) {
-	// A string without escapes decodes to its bytes when they are valid UTF-8.
-	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' && bytes.IndexByte(raw, '\\') < 0 && utf8.Valid(raw) {
-		return string(raw[1 : len(raw)-1]), true
+	// A string of valid UTF-8 decodes to its bytes without escapes, and as
+	// jsonwire decodes it without \u escapes (the only place jsonwire differs:
+	// it keeps lone surrogates).
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' && utf8.Valid(raw) {
+		if bytes.IndexByte(raw, '\\') < 0 {
+			return string(raw[1 : len(raw)-1]), true
+		}
+		if !bytes.Contains(raw, []byte(`\u`)) {
+			value, err := jsonwire.UnmarshalString(raw)
+			return value, err == nil
+		}
 	}
 	var value string
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
