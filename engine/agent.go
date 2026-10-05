@@ -740,8 +740,7 @@ func (agent *Agent) runPromptMessagesReserved(active *activeRun, messages AgentM
 }
 
 func (agent *Agent) withInitialSystemPrompt(loopContext AgentContext, messages AgentMessages) AgentMessages {
-	combined := append(append(AgentMessages(nil), loopContext.Messages...), messages...)
-	current := ai.CurrentSystemMessage(agentMessagesToAI(combined))
+	current := ai.CurrentSystemMessage(systemMessages(loopContext.Messages, messages))
 	if current != nil || loopContext.SystemPrompt == "" {
 		return messages
 	}
@@ -957,7 +956,7 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 					return nil, err
 				}
 			}
-			current := ai.CurrentSystemMessage(agentMessagesToAI(transformed))
+			current := ai.CurrentSystemMessage(systemMessages(transformed))
 			timestamp := agent.clockNow()
 			var tools []ai.Tool
 			if current != nil {

@@ -321,7 +321,7 @@ func TestAgentSystemPromptFollowsTheTranscript(t *testing.T) {
 	if got := responses.contexts[0].SystemPrompt; got == nil || !strings.Contains(*got, "updated") {
 		t.Fatalf("provider system prompt = %#v, want updated", got)
 	}
-	if got := agent.State().SystemPrompt; got != ai.CurrentSystemPrompt(agentMessagesToAI(agent.State().Messages)) || !strings.Contains(got, "updated") {
+	if got := agent.State().SystemPrompt; got != ai.CurrentSystemPrompt(systemMessages(agent.State().Messages)) || !strings.Contains(got, "updated") {
 		t.Fatalf("state system prompt = %q", got)
 	}
 }
