@@ -5,6 +5,29 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-05
+
+Turns cost the same at the eightieth message as at the first, natively and on the Worker host,
+and the Worker bundle is half its size: native turns take less than half the CPU of pi's CLI
+and a third of its memory. A message can invoke several skills, and memtree is marked experimental.
+
+- Turns no longer slow down as a conversation grows: the session keeps the model context decoded
+  and extends it as entries are appended, instead of re-reading the whole journal on every append
+  and request, and hot paths encode and decode JSON without reflection. A native turn stays at
+  3-4 ms of CPU over 80 turns where it grew from 14 to 82 ms; on the Worker host a warm turn
+  retires 24M instructions instead of 1.27G and allocates 266 KB instead of 6.6 MB.
+- The Worker runs every Durable Object of an isolate in one Go runtime, compiles its regular
+  expressions on first use, and keeps large functions off the stacks that wait on JavaScript, so a
+  fresh isolate's first turns spend less time in V8's compiler.
+- Provider requests go through one small stdlib HTTP client instead of the OpenAI and Anthropic
+  Go SDKs, which only sent bodies Orb had built, and Bedrock no longer uses the AWS SDK's runtime
+  client: its SigV4 signing and event streams are Orb's own, and only native hosts read the AWS
+  shared config. Anthropic workload-identity federation exchanges its token as upstream's
+  TypeScript SDK does, with its errors, so a token response without `expires_in` now fails. The
+  Worker bundle shrinks from 55.4 MB to 28.1 MB (7.0 MB gzip) and the CLI from 57.6 MB to 46.4 MB.
+  Go embedders: `AnthropicMessagesOptions.Client` is removed.
+- User messages have a padded line above and below their text, and an open group of tool calls
+  (Ran, Explored, Worked) drops its down chevron and lines up with the calls under it.
 - A message can invoke several skills: `/skill:a … /skill:b` sends both, each skill's block
   after the other, instead of being refused. The transcript chips each one in place, with a
   footer line per skill, and the session list, queue and HTML export show them all.
@@ -43,16 +66,6 @@ Mermaid diagrams render. Bridge followers long-poll, open long conversations at 
 - Pairing a machine (`orb bridge pair`, `join`, `trust`, `connect-ssh`) turns its `bridge` plugin
   on unless its owner set it, so the Orbs opened there in a terminal can be followed and driven
   from the paired devices too.
-- Turns no longer slow down as a conversation grows: the session keeps the model context decoded
-  and extends it as entries are appended, instead of re-reading the whole journal on every append
-  and request. After 80 turns a turn costs a tenth of the CPU it did on the Worker host.
-- Provider requests go through one small stdlib HTTP client instead of the OpenAI and Anthropic
-  Go SDKs, which only sent bodies Orb had built, and Bedrock no longer uses the AWS SDK's runtime
-  client: its SigV4 signing and event streams are Orb's own, and only native hosts read the AWS
-  shared config. Anthropic workload-identity federation exchanges its token as upstream's
-  TypeScript SDK does, with its errors, so a token response without `expires_in` now fails. The Worker bundle shrinks from 55.4 MB to 27.9 MB (7.0 MB gzip) and activates
-  faster, and the CLI from 57.6 MB to 46.4 MB. Go embedders: `AnthropicMessagesOptions.Client`
-  is removed.
 
 ## [0.14.1] - 2026-10-04
 
