@@ -175,6 +175,14 @@ func (projection *contextProjection) addFields(entry *SessionEntry) {
 	case "context_edit":
 		projection.edits = true
 	case "message":
+		// An appended entry carries its decoded message; a read one is
+		// decoded for its header alone.
+		if entry.decoded != nil {
+			if assistant, ok := entry.decoded.(*ai.AssistantMessage); ok {
+				projection.context.Model = &SessionModel{Provider: string(assistant.Provider), ModelID: assistant.Model}
+			}
+			return
+		}
 		var header struct {
 			Role     string `json:"role"`
 			Provider string `json:"provider"`
