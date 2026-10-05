@@ -234,6 +234,9 @@ func (projection *contextProjection) settleTools() {
 func entryContextMessages(entry SessionEntry) []json.RawMessage {
 	switch entry.Type {
 	case "message":
+		if hasMessageContent(entry.decoded) {
+			return []json.RawMessage{entry.Message}
+		}
 		return []json.RawMessage{normalizeMessageContent(entry.Message)}
 	case "custom_message":
 		content := entry.Content
@@ -362,6 +365,25 @@ func isSystemMessageEntry(entry SessionEntry) bool {
 
 // normalizeMessageContent gives a message without content an empty one. An
 // unchanged message keeps sharing its entry's bytes, which are never modified.
+// hasMessageContent reports a decoded message normalizeMessageContent would
+// leave alone: one with text or blocks, which only content present and not
+// null decodes to, or one that is not a user, assistant or tool result
+// message. Null decodes to empty content, so empty content is checked.
+func hasMessageContent(message ai.Message) bool {
+	switch typed := message.(type) {
+	case nil:
+		return false
+	case *ai.UserMessage:
+		return typed.Content.Text != nil || len(typed.Content.Blocks) > 0
+	case *ai.AssistantMessage:
+		return len(typed.Content) > 0
+	case *ai.ToolResultMessage:
+		return len(typed.Content) > 0
+	default:
+		return true
+	}
+}
+
 func normalizeMessageContent(message json.RawMessage) json.RawMessage {
 	var header struct {
 		Role    string          `json:"role"`
