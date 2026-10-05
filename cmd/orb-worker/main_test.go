@@ -42,10 +42,7 @@ func TestDurableObjectBundle(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "worker.mjs"), bundle, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run := exec.CommandContext(t.Context(), node, "testdata/durable.mjs", filepath.Join(dir, "worker.mjs"))
-	// Go's js/wasm net/http bypasses fetch when argv0 starts with "node".
-	run.Args[0] = "orb-worker-test"
-	output, err := run.CombinedOutput()
+	output, err := exec.CommandContext(t.Context(), node, "testdata/durable.mjs", filepath.Join(dir, "worker.mjs")).CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "durable harness OK") {
 		t.Fatalf("Durable Object bundle: %v\n%s", err, output)
 	}

@@ -1,6 +1,7 @@
 // Orb on Cloudflare Durable Objects and self-hosted Celld: one Durable Object
-// per agent name, each running its own Go runtime (orb.wasm, cmd/orb-worker)
-// over the object's storage. `make worker-build` prepends Go's wasm_exec.js
+// per agent name, each with its own Orb over the object's storage, all of an
+// isolate's objects in one Go runtime (orb.wasm, cmd/orb-worker). `make
+// worker-build` prepends Go's wasm_exec.js
 // (which defines globalThis.Go) to this module, so the bundle is one
 // JavaScript module plus orb.wasm and needs no bundler.
 import orbModule from "./orb.wasm";
@@ -61,8 +62,6 @@ function problem(status, error, headers = {}) {
   return Response.json({ error }, { status, headers });
 }
 
-let bootSlots = 0;
-
 // Go's http transport (platforms/worker/fetch_js.go) crosses into JavaScript
 // as little as it can: headers travel as "name\nvalue" lines, a response
 // arrives in one callback, and each read brings one chunk, null at the end or
@@ -92,24 +91,69 @@ const fetchHelpers = {
   },
 };
 
-// start instantiates one Go runtime for one object. Go reads its boot slot
-// synchronously at startup, so the slot is free again by the time the next
-// object in this isolate boots.
+// The isolate's Go runtime, which its objects share, and the exit callbacks
+// of the objects open in it.
+let runtime;
+const running = new Set();
+
+// orbRuntime instantiates orb.wasm once per isolate. A runtime that stops,
+// as a panic does, stops every object in it, and the next event boots another.
+function orbRuntime() {
+  runtime ??= (async () => {
+    const go = new Go();
+    let exitCode = 1;
+    const warn = go.exit;
+    go.exit = code => {
+      exitCode = code;
+      warn(code);
+    };
+    const ready = new Promise((resolve, reject) => {
+      globalThis.__orbWorkerBoot = { fetch: fetchHelpers, resolve, reject: message => reject(new Error(message)) };
+    });
+    go.argv = ["orb-worker", "__orbWorkerBoot"];
+    go.env = {};
+    const instance = await WebAssembly.instantiate(orbModule, go.importObject);
+    const stopped = go.run(instance).then(() => {
+      runtime = undefined;
+      for (const exit of running) exit(exitCode);
+      running.clear();
+      throw new Error("orb-worker exited");
+    });
+    stopped.catch(() => {});
+    const api = await Promise.race([ready, stopped]);
+    return { api, memoryBytes: () => instance.exports.mem.buffer.byteLength };
+  })().catch(error => {
+    runtime = undefined;
+    throw error;
+  });
+  return runtime;
+}
+
+// start opens one object's Orb in the isolate's runtime.
 async function start(storage, env, name, emit, exited) {
   const began = Date.now();
-  const go = new Go();
-  const slot = `__orbWorkerBoot${++bootSlots}`;
-  const ready = new Promise((resolve, reject) => {
-    globalThis[slot] = { storage, env, name, emit, fetch: fetchHelpers, resolve, reject: message => reject(new Error(message)), exit: exited };
-  });
-  go.argv = ["orb-worker", slot];
-  go.env = {};
-  const instance = await WebAssembly.instantiate(orbModule, go.importObject);
-  const stopped = go.run(instance).then(() => Promise.reject(new Error("orb-worker exited while booting")));
-  stopped.catch(() => {});
-  const api = await Promise.race([ready, stopped]);
-  return { api, memoryBytes: () => instance.exports.mem.buffer.byteLength, bootMs: Date.now() - began, bootId: crypto.randomUUID() };
+  const { api: orb, memoryBytes } = await orbRuntime();
+  const exit = code => {
+    running.delete(exit);
+    exited(code);
+  };
+  running.add(exit);
+  try {
+    const api = await orb.open({ storage, env, name, emit, exit });
+    return { api, memoryBytes, bootMs: Date.now() - began, bootId: crypto.randomUUID() };
+  } catch (error) {
+    running.delete(exit);
+    throw error;
+  }
 }
+
+// The runtime outlives the objects in it, so an object reaches its Orb's
+// callbacks only weakly and disposes of its Orb once it is collected.
+const collected = new FinalizationRegistry(dispose => {
+  try {
+    dispose();
+  } catch {}
+});
 
 export class OrbAgent {
   constructor(ctx, env) {
@@ -126,7 +170,12 @@ export class OrbAgent {
   }
 
   boot() {
-    this.orb ??= start(this.ctx.storage, this.env, this.ctx.id?.name ?? "", (array, length) => this.frame(array.slice(0, length)), code => this.exited(code)).catch(error => {
+    const self = new WeakRef(this);
+    this.orb ??= start(this.ctx.storage, this.env, this.ctx.id?.name ?? "",
+      (array, length) => self.deref()?.frame(array.slice(0, length)), code => self.deref()?.exited(code)).then(orb => {
+      collected.register(this, () => orb.api.dispose(), orb);
+      return orb;
+    }, error => {
       this.orb = undefined;
       throw error;
     });
@@ -134,6 +183,7 @@ export class OrbAgent {
   }
 
   exited(code) {
+    this.orb?.then(orb => collected.unregister(orb), () => {});
     this.orb = undefined;
     this.pending = 0;
     this.busy = false;
