@@ -334,6 +334,11 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	existing := sm.BuildSessionContext()
 	hasExisting := len(existing.Messages) > 0
+	// existing's messages as the session manager decoded them.
+	var decoded []any
+	if hasExisting {
+		decoded = sm.ContextMessages()
+	}
 	hasThinkingEntry := slices.ContainsFunc(sm.GetBranch(), func(entry sessionstore.SessionEntry) bool {
 		return entry.Type == "thinking_level_change"
 	})
@@ -404,8 +409,8 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		// A resumed session restores the loadout its transcript declares; tools
 		// that register later, such as MCP tools, turn on when they do.
 		var transcript ai.MessageList
-		for _, raw := range existing.Messages {
-			if system, ok := decodeSessionMessage(raw).(*ai.SystemMessage); ok {
+		for _, message := range decoded {
+			if system, ok := message.(*ai.SystemMessage); ok {
 				transcript = append(transcript, system)
 			}
 		}
@@ -539,11 +544,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	a = engine.NewAgent(streamFn, agentOpts...)
 
 	if hasExisting {
-		messages := make(engine.AgentMessages, 0, len(existing.Messages))
-		for _, raw := range existing.Messages {
-			messages = append(messages, decodeSessionMessage(raw))
-		}
-		a.SetMessages(messages)
+		a.SetMessages(engine.AgentMessages(decoded))
 		if !hasThinkingEntry {
 			if _, err := sm.AppendThinkingLevelChange(string(thinking)); err != nil {
 				return nil, err
