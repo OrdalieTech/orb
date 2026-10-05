@@ -102,6 +102,11 @@ func AppendFloat(dst []byte, value float64) []byte {
 	if value == 0 {
 		return append(dst, '0')
 	}
+	// Whole numbers, like millisecond times and token counts, print as
+	// integers, which spares finding their shortest decimal form.
+	if value == math.Trunc(value) && math.Abs(value) < 1<<53 {
+		return strconv.AppendInt(dst, int64(value), 10)
+	}
 	format := byte('f')
 	if abs := math.Abs(value); abs < 1e-6 || abs >= 1e21 {
 		format = 'e'
