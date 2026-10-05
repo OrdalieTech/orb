@@ -127,7 +127,8 @@ func composeRegisteredProviders(
 	configOrder, nativeOrder []string,
 	credentials map[string]*aiauth.Credential,
 ) ([]ai.Model, []string) {
-	all := append([]ai.Model(nil), base...)
+	// Every step below returns a new list; base itself is shared.
+	all, shared := base, true
 	errorsList := make([]string, 0)
 	providerIDs := make([]string, 0, len(modelsConfig.Providers))
 	for _, providerID := range modelsConfig.providerIDs() {
@@ -144,7 +145,7 @@ func composeRegisteredProviders(
 			invalidConfig[providerID] = struct{}{}
 			continue
 		}
-		all = updated
+		all, shared = updated, false
 	}
 	for _, id := range nativeOrder {
 		provider, ok := native[id]
@@ -169,7 +170,7 @@ func composeRegisteredProviders(
 				continue
 			}
 		}
-		all = replaceProviderModels(all, id, models)
+		all, shared = replaceProviderModels(all, id, models), false
 	}
 	for _, id := range configOrder {
 		config, ok := configs[id]
@@ -202,7 +203,10 @@ func composeRegisteredProviders(
 				}
 			}
 		}
-		all = updated
+		all, shared = updated, false
+	}
+	if shared {
+		all = append([]ai.Model(nil), base...)
 	}
 	return all, errorsList
 }

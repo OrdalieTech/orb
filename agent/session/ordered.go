@@ -211,8 +211,8 @@ func decodeString(raw json.RawMessage) (string, bool) {
 }
 
 func decodeInt(raw json.RawMessage) (int64, bool) {
-	var value float64
-	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil || math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value {
+	value, ok := decodeNumber(raw)
+	if !ok || math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value {
 		return 0, false
 	}
 	if value < math.MinInt64 || value >= -float64(math.MinInt64) {
@@ -221,7 +221,14 @@ func decodeInt(raw json.RawMessage) (int64, bool) {
 	return int64(value), true
 }
 
+// decodeNumber reads a JSON number; a plain integer skips the decoder, which
+// rounds it the same way.
 func decodeNumber(raw json.RawMessage) (float64, bool) {
+	if digits := bytes.TrimPrefix(raw, []byte("-")); len(digits) > 0 && (digits[0] != '0' || len(digits) == 1) &&
+		!bytes.ContainsFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) {
+		value, err := strconv.ParseFloat(string(raw), 64)
+		return value, err == nil
+	}
 	var value float64
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
 		return 0, false
@@ -231,8 +238,14 @@ func decodeNumber(raw json.RawMessage) (float64, bool) {
 
 func decodeBool(raw json.RawMessage) (*bool, bool) {
 	var value bool
-	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
-		return nil, false
+	switch string(raw) {
+	case "true":
+		value = true
+	case "false":
+	default:
+		if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+			return nil, false
+		}
 	}
 	return &value, true
 }

@@ -262,27 +262,38 @@ func ApplyModelConfig(base []ai.Model, config *ModelConfig) ([]ai.Model, error) 
 	if config == nil {
 		return append([]ai.Model(nil), base...), nil
 	}
-	byProvider := make(map[string][]ai.Model)
+	// Each provider's models, by index, take the place of its first one;
+	// providers only the config names follow. Indexes spare copying every
+	// catalog model into a group before copying it into the result.
+	indexes := make(map[string][]int)
 	providerOrder := make([]string, 0)
-	for _, model := range base {
+	for index, model := range base {
 		providerID := string(model.Provider)
-		if _, exists := byProvider[providerID]; !exists {
+		if _, exists := indexes[providerID]; !exists {
 			providerOrder = append(providerOrder, providerID)
 		}
-		byProvider[providerID] = append(byProvider[providerID], model)
+		indexes[providerID] = append(indexes[providerID], index)
 	}
-	customProviders := make([]string, 0)
 	for _, providerID := range config.providerIDs() {
-		if _, exists := byProvider[providerID]; !exists {
-			customProviders = append(customProviders, providerID)
+		if _, exists := indexes[providerID]; !exists {
+			providerOrder = append(providerOrder, providerID)
 		}
 	}
-	providerOrder = append(providerOrder, customProviders...)
 
 	result := make([]ai.Model, 0, len(base))
 	for _, providerID := range providerOrder {
 		provider, configured := config.Providers[providerID]
-		models, err := applyProviderConfig(providerID, byProvider[providerID], provider, configured)
+		if !configured {
+			for _, index := range indexes[providerID] {
+				result = append(result, base[index])
+			}
+			continue
+		}
+		group := make([]ai.Model, 0, len(indexes[providerID]))
+		for _, index := range indexes[providerID] {
+			group = append(group, base[index])
+		}
+		models, err := applyProviderConfig(providerID, group, provider, true)
 		if err != nil {
 			return nil, err
 		}
