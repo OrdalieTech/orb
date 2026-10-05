@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type AgentEventType string
@@ -182,9 +184,7 @@ func marshalMessageEvent(kind AgentEventType, message AgentMessage) ([]byte, err
 }
 
 func (AgentStartEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type AgentEventType `json:"type"`
-	}{Type: EventAgentStart})
+	return []byte(`{"type":"agent_start"}`), nil
 }
 
 func (event AgentEndEvent) MarshalJSON() ([]byte, error) {
@@ -216,9 +216,7 @@ func appendMessageList[T any](output []byte, messages []T) ([]byte, error) {
 }
 
 func (TurnStartEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type AgentEventType `json:"type"`
-	}{Type: EventTurnStart})
+	return []byte(`{"type":"turn_start"}`), nil
 }
 
 func (event TurnEndEvent) MarshalJSON() ([]byte, error) {
@@ -277,83 +275,85 @@ func (event MessageEndEvent) MarshalJSON() ([]byte, error) {
 }
 
 func (event ToolExecutionStartEvent) MarshalJSON() ([]byte, error) {
-	args, err := marshalEventToolArguments(event.toolCall, event.Args)
+	output, err := appendToolExecution(`{"type":"tool_execution_start","toolCallId":`, event.ToolCallID, event.ToolName, event.toolCall, event.Args)
 	if err != nil {
 		return nil, err
 	}
-	return ai.Marshal(struct {
-		Type             AgentEventType  `json:"type"`
-		ToolCallID       string          `json:"toolCallId"`
-		ToolName         string          `json:"toolName"`
-		Args             json.RawMessage `json:"args"`
-		ParentToolCallID string          `json:"parentToolCallId,omitempty"`
-	}{
-		Type:             EventToolExecutionStart,
-		ToolCallID:       event.ToolCallID,
-		ToolName:         event.ToolName,
-		Args:             args,
-		ParentToolCallID: event.ParentToolCallID,
-	})
+	return appendParentToolCallID(output, event.ParentToolCallID), nil
 }
 
 func (event ToolExecutionUpdateEvent) MarshalJSON() ([]byte, error) {
-	args, err := marshalEventToolArguments(event.toolCall, event.Args)
+	output, err := appendToolExecution(`{"type":"tool_execution_update","toolCallId":`, event.ToolCallID, event.ToolName, event.toolCall, event.Args)
 	if err != nil {
 		return nil, err
 	}
-	return ai.Marshal(struct {
-		Type             AgentEventType  `json:"type"`
-		ToolCallID       string          `json:"toolCallId"`
-		ToolName         string          `json:"toolName"`
-		Args             json.RawMessage `json:"args"`
-		PartialResult    AgentToolResult `json:"partialResult"`
-		ParentToolCallID string          `json:"parentToolCallId,omitempty"`
-	}{
-		Type:             EventToolExecutionUpdate,
-		ToolCallID:       event.ToolCallID,
-		ToolName:         event.ToolName,
-		Args:             args,
-		PartialResult:    event.PartialResult,
-		ParentToolCallID: event.ParentToolCallID,
-	})
+	if output, err = event.PartialResult.appendWire(append(output, `,"partialResult":`...)); err != nil {
+		return nil, err
+	}
+	return appendParentToolCallID(output, event.ParentToolCallID), nil
 }
 
 func (event ToolExecutionEndEvent) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Type             AgentEventType  `json:"type"`
-		ToolCallID       string          `json:"toolCallId"`
-		ToolName         string          `json:"toolName"`
-		Result           AgentToolResult `json:"result"`
-		IsError          bool            `json:"isError"`
-		ParentToolCallID string          `json:"parentToolCallId,omitempty"`
-	}{
-		Type:             EventToolExecutionEnd,
-		ToolCallID:       event.ToolCallID,
-		ToolName:         event.ToolName,
-		Result:           event.Result,
-		IsError:          event.IsError,
-		ParentToolCallID: event.ParentToolCallID,
-	})
+	output := jsonwire.AppendString([]byte(`{"type":"tool_execution_end","toolCallId":`), event.ToolCallID)
+	output, err := event.Result.appendWire(append(jsonwire.AppendString(append(output, `,"toolName":`...), event.ToolName), `,"result":`...))
+	if err != nil {
+		return nil, err
+	}
+	output = strconv.AppendBool(append(output, `,"isError":`...), event.IsError)
+	return appendParentToolCallID(output, event.ParentToolCallID), nil
 }
 
-func (result AgentToolResult) MarshalJSON() ([]byte, error) {
-	return ai.Marshal(struct {
-		Content           ai.ToolResultContent `json:"content"`
-		Details           any                  `json:"details,omitempty"`
-		StructuredContent any                  `json:"structuredContent,omitempty"`
-		Usage             *ai.Usage            `json:"usage,omitempty"`
-		AddedToolNames    *[]string            `json:"addedToolNames,omitempty"`
-		IsError           bool                 `json:"isError,omitempty"`
-		Terminate         *bool                `json:"terminate,omitempty"`
+// appendToolExecution starts a tool execution event: head, call id, tool name
+// and arguments.
+func appendToolExecution(head, id, name string, toolCall *ai.ToolCall, fallback map[string]any) ([]byte, error) {
+	args, err := marshalEventToolArguments(toolCall, fallback)
+	if err != nil {
+		return nil, err
+	}
+	output := jsonwire.AppendString([]byte(head), id)
+	output = jsonwire.AppendString(append(output, `,"toolName":`...), name)
+	return jsonwire.AppendCompact(append(output, `,"args":`...), args)
+}
+
+func appendParentToolCallID(output []byte, id string) []byte {
+	if id != "" {
+		output = jsonwire.AppendString(append(output, `,"parentToolCallId":`...), id)
+	}
+	return append(output, '}')
+}
+
+func (result AgentToolResult) MarshalJSON() ([]byte, error) { return result.appendWire(nil) }
+
+// appendWire writes the members in declaration order, leaving out the empty
+// optional ones.
+func (result AgentToolResult) appendWire(output []byte) ([]byte, error) {
+	content, err := result.Content.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	output = append(append(output, `{"content":`...), content...)
+	for _, member := range []struct {
+		name  string
+		value any
+		set   bool
 	}{
-		Content:           result.Content,
-		Details:           result.Details,
-		StructuredContent: result.StructuredContent,
-		Usage:             result.Usage,
-		AddedToolNames:    result.AddedToolNames,
-		IsError:           result.IsError,
-		Terminate:         result.Terminate,
-	})
+		{`,"details":`, result.Details, result.Details != nil},
+		{`,"structuredContent":`, result.StructuredContent, result.StructuredContent != nil},
+		{`,"usage":`, result.Usage, result.Usage != nil},
+		{`,"addedToolNames":`, result.AddedToolNames, result.AddedToolNames != nil},
+		{`,"isError":`, result.IsError, result.IsError},
+		{`,"terminate":`, result.Terminate, result.Terminate != nil},
+	} {
+		if !member.set {
+			continue
+		}
+		encoded, err := ai.Marshal(member.value)
+		if err != nil {
+			return nil, err
+		}
+		output = append(append(output, member.name...), encoded...)
+	}
+	return append(output, '}'), nil
 }
 
 func marshalEventToolArguments(toolCall *ai.ToolCall, fallback map[string]any) (json.RawMessage, error) {

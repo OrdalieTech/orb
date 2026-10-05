@@ -109,9 +109,7 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 		}
 		return fmt.Appendf(encoded[:len(encoded)-1], `,"willRetry":%t}`, typed.WillRetry), nil
 	case AgentSettledEvent:
-		return ai.Marshal(struct {
-			Type SessionEventType `json:"type"`
-		}{EventAgentSettled})
+		return []byte(`{"type":"agent_settled"}`), nil
 	case QueueUpdateEvent:
 		return ai.Marshal(struct {
 			Type     SessionEventType `json:"type"`
