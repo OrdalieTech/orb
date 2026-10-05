@@ -334,81 +334,24 @@ func rpcCommandIsAsync(command string) bool {
 	}
 }
 
-func (mode *server) handleCommand(session *agent.SessionRuntime, command Command) *Response { //nolint:gocyclo,cyclop,funlen
-	if session == nil {
+// handleCommand answers command. A prompt runs outside the frame answering
+// the other commands: under js/wasm, every frame of a goroutine is unwound and
+// re-entered each time it waits, as a prompt does throughout its run.
+func (mode *server) handleCommand(session *agent.SessionRuntime, command Command) *Response {
+	switch {
+	case session == nil:
 		response := rpcError(command.ID, command.HasID, command.Type, "Session is unavailable")
 		return &response
+	case command.Type == "prompt":
+		return mode.prompt(session, command)
 	}
-	success := func(data ...any) *Response {
-		response := rpcSuccess(command.ID, command.HasID, command.Type)
-		if len(data) > 0 {
-			response.Data, response.HasData = data[0], true
-		}
-		return &response
-	}
-	failure := func(err error) *Response {
-		response := rpcError(command.ID, command.HasID, command.Type, err.Error())
-		return &response
-	}
+	return mode.answer(session, command)
+}
+
+func (mode *server) answer(session *agent.SessionRuntime, command Command) *Response { //nolint:gocyclo,cyclop,funlen
+	success, failure := command.success, command.failure
 
 	switch command.Type {
-	case "prompt":
-		// Upstream's prompt throws without a message; an empty one never reaches the model.
-		if strings.TrimSpace(command.Message) == "" && len(command.Images) == 0 {
-			return failure(errors.New("prompt requires a message"))
-		}
-		mode.promptMu.Lock()
-		if session.IsStreaming() || mode.prompting {
-			switch command.StreamingBehavior {
-			case "steer":
-				if err := session.SteerImages(command.Message, command.Images); err != nil {
-					mode.promptMu.Unlock()
-					return failure(err)
-				}
-			case "followUp":
-				if err := session.FollowUpImages(command.Message, command.Images); err != nil {
-					mode.promptMu.Unlock()
-					return failure(err)
-				}
-			default:
-				mode.promptMu.Unlock()
-				return failure(errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")) //nolint:staticcheck // Upstream RPC error text.
-			}
-			mode.promptMu.Unlock()
-			return success(dispositionData{agent.DispositionQueued})
-		}
-		mode.prompting = true
-		mode.promptSession = session
-		preflight := make(chan struct{})
-		mode.promptPreflight = preflight
-		mode.promptMu.Unlock()
-		finishPreflight := sync.OnceFunc(func() { close(preflight) })
-		defer func() {
-			finishPreflight()
-			mode.promptMu.Lock()
-			mode.prompting = false
-			mode.promptSession = nil
-			mode.promptPreflight = nil
-			mode.promptMu.Unlock()
-		}()
-		// Upstream dispatches extension commands before any model/API-key
-		// validation and emits the authoritative response from preflightResult
-		// so a handled command never needs a model.
-		responded := false
-		err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
-			Images: command.Images,
-			Source: extensions.InputRPC,
-			PreflightResult: func(disposition agent.InputDisposition) {
-				responded = true
-				_ = mode.writeObject(*success(dispositionData{disposition}))
-				finishPreflight()
-			},
-		})
-		if err != nil && !responded {
-			_ = mode.writeObject(*failure(err))
-			finishPreflight()
-		}
-		return nil
 	case "steer":
 		var disposition agent.InputDisposition
 		if err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
@@ -659,6 +602,82 @@ func (mode *server) handleCommand(session *agent.SessionRuntime, command Command
 	default:
 		return failure(errors.New("Unknown command: " + command.Type))
 	}
+}
+
+// prompt starts a run, or queues the message on the running one as its
+// streaming behavior asks. A started run's response is written once its
+// preflight settles, so prompt then returns none.
+func (mode *server) prompt(session *agent.SessionRuntime, command Command) *Response {
+	success, failure := command.success, command.failure
+	// Upstream's prompt throws without a message; an empty one never reaches the model.
+	if strings.TrimSpace(command.Message) == "" && len(command.Images) == 0 {
+		return failure(errors.New("prompt requires a message"))
+	}
+	mode.promptMu.Lock()
+	if session.IsStreaming() || mode.prompting {
+		switch command.StreamingBehavior {
+		case "steer":
+			if err := session.SteerImages(command.Message, command.Images); err != nil {
+				mode.promptMu.Unlock()
+				return failure(err)
+			}
+		case "followUp":
+			if err := session.FollowUpImages(command.Message, command.Images); err != nil {
+				mode.promptMu.Unlock()
+				return failure(err)
+			}
+		default:
+			mode.promptMu.Unlock()
+			return failure(errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")) //nolint:staticcheck // Upstream RPC error text.
+		}
+		mode.promptMu.Unlock()
+		return success(dispositionData{agent.DispositionQueued})
+	}
+	mode.prompting = true
+	mode.promptSession = session
+	preflight := make(chan struct{})
+	mode.promptPreflight = preflight
+	mode.promptMu.Unlock()
+	finishPreflight := sync.OnceFunc(func() { close(preflight) })
+	defer func() {
+		finishPreflight()
+		mode.promptMu.Lock()
+		mode.prompting = false
+		mode.promptSession = nil
+		mode.promptPreflight = nil
+		mode.promptMu.Unlock()
+	}()
+	// Upstream dispatches extension commands before any model/API-key
+	// validation and emits the authoritative response from preflightResult
+	// so a handled command never needs a model.
+	responded := false
+	err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
+		Images: command.Images,
+		Source: extensions.InputRPC,
+		PreflightResult: func(disposition agent.InputDisposition) {
+			responded = true
+			_ = mode.writeObject(*success(dispositionData{disposition}))
+			finishPreflight()
+		},
+	})
+	if err != nil && !responded {
+		_ = mode.writeObject(*failure(err))
+		finishPreflight()
+	}
+	return nil
+}
+
+func (command Command) success(data ...any) *Response {
+	response := rpcSuccess(command.ID, command.HasID, command.Type)
+	if len(data) > 0 {
+		response.Data, response.HasData = data[0], true
+	}
+	return &response
+}
+
+func (command Command) failure(err error) *Response {
+	response := rpcError(command.ID, command.HasID, command.Type, err.Error())
+	return &response
 }
 
 func rpcMessageCount(messages engine.AgentMessages) int {
