@@ -23,9 +23,9 @@ docker run -d --name agent-sales --restart on-failure --memory 256m --env-file /
 
 | Target | Adds | Size | Memory cap |
 |---|---|---|---|
-| default | Orb, Buzz's CLI and buzz-acp, bash, git, curl | 226 MB | 256 MB |
-| `--target browser` | [agent-browser](https://github.com/vercel-labs/agent-browser) and [Lightpanda](https://lightpanda.io) | 318 MB | 512 MB |
-| `--target browser --build-arg CHROMIUM=1` | and headless Chromium | 861 MB | 1.5 GB, with `--shm-size=256m` |
+| default | Orb, Buzz's CLI and buzz-acp, bash, git, curl | 220 MB | 256 MB |
+| `--target browser` | [agent-browser](https://github.com/vercel-labs/agent-browser) and [Lightpanda](https://lightpanda.io) | 312 MB | 512 MB |
+| `--target browser --build-arg CHROMIUM=1` | and headless Chromium | 855 MB | 1.5 GB, with `--shm-size=256m` |
 
 The base is Debian 13 (Buzz's binaries need glibc 2.39), without apt, Perl or documentation; git's
 few Perl commands (`send-email`, `svn`) are missing. Memory caps leave room over what a pilot
