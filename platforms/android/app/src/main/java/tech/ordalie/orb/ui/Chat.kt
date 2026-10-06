@@ -3,6 +3,7 @@ package tech.ordalie.orb.ui
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.text.BasicText
@@ -17,6 +18,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.*
 import kotlin.math.roundToInt
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.core.*
 
 /** Conversation text, in sp. */
@@ -39,30 +41,39 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
     DisposableEffect(s) { s.watched = true; onDispose { s.watched = false } }
     val blocks = blocks(s.transcript.items)
     val streaming = (s.transcript.items.lastOrNull() as? Said)?.live == true
+    // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
+    // the bottom. Scrolling away leaves them where they read until they come back down, or send.
+    val list = rememberLazyListState()
+    var follow by remember(s) { mutableStateOf(true) }
+    LaunchedEffect(list) { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) follow = false } }
+    LaunchedEffect(list) { snapshotFlow { list.isScrollInProgress }.collect { if (!it) follow = !list.canScrollForward } }
+    LaunchedEffect(list) {
+        snapshotFlow { list.canScrollForward to list.layoutInfo.totalItemsCount }.collect { (more, n) -> if (follow && more && n > 0) list.requestScrollToItem(n - 1, Int.MAX_VALUE) }
+    }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         val ghost by animateFloatAsState(if (blocks.isEmpty()) 1f else 0f, tween(400), label = "standby")
         if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T(if (s.loaded) "ready" else "standby", label = true, color = p.meta) }
-        // Laid out from the bottom: it opens on the latest turn, what streams in grows upward, and a
-        // reader scrolled up keeps their place (older messages loading above it included). Items never
-        // slide: a streamed line would set every row above it moving.
-        LazyColumn(Modifier.fillMaxSize(), rememberLazyListState(), reverseLayout = true) {
-            // Room under the last message, where the caret waits while Orb writes.
-            item(key = "end") { Box(Modifier.fillMaxWidth().height(40.dp).padding(start = Margin, top = 6.dp)) { if (streaming) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp) } }
-            itemsIndexed(blocks.asReversed(), key = { _, b -> b.first().key }) { i, b ->
-                // A held finger selects words, in what anyone said, with the system's copy and share.
-                SelectionContainer(Modifier.animateItem(fadeInSpec = tween(280), placementSpec = null, fadeOutSpec = tween(160))) { Block(b, first = i == blocks.lastIndex, s) { ref -> c.view(ref, s) } }
-            }
+        // Items never slide: a streamed line would set every row around it moving.
+        LazyColumn(Modifier.fillMaxSize(), list) {
             if (s.earlier) item(key = "earlier") {
-                Box(Modifier.fillMaxWidth().press(onClick = s::loadEarlier).padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                // Older messages load above; the ones read so far stay where they are.
+                val shown = blocks.size
+                Box(Modifier.fillMaxWidth().press { s.loadEarlier(); c.rt.scope.launch { snapshotFlow { blocks(s.transcript.items).size }.first { it != shown }.let { list.scrollToItem((it - shown).coerceAtLeast(0)) } } }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                     T("earlier messages", size = 13.sp, weight = Medium, color = p.meta)
                 }
             }
+            itemsIndexed(blocks, key = { _, b -> b.first().key }) { i, b ->
+                // A held finger selects words, in what anyone said, with the system's copy and share.
+                SelectionContainer(Modifier.animateItem(fadeInSpec = tween(280), placementSpec = null, fadeOutSpec = tween(160))) { Block(b, first = i == 0, s) { ref -> c.view(ref, s) } }
+            }
+            // Room under the last message, where the caret waits while Orb writes.
+            item(key = "end") { Box(Modifier.fillMaxWidth().height(40.dp).padding(start = Margin, top = 6.dp)) { if (streaming) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp) } }
         }
     }
     AnimatedVisibility(s.status.isNotBlank(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         T(s.status, Modifier.padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = 13.sp, color = p.meta, lines = 1)
     }
-    PromptBox(s, c.cites, c.onCite, c::chooseWhere, { c.chooseModel(s) }, c.palette(s)) { if (!c.command(s, it)) s.prompt(it) }
+    PromptBox(s, c.cites, c.onCite, c::chooseWhere, { c.chooseModel(s) }, c.palette(s)) { follow = true; if (!c.command(s, it)) s.prompt(it) }
 }
 
 /**
