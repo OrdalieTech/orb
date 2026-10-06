@@ -1,23 +1,19 @@
 package teams
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
-
-const maxResponseBytes = 4 << 20
 
 // APIError is a decoded connector failure.
 type APIError struct {
@@ -146,71 +142,43 @@ func (c *client) createActivity(ctx context.Context, serviceURL, conversationID 
 }
 
 func (c *client) do(ctx context.Context, method, callURL string, payload, out any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("teams: encode activity: %w", err)
-	}
+	var token string
 	refreshed := false
-	for attempt := 0; ; attempt++ {
-		token, err := c.tokens.token(ctx)
-		if err != nil {
+	return httpjson.Retry(ctx, c.maxAttempts, c.sleep, func() error {
+		var err error
+		if token, err = c.tokens.token(ctx); err != nil {
 			return err
 		}
-		status, data, header, err := c.roundTrip(ctx, method, callURL, body, token)
+		response, err := httpjson.Do(ctx, c.http, method, callURL, payload, out, "Authorization", "Bearer "+token)
 		if err != nil {
-			return err
+			// The token travels in a header, never the URL, so transport
+			// errors cannot embed it.
+			return fmt.Errorf("teams: %s %s: %w", method, callURL, err)
 		}
-		if status >= 200 && status < 300 {
-			if out != nil && len(data) > 0 {
-				if err := json.Unmarshal(data, out); err != nil {
-					return fmt.Errorf("teams: decode connector response: %w", err)
-				}
-			}
+		if response.OK() {
 			return nil
 		}
-		apiErr := decodeAPIError(status, data, header)
-		if status == http.StatusUnauthorized && !refreshed {
+		return decodeAPIError(response)
+	}, func(err error, attempt int) (time.Duration, bool) {
+		apiErr, ok := asAPIError(err)
+		switch {
+		case !ok:
+			return 0, false
+		case apiErr.Status == http.StatusUnauthorized && !refreshed:
 			refreshed = true
 			c.tokens.invalidate(token)
-			continue
+			return 0, true
+		case !retryableStatus(apiErr.Status):
+			return 0, false
+		case apiErr.RetryAfter > 0:
+			return apiErr.RetryAfter, true
 		}
-		if retryableStatus(status) && attempt+1 < c.maxAttempts {
-			delay := apiErr.RetryAfter
-			if delay <= 0 {
-				delay = c.backoff(attempt)
-			}
-			if err := c.sleep(ctx, delay); err != nil {
-				return err
-			}
-			continue
-		}
-		return apiErr
-	}
+		return c.backoff(attempt), true
+	})
 }
 
-func (c *client) roundTrip(ctx context.Context, method, callURL string, body []byte, token string) (int, []byte, http.Header, error) {
-	request, err := http.NewRequestWithContext(ctx, method, callURL, bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("teams: build connector request: %w", err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+token)
-	response, err := c.http.Do(request)
-	if err != nil {
-		// The token travels in a header, never the URL, so transport
-		// errors cannot embed it.
-		return 0, nil, nil, fmt.Errorf("teams: %s %s: %w", method, callURL, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes))
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("teams: read connector response: %w", err)
-	}
-	return response.StatusCode, data, response.Header, nil
-}
-
-func decodeAPIError(status int, body []byte, header http.Header) *APIError {
-	apiErr := &APIError{Status: status, raw: snippet(body)}
+func decodeAPIError(response *httpjson.Response) *APIError {
+	apiErr := &APIError{Status: response.Status, raw: httpjson.Snippet(response.Body), RetryAfter: httpjson.RetryAfter(response.Header)}
 	var envelope struct {
 		Error struct {
 			Code    string `json:"code"`
@@ -218,15 +186,10 @@ func decodeAPIError(status int, body []byte, header http.Header) *APIError {
 		} `json:"error"`
 		ErrorCode int `json:"errorCode"`
 	}
-	if json.Unmarshal(body, &envelope) == nil {
+	if json.Unmarshal(response.Body, &envelope) == nil {
 		apiErr.Code = envelope.Error.Code
 		apiErr.Message = envelope.Error.Message
 		apiErr.ErrorCode = envelope.ErrorCode
-	}
-	if header != nil {
-		if seconds, err := strconv.Atoi(header.Get("Retry-After")); err == nil && seconds > 0 {
-			apiErr.RetryAfter = time.Duration(seconds) * time.Second
-		}
 	}
 	return apiErr
 }

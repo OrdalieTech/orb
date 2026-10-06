@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 type tokenSource struct {
@@ -120,7 +122,7 @@ func (s *tokenSource) fetch(ctx context.Context) (string, time.Time, error) {
 		return "", time.Time{}, fmt.Errorf("teams: read token response: %w", err)
 	}
 	if response.StatusCode != http.StatusOK {
-		return "", time.Time{}, fmt.Errorf("teams: token endpoint http %d: %s", response.StatusCode, redactString(snippet(body), s.secret))
+		return "", time.Time{}, fmt.Errorf("teams: token endpoint http %d: %s", response.StatusCode, redactString(httpjson.Snippet(body), s.secret))
 	}
 	var decoded tokenResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
@@ -148,12 +150,4 @@ func redactString(s, secret string) string {
 		return s
 	}
 	return strings.ReplaceAll(s, secret, "<secret>")
-}
-
-func snippet(body []byte) string {
-	const maxSnippet = 256
-	if len(body) > maxSnippet {
-		return string(body[:maxSnippet])
-	}
-	return string(body)
 }

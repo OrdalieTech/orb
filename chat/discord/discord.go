@@ -22,6 +22,7 @@ import (
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // DefaultBaseURL is the production REST API endpoint.
@@ -138,18 +139,13 @@ func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.Read
 	if !strings.HasPrefix(ref.ID, "https://") && !strings.HasPrefix(ref.ID, "http://") {
 		return nil, "", fmt.Errorf("discord: attachment %q: ref is not a download URL", ref.Name)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.ID, nil)
+	resp, failed, err := httpjson.Get(ctx, a.client.http, ref.ID)
 	if err != nil {
-		return nil, "", fmt.Errorf("discord: download attachment %q: %w", ref.Name, err)
+		return nil, "", fmt.Errorf("discord: download attachment %q: %w", ref.Name, httpjson.Redact(err, a.client.token))
 	}
-	resp, err := a.client.http.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("discord: download attachment %q: %w", ref.Name, a.client.redact(err))
-	}
-	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
+	if failed != nil {
 		return nil, "", fmt.Errorf("discord: download attachment %q: http %d (signed attachment links expire)",
-			ref.Name, resp.StatusCode)
+			ref.Name, failed.Status)
 	}
 	mime := resp.Header.Get("Content-Type")
 	if mime == "" {

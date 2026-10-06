@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // DefaultOpenIDMetadataURL is the Bot Framework OpenID metadata document
@@ -232,24 +233,20 @@ func (a *Adapter) trustedHost(host string) bool {
 // ponytail: inline images and connector-served files only; SharePoint
 // attachment URLs need Graph credentials the adapter does not hold.
 func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.ReadCloser, string, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.ID, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("teams: build attachment request: %w", err)
-	}
-	if a.trustedHost(request.URL.Host) {
+	var auth []string
+	if u, err := url.Parse(ref.ID); err == nil && a.trustedHost(u.Host) {
 		token, err := a.client.tokens.token(ctx)
 		if err != nil {
 			return nil, "", err
 		}
-		request.Header.Set("Authorization", "Bearer "+token)
+		auth = []string{"Authorization", "Bearer " + token}
 	}
-	response, err := a.client.http.Do(request)
+	response, failed, err := httpjson.Get(ctx, a.client.http, ref.ID, auth...)
 	if err != nil {
 		return nil, "", fmt.Errorf("teams: download attachment: %w", err)
 	}
-	if response.StatusCode != http.StatusOK {
-		_ = response.Body.Close()
-		return nil, "", fmt.Errorf("teams: download attachment: http %d", response.StatusCode)
+	if failed != nil {
+		return nil, "", fmt.Errorf("teams: download attachment: http %d", failed.Status)
 	}
 	mime := ref.MIME
 	if ct := response.Header.Get("Content-Type"); ct != "" {

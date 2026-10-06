@@ -1,20 +1,16 @@
 package discord
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
-)
 
-const maxResponseBytes = 4 << 20
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
+)
 
 const maxCallAttempts = 3
 
@@ -89,92 +85,45 @@ type gatewayBotResponse struct {
 // ponytail: no proactive rate-limit bucket tracking (X-RateLimit-* headers
 // are ignored) — at one bot's send cadence the reactive 429 path suffices.
 func (c *restClient) call(ctx context.Context, method, path string, payload, out any) error {
-	for attempt := 1; ; attempt++ {
-		err := c.do(ctx, method, path, payload, out)
-		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests && attempt < maxCallAttempts {
-			delay := apiErr.RetryAfter
-			if delay <= 0 {
-				delay = time.Second
-			}
-			if sleepErr := c.sleep(ctx, delay); sleepErr != nil {
-				return sleepErr
-			}
-			continue
-		}
-		return err
-	}
-}
-
-func (c *restClient) do(ctx context.Context, method, path string, payload, out any) error {
-	var body io.Reader
-	if payload != nil {
-		data, err := json.Marshal(payload)
+	return httpjson.Retry(ctx, maxCallAttempts, c.sleep, func() error {
+		resp, err := httpjson.Do(ctx, c.http, method, c.baseURL+path, payload, out, "Authorization", "Bot "+c.token)
 		if err != nil {
-			return fmt.Errorf("discord: %s %s: encode request: %w", method, path, err)
+			return fmt.Errorf("discord: %s %s: %w", method, path, httpjson.Redact(err, c.token))
 		}
-		body = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
-	if err != nil {
-		return fmt.Errorf("discord: %s %s: build request: %w", method, path, c.redact(err))
-	}
-	req.Header.Set("Authorization", "Bot "+c.token)
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("discord: %s %s: %w", method, path, c.redact(err))
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("discord: %s %s: read response: %w", method, path, c.redact(err))
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return apiErrorFrom(method, path, resp, data)
-	}
-	if out != nil && len(data) > 0 {
-		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("discord: %s %s: decode response: %w", method, path, err)
+		if !resp.OK() {
+			return apiErrorFrom(method, path, resp)
 		}
-	}
-	return nil
+		return nil
+	}, func(err error, _ int) (time.Duration, bool) {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != http.StatusTooManyRequests {
+			return 0, false
+		}
+		if apiErr.RetryAfter <= 0 {
+			return time.Second, true
+		}
+		return apiErr.RetryAfter, true
+	})
 }
 
-func apiErrorFrom(method, path string, resp *http.Response, body []byte) *APIError {
-	apiErr := &APIError{Method: method, Path: path, Status: resp.StatusCode}
+func apiErrorFrom(method, path string, resp *httpjson.Response) *APIError {
+	apiErr := &APIError{Method: method, Path: path, Status: resp.Status}
 	var envelope struct {
 		Message    string  `json:"message"`
 		Code       int     `json:"code"`
 		RetryAfter float64 `json:"retry_after"` // seconds, fractional
 	}
-	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Message != "" {
+	if err := json.Unmarshal(resp.Body, &envelope); err == nil && envelope.Message != "" {
 		apiErr.Message = envelope.Message
 		apiErr.Code = envelope.Code
 		apiErr.RetryAfter = time.Duration(envelope.RetryAfter * float64(time.Second))
 	} else {
-		const maxSnippet = 256
-		snippet := string(body)
-		if len(snippet) > maxSnippet {
-			snippet = snippet[:maxSnippet]
-		}
-		apiErr.Message = snippet
+		apiErr.Message = httpjson.Snippet(resp.Body)
 	}
 	if apiErr.Status == http.StatusTooManyRequests && apiErr.RetryAfter <= 0 {
-		if seconds, err := strconv.ParseFloat(resp.Header.Get("Retry-After"), 64); err == nil {
-			apiErr.RetryAfter = time.Duration(seconds * float64(time.Second))
-		}
+		apiErr.RetryAfter = httpjson.RetryAfter(resp.Header)
 	}
 	return apiErr
-}
-
-func (c *restClient) redact(err error) error {
-	if err == nil || !strings.Contains(err.Error(), c.token) {
-		return err
-	}
-	return errors.New(strings.ReplaceAll(err.Error(), c.token, "<token>"))
 }
 
 func (c *restClient) getGatewayBot(ctx context.Context) (*gatewayBotResponse, error) {

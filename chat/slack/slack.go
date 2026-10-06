@@ -17,12 +17,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 const platformName = "slack"
@@ -166,21 +168,16 @@ func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.Read
 	if !strings.HasPrefix(ref.ID, "https://") && !strings.HasPrefix(ref.ID, "http://") {
 		return nil, "", fmt.Errorf("slack: attachment id is not a download url")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.ID, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("slack: build download request: %w", err)
+	var auth []string
+	if u, err := url.Parse(ref.ID); err == nil && trustedSlackHost(u.Hostname()) {
+		auth = []string{"Authorization", "Bearer " + a.client.token}
 	}
-	if trustedSlackHost(req.URL.Hostname()) {
-		req.Header.Set("Authorization", "Bearer "+a.client.token)
-	}
-	resp, err := a.download.Do(req)
+	resp, failed, err := httpjson.Get(ctx, a.download, ref.ID, auth...)
 	if err != nil {
 		return nil, "", fmt.Errorf("slack: download file: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
-		_ = resp.Body.Close()
-		return nil, "", fmt.Errorf("slack: file download returned HTTP %d", resp.StatusCode)
+	if failed != nil {
+		return nil, "", fmt.Errorf("slack: file download returned HTTP %d", failed.Status)
 	}
 	return resp.Body, ref.MIME, nil
 }

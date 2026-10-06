@@ -1,21 +1,18 @@
 package slack
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 	"time"
+
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // DefaultBaseURL is the production Web API endpoint.
 const DefaultBaseURL = "https://slack.com"
-
-const maxResponseBytes = 4 << 20
 
 const maxCallAttempts = 5
 
@@ -77,57 +74,41 @@ type apiEnvelope struct {
 }
 
 func (c *client) call(ctx context.Context, method string, params, out any) error {
-	payload, err := json.Marshal(params)
-	if err != nil {
-		return fmt.Errorf("slack: %s: encode params: %w", method, err)
-	}
-	for attempt := 1; ; attempt++ {
-		err := c.doCall(ctx, method, payload, out)
+	return httpjson.Retry(ctx, maxCallAttempts, c.sleep, func() error {
+		return c.doCall(ctx, method, params, out)
+	}, func(err error, _ int) (time.Duration, bool) {
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 && attempt < maxCallAttempts {
-			if sleepErr := c.sleep(ctx, apiErr.RetryAfter); sleepErr != nil {
-				return sleepErr
-			}
-			continue
+		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
+			return apiErr.RetryAfter, true
 		}
-		return err
-	}
+		return 0, false
+	})
 }
 
-func (c *client) doCall(ctx context.Context, method string, payload []byte, out any) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/"+method, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("slack: %s: build request: %w", method, err)
-	}
-	request.Header.Set("Content-Type", "application/json; charset=utf-8")
-	request.Header.Set("Authorization", "Bearer "+c.token)
-	response, err := c.http.Do(request)
+func (c *client) doCall(ctx context.Context, method string, params, out any) error {
+	response, err := httpjson.Do(ctx, c.http, http.MethodPost, c.baseURL+"/api/"+method, params, nil,
+		"Content-Type", "application/json; charset=utf-8", "Authorization", "Bearer "+c.token)
 	if err != nil {
 		return fmt.Errorf("slack: %s: %w", method, err)
 	}
-	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("slack: %s: read response: %w", method, err)
-	}
-	if response.StatusCode == http.StatusTooManyRequests {
-		retryAfter := time.Second
-		if seconds, err := strconv.Atoi(response.Header.Get("Retry-After")); err == nil && seconds > 0 {
-			retryAfter = time.Duration(seconds) * time.Second
+	if response.Status == http.StatusTooManyRequests {
+		retryAfter := httpjson.RetryAfter(response.Header)
+		if retryAfter <= 0 {
+			retryAfter = time.Second
 		}
-		return &APIError{Method: method, Status: response.StatusCode, Code: "ratelimited", RetryAfter: retryAfter}
+		return &APIError{Method: method, Status: response.Status, Code: "ratelimited", RetryAfter: retryAfter}
 	}
 	// ponytail: no retry on 5xx/transport errors — the processor's delivery
 	// retry loop and Slack's event redelivery are the safety net.
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("slack: %s: http %d", method, response.StatusCode)
+	if !response.OK() {
+		return fmt.Errorf("slack: %s: http %d", method, response.Status)
 	}
 	var envelope apiEnvelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	if err := json.Unmarshal(response.Body, &envelope); err != nil {
 		return fmt.Errorf("slack: %s: decode response: %w", method, err)
 	}
 	if !envelope.OK {
-		apiErr := &APIError{Method: method, Status: response.StatusCode, Code: envelope.Error}
+		apiErr := &APIError{Method: method, Status: response.Status, Code: envelope.Error}
 		if apiErr.Code == "" {
 			apiErr.Code = "unknown_error"
 		}
@@ -137,7 +118,7 @@ func (c *client) doCall(ctx context.Context, method string, payload []byte, out 
 		return apiErr
 	}
 	if out != nil {
-		if err := json.Unmarshal(body, out); err != nil {
+		if err := json.Unmarshal(response.Body, out); err != nil {
 			return fmt.Errorf("slack: %s: decode result: %w", method, err)
 		}
 	}

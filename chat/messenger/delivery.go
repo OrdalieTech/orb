@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 type delivery struct {
@@ -162,31 +164,23 @@ func (a *Adapter) sendText(ctx context.Context, psid, body, messagingType string
 		"messaging_type": messagingType,
 		"message":        map[string]string{"text": body},
 	}
-	for attempt := 0; ; attempt++ {
-		var out sendResponse
-		err := a.do(ctx, http.MethodPost, a.sendPath(), payload, &out)
-		if err == nil {
-			return out.MessageID, nil
-		}
+	var out sendResponse
+	err := httpjson.Retry(ctx, a.maxAttempts, ctxsleep.Sleep, func() error {
+		return a.do(ctx, http.MethodPost, a.sendPath(), payload, &out)
+	}, func(err error, attempt int) (time.Duration, bool) {
 		var graphErr *GraphError
-		if errors.As(err, &graphErr) && retryable(graphErr.Code) && attempt+1 < a.maxAttempts {
-			wait := a.backoff(attempt)
-			if graphErr.RegainAfter > 0 {
-				wait = graphErr.RegainAfter
-			}
-			// ponytail: a regain hint beyond maxRetryWait surfaces now
-			// instead of sleeping minutes inside a turn — the processor's
-			// delivery retry loop and queue redelivery are the safety net,
-			// as for 5xx/transport errors.
-			if wait <= a.maxRetryWait {
-				select {
-				case <-time.After(wait):
-					continue
-				case <-ctx.Done():
-					return "", ctx.Err()
-				}
-			}
+		if !errors.As(err, &graphErr) || !retryable(graphErr.Code) {
+			return 0, false
 		}
-		return "", err
-	}
+		wait := a.backoff(attempt)
+		if graphErr.RegainAfter > 0 {
+			wait = graphErr.RegainAfter
+		}
+		// ponytail: a regain hint beyond maxRetryWait surfaces now instead
+		// of sleeping minutes inside a turn — the processor's delivery retry
+		// loop and queue redelivery are the safety net, as for 5xx/transport
+		// errors.
+		return wait, wait <= a.maxRetryWait
+	})
+	return out.MessageID, err
 }

@@ -5,7 +5,6 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +13,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // DefaultBaseURL is the production Bot API endpoint.
@@ -157,42 +158,26 @@ type editMessageParams struct {
 // nil). 429 responses are retried after the server-requested pause, bounded
 // by maxCallAttempts.
 func (c *client) call(ctx context.Context, httpClient *http.Client, method string, params any, out any) error {
-	payload, err := json.Marshal(params)
-	if err != nil {
-		return fmt.Errorf("telegram: %s: encode params: %w", method, err)
-	}
-	for attempt := 1; ; attempt++ {
-		err := c.doCall(ctx, httpClient, method, payload, out)
+	return httpjson.Retry(ctx, maxCallAttempts, c.sleep, func() error {
+		return c.doCall(ctx, httpClient, method, params, out)
+	}, func(err error, _ int) (time.Duration, bool) {
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 && attempt < maxCallAttempts {
-			if sleepErr := c.sleep(ctx, apiErr.RetryAfter); sleepErr != nil {
-				return sleepErr
-			}
-			continue
+		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
+			return apiErr.RetryAfter, true
 		}
-		return err
-	}
+		return 0, false
+	})
 }
 
-func (c *client) doCall(ctx context.Context, httpClient *http.Client, method string, payload []byte, out any) error {
-	url := c.baseURL + "/bot" + c.token + "/" + method
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+// doCall's URL embeds the bot token, so its errors are redacted.
+func (c *client) doCall(ctx context.Context, httpClient *http.Client, method string, params any, out any) error {
+	response, err := httpjson.Do(ctx, httpClient, http.MethodPost, c.baseURL+"/bot"+c.token+"/"+method, params, nil)
 	if err != nil {
-		return fmt.Errorf("telegram: %s: build request: %w", method, c.redact(err))
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := httpClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("telegram: %s: %w", method, c.redact(err))
-	}
-	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-	if err != nil {
-		return fmt.Errorf("telegram: %s: read response: %w", method, c.redact(err))
+		return fmt.Errorf("telegram: %s: %w", method, httpjson.Redact(err, c.token))
 	}
 	var envelope apiResponse
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return fmt.Errorf("telegram: %s: decode response (http %d): %w", method, response.StatusCode, err)
+	if err := json.Unmarshal(response.Body, &envelope); err != nil {
+		return fmt.Errorf("telegram: %s: decode response (http %d): %w", method, response.Status, err)
 	}
 	if !envelope.OK {
 		if strings.Contains(envelope.Description, notModifiedMarker) {
@@ -210,15 +195,6 @@ func (c *client) doCall(ctx context.Context, httpClient *http.Client, method str
 		}
 	}
 	return nil
-}
-
-// redact strips the bot token from transport errors (whose URLs embed it) so
-// it can never reach logs.
-func (c *client) redact(err error) error {
-	if err == nil || !strings.Contains(err.Error(), c.token) {
-		return err
-	}
-	return errors.New(strings.ReplaceAll(err.Error(), c.token, "<token>"))
 }
 
 func (c *client) getMe(ctx context.Context) (*apiUser, error) {
@@ -281,18 +257,12 @@ func (c *client) getFile(ctx context.Context, fileID string) (*apiFilePath, erro
 // downloadFile streams the file behind a getFile path. The URL embeds the
 // token; errors are redacted so the token is never logged.
 func (c *client) downloadFile(ctx context.Context, filePath string) (io.ReadCloser, error) {
-	url := c.baseURL + "/file/bot" + c.token + "/" + filePath
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	response, failed, err := httpjson.Get(ctx, c.http, c.baseURL+"/file/bot"+c.token+"/"+filePath)
 	if err != nil {
-		return nil, fmt.Errorf("telegram: download file: %w", c.redact(err))
+		return nil, fmt.Errorf("telegram: download file: %w", httpjson.Redact(err, c.token))
 	}
-	response, err := c.http.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("telegram: download file: %w", c.redact(err))
-	}
-	if response.StatusCode != http.StatusOK {
-		_ = response.Body.Close()
-		return nil, fmt.Errorf("telegram: download file %q: http %d", filePath, response.StatusCode)
+	if failed != nil {
+		return nil, fmt.Errorf("telegram: download file %q: http %d", filePath, failed.Status)
 	}
 	return response.Body, nil
 }

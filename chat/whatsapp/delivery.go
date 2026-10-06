@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // delivery is one turn's output surface. chat.Delivery calls are serialized
@@ -127,26 +129,17 @@ func (a *Adapter) sendText(ctx context.Context, to, body, contextID string) (str
 	if contextID != "" {
 		payload["context"] = map[string]string{"message_id": contextID}
 	}
-	for attempt := 0; ; attempt++ {
-		var out sendResponse
-		err := a.do(ctx, http.MethodPost, a.messagesPath(), payload, &out)
-		if err == nil {
-			if len(out.Messages) == 0 {
-				return "", nil
-			}
-			return out.Messages[0].ID, nil
-		}
+	var out sendResponse
+	// ponytail: no retry on 5xx/transport errors — the processor's delivery
+	// retry loop and queue redelivery are the safety net.
+	err := httpjson.Retry(ctx, a.maxAttempts, ctxsleep.Sleep, func() error {
+		return a.do(ctx, http.MethodPost, a.messagesPath(), payload, &out)
+	}, func(err error, attempt int) (time.Duration, bool) {
 		var graphErr *GraphError
-		if errors.As(err, &graphErr) && retryable(graphErr.Code) && attempt+1 < a.maxAttempts {
-			select {
-			case <-time.After(a.backoff(attempt)):
-				continue
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
-		}
-		// ponytail: no retry on 5xx/transport errors — the processor's
-		// delivery retry loop and queue redelivery are the safety net.
+		return a.backoff(attempt), errors.As(err, &graphErr) && retryable(graphErr.Code)
+	})
+	if err != nil || len(out.Messages) == 0 {
 		return "", err
 	}
+	return out.Messages[0].ID, nil
 }

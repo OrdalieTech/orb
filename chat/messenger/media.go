@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // Download implements chat.Adapter. Messenger attachment refs carry the
@@ -24,18 +24,12 @@ func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.Read
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
 		return nil, "", fmt.Errorf("messenger: attachment ref is not an http(s) url")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ref.ID, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("messenger: build media request: %w", err)
-	}
-	resp, err := a.client.Do(req)
+	resp, failed, err := httpjson.Get(ctx, a.client, ref.ID)
 	if err != nil {
 		return nil, "", fmt.Errorf("messenger: download media: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
-		_ = resp.Body.Close()
-		return nil, "", fmt.Errorf("messenger: media download returned HTTP %d (attachment urls expire; download promptly)", resp.StatusCode)
+	if failed != nil {
+		return nil, "", fmt.Errorf("messenger: media download returned HTTP %d (attachment urls expire; download promptly)", failed.Status)
 	}
 	mime := resp.Header.Get("Content-Type")
 	if mime == "" {

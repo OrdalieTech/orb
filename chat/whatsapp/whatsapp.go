@@ -11,16 +11,15 @@
 package whatsapp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // GraphVersion is the pinned Graph API version used for every call.
@@ -28,9 +27,6 @@ const GraphVersion = "v23.0"
 
 // platformName matches chat.Message.Platform for this adapter.
 const platformName = "whatsapp"
-
-// maxResponseBytes bounds how much of a Graph response body is read.
-const maxResponseBytes = 4 << 20
 
 // Options configures the WhatsApp Cloud API adapter.
 type Options struct {
@@ -116,38 +112,12 @@ func (a *Adapter) messagesPath() string {
 // do performs one Graph call: JSON in (optional), JSON out (optional).
 // Non-2xx responses decode into a *GraphError when the body carries one.
 func (a *Adapter) do(ctx context.Context, method, path string, payload, out any) error {
-	var body io.Reader
-	if payload != nil {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("whatsapp: encode request: %w", err)
-		}
-		body = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, a.baseURL+path, body)
-	if err != nil {
-		return fmt.Errorf("whatsapp: build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+a.opts.Token)
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := a.client.Do(req)
+	resp, err := httpjson.Do(ctx, a.client, method, a.baseURL+path, payload, out, "Authorization", "Bearer "+a.opts.Token)
 	if err != nil {
 		return fmt.Errorf("whatsapp: %s %s: %w", method, path, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("whatsapp: read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return graphErrorFrom(resp.StatusCode, data)
-	}
-	if out != nil {
-		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("whatsapp: decode response: %w", err)
-		}
+	if !resp.OK() {
+		return graphErrorFrom(resp.Status, resp.Body)
 	}
 	return nil
 }
@@ -219,10 +189,5 @@ func graphErrorFrom(status int, body []byte) error {
 	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error.Code != 0 {
 		return &envelope.Error
 	}
-	const maxSnippet = 256
-	snippet := string(body)
-	if len(snippet) > maxSnippet {
-		snippet = snippet[:maxSnippet]
-	}
-	return fmt.Errorf("whatsapp: graph returned HTTP %d: %s", status, snippet)
+	return fmt.Errorf("whatsapp: graph returned HTTP %d: %s", status, httpjson.Snippet(body))
 }

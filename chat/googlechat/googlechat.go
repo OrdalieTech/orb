@@ -14,7 +14,6 @@
 package googlechat
 
 import (
-	"bytes"
 	"context"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -28,13 +27,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 const platformName = "googlechat"
@@ -253,20 +252,12 @@ func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.Read
 	if err != nil {
 		return nil, "", err
 	}
-	mediaURL := a.baseURL + "/v1/media/" + ref.ID + "?alt=media"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("googlechat: build media request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := a.client.Do(req)
+	resp, failed, err := httpjson.Get(ctx, a.client, a.baseURL+"/v1/media/"+ref.ID+"?alt=media", "Authorization", "Bearer "+token)
 	if err != nil {
 		return nil, "", fmt.Errorf("googlechat: download media: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-		_ = resp.Body.Close()
-		return nil, "", apiErrorFrom(resp, data)
+	if failed != nil {
+		return nil, "", apiErrorFrom(failed)
 	}
 	return resp.Body, ref.MIME, nil
 }
@@ -300,13 +291,8 @@ func (e *APIError) Error() string {
 	return msg
 }
 
-func apiErrorFrom(resp *http.Response, body []byte) error {
-	apiErr := &APIError{HTTPStatus: resp.StatusCode}
-	if header := resp.Header.Get("Retry-After"); header != "" {
-		if seconds, err := strconv.Atoi(header); err == nil && seconds >= 0 {
-			apiErr.RetryAfter = time.Duration(seconds) * time.Second
-		}
-	}
+func apiErrorFrom(resp *httpjson.Response) error {
+	apiErr := &APIError{HTTPStatus: resp.Status, RetryAfter: httpjson.RetryAfter(resp.Header)}
 	var envelope struct {
 		Error struct {
 			Code    int    `json:"code"`
@@ -314,18 +300,13 @@ func apiErrorFrom(resp *http.Response, body []byte) error {
 			Status  string `json:"status"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error.Code != 0 {
+	if err := json.Unmarshal(resp.Body, &envelope); err == nil && envelope.Error.Code != 0 {
 		apiErr.Code = envelope.Error.Code
 		apiErr.Message = envelope.Error.Message
 		apiErr.Status = envelope.Error.Status
 		return apiErr
 	}
-	const maxSnippet = 256
-	snippet := string(body)
-	if len(snippet) > maxSnippet {
-		snippet = snippet[:maxSnippet]
-	}
-	apiErr.Message = snippet
+	apiErr.Message = httpjson.Snippet(resp.Body)
 	return apiErr
 }
 
@@ -409,80 +390,40 @@ func (a *Adapter) createOrUpdate(ctx context.Context, space, messageID, text, th
 }
 
 func (a *Adapter) do(ctx context.Context, method, path string, query url.Values, payload, out any) error {
-	var body []byte
-	if payload != nil {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("googlechat: encode request: %w", err)
-		}
-		body = data
-	}
-	refreshed := false
-	for attempt := 0; ; attempt++ {
-		err := a.doOnce(ctx, method, path, query, body, out)
-		if err == nil {
-			return nil
-		}
-		if isStatus(err, http.StatusUnauthorized) && !refreshed {
-			// Token expired or clock skew: mint a new assertion, retry once.
-			refreshed = true
-			a.invalidateToken()
-			continue
-		}
-		if retryable(err) && attempt+1 < a.maxAttempts {
-			delay := a.backoff(attempt)
-			var apiErr *APIError
-			if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
-				delay = min(apiErr.RetryAfter, 64*time.Second)
-			}
-			if sleepErr := a.sleep(ctx, delay); sleepErr != nil {
-				return sleepErr
-			}
-			continue
-		}
-		return err
-	}
-}
-
-func (a *Adapter) doOnce(ctx context.Context, method, path string, query url.Values, body []byte, out any) error {
-	token, err := a.bearer(ctx)
-	if err != nil {
-		return err
-	}
 	target := a.baseURL + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, target, reader)
-	if err != nil {
-		return fmt.Errorf("googlechat: build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("googlechat: %s %s: %w", method, path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("googlechat: read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return apiErrorFrom(resp, data)
-	}
-	if out != nil {
-		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("googlechat: decode response: %w", err)
+	refreshed := false
+	return httpjson.Retry(ctx, a.maxAttempts, a.sleep, func() error {
+		token, err := a.bearer(ctx)
+		if err != nil {
+			return err
 		}
-	}
-	return nil
+		resp, err := httpjson.Do(ctx, a.client, method, target, payload, out, "Authorization", "Bearer "+token)
+		if err != nil {
+			return fmt.Errorf("googlechat: %s %s: %w", method, path, err)
+		}
+		if !resp.OK() {
+			return apiErrorFrom(resp)
+		}
+		return nil
+	}, func(err error, attempt int) (time.Duration, bool) {
+		if isStatus(err, http.StatusUnauthorized) && !refreshed {
+			// Token expired or clock skew: mint a new assertion, retry once.
+			refreshed = true
+			a.invalidateToken()
+			return 0, true
+		}
+		if !retryable(err) {
+			return 0, false
+		}
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
+			return min(apiErr.RetryAfter, 64*time.Second), true
+		}
+		return a.backoff(attempt), true
+	})
 }
 
 func turnMessageID(replyTo string, key chat.ConversationKey) string {

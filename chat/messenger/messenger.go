@@ -16,24 +16,21 @@
 package messenger
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // GraphVersion is the pinned Graph API version used for every call.
 const GraphVersion = "v23.0"
 
 const platformName = "messenger"
-
-const maxResponseBytes = 4 << 20
 
 // Options configures the Messenger adapter.
 type Options struct {
@@ -152,38 +149,12 @@ func (a *Adapter) sendPath() string {
 }
 
 func (a *Adapter) do(ctx context.Context, method, path string, payload, out any) error {
-	var body io.Reader
-	if payload != nil {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("messenger: encode request: %w", err)
-		}
-		body = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, a.baseURL+path, body)
-	if err != nil {
-		return fmt.Errorf("messenger: build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+a.opts.Token)
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := a.client.Do(req)
+	resp, err := httpjson.Do(ctx, a.client, method, a.baseURL+path, payload, out, "Authorization", "Bearer "+a.opts.Token)
 	if err != nil {
 		return fmt.Errorf("messenger: %s %s: %w", method, path, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("messenger: read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return graphErrorFrom(resp.StatusCode, data, resp.Header.Get("X-Business-Use-Case-Usage"))
-	}
-	if out != nil {
-		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("messenger: decode response: %w", err)
-		}
+	if !resp.OK() {
+		return graphErrorFrom(resp.Status, resp.Body, resp.Header.Get("X-Business-Use-Case-Usage"))
 	}
 	return nil
 }
@@ -263,12 +234,7 @@ func graphErrorFrom(status int, body []byte, usageHeader string) error {
 		envelope.Error.RegainAfter = regainAfter(usageHeader)
 		return &envelope.Error
 	}
-	const maxSnippet = 256
-	snippet := string(body)
-	if len(snippet) > maxSnippet {
-		snippet = snippet[:maxSnippet]
-	}
-	return fmt.Errorf("messenger: graph returned HTTP %d: %s", status, snippet)
+	return fmt.Errorf("messenger: graph returned HTTP %d: %s", status, httpjson.Snippet(body))
 }
 
 func regainAfter(header string) time.Duration {

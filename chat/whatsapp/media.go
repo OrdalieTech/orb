@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 )
 
 // mediaInfo is the Graph media-metadata subset the gateway reads.
@@ -33,19 +34,12 @@ func (a *Adapter) fetchMediaInfo(ctx context.Context, mediaID string) (mediaInfo
 // fetchMediaURL downloads the media content with the Bearer token (the
 // lookaside CDN refuses unauthenticated requests).
 func (a *Adapter) fetchMediaURL(ctx context.Context, mediaURL string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("whatsapp: build media request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+a.opts.Token)
-	resp, err := a.client.Do(req)
+	resp, failed, err := httpjson.Get(ctx, a.client, mediaURL, "Authorization", "Bearer "+a.opts.Token)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp: download media: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("whatsapp: media download returned HTTP %d", resp.StatusCode)
+	if failed != nil {
+		return nil, fmt.Errorf("whatsapp: media download returned HTTP %d", failed.Status)
 	}
 	return resp.Body, nil
 }
