@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Orb holds each conversation's Claude transcript. Claude's own records are
@@ -38,18 +39,12 @@ const transcriptEntry = Name + ".transcript"
 // ErrNoClaudeCodeSession reports an ID that names no Claude Code session.
 var ErrNoClaudeCodeSession = errors.New("no Claude Code session")
 
-func messageRole(entry *session.SessionEntry) string {
-	var message struct{ Role string }
-	_ = json.Unmarshal(entry.Message, &message)
-	return message.Role
-}
-
 // lastMessage is the message the conversation ends at, before its skip newest
 // prompts: those a turn is about to send.
 func lastMessage(manager extensions.ReadonlySessionManager, skip int) string {
 	for entry := manager.GetLeafEntry(); entry != nil; {
 		if entry.Type == "message" {
-			if skip == 0 || messageRole(entry) != "user" {
+			if skip == 0 || jsonwire.MessageRole(entry.Message) != "user" {
 				return entry.ID
 			}
 			skip--
@@ -93,7 +88,7 @@ func rebuild(manager extensions.ReadonlySessionManager, skip int) []*record {
 		if branch[i].Type != "message" {
 			continue
 		}
-		if messageRole(&branch[i]) != "user" {
+		if jsonwire.MessageRole(branch[i].Message) != "user" {
 			break
 		}
 		branch, skip = branch[:i], skip-1

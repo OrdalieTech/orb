@@ -111,7 +111,7 @@ func PrepareBranchEntries(entries []SessionEntry, tokenBudget float64) BranchPre
 		// Both upstream branch-summarization getMessageFromEntry variants
 		// project a branch_summary unconditionally, even with an empty summary.
 		message := harnessEntryMessage(entries[index], true)
-		if message == nil || (entries[index].Type == "message" && messageRole(message) == "toolResult") {
+		if message == nil || (entries[index].Type == "message" && MessageRole(message) == "toolResult") {
 			continue
 		}
 		extractFileOperations(message, &operations)

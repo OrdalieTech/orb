@@ -2013,13 +2013,7 @@ func userMessageText(message engine.AgentMessage) string {
 	if user.Content.Text != nil {
 		return *user.Content.Text
 	}
-	var result bytes.Buffer
-	for _, block := range user.Content.Blocks {
-		if text, ok := block.(*ai.TextContent); ok {
-			result.WriteString(text.Text)
-		}
-	}
-	return result.String()
+	return ai.ContentText(user.Content.Blocks, "")
 }
 
 func indexOf(values []string, target string) int {

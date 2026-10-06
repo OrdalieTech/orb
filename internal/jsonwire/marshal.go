@@ -330,6 +330,15 @@ func DecodeWTF8Surrogate(value string) (uint16, bool) {
 	return unit, unit >= 0xd800 && unit <= 0xdfff
 }
 
+// MessageRole is the role of the JSON message raw, or "" when it has none.
+func MessageRole(raw []byte) string {
+	var message struct {
+		Role string `json:"role"`
+	}
+	_ = json.Unmarshal(raw, &message)
+	return message.Role
+}
+
 // MessageRoleAndText preserves upstream's concatenation of text blocks with no separator.
 func MessageRoleAndText(raw json.RawMessage) (string, string) {
 	var message struct {

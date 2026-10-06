@@ -13,6 +13,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const estimatedImageChars int64 = 4800
@@ -231,7 +232,7 @@ func isTurnStartEntry(entry SessionEntry) bool {
 	if entry.Type == "compaction" {
 		return false
 	}
-	switch messageRole(entryMessage(entry, false)) {
+	switch MessageRole(entryMessage(entry, false)) {
 	case "user", "bashExecution", "custom", "branchSummary", "compactionSummary":
 		return true
 	}
@@ -260,27 +261,7 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 		accumulated += messageTokens
 		if accumulated >= keepRecentTokens {
 			exceeded = true
-			chosen := -1
-			for _, candidate := range cutPoints {
-				if candidate >= index {
-					chosen = candidate
-					break
-				}
-			}
-			if chosen < 0 {
-				// The newest messages alone exceed the recent budget (typically one large
-				// tool result). Cut at the latest boundary before them so the turn still
-				// folds instead of retaining the whole path and compacting nothing.
-				for _, candidate := range cutPoints {
-					if candidate > index {
-						break
-					}
-					chosen = candidate
-				}
-			}
-			if chosen >= 0 {
-				cutIndex = chosen
-			}
+			cutIndex = cutPointAt(cutPoints, index)
 			break
 		}
 	}
@@ -309,6 +290,19 @@ func FindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepRecentTo
 	}
 }
 
+// cutPointAt is the first of the ascending cutPoints at or after index or,
+// when the newest messages alone exceed the recent budget (typically one large
+// tool result), the latest before it, so the turn still folds instead of
+// retaining the whole path and compacting nothing.
+func cutPointAt(cutPoints []int, index int) int {
+	for _, candidate := range cutPoints {
+		if candidate >= index {
+			return candidate
+		}
+	}
+	return cutPoints[len(cutPoints)-1]
+}
+
 // isRecoverySuffix reports entries that hold an omitted assistant attempt and
 // nothing else the model sees, and replace no content outside them.
 func isRecoverySuffix(suffix []SessionEntry) bool {
@@ -320,7 +314,7 @@ func isRecoverySuffix(suffix []SessionEntry) bool {
 			return false
 		case entry.Omitted:
 			omitted[entry.ID] = true
-			attempt = attempt || entry.Type == "message" && messageRole(entry.Message) == "assistant"
+			attempt = attempt || entry.Type == "message" && MessageRole(entry.Message) == "assistant"
 		case entryMessage(entry, false) != nil:
 			return false
 		}
@@ -412,14 +406,14 @@ func prepareCompaction(pathEntries []SessionEntry, settings CompactionSettings, 
 	}
 	messages := make(engine.AgentMessages, 0, historyEnd-boundaryStart)
 	for index := boundaryStart; index < historyEnd; index++ {
-		if message := compactionMessage(entries[index], false); message != nil && messageRole(message) != "system" {
+		if message := compactionMessage(entries[index], false); message != nil && MessageRole(message) != "system" {
 			messages = append(messages, message)
 		}
 	}
 	prefix := engine.AgentMessages{}
 	if cut.IsSplitTurn {
 		for index := cut.TurnStartIndex; index < cut.FirstKeptEntryIndex; index++ {
-			if message := compactionMessage(entries[index], false); message != nil && messageRole(message) != "system" {
+			if message := compactionMessage(entries[index], false); message != nil && MessageRole(message) != "system" {
 				prefix = append(prefix, message)
 			}
 		}
@@ -799,7 +793,7 @@ func SerializeConversation(messages engine.AgentMessages) string {
 				parts = append(parts, "[Assistant tool calls]: "+strings.Join(toolCalls, "; "))
 			}
 		case *ai.ToolResultMessage:
-			if text := toolResultText(typed.Content); text != "" {
+			if text := ai.ContentText(typed.Content, ""); text != "" {
 				parts = append(parts, "[Tool result]: "+truncateSummary(text, 2000))
 			}
 		}
@@ -829,7 +823,7 @@ func validCutPoints(entries []SessionEntry, startIndex, endIndex int) []int {
 			continue
 		}
 		if entry.Type == "message" {
-			switch messageRole(entry.Message) {
+			switch MessageRole(entry.Message) {
 			case "bashExecution", "custom", "branchSummary", "compactionSummary", "user", "assistant":
 				result = append(result, index)
 			}
@@ -857,7 +851,7 @@ func harnessValidCutPoints(entries []SessionEntry, startIndex, endIndex int) []i
 		entry := entries[index]
 		if entry.Type == "message" {
 			message := harnessEntryMessage(entry, false)
-			switch messageRole(message) {
+			switch MessageRole(message) {
 			case "assistant":
 				pendingResults = harnessToolCallCount(message)
 				result = append(result, index)
@@ -906,7 +900,7 @@ func harnessFindTurnStartIndex(entries []SessionEntry, entryIndex, startIndex in
 			return index
 		}
 		if entry.Type == "message" {
-			switch messageRole(harnessEntryMessage(entry, false)) {
+			switch MessageRole(harnessEntryMessage(entry, false)) {
 			case "user", "bashExecution":
 				return index
 			}
@@ -928,27 +922,7 @@ func harnessFindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepR
 		}
 		accumulated += EstimateTokens(harnessEntryMessage(entries[index], false))
 		if accumulated >= keepRecentTokens {
-			chosen := -1
-			for _, candidate := range cutPoints {
-				if candidate >= index {
-					chosen = candidate
-					break
-				}
-			}
-			if chosen < 0 {
-				// The newest messages alone exceed the recent budget (typically one large
-				// tool result). Cut at the latest boundary before them so the turn still
-				// folds instead of retaining the whole path and compacting nothing.
-				for _, candidate := range cutPoints {
-					if candidate > index {
-						break
-					}
-					chosen = candidate
-				}
-			}
-			if chosen >= 0 {
-				cutIndex = chosen
-			}
+			cutIndex = cutPointAt(cutPoints, index)
 			break
 		}
 	}
@@ -960,7 +934,7 @@ func harnessFindCutPoint(entries []SessionEntry, startIndex, endIndex int, keepR
 		cutIndex--
 	}
 	cutEntry := entries[cutIndex]
-	isUserMessage := cutEntry.Type == "message" && messageRole(harnessEntryMessage(cutEntry, false)) == "user"
+	isUserMessage := cutEntry.Type == "message" && MessageRole(harnessEntryMessage(cutEntry, false)) == "user"
 	turnStart := -1
 	if !isUserMessage {
 		turnStart = harnessFindTurnStartIndex(entries, cutIndex, startIndex)
@@ -1024,7 +998,8 @@ func harnessEntryMessage(entry SessionEntry, includeCompaction bool) engine.Agen
 	return nil
 }
 
-func messageRole(message engine.AgentMessage) string {
+// MessageRole is the role message carries on the wire, or "" when it has none.
+func MessageRole(message engine.AgentMessage) string {
 	switch typed := message.(type) {
 	case *ai.UserMessage, ai.UserMessage:
 		return "user"
@@ -1041,15 +1016,8 @@ func messageRole(message engine.AgentMessage) string {
 	case *SummaryMessage:
 		return typed.Role
 	}
-	encoded, err := ai.Marshal(message)
-	if err != nil {
-		return ""
-	}
-	var envelope struct {
-		Role string `json:"role"`
-	}
-	_ = json.Unmarshal(encoded, &envelope)
-	return envelope.Role
+	encoded, _ := ai.Marshal(message)
+	return jsonwire.MessageRole(encoded)
 }
 
 func userContentChars(content ai.UserContent) int64 {
@@ -1267,22 +1235,7 @@ func userText(content ai.UserContent) string {
 	if content.Text != nil {
 		return *content.Text
 	}
-	var text strings.Builder
-	for _, block := range content.Blocks {
-		if typed, ok := block.(*ai.TextContent); ok {
-			text.WriteString(typed.Text)
-		}
-	}
-	return text.String()
-}
-func toolResultText(content ai.ToolResultContent) string {
-	var text strings.Builder
-	for _, block := range content {
-		if typed, ok := block.(*ai.TextContent); ok {
-			text.WriteString(typed.Text)
-		}
-	}
-	return text.String()
+	return ai.ContentText(content.Blocks, "")
 }
 
 func truncateSummary(text string, maxChars int) string {

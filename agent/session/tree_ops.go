@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 type resolvedLabel struct {
@@ -155,7 +156,7 @@ func (manager *SessionManager) hasConversationLocked() bool {
 		if candidate == nil || candidate.Entry == nil || candidate.Entry.Type != "message" {
 			continue
 		}
-		if role := messageRole(candidate.Entry.Message); role == "user" || role == "assistant" {
+		if role := jsonwire.MessageRole(candidate.Entry.Message); role == "user" || role == "assistant" {
 			return true
 		}
 	}

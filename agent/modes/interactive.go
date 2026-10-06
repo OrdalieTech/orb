@@ -5187,13 +5187,7 @@ func userMessageText(message any) string {
 	if content.Text != nil {
 		return *content.Text
 	}
-	var parts []string
-	for _, block := range content.Blocks {
-		if tb, ok := block.(*ai.TextContent); ok {
-			parts = append(parts, tb.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
+	return ai.ContentText(content.Blocks)
 }
 
 // Native skill styling preserves the complete pi completion surface.

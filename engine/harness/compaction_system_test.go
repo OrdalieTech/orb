@@ -57,7 +57,7 @@ func TestCompactionSystemOnlyHistoryUsesOnlyTurnPrefixSummary(t *testing.T) {
 				if result.Summary != want || result.Usage == nil || !reflect.DeepEqual(*result.Usage, response.Usage) {
 					t.Fatalf("result = %#v, want %q and prefix-only usage", result, want)
 				}
-				if messageRole(entries[0].Message) != "system" || messageRole(entries[2].Message) != "system" {
+				if MessageRole(entries[0].Message) != "system" || MessageRole(entries[2].Message) != "system" {
 					t.Fatal("compaction preparation mutated persisted prompt state")
 				}
 			})

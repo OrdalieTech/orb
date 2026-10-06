@@ -18,6 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
@@ -672,14 +673,6 @@ func (manager *SessionManager) appendFileEntryLocked(entry *FileEntry) error {
 	})
 }
 
-func messageRole(message json.RawMessage) string {
-	var header struct {
-		Role string `json:"role"`
-	}
-	_ = json.Unmarshal(message, &header)
-	return header.Role
-}
-
 func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, error) {
 	if manager.harnessStorage != nil {
 		id, err := manager.harnessStorage.CreateEntryID()
@@ -965,14 +958,7 @@ func (manager *SessionManager) AppendContextEdit(targetID string, replacement js
 	if !slices.ContainsFunc(manager.GetBranch(), func(entry SessionEntry) bool { return entry.ID == targetID }) {
 		return "", fmt.Errorf("entry %s is not on the active branch", targetID)
 	}
-	role := "custom"
-	if target.Type == "message" {
-		var header struct {
-			Role string `json:"role"`
-		}
-		_ = json.Unmarshal(target.Message, &header)
-		role = header.Role
-	}
+	role := jsonwire.MessageRole(target.Message)
 	if target.Type != "custom_message" && (target.Type != "message" || (role != "user" && role != "assistant" && role != "toolResult")) {
 		return "", fmt.Errorf("entry %s does not contribute editable model content", targetID)
 	}

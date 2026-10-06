@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 func GetLatestCompactionEntry(entries []SessionEntry) *SessionEntry {
@@ -346,13 +347,7 @@ func applyContextEdit(messages []json.RawMessage, replacement json.RawMessage) [
 }
 
 func isSystemMessageEntry(entry SessionEntry) bool {
-	if entry.Type != "message" {
-		return false
-	}
-	var header struct {
-		Role string `json:"role"`
-	}
-	return json.Unmarshal(entry.Message, &header) == nil && header.Role == "system"
+	return entry.Type == "message" && jsonwire.MessageRole(entry.Message) == "system"
 }
 
 // normalizeMessageContent gives a message without content an empty one. An

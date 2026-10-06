@@ -82,7 +82,7 @@ func TestHarnessCutPointNeverSplitsToolCallFromResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared == nil || len(prepared.RetainedTail) != 3 || messageRole(prepared.RetainedTail[0]) != "assistant" {
+	if prepared == nil || len(prepared.RetainedTail) != 3 || MessageRole(prepared.RetainedTail[0]) != "assistant" {
 		t.Fatalf("preparation = %#v", prepared)
 	}
 }

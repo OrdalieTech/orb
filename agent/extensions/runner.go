@@ -2,7 +2,6 @@ package extensions
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 type ExtensionError struct {
@@ -891,9 +891,7 @@ func (runner *Runner) EmitMessageEnd(ctx context.Context, event MessageEndEvent)
 			if !ok || replacement.Message == nil {
 				continue
 			}
-			currentRole, currentErr := messageRole(current)
-			replacementRole, replacementErr := messageRole(replacement.Message)
-			if currentErr != nil || replacementErr != nil || currentRole != replacementRole {
+			if role := harness.MessageRole(current); role == "" || role != harness.MessageRole(replacement.Message) {
 				runner.emitError(ExtensionError{
 					ExtensionPath: extension.Path,
 					Event:         string(EventMessageEnd),
@@ -1427,31 +1425,6 @@ func providerRequestResult(value any) (*ProviderRequestResult, bool) {
 		}
 		return &ProviderRequestResult{Payload: value, Replace: true}, true
 	}
-}
-
-func messageRole(message engine.AgentMessage) (string, error) {
-	switch message.(type) {
-	case *ai.UserMessage:
-		return "user", nil
-	case *ai.AssistantMessage:
-		return "assistant", nil
-	case *ai.ToolResultMessage:
-		return "toolResult", nil
-	}
-	encoded, err := ai.Marshal(message)
-	if err != nil {
-		return "", err
-	}
-	var envelope struct {
-		Role string `json:"role"`
-	}
-	if err := json.Unmarshal(encoded, &envelope); err != nil {
-		return "", err
-	}
-	if envelope.Role == "" {
-		return "", fmt.Errorf("message has no role")
-	}
-	return envelope.Role, nil
 }
 
 func cloneMessages(messages engine.AgentMessages) engine.AgentMessages {

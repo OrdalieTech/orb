@@ -7,6 +7,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
@@ -193,7 +194,7 @@ func EntriesToFork(storage SessionStorage, entryID string, position ForkPosition
 	}
 	leaf := target.ID
 	if position == "" || position == ForkBefore {
-		if target.Type != "message" || rawMessageRole(target.Message) != "user" {
+		if target.Type != "message" || jsonwire.MessageRole(target.Message) != "user" {
 			return nil, newSessionError(SessionErrorInvalidFork, "Entry %s is not a user message", entryID)
 		}
 		if target.ParentID == nil {
@@ -202,14 +203,6 @@ func EntriesToFork(storage SessionStorage, entryID string, position ForkPosition
 		leaf = *target.ParentID
 	}
 	return storage.PathToRootOrCompaction(&leaf)
-}
-
-func rawMessageRole(message json.RawMessage) string {
-	var envelope struct {
-		Role string `json:"role"`
-	}
-	_ = json.Unmarshal(message, &envelope)
-	return envelope.Role
 }
 
 func trimHarnessJSSpace(value string) string {

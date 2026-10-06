@@ -72,11 +72,11 @@ func TestV081CompactPropagatesRetainedTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FirstKeptEntryID != "kept" || len(result.RetainedTail) != 1 || messageRole(result.RetainedTail[0]) != "user" {
+	if result.FirstKeptEntryID != "kept" || len(result.RetainedTail) != 1 || MessageRole(result.RetainedTail[0]) != "user" {
 		t.Fatalf("compaction result = %#v", result)
 	}
 	tail[0] = assistant("mutated", 1)
-	if messageRole(result.RetainedTail[0]) != "assistant" {
+	if MessageRole(result.RetainedTail[0]) != "assistant" {
 		t.Fatal("result did not retain the upstream preparation slice")
 	}
 }
