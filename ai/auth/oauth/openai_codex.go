@@ -158,7 +158,7 @@ type openAICodexDeviceToken struct {
 }
 
 func (flow *OpenAICodex) loginDevice(ctx context.Context, interaction auth.AuthInteraction) (*auth.Credential, error) {
-	body, status, err := flow.request(ctx, http.MethodPost, flow.options.DeviceUserCodeURL, "application/json", []byte(`{"client_id":"`+openAICodexClientID+`"}`))
+	body, status, err := flow.post(ctx, flow.options.DeviceUserCodeURL, "application/json", []byte(`{"client_id":"`+openAICodexClientID+`"}`))
 	if err != nil {
 		return nil, cancelledLoginError(ctx, err)
 	}
@@ -201,7 +201,7 @@ func (flow *OpenAICodex) loginDevice(ctx context.Context, interaction auth.AuthI
 
 func (flow *OpenAICodex) pollDevice(ctx context.Context, deviceAuthID, userCode string) (deviceCodePollResult[openAICodexDeviceToken], error) {
 	body := []byte(`{"device_auth_id":` + strconv.Quote(deviceAuthID) + `,"user_code":` + strconv.Quote(userCode) + `}`)
-	responseBody, status, err := flow.request(ctx, http.MethodPost, flow.options.DeviceTokenURL, "application/json", body)
+	responseBody, status, err := flow.post(ctx, flow.options.DeviceTokenURL, "application/json", body)
 	if err != nil {
 		return deviceCodePollResult[openAICodexDeviceToken]{}, cancelledLoginError(ctx, err)
 	}
@@ -318,7 +318,7 @@ func (flow *OpenAICodex) exchangeCode(ctx context.Context, code, verifier, redir
 }
 
 func (flow *OpenAICodex) requestToken(ctx context.Context, body []byte, operation string) (openAICodexToken, error) {
-	responseBody, status, err := flow.request(ctx, http.MethodPost, flow.options.TokenURL, "application/x-www-form-urlencoded", body)
+	responseBody, status, err := flow.post(ctx, flow.options.TokenURL, formContentType, body)
 	if err != nil {
 		if operation == "refresh" {
 			return openAICodexToken{}, fmt.Errorf("OpenAI Codex token refresh error: %s", err)
@@ -375,19 +375,35 @@ func OpenAICodexAccountID(token string) string {
 	return scoped.AccountID
 }
 
-func (flow *OpenAICodex) request(ctx context.Context, method, endpoint, contentType string, body []byte) ([]byte, int, error) {
+const formContentType = "application/x-www-form-urlencoded"
+
+// send makes one request with header and reads the whole response body.
+func send(ctx context.Context, client *http.Client, method, endpoint string, body []byte, header http.Header) (*http.Response, []byte, error) {
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	request.Header.Set("Content-Type", contentType)
-	response, err := flow.options.HTTPClient.Do(request)
+	request.Header = header
+	response, err := client.Do(request)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
 	contents, err := io.ReadAll(response.Body)
-	return contents, response.StatusCode, err
+	return response, contents, err
+}
+
+// acceptJSON is the header of a request that sends contentType and wants JSON.
+func acceptJSON(contentType string) http.Header {
+	return http.Header{"Accept": {"application/json"}, "Content-Type": {contentType}}
+}
+
+func (flow *OpenAICodex) post(ctx context.Context, endpoint, contentType string, body []byte) ([]byte, int, error) {
+	response, contents, err := send(ctx, flow.options.HTTPClient, http.MethodPost, endpoint, body, http.Header{"Content-Type": {contentType}})
+	if err != nil {
+		return nil, 0, err
+	}
+	return contents, response.StatusCode, nil
 }
 
 func orderedForm(pairs ...string) []byte {

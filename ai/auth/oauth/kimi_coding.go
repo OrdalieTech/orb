@@ -1,12 +1,10 @@
 package oauth
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -298,18 +296,7 @@ func (flow *KimiCoding) parseTokenResponse(body map[string]any, raw any, operati
 func (flow *KimiCoding) postForm(ctx context.Context, endpoint string, form []byte) (int, []byte, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, kimiCodingRequestTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(form))
-	if err != nil {
-		return 0, nil, err
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	response, err := flow.options.HTTPClient.Do(request)
-	if err != nil {
-		return 0, nil, cancelledLoginError(ctx, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	contents, err := io.ReadAll(response.Body)
+	response, contents, err := send(requestCtx, flow.options.HTTPClient, http.MethodPost, endpoint, form, acceptJSON(formContentType))
 	if err != nil {
 		return 0, nil, cancelledLoginError(ctx, err)
 	}

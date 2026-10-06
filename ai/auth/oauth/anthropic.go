@@ -277,18 +277,7 @@ func (flow *Anthropic) exchange(ctx context.Context, body []byte, label string) 
 }
 
 func (flow *Anthropic) postJSON(ctx context.Context, body []byte) ([]byte, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, flow.options.TokenURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	response, err := flow.options.HTTPClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-	responseBody, err := io.ReadAll(response.Body)
+	response, responseBody, err := send(ctx, flow.options.HTTPClient, http.MethodPost, flow.options.TokenURL, body, acceptJSON("application/json"))
 	if err != nil {
 		return nil, err
 	}

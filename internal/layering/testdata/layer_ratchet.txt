@@ -13,7 +13,6 @@ internal/toolenv	os.Environ	1
 internal/toolenv	os.Getenv	1
 plugins/claudesessions	imports platforms/native/sandbox	1
 plugins/herdr	os.Getenv	3
-plugins/mcp	func init	1
 plugins/permissions	imports platforms/native/sandbox	1
 plugins/permissions/native	imports platforms/native/sandbox	1
 plugins/subagents	imports platforms/native/sandbox	4

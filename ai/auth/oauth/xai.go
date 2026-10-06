@@ -1,12 +1,10 @@
 package oauth
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -232,20 +230,9 @@ func (flow *XAI) xaiCredential(body map[string]any, previousRefresh string) (*au
 }
 
 func (flow *XAI) postForm(ctx context.Context, endpoint string, form []byte) (xAIHTTPResponse, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(form))
-	if err != nil {
-		return xAIHTTPResponse{}, err
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := flow.options.HTTPClient.Do(request)
+	response, contents, err := send(ctx, flow.options.HTTPClient, http.MethodPost, endpoint, form, acceptJSON(formContentType))
 	if err != nil {
 		return xAIHTTPResponse{}, cancelledLoginError(ctx, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	contents, err := io.ReadAll(response.Body)
-	if err != nil {
-		return xAIHTTPResponse{}, err
 	}
 	var decoded any
 	if json.Unmarshal(contents, &decoded) != nil {

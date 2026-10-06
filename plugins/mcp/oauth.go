@@ -122,14 +122,6 @@ type challenge struct {
 	ResourceMetadataURL, Scope, Error string
 }
 
-var challengeFields = map[string]*regexp.Regexp{}
-
-func init() {
-	for _, name := range []string{"resource_metadata", "scope", "error"} {
-		challengeFields[name] = regexp.MustCompile(`(?i)(?:^|[,\s])` + name + `=(?:"([^"]*)"|([^\s,]+))`)
-	}
-}
-
 func parseChallenge(header string) challenge {
 	fields := strings.Fields(header)
 	if len(fields) == 0 || !strings.EqualFold(fields[0], "bearer") && !strings.EqualFold(fields[0], "dpop") {
@@ -137,7 +129,7 @@ func parseChallenge(header string) challenge {
 	}
 	field := func(name string) string {
 		// An empty value carries no information, so it counts as absent.
-		match := challengeFields[name].FindStringSubmatch(header)
+		match := regexp.MustCompile(`(?i)(?:^|[,\s])` + name + `=(?:"([^"]*)"|([^\s,]+))`).FindStringSubmatch(header)
 		if match == nil {
 			return ""
 		}
@@ -431,8 +423,10 @@ func (flow oauthFlow) run(ctx context.Context, options flowOptions) (bool, error
 	if metadata != nil && len(metadata.CodeChallengeMethodsSupported) > 0 && !slices.Contains(metadata.CodeChallengeMethodsSupported, "S256") {
 		return false, errors.New("authorization server does not support PKCE S256")
 	}
-	verifier := randomToken(32)
-	digest := sha256.Sum256([]byte(verifier))
+	verifier, codeChallenge, err := oauth.GeneratePKCE(nil)
+	if err != nil {
+		return false, err
+	}
 	authorization, err := url.Parse(endpoint(metadata, discovered.AuthorizationServerURL, "/authorize", func(metadata *authServerMetadata) string { return metadata.AuthorizationEndpoint }))
 	if err != nil {
 		return false, err
@@ -440,7 +434,7 @@ func (flow oauthFlow) run(ctx context.Context, options flowOptions) (bool, error
 	query := authorization.Query()
 	query.Set("response_type", "code")
 	query.Set("client_id", client.ClientID)
-	query.Set("code_challenge", base64.RawURLEncoding.EncodeToString(digest[:]))
+	query.Set("code_challenge", codeChallenge)
 	query.Set("code_challenge_method", "S256")
 	query.Set("redirect_uri", flow.redirectURL)
 	if state.OAuthState != "" {
@@ -495,12 +489,6 @@ func rootURL(serverURL string) string {
 	return parsed.Scheme + "://" + parsed.Host + "/"
 }
 
-func randomToken(size int) string {
-	data := make([]byte, size)
-	_, _ = rand.Read(data)
-	return base64.RawURLEncoding.EncodeToString(data)
-}
-
 func secureEndpoint(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname())) {
@@ -510,19 +498,24 @@ func secureEndpoint(value string) error {
 }
 
 func (flow oauthFlow) getJSON(ctx context.Context, target string) (*http.Response, []byte, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	return flow.send(ctx, http.MethodGet, target, nil, http.Header{"Accept": {"application/json"}, "Mcp-Protocol-Version": {protocolVersion}})
+}
+
+// send makes one request and reads up to 1 MiB of the response; the response
+// comes back with a read error too.
+func (flow oauthFlow) send(ctx context.Context, method, target string, body []byte, header http.Header) (*http.Response, []byte, error) {
+	request, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("MCP-Protocol-Version", protocolVersion)
+	request.Header = header
 	response, err := flow.client.Do(request)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	return response, body, err
+	contents, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	return response, contents, err
 }
 
 // discoveryMiss is a status that means "not here": 4xx and 502.
@@ -642,18 +635,10 @@ func (flow oauthFlow) register(ctx context.Context, server string, metadata *aut
 	}
 	data, _ := json.Marshal(body)
 	target := endpoint(metadata, server, "/register", func(metadata *authServerMetadata) string { return metadata.RegistrationEndpoint })
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(data))
-	if err != nil {
+	response, answer, err := flow.send(ctx, http.MethodPost, target, data, http.Header{"Accept": {"application/json"}, "Content-Type": {"application/json"}})
+	if response == nil {
 		return nil, err
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	response, err := flow.client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-	answer, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if response.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("client registration failed: HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(answer)))
 	}
@@ -686,21 +671,14 @@ func (flow oauthFlow) tokenRequest(ctx context.Context, target string, metadata 
 			params.Set("client_secret", client.ClientSecret)
 		}
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(params.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	header := http.Header{"Accept": {"application/json"}, "Content-Type": {"application/x-www-form-urlencoded"}}
 	if method == "client_secret_basic" {
-		request.SetBasicAuth(client.ClientID, client.ClientSecret)
+		header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(client.ClientID+":"+client.ClientSecret)))
 	}
-	response, err := flow.client.Do(request)
-	if err != nil {
+	response, body, err := flow.send(ctx, http.MethodPost, target, []byte(params.Encode()), header)
+	if response == nil {
 		return nil, err
 	}
-	defer func() { _ = response.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	// Servers report OAuth errors with any status, so the body comes first.
 	var failure struct {
 		Error       string `json:"error"`

@@ -262,20 +262,9 @@ func (flow *OpenAIChatGPT) parseManual(input, expectedState string) (chatGPTAuth
 }
 
 func (flow *OpenAIChatGPT) requestToken(ctx context.Context, body []byte) (map[string]any, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, flow.options.TokenURL, strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("accept", "application/json")
-	request.Header.Set("content-type", "application/x-www-form-urlencoded")
-	response, err := flow.options.HTTPClient.Do(request)
+	response, contents, err := send(ctx, flow.options.HTTPClient, http.MethodPost, flow.options.TokenURL, body, acceptJSON(formContentType))
 	if err != nil {
 		return nil, cancelledLoginError(ctx, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	contents, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
 	}
 	if response.StatusCode < 200 || response.StatusCode > 299 {
 		detail := strings.TrimSpace(string(contents))

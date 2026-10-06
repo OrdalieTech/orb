@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -367,19 +366,7 @@ func (flow *GitHubCopilot) fetchWithRateLimitRetry(ctx context.Context, method, 
 	}
 	for attempt := 0; ; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(requestCtx, 5*time.Second)
-		request, err := http.NewRequestWithContext(attemptCtx, method, endpoint, bytes.NewReader(body))
-		if err != nil {
-			cancel()
-			return 0, "", nil, err
-		}
-		request.Header = headers.Clone()
-		response, err := flow.options.HTTPClient.Do(request)
-		if err != nil {
-			cancel()
-			return 0, "", nil, err
-		}
-		contents, err := io.ReadAll(response.Body)
-		_ = response.Body.Close()
+		response, contents, err := send(attemptCtx, flow.options.HTTPClient, method, endpoint, body, headers.Clone())
 		cancel()
 		if err != nil {
 			return 0, "", nil, err
@@ -427,24 +414,11 @@ func (flow *GitHubCopilot) knownModelIDs() []string {
 }
 
 func (flow *GitHubCopilot) fetchJSON(ctx context.Context, method, endpoint string, body []byte, form bool, headers http.Header) (map[string]any, error) {
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	if headers != nil {
-		request.Header = headers.Clone()
-	}
 	if form {
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		request.Header.Set("User-Agent", githubCopilotUserAgent)
+		headers = acceptJSON(formContentType)
+		headers.Set("User-Agent", githubCopilotUserAgent)
 	}
-	response, err := flow.options.HTTPClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-	contents, err := io.ReadAll(response.Body)
+	response, contents, err := send(ctx, flow.options.HTTPClient, method, endpoint, body, headers)
 	if err != nil {
 		return nil, err
 	}

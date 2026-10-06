@@ -1,12 +1,10 @@
 package oauth
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -79,7 +77,7 @@ func (flow *Meta) Login(ctx context.Context, interaction auth.AuthInteraction) (
 }
 
 func (flow *Meta) login(ctx context.Context, interaction auth.AuthInteraction) (*auth.Credential, error) {
-	status, body, err := flow.post(ctx, flow.options.DeviceAuthorizationURL, "application/x-www-form-urlencoded", orderedForm("client_id", metaClientID), nil)
+	status, body, err := flow.post(ctx, flow.options.DeviceAuthorizationURL, formContentType, orderedForm("client_id", metaClientID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +116,7 @@ func (flow *Meta) login(ctx context.Context, interaction auth.AuthInteraction) (
 }
 
 func (flow *Meta) pollIdentity(ctx context.Context, deviceCode string) (deviceCodePollResult[string], error) {
-	status, body, err := flow.post(ctx, flow.options.DeviceTokenURL, "application/x-www-form-urlencoded", orderedForm(
+	status, body, err := flow.post(ctx, flow.options.DeviceTokenURL, formContentType, orderedForm(
 		"grant_type", metaDeviceCodeGrantType, "device_code", deviceCode, "client_id", metaClientID,
 	), nil)
 	if err != nil {
@@ -185,23 +183,13 @@ func (*Meta) ToAuth(credential *auth.Credential) (auth.ModelAuth, error) {
 func (flow *Meta) post(ctx context.Context, endpoint, contentType string, payload []byte, headers map[string]string) (int, map[string]any, error) {
 	requestContext, cancel := context.WithTimeout(ctx, metaRequestTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestContext, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return 0, nil, err
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", contentType)
+	header := acceptJSON(contentType)
 	for name, value := range headers {
-		request.Header.Set(name, value)
+		header.Set(name, value)
 	}
-	response, err := flow.options.HTTPClient.Do(request)
+	response, contents, err := send(requestContext, flow.options.HTTPClient, http.MethodPost, endpoint, payload, header)
 	if err != nil {
 		return 0, nil, cancelledLoginError(ctx, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	contents, err := io.ReadAll(response.Body)
-	if err != nil {
-		return 0, nil, err
 	}
 	body := map[string]any{}
 	_ = json.Unmarshal(contents, &body)

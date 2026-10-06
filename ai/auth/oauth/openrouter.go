@@ -1,7 +1,6 @@
 package oauth
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -174,18 +173,7 @@ func (flow *OpenRouter) exchangeAuthorizationCode(ctx context.Context, code, ver
 		"code_verifier", verifier,
 		"code_challenge_method", "S256",
 	)
-	request, err := http.NewRequestWithContext(exchangeCtx, http.MethodPost, flow.options.TokenURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	response, err := flow.options.HTTPClient.Do(request)
-	if err != nil {
-		return nil, openRouterExchangeFailure(ctx, exchangeCtx, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	contents, err := io.ReadAll(response.Body)
+	response, contents, err := send(exchangeCtx, flow.options.HTTPClient, http.MethodPost, flow.options.TokenURL, body, acceptJSON("application/json"))
 	if err != nil {
 		return nil, openRouterExchangeFailure(ctx, exchangeCtx, err)
 	}
