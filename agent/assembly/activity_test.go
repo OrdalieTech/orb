@@ -36,7 +36,7 @@ func testActivityView(t *testing.T, count int) (*activity.Store, *activityView) 
 func TestActivityBarCompactExpandAndPage(t *testing.T) {
 	_, view := testActivityView(t, 12)
 	lines := view.Render(80)
-	if len(lines) != 1 || !strings.Contains(lines[0], "12 agents") {
+	if len(lines) != 1 || !strings.Contains(lines[0], "12 agents") || strings.Contains(lines[0], "alt+") {
 		t.Fatal(lines)
 	}
 	if !view.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Row: 0}) || len(view.Render(80)) != 1 {

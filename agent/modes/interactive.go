@@ -155,6 +155,7 @@ type InteractiveMode struct {
 	themeController        *theme.Controller
 	terminalBackgroundMu   sync.Mutex
 	terminalBackground     *tui.RgbColor
+	terminalScheme         tui.TerminalColorScheme
 	themeSetting           string // --use-theme override; "" defers to settings
 	authContext            context.Context
 	authCancel             context.CancelFunc
@@ -710,12 +711,10 @@ func (mode *InteractiveMode) initializeTheme() error {
 	}
 	mode.terminalBackgroundMu.Lock()
 	defer mode.terminalBackgroundMu.Unlock()
-	if mode.terminalBackground != nil {
-		if native, ok := mode.themeRegistry.Get("terminal"); ok && native.SourcePath == "" {
-			native.SetTerminalBackground(*mode.terminalBackground)
-		}
+	if native, ok := mode.themeRegistry.Get("terminal"); ok && native.SourcePath == "" {
+		mode.colorTerminalThemeLocked(native)
 	}
-	mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
+	mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), mode.terminalAppearanceLocked(), func() {
 		if mode.ui != nil {
 			mode.ui.Invalidate()
 		}
@@ -735,6 +734,8 @@ func (mode *InteractiveMode) themeSettingOr(persisted string) string {
 }
 
 func (mode *InteractiveMode) extendExtensionThemes() error {
+	mode.terminalBackgroundMu.Lock()
+	defer mode.terminalBackgroundMu.Unlock()
 	if mode.themeRegistry == nil {
 		return nil
 	}
@@ -744,7 +745,7 @@ func (mode *InteractiveMode) extendExtensionThemes() error {
 	}
 	if installed {
 		settings := mode.session.InteractiveModeSettings()
-		mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), theme.DetectBackground(nil).Theme, func() {
+		mode.themeController = theme.Initialize(mode.themeRegistry, mode.themeSettingOr(settings.ThemeSetting), mode.terminalAppearanceLocked(), func() {
 			if mode.ui != nil {
 				mode.ui.Invalidate()
 			}
@@ -5085,7 +5086,10 @@ func (mode *InteractiveMode) cleanupWithOrder(fromSignal bool) {
 			dispose()
 		}
 		mode.mu.Lock()
+		// The terminal appearance watcher reads it under terminalBackgroundMu.
+		mode.terminalBackgroundMu.Lock()
 		mode.themeController = nil
+		mode.terminalBackgroundMu.Unlock()
 		mode.mu.Unlock()
 		// No settling frame may be written after ui.Stop hands the terminal back.
 		mode.stopLogoUnfold()

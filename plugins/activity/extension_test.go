@@ -51,6 +51,9 @@ func TestExtensionLifecycleAndSharedView(t *testing.T) {
 	}
 	ui := &testUI{}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{SessionManager: manager, UI: ui, Mode: extensions.ModeTUI})
+	if shortcuts := runner.Shortcuts(nil); len(shortcuts) != 0 {
+		t.Fatalf("activity must not add a dedicated shortcut: %v", shortcuts)
+	}
 	runner.Emit(t.Context(), extensions.SessionStartEvent{})
 	if ui.view != nil {
 		t.Fatal("empty activity widget")

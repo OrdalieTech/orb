@@ -79,8 +79,8 @@ Claude Code's own background tasks and `Monitor`.
 ### activity
 
 Enable with `orb plugins enable activity` (or `/plugins`). One line above the TUI input
-summarizes live agents and background processes. Click the line, press `Alt+A`, or run
-`/activity` to expand/collapse statuses. Scroll the expanded list or use `/activity next`
+summarizes live agents and background processes. Click the line to expand/collapse statuses;
+`/activity` is the keyboard alternative. Scroll the expanded list or use `/activity next`
 and `/activity prev`; `/activity close` folds it without affecting execution. At most six
 rows show at once, fewer on short terminals. Recent completions clear on the next prompt.
 

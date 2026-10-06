@@ -146,7 +146,10 @@ type TUI struct {
 	overlayFocusRestore overlayFocusRestoreState
 
 	colorMu                                 sync.Mutex
-	pendingOsc11BackgroundReplies           int
+	nextOsc11BackgroundQuery                uint64
+	osc11BackgroundReplies                  uint64
+	terminalBackgroundListeners             []terminalBackgroundListenerEntry
+	nextTerminalBackgroundListener          uint64
 	pendingOsc11BackgroundQueries           []*pendingOsc11BackgroundQuery
 	terminalColorSchemeListeners            []terminalColorSchemeListenerEntry
 	nextTerminalColorSchemeListener         uint64

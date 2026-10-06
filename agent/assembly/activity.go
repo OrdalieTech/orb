@@ -220,11 +220,8 @@ func (v *activityView) Render(width int) []string {
 		marker = "▾"
 	}
 	tail := " " + marker
-	if width >= 50 {
-		tail = "  alt+a " + marker
-		if agents+processes == 1 {
-			tail = "  " + activityAge(records[0], now) + tail
-		}
+	if width >= 50 && agents+processes == 1 {
+		tail = "  " + activityAge(records[0], now) + tail
 	}
 	body := " " + icon + " " + summary
 	body = tui.TruncateToWidth(body, max(0, width-tui.VisibleWidth(tail)), "…", true)

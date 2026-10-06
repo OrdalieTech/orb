@@ -37,12 +37,7 @@ func (border *DynamicBorder) Render(width int) []string {
 }
 
 func menuSelectedBackground(text string) string {
-	if current := theme.Current(); current != nil && current.Name == "terminal" {
-		return theme.BG("selectedBg", text)
-	}
-	prefix := strings.Replace(theme.FGANSI("borderMuted"), "[38;", "[48;", 1)
-	prefix = strings.Replace(prefix, "[39m", "[49m", 1)
-	return prefix + text + "\x1b[49m"
+	return theme.BG("selectedBg", text)
 }
 
 func settingsListTheme() tui.SettingsListTheme {
@@ -59,9 +54,9 @@ func settingsListTheme() tui.SettingsListTheme {
 			}
 			return theme.FG("muted", text)
 		},
-		Description: func(text string) string { return theme.FG("dim", text) },
-		Cursor:      theme.FG("text", "› "),
-		Hint:        func(text string) string { return theme.FG("dim", text) },
+		Description: func(text string) string { return theme.FG("muted", text) },
+		Cursor:      "› ",
+		Hint:        func(text string) string { return theme.FG("muted", text) },
 		SelectedBg:  func(text string) string { return menuSelectedBackground(text) },
 	}
 }
@@ -76,8 +71,13 @@ func newSearchInput() *tui.Input {
 func menuFrame(title string, child tui.Component) *tui.Frame {
 	frame := tui.NewPanel(title, "",
 		func(text string) string { return theme.Bold(theme.FG("text", text)) },
-		func(text string) string { return theme.FG("dim", text) },
+		func(text string) string { return theme.FG("muted", text) },
 		func() string { return theme.BGANSI("toolPendingBg") }, child)
+	background := frame.Background
+	frame.Background = func(text string) string {
+		ink := theme.FGANSI("text")
+		return ink + strings.ReplaceAll(tui.ReopenAfterReset(ink, background(text)), "\x1b[39m", "\x1b[39m"+ink) + "\x1b[39m"
+	}
 	frame.ActionSelected = func(text string) string { return menuSelectedBackground(theme.Bold(theme.FG("accent", text))) }
 	return frame
 }
@@ -224,16 +224,16 @@ func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, hei
 	palette.list = tui.NewGridList(rows, 10, tui.GridListTheme{
 		Cell: func(row tui.GridRow, column int, text string) string {
 			color := "text"
-			if column > 0 || strings.HasPrefix(row.Value, "add:") {
+			if column > 0 && row.Value != palette.list.SelectedValue() || strings.HasPrefix(row.Value, "add:") {
 				color = "muted"
 			}
 			return theme.FG(color, tui.StripANSI(text))
 		},
 		SelectedBg: func(s string) string { return menuSelectedBackground(s) },
 		Detail:     func(s string) string { return theme.FG("muted", s) },
-		ScrollInfo: func(s string) string { return theme.FG("dim", s) },
+		ScrollInfo: func(s string) string { return theme.FG("muted", s) },
 		Query:      func(s string) string { return theme.FG("text", s) },
-		Cursor:     theme.FG("text", "› "),
+		Cursor:     "› ",
 	})
 	palette.list.Searchable = true
 	palette.list.DetailHeight = 1
@@ -304,8 +304,18 @@ func (palette *commandPalette) HandleMouse(event tui.MouseEvent) bool {
 func (mode *InteractiveMode) watchTerminalBackground(ctx context.Context) func() {
 	ctx, cancel := context.WithCancel(ctx)
 	refresh := make(chan struct{}, 1)
-	refresh <- struct{}{}
-	unsubscribe := mode.ui.OnTerminalColorSchemeChange(func(tui.TerminalColorScheme) {
+	unsubscribeBackground := mode.ui.OnTerminalBackgroundChange(func(background tui.RgbColor) {
+		if ctx.Err() == nil {
+			mode.setTerminalBackground(&background)
+		}
+	})
+	unsubscribe := mode.ui.OnTerminalColorSchemeChange(func(scheme tui.TerminalColorScheme) {
+		if ctx.Err() != nil {
+			return
+		}
+		if !mode.setTerminalScheme(scheme) {
+			return
+		}
 		select {
 		case refresh <- struct{}{}:
 		default:
@@ -315,37 +325,87 @@ func (mode *InteractiveMode) watchTerminalBackground(ctx context.Context) func()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		// A slow poll also covers terminals that miss or lack mode 2031.
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		mode.ui.QueryTerminalColorScheme(time.Second)
+		mode.ui.QueryTerminalBackgroundColor(time.Second)
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				mode.ui.QueryTerminalColorScheme(time.Second)
 			case <-refresh:
 			}
-			query := mode.ui.QueryTerminalBackgroundColor(time.Second)
-			select {
-			case <-ctx.Done():
-				return
-			case background := <-query:
-				mode.setTerminalBackground(background)
-			}
+			mode.ui.QueryTerminalBackgroundColor(time.Second)
 		}
 	}()
-	return func() { unsubscribe(); cancel(); <-done; mode.ui.SetTerminalColorSchemeNotifications(false) }
+	return func() {
+		cancel()
+		unsubscribe()
+		unsubscribeBackground()
+		<-done
+		mode.ui.SetTerminalColorSchemeNotifications(false)
+	}
 }
 
 func (mode *InteractiveMode) setTerminalBackground(background *tui.RgbColor) {
 	mode.terminalBackgroundMu.Lock()
 	defer mode.terminalBackgroundMu.Unlock()
-	// Terminal appearance outlives the session and its reloadable resources.
-	mode.terminalBackground = background
+	if background == nil || mode.terminalBackground != nil && *mode.terminalBackground == *background {
+		return
+	}
+	copy := *background
+	mode.terminalBackground = &copy
+	mode.applyTerminalAppearanceLocked()
+}
+
+func (mode *InteractiveMode) setTerminalScheme(scheme tui.TerminalColorScheme) bool {
+	mode.terminalBackgroundMu.Lock()
+	defer mode.terminalBackgroundMu.Unlock()
+	if scheme == mode.terminalScheme {
+		return false
+	}
+	// A confirmed transition invalidates the previous RGB sample, not a timeout.
+	if mode.terminalScheme != "" {
+		mode.terminalBackground = nil
+	}
+	mode.terminalScheme = scheme
+	mode.applyTerminalAppearanceLocked()
+	return true
+}
+
+func (mode *InteractiveMode) terminalAppearanceLocked() theme.TerminalTheme {
+	if mode.terminalBackground != nil {
+		return theme.BackgroundAppearance(*mode.terminalBackground)
+	}
+	if mode.terminalScheme != "" {
+		return theme.TerminalTheme(mode.terminalScheme)
+	}
+	return theme.DetectBackground(nil).Theme
+}
+
+func (mode *InteractiveMode) applyTerminalAppearanceLocked() {
 	if native := theme.GetTheme("terminal"); native != nil && native.SourcePath == "" {
-		if background == nil {
-			native.ClearTerminalBackground()
-		} else {
-			native.SetTerminalBackground(*background)
-		}
+		mode.colorTerminalThemeLocked(native)
 		if theme.Current() == native {
 			mode.ui.Invalidate()
 		}
+	}
+	if mode.themeController != nil {
+		mode.themeController.SetTerminalAppearance(mode.terminalAppearanceLocked())
+	}
+}
+
+func (mode *InteractiveMode) colorTerminalThemeLocked(native *theme.Theme) {
+	if mode.terminalBackground != nil {
+		native.SetTerminalBackground(*mode.terminalBackground)
+	} else if mode.terminalScheme != "" {
+		background := tui.RgbColor{R: 24, G: 24, B: 30}
+		if mode.terminalScheme == tui.TerminalColorSchemeLight {
+			background = tui.RgbColor{R: 255, G: 255, B: 255}
+		}
+		native.SetTerminalBackground(background)
 	}
 }

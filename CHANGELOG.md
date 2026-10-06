@@ -41,6 +41,10 @@ shown by `/changelog`.
   session switches reload extensions and trust from disk as the TUI does, and a switch aborts and
   drains an active turn first. Malformed SSE streams can differ at the edges (a lone CR ends a
   line).
+- The TUI follows the terminal's light/dark appearance as it changes (mode 2031 reports, a slow
+  poll for terminals without them, late OSC 11 replies), switching automatic theme pairs without
+  overriding an explicit theme, and keeps menus and selections readable on either background. The
+  activity line drops its `alt+a` shortcut; click it or use `/activity`.
 - Fixes: a background job ignoring TERM is killed when its session ends, even when shutdown ran
   out of time; the first sign-in with native storage keeps its device ID in the database instead of
   creating `settings.json`; `mcp-auth.json` is replaced atomically; a `file://` path can no longer

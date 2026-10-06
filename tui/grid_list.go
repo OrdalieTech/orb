@@ -534,6 +534,12 @@ func (frame *Frame) Render(width int) []string {
 	return lines
 }
 
+func (frame *Frame) Invalidate() {
+	frame.mu.Lock()
+	defer frame.mu.Unlock()
+	invalidate(frame.Child)
+}
+
 // Frame forwards focus and input to its child so it can wrap Focusable
 // components directly.
 func (frame *Frame) HandleInput(event KeyEvent) {

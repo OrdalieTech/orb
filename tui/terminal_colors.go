@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,9 +32,15 @@ const (
 )
 
 type pendingOsc11BackgroundQuery struct {
+	id      uint64
 	settled bool
 	result  chan *RgbColor
 	timer   *time.Timer
+}
+
+type terminalBackgroundListenerEntry struct {
+	id       uint64
+	listener func(RgbColor)
 }
 
 type terminalColorSchemeListenerEntry struct {
@@ -149,8 +156,9 @@ func ParseTerminalColorSchemeReport(data string) (TerminalColorScheme, bool) {
 func (ui *TUI) QueryTerminalBackgroundColor(timeout time.Duration) <-chan *RgbColor {
 	query := &pendingOsc11BackgroundQuery{result: make(chan *RgbColor, 1)}
 	ui.colorMu.Lock()
+	ui.nextOsc11BackgroundQuery++
+	query.id = ui.nextOsc11BackgroundQuery
 	ui.pendingOsc11BackgroundQueries = append(ui.pendingOsc11BackgroundQueries, query)
-	ui.pendingOsc11BackgroundReplies++
 	query.timer = time.AfterFunc(timeout, guarded(func() {
 		ui.colorMu.Lock()
 		defer ui.colorMu.Unlock()
@@ -159,6 +167,7 @@ func (ui *TUI) QueryTerminalBackgroundColor(timeout time.Duration) <-chan *RgbCo
 		}
 		query.settled = true
 		query.timer = nil
+		ui.pendingOsc11BackgroundQueries = slices.DeleteFunc(ui.pendingOsc11BackgroundQueries, func(pending *pendingOsc11BackgroundQuery) bool { return pending == query })
 		query.result <- nil
 		close(query.result)
 	}))
@@ -169,33 +178,49 @@ func (ui *TUI) QueryTerminalBackgroundColor(timeout time.Duration) <-chan *RgbCo
 
 func (ui *TUI) consumeOsc11BackgroundResponse(data string) bool {
 	ui.colorMu.Lock()
-	defer ui.colorMu.Unlock()
-	if ui.pendingOsc11BackgroundReplies <= 0 || !IsOsc11BackgroundColorResponse(data) {
+	if ui.osc11BackgroundReplies == ui.nextOsc11BackgroundQuery || !IsOsc11BackgroundColorResponse(data) {
+		ui.colorMu.Unlock()
 		return false
 	}
 	color, parsed := ParseOsc11BackgroundColor(data)
-	ui.pendingOsc11BackgroundReplies--
-	var query *pendingOsc11BackgroundQuery
-	if len(ui.pendingOsc11BackgroundQueries) > 0 {
-		query = ui.pendingOsc11BackgroundQueries[0]
+	ui.osc11BackgroundReplies++
+	if len(ui.pendingOsc11BackgroundQueries) > 0 && ui.pendingOsc11BackgroundQueries[0].id == ui.osc11BackgroundReplies {
+		query := ui.pendingOsc11BackgroundQueries[0]
 		ui.pendingOsc11BackgroundQueries = ui.pendingOsc11BackgroundQueries[1:]
-	}
-	if query == nil || query.settled {
-		return true
-	}
-	query.settled = true
-	if query.timer != nil {
+		query.settled = true
 		query.timer.Stop()
-		query.timer = nil
+		if parsed {
+			result := color
+			query.result <- &result
+		} else {
+			query.result <- nil
+		}
+		close(query.result)
 	}
+	listeners := append([]terminalBackgroundListenerEntry(nil), ui.terminalBackgroundListeners...)
+	ui.colorMu.Unlock()
+	// OSC replies have no request ID. Preserve query ordering, but let appearance
+	// observers recover even when a query timed out or an earlier reply was lost.
 	if parsed {
-		result := color
-		query.result <- &result
-	} else {
-		query.result <- nil
+		for _, entry := range listeners {
+			entry.listener(color)
+		}
 	}
-	close(query.result)
 	return true
+}
+
+// OnTerminalBackgroundChange observes valid requested colors, including late replies.
+func (ui *TUI) OnTerminalBackgroundChange(listener func(RgbColor)) func() {
+	ui.colorMu.Lock()
+	ui.nextTerminalBackgroundListener++
+	id := ui.nextTerminalBackgroundListener
+	ui.terminalBackgroundListeners = append(ui.terminalBackgroundListeners, terminalBackgroundListenerEntry{id, listener})
+	ui.colorMu.Unlock()
+	return func() {
+		ui.colorMu.Lock()
+		defer ui.colorMu.Unlock()
+		ui.terminalBackgroundListeners = slices.DeleteFunc(ui.terminalBackgroundListeners, func(entry terminalBackgroundListenerEntry) bool { return entry.id == id })
+	}
 }
 
 // OnTerminalColorSchemeChange registers an insertion-ordered scheme listener.

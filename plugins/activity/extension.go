@@ -102,10 +102,6 @@ func Extension(factory ViewFactory) extensions.Factory {
 			Description: "Expand or collapse activity statuses (next/prev to page, close to fold)",
 			Handler:     func(_ context.Context, args string, _ extensions.CommandContext) error { return control(args) },
 		})
-		api.RegisterShortcut("alt+a", extensions.Shortcut{
-			Description: "Expand or collapse activity statuses",
-			Handler:     func(context.Context, extensions.Context) error { return control("") },
-		})
 		api.On(extensions.EventSessionShutdown, func(context.Context, extensions.Event, extensions.Context) (any, error) {
 			mu.Lock()
 			defer mu.Unlock()

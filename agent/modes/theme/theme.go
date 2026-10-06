@@ -96,7 +96,7 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	}
 	next := terminalTheme(theme.mode)
 	bg := fmt.Sprintf("#%02x%02x%02x", background.R, background.G, background.B)
-	light := luminance(background.R, background.G, background.B) > .179
+	light := BackgroundAppearance(background) == Light
 	next.appearance = string(Dark)
 	if light {
 		next.appearance = string(Light)
@@ -110,8 +110,45 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 		br, bg, bb, _ := themefile.ParseHex(b)
 		return fmt.Sprintf("#%02x%02x%02x", int(float64(ar)*(1-amount)+float64(br)*amount), int(float64(ag)*(1-amount)+float64(bg)*amount), int(float64(ab)*(1-amount)+float64(bb)*amount))
 	}
+	displayed := func(value string) float64 {
+		if theme.mode == Color256 {
+			r, g, b, _ := themefile.ParseHex(value)
+			value = themefile.ANSI256ToHex(rgbTo256(r, g, b))
+		}
+		return luminanceHex(value)
+	}
+	contrast := func(foreground, surface string) float64 {
+		x, y := displayed(foreground), displayed(surface)
+		ratio := (max(x, y) + .05) / (min(x, y) + .05)
+		if surface == bg {
+			// The terminal's unpainted background is not quantized by Orb.
+			y = luminanceHex(bg)
+			ratio = min(ratio, (max(x, y)+.05)/(min(x, y)+.05))
+		}
+		return ratio
+	}
+	if contrast(ink, bg) < 4.5 {
+		ink = "#ffffff"
+		if light {
+			ink = "#000000"
+		}
+	}
+	surface := func(amount float64) string {
+		paper := "#000000"
+		if light {
+			paper = "#ffffff"
+		}
+		value := blend(bg, ink, amount)
+		for range 32 {
+			if contrast(ink, value) >= 4.5 {
+				return value
+			}
+			value = blend(value, paper, .06)
+		}
+		return paper
+	}
 	accent, purple = blend(accent, ink, .4), blend(purple, ink, .3)
-	panel, selected := blend(bg, ink, .045), blend(bg, ink, .10)
+	panel, selected := surface(.045), surface(.10)
 	backdrop := blend(bg, "#000000", .14)
 	set := func(names, value string) {
 		for _, name := range strings.Fields(names) {
@@ -130,18 +167,14 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 		for range 32 {
 			minimum := 21.0
 			for _, surface := range []string{bg, panel, selected} {
-				a, b := luminanceHex(value), luminanceHex(surface)
-				if a < b {
-					a, b = b, a
-				}
-				minimum = min(minimum, (a+.05)/(b+.05))
+				minimum = min(minimum, contrast(value, surface))
 			}
 			if minimum >= ratio {
-				break
+				return value
 			}
 			value = blend(value, ink, .12)
 		}
-		return value
+		return ink
 	}
 	readable := func(value string) string { return readableAt(value, 4.5) }
 	set("accent borderAccent mdHeading mdLink mdCode syntaxFunction syntaxType thinkingLow thinkingMedium", readable(accent))
@@ -155,7 +188,7 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	set("muted thinkingText syntaxComment mdLinkUrl mdQuote toolOutput toolDiffContext thinkingOff thinkingMinimal thinkingHigh thinkingXhigh thinkingMax", readable(blend(bg, ink, .65)))
 	set("dim border mdCodeBlockBorder", readableAt(blend(bg, ink, .42), 3))
 	set("borderMuted mdQuoteBorder mdHr", blend(bg, ink, .22))
-	set("toolTitle userMessageText customMessageText", ink)
+	set("text searchMatchText toolTitle userMessageText customMessageText mdCodeBlock syntaxVariable syntaxOperator syntaxPunctuation", ink)
 	set("toolPendingBg userMessageBg customMessageBg mdCodeBlockBg", panel)
 	set("selectedBg searchMatchBg scrollbarThumb", selected)
 	set("toolSuccessBg diffAddedBg", blend(bg, green, .09))
@@ -165,6 +198,14 @@ func (theme *Theme) SetTerminalBackground(background tui.RgbColor) {
 	set("modalBackdropText", blend(backdrop, ink, .38))
 	next.export = map[string]themefile.Color{"pageBg": {Text: bg}, "cardBg": {Text: panel}, "infoBg": {Text: panel}}
 	theme.terminalPalette.Store(next)
+}
+
+// BackgroundAppearance uses the crossover where black and white have equal contrast.
+func BackgroundAppearance(background tui.RgbColor) TerminalTheme {
+	if luminance(background.R, background.G, background.B) > .179 {
+		return Light
+	}
+	return Dark
 }
 
 func (theme *Theme) ColorMode() ColorMode { return theme.mode }
@@ -290,17 +331,21 @@ func Inverse(value string) string       { return "\x1b[7m" + value + "\x1b[27m" 
 func Strikethrough(value string) string { return "\x1b[9m" + value + "\x1b[29m" }
 
 func (theme *Theme) Markdown(codeBlockIndent string) tui.MarkdownTheme {
+	return markdownTheme(func() *Theme { return theme }, codeBlockIndent)
+}
+
+func markdownTheme(current func() *Theme, codeBlockIndent string) tui.MarkdownTheme {
 	style := func(name string) tui.StyleFunc {
-		return func(value string) string { return theme.Foreground(name, value) }
+		return func(value string) string { return current().Foreground(name, value) }
 	}
 	result := tui.MarkdownTheme{
 		Heading: style("mdHeading"), Link: style("mdLink"), LinkURL: style("mdLinkUrl"), Code: style("mdCode"),
 		CodeBlock: style("mdCodeBlock"), CodeBlockBorder: style("mdCodeBlockBorder"), Quote: style("mdQuote"),
 		QuoteBorder: style("mdQuoteBorder"), HorizontalRule: style("mdHr"), ListBullet: style("mdListBullet"),
 		Bold: Bold, Italic: Italic, Underline: Underline, Strikethrough: Strikethrough,
-		HighlightCode: func(code, language string) []string { return Highlight(code, language, theme) },
+		HighlightCode: func(code, language string) []string { return Highlight(code, language, current()) },
 		CodeBlockBackground: func(value string) string {
-			if prefix, err := theme.BackgroundANSI("mdCodeBlockBg"); err == nil && prefix != "" {
+			if prefix, err := current().BackgroundANSI("mdCodeBlockBg"); err == nil && prefix != "" {
 				return prefix + value + "\x1b[49m"
 			}
 			return value
@@ -393,7 +438,7 @@ func MarkdownTheme() tui.MarkdownTheme {
 	if t == nil {
 		return tui.MarkdownTheme{}
 	}
-	return t.Markdown("")
+	return markdownTheme(Current, "")
 }
 
 func EditorTheme() tui.EditorTheme {

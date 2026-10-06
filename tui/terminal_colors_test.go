@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -101,6 +102,37 @@ func TestTerminalBackgroundQueryQueueConsumesLateRepliesInOrder(t *testing.T) {
 	if len(listenerInputs) != 0 || len(focused.inputs) != 0 {
 		t.Fatalf("queued replies leaked: listeners=%q focus=%q", listenerInputs, focused.inputs)
 	}
+}
+
+func TestTerminalBackgroundObserversRecoverAfterLostAndLateReplies(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ui := NewTUI(newFakeTerminal(80, 24))
+		var observed []RgbColor
+		unsubscribe := ui.OnTerminalBackgroundChange(func(color RgbColor) {
+			// Callbacks may query again; they must run outside colorMu.
+			ui.OnTerminalColorSchemeChange(func(TerminalColorScheme) {})()
+			observed = append(observed, color)
+		})
+		for range 100 {
+			if got := <-ui.QueryTerminalBackgroundColor(time.Millisecond); got != nil {
+				t.Fatal(got)
+			}
+		}
+		if len(ui.pendingOsc11BackgroundQueries) != 0 {
+			t.Fatal("timeouts retained query channels and timers")
+		}
+		ui.handleInput("\x1b]11;invalid\x07")
+		ui.handleInput("\x1b]11;#18181e\x07")
+		ui.handleInput("\x1b]11;#ffffff\x07")
+		if want := []RgbColor{{24, 24, 30}, {255, 255, 255}}; !reflect.DeepEqual(observed, want) {
+			t.Fatalf("late recovery = %v, want %v", observed, want)
+		}
+		unsubscribe()
+		ui.handleInput("\x1b]11;#000000\x07")
+		if len(observed) != 2 {
+			t.Fatal("disposed listener received a reply")
+		}
+	})
 }
 
 func TestTerminalColorSchemeNotificationSequencesAndTimeout(t *testing.T) {

@@ -683,6 +683,16 @@ func TestTerminalPaletteSurvivesSessionReload(t *testing.T) {
 			}
 		}
 	}
+	settings.SetTheme("light/dark")
+	for _, background := range []tui.RgbColor{{R: 255, G: 252, B: 239}, {R: 24, G: 27, B: 32}} {
+		mode.setTerminalBackground(&background)
+		if err := mode.initializeTheme(); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := theme.Current().Name, string(theme.BackgroundAppearance(background)); got != want {
+			t.Fatalf("reload resolved auto pair from stale environment: %s, want %s", got, want)
+		}
+	}
 	settings.SetTheme("light")
 	if err := mode.initializeTheme(); err != nil {
 		t.Fatal(err)
@@ -805,7 +815,7 @@ func TestTranscriptRecolorsAcrossTerminalAppearanceChanges(t *testing.T) {
 			&ai.ThinkingContent{Thinking: strings.Repeat("reasoning ", 600)},
 			&ai.TextContent{Text: "**Answer** with `code`"},
 		}}, false, theme.MarkdownTheme(), "", 0, nil)
-		return []tui.Component{tool, bash, assistant}
+		return []tui.Component{tool, bash, assistant, NewUserMessageComponent("**Question** with `code`", theme.MarkdownTheme(), 0, nil)}
 	}
 	components := makeComponents()
 	for _, step := range []string{"light", "dark", "light", "timeout", "dark", "explicit-light", "explicit-dark"} {

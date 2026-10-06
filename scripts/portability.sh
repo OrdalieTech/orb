@@ -83,4 +83,5 @@ suites=$(go list $wasm_suites | grep -v -x -F "$wasm_suite_skip")
 echo "portability: js/wasm suites (Node)"
 GOOS=js GOARCH=wasm CGO_ENABLED=0 go test -count=1 -exec="$wasm_exec/go_js_wasm_exec" $suites
 echo "portability: wasip1/wasm suites (wazero)"
-GOWASIRUNTIME=wazero GOOS=wasip1 GOARCH=wasm CGO_ENABLED=0 go test -count=1 -exec="$wasm_exec/go_wasip1_wasm_exec" $suites
+# Go's WASI wrapper caches Wazero under TMPDIR; the bundle's EXIT trap removes it.
+TMPDIR="$bundle" GOWASIRUNTIME=wazero GOOS=wasip1 GOARCH=wasm CGO_ENABLED=0 go test -count=1 -exec="$wasm_exec/go_wasip1_wasm_exec" $suites

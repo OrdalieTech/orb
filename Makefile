@@ -4,12 +4,8 @@ UPSTREAM_DIR ?= $(CURDIR)/.upstream
 UPSTREAM_READONLY ?= 0
 GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
-ifeq ($(CI),true)
-GO_ENV :=
-else
-GO_ENV := GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
-endif
-LINT_ENV := $(GO_ENV) GOLANGCI_LINT_CACHE=$(CURDIR)/.tools/cache/golangci-lint
+# Use Go's shared caches instead of duplicating artifacts and modules per worktree.
+GO_ENV ?=
 
 .PHONY: check build test lint portability nightly-live upstream fixtures fixtures-tui fixtures-check ensure-upstream-fixture-tools upstream-rpc-tests sdk-surface
 
@@ -55,7 +51,7 @@ lint: $(GOLANGCI_LINT)
 	# upstream; its unkeyed Rule literals trip vet's composites check. Same
 	# exclusion as .golangci.yml (which plain `go vet` cannot read).
 	$(GO_ENV) go vet $$($(GO_ENV) go list ./... | grep -v /internal/chromalexers)
-	$(LINT_ENV) $(GOLANGCI_LINT) run
+	$(GO_ENV) $(GOLANGCI_LINT) run
 
 nightly-live:
 	$(GO_ENV) CGO_ENABLED=0 ORB_NIGHTLY_LIVE=1 go test -v -count=1 -timeout=20m ./agent -run '^TestNightlyLiveSuite$$'

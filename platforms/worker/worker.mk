@@ -14,11 +14,7 @@
 
 WORKER_DIR ?= $(CURDIR)/.tools/worker
 WORKER_E2E_DIR ?= $(CURDIR)/.tools/worker-e2e
-ifneq ($(origin GO_ENV),undefined)
 WORKER_GO_ENV ?= $(GO_ENV)
-else
-WORKER_GO_ENV ?= GOCACHE=$(CURDIR)/.tools/cache/go-build GOMODCACHE=$(CURDIR)/.tools/cache/go-mod
-endif
 CELLD ?= $(CURDIR)/.tools/bin/celld
 WORKER_WASM_EXEC = $$($(WORKER_GO_ENV) go env GOROOT)/lib/wasm
 
