@@ -25,7 +25,7 @@ Only the agent's own secrets, as environment:
 |---|---|---|
 | `BUZZ_PRIVATE_KEY` | Buzz | the agent's Nostr key |
 | `BUZZ_AUTH_TAG` | Buzz | NIP-OA tag attesting the owner's authorization: `python3 sign-auth-tag.py <agent pubkey>`, run by the owner |
-| `BUZZ_RELAY_URL` | Buzz | `wss://chat.ordalie.com` |
+| `BUZZ_RELAY_URL` | Buzz | the relay, such as `wss://buzz.example.com` |
 | `BUZZ_ACP_RESPOND_TO`, `BUZZ_ACP_RESPOND_TO_ALLOWLIST` | Buzz | who the agent answers: `allowlist` and team pubkeys |
 | `BUZZ_ACP_SUBSCRIBE`, `BUZZ_ACP_IDLE_TIMEOUT`, other `BUZZ_ACP_*` | Buzz | as for any buzz-acp agent |
 | `TELEGRAM_BOT_TOKEN` | Telegram | the bot's token |
@@ -58,6 +58,6 @@ ran, the store under `state/` may hold a copy, so start such an agent on a fresh
 `config/settings.json` and `config/models.json` are read on every start: edit them and restart to
 change the model.
 
-Measured on the lab-3 pilot (0.17.2, Buzz and Telegram, Codex model): 12 to 27 MiB for the whole
+Measured on a pilot agent (0.17.2, Buzz and Telegram, Codex model): 12 to 27 MiB for the whole
 container.
 
