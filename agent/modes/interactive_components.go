@@ -582,7 +582,6 @@ type ToolExecutionComponent struct {
 	expanded        bool
 	hovered         bool
 	showImages      bool
-	imageWidth      int
 	isPartial       bool
 	result          *toolResult
 	toolDef         *extensions.ToolDefinition
@@ -774,29 +773,7 @@ func (c *ToolExecutionComponent) updateDisplay() {
 				), expanded: c.expanded})
 			}
 		}
-		// Expanded, a result shows the images the model was given.
-		if c.expanded && c.showImages {
-			for _, block := range c.result.Content {
-				if image, ok := block.(*ai.ImageContent); ok && image.Data != "" {
-					c.contentBox.AddChild(tui.NewSpacer(1))
-					c.contentBox.AddChild(inlineImage(image, c.imageWidth))
-				}
-			}
-		}
 	}
-}
-
-// inlineImageRows caps an inline image's height, so a tall screenshot stays a glance.
-const inlineImageRows = 16
-
-// inlineImage draws an image in the transcript at most width cells wide (the
-// image width setting) and inlineImageRows tall.
-func inlineImage(image *ai.ImageContent, width int) *tui.Image {
-	if width <= 0 {
-		width = 60
-	}
-	rows := inlineImageRows
-	return tui.NewImage(image.Data, image.MimeType, tui.ImageTheme{}, &tui.ImageOptions{MaxWidthCells: &width, MaxHeightCells: &rows}, tui.GetImageDimensions(image.Data, image.MimeType))
 }
 
 func (c *ToolExecutionComponent) showOutput() bool {
