@@ -97,7 +97,7 @@ func normalizeGoogleSchema(value any) (googleJSONObject, error) {
 	}
 	typeValue, _ := object.Value("type")
 	anyOfValue, _ := object.Value("anyOf")
-	if googleJSONValueTruthy(typeValue) && googleJSONValueTruthy(anyOfValue) {
+	if jsValueTruthy(typeValue) && jsValueTruthy(anyOfValue) {
 		return nil, errors.New("type and anyOf cannot be both populated.") //nolint:staticcheck // Exact SDK text.
 	}
 	output := googleJSONObject{}

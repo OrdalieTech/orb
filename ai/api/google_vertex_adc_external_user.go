@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 )
 
@@ -45,24 +44,13 @@ func (adc *googleVertexADC) externalAuthorizedUserToken(ctx context.Context, raw
 		endpoint = *credential.TokenURL
 	}
 
-	body := "grant_type=refresh_token&refresh_token=" + googleVertexURLSearchParamsEscape(credential.RefreshToken)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
-	if err != nil {
-		return googleVertexTokenResponse{}, err
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-	request.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(credential.ClientID+":"+credential.ClientSecret)))
-
-	response, err := adc.do(ctx, request)
-	if err != nil {
-		return googleVertexTokenResponse{}, googleVertexExternalAuthorizedUserOAuthError(err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
+	header, body := googleVertexForm([2]string{"grant_type", "refresh_token"}, [2]string{"refresh_token", credential.RefreshToken})
+	header.Set("Accept", "application/json")
+	header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(credential.ClientID+":"+credential.ClientSecret)))
 	var token googleVertexExternalAuthorizedUserTokenResponse
-	if err := json.NewDecoder(response.Body).Decode(&token); err != nil {
-		return googleVertexTokenResponse{}, err
+	if err := adc.postJSON(ctx, endpoint, body, header, &token); err != nil {
+		// Only the retry policy's failures carry the prefix this rewrites.
+		return googleVertexTokenResponse{}, googleVertexExternalAuthorizedUserOAuthError(err)
 	}
 	if token.RefreshToken != nil && adc.credential != nil && adc.credential.Type == "external_account_authorized_user" {
 		adc.credential.RefreshToken = *token.RefreshToken

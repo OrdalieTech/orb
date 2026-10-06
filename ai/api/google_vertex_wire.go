@@ -67,7 +67,7 @@ func googleVertexWirePayload(parameters googleDecodedParameters, project, locati
 	}
 	responseSchema := config.ResponseSchema
 	responseJSONSchema := config.ResponseJSONSchema
-	if googleSchemaHasDollar(responseSchema) && !googleJSTruthy(responseJSONSchema) {
+	if googleSchemaHasDollar(responseSchema) && !jsTruthy(responseJSONSchema) {
 		responseJSONSchema, responseSchema = responseSchema, nil
 	}
 	responseSchema, err = normalizeGoogleResponseSchema(responseSchema)

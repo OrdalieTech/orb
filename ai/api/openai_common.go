@@ -855,7 +855,7 @@ func openRouterMetadataFromErrorBody(body []byte) string {
 		return ""
 	}
 	var value any
-	if json.Unmarshal(parsed.Metadata.Raw, &value) != nil || !openAIJSONTruthy(value) {
+	if json.Unmarshal(parsed.Metadata.Raw, &value) != nil || !jsValueTruthy(value) {
 		return ""
 	}
 	return openAIJSString(value)
@@ -939,13 +939,13 @@ func newOpenAIStatusError(status int, contents []byte) error {
 		return &openAIStatusError{status: status, message: statusOnly}
 	}
 	var value any
-	if json.Unmarshal(normalized, &value) != nil || !openAIJSONTruthy(value) {
+	if json.Unmarshal(normalized, &value) != nil || !jsValueTruthy(value) {
 		return &openAIStatusError{status: status, message: statusOnly}
 	}
 	serialized := string(normalized)
 	messageValue := ""
 	if object, ok := value.(map[string]any); ok {
-		if candidate, ok := object["message"]; ok && openAIJSONTruthy(candidate) {
+		if candidate, ok := object["message"]; ok && jsValueTruthy(candidate) {
 			if text, ok := candidate.(string); ok {
 				messageValue = text
 			} else if encoded, encodeErr := ai.Marshal(candidate); encodeErr == nil {
@@ -974,7 +974,8 @@ func newOpenAIStatusError(status int, contents []byte) error {
 	}
 }
 
-func openAIJSONTruthy(value any) bool {
+// jsValueTruthy is JavaScript truthiness of a decoded JSON value.
+func jsValueTruthy(value any) bool {
 	switch typed := value.(type) {
 	case nil:
 		return false
@@ -982,6 +983,9 @@ func openAIJSONTruthy(value any) bool {
 		return typed
 	case float64:
 		return typed != 0
+	case json.Number:
+		number, err := strconv.ParseFloat(string(typed), 64)
+		return err != nil || number != 0
 	case string:
 		return typed != ""
 	default:

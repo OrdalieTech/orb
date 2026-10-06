@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -309,10 +310,12 @@ func (adc *googleVertexADC) metadataToken(ctx context.Context) (googleVertexToke
 		return googleVertexTokenResponse{}, err
 	}
 	defer func() { _ = response.Body.Close() }()
+	var token googleVertexTokenResponse
 	if err := validateGoogleMetadataResponse(response); err != nil {
-		return googleVertexTokenResponse{}, err
+		return token, err
 	}
-	return decodeGoogleVertexToken(response.Body)
+	err = json.NewDecoder(response.Body).Decode(&token)
+	return token, err
 }
 
 func validateGoogleMetadataResponse(response *http.Response) error {
@@ -333,10 +336,10 @@ func (adc *googleVertexADC) refreshAuthorizedUser(ctx context.Context, credentia
 		return googleVertexTokenResponse{}, errors.New("authorized_user ADC requires client_id, client_secret, and refresh_token")
 	}
 	return adc.postTokenForm(ctx,
-		googleVertexFormValue{name: "refresh_token", value: credential.RefreshToken},
-		googleVertexFormValue{name: "client_id", value: credential.ClientID},
-		googleVertexFormValue{name: "client_secret", value: credential.ClientSecret},
-		googleVertexFormValue{name: "grant_type", value: "refresh_token"},
+		[2]string{"refresh_token", credential.RefreshToken},
+		[2]string{"client_id", credential.ClientID},
+		[2]string{"client_secret", credential.ClientSecret},
+		[2]string{"grant_type", "refresh_token"},
 	)
 }
 
@@ -349,8 +352,8 @@ func (adc *googleVertexADC) exchangeServiceAccountJWT(ctx context.Context, crede
 		return googleVertexTokenResponse{}, err
 	}
 	return adc.postTokenForm(ctx,
-		googleVertexFormValue{name: "grant_type", value: "urn:ietf:params:oauth:grant-type:jwt-bearer"},
-		googleVertexFormValue{name: "assertion", value: assertion},
+		[2]string{"grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"},
+		[2]string{"assertion", assertion},
 	)
 }
 
@@ -400,44 +403,40 @@ func googleVertexJWT(email, privateKey string, now time.Time) (string, error) {
 	return unsigned + "." + encode(signature), nil
 }
 
-type googleVertexFormValue struct {
-	name  string
-	value string
-}
-
-func googleVertexFormBody(values ...googleVertexFormValue) string {
-	var body strings.Builder
+// googleVertexForm is a form header plus the URLSearchParams body of
+// name/value pairs.
+func googleVertexForm(values ...[2]string) (http.Header, []byte) {
+	var body []byte
 	for index, value := range values {
 		if index > 0 {
-			body.WriteByte('&')
+			body = append(body, '&')
 		}
-		body.WriteString(googleVertexURLSearchParamsEscape(value.name))
-		body.WriteByte('=')
-		body.WriteString(googleVertexURLSearchParamsEscape(value.value))
+		body = append(append(append(body, googleVertexURLSearchParamsEscape(value[0])...), '='), googleVertexURLSearchParamsEscape(value[1])...)
 	}
-	return body.String()
+	return http.Header{"Content-Type": {"application/x-www-form-urlencoded;charset=UTF-8"}}, body
 }
 
-func (adc *googleVertexADC) postTokenForm(ctx context.Context, values ...googleVertexFormValue) (googleVertexTokenResponse, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, googleVertexTokenURL, strings.NewReader(googleVertexFormBody(values...)))
+func (adc *googleVertexADC) postTokenForm(ctx context.Context, values ...[2]string) (googleVertexTokenResponse, error) {
+	var token googleVertexTokenResponse
+	header, body := googleVertexForm(values...)
+	err := adc.postJSON(ctx, googleVertexTokenURL, body, header, &token)
+	return token, err
+}
+
+// postJSON posts body with header through the retry policy and decodes the
+// JSON answer into result.
+func (adc *googleVertexADC) postJSON(ctx context.Context, endpoint string, body []byte, header http.Header, result any) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return googleVertexTokenResponse{}, err
+		return err
 	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+	request.Header = header
 	response, err := adc.do(ctx, request)
 	if err != nil {
-		return googleVertexTokenResponse{}, err
+		return err
 	}
 	defer func() { _ = response.Body.Close() }()
-	return decodeGoogleVertexToken(response.Body)
-}
-
-func decodeGoogleVertexToken(reader io.Reader) (googleVertexTokenResponse, error) {
-	var token googleVertexTokenResponse
-	if err := json.NewDecoder(reader).Decode(&token); err != nil {
-		return token, err
-	}
-	return token, nil
+	return json.NewDecoder(response.Body).Decode(result)
 }
 
 func (adc *googleVertexADC) do(ctx context.Context, request *http.Request) (*http.Response, error) {

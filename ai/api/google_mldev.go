@@ -23,7 +23,8 @@ func googleNonNullRaw(value json.RawMessage) json.RawMessage {
 	return value
 }
 
-func googleJSTruthy(value json.RawMessage) bool {
+// jsTruthy is JavaScript truthiness of a raw JSON value; absent is falsy.
+func jsTruthy(value json.RawMessage) bool {
 	trimmed := bytes.TrimSpace(value)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("false")) {
 		return false
@@ -562,7 +563,7 @@ func googleFunctionDeclarations(value json.RawMessage) (json.RawMessage, error) 
 
 func normalizeGoogleDeclarationSchema(declaration *googleJSONObject, legacy, jsonName string) error {
 	schema, ok := declaration.Value(legacy)
-	if !ok || !googleJSONValueTruthy(schema) {
+	if !ok || !jsValueTruthy(schema) {
 		return nil
 	}
 	object, ok := schema.(googleJSONObject)
@@ -571,7 +572,7 @@ func normalizeGoogleDeclarationSchema(declaration *googleJSONObject, legacy, jso
 	}
 	if _, hasDollar := object.Value("$schema"); hasDollar {
 		jsonSchema, _ := declaration.Value(jsonName)
-		if !googleJSONValueTruthy(jsonSchema) {
+		if !jsValueTruthy(jsonSchema) {
 			declaration.Set(jsonName, object)
 			declaration.Delete(legacy)
 		}
@@ -583,22 +584,6 @@ func normalizeGoogleDeclarationSchema(declaration *googleJSONObject, legacy, jso
 	}
 	declaration.Set(legacy, normalized)
 	return nil
-}
-
-func googleJSONValueTruthy(value any) bool {
-	switch value := value.(type) {
-	case nil:
-		return false
-	case bool:
-		return value
-	case string:
-		return value != ""
-	case json.Number:
-		number, err := strconv.ParseFloat(string(value), 64)
-		return err != nil || number != 0
-	default:
-		return true
-	}
 }
 
 func googleWireToolConfig(value json.RawMessage) (json.RawMessage, error) {

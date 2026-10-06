@@ -91,23 +91,12 @@ func (adc *googleVertexADC) impersonatedServiceAccountToken(ctx context.Context,
 	}
 
 	tokenURL := endpoint + "/v1/projects/-/serviceAccounts/" + match[1] + ":generateAccessToken"
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, bytes.NewReader(body))
-	if err != nil {
-		return googleVertexTokenResponse{}, fmt.Errorf("unable to impersonate: %w", err)
-	}
-	request.Header.Set("Authorization", "Bearer "+sourceToken.AccessToken)
-	request.Header.Set("Content-Type", "application/json")
+	header := http.Header{"Authorization": {"Bearer " + sourceToken.AccessToken}, "Content-Type": {"application/json"}}
 	if sourceCredential.QuotaProjectID != "" {
-		request.Header.Set("X-Goog-User-Project", sourceCredential.QuotaProjectID)
+		header.Set("X-Goog-User-Project", sourceCredential.QuotaProjectID)
 	}
-	response, err := adc.do(ctx, request)
-	if err != nil {
-		return googleVertexTokenResponse{}, fmt.Errorf("unable to impersonate: %w", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
 	var token googleVertexImpersonatedResponse
-	if err := json.NewDecoder(response.Body).Decode(&token); err != nil {
+	if err := adc.postJSON(ctx, tokenURL, body, header, &token); err != nil {
 		return googleVertexTokenResponse{}, fmt.Errorf("unable to impersonate: %w", err)
 	}
 	expires, err := time.Parse(time.RFC3339Nano, token.ExpireTime)

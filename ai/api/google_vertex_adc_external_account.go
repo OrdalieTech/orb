@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -157,30 +156,14 @@ func (adc *googleVertexADC) exchangeExternalAccountSTS(
 		}
 		values = append(values, [2]string{"options", string(options)})
 	}
-	var form strings.Builder
-	for index, pair := range values {
-		if index > 0 {
-			form.WriteByte('&')
-		}
-		form.WriteString(googleVertexURLSearchParamsEscape(pair[0]))
-		form.WriteByte('=')
-		form.WriteString(googleVertexURLSearchParamsEscape(pair[1]))
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, config.externalAccountTokenURL(), strings.NewReader(form.String()))
-	if err != nil {
-		return googleVertexTokenResponse{}, err
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-	request.Header.Set("X-Goog-Api-Client", googleVertexExternalAccountMetrics(sourceType, config.ServiceAccountImpersonationURL != "", config.ServiceAccountImpersonation.TokenLifetimeSeconds != 0))
+	header, body := googleVertexForm(values...)
+	header.Set("X-Goog-Api-Client", googleVertexExternalAccountMetrics(sourceType, config.ServiceAccountImpersonationURL != "", config.ServiceAccountImpersonation.TokenLifetimeSeconds != 0))
 	if config.ClientID != "" {
-		request.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(config.ClientID+":"+config.ClientSecret)))
+		header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(config.ClientID+":"+config.ClientSecret)))
 	}
-	response, err := adc.do(ctx, request)
-	if err != nil {
-		return googleVertexTokenResponse{}, err
-	}
-	defer func() { _ = response.Body.Close() }()
-	return decodeGoogleVertexToken(response.Body)
+	var token googleVertexTokenResponse
+	err := adc.postJSON(ctx, config.externalAccountTokenURL(), body, header, &token)
+	return token, err
 }
 
 func googleVertexExternalAccountMetrics(sourceType string, impersonation, configuredLifetime bool) string {
@@ -207,19 +190,9 @@ func (adc *googleVertexADC) impersonateExternalAccountServiceAccount(
 	if err != nil {
 		return googleVertexTokenResponse{}, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, config.ServiceAccountImpersonationURL, bytes.NewReader(body))
-	if err != nil {
-		return googleVertexTokenResponse{}, err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+stsAccessToken)
-	response, err := adc.do(ctx, request)
-	if err != nil {
-		return googleVertexTokenResponse{}, err
-	}
-	defer func() { _ = response.Body.Close() }()
 	var token googleVertexExternalAccountIAMResponse
-	if err := json.NewDecoder(response.Body).Decode(&token); err != nil {
+	header := http.Header{"Content-Type": {"application/json"}, "Authorization": {"Bearer " + stsAccessToken}}
+	if err := adc.postJSON(ctx, config.ServiceAccountImpersonationURL, body, header, &token); err != nil {
 		return googleVertexTokenResponse{}, err
 	}
 	expires, err := time.Parse(time.RFC3339Nano, token.ExpireTime)

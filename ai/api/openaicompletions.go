@@ -1712,7 +1712,7 @@ func (state *completionsStreamState) consumeChunk(
 			state.output.ResponseModel = &responseModel
 		}
 	}
-	if rawJSTruthy(chunk.Usage) {
+	if jsTruthy(chunk.Usage) {
 		state.output.Usage = parseOpenAICompletionsUsage(chunk.Usage, model)
 	}
 	choices := rawJSONArray(chunk.Choices)
@@ -1721,7 +1721,7 @@ func (state *completionsStreamState) consumeChunk(
 	}
 	var choice struct{ Delta, FinishReason, Usage json.RawMessage }
 	readMembers(choices[0], rawMember{"delta", &choice.Delta}, rawMember{"finish_reason", &choice.FinishReason}, rawMember{"usage", &choice.Usage})
-	if !rawJSTruthy(chunk.Usage) && rawJSTruthy(choice.Usage) {
+	if !jsTruthy(chunk.Usage) && jsTruthy(choice.Usage) {
 		state.output.Usage = parseOpenAICompletionsUsage(choice.Usage, model)
 	}
 	if reason, ok := rawJSONString(choice.FinishReason); ok && reason != "" {
@@ -2265,13 +2265,4 @@ func rawJSONInt64(raw json.RawMessage) (int64, bool) {
 		return 0, false
 	}
 	return value, true
-}
-
-func rawJSTruthy(raw json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("false")) ||
-		bytes.Equal(trimmed, []byte("0")) || bytes.Equal(trimmed, []byte(`""`)) {
-		return false
-	}
-	return true
 }
