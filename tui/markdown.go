@@ -76,7 +76,7 @@ type Markdown struct {
 }
 
 func NewMarkdown(text string, paddingX, paddingY int, theme MarkdownTheme, defaultStyle *DefaultTextStyle, options *MarkdownOptions) *Markdown {
-	markdown := &Markdown{text: text, paddingX: paddingX, paddingY: paddingY, theme: normalizeMarkdownTheme(theme), defaultStyle: defaultStyle}
+	markdown := &Markdown{text: text, paddingX: max(0, paddingX), paddingY: max(0, paddingY), theme: normalizeMarkdownTheme(theme), defaultStyle: defaultStyle}
 	if options != nil {
 		markdown.options = *options
 	}

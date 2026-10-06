@@ -592,6 +592,8 @@ type ToolExecutionComponent struct {
 	rendererState   map[string]any
 	callComponent   extensions.Component
 	resultComponent extensions.Component
+
+	callFailed, resultFailed bool
 	// faded caches the resting look of the last rendered lines.
 	fadedFrom, faded []string
 	// headed sits right under the reasoning that led to it.
@@ -710,27 +712,34 @@ func (c *ToolExecutionComponent) updateDisplay() {
 	c.contentBox.Clear()
 
 	// Tool call header
-	if c.toolDef != nil && c.toolDef.RenderCall != nil {
-		rendered := c.toolDef.RenderCall(c.args, themeAdapter{}, extensions.ToolRenderContext{
-			Args:             c.args,
-			ToolCallID:       c.toolCallID,
-			Invalidate:       func() { c.ui.RequestRender() },
-			LastComponent:    c.callComponent,
-			State:            c.rendererState,
-			CWD:              c.cwd,
-			ExecutionStarted: c.execStarted,
-			ArgsComplete:     c.argsComplete,
-			IsPartial:        c.isPartial,
-			Expanded:         c.expanded,
-			ShowImages:       c.showImages,
-			IsError:          c.result != nil && c.result.IsError,
+	if c.callFailed {
+		c.contentBox.AddChild(c.rendererFallback(false))
+	} else if c.toolDef != nil && c.toolDef.RenderCall != nil {
+		var rendered extensions.Component
+		rendererInvoke(&c.callFailed, func() {
+			rendered = c.toolDef.RenderCall(c.args, themeAdapter{}, extensions.ToolRenderContext{
+				Args:             c.args,
+				ToolCallID:       c.toolCallID,
+				Invalidate:       func() { c.ui.RequestRender() },
+				LastComponent:    c.callComponent,
+				State:            c.rendererState,
+				CWD:              c.cwd,
+				ExecutionStarted: c.execStarted,
+				ArgsComplete:     c.argsComplete,
+				IsPartial:        c.isPartial,
+				Expanded:         c.expanded,
+				ShowImages:       c.showImages,
+				IsError:          c.result != nil && c.result.IsError,
+			})
 		})
-		if rendered != nil {
+		if c.callFailed {
+			c.contentBox.AddChild(c.rendererFallback(false))
+		} else if rendered != nil {
 			c.callComponent = rendered
 			if _, compact := rendered.(toolCallHeader); !compact && (toolActivityKind(c.toolName) != "" || strings.EqualFold(c.toolName, "bash")) {
 				rendered = toolCallHeader{inner: rendered, expanded: c.expanded}
 			}
-			c.contentBox.AddChild(rendered)
+			c.contentBox.AddChild(&safeToolRenderer{source: c.callComponent, inner: rendered, failed: &c.callFailed, fallback: func() tui.Component { return c.rendererFallback(false) }})
 		}
 	} else {
 		title, detailFrom := fallbackToolTitle(c.toolName, c.args)
@@ -739,28 +748,35 @@ func (c *ToolExecutionComponent) updateDisplay() {
 
 	// Tool result
 	if c.result != nil {
-		if c.toolDef != nil && c.toolDef.RenderResult != nil {
-			rendered := c.toolDef.RenderResult(
-				engine.AgentToolResult{Content: c.result.Content, Details: c.result.Details},
-				extensions.ToolRenderResultOptions{Expanded: c.expanded, IsPartial: c.isPartial},
-				themeAdapter{},
-				extensions.ToolRenderContext{
-					Args:          c.args,
-					ToolCallID:    c.toolCallID,
-					Invalidate:    func() { c.ui.RequestRender() },
-					LastComponent: c.resultComponent,
-					State:         c.rendererState,
-					CWD:           c.cwd,
-					Expanded:      c.expanded,
-					IsPartial:     c.isPartial,
-					IsError:       c.result.IsError,
-				},
-			)
-			if rendered != nil {
+		if c.resultFailed {
+			c.contentBox.AddChild(c.rendererFallback(true))
+		} else if c.toolDef != nil && c.toolDef.RenderResult != nil {
+			var rendered extensions.Component
+			rendererInvoke(&c.resultFailed, func() {
+				rendered = c.toolDef.RenderResult(
+					engine.AgentToolResult{Content: c.result.Content, Details: c.result.Details},
+					extensions.ToolRenderResultOptions{Expanded: c.expanded, IsPartial: c.isPartial},
+					themeAdapter{},
+					extensions.ToolRenderContext{
+						Args:          c.args,
+						ToolCallID:    c.toolCallID,
+						Invalidate:    func() { c.ui.RequestRender() },
+						LastComponent: c.resultComponent,
+						State:         c.rendererState,
+						CWD:           c.cwd,
+						Expanded:      c.expanded,
+						IsPartial:     c.isPartial,
+						IsError:       c.result.IsError,
+					},
+				)
+			})
+			if c.resultFailed {
+				c.contentBox.AddChild(c.rendererFallback(true))
+			} else if rendered != nil {
 				c.resultComponent = rendered
 				_, plainOutput := rendered.(*toolOutputPreview)
 				if !plainOutput || c.showOutput() {
-					c.contentBox.AddChild(toolResultClip{inner: rendered, expanded: c.expanded})
+					c.contentBox.AddChild(&safeToolRenderer{source: rendered, inner: toolResultClip{inner: rendered, expanded: c.expanded}, failed: &c.resultFailed, fallback: func() tui.Component { return c.rendererFallback(true) }})
 				}
 			}
 		} else if c.showOutput() {
@@ -774,6 +790,53 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			}
 		}
 	}
+}
+
+// All renderer boundaries run under the owning execution's mutex (or during construction).
+// Keep the original components in LastComponent; only the display tree uses wrappers.
+func rendererInvoke(failed *bool, invoke func()) {
+	if *failed {
+		return
+	}
+	defer func() {
+		if recover() != nil {
+			*failed = true
+		}
+	}()
+	invoke()
+}
+
+type safeToolRenderer struct {
+	source   tui.Component
+	inner    tui.Component
+	failed   *bool
+	fallback func() tui.Component
+}
+
+func (r *safeToolRenderer) Render(width int) (lines []string) {
+	rendererInvoke(r.failed, func() { lines = r.inner.Render(width) })
+	if *r.failed {
+		return r.fallback().Render(width)
+	}
+	return lines
+}
+
+func (r *safeToolRenderer) Invalidate() {
+	if component, ok := r.source.(tui.Invalidatable); ok {
+		rendererInvoke(r.failed, component.Invalidate)
+	}
+}
+
+func (c *ToolExecutionComponent) rendererFallback(result bool) tui.Component {
+	box := tui.NewBox(0, 0, nil)
+	if result {
+		box.AddChild(toolResultClip{inner: newToolOutputPreview(c.getTextOutput(), extensions.ToolRenderResultOptions{Expanded: c.expanded, IsPartial: c.isPartial}, themeAdapter{}), expanded: c.expanded})
+	} else {
+		title, detailFrom := fallbackToolTitle(c.toolName, c.args)
+		box.AddChild(toolCallHeader{inner: tui.NewText(title, 0, 0, nil), expanded: c.expanded, title: title, keepTailFrom: detailFrom})
+	}
+	box.AddChild(tui.NewText(c.toolName+": custom renderer failed; using built-in output", 0, 0, nil))
+	return box
 }
 
 func (c *ToolExecutionComponent) showOutput() bool {
@@ -952,7 +1015,11 @@ func (c *ToolExecutionComponent) getTextOutput() string {
 	return strings.Join(parts, "\n")
 }
 
-func (c *ToolExecutionComponent) Invalidate() { c.contentBox.Invalidate() }
+func (c *ToolExecutionComponent) Invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.contentBox.Invalidate()
+}
 func (c *ToolExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()

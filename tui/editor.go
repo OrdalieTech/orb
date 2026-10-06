@@ -942,9 +942,10 @@ func (editor *Editor) HandleMouse(event MouseEvent) bool {
 			if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
 				editor.pushUndoSnapshot()
 				editor.lastAction = ""
-				editor.applyCompletionResult(item)
-				editor.cancelAutocomplete()
-				editor.emitChange()
+				if editor.applyCompletionResult(item) {
+					editor.cancelAutocomplete()
+					editor.emitChange()
+				}
 			}
 		}
 		pending := editor.pending
@@ -1126,9 +1127,10 @@ func (editor *Editor) handleData(data string) {
 			if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
 				editor.pushUndoSnapshot()
 				editor.lastAction = ""
-				editor.applyCompletionResult(item)
-				editor.cancelAutocomplete()
-				editor.emitChange()
+				if editor.applyCompletionResult(item) {
+					editor.cancelAutocomplete()
+					editor.emitChange()
+				}
 			}
 			return
 		}
@@ -1140,7 +1142,9 @@ func (editor *Editor) handleData(data string) {
 			} else if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
 				editor.pushUndoSnapshot()
 				editor.lastAction = ""
-				editor.applyCompletionResult(item)
+				if !editor.applyCompletionResult(item) {
+					return
+				}
 				if submitSlash {
 					editor.cancelAutocomplete()
 					// Fall through to submit.
@@ -1244,23 +1248,36 @@ func (editor *Editor) handleData(data string) {
 	}
 }
 
-func (editor *Editor) applyCompletionResult(item SelectItem) {
-	provider := editor.autocompleteProvider
+func (editor *Editor) applyCompletionResult(item SelectItem) bool {
+	return editor.applyFreshCompletion(editor.autocompleteProvider, AutocompleteItem(item), editor.autocompletePrefix)
+}
+
+// applyFreshCompletion calls provider code without the lock, then checks that
+// neither the editor snapshot nor the request/provider generation changed.
+// Caller holds editor.mu, including when provider code panics.
+func (editor *Editor) applyFreshCompletion(provider AutocompleteProvider, item AutocompleteItem, prefix string) bool {
+	text := editor.getTextLocked()
 	lines := append([]string(nil), editor.state.lines...)
 	cursorLine, cursorCol := editor.state.cursorLine, editor.state.cursorCol
-	prefix := editor.autocompletePrefix
-	editor.mu.Unlock()
-	result := provider.ApplyCompletion(
-		lines,
-		cursorLine,
-		cursorCol,
-		AutocompleteItem(item),
-		prefix,
-	)
-	editor.mu.Lock()
-	editor.state.lines = result.Lines
+	startToken, requestID := editor.autocompleteStartToken, editor.autocompleteRequestID
+	result := func() CompletionResult {
+		editor.mu.Unlock()
+		defer editor.mu.Lock()
+		return provider.ApplyCompletion(lines, cursorLine, cursorCol, item, prefix)
+	}()
+	if startToken != editor.autocompleteStartToken || requestID != editor.autocompleteRequestID ||
+		text != editor.getTextLocked() || cursorLine != editor.state.cursorLine || cursorCol != editor.state.cursorCol {
+		return false
+	}
+	// Provider columns are rune offsets, including end-of-line.
+	if result.CursorLine < 0 || result.CursorLine >= len(result.Lines) ||
+		result.CursorCol < 0 || result.CursorCol > runeLen(result.Lines[result.CursorLine]) {
+		return false
+	}
+	editor.state.lines = append([]string(nil), result.Lines...)
 	editor.state.cursorLine = result.CursorLine
 	editor.setCursorCol(result.CursorCol)
+	return true
 }
 
 // wrapKey names a logical line's wrap: its text, the width, and the pastes its
@@ -2454,15 +2471,9 @@ func (editor *Editor) startAutocompleteRequest(startToken int, force, explicitTa
 		} else if force && explicitTab && len(suggestions.Items) == 1 {
 			editor.pushUndoSnapshot()
 			editor.lastAction = ""
-			lines := append([]string(nil), editor.state.lines...)
-			cursorLine, cursorCol := editor.state.cursorLine, editor.state.cursorCol
-			editor.mu.Unlock()
-			result := provider.ApplyCompletion(lines, cursorLine, cursorCol, suggestions.Items[0], suggestions.Prefix)
-			editor.mu.Lock()
-			editor.state.lines = result.Lines
-			editor.state.cursorLine = result.CursorLine
-			editor.setCursorCol(result.CursorCol)
-			editor.emitChange()
+			if editor.applyFreshCompletion(provider, suggestions.Items[0], suggestions.Prefix) {
+				editor.emitChange()
+			}
 		} else {
 			state := "regular"
 			if force {

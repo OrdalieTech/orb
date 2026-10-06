@@ -77,7 +77,7 @@ type SelectList struct {
 }
 
 func NewSelectList(items []SelectItem, maxVisible int, theme SelectListTheme, layout SelectListLayoutOptions) *SelectList {
-	return &SelectList{items: items, filteredItems: items, maxVisible: maxVisible, theme: theme, layout: layout}
+	return &SelectList{items: items, filteredItems: items, maxVisible: max(1, maxVisible), theme: theme, layout: layout}
 }
 
 // SetFilter keeps items whose value starts with filter (case-insensitive) and

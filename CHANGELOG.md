@@ -5,6 +5,12 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Over-wide TUI lines are clipped safely instead of crashing the session, including during redraws and terminal resizes.
+- Harden UI recovery: faulty tool renderers fall back to built-in output, invalid or stale
+  completions leave the editor intact, negative list sizes and padding are clamped, and debug-log
+  failures are shown instead of panicking. Long unbroken text no longer causes quadratic
+  tokenization allocations.
+
 ## [0.17.5] - 2026-10-06
 
 Buzz is one self-contained chat platform package among the others.

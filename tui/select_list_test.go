@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -57,5 +59,31 @@ func TestSelectListFilterAndScroll(t *testing.T) {
 	rendered = list.Render(40)
 	if len(rendered) != 3 || !strings.Contains(rendered[2], "(1/4)") {
 		t.Fatalf("scroll render = %q", rendered)
+	}
+}
+
+func TestSelectListDimensions(t *testing.T) {
+	for _, height := range []int{-100, -7, -2, -1, 0, 1, 2, 3, 5} {
+		for _, width := range []int{-100, -1, 0, 1, 2, 3, 4, 8, 40, 41, 80} {
+			for _, count := range []int{0, 1, 3} {
+				t.Run(fmt.Sprintf("height=%d/width=%d/items=%d", height, width, count), func(t *testing.T) {
+					items := []SelectItem{{Value: "alpha", Description: "A description"}, {Value: "beta"}, {Value: "gamma"}}
+					list := NewSelectList(items[:count], height, testSelectTheme, SelectListLayoutOptions{})
+					want := NewSelectList(items[:count], max(1, height), testSelectTheme, SelectListLayoutOptions{})
+					for _, filter := range []string{"", "missing", ""} {
+						list.SetFilter(filter)
+						want.SetFilter(filter)
+						for range 4 {
+							gotLines, wantLines := list.Render(width), want.Render(width)
+							if !reflect.DeepEqual(gotLines, wantLines) {
+								t.Fatalf("render = %q, want %q", gotLines, wantLines)
+							}
+							press(list, "\x1b[B")
+							press(want, "\x1b[B")
+						}
+					}
+				})
+			}
+		}
 	}
 }

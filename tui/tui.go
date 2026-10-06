@@ -1483,6 +1483,12 @@ func (ui *TUI) RenderNow() {
 	newLines = ui.renderSelection(newLines)
 	cursorRow, cursorColumn, hasCursor := ui.extractCursor(newLines, height)
 	newLines = applyLineResets(newLines)
+	// Component overflow must not wrap terminal rows or terminate the session.
+	for index, line := range newLines {
+		if !IsImageLine(line) && VisibleWidth(line) > width {
+			newLines[index] = TruncateToWidth(line, width, "", false) + segmentReset
+		}
+	}
 	fullRender := func(clear bool) {
 		ui.fullRedraws++
 		var output strings.Builder
@@ -1670,11 +1676,6 @@ func (ui *TUI) RenderNow() {
 			continue
 		}
 		output.WriteString("\x1b[2K")
-		if !IsImageLine(line) && VisibleWidth(line) > width {
-			ui.setStopped(true)
-			_ = ui.stopTerminal(ui.viewportBody != nil)
-			panic(fmt.Sprintf("rendered line %d exceeds terminal width (%d > %d)", index, VisibleWidth(newLines[index]), width))
-		}
 		output.WriteString(line)
 	}
 	finalCursorRow := renderEnd

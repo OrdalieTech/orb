@@ -30,25 +30,29 @@ func (mode *InteractiveMode) handleDebugCommand() {
 	for index, line := range lines {
 		encoded, err := jsonwire.Marshal(line)
 		if err != nil {
-			panic(err)
+			mode.showError(fmt.Errorf("serialize debug rendered line %d: %w", index, err))
+			return
 		}
 		data = append(data, fmt.Sprintf("[%d] (w=%d) %s", index, tui.VisibleWidth(line), encoded))
 	}
 	data = append(data, "", "=== Agent messages (JSONL) ===")
-	for _, message := range mode.session.State().Messages {
+	for index, message := range mode.session.State().Messages {
 		encoded, err := jsonwire.Marshal(message)
 		if err != nil {
-			panic(err)
+			mode.showError(fmt.Errorf("serialize debug message %d: %w", index, err))
+			return
 		}
 		data = append(data, string(encoded))
 	}
 	data = append(data, "")
 
 	if err := os.MkdirAll(filepath.Dir(debugPath), 0o755); err != nil {
-		panic(err)
+		mode.showError(fmt.Errorf("create debug log directory %q: %w", filepath.Dir(debugPath), err))
+		return
 	}
 	if err := os.WriteFile(debugPath, []byte(strings.Join(data, "\n")), 0o644); err != nil {
-		panic(err)
+		mode.showError(fmt.Errorf("write debug log %q: %w", debugPath, err))
+		return
 	}
 
 	mode.chat.AddChild(tui.NewSpacer(1))

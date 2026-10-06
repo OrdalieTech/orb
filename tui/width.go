@@ -491,17 +491,19 @@ func isCJK(segment string) bool {
 
 func ansiTokens(text string) []string {
 	tokens := make([]string, 0)
-	current, pending := "", ""
+	// Builders avoid copying the growing token (or ANSI-only run) per grapheme.
+	var current, pending strings.Builder
 	kind := byte(0)
 	flush := func() {
-		if current != "" {
-			tokens = append(tokens, current)
-			current, kind = "", 0
+		if current.Len() > 0 {
+			tokens = append(tokens, current.String())
+			current.Reset()
+			kind = 0
 		}
 	}
 	for pos := 0; pos < len(text); {
 		if code, next, ok := extractANSI(text, pos); ok {
-			pending += code
+			pending.WriteString(code)
 			pos = next
 			continue
 		}
@@ -517,31 +519,32 @@ func ansiTokens(text string) []string {
 			space := segment == " "
 			if !space && isCJK(segment) {
 				flush()
-				tokens = append(tokens, pending+segment)
-				pending = ""
+				tokens = append(tokens, pending.String()+segment)
+				pending.Reset()
 				return true
 			}
 			nextKind := byte('w')
 			if space {
 				nextKind = 's'
 			}
-			if current != "" && kind != nextKind {
+			if current.Len() > 0 && kind != nextKind {
 				flush()
 			}
-			current += pending + segment
-			pending = ""
+			current.WriteString(pending.String())
+			current.WriteString(segment)
+			pending.Reset()
 			kind = nextKind
 			return true
 		})
 		pos = end
 	}
-	if pending != "" {
-		if current != "" {
-			current += pending
+	if pending.Len() > 0 {
+		if current.Len() > 0 {
+			current.WriteString(pending.String())
 		} else if len(tokens) > 0 {
-			tokens[len(tokens)-1] += pending
+			tokens[len(tokens)-1] += pending.String()
 		} else {
-			current = pending
+			current.WriteString(pending.String())
 		}
 	}
 	flush()

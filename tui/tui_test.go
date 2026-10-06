@@ -553,27 +553,56 @@ func TestTUITenThousandLineReplayStaysDifferential(t *testing.T) {
 	t.Logf("10k-line tail update: %s, %d terminal bytes", elapsed, len(output))
 }
 
-func TestTUIStopsTerminalBeforeLineOverflowPanic(t *testing.T) {
-	terminal := newFakeTerminal(3, 3)
-	ui := NewTUI(terminal)
-	body := &mutableLines{lines: []string{"toolong"}}
-	ui.AddChild(body)
-	ui.SetViewport(body, &mutableLines{})
-	ui.setStopped(false)
-	ui.renderMu.Lock()
-	ui.previousLines = []string{"old"}
-	ui.previousWidth, ui.previousHeight = 3, 3
-	ui.renderMu.Unlock()
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected line overflow panic")
+func TestTUIClipsOverflowWithoutStopping(t *testing.T) {
+	for _, viewport := range []bool{false, true} {
+		for _, text := range []string{
+			strings.Repeat("x", 169),
+			"\x1b[31m\x1b]8;;https://example.com\a" + strings.Repeat("界👩‍💻é", 40),
+		} {
+			for _, phase := range []string{"initial", "update", "resize"} {
+				t.Run(fmt.Sprintf("viewport=%t/%s/styled=%t", viewport, phase, strings.HasPrefix(text, "\x1b")), func(t *testing.T) {
+					terminal := newFakeTerminal(164, 40)
+					ui := NewTUI(terminal)
+					body := &mutableLines{lines: []string{"old"}}
+					if viewport {
+						ui.SetViewport(body, &mutableLines{})
+					} else {
+						ui.AddChild(body)
+					}
+					ui.setStopped(false)
+					if phase != "initial" {
+						if phase == "resize" {
+							terminal.columns = 240
+							body.lines[0] = text
+						}
+						ui.RenderNow()
+						terminal.columns = 164
+					}
+					terminal.resetOutput()
+					body.lines[0] = text
+					ui.RenderNow()
+					want := TruncateToWidth(text, 164, "", false) + segmentReset
+					if got := ui.previousLines[0]; got != want {
+						t.Fatalf("rendered line = %q, want %q", got, want)
+					}
+					if !strings.Contains(terminal.output(), want) || VisibleWidth(want) > 164 {
+						t.Fatalf("overflow was not clipped in terminal output: %q", terminal.output())
+					}
+					if body.lines[0] != text {
+						t.Fatal("render mutated component content")
+					}
+					terminal.resetOutput()
+					ui.RenderNow()
+					if terminal.output() != "" {
+						t.Fatalf("unchanged clipped frame was repainted: %q", terminal.output())
+					}
+					body.lines[0] = "still running"
+					ui.RenderNow()
+					if ui.isStopped() || terminal.stopped || !strings.Contains(terminal.output(), "still running") {
+						t.Fatal("overflow stopped subsequent rendering")
+					}
+				})
+			}
 		}
-		if !terminal.stopped {
-			t.Fatal("terminal was not restored before panic")
-		}
-		if output := terminal.output(); !strings.Contains(output, alternateScreenOff) || !strings.Contains(output, scrollOnOutputOn) {
-			t.Fatalf("terminal protocols were not restored before panic: %q", output)
-		}
-	}()
-	ui.RenderNow()
+	}
 }

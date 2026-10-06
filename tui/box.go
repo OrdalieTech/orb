@@ -25,7 +25,7 @@ type Box struct {
 }
 
 func NewBox(paddingX, paddingY int, background StyleFunc) *Box {
-	return &Box{paddingX: paddingX, paddingY: paddingY, bg: background}
+	return &Box{paddingX: max(0, paddingX), paddingY: max(0, paddingY), bg: background}
 }
 
 func (box *Box) AddChild(component Component) {

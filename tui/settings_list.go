@@ -81,7 +81,7 @@ func NewSettingsList(items []SettingItem, maxVisible int, theme SettingsListThem
 	list := &SettingsList{
 		items:         stored,
 		filteredItems: stored,
-		maxVisible:    maxVisible,
+		maxVisible:    max(1, maxVisible),
 		theme:         theme,
 		onChange:      onChange,
 		onCancel:      onCancel,

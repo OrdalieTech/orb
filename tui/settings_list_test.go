@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -111,5 +113,33 @@ func TestSettingsListSearch(t *testing.T) {
 	rendered = strings.Join(list.Render(60), "\n")
 	if !strings.Contains(rendered, "No matching settings") {
 		t.Fatalf("no-match hint missing: %q", rendered)
+	}
+}
+
+func TestSettingsListDimensions(t *testing.T) {
+	for _, height := range []int{-100, -7, -2, -1, 0, 1, 2, 3, 5} {
+		for _, width := range []int{-100, -1, 0, 1, 2, 3, 4, 8, 40, 41, 80} {
+			for _, count := range []int{0, 1, 3} {
+				t.Run(fmt.Sprintf("height=%d/width=%d/items=%d", height, width, count), func(t *testing.T) {
+					items := []SettingItem{{ID: "alpha", Label: "Alpha", CurrentValue: "on", Description: "A description that can wrap onto several lines"}, {ID: "beta", Label: "Beta"}, {ID: "gamma", Label: "Gamma"}}
+					for _, options := range []SettingsListOptions{{}, {EnableSearch: true}, {FixedGeometry: true}, {EnableSearch: true, FixedGeometry: true}} {
+						list := NewSettingsList(items[:count], height, testSettingsTheme, nil, nil, options)
+						want := NewSettingsList(items[:count], max(1, height), testSettingsTheme, nil, nil, options)
+						for _, filter := range []string{"", "missing", ""} {
+							list.applyFilter(filter)
+							want.applyFilter(filter)
+							for range 4 {
+								gotLines, wantLines := list.Render(width), want.Render(width)
+								if !reflect.DeepEqual(gotLines, wantLines) {
+									t.Fatalf("options=%+v render = %q, want %q", options, gotLines, wantLines)
+								}
+								press(list, "\x1b[B")
+								press(want, "\x1b[B")
+							}
+						}
+					}
+				})
+			}
+		}
 	}
 }
