@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
+	"github.com/OrdalieTech/orb/platforms/native"
 )
 
 type credentialPrintKind string
@@ -366,7 +367,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}
 
 	interaction := aiauth.NewTextInteraction(streams.Stdin, streams.Stdout, streams.Stderr)
-	credential, err := method.Login(ctx, withDeviceID(interaction))
+	credential, err := method.Login(ctx, withDeviceID(stateFromContext(ctx), interaction))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -380,19 +381,22 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 }
 
 // withDeviceID gives login flows this installation's stable device ID, kept in
-// the global settings and created on first use.
-func withDeviceID(interaction aiauth.AuthInteraction) aiauth.AuthInteraction {
-	return deviceIDInteraction{interaction}
+// state's global settings and created on first use.
+func withDeviceID(state *native.State, interaction aiauth.AuthInteraction) aiauth.AuthInteraction {
+	return deviceIDInteraction{interaction, state}
 }
 
-type deviceIDInteraction struct{ aiauth.AuthInteraction }
+type deviceIDInteraction struct {
+	aiauth.AuthInteraction
+	state *native.State
+}
 
-func (deviceIDInteraction) DeviceID() (string, error) {
+func (interaction deviceIDInteraction) DeviceID() (string, error) {
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
 		return "", err
 	}
-	settings, err := config.NewSettingsManager(agentDir, config.WithAgentDir(agentDir))
+	settings, err := interaction.state.Settings(agentDir, agentDir)
 	if err != nil {
 		return "", err
 	}

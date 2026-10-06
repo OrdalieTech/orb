@@ -72,7 +72,7 @@ func runLoginJSON(ctx context.Context, args []string, streams cliStreams) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	interaction := aiauth.NewJSONInteraction(ctx, streams.Stdin, out)
-	credential, err := loginCredential(ctx, registry, provider, authType, interaction)
+	credential, err := loginCredential(ctx, stateFromContext(ctx), registry, provider, authType, interaction)
 	if err == nil {
 		_, err = storage.Modify(ctx, provider, func(*aiauth.Credential) (*aiauth.Credential, error) { return credential, nil })
 	}

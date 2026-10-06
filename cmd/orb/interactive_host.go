@@ -25,6 +25,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
+	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -411,11 +412,11 @@ func authOptions(ctx context.Context, credentials aiauth.CredentialStore, regist
 }
 
 func (host *interactiveSessionHost) loginCredential(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
-	return loginCredential(ctx, host.currentInputs().ModelRegistry, providerID, authType, interaction)
+	return loginCredential(ctx, host.args.native, host.currentInputs().ModelRegistry, providerID, authType, interaction)
 }
 
 // loginCredential runs one provider's sign-in method and returns the credential to store.
-func loginCredential(ctx context.Context, registry *config.ModelRegistry, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
+func loginCredential(ctx context.Context, state *native.State, registry *config.ModelRegistry, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) (*aiauth.Credential, error) {
 	methods := aiauth.ProviderAuth{}
 	known := false
 	if registry != nil {
@@ -433,7 +434,7 @@ func loginCredential(ctx context.Context, registry *config.ModelRegistry, provid
 		if methods.OAuth == nil {
 			return nil, fmt.Errorf("provider %q does not support OAuth login", providerID)
 		}
-		return methods.OAuth.Login(ctx, withDeviceID(interaction))
+		return methods.OAuth.Login(ctx, withDeviceID(state, interaction))
 	case aiauth.AuthTypeAPIKey:
 		login, ok := methods.APIKey.(aiauth.APIKeyLogin)
 		if !ok {
