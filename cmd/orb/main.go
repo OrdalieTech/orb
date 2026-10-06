@@ -27,17 +27,20 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/chat/discord"
-	"github.com/OrdalieTech/orb/chat/googlechat"
-	"github.com/OrdalieTech/orb/chat/messenger"
-	"github.com/OrdalieTech/orb/chat/slack"
-	"github.com/OrdalieTech/orb/chat/teams"
-	"github.com/OrdalieTech/orb/chat/telegram"
-	"github.com/OrdalieTech/orb/chat/whatsapp"
+	// The platforms `orb chat` runs an agent on; each registers itself.
+	_ "github.com/OrdalieTech/orb/chat/buzz"
+	_ "github.com/OrdalieTech/orb/chat/discord"
+	_ "github.com/OrdalieTech/orb/chat/googlechat"
+	_ "github.com/OrdalieTech/orb/chat/messenger"
+	_ "github.com/OrdalieTech/orb/chat/slack"
+	_ "github.com/OrdalieTech/orb/chat/teams"
+	_ "github.com/OrdalieTech/orb/chat/telegram"
+	_ "github.com/OrdalieTech/orb/chat/whatsapp"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/mermaid"
+	"github.com/OrdalieTech/orb/internal/multicall"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
@@ -106,8 +109,8 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "mermaid" {
 		os.Exit(runMermaid(os.Stdin, os.Stdout))
 	}
-	if filepath.Base(os.Args[0]) == "buzz" {
-		os.Exit(runBuzzShim(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	if command := multicall.Lookup(filepath.Base(os.Args[0])); command != nil {
+		os.Exit(command(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
 		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
@@ -825,16 +828,16 @@ func reportCLIError(writer io.Writer, err error) int {
 
 func runChatCommand(ctx context.Context, args []string, streams cliStreams, dependencies cliDependencies) int {
 	if len(args) == 0 || slices.Contains(args, "--help") || slices.Contains(args, "-h") {
-		_, _ = io.WriteString(streams.Stdout, chatHelpText)
+		_, _ = io.WriteString(streams.Stdout, chatHelpText())
 		return 0
 	}
 	tools := false
 	var platforms []string
 	for _, arg := range args {
-		switch arg = strings.ToLower(arg); arg {
-		case "--tools":
+		switch arg = strings.ToLower(arg); {
+		case arg == "--tools":
 			tools = true
-		case "buzz", "telegram", "discord", "slack", "teams", "whatsapp", "messenger", "googlechat":
+		case slices.Contains(chat.PlatformNames(), arg):
 			if !slices.Contains(platforms, arg) {
 				platforms = append(platforms, arg)
 			}
@@ -847,10 +850,14 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	}
 	agents := teamAgent(ctx, dependencies, streams)
 	var fronts []func(context.Context) error
-	if slices.Contains(platforms, "buzz") {
-		fronts = append(fronts, func(ctx context.Context) error { return runBuzz(ctx, agents) })
+	var chats []string
+	for _, name := range platforms {
+		if platform, _ := chat.LookupPlatform(name); platform.Front != nil {
+			fronts = append(fronts, func(ctx context.Context) error { return platform.Front(ctx, agents.serve, streams.Stderr) })
+		} else {
+			chats = append(chats, name)
+		}
 	}
-	chats := slices.DeleteFunc(slices.Clone(platforms), func(platform string) bool { return platform == "buzz" })
 	if len(chats) == 0 {
 		return runFronts(ctx, fronts, streams, nil)
 	}
@@ -869,7 +876,8 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	var adapters []chat.Adapter
 	var ingresses []func(context.Context, func(chat.Message) error) error
 	for _, platform := range chats {
-		adapter, ingress, err := chatAdapter(platform)
+		open, _ := chat.LookupPlatform(platform)
+		adapter, ingress, err := open.Open()
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
@@ -898,125 +906,6 @@ func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
 		}
 		return runtime.Session(), close, nil
 	})
-}
-
-// chatAdapter builds a chat platform's adapter and ingress from its environment.
-func chatAdapter(platform string) (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
-	var adapter chat.Adapter
-	var ingress func(context.Context, func(chat.Message) error) error
-	// ponytail: credentials stay in the process environment; add named account
-	// persistence only when one process needs to switch between accounts.
-	switch platform {
-	case "telegram":
-		token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
-		if token == "" {
-			return nil, nil, errors.New("TELEGRAM_BOT_TOKEN is required")
-		}
-		telegramAdapter, createErr := telegram.New(telegram.Options{Token: token})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = telegramAdapter, telegramAdapter.Poll
-	case "discord":
-		token := strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN"))
-		if token == "" {
-			return nil, nil, errors.New("DISCORD_BOT_TOKEN is required")
-		}
-		discordAdapter, createErr := discord.New(discord.Options{Token: token})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = discordAdapter, discordAdapter.Run
-	case "slack":
-		slackAdapter, createErr := slack.New(slack.Options{
-			Token: os.Getenv("SLACK_BOT_TOKEN"), SigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
-			BotUserID: os.Getenv("SLACK_BOT_USER_ID"),
-		})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = slackAdapter, webhookIngress(platform, slackAdapter.Webhook)
-	case "teams":
-		teamsAdapter, createErr := teams.New(teams.Options{
-			AppID: os.Getenv("TEAMS_APP_ID"), AppPassword: os.Getenv("TEAMS_APP_PASSWORD"),
-			TenantID: os.Getenv("TEAMS_TENANT_ID"),
-		})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = teamsAdapter, webhookIngress(platform, teamsAdapter.Webhook)
-	case "whatsapp":
-		whatsappAdapter, createErr := whatsapp.New(whatsapp.Options{
-			Token: os.Getenv("WHATSAPP_TOKEN"), PhoneNumberID: os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
-			AppSecret: os.Getenv("WHATSAPP_APP_SECRET"), VerifyToken: os.Getenv("WHATSAPP_VERIFY_TOKEN"),
-		})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = whatsappAdapter, webhookIngress(platform, whatsappAdapter.Webhook)
-	case "messenger":
-		messengerAdapter, createErr := messenger.New(messenger.Options{
-			Token: os.Getenv("MESSENGER_TOKEN"), PageID: os.Getenv("MESSENGER_PAGE_ID"),
-			AppSecret: os.Getenv("MESSENGER_APP_SECRET"), VerifyToken: os.Getenv("MESSENGER_VERIFY_TOKEN"),
-		})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = messengerAdapter, webhookIngress(platform, messengerAdapter.Webhook)
-	case "googlechat":
-		credentials, readErr := os.ReadFile(os.Getenv("GOOGLE_CHAT_CREDENTIALS_FILE"))
-		if readErr != nil {
-			return nil, nil, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", readErr)
-		}
-		googleAdapter, createErr := googlechat.New(googlechat.Options{
-			ProjectNumber: os.Getenv("GOOGLE_CHAT_PROJECT_NUMBER"), CredentialsJSON: credentials,
-		})
-		if createErr != nil {
-			return nil, nil, createErr
-		}
-		adapter, ingress = googleAdapter, webhookIngress(platform, googleAdapter.Webhook)
-	}
-	return adapter, ingress, nil
-}
-
-func webhookIngress(
-	platform string,
-	webhook func(func(chat.Message) error) http.Handler,
-) func(context.Context, func(chat.Message) error) error {
-	return func(ctx context.Context, publish func(chat.Message) error) error {
-		listen := strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN"))
-		if listen == "" {
-			listen = "127.0.0.1:8080"
-		}
-		webhookPath := strings.TrimSpace(os.Getenv("ORB_CHAT_PATH"))
-		if webhookPath == "" {
-			webhookPath = "/" + platform
-		}
-		if !strings.HasPrefix(webhookPath, "/") || strings.ContainsAny(webhookPath, "{} \t\r\n") {
-			return errors.New("ORB_CHAT_PATH must be a literal path starting with /")
-		}
-		mux := http.NewServeMux()
-		mux.Handle(webhookPath, webhook(publish))
-		// ponytail: one stdlib webhook server per process; terminate TLS and
-		// multiplex public routes in the deployment's reverse proxy.
-		server := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-		result := make(chan error, 1)
-		go func() { result <- server.ListenAndServe() }()
-		select {
-		case err := <-result:
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return err
-		case <-ctx.Done():
-			shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := server.Shutdown(shutdownContext); err != nil {
-				return err
-			}
-			return ctx.Err()
-		}
-	}
 }
 
 func runLocalChat(
@@ -1130,14 +1019,20 @@ func chatAuthorizer(allowed string) (func(chat.Message) error, error) {
 	}, nil
 }
 
-const chatHelpText = `Usage: orb chat <platform>... [--tools]
+// chatHelpText documents `orb chat` and the platforms linked in.
+func chatHelpText() string {
+	names := chat.PlatformNames()
+	var credentials strings.Builder
+	for _, name := range names {
+		platform, _ := chat.LookupPlatform(name)
+		credentials.WriteString("  " + platform.Help + "\n")
+	}
+	return `Usage: orb chat <platform>... [--tools]
 
 Runs this agent on every platform named, as one process with one memory.
 
-Platforms: buzz, telegram, discord, slack, teams, whatsapp, messenger, googlechat
+Platforms: ` + strings.Join(names, ", ") + `
 
-  buzz     Starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's Buzz identity
-           (BUZZ_PRIVATE_KEY, BUZZ_RELAY_URL, BUZZ_ACP_*) and reaches this agent over ACP.
   --tools  Gives chat conversations the agent's tools in the working directory.
            Only for an agent running isolated, such as one container per agent.
 
@@ -1148,14 +1043,8 @@ Common environment:
   ORB_CHAT_PATH            Webhook path (default /<platform>)
 
 Platform credentials:
-  TELEGRAM_BOT_TOKEN        Telegram bot token
-  DISCORD_BOT_TOKEN         Discord bot token
-  SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_BOT_USER_ID
-  TEAMS_APP_ID, TEAMS_APP_PASSWORD, TEAMS_TENANT_ID
-  WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN
-  MESSENGER_TOKEN, MESSENGER_PAGE_ID, MESSENGER_APP_SECRET, MESSENGER_VERIFY_TOKEN
-  GOOGLE_CHAT_PROJECT_NUMBER, GOOGLE_CHAT_CREDENTIALS_FILE
-`
+` + credentials.String()
+}
 
 const helpText = `orb - AI coding assistant
 

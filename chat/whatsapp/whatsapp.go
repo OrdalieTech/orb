@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
@@ -68,6 +69,19 @@ type Adapter struct {
 }
 
 var _ chat.Adapter = (*Adapter)(nil)
+
+func init() {
+	chat.Register("whatsapp", chat.Platform{Help: "WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+		adapter, err := New(Options{
+			Token: os.Getenv("WHATSAPP_TOKEN"), PhoneNumberID: os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
+			AppSecret: os.Getenv("WHATSAPP_APP_SECRET"), VerifyToken: os.Getenv("WHATSAPP_VERIFY_TOKEN"),
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return adapter, chat.WebhookIngress("whatsapp", adapter.Webhook), nil
+	}})
+}
 
 // New builds the adapter. It refuses to construct without Token,
 // PhoneNumberID, AppSecret, and VerifyToken.

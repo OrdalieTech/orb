@@ -1,6 +1,6 @@
 // Package acp serves the Agent Client Protocol (agentclientprotocol.com):
-// newline-delimited JSON-RPC 2.0 through which a client such as Zed, Buzz's
-// buzz-acp or Buzz Desktop drives any number of Orb sessions in one process.
+// newline-delimited JSON-RPC 2.0 through which a client, an editor or a chat
+// platform's agent harness, drives any number of Orb sessions in one process.
 // An ACP session id is the Orb session id, so a stored session reopens by id.
 package acp
 
@@ -163,8 +163,8 @@ func (s *server) request(method string, params json.RawMessage) (any, error) {
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, invalid("initialize: %v", err)
 		}
-		// Version 2 is Buzz's provisional one: it moves the harness prompt into
-		// session/new's systemPrompt instead of every user message.
+		// Protocol version 2, still provisional, moves a client's harness
+		// prompt into session/new's systemPrompt instead of every user message.
 		s.mu.Lock()
 		s.protocol = min(max(p.ProtocolVersion, 1), 2)
 		s.mu.Unlock()
@@ -445,8 +445,9 @@ func (s *server) prompt(session *live, text string, images []*ai.ImageContent) (
 	return map[string]string{"stopReason": "end_turn"}, nil
 }
 
-// usage reports the session's cumulative usage the way goose and buzz-agent
-// do, which buzz-acp turns into per-turn metrics.
+// usage reports the session's cumulative usage as the unstable
+// _goose/unstable/session/update extension other ACP agents also send, which
+// clients turn into per-turn metrics.
 func (s *server) usage(id string, runtime *agent.AgentSession) {
 	stats := runtime.GetSessionStats()
 	update := map[string]any{

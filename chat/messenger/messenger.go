@@ -23,6 +23,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
@@ -85,6 +86,19 @@ type Adapter struct {
 }
 
 var _ chat.Adapter = (*Adapter)(nil)
+
+func init() {
+	chat.Register("messenger", chat.Platform{Help: "MESSENGER_TOKEN, MESSENGER_PAGE_ID, MESSENGER_APP_SECRET, MESSENGER_VERIFY_TOKEN", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+		adapter, err := New(Options{
+			Token: os.Getenv("MESSENGER_TOKEN"), PageID: os.Getenv("MESSENGER_PAGE_ID"),
+			AppSecret: os.Getenv("MESSENGER_APP_SECRET"), VerifyToken: os.Getenv("MESSENGER_VERIFY_TOKEN"),
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return adapter, chat.WebhookIngress("messenger", adapter.Webhook), nil
+	}})
+}
 
 // New builds the adapter. It refuses to construct without Token, PageID,
 // AppSecret, and VerifyToken.

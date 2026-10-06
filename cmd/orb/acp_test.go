@@ -10,13 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
-	"github.com/OrdalieTech/orb/agent/acp"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -26,7 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
-// acpClient drives `orb --mode acp` over its stdio, as Zed or buzz-acp does.
+// acpClient drives `orb --mode acp` over its stdio, as an editor or a chat platform's ACP client does.
 type acpClient struct {
 	t      *testing.T
 	in     *io.PipeWriter
@@ -145,9 +143,9 @@ func TestACPClientRunsAndReopensAnOrbSession(t *testing.T) {
 		t.Fatalf("initialize = %v", initialized)
 	}
 
-	// Buzz's harness prompt replaces Orb's base prompt, as --system-prompt does.
+	// A client's harness prompt replaces Orb's base prompt, as --system-prompt does.
 	created, _ := client.call("session/new", map[string]any{
-		"cwd": project, "mcpServers": []any{}, "systemPrompt": "BUZZ_BASE: you answer in the team channel.",
+		"cwd": project, "mcpServers": []any{}, "systemPrompt": "CLIENT_BASE: you answer in the team channel.",
 		"_meta": map[string]any{"sessionTitle": "launch planning"},
 	})
 	sessionID, _ := created["result"].(map[string]any)["sessionId"].(string)
@@ -161,7 +159,7 @@ func TestACPClientRunsAndReopensAnOrbSession(t *testing.T) {
 	if result, _ := answered["result"].(map[string]any); result["stopReason"] != "end_turn" {
 		t.Fatalf("prompt = %v", answered)
 	}
-	if strings.Count(systemPrompt, "BUZZ_BASE") != 1 {
+	if strings.Count(systemPrompt, "CLIENT_BASE") != 1 {
 		t.Fatalf("system prompt = %q", systemPrompt)
 	}
 	calls, results := updates(notifications, "tool_call"), updates(notifications, "tool_call_update")
@@ -201,7 +199,7 @@ func TestACPClientRunsAndReopensAnOrbSession(t *testing.T) {
 }
 
 // One agent, two fronts: what a Telegram conversation asks it to remember, its
-// Buzz (ACP) sessions know.
+// ACP sessions know.
 func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	root := t.TempDir()
 	project, agentDir := filepath.Join(root, "workspace"), filepath.Join(root, "agent")
@@ -294,116 +292,58 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	}
 }
 
-// A team agent's tools never see its credentials, yet its shell still posts on
-// Buzz the way Buzz's harness prompt says: `buzz messages send`, and the agent
-// signs its own profile, owner's tag included.
-func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
+// A team agent's tools never see its credentials.
+func TestTeamAgentShellSeesNoSecret(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the fake buzz CLI is a shell script")
+		t.Skip("the shell lists its environment with env")
 	}
 	root := t.TempDir()
-	project, bin := filepath.Join(root, "workspace"), filepath.Join(root, "bin")
-	for _, dir := range []string{project, bin} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+	project := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
 	}
 	t.Chdir(project)
 	t.Setenv("HOME", root)
 	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
-	secrets := map[string]string{
-		"OPENROUTER_API_KEY": "sk-or-secret", "TELEGRAM_BOT_TOKEN": "tg-secret",
-		"BUZZ_PRIVATE_KEY": "nostr-secret", "BUZZ_AUTH_TAG": "auth-tag-secret",
-	}
+	secrets := map[string]string{"OPENROUTER_API_KEY": "sk-or-secret", "TELEGRAM_BOT_TOKEN": "tg-secret", "PLATFORM_PRIVATE_KEY": "platform-secret"}
 	for name, value := range secrets {
 		t.Setenv(name, value)
 	}
-	t.Setenv("BUZZ_ACP_DISPLAY_NAME", "Sales")
-	t.Setenv("ORB_BUZZ_ABOUT", "Answers the sales team")
 	t.Setenv(toolenv.Allow, "")
-	t.Setenv("ORB_BUZZ", "")
-	// The shell's buzz is Orb answering as buzz; the real CLI records its run.
-	shim := "#!/bin/sh\nORB_BUZZ_SHIM_HELPER=1 exec '" + os.Args[0] + "' -test.run='^TestBuzzShimHelper$' -- \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "buzz"), []byte(shim), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	runs, cli := filepath.Join(root, "runs"), filepath.Join(root, "buzz-cli")
-	real := "#!/bin/sh\n{ echo \"args: $*\"; echo \"input: $(cat)\"; env; } > '" + runs + "'.$$\necho '{\"ok\":true}'\n"
-	if err := os.WriteFile(cli, []byte(real), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ORB_BUZZ_CLI", cli)
-
 	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
 	provider.SetResponses([]faux.ResponseStep{
 		faux.AssistantMessage(faux.ToolCall("bash", map[string]any{"command": "env"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
-		faux.AssistantMessage(faux.ToolCall("bash", map[string]any{"command": "printf 'Hello team' | buzz messages send --channel c1 --content -"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
-		faux.AssistantMessage("Posted."),
+		faux.AssistantMessage("Done."),
 	})
 	agents := teamAgent(context.Background(), scriptedRuntime(provider), cliStreams{Stderr: io.Discard})
-	stop, err := serveBuzzCLI(context.Background(), io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
 	stdinReader, stdinWriter := io.Pipe()
 	stdoutReader, stdoutWriter := io.Pipe()
 	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
 	go func() {
-		_ = acp.Serve(context.Background(), stdinReader, stdoutWriter, agents, version)
+		_ = agents.serve(context.Background(), stdinReader, stdoutWriter)
 		_ = stdoutWriter.Close()
 		client.done <- 0
 	}()
 	client.call("initialize", map[string]any{"protocolVersion": 2})
 	created, _ := client.call("session/new", map[string]any{"cwd": project, "mcpServers": []any{}})
 	_, notifications := client.call("session/prompt", map[string]any{
-		"sessionId": created["result"].(map[string]any)["sessionId"], "prompt": []any{map[string]any{"type": "text", "text": "Say hello on Buzz."}},
+		"sessionId": created["result"].(map[string]any)["sessionId"], "prompt": []any{map[string]any{"type": "text", "text": "Show your environment."}},
 	})
 	client.close()
 
 	results := updates(notifications, "tool_call_update")
-	if len(results) != 2 {
+	if len(results) != 1 {
 		t.Fatalf("tool results = %v", results)
 	}
-	output := func(update map[string]any) string {
-		return update["content"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
-	}
-	shell, sent := output(results[0]), output(results[1])
-	if !strings.Contains(shell, "PATH=") || !strings.Contains(sent, `{"ok":true}`) {
-		t.Fatalf("env = %q, buzz = %q", shell, sent)
-	}
-	// The profile is published beside the conversation, so wait for its run.
-	var record string
-	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(record, "set-profile") && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		files, _ := filepath.Glob(runs + ".*")
-		record = ""
-		for _, file := range files {
-			run, _ := os.ReadFile(file)
-			record += string(run)
-		}
+	shell := results[0]["content"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	if !strings.Contains(shell, "PATH=") {
+		t.Fatalf("env = %q", shell)
 	}
 	for name, value := range secrets {
 		if strings.Contains(shell, value) {
 			t.Errorf("the shell saw %s", name)
 		}
-		if leaked := strings.Contains(record, value); leaked != strings.HasPrefix(name, "BUZZ_") {
-			t.Errorf("the buzz CLI holds %s: %t", name, leaked)
-		}
 	}
-	for _, run := range []string{"args: messages send --channel c1 --content -\ninput: Hello team", "args: users set-profile --name Sales --about Answers the sales team\n"} {
-		if !strings.Contains(record, run) {
-			t.Fatalf("the buzz CLI ran with %s", record)
-		}
-	}
-}
-
-func TestBuzzShimHelper(t *testing.T) {
-	if os.Getenv("ORB_BUZZ_SHIM_HELPER") != "1" {
-		return
-	}
-	args := os.Args[slices.Index(os.Args, "--")+1:]
-	os.Exit(runBuzzShim(args, os.Stdin, os.Stdout, os.Stderr))
 }
 
 // One agent, two live conversations: what one saves, the other knows from
@@ -444,7 +384,7 @@ func TestLiveConversationsShareMemoryAsItChanges(t *testing.T) {
 	client := startACP(t, provider)
 	client.call("initialize", map[string]any{"protocolVersion": 2})
 	open := func() string {
-		created, _ := client.call("session/new", map[string]any{"cwd": project, "mcpServers": []any{}, "systemPrompt": "BUZZ_BASE"})
+		created, _ := client.call("session/new", map[string]any{"cwd": project, "mcpServers": []any{}, "systemPrompt": "CLIENT_BASE"})
 		return created["result"].(map[string]any)["sessionId"].(string)
 	}
 	ask := func(session, text string) {

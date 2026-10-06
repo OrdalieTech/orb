@@ -5,6 +5,9 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb chat` platforms register themselves from their own packages, and all of Orb's Buzz code
+  lives in `chat/buzz`; a build without it keeps every other platform. No behaviour change.
+
 ## [0.17.4] - 2026-10-06
 
 A team agent shows on Buzz under its name and in its agent directory.

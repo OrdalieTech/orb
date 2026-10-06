@@ -596,8 +596,8 @@ is native Go; executing package-provided JavaScript requires the D31 Node/Bun ru
 
 ### ACP and team agents
 
-`agent/acp` serves the Agent Client Protocol over newline-delimited JSON-RPC to any client (Zed,
-Buzz Desktop, Buzz's `buzz-acp` harness). It names no CLI type: a `Host` opens sessions, and
+`agent/acp` serves the Agent Client Protocol over newline-delimited JSON-RPC to any client (an
+editor such as Zed, or a chat platform's agent harness such as Buzz's `buzz-acp`). It names no CLI type: a `Host` opens sessions, and
 `cmd/orb` opens each one exactly as the CLI opens its session (settings, plugins, skills, context
 files), adding the client's `mcpServers` and harness prompt. Each session claims its conversation
 separately, so one process holds many; idle ones past eight are disposed and reopen from the store.
@@ -619,6 +619,10 @@ The agent receives its credentials on descriptors: secrets as KEY=VALUE lines (`
 OAuth logins as an open `auth.json` (`ORB_AUTH_FD`), so no path its in-process tools can open holds one.
 
 Without `ORB_ACP_SOCKET` (development), `orb chat buzz` starts buzz-acp itself, as its own user.
+
+`orb chat` knows its platforms only as the `chat.Platform`s their packages register: Telegram's
+adapter, Buzz's front. `chat/buzz` holds the whole Buzz side above, the ACP socket or buzz-acp, the
+buzz socket and the shell's `buzz`, which it registers as an alias with `internal/multicall`.
 
 Tools see only the `ORB_TOOL_ENV` allowlist (`internal/toolenv`). Measured natively (one process,
 eight sessions): the agent 36 MB PSS, the relay 17 MB and buzz-acp 4 MB, against about 650 MB per

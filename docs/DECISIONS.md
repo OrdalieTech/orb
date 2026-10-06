@@ -273,9 +273,10 @@ Each holds until changed by owner-signed decision.
   `session/load` or a prompt to a stored id reopens it. Each session is built as the CLI builds
   one, plus the client's `mcpServers`, declared direct. A harness prompt (`systemPrompt`, `_meta.systemPrompt`, or `{append|replace}`) maps to
   `--system-prompt` and `--append-system-prompt`, as pi-acp maps it. Orb answers protocol version 2
-  when asked, Buzz's provisional version that carries the harness prompt in `session/new` instead
-  of every message. Usage goes out as goose's `_goose/unstable/session/update`, the shape buzz-acp
-  accepts from any agent. No `session/request_permission`: the deployment is the sandbox.
+  when a client asks for it, the provisional revision that carries the harness prompt in
+  `session/new` instead of every message. Usage goes out as the `_goose/unstable/session/update`
+  extension, which clients accept from any agent. No `session/request_permission`: the deployment
+  is the sandbox.
 - **Team agents.** One agent is one process, `orb chat <front>... --tools`: every front drives
   sessions of the same agent dir and store, so identity, memory (the `memory` plugin) and tools are
   shared, and each conversation (a Buzz channel or thread, a Telegram chat) is a session. Buzz stays
@@ -284,6 +285,18 @@ Each holds until changed by owner-signed decision.
   `orb chat connect` relay it runs as its agent command. Its exit ends the agent, so an owner's
   `!shutdown` stays final under the container's restart policy. A Go Nostr front is deferred until
   buzz-acp gets in the way. Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
+- **Chat platforms are packages that register themselves; Buzz is one of them.** Each
+  `chat/<platform>` package registers a `chat.Platform` from `init`: an `Open` that builds its
+  adapter from the environment, for platforms whose messages the chat processor routes (Telegram,
+  Slack and the rest), or a `Front` that drives the agent's sessions itself as an ACP client
+  (Buzz). `cmd/orb` links each with one blank import and names none; a name Orb answers to when
+  started through a link, such as the shell's `buzz`, registers with `internal/multicall`, which
+  `main` consults first. Without `chat/buzz` and its import, Orb builds and every other front
+  works. Coupling kept knowingly: `chat/buzz` gives buzz-acp Orb's generic
+  `orb chat connect <socket>` as its agent command outside the image; the team agent's credential
+  handling (tool allowlist, non-dumpable process, descriptors) stays in `cmd/orb`, since every
+  front needs it though Buzz prompted it; and `platforms/agent` is an image for Buzz and Telegram
+  whose entrypoint knows `BUZZ_*`. Owner, 2026-10-06.
 - **Memory is the agent's; each session is a view of it.** A session's prompt carries the memory
   profile as it stood when the session began, so the prefix stays cacheable. Whatever changed
   since, written by any other session of the agent on any front or process, joins the session at
@@ -304,8 +317,9 @@ Each holds until changed by owner-signed decision.
   socket `ORB_BUZZ` names, and the agent runs the real CLI (`ORB_BUZZ_CLI`) with `BUZZ_PRIVATE_KEY`
   and `BUZZ_AUTH_TAG` added to that child alone; standard input goes along only for a `-`
   argument, since the bash tool feeds its script on the shell's stdin. No model-facing tool, no
-  buzz-dev-mcp (its tools duplicate Orb's). Orb's only other Buzz code is `orb chat buzz`
-  supervising buzz-acp and publishing the agent's profile with that same CLI. Owner, 2026-10-06.
+  buzz-dev-mcp (its tools duplicate Orb's). The rest of Orb's Buzz code, all in `chat/buzz`, is
+  `orb chat buzz` supervising buzz-acp and publishing the agent's profile with that same CLI.
+  Owner, 2026-10-06.
 - **The agent signs its profile; its owner signs its record, on the owner's machine.** Buzz names
   an agent by its kind:0, and its agent directory lists one only when that kind:0 carries a valid
   NIP-OA tag from its owner and the owner has published a kind:30177 record of it (its name and
