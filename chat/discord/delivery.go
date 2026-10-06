@@ -12,6 +12,13 @@ import (
 	"github.com/OrdalieTech/orb/chat/internal/typing"
 )
 
+// Discord renders standard markdown natively, so finalized model output is
+// sent verbatim, split at the content cap in runes.
+//
+// ponytail: chunk boundaries ignore code fences — a >2000-rune fence splits
+// mid-block; accepted ceiling.
+const messageLimit = 2000
+
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound event id
 // ("dc:<channel_id>:<message_id>"); a non-empty resumePreviewID makes
 // Finalize edit that message instead of sending a new one (crash recovery).
@@ -121,7 +128,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 	if strings.TrimSpace(text) == "" {
 		text = "(empty reply)"
 	}
-	chunks := chunkText(text, messageLimit)
+	chunks := runechunk.Split(text, messageLimit)
 	if len(chunks) == 0 {
 		chunks = []string{"(empty reply)"}
 	}
@@ -168,7 +175,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 // threading.
 func (d *delivery) Notify(ctx context.Context, text string) error {
 	d.typing.Stop()
-	for _, chunk := range chunkText(text, messageLimit) {
+	for _, chunk := range runechunk.Split(text, messageLimit) {
 		if _, err := d.createChunk(ctx, chunk, false); err != nil {
 			return err
 		}

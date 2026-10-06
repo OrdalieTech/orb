@@ -10,8 +10,16 @@ import (
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/chat/internal/httpjson"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 	"github.com/OrdalieTech/orb/chat/internal/typing"
 )
+
+// chunkLimit stays under the Send API's 2000-character cap (runes: the API
+// counts characters, not bytes).
+//
+// ponytail: chunk boundaries ignore code fences — a >limit fence splits
+// mid-block; accepted ceiling (same as the WhatsApp adapter).
+const chunkLimit = 1900
 
 type delivery struct {
 	adapter *Adapter
@@ -84,7 +92,7 @@ func (d *delivery) PreviewID() string { return "" }
 // plain text only; strip-to-plain if operators complain about literal **.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
 	d.typing.Stop()
-	chunks := chunkText(text, chunkLimit)
+	chunks := runechunk.Split(text, chunkLimit)
 	if len(chunks) == 0 {
 		chunks = []string{"(empty reply)"}
 	}
@@ -111,7 +119,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 // the user messages again, by design.
 func (d *delivery) Notify(ctx context.Context, text string) error {
 	d.typing.Stop()
-	for _, chunk := range chunkText(text, chunkLimit) {
+	for _, chunk := range runechunk.Split(text, chunkLimit) {
 		if _, err := d.adapter.sendText(ctx, d.psid, chunk, "UPDATE"); err != nil {
 			return err
 		}

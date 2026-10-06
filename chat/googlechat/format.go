@@ -40,28 +40,7 @@ const boldSentinel = "\x00"
 // inline code spans is rewritten too — accepted ceiling, matching the
 // WhatsApp adapter.
 func FormatText(markdown string) string {
-	lines := strings.Split(markdown, "\n")
-	out := make([]string, 0, len(lines))
-	inFence := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if runechunk.IsFence(trimmed, inFence) {
-			inFence = !inFence
-			out = append(out, fenceMarker)
-			continue
-		}
-		if inFence {
-			out = append(out, line)
-			continue
-		}
-		if strings.HasPrefix(trimmed, fenceMarker) {
-			// Inline triple-backtick span with content on the same line:
-			// downgrade to single backticks so no fence dangles.
-			line = strings.ReplaceAll(line, fenceMarker, "`")
-		}
-		out = append(out, formatInline(line))
-	}
-	return strings.Join(out, "\n")
+	return runechunk.FormatFenced(markdown, func(line string) string { return line }, formatInline)
 }
 
 func formatInline(line string) string {

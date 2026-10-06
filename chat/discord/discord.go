@@ -92,10 +92,7 @@ func New(opts Options) (*Adapter, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	httpClient := opts.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
-	}
+	httpClient := httpjson.ClientOr(opts.HTTPClient)
 	account := opts.BotUserID
 	if account == "" {
 		account = accountFromToken(opts.Token)

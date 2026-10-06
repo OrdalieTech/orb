@@ -166,6 +166,31 @@ func TruncateUTF16(s string, limit int) string {
 	return s
 }
 
+// FormatFenced rewrites markdown line by line for platforms that render
+// triple-backtick blocks but would show a fence's language token literally:
+// fence markers become a bare ```, lines inside a fence go through code, and
+// other lines through prose, after an inline ``` span (content on the same
+// line) is downgraded to single backticks so no fence dangles.
+func FormatFenced(markdown string, code, prose func(string) string) string {
+	lines := strings.Split(markdown, "\n")
+	inFence := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case IsFence(trimmed, inFence):
+			inFence = !inFence
+			lines[i] = "```"
+		case inFence:
+			lines[i] = code(line)
+		case strings.HasPrefix(trimmed, "```"):
+			lines[i] = prose(strings.ReplaceAll(line, "```", "`"))
+		default:
+			lines[i] = prose(line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // IsFence reports whether trimmed is a pure code-fence marker: bare ```
 // always, or ``` plus a single language token when opening a fence. Closing
 // fences carry no info string (CommonMark), and any line with more backticks

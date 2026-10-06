@@ -82,10 +82,7 @@ func New(opts Options) (*Adapter, error) {
 	if baseURL == "" {
 		baseURL = "https://graph.facebook.com"
 	}
-	client := opts.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
+	client := httpjson.ClientOr(opts.HTTPClient)
 	return &Adapter{
 		opts:        opts,
 		client:      client,

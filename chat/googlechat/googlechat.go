@@ -146,10 +146,7 @@ func New(opts Options) (*Adapter, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
-	client := opts.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
+	client := httpjson.ClientOr(opts.HTTPClient)
 	return &Adapter{
 		projectNumber: opts.ProjectNumber,
 		baseURL:       strings.TrimRight(opts.BaseURL, "/"),

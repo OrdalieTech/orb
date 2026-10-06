@@ -24,6 +24,15 @@ type Response struct {
 	Body   []byte
 }
 
+// ClientOr returns client, or a client with the adapters' default 30s timeout
+// when it is nil.
+func ClientOr(client *http.Client) *http.Client {
+	if client == nil {
+		return &http.Client{Timeout: 30 * time.Second}
+	}
+	return client
+}
+
 // OK reports a 2xx status.
 func (r *Response) OK() bool { return r.Status >= 200 && r.Status < 300 }
 

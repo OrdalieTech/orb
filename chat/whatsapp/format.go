@@ -2,12 +2,15 @@ package whatsapp
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
-// maxMessageLen is the Cloud API text.body character limit.
+// maxMessageLen is the Cloud API text.body character limit; replies split at
+// it in runes.
+//
+// ponytail: chunk boundaries ignore code fences — a >4096-char fence splits
+// mid-block; accepted ceiling.
 const maxMessageLen = 4096
 
 var (
@@ -28,29 +31,7 @@ var (
 // and single-underscore emphasis pass through unchanged (md italic renders
 // as WhatsApp bold/italic respectively — accepted ceiling).
 func FormatText(markdown string) string {
-	lines := strings.Split(markdown, "\n")
-	out := make([]string, 0, len(lines))
-	inFence := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if runechunk.IsFence(trimmed, inFence) {
-			inFence = !inFence
-			out = append(out, "```")
-			continue
-		}
-		if inFence {
-			out = append(out, line)
-			continue
-		}
-		if strings.HasPrefix(trimmed, "```") {
-			// Inline triple-backtick span with content on the same line
-			// (e.g. "```ls -la``` lists files"): downgrade to single
-			// backticks so no content is lost and no fence dangles.
-			line = strings.ReplaceAll(line, "```", "`")
-		}
-		out = append(out, formatInline(line))
-	}
-	return strings.Join(out, "\n")
+	return runechunk.FormatFenced(markdown, func(line string) string { return line }, formatInline)
 }
 
 func formatInline(line string) string {
@@ -62,17 +43,4 @@ func formatInline(line string) string {
 		line = "*" + match[1] + "*"
 	}
 	return line
-}
-
-// ChunkText splits text into chunks of at most limit characters (runes),
-// preferring paragraph breaks, then line breaks, then spaces, then a hard
-// cut. Empty input yields no chunks.
-//
-// ponytail: chunk boundaries ignore code fences — a >4096-char fence splits
-// mid-block; accepted ceiling.
-func ChunkText(text string, limit int) []string {
-	if limit <= 0 {
-		limit = maxMessageLen
-	}
-	return runechunk.Split(text, limit)
 }

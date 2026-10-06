@@ -38,28 +38,7 @@ const boldMark = "\x00"
 // contents are transformed like normal text, and spaced single asterisks can
 // over-italicize — accepted ceilings.
 func FormatText(markdown string) string {
-	lines := strings.Split(markdown, "\n")
-	out := make([]string, 0, len(lines))
-	inFence := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if runechunk.IsFence(trimmed, inFence) {
-			inFence = !inFence
-			out = append(out, "```")
-			continue
-		}
-		if inFence {
-			out = append(out, escapeText(line))
-			continue
-		}
-		if strings.HasPrefix(trimmed, "```") {
-			// Inline triple-backtick span with content on the same line:
-			// downgrade to single backticks so no fence dangles.
-			line = strings.ReplaceAll(line, "```", "`")
-		}
-		out = append(out, formatLine(line))
-	}
-	return strings.Join(out, "\n")
+	return runechunk.FormatFenced(markdown, escapeText, formatLine)
 }
 
 var mrkdwnEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")

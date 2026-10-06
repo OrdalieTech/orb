@@ -10,6 +10,7 @@ import (
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/chat/internal/httpjson"
+	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
 // delivery is one turn's output surface. chat.Delivery calls are serialized
@@ -68,7 +69,7 @@ func (d *delivery) PreviewID() string { return "" }
 // Chunks already sent are skipped on retry (the processor re-invokes Finalize
 // with the same text), so a failure mid-way never duplicates earlier chunks.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
-	chunks := ChunkText(FormatText(text), maxMessageLen)
+	chunks := runechunk.Split(FormatText(text), maxMessageLen)
 	if len(chunks) == 0 {
 		chunks = []string{"(empty reply)"}
 	}
@@ -95,7 +96,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 // Notify sends a small out-of-band notice as plain text (no markdown
 // conversion, no reply context).
 func (d *delivery) Notify(ctx context.Context, text string) error {
-	for _, chunk := range ChunkText(text, maxMessageLen) {
+	for _, chunk := range runechunk.Split(text, maxMessageLen) {
 		if _, err := d.adapter.sendText(ctx, d.to, chunk, ""); err != nil {
 			return err
 		}
