@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
@@ -65,12 +66,7 @@ func DefaultSessionDirPath(cwd, agentDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	encoded := resolvedCWD
-	if strings.HasPrefix(encoded, "/") || strings.HasPrefix(encoded, "\\") {
-		encoded = encoded[1:]
-	}
-	encoded = strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(encoded)
-	return filepath.Join(resolvedAgentDir, "sessions", "--"+encoded+"--"), nil
+	return filepath.Join(resolvedAgentDir, "sessions", harness.SessionDirName(resolvedCWD)), nil
 }
 
 // DefaultSessionDir computes and creates the cwd-specific directory.

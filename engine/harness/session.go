@@ -70,7 +70,7 @@ func (session *Session) appendEntry(entry SessionTreeEntry) (string, error) {
 			return "", err
 		}
 	}
-	entry.Timestamp = formatHarnessTimestamp(time.Now())
+	entry.Timestamp = FormatTimestamp(time.Now())
 	entry.raw = nil
 	if err := session.storage.AppendEntry(entry); err != nil {
 		return "", err
@@ -191,7 +191,7 @@ func (session *Session) AppendLabel(targetID string, label *string) (string, err
 
 func (session *Session) AppendName(name string) (string, error) {
 	entry := SessionTreeEntry{Type: "session_info"}
-	entry.Name = sanitizeHarnessSessionName(name)
+	entry.Name = SanitizeSessionName(name)
 	return session.appendEntry(entry)
 }
 
@@ -232,7 +232,8 @@ func (session *Session) MoveTo(entryID *string, summary *BranchSummary) (string,
 	return session.appendEntry(entry)
 }
 
-func sanitizeHarnessSessionName(name string) string {
+// SanitizeSessionName folds each run of line breaks into one space and trims.
+func SanitizeSessionName(name string) string {
 	var output strings.Builder
 	output.Grow(len(name))
 	inBreak := false

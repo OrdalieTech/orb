@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
 
 type Clock func() time.Time
@@ -174,7 +175,7 @@ func AssertValidSessionID(id string) error {
 func defaultManagerOptions() managerOptions {
 	return managerOptions{
 		clock:              time.Now,
-		sessionIDGenerator: randomUUIDv7,
+		sessionIDGenerator: uuidv7.Generate,
 		entryIDGenerator:   randomEntryCandidate,
 	}
 }
@@ -458,7 +459,7 @@ func (manager *SessionManager) newSessionLocked(options *NewSessionOptions) (str
 			return "", err
 		}
 	}
-	timestamp := formatTimestamp(now)
+	timestamp := harness.FormatTimestamp(now)
 	version := CurrentVersion
 	header := newHeaderRecord(SessionHeader{
 		Type:          "session",
@@ -478,8 +479,7 @@ func (manager *SessionManager) newSessionLocked(options *NewSessionOptions) (str
 	manager.generation++
 	manager.flushed = false
 	if manager.persist {
-		filenameTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
-		manager.sessionFile = filepath.Join(manager.sessionDir, filenameTimestamp+"_"+manager.sessionID+".jsonl")
+		manager.sessionFile = filepath.Join(manager.sessionDir, harness.SessionFileName(timestamp, manager.sessionID))
 	} else {
 		manager.sessionFile = ""
 	}
@@ -491,30 +491,6 @@ func parentSession(options *NewSessionOptions) *string {
 		return nil
 	}
 	return options.ParentSession
-}
-
-func formatTimestamp(value time.Time) string {
-	value = value.UTC()
-	year, month, day := value.Date()
-	if year < 0 || year > 9999 {
-		return value.Format("2006-01-02T15:04:05.000Z07:00")
-	}
-	// The layout written out, which Format would parse on every entry.
-	hour, minute, second := value.Clock()
-	digits := func(dst []byte, value, width int) []byte {
-		for divisor := []int{1, 10, 100, 1000}[width-1]; divisor > 0; divisor /= 10 {
-			dst = append(dst, byte('0'+value/divisor%10))
-		}
-		return dst
-	}
-	stamp := make([]byte, 0, 24)
-	stamp = append(digits(stamp, year, 4), '-')
-	stamp = append(digits(stamp, int(month), 2), '-')
-	stamp = append(digits(stamp, day, 2), 'T')
-	stamp = append(digits(stamp, hour, 2), ':')
-	stamp = append(digits(stamp, minute, 2), ':')
-	stamp = append(digits(stamp, second, 2), '.')
-	return string(append(digits(stamp, value.Nanosecond()/1e6, 3), 'Z'))
 }
 
 func (manager *SessionManager) buildIndexLocked() {
@@ -687,7 +663,7 @@ func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, er
 				return "", err
 			}
 		}
-		harnessEntry.Timestamp = formatTimestamp(manager.clock())
+		harnessEntry.Timestamp = harness.FormatTimestamp(manager.clock())
 		if err := manager.harnessStorage.AppendEntry(harnessEntry); err != nil {
 			return "", err
 		}
@@ -728,7 +704,7 @@ func (manager *SessionManager) newEntryBaseLocked(entryType string) (SessionEntr
 		Type:      entryType,
 		ID:        id,
 		ParentID:  cloneString(manager.leafID),
-		Timestamp: formatTimestamp(manager.clock()),
+		Timestamp: harness.FormatTimestamp(manager.clock()),
 	}, nil
 }
 
@@ -907,7 +883,7 @@ func (manager *SessionManager) AppendSessionInfo(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	entry.Name = sanitizeSessionName(name)
+	entry.Name = harness.SanitizeSessionName(name)
 	return manager.appendEntryLocked(entry)
 }
 

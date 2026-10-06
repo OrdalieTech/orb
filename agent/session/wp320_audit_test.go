@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/OrdalieTech/orb/engine/harness"
 )
 
 func TestCreateBranchedSessionRechainsAndRecreatesResolvedLabelsInOrder(t *testing.T) {
@@ -113,7 +115,7 @@ func TestCreateBranchedSessionRechainsAndRecreatesResolvedLabelsInOrder(t *testi
 		t.Fatal("label outside retained path survived")
 	}
 	header := manager.GetHeader()
-	if header == nil || header.ID != "branched" || header.Timestamp != formatTimestamp(start.Add(10*time.Second)) || header.ParentSession != nil {
+	if header == nil || header.ID != "branched" || header.Timestamp != harness.FormatTimestamp(start.Add(10*time.Second)) || header.ParentSession != nil {
 		t.Fatalf("branched header = %+v", header)
 	}
 }

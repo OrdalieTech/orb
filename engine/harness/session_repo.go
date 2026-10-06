@@ -65,7 +65,13 @@ func (repo *JSONLSessionRepo) sessionsRoot(ctx context.Context) (string, error) 
 	return root, nil
 }
 
-func encodeHarnessCWD(cwd string) string {
+// SessionFileName is the file name of a session created at createdAt.
+func SessionFileName(createdAt, id string) string {
+	return strings.NewReplacer(":", "-", ".", "-").Replace(createdAt) + "_" + id + ".jsonl"
+}
+
+// SessionDirName is the directory name of the sessions run in cwd.
+func SessionDirName(cwd string) string {
 	if strings.HasPrefix(cwd, "/") || strings.HasPrefix(cwd, "\\") {
 		cwd = cwd[1:]
 	}
@@ -78,7 +84,7 @@ func (repo *JSONLSessionRepo) sessionDir(ctx context.Context, cwd string) (strin
 	if err != nil {
 		return "", err
 	}
-	path, err := repo.FS.JoinPath(ctx, root, encodeHarnessCWD(cwd))
+	path, err := repo.FS.JoinPath(ctx, root, SessionDirName(cwd))
 	if err != nil {
 		return "", fileSystemSessionError(err, "Failed to resolve session directory for %s", cwd)
 	}
@@ -94,7 +100,7 @@ func (repo *JSONLSessionRepo) Create(ctx context.Context, options SessionCreateO
 			return nil, err
 		}
 	}
-	createdAt := formatHarnessTimestamp(time.Now())
+	createdAt := FormatTimestamp(time.Now())
 	dir, err := repo.sessionDir(ctx, options.CWD)
 	if err != nil {
 		return nil, err
@@ -102,8 +108,7 @@ func (repo *JSONLSessionRepo) Create(ctx context.Context, options SessionCreateO
 	if err := repo.FS.CreateDir(ctx, dir, true); err != nil {
 		return nil, fileSystemSessionError(err, "Failed to create session directory %s", dir)
 	}
-	name := strings.NewReplacer(":", "-", ".", "-").Replace(createdAt) + "_" + id + ".jsonl"
-	path, err := repo.FS.JoinPath(ctx, dir, name)
+	path, err := repo.FS.JoinPath(ctx, dir, SessionFileName(createdAt, id))
 	if err != nil {
 		return nil, fileSystemSessionError(err, "Failed to resolve session file path for %s", id)
 	}
@@ -196,7 +201,7 @@ func (repo *JSONLSessionRepo) newRuntimeSession(ctx context.Context, path, cwd s
 	if err != nil {
 		return nil, err
 	}
-	metadata := SessionMetadata{ID: id, CreatedAt: formatHarnessTimestamp(time.Now()), CWD: cwd, Path: path}
+	metadata := SessionMetadata{ID: id, CreatedAt: FormatTimestamp(time.Now()), CWD: cwd, Path: path}
 	if err := validateHarnessMetadata(metadata); err != nil {
 		return nil, err
 	}
@@ -423,8 +428,7 @@ func (repo *JSONLSessionRepo) ImportJSONL(ctx context.Context, content []byte) (
 	if err != nil {
 		return nil, err
 	}
-	name := strings.NewReplacer(":", "-", ".", "-").Replace(metadata.CreatedAt) + "_" + metadata.ID + ".jsonl"
-	path, err := repo.FS.JoinPath(ctx, dir, name)
+	path, err := repo.FS.JoinPath(ctx, dir, SessionFileName(metadata.CreatedAt, metadata.ID))
 	if err != nil {
 		return nil, fileSystemSessionError(err, "Failed to resolve session file path for %s", metadata.ID)
 	}

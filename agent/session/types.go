@@ -3,11 +3,9 @@ package session
 import (
 	"encoding/json"
 	"slices"
-	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
-	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
 const CurrentVersion = 3
@@ -380,22 +378,4 @@ func cloneSessionUsage(usage *ai.Usage) *ai.Usage {
 		copy.CacheWrite1h = &value
 	}
 	return &copy
-}
-
-func sanitizeSessionName(name string) string {
-	var output strings.Builder
-	output.Grow(len(name))
-	inBreak := false
-	for _, character := range name {
-		if character == '\r' || character == '\n' {
-			if !inBreak {
-				output.WriteByte(' ')
-				inBreak = true
-			}
-			continue
-		}
-		inBreak = false
-		output.WriteRune(character)
-	}
-	return strings.TrimFunc(output.String(), jstrim.IsSpace)
 }

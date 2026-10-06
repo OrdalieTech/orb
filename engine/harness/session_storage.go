@@ -302,7 +302,7 @@ func (storage *InMemorySessionStorage) setLeafLocked(leafID *string) error {
 	}
 	storage.state.append(SessionTreeEntry{
 		Type: "leaf", ID: id, ParentID: clonePointer(storage.state.leafID),
-		Timestamp: formatHarnessTimestamp(time.Now()), TargetID: clonePointer(leafID), HasTargetID: true,
+		Timestamp: FormatTimestamp(time.Now()), TargetID: clonePointer(leafID), HasTargetID: true,
 	})
 	return nil
 }
@@ -536,7 +536,7 @@ func (storage *JSONLSessionStorage) SetLeafID(leafID *string) error {
 	}
 	return storage.appendLockedWithLabel(SessionTreeEntry{
 		Type: "leaf", ID: id, ParentID: clonePointer(storage.state.leafID),
-		Timestamp: formatHarnessTimestamp(time.Now()), TargetID: clonePointer(leafID), HasTargetID: true,
+		Timestamp: FormatTimestamp(time.Now()), TargetID: clonePointer(leafID), HasTargetID: true,
 	}, "session leaf")
 }
 

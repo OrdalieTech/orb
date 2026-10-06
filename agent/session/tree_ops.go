@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
@@ -67,7 +67,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 	if err != nil {
 		return "", err
 	}
-	timestamp := formatTimestamp(now)
+	timestamp := harness.FormatTimestamp(now)
 	version := CurrentVersion
 	var parentSession *string
 	if manager.persist {
@@ -109,8 +109,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 	manager.fileEntries = append(manager.fileEntries, labelRecords...)
 	manager.sessionID = newSessionID
 	if manager.persist {
-		filenameTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
-		manager.sessionFile = filepath.Join(manager.sessionDir, filenameTimestamp+"_"+newSessionID+".jsonl")
+		manager.sessionFile = filepath.Join(manager.sessionDir, harness.SessionFileName(timestamp, newSessionID))
 	} else {
 		manager.sessionFile = ""
 	}
@@ -246,9 +245,8 @@ func ForkFrom(sourcePath, targetCWD, sessionDir string, options ...Option) (*Ses
 			return nil, err
 		}
 	}
-	timestamp := formatTimestamp(now)
-	filenameTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
-	newSessionFile := filepath.Join(sessionDir, filenameTimestamp+"_"+newSessionID+".jsonl")
+	timestamp := harness.FormatTimestamp(now)
+	newSessionFile := filepath.Join(sessionDir, harness.SessionFileName(timestamp, newSessionID))
 	version := CurrentVersion
 	parent := resolvedSource
 	entries := []*FileEntry{newHeaderRecord(SessionHeader{

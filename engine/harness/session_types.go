@@ -53,8 +53,29 @@ func newSessionError(code SessionErrorCode, format string, arguments ...any) *Se
 	return &SessionError{Code: code, Err: fmt.Errorf(format, arguments...)}
 }
 
-func formatHarnessTimestamp(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
+// FormatTimestamp writes value as Date.toISOString does.
+func FormatTimestamp(value time.Time) string {
+	value = value.UTC()
+	year, month, day := value.Date()
+	if year < 0 || year > 9999 {
+		return value.Format("2006-01-02T15:04:05.000Z07:00")
+	}
+	// The layout written out, which Format would parse on every entry.
+	hour, minute, second := value.Clock()
+	digits := func(dst []byte, value, width int) []byte {
+		for divisor := []int{1, 10, 100, 1000}[width-1]; divisor > 0; divisor /= 10 {
+			dst = append(dst, byte('0'+value/divisor%10))
+		}
+		return dst
+	}
+	stamp := make([]byte, 0, 24)
+	stamp = append(digits(stamp, year, 4), '-')
+	stamp = append(digits(stamp, int(month), 2), '-')
+	stamp = append(digits(stamp, day, 2), 'T')
+	stamp = append(digits(stamp, hour, 2), ':')
+	stamp = append(digits(stamp, minute, 2), ':')
+	stamp = append(digits(stamp, second, 2), '.')
+	return string(append(digits(stamp, value.Nanosecond()/1e6, 3), 'Z'))
 }
 
 // SessionMetadata is shared by memory and JSONL repositories. JSONL-only
