@@ -34,9 +34,12 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	errorsSeen := make(chan extensions.ExtensionError, 2)
 	callbackSignalContext, cancelCallbackSignal := context.WithCancel(context.Background())
 	defer cancelCallbackSignal()
-	var allToolReads atomic.Int32
+	// readsAtMessage is allToolReads as the last message is sent: the action's
+	// own state refresh follows it.
+	var allToolReads, readsAtMessage atomic.Int32
 	actions := extensions.Actions{
 		SendUserMessage: func(_ context.Context, content ai.UserContent, _ *extensions.SendUserMessageOptions) error {
+			readsAtMessage.Store(allToolReads.Load())
 			if content.Text == nil {
 				messages <- "non-text-user-message"
 				return nil
@@ -189,6 +192,11 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	readonlyAuth := runner.Command("state-auth-readonly")
 	if readonlyAuth == nil {
 		t.Fatal("state-auth-readonly command was not registered")
+	}
+	// The last message's action refreshes the state after the message lands;
+	// let it finish so it is not counted against the readonly sequence.
+	for deadline := time.Now().Add(5 * time.Second); allToolReads.Load() <= readsAtMessage.Load() && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
 	}
 	readsBefore := allToolReads.Load()
 	if err := readonlyAuth.Handler(context.Background(), "", runner.CreateCommandContext()); err != nil {
