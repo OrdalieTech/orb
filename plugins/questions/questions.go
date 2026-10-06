@@ -12,6 +12,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -160,31 +161,25 @@ func Extension() extensions.Factory {
 	return func(api extensions.API) error {
 		api.RegisterTool(extensions.ToolDefinition{Name: ToolName, Label: "Question", Description: "Ask the user for missing information or a choice. Offer concise options with descriptions, or omit options for free text. The user can always write their own answer. Do not use this tool to bypass action permissions.", Parameters: schema, ExecutionMode: engine.ToolExecutionSequential,
 			Execute: func(ctx context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
-				raw, err := json.Marshal(args)
-				if err != nil {
-					return engine.AgentToolResult{}, err
-				}
 				var request Request
-				if err = json.Unmarshal(raw, &request); err != nil {
+				if err := toolutil.Decode(args, &request); err != nil {
 					return engine.AgentToolResult{}, err
 				}
 				result, err := Ask(ctx, request, extensions.InputHandlerFromContext(ctx))
 				if err != nil {
 					return engine.AgentToolResult{}, err
 				}
-				raw, err = json.Marshal(result)
+				raw, err := json.Marshal(result)
 				return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: string(raw)}}, Details: result}, err
 			},
 			RenderCall: func(args any, theme extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
-				raw, _ := json.Marshal(args)
 				var request Request
-				_ = json.Unmarshal(raw, &request)
+				_ = toolutil.Decode(args, &request)
 				return tui.NewText(theme.FG("toolTitle", request.Summary()), 0, 0, nil)
 			},
 			RenderResult: func(result engine.AgentToolResult, _ extensions.ToolRenderResultOptions, _ extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
-				raw, _ := json.Marshal(result.Details)
 				var answers Result
-				if json.Unmarshal(raw, &answers) != nil {
+				if toolutil.Decode(result.Details, &answers) != nil {
 					return tui.NewText(ai.ContentText(result.Content), 0, 0, nil)
 				}
 				if answers.Cancelled {

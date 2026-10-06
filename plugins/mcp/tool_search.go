@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 )
 
 // ToolSearchName is the tool that loads deferred tools, such as MCP servers'.
@@ -40,8 +41,7 @@ func ToolSearchExtension() extensions.Factory {
 					Query string   `json:"query"`
 					Limit *float64 `json:"limit"`
 				}
-				data, _ := json.Marshal(args)
-				_ = json.Unmarshal(data, &input)
+				_ = toolutil.Decode(args, &input)
 				if strings.TrimSpace(input.Query) == "" {
 					return engine.AgentToolResult{}, errors.New("query must not be empty")
 				}
