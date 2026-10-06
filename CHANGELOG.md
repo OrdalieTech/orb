@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.4] - 2026-10-06
+
+A team agent shows on Buzz under its name and in its agent directory.
+
 - A team agent shows on Buzz under its name and in Buzz's agent directory: `orb chat buzz`
   publishes its profile at start (`BUZZ_ACP_DISPLAY_NAME`, `ORB_BUZZ_ABOUT`, `ORB_BUZZ_AVATAR`)
   signed with its owner's tag, and `platforms/agent/buzz-owner.py`, which replaces
