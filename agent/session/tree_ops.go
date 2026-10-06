@@ -59,7 +59,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 		}
 		pathRecords = append(pathRecords, record)
 		pathIDs[entry.ID] = struct{}{}
-		parentID = cloneString(&entry.ID)
+		parentID = clonePointer(&entry.ID)
 	}
 
 	now := manager.clock()
@@ -71,7 +71,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 	version := CurrentVersion
 	var parentSession *string
 	if manager.persist {
-		parentSession = cloneString(&previousSessionFile)
+		parentSession = clonePointer(&previousSessionFile)
 	}
 	header := newHeaderRecord(SessionHeader{
 		Type:          "session",
@@ -96,7 +96,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 		labelRecord := newEntryRecord(SessionEntry{
 			Type:      "label",
 			ID:        labelID,
-			ParentID:  cloneString(parentID),
+			ParentID:  clonePointer(parentID),
 			Timestamp: label.timestamp,
 			TargetID:  label.targetID,
 			Label:     &labelValue,

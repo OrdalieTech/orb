@@ -2,7 +2,6 @@ package session
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -91,19 +90,12 @@ func readSessionHeader(path string) *SessionHeader {
 			if entry.Type != "session" || entry.Header == nil {
 				return nil
 			}
-			rawID, ok := entry.object.Get("id")
-			if !ok {
-				return nil
-			}
-			if _, valid := decodeString(rawID); !valid {
+			if _, valid := stringMember(entry.object, "id"); !valid {
 				return nil
 			}
 			return entry.Header
 		}
 		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				return nil
-			}
 			return nil
 		}
 	}

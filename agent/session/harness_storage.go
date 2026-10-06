@@ -163,7 +163,7 @@ func (manager *SessionManager) refreshHarnessLocked() error {
 	if err != nil {
 		return err
 	}
-	manager.leafID = cloneString(leaf)
+	manager.leafID = clonePointer(leaf)
 	if len(entries) > 0 {
 		manager.revision++
 	}
@@ -183,7 +183,7 @@ func (manager *SessionManager) harnessHeaderLocked() *FileEntry {
 	return newHeaderRecord(SessionHeader{
 		Type: "session", Version: harnessSessionVersion(manager.harnessStorage), ID: metadata.ID,
 		Timestamp: metadata.CreatedAt, CWD: cmp.Or(metadata.CWD, manager.cwd),
-		ParentSession: cloneString(metadata.ParentSessionPath), Metadata: cloneRaw(metadata.Metadata),
+		ParentSession: clonePointer(metadata.ParentSessionPath), Metadata: cloneRaw(metadata.Metadata),
 	})
 }
 
@@ -206,14 +206,14 @@ func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 		targetID = *entry.TargetID
 	}
 	return SessionEntry{
-		Type: entry.Type, ID: entry.ID, ParentID: cloneString(entry.ParentID), Timestamp: entry.Timestamp,
+		Type: entry.Type, ID: entry.ID, ParentID: clonePointer(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: cloneRaw(entry.Message), ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
 		ModelID: entry.ModelID, ActiveToolNames: slices.Clone(entry.ActiveToolNames),
 		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
-		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: cloneBool(entry.FromHook), FromID: entry.FromID,
+		Details: cloneRaw(entry.Details), Usage: cloneSessionUsage(entry.Usage), FromHook: clonePointer(entry.FromHook), FromID: entry.FromID,
 		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),
-		Display: entry.Display, TargetID: targetID, LeafTargetID: cloneString(entry.TargetID),
-		Label: cloneString(entry.Label), Name: entry.Name, Replacement: cloneRaw(entry.Replacement),
+		Display: entry.Display, TargetID: targetID, LeafTargetID: clonePointer(entry.TargetID),
+		Label: clonePointer(entry.Label), Name: entry.Name, Replacement: cloneRaw(entry.Replacement),
 	}
 }
 
@@ -239,14 +239,6 @@ func harnessEntryFromSession(entry SessionEntry) harness.SessionTreeEntry {
 		Display: entry.Display, TargetID: targetID, HasTargetID: entry.Type == "leaf" || entry.Type == "label" || entry.Type == "context_edit",
 		Label: entry.Label, Name: entry.Name, Replacement: entry.Replacement,
 	}
-}
-
-func cloneBool(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }
 
 func (manager *SessionManager) harnessJSONLLocked() ([]byte, error) {

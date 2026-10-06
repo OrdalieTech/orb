@@ -119,7 +119,7 @@ type contextProjection struct {
 
 func buildContextProjection(entries []SessionEntry, leafID *string) contextProjection {
 	path := buildSessionPath(entries, leafID)
-	projection := contextProjection{context: SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}, leaf: cloneString(leafID)}
+	projection := contextProjection{context: SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}, leaf: clonePointer(leafID)}
 	for index := range path {
 		projection.addFields(&path[index])
 	}

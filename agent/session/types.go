@@ -119,7 +119,7 @@ func (entry SessionEntry) MarshalJSON() ([]byte, error) {
 // a parentId override in upstream JSONL branch export.
 func (entry SessionEntry) MarshalJSONWithParent(parentID *string) ([]byte, error) {
 	if entry.object == nil {
-		entry.ParentID = cloneString(parentID)
+		entry.ParentID = clonePointer(parentID)
 		return entry.MarshalJSON()
 	}
 	object := slices.Clone(*entry.object)

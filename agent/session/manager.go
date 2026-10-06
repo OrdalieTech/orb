@@ -702,17 +702,16 @@ func (manager *SessionManager) newEntryBaseLocked(entryType string) (SessionEntr
 	return SessionEntry{
 		Type:      entryType,
 		ID:        id,
-		ParentID:  cloneString(manager.leafID),
+		ParentID:  clonePointer(manager.leafID),
 		Timestamp: harness.FormatTimestamp(manager.clock()),
 	}, nil
 }
 
-func cloneString(value *string) *string {
+func clonePointer[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	return new(*value)
 }
 
 func (manager *SessionManager) AppendMessage(message any) (string, error) {
@@ -962,7 +961,7 @@ func (manager *SessionManager) AppendLabelChange(targetID string, label *string)
 		return "", err
 	}
 	entry.TargetID = targetID
-	entry.Label = cloneString(label)
+	entry.Label = clonePointer(label)
 	id, err := manager.appendEntryLocked(entry)
 	if err != nil {
 		return "", err
@@ -1035,7 +1034,7 @@ func (manager *SessionManager) GetLeafID() *string {
 	if !fresh {
 		return nil
 	}
-	return cloneString(manager.leafID)
+	return clonePointer(manager.leafID)
 }
 
 func (manager *SessionManager) GetLeafEntry() *SessionEntry {
@@ -1058,9 +1057,9 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 		return nil
 	}
 	copy := *entry
-	copy.ParentID = cloneString(entry.ParentID)
-	copy.LeafTargetID = cloneString(entry.LeafTargetID)
-	copy.Label = cloneString(entry.Label)
+	copy.ParentID = clonePointer(entry.ParentID)
+	copy.LeafTargetID = clonePointer(entry.LeafTargetID)
+	copy.Label = clonePointer(entry.Label)
 	copy.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
 	copy.Message = cloneRaw(entry.Message)
 	copy.Details = cloneRaw(entry.Details)
@@ -1121,7 +1120,7 @@ func (manager *SessionManager) GetHeader() *SessionHeader {
 	for _, entry := range manager.fileEntries {
 		if entry != nil && entry.Header != nil && entry.Type == "session" {
 			copy := *entry.Header
-			copy.ParentSession = cloneString(entry.Header.ParentSession)
+			copy.ParentSession = clonePointer(entry.Header.ParentSession)
 			copy.Metadata = cloneRaw(entry.Header.Metadata)
 			return &copy
 		}
@@ -1315,14 +1314,14 @@ func (manager *SessionManager) BranchWithSummary(
 				return "", fmt.Errorf("Entry %s not found", *branchFromID) //nolint:staticcheck // Upstream error capitalization is observable.
 			}
 		}
-		manager.leafID = cloneString(branchFromID)
+		manager.leafID = clonePointer(branchFromID)
 	}
 	manager.revision++
 	entry, err := manager.newEntryBaseLocked("branch_summary")
 	if err != nil {
 		return "", err
 	}
-	entry.ParentID = cloneString(branchFromID)
+	entry.ParentID = clonePointer(branchFromID)
 	entry.FromID = fromID
 	entry.Summary = summary
 	if err := applyOptionalEntryFields(&entry, options); err != nil {
