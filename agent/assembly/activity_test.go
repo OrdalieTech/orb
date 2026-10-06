@@ -22,8 +22,11 @@ func (h *activityHost) Invalidate() { h.redraws.Add(1) }
 func testActivityView(t *testing.T, count int) (*activity.Store, *activityView) {
 	t.Helper()
 	store := activity.NewStore("session")
+	// Distinct start times keep the order the records were made in: a clock
+	// as coarse as Windows' would tie them, and ties sort by source.
+	started := time.Now().Add(-time.Minute)
 	for i := range count {
-		store.Apply(activity.Record{SessionID: "session", Source: []string{"Claude", "Codex", "Orb"}[i%3], ID: fmt.Sprint(i), Kind: activity.Agent, Title: "Trace external source viewer", State: activity.Running, Sequence: 1, Started: time.Now().Add(-time.Minute)})
+		store.Apply(activity.Record{SessionID: "session", Source: []string{"Claude", "Codex", "Orb"}[i%3], ID: fmt.Sprint(i), Kind: activity.Agent, Title: "Trace external source viewer", State: activity.Running, Sequence: 1, Started: started.Add(time.Duration(i) * time.Millisecond)})
 	}
 	view := newActivityView(store, &activityHost{}, nil).(*activityView)
 	t.Cleanup(view.Dispose)
