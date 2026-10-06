@@ -420,10 +420,10 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := other.bindSession(manager); err == nil {
+	if err := other.BindSession(manager); err == nil {
 		t.Fatal("second process owner accepted")
 	}
-	if _, err := other.deleteSession(id); err == nil {
+	if err := other.DeleteSession(id); err == nil {
 		t.Fatal("deleted an owned session")
 	}
 	_ = other.Close()
@@ -435,17 +435,17 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	if err := state.DB.Backup(ctx, backup); err != nil {
 		t.Fatal(err)
 	}
-	forked, err := state.sessions().Fork(ctx, harness.SessionMetadata{ID: id}, harness.SessionForkOptions{SessionCreateOptions: harness.SessionCreateOptions{CWD: cwd}, Position: harness.ForkAt})
+	forked, err := state.Sessions().Fork(ctx, harness.SessionMetadata{ID: id}, harness.SessionForkOptions{SessionCreateOptions: harness.SessionCreateOptions{CWD: cwd}, Position: harness.ForkAt})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.sessions().Delete(ctx, harness.SessionMetadata{ID: id}); err != nil {
+	if err := state.Sessions().Delete(ctx, harness.SessionMetadata{ID: id}); err != nil {
 		t.Fatal(err)
 	}
 	if count, err := state.DB.RestoreSessions(ctx, backup, "personal"); err != nil || count != 1 {
 		t.Fatalf("restore: %d %v", count, err)
 	}
-	if _, err := state.sessions().Open(ctx, forked.Metadata()); err != nil {
+	if _, err := state.Sessions().Open(ctx, forked.Metadata()); err != nil {
 		t.Fatal("restore removed newer conversation", err)
 	}
 	if err = state.Close(); err != nil {
@@ -550,7 +550,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := state.auth(agentDir)
+	credentials, err := state.Auth(agentDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +560,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	}
 	bounded, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	if _, err = state.accounts(agentDir, credentials).Add(bounded, "test", "default again", credential); err != nil {
+	if _, err = state.Accounts(agentDir, credentials).Add(bounded, "test", "default again", credential); err != nil {
 		t.Fatal("nested credential transaction", err)
 	}
 	preferences := filepath.Join(root, "exported-settings.json")
@@ -574,7 +574,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if runNativeCLI(ctx, []string{"storage", "config", "import", "settings.json", preferences}, streams) != 0 {
 		t.Fatal("configuration import failed")
 	}
-	settings, err := state.settings(root, agentDir)
+	settings, err := state.Settings(root, agentDir)
 	if err != nil || settings.GetTheme() != "light" {
 		t.Fatal("configuration import not authoritative", err)
 	}
@@ -582,7 +582,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if len(settings.DrainErrors()) != 0 {
 		t.Fatal("native settings failed")
 	}
-	rows, err := state.memory().Query(ctx, memory.Filter{Tags: []string{"project"}})
+	rows, err := state.Memory().Query(ctx, memory.Filter{Tags: []string{"project"}})
 	if err != nil || len(rows) != 1 || rows[0].ID != id {
 		t.Fatal("memory migration", rows, err)
 	}
@@ -618,7 +618,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err := cache.Put(ctx, ticket, sqlite.ForeignSession{Peer: remote.PeerID(), Namespace: "remote", ID: "session", Instance: "instance"}); err != nil {
 		t.Fatal(err)
 	}
-	service := daemon.New(ctx, state.State, "personal", version, b, nil, "")
+	service := daemon.New(ctx, state, "personal", version, b, nil, "")
 	params, _ := json.Marshal(map[string]string{"peer_id": remote.PeerID()})
 	if _, err := service.Admin(context.Background(), "block", params); err != nil {
 		t.Fatal(err)
@@ -662,15 +662,15 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = state.Close() }()
-	settings, err := state.settings(root, agentDir)
+	settings, err := state.Settings(root, agentDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := state.auth(agentDir)
+	credentials, err := state.Auth(agentDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry, err := state.models(agentDir, credentials, true)
+	registry, err := state.Models(agentDir, credentials, true)
 	if err != nil {
 		t.Fatal(err)
 	}

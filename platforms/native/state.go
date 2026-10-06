@@ -65,6 +65,9 @@ func StopLegacyWriters(ctx context.Context, agentDir string, confirm func(pid in
 type State struct {
 	DB       *sqlite.DB
 	AgentDir string
+	// Files keeps settings.json and models.json in the agent dir
+	// authoritative, as a deployed agent's mounted configuration is.
+	Files bool
 	// credentials, when set, holds auth.json instead of the database.
 	credentials host.Document
 
@@ -340,7 +343,7 @@ func (state *State) ChatNamespace(path string) string {
 
 func (state *State) Settings(cwd, agentDir string, options ...config.Option) (*config.SettingsManager, error) {
 	options = append(options, config.WithAgentDir(agentDir))
-	if state != nil {
+	if state != nil && !state.Files {
 		options = append(options, config.WithGlobalDocument(state.Document(filepath.Join(agentDir, "settings.json"))))
 	}
 	return config.NewSettingsManager(cwd, options...)
@@ -372,7 +375,7 @@ func (state *State) Accounts(agentDir string, base auth.CredentialStore) *accoun
 }
 
 func (state *State) Models(agentDir string, credentials auth.CredentialStore, offline bool) (*config.ModelRegistry, error) {
-	if state == nil {
+	if state == nil || state.Files {
 		if offline {
 			return config.NewOfflineModelRegistry(agentDir)
 		}
@@ -503,7 +506,7 @@ func (state *State) Conversation() *State {
 	if state == nil {
 		return nil
 	}
-	return &State{DB: state.DB, AgentDir: state.AgentDir, credentials: state.credentials}
+	return &State{DB: state.DB, AgentDir: state.AgentDir, Files: state.Files, credentials: state.credentials}
 }
 
 // Release drops the conversation claim, discarding a conversation left empty.

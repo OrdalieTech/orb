@@ -583,7 +583,7 @@ func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer str
 }
 
 func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile, peer string) error {
-	cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx).native(), profile)
+	cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx), profile)
 	if cacheErr == nil {
 		defer closeCache()
 	}

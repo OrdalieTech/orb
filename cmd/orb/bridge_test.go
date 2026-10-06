@@ -231,20 +231,20 @@ func TestBridgeLiveAttach(t *testing.T) {
 		}
 		provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 		provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("live bridge answer")})
-		saved, err := state.sessions().List(ctx, harness.SessionListOptions{CWD: cwd})
+		saved, err := state.Sessions().List(ctx, harness.SessionListOptions{CWD: cwd})
 		if err != nil {
 			t.Fatal(err)
 		}
 		var stored *harness.Session
 		if len(saved) > 0 {
-			stored, err = state.sessions().Open(ctx, saved[0])
+			stored, err = state.Sessions().Open(ctx, saved[0])
 		} else {
-			stored, err = state.sessions().Create(ctx, harness.SessionCreateOptions{CWD: cwd})
+			stored, err = state.Sessions().Create(ctx, harness.SessionCreateOptions{CWD: cwd})
 		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		manager, err := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(state.sessions()))
+		manager, err := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(state.Sessions()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1105,7 +1105,7 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 	if instance == "" {
 		t.Fatal("no live instance")
 	}
-	cache, closeCache, err := daemon.Cache(ctx, stateFromContext(ctx).native(), "personal")
+	cache, closeCache, err := daemon.Cache(ctx, stateFromContext(ctx), "personal")
 	if err != nil {
 		t.Fatal(err)
 	}

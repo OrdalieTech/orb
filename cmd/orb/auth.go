@@ -78,11 +78,11 @@ func handleCredentialPrintCommand(ctx context.Context, argv []string, streams cl
 	if _, err := migrateAuthForContext(ctx, agentDir); err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
-	storage, err := stateFromContext(ctx).auth(agentDir)
+	storage, err := stateFromContext(ctx).Auth(agentDir)
 	if err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
-	registry, err := stateFromContext(ctx).models(agentDir, storage, true)
+	registry, err := stateFromContext(ctx).Models(agentDir, storage, true)
 	if err != nil {
 		return true, reportCredentialPrintError(streams.Stderr, err, "Failed to resolve credential")
 	}
@@ -334,7 +334,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	if _, err := migrateAuthForContext(ctx, agentDir); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	storage, err := stateFromContext(ctx).auth(agentDir)
+	storage, err := stateFromContext(ctx).Auth(agentDir)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}

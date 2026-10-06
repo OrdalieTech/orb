@@ -407,11 +407,11 @@ func reportPackageSettingsErrors(stderr io.Writer, settings *config.SettingsMana
 // saved-trust-only for update, otherwise the full trust flow (headless — no
 // prompt, no project_trust extensions yet).
 func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, projectTrustOverride *bool, useSavedProjectTrustOnly bool) (*config.SettingsManager, []string, error) {
-	settings, err := stateFromContext(ctx).settings(cwd, agentDir, config.WithProjectTrusted(false))
+	settings, err := stateFromContext(ctx).Settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return nil, nil, err
 	}
-	trustStore, err := stateFromContext(ctx).trust(agentDir)
+	trustStore, err := stateFromContext(ctx).Trust(agentDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -494,7 +494,7 @@ func handleConfigCommand(ctx context.Context, argv []string, streams cliStreams,
 		return true, 1
 	}
 
-	globalSettings, err := stateFromContext(ctx).settings(cwd, agentDir, config.WithProjectTrusted(false))
+	globalSettings, err := stateFromContext(ctx).Settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return true, reportCLIError(streams.Stderr, err)
 	}
@@ -546,7 +546,7 @@ func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (b
 		return false, 0
 	}
 	trusted := func(cwd, agentDir string) bool {
-		store, err := stateFromContext(ctx).trust(agentDir)
+		store, err := stateFromContext(ctx).Trust(agentDir)
 		if err != nil {
 			return false
 		}

@@ -26,11 +26,11 @@ func runLoginJSON(ctx context.Context, args []string, streams cliStreams) int {
 	if _, err = migrateAuthForContext(ctx, agentDir); err != nil {
 		return fail(err)
 	}
-	storage, err := stateFromContext(ctx).auth(agentDir)
+	storage, err := stateFromContext(ctx).Auth(agentDir)
 	if err != nil {
 		return fail(err)
 	}
-	registry, err := stateFromContext(ctx).models(agentDir, storage, true)
+	registry, err := stateFromContext(ctx).Models(agentDir, storage, true)
 	if err != nil {
 		return fail(err)
 	}

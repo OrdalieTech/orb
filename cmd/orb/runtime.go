@@ -167,11 +167,11 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			return runtimeInputs{}, err
 		}
 	}
-	authStorage, err := args.native.auth(agentDir)
+	authStorage, err := args.native.Auth(agentDir)
 	if err != nil {
 		return runtimeInputs{}, err
 	}
-	settings, err := args.native.settings(cwd, agentDir, config.WithProjectTrusted(false))
+	settings, err := args.native.Settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return runtimeInputs{}, err
 	}
@@ -304,9 +304,9 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		extensionRegistry = extensions.NewRegistry(cwd)
 	}
 
-	accountStore := args.native.accounts(agentDir, authStorage)
+	accountStore := args.native.Accounts(agentDir, authStorage)
 	runtimeAuth := newRuntimeCredentials(accountStore)
-	registry, err := args.native.models(agentDir, runtimeAuth, os.Getenv("PI_OFFLINE") != "")
+	registry, err := args.native.Models(agentDir, runtimeAuth, os.Getenv("PI_OFFLINE") != "")
 	if err != nil {
 		return runtimeInputs{}, err
 	}

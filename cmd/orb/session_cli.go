@@ -280,7 +280,7 @@ func confirmGlobalSessionFork(streams cliStreams, sessionCWD string) (bool, erro
 
 func createNativeSession(cwd string, args CLIArgs, selector SessionSelector) (*session.SessionManager, session.SessionContext, error) {
 	ctx := context.Background()
-	repo := args.native.sessions()
+	repo := args.native.Sessions()
 	var opened *harness.Session
 	var err error
 	reference := ""
@@ -316,19 +316,19 @@ func createNativeSession(cwd string, args CLIArgs, selector SessionSelector) (*s
 	if reference != "" {
 		opened, err = repo.OpenPath(ctx, reference)
 	}
-	if settings, settingsErr := args.native.settings(cwd, args.native.agentDir); hasCLIValue(args.Session) && errors.Is(err, fs.ErrNotExist) && settingsErr == nil {
+	if settings, settingsErr := args.native.Settings(cwd, args.native.AgentDir); hasCLIValue(args.Session) && errors.Is(err, fs.ErrNotExist) && settingsErr == nil {
 		manager, importErr := importSession(settings, *args.Session, func(dir string) (*session.SessionManager, error) {
 			created, err := repo.Create(ctx, harness.SessionCreateOptions{CWD: dir, ID: *args.Session})
 			if err != nil {
 				return nil, err
 			}
-			return session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir))
+			return session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(repo), session.WithAgentDir(args.native.AgentDir))
 		})
 		if importErr != nil {
 			return nil, session.SessionContext{}, importErr
 		}
 		if manager != nil {
-			if err = args.native.bindSession(manager); err != nil {
+			if err = args.native.BindSession(manager); err != nil {
 				return nil, session.SessionContext{}, err
 			}
 			return manager, manager.BuildSessionContext(), nil
@@ -357,7 +357,7 @@ func createNativeSession(cwd string, args CLIArgs, selector SessionSelector) (*s
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}
-	options := []session.Option{session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir)}
+	options := []session.Option{session.WithHarnessRepo(repo), session.WithAgentDir(args.native.AgentDir)}
 	if args.clientCWD {
 		options = append(options, session.WithCwdOverride(cwd))
 	}
@@ -365,7 +365,7 @@ func createNativeSession(cwd string, args CLIArgs, selector SessionSelector) (*s
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}
-	if err = args.native.bindSession(manager); err != nil {
+	if err = args.native.BindSession(manager); err != nil {
 		return nil, session.SessionContext{}, err
 	}
 	return manager, manager.BuildSessionContext(), nil

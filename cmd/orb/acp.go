@@ -13,6 +13,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/internal/toolenv"
+	"github.com/OrdalieTech/orb/platforms/native/teamenv"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 )
 
@@ -66,10 +67,10 @@ func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.Agent
 		}
 		args.mcpServers = append(args.mcpServers, mcp.Entry{Name: server.Name, Config: config, Source: "ACP client", Scope: "session"})
 	}
-	args.native = args.native.conversation()
+	args.native = args.native.Conversation()
 	manager, _, err := createCLISession(cwd, args, host.streams, nil)
 	if err != nil {
-		args.native.release()
+		args.native.Release()
 		return nil, nil, err
 	}
 	return openHeadless(ctx, args, host.dependencies, host.streams, manager)
@@ -87,10 +88,10 @@ func openHeadless(ctx context.Context, args CLIArgs, dependencies cliDependencie
 		}
 	}
 	if err != nil {
-		args.native.release()
+		args.native.Release()
 		return nil, nil, err
 	}
-	return runtime, func() { runtime.Dispose(context.Background()); args.native.release() }, nil
+	return runtime, func() { runtime.Dispose(context.Background()); args.native.Release() }, nil
 }
 
 func setVariable(values map[string]string, variable acp.Variable) map[string]string {
@@ -126,7 +127,7 @@ func chatConnectCommand(socket string) ([]string, error) {
 // an ACP client that starts its agent as a command. It inherits that client's
 // environment, which may hold the client's own keys, so it hides it.
 func runChatConnect(socket string, in io.Reader, out io.Writer) int {
-	hideProcess()
+	teamenv.Hide()
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Error: "+err.Error())
@@ -151,11 +152,11 @@ func teamAgent(ctx context.Context, dependencies cliDependencies, streams cliStr
 	if os.Getenv(toolenv.Allow) == "" {
 		_ = os.Setenv(toolenv.Allow, teamTools)
 	}
-	hideProcess()
+	teamenv.Hide()
 	args := ParseArgs(nil)
 	args.native, args.useUnknownModel = stateFromContext(ctx), true
 	if args.native != nil {
-		args.native.files = true
+		args.native.Files = true
 	}
 	return acpHost{args: args, dependencies: dependencies, streams: streams}
 }

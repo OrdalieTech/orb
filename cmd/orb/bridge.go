@@ -24,11 +24,11 @@ import (
 )
 
 func bridgeAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
-	return daemon.Admin(ctx, stateFromContext(ctx).native(), profile)
+	return daemon.Admin(ctx, stateFromContext(ctx), profile)
 }
 
 func startBridge(ctx context.Context, profile string, explicit bool) error {
-	return daemon.Start(ctx, stateFromContext(ctx).native(), profile, explicit)
+	return daemon.Start(ctx, stateFromContext(ctx), profile, explicit)
 }
 
 func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) int {
@@ -78,7 +78,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		}
 		ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		err := daemon.Run(ctx, stateFromContext(ctx).native(), profile, version, web)
+		err := daemon.Run(ctx, stateFromContext(ctx), profile, version, web)
 		var next daemon.RestartInto
 		if errors.As(err, &next) {
 			err = native.Exec(string(next), os.Args, os.Environ())
@@ -386,7 +386,7 @@ func runBridgeServiceCommand(ctx context.Context, profile string, args []string,
 	switch strings.Join(args, " ") {
 	case "install":
 		var note string
-		if note, err = daemon.Install(ctx, stateFromContext(ctx).native(), profile); err == nil {
+		if note, err = daemon.Install(ctx, stateFromContext(ctx), profile); err == nil {
 			_, _ = fmt.Fprintln(streams.Stdout, strings.TrimSpace("Bridge runs as a service now: it starts with the machine and restarts if it crashes.\n"+note))
 		}
 	case "remove":

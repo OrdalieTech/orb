@@ -99,7 +99,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows := assembly.Rows(assembly.Options{
 		UsageCache: args.usageCache,
-		Memory:     args.native.memory(),
+		Memory:     args.native.Memory(),
 		Policy:     policy,
 		CWD:        cwd, AgentDir: agentDir, Settings: settings,
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
@@ -186,7 +186,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
 			// run on the real NewAgentSession-backed runtime.
 			manager.SetAgentSessionService(agent.NewExtensionAgentSessionService(
-				agent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir, Configure: args.native.configureChild},
+				agent.ExtensionAgentSessionServiceOptions{CWD: cwd, AgentDir: agentDir, Configure: configureChild(args.native)},
 			))
 			result := manager.RegisterInto(context.Background(), registry, paths)
 			replaceActiveExtensionHost(manager)
@@ -273,7 +273,7 @@ func loadStartupExtensions(cwd string, args CLIArgs) (*extensions.Registry, []mo
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	settings, err := args.native.settings(cwd, agentDir, config.WithProjectTrusted(false))
+	settings, err := args.native.Settings(cwd, agentDir, config.WithProjectTrusted(false))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -324,7 +324,7 @@ func resolveStartupProjectTrust(ctx context.Context, cwd, agentDir string, args 
 		resolution.PreTrustRegistry, preTrustDiagnostics = loadCompiledExtensions(cwd, agentDir, args, settings, untrustedPaths)
 		trustRunner = extensions.NewRunner(resolution.PreTrustRegistry, extensions.RunnerOptions{CWD: cwd})
 	}
-	trustStore, err := args.native.trust(agentDir)
+	trustStore, err := args.native.Trust(agentDir)
 	if err != nil {
 		return resolution, err
 	}

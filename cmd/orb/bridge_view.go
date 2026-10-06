@@ -209,7 +209,7 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 			}
 			return admin.Call(callCtx, "remote", map[string]any{"peer_id": peer, "method": method, "params": p}, result)
 		}
-		cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx).native(), profile)
+		cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx), profile)
 		if cacheErr == nil {
 			defer closeCache()
 		}

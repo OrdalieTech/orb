@@ -115,7 +115,7 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 	factory := func(_ context.Context, runtimeOptions agent.AgentSessionOptions) (*agent.AgentSessionResult, error) {
 		manager := runtimeOptions.SessionManager
 		args := *options.Args
-		if err := args.native.bindSession(manager); err != nil {
+		if err := args.native.BindSession(manager); err != nil {
 			return nil, err
 		}
 		contextState := manager.BuildSessionContext()
@@ -193,7 +193,7 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 		CWD: options.Manager.GetCWD(), SessionManager: options.Manager,
 	}, factory)
 	if err == nil && options.Args.native != nil {
-		host.SetSessionClaim(options.Args.native.claimSession)
+		host.SetSessionClaim(options.Args.native.ClaimSession)
 	}
 	return host, err
 }

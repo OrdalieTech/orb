@@ -13,15 +13,10 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
-	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
-	"github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/platforms/native"
-	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/platforms/native/teamenv"
-	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -43,68 +38,22 @@ func stopLegacyWriters(ctx context.Context, agentDir string, streams cliStreams)
 	return native.StopLegacyWriters(ctx, agentDir, confirm)
 }
 
-// nativeState is the native host's state as this assembly holds it; files
-// keeps settings.json and models.json in the agent dir authoritative, as a
-// deployed agent's mounted configuration is. The lower-case methods keep the
-// runtime's call sites; a nil nativeState is the file-backed fallback.
-type nativeState struct {
-	*native.State
-	agentDir string
-	files    bool
-}
 type nativeStateKey struct{}
 
-func stateFromContext(ctx context.Context) *nativeState {
-	state, _ := ctx.Value(nativeStateKey{}).(*nativeState)
+func stateFromContext(ctx context.Context) *native.State {
+	state, _ := ctx.Value(nativeStateKey{}).(*native.State)
 	return state
 }
 
-func openNativeState(ctx context.Context, agentDir string, migrate bool, sessionDirs ...string) (*nativeState, error) {
-	state, err := native.Open(ctx, agentDir, migrate, teamenv.AuthDocument(), sessionDirs...)
-	if err != nil {
-		return nil, err
-	}
-	return &nativeState{State: state, agentDir: state.AgentDir}, nil
+func openNativeState(ctx context.Context, agentDir string, migrate bool, sessionDirs ...string) (*native.State, error) {
+	return native.Open(ctx, agentDir, migrate, teamenv.AuthDocument(), sessionDirs...)
 }
 
-func (s *nativeState) native() *native.State {
-	if s == nil {
-		return nil
-	}
-	return s.State
-}
-
-// config is native() unless files keeps the configuration on disk.
-func (s *nativeState) config() *native.State {
-	if s == nil || s.files {
-		return nil
-	}
-	return s.State
-}
-
-func (s *nativeState) settings(cwd, agentDir string, options ...config.Option) (*config.SettingsManager, error) {
-	return s.config().Settings(cwd, agentDir, options...)
-}
-func (s *nativeState) models(agentDir string, credentials auth.CredentialStore, offline bool) (*config.ModelRegistry, error) {
-	return s.config().Models(agentDir, credentials, offline)
-}
-func (s *nativeState) auth(agentDir string) (*config.AuthStorage, error) {
-	return s.native().Auth(agentDir)
-}
-func (s *nativeState) trust(agentDir string) (*config.ProjectTrustStore, error) {
-	return s.native().Trust(agentDir)
-}
-func (s *nativeState) accounts(agentDir string, base auth.CredentialStore) *accounts.Store {
-	return s.native().Accounts(agentDir, base)
-}
-func (s *nativeState) memory() memory.Store       { return s.native().Memory() }
-func (s *nativeState) sessions() *sqlite.Sessions { return s.Sessions() }
-func (s *nativeState) release()                   { s.native().Release() }
-func (s *nativeState) keybindings() (tui.KeybindingsConfig, error) {
-	if s == nil {
+func nativeKeybindings(state *native.State) (tui.KeybindingsConfig, error) {
+	if state == nil {
 		return nil, nil
 	}
-	data, err := s.Document(filepath.Join(s.agentDir, "keybindings.json")).Read(context.Background())
+	data, err := state.Document(filepath.Join(state.AgentDir, "keybindings.json")).Read(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -113,45 +62,32 @@ func (s *nativeState) keybindings() (tui.KeybindingsConfig, error) {
 	}
 	return tui.KeybindingsConfig{}, nil
 }
-func (s *nativeState) bindSession(manager *session.SessionManager) error {
-	return s.native().BindSession(manager)
-}
-func (s *nativeState) claimSession(manager *session.SessionManager) (func(), error) {
-	return s.native().ClaimSession(manager)
-}
-func (s *nativeState) deleteSession(id string) (modes.SessionDeleteMethod, error) {
-	return modes.SessionDeleteUnlink, s.DeleteSession(id)
-}
-func (s *nativeState) conversation() *nativeState {
-	if s == nil {
-		return nil
-	}
-	return &nativeState{State: s.Conversation(), agentDir: s.agentDir, files: s.files}
-}
 
-// configureChild builds an extension's child agent on this state when it
-// shares the agent dir.
-func (s *nativeState) configureChild(options *agent.AgentSessionOptions) error {
-	if s == nil || options.AgentDir != s.agentDir {
-		return nil
-	}
-	var err error
-	if options.Settings, err = s.settings(options.CWD, s.agentDir); err != nil {
+// configureChild builds an extension's child agent on state when it shares
+// the agent dir.
+func configureChild(state *native.State) func(*agent.AgentSessionOptions) error {
+	return func(options *agent.AgentSessionOptions) error {
+		if state == nil || options.AgentDir != state.AgentDir {
+			return nil
+		}
+		var err error
+		if options.Settings, err = state.Settings(options.CWD, state.AgentDir); err != nil {
+			return err
+		}
+		if options.ModelRegistry == nil {
+			credentials, err := state.Auth(state.AgentDir)
+			if err != nil {
+				return err
+			}
+			if options.ModelRegistry, err = state.Models(state.AgentDir, state.Accounts(state.AgentDir, credentials), os.Getenv("PI_OFFLINE") != ""); err != nil {
+				return err
+			}
+		}
+		if options.SessionManager == nil {
+			options.SessionManager, err = state.ChildSession(options.CWD)
+		}
 		return err
 	}
-	if options.ModelRegistry == nil {
-		credentials, err := s.auth(s.agentDir)
-		if err != nil {
-			return err
-		}
-		if options.ModelRegistry, err = s.models(s.agentDir, s.accounts(s.agentDir, credentials), os.Getenv("PI_OFFLINE") != ""); err != nil {
-			return err
-		}
-	}
-	if options.SessionManager == nil {
-		options.SessionManager, err = s.ChildSession(options.CWD)
-	}
-	return err
 }
 
 func migrateAuthForContext(ctx context.Context, agentDir string) ([]string, error) {
@@ -220,7 +156,7 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 		_, _ = fmt.Fprintln(streams.Stdout, "Migration complete. Original files are retained; use this Orb version for this state root.")
 		return 0
 	}
-	if err := runStorageCommand(ctx, state.State, argv[1:], streams); err != nil {
+	if err := runStorageCommand(ctx, state, argv[1:], streams); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
 	return 0

@@ -128,8 +128,6 @@ func main() {
 	}))
 }
 
-func hideProcess() { teamenv.Hide() }
-
 // runMermaid draws the Mermaid diagram on stdin as the TUI shows it, Unicode text, for clients
 // with no renderer of their own (the Android app); nothing drawable exits 1. It opens no state.
 func runMermaid(in io.Reader, out io.Writer) int {
@@ -206,11 +204,13 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		dependencies.selectSession = startupTUISessionSelector(ctx)
 	} else if dependencies.selectSession == nil {
 		dependencies.selectSession = func(current, all modes.SessionSelectorContextLoader) (string, bool, error) {
-			bindings, err := state.keybindings()
+			bindings, err := nativeKeybindings(state)
 			if err != nil {
 				return "", false, err
 			}
-			return modes.RunSessionSelectorWithOptions(ctx, modes.SessionSelectorOptions{CurrentSessionsContext: current, AllSessionsContext: all, Keybindings: modes.NewAppKeybindings(bindings), DeleteSession: state.deleteSession})
+			return modes.RunSessionSelectorWithOptions(ctx, modes.SessionSelectorOptions{CurrentSessionsContext: current, AllSessionsContext: all, Keybindings: modes.NewAppKeybindings(bindings), DeleteSession: func(id string) (modes.SessionDeleteMethod, error) {
+				return modes.SessionDeleteUnlink, state.DeleteSession(id)
+			}})
 		}
 	}
 	if dependencies.selectMissingSessionCWD == nil {
@@ -287,11 +287,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		var path string
 		var err error
 		if args.native != nil && !strings.ContainsAny(*args.Export, `/\`) && !strings.HasSuffix(*args.Export, ".jsonl") {
-			stored, openErr := args.native.sessions().OpenPath(ctx, *args.Export)
+			stored, openErr := args.native.Sessions().OpenPath(ctx, *args.Export)
 			if openErr != nil {
 				return reportCLIError(streams.Stderr, openErr)
 			}
-			manager, openErr := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(args.native.sessions()))
+			manager, openErr := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(args.native.Sessions()))
 			if openErr != nil {
 				return reportCLIError(streams.Stderr, openErr)
 			}
@@ -458,9 +458,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		if args.native != nil {
 			var opened *harness.Session
-			opened, err = args.native.sessions().OpenPath(ctx, manager.GetSessionID())
+			opened, err = args.native.Sessions().OpenPath(ctx, manager.GetSessionID())
 			if err == nil {
-				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.sessions()), session.WithCwdOverride(selectedCWD))
+				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.Sessions()), session.WithCwdOverride(selectedCWD))
 			}
 		} else {
 			manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(selectedCWD))
@@ -506,7 +506,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		defer attachCLIBridge(ctx, host.AgentSessionRuntime, args, inputs.Settings, streams.Stderr)()
 
-		bindings, err := args.native.keybindings()
+		bindings, err := nativeKeybindings(args.native)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
@@ -849,7 +849,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
 	return chat.WithWorkspace(cwd, func(ctx context.Context, manager *session.SessionManager) (*agent.AgentSession, func(), error) {
 		args := agents.args
-		args.native = args.native.conversation()
+		args.native = args.native.Conversation()
 		runtime, close, err := openHeadless(ctx, args, agents.dependencies, agents.streams, manager)
 		if err != nil {
 			return nil, nil, err
@@ -872,21 +872,21 @@ func runLocalChat(
 ) int {
 	options := gateway.Options{DataDir: dataDir, Adapters: adapters, Ingresses: ingresses, Fronts: fronts, Authorize: authorize, Provider: providerOptions, Log: streams.Stderr}
 	if state := stateFromContext(ctx); state != nil {
-		settings, err := state.settings(dataDir, state.agentDir)
+		settings, err := state.Settings(dataDir, state.AgentDir)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		auth, err := state.auth(state.agentDir)
+		auth, err := state.Auth(state.AgentDir)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		registry, err := state.models(state.agentDir, state.accounts(state.agentDir, auth), false)
+		registry, err := state.Models(state.AgentDir, state.Accounts(state.AgentDir, auth), false)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
 		options.Provider = append(options.Provider, chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo {
 			return state.DB.Sessions(state.ChatNamespace(filepath.Join(dataDir, "sessions", key.String())))
-		}, settings, registry), chat.WithAgentDir(state.agentDir))
+		}, settings, registry), chat.WithAgentDir(state.AgentDir))
 		options.Spool = state.DB.Chat(state.ChatNamespace(dataDir))
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

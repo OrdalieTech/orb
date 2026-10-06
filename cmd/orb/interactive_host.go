@@ -84,7 +84,7 @@ func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPa
 	if host.args.native != nil {
 		// Native conversations open from the store even when the current one
 		// is not stored there (--no-session).
-		switchOptions.Repo = host.args.native.sessions()
+		switchOptions.Repo = host.args.native.Sessions()
 	}
 	return host.AgentSessionRuntime.SwitchSession(ctx, sessionPath, switchOptions)
 }
@@ -169,7 +169,7 @@ func (host *interactiveSessionHost) Dispose() {
 func (host *interactiveSessionHost) ListProjectSessions(onProgress session.SessionListProgress) []session.SessionInfo {
 	manager := host.Session().Manager()
 	if host.args.native != nil {
-		rows, _ := host.args.native.sessions().ListInfo(context.Background(), manager.GetCWD(), nil)
+		rows, _ := host.args.native.Sessions().ListInfo(context.Background(), manager.GetCWD(), nil)
 		return spoken(rows)
 	}
 	return session.List(manager.GetCWD(), manager.GetSessionDir(), onProgress, session.WithAgentDir(host.agentDir))
@@ -177,7 +177,7 @@ func (host *interactiveSessionHost) ListProjectSessions(onProgress session.Sessi
 
 func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionListProgress) []session.SessionInfo {
 	if host.args.native != nil {
-		rows, _ := host.args.native.sessions().ListInfo(context.Background(), "", nil)
+		rows, _ := host.args.native.Sessions().ListInfo(context.Background(), "", nil)
 		return spoken(rows)
 	}
 	return session.ListAll(host.allSessionsDir(), onProgress, session.WithAgentDir(host.agentDir))
@@ -186,7 +186,7 @@ func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionLi
 func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Context, onUpdate session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
 	manager := host.Session().Manager()
 	if host.args.native != nil {
-		rows, err := host.args.native.sessions().ListInfo(ctx, manager.GetCWD(), spokenUpdates(onUpdate))
+		rows, err := host.args.native.Sessions().ListInfo(ctx, manager.GetCWD(), spokenUpdates(onUpdate))
 		return spoken(rows), err
 	}
 	return session.ListContext(ctx, manager.GetCWD(), manager.GetSessionDir(), onUpdate, session.WithAgentDir(host.agentDir))
@@ -194,7 +194,7 @@ func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Conte
 
 func (host *interactiveSessionHost) ListAllSessionsContext(ctx context.Context, onUpdate session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
 	if host.args.native != nil {
-		rows, err := host.args.native.sessions().ListInfo(ctx, "", spokenUpdates(onUpdate))
+		rows, err := host.args.native.Sessions().ListInfo(ctx, "", spokenUpdates(onUpdate))
 		return spoken(rows), err
 	}
 	return session.ListAllContext(ctx, host.allSessionsDir(), onUpdate, session.WithAgentDir(host.agentDir))
@@ -228,7 +228,7 @@ func spokenUpdates(update session.SessionListUpdateFunc) session.SessionListUpda
 
 func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, error) {
 	cwd := host.Session().Manager().GetCWD()
-	trust, err := host.args.native.trust(host.agentDir)
+	trust, err := host.args.native.Trust(host.agentDir)
 	if err != nil {
 		return modes.InteractiveTrustState{}, err
 	}
@@ -246,7 +246,7 @@ func (host *interactiveSessionHost) TrustState() (modes.InteractiveTrustState, e
 }
 
 func (host *interactiveSessionHost) SetProjectTrust(ctx context.Context, updates []config.ProjectTrustUpdate) error {
-	trust, err := host.args.native.trust(host.agentDir)
+	trust, err := host.args.native.Trust(host.agentDir)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func (host *interactiveSessionHost) authStorage() (*config.AuthStorage, error) {
 	if storage := host.currentInputs().Auth; storage != nil {
 		return storage, nil
 	}
-	return host.args.native.auth(host.agentDir)
+	return host.args.native.Auth(host.agentDir)
 }
 
 func (host *interactiveSessionHost) authCredentials() (aiauth.CredentialStore, error) {
@@ -489,7 +489,7 @@ func (host *interactiveSessionHost) accountStore() (*accounts.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return host.args.native.accounts(host.agentDir, base), nil
+	return host.args.native.Accounts(host.agentDir, base), nil
 }
 
 func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]accounts.Account, error) {
@@ -719,5 +719,5 @@ func (host *interactiveSessionHost) DeleteSession(reference string) (modes.Sessi
 		// File-backed SDK hosts retain the selector's ordinary delete path.
 		return modes.SessionDeleteUnlink, os.Remove(reference)
 	}
-	return host.args.native.deleteSession(reference)
+	return modes.SessionDeleteUnlink, host.args.native.DeleteSession(reference)
 }

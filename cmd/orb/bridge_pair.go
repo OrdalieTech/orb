@@ -69,7 +69,7 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 		if _, err := exec.LookPath("systemctl"); err == nil {
 			_, _ = fmt.Fprint(streams.Stdout, "Keep Bridge running after you log out and across reboots (systemd user service)? [Y/n] ")
 			if yes(in, true) {
-				note, err := daemon.Install(ctx, stateFromContext(ctx).native(), profile)
+				note, err := daemon.Install(ctx, stateFromContext(ctx), profile)
 				if err != nil {
 					return reportCLIError(streams.Stderr, err)
 				}

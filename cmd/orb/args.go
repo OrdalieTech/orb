@@ -9,6 +9,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
@@ -24,7 +25,7 @@ type CLIDiagnostic struct {
 
 type CLIArgs struct {
 	usageCache         *usage.Cache
-	native             *nativeState
+	native             *native.State
 	BridgeProfile      string
 	InstanceAlias      string
 	bridgeLink         *cliBridgeLink
