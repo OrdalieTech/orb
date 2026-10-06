@@ -27,6 +27,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/chat"
+	"github.com/OrdalieTech/orb/chat/gateway"
 	"github.com/OrdalieTech/orb/chat/platforms"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
@@ -40,7 +41,6 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/teamenv"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
-	"github.com/gofrs/flock"
 	"golang.org/x/term"
 )
 
@@ -822,9 +822,9 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		}
 	}
 	if len(chats) == 0 {
-		return runFronts(ctx, fronts, streams, nil)
+		return runFronts(ctx, fronts, streams)
 	}
-	authorize, err := chatAuthorizer(os.Getenv(platforms.AllowedSenders))
+	authorize, err := gateway.Authorizer(os.Getenv(platforms.AllowedSenders))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -846,7 +846,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		}
 		ingress := inbound.Poll
 		if inbound.Webhook != nil {
-			ingress = webhookIngress(platform, inbound.Webhook)
+			ingress = gateway.Webhook(platform, strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN")), strings.TrimSpace(os.Getenv("ORB_CHAT_PATH")), inbound.Webhook)
 		}
 		adapters, ingresses = append(adapters, adapter), append(ingresses, ingress)
 	}
@@ -875,46 +875,8 @@ func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
 	})
 }
 
-func webhookIngress(
-	platform string,
-	webhook func(func(chat.Message) error) http.Handler,
-) func(context.Context, func(chat.Message) error) error {
-	return func(ctx context.Context, publish func(chat.Message) error) error {
-		listen := strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN"))
-		if listen == "" {
-			listen = "127.0.0.1:8080"
-		}
-		webhookPath := strings.TrimSpace(os.Getenv("ORB_CHAT_PATH"))
-		if webhookPath == "" {
-			webhookPath = "/" + platform
-		}
-		if !strings.HasPrefix(webhookPath, "/") || strings.ContainsAny(webhookPath, "{} \t\r\n") {
-			return errors.New("ORB_CHAT_PATH must be a literal path starting with /")
-		}
-		mux := http.NewServeMux()
-		mux.Handle(webhookPath, webhook(publish))
-		// ponytail: one stdlib webhook server per process; terminate TLS and
-		// multiplex public routes in the deployment's reverse proxy.
-		server := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-		result := make(chan error, 1)
-		go func() { result <- server.ListenAndServe() }()
-		select {
-		case err := <-result:
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return err
-		case <-ctx.Done():
-			shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := server.Shutdown(shutdownContext); err != nil {
-				return err
-			}
-			return ctx.Err()
-		}
-	}
-}
-
+// runLocalChat runs the gateway on dataDir, its sessions and spool in the
+// native state when there is one.
 func runLocalChat(
 	ctx context.Context,
 	dataDir string,
@@ -925,8 +887,8 @@ func runLocalChat(
 	providerOptions []chat.LocalProviderOption,
 	streams cliStreams,
 ) int {
-	state := stateFromContext(ctx)
-	if state != nil {
+	options := gateway.Options{DataDir: dataDir, Adapters: adapters, Ingresses: ingresses, Fronts: fronts, Authorize: authorize, Provider: providerOptions, Log: streams.Stderr}
+	if state := stateFromContext(ctx); state != nil {
 		settings, err := state.settings(dataDir, state.agentDir)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
@@ -939,91 +901,27 @@ func runLocalChat(
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		providerOptions = append(providerOptions, chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo {
+		options.Provider = append(options.Provider, chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo {
 			return state.DB.Sessions(state.ChatNamespace(filepath.Join(dataDir, "sessions", key.String())))
 		}, settings, registry), chat.WithAgentDir(state.agentDir))
+		options.Spool = state.DB.Chat(state.ChatNamespace(dataDir))
 	}
-	provider, err := chat.NewLocalProvider(filepath.Join(dataDir, "sessions"), providerOptions...)
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-	processor, err := chat.New(chat.Options{
-		Sessions: provider, Adapters: adapters, Authorize: authorize,
-	})
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-	var local *chat.Local
-	if state != nil {
-		lock := flock.New(filepath.Join(dataDir, "gateway.lock"))
-		held, lockErr := lock.TryLock()
-		if lockErr != nil || !held {
-			_ = lock.Close()
-			return reportCLIError(streams.Stderr, errors.New("chat gateway data is already in use"))
-		}
-		defer func() { _ = lock.Close() }()
-		local, err = chat.NewLocalWithSpool(processor, state.DB.Chat(state.ChatNamespace(dataDir)))
-	} else {
-		local, err = chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
-	}
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-
-	for _, ingress := range ingresses {
-		fronts = append(fronts, func(ctx context.Context) error { return ingress(ctx, local.Publish) })
-	}
-	return runFronts(ctx, fronts, streams, func(ctx context.Context) error {
-		return errors.Join(local.Close(ctx), processor.Close(ctx))
-	})
-}
-
-// runFronts runs an agent's fronts until one ends or a signal arrives, stops
-// the others, then closes; the ending front's error is the exit status.
-func runFronts(ctx context.Context, fronts []func(context.Context) error, streams cliStreams, close func(context.Context) error) int {
-	signalled, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	running, cancel := context.WithCancel(signalled)
-	results := make(chan error, len(fronts))
-	for _, front := range fronts {
-		go func() { results <- front(running) }()
-	}
-	_, _ = fmt.Fprintln(streams.Stderr, "agent running; press Ctrl-C to stop")
-	err := <-results
-	if signalled.Err() != nil {
-		err = nil
-	}
-	cancel()
-	for range len(fronts) - 1 {
-		<-results
-	}
-	if close != nil {
-		shutdown, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancelShutdown()
-		err = errors.Join(err, close(shutdown))
-	}
-	if err != nil && !errors.Is(err, context.Canceled) {
+	if err := gateway.Run(ctx, options); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
 	return 0
 }
 
-func chatAuthorizer(allowed string) (func(chat.Message) error, error) {
-	ids := map[string]struct{}{}
-	for _, id := range strings.Split(allowed, ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			ids[id] = struct{}{}
-		}
+// runFronts runs an agent's fronts until one ends or a signal arrives.
+func runFronts(ctx context.Context, fronts []func(context.Context) error, streams cliStreams) int {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := gateway.RunFronts(ctx, fronts, streams.Stderr, nil); err != nil {
+		return reportCLIError(streams.Stderr, err)
 	}
-	if len(ids) == 0 {
-		return nil, errors.New("ORB_CHAT_ALLOWED_SENDERS is required")
-	}
-	return func(message chat.Message) error {
-		if _, ok := ids[message.SenderID]; ok {
-			return nil
-		}
-		return fmt.Errorf("sender %s is not in ORB_CHAT_ALLOWED_SENDERS", message.SenderID)
-	}, nil
+	return 0
 }
 
 // chatHelpText documents `orb chat` and the platforms linked in.
