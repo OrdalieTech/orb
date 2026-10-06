@@ -332,12 +332,17 @@ func (p *plugin) shutdown() {
 	}
 }
 
-// kill ends the job's process group through the same bash that started it.
+// kill ends the job's process group through the same bash that started it:
+// TERM first for a clean exit, waiting up to two seconds within ctx, then KILL
+// for a job that ignores it. KILL runs on its own, so a caller that runs out of
+// time (a shutdown on a loaded machine) never leaves such a job running.
 func kill(ctx context.Context, j *job) {
 	j.stopped.Store(true)
-	// TERM first for a clean exit, KILL after two seconds for a job that ignores it.
-	stop := fmt.Sprintf(`kill -TERM -%[1]s 2>/dev/null || kill -TERM %[1]s 2>/dev/null; i=0; while [ $i -lt 20 ] && kill -0 -%[1]s 2>/dev/null; do sleep 0.1; i=$((i+1)); done; kill -KILL -%[1]s 2>/dev/null; true`, j.pid)
-	_, _ = j.tool.Execute(ctx, "", map[string]any{"command": stop}, nil)
+	term := fmt.Sprintf(`kill -TERM -%[1]s 2>/dev/null || kill -TERM %[1]s 2>/dev/null; i=0; while [ $i -lt 20 ] && kill -0 -%[1]s 2>/dev/null; do sleep 0.1; i=$((i+1)); done`, j.pid)
+	_, _ = j.tool.Execute(ctx, "", map[string]any{"command": term}, nil)
+	final, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, _ = j.tool.Execute(final, "", map[string]any{"command": "kill -KILL -" + j.pid + " 2>/dev/null; true"}, nil)
 }
 
 // cursor is how far a monitored job's log has been reported.

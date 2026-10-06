@@ -163,3 +163,23 @@ func TestStopJobEndsTheProcessGroup(t *testing.T) {
 		t.Fatalf("a stopped job reported: %q", h.messages)
 	}
 }
+
+// A job that ignores TERM still dies when whoever stops it runs out of time:
+// session shutdown on a loaded machine used to leave such jobs running.
+func TestStopKillsAJobEvenWhenItsCallerGaveUp(t *testing.T) {
+	h := newHarness(t)
+	defer h.shutdown()
+	id, group, _, err := launch(h, "trap '' TERM; sleep 30", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * tick)
+	gaveUp, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = h.stop.Execute(gaveUp, "call", map[string]any{"job": id}, nil)
+	for deadline := time.Now().Add(5 * time.Second); syscall.Kill(-group, 0) == nil; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the job's process group survived a stop whose caller gave up")
+		}
+	}
+}
