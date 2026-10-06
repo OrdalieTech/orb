@@ -13,7 +13,7 @@ agent	os.ReadDir	4
 agent	os.ReadFile	12
 agent	os.RemoveAll	7
 agent	os.Rename	1
-agent	os.Stat	20
+agent	os.Stat	19
 agent	os.Stderr	1
 agent	os.Stdout	1
 agent	os.UserHomeDir	2

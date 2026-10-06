@@ -18,7 +18,7 @@ import (
 
 // Partial-fix regression (out-of-box RPC UI): an extension's session_start
 // handler must observe a live ctx.ui, not the headless noop. The RPC path now
-// builds the runtime with DeferSessionStart so session_start fires inside
+// builds the runtime with DeferExtensionStart so session_start fires inside
 // bindReplacement AFTER BindExtensionUI, mirroring upstream (bind UI, then emit
 // session_start). Before the fix, session_start fired at construction with the
 // noop UI and its notify/setTitle/setWidget were silently dropped.
@@ -48,7 +48,7 @@ func TestRPCSessionStartSeesLiveExtensionUI(t *testing.T) {
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: created, SessionManager: manager, Settings: settings,
 		ExtensionRegistry: registry, ExtensionMode: extensions.ModeRPC,
-		DeferSessionStart: true,
+		DeferExtensionStart: true,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -40,37 +40,46 @@ func TestCLIFirstRequestDeclaresExecutableTools(t *testing.T) {
 				}
 			}
 			provider, model, key := "openai", "gpt-test", "fixture-key"
-			inputs, err := createRuntimeInputs(cwd, CLIArgs{
-				Provider: &provider, Model: &model, APIKey: &key,
-				NoExtensions: true, NoSkills: true, NoContextFiles: true,
-				extensionsLoaded: true, extensionRegistry: registry,
-			}, engine.AgentMessages{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if test.bootstrapPrompt != "" {
-				inputs.Agent.AppendMessage(&ai.SystemMessage{Content: test.bootstrapPrompt})
-			}
 			var request ai.Context
 			calls := 0
-			inputs.StreamFn = func(_ context.Context, model *ai.Model, current ai.Context, _ *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
-				request = current
-				calls++
-				message := &ai.AssistantMessage{API: model.API, Provider: model.Provider, Model: model.ID,
-					Content: ai.AssistantContent{&ai.TextContent{Text: "done"}}, StopReason: ai.StopReasonStop}
-				return func(yield func(ai.AssistantMessageEvent, error) bool) {
-					yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
-				}, nil
-			}
+			var inputs runtimeInputs
 			manager, err := session.InMemory(cwd)
 			if err != nil {
 				t.Fatal(err)
 			}
-			runtime, err := buildSessionRuntime(inputs, manager, sessionRuntimeOptions{mode: extensions.ModePrint})
+			host, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
+				Args: &CLIArgs{
+					Provider: &provider, Model: &model, APIKey: &key,
+					NoExtensions: true, NoSkills: true, NoContextFiles: true,
+					extensionsLoaded: true, extensionRegistry: registry,
+				},
+				Manager: manager, ExtensionMode: extensions.ModePrint,
+				Dependencies: cliDependencies{createRuntime: func(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+					created, err := createRuntimeInputs(cwd, args, prior)
+					if err != nil {
+						return created, err
+					}
+					if test.bootstrapPrompt != "" {
+						created.Agent.AppendMessage(&ai.SystemMessage{Content: test.bootstrapPrompt})
+					}
+					created.StreamFn = func(_ context.Context, model *ai.Model, current ai.Context, _ *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+						request = current
+						calls++
+						message := &ai.AssistantMessage{API: model.API, Provider: model.Provider, Model: model.ID,
+							Content: ai.AssistantContent{&ai.TextContent{Text: "done"}}, StopReason: ai.StopReasonStop}
+						return func(yield func(ai.AssistantMessageEvent, error) bool) {
+							yield(ai.DoneEvent{Reason: ai.StopReasonStop, Message: message}, nil)
+						}, nil
+					}
+					return created, nil
+				}},
+				Created: func(created runtimeInputs) { inputs = created },
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer runtime.Dispose()
+			defer host.Dispose(context.Background())
+			runtime := host.Session()
 			if err := runtime.Prompt(context.Background(), "Use the coding tools."); err != nil {
 				t.Fatal(err)
 			}

@@ -12,7 +12,6 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/rpc"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
@@ -104,6 +103,7 @@ type hostFixture struct {
 	recorder    *hostLifecycleRecorder
 	createCalls int
 	failCreate  bool
+	onCreate    func(CLIArgs)
 	host        *interactiveSessionHost
 }
 
@@ -116,20 +116,16 @@ func newHostFixture(t *testing.T) *hostFixture {
 		t.Fatal(err)
 	}
 	fixture := &hostFixture{root: root, agentDir: agentDir, settings: settings, recorder: &hostLifecycleRecorder{}}
-	dependencies := cliDependencies{createRuntime: fixture.createRuntime}
 	manager, err := session.Create(root, filepath.Join(root, "sessions"), session.WithSessionID("initial"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	inputs, err := fixture.createRuntime(root, CLIArgs{}, engine.AgentMessages{})
+	fixture.host, err = newInteractiveSessionHost(context.Background(), CLIArgs{}, cliDependencies{createRuntime: fixture.createRuntime}, manager, agentDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := buildSessionRuntime(inputs, manager, sessionRuntimeOptions{mode: extensions.ModeTUI})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.host = newInteractiveSessionHost(CLIArgs{}, dependencies, runtime, inputs, agentDir, nil)
+	// The TUI starts the first session once it has attached its UI.
+	fixture.host.Session().StartExtensions()
 	fixture.recorder.trace = nil
 	t.Cleanup(fixture.host.Dispose)
 	return fixture
@@ -138,6 +134,9 @@ func newHostFixture(t *testing.T) *hostFixture {
 func (fixture *hostFixture) createRuntime(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
 	fixture.createCalls++
 	fixture.recorder.trace = append(fixture.recorder.trace, "create")
+	if fixture.onCreate != nil {
+		fixture.onCreate(args)
+	}
 	if fixture.failCreate {
 		return runtimeInputs{}, errors.New("runtime creation failed")
 	}
@@ -381,7 +380,7 @@ func TestInteractiveHostSwitchSessionRestoresModelAndRollsBackMissingCwd(t *test
 	}
 	current := host.Session()
 	_, err = host.SwitchSession(context.Background(), missingFile, "", nil)
-	var missingErr *modes.MissingSessionCwdError
+	var missingErr *agent.MissingSessionCWDError
 	if !errors.As(err, &missingErr) {
 		t.Fatalf("expected MissingSessionCwdError, got %v", err)
 	}
@@ -469,7 +468,7 @@ func TestInteractiveHostImportSession(t *testing.T) {
 	host := fixture.host
 
 	_, err := host.ImportSession(context.Background(), filepath.Join(fixture.root, "absent.jsonl"), "")
-	var notFound *modes.SessionImportFileNotFoundError
+	var notFound *agent.SessionImportFileNotFoundError
 	if !errors.As(err, &notFound) || !strings.HasPrefix(err.Error(), "File not found: ") {
 		t.Fatalf("missing import error = %v", err)
 	}
@@ -584,7 +583,9 @@ func TestInteractiveHostAuthOptionsAndLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture.host.mu.Lock()
 	fixture.host.inputs.Auth = storage
+	fixture.host.mu.Unlock()
 	if _, err := storage.Modify(context.Background(), "anthropic", func(*aiauth.Credential) (*aiauth.Credential, error) {
 		return aiauth.APIKeyCredential("sk-test"), nil
 	}); err != nil {
@@ -637,7 +638,7 @@ func TestRPCSessionHostReplacementKeepsExtensionsAndSurvivesFailure(t *testing.T
 		t.Fatal(err)
 	}
 	runtime, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
-		BaseArgs: CLIArgs{}, Manager: manager,
+		Args: &CLIArgs{}, Manager: manager,
 		Dependencies:  cliDependencies{createRuntime: fixture.createRuntime},
 		ExtensionMode: extensions.ModeRPC,
 	})

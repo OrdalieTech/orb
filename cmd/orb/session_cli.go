@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
@@ -71,19 +72,6 @@ type resolvedSession struct {
 	path string
 	cwd  string
 	arg  string
-}
-
-type MissingSessionCWDError struct {
-	StoredCWD   string
-	SessionFile string
-	CurrentCWD  string
-}
-
-func (issue *MissingSessionCWDError) Error() string {
-	return fmt.Sprintf(
-		"Stored session working directory does not exist: %s\nSession file: %s\nCurrent working directory: %s",
-		issue.StoredCWD, issue.SessionFile, issue.CurrentCWD,
-	)
 }
 
 func validateSessionFlags(args CLIArgs) []string {
@@ -256,20 +244,8 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 	return manager, manager.BuildSessionContext(), nil
 }
 
-func getMissingSessionCWDIssue(manager *session.SessionManager, fallbackCWD string) *MissingSessionCWDError {
-	if manager == nil || !manager.IsPersisted() || manager.GetCWD() == "" {
-		return nil
-	}
-	if _, err := os.Stat(manager.GetCWD()); !errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return &MissingSessionCWDError{
-		StoredCWD: manager.GetCWD(), SessionFile: manager.GetSessionFile(), CurrentCWD: fallbackCWD,
-	}
-}
-
-func formatMissingSessionCWDPrompt(issue *MissingSessionCWDError) string {
-	return "cwd from session file does not exist\n" + issue.StoredCWD + "\n\ncontinue in current cwd\n" + issue.CurrentCWD
+func formatMissingSessionCWDPrompt(issue *agent.MissingSessionCWDError) string {
+	return "cwd from session file does not exist\n" + issue.SessionCWD + "\n\ncontinue in current cwd\n" + issue.FallbackCWD
 }
 
 func resolveSessionArgument(argument, cwd, sessionDir, agentDir string) (resolvedSession, error) {

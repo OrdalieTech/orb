@@ -74,7 +74,7 @@ type cliDependencies struct {
 	runInteractive          func(context.Context, *agent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
 	selectSessionContext    ContextSessionSelector
-	selectMissingSessionCWD func(context.Context, *MissingSessionCWDError) (string, bool, error)
+	selectMissingSessionCWD func(context.Context, *agent.MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 	selfUpdate              func(context.Context, io.Writer, bool, bool) int
 }
@@ -217,11 +217,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 	}
 	if dependencies.selectMissingSessionCWD == nil {
-		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *MissingSessionCWDError) (string, bool, error) {
+		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *agent.MissingSessionCWDError) (string, bool, error) {
 			return modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{
 				Title: formatMissingSessionCWDPrompt(issue),
 				Choices: []modes.StartupChoice{
-					{Label: "Continue", Value: issue.CurrentCWD},
+					{Label: "Continue", Value: issue.FallbackCWD},
 					{Label: "Cancel", Cancel: true},
 				},
 			})
@@ -444,7 +444,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 		return reportCLIError(streams.Stderr, err)
 	}
-	if issue := getMissingSessionCWDIssue(manager, cwd); issue != nil {
+	if issue := (*agent.MissingSessionCWDError)(nil); errors.As(agent.AssertSessionCWD(manager, cwd), &issue) {
 		if !isInteractive {
 			return reportCLIError(streams.Stderr, issue)
 		}
@@ -487,28 +487,19 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		applySessionDefaults(&args, sessionContext, manager.GetBranch())
 	}
 	if isInteractive {
-		inputs, runtimeErr := dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(sessionContext.Messages))
-		if runtimeErr != nil {
-			return reportCLIError(streams.Stderr, runtimeErr)
-		}
-		if runtimeErr = appendInitialRuntimeState(manager, inputs.Agent.State(), sessionContext); runtimeErr != nil {
-			return reportCLIError(streams.Stderr, runtimeErr)
-		}
-		sessionRuntime, runtimeErr := buildSessionRuntime(inputs, manager, sessionRuntimeOptions{
-			mode: extensions.ModeTUI, errorWriter: streams.Stderr, deferSessionStart: true,
-		})
-		if runtimeErr != nil {
-			return reportCLIError(streams.Stderr, runtimeErr)
-		}
-		initial, initialImages, inputErr := PrepareInitialInput(&args, manager.GetCWD(), nil)
-		if inputErr != nil {
-			sessionRuntime.Dispose()
-			return reportCLIError(streams.Stderr, inputErr)
-		}
 		agentDir, dirErr := config.GetAgentDir()
 		if dirErr != nil {
-			sessionRuntime.Dispose()
 			return reportCLIError(streams.Stderr, dirErr)
+		}
+		host, hostErr := newInteractiveSessionHost(ctx, baseArgs, dependencies, manager, agentDir, streams.Stderr)
+		if hostErr != nil {
+			return reportCLIError(streams.Stderr, hostErr)
+		}
+		inputs := host.currentInputs()
+		initial, initialImages, inputErr := PrepareInitialInput(&args, manager.GetCWD(), nil)
+		if inputErr != nil {
+			host.Session().Dispose()
+			return reportCLIError(streams.Stderr, inputErr)
 		}
 		var startupModelRefresh func(context.Context) error
 		if startupModelRefreshEnabled("interactive", offlineMode, !networkDisabled) {
@@ -516,8 +507,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 				return refreshStartupModels(refreshContext, !networkDisabled, agentDir, inputs.ModelRegistry, dependencies.refreshModels)
 			}
 		}
-		host := newInteractiveSessionHost(baseArgs, dependencies, sessionRuntime, inputs, agentDir, streams.Stderr)
-		defer attachCLIBridge(ctx, bridgeInteractiveHost{host}, args, inputs.Settings, streams.Stderr)()
+		defer attachCLIBridge(ctx, host.AgentSessionRuntime, args, inputs.Settings, streams.Stderr)()
 
 		bindings, err := args.native.keybindings()
 		if err != nil {
@@ -554,11 +544,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		extensionMode = extensions.ModeRPC
 	}
 	sessionHost, err := newCLISessionRuntimeHost(ctx, cliSessionRuntimeHostOptions{
-		BaseArgs: baseArgs, Manager: manager,
-		Dependencies: dependencies, Streams: streams, ExtensionMode: extensionMode,
-		// RPC binds its extension UI in bindReplacement; hold session_start
-		// until then so extensions see a live ctx.ui (not the headless noop).
-		DeferSessionStart: args.Mode == "rpc",
+		Args: &baseArgs, Manager: manager, Dependencies: dependencies, Stderr: streams.Stderr, ExtensionMode: extensionMode,
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)

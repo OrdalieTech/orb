@@ -16,7 +16,6 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	attach "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
-	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
@@ -26,51 +25,6 @@ import (
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
 )
-
-type bridgeInteractiveHost struct{ *interactiveSessionHost }
-
-func (h bridgeInteractiveHost) EnableControl() (*agent.SessionControl, error) {
-	h.mu.Lock()
-	existing := h.bridgeControl
-	h.mu.Unlock()
-	if existing != nil {
-		return existing, nil
-	}
-	c, err := agent.NewSessionControl(h.Session)
-	if err != nil {
-		return nil, err
-	}
-	h.mu.Lock()
-	h.bridgeControl = c
-	h.mu.Unlock()
-	return c, nil
-}
-func (h bridgeInteractiveHost) ObserveSessions(f func(*agent.AgentSession)) func() {
-	h.mu.Lock()
-	h.bridgeNextObserver++
-	id := h.bridgeNextObserver
-	if h.bridgeObservers == nil {
-		h.bridgeObservers = map[uint64]func(*agent.AgentSession){}
-	}
-	h.bridgeObservers[id] = f
-	s := h.session
-	h.mu.Unlock()
-	f(s)
-	return func() { h.mu.Lock(); delete(h.bridgeObservers, id); h.mu.Unlock() }
-}
-func (h bridgeInteractiveHost) SwitchSession(ctx context.Context, path string, opts *agent.AgentSessionRuntimeSwitchOptions) (extensions.SessionReplacementResult, error) {
-	cwd := ""
-	var with func(context.Context, extensions.ReplacedSessionContext) error
-	if opts != nil {
-		cwd = opts.CWDOverride
-		with = opts.WithSession
-	}
-	return h.interactiveSessionHost.SwitchSession(ctx, path, cwd, &extensions.SwitchSessionOptions{WithSession: with})
-}
-func (h bridgeInteractiveHost) Fork(ctx context.Context, id string, opts *extensions.ForkOptions) (agent.AgentSessionRuntimeForkResult, error) {
-	r, err := h.interactiveSessionHost.Fork(ctx, id, opts)
-	return agent.AgentSessionRuntimeForkResult{Cancelled: r.Cancelled, SelectedText: &r.SelectedText}, err
-}
 
 type cliBridgeLink struct {
 	mu         sync.Mutex

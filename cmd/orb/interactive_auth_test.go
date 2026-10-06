@@ -14,7 +14,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/engine"
 )
 
 type fixedInteractiveAPIKeyAuth struct{ key string }
@@ -263,14 +262,12 @@ func TestLOGm3InteractiveHostRuntimeAPIKeyStatusAndLogout(t *testing.T) {
 			t.Fatalf("runtime credential remained in logout list: %#v", options.Logout)
 		}
 	}
-	originalCreateRuntime := fixture.host.dependencies.createRuntime
 	replacementCalled := false
-	fixture.host.dependencies.createRuntime = func(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+	fixture.onCreate = func(args CLIArgs) {
 		replacementCalled = true
 		if args.APIKey != nil {
 			t.Fatalf("replacement runtime received logged-out --api-key: %q", *args.APIKey)
 		}
-		return originalCreateRuntime(cwd, args, prior)
 	}
 	if _, err := fixture.host.NewSession(context.Background(), nil); err != nil {
 		t.Fatal(err)

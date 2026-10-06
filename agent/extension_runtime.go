@@ -239,11 +239,9 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	startEvent := extensions.SessionStartEvent{Reason: extensions.SessionStartStartup}
 	if runtimeConfig.SessionStartEvent != nil {
 		startEvent = *runtimeConfig.SessionStartEvent
-	} else if runtimeConfig.SessionStart != nil {
-		startEvent = *runtimeConfig.SessionStart
 	}
 	state.startEvent = startEvent
-	if !runtimeConfig.DeferExtensionStart && !runtimeConfig.DeferSessionStart {
+	if !runtimeConfig.DeferExtensionStart {
 		_ = runtime.BindExtensions(context.Background())
 	}
 }

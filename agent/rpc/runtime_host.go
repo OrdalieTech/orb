@@ -22,7 +22,7 @@ type RuntimeHost struct {
 // Set deferInitialBind when Serve will bind extensions itself after installing
 // the RPC extension UI, so session_start fires once, with a live ctx.ui rather
 // than the headless noop (the session must also be created with
-// DeferSessionStart so construction does not fire session_start first).
+// DeferExtensionStart so construction does not fire session_start first).
 func NewRuntimeHost(ctx context.Context, runtime *agent.AgentSessionRuntime, deferInitialBind bool) (*RuntimeHost, error) {
 	if runtime == nil || runtime.Session() == nil {
 		return nil, errors.New("RPC session host requires an agent session runtime")

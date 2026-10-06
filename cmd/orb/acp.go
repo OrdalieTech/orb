@@ -78,7 +78,7 @@ func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.Agent
 // close disposes it and releases args' conversation claim.
 func openHeadless(ctx context.Context, args CLIArgs, dependencies cliDependencies, streams cliStreams, manager *session.SessionManager) (*agent.AgentSessionRuntime, func(), error) {
 	runtime, err := newCLISessionRuntimeHost(ctx, cliSessionRuntimeHostOptions{
-		BaseArgs: args, Manager: manager, Dependencies: dependencies, Streams: streams, ExtensionMode: extensions.ModePrint,
+		Args: &args, Manager: manager, Dependencies: dependencies, Stderr: streams.Stderr, ExtensionMode: extensions.ModePrint,
 	})
 	if err == nil {
 		if err = runtime.Session().BindExtensions(ctx); err != nil {

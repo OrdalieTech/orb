@@ -61,8 +61,6 @@ type SessionRuntimeConfig struct {
 	ResourceLoader      ResourceLoader
 	SessionStartEvent   *extensions.SessionStartEvent
 	DeferExtensionStart bool
-	SessionStart        *extensions.SessionStartEvent
-	DeferSessionStart   bool
 }
 
 type SessionRuntime struct {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -15,15 +16,16 @@ import (
 )
 
 type cliSessionRuntimeHostOptions struct {
-	BaseArgs      CLIArgs
+	// Args are the startup arguments every runtime is built from, the first
+	// and each replacement alike; the interactive host clears its --api-key
+	// on logout.
+	Args          *CLIArgs
 	Manager       *session.SessionManager
 	Dependencies  cliDependencies
-	Streams       cliStreams
+	Stderr        io.Writer
 	ExtensionMode extensions.Mode
-	// DeferSessionStart holds session_start until the mode binds its extension
-	// UI, so extensions see a live ctx.ui on session_start. RPC mode sets this
-	// (it binds the RPC UI in bindReplacement); the TUI path defers separately.
-	DeferSessionStart bool
+	// Created receives the inputs of each runtime built.
+	Created func(runtimeInputs)
 }
 
 type cliPrintSession struct {
@@ -102,20 +104,17 @@ func (session *cliPrintSession) unsubscribeLocked() {
 	}
 }
 
+// newCLISessionRuntimeHost builds the session the CLI runs in every mode, and
+// rebuilds it for each replacement, resolving cwd-bound services, extensions,
+// project trust and the model again for the replacement's session.
 func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHostOptions) (*agent.AgentSessionRuntime, error) {
-	if options.Manager == nil {
-		return nil, fmt.Errorf("orb: session runtime host requires a session manager")
-	}
-	stderr := options.Streams.Stderr
-	if stderr == nil {
-		stderr = io.Discard
+	stderr := cmp.Or[io.Writer](options.Stderr, io.Discard)
+	if options.Args == nil {
+		options.Args = &CLIArgs{}
 	}
 	factory := func(_ context.Context, runtimeOptions agent.AgentSessionOptions) (*agent.AgentSessionResult, error) {
 		manager := runtimeOptions.SessionManager
-		if manager == nil {
-			return nil, fmt.Errorf("orb: replacement runtime requires a session manager")
-		}
-		args := options.BaseArgs
+		args := *options.Args
 		if err := args.native.bindSession(manager); err != nil {
 			return nil, err
 		}
@@ -123,52 +122,40 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 		if len(contextState.Messages) > 0 {
 			applySessionDefaults(&args, contextState, manager.GetBranch())
 		}
-		if runtimeOptions.ExtensionRegistry != nil {
-			args.extensionRegistry = runtimeOptions.ExtensionRegistry
-			args.extensionsLoaded = true
-			args.extensionWarnings = nil
+		if args.extensionsLoaded && runtimeOptions.ExtensionRegistry != nil {
+			// A replacement gets fresh instances of the extensions preloaded at
+			// startup (upstream re-runs factories per session).
+			args.extensionRegistry, args.extensionWarnings = runtimeOptions.ExtensionRegistry, nil
 		}
-
 		inputs, err := options.Dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(contextState.Messages))
 		if err != nil {
 			return nil, err
 		}
-		if runtimeOptions.ExtensionRegistry != nil {
-			inputs.Extensions = runtimeOptions.ExtensionRegistry
-		}
 		if err := appendInitialRuntimeState(manager, inputs.Agent.State(), contextState); err != nil {
+			return nil, err
+		}
+		agentDir, err := config.GetAgentDir()
+		if err != nil {
 			return nil, err
 		}
 		settings := inputs.Settings
 		if settings == nil {
-			agentDir, settingsErr := config.GetAgentDir()
-			if settingsErr != nil {
-				return nil, settingsErr
-			}
-			settings, settingsErr = config.NewSettingsManager(manager.GetCWD(), config.WithAgentDir(agentDir))
-			if settingsErr != nil {
-				return nil, settingsErr
+			if settings, err = config.NewSettingsManager(manager.GetCWD(), config.WithAgentDir(agentDir)); err != nil {
+				return nil, err
 			}
 		}
 		sessionConfig := agent.SessionRuntimeConfig{
 			Agent: inputs.Agent, SessionManager: manager, Settings: settings, StreamFn: inputs.StreamFn,
 			GetAPIKey: inputs.GetAPIKey, GetRequestAuth: inputs.GetRequestAuth, GetModelHeaders: inputs.GetModelHeaders,
-			AvailableModels:   inputs.AvailableModels,
-			ScopedModels:      inputs.ScopedModels,
-			SlashResolver:     inputs.SlashResolver,
-			ExtensionRegistry: inputs.Extensions,
-			ExtensionMode:     options.ExtensionMode,
+			AvailableModels: inputs.AvailableModels, ScopedModels: inputs.ScopedModels, SlashResolver: inputs.SlashResolver,
+			ExtensionRegistry: inputs.Extensions, ExtensionMode: options.ExtensionMode,
 			ExtensionErrorHandler: func(extensionError extensions.ExtensionError) {
 				_, _ = fmt.Fprintf(stderr, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
 			},
 			BaseTools: inputs.BaseTools, InitialActiveToolNames: inputs.ActiveToolNames,
-			AllowedToolNames: inputs.AllowedTools, ExcludedToolNames: inputs.ExcludedTools,
-			RebuildBaseTools:    inputs.RebuildBaseTools,
-			SystemPromptOptions: &inputs.PromptOptions,
-			Clock:               inputs.Clock,
-			SessionStartEvent:   runtimeOptions.SessionStartEvent,
-			DeferExtensionStart: runtimeOptions.DeferExtensionStart,
-			DeferSessionStart:   options.DeferSessionStart,
+			AllowedToolNames: inputs.AllowedTools, ExcludedToolNames: inputs.ExcludedTools, RebuildBaseTools: inputs.RebuildBaseTools,
+			SystemPromptOptions: &inputs.PromptOptions, Clock: inputs.Clock, ResourceLoader: inputs.ResourceLoader,
+			SessionStartEvent: runtimeOptions.SessionStartEvent, DeferExtensionStart: runtimeOptions.DeferExtensionStart,
 		}
 		if inputs.ModelRegistry != nil {
 			sessionConfig.ModelRegistry = inputs.ModelRegistry
@@ -176,10 +163,6 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 		// Providers key affinity and prompt caches on the session id; upstream
 		// createAgentSession passes sessionId into the Agent at construction.
 		inputs.Agent.SetStreamSessionID(manager.GetSessionID())
-		agentDir, err := config.GetAgentDir()
-		if err != nil {
-			return nil, err
-		}
 		created, err := newSessionRuntime(sessionConfig)
 		if err != nil {
 			return nil, err
@@ -188,7 +171,13 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 		for _, diagnostic := range inputs.Diagnostics {
 			message := startupDiagnosticText(diagnostic)
 			diagnostics = append(diagnostics, agent.AgentSessionRuntimeDiagnostic{Type: "warning", Message: message})
-			_, _ = fmt.Fprintln(stderr, "Warning: "+message)
+			// The TUI shows its diagnostics itself.
+			if options.ExtensionMode != extensions.ModeTUI {
+				_, _ = fmt.Fprintln(stderr, "Warning: "+message)
+			}
+		}
+		if options.Created != nil {
+			options.Created(inputs)
 		}
 		return &agent.AgentSessionResult{
 			Session: created, ExtensionRegistry: inputs.Extensions,
@@ -203,8 +192,8 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{
 		CWD: options.Manager.GetCWD(), SessionManager: options.Manager,
 	}, factory)
-	if err == nil && options.BaseArgs.native != nil {
-		host.SetSessionClaim(options.BaseArgs.native.claimSession)
+	if err == nil && options.Args.native != nil {
+		host.SetSessionClaim(options.Args.native.claimSession)
 	}
 	return host, err
 }

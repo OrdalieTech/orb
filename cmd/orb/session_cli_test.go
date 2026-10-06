@@ -285,9 +285,9 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
 		}, cliDependencies{
-			selectMissingSessionCWD: func(_ context.Context, issue *MissingSessionCWDError) (string, bool, error) {
+			selectMissingSessionCWD: func(_ context.Context, issue *agent.MissingSessionCWDError) (string, bool, error) {
 				selected = true
-				if issue.StoredCWD != project || issue.CurrentCWD != current || issue.SessionFile != path {
+				if issue.SessionCWD != project || issue.FallbackCWD != current || issue.SessionFile != path {
 					t.Fatalf("selector issue = %#v", issue)
 				}
 				return current, true, nil
@@ -307,7 +307,7 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
 		}, cliDependencies{
-			selectMissingSessionCWD: func(context.Context, *MissingSessionCWDError) (string, bool, error) {
+			selectMissingSessionCWD: func(context.Context, *agent.MissingSessionCWDError) (string, bool, error) {
 				return "", false, nil
 			},
 			createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {

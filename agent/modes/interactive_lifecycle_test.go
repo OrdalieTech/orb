@@ -51,7 +51,7 @@ func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t
 	}
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
-		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferSessionStart: true,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferExtensionStart: true,
 	})
 	if err != nil {
 		t.Fatal(err)

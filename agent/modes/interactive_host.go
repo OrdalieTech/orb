@@ -106,29 +106,8 @@ type InteractiveAuthOptions struct {
 
 // MissingSessionCwdError reports a session whose stored cwd no longer exists;
 // the TUI prompts for a cwd override and retries.
-type MissingSessionCwdError struct {
-	SessionFile string
-	SessionCWD  string
-	FallbackCWD string
-}
-
-func (err *MissingSessionCwdError) Error() string {
-	sessionFile := ""
-	if err.SessionFile != "" {
-		sessionFile = "\nSession file: " + err.SessionFile
-	}
-	return "Stored session working directory does not exist: " + err.SessionCWD + sessionFile + "\nCurrent working directory: " + err.FallbackCWD
-}
+type MissingSessionCwdError = agent.MissingSessionCWDError
 
 func formatMissingSessionCwdPrompt(err *MissingSessionCwdError) string {
 	return "cwd from session file does not exist\n" + err.SessionCWD + "\n\ncontinue in current cwd\n" + err.FallbackCWD
-}
-
-// SessionImportFileNotFoundError reports an /import path that does not exist.
-type SessionImportFileNotFoundError struct {
-	FilePath string
-}
-
-func (err *SessionImportFileNotFoundError) Error() string {
-	return "File not found: " + err.FilePath
 }

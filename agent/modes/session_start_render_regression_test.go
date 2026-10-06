@@ -94,7 +94,7 @@ func newSessionStartRuntime(t *testing.T, settingsJSON map[string]any, registry 
 	}
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
 		Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
-		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferSessionStart: true,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferExtensionStart: true,
 	})
 	if err != nil {
 		t.Fatal(err)

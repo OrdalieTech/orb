@@ -739,7 +739,8 @@ func TestRunCLIJSONMovesEventSubscriptionBeforeReplacementWithSession(t *testing
 			}),
 			engine.WithConvertToLLM(agent.ConvertToLLM),
 		)
-		return runtimeInputs{Agent: created, Extensions: registry}, nil
+		fresh, err := registry.Fresh(root) // each runtime gets its own instances, as createRuntimeInputs builds them
+		return runtimeInputs{Agent: created, Extensions: fresh}, err
 	}
 	var stdout, stderr bytes.Buffer
 	code := runCLIWithDependencies(context.Background(), []string{
@@ -791,7 +792,8 @@ func TestRunCLIRPCMovesEventSubscriptionForExtensionInitiatedReplacement(t *test
 			}),
 			engine.WithConvertToLLM(agent.ConvertToLLM),
 		)
-		return runtimeInputs{Agent: created, Extensions: registry}, nil
+		fresh, err := registry.Fresh(root)
+		return runtimeInputs{Agent: created, Extensions: fresh}, err
 	}
 	input, inputWriter := io.Pipe()
 	output, outputWriter := io.Pipe()
