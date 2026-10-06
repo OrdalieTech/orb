@@ -20,6 +20,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/nodepath"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
 
 const (
@@ -673,12 +674,10 @@ func (manager *SettingsManager) DeviceID() (string, error) {
 	if id := manager.stringValue("deviceId"); id != "" {
 		return id, nil
 	}
-	value := make([]byte, 16)
-	if _, err := rand.Read(value); err != nil {
+	id, err := uuidv7.NewV4(rand.Reader)
+	if err != nil {
 		return "", err
 	}
-	value[6], value[8] = value[6]&0x0f|0x40, value[8]&0x3f|0x80
-	id := fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:])
 	manager.setGlobalValues(settingMember("deviceId", id))
 	return id, nil
 }

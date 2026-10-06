@@ -1,5 +1,5 @@
 // Package uuidv7 generates the monotonic UUID and short entry identifiers used
-// by upstream harness session storage.
+// by upstream harness session storage, and crypto.randomUUID()'s UUIDv4.
 package uuidv7
 
 import (
@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	mathrand "math/rand/v2"
 	"sync"
 	"time"
@@ -60,6 +61,18 @@ func EntryCandidate() string {
 	var value [4]byte
 	binary.BigEndian.PutUint32(value[:], mathrand.Uint32())
 	return hex.EncodeToString(value[:])
+}
+
+// NewV4 returns a lowercase-hex UUIDv4 read from random, as
+// crypto.randomUUID() writes one.
+func NewV4(random io.Reader) (string, error) {
+	var value [16]byte
+	if _, err := io.ReadFull(random, value[:]); err != nil {
+		return "", err
+	}
+	value[6] = value[6]&0x0f | 0x40
+	value[8] = value[8]&0x3f | 0x80
+	return format(value), nil
 }
 
 func format(value [16]byte) string {

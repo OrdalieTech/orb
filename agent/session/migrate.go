@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 	textunicode "golang.org/x/text/encoding/unicode"
 )
 
@@ -286,7 +288,7 @@ func findUniqueID[V any](existing map[string]V, generator IDGenerator) (string, 
 			return id, nil
 		}
 	}
-	return randomUUID()
+	return uuidv7.NewV4(rand.Reader)
 }
 
 func generateUniqueID[V any](existing map[string]V, generator IDGenerator) (string, error) {

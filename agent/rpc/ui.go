@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
 
 type ExtensionUIRequest struct {
@@ -205,7 +206,7 @@ func (ui *ExtensionUI) dialog(
 	if ctx.Err() != nil {
 		return ExtensionUIResponse{}, false, nil
 	}
-	id, err := newRequestID()
+	id, err := uuidv7.NewV4(rand.Reader)
 	if err != nil {
 		return ExtensionUIResponse{}, false, err
 	}
@@ -246,7 +247,7 @@ func (ui *ExtensionUI) dialog(
 }
 
 func (ui *ExtensionUI) fire(request ExtensionUIRequest) error {
-	id, err := newRequestID()
+	id, err := uuidv7.NewV4(rand.Reader)
 	if err != nil {
 		return err
 	}
@@ -373,13 +374,3 @@ func (adapter extensionUIAdapter) SetEditorText(text string) {
 }
 
 var _ extensions.UI = extensionUIAdapter{}
-
-func newRequestID() (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	bytes[6] = bytes[6]&0x0f | 0x40
-	bytes[8] = bytes[8]&0x3f | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", bytes[:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:]), nil
-}

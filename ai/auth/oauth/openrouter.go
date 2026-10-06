@@ -3,7 +3,6 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
 
 // OpenRouter ports upstream openRouterOAuth (ai/src/auth/oauth/openrouter.ts):
@@ -80,7 +80,7 @@ func (flow *OpenRouter) Login(ctx context.Context, interaction auth.AuthInteract
 	if err != nil {
 		return nil, err
 	}
-	uuid, err := randomUUID(flow.options.Random)
+	uuid, err := uuidv7.NewV4(flow.options.Random)
 	if err != nil {
 		return nil, err
 	}
@@ -228,16 +228,4 @@ func openRouterErrorDetail(body map[string]any) string {
 		}
 	}
 	return ""
-}
-
-// randomUUID mirrors crypto.randomUUID(): a lowercase-hex UUIDv4.
-func randomUUID(random io.Reader) (string, error) {
-	var value [16]byte
-	if _, err := io.ReadFull(random, value[:]); err != nil {
-		return "", err
-	}
-	value[6] = value[6]&0x0f | 0x40
-	value[8] = value[8]&0x3f | 0x80
-	encoded := hex.EncodeToString(value[:])
-	return encoded[:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:], nil
 }
