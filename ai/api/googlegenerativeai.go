@@ -425,39 +425,33 @@ func googleProviderHeaders(model *ai.Model, options *ai.StreamOptions) http.Head
 	return headers
 }
 
-var googleSSEDelimiters = [][]byte{[]byte("\n\n"), []byte("\r\r"), []byte("\r\n\r\n")}
-
+// readGoogleSSE reads the Gemini stream as the pinned SDK does: an event's
+// payload is everything after its leading "data:", continuation lines
+// included; a chunk that is a JSON error envelope fails the stream; and an
+// event the body ends before closing is an incomplete segment.
 func readGoogleSSE(reader io.Reader, handle func(json.RawMessage) error) error {
-	buffer := make([]byte, 0, 4096)
-	chunk := make([]byte, 4096)
-	for {
-		read, readErr := reader.Read(chunk)
-		if read > 0 {
-			if err := googleSSEChunkError(chunk[:read]); err != nil {
-				return err
-			}
-			buffer = append(buffer, chunk[:read]...)
-			for {
-				index, length := nextGoogleSSEDelimiter(buffer)
-				if index < 0 {
-					break
-				}
-				if err := handleGoogleSSEEvent(buffer[:index], handle); err != nil {
-					return err
-				}
-				buffer = append(buffer[:0], buffer[index+length:]...)
-			}
+	return scanSSE(googleErrorChunks{reader}, func(event *sseEvent) error {
+		trimmed := bytes.TrimSpace(event.raw)
+		if event.eof && len(trimmed) != 0 {
+			return errors.New("Incomplete JSON segment at the end") //nolint:staticcheck // Exact upstream text.
 		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				return readErr
-			}
-			if len(bytes.TrimSpace(buffer)) != 0 {
-				return errors.New("Incomplete JSON segment at the end") //nolint:staticcheck // Exact upstream text.
-			}
-			return nil
+		if data, ok := bytes.CutPrefix(trimmed, []byte("data:")); ok {
+			return handle(json.RawMessage(bytes.TrimSpace(data)))
+		}
+		return nil
+	})
+}
+
+type googleErrorChunks struct{ io.Reader }
+
+func (chunks googleErrorChunks) Read(buffer []byte) (int, error) {
+	read, err := chunks.Reader.Read(buffer)
+	if read > 0 {
+		if chunkErr := googleSSEChunkError(buffer[:read]); chunkErr != nil {
+			return 0, chunkErr
 		}
 	}
+	return read, err
 }
 
 func googleSSEChunkError(chunk []byte) error {
@@ -527,25 +521,6 @@ func googleJSString(object map[string]json.RawMessage, name string) string {
 		}
 	}
 	return string(trimmed)
-}
-
-func nextGoogleSSEDelimiter(buffer []byte) (index, length int) {
-	index = -1
-	for _, delimiter := range googleSSEDelimiters {
-		candidate := bytes.Index(buffer, delimiter)
-		if candidate >= 0 && (index < 0 || candidate < index) {
-			index, length = candidate, len(delimiter)
-		}
-	}
-	return index, length
-}
-
-func handleGoogleSSEEvent(event []byte, handle func(json.RawMessage) error) error {
-	trimmed := bytes.TrimSpace(event)
-	if !bytes.HasPrefix(trimmed, []byte("data:")) {
-		return nil
-	}
-	return handle(json.RawMessage(bytes.TrimSpace(trimmed[len("data:"):])))
 }
 
 type googleStreamProcessor struct {

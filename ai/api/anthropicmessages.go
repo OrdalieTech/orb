@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -327,11 +326,15 @@ func StreamAnthropicMessagesWithOptions(
 		}
 
 		processor := newAnthropicStreamProcessor(model, requestContext, output, isOAuth, sink)
-		err = readAnthropicSSE(response.Body, func(event string, data []byte, raw []string) error {
+		err = scanSSE(response.Body, func(event *sseEvent) error {
+			if len(event.name) == 0 && len(event.data) == 0 {
+				return nil
+			}
+			data := bytes.Clone(bytes.TrimSuffix(event.data, []byte("\n")))
 			if options != nil && options.OnProviderStreamEvent != nil && json.Valid(data) {
 				options.OnProviderStreamEvent(ctx, data, model)
 			}
-			return processor.handleSSE(event, data, raw)
+			return processor.handleSSE(string(event.name), data, event.raw)
 		})
 		if errors.Is(err, errStopSSE) {
 			return
@@ -1375,7 +1378,8 @@ func newAnthropicStreamProcessor(
 	}
 }
 
-func (processor *anthropicStreamProcessor) handleSSE(eventName string, data []byte, raw []string) error {
+// handleSSE reads one event; raw holds its lines, each followed by "\n".
+func (processor *anthropicStreamProcessor) handleSSE(eventName string, data, raw []byte) error {
 	if eventName == "error" {
 		return errors.New(string(data))
 	}
@@ -1391,7 +1395,7 @@ func (processor *anthropicStreamProcessor) handleSSE(eventName string, data []by
 			err = json.Unmarshal([]byte(repaired), &event)
 		}
 		if err != nil {
-			return fmt.Errorf("Could not parse Anthropic SSE event %s: %s; data=%s; raw=%s", eventName, anthropicJSONErrorMessage(err), data, strings.Join(raw, `\n`)) //nolint:staticcheck // Exact upstream prefix is observable.
+			return fmt.Errorf("Could not parse Anthropic SSE event %s: %s; data=%s; raw=%s", eventName, anthropicJSONErrorMessage(err), data, bytes.ReplaceAll(bytes.TrimSuffix(raw, []byte("\n")), []byte("\n"), []byte(`\n`))) //nolint:staticcheck // Exact upstream prefix is observable.
 		}
 	}
 	switch event.Type {
@@ -1660,73 +1664,6 @@ func anthropicJSONErrorMessage(err error) string {
 		return "Unexpected end of JSON input"
 	}
 	return err.Error()
-}
-
-func readAnthropicSSE(reader io.Reader, handle func(string, []byte, []string) error) error {
-	buffered := bufio.NewReader(reader)
-	eventName := ""
-	data := make([]string, 0)
-	raw := make([]string, 0)
-	flush := func() error {
-		if eventName == "" && len(data) == 0 {
-			return nil
-		}
-		err := handle(eventName, []byte(strings.Join(data, "\n")), raw)
-		eventName = ""
-		data = data[:0]
-		raw = raw[:0]
-		return err
-	}
-	line := make([]byte, 0, 256)
-	consumeLine := func() error {
-		value := string(line)
-		line = line[:0]
-		if value == "" {
-			return flush()
-		}
-		raw = append(raw, value)
-		if strings.HasPrefix(value, ":") {
-			return nil
-		}
-		name, value, found := strings.Cut(value, ":")
-		if !found {
-			value = ""
-		}
-		value = strings.TrimPrefix(value, " ")
-		switch name {
-		case "event":
-			eventName = value
-		case "data":
-			data = append(data, value)
-		}
-		return nil
-	}
-	for {
-		char, err := buffered.ReadByte()
-		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				return err
-			}
-			if len(line) > 0 {
-				if err := consumeLine(); err != nil {
-					return err
-				}
-			}
-			return flush()
-		}
-		if char != '\r' && char != '\n' {
-			line = append(line, char)
-			continue
-		}
-		if char == '\r' {
-			if next, peekErr := buffered.Peek(1); peekErr == nil && next[0] == '\n' {
-				_, _ = buffered.ReadByte()
-			}
-		}
-		if err := consumeLine(); err != nil {
-			return err
-		}
-	}
 }
 
 func clearAnthropicStreamingFields(output *ai.AssistantMessage) {

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -657,34 +656,117 @@ func providerResponse(response *http.Response) ai.ProviderResponse {
 	return ai.ProviderResponse{Status: response.StatusCode, Headers: headers}
 }
 
-// readSSE hands each event's data to handle, as the OpenAI SDK's stream did:
-// "[DONE]" ends the stream, and a top-level "error" member fails it.
-// sseBuffers keeps the scanners' first line buffers across streams; a
-// stream's events are copied out of the buffer before they are handled.
-var sseBuffers = sync.Pool{New: func() any {
-	buffer := make([]byte, 4096)
-	return &buffer
-}}
+// sseEvent is one server-sent event as the WHATWG event-stream grammar reads
+// it; its buffers are reused once handle returns.
+type sseEvent struct {
+	name []byte // the last "event" field
+	data []byte // every "data" field, each followed by "\n"
+	raw  []byte // every line, comments included, each followed by "\n"
+	eof  bool   // the body ended before a blank line closed the event
+}
 
-func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
-	buffer := sseBuffers.Get().(*[]byte)
-	defer sseBuffers.Put(buffer)
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(*buffer, bufio.MaxScanTokenSize<<9)
-	var data []byte
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) > 0 {
-			if name, value, _ := bytes.Cut(line, []byte(":")); string(name) == "data" {
-				data = append(append(data, bytes.TrimPrefix(value, []byte(" "))...), '\n')
+type sseScanner struct {
+	buffer []byte
+	event  sseEvent
+}
+
+// sseScanners keeps line and event buffers across streams.
+var sseScanners = sync.Pool{New: func() any { return &sseScanner{buffer: make([]byte, 0, 4096)} }}
+
+// scanSSE splits body into lines at CR, LF or CRLF and hands handle each event
+// a blank line closes, then any lines still pending at EOF as an event marked
+// eof. Each provider applies its own data and error rules.
+func scanSSE(body io.Reader, handle func(*sseEvent) error) error {
+	scanner := sseScanners.Get().(*sseScanner)
+	defer sseScanners.Put(scanner)
+	event := &scanner.event
+	*event = sseEvent{name: event.name[:0], data: event.data[:0], raw: event.raw[:0]}
+	buffer, afterCR := scanner.buffer[:0], false
+	defer func() { scanner.buffer = buffer }()
+	for {
+		if len(buffer) == cap(buffer) {
+			buffer = slices.Grow(buffer, len(buffer))
+		}
+		read, readErr := body.Read(buffer[len(buffer):cap(buffer)])
+		buffer = buffer[:len(buffer)+read]
+		start := 0
+		for start < len(buffer) {
+			if afterCR {
+				afterCR = false
+				if buffer[start] == '\n' {
+					start++
+					continue
+				}
 			}
+			line := buffer[start:]
+			end := bytes.IndexByte(line, '\n')
+			if end >= 0 {
+				line = line[:end]
+			}
+			if cr := bytes.IndexByte(line, '\r'); cr >= 0 {
+				end, afterCR = cr, true
+			}
+			if end < 0 {
+				break
+			}
+			if err := event.addLine(line[:end], handle); err != nil {
+				return err
+			}
+			start += end + 1
+		}
+		buffer = buffer[:copy(buffer, buffer[start:])]
+		if readErr == nil {
 			continue
 		}
-		if len(data) == 0 {
-			continue
+		if !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		if len(buffer) > 0 {
+			_ = event.addLine(buffer, handle) // a non-blank line never dispatches
+		}
+		if len(event.raw) == 0 {
+			return nil
+		}
+		event.eof = true
+		return handle(event)
+	}
+}
+
+func (event *sseEvent) addLine(line []byte, handle func(*sseEvent) error) error {
+	if len(line) == 0 {
+		if len(event.raw) == 0 {
+			return nil
+		}
+		err := handle(event)
+		event.name, event.data, event.raw = event.name[:0], event.data[:0], event.raw[:0]
+		return err
+	}
+	event.raw = append(append(event.raw, line...), '\n')
+	name, value, _ := bytes.Cut(line, []byte(":"))
+	value = bytes.TrimPrefix(value, []byte(" "))
+	switch string(name) {
+	case "event":
+		event.name = append(event.name[:0], value...)
+	case "data":
+		event.data = append(append(event.data, value...), '\n')
+	}
+	return nil
+}
+
+// errSSEDone is "[DONE]" ending an OpenAI-style stream.
+var errSSEDone = errors.New("ai/api: SSE done")
+
+// readSSE hands each event's data to handle, as the OpenAI SDK's stream did:
+// "[DONE]" ends the stream, a top-level "error" member fails it, and an event
+// the body ends before closing is dropped.
+func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
+	err := scanSSE(body, func(event *sseEvent) error {
+		data := event.data
+		if len(data) == 0 || event.eof {
+			return nil
 		}
 		if bytes.HasPrefix(data, []byte("[DONE]")) {
-			return nil
+			return errSSEDone
 		}
 		var raw json.RawMessage
 		if jsonwire.Valid(data) {
@@ -710,12 +792,12 @@ func readSSE(body io.Reader, handle func(json.RawMessage) error) error {
 			}
 			return fmt.Errorf("received error while streaming: %s", message)
 		}
-		if err := handle(raw); err != nil {
-			return err
-		}
-		data = data[:0]
+		return handle(raw)
+	})
+	if errors.Is(err, errSSEDone) {
+		return nil
 	}
-	return scanner.Err()
+	return err
 }
 
 func calculateCost(model *ai.Model, usage *ai.Usage) { ai.CalculateCost(model, usage) }

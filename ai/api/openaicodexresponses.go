@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -856,39 +855,17 @@ func codexString(raw json.RawMessage) (string, bool) {
 }
 
 func readOpenAICodexSSE(body io.Reader, handle func(json.RawMessage) error) error {
-	reader := bufio.NewReader(body)
-	dataLines := make([]string, 0, 1)
-	flush := func() error {
-		data := strings.TrimSpace(strings.Join(dataLines, "\n"))
-		dataLines = dataLines[:0]
-		if data == "" || data == "[DONE]" {
+	return scanSSE(body, func(event *sseEvent) error {
+		data := bytes.TrimSpace(event.data)
+		if len(data) == 0 || string(data) == "[DONE]" {
 			return nil
 		}
 		var raw json.RawMessage
-		if err := json.Unmarshal([]byte(data), &raw); err != nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
 			return fmt.Errorf("Invalid Codex SSE JSON: %w", err) //nolint:staticcheck // Upstream diagnostic text is observable.
 		} //nolint:staticcheck // Upstream capitalization is observable.
 		return handle(raw)
-	}
-	for {
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-			if line == "" {
-				if err := flush(); err != nil {
-					return err
-				}
-			} else if strings.HasPrefix(line, "data:") {
-				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-			}
-		}
-		if errors.Is(err, io.EOF) {
-			return flush()
-		}
-		if err != nil {
-			return err
-		}
-	}
+	})
 }
 
 // codexFlexibleCode decodes an error code that providers send as either a JSON

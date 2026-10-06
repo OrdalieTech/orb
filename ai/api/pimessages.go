@@ -627,50 +627,16 @@ func appendPiMessagesDiagnostic(message *ai.AssistantMessage, diagnostic ai.Assi
 }
 
 func readPiMessagesEvents(reader io.Reader, handle func(piMessagesWireEvent) error) error {
-	buffer := make([]byte, 0, 4096)
-	chunk := make([]byte, 4096)
-	for {
-		read, readErr := reader.Read(chunk)
-		if read > 0 {
-			buffer = append(buffer, chunk[:read]...)
-			buffer = bytes.ReplaceAll(buffer, []byte("\r\n"), []byte("\n"))
-			for {
-				index := bytes.Index(buffer, []byte("\n\n"))
-				if index < 0 {
-					break
-				}
-				if err := parsePiMessagesEvent(buffer[:index], handle); err != nil {
-					return err
-				}
-				buffer = append(buffer[:0], buffer[index+2:]...)
-			}
-		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				return readErr
-			}
-			if len(bytes.TrimSpace(buffer)) != 0 {
-				return parsePiMessagesEvent(buffer, handle)
-			}
+	return scanSSE(reader, func(sse *sseEvent) error {
+		data, _, _ := bytes.Cut(sse.data, []byte("\n"))
+		data = bytes.TrimSpace(data)
+		if len(data) == 0 || string(data) == "[DONE]" {
 			return nil
 		}
-	}
-}
-
-func parsePiMessagesEvent(raw []byte, handle func(piMessagesWireEvent) error) error {
-	var data []byte
-	for _, line := range bytes.Split(raw, []byte("\n")) {
-		if bytes.HasPrefix(line, []byte("data:")) {
-			data = bytes.TrimSpace(line[len("data:"):])
-			break
+		var event piMessagesWireEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			return err
 		}
-	}
-	if len(data) == 0 || bytes.Equal(data, []byte("[DONE]")) {
-		return nil
-	}
-	var event piMessagesWireEvent
-	if err := json.Unmarshal(data, &event); err != nil {
-		return err
-	}
-	return handle(event)
+		return handle(event)
+	})
 }

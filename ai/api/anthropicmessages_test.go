@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,11 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/OrdalieTech/orb/ai"
 )
 
-func TestReadAnthropicSSEAcceptsAllLineEndings(t *testing.T) {
+func TestScanSSEAcceptsAllLineEndings(t *testing.T) {
 	for _, separator := range []string{"\n", "\r\n", "\r"} {
 		t.Run(strings.ReplaceAll(separator, "\r", "CR"), func(t *testing.T) {
 			input := strings.Join([]string{
@@ -22,18 +24,19 @@ func TestReadAnthropicSSEAcceptsAllLineEndings(t *testing.T) {
 				"event: content_block_delta",
 				`data: {"type":"content_block_delta",`,
 				`data: "index":0}`,
-				"",
+				"", "",
 			}, separator)
-			var eventName, data string
-			err := readAnthropicSSE(strings.NewReader(input), func(name string, raw []byte, _ []string) error {
-				eventName, data = name, string(raw)
+			var events []string
+			// One byte per read splits every CRLF across reads.
+			err := scanSSE(iotest.OneByteReader(strings.NewReader(input)), func(event *sseEvent) error {
+				events = append(events, fmt.Sprintf("%s %q %t", event.name, event.data, event.eof))
 				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if eventName != "content_block_delta" || data != "{\"type\":\"content_block_delta\",\n\"index\":0}" {
-				t.Fatalf("decoded event = %q %q", eventName, data)
+			if want := `content_block_delta "{\"type\":\"content_block_delta\",\n\"index\":0}\n" false`; len(events) != 1 || events[0] != want {
+				t.Fatalf("decoded events = %q, want %q", events, want)
 			}
 		})
 	}
