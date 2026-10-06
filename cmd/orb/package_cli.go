@@ -723,8 +723,3 @@ func displayVersion(value string) string {
 	}
 	return "v" + value
 }
-
-func isDevelopmentVersion(value string) bool {
-	value = strings.ToLower(strings.TrimSpace(value))
-	return value == "" || value == "dev" || strings.Contains(value, "-dev")
-}

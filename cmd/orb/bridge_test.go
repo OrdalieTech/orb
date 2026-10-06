@@ -858,7 +858,7 @@ func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
 			if test.name == "custom-old" {
 				remoteOrb = filepath.Join(dest, "orb")
 			}
-			path, err := ensureBridgeSSH(t.Context(), "server", remoteOrb, updater)
+			path, err := ensureBridgeSSH(t.Context(), "server", remoteOrb, updater.Updater)
 			if test.failure != "" {
 				if err == nil || !strings.Contains(err.Error(), test.failure) {
 					t.Fatalf("wrong failure: %v", err)
@@ -883,7 +883,7 @@ func TestSSHSetupInstallsMissingOrOldOrbAndReusesCompatibleOrb(t *testing.T) {
 			if err != nil || string(got) != string(payload) || path != filepath.Join(dest, "orb") {
 				t.Fatal("verified Orb was not installed")
 			}
-			path, err = ensureBridgeSSH(t.Context(), "server", "orb", updater)
+			path, err = ensureBridgeSSH(t.Context(), "server", "orb", updater.Updater)
 			if err != nil || path != filepath.Join(dest, "orb") || state.archiveHits != 1 {
 				t.Fatalf("compatible Orb was not reused: %v", err)
 			}

@@ -28,6 +28,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/platforms/native"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
 	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 )
@@ -1035,7 +1036,7 @@ func runBridgeSSH(ctx context.Context, target, remoteOrb, profile string, args .
 func runBridgeSSHExec(ctx context.Context, arguments []string, input io.Reader) ([]byte, error) {
 	wait := 40 * time.Second
 	if input != nil {
-		wait = selfUpdateDownloadWait
+		wait = selfupdate.DownloadWait
 	}
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
@@ -1079,7 +1080,7 @@ func runBridgeSSHExec(ctx context.Context, arguments []string, input io.Reader) 
 
 func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, target, remoteProfile, remoteOrb string) (string, error) {
 	var err error
-	remoteOrb, err = ensureBridgeSSH(ctx, target, remoteOrb, newSelfUpdater(version, false))
+	remoteOrb, err = ensureBridgeSSH(ctx, target, remoteOrb, selfupdate.New(version, false))
 	if err != nil {
 		return "", err
 	}
@@ -1147,7 +1148,7 @@ func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string, ma
 	return nil
 }
 
-func ensureBridgeSSH(ctx context.Context, target, remoteOrb string, updater selfUpdater) (string, error) {
+func ensureBridgeSSH(ctx context.Context, target, remoteOrb string, updater selfupdate.Updater) (string, error) {
 	if remoteOrb != "orb" {
 		help, err := runBridgeSSH(ctx, target, remoteOrb, "personal", "--help")
 		if err != nil {
@@ -1184,12 +1185,11 @@ printf 'install\n'; uname -sm`)
 	}
 	goos := strings.ToLower(platform[0])
 	goarch := map[string]string{"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[platform[1]]
-	updater.client = guardRedirects(updater.client)
-	tag, err := fetchLatestReleaseVersion(ctx, updater.currentVersion, updater.client, updater.releaseURL, selfUpdateMetadataWait)
+	tag, err := updater.Latest(ctx)
 	if err != nil {
 		return "", err
 	}
-	payload, err := updater.downloadTarget(ctx, tag, goos, goarch)
+	payload, err := updater.Download(ctx, tag, goos, goarch)
 	if err != nil {
 		return "", fmt.Errorf("could not download Orb for the server.\n%w", err)
 	}

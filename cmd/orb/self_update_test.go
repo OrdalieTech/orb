@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/internal/orbalogo"
+	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 )
 
 var newOrb = []byte("#!/bin/sh\necho orb 0.5.0\n")
@@ -120,20 +121,20 @@ func updaterFor(t *testing.T, currentVersion string, state *release) selfUpdater
 		}
 	}))
 	t.Cleanup(server.Close)
-	return selfUpdater{
-		key:            public,
-		currentVersion: currentVersion,
-		releaseURL:     server.URL + "/releases/latest",
-		releaseBase:    server.URL + "/download",
-		client:         server.Client(),
+	return selfUpdater{Updater: selfupdate.Updater{
+		Key:            public,
+		CurrentVersion: currentVersion,
+		ReleaseURL:     server.URL + "/releases/latest",
+		ReleaseBase:    server.URL + "/download",
+		Client:         server.Client(),
 		// Resolving the running binary is a filesystem effect, so only a test that installs one
 		// overrides this; every other route proves it never got that far.
-		executable: func() (string, error) {
+		Executable: func() (string, error) {
 			t.Error("the updater resolved the running binary")
 			return "", errors.New("must not be called")
 		},
-		resolveLinks: filepath.EvalSymlinks,
-	}
+		ResolveLinks: filepath.EvalSymlinks,
+	}}
 }
 
 func assertOnlyOrb(t *testing.T, dir string) {
@@ -175,7 +176,7 @@ func TestSelfUpdateReplacesCanonicalBinary(t *testing.T) {
 	dir, canonical, link := installedOrb(t, 0o700)
 	state := &release{}
 	updater := updaterFor(t, "0.4.15", state)
-	updater.executable = func() (string, error) { return link, nil }
+	updater.Executable = func() (string, error) { return link, nil }
 	var output bytes.Buffer
 	if runtime.GOOS == "windows" {
 		if code := updater.run(context.Background(), &output); code != 1 || !strings.Contains(output.String(), windowsRefusal) {
@@ -241,10 +242,10 @@ func TestSelfUpdateRejectsBadReleasesAndRollsBack(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			dir, canonical, link := installedOrb(t, 0o755)
 			updater := updaterFor(t, "0.4.15", &test.state)
-			updater.executable = func() (string, error) { return link, nil }
+			updater.Executable = func() (string, error) { return link, nil }
 			if test.managed {
-				updater.executable = func() (string, error) { return "/nix/store/abc-orb/bin/orb", nil }
-				updater.resolveLinks = func(value string) (string, error) { return value, nil }
+				updater.Executable = func() (string, error) { return "/nix/store/abc-orb/bin/orb", nil }
+				updater.ResolveLinks = func(value string) (string, error) { return value, nil }
 			}
 			var output bytes.Buffer
 			if code := updater.run(context.Background(), &output); code != 1 {
@@ -282,7 +283,7 @@ func TestSelfUpdateRefusesAMetadataRedirectOffHTTPS(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	updater := updaterFor(t, "0.4.15", &release{})
-	updater.releaseURL = server.URL + "/releases/latest"
+	updater.ReleaseURL = server.URL + "/releases/latest"
 	var output bytes.Buffer
 	if code := updater.run(context.Background(), &output); code != 1 {
 		t.Fatalf("code = %d, output = %q", code, output.String())
@@ -292,7 +293,7 @@ func TestSelfUpdateRefusesAMetadataRedirectOffHTTPS(t *testing.T) {
 	}
 }
 
-// swapBinary owns the last-moment guard; drive it directly because it fires between staging and
+// selfupdate.Swap owns the last-moment guard; drive it directly because it fires between staging and
 // rename, after another installer has already written the target.
 func TestSwapBinaryRefusesATargetThatChangedWhileStaged(t *testing.T) {
 	dir, canonical, _ := installedOrb(t, 0o755)
@@ -303,7 +304,7 @@ func TestSwapBinaryRefusesATargetThatChangedWhileStaged(t *testing.T) {
 	if err := os.WriteFile(canonical, []byte("someone else got here first"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	swapErr := swapBinary(canonical, newOrb, before)
+	swapErr := selfupdate.Swap(canonical, newOrb, before)
 	if swapErr == nil || !strings.Contains(swapErr.Error(), "changed while the update was staged") {
 		t.Fatalf("err = %v", swapErr)
 	}

@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -21,7 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
-	"github.com/OrdalieTech/orb/internal/semver"
+	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/creack/pty"
 )
@@ -79,7 +80,7 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 			Version string `json:"version"`        // its Orb, so a peer can offer host.update
 			Items   []item `json:"items"`
 			Cursor  string `json:"cursor,omitempty"`
-		}{strings.Split(host, ".")[0], plainVersion(buildVersion(version, info, ok)), []item{}, page.Next}
+		}{strings.Split(host, ".")[0], selfupdate.Plain(selfupdate.BuildVersion(version, info, ok)), []item{}, page.Next}
 		for _, e := range page.Sessions {
 			if e.MessageCount == 0 {
 				continue // a thread nobody wrote in is not worth reopening
@@ -438,35 +439,21 @@ func (s *bridgeService) endTerminal(id string) {
 // update brings this machine's orb to the latest release, as `orb update` does, then restarts
 // the Bridge on the new binary; peers see it back within seconds. The answer says what happened.
 func (s *bridgeService) update(ctx context.Context) json.RawMessage {
-	info, ok := debug.ReadBuildInfo()
-	u := newSelfUpdater(buildVersion(version, info, ok), false)
-	u.client = guardRedirects(u.client)
-	result := map[string]string{"from": plainVersion(u.currentVersion)}
-	say := func(status string) json.RawMessage { result["status"] = status; return bridge.JSON(result) }
-	current, parsed := semver.Parse(u.currentVersion)
-	if !parsed || isDevelopmentVersion(u.currentVersion) {
-		return say("a development build; update it by hand")
+	u := selfupdate.New(version, false)
+	result := map[string]string{"from": selfupdate.Plain(u.CurrentVersion)}
+	tag, target, err := u.Update(ctx, func(string) func() { return func() {} })
+	switch {
+	case errors.Is(err, selfupdate.ErrDevelopment):
+		result["status"] = "a development build; update it by hand"
+	case errors.Is(err, selfupdate.ErrCurrent):
+		result["status"] = "already current"
+	case err != nil:
+		result["status"] = err.Error()
+	default:
+		result["to"], result["status"] = selfupdate.Plain(tag), "updated · Bridge restarting"
+		s.restart(target)
 	}
-	tag, err := fetchLatestReleaseVersion(ctx, u.currentVersion, u.client, u.releaseURL, selfUpdateMetadataWait)
-	if err != nil {
-		return say(err.Error())
-	}
-	if latest, ok := semver.Parse(tag); !ok || semver.Compare(latest, current) <= 0 {
-		return say("already current")
-	}
-	target, before, err := u.resolveTarget()
-	if err == nil {
-		var payload []byte
-		if payload, err = u.download(ctx, tag); err == nil {
-			err = swapBinary(target, payload, before)
-		}
-	}
-	if err != nil {
-		return say(err.Error())
-	}
-	result["to"] = plainVersion(tag)
-	s.restart(target)
-	return say("updated · Bridge restarting")
+	return bridge.JSON(result)
 }
 
 // launchFolder accepts an absolute path or one under ~, and only an existing directory.
