@@ -1,6 +1,7 @@
 package filelock
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -113,5 +114,36 @@ func TestFileUpdateKeepsSymlinkAndNarrowedMode(t *testing.T) {
 	}
 	if _, err := os.Stat(link + ".lock"); !os.IsNotExist(err) {
 		t.Fatalf("lock survived the update: %v", err)
+	}
+}
+
+// A change that ran is written even when its caller gave up meanwhile: it may
+// have rotated a credential the old file no longer redeems.
+func TestFileUpdateWritesAChangeWhoseCallerGaveUp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	err := File{Path: path, Perm: 0o600}.Update(ctx, func([]byte) ([]byte, error) {
+		cancel()
+		return []byte(`{"rotated":true}`), nil
+	})
+	if data, _ := os.ReadFile(path); err != nil || string(data) != `{"rotated":true}` {
+		t.Fatalf("update = %v, file %q", err, data)
+	}
+}
+
+// Upstream rewrites these files in place, and so does File unless Atomic: the
+// file stays the same file, with its owner and any bind mount.
+func TestFileUpdateRewritesInPlace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.Stat(path)
+	if err := (File{Path: path, Perm: 0o644}).Update(context.Background(), func([]byte) ([]byte, error) { return []byte(`{"a":1}`), nil }); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(path)
+	if !os.SameFile(before, after) {
+		t.Fatal("the update replaced the file instead of rewriting it")
 	}
 }

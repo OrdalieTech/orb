@@ -435,7 +435,7 @@ func (env *NodeExecutionEnv) CreateTempFile(ctx context.Context, prefix, suffix 
 func (env *NodeExecutionEnv) Cleanup() error {
 	env.childrenMu.Lock()
 	for pid := range env.activeChildren {
-		proctree.Kill(pid)
+		_ = proctree.Kill(pid)
 	}
 	clear(env.activeChildren)
 	env.childrenMu.Unlock()

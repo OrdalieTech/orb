@@ -369,7 +369,7 @@ func isolate(cmd *exec.Cmd) func() error {
 	proctree.Isolate(cmd)
 	return func() error {
 		if cmd.Process != nil {
-			proctree.Kill(cmd.Process.Pid)
+			_ = proctree.Kill(cmd.Process.Pid)
 		}
 		return nil
 	}

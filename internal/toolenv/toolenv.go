@@ -69,13 +69,20 @@ func Get(env []string, name string) string {
 	return ""
 }
 
-// Set replaces every entry for name in env with name=value.
+// Set replaces every entry for name in env with one name=value, keeping the
+// spelling env already uses (Windows' Path stays Path), so a later lookup by
+// that spelling finds it.
 func Set(env []string, name, value string) []string {
+	key := name
 	env = slices.DeleteFunc(env, func(entry string) bool {
-		key, _, ok := strings.Cut(entry, "=")
-		return ok && nameEqual(key, name)
+		existing, _, ok := strings.Cut(entry, "=")
+		if ok && nameEqual(existing, name) {
+			key = existing
+			return true
+		}
+		return false
 	})
-	return append(env, name+"="+value)
+	return append(env, key+"="+value)
 }
 
 // PrependPath puts dir first on the search list value unless it is already there.

@@ -131,3 +131,22 @@ func TestResolveProviderAuthDefaultRefreshDoesNotImposeProviderContract(t *testi
 		t.Fatalf("default refresh result = %#v, %v", result, err)
 	}
 }
+
+// tornDocument is auth.json caught halfway through pi's in-place rewrite by a
+// lock-free read; under the lock it reads whole.
+type tornDocument struct{ whole []byte }
+
+func (d tornDocument) Read(context.Context) ([]byte, error) { return d.whole[:len(d.whole)/2], nil }
+func (d tornDocument) Update(_ context.Context, change func([]byte) ([]byte, error)) error {
+	_, err := change(d.whole)
+	return err
+}
+
+// A read that catches auth.json mid-write still finds the credential.
+func TestCredentialReadSurvivesATornAuthFile(t *testing.T) {
+	store := NewDocumentStore(tornDocument{whole: []byte(`{"anthropic":{"type":"api_key","key":"sk-ant"}}`)})
+	credential, err := store.Read(context.Background(), "anthropic")
+	if err != nil || credential == nil || credential.Key == nil || *credential.Key != "sk-ant" {
+		t.Fatalf("read = %+v, %v", credential, err)
+	}
+}

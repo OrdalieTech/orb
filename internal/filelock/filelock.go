@@ -11,6 +11,7 @@ package filelock
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -27,9 +28,9 @@ const (
 	budget    = 10 * time.Second // Windows delete-pending retries
 	minDelay  = time.Millisecond
 	maxDelay  = 50 * time.Millisecond
-	// documentStale is the window upstream's async auth and models-store locks
-	// refresh against (every 15 s), so a live upstream lock is never reclaimed.
-	documentStale = 30 * time.Second
+	// AsyncStale is the window upstream's async auth lock refreshes against
+	// (every 15 s), so a live upstream lock is never reclaimed.
+	AsyncStale = 30 * time.Second
 )
 
 // Acquire locks path+".lock" and returns the release.
@@ -167,11 +168,19 @@ func GroupOrOtherAccess(mode os.FileMode) bool {
 }
 
 // File is a Document kept in the file at Path. Update holds the lock upstream
-// takes on the same path and replaces the file with WriteFile; Read takes no
-// lock, so it can nest inside an Update and never blocks on one.
+// takes on the same path; Read takes no lock, so it can nest inside an Update
+// and never blocks on one.
 type File struct {
 	Path string
 	Perm os.FileMode
+	// Stale is how long a dead holder's lock takes to expire: AsyncStale for
+	// auth.json, whose upstream lock heartbeats; 10 s when zero.
+	Stale time.Duration
+	// Atomic replaces the file through a renamed temporary (WriteFile).
+	// Otherwise it is rewritten in place, as upstream writes auth, settings
+	// and trust files, which keeps their owner, umask, symlinks and
+	// single-file bind mounts; a private Perm is then enforced on the file.
+	Atomic bool
 }
 
 func (f File) Read(context.Context) ([]byte, error) {
@@ -182,13 +191,15 @@ func (f File) Read(context.Context) ([]byte, error) {
 	return data, err
 }
 
-// Update leaves an unchanged file untouched and deletes it when change returns nil.
+// Update leaves an unchanged file untouched and deletes it when change returns
+// nil. ctx bounds the wait for the lock only: once change has run (it may have
+// rotated a credential), its result is written.
 func (f File) Update(ctx context.Context, change func([]byte) ([]byte, error)) error {
 	// A private file gets a private directory: 0600 creates 0700, 0644 creates 0755.
 	if err := os.MkdirAll(filepath.Dir(f.Path), f.Perm|f.Perm>>2&0o111); err != nil {
 		return err
 	}
-	held, err := acquire(ctx, f.Path, documentStale)
+	held, err := acquire(ctx, f.Path, cmp.Or(f.Stale, stale))
 	if err != nil {
 		return err
 	}
@@ -202,19 +213,25 @@ func (f File) Update(ctx context.Context, change func([]byte) ([]byte, error)) e
 	if err != nil || bytes.Equal(next, current) {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	if err := held.owned(); err != nil {
 		return err
 	}
-	if next == nil {
+	switch {
+	case next == nil:
 		if err := os.Remove(f.Path); !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
+	case f.Atomic:
+		return WriteFile(f.Path, next, f.Perm)
 	}
-	return WriteFile(f.Path, next, f.Perm)
+	if err := os.WriteFile(f.Path, next, f.Perm); err != nil {
+		return err
+	}
+	if f.Perm&0o077 == 0 {
+		return os.Chmod(f.Path, f.Perm)
+	}
+	return nil
 }
 
 // WriteFile replaces path with data so a reader sees the old file or the new

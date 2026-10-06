@@ -291,7 +291,17 @@ func (store *ProjectTrustStore) GetEntry(cwd string) (*ProjectTrustStoreEntry, e
 	}
 	data, err := store.decode(contents)
 	if err != nil {
-		return nil, err
+		// pi rewrites trust.json in place under its lock: a read that caught
+		// that write halfway is read again under the lock.
+		if store.document.Update(context.Background(), func(current []byte) ([]byte, error) {
+			contents = current
+			return current, nil
+		}) != nil {
+			return nil, err
+		}
+		if data, err = store.decode(contents); err != nil {
+			return nil, err
+		}
 	}
 	return findNearestTrustEntry(data, cwd), nil
 }
@@ -313,7 +323,7 @@ func (store *ProjectTrustStore) SetMany(decisions []ProjectTrustUpdate) error {
 
 // decode treats a missing store as empty, like upstream's existsSync check.
 func (store *ProjectTrustStore) decode(contents []byte) (trustFile, error) {
-	if contents == nil {
+	if len(contents) == 0 {
 		return trustFile{}, nil
 	}
 	return decodeTrust(contents, store.name)

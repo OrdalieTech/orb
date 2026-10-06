@@ -200,9 +200,15 @@ func migrateSettingsObject(object settingsObject) (settingsObject, error) {
 }
 
 // fileDocument is a kernel file shared with upstream pi: updates hold its
-// proper-lockfile lock and replace the file atomically.
+// proper-lockfile lock and rewrite the file in place, as pi does.
 func fileDocument(path string, perm os.FileMode) host.Document {
 	return filelock.File{Path: path, Perm: perm}
+}
+
+// authFile is auth.json: upstream's lock on it heartbeats, so a dead
+// holder's lock takes AsyncStale to expire.
+func authFile(path string) host.Document {
+	return filelock.File{Path: path, Perm: 0o600, Stale: filelock.AsyncStale}
 }
 
 func writeGlobalSettings(path string, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {

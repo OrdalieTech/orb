@@ -14,7 +14,7 @@ import (
 
 // NewStore performs no I/O; an unused capability creates no files.
 func NewStore(path string, base auth.CredentialStore) *accounts.Store {
-	return accounts.NewStoreWithDocument(file{filelock.File{Path: path, Perm: 0o600}}, base)
+	return accounts.NewStoreWithDocument(file{filelock.File{Path: path, Perm: 0o600, Atomic: true}}, base)
 }
 
 // file keeps the document indented for people who read it.

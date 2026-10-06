@@ -76,7 +76,9 @@ func LoadStore(path string) (*Catalog, error) { return loadStore(path, nil) }
 func LoadStoreDocument(document document.Document) (*Catalog, error) { return loadStore("", document) }
 
 // StoreFile is models-store.json at path, locked like upstream's FileModelsStore.
-func StoreFile(path string) document.Document { return filelock.File{Path: path, Perm: 0o600} }
+func StoreFile(path string) document.Document {
+	return filelock.File{Path: path, Perm: 0o600, Atomic: true}
+}
 
 func readStore(path string, store document.Document) ([]byte, error) {
 	if store == nil {

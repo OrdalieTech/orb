@@ -95,6 +95,6 @@ func KillTrackedDetachedChildren() {
 	clear(trackedDetachedChildren.pids)
 	trackedDetachedChildren.Unlock()
 	for _, pid := range pids {
-		proctree.Kill(pid)
+		_ = proctree.Kill(pid)
 	}
 }

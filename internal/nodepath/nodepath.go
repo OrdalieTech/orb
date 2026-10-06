@@ -54,10 +54,11 @@ func NormalizeShellPath(path string) string {
 // converts a file:// URL to its path.
 func Expand(path string) (string, error) {
 	if path == "~" || strings.HasPrefix(path, "~/") || windows && strings.HasPrefix(path, `~\`) {
-		if home, err := HomeDir(); err == nil {
-			return filepath.Join(home, path[1:]), nil
+		home, err := HomeDir()
+		if err != nil {
+			return "", err
 		}
-		return path, nil
+		return filepath.Join(home, path[1:]), nil
 	}
 	if strings.HasPrefix(path, "file://") {
 		return FileURLToPath(path)

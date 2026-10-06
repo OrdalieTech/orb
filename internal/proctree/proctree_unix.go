@@ -17,10 +17,17 @@ func Isolate(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
 
-// Kill kills the process group led by pid, which Isolate started. It never
-// signals pid alone: after the leader is reaped that pid may be reused.
-func Kill(pid int) {
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+// Kill kills the process group led by pid, which Isolate started; a group
+// already gone is os.ErrProcessDone. It never signals pid alone: after the
+// leader is reaped that pid may be reused.
+func Kill(pid int) error {
+	err := syscall.Kill(-pid, syscall.SIGKILL)
+	// ESRCH: the group is gone. EPERM: on darwin, signalling a group whose
+	// leader is already a zombie reports EPERM; nothing is left to kill either way.
+	if errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM) {
+		return os.ErrProcessDone
+	}
+	return err
 }
 
 func defaultShell(func(string) string) (Shell, error) {

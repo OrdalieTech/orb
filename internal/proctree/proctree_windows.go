@@ -22,20 +22,22 @@ func Isolate(cmd *exec.Cmd) {
 }
 
 // Kill runs System32's taskkill over pid's tree, detached and not awaited,
-// matching upstream's fire-and-forget spawn.
-func Kill(pid int) {
+// matching upstream's fire-and-forget spawn; its error is only the spawn's.
+func Kill(pid int) error {
 	system, err := windows.GetSystemDirectory()
 	if err != nil {
-		return
+		return err
 	}
 	command := exec.Command(filepath.Join(system, "taskkill.exe"), "/F", "/T", "/PID", strconv.Itoa(pid))
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
 	}
-	if command.Start() == nil {
-		go func() { _ = command.Wait() }()
+	if err := command.Start(); err != nil {
+		return err
 	}
+	go func() { _ = command.Wait() }()
+	return nil
 }
 
 func defaultShell(getenv func(string) string) (Shell, error) {

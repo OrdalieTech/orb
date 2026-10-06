@@ -155,7 +155,7 @@ func Run(ctx context.Context, command Command) (int, error) {
 	var stop atomic.Int32
 	kill := func(reason int32) {
 		if stop.CompareAndSwap(running, reason) {
-			Kill(pid)
+			_ = Kill(pid)
 		}
 	}
 	var callbackErr error

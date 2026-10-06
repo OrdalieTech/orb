@@ -1391,7 +1391,9 @@ func resolveCommandCWD(base, configured string) string {
 
 func expandHome(value string) string {
 	if value == "~" || strings.HasPrefix(value, "~/") {
-		value, _ = nodepath.Expand(value)
+		if expanded, err := nodepath.Expand(value); err == nil {
+			value = expanded
+		}
 	}
 	return value
 }

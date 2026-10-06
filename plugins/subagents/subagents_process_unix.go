@@ -28,10 +28,7 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 		process.Env = append(process.Env, name+"="+value)
 	}
 	proctree.Isolate(process)
-	process.Cancel = func() error {
-		proctree.Kill(process.Process.Pid)
-		return nil
-	}
+	process.Cancel = func() error { return proctree.Kill(process.Process.Pid) }
 	process.Stdout, process.Stderr = stdout, stderr
 	statusReader, statusWriter, err := os.Pipe()
 	if err != nil {
@@ -46,7 +43,7 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 	_ = statusWriter.Close()
 	var run externalRun
 	_, run.statusErr = fmt.Fscan(statusReader, &run.status)
-	_ = process.Cancel()
+	run.cleanupErr = process.Cancel()
 	run.waitErr = process.Wait()
 	return run, nil
 }

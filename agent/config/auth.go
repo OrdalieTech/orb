@@ -43,7 +43,7 @@ func NewAuthStorage(path string) (*AuthStorage, error) {
 	if err != nil && !errors.Is(err, os.ErrExist) {
 		return nil, err
 	}
-	return &AuthStorage{Store: aiauth.NewDocumentStore(fileDocument(resolved, 0o600)), path: resolved}, nil
+	return &AuthStorage{Store: aiauth.NewDocumentStore(authFile(resolved)), path: resolved}, nil
 }
 
 // NewAuthStorageWithDocument uses a caller-owned transactional credential document.

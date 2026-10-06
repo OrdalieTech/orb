@@ -31,6 +31,19 @@ func (store *Store) load(ctx context.Context) (credentials, error) {
 	if err != nil {
 		return credentials{}, err
 	}
+	stored, err := parseCredentials(data)
+	if err == nil {
+		return stored, nil
+	}
+	// Reads take no lock, and pi rewrites auth.json in place under it: a read
+	// can catch that write halfway, so read again under the lock.
+	locked := store.document.Update(context.WithoutCancel(ctx), func(current []byte) ([]byte, error) {
+		data = current
+		return current, nil
+	})
+	if locked != nil {
+		return credentials{}, err
+	}
 	return parseCredentials(data)
 }
 
