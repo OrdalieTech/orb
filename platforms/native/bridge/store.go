@@ -7,20 +7,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 
 	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/gofrs/flock"
 )
-
-// groupOrOtherAccess reports POSIX group or other permission bits. Windows
-// has none (Go reports 0666/0777 there); the profile directory's ACL is what
-// keeps the bridge state private on that platform.
-func groupOrOtherAccess(mode os.FileMode) bool {
-	return runtime.GOOS != "windows" && mode.Perm()&0o077 != 0
-}
 
 // Store is one Bridge document behind the profile's single-owner lock: the
 // supplied document when native storage is open, else a private file. The
@@ -49,12 +42,12 @@ func OpenStore(path string, quota int, document host.Document) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() || groupOrOtherAccess(info.Mode()) {
+	if !info.IsDir() || filelock.GroupOrOtherAccess(info.Mode()) {
 		return nil, errors.New("bridge directory must be private")
 	}
 	for _, name := range []string{path, path + ".lock"} {
 		if info, err = os.Lstat(name); err == nil {
-			if !info.Mode().IsRegular() || groupOrOtherAccess(info.Mode()) {
+			if !info.Mode().IsRegular() || filelock.GroupOrOtherAccess(info.Mode()) {
 				return nil, errors.New("bridge store must be a private regular file")
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -118,56 +111,18 @@ func (s *Store) Update(ctx context.Context, change func([]byte) ([]byte, error))
 	if len(b) > s.quota {
 		return errors.New("store quota exceeded")
 	}
-	if s.document != nil {
+	switch {
+	case s.document != nil:
 		err = document.Replace(ctx, s.document, b)
-	} else {
-		err = s.writeFile(b)
+	case b == nil:
+		if err = os.Remove(s.path); errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
+	default:
+		err = filelock.WriteFile(s.path, b, 0o600)
 	}
 	s.failed = err != nil
 	s.cached = b
-	return err
-}
-
-func (s *Store) writeFile(b []byte) error {
-	if b == nil {
-		if err := os.Remove(s.path); !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	dir := filepath.Dir(s.path)
-	f, err := os.CreateTemp(dir, ".bridge-")
-	if err != nil {
-		return err
-	}
-	name := f.Name()
-	defer func() { _ = os.Remove(name) }()
-	defer func() { _ = f.Close() }()
-	if _, err = f.Write(b); err != nil {
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err = os.Rename(name, s.path); err != nil {
-		return err
-	}
-	// Windows cannot flush a directory opened read-only (FlushFileBuffers needs
-	// GENERIC_WRITE); NTFS journals the rename itself.
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	err = d.Sync()
-	if closeErr := d.Close(); err == nil {
-		err = closeErr
-	}
 	return err
 }
 

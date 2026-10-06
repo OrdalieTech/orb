@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"golang.org/x/term"
@@ -1588,34 +1589,14 @@ func materializeSource(agentDir, name string, source []byte) (string, error) {
 	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, source) {
 		return path, nil
 	}
-	if err := writeHostFile(directory, fileName, source); err != nil {
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", err
+	}
+	// A spawned runtime sees the previous script or the complete new one.
+	if err := filelock.WriteFile(path, source, 0o600); err != nil {
 		return "", err
 	}
 	return path, nil
-}
-
-// writeHostFile publishes data as directory/name atomically: readers (a spawned
-// runtime loading a script, a metadata command reading the snapshot) either see
-// the previous file or the complete new one. os.CreateTemp already creates the
-// temporary file 0600, which is the mode both host artifacts keep.
-func writeHostFile(directory, name string, data []byte) error {
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(directory, "."+name+"-*")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, filepath.Join(directory, name))
 }
 
 func wireValue(value any) (any, error) {

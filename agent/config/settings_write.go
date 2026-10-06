@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
@@ -199,34 +199,15 @@ func migrateSettingsObject(object settingsObject) (settingsObject, error) {
 	return object, nil
 }
 
-func withSettingsLock(path string, operation func() error) (err error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	release, err := filelock.Acquire(path)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, release()) }()
-	return operation()
+// fileDocument is a kernel file shared with upstream pi: updates hold its
+// proper-lockfile lock and replace the file atomically.
+func fileDocument(path string, perm os.FileMode) host.Document {
+	return filelock.File{Path: path, Perm: perm}
 }
 
 func writeGlobalSettings(path string, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
-	return withSettingsLock(path, func() error {
-		current, err := os.ReadFile(path)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		encoded, err := updatedSettings(current, values, nestedField, nestedKey, nestedValue)
-		if err != nil {
-			return err
-		}
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if err != nil {
-			return err
-		}
-		_, writeErr := file.Write(encoded)
-		return errors.Join(writeErr, file.Close())
+	return fileDocument(path, 0o644).Update(context.Background(), func(current []byte) ([]byte, error) {
+		return updatedSettings(current, values, nestedField, nestedKey, nestedValue)
 	})
 }
 

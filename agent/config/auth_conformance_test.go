@@ -256,7 +256,6 @@ func verifyAuthLockWithUpstream(t *testing.T, authPath string, storage *AuthStor
 		_ = command.Process.Kill()
 		t.Fatal("TS lock writer did not finish")
 	}
-	storage.Reload()
 	credential, err := storage.Read(context.Background(), "typescript-lock")
 	if err != nil || credential == nil || credential.Key == nil || *credential.Key != "typescript" {
 		t.Fatalf("TS write after lock release = %#v, %v", credential, err)

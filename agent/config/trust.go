@@ -114,17 +114,6 @@ func GetProjectTrustOptions(cwd string, includeSessionOnly bool) []ProjectTrustO
 // trustFile entries: nil means an explicit JSON null kept in the file.
 type trustFile map[string]*bool
 
-func readTrustFile(path string) (trustFile, error) {
-	contents, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return trustFile{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read trust store %s: %s", path, err) //nolint:staticcheck // Upstream error text is observable.
-	}
-	return decodeTrust(contents, path)
-}
-
 func decodeTrust(contents []byte, path string) (trustFile, error) {
 	decoder := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(contents, []byte{0xef, 0xbb, 0xbf})))
 	var parsed any
@@ -153,8 +142,8 @@ func decodeTrust(contents []byte, path string) (trustFile, error) {
 	return data, nil
 }
 
-// writeTrustFile matches upstream's JSON.stringify(sorted, null, 2) + "\n".
-func writeTrustFile(path string, data trustFile) error {
+// encodeTrust matches upstream's JSON.stringify(sorted, null, 2) + "\n".
+func encodeTrust(data trustFile) ([]byte, error) {
 	keys := slices.Collect(maps.Keys(data))
 	sort.Slice(keys, func(left, right int) bool { return lessUTF16(keys[left], keys[right]) })
 	var output bytes.Buffer
@@ -165,7 +154,7 @@ func writeTrustFile(path string, data trustFile) error {
 		for index, key := range keys {
 			encodedKey, err := jsonwire.MarshalString(key)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			output.WriteString("  ")
 			output.Write(encodedKey)
@@ -186,10 +175,7 @@ func writeTrustFile(path string, data trustFile) error {
 		output.WriteString("}")
 	}
 	output.WriteString("\n")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, output.Bytes(), 0o644)
+	return output.Bytes(), nil
 }
 
 // lessUTF16 orders keys the way JS Array.prototype.sort() compares strings: by
@@ -269,15 +255,15 @@ func HasTrustRequiringProjectResources(cwd string) bool {
 
 // ProjectTrustStore persists project trust decisions in <agentDir>/trust.json.
 type ProjectTrustStore struct {
-	document  host.Document
-	trustPath string
+	document host.Document
+	name     string // the trust file path in error text
 }
 
 func NewProjectTrustStoreWithDocument(document host.Document) (*ProjectTrustStore, error) {
 	if document == nil {
 		return nil, errors.New("trust document is required")
 	}
-	return &ProjectTrustStore{document: document}, nil
+	return &ProjectTrustStore{document: document, name: "database"}, nil
 }
 
 func NewProjectTrustStore(agentDir string) *ProjectTrustStore {
@@ -285,7 +271,8 @@ func NewProjectTrustStore(agentDir string) *ProjectTrustStore {
 	if err != nil {
 		resolved = agentDir
 	}
-	return &ProjectTrustStore{trustPath: filepath.Join(resolved, "trust.json")}
+	path := filepath.Join(resolved, "trust.json")
+	return &ProjectTrustStore{document: fileDocument(path, 0o644), name: path}
 }
 
 // Get returns the nearest stored decision for cwd, or nil when undecided.
@@ -298,33 +285,15 @@ func (store *ProjectTrustStore) Get(cwd string) (*bool, error) {
 }
 
 func (store *ProjectTrustStore) GetEntry(cwd string) (*ProjectTrustStoreEntry, error) {
-	if store.document != nil {
-		contents, err := store.document.Read(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		if len(contents) == 0 {
-			return nil, nil
-		}
-		data, err := decodeTrust(contents, "database")
-		if err != nil {
-			return nil, err
-		}
-		return findNearestTrustEntry(data, cwd), nil
+	contents, err := store.document.Read(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read trust store %s: %s", store.name, err) //nolint:staticcheck // Upstream error text is observable.
 	}
-	var entry *ProjectTrustStoreEntry
-	err := withSettingsLock(store.trustPath, func() error {
-		data, err := readTrustFile(store.trustPath)
-		if err != nil {
-			return err
-		}
-		entry = findNearestTrustEntry(data, cwd)
-		return nil
-	})
+	data, err := store.decode(contents)
 	if err != nil {
 		return nil, err
 	}
-	return entry, nil
+	return findNearestTrustEntry(data, cwd), nil
 }
 
 func (store *ProjectTrustStore) Set(cwd string, decision *bool) error {
@@ -332,28 +301,22 @@ func (store *ProjectTrustStore) Set(cwd string, decision *bool) error {
 }
 
 func (store *ProjectTrustStore) SetMany(decisions []ProjectTrustUpdate) error {
-	if store.document != nil {
-		return store.document.Update(context.Background(), func(contents []byte) ([]byte, error) {
-			data := trustFile{}
-			var err error
-			if len(contents) > 0 {
-				data, err = decodeTrust(contents, "database")
-				if err != nil {
-					return nil, err
-				}
-			}
-			applyTrustUpdates(data, decisions)
-			return json.Marshal(data)
-		})
-	}
-	return withSettingsLock(store.trustPath, func() error {
-		data, err := readTrustFile(store.trustPath)
+	return store.document.Update(context.Background(), func(contents []byte) ([]byte, error) {
+		data, err := store.decode(contents)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		applyTrustUpdates(data, decisions)
-		return writeTrustFile(store.trustPath, data)
+		return encodeTrust(data)
 	})
+}
+
+// decode treats a missing store as empty, like upstream's existsSync check.
+func (store *ProjectTrustStore) decode(contents []byte) (trustFile, error) {
+	if contents == nil {
+		return trustFile{}, nil
+	}
+	return decodeTrust(contents, store.name)
 }
 
 func applyTrustUpdates(data trustFile, decisions []ProjectTrustUpdate) {

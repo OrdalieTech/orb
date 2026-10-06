@@ -110,7 +110,7 @@ func TestAuthStorageUsesProperLockfileDirectoryProtocol(t *testing.T) {
 		t.Fatalf("blocked write changed auth.json to %q: %v", contents, err)
 	}
 
-	old := time.Now().Add(-authLockStale - time.Second)
+	old := time.Now().Add(-time.Minute)
 	if err := os.Chtimes(lockPath, old, old); err != nil {
 		t.Fatal(err)
 	}

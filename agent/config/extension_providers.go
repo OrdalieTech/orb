@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -15,10 +13,9 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/host"
-	"github.com/OrdalieTech/orb/internal/filelock"
-	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 func normalizeProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
@@ -813,165 +810,41 @@ func extensionCredentials(credential *aiauth.Credential) extensions.OAuthCredent
 	return result
 }
 
-var providerStoreMu sync.Mutex
-
+// providerModelStore is the extension's entry in models-store.json, which it
+// shares with the models.dev overlay and with upstream pi.
 type providerModelStore struct {
 	document host.Document
-	path     string
 	id       string
 }
 
 func newProviderModelStore(path, id string, documents ...host.Document) extensions.ProviderModelStore {
-	store := providerModelStore{path: path, id: id}
-	if len(documents) > 0 {
+	store := providerModelStore{document: aimodels.StoreFile(path), id: id}
+	if len(documents) > 0 && documents[0] != nil {
 		store.document = documents[0]
 	}
 	return store
 }
 
-func (store providerModelStore) Read(ctx context.Context) (entry *extensions.ProviderModelsStoreEntry, err error) {
-	if store.document != nil {
-		data, err := store.document.Read(ctx)
-		if err != nil || len(data) == 0 {
-			return nil, err
-		}
-		var values map[string]json.RawMessage
-		if err = json.Unmarshal(data, &values); err != nil {
-			return nil, err
-		}
-		if len(values[store.id]) == 0 {
-			return nil, nil
-		}
-		err = json.Unmarshal(values[store.id], &entry)
-		return entry, err
-	}
-	unlock, err := lockProviderStore(store.path)
-	if err != nil {
+func (store providerModelStore) Read(ctx context.Context) (*extensions.ProviderModelsStoreEntry, error) {
+	entry, err := aimodels.ReadStoreEntry(ctx, store.document, store.id)
+	if entry == nil {
 		return nil, err
 	}
-	defer func() { err = errors.Join(err, unlock()) }()
-	values, err := readProviderStore(store.path)
-	if err != nil {
-		return nil, err
+	result := &extensions.ProviderModelsStoreEntry{Models: entry.Models}
+	if entry.CheckedAt != 0 {
+		result.CheckedAt = &entry.CheckedAt
 	}
-	stored, ok := values[store.id]
-	if !ok {
-		return nil, nil
-	}
-	return &stored, nil
+	return result, nil
 }
 
-func (store providerModelStore) Write(ctx context.Context, entry extensions.ProviderModelsStoreEntry) (err error) {
-	if store.document != nil {
-		return store.updateDocument(ctx, &entry)
+func (store providerModelStore) Write(ctx context.Context, entry extensions.ProviderModelsStoreEntry) error {
+	stored := &aimodels.StoreEntry{Models: entry.Models}
+	if entry.CheckedAt != nil {
+		stored.CheckedAt = *entry.CheckedAt
 	}
-	unlock, err := lockProviderStore(store.path)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, unlock()) }()
-	values, err := readProviderStore(store.path)
-	if err != nil {
-		return err
-	}
-	values[store.id] = entry
-	return writeProviderStore(store.path, values)
+	return aimodels.WriteStoreEntry(ctx, store.document, store.id, stored)
 }
 
-func (store providerModelStore) Delete(ctx context.Context) (err error) {
-	if store.document != nil {
-		return store.updateDocument(ctx, nil)
-	}
-	unlock, err := lockProviderStore(store.path)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, unlock()) }()
-	values, err := readProviderStore(store.path)
-	if err != nil {
-		return err
-	}
-	delete(values, store.id)
-	return writeProviderStore(store.path, values)
-}
-
-// Extension-registered provider catalogs share models-store.json with the model
-// store and with upstream pi, so this locks through filelock rather than flock:
-// a flock here left the regular lock file that wedges upstream permanently.
-func lockProviderStore(path string) (func() error, error) {
-	providerStoreMu.Lock()
-	release, err := filelock.Acquire(path)
-	if err != nil {
-		providerStoreMu.Unlock()
-		return nil, err
-	}
-	return func() error {
-		err := release()
-		providerStoreMu.Unlock()
-		return err
-	}, nil
-}
-
-func readProviderStore(path string) (map[string]extensions.ProviderModelsStoreEntry, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return make(map[string]extensions.ProviderModelsStoreEntry), nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var values map[string]extensions.ProviderModelsStoreEntry
-	if err := json.Unmarshal(data, &values); err != nil {
-		return nil, err
-	}
-	return values, nil
-}
-
-func writeProviderStore(path string, values map[string]extensions.ProviderModelsStoreEntry) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := jsonwire.MarshalIndent(values, "", "  ")
-	if err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".models-store-extension-*")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-	if err := temporary.Chmod(0o600); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, path)
-}
-
-func (store providerModelStore) updateDocument(ctx context.Context, entry *extensions.ProviderModelsStoreEntry) error {
-	return store.document.Update(ctx, func(data []byte) ([]byte, error) {
-		values := map[string]json.RawMessage{}
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &values); err != nil {
-				return nil, err
-			}
-		}
-		if entry == nil {
-			delete(values, store.id)
-		} else {
-			encoded, err := jsonwire.Marshal(entry)
-			if err != nil {
-				return nil, err
-			}
-			values[store.id] = encoded
-		}
-		return jsonwire.Marshal(values)
-	})
+func (store providerModelStore) Delete(ctx context.Context) error {
+	return aimodels.WriteStoreEntry(ctx, store.document, store.id, nil)
 }

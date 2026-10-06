@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"sync"
@@ -44,6 +42,8 @@ type orderedStore struct {
 	entries map[string]storedProvider
 }
 
+// MarshalJSON keeps upstream's JSON.stringify member order; jsonwire leaves
+// <, >, and & literal where encoding/json would HTML-escape them.
 func (store orderedStore) MarshalJSON() ([]byte, error) {
 	var output bytes.Buffer
 	output.WriteByte('{')
@@ -75,16 +75,19 @@ func LoadStore(path string) (*Catalog, error) { return loadStore(path, nil) }
 
 func LoadStoreDocument(document document.Document) (*Catalog, error) { return loadStore("", document) }
 
-func readStore(path string, document document.Document) ([]byte, error) {
-	if document != nil {
-		return document.Read(context.Background())
+// StoreFile is models-store.json at path, locked like upstream's FileModelsStore.
+func StoreFile(path string) document.Document { return filelock.File{Path: path, Perm: 0o600} }
+
+func readStore(path string, store document.Document) ([]byte, error) {
+	if store == nil {
+		store = StoreFile(path)
 	}
-	return os.ReadFile(path)
+	return store.Read(context.Background())
 }
 
 func loadStore(path string, document document.Document) (*Catalog, error) {
 	data, err := readStore(path, document)
-	if errors.Is(err, os.ErrNotExist) || (err == nil && len(data) == 0) {
+	if err == nil && len(data) == 0 {
 		return &Catalog{providers: make(map[string]map[string]ai.Model)}, nil
 	}
 	if err != nil {
@@ -351,8 +354,16 @@ func storeFreshAt(path string, now time.Time, documents ...document.Document) bo
 	return latest != 0 && now.UnixMilli()-latest < remoteCatalogRefreshInterval.Milliseconds()
 }
 
-func updateStore(path string, documents []document.Document, change func(*orderedStore)) (err error) {
-	update := func(data []byte) ([]byte, error) {
+func updateStore(path string, documents []document.Document, change func(*orderedStore)) error {
+	store := StoreFile(path)
+	if len(documents) > 0 && documents[0] != nil {
+		store = documents[0]
+	}
+	return updateOrderedStore(context.Background(), store, change)
+}
+
+func updateOrderedStore(ctx context.Context, store document.Document, change func(*orderedStore)) error {
+	return store.Update(ctx, func(data []byte) ([]byte, error) {
 		stored := orderedStore{entries: make(map[string]storedProvider)}
 		var err error
 		if len(data) > 0 {
@@ -363,31 +374,41 @@ func updateStore(path string, documents []document.Document, change func(*ordere
 		}
 		change(&stored)
 		return jsonwire.MarshalIndent(stored, "", "  ")
-	}
-	if len(documents) > 0 && documents[0] != nil {
-		return documents[0].Update(context.Background(), update)
-	}
-	if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	release, err := filelock.Acquire(path)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, release()) }()
-	data, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	data, err = update(data)
-	if err != nil {
-		return err
+	})
+}
+
+// StoreEntry is one provider's models-store.json entry.
+type StoreEntry = storedProvider
+
+// ReadStoreEntry returns providerID's entry, or nil when it has none.
+func ReadStoreEntry(ctx context.Context, store document.Document, providerID string) (*StoreEntry, error) {
+	data, err := store.Read(ctx)
+	if err != nil || len(data) == 0 {
+		return nil, err
 	}
 	stored, err := decodeOrderedStore(data)
-	if err != nil {
-		return err
+	if entry, ok := stored.entries[providerID]; ok && err == nil {
+		return &entry, nil
 	}
-	return writeOrderedStore(path, stored)
+	return nil, err
+}
+
+// WriteStoreEntry replaces providerID's entry in place, appending a new one;
+// nil deletes it. Other entries keep their order and fields.
+func WriteStoreEntry(ctx context.Context, store document.Document, providerID string, entry *StoreEntry) error {
+	return updateOrderedStore(ctx, store, func(stored *orderedStore) {
+		_, exists := stored.entries[providerID]
+		switch {
+		case entry == nil:
+			delete(stored.entries, providerID)
+			stored.order = slices.DeleteFunc(stored.order, func(id string) bool { return id == providerID })
+		case !exists:
+			stored.order = append(stored.order, providerID)
+			fallthrough
+		default:
+			stored.entries[providerID] = *entry
+		}
+	})
 }
 
 func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModified *int64, etag string, documents ...document.Document) error {
@@ -437,34 +458,6 @@ func cloneTimestamp(value *int64) *int64 {
 	}
 	copy := *value
 	return &copy
-}
-
-// writeOrderedStore persists with JSON.stringify(current, null, 2) byte parity
-// (upstream models-store.ts): jsonwire leaves <, >, and & literal where
-// json.MarshalIndent would HTML-escape them.
-func writeOrderedStore(path string, stored orderedStore) error {
-	data, err := jsonwire.MarshalIndent(stored, "", "  ")
-	if err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".models-store-*")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-	if err := temporary.Chmod(0o600); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, path)
 }
 
 func decodeOrderedStore(data []byte) (orderedStore, error) {

@@ -152,8 +152,31 @@ func (store *FileStore) Transact(ctx context.Context, fn func(memory.Store) erro
 	if fn == nil {
 		return errors.New("memory: transaction callback is required")
 	}
+	return store.locked(ctx, false, func() error {
+		items, err := store.readLocked(ctx)
+		if err != nil {
+			return err
+		}
+		order := 0
+		for _, item := range items {
+			order = max(order, item.order+1)
+		}
+		transaction := &fileTransaction{items: items, order: order}
+		if err := fn(transaction); err != nil {
+			return err
+		}
+		return store.appendRecordsLocked(ctx, transaction.records)
+	})
+}
+
+// locked runs fn under the store's flock, shared or exclusive, polling until ctx ends.
+func (store *FileStore) locked(ctx context.Context, shared bool, fn func() error) error {
 	lock := flock.New(store.lockPath)
-	locked, err := lock.TryLockContext(ctx, 10*time.Millisecond)
+	try := lock.TryLockContext
+	if shared {
+		try = lock.TryRLockContext
+	}
+	locked, err := try(ctx, 10*time.Millisecond)
 	if err != nil {
 		return err
 	}
@@ -161,19 +184,7 @@ func (store *FileStore) Transact(ctx context.Context, fn func(memory.Store) erro
 		return ctx.Err()
 	}
 	defer func() { _ = lock.Unlock() }()
-	items, err := store.readLocked(ctx)
-	if err != nil {
-		return err
-	}
-	order := 0
-	for _, item := range items {
-		order = max(order, item.order+1)
-	}
-	transaction := &fileTransaction{items: items, order: order}
-	if err := fn(transaction); err != nil {
-		return err
-	}
-	return store.appendRecordsLocked(ctx, transaction.records)
+	return fn()
 }
 
 func (transaction *fileTransaction) Append(ctx context.Context, item memory.Item) (string, error) {
@@ -214,20 +225,7 @@ func (transaction *fileTransaction) Delete(ctx context.Context, id string) error
 }
 
 func (store *FileStore) append(ctx context.Context, record fileRecord) error {
-	lock := flock.New(store.lockPath)
-	locked, err := lock.TryLockContext(ctx, 10*time.Millisecond)
-	if err != nil {
-		return err
-	}
-	if !locked {
-		return ctx.Err()
-	}
-	defer func() { _ = lock.Unlock() }()
-	return store.appendLocked(ctx, record)
-}
-
-func (store *FileStore) appendLocked(ctx context.Context, record fileRecord) error {
-	return store.appendRecordsLocked(ctx, []fileRecord{record})
+	return store.locked(ctx, false, func() error { return store.appendRecordsLocked(ctx, []fileRecord{record}) })
 }
 
 func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileRecord) error {
@@ -258,17 +256,12 @@ func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileR
 	return err
 }
 
-func (store *FileStore) read(ctx context.Context) (map[string]storedItem, error) {
-	lock := flock.New(store.lockPath)
-	locked, err := lock.TryRLockContext(ctx, 10*time.Millisecond)
-	if err != nil {
-		return nil, err
-	}
-	if !locked {
-		return nil, ctx.Err()
-	}
-	defer func() { _ = lock.Unlock() }()
-	return store.readLocked(ctx)
+func (store *FileStore) read(ctx context.Context) (items map[string]storedItem, err error) {
+	err = store.locked(ctx, true, func() error {
+		items, err = store.readLocked(ctx)
+		return err
+	})
+	return items, err
 }
 
 func (store *FileStore) readLocked(ctx context.Context) (map[string]storedItem, error) {

@@ -3,6 +3,7 @@ package filelock
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -83,5 +84,34 @@ func TestAcquireSerializesContendingWriters(t *testing.T) {
 	}
 	if peak != 1 {
 		t.Fatalf("peak concurrent holders = %d, want 1", peak)
+	}
+}
+
+// An update replaces the file atomically yet behaves like upstream's in-place
+// writeFileSync: a dotfile-managed symlink keeps pointing at its target, and a
+// mode the user narrowed is not widened back.
+func TestFileUpdateKeepsSymlinkAndNarrowedMode(t *testing.T) {
+	dir := t.TempDir()
+	target, link := filepath.Join(dir, "target.json"), filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip(err)
+	}
+	file := File{Path: link, Perm: 0o644}
+	if err := file.Update(t.Context(), func([]byte) ([]byte, error) { return []byte(`{"a":1}`), nil }); err != nil {
+		t.Fatal(err)
+	}
+	data, err := file.Read(t.Context())
+	info, statErr := os.Lstat(link)
+	if err != nil || string(data) != `{"a":1}` || statErr != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("data %q, %v; link %v, %v", data, err, info, statErr)
+	}
+	if info, err := os.Stat(target); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("target mode %v, %v", info, err)
+	}
+	if _, err := os.Stat(link + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("lock survived the update: %v", err)
 	}
 }

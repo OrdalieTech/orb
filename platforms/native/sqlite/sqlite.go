@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/gofrs/flock"
 
 	_ "modernc.org/sqlite"
@@ -84,13 +85,6 @@ func fileURI(path, query string) string {
 	return u.String()
 }
 
-// groupOrOtherAccess reports POSIX group or other permission bits. Windows
-// has none (Go reports 0666/0777 there); the profile directory's ACL is what
-// keeps the database private on that platform.
-func groupOrOtherAccess(mode os.FileMode) bool {
-	return runtime.GOOS != "windows" && mode.Perm()&0o077 != 0
-}
-
 func Open(ctx context.Context, path string) (_ *DB, err error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("database path must be absolute")
@@ -106,7 +100,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 		if statErr != nil {
 			return nil, statErr
 		}
-		if groupOrOtherAccess(info.Mode()) || (name == filepath.Dir(path) && !info.IsDir()) || (name != filepath.Dir(path) && !info.Mode().IsRegular()) {
+		if filelock.GroupOrOtherAccess(info.Mode()) || (name == filepath.Dir(path) && !info.IsDir()) || (name != filepath.Dir(path) && !info.Mode().IsRegular()) {
 			return nil, errors.New("database and directory must be private regular paths")
 		}
 	}
@@ -327,7 +321,7 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 	if err != nil {
 		return err
 	}
-	if !parent.IsDir() || groupOrOtherAccess(parent.Mode()) {
+	if !parent.IsDir() || filelock.GroupOrOtherAccess(parent.Mode()) {
 		return errors.New("backup directory must be private")
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)

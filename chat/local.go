@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/filelock"
 )
 
 // Handler consumes one message synchronously. [*Processor] implements it.
@@ -387,22 +389,7 @@ func compactSpool(path string, pending []Message) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("chat: create spool dir: %w", err)
 	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".spool-*")
-	if err != nil {
-		return fmt.Errorf("chat: compact spool: %w", err)
-	}
-	_, err = temp.Write(data.Bytes())
-	if err == nil {
-		err = temp.Sync()
-	}
-	if closeErr := temp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(temp.Name(), path)
-	}
-	if err != nil {
-		_ = os.Remove(temp.Name())
+	if err := filelock.WriteFile(path, data.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("chat: compact spool: %w", err)
 	}
 	return nil

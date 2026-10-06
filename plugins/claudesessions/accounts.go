@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -155,11 +156,7 @@ func syncMCPServers(from, to string) error {
 	if err != nil {
 		return err
 	}
-	temporary := to + ".orb"
-	if err := os.WriteFile(temporary, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(temporary, to)
+	return filelock.WriteFile(to, data, 0o600)
 }
 
 func accountsDir(agentDir string) string { return filepath.Join(agentDir, "plugins", Name, "accounts") }
