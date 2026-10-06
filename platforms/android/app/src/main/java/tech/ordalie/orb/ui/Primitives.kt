@@ -1,6 +1,8 @@
 package tech.ordalie.orb.ui
 
 import android.content.*
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -15,12 +17,14 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import kotlin.math.roundToInt
+import kotlinx.coroutines.*
 import tech.ordalie.orb.core.Tool
 
 /** A hairline separates regions — turns, table rows, the prompt — never words. */
@@ -55,8 +59,8 @@ fun Modifier.press(enabled: Boolean = true, onLong: (() -> Unit)? = null, onClic
 }
 
 @Composable
-fun Btn(label: String, inverted: Boolean = false, modifier: Modifier = Modifier, color: Color = p.fg, on: Color = p.bg, onClick: () -> Unit) =
-    Box(modifier.press(onClick = onClick).clip(Soft).background(if (inverted) color else Color.Transparent).border(1.dp, color, Soft).padding(horizontal = 14.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+fun Btn(label: String, inverted: Boolean = false, modifier: Modifier = Modifier, color: Color = p.fg, on: Color = p.bg, shape: Shape = Soft, onClick: () -> Unit) =
+    Box(modifier.press(onClick = onClick).clip(shape).background(if (inverted) color else Color.Transparent).border(1.dp, color, shape).padding(horizontal = 14.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
         T(label, size = 13.sp, weight = Strong, color = if (inverted) on else color)
     }
 
@@ -70,13 +74,14 @@ fun Field(value: String, hint: String, modifier: Modifier = Modifier, secret: Bo
         if (value.isEmpty()) T(hint, size = 15.sp, color = p.meta, lines = 1)
     }
 
-/** A card rising from the bottom over a dimmed screen; a tap outside closes it. */
+/** A card rising from the bottom over a dimmed screen, its corners following the screen's; a tap outside closes it. */
 @Composable
 fun AnimatedVisibilityScope.Sheet(dismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
     Box(Modifier.fillMaxSize().background(Color(0x66000000)).press(onClick = dismiss), contentAlignment = Alignment.BottomCenter) {
+        val shape = bezel(8.dp)
         Column(
             Modifier.animateEnterExit(enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 420f)) { it }, exit = slideOutVertically(tween(220)) { it })
-                .fillMaxWidth().padding(8.dp).then(modifier).clip(Pane).background(p.bg).border(1.dp, p.rule, Pane)
+                .fillMaxWidth().padding(8.dp).then(modifier).clip(shape).background(p.bg).border(1.dp, p.rule, shape)
                 .navigationBarsPadding().imePadding().press {},
             content = content,
         )
@@ -156,6 +161,29 @@ fun Header(title: String, sub: String = "", back: () -> Unit, right: @Composable
         }
         right()
     }
+
+/** Decoded pictures, by source and size, within an eighth of the heap; nothing is written anywhere. */
+private val pictures = object : LruCache<String, ImageBitmap>((java.lang.Runtime.getRuntime().maxMemory() / 8).toInt()) {
+    override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
+}
+
+/** A base64 image decoded no larger than [px] on its long side; sampled down while decoding, so the full size never sits in memory. */
+private fun decode(data: String, px: Int): ImageBitmap? {
+    val key = "$px:${data.length}:${data.hashCode()}"
+    pictures.get(key)?.let { return it }
+    val bytes = runCatching { java.util.Base64.getMimeDecoder().decode(data) }.getOrNull() ?: return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= px) sample *= 2
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()?.also { pictures.put(key, it) }
+}
+
+/** An image, decoded off the main thread when it first comes on screen. */
+@Composable
+fun Picture(data: String, px: Int, modifier: Modifier = Modifier) {
+    val image by produceState(pictures.get("$px:${data.length}:${data.hashCode()}"), data, px) { if (value == null) value = withContext(Dispatchers.Default) { decode(data, px) } }
+    image?.let { Image(it, null, modifier, contentScale = ContentScale.Fit) } ?: Box(modifier.size(96.dp).background(p.raised, Soft))
+}
 
 fun Context.copy(text: String, what: String = "copied") {
     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("orb", text))

@@ -67,7 +67,7 @@ private fun PeerRow(peer: Peer, c: Ctx) = Column(Modifier.animateContentSize()) 
     val scope = rememberCoroutineScope()
     var updating by remember(peer.version) { mutableStateOf("") }
     Row(
-        Modifier.fillMaxWidth().press { peer.instances.firstOrNull()?.let { c.nav.go(Screen.Chat(c.rt.open(it))) } }.padding(vertical = 12.dp),
+        Modifier.fillMaxWidth().press { peer.instances.firstOrNull()?.let { c.nav.show(c.rt.open(it)) } }.padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Dot(if (peer.connected) p.fg else p.rule, 8.dp, pulse = peer.instances.any { it.busy })

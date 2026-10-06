@@ -8,6 +8,14 @@ shown by `/changelog`.
 - A Bridge instance answers what `@` completes to (`complete`: its skills, then the files in its
   folder, as the TUI offers them; a folder listing where fd cannot run) and describes its
   provider's plan limits (`usage`: Claude from each turn, Codex and OpenCode Go read behind it).
+- The Android app swipes between Home and its tabs, keeps the conversations seen last streaming
+  off screen (as many as its memory allows), completes `@` like the TUI, shows the plan window
+  nearest its limit beside the context (all windows and their resets a tap away), shows the images
+  a message or tool carried (decoded only on screen, never stored), lets you select text, and
+  follows the screen's curve with its prompt box and sheets. Conversations stream without jumps,
+  with room under the last message; quotes, nested ones included, read as one block and code
+  wraps. A message that invoked a skill reads as typed, and an empty tab no longer comes back
+  stuck after a restart.
 
 ## [0.19.0] - 2026-10-06
 

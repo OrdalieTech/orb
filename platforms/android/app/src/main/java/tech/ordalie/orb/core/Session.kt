@@ -41,6 +41,18 @@ class Questions(private val id: String, private val questions: JSONArray) {
 /** A slash command the Orb offers: an extension command, a prompt template or a skill. */
 data class Command(val name: String, val hint: String)
 
+/** What an `@` token completes to: the text that replaces it, and how to show it. */
+data class Completion(val text: String, val label: String, val detail: String)
+
+/** The plan limits of a session's provider account, as its Orb last read them. */
+data class Usage(val plan: String, val windows: List<Limit>, val at: Long) {
+    /** The windows not reset since the reading: one that has reset says nothing until the next. */
+    fun open() = System.currentTimeMillis().let { now -> windows.filter { it.resets == 0L || it.resets > now } }
+}
+data class Limit(val name: String, val left: Double, val resets: Long)
+
+private fun instant(s: String) = runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrDefault(0L)
+
 /**
  * A conversation in an Orb on Bridge — one of this phone's or a paired device's — driven with the
  * calls `orb bridge view` makes and followed by long polls. The phone is a peer of itself, so this
@@ -58,10 +70,13 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     var online by mutableStateOf(true)
     var context by mutableStateOf(0f) // share of the context window in use
     var cost by mutableStateOf(0.0)
+    var usage by mutableStateOf<Usage?>(null)
     /** Reasoning levels the current model accepts, lowest first; empty when it has none. */
     var levels by mutableStateOf(emptyList<String>())
     var commands by mutableStateOf(emptyList<Command>())
     var id by mutableStateOf(resume)
+    /** Whether its messages have loaded: an empty conversation is then ready, not still coming. */
+    var loaded by mutableStateOf(false)
     /** Whether older messages than those shown exist: a long conversation opens at its end. */
     var earlier by mutableStateOf(false)
     var cwd by mutableStateOf("")
@@ -82,8 +97,13 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     /** The Orb serving this thread, empty until one does (a tab the app restored); a reopened thread gets a new one. */
     @Volatile var instance = instance
         private set
-    /** Whether a screen shows this session. Unwatched, it only keeps its state fresh, slowly. */
+    /** Whether a screen shows this session. Unwatched, it only keeps its state fresh, slowly, unless it [follows]. */
     @Volatile var watched = false
+        set(value) { field = value; if (value) seen = System.currentTimeMillis() }
+    /** When a screen last showed it: the app keeps the latest seen following off screen. */
+    var seen by mutableLongStateOf(0L)
+    /** Keeps streaming off screen, so showing it again is instant. */
+    @Volatile var follows = false
     private val job = scope.launch { follow() }
 
     private suspend fun remote(method: String, params: JSONObject) = bridge.remote(peer, method, params)
@@ -101,10 +121,12 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         // A tab whose Orb is not running (the app restored it, or the Orb ended there) starts one once shown.
         if (instance.isEmpty() || gone) { if (watched && System.currentTimeMillis() >= nextTry) reopen(); return 1000 }
         val waits = info.optBoolean("waits")
-        if (stale || !waits || !watched) { if (!describe()) return if (gone) 5000 else 2000; stale = false }
-        if (!watched) { cursor = ""; return 5000 } // the transcript is fetched again when a screen shows it
+        val live = watched || follows
+        if (stale || !waits || !live) { if (!describe()) return if (gone) 5000 else 2000; stale = false }
+        if (!live) { cursor = ""; return 5000 } // the transcript is fetched again when a screen shows it
         if (cursor.isEmpty()) snapshot() else events(waits)
-        return if (waits) 0 else if (busy) 350 else 900
+        // Off screen, a turn's events gather between polls instead of waking the app per token.
+        return if (waits) (if (watched || !busy) 0 else 1500) else if (busy) 350 else 900
     }
 
     private suspend fun describe(): Boolean {
@@ -117,7 +139,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
             return false
         }
         val session = next.optJSONObject("target")?.optString("session_id").orEmpty()
-        if (session != target?.optString("session_id")) { cursor = ""; from = -1; transcript.clear() }
+        if (session != target?.optString("session_id")) { cursor = ""; from = -1; transcript.clear(); loaded = false }
         info = next; online = true; gone = false
         if (status.startsWith("offline") || status.startsWith("ended") || status == "reconnecting") status = ""
         id = session; cwd = next.optString("cwd")
@@ -129,6 +151,9 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         if (next.has("thinking")) thinking = next.optString("thinking") // an Orb before 0.15 keeps it to itself: the last choice stands
         busy = next.optJSONObject("target")?.optString("execution_id").orEmpty().isNotEmpty() || next.optString("status").contains("stream", true)
         next.optJSONObject("stats")?.let { cost = it.optDouble("cost", 0.0); context = (it.optJSONObject("contextUsage")?.optDouble("percent", 0.0) ?: 0.0).toFloat() / 100f }
+        usage = next.optJSONObject("usage")?.let { u ->
+            Usage(u.optString("plan"), u.optJSONArray("windows")?.let { a -> (0 until a.length()).map(a::getJSONObject).map { Limit(it.optString("name"), it.optDouble("remaining"), instant(it.optString("resets_at"))) } }.orEmpty(), instant(u.optString("checked_at")))
+        }
         commands = next.optJSONArray("commands")?.let { a -> (0 until a.length()).map(a::getJSONObject).map { Command(it.optString("name"), it.optString("description")) } }.orEmpty()
         next.optJSONObject("input")?.let { i ->
             if (i.optString("id") != asked) {
@@ -139,7 +164,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
                 ask = questions?.ask() ?: Ask(asked, if (choices.any { "approve" in it }) "permissions" else "questions", i.optString("title"), choices = choices, free = choices.isEmpty())
             }
         } ?: run { asked = ""; questions = null; if (ask != null) ask = null }
-        queued?.takeIf { session.isNotEmpty() && session != queuedFrom }?.let { queued = null; call("prompt", JSONObject().put("text", it)) }
+        queued?.takeIf { session.isNotEmpty() && session != queuedFrom }?.let { queued = null; call("prompt", JSONObject().put("text", invoking(it))) }
         return true
     }
 
@@ -158,7 +183,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
             r.optJSONArray("messages")?.let { a -> for (i in 0 until a.length()) messages.put(a.get(i)) }
             snap = r.optString("snapshot_id"); offset = r.optString("offset")
             if (offset.isEmpty()) {
-                transcript.clear(); transcript.load(messages)
+                transcript.clear(); transcript.load(messages); loaded = true
                 r.optJSONObject("partial")?.let { transcript.apply(JSONObject().put("type", "message_update").put("message", it)) }
                 cursor = r.optString("cursor"); remote("events.unsubscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap)); return
             }
@@ -195,9 +220,20 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         when {
             gone || instance.isEmpty() -> reopen(text)
             target == null -> later(text)
-            busy -> { call("follow_up", execution(JSONObject().put("text", text))); transcript.waiting(steer = false) }
-            else -> call("prompt", JSONObject().put("text", text))
+            busy -> { call("follow_up", execution(JSONObject().put("text", invoking(text)))); transcript.waiting(steer = false) }
+            else -> call("prompt", JSONObject().put("text", invoking(text)))
         }
+    }
+
+    /**
+     * A skill token anywhere in a message invokes it, as in the TUI: the kernel expands only a
+     * leading run, so each skill not already leading is put before the text once (modes.skillSubmission).
+     */
+    private fun invoking(text: String): String {
+        val tokens = SKILL.findAll(text).toList()
+        val names = tokens.map { it.groupValues[1] }.filter { n -> commands.any { it.name == "skill:$n" } }.distinct()
+        if (names.isEmpty() || names.size == 1 && tokens[0].range.first == 0 && tokens[0].groupValues[1] == names[0]) return text
+        return names.joinToString(" ") { "/skill:$it" } + " " + text
     }
 
     /** Starts Orb on this thread again over there (or joins the one that has it open), then sends [text] once it is ready. */
@@ -213,7 +249,11 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
             reopening = false
         }
     }
-    fun steer(text: String) { transcript.sent += text; call("steer", execution(JSONObject().put("text", text))); transcript.waiting(steer = true) }
+    fun steer(text: String) { transcript.sent += text; call("steer", execution(JSONObject().put("text", invoking(text)))); transcript.waiting(steer = true) }
+    /** What `@query` completes to on the Orb, as in the TUI: its skills, then the files in its folder. An older Orb offers none. */
+    suspend fun complete(query: String): List<Completion> =
+        remote("instances.call", JSONObject().put("instance_id", instance).put("service", "orb.instance/1").put("method", "complete").put("args", JSONObject().put("query", query)))
+            .optJSONObject("result")?.optJSONArray("items")?.let { a -> (0 until a.length()).map(a::getJSONObject).map { Completion(it.optString("text"), it.optString("label"), it.optString("detail")) } }.orEmpty()
     fun abort() = call("cancel", execution())
     fun answer(value: String?) {
         val a = ask ?: return
@@ -244,5 +284,8 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     fun loadEarlier() { from = (from - 100).coerceAtLeast(0); cursor = ""; poll?.cancel() }
     fun close() = job.cancel()
 
-    private companion object { const val TAIL = 80 }
+    private companion object {
+        const val TAIL = 80
+        val SKILL = Regex("""(?<=^|\s)/skill:(\S+)""")
+    }
 }

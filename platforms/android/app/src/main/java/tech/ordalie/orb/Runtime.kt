@@ -34,8 +34,16 @@ class Runtime(context: Context) {
             for (i in 0 until a.length()) a.getJSONObject(i).let { t -> sessions += Session(scope, bridge, t.getString("peer"), "", t.optString("where"), t.getString("session")).apply { title = t.optString("title") } }
         }
         scope.launch {
-            snapshotFlow { sessions.filter { it.id.isNotEmpty() }.map { org.json.JSONObject().put("peer", it.peer).put("session", it.id).put("title", it.title).put("where", it.where) } }
+            // A conversation that loaded empty is not stored yet, so there would be nothing to reopen.
+            snapshotFlow { sessions.filter { it.id.isNotEmpty() && !(it.loaded && it.transcript.items.isEmpty()) }.map { org.json.JSONObject().put("peer", it.peer).put("session", it.id).put("title", it.title).put("where", it.where) } }
                 .collect { orb.tabs = org.json.JSONArray(it).toString() }
+        }
+        // While the app shows, the conversations seen last keep streaming off screen, as many as
+        // the heap holds transcripts for (one per 48 MB, up to 8), so a swipe finds them current.
+        val budget = (java.lang.Runtime.getRuntime().maxMemory() / (48L shl 20)).toInt().coerceIn(1, 8)
+        scope.launch {
+            snapshotFlow { if (visible) sessions.sortedByDescending { it.seen }.take(budget) else emptyList() }
+                .collect { kept -> sessions.forEach { it.follows = it in kept } }
         }
         scope.launch { while (true) { Release.latest()?.let { latest = it }; delay(6 * 3600_000L) } }
         bridge.up // the pipe starts this phone's Bridge

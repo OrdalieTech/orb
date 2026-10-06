@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.*
 import android.provider.OpenableColumns
+import android.view.RoundedCorner
 import androidx.activity.*
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +26,8 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         startForegroundService(Intent(this, OrbService::class.java))
         receive(intent)
-        setContent { OrbTheme { App(runtime, cites, { pick.launch(arrayOf("*/*")) }, shared) } }
+        val corner = if (Build.VERSION.SDK_INT >= 31) windowManager.currentWindowMetrics.windowInsets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0 else 0
+        setContent { OrbTheme(corner) { App(runtime, cites, { pick.launch(arrayOf("*/*")) }, shared) } }
     }
 
     // Access to the phone's files may have just been granted in Settings: show them to the Linux.

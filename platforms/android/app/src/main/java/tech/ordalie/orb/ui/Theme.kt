@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,9 +44,18 @@ val Soft = RoundedCornerShape(6.dp)
 val Pane = RoundedCornerShape(10.dp)
 val Margin = 16.dp
 
+/** The display's corner radius, as the platform reports it; none where the screen is square. */
+val LocalCorner = staticCompositionLocalOf { 0.dp }
+/** A surface floating [inset] above the screen's bottom edge: its corners run concentric with the screen's. */
 @Composable
-fun OrbTheme(content: @Composable () -> Unit) =
-    CompositionLocalProvider(LocalPalette provides if (isSystemInDarkTheme()) DarkPalette else LightPalette, content = content)
+fun bezel(inset: Dp) = RoundedCornerShape((LocalCorner.current - inset).coerceAtLeast(10.dp))
+
+/** [corner] is the screen's corner radius in pixels. */
+@Composable
+fun OrbTheme(corner: Int = 0, content: @Composable () -> Unit) = CompositionLocalProvider(
+    LocalPalette provides if (isSystemInDarkTheme()) DarkPalette else LightPalette,
+    LocalCorner provides with(LocalDensity.current) { corner.toDp() }, content = content,
+)
 
 fun type(size: TextUnit = Size.Body, color: Color = Color.Unspecified, weight: FontWeight = FontWeight.Normal) =
     TextStyle(fontFamily = Mono, fontSize = size, color = color, fontWeight = weight, letterSpacing = (-0.03).em, lineHeight = 1.4.em)

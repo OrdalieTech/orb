@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import tech.ordalie.orb.runtime
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontStyle
@@ -41,9 +42,10 @@ private fun blocks(md: String): List<Block> = buildList {
             t.startsWith("```") -> {
                 flush()
                 val lang = t.removePrefix("```").trim()
+                val indent = line.length - t.length // a fence inside a list item: its lines carry the item's indent
                 val body = StringBuilder()
                 i++
-                while (i < lines.size && !lines[i].trimStart().startsWith("```")) { body.appendLine(lines[i]); i++ }
+                while (i < lines.size && !lines[i].trimStart().startsWith("```")) { body.appendLine(lines[i].drop(minOf(indent, lines[i].length - lines[i].trimStart().length))); i++ }
                 add(Code(lang, body.toString().trimEnd('\n')))
             }
             t.startsWith("|") && i + 1 < lines.size && RULER.matches(lines[i + 1].trim()) -> {
@@ -55,7 +57,14 @@ private fun blocks(md: String): List<Block> = buildList {
                 i--
             }
             t.startsWith("#") -> { flush(); add(Head(t.trimStart('#').trim(), t.takeWhile { it == '#' }.length)) }
-            t.startsWith(">") -> { flush(); add(Quote(t.removePrefix(">").trim())) }
+            // A quote runs until its last > line, and holds markdown of its own: nested quotes, code, lists.
+            t.startsWith(">") -> {
+                flush()
+                val body = StringBuilder()
+                while (i < lines.size && lines[i].trimStart().startsWith(">")) body.appendLine(lines[i++].trimStart().removePrefix(">").removePrefix(" "))
+                add(Quote(body.toString().trimEnd()))
+                i--
+            }
             ITEM.matches(line) -> { flush(); ITEM.find(line)!!.groupValues.let { add(Item(if (it[2][0].isDigit()) it[2] else "·", it[3], it[1].length / 2)) } }
             t == "---" || t == "***" -> { flush(); add(Break) }
             t.isEmpty() -> flush()
@@ -98,11 +107,12 @@ private fun Diagram(source: String, done: Boolean, size: Float) {
     CodeBox(if (art == null) "mermaid" else "", art ?: source, size, art != null)
 }
 
+/** Code wraps, so a long line reads without sideways scrolling, which swipes pages here; a drawing scrolls, its lines flush. */
 @Composable
 private fun CodeBox(lang: String, text: String, size: Float, drawing: Boolean = false) = Column(Modifier.fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(12.dp)) {
     if (lang.isNotEmpty()) T(lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
-    // Box-drawing lines join only when lines sit flush.
-    Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(text, style = type((size - 3).sp, p.fg).let { if (drawing) it.copy(lineHeight = 1.1.em, letterSpacing = 0.sp) else it }, softWrap = false) }
+    if (drawing) Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(text, style = type((size - 3).sp, p.fg).copy(lineHeight = 1.1.em, letterSpacing = 0.sp), softWrap = false) }
+    else BasicText(text, style = type((size - 3).sp, p.fg))
 }
 
 /** A table as wide as its cells (each column up to 28 characters, wrapping beyond); a wide one scrolls sideways. */
@@ -123,17 +133,18 @@ private fun Grid(rows: List<List<String>>, size: Float) {
 
 /** [done] once the message is complete: diagrams are drawn then, not at every streamed token. */
 @Composable
-fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f, done: Boolean = true) = Column(modifier, verticalArrangement = Arrangement.spacedBy((size * 0.6f).dp)) {
-    val body = type(size.sp, p.fg)
+fun Markdown(text: String, modifier: Modifier = Modifier, size: Float = 15f, done: Boolean = true, ink: Color = p.fg): Unit = Column(modifier, verticalArrangement = Arrangement.spacedBy((size * 0.6f).dp)) {
+    val body = type(size.sp, ink)
+    val rule = p.rule
     blocks(text).forEach { b ->
         when (b) {
             is Para -> BasicText(inline(b.text, p.mute, p.raised), style = body)
-            is Head -> BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(top = 4.dp), type(if (b.level <= 2) (size + 3).sp else (size + 1).sp, p.fg, Strong))
+            is Head -> BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(top = 4.dp), type(if (b.level <= 2) (size + 3).sp else (size + 1).sp, ink, Strong))
             is Item -> Row(Modifier.padding(start = (b.depth * 18).dp)) {
                 T(b.mark, Modifier.width(if (b.mark == "·") (size + 1).dp else (size * 1.8f).dp), size = size.sp, color = p.meta, weight = Medium)
                 BasicText(inline(b.text, p.mute, p.raised), Modifier.weight(1f), body)
             }
-            is Quote -> Row { Box(Modifier.width(2.dp).height(22.dp).background(p.rule)); BasicText(inline(b.text, p.mute, p.raised), Modifier.padding(start = 12.dp), body.copy(color = p.mute)) }
+            is Quote -> Markdown(b.text, Modifier.drawBehind { drawRect(rule, size = this.size.copy(width = 2.dp.toPx())) }.padding(start = 14.dp), size, done, p.mute)
             is Code -> if (b.lang == "mermaid") Diagram(b.text, done, size) else CodeBox(b.lang, b.text, size)
             is Table -> Grid(b.rows, size)
             Break -> Spacer(Modifier.height(4.dp))

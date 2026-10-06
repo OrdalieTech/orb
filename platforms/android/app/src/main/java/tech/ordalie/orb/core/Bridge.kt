@@ -93,7 +93,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
             }
             result.optJSONArray("items")?.let { a ->
                 (0 until a.length()).map(a::getJSONObject).mapTo(found) { t ->
-                    Thread(peer, t.optString("session_id"), t.optString("name").takeIf { it.isNotBlank() && it != "null" } ?: t.optString("first").lineSequence().first().ifBlank { t.optString("cwd").substringAfterLast('/') },
+                    Thread(peer, t.optString("session_id"), t.optString("name").takeIf { it.isNotBlank() && it != "null" } ?: Transcript.invocation(t.optString("first")).lineSequence().first().ifBlank { t.optString("cwd").substringAfterLast('/') },
                         t.optString("cwd"), t.optLong("modified"))
                 }
             }

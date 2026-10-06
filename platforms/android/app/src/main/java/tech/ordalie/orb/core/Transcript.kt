@@ -5,7 +5,8 @@ import org.json.*
 
 /** The primitives a conversation is drawn from. */
 sealed class Item(val key: String)
-class You(key: String, val text: String, val via: String? = null) : Item(key)
+/** [images] are base64 as the message carried them; a screen decodes them only to show them. */
+class You(key: String, val text: String, val via: String? = null, val images: List<String> = emptyList()) : Item(key)
 class Said(key: String) : Item(key) {
     var text by mutableStateOf("")
     var thinking by mutableStateOf("")
@@ -16,6 +17,7 @@ class Tool(key: String, val verb: String, val target: String, val args: String =
     var output by mutableStateOf("") // the full text, shown when the line is opened
     var live by mutableStateOf(true)
     var failed by mutableStateOf(false)
+    var images by mutableStateOf(emptyList<String>()) // what it showed the model, a screenshot or a read image
 }
 class Note(key: String, val text: String, val alarm: Boolean = false) : Item(key)
 
@@ -48,6 +50,7 @@ class Transcript {
             "tool_execution_end" -> tools[e.optString("toolCallId")]?.let {
                 val out = content(e.optJSONObject("result"))
                 it.result = summary(it.verb, out); it.output = out.takeLast(OUTPUT); it.failed = e.optBoolean("isError"); it.live = false
+                it.images = images(e.optJSONObject("result")?.opt("content"))
             }
             "agent_end" -> { said?.live = false; said = null; tools.values.forEach { it.live = false } }
             "compaction_start" -> items += Note(key(), "compacting context…")
@@ -96,11 +99,11 @@ class Transcript {
         when (m.optString("role")) {
             // Live user messages come as start+end; snapshots and history carry only the end.
             "user" -> if (!final || !userOpen) {
-                val text = text(m.opt("content"))
+                val text = invocation(text(m.opt("content")))
                 // Machine-written turns (<task-notification>…) are events, not the person speaking.
                 val tag = Regex("^<([a-z][\\w-]*)[ >]").find(text.trimStart())?.groupValues?.get(1)
                 items += if (tag != null) Note(key(), tag.replace('-', ' ') + " · " + text.replace(Regex("<[^>]+>"), " ").trim().replace(Regex("\\s+"), " ").take(160))
-                else You(key(), text, via = if (sent.remove(text) || replaying) null else "bridge")
+                else You(key(), text, if (sent.remove(text) || replaying) null else "bridge", images(m.opt("content")))
                 userOpen = !final
             } else userOpen = false
             "assistant" -> {
@@ -125,6 +128,7 @@ class Transcript {
             "toolResult" -> tools[m.optString("toolCallId")]?.let {
                 val out = content(m)
                 it.result = summary(it.verb, out); it.output = out.takeLast(OUTPUT); it.failed = m.optBoolean("isError"); it.live = false
+                it.images = images(m.opt("content"))
             }
         }
     }
@@ -146,6 +150,17 @@ class Transcript {
         }
         fun thinking(c: Any?): String = (c as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.takeIf { p -> p.optString("type") == "thinking" }?.optString("thinking") }.joinToString("") } ?: ""
         fun content(r: JSONObject?): String = text(r?.opt("content"))
+        fun images(c: Any?): List<String> = (c as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.takeIf { p -> p.optString("type") == "image" }?.optString("data")?.ifEmpty { null } } }.orEmpty()
+        private val SKILL = Regex("""(?s)^<skill name="([^"]+)" location="[^"]+">\n.*?\n</skill>(?:\n\n(.+))?$""")
+        /** A message that invoked skills, as it was typed: their tokens in place (exporthtml.InvocationText). */
+        fun invocation(raw: String): String {
+            var text = raw
+            val names = mutableListOf<String>()
+            while (true) SKILL.find(text)?.let { names += it.groupValues[1]; text = it.groupValues[2].trim() } ?: break
+            // A stored preview is clipped, often before the block closes.
+            if (names.isEmpty()) return Regex("""^<skill name="([^"]+)"""").find(raw)?.let { "/skill:" + it.groupValues[1] } ?: raw
+            return names.asReversed().fold(text) { t, n -> if (Regex("""(?<=^|\s)/skill:${Regex.escape(n)}(?=\s|$)""").containsMatchIn(t)) t else "/skill:$n $t".trim() }
+        }
         /** Providers answer errors as JSON bodies; the turn only needs the status and the sentence. */
         fun error(raw: String): String {
             val status = Regex("^\\d{3}").find(raw.trim())?.value

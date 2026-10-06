@@ -25,6 +25,16 @@ class TranscriptTest {
         (t.items[2] as Tool).let { assertEquals("bash", it.verb); assertEquals("ls -la", it.target); assertEquals("b", it.result); assertFalse(it.live) }
     }
 
+    @Test fun aMessageThatInvokedSkillsReadsAsTyped() {
+        for ((typed, rest) in listOf("fix /skill:review this" to "fix /skill:review this", "/skill:review check" to "check")) {
+            val t = Transcript()
+            t.sent += typed
+            val envelope = "<skill name=\"review\" location=\"/s/SKILL.md\">\nRead the diff.\n</skill>\n\n$rest"
+            t.apply(JSONObject().put("type", "message_start").put("message", JSONObject().put("role", "user").put("content", envelope)))
+            (t.items.single() as You).let { assertEquals(typed, it.text); assertNull(it.via) }
+        }
+    }
+
     @Test fun aPromptThisSideDidNotSendCameThroughBridge() {
         val t = Transcript()
         t.feed("""{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"from the Mac"}]}}""")

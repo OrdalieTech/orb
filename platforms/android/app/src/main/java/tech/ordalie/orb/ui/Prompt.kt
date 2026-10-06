@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
@@ -18,7 +19,11 @@ import androidx.compose.ui.text.*
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.*
+import kotlinx.coroutines.delay
 import tech.ordalie.orb.core.*
+
+/** The box's buttons sit in its rounded corner, so they round fully, concentric with it. */
+private val Pill = RoundedCornerShape(50)
 
 /** Tokens stay plain text on the wire; the box only draws them as chips while you write. */
 private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTransformation {
@@ -41,7 +46,8 @@ fun PromptBox(
     session: Session?, cites: SnapshotStateList<String>, onCite: () -> Unit, onWhere: () -> Unit, onModel: () -> Unit, commands: List<Command> = emptyList(),
     placeholder: String = "What should we work on?", modifier: Modifier = Modifier, onSend: (String) -> Unit,
 ) {
-    var value by remember { mutableStateOf(TextFieldValue("")) }
+    // Saved per page: each tab keeps its draft while you swipe away.
+    var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
     var extra by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val busy = session?.busy == true
@@ -54,9 +60,11 @@ fun PromptBox(
         value = TextFieldValue(""); cites.clear()
         return text
     }
+    // Its corners follow the screen's, from where it floats: above the navigation bar.
+    val shape = bezel(8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
     Column(
         modifier.fillMaxWidth().navigationBarsPadding().padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
-            .clip(Pane).background(p.raised).border(1.dp, p.rule, Pane).animateContentSize(spring(stiffness = 500f)),
+            .clip(shape).background(p.raised).border(1.dp, p.rule, shape).animateContentSize(spring(stiffness = 500f)),
     ) {
         // The top edge is a handle, unmarked until used: drag it to give the draft more room.
         Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).pointerInput(Unit) {
@@ -69,19 +77,35 @@ fun PromptBox(
         // Typing / opens the palette: the app's commands and the core's, filtered as you type.
         val query = value.text.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }?.drop(1)
         val matches = query?.let { q -> commands.filter { it.name.startsWith(q, true) } + commands.filter { !it.name.startsWith(q, true) && it.name.contains(q, true) } }.orEmpty()
-        if (matches.isNotEmpty()) Column(Modifier.fillMaxWidth().heightIn(max = 150.dp).verticalScroll(rememberScrollState()).padding(top = 2.dp)) {
-            matches.forEach { cmd ->
-                Row(Modifier.fillMaxWidth().press {
-                    if (cmd.name in NOW) { value = TextFieldValue(""); onSend("/" + cmd.name) }
-                    else ("/" + cmd.name + " ").let { value = TextFieldValue(it, TextRange(it.length)) }
-                }.padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T("/" + cmd.name, size = 15.sp, weight = Strong, lines = 1)
+        // An @ token asks the Orb what it completes to, as the TUI does: skills, then files.
+        val cursor = value.selection.start
+        val at = value.text.take(cursor).let { it.substring(it.indexOfLast(Char::isWhitespace) + 1) }.takeIf { it.startsWith("@") && session != null }
+        var found by remember { mutableStateOf(emptyList<Completion>()) }
+        LaunchedEffect(at) { if (at == null) found = emptyList() else { delay(120); found = session!!.complete(at.drop(1)) } }
+        val rows = if (matches.isNotEmpty()) matches.map { cmd ->
+            Command("/" + cmd.name, cmd.hint) to {
+                if (cmd.name in NOW) { value = TextFieldValue(""); onSend("/" + cmd.name) }
+                else ("/" + cmd.name + " ").let { value = TextFieldValue(it, TextRange(it.length)) }
+            }
+        } else found.takeIf { at != null }.orEmpty().map { f ->
+            Command(if (f.text.startsWith("/skill:")) "◆ " + f.label else f.label, f.detail) to {
+                // A folder keeps the token open, so completion goes on inside it.
+                val gap = if (f.text.endsWith("/") || f.text.endsWith("/\"")) "" else " "
+                val end = (cursor until value.text.length).firstOrNull { value.text[it].isWhitespace() } ?: value.text.length
+                val text = value.text.take(cursor - at!!.length) + f.text + gap + value.text.drop(end)
+                value = TextFieldValue(text, TextRange(text.length - (value.text.length - end) - if (f.text.endsWith("/\"")) 1 else 0))
+            }
+        }
+        if (rows.isNotEmpty()) Column(Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState()).padding(top = 2.dp)) {
+            rows.forEach { (row, pick) ->
+                Row(Modifier.fillMaxWidth().press(onClick = pick).padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    T(row.name, size = 15.sp, weight = Strong, lines = 1)
                     Spacer(Modifier.width(12.dp))
-                    T(cmd.hint, Modifier.weight(1f), size = 13.sp, color = p.meta, lines = 1)
+                    T(row.hint, Modifier.weight(1f), size = 13.sp, color = p.meta, lines = 1)
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().heightIn(min = ((if (matches.isEmpty()) 52 else 40) + extra).dp, max = (240 + extra).dp).padding(horizontal = 14.dp, vertical = 6.dp)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = ((if (rows.isEmpty()) 52 else 40) + extra).dp, max = (240 + extra).dp).padding(horizontal = 14.dp, vertical = 6.dp)) {
             BasicTextField(
                 value, { value = it }, Modifier.fillMaxWidth(), textStyle = type(16.sp, p.fg), cursorBrush = SolidColor(p.fg),
                 visualTransformation = tokens,
@@ -111,9 +135,9 @@ fun PromptBox(
             AnimatedContent(mode, transitionSpec = { (fadeIn(tween(180)) + scaleIn(tween(180), 0.9f)) togetherWith fadeOut(tween(120)) }, label = "act") { m ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (m) {
-                        0 -> Btn("stop", color = Ink.Rupture) { session?.abort() }
-                        1 -> { Btn("queue") { take()?.let { session?.prompt(it) } }; Btn("steer", inverted = true) { take()?.let { session?.steer(it) } } }
-                        else -> Btn("send", inverted = true) { take()?.let(onSend) }
+                        0 -> Btn("stop", color = Ink.Rupture, shape = Pill) { session?.abort() }
+                        1 -> { Btn("queue", shape = Pill) { take()?.let { session?.prompt(it) } }; Btn("steer", inverted = true, shape = Pill) { take()?.let { session?.steer(it) } } }
+                        else -> Btn("send", inverted = true, shape = Pill) { take()?.let(onSend) }
                     }
                 }
             }

@@ -2,6 +2,7 @@ package tech.ordalie.orb.ui
 
 import android.content.Context
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import kotlin.math.roundToInt
 import kotlinx.coroutines.*
 import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.*
@@ -9,7 +10,7 @@ import tech.ordalie.orb.core.*
 /** What every screen needs, passed as one value, and the app's actions on conversations. */
 class Ctx(
     val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context,
-    val deck: (Session) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit,
+    val deck: (Session) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (String) -> Unit,
 ) {
     /** This phone, the first machine on Bridge; null until its Bridge has answered. */
     val phone: Peer? get() = rt.bridge.peers.firstOrNull { it.id == rt.bridge.self }
@@ -91,11 +92,18 @@ class Ctx(
     /** A tab held down: rename its conversation, or stop following it. */
     fun tabMenu(s: Session) = pick(Picker(s.title.ifEmpty { "new session" }, listOf("rename", "close tab")) {
         if (it == "rename") rename(Rename(s.title) { name -> s.rename(name) })
-        else { if ((nav.stack.last() as? Screen.Chat)?.session == s) nav.home(); rt.close(s) }
+        else { if (nav.open == s) nav.home(); rt.close(s) }
     })
 
+    /** A session's plan windows: what is left of each and when it resets, from its Orb's last reading. */
+    fun usage(s: Session) = s.usage?.let { u ->
+        val time = java.text.SimpleDateFormat("EEE HH:mm", java.util.Locale.getDefault())
+        pick(Picker(listOf(s.model.substringBefore('/'), u.plan, "read " + ago(u.at)).filter(String::isNotEmpty).joinToString(" · "),
+            u.open().map { "${it.name} · ${it.left.roundToInt()}% left" + if (it.resets > 0) " · resets ${time.format(it.resets)}" else "" }) {})
+    }
+
     fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) {
-        val open = (nav.stack.last() as? Screen.Chat)?.session
+        val open = nav.open
         nav.go(when (it) { "terminal" -> Screen.Terminal(open); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers(open?.peer ?: rt.bridge.self) })
     })
 }
