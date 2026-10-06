@@ -21,7 +21,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -174,30 +173,19 @@ func credentialKeys(name, serverURL string) (key, legacy string) {
 // edit runs change on the stored states under the file lock and saves them
 // when it reports a change.
 func (store credentialStore) edit(change func(map[string]*oauthState) bool) error {
-	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
-		return err
-	}
-	release, err := filelock.Acquire(store.path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = release() }()
-	states := map[string]*oauthState{}
-	if data, err := os.ReadFile(store.path); err == nil && len(bytes.TrimSpace(data)) > 0 {
-		if err := json.Unmarshal(data, &states); err != nil {
-			return fmt.Errorf("%s: %w", store.path, err)
+	return filelock.File{Path: store.path, Perm: 0o600}.Update(context.Background(), func(data []byte) ([]byte, error) {
+		states := map[string]*oauthState{}
+		if len(bytes.TrimSpace(data)) > 0 {
+			if err := json.Unmarshal(data, &states); err != nil {
+				return nil, fmt.Errorf("%s: %w", store.path, err)
+			}
 		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if !change(states) {
-		return nil
-	}
-	data, err := json.MarshalIndent(states, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(store.path, append(data, '\n'), 0o600)
+		if !change(states) {
+			return data, nil
+		}
+		encoded, err := json.MarshalIndent(states, "", "  ")
+		return append(encoded, '\n'), err
+	})
 }
 
 // load returns a server's state, taking over pi's legacy entry keyed by URL

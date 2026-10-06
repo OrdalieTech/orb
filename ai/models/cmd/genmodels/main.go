@@ -7,10 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/models/internal/cataloggen"
+	"github.com/OrdalieTech/orb/internal/filelock"
 )
 
 func main() {
@@ -50,39 +50,9 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if err := writeGeneratedFile(*output, formatted); err != nil {
+	if err := filelock.WriteFile(*output, formatted, 0o644); err != nil {
 		fatal(err)
 	}
-}
-
-func writeGeneratedFile(path string, content []byte) (err error) {
-	return writeGeneratedFileWithRename(path, content, os.Rename)
-}
-
-func writeGeneratedFileWithRename(path string, content []byte, rename func(string, string) error) (err error) {
-	directory := filepath.Dir(path)
-	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-	defer func() {
-		if temporary != nil {
-			_ = temporary.Close()
-		}
-	}()
-	if err := temporary.Chmod(0o644); err != nil {
-		return err
-	}
-	if _, err := temporary.Write(content); err != nil {
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	temporary = nil
-	return rename(temporaryPath, path)
 }
 
 func readInput(path, endpoint string) ([]byte, error) {
