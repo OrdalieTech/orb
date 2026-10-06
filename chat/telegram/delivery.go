@@ -10,6 +10,7 @@ import (
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
+	"github.com/OrdalieTech/orb/chat/internal/typing"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound event id
@@ -30,7 +31,7 @@ func (a *Adapter) NewDelivery(key chat.ConversationKey, replyTo string, resumePr
 
 // delivery is one turn's Telegram output surface. chat.Delivery calls are
 // serialized but Preview/PreviewID arrive on the preview renderer goroutine;
-// the mutex shields the preview state and the typing refresher.
+// the mutex shields the preview state.
 type delivery struct {
 	adapter  *Adapter
 	chatID   int64
@@ -44,7 +45,7 @@ type delivery struct {
 	previewID     int64
 	previewText   string
 	lastPreviewAt time.Time
-	typingStop    chan struct{}
+	typing        typing.Refresher
 }
 
 var _ chat.Delivery = (*delivery)(nil)
@@ -53,40 +54,13 @@ var _ chat.Delivery = (*delivery)(nil)
 // refresher ticking every TypingInterval (the indicator shows at most ~5s per
 // call) until Finalize or Notify.
 func (d *delivery) Typing(ctx context.Context) error {
-	d.mu.Lock()
-	if d.typingStop == nil {
-		stop := make(chan struct{})
-		d.typingStop = stop
-		go d.typingLoop(ctx, stop)
-	}
-	d.mu.Unlock()
-	return d.adapter.client.sendChatAction(ctx, d.chatID, d.threadID, "typing")
-}
-
-func (d *delivery) typingLoop(ctx context.Context, stop chan struct{}) {
-	ticker := time.NewTicker(d.adapter.typingInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := d.adapter.client.sendChatAction(ctx, d.chatID, d.threadID, "typing"); err != nil {
-				d.adapter.logger.Debug("telegram: typing refresh failed", "error", err)
-			}
+	d.typing.Start(ctx, d.adapter.typingInterval, func() bool {
+		if err := d.adapter.client.sendChatAction(ctx, d.chatID, d.threadID, "typing"); err != nil {
+			d.adapter.logger.Debug("telegram: typing refresh failed", "error", err)
 		}
-	}
-}
-
-func (d *delivery) stopTyping() {
-	d.mu.Lock()
-	if d.typingStop != nil {
-		close(d.typingStop)
-		d.typingStop = nil
-	}
-	d.mu.Unlock()
+		return true
+	})
+	return d.adapter.client.sendChatAction(ctx, d.chatID, d.threadID, "typing")
 }
 
 // errPreviewThrottled reports a preview edit skipped by the per-chat rate
@@ -158,7 +132,7 @@ func (d *delivery) PreviewID() string {
 // already sent are skipped on retry (the processor re-invokes Finalize with
 // the same text), so a failure mid-way never duplicates earlier chunks.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
-	d.stopTyping()
+	d.typing.Stop()
 	if strings.TrimSpace(text) == "" {
 		text = "(empty reply)"
 	}
@@ -197,7 +171,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 
 // Notify implements [chat.Delivery]: one plain sendMessage.
 func (d *delivery) Notify(ctx context.Context, text string) error {
-	d.stopTyping()
+	d.typing.Stop()
 	_, err := d.adapter.client.sendMessage(ctx, sendMessageParams{
 		ChatID:             d.chatID,
 		Text:               runechunk.TruncateUTF16(text, textLimit),

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
+	"github.com/OrdalieTech/orb/chat/internal/typing"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound activity id
@@ -36,8 +36,7 @@ type delivery struct {
 	sent    int      // chunks already delivered: Finalize retries resume here
 	sentIDs []string // activity ids of the chunks counted in sent
 
-	mu         sync.Mutex
-	typingStop chan struct{}
+	typing typing.Refresher
 }
 
 var _ chat.Delivery = (*delivery)(nil)
@@ -64,13 +63,12 @@ func (d *delivery) Typing(ctx context.Context) error {
 	if d.serviceURL == "" {
 		return fmt.Errorf("teams: no serviceUrl known for conversation %q", d.convID)
 	}
-	d.mu.Lock()
-	if d.typingStop == nil {
-		stop := make(chan struct{})
-		d.typingStop = stop
-		go d.typingLoop(ctx, stop)
-	}
-	d.mu.Unlock()
+	d.typing.Start(ctx, d.adapter.typingInterval, func() bool {
+		if err := d.sendTyping(ctx); err != nil {
+			d.adapter.logger.Debug("teams: typing refresh failed", "error", err)
+		}
+		return true
+	})
 	return d.sendTyping(ctx)
 }
 
@@ -80,36 +78,6 @@ func (d *delivery) sendTyping(ctx context.Context) error {
 		return nil
 	}
 	return err
-}
-
-func (d *delivery) typingLoop(ctx context.Context, stop chan struct{}) {
-	ticker := time.NewTicker(d.adapter.typingInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := d.sendTyping(ctx); err != nil {
-				d.adapter.logger.Debug("teams: typing refresh failed", "error", err)
-			}
-		}
-	}
-}
-
-func (d *delivery) stopTyping() {
-	d.mu.Lock()
-	d.stopTypingLocked()
-	d.mu.Unlock()
-}
-
-func (d *delivery) stopTypingLocked() {
-	if d.typingStop != nil {
-		close(d.typingStop)
-		d.typingStop = nil
-	}
 }
 
 // Preview implements [chat.Delivery]. D28 makes Teams final-only; typing is
@@ -128,7 +96,7 @@ func (d *delivery) PreviewID() string { return "" }
 // writes-blocked conversation is marked dead and the rest is dropped
 // silently.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
-	d.stopTyping()
+	d.typing.Stop()
 	if d.adapter.isDead(d.convID) {
 		return chat.Receipt{MessageIDs: d.sentIDs, At: time.Now().UTC()}, nil
 	}
@@ -200,7 +168,7 @@ func (d *delivery) sendChunk(ctx context.Context, chunk string, first bool, limi
 // Notify implements [chat.Delivery]: one plain-text message (no reply
 // threading, no markdown rendering). Dead conversations swallow the notice.
 func (d *delivery) Notify(ctx context.Context, text string) error {
-	d.stopTyping()
+	d.typing.Stop()
 	if d.adapter.isDead(d.convID) {
 		return nil
 	}

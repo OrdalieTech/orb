@@ -10,6 +10,7 @@ import (
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/chat/internal/httpjson"
+	"github.com/OrdalieTech/orb/chat/internal/typing"
 )
 
 type delivery struct {
@@ -19,9 +20,9 @@ type delivery struct {
 	sent    int      // chunks already delivered: Finalize retries resume here
 	sentIDs []string // message ids of the chunks counted in sent
 
-	mu         sync.Mutex
-	seen       bool // mark_seen fired
-	typingStop chan struct{}
+	mu     sync.Mutex
+	seen   bool // mark_seen fired
+	typing typing.Refresher
 }
 
 var _ chat.Delivery = (*delivery)(nil)
@@ -45,50 +46,22 @@ func (d *delivery) Typing(ctx context.Context) error {
 	d.mu.Lock()
 	first := !d.seen
 	d.seen = true
-	if d.typingStop == nil {
-		stop := make(chan struct{})
-		d.typingStop = stop
-		go d.typingLoop(ctx, stop)
-	}
 	d.mu.Unlock()
+	d.typing.Start(ctx, d.adapter.typingInterval, func() bool {
+		err := d.adapter.senderAction(ctx, d.psid, "typing_on")
+		if err == nil {
+			return true
+		}
+		d.adapter.logger.Debug("messenger: typing refresh failed", "error", err)
+		var graphErr *GraphError
+		return !errors.As(err, &graphErr) || !retryable(graphErr.Code)
+	})
 	if first {
 		if err := d.adapter.senderAction(ctx, d.psid, "mark_seen"); err != nil {
 			d.adapter.logger.Debug("messenger: mark_seen failed", "error", err)
 		}
 	}
 	return d.adapter.senderAction(ctx, d.psid, "typing_on")
-}
-
-func (d *delivery) typingLoop(ctx context.Context, stop chan struct{}) {
-	ticker := time.NewTicker(d.adapter.typingInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			err := d.adapter.senderAction(ctx, d.psid, "typing_on")
-			if err == nil {
-				continue
-			}
-			d.adapter.logger.Debug("messenger: typing refresh failed", "error", err)
-			var graphErr *GraphError
-			if errors.As(err, &graphErr) && retryable(graphErr.Code) {
-				return
-			}
-		}
-	}
-}
-
-func (d *delivery) stopTyping() {
-	d.mu.Lock()
-	if d.typingStop != nil {
-		close(d.typingStop)
-		d.typingStop = nil
-	}
-	d.mu.Unlock()
 }
 
 // Preview is a no-op: the Send API is append-only (no message editing), so
@@ -110,7 +83,7 @@ func (d *delivery) PreviewID() string { return "" }
 // ponytail: model markdown passes through untouched — Messenger renders
 // plain text only; strip-to-plain if operators complain about literal **.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
-	d.stopTyping()
+	d.typing.Stop()
 	chunks := chunkText(text, chunkLimit)
 	if len(chunks) == 0 {
 		chunks = []string{"(empty reply)"}
@@ -137,7 +110,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 // 2018278 and the error surfaces loudly — the gateway stays silent until
 // the user messages again, by design.
 func (d *delivery) Notify(ctx context.Context, text string) error {
-	d.stopTyping()
+	d.typing.Stop()
 	for _, chunk := range chunkText(text, chunkLimit) {
 		if _, err := d.adapter.sendText(ctx, d.psid, chunk, "UPDATE"); err != nil {
 			return err

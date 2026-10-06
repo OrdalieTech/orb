@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
+	"github.com/OrdalieTech/orb/chat/internal/typing"
 )
 
 // NewDelivery implements [chat.Adapter]. replyTo is the inbound event id
@@ -35,7 +36,7 @@ type delivery struct {
 	previewID     string
 	previewText   string
 	lastPreviewAt time.Time
-	typingStop    chan struct{}
+	typing        typing.Refresher
 }
 
 var _ chat.Delivery = (*delivery)(nil)
@@ -44,40 +45,13 @@ var _ chat.Delivery = (*delivery)(nil)
 // refresher ticking every TypingInterval (the indicator expires after ~10s)
 // until Finalize or Notify.
 func (d *delivery) Typing(ctx context.Context) error {
-	d.mu.Lock()
-	if d.typingStop == nil {
-		stop := make(chan struct{})
-		d.typingStop = stop
-		go d.typingLoop(ctx, stop)
-	}
-	d.mu.Unlock()
-	return d.adapter.client.triggerTyping(ctx, d.channelID)
-}
-
-func (d *delivery) typingLoop(ctx context.Context, stop chan struct{}) {
-	ticker := time.NewTicker(d.adapter.typingInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := d.adapter.client.triggerTyping(ctx, d.channelID); err != nil {
-				d.adapter.logger.Debug("discord: typing refresh failed", "error", err)
-			}
+	d.typing.Start(ctx, d.adapter.typingInterval, func() bool {
+		if err := d.adapter.client.triggerTyping(ctx, d.channelID); err != nil {
+			d.adapter.logger.Debug("discord: typing refresh failed", "error", err)
 		}
-	}
-}
-
-func (d *delivery) stopTyping() {
-	d.mu.Lock()
-	if d.typingStop != nil {
-		close(d.typingStop)
-		d.typingStop = nil
-	}
-	d.mu.Unlock()
+		return true
+	})
+	return d.adapter.client.triggerTyping(ctx, d.channelID)
 }
 
 // An error keeps the coalescer snapshot dirty for the next tick.
@@ -143,7 +117,7 @@ func (d *delivery) PreviewID() string {
 // duplicates earlier chunks. Every payload carries allowed_mentions
 // {"parse":[]}.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
-	d.stopTyping()
+	d.typing.Stop()
 	if strings.TrimSpace(text) == "" {
 		text = "(empty reply)"
 	}
@@ -193,7 +167,7 @@ func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, err
 // Notify implements [chat.Delivery]: plain chunked sends, no reply
 // threading.
 func (d *delivery) Notify(ctx context.Context, text string) error {
-	d.stopTyping()
+	d.typing.Stop()
 	for _, chunk := range chunkText(text, messageLimit) {
 		if _, err := d.createChunk(ctx, chunk, false); err != nil {
 			return err
