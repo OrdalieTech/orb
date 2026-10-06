@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
@@ -400,26 +400,9 @@ func matchesPath(pattern, raw, cwd string, allow bool) bool {
 	return err == nil && matched
 }
 
-func expandHome(value string) string {
-	if value != "~" && !strings.HasPrefix(value, "~/") {
-		return value
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return value
-	}
-	if value == "~" {
-		return home
-	}
-	return filepath.Join(home, filepath.FromSlash(strings.TrimPrefix(value, "~/")))
-}
-
+// canonicalPath resolves raw the way the file tools do, then through symlinks.
 func canonicalPath(cwd, raw string) string {
-	value := expandHome(raw)
-	if !filepath.IsAbs(value) {
-		value = filepath.Join(cwd, value)
-	}
-	value = filepath.Clean(value)
+	value := nodepath.Resolve(raw, cwd)
 	for ancestor := value; ; ancestor = filepath.Dir(ancestor) {
 		if resolved, err := filepath.EvalSymlinks(ancestor); err == nil {
 			suffix, _ := filepath.Rel(ancestor, value)

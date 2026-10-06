@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -79,14 +78,10 @@ func (resources Resources) JoinedAppendSystemPrompt() *string {
 
 // DefaultAgentDir returns the upstream global resource directory.
 func DefaultAgentDir() string {
-	if configured := os.Getenv("PI_CODING_AGENT_DIR"); configured != "" {
-		return normalizeResourcePath(configured)
+	if dir, err := nodepath.AgentDir(os.Getenv(nodepath.AgentDirEnv)); err == nil {
+		return dir
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".pi", "agent")
-	}
-	return filepath.Join(home, ".pi", "agent")
+	return filepath.Join(".pi", "agent")
 }
 
 // LoadResources discovers context and prompt files, then applies CLI overrides.
@@ -716,31 +711,9 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-func resolveResourcePath(path string) string {
-	path = normalizeResourcePath(path)
-	if absolute, err := filepath.Abs(path); err == nil {
-		return filepath.Clean(absolute)
-	}
-	return filepath.Clean(path)
-}
+func resolveResourcePath(path string) string { return nodepath.Resolve(path, "") }
 
-func normalizeResourcePath(path string) string {
-	path = nodepath.NormalizeShellPath(path)
-	if path == "~" || strings.HasPrefix(path, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(path, `~\`)) {
-		if home, err := os.UserHomeDir(); err == nil {
-			if path == "~" {
-				return home
-			}
-			return filepath.Join(home, path[2:])
-		}
-	}
-	if strings.HasPrefix(path, "file://") {
-		if converted, err := nodepath.FileURLToPath(path); err == nil {
-			return converted
-		}
-	}
-	return path
-}
+func normalizeResourcePath(path string) string { return nodepath.Normalize(path) }
 
 func decodeResourceUTF8(data []byte) string {
 	decoded, _ := textunicode.UTF8.NewDecoder().Bytes(data)

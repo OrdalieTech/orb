@@ -24,7 +24,7 @@ import (
 
 const (
 	ConfigDirName = ".pi"
-	EnvAgentDir   = "PI_CODING_AGENT_DIR"
+	EnvAgentDir   = nodepath.AgentDirEnv
 	EnvSessionDir = "PI_CODING_AGENT_SESSION_DIR"
 )
 
@@ -1024,14 +1024,7 @@ func invalidTimeoutSetting(key string, value any) error {
 }
 
 func GetAgentDir() (string, error) {
-	if configured := os.Getenv(EnvAgentDir); configured != "" {
-		return NormalizePath(configured)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ConfigDirName, "agent"), nil
+	return nodepath.AgentDir(os.Getenv(EnvAgentDir))
 }
 
 // UserNpmInstallRoot and ProjectNpmInstallRoot name the npm projects orb
@@ -1061,21 +1054,7 @@ func ResolveSessionDir(cliValue string, manager *SettingsManager) (string, error
 }
 
 func NormalizePath(path string) (string, error) {
-	path = nodepath.NormalizeShellPath(path)
-	if path == "~" || strings.HasPrefix(path, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(path, `~\`)) {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if path == "~" {
-			return home, nil
-		}
-		return filepath.Join(home, path[2:]), nil
-	}
-	if strings.HasPrefix(path, "file://") {
-		return nodepath.FileURLToPath(path)
-	}
-	return path, nil
+	return nodepath.Expand(nodepath.NormalizeShellPath(path))
 }
 
 func resolvePath(path string) (string, error) {

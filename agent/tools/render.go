@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -20,7 +19,7 @@ type PlainTextRenderer interface {
 // ShortenPath abbreviates a home-relative path with "~" for tool headers,
 // matching upstream render-utils shortenPath.
 func ShortenPath(path string) string {
-	home, err := toolUserHomeDir()
+	home, err := nodepath.HomeDir()
 	if err != nil || home == "" {
 		return path
 	}
@@ -36,14 +35,7 @@ func linkPath(displayText, rawPath, cwd string) string {
 	if !termcaps.Get().Hyperlinks {
 		return displayText
 	}
-	absolutePath := rawPath
-	if expanded, err := expandPath(rawPath, false, false); err == nil {
-		absolutePath = expanded
-	}
-	if !filepath.IsAbs(absolutePath) {
-		absolutePath = filepath.Join(cwd, absolutePath)
-	}
-	return termcaps.Hyperlink(displayText, nodepath.PathToFileURL(filepath.Clean(absolutePath)))
+	return termcaps.Hyperlink(displayText, nodepath.PathToFileURL(nodepath.Resolve(rawPath, cwd)))
 }
 
 // renderLinkedPath renders a tool-header path (~-shortened, hyperlinked),

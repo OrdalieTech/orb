@@ -7,9 +7,15 @@ import (
 	"errors"
 	"net/netip"
 	"net/url"
+	"os"
+	"os/user"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 const windows = runtime.GOOS == "windows"
@@ -29,12 +35,6 @@ func FileURLToPath(raw string) (string, error) {
 	return fileURLToPath(raw, windows)
 }
 
-// HostPathToPath converts the host and percent-encoded pathname of an already
-// parsed file URL; host must already be "" for localhost.
-func HostPathToPath(host, pathname string) (string, error) {
-	return hostPathToPath(host, pathname, windows)
-}
-
 // PathToFileURL encodes an absolute native path like Node's url.pathToFileURL.
 func PathToFileURL(path string) string {
 	return pathToFileURL(path, windows)
@@ -48,6 +48,76 @@ func NormalizeShellPath(path string) string {
 		return path
 	}
 	return windowsShellPath(path)
+}
+
+// Expand resolves a leading ~ against the user's home, when there is one, and
+// converts a file:// URL to its path.
+func Expand(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") || windows && strings.HasPrefix(path, `~\`) {
+		if home, err := HomeDir(); err == nil {
+			return filepath.Join(home, path[1:]), nil
+		}
+		return path, nil
+	}
+	if strings.HasPrefix(path, "file://") {
+		return FileURLToPath(path)
+	}
+	return path, nil
+}
+
+// Normalize is upstream's normalizePath: the shell-drive rewrite, then Expand;
+// a malformed file URL stays an ordinary path.
+func Normalize(path string) string {
+	path = NormalizeShellPath(path)
+	if expanded, err := Expand(path); err == nil {
+		return expanded
+	}
+	return path
+}
+
+// Resolve normalizes path and makes it absolute against base, like Node's
+// path.resolve(base, path).
+func Resolve(path, base string) string {
+	path = Normalize(path)
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	if absolute, err := filepath.Abs(base); err == nil {
+		base = absolute
+	}
+	// Node's win32 path.resolve roots "\x" and "/x" on the base's drive.
+	if windows && (strings.HasPrefix(path, `\`) || strings.HasPrefix(path, "/")) {
+		return filepath.Clean(filepath.VolumeName(base) + path)
+	}
+	return filepath.Join(base, path)
+}
+
+// AgentDirEnv names the variable that moves upstream's agent directory.
+const AgentDirEnv = "PI_CODING_AGENT_DIR"
+
+// AgentDir is upstream's agent directory: configured, the value of
+// AgentDirEnv, when it is set, else ~/.pi/agent.
+func AgentDir(configured string) (string, error) {
+	if configured != "" {
+		return Expand(NormalizeShellPath(configured))
+	}
+	home, err := HomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".pi", "agent"), nil
+}
+
+// HomeDir is the user's home directory, from the account database when $HOME is unset.
+func HomeDir() (string, error) {
+	if home, err := os.UserHomeDir(); err == nil {
+		return home, nil
+	}
+	current, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	return current.HomeDir, nil
 }
 
 // NormalizeUnicodeSpaces folds pasted path spacing without changing other whitespace.
@@ -137,6 +207,8 @@ func parseFileHost(host string) (string, error) {
 	if err != nil || !utf8.ValidString(decoded) {
 		return "", ErrInvalidURL
 	}
+	// UTS #46 drops ignorable code points and applies NFKC before the host is checked.
+	decoded = strings.Map(dropIgnoredHostRune, norm.NFKC.String(strings.Map(dropIgnoredHostRune, decoded)))
 	for index := 0; index < len(decoded); index++ {
 		if decoded[index] <= 0x20 || decoded[index] == 0x7f || strings.IndexByte("#%/:<>?@[\\]^|", decoded[index]) >= 0 {
 			return "", ErrInvalidURL
@@ -147,6 +219,18 @@ func parseFileHost(host string) (string, error) {
 		return "", nil
 	}
 	return decoded, nil
+}
+
+func dropIgnoredHostRune(character rune) rune {
+	switch {
+	case character == '\u00ad', character == '\u034f', character == '\u200b', character == '\u3164', character == '\ufeff', character == '\uffa0',
+		character >= '\u115f' && character <= '\u1160', character >= '\u17b4' && character <= '\u17b5',
+		character >= '\u180b' && character <= '\u180f', character >= '\u2060' && character <= '\u2064',
+		character >= '\u206a' && character <= '\u206f', unicode.Is(unicode.Variation_Selector, character),
+		character >= '\U0001bca0' && character <= '\U0001bca3', character >= '\U0001d173' && character <= '\U0001d17a':
+		return -1
+	}
+	return character
 }
 
 // normalizeFilePath applies WHATWG path-state dot-segment and drive-letter
@@ -195,6 +279,10 @@ func hostPathToPath(host, pathname string, windows bool) (string, error) {
 	decoded, err := decodeURIComponent(strings.ReplaceAll(pathname, "/", `\`))
 	if err != nil {
 		return "", err
+	}
+	// A non-ASCII server name would need WHATWG's IDNA conversion, which is not ported.
+	if strings.ContainsFunc(host, func(character rune) bool { return character >= utf8.RuneSelf }) {
+		return "", ErrInvalidURL
 	}
 	if host != "" {
 		return `\\` + host + decoded, nil

@@ -64,19 +64,9 @@ func processAbsolute(path string) string {
 
 func (env *NodeExecutionEnv) resolve(path string) string {
 	normalized := path
-	if normalized == "~" {
-		if home, homeErr := os.UserHomeDir(); homeErr == nil {
-			normalized = home
-		}
-	} else if strings.HasPrefix(normalized, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(normalized, `~\`)) {
-		if home, homeErr := os.UserHomeDir(); homeErr == nil {
-			normalized = filepath.Join(home, normalized[2:])
-		}
-	} else if strings.HasPrefix(normalized, "file://") {
-		// Malformed URLs stay ordinary paths so filesystem methods preserve their non-throwing contract.
-		if converted, err := nodepath.FileURLToPath(normalized); err == nil {
-			normalized = converted
-		}
+	// Malformed URLs stay ordinary paths so filesystem methods preserve their non-throwing contract.
+	if expanded, err := nodepath.Expand(path); err == nil {
+		normalized = expanded
 	}
 	if filepath.IsAbs(normalized) {
 		return filepath.Clean(normalized)

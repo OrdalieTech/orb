@@ -20,6 +20,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 const (
@@ -90,21 +92,8 @@ func defaultToolManager() (*toolManager, error) {
 }
 
 func managedBinDir() (string, error) {
-	agentDir := os.Getenv("PI_CODING_AGENT_DIR")
-	if agentDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		agentDir = filepath.Join(home, ".pi", "agent")
-	} else {
-		normalized, err := expandPath(agentDir, false, false)
-		if err != nil {
-			return "", err
-		}
-		agentDir = normalized
-	}
-	return filepath.Join(agentDir, "bin"), nil
+	agentDir, err := nodepath.AgentDir(os.Getenv(nodepath.AgentDirEnv))
+	return filepath.Join(agentDir, "bin"), err
 }
 
 func (manager *toolManager) getToolPath(ctx context.Context, tool managedTool) string {

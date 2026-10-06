@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 type Diagnostic struct {
@@ -133,37 +135,23 @@ func Discover(cwd string, paths []string) ([]*Theme, []Diagnostic) {
 	return themes, append(loader.Warnings(), collisions...)
 }
 
-// CleanPath trims, expands a leading ~, and makes path absolute and clean.
+// CleanPath trims path and resolves it like upstream's resolvePath.
 func CleanPath(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			if path == "~" {
-				path = home
-			} else {
-				path = filepath.Join(home, path[2:])
-			}
-		}
-	}
-	if path == "" {
-		return ""
-	}
-	absolute, err := filepath.Abs(path)
-	if err == nil {
-		return filepath.Clean(absolute)
-	}
-	return filepath.Clean(path)
+	return cleanPath(path, "")
 }
 
-// ResolvePaths joins relative, non-home paths onto base.
+// ResolvePaths cleans paths, joining relative ones onto base.
 func ResolvePaths(paths []string, base string) []string {
-	result := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path != "" && !filepath.IsAbs(path) && path != "~" && !strings.HasPrefix(path, "~/") {
-			path = filepath.Join(base, path)
-		}
-		result = append(result, path)
+	result := make([]string, len(paths))
+	for index, path := range paths {
+		result[index] = cleanPath(path, base)
 	}
 	return result
+}
+
+func cleanPath(path, base string) string {
+	if path = strings.TrimSpace(path); path == "" {
+		return ""
+	}
+	return nodepath.Resolve(path, base)
 }

@@ -7,7 +7,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -962,24 +961,7 @@ func isConfigLocalPath(value string) bool {
 }
 
 func resolveConfigPath(value, baseDir string) string {
-	value = nodepath.NormalizeShellPath(strings.TrimSpace(value))
-	if value == "~" || strings.HasPrefix(value, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(value, `~\`)) {
-		if homeDir, err := os.UserHomeDir(); err == nil {
-			if value == "~" {
-				value = homeDir
-			} else {
-				value = filepath.Join(homeDir, value[2:])
-			}
-		}
-	} else if strings.HasPrefix(value, "file://") {
-		if converted, err := nodepath.FileURLToPath(value); err == nil {
-			value = converted
-		}
-	}
-	if !filepath.IsAbs(value) {
-		value = filepath.Join(baseDir, value)
-	}
-	return filepath.Clean(value)
+	return nodepath.Resolve(strings.TrimSpace(value), baseDir)
 }
 
 func (list *configResourceList) packageSourceMatches(leftSource, leftScope, rightSource, rightScope string) bool {

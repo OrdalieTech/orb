@@ -29,6 +29,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/tui"
 	mcpjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -1405,9 +1406,7 @@ func resolveCommandCWD(base, configured string) string {
 
 func expandHome(value string) string {
 	if value == "~" || strings.HasPrefix(value, "~/") {
-		if expanded, err := configpkg.NormalizePath(value); err == nil {
-			return expanded
-		}
+		value, _ = nodepath.Expand(value)
 	}
 	return value
 }

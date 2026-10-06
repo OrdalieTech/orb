@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -142,24 +141,7 @@ func isExtensionFile(name string) bool {
 }
 
 func resolvePath(input, base string) string {
-	input = nodepath.NormalizeShellPath(nodepath.NormalizeUnicodeSpaces(input))
-	if input == "~" || strings.HasPrefix(input, "~/") || (runtime.GOOS == "windows" && strings.HasPrefix(input, `~\`)) {
-		if home, err := os.UserHomeDir(); err == nil {
-			input = filepath.Join(home, input[1:])
-		}
-	}
-	if strings.HasPrefix(input, "file://") {
-		if converted, err := nodepath.FileURLToPath(input); err == nil {
-			input = converted
-		}
-	}
-	if !filepath.IsAbs(input) {
-		input = filepath.Join(base, input)
-	}
-	if absolute, err := filepath.Abs(input); err == nil {
-		return filepath.Clean(absolute)
-	}
-	return filepath.Clean(input)
+	return nodepath.Resolve(nodepath.NormalizeUnicodeSpaces(input), base)
 }
 
 func absoluteOrDot(path string) string {
