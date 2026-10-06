@@ -30,6 +30,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/questions"
@@ -532,10 +533,8 @@ func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *transl
 var errNoUI = errors.New("input requires an interactive UI or an attached controller")
 
 func newUUID() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	b[6], b[8] = b[6]&0x0f|0x40, b[8]&0x3f|0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	id, _ := uuidv7.NewV4(rand.Reader)
+	return id
 }
 
 // nativeContent converts Orb prompts, including extension messages, into the
