@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-10-06
+
+An agent's live conversations share its memory as it changes.
+
 - An agent's live conversations share its memory as it changes: what one saves, replaces or
   forgets reaches the others at their next turn, on any front, while each keeps the prompt it
   started with so provider caches hold. Before, a conversation saw only the memory it began with.
