@@ -228,8 +228,6 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		defaultLoader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
 			AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
-			PackageSkillPaths: enabledPackageResourcePaths(resolvedPaths.Skills), PackagePromptTemplatePaths: enabledPackageResourcePaths(resolvedPaths.Prompts),
-			PackageThemePaths: enabledPackageThemePaths(resolvedPaths.Themes),
 			ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
 			NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates, NoThemes: args.NoThemes,
 			SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
@@ -362,42 +360,6 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 	transport := settings.GetTransport()
 	providerRetry := settings.GetProviderRetrySettings()
 	maxRetryDelay := providerRetry.MaxRetryDelayMS
-	streamFn := func(
-		ctx context.Context,
-		model *ai.Model,
-		request ai.Context,
-		options *ai.SimpleStreamOptions,
-	) (ai.AssistantMessageEventStream, error) {
-		merged := ai.SimpleStreamOptions{}
-		if options != nil {
-			merged = *options
-		}
-		currentRetry := settings.GetProviderRetrySettings()
-		if merged.TimeoutMS == nil {
-			merged.TimeoutMS = currentRetry.TimeoutMS
-		}
-		if merged.TimeoutMS == nil {
-			httpIdleTimeout, timeoutErr := settings.GetHTTPIdleTimeoutMS()
-			if timeoutErr != nil {
-				return nil, timeoutErr
-			}
-			if httpIdleTimeout == 0 {
-				httpIdleTimeout = 2147483647
-			}
-			merged.TimeoutMS = &httpIdleTimeout
-		}
-		if merged.WebSocketConnectTimeoutMS == nil {
-			webSocketConnectTimeout, timeoutErr := settings.GetWebSocketConnectTimeoutMS()
-			if timeoutErr != nil {
-				return nil, timeoutErr
-			}
-			merged.WebSocketConnectTimeoutMS = webSocketConnectTimeout
-		}
-		if merged.MaxRetries == nil {
-			merged.MaxRetries = currentRetry.MaxRetries
-		}
-		return registry.StreamSimple(ctx, model, request, &merged)
-	}
 	state := engine.AgentState{
 		Model:         model,
 		ThinkingLevel: thinking,
@@ -410,17 +372,8 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		cliAPIKeyProvider = &provider
 		runtimeAuth.SetRuntimeAPIKey(string(provider), *args.APIKey)
 	}
-	resolveRequestAuth := requestAuthResolverWithCredentials(registry, runtimeAuth)
-	resolveAPIKey := func(ctx context.Context, providerID ai.ProviderID) (*string, error) {
-		resolved, err := resolveRequestAuth(ctx, providerID)
-		if err != nil || resolved == nil {
-			return nil, err
-		}
-		return resolved.APIKey, nil
-	}
-	resolveModelHeaders := func(ctx context.Context, model *ai.Model, apiKey *string, env ai.ProviderEnv) (*map[string]string, error) {
-		return registry.ResolveModelHeaders(ctx, *model, map[string]string(env), apiKey)
-	}
+	resolveRequestAuth, resolveAPIKey := agent.RequestAuthResolvers(registry, runtimeAuth)
+	resolveModelHeaders := registry.DefaultModelHeadersResolver()
 	availableModels := func() []ai.Model {
 		result, _ := registry.AvailableWithError(nil)
 		if cliAPIKeyProvider != nil && runtimeAuth.HasRuntimeAPIKey(string(*cliAPIKeyProvider)) {
@@ -436,7 +389,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		return result
 	}
 	created := engine.NewAgent(
-		streamFn, engine.WithInitialState(state),
+		registry.StreamSimple, engine.WithInitialState(state),
 		engine.WithConvertToLLM(agent.ConvertToLLMWithBlockImages(settings.GetBlockImages)),
 		engine.WithSteeringMode(engine.QueueMode(settings.GetSteeringMode())),
 		engine.WithFollowUpMode(engine.QueueMode(settings.GetFollowUpMode())),
@@ -452,7 +405,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		engine.WithModelHeadersResolver(resolveModelHeaders),
 	)
 	return runtimeInputs{
-		Agent: created, Settings: settings, StreamFn: streamFn, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
+		Agent: created, Settings: settings, StreamFn: registry.StreamSimple, AvailableModels: availableModels, ScopedModels: scopedModels, GetAPIKey: resolveAPIKey,
 		GetRequestAuth:  resolveRequestAuth,
 		GetModelHeaders: resolveModelHeaders,
 		SlashResolver:   &agent.SlashResolver{Skills: resources.Skills, PromptTemplates: resources.PromptTemplates},
@@ -502,34 +455,11 @@ func hasNonControlExtensions(registry *extensions.Registry) bool {
 	return false
 }
 
-// enabledPackageResourcePaths keeps enabled package-contributed resources;
-// local and auto-discovered entries stay with the existing resource loaders.
-func enabledPackageResourcePaths(resources []agent.ResolvedResource) []string {
-	paths := make([]string, 0, len(resources))
-	for _, resource := range resources {
-		if resource.Enabled && resource.Metadata.Origin == "package" {
-			paths = append(paths, resource.Path)
-		}
-	}
-	return paths
-}
-
-func enabledPackageThemePaths(resources []agent.ResolvedResource) []agent.ResourcePath {
-	paths := make([]agent.ResourcePath, 0, len(resources))
-	for _, resource := range resources {
-		if resource.Enabled && resource.Metadata.Origin == "package" {
-			paths = append(paths, agent.ResourcePath{Path: resource.Path, Metadata: resource.Metadata})
-		}
-	}
-	return paths
-}
-
 func resolveRuntimeModel(
 	args CLIArgs,
 	settings *config.SettingsManager,
 	registry *config.ModelRegistry,
 ) (*ai.Model, *ai.ModelThinkingLevel, []agent.ScopedModel, []string, error) {
-	args = normalizeRuntimeCLIArgs(args)
 	all := registry.Models()
 	available, err := registry.AvailableWithError(nil)
 	if err != nil {
@@ -625,28 +555,6 @@ func normalizeRuntimeCLIArgs(args CLIArgs) CLIArgs {
 		args.Model = nil
 	}
 	return args
-}
-
-func requestAuthResolverWithCredentials(
-	registry *config.ModelRegistry,
-	credentials aiauth.CredentialStore,
-) engine.GetRequestAuthFunc {
-	var baseResolver func(context.Context, ai.ProviderID) (*config.RequestAuth, error)
-	if registry != nil {
-		baseResolver = registry.DefaultRequestAuthResolver(credentials)
-	} else {
-		baseResolver = config.FallbackRequestAuthResolver(credentials)
-	}
-	return func(ctx context.Context, providerID ai.ProviderID) (*engine.RequestAuth, error) {
-		resolved, err := baseResolver(ctx, providerID)
-		if err != nil || resolved == nil {
-			return nil, err
-		}
-		return &engine.RequestAuth{
-			APIKey: resolved.APIKey, Headers: resolved.Headers,
-			Env: resolved.Env, BaseURL: resolved.BaseURL,
-		}, nil
-	}
 }
 
 // createBuiltInTools builds the named built-in tools (all of them for nil

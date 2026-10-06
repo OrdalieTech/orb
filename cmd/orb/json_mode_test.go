@@ -346,8 +346,8 @@ func TestCLIJSONModeResumeAndForkHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := createCLIStoredSession(t, project, sessionDir, "json-source")
-	selector := func(current, _ SessionListLoader) (string, bool, error) {
-		listed := current(nil)
+	selector := func(current, _ modes.SessionSelectorContextLoader) (string, bool, error) {
+		listed, _ := current(context.Background(), nil)
 		for _, candidate := range listed {
 			if candidate.ID == source.GetSessionID() {
 				return candidate.Path, true, nil

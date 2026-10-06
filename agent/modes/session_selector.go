@@ -1071,23 +1071,6 @@ func deleteSessionFile(path string) (SessionDeleteMethod, error) {
 	return SessionDeleteUnlink, nil
 }
 
-func RunSessionSelector(ctx context.Context, current, all SessionSelectorLoader) (string, bool, error) {
-	return RunSessionSelectorWithTerminal(ctx, current, all, tui.NewProcessTerminal())
-}
-
-func RunSessionSelectorWithTerminal(ctx context.Context, current, all SessionSelectorLoader, terminal tui.Terminal) (string, bool, error) {
-	return runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{
-		CurrentSessions: current,
-		AllSessions:     all,
-	}, terminal)
-}
-
-// RunSessionSelectorContext runs the startup picker with cancellable,
-// progressively publishing loaders.
-func RunSessionSelectorContext(ctx context.Context, current, all SessionSelectorContextLoader) (string, bool, error) {
-	return runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{CurrentSessionsContext: current, AllSessionsContext: all}, tui.NewProcessTerminal())
-}
-
 // RunSessionSelectorWithOptions assembles native loaders and actions explicitly.
 func RunSessionSelectorWithOptions(ctx context.Context, options SessionSelectorOptions) (string, bool, error) {
 	return runSessionSelectorWithTerminal(ctx, options, tui.NewProcessTerminal())

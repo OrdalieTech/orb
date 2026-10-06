@@ -66,7 +66,7 @@ func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.Agent
 		args.mcpServers = append(args.mcpServers, mcp.Entry{Name: server.Name, Config: config, Source: "ACP client", Scope: "session"})
 	}
 	args.native = args.native.conversation()
-	manager, _, err := createCLISession(cwd, args, host.streams, nil, nil)
+	manager, _, err := createCLISession(cwd, args, host.streams, nil)
 	if err != nil {
 		args.native.release()
 		return nil, nil, err

@@ -26,6 +26,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	allapi "github.com/OrdalieTech/orb/ai/api/all"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/host"
@@ -318,19 +319,6 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	if streamFn == nil {
 		streamFn = allapi.StreamSimple
 	}
-	providerStreamFn := streamFn
-	streamFn = func(
-		ctx context.Context,
-		model *ai.Model,
-		request ai.Context,
-		options *ai.SimpleStreamOptions,
-	) (ai.AssistantMessageEventStream, error) {
-		merged, err := providerStreamOptions(settings, options)
-		if err != nil {
-			return nil, err
-		}
-		return providerStreamFn(ctx, model, request, &merged)
-	}
 
 	existing := sm.BuildSessionContext()
 	hasExisting := len(existing.Messages) > 0
@@ -620,30 +608,32 @@ func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager
 // models.json overrides, and built-in provider auth work automatically.
 func withRequestAuth(opts AgentSessionOptions, modelRegistry *config.ModelRegistry) AgentSessionOptions {
 	if opts.GetRequestAuth == nil && opts.GetAPIKey == nil && opts.StreamFn == nil && opts.SessionLoop == nil {
-		registryResolver := modelRegistry.DefaultRequestAuthResolver(nil)
-		getRequestAuth := func(ctx context.Context, provider ai.ProviderID) (*engine.RequestAuth, error) {
-			resolved, err := registryResolver(ctx, provider)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return &engine.RequestAuth{
-				APIKey: resolved.APIKey, Headers: resolved.Headers,
-				Env: resolved.Env, BaseURL: resolved.BaseURL,
-			}, nil
-		}
-		opts.GetRequestAuth = getRequestAuth
-		opts.GetAPIKey = func(ctx context.Context, provider ai.ProviderID) (*string, error) {
-			resolved, err := getRequestAuth(ctx, provider)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return resolved.APIKey, nil
-		}
+		opts.GetRequestAuth, opts.GetAPIKey = RequestAuthResolvers(modelRegistry, nil)
 	}
 	if opts.GetModelHeaders == nil && opts.StreamFn == nil {
 		opts.GetModelHeaders = modelRegistry.DefaultModelHeadersResolver()
 	}
 	return opts
+}
+
+// RequestAuthResolvers resolve request auth, and the API key in it, through
+// registry from credentials (nil for the registry's own).
+func RequestAuthResolvers(registry *config.ModelRegistry, credentials aiauth.CredentialStore) (engine.GetRequestAuthFunc, engine.GetAPIKeyFunc) {
+	resolve := registry.DefaultRequestAuthResolver(credentials)
+	getRequestAuth := func(ctx context.Context, provider ai.ProviderID) (*engine.RequestAuth, error) {
+		resolved, err := resolve(ctx, provider)
+		if err != nil || resolved == nil {
+			return nil, err
+		}
+		return &engine.RequestAuth{APIKey: resolved.APIKey, Headers: resolved.Headers, Env: resolved.Env, BaseURL: resolved.BaseURL}, nil
+	}
+	return getRequestAuth, func(ctx context.Context, provider ai.ProviderID) (*string, error) {
+		resolved, err := getRequestAuth(ctx, provider)
+		if err != nil || resolved == nil {
+			return nil, err
+		}
+		return resolved.APIKey, nil
+	}
 }
 
 func resourceRuntimeDiagnostics(resources *Resources) []AgentSessionRuntimeDiagnostic {

@@ -448,7 +448,7 @@ func runCancelledSelectorWithStatusTimer(t *testing.T) <-chan struct{} {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	terminal := &selectorCancellationTerminal{loaded: loaded, session: sessionPath, cancel: cancel}
-	_, _, err := RunSessionSelectorWithTerminal(ctx, loader, loader, terminal)
+	_, _, err := runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{CurrentSessions: loader, AllSessions: loader}, terminal)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("runner cancellation error = %v, want %v", err, context.Canceled)
 	}
@@ -526,7 +526,7 @@ func TestRunSessionSelectorTerminalLifecycle(t *testing.T) {
 		return func(session.SessionListProgress) []session.SessionInfo { return values }
 	}
 	terminal := &selectorLifecycleTerminal{input: "\r"}
-	path, selected, err := RunSessionSelectorWithTerminal(context.Background(), loader(current), loader(all), terminal)
+	path, selected, err := runSessionSelectorWithTerminal(context.Background(), SessionSelectorOptions{CurrentSessions: loader(current), AllSessions: loader(all)}, terminal)
 	if err != nil || !selected || path != current[1].Path {
 		t.Fatalf("path=%q selected=%t err=%v", path, selected, err)
 	}
@@ -539,7 +539,7 @@ func TestRunSessionSelectorTerminalLifecycle(t *testing.T) {
 
 	stopFailure := errors.New("restore failed")
 	terminal = &selectorLifecycleTerminal{input: "\x1b", stopErr: stopFailure}
-	_, _, err = RunSessionSelectorWithTerminal(context.Background(), loader(current), loader(all), terminal)
+	_, _, err = runSessionSelectorWithTerminal(context.Background(), SessionSelectorOptions{CurrentSessions: loader(current), AllSessions: loader(all)}, terminal)
 	if !errors.Is(err, stopFailure) {
 		t.Fatalf("stop error = %v", err)
 	}

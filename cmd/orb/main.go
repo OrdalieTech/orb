@@ -73,7 +73,6 @@ type cliDependencies struct {
 	refreshModels           func(context.Context, string) error
 	runInteractive          func(context.Context, *agent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
-	selectSessionContext    ContextSessionSelector
 	selectMissingSessionCWD func(context.Context, *agent.MissingSessionCWDError) (string, bool, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 	selfUpdate              func(context.Context, io.Writer, bool, bool) int
@@ -203,17 +202,15 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return refresh(context.WithValue(refreshCtx, nativeStateKey{}, state), agentDir)
 		}
 	}
-	if dependencies.selectSession == nil && dependencies.selectSessionContext == nil {
-		if state := stateFromContext(ctx); state != nil {
-			dependencies.selectSessionContext = func(current, all ContextSessionListLoader) (string, bool, error) {
-				bindings, err := state.keybindings()
-				if err != nil {
-					return "", false, err
-				}
-				return modes.RunSessionSelectorWithOptions(ctx, modes.SessionSelectorOptions{CurrentSessionsContext: modes.SessionSelectorContextLoader(current), AllSessionsContext: modes.SessionSelectorContextLoader(all), Keybindings: modes.NewAppKeybindings(bindings), DeleteSession: state.deleteSession})
+	if state := stateFromContext(ctx); dependencies.selectSession == nil && state == nil {
+		dependencies.selectSession = startupTUISessionSelector(ctx)
+	} else if dependencies.selectSession == nil {
+		dependencies.selectSession = func(current, all modes.SessionSelectorContextLoader) (string, bool, error) {
+			bindings, err := state.keybindings()
+			if err != nil {
+				return "", false, err
 			}
-		} else {
-			dependencies.selectSessionContext = startupContextTUISessionSelector(ctx)
+			return modes.RunSessionSelectorWithOptions(ctx, modes.SessionSelectorOptions{CurrentSessionsContext: current, AllSessionsContext: all, Keybindings: modes.NewAppKeybindings(bindings), DeleteSession: state.deleteSession})
 		}
 	}
 	if dependencies.selectMissingSessionCWD == nil {
@@ -437,7 +434,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		args.useUnknownModel = true
 	}
 	baseArgs := args
-	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession, dependencies.selectSessionContext)
+	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	if err != nil {
 		if errors.Is(err, errNoSessionSelected) {
 			return 0

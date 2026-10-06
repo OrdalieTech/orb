@@ -47,23 +47,13 @@ func importSession(settings *config.SettingsManager, id string, create func(cwd 
 	return nil, nil
 }
 
-type SessionListLoader func(session.SessionListProgress) []session.SessionInfo
-
-type ContextSessionListLoader func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error)
-
-type SessionSelector func(current, all SessionListLoader) (path string, selected bool, err error)
-
-type ContextSessionSelector func(current, all ContextSessionListLoader) (path string, selected bool, err error)
+// SessionSelector picks a session at startup from the current project's
+// sessions and every project's.
+type SessionSelector func(current, all modes.SessionSelectorContextLoader) (path string, selected bool, err error)
 
 func startupTUISessionSelector(ctx context.Context) SessionSelector {
-	return func(current, all SessionListLoader) (string, bool, error) {
-		return modes.RunSessionSelector(ctx, modes.SessionSelectorLoader(current), modes.SessionSelectorLoader(all))
-	}
-}
-
-func startupContextTUISessionSelector(ctx context.Context) ContextSessionSelector {
-	return func(current, all ContextSessionListLoader) (string, bool, error) {
-		return modes.RunSessionSelectorContext(ctx, modes.SessionSelectorContextLoader(current), modes.SessionSelectorContextLoader(all))
+	return func(current, all modes.SessionSelectorContextLoader) (string, bool, error) {
+		return modes.RunSessionSelectorWithOptions(ctx, modes.SessionSelectorOptions{CurrentSessionsContext: current, AllSessionsContext: all})
 	}
 }
 
@@ -117,9 +107,9 @@ func validateSessionFlags(args CLIArgs) []string {
 
 func hasCLIValue(value *string) bool { return value != nil && *value != "" }
 
-func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector SessionSelector, contextSelector ContextSessionSelector) (*session.SessionManager, session.SessionContext, error) {
+func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector SessionSelector) (*session.SessionManager, session.SessionContext, error) {
 	if args.native != nil && !args.NoSession {
-		return createNativeSession(cwd, args, streams, selector, contextSelector)
+		return createNativeSession(cwd, args, selector)
 	}
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
@@ -193,31 +183,14 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 			manager, err = session.Open(resolved.path, sessionDir, openOptions...)
 		}
 	case args.Resume:
-		var selectedPath string
-		var selected bool
-		var selectErr error
-		if contextSelector != nil {
-			selectedPath, selected, selectErr = contextSelector(
-				func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
-					return session.ListContext(ctx, cwd, sessionDir, update, session.WithAgentDir(agentDir))
-				},
-				func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
-					return session.ListAllContext(ctx, sessionDir, update, session.WithAgentDir(agentDir))
-				},
-			)
-		} else {
-			if selector == nil {
-				selector = startupTUISessionSelector(context.Background())
-			}
-			selectedPath, selected, selectErr = selector(
-				func(progress session.SessionListProgress) []session.SessionInfo {
-					return session.List(cwd, sessionDir, progress, session.WithAgentDir(agentDir))
-				},
-				func(progress session.SessionListProgress) []session.SessionInfo {
-					return session.ListAll(sessionDir, progress, session.WithAgentDir(agentDir))
-				},
-			)
-		}
+		selectedPath, selected, selectErr := selector(
+			func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+				return session.ListContext(ctx, cwd, sessionDir, update, session.WithAgentDir(agentDir))
+			},
+			func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+				return session.ListAllContext(ctx, sessionDir, update, session.WithAgentDir(agentDir))
+			},
+		)
 		if selectErr != nil {
 			return nil, session.SessionContext{}, selectErr
 		}
@@ -305,7 +278,7 @@ func confirmGlobalSessionFork(streams cliStreams, sessionCWD string) (bool, erro
 	return answer == "y" || answer == "yes", nil
 }
 
-func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector SessionSelector, contextSelector ContextSessionSelector) (*session.SessionManager, session.SessionContext, error) {
+func createNativeSession(cwd string, args CLIArgs, selector SessionSelector) (*session.SessionManager, session.SessionContext, error) {
 	ctx := context.Background()
 	repo := args.native.sessions()
 	var opened *harness.Session
@@ -328,26 +301,11 @@ func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector 
 		}
 	case args.Resume:
 		var selected bool
-		current := func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+		reference, selected, err = selector(func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
 			return repo.ListInfo(ctx, cwd, update)
-		}
-		all := func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+		}, func(ctx context.Context, update session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
 			return repo.ListInfo(ctx, "", update)
-		}
-		if contextSelector == nil && selector == nil {
-			contextSelector = startupContextTUISessionSelector(ctx)
-		}
-		if contextSelector != nil {
-			reference, selected, err = contextSelector(current, all)
-		} else {
-			reference, selected, err = selector(func(progress session.SessionListProgress) []session.SessionInfo {
-				rows, _ := current(ctx, nil)
-				return rows
-			}, func(progress session.SessionListProgress) []session.SessionInfo {
-				rows, _ := all(ctx, nil)
-				return rows
-			})
-		}
+		})
 		if err != nil {
 			return nil, session.SessionContext{}, err
 		}

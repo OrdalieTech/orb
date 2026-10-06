@@ -200,6 +200,14 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	if streamFn == nil {
 		streamFn = allapi.StreamSimple
 	}
+	providerStream := streamFn
+	streamFn = func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		merged, err := providerStreamOptions(runtimeConfig.Settings, options)
+		if err != nil {
+			return nil, err
+		}
+		return providerStream(ctx, model, request, &merged)
+	}
 	runtimeConfig.Agent.SetStreamFn(streamFn)
 	runtimeConfig.Agent.SetRequestResolvers(runtimeConfig.GetAPIKey, runtimeConfig.GetRequestAuth, runtimeConfig.GetModelHeaders)
 	complete := runtimeConfig.Complete

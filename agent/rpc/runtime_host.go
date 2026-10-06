@@ -30,17 +30,12 @@ func NewRuntimeHost(ctx context.Context, runtime *agent.AgentSessionRuntime, def
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	host := &RuntimeHost{ctx: ctx, runtime: runtime}
-	runtime.SetRebindSession(func(replacement *agent.AgentSession) error {
-		return replacement.BindExtensions(ctx)
-	})
-	if deferInitialBind {
-		return host, nil
+	if !deferInitialBind {
+		if err := runtime.Session().BindExtensions(ctx); err != nil {
+			return nil, err
+		}
 	}
-	if err := runtime.Session().BindExtensions(ctx); err != nil {
-		return nil, err
-	}
-	return host, nil
+	return &RuntimeHost{ctx: ctx, runtime: runtime}, nil
 }
 
 func (host *RuntimeHost) Session() *agent.SessionRuntime {
@@ -56,12 +51,7 @@ func (host *RuntimeHost) SetRebindSession(rebind func(*agent.SessionRuntime) err
 	if runtime == nil {
 		return
 	}
-	runtime.SetRebindSession(func(replacement *agent.AgentSession) error {
-		if rebind == nil {
-			return replacement.BindExtensions(host.ctx)
-		}
-		return rebind(replacement)
-	})
+	runtime.SetRebindSession(rebind)
 }
 
 func (host *RuntimeHost) NewSession(parentSession string) (bool, error) {

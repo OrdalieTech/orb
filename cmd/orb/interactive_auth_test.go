@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/platforms/native/accounts"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -200,7 +201,7 @@ func TestLOGm3InteractiveHostRuntimeAPIKeyStatusAndLogout(t *testing.T) {
 	})
 	runtimeAuth := newRuntimeCredentials(baseStore)
 	runtimeAuth.SetRuntimeAPIKey("runtime-auth", "runtime-key")
-	resolver := requestAuthResolverWithCredentials(registry, runtimeAuth)
+	resolver, _ := agent.RequestAuthResolvers(registry, runtimeAuth)
 	cliKey := "runtime-key"
 	fixture.host.mu.Lock()
 	fixture.host.args.APIKey = &cliKey
@@ -385,7 +386,7 @@ func TestProviderAccountsSwitchWithoutReplacingCompatibilityCredential(t *testin
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("accounts=%v error=%v", rows, err)
 	}
-	resolver := requestAuthResolverWithCredentials(registry, credentials)
+	resolver, _ := agent.RequestAuthResolvers(registry, credentials)
 	check := func(want string) {
 		t.Helper()
 		resolved, err := resolver(t.Context(), "groq")

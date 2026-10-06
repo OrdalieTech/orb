@@ -17,6 +17,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
@@ -45,15 +46,15 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	}
 	source := createCLIStoredSession(t, project, dir, "source-id")
 
-	selector := func(current, _ SessionListLoader) (string, bool, error) {
-		listed := current(nil)
+	selector := func(current, _ modes.SessionSelectorContextLoader) (string, bool, error) {
+		listed, _ := current(context.Background(), nil)
 		if len(listed) != 1 {
 			t.Fatalf("current sessions = %#v", listed)
 		}
 		return listed[0].Path, true, nil
 	}
 	streams := cliStreams{Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}, StdinTTY: true, StdoutTTY: true}
-	manager, _, err := createCLISession(project, CLIArgs{Resume: true}, streams, selector, nil)
+	manager, _, err := createCLISession(project, CLIArgs{Resume: true}, streams, selector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 	}
 
 	forkArg := "source"
-	forked, _, err := createCLISession(project, CLIArgs{Fork: &forkArg}, streams, nil, nil)
+	forked, _, err := createCLISession(project, CLIArgs{Fork: &forkArg}, streams, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestCreateCLISessionForkResumeAndExactID(t *testing.T) {
 
 	exactID := "exact-new"
 	var warning bytes.Buffer
-	created, _, err := createCLISession(project, CLIArgs{SessionID: &exactID}, cliStreams{Stderr: &warning}, nil, nil)
+	created, _, err := createCLISession(project, CLIArgs{SessionID: &exactID}, cliStreams{Stderr: &warning}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestCreateCLISessionConfirmsGlobalIDBeforeForking(t *testing.T) {
 	var output bytes.Buffer
 	forked, _, err := createCLISession(current, CLIArgs{Session: &argument}, cliStreams{
 		Stdin: strings.NewReader("yes\n"), Stdout: &output,
-	}, nil, nil)
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +119,7 @@ func TestCreateCLISessionConfirmsGlobalIDBeforeForking(t *testing.T) {
 	output.Reset()
 	_, _, err = createCLISession(current, CLIArgs{Session: &argument}, cliStreams{
 		Stdin: strings.NewReader("no\n"), Stdout: &output,
-	}, nil, nil)
+	}, nil)
 	if !errors.Is(err, errNoSessionSelected) || !strings.HasSuffix(output.String(), "Aborted.\n") {
 		t.Fatalf("declined global session err=%v output=%q", err, output.String())
 	}
@@ -398,7 +399,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	}
 	id := legacy.GetSessionID()
 	args := CLIArgs{Session: &id, native: state}
-	manager, _, err := createCLISession(cwd, args, cliStreams{}, nil, nil)
+	manager, _, err := createCLISession(cwd, args, cliStreams{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +428,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	}
 	_ = other.Close()
 	missing, requested := "missing", "new-id"
-	if _, _, err := createCLISession(cwd, CLIArgs{Fork: &missing, SessionID: &requested, native: state}, cliStreams{}, nil, nil); err == nil {
+	if _, _, err := createCLISession(cwd, CLIArgs{Fork: &missing, SessionID: &requested, native: state}, cliStreams{}, nil); err == nil {
 		t.Fatal("forked missing session")
 	}
 	backup := filepath.Join(root, "backup.db")
@@ -456,7 +457,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	}
 	defer func() { _ = state.Close() }()
 	args.native = state
-	manager, _, err = createCLISession(cwd, args, cliStreams{}, nil, nil)
+	manager, _, err = createCLISession(cwd, args, cliStreams{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +472,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, reference := range []string{id, id[:len(id)-1]} {
-		resumed, _, err := createCLISession(cwd, CLIArgs{Session: &reference, native: state}, cliStreams{}, nil, nil)
+		resumed, _, err := createCLISession(cwd, CLIArgs{Session: &reference, native: state}, cliStreams{}, nil)
 		if err != nil {
 			t.Fatal("legacy files interfered with native resume", err)
 		}

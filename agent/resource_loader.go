@@ -78,9 +78,6 @@ type DefaultResourceLoaderOptions struct {
 	AdditionalSkillPaths          []string
 	AdditionalPromptTemplatePaths []string
 	AdditionalThemePaths          []string
-	PackageSkillPaths             []string
-	PackagePromptTemplatePaths    []string
-	PackageThemePaths             []ResourcePath
 	ExtensionFactories            []extensions.Factory
 	ExtensionRegistry             *extensions.Registry
 	NoExtensions                  bool
@@ -456,23 +453,8 @@ func resolveResourceLoaderPaths(options DefaultResourceLoaderOptions) (ResourceE
 		SkillPaths:  enabledResourcePaths(resolved.Skills, true),
 		PromptPaths: enabledResourcePaths(resolved.Prompts, false),
 	}
-	if !options.NoSkills {
-		packageMetadata := PathMetadata{Source: "package", Scope: "temporary", Origin: "package", BaseDir: options.CWD}
-		for _, path := range options.PackageSkillPaths {
-			paths.SkillPaths = appendUniqueResourcePath(paths.SkillPaths, mapSkillResourcePath(ResourcePath{Path: path, Metadata: packageMetadata}))
-		}
-	}
-	if !options.NoPromptTemplates {
-		packageMetadata := PathMetadata{Source: "package", Scope: "temporary", Origin: "package", BaseDir: options.CWD}
-		for _, path := range options.PackagePromptTemplatePaths {
-			paths.PromptPaths = appendUniqueResourcePath(paths.PromptPaths, ResourcePath{Path: path, Metadata: packageMetadata})
-		}
-	}
 	if !options.NoThemes {
 		paths.ThemePaths = enabledResourcePaths(resolved.Themes, false)
-		for _, entry := range options.PackageThemePaths {
-			paths.ThemePaths = appendUniqueResourcePath(paths.ThemePaths, entry)
-		}
 	}
 	paths.SkillPaths = normalizeResourcePathEntries(paths.SkillPaths, options.CWD)
 	paths.PromptPaths = normalizeResourcePathEntries(paths.PromptPaths, options.CWD)
@@ -514,16 +496,6 @@ func mapSkillResourcePath(resource ResourcePath) ResourcePath {
 		resource.Path = skillFile
 	}
 	return resource
-}
-
-func appendUniqueResourcePath(paths []ResourcePath, entry ResourcePath) []ResourcePath {
-	canonical := canonicalResourcePath(entry.Path)
-	for _, existing := range paths {
-		if canonicalResourcePath(existing.Path) == canonical {
-			return paths
-		}
-	}
-	return append(paths, entry)
 }
 
 func resourceLoaderPaths(cwd string, resolved []ResourcePath, additional []string, extended []ResourcePath, loadResolved bool) ([]string, map[string]PathMetadata) {
