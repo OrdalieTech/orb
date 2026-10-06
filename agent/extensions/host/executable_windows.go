@@ -5,26 +5,9 @@ package host
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
-
-// resolveExecutable reports the file Windows runs for path: path itself when
-// it carries an extension, else path plus the first PATHEXT extension present,
-// the lookup cmd.exe performs. Windows has no exec permission bits.
-func resolveExecutable(path string) (string, bool) {
-	resolved, err := exec.LookPath(path)
-	return resolved, err == nil
-}
-
-func hasPathSeparator(name string) bool {
-	return strings.ContainsAny(name, `:\/`)
-}
-
-func environmentNameEqual(left, right string) bool {
-	return strings.EqualFold(left, right)
-}
 
 // nodeSearchCandidate maps a nodeSearchPatterns match to the Node it names:
 // win32 patterns match the install directory, and PATHEXT picks node.exe (or

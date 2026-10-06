@@ -25,10 +25,10 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 	if err != nil {
 		return externalRun{}, unavailableError{err}
 	}
-	if shell.CommandTransport == tools.ShellCommandStdin {
+	if shell.Stdin {
 		return externalRun{}, unavailableError{errors.New("the legacy WSL bash reads its command from stdin, which carries the task")}
 	}
-	command, env = sandbox.Wrap(mode, cwd, shell.Shell, command, env)
+	command, env = sandbox.Wrap(mode, cwd, shell.Path, command, env)
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return externalRun{}, unavailableError{err}
@@ -39,7 +39,7 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
 		return externalRun{}, unavailableError{err}
 	}
-	process := exec.CommandContext(ctx, shell.Shell, append(slices.Clone(shell.Args), command)...)
+	process := exec.CommandContext(ctx, shell.Path, append(slices.Clone(shell.Args), command)...)
 	// WaitDelay only matters if a pipe outlives the job; the job kill closes them.
 	process.Dir, process.Stdin, process.Stdout, process.Stderr, process.WaitDelay = cwd, stdin, stdout, stderr, 5*time.Second
 	for name, value := range env {

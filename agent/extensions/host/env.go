@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
 const (
 	piSubagentBinaryEnv = "PI_SUBAGENT_PI_BINARY"
-	piAgentDirEnv       = "PI_CODING_AGENT_DIR"
 	piAgentMarkerEnv    = "PI_CODING_AGENT"
 )
 
@@ -54,7 +56,7 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	}
 	environment = setEnvironmentValue(environment, "PATH", prependPath(shimDir, pathValue))
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)
-	environment = setEnvironmentValue(environment, piAgentDirEnv, agentDir)
+	environment = setEnvironmentValue(environment, nodepath.AgentDirEnv, agentDir)
 	environment = setEnvironmentValue(environment, piAgentMarkerEnv, "true")
 	// The pi SDK surface is served exclusively by the embedded orb-extension-sdk
 	// (materialized in startLocked, named by ORB_EXTENSION_SDK_ROOT). orb never
@@ -118,29 +120,12 @@ func replaceExecutableLink(path, target string) error {
 	return os.Rename(temporaryPath, path)
 }
 
-func prependPath(directory, value string) string {
-	if value == "" {
-		return directory
-	}
-	if slices.Contains(filepath.SplitList(value), directory) {
-		return value
-	}
-	return directory + string(os.PathListSeparator) + value
-}
-
 func environmentValue(environment []string, name string) string {
-	for index := len(environment) - 1; index >= 0; index-- {
-		if key, value, ok := strings.Cut(environment[index], "="); ok && environmentNameEqual(key, name) {
-			return value
-		}
-	}
-	return ""
+	return toolenv.Get(environment, name)
 }
 
 func setEnvironmentValue(environment []string, name, value string) []string {
-	environment = slices.DeleteFunc(environment, func(entry string) bool {
-		key, _, ok := strings.Cut(entry, "=")
-		return ok && environmentNameEqual(key, name)
-	})
-	return append(environment, name+"="+value)
+	return toolenv.Set(environment, name, value)
 }
+
+func prependPath(directory, value string) string { return toolenv.PrependPath(directory, value) }

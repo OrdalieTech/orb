@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/proctree"
 )
 
 func TestGetShellEnvPrependsManagedBinOnce(t *testing.T) {
@@ -116,8 +118,8 @@ func TestLocalBashOperationsSerializesStdoutAndStderrCallbacks(t *testing.T) {
 }
 
 func localBashOperationsForTest(shell string) *localBashOperations {
-	return &localBashOperations{resolveShell: func(string) (ShellConfig, error) {
-		return ShellConfig{Shell: shell, Args: []string{"-c"}, CommandTransport: ShellCommandArgv}, nil
+	return &localBashOperations{shell: func() (proctree.Shell, error) {
+		return proctree.Shell{Path: shell, Args: []string{"-c"}}, nil
 	}}
 }
 

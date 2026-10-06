@@ -45,7 +45,7 @@ func TestNodeExecutionEnvShellParityAndFailures(t *testing.T) {
 		t.Fatalf("callbacks = %q", callbacks)
 	}
 
-	for _, timeout := range []float64{0, -1, math.NaN(), math.Inf(1), maxExecutionTimeoutSeconds + 1} {
+	for _, timeout := range []float64{0, -1, math.NaN(), math.Inf(1), 2_147_484} {
 		if _, err := env.Exec(ctx, "true", ExecOptions{TimeoutSeconds: &timeout}); err == nil {
 			t.Fatalf("timeout %v succeeded", timeout)
 		} else {

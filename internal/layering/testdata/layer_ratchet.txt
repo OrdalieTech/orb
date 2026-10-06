@@ -10,7 +10,6 @@ internal/qr	func init	1
 internal/skilllocations	os.Getenv	2
 internal/termcaps	os.Getenv	12
 internal/toolenv	os.Environ	1
-internal/toolenv	os.Getenv	1
 plugins/claudesessions	imports platforms/native/sandbox	1
 plugins/herdr	os.Getenv	3
 plugins/permissions	imports platforms/native/sandbox	1

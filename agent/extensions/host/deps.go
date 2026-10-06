@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
 type packageManifest struct {
@@ -144,16 +146,12 @@ func dependencyInstallCommand(runtime Runtime, environment []string) (string, []
 }
 
 func lookPathInEnvironment(name string, environment []string) (string, error) {
-	if hasPathSeparator(name) {
-		if resolved, ok := resolveExecutable(name); ok {
-			return resolved, nil
-		}
-		return "", exec.ErrNotFound
-	}
-	for _, directory := range filepath.SplitList(environmentValue(environment, "PATH")) {
-		if candidate, ok := resolveExecutable(filepath.Join(directory, name)); ok {
-			return candidate, nil
-		}
-	}
-	return "", exec.ErrNotFound
+	return toolenv.LookPath(name, environment)
+}
+
+// resolveExecutable reports the file path runs: path itself when it is
+// executable, or on win32 path plus the first PATHEXT extension present.
+func resolveExecutable(path string) (string, bool) {
+	resolved, err := toolenv.LookPath(path, nil)
+	return resolved, err == nil
 }

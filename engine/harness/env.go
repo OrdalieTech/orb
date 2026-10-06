@@ -2,19 +2,14 @@ package harness
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,14 +18,9 @@ import (
 	textunicode "golang.org/x/text/encoding/unicode"
 
 	"github.com/OrdalieTech/orb/internal/nodepath"
+	"github.com/OrdalieTech/orb/internal/proctree"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 )
-
-const maxExecutionTimeoutSeconds = 2_147_483_647.0 / 1000.0
-
-// exitStdioGracePeriod bounds how long exec waits for stdio to drain after the
-// shell exits when a detached descendant retains the inherited pipes.
-const exitStdioGracePeriod = 100 * time.Millisecond
 
 // NodeExecutionEnv is the pure-Go local filesystem and shell backend.
 type NodeExecutionEnv struct {
@@ -39,7 +29,7 @@ type NodeExecutionEnv struct {
 	ShellEnv  map[string]string
 
 	childrenMu     sync.Mutex
-	activeChildren map[*os.Process]struct{}
+	activeChildren map[int]struct{}
 }
 
 // LocalExecutionEnv is the platform-neutral Go name for NodeExecutionEnv.
@@ -444,335 +434,73 @@ func (env *NodeExecutionEnv) CreateTempFile(ctx context.Context, prefix, suffix 
 
 func (env *NodeExecutionEnv) Cleanup() error {
 	env.childrenMu.Lock()
-	for process := range env.activeChildren {
-		killProcessTree(process)
+	for pid := range env.activeChildren {
+		proctree.Kill(pid)
 	}
 	clear(env.activeChildren)
 	env.childrenMu.Unlock()
 	return nil
 }
 
-func (env *NodeExecutionEnv) trackChild(process *os.Process) {
-	if process == nil {
-		return
-	}
-	env.childrenMu.Lock()
-	if env.activeChildren == nil {
-		env.activeChildren = make(map[*os.Process]struct{})
-	}
-	env.activeChildren[process] = struct{}{}
-	env.childrenMu.Unlock()
-}
-
-func (env *NodeExecutionEnv) untrackChild(process *os.Process) {
-	if process == nil {
-		return
-	}
-	env.childrenMu.Lock()
-	delete(env.activeChildren, process)
-	env.childrenMu.Unlock()
-}
-
-func (env *NodeExecutionEnv) shell() (string, error) {
-	if env.ShellPath != "" {
-		info, err := os.Stat(env.ShellPath)
-		if err != nil || info.IsDir() {
-			return "", &ExecutionError{Code: ExecutionErrorShellUnavailable, Err: fmt.Errorf("Custom shell path not found: %s", env.ShellPath)} //nolint:staticcheck // Upstream error text is observable.
-		}
-		return env.ShellPath, nil
-	}
-	if runtime.GOOS == "windows" {
-		candidates := make([]string, 0, 2)
-		if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
-			candidates = append(candidates, programFiles+`\Git\bin\bash.exe`)
-		}
-		if programFilesX86 := os.Getenv("ProgramFiles(x86)"); programFilesX86 != "" {
-			candidates = append(candidates, programFilesX86+`\Git\bin\bash.exe`)
-		}
-		for _, candidate := range candidates {
-			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-				return candidate, nil
-			}
-		}
-		if shell, err := exec.LookPath("bash.exe"); err == nil {
-			return shell, nil
-		}
-		searched := make([]string, len(candidates))
-		for index, candidate := range candidates {
-			searched[index] = "  " + candidate
-		}
-		return "", &ExecutionError{Code: ExecutionErrorShellUnavailable, Err: fmt.Errorf( //nolint:staticcheck // Upstream error text is observable.
-			"No bash shell found. Options:\n"+
-				"  1. Install Git for Windows: https://git-scm.com/download/win\n"+
-				"  2. Add your bash to PATH (Cygwin, MSYS2, etc.)\n"+
-				"  3. Configure an explicit shellPath\n\n"+
-				"Searched Git Bash in:\n%s", strings.Join(searched, "\n"))}
-	}
-	if info, err := os.Stat("/bin/bash"); err == nil && !info.IsDir() {
-		return "/bin/bash", nil
-	}
-	if shell, err := exec.LookPath("bash"); err == nil {
-		return shell, nil
-	}
-	if shell, err := exec.LookPath("sh"); err == nil {
-		return shell, nil
-	}
-	return "", &ExecutionError{Code: ExecutionErrorShellUnavailable, Err: errors.New("No bash shell found")} //nolint:staticcheck // Upstream error text is observable.
-}
-
-func validateExecutionTimeout(seconds *float64) error {
-	if seconds == nil {
-		return nil
-	}
-	if math.IsNaN(*seconds) || math.IsInf(*seconds, 0) || *seconds <= 0 {
-		return &ExecutionError{Code: ExecutionErrorTimeout, Err: errors.New("Invalid timeout: must be a finite number of seconds")} //nolint:staticcheck // Upstream error text is observable.
-	}
-	if *seconds > maxExecutionTimeoutSeconds {
-		return &ExecutionError{Code: ExecutionErrorTimeout, Err: fmt.Errorf("Invalid timeout: maximum is %s seconds", strconv.FormatFloat(maxExecutionTimeoutSeconds, 'f', 3, 64))} //nolint:staticcheck // Upstream error text is observable.
-	}
-	return nil
-}
-
-type callbackBuffer struct {
-	mu         sync.Mutex
-	buffer     bytes.Buffer
-	callbackMu *sync.Mutex
-	callback   func(string) error
-	onError    func(error)
-	detached   bool
-}
-
-func (writer *callbackBuffer) Write(chunk []byte) (int, error) {
-	writer.mu.Lock()
-	_, _ = writer.buffer.Write(chunk)
-	writer.mu.Unlock()
-	if writer.callback != nil {
-		writer.callbackMu.Lock()
-		if !writer.detached {
-			if err := writer.callback(string(chunk)); err != nil {
-				writer.onError(err)
-			}
-		}
-		writer.callbackMu.Unlock()
-	}
-	return len(chunk), nil
-}
-
-// detach mirrors destroying the settled streams: late chunks from lingering
-// descendants must not reach the caller's callbacks after exec resolves.
-func (writer *callbackBuffer) detach() {
-	writer.callbackMu.Lock()
-	writer.detached = true
-	writer.callbackMu.Unlock()
-}
-
-func (writer *callbackBuffer) String() string {
-	writer.mu.Lock()
-	defer writer.mu.Unlock()
-	return writer.buffer.String()
-}
-
-func mergeExecutionEnvironment(base []string, layers ...map[string]string) []string {
-	values := make(map[string]string, len(base))
-	for _, pair := range base {
-		if index := strings.IndexByte(pair, '='); index >= 0 {
-			values[pair[:index]] = pair[index+1:]
-		}
-	}
-	for _, layer := range layers {
-		for key, value := range layer {
-			values[key] = value
-		}
-	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	result := make([]string, 0, len(keys))
-	for _, key := range keys {
-		result = append(result, key+"="+values[key])
-	}
-	return result
-}
-
+// Exec runs command through the shared shell executor; its failures become
+// typed ExecutionErrors.
 func (env *NodeExecutionEnv) Exec(ctx context.Context, command string, options ExecOptions) (ExecResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if ctx.Err() != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorAborted, Err: errors.New("aborted")}
-	}
-	if err := validateExecutionTimeout(options.TimeoutSeconds); err != nil {
-		return ExecResult{}, err
-	}
-	shell, err := env.shell()
-	if err != nil {
-		return ExecResult{}, err
-	}
 	cwd := env.WorkingDirectory()
 	if options.CWD != "" {
 		cwd = env.resolve(options.CWD)
 	}
-	if _, statErr := os.Stat(cwd); statErr != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: fmt.Errorf("Working directory does not exist: %s\nCannot execute bash commands.", cwd)} //nolint:staticcheck // Upstream error text is observable.
+	environment := toolenv.Merge(nil, options.Env)
+	if options.InheritEnv == nil || *options.InheritEnv {
+		environment = toolenv.Merge(toolenv.Environ(), env.ShellEnv, options.Env)
 	}
-	cmd := exec.Command(shell, "-c", command)
-	cmd.Dir = cwd
-	if options.InheritEnv != nil && !*options.InheritEnv {
-		cmd.Env = mergeExecutionEnvironment(nil, options.Env)
-	} else {
-		cmd.Env = mergeExecutionEnvironment(toolenv.Environ(), env.ShellEnv, options.Env)
-	}
-	configureProcessTree(cmd)
-
-	callbackSignal := make(chan struct{}, 1)
-	var callbackMu sync.Mutex
-	var callbackCallMu sync.Mutex
+	var stdout, stderr strings.Builder
 	var callbackErr error
-	recordCallbackError := func(err error) {
-		callbackMu.Lock()
-		if callbackErr == nil {
-			callbackErr = err
-			callbackSignal <- struct{}{}
-		}
-		callbackMu.Unlock()
-	}
-	stdout := &callbackBuffer{callbackMu: &callbackCallMu, callback: options.OnStdout, onError: recordCallbackError}
-	stderr := &callbackBuffer{callbackMu: &callbackCallMu, callback: options.OnStderr, onError: recordCallbackError}
-	stdoutRead, stdoutWrite, pipeErr := os.Pipe()
-	if pipeErr != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: pipeErr}
-	}
-	stderrRead, stderrWrite, pipeErr := os.Pipe()
-	if pipeErr != nil {
-		_ = stdoutRead.Close()
-		_ = stdoutWrite.Close()
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: pipeErr}
-	}
-	cmd.Stdout = stdoutWrite
-	cmd.Stderr = stderrWrite
-	if err := cmd.Start(); err != nil {
-		_ = stdoutRead.Close()
-		_ = stdoutWrite.Close()
-		_ = stderrRead.Close()
-		_ = stderrWrite.Close()
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: err}
-	}
-	_ = stdoutWrite.Close()
-	_ = stderrWrite.Close()
-	env.trackChild(cmd.Process)
-	defer env.untrackChild(cmd.Process)
-
-	dataSignal := make(chan struct{}, 1)
-	streamsDone := make(chan struct{})
-	var readers sync.WaitGroup
-	readers.Add(2)
-	drainStream := func(pipe *os.File, buffer *callbackBuffer) {
-		defer readers.Done()
-		chunk := make([]byte, 32*1024)
-		for {
-			count, readErr := pipe.Read(chunk)
-			if count > 0 {
-				_, _ = buffer.Write(chunk[:count])
-				select {
-				case dataSignal <- struct{}{}:
-				default:
-				}
+	pid := 0
+	exitCode, err := proctree.Run(ctx, proctree.Command{
+		Script: command, Dir: cwd, Env: environment, Timeout: options.TimeoutSeconds,
+		Shell: func() (proctree.Shell, error) {
+			shell, err := proctree.FindShell(env.ShellPath, os.Getenv)
+			if err != nil {
+				return shell, &ExecutionError{Code: ExecutionErrorShellUnavailable, Err: err}
 			}
-			if readErr != nil {
-				return
+			return shell, nil
+		},
+		Started: func(started int) {
+			pid = started
+			env.childrenMu.Lock()
+			if env.activeChildren == nil {
+				env.activeChildren = make(map[int]struct{})
 			}
-		}
-	}
-	go drainStream(stdoutRead, stdout)
-	go drainStream(stderrRead, stderr)
-	go func() {
-		readers.Wait()
-		close(streamsDone)
-	}()
-
-	// Completion is process exit plus stdio close, or a short idle grace when a
-	// detached descendant retains the inherited pipes past the shell's exit.
-	done := make(chan error, 1)
-	go func() {
-		exitErr := cmd.Wait()
-		graceTimer := time.NewTimer(exitStdioGracePeriod)
-		defer graceTimer.Stop()
-		for {
-			select {
-			case <-streamsDone:
-				done <- exitErr
-				return
-			case <-dataSignal:
-				if !graceTimer.Stop() {
-					select {
-					case <-graceTimer.C:
-					default:
-					}
-				}
-				graceTimer.Reset(exitStdioGracePeriod)
-			case <-graceTimer.C:
-				done <- exitErr
-				return
+			env.activeChildren[pid] = struct{}{}
+			env.childrenMu.Unlock()
+		},
+		OnData: func(isStderr bool, chunk []byte) error {
+			buffer, callback := &stdout, options.OnStdout
+			if isStderr {
+				buffer, callback = &stderr, options.OnStderr
 			}
-		}
-	}()
-
-	var timeout <-chan time.Time
-	var timer *time.Timer
-	if options.TimeoutSeconds != nil {
-		timer = time.NewTimer(time.Duration(*options.TimeoutSeconds * float64(time.Second)))
-		timeout = timer.C
+			buffer.Write(chunk)
+			if callback == nil || callbackErr != nil {
+				return nil
+			}
+			callbackErr = callback(string(chunk))
+			return callbackErr
+		},
+	})
+	env.childrenMu.Lock()
+	delete(env.activeChildren, pid)
+	env.childrenMu.Unlock()
+	var failure *proctree.Error
+	switch {
+	case err == nil:
+		return ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}, nil
+	case callbackErr != nil:
+		return ExecResult{}, &ExecutionError{Code: ExecutionErrorCallback, Err: callbackErr}
+	case errors.As(err, &failure):
+		code := map[proctree.Kind]ExecutionErrorCode{proctree.Spawn: ExecutionErrorSpawn, proctree.Aborted: ExecutionErrorAborted, proctree.Timeout: ExecutionErrorTimeout}[failure.Kind]
+		return ExecResult{}, &ExecutionError{Code: code, Err: failure.Err}
 	}
-	timedOut := false
-	var waitErr error
-	select {
-	case waitErr = <-done:
-	case <-ctx.Done():
-		killProcessTree(cmd.Process)
-		waitErr = <-done
-	case <-timeout:
-		timedOut = true
-		killProcessTree(cmd.Process)
-		waitErr = <-done
-	case <-callbackSignal:
-		killProcessTree(cmd.Process)
-		waitErr = <-done
-	}
-	if timer != nil {
-		timer.Stop()
-	}
-	stdout.detach()
-	stderr.detach()
-	_ = stdoutRead.Close()
-	_ = stderrRead.Close()
-
-	callbackMu.Lock()
-	streamErr := callbackErr
-	callbackMu.Unlock()
-	if streamErr != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorCallback, Err: streamErr}
-	}
-	if timedOut {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorTimeout, Err: fmt.Errorf("timeout:%s", strconv.FormatFloat(*options.TimeoutSeconds, 'g', -1, 64))}
-	}
-	if ctx.Err() != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorAborted, Err: errors.New("aborted")}
-	}
-
-	exitCode := 0
-	if waitErr != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(waitErr, &exitErr) {
-			return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawn, Err: waitErr}
-		}
-		exitCode = exitErr.ExitCode()
-		if exitCode < 0 {
-			exitCode = 0
-		}
-	}
-	return ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}, nil
+	return ExecResult{}, err
 }
 
 var _ ExecutionEnv = (*NodeExecutionEnv)(nil)

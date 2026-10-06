@@ -4,23 +4,7 @@ package host
 
 import (
 	"os"
-	"strings"
 )
-
-// resolveExecutable reports whether path names a runnable file, as the exec
-// permission bits say.
-func resolveExecutable(path string) (string, bool) {
-	info, err := os.Stat(path)
-	return path, err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0
-}
-
-func hasPathSeparator(name string) bool {
-	return strings.ContainsRune(name, os.PathSeparator)
-}
-
-func environmentNameEqual(left, right string) bool {
-	return left == right
-}
 
 // nodeSearchCandidate maps a nodeSearchPatterns match to the Node it names:
 // POSIX patterns match the executable itself.

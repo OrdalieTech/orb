@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
 func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
@@ -30,8 +32,8 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	if got := environmentValue(environment, piSubagentBinaryEnv); got != shim {
 		t.Fatalf("%s = %q, want %q", piSubagentBinaryEnv, got, shim)
 	}
-	if got := environmentValue(environment, piAgentDirEnv); got != agentDir {
-		t.Fatalf("%s = %q, want %q", piAgentDirEnv, got, agentDir)
+	if got := environmentValue(environment, nodepath.AgentDirEnv); got != agentDir {
+		t.Fatalf("%s = %q, want %q", nodepath.AgentDirEnv, got, agentDir)
 	}
 	if got := environmentValue(environment, piAgentMarkerEnv); got != "true" {
 		t.Fatalf("%s = %q", piAgentMarkerEnv, got)

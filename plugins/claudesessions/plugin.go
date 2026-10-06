@@ -22,6 +22,8 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/proctree"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -362,6 +364,17 @@ type modelInfo struct {
 	Adaptive bool     `json:"supportsAdaptiveThinking"`
 }
 
+// isolate makes cmd the root of its own process tree and returns the tree's kill.
+func isolate(cmd *exec.Cmd) func() error {
+	proctree.Isolate(cmd)
+	return func() error {
+		if cmd.Process != nil {
+			proctree.Kill(cmd.Process.Pid)
+		}
+		return nil
+	}
+}
+
 // oneShot runs the host for one request that needs no session, tools or approvals.
 func oneShot(ctx context.Context, options Options, cwd string, request map[string]any, response any) error {
 	request["type"], request["sdk"], request["claude"], request["cwd"] = "start", options.SDK, options.Claude, cwd
@@ -453,33 +466,17 @@ func includeSelected(models []ai.Model, selected *ai.Model) []ai.Model {
 
 // Resolve only against the host-supplied environment, never process-global PATH.
 func executable(name string, env []string) (string, error) {
-	if filepath.IsAbs(name) {
-		if resolved, ok := runnable(name); ok {
-			return resolved, nil
-		}
-		if _, err := os.Stat(name); err != nil {
-			return "", err
+	if !filepath.IsAbs(name) && filepath.Base(name) != name {
+		return "", errors.New("executable path must be absolute")
+	}
+	resolved, err := toolenv.LookPath(name, env)
+	if err != nil && filepath.IsAbs(name) {
+		if _, statErr := os.Stat(name); statErr != nil {
+			return "", statErr
 		}
 		return "", fmt.Errorf("%s is not executable", name)
 	}
-	if hasPathSeparator(name) {
-		return "", errors.New("executable path must be absolute")
-	}
-	search := ""
-	for _, item := range env {
-		if value, ok := searchPath(item); ok {
-			search = value
-		}
-	}
-	for _, dir := range filepath.SplitList(search) {
-		if !filepath.IsAbs(dir) {
-			continue
-		}
-		if candidate, ok := runnable(filepath.Join(dir, name)); ok {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("%s: %w", name, exec.ErrNotFound)
+	return resolved, err
 }
 
 // These tools provide presentation only; the SDK alone executes native calls.

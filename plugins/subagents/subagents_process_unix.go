@@ -8,9 +8,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"syscall"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/proctree"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
@@ -27,7 +27,11 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 	for name, value := range env {
 		process.Env = append(process.Env, name+"="+value)
 	}
-	killGroup := isolateExternalProcess(process)
+	proctree.Isolate(process)
+	process.Cancel = func() error {
+		proctree.Kill(process.Process.Pid)
+		return nil
+	}
 	process.Stdout, process.Stderr = stdout, stderr
 	statusReader, statusWriter, err := os.Pipe()
 	if err != nil {
@@ -42,25 +46,7 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 	_ = statusWriter.Close()
 	var run externalRun
 	_, run.statusErr = fmt.Fscan(statusReader, &run.status)
-	run.cleanupErr = killGroup()
+	_ = process.Cancel()
 	run.waitErr = process.Wait()
 	return run, nil
-}
-
-func isolateExternalProcess(process *exec.Cmd) func() error {
-	process.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	process.Cancel = func() error {
-		if process.Process == nil {
-			return os.ErrProcessDone
-		}
-		err := syscall.Kill(-process.Process.Pid, syscall.SIGKILL)
-		// ESRCH: the group is gone. EPERM: on darwin, signalling a group whose
-		// leader is already a zombie (the exec watchdog killed it first)
-		// reports EPERM — there is nothing left to clean up either way.
-		if err == syscall.ESRCH || err == syscall.EPERM {
-			return os.ErrProcessDone
-		}
-		return err
-	}
-	return process.Cancel
 }

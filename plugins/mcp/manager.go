@@ -498,7 +498,7 @@ func defaultConnect(
 	if config.CWD != "" {
 		command.Dir = config.CWD
 	}
-	command.Env = mergedEnvironment(env)
+	command.Env = toolenv.Merge(toolenv.Environ(), env)
 	// A process server opens with initialize: SDKs before the 2026-07-28
 	// protocol (rmcp, for one) exit on the server/discover probe the SDK's
 	// default sends first, and a dead process leaves nothing to fall back on.
@@ -650,21 +650,6 @@ func (body *progressEventBody) observeEvent() {
 	body.eventName = ""
 	body.eventData = nil
 	body.eventInvalid = false
-}
-
-func mergedEnvironment(overrides map[string]string) []string {
-	values := make(map[string]string)
-	for _, entry := range toolenv.Environ() {
-		if index := strings.IndexByte(entry, '='); index >= 0 {
-			values[entry[:index]] = entry[index+1:]
-		}
-	}
-	maps.Copy(values, overrides)
-	result := make([]string, 0, len(values))
-	for _, name := range slices.Sorted(maps.Keys(values)) {
-		result = append(result, name+"="+values[name])
-	}
-	return result
 }
 
 func listTools(ctx context.Context, session *mcpsdk.ClientSession) ([]*mcpsdk.Tool, error) {

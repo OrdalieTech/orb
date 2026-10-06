@@ -3,7 +3,12 @@
 package toolenv
 
 import (
+	"fmt"
+	"maps"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -40,7 +45,7 @@ func Environ() []string {
 
 func allowed() []string {
 	environ := os.Environ()
-	allowed := os.Getenv(Allow)
+	allowed := Get(environ, Allow)
 	if allowed == "" {
 		return environ
 	}
@@ -50,4 +55,74 @@ func allowed() []string {
 		// Windows names variables case-insensitively (PATH is Path there).
 		return !slices.ContainsFunc(names, func(allowed string) bool { return strings.EqualFold(strings.TrimSpace(allowed), name) })
 	})
+}
+
+const windows = runtime.GOOS == "windows"
+
+// Get returns name's last value in env; win32 matches names case-insensitively.
+func Get(env []string, name string) string {
+	for index := len(env) - 1; index >= 0; index-- {
+		if key, value, ok := strings.Cut(env[index], "="); ok && nameEqual(key, name) {
+			return value
+		}
+	}
+	return ""
+}
+
+// Set replaces every entry for name in env with name=value.
+func Set(env []string, name, value string) []string {
+	env = slices.DeleteFunc(env, func(entry string) bool {
+		key, _, ok := strings.Cut(entry, "=")
+		return ok && nameEqual(key, name)
+	})
+	return append(env, name+"="+value)
+}
+
+// PrependPath puts dir first on the search list value unless it is already there.
+func PrependPath(dir, value string) string {
+	if value == "" {
+		return dir
+	}
+	if slices.Contains(filepath.SplitList(value), dir) {
+		return value
+	}
+	return dir + string(os.PathListSeparator) + value
+}
+
+// Merge overlays layers on base, later layers winning, sorted by name.
+func Merge(base []string, layers ...map[string]string) []string {
+	values := make(map[string]string, len(base))
+	for _, entry := range base {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			values[key] = value
+		}
+	}
+	for _, layer := range layers {
+		maps.Copy(values, layer)
+	}
+	merged := make([]string, 0, len(values))
+	for _, key := range slices.Sorted(maps.Keys(values)) {
+		merged = append(merged, key+"="+values[key])
+	}
+	return merged
+}
+
+// LookPath finds the executable name runs under env: a name with a path
+// separator as is, any other through env's PATH, never a relative entry.
+func LookPath(name string, env []string) (string, error) {
+	if strings.ContainsRune(name, os.PathSeparator) || windows && strings.ContainsAny(name, ":/") {
+		return exec.LookPath(name)
+	}
+	for _, dir := range filepath.SplitList(Get(env, "PATH")) {
+		if filepath.IsAbs(dir) {
+			if resolved, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
+				return resolved, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("%s: %w", name, exec.ErrNotFound)
+}
+
+func nameEqual(left, right string) bool {
+	return left == right || windows && strings.EqualFold(left, right)
 }

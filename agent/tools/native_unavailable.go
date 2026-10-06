@@ -25,7 +25,6 @@ func nativeFilesystemErrorCode(err error) string {
 	}
 	return ""
 }
-func GetShellConfig(string) (ShellConfig, error)                          { return ShellConfig{}, nativeUnavailable() }
 func GetShellEnv() (map[string]string, error)                             { return map[string]string{}, nil }
 func NewLocalBashOperations(...LocalBashOperationsOptions) BashOperations { return unavailableBash{} }
 
@@ -34,10 +33,7 @@ type unavailableBash struct{}
 func (unavailableBash) Exec(context.Context, string, string, BashExecOptions) (BashExecResult, error) {
 	return BashExecResult{}, nativeUnavailable()
 }
-func TrackDetachedChildPID(int)    {}
-func UntrackDetachedChildPID(int)  {}
 func KillTrackedDetachedChildren() {}
-func KillProcessTree(int)          {}
 
 func (*findTool) executeFD(context.Context, string, string, float64) (engine.AgentToolResult, error) {
 	return engine.AgentToolResult{}, nativeUnavailable()

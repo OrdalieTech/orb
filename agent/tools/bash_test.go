@@ -14,11 +14,11 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/proctree"
 	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
@@ -321,15 +321,9 @@ func TestBashToolTruncatedAbortIncludesUsableFullOutputPath(t *testing.T) {
 }
 
 func TestLocalBashOperationsSupportsArgvAndStdinTransport(t *testing.T) {
-	for _, transport := range []ShellCommandTransport{ShellCommandArgv, ShellCommandStdin} {
-		t.Run(string(transport), func(t *testing.T) {
-			args := []string{"-c"}
-			if transport == ShellCommandStdin {
-				args = []string{"-s"}
-			}
-			operations := &localBashOperations{resolveShell: func(string) (ShellConfig, error) {
-				return ShellConfig{Shell: "/bin/bash", Args: args, CommandTransport: transport}, nil
-			}}
+	for _, shell := range []proctree.Shell{{Path: "/bin/bash", Args: []string{"-c"}}, {Path: "/bin/bash", Args: []string{"-s"}, Stdin: true}} {
+		t.Run(shell.Args[0], func(t *testing.T) {
+			operations := &localBashOperations{shell: func() (proctree.Shell, error) { return shell, nil }}
 			var output strings.Builder
 			result, err := operations.Exec(context.Background(), "printf transport", t.TempDir(), BashExecOptions{
 				OnData: func(data []byte) { output.Write(data) },
@@ -412,39 +406,6 @@ func TestLocalBashOperationsTracksDetachedProcessUntilItSettles(t *testing.T) {
 	}
 }
 
-func TestWaitForProcessPipesRearmsActiveGrace(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		stdout, err := os.Open(os.DevNull)
-		if err != nil {
-			t.Fatal(err)
-		}
-		stderr, err := os.Open(os.DevNull)
-		if err != nil {
-			t.Fatal(err)
-		}
-		activity := make(chan struct{})
-		readerDone := make(chan struct{})
-		done := make(chan struct{})
-		go func() {
-			waitForProcessPipes(stdout, stderr, activity, readerDone, &processPipeCallbackState{})
-			close(done)
-		}()
-		synctest.Wait()
-		for range 3 {
-			time.Sleep(exitStdioGrace - time.Nanosecond)
-			activity <- struct{}{}
-		}
-		readerDone <- struct{}{}
-		readerDone <- struct{}{}
-		synctest.Wait()
-		select {
-		case <-done:
-		default:
-			t.Fatal("pipe wait did not finish")
-		}
-	})
-}
-
 func TestLocalBashOperationsReleasesQuietInheritedStdioAfterGrace(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "quiet-child.pid")
@@ -471,7 +432,7 @@ func TestLocalBashOperationsReleasesQuietInheritedStdioAfterGrace(t *testing.T) 
 	if result.ExitCode == nil || *result.ExitCode != 0 || output.String() != "parent-exiting" {
 		t.Fatalf("result = %+v, output = %q", result, output.String())
 	}
-	if elapsed < exitStdioGrace || elapsed > time.Second {
+	if elapsed < 100*time.Millisecond || elapsed > time.Second {
 		t.Fatalf("quiet inherited stdio released after %s", elapsed)
 	}
 }
