@@ -30,7 +30,23 @@ shown by `/changelog`.
   the agent cannot enter is refused with its reason when the session opens.
 - Chat platforms take their configuration as options and register nothing; one catalog,
   `chat/platforms`, maps each platform's environment and agent-file section onto them, for both
-  `orb chat` and `orb-agent`. Layers are enforced by one map in `internal/layering`.
+  `orb chat` and `orb-agent`. Layers are enforced by one map in `internal/layering`: only hosts
+  and assemblies read the environment, home or working directory, or register at init.
+- About 3,400 fewer lines, half of them out of `cmd/orb`, with one copy of each primitive: the SSE
+  line scanner, OAuth requests, the shell executor (`internal/proctree`, now behind both the bash
+  tool and the harness's `Exec` port, with the same shell lookup and errors), `~` and `file://`
+  resolution, locked config files, ordered JSON objects, clones, UUIDs and the chat adapters' HTTP
+  client. Native storage, self-update, the Bridge daemon, `orb mcp` and the chat gateway moved out
+  of the CLI into their layers. Every mode now runs on one session runtime, so RPC, print and ACP
+  session switches reload extensions and trust from disk as the TUI does, and a switch aborts and
+  drains an active turn first. Malformed SSE streams can differ at the edges (a lone CR ends a
+  line).
+- Fixes: a background job ignoring TERM is killed when its session ends, even when shutdown ran
+  out of time; the first sign-in with native storage keeps its device ID in the database instead of
+  creating `settings.json`; `mcp-auth.json` is replaced atomically; a `file://` path can no longer
+  slip past a permission rule; a provider an extension registers no longer re-sorts
+  `models-store.json` or drops its models.dev `lastModified`/`etag`; `host.update` reports a
+  release tag it cannot parse instead of "already current".
 
 ## [0.18.0] - 2026-10-06
 

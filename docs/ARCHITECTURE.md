@@ -24,10 +24,11 @@ orb/
 ├── host/                     host ports; Store hands out transactional Documents
 ├── bridge/                   core Bridge: identity, grants, routing, ledger, attachment contracts
 │   └── protocol/             bounded strict JSON-RPC stream
-├── platforms/native/         native host: sqlite/ explicitly opened adapter, sandbox/, accounts/ sidecar file,
-│                             bridge/ IPC and persistence, tailcat/ network transport
+├── platforms/native/         native host: State (the CLI's stores over sqlite/ or files), sandbox/, accounts/
+│                             sidecar file, bridge/ IPC, persistence and daemon, tailcat/ network transport,
+│                             selfupdate/, teamenv/ (team agent credentials received off the environment)
 ├── platforms/websocket/      Bridge's pinned TLS stream over WebSockets (browser, Worker, native listener)
-├── platforms/agent/          container image for one team agent (orb chat buzz telegram)
+├── platforms/agent/          container image for one team agent; harness/ is its entrypoint, orb-agent
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -42,7 +43,9 @@ orb/
 │   ├── bridge/               runtime attachment, operation ledger adapter, bridge_call extension
 │   │   └── tool/             headless bridge_call tool
 │   └── assembly/             product catalog, enablement and plugin management UI
-├── chat/                     chat gateway + platform adapters (D27/D28 additions; chat → agent only)
+├── chat/                     chat processing + platform adapters, configured by options (chat → agent only)
+│   ├── gateway/              runs an agent's platforms as one process: ingress (polling or webhooks) → processor
+│   └── platforms/            the catalog: each platform's environment and agent-file section → its options
 ├── plugins/                  optional capabilities, independently importable Go packages
 │   ├── memory/               storage contract only
 │   │   ├── agent/            engine attachment and bounded memory tools
@@ -59,7 +62,7 @@ orb/
 │   │   └── native/           native bash/file containment through tool-operation options
 │   ├── questions/            shared human-question tool and choice panel over RequestInput
 │   ├── claudesessions/       official Claude SDK host behind the engine.SessionLoop seam
-│   ├── mcp/                  configured MCP integration
+│   ├── mcp/                  configured MCP integration; cli/ is `orb mcp`
 │   ├── herdr/                Herdr pane reporting, attached only inside Herdr
 │   └── internal/toolutil/    argument decoding and text results shared by plugin tools
 ├── internal/
@@ -68,7 +71,12 @@ orb/
 │   ├── partialjson/          streaming tool-arg parser (port of `partial-json`)
 │   ├── truncate/             shared output truncation (50KB / 2000-line rules)
 │   ├── jstrim/               ECMAScript String.prototype.trim whitespace predicate
-│   ├── filelock/             proper-lockfile-compatible mkdir+heartbeat lock
+│   ├── filelock/             proper-lockfile-compatible mkdir+heartbeat lock; locked file documents
+│   ├── layering/             the layer map and its ratchets, checked by make check
+│   ├── nodepath/             Node's ~, file:// and agent-directory resolution
+│   ├── proctree/             the one shell executor: process trees run, isolated and killed whole
+│   ├── toolenv/              tool environments: case-aware get/set, PATH, lookup
+│   ├── ptr/                  pointer clone helper
 │   ├── cjksegment/           CJK segmentation helper
 │   ├── ignorerules/          gitignore-style matching
 │   ├── localecompare/        JS localeCompare ordering
@@ -78,7 +86,8 @@ orb/
 ├── conformance/
 │   ├── extract/              TS scripts run inside .upstream/ to emit fixtures (dev-only Node)
 │   ├── fixtures/             committed golden fixtures (F1–F13, see §6)
-│   └── runner/               go test helpers consuming fixtures; RPC black-box adapter
+│   ├── runner/               go test helpers consuming fixtures; RPC black-box adapter
+│   └── f7/                   the F7 scenario runtime shared by the runner and the conformance build
 ├── docs/                     DECISIONS.md, ARCHITECTURE.md, user and embedder guides
 ├── AGENTS.md                 execution contract for implementing agents
 └── UPSTREAM.lock             pinned upstream pi release the fixtures are extracted from
@@ -511,7 +520,7 @@ and explicit `-e` entries in upstream order. Node strips TypeScript natively and
 directly; where Node refuses type stripping under `node_modules`, the loader supplies transpiled
 source from its load hook so the package manager's own layout keeps governing resolution. Every
 `@earendil-works/pi-*` (and legacy `@mariozechner/pi-*`) specifier resolves to the embedded
-`orb-extension-sdk` (`host/sdk/`, versioned by `sdk.json`, go:embed-ed and materialized
+`orb-extension-sdk` (`agent/extensions/host/sdk/`, versioned by `sdk.json`, go:embed-ed and materialized
 content-addressed beside `host.mjs`): pure ports of the exercised upstream symbols, thin
 session/settings/resource handles, and capability-negotiated services (`sdk_v1`,
 `agent_session_v1`, `model_runtime_v1`) that bridge `createAgentSession`, `ModelRuntime`, and
