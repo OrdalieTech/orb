@@ -76,6 +76,25 @@ through the same bash as foreground commands, so the sandbox, shell, command pre
 `permissions` rules for `bash` apply unchanged. At most 8 run at once. Claude models keep
 Claude Code's own background tasks and `Monitor`.
 
+### activity
+
+Enable with `orb plugins enable activity` (or `/plugins`). One line above the TUI input
+summarizes live agents and background processes. Click the line, press `Alt+A`, or run
+`/activity` to expand/collapse statuses. Scroll the expanded list or use `/activity next`
+and `/activity prev`; `/activity close` folds it without affecting execution. At most six
+rows show at once, fewer on short terminals. Recent completions clear on the next prompt.
+
+Native Claude tasks, Orb subagents, configured external CLIs (including Claude and Codex),
+and background bash jobs feed the same session-local state and renderer. This does not add
+native Codex execution: imported Codex transcripts contain no live tasks to track. A parent's
+answer or tool-launch result never completes a child; lost native outcomes show as unknown.
+The bar observes work only: it grants no permissions and never cancels a session or task.
+
+SDK consumers can use the headless `plugins/activity.Store` with normalized `Record` observations
+on the extension bus's `orb:activity` channel. Publishers bind IDs and updates to their originating
+session; each registry attachment has its own store. No new agent events or session records are
+persisted, and the observation path adds no model turns or context.
+
 ### permissions
 
 ```json

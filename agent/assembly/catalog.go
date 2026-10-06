@@ -8,6 +8,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/jobs"
 	memorysdk "github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -39,9 +40,10 @@ type CatalogOptions struct {
 	Bash jobs.Bash
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
+	"activity":           "Compact, expandable statuses for agents and background processes",
 	"questions":          "Ask the user questions with choices and custom answers",
 	"bridge":             "Pair devices and control explicitly shared Orb instances",
 	"bridge-agent-calls": "Allow granted agent-initiated calls through a Bridge attachment",
@@ -105,6 +107,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 		"websearch":      websearch.Extension(options.HTTPClient),
 		"subagents":      subagents.Extension(options.StreamFn, inheritPolicy, options.Settings),
 		"jobs":           jobs.Extension(options.Bash),
+		"activity":       activity.Extension(newActivityView),
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
 		"memtree":        memtreeExtension(options.Settings),

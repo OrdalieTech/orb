@@ -31,6 +31,7 @@ import (
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
+	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/questions"
 )
 
@@ -58,6 +59,8 @@ type Options struct {
 	// Account resolves the selected Claude account's directory through Orb's
 	// auth pipeline; empty runs with the user's own Claude Code login.
 	Account func(context.Context) string
+	// Activity observes native tasks independently of tool-call and turn completion.
+	Activity func(work.Record)
 }
 
 // Native SDK events may omit utilization; absence is never treated as zero use.
@@ -186,6 +189,7 @@ type host struct {
 type nativeTask struct {
 	description string
 	shown       bool
+	record      work.Record
 }
 
 type hostFrame struct {
@@ -391,6 +395,12 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	}
 
 	translator := translation{driver: d, ctx: ctx, emit: emit, model: model.ID, tools: map[string]string{}, tasks: h.tasks}
+	// An unacknowledged task is unknown, never successful merely because its parent ended.
+	defer func() {
+		for _, task := range translator.tasks {
+			translator.taskActivity(task, work.Unknown, "Native task outcome unavailable")
+		}
+	}()
 	done, grace := ctx.Done(), (<-chan time.Time)(nil)
 	// While Claude waits on its background tasks no tool result comes to carry
 	// steering, so messages queued meanwhile are handed over as they arrive.
@@ -799,31 +809,56 @@ func (t *translation) event(raw json.RawMessage) error {
 			if text == "" {
 				text = activity.Description
 			}
+			if task := t.tasks[activity.TaskID]; task != nil {
+				t.taskActivity(task, work.Running, text)
+			}
 			return t.toolProgress(activity.ToolID, activity.Usage.Duration/1000, text)
 		// A foreground task already has its tool row; only subagents and background work get notices.
 		case "task_started":
-			if activity.Ambient || activity.SkipTranscript {
+			if activity.Ambient || activity.SkipTranscript || activity.TaskID == "" {
 				return nil
 			}
 			if t.tasks == nil {
 				t.tasks = map[string]*nativeTask{}
 			}
-			task := &nativeTask{description: activity.Description, shown: activity.TaskType == "local_agent" || activity.Backgrounded}
-			if len(t.tasks) < 1024 {
-				t.tasks[activity.TaskID] = task
+			if t.tasks[activity.TaskID] != nil || len(t.tasks) >= 1024 {
+				return nil
 			}
+			kind := work.Process
+			if strings.HasSuffix(activity.TaskType, "agent") {
+				kind = work.Agent
+			}
+			task := &nativeTask{description: activity.Description, shown: kind == work.Agent || activity.Backgrounded,
+				record: work.Record{ID: newUUID(), Kind: kind, Title: activity.Description, Started: time.Now()},
+			}
+			if task.record.Title == "" {
+				task.record.Title = string(kind)
+			}
+			t.tasks[activity.TaskID] = task
+			t.taskActivity(task, work.Running, "")
 			if task.shown {
 				return t.notice("Claude task started: " + activity.Description)
 			}
 		case "task_updated":
 			if task := t.tasks[activity.TaskID]; task != nil && !task.shown && activity.Patch.Backgrounded {
 				task.shown = true
+				t.taskActivity(task, work.Running, "")
 				return t.notice("Claude task moved to background: " + task.description)
 			}
 		case "task_notification":
 			task := t.tasks[activity.TaskID]
 			delete(t.tasks, activity.TaskID)
 			if task != nil && task.shown {
+				state := work.Unknown
+				switch activity.Status {
+				case "completed":
+					state = work.Completed
+				case "failed":
+					state = work.Failed
+				case "stopped", "cancelled":
+					state = work.Cancelled
+				}
+				t.taskActivity(task, state, activity.Summary)
 				return t.notice("Claude task " + activity.Status + ": " + activity.Summary)
 			}
 		case "init":
@@ -1008,6 +1043,14 @@ func patchDiff(hunks []patchHunk) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+func (t *translation) taskActivity(task *nativeTask, state work.State, detail string) {
+	if !task.shown || t.driver == nil || t.driver.options.Activity == nil {
+		return
+	}
+	task.record.State, task.record.Detail = state, detail
+	t.driver.options.Activity(task.record)
 }
 
 func (t *translation) toolResult(id string, content ai.ToolResultContent, isError bool, details json.RawMessage) error {

@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 )
 
@@ -43,6 +44,7 @@ type job struct {
 	started               time.Time
 	tool                  engine.AgentTool
 	stopped               atomic.Bool
+	publish               func(activity.Record)
 }
 
 type plugin struct {
@@ -122,7 +124,9 @@ func (p *plugin) execute(ctx context.Context, id string, raw any, update engine.
 	if !input.Background && !input.Monitor {
 		return tool.Execute(ctx, id, raw, update)
 	}
-	return p.start(ctx, tool, input.Command, input.Monitor)
+	bus := p.api.Events()
+	publish := activity.Publisher(func() extensions.EventBus { return bus }, session.SessionManager().GetSessionID(), "Orb")
+	return p.start(ctx, tool, input.Command, input.Monitor, publish)
 }
 
 // tool is the host's bash with the session metadata the runtime gives its own.
@@ -144,7 +148,7 @@ func (p *plugin) tool(session extensions.Context) (engine.AgentTool, error) {
 	return tool, err
 }
 
-func (p *plugin) start(ctx context.Context, tool engine.AgentTool, command string, monitor bool) (engine.AgentToolResult, error) {
+func (p *plugin) start(ctx context.Context, tool engine.AgentTool, command string, monitor bool, publish func(activity.Record)) (engine.AgentToolResult, error) {
 	p.mu.Lock()
 	if len(p.jobs) >= maxJobs {
 		p.mu.Unlock()
@@ -155,7 +159,7 @@ func (p *plugin) start(ctx context.Context, tool engine.AgentTool, command strin
 		p.dir, err = os.MkdirTemp("", "orb-jobs-")
 	}
 	p.next++
-	j := &job{id: strconv.Itoa(p.next), command: command, monitor: monitor, started: time.Now(), tool: tool}
+	j := &job{id: strconv.Itoa(p.next), command: command, monitor: monitor, started: time.Now(), tool: tool, publish: publish}
 	j.log = filepath.Join(p.dir, j.id+".log")
 	p.mu.Unlock()
 	script := filepath.Join(p.dir, j.id+".sh")
@@ -181,12 +185,25 @@ func (p *plugin) start(ctx context.Context, tool engine.AgentTool, command strin
 	p.mu.Lock()
 	p.jobs[j.id] = j
 	p.mu.Unlock()
+	j.activity(activity.Running)
 	go p.watch(j)
 	report := "reports when it ends"
 	if monitor {
 		report = "reports each line it prints, and its end"
 	}
 	return toolutil.TextResult(fmt.Sprintf("Started background job %s (pid %s). Output: %s. A message %s, so keep working rather than wait or poll; stop it with stop_job.", j.id, j.pid, j.log, report)), nil
+}
+
+func (j *job) activity(state activity.State) {
+	if j.publish == nil {
+		return
+	}
+	title := "Bash #" + j.id
+	// Only the executable, never raw shell arguments or assignments, enters the bar.
+	if words := strings.Fields(j.command); len(words) > 0 && !strings.Contains(words[0], "=") {
+		title += " · " + filepath.Base(words[0])
+	}
+	j.publish(activity.Record{ID: j.id, Kind: activity.Process, Title: title, State: state, Started: j.started})
 }
 
 // watch reports a monitored job's new lines and every job's end, at most once a tick.
@@ -223,6 +240,13 @@ func (p *plugin) watch(j *job) {
 		if !mine {
 			return
 		}
+		state := activity.Failed
+		if code == "0" {
+			state = activity.Completed
+		} else if !done {
+			state = activity.Unknown
+		}
+		j.activity(state)
 		p.report(j, &at, true)
 		text := fmt.Sprintf("Job %s (%s) exited with code %s after %s. Output: %s", j.id, oneLine(j.command), code, time.Since(j.started).Round(time.Second), j.log)
 		if !j.monitor {
@@ -280,6 +304,11 @@ func (p *plugin) stop(ctx context.Context, _ string, raw any, _ engine.AgentTool
 		return engine.AgentToolResult{}, fmt.Errorf("no background job %q is running", input.Job)
 	}
 	kill(ctx, j)
+	state := activity.Cancelled
+	if ctx.Err() != nil || alive(j.pid) {
+		state = activity.Unknown
+	}
+	j.activity(state)
 	return toolutil.TextResult(fmt.Sprintf("Stopped background job %s. Output: %s", j.id, j.log)), nil
 }
 

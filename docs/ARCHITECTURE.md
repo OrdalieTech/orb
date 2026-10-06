@@ -54,6 +54,7 @@ orb/
 │   ├── titles/               names a session after its first exchange, once
 │   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
 │   ├── subagents/            child agents and native CLI execution
+│   ├── activity/             headless session-local work observations; TUI view in agent/assembly
 │   ├── permissions/          policy, hooks and configuration UI
 │   │   └── native/           native bash/file containment through tool-operation options
 │   ├── questions/            shared human-question tool and choice panel over RequestInput

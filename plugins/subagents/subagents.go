@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
+	"github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	permissionnative "github.com/OrdalieTech/orb/plugins/permissions/native"
@@ -72,8 +73,6 @@ type subagentTask struct {
 	Context string   `json:"context"`
 	Tools   []string `json:"tools"`
 }
-
-type childProgress struct{ name, status string }
 
 // cappedOutput grows on demand up to externalOutputLimit; each stream has a
 // single writer (the exec copier goroutine), so no lock is needed.
@@ -211,7 +210,6 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 		if policy != nil && policy.Sandbox != "" {
 			sandboxMode = policy.Sandbox
 		}
-		var progressMu sync.Mutex
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "subagent", Label: "Subagent", Description: "Run a child agent", Parameters: schemaWithExternal(external),
 			Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, extensionContext extensions.Context) (engine.AgentToolResult, error) {
@@ -259,33 +257,22 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 					}
 				}
 
-				progress := make([]childProgress, len(tasks))
+				// Capture the session and bus while live; joined children may outlive disposal.
+				bus := api.Events()
+				publishers := make([]func(activity.Record), len(tasks))
 				for index, task := range tasks {
-					progress[index] = childProgress{name: fmt.Sprintf("%s-%d", task.Agent, index+1), status: "queued"}
-				}
-				// The run owns the widget: every child is joined below, so no
-				// update can outlive this clear.
-				// extensions.Context has no staleness predicate and every accessor
-				// panics once the session is disposed or reloaded, so the UI is
-				// captured here while the context is provably live. A fan-out
-				// routinely outlives its session: Dispose during the run would
-				// otherwise panic a child goroutine and take the host down.
-				ui := extensionContext.UI()
-				defer ui.SetWidget("subagents", nil, nil)
-				updateProgress := func(index int, status string) {
-					// SetWidget stays under the lock, otherwise a stale line set
-					// can reach the UI after a newer one.
-					progressMu.Lock()
-					defer progressMu.Unlock()
-					progress[index].status = status
-					lines := make([]string, len(progress))
-					for childIndex, child := range progress {
-						lines[childIndex] = child.name + ": " + child.status
+					source := "Orb"
+					if _, configured := external[task.Agent]; configured {
+						source = task.Agent
 					}
-					ui.SetWidget("subagents", &extensions.Widget{Lines: lines}, nil)
+					publishers[index] = activity.Publisher(func() extensions.EventBus { return bus }, extensionContext.SessionManager().GetSessionID(), source)
 				}
-				for index := range progress {
-					updateProgress(index, "queued")
+				updateProgress := func(index int, state activity.State) {
+					title, _, _ := strings.Cut(tasks[index].Task, "\n")
+					publishers[index](activity.Record{ID: "child", Kind: activity.Agent, Title: tasks[index].Agent + " · " + title, State: state})
+				}
+				for index := range tasks {
+					updateProgress(index, activity.Queued)
 				}
 
 				results := make([]string, len(tasks))
@@ -302,16 +289,18 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 						case semaphore <- struct{}{}:
 						case <-ctx.Done():
 							errorsByChild[index] = ctx.Err()
-							updateProgress(index, "cancelled")
+							updateProgress(index, activity.Cancelled)
 							return
 						}
 						defer func() { <-semaphore }()
-						updateProgress(index, "running")
+						updateProgress(index, activity.Running)
 						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, sandboxMode, external, task)
-						if errorsByChild[index] != nil {
-							updateProgress(index, "error")
+						if ctx.Err() != nil {
+							updateProgress(index, activity.Cancelled)
+						} else if errorsByChild[index] != nil {
+							updateProgress(index, activity.Failed)
 						} else {
-							updateProgress(index, "done")
+							updateProgress(index, activity.Completed)
 						}
 					}()
 				}

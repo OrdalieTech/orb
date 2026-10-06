@@ -68,6 +68,7 @@ type RunnerOptions struct {
 
 type Runner struct {
 	extensions     []*Extension
+	events         EventBus
 	runtime        *runtimeState
 	cwd            string
 	sessionManager ReadonlySessionManager
@@ -102,6 +103,7 @@ func NewRunner(registry *Registry, options RunnerOptions) *Runner {
 		cwd = registry.cwd
 	}
 	runner := &Runner{
+		events:         registry.Events(),
 		extensions:     registry.Extensions(),
 		runtime:        registry.runtime,
 		cwd:            cwd,
@@ -242,6 +244,9 @@ func (runner *Runner) ExtensionPaths() []string {
 }
 
 func (runner *Runner) ModelRegistry() ModelRegistry { return runner.modelRegistry }
+
+// Events is this attachment's bus, including when a runtime replaces it on reload.
+func (runner *Runner) Events() EventBus { return runner.events }
 
 func (runner *Runner) Shutdown() { runner.CreateContext().Shutdown() }
 

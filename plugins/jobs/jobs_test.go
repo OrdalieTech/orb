@@ -16,6 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/activity"
 )
 
 type harness struct {
@@ -23,6 +24,7 @@ type harness struct {
 	shutdown   func()
 	mu         sync.Mutex
 	messages   []string
+	activities *activity.Store
 }
 
 func newHarness(t *testing.T) *harness {
@@ -36,6 +38,8 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.activities = activity.NewStore(manager.GetSessionID())
+	registry.Events().On(activity.Channel, func(_ context.Context, data any) error { h.activities.Apply(data.(activity.Record)); return nil })
 	options := extensions.RunnerOptions{SessionManager: manager}
 	options.Actions.SendMessage = func(_ context.Context, message extensions.CustomMessage, _ *extensions.SendMessageOptions) error {
 		h.mu.Lock()
@@ -104,13 +108,22 @@ func TestBackgroundJobReportsItsEnd(t *testing.T) {
 	if got := strings.TrimSpace(h.run(t, h.bash, map[string]any{"command": "echo foreground"})); got != "foreground" {
 		t.Fatalf("foreground = %q", got)
 	}
+	if len(h.activities.Snapshot()) != 0 {
+		t.Fatal("foreground command became a background activity")
+	}
 	start := time.Now()
 	started := h.run(t, h.bash, map[string]any{"command": "echo begin; sleep 1; echo finished; exit 3", "run_in_background": true})
 	if time.Since(start) > 500*time.Millisecond || !strings.Contains(started, "Started background job 1") {
 		t.Fatalf("start took %v: %q", time.Since(start), started)
 	}
+	if got := h.activities.Snapshot(); len(got) != 1 || got[0].Kind != activity.Process || got[0].State != activity.Running || got[0].Title != "Bash #1 · echo" {
+		t.Fatal(got)
+	}
 	if got := h.wait(t, "exited with code 3"); !strings.Contains(got, "finished") {
 		t.Fatalf("end message = %q", got)
+	}
+	if got := h.activities.Snapshot()[0]; got.State != activity.Failed {
+		t.Fatal(got)
 	}
 }
 
@@ -119,6 +132,9 @@ func TestMonitorReportsLines(t *testing.T) {
 	h := newHarness(t)
 	h.run(t, h.bash, map[string]any{"command": "for i in 1 2 3; do echo line$i; sleep 0.4; done", "monitor": true})
 	got := h.wait(t, "exited with code 0")
+	if state := h.activities.Snapshot()[0].State; state != activity.Completed {
+		t.Fatal(state)
+	}
 	if !strings.Contains(got, "printed:\nline1") || !strings.Contains(got, "line3") || strings.Index(got, "line3") > strings.Index(got, "exited") {
 		t.Fatalf("messages = %q", got)
 	}

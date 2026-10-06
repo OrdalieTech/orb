@@ -19,16 +19,9 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
+	"github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 )
-
-type widgetUI struct {
-	extensions.NoopUI
-	mu      sync.Mutex
-	lines   []string
-	factory extensions.ComponentFactory
-	shown   int
-}
 
 func must[T any](value T, err error) T {
 	if err != nil {
@@ -54,25 +47,6 @@ func requireError(t *testing.T, err error, want string) {
 	t.Helper()
 	require(t, err != nil && strings.Contains(err.Error(), want), "error = %v, want %q", err, want)
 }
-
-func (ui *widgetUI) SetWidget(_ string, widget *extensions.Widget, _ *extensions.WidgetOptions) {
-	ui.mu.Lock()
-	defer ui.mu.Unlock()
-	ui.lines, ui.factory = nil, nil
-	if widget != nil {
-		ui.lines = append([]string(nil), widget.Lines...)
-		ui.factory = widget.Factory
-		ui.shown++
-	}
-}
-
-func (ui *widgetUI) snapshot() []string {
-	ui.mu.Lock()
-	defer ui.mu.Unlock()
-	return append([]string(nil), ui.lines...)
-}
-
-func (ui *widgetUI) showCount() int { ui.mu.Lock(); defer ui.mu.Unlock(); return ui.shown }
 
 func TestSubagentCompletesInProcessWithForkedContext(t *testing.T) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
@@ -233,20 +207,36 @@ func TestSubagentInheritsPermissionsPolicy(t *testing.T) {
 	}
 }
 
-func TestSubagentClearsProgressWidgetAndFailsParallelRuns(t *testing.T) {
-	ui := &widgetUI{}
-	tool := pluginTool(t, "subagents", "subagent", Extension(nil, nil, nil), extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
-	// No parent model registry, so every child fails: the widget must still go.
+func TestSubagentPublishesTerminalStatusesForFailedParallelRuns(t *testing.T) {
+	var mu sync.Mutex
+	states := map[string][]activity.State{}
+	factory := func(api extensions.API) error {
+		api.Events().On(activity.Channel, func(_ context.Context, data any) error {
+			r := data.(activity.Record)
+			mu.Lock()
+			defer mu.Unlock()
+			states[r.ID] = append(states[r.ID], r.State)
+			if r.Source != "Orb" || r.Kind != activity.Agent || r.SessionID == "" {
+				t.Errorf("invalid activity: %+v", r)
+			}
+			return nil
+		})
+		return Extension(nil, nil, nil)(api)
+	}
+	tool := pluginTool(t, "subagents", "subagent", factory, extensions.RunnerOptions{})
+	// No parent model registry: every child must settle as failed, not remain running.
 	_, err := tool.Execute(context.Background(), "sub-1", map[string]any{"mode": "single", "task": "work"}, nil)
 	require(t, err != nil, "child without a model registry succeeded")
-	require(t, ui.showCount() > 0, "progress widget was never shown")
-	require(t, len(ui.snapshot()) == 0, "progress widget left on screen: %v", ui.snapshot())
-
 	_, err = tool.Execute(context.Background(), "sub-2", map[string]any{"mode": "parallel", "tasks": []any{
 		map[string]any{"task": "alpha"}, map[string]any{"task": "beta"},
 	}}, nil)
 	require(t, err != nil && strings.Contains(err.Error(), "2 of 2 children failed") && strings.Contains(err.Error(), "[2] worker"), "parallel failure = %v", err)
-	require(t, len(ui.snapshot()) == 0, "progress widget left on screen: %v", ui.snapshot())
+	mu.Lock()
+	defer mu.Unlock()
+	require(t, len(states) == 3, "calls collided: %v", states)
+	for id, history := range states {
+		require(t, len(history) == 3 && history[0] == activity.Queued && history[1] == activity.Running && history[2] == activity.Failed, "%s: %v", id, history)
+	}
 }
 
 func pluginTool(t *testing.T, plugin, tool string, factory extensions.Factory, runnerOptions extensions.RunnerOptions) engine.AgentTool {

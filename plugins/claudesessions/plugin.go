@@ -22,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 )
 
@@ -58,6 +59,9 @@ func Factory(options Options) agent.CreateAgentSessionRuntimeFactory {
 		owned.Manager = opts.SessionManager
 		owned.Account = accountResolver(opts.GetRequestAuth)
 		var runtime *agent.SessionRuntime
+		if owned.Activity == nil {
+			owned.Activity = nativeActivity(func() *agent.SessionRuntime { return runtime }, owned.Manager.GetSessionID())
+		}
 		if owned.Ask == nil {
 			owned.Ask = func(ctx context.Context, title string, choices []string) (string, error) {
 				return runtime.RequestInput(ctx, title, choices)
@@ -144,6 +148,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	options.Context = orbContext(cfg.SystemPromptOptions)
 	options.Account = accountResolver(cfg.GetRequestAuth)
 	var runtime *agent.SessionRuntime
+	options.Activity = nativeActivity(func() *agent.SessionRuntime { return runtime }, options.Manager.GetSessionID())
 	// As Orb's own approvals: a print or JSON run asks no one unless its turn
 	// brings an input handler, and Claude's ask resolves by the headless fallback.
 	askable := cfg.ExtensionMode == extensions.ModeTUI || cfg.ExtensionMode == extensions.ModeRPC
@@ -184,6 +189,17 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 			}
 		})
 	}, nil
+}
+
+func nativeActivity(current func() *agent.SessionRuntime, sessionID string) func(work.Record) {
+	return work.Publisher(func() extensions.EventBus {
+		if runtime := current(); runtime != nil {
+			if runner := runtime.ExtensionRunner(); runner != nil {
+				return runner.Events()
+			}
+		}
+		return nil
+	}, sessionID, "Claude")
 }
 
 // withOtherModels lists Claude's models first, then every other provider's, so
