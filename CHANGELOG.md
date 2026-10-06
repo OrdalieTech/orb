@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-06
+
+Fixes from the team agent pilot: credentials out of every tool's reach, the model set by the
+mounted settings, and a quicker, lighter Buzz start.
+
 - A team agent's credentials stay out of every tool's reach, its in-process read tool included:
   the image's entrypoint hands them over on descriptors (`ORB_SECRETS_FD`, and `ORB_AUTH_FD` for
   OAuth logins in `/agent/secrets/auth.json`), so neither its environment nor any file it can open
