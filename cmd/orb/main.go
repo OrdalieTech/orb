@@ -27,20 +27,11 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/chat"
-	// The platforms `orb chat` runs an agent on; each registers itself.
-	_ "github.com/OrdalieTech/orb/chat/buzz"
-	_ "github.com/OrdalieTech/orb/chat/discord"
-	_ "github.com/OrdalieTech/orb/chat/googlechat"
-	_ "github.com/OrdalieTech/orb/chat/messenger"
-	_ "github.com/OrdalieTech/orb/chat/slack"
-	_ "github.com/OrdalieTech/orb/chat/teams"
-	_ "github.com/OrdalieTech/orb/chat/telegram"
-	_ "github.com/OrdalieTech/orb/chat/whatsapp"
+	"github.com/OrdalieTech/orb/chat/platforms"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/mermaid"
-	"github.com/OrdalieTech/orb/internal/multicall"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
@@ -109,8 +100,9 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "mermaid" {
 		os.Exit(runMermaid(os.Stdin, os.Stdout))
 	}
-	if command := multicall.Lookup(filepath.Base(os.Args[0])); command != nil {
-		os.Exit(command(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	// Orb started under a platform's name, through a link in an agent's shell.
+	if platform, ok := platforms.Lookup(filepath.Base(os.Args[0])); ok && platform.Alias != nil {
+		os.Exit(platform.Alias(os.Environ(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
 		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
@@ -832,29 +824,30 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		return 0
 	}
 	tools := false
-	var platforms []string
+	var selected []string
 	for _, arg := range args {
 		switch arg = strings.ToLower(arg); {
 		case arg == "--tools":
 			tools = true
-		case slices.Contains(chat.PlatformNames(), arg):
-			if !slices.Contains(platforms, arg) {
-				platforms = append(platforms, arg)
+		case slices.Contains(platforms.Names(), arg):
+			if !slices.Contains(selected, arg) {
+				selected = append(selected, arg)
 			}
 		default:
 			return reportCLIError(streams.Stderr, fmt.Errorf("unsupported chat platform %q", arg))
 		}
 	}
-	if len(platforms) == 0 {
+	if len(selected) == 0 {
 		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>... [--tools]"))
 	}
 	agents := teamAgent(ctx, dependencies, streams)
 	var fronts []func(context.Context) error
 	var chats []string
-	for _, name := range platforms {
-		if platform, _ := chat.LookupPlatform(name); platform.Front != nil {
+	for _, name := range selected {
+		if platform, _ := platforms.Lookup(name); platform.Front != nil {
 			fronts = append(fronts, func(ctx context.Context) error {
-				return platform.Front(ctx, chat.Agent{Serve: agents.serve, Connect: chatConnectCommand, Log: streams.Stderr})
+				agent := chat.Agent{Serve: agents.serve, Connect: chatConnectCommand, Environ: toolenv.Environ, Export: toolenv.Export, Log: streams.Stderr}
+				return platform.Front(ctx, agent, os.Environ())
 			})
 		} else {
 			chats = append(chats, name)
@@ -863,7 +856,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	if len(chats) == 0 {
 		return runFronts(ctx, fronts, streams, nil)
 	}
-	authorize, err := chatAuthorizer(os.Getenv("ORB_CHAT_ALLOWED_SENDERS"))
+	authorize, err := chatAuthorizer(os.Getenv(platforms.AllowedSenders))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -878,8 +871,8 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	var adapters []chat.Adapter
 	var ingresses []func(context.Context, func(chat.Message) error) error
 	for _, platform := range chats {
-		open, _ := chat.LookupPlatform(platform)
-		adapter, inbound, err := open.Open()
+		open, _ := platforms.Lookup(platform)
+		adapter, inbound, err := open.Open(os.Environ())
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
@@ -1067,10 +1060,8 @@ func chatAuthorizer(allowed string) (func(chat.Message) error, error) {
 
 // chatHelpText documents `orb chat` and the platforms linked in.
 func chatHelpText() string {
-	names := chat.PlatformNames()
 	var credentials strings.Builder
-	for _, name := range names {
-		platform, _ := chat.LookupPlatform(name)
+	for _, platform := range platforms.All {
 		line := fmt.Sprintf("  %-25s %s", strings.Join(platform.Env, ", "), platform.About)
 		if len(strings.Join(platform.Env, ", ")) > 25 && platform.About != "" {
 			line = "  " + strings.Join(platform.Env, ", ") + "\n" + strings.Repeat(" ", 28) + platform.About
@@ -1081,7 +1072,7 @@ func chatHelpText() string {
 
 Runs this agent on every platform named, as one process with one memory.
 
-Platforms: ` + strings.Join(names, ", ") + `
+Platforms: ` + strings.Join(platforms.Names(), ", ") + `
 
   --tools  Gives chat conversations the agent's tools in the working directory.
            Only for an agent running isolated, such as one container per agent.

@@ -73,6 +73,13 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   the implementation (green).
 - **P9 — Never weaken a criterion or a golden to pass it.** A failing fixture means the code is
   wrong. A genuinely impossible criterion stops the work and surfaces to the owner.
+- **Layers, enforced.** Every package has a layer, and an import points to its own layer or
+  below: libraries (`internal`, `tui`) → `ai` → `engine` → core (`agent`, `bridge`, `host`) →
+  capabilities (`plugins`) → drivers (TUI mode, RPC, ACP, `chat`) → hosts (`platforms`) →
+  assemblies (`cmd`, catalogs such as `agent/assembly` and `chat/platforms`, examples, the agent
+  harness). Only hosts and assemblies read or change the process environment or register at
+  init; everything below takes its configuration as values. `internal/layering` checks it with
+  one map and one ratchet of existing violations that only shrinks. Owner, 2026-10-06.
 - **P10 — A portable core behind host ports.** Not everything is a plugin; the core is named and
   closed. It is the agent semantics that are identical on every target: the `ai` message/stream
   model and provider wire codecs, the `engine` loop, tool pipeline, events and compaction,
@@ -276,7 +283,9 @@ Each holds until changed by owner-signed decision.
   when a client asks for it, the provisional revision that carries the harness prompt in
   `session/new` instead of every message. Usage goes out as the `_goose/unstable/session/update`
   extension, which clients accept from any agent. No `session/request_permission`: the deployment
-  is the sandbox.
+  is the sandbox. A session runs where its client says: the `cwd` of `session/new` and
+  `session/load` is the session's, a stored session's included, and one the agent cannot enter
+  is refused with its reason instead of failing every tool call.
 - **Team agents.** One agent is one process, `orb chat <front>... --tools`: every front drives
   sessions of the same agent dir and store, so identity, memory (the `memory` plugin) and tools are
   shared, and each conversation (a Buzz channel or thread, a Telegram chat) is a session. Buzz stays
@@ -285,41 +294,38 @@ Each holds until changed by owner-signed decision.
   `orb chat connect` relay it runs as its agent command. Its exit ends the agent, so an owner's
   `!shutdown` stays final under the container's restart policy. A Go Nostr front is deferred until
   buzz-acp gets in the way. Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
-- **Chat platforms are packages that register themselves; Buzz is one of them.** Each
-  `chat/<platform>` package registers a `chat.Platform` from `init`, and `cmd/orb` links each with
-  one blank import and names none. A platform declares the variables it reads and what it does
-  (`Env`, `About`; `orb chat --help` formats them), and either an `Open` that builds its adapter
-  and says how messages come in (`chat.Inbound`: it polls, or it is called and `orb chat` serves
-  its webhook on `ORB_CHAT_LISTEN`/`ORB_CHAT_PATH`), or a `Front` that drives the agent's sessions
-  itself as an ACP client. A front sees the agent only through `chat.Agent`: `Serve` (ACP on one
-  connection), `Connect` (the command line that relays stdio to an ACP socket, `orb chat connect`
-  in Orb) and `Log`. A component hands its tools something, such as Buzz's shim socket, with
-  `toolenv.Export`, never by editing `ORB_TOOL_ENV`, so it works whenever the allowlist is set.
-  A name Orb answers to when started through a link, such as the shell's `buzz`, registers with
-  `internal/multicall`, which `main` consults first. Without `chat/buzz` and its import, Orb
-  builds and every other platform works. Coupling kept knowingly: platform packages read their own
-  credentials from the process environment, which `orb chat` fills from `ORB_SECRETS_FD`; the team
-  agent's credential handling (tool allowlist, non-dumpable process, descriptors) stays in
-  `cmd/orb`, since every front needs it though Buzz prompted it; `ORB_ACP_SOCKET` keeps its
-  generic name although only Buzz reads it, as the pilot's environment names it;
-  `internal/multicall` serves only plugins compiled into Orb, which all of them are; adapters and
-  fronts share one `chat.Platform` with exclusive fields rather than two registries; and
-  `platforms/agent` is an image for Buzz and Telegram, which installs Buzz's binaries.
-  Owner, 2026-10-06.
+- **Chat platforms are plain packages; one catalog composes them.** A platform package
+  (`chat/telegram`, `chat/buzz`, …) takes its configuration as Options and reads no environment,
+  registers nothing and holds no package state (P3). The catalog `chat/platforms`, an assembly,
+  has one row per platform: the variables it reads (`Env`, `About` for help), and either `Open`
+  (an adapter and its `chat.Inbound`: it polls, or it is called and `orb chat` serves its
+  webhook on `ORB_CHAT_LISTEN`/`ORB_CHAT_PATH`) or `Front` (it drives the agent's sessions
+  itself as an ACP client), plus `Configure` (its section of an agent file), `Sidecar` (a process
+  run beside the agent as another user) and `Alias` (what Orb runs when started under its name,
+  such as the shell's `buzz`). `orb` and `orb-agent` both read it, so the platform list exists
+  once, and removing a platform is deleting its package and its row. A front sees the agent only
+  through `chat.Agent`: `Serve` (ACP on one connection), `Connect` (the command relaying stdio to
+  an ACP socket, `orb chat connect` in Orb), `Environ` and `Export` (its tools' environment) and
+  `Log`. Coupling kept knowingly: `ORB_ACP_SOCKET` keeps its generic name although only Buzz
+  reads it, as the pilot's environment names it; adapters and fronts share one row type with
+  exclusive fields; and `platforms/agent` is an image for Buzz and Telegram, which installs
+  Buzz's binaries. Owner, 2026-10-06.
 - **A team agent is one file and its secrets, set up outside Orb.** `orb-agent`
   (`platforms/agent/harness`), the image's entrypoint and a program of its own, validates
   `/agent/agent.yaml` strictly and renders it into the files Orb already reads (settings.json,
   AGENTS.md, mcp.json, models.json) and the browser's config, rewriting them on every start, so the
   file is the agent's configuration of record; secrets stay in the environment and reach Orb on
-  descriptors as before. What it knows of a platform is what the platform declares on
-  `chat.Platform`: its `Env`, `Configure` (its section of the file mapped onto the environment it
-  already reads, so the env contract is unchanged and an image without a file runs as before) and
-  `Sidecar` (a process run beside the agent as the `sidecar` user, such as buzz-acp, given the relay
-  command for the agent's ACP socket). The `allow` of a platform `orb chat` routes is its shared
-  sender allowlist. Coupling kept knowingly: `orb-agent` links the same platform packages as `orb`,
-  so the two list them alike; the image's relay (`nc`), socket path and the `agent`/`sidecar` users
-  are the harness's; and Buzz's section takes a chosen set of buzz-acp settings, the rest staying
-  `BUZZ_ACP_*` environment. Owner, 2026-10-06.
+  descriptors as before. What it knows of a platform is its catalog row: `Env`, `Configure` (its
+  section of the file mapped onto the environment it already reads, so the env contract is
+  unchanged and an image without a file runs as before) and `Sidecar` (a process run beside the
+  agent as the `sidecar` user, such as buzz-acp, given the relay command for the agent's ACP
+  socket). The agent and its sidecars run in the agent's workspace: a sidecar that is an ACP
+  client opens the agent's sessions in its own working directory, which the agent's tools must be
+  able to enter (0.18.0 ran buzz-acp in its home, and every Buzz turn's tools failed). The `allow`
+  of a platform `orb chat` routes is its shared sender allowlist. Coupling kept knowingly: the
+  image's relay (`nc`), socket path and the `agent`/`sidecar` users are the harness's; and Buzz's
+  section takes a chosen set of buzz-acp settings, the rest staying `BUZZ_ACP_*` environment.
+  Owner, 2026-10-06.
 - **Orb has no scheduler.** A timer outside Orb (systemd on the host) starts a turn in a running
   agent through its ACP socket (`orb chat connect`), in a session of its own, with the agent's
   memory, tools and identity: it posts on Buzz with the shim, and the timer delivers the printed

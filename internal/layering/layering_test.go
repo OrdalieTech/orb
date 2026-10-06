@@ -47,7 +47,7 @@ var layers = map[string]int{
 	"agent/modes": driver, "agent/rpc": driver, "agent/acp": driver, "agent/bridge": driver,
 	"agent/clipboard": driver, "agent/extensions/host": driver, "chat": driver,
 	"platforms": hostLayer,
-	"cmd":       assembly, "agent/assembly": assembly, "agent/examples": assembly, "chat/examples": assembly,
+	"cmd":       assembly, "agent/assembly": assembly, "agent/examples": assembly, "chat/examples": assembly, "chat/platforms": assembly,
 	"platforms/agent": assembly, "conformance": assembly,
 }
 

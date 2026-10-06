@@ -137,7 +137,7 @@ func (s *heartbeatState) pending(now time.Time, interval time.Duration) (bool, t
 	return true, interval - now.Sub(s.sentAt)
 }
 
-// Run connects to the Discord gateway and pumps normalized MESSAGE_CREATE
+// Poll connects to the Discord gateway and pumps normalized MESSAGE_CREATE
 // dispatches into publish until ctx ends or a fatal configuration error
 // (bad token, disallowed intents) occurs. Connection losses reconnect with
 // capped exponential backoff, resuming the previous session whenever the
@@ -146,7 +146,7 @@ func (s *heartbeatState) pending(now time.Time, interval time.Duration) (bool, t
 //
 // publish must enqueue durably and return fast: it is the ingress
 // publish-then-ack edge and must never wait on turn processing.
-func (a *Adapter) Run(ctx context.Context, publish func(chat.Message) error) error {
+func (a *Adapter) Poll(ctx context.Context, publish func(chat.Message) error) error {
 	st := &gatewayState{}
 	delay := time.Second
 	for {

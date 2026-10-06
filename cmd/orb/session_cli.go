@@ -175,8 +175,12 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 		if resolveErr != nil {
 			return nil, session.SessionContext{}, resolveErr
 		}
-		switch resolved.kind {
-		case "not_found":
+		openOptions := []session.Option{session.WithAgentDir(agentDir)}
+		if args.clientCWD {
+			openOptions = append(openOptions, session.WithCwdOverride(cwd))
+		}
+		switch {
+		case resolved.kind == "not_found":
 			manager, err = importSession(settings, resolved.arg, func(dir string) (*session.SessionManager, error) {
 				return session.Create(dir, sessionDir, session.WithAgentDir(agentDir), session.WithSessionID(resolved.arg))
 			})
@@ -187,7 +191,7 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 				break
 			}
 			return nil, session.SessionContext{}, fmt.Errorf("No session found matching '%s'", resolved.arg) //nolint:staticcheck // Upstream error capitalization is observable.
-		case "global":
+		case resolved.kind == "global" && !args.clientCWD:
 			confirmed, confirmErr := confirmGlobalSessionFork(streams, resolved.cwd)
 			if confirmErr != nil {
 				return nil, session.SessionContext{}, confirmErr
@@ -198,7 +202,7 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 			}
 			manager, err = session.ForkFrom(resolved.path, cwd, sessionDir, session.WithAgentDir(agentDir))
 		default:
-			manager, err = session.Open(resolved.path, sessionDir, session.WithAgentDir(agentDir))
+			manager, err = session.Open(resolved.path, sessionDir, openOptions...)
 		}
 	case args.Resume:
 		var selectedPath string
@@ -419,7 +423,11 @@ func createNativeSession(cwd string, args CLIArgs, streams cliStreams, selector 
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}
-	manager, err := session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir))
+	options := []session.Option{session.WithHarnessRepo(repo), session.WithAgentDir(args.native.agentDir)}
+	if args.clientCWD {
+		options = append(options, session.WithCwdOverride(cwd))
+	}
+	manager, err := session.FromHarnessStorage(opened.Storage(), options...)
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}

@@ -621,11 +621,11 @@ OAuth logins as an open `auth.json` (`ORB_AUTH_FD`), so no path its in-process t
 
 Without `ORB_ACP_SOCKET` (development), `orb chat buzz` starts buzz-acp itself, as its own user.
 
-`orb chat` knows its platforms only as the `chat.Platform`s their packages register: Telegram's
-adapter, Buzz's front, which reaches the agent only through `chat.Agent` (`Serve`, `Connect`,
-`Log`). `chat/buzz` holds the whole Buzz side above, the ACP socket or buzz-acp, the buzz socket,
-exported to the tools with `toolenv.Export`, and the shell's `buzz`, which it registers as an
-alias with `internal/multicall`.
+`orb chat` knows its platforms only as rows of the `chat/platforms` catalog, which maps each
+one's environment onto its package's options: Telegram's adapter, Buzz's front, which reaches the
+agent only through `chat.Agent` (`Serve`, `Connect`, `Environ`, `Export`, `Log`). `chat/buzz` holds
+the whole Buzz side above, the ACP socket or buzz-acp, the buzz socket, exported to the tools,
+and the shell's `buzz`, the row's alias.
 
 Tools see only the `ORB_TOOL_ENV` allowlist (`internal/toolenv`). Measured natively (one process,
 eight sessions): the agent 36 MB PSS, the relay 17 MB and buzz-acp 4 MB, against about 650 MB per

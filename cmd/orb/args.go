@@ -80,10 +80,13 @@ type CLIArgs struct {
 	RestoredModel      bool
 	allowNoModel       bool
 	useUnknownModel    bool
-	metadataOnly       bool
-	extensionsLoaded   bool
-	extensionRegistry  *extensions.Registry
-	extensionWarnings  []modes.StartupDiagnostic
+	// clientCWD makes the working directory a session is opened with its own,
+	// a stored session's included: an ACP client says where each session runs.
+	clientCWD         bool
+	metadataOnly      bool
+	extensionsLoaded  bool
+	extensionRegistry *extensions.Registry
+	extensionWarnings []modes.StartupDiagnostic
 	// resolvedProjectTrust carries the trust decision loadStartupExtensions
 	// already made in this process, so the runtime neither re-fires the
 	// project_trust event nor replaces the live extension host.

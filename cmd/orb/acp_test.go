@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -53,11 +54,17 @@ func scriptedRuntime(provider *faux.Provider) cliDependencies {
 
 func startACP(t *testing.T, provider *faux.Provider) *acpClient {
 	t.Helper()
+	return startACPIn(context.Background(), t, provider)
+}
+
+// startACPIn runs `orb --mode acp` in ctx, which may carry the native store.
+func startACPIn(ctx context.Context, t *testing.T, provider *faux.Provider) *acpClient {
+	t.Helper()
 	stdinReader, stdinWriter := io.Pipe()
 	stdoutReader, stdoutWriter := io.Pipe()
 	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
 	go func() {
-		client.done <- runCLIWithDependencies(context.Background(), []string{"--mode", "acp"}, cliStreams{
+		client.done <- runCLIWithDependencies(ctx, []string{"--mode", "acp"}, cliStreams{
 			Stdin: stdinReader, Stdout: stdoutWriter, Stderr: io.Discard,
 		}, scriptedRuntime(provider))
 		_ = stdoutWriter.Close()
@@ -412,5 +419,78 @@ func TestLiveConversationsShareMemoryAsItChanges(t *testing.T) {
 	}
 	if strings.Contains(saver.context, "Persistent memory changed") {
 		t.Fatalf("the saver was told its own change: %s", saver.context)
+	}
+}
+
+// A session's tools run where its client says, whatever the session's
+// history: a working directory the agent cannot enter is refused when the
+// session opens, not discovered by every tool, and loading a stored session
+// from another directory moves it there.
+func TestACPSessionsWorkWhereTheirClientSays(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs Unix permissions that bind its user")
+	}
+	for _, native := range []bool{false, true} {
+		t.Run(map[bool]string{false: "session files", true: "native store"}[native], func(t *testing.T) {
+			sessionsWorkWhereTheirClientSays(t, native)
+		})
+	}
+}
+
+func sessionsWorkWhereTheirClientSays(t *testing.T, native bool) {
+	root := t.TempDir()
+	first, moved, locked := filepath.Join(root, "first"), filepath.Join(root, "moved"), filepath.Join(root, "locked")
+	for _, dir := range []string{first, moved, locked} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(locked, 0o755) }()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	ctx := context.Background()
+	if native {
+		state, err := openNativeState(ctx, filepath.Join(root, "agent"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = state.close() }()
+		ctx = context.WithValue(ctx, nativeStateKey{}, state)
+	}
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage("Hello."),
+		faux.AssistantMessage(faux.ToolCall("bash", map[string]any{"command": "pwd"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("Done."),
+	})
+
+	client := startACPIn(ctx, t, provider)
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	if refused, _ := client.call("session/new", map[string]any{"cwd": locked, "mcpServers": []any{}}); refused["error"] == nil ||
+		!strings.Contains(fmt.Sprint(refused["error"]), locked) {
+		t.Fatalf("session/new in a directory the agent cannot enter = %v, want an error naming it", refused)
+	}
+	created, _ := client.call("session/new", map[string]any{"cwd": first, "mcpServers": []any{}})
+	id := created["result"].(map[string]any)["sessionId"]
+	client.call("session/prompt", map[string]any{"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "Hello."}}})
+	client.close()
+
+	client = startACPIn(ctx, t, provider)
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	if loaded, _ := client.call("session/load", map[string]any{"sessionId": id, "cwd": moved, "mcpServers": []any{}}); loaded["error"] != nil {
+		t.Fatalf("session/load = %v", loaded)
+	}
+	_, notifications := client.call("session/prompt", map[string]any{"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "Where are you?"}}})
+	client.close()
+	results := updates(notifications, "tool_call_update")
+	if len(results) != 1 {
+		t.Fatalf("tool results = %v", results)
+	}
+	if output := results[0]["content"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string); !strings.Contains(output, moved) {
+		t.Fatalf("the loaded session's bash ran in %q, want %s", output, moved)
 	}
 }

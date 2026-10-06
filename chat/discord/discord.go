@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -73,20 +72,6 @@ type Adapter struct {
 }
 
 var _ chat.Adapter = (*Adapter)(nil)
-
-func init() {
-	chat.Register("discord", chat.Platform{Env: []string{"DISCORD_BOT_TOKEN"}, About: "Discord bot token", Open: func() (chat.Adapter, chat.Inbound, error) {
-		token := strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN"))
-		if token == "" {
-			return nil, chat.Inbound{}, errors.New("DISCORD_BOT_TOKEN is required")
-		}
-		adapter, err := New(Options{Token: token})
-		if err != nil {
-			return nil, chat.Inbound{}, err
-		}
-		return adapter, chat.Inbound{Poll: adapter.Run}, nil
-	}})
-}
 
 // New creates a Discord adapter. It performs no network calls; the gateway
 // session starts with [Adapter.Run].

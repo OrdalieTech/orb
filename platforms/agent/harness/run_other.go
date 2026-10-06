@@ -4,6 +4,6 @@ package main
 
 import "errors"
 
-func run([]string) (int, error) {
+func run([]string, layout) (int, error) {
 	return 0, errors.New("runs the agent in its Linux image only; check <file> works anywhere")
 }

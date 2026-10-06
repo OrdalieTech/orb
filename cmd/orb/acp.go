@@ -26,7 +26,19 @@ type acpHost struct {
 
 func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.AgentSessionRuntime, func(), error) {
 	args := host.args
-	args.native = args.native.conversation()
+	cwd := options.CWD
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+	// The session's tools run in cwd: one the agent cannot open is refused
+	// here, saying why, rather than failing every tool call.
+	directory, err := os.Open(cwd)
+	if err != nil {
+		return nil, nil, fmt.Errorf("session working directory: %w", err)
+	}
+	_ = directory.Close()
+	// The client says where the session runs, including a stored one it loads.
+	args.clientCWD = true
 	args.Session, args.SystemPrompt = nil, options.SystemPrompt
 	if options.ID != "" {
 		args.Session = &options.ID
@@ -53,10 +65,7 @@ func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.Agent
 		}
 		args.mcpServers = append(args.mcpServers, mcp.Entry{Name: server.Name, Config: config, Source: "ACP client", Scope: "session"})
 	}
-	cwd := options.CWD
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
+	args.native = args.native.conversation()
 	manager, _, err := createCLISession(cwd, args, host.streams, nil, nil)
 	if err != nil {
 		args.native.release()

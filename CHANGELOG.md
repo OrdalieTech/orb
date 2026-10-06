@@ -5,6 +5,15 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Buzz turns run tools again in the team agent image: 0.18.0 started buzz-acp in its own home,
+  which buzz-acp makes every session's working directory and the agent cannot enter, so each
+  tool failed with `spawn /bin/bash EACCES`. Sidecars run in the agent's workspace, an ACP
+  session's working directory is the one its client gives (a stored session's included), and one
+  the agent cannot enter is refused with its reason when the session opens.
+- Chat platforms take their configuration as options and register nothing; one catalog,
+  `chat/platforms`, maps each platform's environment and agent-file section onto them, for both
+  `orb chat` and `orb-agent`. Layers are enforced by one map in `internal/layering`.
+
 ## [0.18.0] - 2026-10-06
 
 Team agents are set up from one file, in a smaller image with optional browsers.

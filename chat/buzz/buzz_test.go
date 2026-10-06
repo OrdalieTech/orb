@@ -2,7 +2,6 @@ package buzz
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"io"
 	"net"
@@ -46,8 +45,6 @@ func shellPosts(t *testing.T, allowlistFirst bool) {
 	for name, value := range secrets {
 		t.Setenv(name, value)
 	}
-	t.Setenv("BUZZ_ACP_DISPLAY_NAME", "Sales")
-	t.Setenv("ORB_BUZZ_ABOUT", "Answers the sales team")
 	t.Setenv("ORB_BUZZ", "")
 	t.Setenv(toolenv.Allow, "")
 	// A team agent's tools inherit only this allowlist.
@@ -65,8 +62,12 @@ func shellPosts(t *testing.T, allowlistFirst bool) {
 	if err := os.WriteFile(cli, []byte(real), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ORB_BUZZ_CLI", cli)
-	stop, err := serveCLI(context.Background(), io.Discard)
+	// The agent's tools get toolenv's environment, as orb chat wires them.
+	agent := chat.Agent{Environ: toolenv.Environ, Export: toolenv.Export, Log: io.Discard}
+	stop, err := serveCLI(context.Background(), agent, Options{
+		CLI: cli, Credentials: []string{"BUZZ_PRIVATE_KEY=nostr-secret", "BUZZ_AUTH_TAG=auth-tag-secret"},
+		Profile: chat.Identity{Name: "Sales", About: "Answers the sales team"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,12 +112,12 @@ func TestShimHelper(t *testing.T) {
 		return
 	}
 	args := os.Args[slices.Index(os.Args, "--")+1:]
-	os.Exit(shim(args, os.Stdin, os.Stdout, os.Stderr))
+	dir, _ := os.Getwd()
+	os.Exit(Shim(os.Getenv("ORB_BUZZ"), dir, args, os.Stdin, os.Stdout, os.Stderr))
 }
 
-// echoAgent answers each connection's first line with "pong:" and that line,
-// and relays through this test binary (TestConnectHelper).
-func echoAgent(log io.Writer) chat.Agent {
+// echoAgent answers each connection's first line with "pong:" and that line.
+func echoAgent() chat.Agent {
 	return chat.Agent{
 		Serve: func(_ context.Context, in io.Reader, out io.Writer) error {
 			line, err := bufio.NewReader(in).ReadString('\n')
@@ -125,71 +126,25 @@ func echoAgent(log io.Writer) chat.Agent {
 			}
 			return err
 		},
-		Connect: func(socket string) ([]string, error) {
-			return []string{os.Args[0], "-test.run=^TestConnectHelper$", "--", "connect", socket}, nil
-		},
-		Log: log,
+		Environ: os.Environ, Export: func(string, string) {}, Log: io.Discard,
 	}
 }
 
-// Started by the agent, buzz-acp gets its own settings and none of the
-// agent's model or chat credentials, reaches the agent by the command the
-// agent gave it, and ends the agent when it exits.
-func TestFrontRunsBuzzACPWithoutTheAgentsCredentials(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the fake buzz-acp is a shell script")
-	}
-	root := t.TempDir()
-	for name, value := range map[string]string{"OPENROUTER_API_KEY": "sk-or-secret", "TELEGRAM_BOT_TOKEN": "tg-secret", "BUZZ_PRIVATE_KEY": "nostr-secret", "BUZZ_ACP_DISPLAY_NAME": ""} {
-		t.Setenv(name, value)
-	}
-	t.Setenv(toolenv.Allow, "PATH,HOME")
-	t.Setenv("ORB_ACP_SOCKET", "")
-	_ = os.Unsetenv("ORB_ACP_SOCKET")
-	harness, seen, reply := filepath.Join(root, "buzz-acp"), filepath.Join(root, "env"), filepath.Join(root, "reply")
-	script := "#!/bin/sh\nenv > '" + seen + "'\nset -f; IFS=,; set -- $BUZZ_ACP_AGENT_ARGS\necho ping | \"$BUZZ_ACP_AGENT_COMMAND\" \"$@\" > '" + reply + "'\n"
-	if err := os.WriteFile(harness, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ORB_BUZZ_ACP", harness)
-	var log bytes.Buffer
-	if err := front(context.Background(), echoAgent(&log)); err != nil {
-		t.Fatalf("front: %v, log: %s", err, log.String())
-	}
-	if answer, _ := os.ReadFile(reply); string(answer) != "pong:ping\n" {
-		t.Fatalf("buzz-acp got %q from the agent", answer)
-	}
-	environ, err := os.ReadFile(seen)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, leaked := range []string{"sk-or-secret", "tg-secret"} {
-		if strings.Contains(string(environ), leaked) {
-			t.Errorf("buzz-acp holds %s", leaked)
-		}
-	}
-	if !strings.Contains(string(environ), "BUZZ_PRIVATE_KEY=nostr-secret") {
-		t.Errorf("buzz-acp lacks its key: %s", environ)
-	}
-}
-
-// With ORB_ACP_SOCKET, buzz-acp runs as another user: the agent serves that
-// socket, open to its group, until it stops.
+// With a socket, buzz-acp runs as another user: the agent serves that socket,
+// open to its group, until it stops.
 func TestFrontServesAnExternalBuzzACP(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("group permissions on a socket are Unix")
 	}
-	t.Setenv("BUZZ_ACP_DISPLAY_NAME", "")
 	dir, err := os.MkdirTemp("", "acp")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	socket := filepath.Join(dir, "acp.sock")
-	t.Setenv("ORB_ACP_SOCKET", socket)
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- front(ctx, echoAgent(io.Discard)) }()
+	go func() { done <- Front(ctx, echoAgent(), Options{CLI: "buzz", Socket: socket}) }()
 	var conn net.Conn
 	for deadline := time.Now().Add(5 * time.Second); conn == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		conn, _ = net.Dial("unix", socket)
@@ -214,21 +169,4 @@ func TestFrontServesAnExternalBuzzACP(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the front outlived its context")
 	}
-}
-
-func TestConnectHelper(t *testing.T) {
-	at := slices.Index(os.Args, "--")
-	if at < 0 || len(os.Args) < at+3 || os.Args[at+1] != "connect" {
-		return
-	}
-	conn, err := net.Dial("unix", os.Args[at+2])
-	if err != nil {
-		os.Exit(1)
-	}
-	go func() {
-		_, _ = io.Copy(conn, os.Stdin)
-		_ = conn.(*net.UnixConn).CloseWrite()
-	}()
-	_, _ = io.Copy(os.Stdout, conn)
-	os.Exit(0)
 }

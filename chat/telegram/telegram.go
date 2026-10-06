@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -60,20 +59,6 @@ type Adapter struct {
 }
 
 var _ chat.Adapter = (*Adapter)(nil)
-
-func init() {
-	chat.Register("telegram", chat.Platform{Env: []string{"TELEGRAM_BOT_TOKEN"}, About: "Telegram bot token", Open: func() (chat.Adapter, chat.Inbound, error) {
-		token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
-		if token == "" {
-			return nil, chat.Inbound{}, errors.New("TELEGRAM_BOT_TOKEN is required")
-		}
-		adapter, err := New(Options{Token: token})
-		if err != nil {
-			return nil, chat.Inbound{}, err
-		}
-		return adapter, chat.Inbound{Poll: adapter.Poll}, nil
-	}})
-}
 
 // New creates a Telegram adapter. It performs no network calls; the bot
 // identity is resolved lazily via getMe when needed.

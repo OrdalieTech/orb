@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/chat/platforms"
 )
 
 func testLayout(t *testing.T) layout {
@@ -15,7 +18,7 @@ func testLayout(t *testing.T) layout {
 		t.Fatal(err)
 	}
 	return layout{
-		home: filepath.Join(root, "agent"), config: filepath.Join(root, "agent", "config"), skills: "/skills",
+		home: filepath.Join(root, "agent"), config: filepath.Join(root, "agent", "config"), workspace: filepath.Join(root, "agent", "workspace"), skills: "/skills",
 		engines: map[string]string{"lightpanda": lightpanda, "chromium": filepath.Join(root, "missing-chromium")},
 	}
 }
@@ -108,6 +111,71 @@ func TestAgentFileMistakesAreRefused(t *testing.T) {
 	} {
 		if _, err := load(agentFileAt(t, content), image); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: error = %v, want %q", content, err, want)
+		}
+	}
+}
+
+// The agent file is the configuration of record: a section it drops removes
+// the file that section made.
+func TestDroppedSectionsRemoveTheirFiles(t *testing.T) {
+	image := testLayout(t)
+	plan, err := load(agentFileAt(t, "model: a/b\nplatforms: {telegram: {}}\n"), image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{image.persona(), image.mcp(), image.models(), image.browser()} {
+		if data, managed := plan.files[path]; !managed || data != nil {
+			t.Errorf("%s: managed %t, data %q; want removed", path, managed, data)
+		}
+	}
+}
+
+// Secrets reach the agent on its descriptor, never in its environment, and a
+// sidecar gets only what its platform declares.
+func TestProcessesGetOnlyTheirOwnEnvironment(t *testing.T) {
+	image := testLayout(t)
+	image.socket, image.relay = "/run/orb/acp.sock", []string{"nc", "-U", "/run/orb/acp.sock"}
+	environ := []string{"PATH=/bin", "HOME=/agent", "ORB_STATE_HOME=/agent/state", "OPENROUTER_API_KEY=sk-or", "BUZZ_PRIVATE_KEY=nostr"}
+	rendered := map[string]string{"BUZZ_ACP_RESPOND_TO": "allowlist", "ORB_BUZZ_ABOUT": "Sales"}
+
+	agent := agentProcess([]string{"buzz", "--tools"}, environ, rendered, image, true)
+	if strings.Join(agent.argv, " ") != "orb chat buzz --tools" {
+		t.Fatalf("argv = %v", agent.argv)
+	}
+	for _, entry := range agent.env {
+		if strings.Contains(entry, "sk-or") || strings.Contains(entry, "nostr") || strings.Contains(entry, "allowlist") {
+			t.Errorf("the agent's environment holds %s", entry)
+		}
+	}
+	for _, want := range []string{"PATH=/bin", "ORB_STATE_HOME=/agent/state", "ORB_SECRETS_FD=3", "ORB_ACP_SOCKET=/run/orb/acp.sock"} {
+		if !slices.Contains(agent.env, want) {
+			t.Errorf("the agent's environment lacks %s: %v", want, agent.env)
+		}
+	}
+	for _, want := range []string{"OPENROUTER_API_KEY=sk-or\n", "BUZZ_PRIVATE_KEY=nostr\n", "BUZZ_ACP_RESPOND_TO=allowlist\n", "ORB_BUZZ_ABOUT=Sales\n"} {
+		if !strings.Contains(agent.secrets, want) {
+			t.Errorf("the agent's descriptor lacks %q", want)
+		}
+	}
+
+	buzz, _ := platforms.Lookup("buzz")
+	sidecar := sidecarProcess(buzz, environ, rendered, image, "/home/sidecar")
+	if strings.Join(sidecar.argv, " ") != "buzz-acp" {
+		t.Fatalf("argv = %v", sidecar.argv)
+	}
+	// buzz-acp opens the agent's sessions in its working directory, which the
+	// agent's tools must be able to enter: the workspace, not its own home.
+	if agent.dir != image.workspace || sidecar.dir != image.workspace {
+		t.Errorf("agent runs in %q and its sidecar in %q, want both in the workspace %q", agent.dir, sidecar.dir, image.workspace)
+	}
+	for _, want := range []string{"HOME=/home/sidecar", "BUZZ_PRIVATE_KEY=nostr", "BUZZ_ACP_RESPOND_TO=allowlist", "BUZZ_ACP_AGENT_ARGS=-U,/run/orb/acp.sock", "BUZZ_ACP_NO_MEMORY=true"} {
+		if !slices.Contains(sidecar.env, want) {
+			t.Errorf("the sidecar lacks %s: %v", want, sidecar.env)
+		}
+	}
+	for _, entry := range sidecar.env {
+		if strings.Contains(entry, "sk-or") || strings.HasPrefix(entry, "ORB_") {
+			t.Errorf("the sidecar holds %s", entry)
 		}
 	}
 }

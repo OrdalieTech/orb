@@ -22,7 +22,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -101,19 +100,6 @@ type Adapter struct {
 }
 
 var _ chat.Adapter = (*Adapter)(nil)
-
-func init() {
-	chat.Register("teams", chat.Platform{Env: []string{"TEAMS_APP_ID", "TEAMS_APP_PASSWORD", "TEAMS_TENANT_ID"}, Open: func() (chat.Adapter, chat.Inbound, error) {
-		adapter, err := New(Options{
-			AppID: os.Getenv("TEAMS_APP_ID"), AppPassword: os.Getenv("TEAMS_APP_PASSWORD"),
-			TenantID: os.Getenv("TEAMS_TENANT_ID"),
-		})
-		if err != nil {
-			return nil, chat.Inbound{}, err
-		}
-		return adapter, chat.Inbound{Webhook: adapter.Webhook}, nil
-	}})
-}
 
 // New creates a Teams adapter. It refuses to construct without AppID and
 // AppPassword: the app id is the inbound token audience, so inbound

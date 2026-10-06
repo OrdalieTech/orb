@@ -320,7 +320,7 @@ func TestGatewayIdentifyDispatchResumeAndFatal(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- env.adapter.Run(t.Context(), func(m chat.Message) error {
+		errCh <- env.adapter.Poll(t.Context(), func(m chat.Message) error {
 			messages <- m.EventID + "|" + m.ChatType + "|" + m.Text + "|" + m.Account
 			return nil
 		})
@@ -424,7 +424,7 @@ func TestGatewayHeartbeatAckLossResumes(t *testing.T) {
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- env.adapter.Run(ctx, func(m chat.Message) error { return nil })
+		errCh <- env.adapter.Poll(ctx, func(m chat.Message) error { return nil })
 	}()
 
 	select {
@@ -486,7 +486,7 @@ func TestServerRequestedHeartbeatNearTimerDoesNotRecycle(t *testing.T) {
 	env.adapter.jitter = func() float64 { return 1 }
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- env.adapter.Run(t.Context(), func(chat.Message) error {
+		errCh <- env.adapter.Poll(t.Context(), func(chat.Message) error {
 			published <- struct{}{}
 			return nil
 		})
@@ -605,7 +605,7 @@ func TestGatewayDisallowedIntentsFatal(t *testing.T) {
 		f.sendClose(4014)
 		f.next(false)
 	})
-	err := env.adapter.Run(t.Context(), func(m chat.Message) error { return nil })
+	err := env.adapter.Poll(t.Context(), func(m chat.Message) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "Message Content Intent") {
 		t.Errorf("Run error = %v, want actionable Message Content Intent error", err)
 	}
@@ -652,7 +652,7 @@ func TestGatewayReconnectAndInvalidSessionReidentify(t *testing.T) {
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- env.adapter.Run(ctx, func(m chat.Message) error { return nil })
+		errCh <- env.adapter.Poll(ctx, func(m chat.Message) error { return nil })
 	}()
 
 	for _, expected := range []string{"identify", "resume", "reidentify"} {

@@ -17,7 +17,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -70,19 +69,6 @@ type Adapter struct {
 }
 
 var _ chat.Adapter = (*Adapter)(nil)
-
-func init() {
-	chat.Register("slack", chat.Platform{Env: []string{"SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_BOT_USER_ID"}, Open: func() (chat.Adapter, chat.Inbound, error) {
-		adapter, err := New(Options{
-			Token: os.Getenv("SLACK_BOT_TOKEN"), SigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
-			BotUserID: os.Getenv("SLACK_BOT_USER_ID"),
-		})
-		if err != nil {
-			return nil, chat.Inbound{}, err
-		}
-		return adapter, chat.Inbound{Webhook: adapter.Webhook}, nil
-	}})
-}
 
 // New builds the adapter. It refuses to construct without Token and
 // SigningSecret. When Options.BotUserID is empty, the bot identity is
