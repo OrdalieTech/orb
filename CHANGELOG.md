@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-10-06
+
+A team agent with an OAuth login answers again from its first start.
+
 - A team agent started on a new volume reads its OAuth login again: 0.17.1 wrapped the
   `ORB_AUTH_FD` descriptor twice while migrating its first start, and the collected copy closed
   it, so every turn failed with "read ORB_AUTH_FD: illegal seek".
