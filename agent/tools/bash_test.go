@@ -482,7 +482,10 @@ func TestLocalBashOperationsDoesNotExpireGraceDuringSlowOutputCallback(t *testin
 	var outputBytes atomic.Int64
 	result, err := NewLocalBashOperations().Exec(
 		context.Background(),
-		"head -c 131072 /dev/zero &",
+		// The shell exits once the background writer runs (the fifo), and the
+		// writer is a builtin: its output starts at once instead of after a
+		// program starts, which a loaded machine can delay past the grace.
+		`mkfifo started; { printf x >started; printf '%0131072d' 0; } & cat started >/dev/null`,
 		dir,
 		BashExecOptions{
 			Env: mustShellEnv(t),
