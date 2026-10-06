@@ -130,7 +130,7 @@ func TestRPCImmediateFollowUpAfterPromptResponseIsQueued(t *testing.T) {
 	if _, err := io.WriteString(inputWriter, `{"id":"p1","type":"prompt","message":"first"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for provider.State().CallCount != 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}

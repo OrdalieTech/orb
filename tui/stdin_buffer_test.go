@@ -95,8 +95,10 @@ func TestStdinBufferSplitSequenceKeepsCompletionWindow(t *testing.T) {
 		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
 		}
-		buffer.Process(";10")
+		// Stamped before Process arms the new window, so a pause before the
+		// next line can only widen the measured gap.
 		second := time.Now()
+		buffer.Process(";10")
 		time.Sleep(4 * timeout)
 		mu.Lock()
 		for _, entry := range emitted {
