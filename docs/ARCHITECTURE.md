@@ -606,12 +606,12 @@ A team agent is one process with several fronts, all driving sessions of the sam
 store, hence one identity, one memory and one tool set:
 
 ```
-agent-entrypoint (root, PID 1)            starts both, ends with the first to exit
+orb-agent (root, PID 1)                   renders agent.yaml, starts both, ends with the first to exit
 ├── orb chat buzz telegram --tools   user agent: the agent (volume /agent, non-dumpable)
 │   ├── telegram    chat adapter → chat.Processor → sessions built as ACP's are (agentWorkspace)
 │   ├── ACP socket  agent/acp at ORB_ACP_SOCKET, one connection per buzz-acp agent process
 │   └── buzz socket runs the real buzz CLI (execute-only) with the Buzz key for the shell's `buzz`
-└── buzz-acp                         user buzz: relay identity, author gate, queues, owner commands
+└── buzz-acp                         user sidecar (Buzz's declared sidecar): relay identity, author gate, queues
     └── nc -N -U <socket>            byte relay to the agent's ACP socket (`orb chat connect` outside the image)
 ```
 

@@ -77,15 +77,18 @@ without `ps` it inspects `/proc`. The CGo-free static build needs no libc.
 
 ### Team agent container
 
-One container per team agent: `orb chat buzz telegram --tools` runs the agent with both fronts on
-one memory, and starts `buzz-acp` for Buzz (see `platforms/agent/README.md`). The image adds
-buzz-acp and the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13) and a shell for
-the agent's bash tool. The shell's `buzz` is Orb, which has the agent run the real CLI with the Buzz
-key, and buzz-acp runs as its own user, so the agent's tools reach none of its credentials. The volume `/agent` holds config,
-state and workspace; secrets arrive as environment only. Evidence so far: the Go suite drives
-`orb --mode acp` and a Telegram conversation sharing memory with an ACP session, and the image ran
-a real `buzz-acp run --task` against a scripted model. Not yet: a relay
-run in CI, a documented removal command.
+One container per team agent: `orb-agent`, the image's entrypoint, sets the agent up from
+`/agent/agent.yaml` and runs `orb chat buzz telegram --tools`, with both fronts on one memory, plus
+buzz-acp for Buzz as a separate user (see `platforms/agent/README.md`). The image adds buzz-acp and
+the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13) and a shell, git and curl for
+the agent's tools; `browser` variants add agent-browser with Lightpanda or Chromium. The shell's
+`buzz` is Orb, which has the agent run the real CLI with the Buzz key, so the agent's tools reach
+none of its credentials. The volume `/agent` holds the agent file, config, state and workspace;
+secrets arrive as environment only. Scheduled turns come from a host timer through the agent's
+ACP socket. Evidence so far: the Go suite drives `orb --mode acp`, a Telegram conversation sharing
+memory with an ACP session, and the harness's rendering; the images ran against a local Buzz relay
+with a scripted model (posting, scheduled turns, both browsers). Not yet: a relay run in CI, a
+documented removal command.
 
 ### Go SDK embedding
 

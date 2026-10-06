@@ -66,6 +66,21 @@ type Platform struct {
 	Open func() (Adapter, Inbound, error)
 	// Front runs the platform until ctx ends.
 	Front func(ctx context.Context, agent Agent) error
+	// Configure maps the platform's section of an agent's configuration file
+	// onto the environment it reads, for a harness that sets agents up from
+	// one file; nil when the platform takes no settings beyond its Env.
+	Configure func(agent Identity, section map[string]any) (map[string]string, error)
+	// Sidecar is a process the platform needs beside the agent, run as
+	// another user so the agent's tools cannot reach it, such as an ACP client
+	// holding the platform's identity: given relay, a command that connects
+	// its stdio to the agent's ACP socket, it returns the process's command
+	// and settings. It also gets the variables Env names.
+	Sidecar func(relay []string) (command []string, env map[string]string)
+}
+
+// Identity is how an agent presents itself on its platforms.
+type Identity struct {
+	Name, About, Avatar string
 }
 
 // Inbound is how a platform's messages reach the processor: it fetches them

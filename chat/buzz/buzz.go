@@ -27,11 +27,65 @@ import (
 
 func init() {
 	chat.Register("buzz", chat.Platform{
-		Env:   []string{"BUZZ_PRIVATE_KEY", "BUZZ_RELAY_URL", "BUZZ_AUTH_TAG", "BUZZ_ACP_*"},
-		About: "starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's Buzz identity and reaches it over ACP",
-		Front: front,
+		Env:       []string{"BUZZ_PRIVATE_KEY", "BUZZ_RELAY_URL", "BUZZ_AUTH_TAG", "BUZZ_API_TOKEN", "BUZZ_ACP_*"},
+		About:     "starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's Buzz identity and reaches it over ACP",
+		Front:     front,
+		Configure: configure,
+		Sidecar:   sidecar,
 	})
 	multicall.Register("buzz", shim)
+}
+
+// settings are the buzz-acp settings an agent file may set, as
+// BUZZ_ACP_<KEY>; allow is BUZZ_ACP_RESPOND_TO_ALLOWLIST. Others stay
+// available as environment.
+var settings = []string{"respond_to", "allow", "subscribe", "channels", "kinds", "idle_timeout", "turn_timeout", "heartbeat_interval", "heartbeat_prompt"}
+
+// configure maps the agent's identity and its buzz section onto the
+// environment this package and buzz-acp read.
+func configure(agent chat.Identity, section map[string]any) (map[string]string, error) {
+	env := map[string]string{}
+	for name, value := range map[string]string{"BUZZ_ACP_DISPLAY_NAME": agent.Name, "ORB_BUZZ_ABOUT": agent.About, "ORB_BUZZ_AVATAR": agent.Avatar} {
+		if value != "" {
+			env[name] = value
+		}
+	}
+	for key, value := range section {
+		if !slices.Contains(settings, key) {
+			return nil, fmt.Errorf("buzz: unknown setting %q (known: %s)", key, strings.Join(settings, ", "))
+		}
+		name := "BUZZ_ACP_" + strings.ToUpper(key)
+		if key == "allow" {
+			name = "BUZZ_ACP_RESPOND_TO_ALLOWLIST"
+		}
+		switch value := value.(type) {
+		case []any:
+			items := make([]string, len(value))
+			for i, item := range value {
+				items[i] = fmt.Sprint(item)
+			}
+			env[name] = strings.Join(items, ",")
+		case map[string]any:
+			return nil, fmt.Errorf("buzz: %s takes a value or a list", key)
+		default:
+			env[name] = fmt.Sprint(value)
+		}
+	}
+	return env, nil
+}
+
+// sidecar is buzz-acp, which holds the agent's Buzz key and reaches it
+// through relay; Buzz's own memory is off, since the agent's is Orb's.
+func sidecar(relay []string) ([]string, map[string]string) {
+	env := map[string]string{
+		"BUZZ_ACP_AGENT_COMMAND": relay[0],
+		"BUZZ_ACP_AGENT_ARGS":    strings.Join(relay[1:], ","),
+		"BUZZ_ACP_NO_MEMORY":     "true",
+	}
+	if level, ok := os.LookupEnv("RUST_LOG"); ok {
+		env["RUST_LOG"] = level
+	}
+	return []string{"buzz-acp"}, env
 }
 
 // front serves this agent on Buzz: buzz-acp reaches this process's sessions

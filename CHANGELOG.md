@@ -5,6 +5,18 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Team agents are set up from one file: the image's new entrypoint, `orb-agent`, validates
+  `/agent/agent.yaml` (identity, model, persona, skills, MCP servers, browser, each platform's
+  settings and allowlist) and renders it into Orb's files and each platform's settings, with
+  secrets still in the env file; `orb-agent check` validates a file before deploying. Platforms
+  declare their part (`Configure`, `Sidecar`), so the entrypoint names none. An image without a
+  file runs as before.
+- The team agent image shrinks to 226 MB (Debian without apt, Perl or documentation; git and curl
+  kept), and gains `browser` variants: agent-browser with Lightpanda, and headless Chromium with
+  `CHROMIUM=1`, chosen per agent with `browser:`, logins kept in the volume.
+- Scheduled turns run from a host timer through a running agent's ACP socket; the image's README
+  shows how.
+
 ## [0.17.6] - 2026-10-06
 
 Chat platforms reach Orb only through declared interfaces.

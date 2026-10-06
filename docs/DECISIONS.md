@@ -304,8 +304,39 @@ Each holds until changed by owner-signed decision.
   generic name although only Buzz reads it, as the pilot's environment names it;
   `internal/multicall` serves only plugins compiled into Orb, which all of them are; adapters and
   fronts share one `chat.Platform` with exclusive fields rather than two registries; and
-  `platforms/agent` is an image for Buzz and Telegram whose entrypoint knows `BUZZ_*`.
+  `platforms/agent` is an image for Buzz and Telegram, which installs Buzz's binaries.
   Owner, 2026-10-06.
+- **A team agent is one file and its secrets, set up outside Orb.** `orb-agent`
+  (`platforms/agent/harness`), the image's entrypoint and a program of its own, validates
+  `/agent/agent.yaml` strictly and renders it into the files Orb already reads (settings.json,
+  AGENTS.md, mcp.json, models.json) and the browser's config, rewriting them on every start, so the
+  file is the agent's configuration of record; secrets stay in the environment and reach Orb on
+  descriptors as before. What it knows of a platform is what the platform declares on
+  `chat.Platform`: its `Env`, `Configure` (its section of the file mapped onto the environment it
+  already reads, so the env contract is unchanged and an image without a file runs as before) and
+  `Sidecar` (a process run beside the agent as the `sidecar` user, such as buzz-acp, given the relay
+  command for the agent's ACP socket). The `allow` of a platform `orb chat` routes is its shared
+  sender allowlist. Coupling kept knowingly: `orb-agent` links the same platform packages as `orb`,
+  so the two list them alike; the image's relay (`nc`), socket path and the `agent`/`sidecar` users
+  are the harness's; and Buzz's section takes a chosen set of buzz-acp settings, the rest staying
+  `BUZZ_ACP_*` environment. Owner, 2026-10-06.
+- **Orb has no scheduler.** A timer outside Orb (systemd on the host) starts a turn in a running
+  agent through its ACP socket (`orb chat connect`), in a session of its own, with the agent's
+  memory, tools and identity: it posts on Buzz with the shim, and the timer delivers the printed
+  reply elsewhere, such as Telegram with the bot's token; missed runs are systemd's
+  `Persistent=true`. Not `docker exec orb -p`: a second Orb whose tools inherit the container's
+  secrets. Owner, 2026-10-06.
+- **A browser is a capability of the agent's image, not of Orb.** The `browser` image adds
+  agent-browser, which the agent drives from its shell with its skill, and Lightpanda, its default
+  engine (small, no rendering, partial Web APIs); built with `CHROMIUM=1` it adds headless
+  Chromium for screenshots and real-site fidelity, chosen per agent with `browser:`. Each browser
+  runs in its agent's container as the agent's user with the tools' environment, its logins in the
+  volume (Lightpanda's restored cookies and storage, Chromium's profile); Chromium runs without its
+  own sandbox, which needs user namespaces containers deny, so the container is the sandbox.
+  Rejected: a browser plugin in Orb and a browser shared between agents. Owner, 2026-10-06.
+- **The base image keeps only what agents run.** Debian 13 (Buzz's binaries need glibc 2.39) with
+  bash, git, curl and nc, assembled into one layer without apt, Perl or documentation (copyright
+  files kept); git's Perl-only commands (`send-email`, `svn`) go with Perl. Owner, 2026-10-06.
 - **Memory is the agent's; each session is a view of it.** A session's prompt carries the memory
   profile as it stood when the session began, so the prefix stays cacheable. Whatever changed
   since, written by any other session of the agent on any front or process, joins the session at
@@ -343,15 +374,15 @@ Each holds until changed by owner-signed decision.
   the relay's, and team rosters resolve through 30177s. Owner, 2026-10-06.
 - **The Nostr key stays out of the tools' reach by user, not by care.** buzz-acp reads the key
   from its environment and writes a signing keyfile, so it cannot share the tools' user. The team
-  agent image starts as root only to run Orb as `agent` and buzz-acp as `buzz` (`setpriv`), and
+  agent image starts as root only to run Orb as `agent` and buzz-acp as `sidecar`, and
   Orb then serves buzz-acp on a fixed group socket (`ORB_ACP_SOCKET`) instead of starting it. The
   real buzz CLI, which runs as `agent` with the key, is installed execute-only, so the kernel runs it
   non-dumpable and its environment stays unreadable. Chosen over a sidecar container: one container,
-  one script. Without `ORB_ACP_SOCKET`, `orb chat buzz` starts buzz-acp as its own user, which
+  one entrypoint. Without `ORB_ACP_SOCKET`, `orb chat buzz` starts buzz-acp as its own user, which
   leaves the key readable by the agent's tools: fit for development, not for a team agent.
 - **A team agent holds its credentials on descriptors, never by path.** Its in-process tools
   (read, edit, write) run as Orb itself, so no file Orb can open by name may hold a secret, and
-  neither may `/proc/self/environ`. The entrypoint, still root, passes every variable outside a
+  neither may `/proc/self/environ`. `orb-agent`, still root, passes every variable outside a
   plain list (`PATH`, `HOME`, locale, `ORB_*`, `PI_*`) as KEY=VALUE lines on `ORB_SECRETS_FD`,
   which Orb loads into its environment (`/proc/self/environ` keeps the exec-time one), and opens
   `/agent/secrets/auth.json` (root, 0600) for OAuth logins as `ORB_AUTH_FD`, close-on-exec, which
@@ -361,8 +392,8 @@ Each holds until changed by owner-signed decision.
   reads them from the agent dir on every start instead of the copies the native store imported,
   so editing the mounted file and restarting changes the model.
 - **buzz-acp reaches the agent through `nc -N -U`** in the image (about 1 MB), not an Orb relay
-  (about 45 MB of runtime to copy bytes). The entrypoint waits for the agent's socket before
-  starting buzz-acp, which launches its agent at once.
+  (about 45 MB of runtime to copy bytes). `orb-agent` waits for the agent's socket before
+  starting sidecars, since buzz-acp launches its agent at once.
 
 ### Storage, release and platforms
 
