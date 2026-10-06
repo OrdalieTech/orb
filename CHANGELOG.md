@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Expanding a tool row whose result holds images, such as a read of a screenshot, shows them in
+  the terminal, as the model saw them. Inline images are at most 16 rows tall, and the image
+  width setting offers 40 columns.
+
 ## [0.17.1] - 2026-10-06
 
 Fixes from the team agent pilot: credentials out of every tool's reach, the model set by the

@@ -234,6 +234,7 @@ func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any
 	mode.ui.SetViewportMouseMotion(true)
 	requester := &chatRenderRequester{mode: mode}
 	component := NewToolExecutionComponent(name, id, args, mode.showImages(), mode.toolDefinition(name), requester, mode.cwd)
+	component.imageWidth = mode.session.InteractiveSettings().ImageWidthCells
 	requester.Bind(component)
 	return component
 }
@@ -2295,7 +2296,7 @@ func (mode *InteractiveMode) settingItems() []tui.SettingItem {
 	if tui.GetCapabilities().Images != "" {
 		items = append(items,
 			tui.SettingItem{ID: "show-images", Label: "Show images", Description: "Render images inline in terminal", CurrentValue: boolText(settings.ShowImages), Values: []string{"true", "false"}},
-			tui.SettingItem{ID: "image-width-cells", Label: "Image width", Description: "Preferred inline image width in terminal cells", CurrentValue: strconv.Itoa(settings.ImageWidthCells), Values: []string{"60", "80", "120"}},
+			tui.SettingItem{ID: "image-width-cells", Label: "Image width", Description: "Preferred inline image width in terminal cells", CurrentValue: strconv.Itoa(settings.ImageWidthCells), Values: []string{"40", "60", "80", "120"}},
 		)
 	}
 	items = append(items,
@@ -4924,16 +4925,10 @@ func (mode *InteractiveMode) renderUserMessage(message *ai.UserMessage) {
 	if !mode.showImages() || message.Content.Text != nil {
 		return
 	}
-	maxWidth := mode.session.InteractiveSettings().ImageWidthCells
-	if maxWidth <= 0 {
-		maxWidth = 60
-	}
 	for _, block := range message.Content.Blocks {
-		image, ok := block.(*ai.ImageContent)
-		if !ok || image == nil {
-			continue
+		if image, ok := block.(*ai.ImageContent); ok && image != nil {
+			mode.chat.AddChild(inlineImage(image, mode.session.InteractiveSettings().ImageWidthCells))
 		}
-		mode.chat.AddChild(tui.NewImage(image.Data, image.MimeType, tui.ImageTheme{}, &tui.ImageOptions{MaxWidthCells: &maxWidth}, tui.GetImageDimensions(image.Data, image.MimeType)))
 	}
 }
 
