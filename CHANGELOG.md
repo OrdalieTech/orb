@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-06
+
+Buzz turns run tools again; chat platforms compose from one catalog, and layers are enforced.
+
 - Buzz turns run tools again in the team agent image: 0.18.0 started buzz-acp in its own home,
   which buzz-acp makes every session's working directory and the agent cannot enter, so each
   tool failed with `spawn /bin/bash EACCES`. Sidecars run in the agent's workspace, an ACP
