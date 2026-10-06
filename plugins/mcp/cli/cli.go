@@ -1,4 +1,6 @@
-package main
+// Package cli is `orb mcp`: it configures and checks MCP servers and signs in
+// to OAuth servers without starting a session.
+package cli
 
 import (
 	"bufio"
@@ -7,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strconv"
@@ -109,12 +112,17 @@ func parseMCPOptions(args []string, known map[string]string, maxPositionals int)
 	return parsed, nil
 }
 
-// handleMCPCommand configures and checks MCP servers outside a session.
-func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
-	if len(argv) == 0 || argv[0] != "mcp" {
-		return false, 0
-	}
-	args := argv[1:]
+// IO is the command's terminal.
+type IO struct {
+	Stdin          io.Reader
+	Stdout, Stderr io.Writer
+	StdinTTY       bool
+}
+
+// Run runs `orb mcp` with the arguments after "mcp" and returns its exit
+// code. dirs resolves the working and agent directories; trusted reports
+// whether the project at cwd is trusted, which admits its .pi/mcp.json.
+func Run(ctx context.Context, args []string, streams IO, dirs func() (cwd, agentDir string, err error), trusted func(cwd, agentDir string) bool) int {
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
 			args = nil
@@ -122,20 +130,22 @@ func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (b
 	}
 	if len(args) == 0 || args[0] == "help" {
 		_, _ = fmt.Fprintln(streams.Stdout, mcpCommandUsage)
-		return true, 0
+		return 0
 	}
-	cwd, agentDir, err := packageCommandDirs()
+	cwd, agentDir, err := dirs()
 	if err != nil {
-		return true, reportCLIError(streams.Stderr, err)
+		_, _ = fmt.Fprintln(streams.Stderr, "Error: "+err.Error())
+		return 1
 	}
-	fail := func(message string) (bool, int) {
+	isTrusted := func() bool { return trusted(cwd, agentDir) }
+	fail := func(message string) int {
 		_, _ = fmt.Fprintln(streams.Stderr, message)
-		return true, 1
+		return 1
 	}
 	command, rest := args[0], args[1:]
 	switch command {
 	case "add":
-		return true, addMCPServer(ctx, cwd, agentDir, rest, streams)
+		return addMCPServer(ctx, cwd, agentDir, isTrusted, rest, streams)
 	case "remove":
 		parsed, err := parseMCPOptions(rest, map[string]string{"local": "flag"}, 1<<30)
 		if err != nil {
@@ -144,7 +154,7 @@ func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (b
 		if len(parsed.positional) != 1 {
 			return fail("Usage: orb mcp remove <server> [-l]\n" + mcpHelpHint)
 		}
-		return true, removeMCPServer(ctx, cwd, agentDir, parsed.positional[0], parsed.values["local"] != "", streams)
+		return removeMCPServer(ctx, cwd, agentDir, parsed.positional[0], parsed.values["local"] != "", streams)
 	case "list":
 		parsed, err := parseMCPOptions(rest, map[string]string{"json": "flag"}, 1<<30)
 		if err != nil {
@@ -153,7 +163,7 @@ func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (b
 		if len(parsed.positional) > 0 {
 			return fail("Usage: orb mcp list [--json]\n" + mcpHelpHint)
 		}
-		return true, listMCPServers(ctx, cwd, agentDir, parsed.values["json"] != "", streams)
+		return listMCPServers(ctx, cwd, agentDir, isTrusted, parsed.values["json"] != "", streams)
 	case "login", "logout":
 		known := map[string]string{}
 		if command == "login" {
@@ -166,18 +176,9 @@ func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (b
 		if len(parsed.positional) != 1 {
 			return fail("Usage: orb mcp " + command + " <server>\n" + mcpHelpHint)
 		}
-		return true, signInMCPServer(ctx, cwd, agentDir, command, parsed.positional[0], parsed.values["timeout"], streams)
+		return signInMCPServer(ctx, cwd, agentDir, isTrusted, command, parsed.positional[0], parsed.values["timeout"], streams)
 	}
 	return fail(fmt.Sprintf("Unknown mcp command %q.\n%s", command, mcpHelpHint))
-}
-
-func projectTrusted(ctx context.Context, cwd, agentDir string) bool {
-	store, err := stateFromContext(ctx).trust(agentDir)
-	if err != nil {
-		return false
-	}
-	decision, err := store.Get(cwd)
-	return err == nil && decision != nil && *decision
 }
 
 func parsePairs(option string, pairs []string) (map[string]string, error) {
@@ -195,7 +196,7 @@ func parsePairs(option string, pairs []string) (map[string]string, error) {
 	return record, nil
 }
 
-func addMCPServer(ctx context.Context, cwd, agentDir string, args []string, streams cliStreams) int {
+func addMCPServer(ctx context.Context, cwd, agentDir string, trusted func() bool, args []string, streams IO) int {
 	fail := func(message string) int {
 		_, _ = fmt.Fprintln(streams.Stderr, message)
 		return 1
@@ -270,7 +271,7 @@ func addMCPServer(ctx context.Context, cwd, agentDir string, args []string, stre
 		verb = "Replaced"
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "%s %s MCP server %q in %s.\n", verb, scope, name, path)
-	if local && !projectTrusted(ctx, cwd, agentDir) {
+	if local && !trusted() {
 		_, _ = fmt.Fprintf(streams.Stdout, "The project is not trusted, so %s is ignored until you start orb in the project and trust it.\n", path)
 	}
 	check := "Check it with: orb mcp list"
@@ -281,7 +282,7 @@ func addMCPServer(ctx context.Context, cwd, agentDir string, args []string, stre
 	return 0
 }
 
-func removeMCPServer(ctx context.Context, cwd, agentDir, name string, local bool, streams cliStreams) int {
+func removeMCPServer(ctx context.Context, cwd, agentDir, name string, local bool, streams IO) int {
 	path, scope := mcp.GlobalPath(agentDir), "global"
 	if local {
 		path, scope = mcp.ProjectPath(cwd), "project"
@@ -323,8 +324,8 @@ type mcpServerReport struct {
 	Error        string            `json:"error,omitempty"`
 }
 
-func listMCPServers(ctx context.Context, cwd, agentDir string, asJSON bool, streams cliStreams) int {
-	trusted := projectTrusted(ctx, cwd, agentDir)
+func listMCPServers(ctx context.Context, cwd, agentDir string, isTrusted func() bool, asJSON bool, streams IO) int {
+	trusted := isTrusted()
 	entries, problems := mcp.Load(agentDir, cwd, trusted)
 	note := ""
 	if _, err := os.Stat(mcp.ProjectPath(cwd)); !trusted && err == nil {
@@ -413,8 +414,8 @@ func listMCPServers(ctx context.Context, cwd, agentDir string, asJSON bool, stre
 	return code
 }
 
-func signInMCPServer(ctx context.Context, cwd, agentDir, command, name, timeout string, streams cliStreams) int {
-	trusted := projectTrusted(ctx, cwd, agentDir)
+func signInMCPServer(ctx context.Context, cwd, agentDir string, isTrusted func() bool, command, name, timeout string, streams IO) int {
+	trusted := isTrusted()
 	entries, _ := mcp.Load(agentDir, cwd, trusted)
 	index := slices.IndexFunc(entries, func(entry mcp.Entry) bool { return entry.Name == name })
 	if index < 0 {
@@ -433,7 +434,8 @@ func signInMCPServer(ctx context.Context, cwd, agentDir, command, name, timeout 
 	if command == "logout" {
 		removed, err := mcp.RemoveCredentials(agentDir, name, entry.Config.URL)
 		if err != nil {
-			return reportCLIError(streams.Stderr, err)
+			_, _ = fmt.Fprintln(streams.Stderr, "Error: "+err.Error())
+			return 1
 		}
 		if removed {
 			_, _ = fmt.Fprintf(streams.Stdout, "Signed out of MCP server %q.\n", name)

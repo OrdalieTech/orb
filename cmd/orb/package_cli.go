@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/codexsessions"
+	mcpcli "github.com/OrdalieTech/orb/plugins/mcp/cli"
 )
 
 // pi's package commands (install/remove/update/list/config). The self route is
@@ -537,6 +538,22 @@ func packageCommandDirs() (cwd, agentDir string, err error) {
 		return "", "", err
 	}
 	return cwd, agentDir, nil
+}
+
+// handleMCPCommand runs `orb mcp`, trusting a project as this state records.
+func handleMCPCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
+	if len(argv) == 0 || argv[0] != "mcp" {
+		return false, 0
+	}
+	trusted := func(cwd, agentDir string) bool {
+		store, err := stateFromContext(ctx).trust(agentDir)
+		if err != nil {
+			return false
+		}
+		decision, err := store.Get(cwd)
+		return err == nil && decision != nil && *decision
+	}
+	return true, mcpcli.Run(ctx, argv[1:], mcpcli.IO{Stdin: streams.Stdin, Stdout: streams.Stdout, Stderr: streams.Stderr, StdinTTY: streams.StdinTTY}, packageCommandDirs, trusted)
 }
 
 func handlePackageCommand(ctx context.Context, argv []string, streams cliStreams, dependencies cliDependencies) (bool, int) {
