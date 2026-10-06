@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-06
+
+Team agents are set up from one file, in a smaller image with optional browsers.
+
 - Team agents are set up from one file: the image's new entrypoint, `orb-agent`, validates
   `/agent/agent.yaml` (identity, model, persona, skills, MCP servers, browser, each platform's
   settings and allowlist) and renders it into Orb's files and each platform's settings, with
