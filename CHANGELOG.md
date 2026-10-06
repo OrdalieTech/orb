@@ -5,10 +5,6 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-## [0.20.0] - 2026-10-06
-
-Bridge clients complete `@` and see plan limits; the Android app swipes between its tabs.
-
 - A Bridge instance answers what `@` completes to (`complete`: its skills, then the files in its
   folder, as the TUI offers them; a folder listing where fd cannot run) and describes its
   provider's plan limits (`usage`: Claude from each turn, Codex and OpenCode Go read behind it).
