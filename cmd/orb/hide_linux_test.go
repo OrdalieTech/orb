@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,11 @@ func TestCredentialsOnDescriptorsAreUnreadableByPath(t *testing.T) {
 		if err := loadSecrets(); err != nil {
 			os.Exit(2)
 		}
+		// A first start opens the state twice; the descriptor must survive the
+		// collection of whatever the first open left behind.
+		_ = authDescriptor()
+		runtime.GC()
+		runtime.GC()
 		auth, _ := authDescriptor().Read(context.Background())
 		environ, _ := os.ReadFile("/proc/self/environ")
 		_, reopen := os.ReadFile("/proc/self/fd/4")

@@ -6,4 +6,4 @@ import "github.com/OrdalieTech/orb/internal/document"
 
 func loadSecrets() error { return nil }
 
-func authDescriptor() document.Document { return nil }
+var authDescriptor = func() document.Document { return nil }

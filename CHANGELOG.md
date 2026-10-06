@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A team agent started on a new volume reads its OAuth login again: 0.17.1 wrapped the
+  `ORB_AUTH_FD` descriptor twice while migrating its first start, and the collected copy closed
+  it, so every turn failed with "read ORB_AUTH_FD: illegal seek".
+
 - Expanding a tool row whose result holds images, such as a read of a screenshot, shows them in
   the terminal, as the model saw them. Inline images are at most 16 rows tall, and the image
   width setting offers 40 columns.

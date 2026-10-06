@@ -43,12 +43,15 @@ func loadSecrets() error {
 // authDescriptor is auth.json on ORB_AUTH_FD, a file the entrypoint opened as
 // root: this process reads and rewrites it, and nothing it starts can open it,
 // /proc/self/fd included, since reopening checks the file's own permissions.
-func authDescriptor() document.Document {
+// It wraps the descriptor once per process: the state can be opened twice (a
+// first start migrates), and a second *os.File would leave the first to be
+// collected, closing the descriptor under it.
+var authDescriptor = sync.OnceValue(func() document.Document {
 	if file := inherited("ORB_AUTH_FD"); file != nil {
 		return &fdDocument{file: file}
 	}
 	return nil
-}
+})
 
 // inherited opens the descriptor an environment variable names, closed on exec
 // so no child inherits it.
