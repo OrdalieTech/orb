@@ -1,4 +1,4 @@
-package main
+package native
 
 import (
 	"context"
@@ -14,7 +14,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func detachedDaemonProcAttr() *syscall.SysProcAttr {
+// DetachedProcAttr starts a daemon outside this process's session.
+func DetachedProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
@@ -22,11 +23,11 @@ func detachedDaemonProcAttr() *syscall.SysProcAttr {
 }
 
 // Windows has no exec(2); sandbox.SelfRestrict already refuses before this runs.
-func execReplacingProcess(string, []string, []string) error { return errors.ErrUnsupported }
+func Exec(string, []string, []string) error { return errors.ErrUnsupported }
 
-// requireOfflineMigration matches the POSIX check: another Orb process owned by this user
+// RequireOfflineMigration matches the POSIX check: another Orb process owned by this user
 // blocks migration when its environment selects the same agent directory.
-func requireOfflineMigration(context.Context, string) error {
+func RequireOfflineMigration(context.Context, string) error {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return errors.New("cannot verify that legacy Orb writers are stopped")
@@ -60,7 +61,7 @@ func requireOfflineMigration(context.Context, string) error {
 		if configured := os.Getenv(config.EnvAgentDir); (configured != "" && value != configured) || (configured == "" && set) {
 			continue
 		}
-		return runningOrbError{int(pid)}
+		return RunningError{int(pid)}
 	}
 	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
 		return errors.New("cannot verify that legacy Orb writers are stopped")
@@ -89,8 +90,8 @@ func processOwnedBy(pid uint32, user *windows.SID) (owned, alive bool, err error
 	return windows.EqualSid(owner.User.Sid, user), true, nil
 }
 
-// stopOrbProcess ends another Orb and waits for it, up to ten seconds.
-func stopOrbProcess(pid int) error {
+// stopProcess ends another Orb and waits for it, up to ten seconds.
+func stopProcess(pid int) error {
 	process, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(pid))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return nil
@@ -108,7 +109,7 @@ func stopOrbProcess(pid int) error {
 	return nil
 }
 
-func describeOrbProcess(int) string { return "" }
+func describeProcess(int) string { return "" }
 
 func processRunning(pid uint32) (bool, error) {
 	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)

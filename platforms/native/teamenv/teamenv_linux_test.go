@@ -1,4 +1,4 @@
-package main
+package teamenv
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 // the agent's environment through /proc.
 func TestHiddenAgentEnvironmentIsUnreadableToItsTools(t *testing.T) {
 	if os.Getenv("ORB_HIDE_HELPER") == "1" {
-		hideProcess()
+		Hide()
 		out, _ := exec.Command("sh", "-c", "cat /proc/$PPID/environ").CombinedOutput()
 		_, _ = os.Stdout.Write(out)
 		os.Exit(0)
@@ -37,15 +37,15 @@ func TestHiddenAgentEnvironmentIsUnreadableToItsTools(t *testing.T) {
 // /proc/self/fd/N, and finds neither.
 func TestCredentialsOnDescriptorsAreUnreadableByPath(t *testing.T) {
 	if os.Getenv("ORB_DESCRIPTORS_HELPER") == "1" {
-		if err := loadSecrets(); err != nil {
+		if err := LoadSecrets(); err != nil {
 			os.Exit(2)
 		}
 		// A first start opens the state twice; the descriptor must survive the
 		// collection of whatever the first open left behind.
-		_ = authDescriptor()
+		_ = AuthDocument()
 		runtime.GC()
 		runtime.GC()
-		auth, _ := authDescriptor().Read(context.Background())
+		auth, _ := AuthDocument().Read(context.Background())
 		environ, _ := os.ReadFile("/proc/self/environ")
 		_, reopen := os.ReadFile("/proc/self/fd/4")
 		fmt.Printf("key=%s auth=%s environ=%t reopen=%t\n", os.Getenv("OPENROUTER_API_KEY"), auth,

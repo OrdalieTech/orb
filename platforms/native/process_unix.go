@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package native
 
 import (
 	"bytes"
@@ -19,16 +19,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func detachedDaemonProcAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{Setsid: true} }
+// DetachedProcAttr starts a daemon outside this process's session.
+func DetachedProcAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{Setsid: true} }
 
-func execReplacingProcess(path string, argv, environment []string) error {
+// Exec replaces this process with path.
+func Exec(path string, argv, environment []string) error {
 	return unix.Exec(path, argv, environment)
 }
 
 // procfs is replaced in tests to exercise the ps path on Linux.
 var procfs = "/proc"
 
-func requireOfflineMigration(ctx context.Context, agentDir string) error {
+// RequireOfflineMigration refuses while another Orb process of this user
+// selects the same agent directory, as a RunningError.
+func RequireOfflineMigration(ctx context.Context, agentDir string) error {
 	processes, probe := orbProcessesFromPS, processEnvironmentFromPS
 	// Slim container images ship no ps; Linux exposes the same facts in procfs.
 	if _, err := os.Stat(filepath.Join(procfs, "self", "environ")); err == nil {
@@ -53,13 +57,13 @@ func requireOfflineMigration(ctx context.Context, agentDir string) error {
 		if configured == "" && strings.Contains(environment, config.EnvAgentDir+"=") {
 			continue
 		}
-		return runningOrbError{pid}
+		return RunningError{pid}
 	}
 	return nil
 }
 
-// stopOrbProcess asks another Orb to exit and waits for it, up to ten seconds.
-func stopOrbProcess(pid int) error {
+// stopProcess asks another Orb to exit and waits for it, up to ten seconds.
+func stopProcess(pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
 	}
@@ -72,8 +76,8 @@ func stopOrbProcess(pid int) error {
 	return fmt.Errorf("Orb process %d did not exit", pid) //nolint:staticcheck // Product name.
 }
 
-// describeOrbProcess is the command line another Orb runs, for the user to recognize it.
-func describeOrbProcess(pid int) string {
+// describeProcess is the command line another Orb runs, for the user to recognize it.
+func describeProcess(pid int) string {
 	output, _ := exec.Command("ps", "-o", "args=", "-p", strconv.Itoa(pid)).Output()
 	return strings.TrimSpace(string(output))
 }

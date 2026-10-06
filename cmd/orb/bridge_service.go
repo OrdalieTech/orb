@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 )
 
 // A server's Bridge should outlive the SSH session that paired it and the machine's reboots:
@@ -112,8 +114,8 @@ func installBridgeService(ctx context.Context, profile string) (string, error) {
 		_ = c.Close()
 	}
 	// The service is an explicit start: a stop marker from before no longer applies.
-	if dir, err := bridgeDir(profile); err == nil {
-		_ = stateFromContext(ctx).write(ctx, filepath.Join(dir, "stopped"), nil)
+	if dir, err := nativebridge.Dir(profile); err == nil {
+		_ = stateFromContext(ctx).native().Write(ctx, filepath.Join(dir, "stopped"), nil)
 	}
 	if err = systemctlUser(ctx, "daemon-reload"); err == nil {
 		err = systemctlUser(ctx, "enable", "--now", bridgeUnitName(profile))

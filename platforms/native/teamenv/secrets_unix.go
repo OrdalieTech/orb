@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package teamenv
 
 import (
 	"bufio"
@@ -13,16 +13,13 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/host"
 )
 
-// A team agent's entrypoint hands it credentials on file descriptors, never
-// in its environment or in files its tools could open.
-
-// loadSecrets reads KEY=VALUE lines from ORB_SECRETS_FD into this process's
+// LoadSecrets reads KEY=VALUE lines from ORB_SECRETS_FD into this process's
 // environment. /proc/self/environ, which the agent's read tool could open,
 // shows only the environment the process started with.
-func loadSecrets() error {
+func LoadSecrets() error {
 	file := inherited("ORB_SECRETS_FD")
 	if file == nil {
 		return nil
@@ -40,13 +37,15 @@ func loadSecrets() error {
 	return lines.Err()
 }
 
-// authDescriptor is auth.json on ORB_AUTH_FD, a file the entrypoint opened as
+// AuthDocument is auth.json on ORB_AUTH_FD, a file the entrypoint opened as
 // root: this process reads and rewrites it, and nothing it starts can open it,
 // /proc/self/fd included, since reopening checks the file's own permissions.
 // It wraps the descriptor once per process: the state can be opened twice (a
 // first start migrates), and a second *os.File would leave the first to be
 // collected, closing the descriptor under it.
-var authDescriptor = sync.OnceValue(func() document.Document {
+func AuthDocument() host.Document { return authDocument() }
+
+var authDocument = sync.OnceValue(func() host.Document {
 	if file := inherited("ORB_AUTH_FD"); file != nil {
 		return &fdDocument{file: file}
 	}

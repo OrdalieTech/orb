@@ -458,7 +458,7 @@ func sessionsWorkWhereTheirClientSays(t *testing.T, native bool) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() { _ = state.close() }()
+		defer func() { _ = state.Close() }()
 		ctx = context.WithValue(ctx, nativeStateKey{}, state)
 	}
 	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})

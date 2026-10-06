@@ -385,7 +385,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state, err := openNativeState(ctx, agentDir, false); err == nil {
-		_ = state.close()
+		_ = state.Close()
 		t.Fatal("legacy cutover without quiescence")
 	}
 	state, err := openNativeState(ctx, agentDir, true)
@@ -424,13 +424,13 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	if _, err := other.deleteSession(id); err == nil {
 		t.Fatal("deleted an owned session")
 	}
-	_ = other.close()
+	_ = other.Close()
 	missing, requested := "missing", "new-id"
 	if _, _, err := createCLISession(cwd, CLIArgs{Fork: &missing, SessionID: &requested, native: state}, cliStreams{}, nil, nil); err == nil {
 		t.Fatal("forked missing session")
 	}
 	backup := filepath.Join(root, "backup.db")
-	if err := state.db.Backup(ctx, backup); err != nil {
+	if err := state.DB.Backup(ctx, backup); err != nil {
 		t.Fatal(err)
 	}
 	forked, err := state.sessions().Fork(ctx, harness.SessionMetadata{ID: id}, harness.SessionForkOptions{SessionCreateOptions: harness.SessionCreateOptions{CWD: cwd}, Position: harness.ForkAt})
@@ -440,20 +440,20 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	if err := state.sessions().Delete(ctx, harness.SessionMetadata{ID: id}); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := state.db.RestoreSessions(ctx, backup, "personal"); err != nil || count != 1 {
+	if count, err := state.DB.RestoreSessions(ctx, backup, "personal"); err != nil || count != 1 {
 		t.Fatalf("restore: %d %v", count, err)
 	}
 	if _, err := state.sessions().Open(ctx, forked.Metadata()); err != nil {
 		t.Fatal("restore removed newer conversation", err)
 	}
-	if err = state.close(); err != nil {
+	if err = state.Close(); err != nil {
 		t.Fatal(err)
 	}
 	state, err = openNativeState(ctx, agentDir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = state.close() }()
+	defer func() { _ = state.Close() }()
 	args.native = state
 	manager, _, err = createCLISession(cwd, args, cliStreams{}, nil, nil)
 	if err != nil {
@@ -512,7 +512,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err = memoryStore.Delete(ctx, deleted); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := bridgeDir("personal")
+	dir, err := nativebridge.Dir("personal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].ID != id {
 		t.Fatal("memory migration", rows, err)
 	}
-	queue := state.db.Chat(state.chatNamespace(dataDir))
+	queue := state.DB.Chat(state.ChatNamespace(dataDir))
 	pending, err := queue.Pending(ctx)
 	if err != nil || len(pending) != 1 {
 		t.Fatal("spool migration", pending, err)
@@ -595,7 +595,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err = queue.Put(ctx, chat.Message{EventID: "after-migration", Text: "new"}); err != nil {
 		t.Fatal(err)
 	}
-	store, err = state.bridgeStore(bridgePath, protocol.MaxFrame)
+	store, err = state.BridgeStore(bridgePath, protocol.MaxFrame)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,7 +608,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = remote.Close() }()
-	cache := state.db.Foreign("personal")
+	cache := state.DB.Foreign("personal")
 	ticket, err := cache.Begin(ctx, remote.PeerID())
 	if err != nil {
 		t.Fatal(err)
@@ -626,15 +626,15 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	}
 	_ = b.Close()
 	_ = store.Close()
-	if err = state.close(); err != nil {
+	if err = state.Close(); err != nil {
 		t.Fatal(err)
 	}
 	state, err = openNativeState(ctx, agentDir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = state.close() }()
-	pending, err = state.db.Chat(state.chatNamespace(dataDir)).Pending(ctx)
+	defer func() { _ = state.Close() }()
+	pending, err = state.DB.Chat(state.ChatNamespace(dataDir)).Pending(ctx)
 	if err != nil || len(pending) != 1 || pending[0].EventID != "after-migration" {
 		t.Fatal("restart replayed old spool", pending, err)
 	}
@@ -659,7 +659,7 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = state.close() }()
+	defer func() { _ = state.Close() }()
 	settings, err := state.settings(root, agentDir)
 	if err != nil {
 		t.Fatal(err)
@@ -674,7 +674,7 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 	}
 	fauxProvider := faux.New(faux.Options{})
 	newProvider := func() *chat.LocalProvider {
-		p, err := chat.NewLocalProvider(root, chat.WithAgentDir(agentDir), chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo { return state.db.Sessions("chat/" + key.String()) }, settings, registry), chat.WithSessionOptions(func(_ chat.ConversationKey, o *agent.AgentSessionOptions) {
+		p, err := chat.NewLocalProvider(root, chat.WithAgentDir(agentDir), chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo { return state.DB.Sessions("chat/" + key.String()) }, settings, registry), chat.WithSessionOptions(func(_ chat.ConversationKey, o *agent.AgentSessionOptions) {
 			o.Model = fauxProvider.GetModel()
 			o.StreamFn = fauxProvider.StreamSimple
 		}))

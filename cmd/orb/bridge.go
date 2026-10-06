@@ -11,12 +11,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/OrdalieTech/orb/agent/config"
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
-	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
-	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
-	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 	"io"
 	"net"
 	"net/http"
@@ -29,49 +23,21 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/platforms/native"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
+	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 )
 
-func validBridgeName(s string) bool {
-	if len(s) == 0 || len(s) > 48 {
-		return false
-	}
-	for _, c := range s {
-		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-func bridgeDir(profile string) (string, error) {
-	if !validBridgeName(profile) {
-		return "", errors.New("invalid bridge profile")
-	}
-	if root := os.Getenv("ORB_BRIDGE_HOME"); root != "" {
-		if !filepath.IsAbs(root) {
-			return "", errors.New("ORB_BRIDGE_HOME must be absolute")
-		}
-		return filepath.Join(root, profile), nil
-	}
-	if os.Getenv(config.EnvAgentDir) != "" {
-		agentDir, err := config.GetAgentDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(agentDir, "bridge", profile), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".orb", "bridge", profile), nil
-}
 func bridgeAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
-	dir, err := bridgeDir(profile)
+	dir, err := nativebridge.Dir(profile)
 	if err != nil {
 		return nil, err
 	}
-	token, err := stateFromContext(ctx).read(ctx, filepath.Join(dir, "admin.token"))
+	token, err := stateFromContext(ctx).native().Read(ctx, filepath.Join(dir, "admin.token"))
 	if err != nil {
 		return nil, err
 	}
@@ -106,13 +72,13 @@ func bridgeServiceReady(ctx context.Context, client *protocol.Conn) (bool, error
 }
 
 func startBridge(ctx context.Context, profile string, explicit bool) error {
-	dir, err := bridgeDir(profile)
+	dir, err := nativebridge.Dir(profile)
 	if err != nil {
 		return err
 	}
 	stopped := filepath.Join(dir, "stopped")
 	if explicit {
-		if err = stateFromContext(ctx).write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = stateFromContext(ctx).native().Write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
@@ -125,10 +91,10 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 			return err
 		}
 		// The older daemon writes its deliberate-stop marker during replacement.
-		if err = stateFromContext(ctx).write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = stateFromContext(ctx).native().Write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-	} else if _, err = stateFromContext(ctx).read(ctx, stopped); err == nil && !explicit {
+	} else if _, err = stateFromContext(ctx).native().Read(ctx, stopped); err == nil && !explicit {
 		return errors.New("bridge stopped; start it explicitly")
 	}
 	if err = os.MkdirAll(dir, 0700); err != nil {
@@ -144,7 +110,7 @@ func startBridge(ctx context.Context, profile string, explicit bool) error {
 	}
 	defer func() { _ = log.Close() }()
 	cmd := exec.Command(exe, "bridge", "run", "--profile", profile)
-	cmd.SysProcAttr = detachedDaemonProcAttr()
+	cmd.SysProcAttr = native.DetachedProcAttr()
 	cmd.Stdout = log
 	cmd.Stderr = log
 	if err = cmd.Start(); err != nil {
@@ -474,17 +440,17 @@ type bridgeWebOptions struct {
 }
 
 func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions) error {
-	dir, err := bridgeDir(profile)
+	dir, err := nativebridge.Dir(profile)
 	if err != nil {
 		return err
 	}
-	store, err := stateFromContext(ctx).bridgeStore(filepath.Join(dir, "state.json"), protocol.MaxFrame)
+	store, err := stateFromContext(ctx).native().BridgeStore(filepath.Join(dir, "state.json"), protocol.MaxFrame)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = store.Close() }()
 	tokenPath := filepath.Join(dir, "admin.token")
-	token, tokenErr := stateFromContext(ctx).read(ctx, tokenPath)
+	token, tokenErr := stateFromContext(ctx).native().Read(ctx, tokenPath)
 	b, err := bridge.Open(store, errors.Is(tokenErr, os.ErrNotExist))
 	if err != nil {
 		return err
@@ -494,7 +460,7 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 		var v [32]byte
 		_, _ = rand.Read(v[:])
 		token = []byte(base64.RawURLEncoding.EncodeToString(v[:]))
-		tokenErr = stateFromContext(ctx).write(ctx, tokenPath, token)
+		tokenErr = stateFromContext(ctx).native().Write(ctx, tokenPath, token)
 	}
 	if tokenErr != nil {
 		return tokenErr
@@ -540,7 +506,7 @@ func runBridgeService(ctx context.Context, profile string, web bridgeWebOptions)
 			if err := protocol.Decode(params, &p); err != nil {
 				return nil, err
 			}
-			if err := stateFromContext(serviceCtx).write(ctx, filepath.Join(dir, "stopped"), []byte("stopped\n")); err != nil {
+			if err := stateFromContext(serviceCtx).native().Write(ctx, filepath.Join(dir, "stopped"), []byte("stopped\n")); err != nil {
 				return nil, err
 			}
 			time.AfterFunc(100*time.Millisecond, stop)
@@ -793,7 +759,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		err := runBridgeService(ctx, profile, web)
 		var next restartInto
 		if errors.As(err, &next) {
-			err = execReplacingProcess(string(next), os.Args, os.Environ())
+			err = native.Exec(string(next), os.Args, os.Environ())
 		}
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
@@ -1047,7 +1013,7 @@ func bridgeSSHArgs(target, command string) ([]string, error) {
 }
 
 func bridgeSSHCommand(target, remoteOrb, profile string, args ...string) ([]string, error) {
-	if !validBridgeName(profile) || remoteOrb == "" || strings.ContainsAny(remoteOrb, "\r\n\x00") {
+	if !nativebridge.ValidName(profile) || remoteOrb == "" || strings.ContainsAny(remoteOrb, "\r\n\x00") {
 		return nil, fmt.Errorf("invalid remote Orb path or profile")
 	}
 	command := []string{remoteOrb, "bridge", "--profile", profile}

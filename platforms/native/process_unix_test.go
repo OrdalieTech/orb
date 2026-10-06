@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package native
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -27,17 +26,17 @@ func TestMigrationProcessExitsDuringInspection(t *testing.T) {
 	previous := procfs
 	procfs = filepath.Join(bin, "no-procfs")
 	t.Cleanup(func() { procfs = previous })
-	if err := requireOfflineMigration(context.Background(), bin); err == nil {
+	if err := RequireOfflineMigration(context.Background(), bin); err == nil {
 		t.Fatal("allowed migration without inspecting a live process")
 	}
 	_ = process.Process.Kill()
 	_ = process.Wait()
-	if err := requireOfflineMigration(context.Background(), bin); err != nil {
+	if err := RequireOfflineMigration(context.Background(), bin); err != nil {
 		t.Fatal("exited process blocked migration:", err)
 	}
 }
 
-// In a terminal, a migration blocked by an Orb still on the previous version
+// A migration blocked by an Orb still on the previous version
 // offers to stop it, and continues once it has exited.
 func TestMigrationOffersToStopTheOldOrb(t *testing.T) {
 	process := exec.Command("sleep", "30")
@@ -58,13 +57,17 @@ func TestMigrationOffersToStopTheOldOrb(t *testing.T) {
 	previous := procfs
 	procfs = filepath.Join(bin, "no-procfs")
 	t.Cleanup(func() { procfs = previous })
-	var stderr strings.Builder
-	streams := cliStreams{Stdin: strings.NewReader("n\n"), Stderr: &stderr, StdinTTY: true, StderrTTY: true}
-	if err := stopLegacyWriters(context.Background(), bin, streams); err == nil || !strings.Contains(stderr.String(), "orb --old") {
-		t.Fatalf("declined: %v %q", err, stderr.String())
+	var offered string
+	answer := false
+	confirm := func(offeredPID int, command string) bool {
+		offered = fmt.Sprint(offeredPID, " ", command)
+		return answer
 	}
-	streams.Stdin = strings.NewReader("y\n")
-	if err := stopLegacyWriters(context.Background(), bin, streams); err != nil {
+	if err := StopLegacyWriters(context.Background(), bin, confirm); err == nil || offered != fmt.Sprint(pid, " orb --old") {
+		t.Fatalf("declined: %v %q", err, offered)
+	}
+	answer = true
+	if err := StopLegacyWriters(context.Background(), bin, confirm); err != nil {
 		t.Fatal(err)
 	}
 	select {

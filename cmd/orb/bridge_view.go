@@ -16,6 +16,8 @@ import (
 	"unicode"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/platforms/native"
+	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -720,13 +722,13 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 
 func openBridgeCache(ctx context.Context, profile string) (*sqlite.DB, error) {
 	if state := stateFromContext(ctx); state != nil {
-		path, err := nativeStatePath(state.agentDir)
+		path, err := native.Path(state.agentDir)
 		if err != nil {
 			return nil, err
 		}
 		return sqlite.Open(ctx, path)
 	}
-	dir, err := bridgeDir(profile)
+	dir, err := nativebridge.Dir(profile)
 	if err != nil {
 		return nil, err
 	}

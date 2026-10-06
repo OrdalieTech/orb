@@ -34,7 +34,9 @@ import (
 	"github.com/OrdalieTech/orb/internal/mermaid"
 	"github.com/OrdalieTech/orb/internal/semver"
 	"github.com/OrdalieTech/orb/internal/toolenv"
+	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
+	"github.com/OrdalieTech/orb/platforms/native/teamenv"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/gofrs/flock"
@@ -107,12 +109,12 @@ func main() {
 	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
 		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
 	}
-	if err := loadSecrets(); err != nil {
+	if err := teamenv.LoadSecrets(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Error: "+err.Error())
 		os.Exit(1)
 	}
 	if os.Getenv(toolenv.Allow) != "" {
-		hideProcess()
+		teamenv.Hide()
 	}
 	// Process markers, entry points only — not set when embedded through the SDK.
 	_ = os.Setenv("AI_AGENT", "orb")
@@ -126,6 +128,8 @@ func main() {
 		StderrTTY: isTerminalFile(os.Stderr),
 	}))
 }
+
+func hideProcess() { teamenv.Hide() }
 
 // runMermaid draws the Mermaid diagram on stdin as the TUI shows it, Unicode text, for clients
 // with no renderer of their own (the Android app); nothing drawable exits 1. It opens no state.
@@ -151,7 +155,7 @@ func runSandboxChild() int {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	if err := execReplacingProcess(shell, []string{shell, "-c", os.Getenv(sandbox.EnvCommand)}, os.Environ()); err != nil {
+	if err := native.Exec(shell, []string{shell, "-c", os.Getenv(sandbox.EnvCommand)}, os.Environ()); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "sandbox: exec:", err)
 	}
 	return 126
@@ -645,7 +649,7 @@ func migrateStartupAuth() (string, error) {
 func catalogRefreshOptions(ctx context.Context, agentDir string) aimodels.RefreshOptions {
 	options := aimodels.RefreshOptions{StorePath: filepath.Join(agentDir, "models-store.json"), UserAgent: aimodels.OrbUserAgent(version)}
 	if state := stateFromContext(ctx); state != nil {
-		options.StoreDocument = state.document(options.StorePath)
+		options.StoreDocument = state.Document(options.StorePath)
 		options.StorePath = ""
 	}
 	return options
@@ -972,7 +976,7 @@ func runLocalChat(
 			return reportCLIError(streams.Stderr, err)
 		}
 		providerOptions = append(providerOptions, chat.WithPersistence(func(key chat.ConversationKey) harness.SessionRepo {
-			return state.db.Sessions(state.chatNamespace(filepath.Join(dataDir, "sessions", key.String())))
+			return state.DB.Sessions(state.ChatNamespace(filepath.Join(dataDir, "sessions", key.String())))
 		}, settings, registry), chat.WithAgentDir(state.agentDir))
 	}
 	provider, err := chat.NewLocalProvider(filepath.Join(dataDir, "sessions"), providerOptions...)
@@ -994,7 +998,7 @@ func runLocalChat(
 			return reportCLIError(streams.Stderr, errors.New("chat gateway data is already in use"))
 		}
 		defer func() { _ = lock.Close() }()
-		local, err = chat.NewLocalWithSpool(processor, state.db.Chat(state.chatNamespace(dataDir)))
+		local, err = chat.NewLocalWithSpool(processor, state.DB.Chat(state.ChatNamespace(dataDir)))
 	} else {
 		local, err = chat.NewLocal(processor, filepath.Join(dataDir, "spool.jsonl"))
 	}

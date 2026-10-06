@@ -514,7 +514,7 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 	// A thread open in another Orb on this machine, one in a terminal say, cannot open twice: the
 	// peer hears so at once instead of an Orb that exits before it is on Bridge.
 	if state := stateFromContext(s.ctx); session != "" && state != nil {
-		if lock, err := state.ownerLock(session); err == nil {
+		if lock, err := state.OwnerLock(session); err == nil {
 			free, _ := lock.TryLock()
 			_ = lock.Close()
 			if !free {

@@ -40,7 +40,7 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = state.close() }() // Windows cannot remove the temp dir around an open database
+	defer func() { _ = state.Close() }() // Windows cannot remove the temp dir around an open database
 	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 		t.Fatalf("unknown thread: %v", err)
 	}
 	// A thread open in another Orb here (a terminal one) is busy, not an Orb that dies unseen.
-	lock, err := state.ownerLock("11111111-2222-4333-8444-555555555555")
+	lock, err := state.OwnerLock("11111111-2222-4333-8444-555555555555")
 	if err != nil || lock.Lock() != nil {
 		t.Fatal("lock:", err)
 	}

@@ -1,4 +1,4 @@
-package main
+package native
 
 import (
 	"context"
@@ -38,7 +38,7 @@ func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
 	writer := start(agentDir)
-	err = requireOfflineMigration(context.Background(), agentDir)
+	err = RequireOfflineMigration(context.Background(), agentDir)
 	if err == nil || !strings.Contains(err.Error(), "close other Orb processes") {
 		t.Fatalf("writer on the same state root: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
 	_ = writer.Wait()
 
 	start(otherDir)
-	if err := requireOfflineMigration(context.Background(), agentDir); err != nil {
+	if err := RequireOfflineMigration(context.Background(), agentDir); err != nil {
 		t.Fatalf("writer on another state root blocked migration: %v", err)
 	}
 }

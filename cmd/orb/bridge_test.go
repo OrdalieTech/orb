@@ -221,7 +221,7 @@ func TestBridgeLiveAttach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = state.close() }()
+	defer func() { _ = state.Close() }()
 	ctx = context.WithValue(ctx, nativeStateKey{}, state)
 	for n := 0; n < 20; n++ {
 		cwd := filepath.Join(root, "runtime", fmt.Sprint(n))
@@ -1078,7 +1078,7 @@ func TestBridgeLiveForeignPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = nativeState.close() }()
+	defer func() { _ = nativeState.Close() }()
 	ctx = context.WithValue(ctx, nativeStateKey{}, nativeState)
 	client, err := bridgeAdmin(ctx, "personal")
 	if err != nil {
