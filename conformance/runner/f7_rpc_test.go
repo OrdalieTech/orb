@@ -3,61 +3,26 @@ package runner_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
-	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/rpc"
-	sessionstore "github.com/OrdalieTech/orb/agent/session"
-	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/conformance/f7"
 	"github.com/OrdalieTech/orb/conformance/runner"
-	"github.com/OrdalieTech/orb/engine"
 )
-
-type f7Scenario struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	FixedNow      int64             `json:"fixedNow"`
-	CWD           string            `json:"cwd"`
-	SessionID     string            `json:"sessionId"`
-	SystemPrompt  string            `json:"systemPrompt"`
-	TokenSize     int               `json:"tokenSize"`
-	Responses     []json.RawMessage `json:"responses"`
-	Steps         []f7Step          `json:"steps"`
-}
-
-type f7Step struct {
-	Name              string `json:"name"`
-	Input             string `json:"input"`
-	Framing           string `json:"framing"`
-	ExpectedLineCount int    `json:"expectedLineCount"`
-}
-
-type f7Host struct {
-	session *agent.SessionRuntime
-}
-
-func (host *f7Host) Session() *agent.SessionRuntime     { return host.session }
-func (*f7Host) NewSession(string) (bool, error)         { return true, nil }
-func (*f7Host) SwitchSession(string) (bool, error)      { return true, nil }
-func (*f7Host) Fork(string, bool) (string, bool, error) { return "", true, nil }
-func (host *f7Host) Dispose()                           { host.session.Dispose() }
 
 func TestF7RPCTranscriptMatchesUpstream(t *testing.T) {
 	manifest := runner.LoadManifest(t, "F7")
 	if manifest.Family != "F7" || manifest.Generator != "conformance/extract/f7-rpc.ts" {
 		t.Fatalf("unexpected F7 manifest: %+v", manifest)
 	}
-	var scenario f7Scenario
+	var scenario f7.Scenario
 	runner.LoadJSON(t, "F7", "scenario.json", &scenario)
 	if scenario.SchemaVersion != 1 || len(scenario.Steps) == 0 || len(scenario.Responses) != 1 {
 		t.Fatalf("F7 scenario = version %d, steps %d, responses %d", scenario.SchemaVersion, len(scenario.Steps), len(scenario.Responses))
@@ -74,7 +39,7 @@ func TestF7RPCTranscriptMatchesUpstream(t *testing.T) {
 	var stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		done <- rpc.Serve(context.Background(), &f7Host{session: runtime}, rpc.Options{
+		done <- rpc.Serve(context.Background(), &f7.Host{Runtime: runtime}, rpc.Options{
 			Input: inputReader, Output: outputWriter, Diagnostics: &stderr,
 		})
 		_ = outputWriter.Close()
@@ -122,7 +87,7 @@ func TestF7RPCTranscriptMatchesUpstream(t *testing.T) {
 }
 
 func TestF7RPCTranscriptReplaysAgainstBinary(t *testing.T) {
-	var scenario f7Scenario
+	var scenario f7.Scenario
 	runner.LoadJSON(t, "F7", "scenario.json", &scenario)
 	trace, err := runner.ReadFixture("F7", "trace.jsonl")
 	if err != nil {
@@ -222,7 +187,28 @@ func TestF7RPCTranscriptReplaysAgainstBinary(t *testing.T) {
 	}
 }
 
-func f7ExpectedLines(t testing.TB, scenario f7Scenario, trace [][]byte) map[string][][]byte {
+func newF7Runtime(t testing.TB, scenario f7.Scenario) *agent.SessionRuntime {
+	t.Helper()
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"enabled":false},"retry":{"enabled":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := f7.NewRuntime(scenario, settings, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runtime
+}
+
+func f7ExpectedLines(t testing.TB, scenario f7.Scenario, trace [][]byte) map[string][][]byte {
 	t.Helper()
 	result := make(map[string][][]byte, len(scenario.Steps))
 	index := 0
@@ -238,77 +224,6 @@ func f7ExpectedLines(t testing.TB, scenario f7Scenario, trace [][]byte) map[stri
 		t.Fatalf("scenario accounts for %d of %d trace lines", index, len(trace))
 	}
 	return result
-}
-
-func newF7Runtime(t testing.TB, scenario f7Scenario) *agent.SessionRuntime {
-	t.Helper()
-	provider := faux.New(faux.Options{
-		API: "faux", Provider: "faux", TokenSize: faux.FixedTokenSize(scenario.TokenSize),
-		Now: func() int64 { return scenario.FixedNow },
-	})
-	responses := make([]faux.ResponseStep, len(scenario.Responses))
-	for index, raw := range scenario.Responses {
-		message, err := ai.UnmarshalMessage(raw)
-		if err != nil {
-			t.Fatalf("decode response %d: %v", index, err)
-		}
-		assistant, ok := message.(*ai.AssistantMessage)
-		if !ok {
-			t.Fatalf("response %d = %T", index, message)
-		}
-		responses[index] = assistant
-	}
-	provider.SetResponses(responses)
-
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"enabled":false},"retry":{"enabled":false}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	nextEntryID := 0
-	manager, err := sessionstore.InMemory(
-		root,
-		sessionstore.WithSessionID(scenario.SessionID),
-		sessionstore.WithClock(func() time.Time { return time.UnixMilli(scenario.FixedNow).UTC() }),
-		sessionstore.WithEntryIDGenerator(func() (string, error) {
-			nextEntryID++
-			return fmt.Sprintf("%08x", nextEntryID), nil
-		}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	model := provider.GetModel()
-	initialPrompt, _, _ := strings.Cut(scenario.SystemPrompt, "\nCurrent working directory:")
-	created := engine.NewAgent(
-		provider.StreamSimple, engine.WithInitialState(engine.AgentState{
-			Model: model, SystemPrompt: initialPrompt, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{},
-		}),
-		engine.WithConvertToLLM(agent.ConvertToLLM),
-		engine.WithClock(func() int64 { return scenario.FixedNow }),
-	)
-	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings, StreamFn: provider.StreamSimple,
-		Clock:               func() int64 { return scenario.FixedNow },
-		ExtensionRegistry:   extensions.NewRegistry(scenario.CWD),
-		SystemPromptOptions: &agent.SystemPromptOptions{CustomPrompt: &initialPrompt, SelectedTools: []string{}, CWD: scenario.CWD},
-		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
-			key := "faux-key"
-			return &key, nil
-		},
-		AvailableModels: func() []ai.Model { return []ai.Model{*model} },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return runtime
 }
 
 func readF7Output(reader io.Reader, lines chan<- []byte, readErrors chan<- error) {
