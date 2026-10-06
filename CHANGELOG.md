@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.6] - 2026-10-06
+
+Chat platforms reach Orb only through declared interfaces.
+
 - Chat platforms reach Orb only through declared interfaces: a front gets the agent as one
   `chat.Agent` value, webhook platforms are served by `orb chat` with its own settings, help text
   comes from each platform's declared variables, and Buzz hands its socket to the agent's tools
