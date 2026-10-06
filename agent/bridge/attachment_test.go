@@ -1,9 +1,14 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
+	"regexp"
 	goruntime "runtime"
 	"strings"
 	"sync/atomic"
@@ -200,6 +205,37 @@ func TestAFollowerSeesANewUsageReading(t *testing.T) {
 	var d Descriptor
 	if json.Unmarshal(a.inspect(), &d) != nil || d.Usage == nil || d.Usage.Windows[0].Remaining != 62 {
 		t.Fatalf("descriptor = %+v", d)
+	}
+}
+
+// An image travels by reference: the snapshot names it, and a follower fetches it at the size it
+// shows, fitted by the Orb, so neither the stream nor any frame carries the original.
+func TestAFollowerFetchesAnImageAtTheSizeItShows(t *testing.T) {
+	a, host := attached(t, faux.AssistantMessage("a gradient"))
+	var original bytes.Buffer
+	_ = png.Encode(&original, image.NewRGBA(image.Rect(0, 0, 800, 400)))
+	data := base64.StdEncoding.EncodeToString(original.Bytes())
+	if err := host.Session().Prompt(t.Context(), "look", &ai.ImageContent{Data: data, MimeType: "image/png"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := a.observe("", "", "", 0)
+	ref := regexp.MustCompile(`"ref":"([\w-]+)"`).FindSubmatch(raw)
+	if ref == nil || bytes.Contains(raw, []byte(data)) {
+		t.Fatalf("snapshot = %s", raw)
+	}
+	out, err := a.Invoke(t.Context(), "call", bridge.JSON(request(a, "image", map[string]any{"ref": string(ref[1]), "size": 200})))
+	var got struct {
+		Data string `json:"data"`
+	}
+	if err != nil || json.Unmarshal(out, &got) != nil {
+		t.Fatal(out, err)
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(got.Data)
+	if config, _, err := image.DecodeConfig(bytes.NewReader(decoded)); err != nil || config.Width != 200 || config.Height != 100 {
+		t.Fatalf("fitted = %+v %v", config, err)
+	}
+	if _, code := call(t, a, "image", map[string]any{"ref": "gone", "size": 200}); code != "not_found" {
+		t.Fatal("unknown image:", code)
 	}
 }
 

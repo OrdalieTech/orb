@@ -10,7 +10,7 @@ import tech.ordalie.orb.core.*
 /** What every screen needs, passed as one value, and the app's actions on conversations. */
 class Ctx(
     val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context,
-    val deck: (Session) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (String) -> Unit,
+    val deck: (Session) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (String, Session) -> Unit,
 ) {
     /** This phone, the first machine on Bridge; null until its Bridge has answered. */
     val phone: Peer? get() = rt.bridge.peers.firstOrNull { it.id == rt.bridge.self }

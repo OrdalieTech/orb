@@ -736,7 +736,8 @@ Signed contact payloads use JCS and are bounded at 16 KiB; reconciliation preser
 revision diagnostics and durable withdrawal floors within explicit scopes.
 
 `orb.instance/1` maps inspection, prompt, steer, follow-up, cancel, session list/new/switch/fork,
-and `@` completion.
+`@` completion, and images. Events and snapshots carry each image as a `ref` in place of its
+bytes, so neither outgrows a frame; a client fetches it at the size it shows.
 Session IDs resolve inside the adapter. Local, extension, and remote work share transition
 ordering and execution identity; control locks never span model streams or interactive approvals.
 Durably record acceptance before acknowledgment or dispatch. Retain compact deduplication
@@ -786,8 +787,9 @@ are `{execution_id, id, value}` and require `instance.input.reply`; session new
 is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
 `{provider, model, thinking?}`. Session list accepts an optional
 `offset`; completion is `{query}` (the text after `@`) → `items` of `{text, label, detail}`, the
-session's skills then the files fd finds, under `instance.prompt`. Read-only inspection needs no
-operation ID. An optional `subject` on remote calls
+session's skills then the files fd finds, under `instance.prompt`; an image is `{ref, size}` →
+`{data, mime_type}`, fitted within `size` pixels and half a frame, under `instance.inspect`.
+Read-only inspection needs no operation ID. An optional `subject` on remote calls
 is restricted to an instance subject and comes from the source bridge's credential-bound
 outbound route; administrative methods never appear in this routing table.
 

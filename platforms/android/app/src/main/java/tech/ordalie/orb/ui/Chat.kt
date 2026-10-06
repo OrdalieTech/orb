@@ -50,7 +50,7 @@ fun ColumnScope.Chat(c: Ctx, s: Session) {
             item(key = "end") { Box(Modifier.fillMaxWidth().height(40.dp).padding(start = Margin, top = 6.dp)) { if (streaming) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp) } }
             itemsIndexed(blocks.asReversed(), key = { _, b -> b.first().key }) { i, b ->
                 // A held finger selects words, in what anyone said, with the system's copy and share.
-                SelectionContainer(Modifier.animateItem(fadeInSpec = tween(280), placementSpec = null, fadeOutSpec = tween(160))) { Block(b, first = i == blocks.lastIndex, c.view) }
+                SelectionContainer(Modifier.animateItem(fadeInSpec = tween(280), placementSpec = null, fadeOutSpec = tween(160))) { Block(b, first = i == blocks.lastIndex, s) { ref -> c.view(ref, s) } }
             }
             if (s.earlier) item(key = "earlier") {
                 Box(Modifier.fillMaxWidth().press(onClick = s::loadEarlier).padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
@@ -86,11 +86,11 @@ private fun Strip(s: Session, usage: () -> Unit, terminal: () -> Unit) =
 /** What the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb
  *  just speaks, full width, its tools inline. */
 @Composable
-private fun Block(items: List<Item>, first: Boolean, view: (String) -> Unit) {
+private fun Block(items: List<Item>, first: Boolean, s: Session, view: (String) -> Unit) {
     val you = items.singleOrNull() as? You
     if (you != null) Column(Modifier.fillMaxWidth().padding(start = 48.dp, end = Margin, top = if (first) 12.dp else 28.dp, bottom = 16.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (you.via != null) T("from a peer", size = Size.Label, color = Ink.Blue)
-        Pictures(you.images, view)
+        Pictures(you.images, s, view)
         if (you.text.isNotBlank()) BasicText(tokens(you.text, p.fg, p.bg), Modifier.background(p.fg.copy(alpha = 0.07f), Pane).padding(horizontal = 12.dp, vertical = 8.dp), type(SIZE.sp, p.fg))
     } else Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         runs(items).forEach { run ->
@@ -102,16 +102,16 @@ private fun Block(items: List<Item>, first: Boolean, view: (String) -> Unit) {
                 is Act.Aside -> Folded(one.note.text, if (one.note.alarm) Ink.Rupture else p.meta)
             }
             // What the tools showed the model stays in view, even while their run is folded.
-            Pictures(run.flatMap { (it as? Act.Call)?.tool?.images.orEmpty() }, view)
+            Pictures(run.flatMap { (it as? Act.Call)?.tool?.images.orEmpty() }, s, view)
         }
     }
 }
 
-/** A row of thumbnails; a tap opens one full screen. */
+/** A row of thumbnails, fetched small from the Orb; a tap opens one full screen. */
 @Composable
-private fun Pictures(images: List<String>, view: (String) -> Unit) {
+private fun Pictures(images: List<String>, s: Session, view: (String) -> Unit) {
     if (images.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        images.forEach { Picture(it, 384, Modifier.height(112.dp).clip(Soft).press { view(it) }) }
+        images.forEach { ref -> Picture(ref, 384, { s.image(ref, it) }, Modifier.height(112.dp).clip(Soft).press { view(ref) }) }
     }
 }
 

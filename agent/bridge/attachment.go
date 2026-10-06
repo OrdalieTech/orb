@@ -2,6 +2,7 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -16,6 +17,7 @@ import (
 	runtime "github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
@@ -72,7 +74,12 @@ type Attachment struct {
 	messageBytes             int
 	exhausted                bool
 	snapshots                map[string]frozen
+	pictures                 map[string]picture // images the stream carried, by reference (see swapImages)
+	pictureOrder             []string
+	pictureBytes             int
 }
+
+type picture struct{ data, mime string }
 
 func Attach(lifetime context.Context, host Host, options Options) (*Attachment, error) {
 	if lifetime == nil || host == nil || !protocol.ValidID(options.InstanceID) || options.Authorize == nil {
@@ -89,7 +96,7 @@ func Attach(lifetime context.Context, host Host, options Options) (*Attachment, 
 	if err != nil {
 		return nil, err
 	}
-	a := &Attachment{host: host, control: control, options: options, lifetime: lifetime, ledger: ledger, inflight: make(chan struct{}, 64), snapshots: map[string]frozen{}}
+	a := &Attachment{host: host, control: control, options: options, lifetime: lifetime, ledger: ledger, inflight: make(chan struct{}, 64), snapshots: map[string]frozen{}, pictures: map[string]picture{}}
 	a.stopSessions = host.ObserveSessions(a.bind)
 	return a, nil
 }
@@ -116,6 +123,7 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		a.partial = nil
 		if state.StreamingMessage != nil {
 			a.partial, _ = jsonwire.Marshal(state.StreamingMessage)
+			a.partial = a.swapImages(a.partial)
 		}
 		for _, m := range state.Messages {
 			b, err := jsonwire.Marshal(m)
@@ -123,7 +131,7 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 				a.exhausted = true
 				continue
 			}
-			a.appendMessage(b)
+			a.appendMessage(a.swapImages(b))
 		}
 	}, func(event engine.AgentEvent) {
 		b, err := engine.MarshalAgentEvent(event)
@@ -135,6 +143,7 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		if a.closed {
 			return
 		}
+		b = a.swapImages(b)
 		switch event.(type) {
 		case engine.MessageStartEvent, engine.MessageUpdateEvent, engine.MessageEndEvent:
 			var fields struct {
@@ -192,6 +201,83 @@ func (a *Attachment) appendMessage(b []byte) {
 	a.messageBytes += len(b)
 	a.messages = append(a.messages, append(json.RawMessage(nil), b...))
 }
+
+// swapImages replaces each image's bytes with a reference a client fetches at the size it shows
+// (the image call), so the stream and snapshots stay small and no image outgrows a frame. The
+// last 32 MiB of images are kept; a.mu is held.
+func (a *Attachment) swapImages(b []byte) []byte {
+	if !bytes.Contains(b, []byte(`"type":"image"`)) {
+		return b
+	}
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.UseNumber()
+	var v any
+	if decoder.Decode(&v) != nil {
+		return b
+	}
+	var swap func(any)
+	swap = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if data, ok := v["data"].(string); ok && v["type"] == "image" && data != "" {
+				sum := sha256.Sum256([]byte(data))
+				ref := base64.RawURLEncoding.EncodeToString(sum[:16])
+				if _, kept := a.pictures[ref]; !kept {
+					mime, _ := v["mimeType"].(string)
+					a.pictures[ref], a.pictureOrder, a.pictureBytes = picture{data, mime}, append(a.pictureOrder, ref), a.pictureBytes+len(data)
+					for a.pictureBytes > 32<<20 && len(a.pictureOrder) > 1 {
+						a.pictureBytes -= len(a.pictures[a.pictureOrder[0]].data)
+						delete(a.pictures, a.pictureOrder[0])
+						a.pictureOrder = a.pictureOrder[1:]
+					}
+				}
+				delete(v, "data")
+				v["ref"] = ref
+				return
+			}
+			for _, x := range v {
+				swap(x)
+			}
+		case []any:
+			for _, x := range v {
+				swap(x)
+			}
+		}
+	}
+	swap(v)
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	if encoder.Encode(v) != nil {
+		return b
+	}
+	return bytes.TrimSuffix(out.Bytes(), []byte("\n"))
+}
+
+// image is one the stream carried, fitted within size pixels and half a frame, as base64.
+func (a *Attachment) image(args json.RawMessage) (json.RawMessage, error) {
+	var p struct {
+		Ref  string `json:"ref"`
+		Size int    `json:"size"`
+	}
+	if err := protocol.Decode(args, &p); err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	pic, ok := a.pictures[p.Ref]
+	a.mu.Unlock()
+	raw, err := base64.StdEncoding.DecodeString(pic.data)
+	if !ok || err != nil {
+		return nil, bridge.Fail("not_found")
+	}
+	size := min(max(p.Size, 64), 4096)
+	fitted := tools.ResizeImage(raw, pic.mime, &tools.ImageResizeOptions{MaxWidth: size, MaxHeight: size, MaxBytes: protocol.MaxFrame / 2})
+	if fitted == nil {
+		return nil, bridge.Fail("unavailable")
+	}
+	return bridge.JSON(map[string]string{"data": fitted.Data, "mime_type": fitted.MimeType}), nil
+}
+
 func (a *Attachment) SetGeneration(generation string) error {
 	if _, err := protocol.Counter(generation); err != nil {
 		return err
@@ -311,7 +397,7 @@ type Completion struct {
 }
 
 // methods are the calls an instance takes, before each principal's permissions filter them.
-var methods = []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name", "session.compact", "shell", "complete"}
+var methods = []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name", "session.compact", "shell", "complete", "image"}
 
 func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
@@ -368,6 +454,9 @@ func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessag
 	}
 	if r.Call.Method == "session.list" {
 		return a.list(protocol.WithPageLimit(ctx, positivePage(r.PageLimit)), r.Call.Args)
+	}
+	if r.Call.Method == "image" {
+		return a.image(r.Call.Args)
 	}
 	if r.Call.Method == "complete" {
 		var args struct {

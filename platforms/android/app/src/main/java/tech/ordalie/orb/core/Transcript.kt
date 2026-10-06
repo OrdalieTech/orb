@@ -5,7 +5,7 @@ import org.json.*
 
 /** The primitives a conversation is drawn from. */
 sealed class Item(val key: String)
-/** [images] are base64 as the message carried them; a screen decodes them only to show them. */
+/** [images] are references: a screen fetches each from the Orb, at the size it shows it (Session.image). */
 class You(key: String, val text: String, val via: String? = null, val images: List<String> = emptyList()) : Item(key)
 class Said(key: String) : Item(key) {
     var text by mutableStateOf("")
@@ -150,7 +150,7 @@ class Transcript {
         }
         fun thinking(c: Any?): String = (c as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.takeIf { p -> p.optString("type") == "thinking" }?.optString("thinking") }.joinToString("") } ?: ""
         fun content(r: JSONObject?): String = text(r?.opt("content"))
-        fun images(c: Any?): List<String> = (c as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.takeIf { p -> p.optString("type") == "image" }?.optString("data")?.ifEmpty { null } } }.orEmpty()
+        fun images(c: Any?): List<String> = (c as? JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.takeIf { p -> p.optString("type") == "image" }?.optString("ref")?.ifEmpty { null } } }.orEmpty()
         private val SKILL = Regex("""(?s)^<skill name="([^"]+)" location="[^"]+">\n.*?\n</skill>(?:\n\n(.+))?$""")
         /** A message that invoked skills, as it was typed: their tokens in place (exporthtml.InvocationText). */
         fun invocation(raw: String): String {

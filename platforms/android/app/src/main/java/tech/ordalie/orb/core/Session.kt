@@ -250,10 +250,14 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         }
     }
     fun steer(text: String) { transcript.sent += text; call("steer", execution(JSONObject().put("text", invoking(text)))); transcript.waiting(steer = true) }
-    /** What `@query` completes to on the Orb, as in the TUI: its skills, then the files in its folder. An older Orb offers none. */
-    suspend fun complete(query: String): List<Completion> =
-        remote("instances.call", JSONObject().put("instance_id", instance).put("service", "orb.instance/1").put("method", "complete").put("args", JSONObject().put("query", query)))
-            .optJSONObject("result")?.optJSONArray("items")?.let { a -> (0 until a.length()).map(a::getJSONObject).map { Completion(it.optString("text"), it.optString("label"), it.optString("detail")) } }.orEmpty()
+    /** What `@query` completes to on the Orb, as in the TUI: its skills, then the files in its folder. */
+    suspend fun complete(query: String): List<Completion> = read("complete", JSONObject().put("query", query))
+        ?.optJSONArray("items")?.let { a -> (0 until a.length()).map(a::getJSONObject).map { Completion(it.optString("text"), it.optString("label"), it.optString("detail")) } }.orEmpty()
+    /** An image the conversation carried, fitted by the Orb within [px], as base64; null once it no longer keeps it. */
+    suspend fun image(ref: String, px: Int): String? = read("image", JSONObject().put("ref", ref).put("size", px))?.optString("data")?.ifEmpty { null }
+    /** A read-only instance call, answered at once. */
+    private suspend fun read(method: String, args: JSONObject) =
+        remote("instances.call", JSONObject().put("instance_id", instance).put("service", "orb.instance/1").put("method", method).put("args", args)).optJSONObject("result")
     fun abort() = call("cancel", execution())
     fun answer(value: String?) {
         val a = ask ?: return

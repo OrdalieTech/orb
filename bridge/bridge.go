@@ -625,7 +625,7 @@ func (b *Bridge) Close() error {
 
 func permission(method string) string {
 	switch method {
-	case "inspect":
+	case "inspect", "image": // an image the conversation carried is part of what inspection reads
 		return "instance.inspect"
 	case "session.list", "session.new", "session.switch", "session.fork", "session.model", "session.name", "session.compact":
 		return "instance.session.manage"

@@ -8,6 +8,8 @@ shown by `/changelog`.
 - A Bridge instance answers what `@` completes to (`complete`: its skills, then the files in its
   folder, as the TUI offers them; a folder listing where fd cannot run) and describes its
   provider's plan limits (`usage`: Claude from each turn, Codex and OpenCode Go read behind it).
+  Images travel by reference: events and snapshots name each one, and a client fetches it fitted
+  to the size it shows (`image`), so a screenshot no longer outgrows a frame or rides every reload.
 - The Android app swipes between Home and its tabs, keeps the conversations seen last streaming
   off screen (as many as its memory allows), completes `@` like the TUI, shows the plan window
   nearest its limit beside the context (all windows and their resets a tap away), shows the images

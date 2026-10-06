@@ -73,7 +73,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     var picker by remember { mutableStateOf<Picker?>(null) }
     var deck by remember { mutableStateOf<Session?>(null) }
     var renaming by remember { mutableStateOf<Rename?>(null) }
-    var viewing by remember { mutableStateOf<String?>(null) }
+    var viewing by remember { mutableStateOf<Pair<String, Session>?>(null) }
     // Shared text is either a Bridge invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
@@ -86,7 +86,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     // A notification asked for a conversation: show its tab.
     LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
-    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }, { picker = it }) { viewing = it }
+    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }, { picker = it }) { ref, s -> viewing = ref to s }
     Box(Modifier.fillMaxSize().background(p.bg)) {
         val top = nav.stack.last()
         Column(Modifier.fillMaxSize()) {
@@ -121,19 +121,19 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         Overlay(picker) { pk -> PickerSheet(pk) { picker = null } }
         Overlay(deck) { s -> ModelSheet(s, ctx) { deck = null } }
         Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
-        Overlay(viewing) { Viewer(it) { viewing = null } }
+        Overlay(viewing) { (ref, s) -> Viewer(ref, s) { viewing = null } }
     }
 }
 
-/** An image full screen: pinch to zoom, drag to look around, a tap closes it. */
+/** An image full screen, fetched at screen size: pinch to zoom, drag to look around, a tap closes it. */
 @Composable
-private fun Viewer(data: String, close: () -> Unit) {
+private fun Viewer(ref: String, s: Session, close: () -> Unit) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) {
         detectTransformGestures { _, move, scale, _ -> zoom = (zoom * scale).coerceIn(1f, 8f); pan = if (zoom == 1f) Offset.Zero else pan + move }
     }.press(onClick = close), contentAlignment = Alignment.Center) {
-        Picture(data, 2048, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y })
+        Picture(ref, 2048, { s.image(ref, it) }, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y })
     }
 }
 

@@ -162,26 +162,20 @@ fun Header(title: String, sub: String = "", back: () -> Unit, right: @Composable
         right()
     }
 
-/** Decoded pictures, by source and size, within an eighth of the heap; nothing is written anywhere. */
+/** Decoded pictures by reference and size, within an eighth of the heap; nothing is written anywhere. */
 private val pictures = object : LruCache<String, ImageBitmap>((java.lang.Runtime.getRuntime().maxMemory() / 8).toInt()) {
     override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
 }
 
-/** A base64 image decoded no larger than [px] on its long side; sampled down while decoding, so the full size never sits in memory. */
-private fun decode(data: String, px: Int): ImageBitmap? {
-    val key = "$px:${data.length}:${data.hashCode()}"
-    pictures.get(key)?.let { return it }
-    val bytes = runCatching { java.util.Base64.getMimeDecoder().decode(data) }.getOrNull() ?: return null
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= px) sample *= 2
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()?.also { pictures.put(key, it) }
-}
-
-/** An image, decoded off the main thread when it first comes on screen. */
+/** An image [load]ed at [px], already fitted by its Orb, when it first comes on screen; decoded off the main thread. */
 @Composable
-fun Picture(data: String, px: Int, modifier: Modifier = Modifier) {
-    val image by produceState(pictures.get("$px:${data.length}:${data.hashCode()}"), data, px) { if (value == null) value = withContext(Dispatchers.Default) { decode(data, px) } }
+fun Picture(ref: String, px: Int, load: suspend (Int) -> String?, modifier: Modifier = Modifier) {
+    val key = "$ref:$px"
+    val image by produceState(pictures.get(key), key) {
+        if (value == null) value = withContext(Dispatchers.Default) {
+            load(px)?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+        }?.also { pictures.put(key, it) }
+    }
     image?.let { Image(it, null, modifier, contentScale = ContentScale.Fit) } ?: Box(modifier.size(96.dp).background(p.raised, Soft))
 }
 
