@@ -2,6 +2,7 @@ package claudesessions
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -59,7 +60,11 @@ func TestNativeActivityOutlivesToolAndParentTurn(t *testing.T) {
 		t.Fatal(got)
 	}
 	send(`{"type":"system","subtype":"task_notification","task_id":"fg","status":"failed"}`)
-	if got := store.Snapshot()[0]; got.State != work.Failed {
+	// Both tasks are finished now, ordered by when they were last updated,
+	// which a coarse clock (Windows) can stamp alike: find the process.
+	got := store.Snapshot()
+	at := slices.IndexFunc(got, func(r work.Record) bool { return r.Kind == work.Process })
+	if at < 0 || got[at].State != work.Failed {
 		t.Fatal(got)
 	}
 }
