@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
@@ -40,25 +40,12 @@ func MigrateAuthToAuthJSON(agentDir string) ([]string, error) {
 	settingsPath := filepath.Join(agentDir, "settings.json")
 	if contents, err := os.ReadFile(settingsPath); err == nil {
 		if normalized, normalizeErr := ai.NormalizeJSONStringifyJSON(contents); normalizeErr == nil {
-			order, settings, parseErr := parseOrderedRawObject(normalized)
-			if raw, exists := settings["apiKeys"]; parseErr == nil && exists {
-				keyOrder, keys, keysErr := parseOrderedRawObject(raw)
-				if keysErr == nil {
-					for _, provider := range keyOrder {
-						var key string
-						if json.Unmarshal(keys[provider], &key) != nil {
-							continue
-						}
-						if _, exists := document.credentials[provider]; exists {
-							continue
-						}
-						document.order = append(document.order, provider)
-						document.credentials[provider] = aiauth.APIKeyCredential(key)
-						migrated = append(migrated, provider)
-					}
-					delete(settings, "apiKeys")
-					order = removeOrderedName(order, "apiKeys")
-					encoded, marshalErr := marshalOrderedRawObject(order, settings)
+			settings, _ := jsonwire.ParseRawObject(normalized)
+			if raw, exists := settings.Get("apiKeys"); exists {
+				if added, ok := addLegacyAPIKeys(&document, raw); ok {
+					migrated = append(migrated, added...)
+					settings.Delete("apiKeys")
+					encoded, marshalErr := marshalStringifiedObject(settings)
 					if marshalErr == nil {
 						// settings.json already exists, so WriteFile preserves
 						// its mode just like upstream writeFileSync.
@@ -85,64 +72,10 @@ func MigrateAuthToAuthJSON(agentDir string) ([]string, error) {
 	return migrated, nil
 }
 
-func parseOrderedRawObject(data []byte) ([]string, map[string]json.RawMessage, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, nil, err
-	}
-	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
-		return nil, nil, errors.New("expected JSON object")
-	}
-	order := make([]string, 0)
-	members := make(map[string]json.RawMessage)
-	for decoder.More() {
-		key, err := decoder.Token()
-		if err != nil {
-			return nil, nil, err
-		}
-		name, ok := key.(string)
-		if !ok {
-			return nil, nil, errors.New("expected JSON object key")
-		}
-		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil {
-			return nil, nil, err
-		}
-		if _, exists := members[name]; !exists {
-			order = append(order, name)
-		}
-		members[name] = raw
-	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, nil, err
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, nil, errors.New("multiple JSON values")
-		}
-		return nil, nil, err
-	}
-	return order, members, nil
-}
-
-func marshalOrderedRawObject(order []string, members map[string]json.RawMessage) ([]byte, error) {
-	var compact bytes.Buffer
-	compact.WriteByte('{')
-	for index, name := range order {
-		if index > 0 {
-			compact.WriteByte(',')
-		}
-		encodedName, err := json.Marshal(name)
-		if err != nil {
-			return nil, err
-		}
-		compact.Write(encodedName)
-		compact.WriteByte(':')
-		compact.Write(members[name])
-	}
-	compact.WriteByte('}')
-	normalized, err := ai.NormalizeJSONStringifyJSON(compact.Bytes())
+// marshalStringifiedObject writes object as JSON.stringify(object, null, 2).
+func marshalStringifiedObject(object jsonwire.RawObject) ([]byte, error) {
+	compact, _ := object.MarshalJSON()
+	normalized, err := ai.NormalizeJSONStringifyJSON(compact)
 	if err != nil {
 		return nil, err
 	}
@@ -153,13 +86,21 @@ func marshalOrderedRawObject(order []string, members map[string]json.RawMessage)
 	return indented.Bytes(), nil
 }
 
-func removeOrderedName(order []string, name string) []string {
-	for index, candidate := range order {
-		if candidate == name {
-			return append(order[:index], order[index+1:]...)
+// addLegacyAPIKeys adds the string members of the legacy settings apiKeys
+// object raw that document has no credential for, returning their providers;
+// ok is false when raw is not a JSON object.
+func addLegacyAPIKeys(document *authDocument, raw json.RawMessage) (added []string, ok bool) {
+	keys, ok := jsonwire.ParseRawObject(raw)
+	for _, member := range keys {
+		var key string
+		if _, exists := document.credentials[member.Name]; exists || json.Unmarshal(member.Value, &key) != nil {
+			continue
 		}
+		document.order = append(document.order, member.Name)
+		document.credentials[member.Name] = aiauth.APIKeyCredential(key)
+		added = append(added, member.Name)
 	}
-	return order
+	return added, ok
 }
 
 func parseLegacyOAuth(data []byte) (authDocument, error) {
@@ -232,25 +173,13 @@ func MigrateAuthDocuments(ctx context.Context, auth, settings, oauth host.Docume
 			return nil, err
 		}
 		if len(data) > 0 {
-			_, members, err := parseOrderedRawObject(data)
-			if err != nil {
-				return nil, err
+			settings, ok := jsonwire.ParseRawObject(data)
+			if !ok {
+				return nil, errors.New("settings.json is not a JSON object")
 			}
-			if raw := members["apiKeys"]; len(raw) > 0 {
-				order, keys, err := parseOrderedRawObject(raw)
-				if err != nil {
-					return nil, err
-				}
-				for _, provider := range order {
-					if _, exists := result.credentials[provider]; exists {
-						continue
-					}
-					var key string
-					if json.Unmarshal(keys[provider], &key) != nil {
-						continue
-					}
-					result.order = append(result.order, provider)
-					result.credentials[provider] = aiauth.APIKeyCredential(key)
+			if raw, _ := settings.Get("apiKeys"); len(raw) > 0 {
+				if _, ok := addLegacyAPIKeys(&result, raw); !ok {
+					return nil, errors.New("settings.json apiKeys is not a JSON object")
 				}
 			}
 		}

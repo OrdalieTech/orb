@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -15,110 +14,25 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
-type settingsMember struct {
-	name  string
-	value json.RawMessage
-}
-
-type settingsObject []settingsMember
-
-func parseSettingsObject(data []byte) (settingsObject, error) {
+func parseSettingsObject(data []byte) (jsonwire.RawObject, error) {
 	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	if len(bytes.TrimSpace(data)) == 0 {
-		return settingsObject{}, nil
+		return jsonwire.RawObject{}, nil
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+	object, ok := jsonwire.ParseRawObject(data)
+	if !ok {
 		return nil, errors.New("settings must be a JSON object")
-	}
-	object := settingsObject{}
-	for decoder.More() {
-		nameStart := decoder.InputOffset()
-		if _, err := decoder.Token(); err != nil {
-			return nil, err
-		}
-		name, err := jsonwire.UnmarshalStringToken(data[nameStart:decoder.InputOffset()])
-		if err != nil {
-			return nil, err
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-		object = object.set(name, value)
-	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, err
-	}
-	var extra json.RawMessage
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, errors.New("settings contain multiple JSON values")
-		}
-		return nil, err
 	}
 	return object, nil
 }
 
-func (object settingsObject) get(name string) (json.RawMessage, bool) {
-	for _, member := range object {
-		if member.name == name {
-			return append(json.RawMessage(nil), member.value...), true
-		}
-	}
-	return nil, false
-}
-
-func (object settingsObject) set(name string, value json.RawMessage) settingsObject {
-	value = append(json.RawMessage(nil), value...)
-	for index := range object {
-		if object[index].name == name {
-			object[index].value = value
-			return object
-		}
-	}
-	return append(object, settingsMember{name: name, value: value})
-}
-
-func (object settingsObject) delete(name string) settingsObject {
-	for index := range object {
-		if object[index].name == name {
-			return append(object[:index], object[index+1:]...)
-		}
-	}
-	return object
-}
-
-func (object settingsObject) marshalIndented() ([]byte, error) {
-	var compact bytes.Buffer
-	compact.WriteByte('{')
-	for index, member := range object {
-		if index > 0 {
-			compact.WriteByte(',')
-		}
-		name, err := jsonwire.MarshalString(member.name)
-		if err != nil {
-			return nil, err
-		}
-		compact.Write(name)
-		compact.WriteByte(':')
-		if len(member.value) == 0 {
-			compact.WriteString("null")
-		} else {
-			compact.Write(member.value)
-		}
-	}
-	compact.WriteByte('}')
+// indentSettings lays object out as JSON.stringify(object, null, 2) does,
+// keeping each value's number and string spelling.
+func indentSettings(object jsonwire.RawObject) ([]byte, error) {
+	compact, _ := object.MarshalJSON()
 	var output bytes.Buffer
-	if err := json.Indent(&output, compact.Bytes(), "", "  "); err != nil {
-		return nil, err
-	}
-	return output.Bytes(), nil
+	err := json.Indent(&output, compact, "", "  ")
+	return output.Bytes(), err
 }
 
 func encodeSetting(value any) (json.RawMessage, error) {
@@ -126,14 +40,15 @@ func encodeSetting(value any) (json.RawMessage, error) {
 	return json.RawMessage(encoded), err
 }
 
-func migrateSettingsObject(object settingsObject) (settingsObject, error) {
-	if queueMode, exists := object.get("queueMode"); exists {
-		if _, hasSteeringMode := object.get("steeringMode"); !hasSteeringMode {
-			object = object.set("steeringMode", queueMode).delete("queueMode")
+func migrateSettingsObject(object jsonwire.RawObject) (jsonwire.RawObject, error) {
+	if queueMode, exists := object.Get("queueMode"); exists {
+		if _, hasSteeringMode := object.Get("steeringMode"); !hasSteeringMode {
+			object.Set("steeringMode", queueMode)
+			object.Delete("queueMode")
 		}
 	}
-	if websockets, exists := object.get("websockets"); exists {
-		if _, hasTransport := object.get("transport"); !hasTransport {
+	if websockets, exists := object.Get("websockets"); exists {
+		if _, hasTransport := object.Get("transport"); !hasTransport {
 			var enabled bool
 			if json.Unmarshal(websockets, &enabled) == nil {
 				transport := "sse"
@@ -144,56 +59,57 @@ func migrateSettingsObject(object settingsObject) (settingsObject, error) {
 				if err != nil {
 					return nil, err
 				}
-				object = object.set("transport", encoded).delete("websockets")
+				object.Set("transport", encoded)
+				object.Delete("websockets")
 			}
 		}
 	}
-	if skillsRaw, exists := object.get("skills"); exists {
+	if skillsRaw, exists := object.Get("skills"); exists {
 		if skills, err := parseSettingsObject(skillsRaw); err == nil {
-			if enabled, present := skills.get("enableSkillCommands"); present {
-				if _, alreadySet := object.get("enableSkillCommands"); !alreadySet {
-					object = object.set("enableSkillCommands", enabled)
+			if enabled, present := skills.Get("enableSkillCommands"); present {
+				if _, alreadySet := object.Get("enableSkillCommands"); !alreadySet {
+					object.Set("enableSkillCommands", enabled)
 				}
 			}
 			var directories []json.RawMessage
-			customDirectories, present := skills.get("customDirectories")
+			customDirectories, present := skills.Get("customDirectories")
 			if present && json.Unmarshal(customDirectories, &directories) == nil && len(directories) > 0 {
-				object = object.set("skills", customDirectories)
+				object.Set("skills", customDirectories)
 			} else {
-				object = object.delete("skills")
+				object.Delete("skills")
 			}
 		}
 	}
-	if retryRaw, exists := object.get("retry"); exists {
+	if retryRaw, exists := object.Get("retry"); exists {
 		if retry, err := parseSettingsObject(retryRaw); err == nil {
-			if delay, hasDelay := retry.get("maxDelayMs"); hasDelay && json.Valid(delay) {
+			if delay, hasDelay := retry.Get("maxDelayMs"); hasDelay && json.Valid(delay) {
 				var numeric json.Number
 				decoder := json.NewDecoder(bytes.NewReader(delay))
 				decoder.UseNumber()
 				if decoder.Decode(&numeric) == nil {
-					provider := settingsObject{}
-					if raw, hasProvider := retry.get("provider"); hasProvider {
+					provider := jsonwire.RawObject{}
+					if raw, hasProvider := retry.Get("provider"); hasProvider {
 						if decoded, decodeErr := parseSettingsObject(raw); decodeErr == nil {
 							provider = decoded
 						}
 					}
-					current, hasCurrent := provider.get("maxRetryDelayMs")
+					current, hasCurrent := provider.Get("maxRetryDelayMs")
 					if !hasCurrent || bytes.Equal(bytes.TrimSpace(current), []byte("null")) {
-						provider = provider.set("maxRetryDelayMs", delay)
-						encoded, encodeErr := provider.marshalIndented()
+						provider.Set("maxRetryDelayMs", delay)
+						encoded, encodeErr := indentSettings(provider)
 						if encodeErr != nil {
 							return nil, encodeErr
 						}
-						retry = retry.set("provider", encoded)
+						retry.Set("provider", encoded)
 					}
 				}
 			}
-			retry = retry.delete("maxDelayMs")
-			encoded, encodeErr := retry.marshalIndented()
+			retry.Delete("maxDelayMs")
+			encoded, encodeErr := indentSettings(retry)
 			if encodeErr != nil {
 				return nil, encodeErr
 			}
-			object = object.set("retry", encoded)
+			object.Set("retry", encoded)
 		}
 	}
 	return object, nil
@@ -211,13 +127,13 @@ func authFile(path string) host.Document {
 	return filelock.File{Path: path, Perm: 0o600, Stale: filelock.AsyncStale}
 }
 
-func writeGlobalSettings(path string, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
+func writeGlobalSettings(path string, values jsonwire.RawObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
 	return fileDocument(path, 0o644).Update(context.Background(), func(current []byte) ([]byte, error) {
 		return updatedSettings(current, values, nestedField, nestedKey, nestedValue)
 	})
 }
 
-func updatedSettings(current []byte, values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) ([]byte, error) {
+func updatedSettings(current []byte, values jsonwire.RawObject, nestedField, nestedKey string, nestedValue json.RawMessage) ([]byte, error) {
 	object, err := parseSettingsObject(current)
 	if err != nil {
 		return nil, err
@@ -227,11 +143,11 @@ func updatedSettings(current []byte, values settingsObject, nestedField, nestedK
 		return nil, err
 	}
 	for _, value := range values {
-		object = object.set(value.name, value.value)
+		object.Set(value.Name, value.Value)
 	}
 	if nestedField != "" {
-		raw, exists := object.get(nestedField)
-		nested := settingsObject{}
+		raw, exists := object.Get(nestedField)
+		nested := jsonwire.RawObject{}
 		if exists {
 			if decoded, decodeErr := parseSettingsObject(raw); decodeErr == nil {
 				nested = decoded
@@ -240,24 +156,24 @@ func updatedSettings(current []byte, values settingsObject, nestedField, nestedK
 		// A nil nestedValue deletes the key; an emptied object drops the
 		// whole field rather than leaving "{}" behind.
 		if nestedValue == nil {
-			nested = nested.delete(nestedKey)
+			nested.Delete(nestedKey)
 		} else {
-			nested = nested.set(nestedKey, nestedValue)
+			nested.Set(nestedKey, nestedValue)
 		}
 		if len(nested) == 0 {
-			object = object.delete(nestedField)
+			object.Delete(nestedField)
 		} else {
-			raw, err = nested.marshalIndented()
+			raw, err = indentSettings(nested)
 			if err != nil {
 				return nil, err
 			}
-			object = object.set(nestedField, raw)
+			object.Set(nestedField, raw)
 		}
 	}
-	return object.marshalIndented()
+	return indentSettings(object)
 }
 
-func (manager *SettingsManager) writeGlobalSettings(values settingsObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
+func (manager *SettingsManager) writeGlobalSettings(values jsonwire.RawObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
 	if manager.globalDocument == nil {
 		return writeGlobalSettings(manager.globalPath, values, nestedField, nestedKey, nestedValue)
 	}
@@ -270,10 +186,10 @@ func (manager *SettingsManager) writeGlobalSettings(values settingsObject, neste
 // setter that reported the new value while the file still held the old one
 // left the manager permanently disagreeing with disk, and the void signature
 // makes DrainErrors the only place a caller ever learns of the failure.
-func (manager *SettingsManager) setGlobalValues(values ...settingsMember) {
+func (manager *SettingsManager) setGlobalValues(values ...jsonwire.RawMember) {
 	decoded := make([]any, len(values))
 	for index, value := range values {
-		decoder := json.NewDecoder(bytes.NewReader(value.value))
+		decoder := json.NewDecoder(bytes.NewReader(value.Value))
 		decoder.UseNumber()
 		if err := decoder.Decode(&decoded[index]); err != nil {
 			panic(fmt.Sprintf("config: invalid setting value: %v", err))
@@ -282,13 +198,13 @@ func (manager *SettingsManager) setGlobalValues(values ...settingsMember) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if !manager.globalLoadError {
-		if err := manager.writeGlobalSettings(settingsObject(values), "", "", nil); err != nil {
+		if err := manager.writeGlobalSettings(jsonwire.RawObject(values), "", "", nil); err != nil {
 			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 			return
 		}
 	}
 	for index, value := range values {
-		manager.global[value.name] = decoded[index]
+		manager.global[value.Name] = decoded[index]
 	}
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
@@ -317,12 +233,12 @@ func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
 	manager.effective = mergeSettings(manager.global, manager.project)
 }
 
-func settingMember(name string, value any) settingsMember {
+func settingMember(name string, value any) jsonwire.RawMember {
 	raw, err := encodeSetting(value)
 	if err != nil {
 		panic(fmt.Sprintf("config: invalid setting value: %v", err))
 	}
-	return settingsMember{name: name, value: raw}
+	return jsonwire.RawMember{Name: name, Value: raw}
 }
 
 func (manager *SettingsManager) SetDefaultModelAndProvider(provider, modelID string) {

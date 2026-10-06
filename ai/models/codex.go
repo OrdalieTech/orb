@@ -80,9 +80,10 @@ func RefreshCodex(ctx context.Context, options RefreshOptions, token, accountID 
 		documents = append(documents, options.StoreDocument)
 	}
 	return updateStore(options.StorePath, documents, func(stored *orderedStore) {
-		if entry, ok := stored.entries["openai-codex"]; ok {
+		if entry, ok := stored.Value("openai-codex"); ok {
+			entry := entry.(storedProvider)
 			entry.Models = models
-			stored.entries["openai-codex"] = entry
+			stored.Set("openai-codex", entry)
 		}
 	})
 }

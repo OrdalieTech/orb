@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Package settings surface of upstream settings-manager.ts.
@@ -138,13 +140,13 @@ func encodePackageSources(sources []PackageSource) (json.RawMessage, error) {
 			entries = append(entries, encoded)
 			continue
 		}
-		object := settingsObject{}
+		object := jsonwire.RawObject{}
 		appendMember := func(name string, value any) error {
 			encoded, err := encodeSetting(value)
 			if err != nil {
 				return err
 			}
-			object = object.set(name, encoded)
+			object.Set(name, encoded)
 			return nil
 		}
 		if err := appendMember("source", source.Source); err != nil {
@@ -166,7 +168,7 @@ func encodePackageSources(sources []PackageSource) (json.RawMessage, error) {
 				return nil, err
 			}
 		}
-		encoded, err := object.marshalIndented()
+		encoded, err := indentSettings(object)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +208,7 @@ func (manager *SettingsManager) SetPackages(sources []PackageSource) error {
 	if err != nil {
 		return err
 	}
-	manager.setGlobalValues(settingsMember{name: "packages", value: raw})
+	manager.setGlobalValues(jsonwire.RawMember{Name: "packages", Value: raw})
 	return nil
 }
 
@@ -227,7 +229,7 @@ func (manager *SettingsManager) SetProjectPackages(sources []PackageSource) erro
 	if manager.projectLoadError {
 		return nil
 	}
-	if err := writeGlobalSettings(manager.projectPath, settingsObject{{name: "packages", value: raw}}, "", "", nil); err != nil {
+	if err := writeGlobalSettings(manager.projectPath, jsonwire.RawObject{{Name: "packages", Value: raw}}, "", "", nil); err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: ProjectSettings, Err: err})
 	}
 	return nil
@@ -276,7 +278,7 @@ func (manager *SettingsManager) setProjectResourcePaths(key string, paths []stri
 	if manager.projectLoadError {
 		return nil
 	}
-	if err := writeGlobalSettings(manager.projectPath, settingsObject{{name: key, value: raw}}, "", "", nil); err != nil {
+	if err := writeGlobalSettings(manager.projectPath, jsonwire.RawObject{{Name: key, Value: raw}}, "", "", nil); err != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: ProjectSettings, Err: err})
 	}
 	return nil

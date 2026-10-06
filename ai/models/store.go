@@ -1,7 +1,6 @@
 package models
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,35 +37,10 @@ type storedProvider struct {
 	ETag         string `json:"etag,omitempty"`
 }
 
-type orderedStore struct {
-	order   []string
-	entries map[string]storedProvider
-}
-
-// MarshalJSON keeps upstream's JSON.stringify member order; jsonwire leaves
-// <, >, and & literal where encoding/json would HTML-escape them.
-func (store orderedStore) MarshalJSON() ([]byte, error) {
-	var output bytes.Buffer
-	output.WriteByte('{')
-	for index, providerID := range store.order {
-		if index > 0 {
-			output.WriteByte(',')
-		}
-		key, err := jsonwire.Marshal(providerID)
-		if err != nil {
-			return nil, err
-		}
-		value, err := jsonwire.Marshal(store.entries[providerID])
-		if err != nil {
-			return nil, err
-		}
-		output.Write(key)
-		output.WriteByte(':')
-		output.Write(value)
-	}
-	output.WriteByte('}')
-	return output.Bytes(), nil
-}
+// orderedStore keeps upstream's JSON.stringify member order, each value a
+// storedProvider; jsonwire leaves <, >, and & literal where encoding/json
+// would HTML-escape them.
+type orderedStore = jsonwire.OrderedObject
 
 // LoadStore restores the provider-scoped models-store.json overlay. Entries
 // for providers bundled in the builtin catalog lose to a newer builtin: the
@@ -319,9 +293,9 @@ func storeValidator(path string, documents ...document.Document) (string, bool) 
 	}
 	builtin := builtinProviderIDs()
 	hasStoredCatalog := false
-	for _, providerID := range stored.order {
-		entry := stored.entries[providerID]
-		if !builtin[providerID] {
+	for _, member := range stored {
+		entry := member.Value.(storedProvider)
+		if !builtin[member.Name] {
 			continue
 		}
 		hasStoredCatalog = true
@@ -367,7 +341,7 @@ func updateStore(path string, documents []document.Document, change func(*ordere
 
 func updateOrderedStore(ctx context.Context, store document.Document, change func(*orderedStore)) error {
 	return store.Update(ctx, func(data []byte) ([]byte, error) {
-		stored := orderedStore{entries: make(map[string]storedProvider)}
+		stored := orderedStore{}
 		var err error
 		if len(data) > 0 {
 			stored, err = decodeOrderedStore(data)
@@ -390,7 +364,8 @@ func ReadStoreEntry(ctx context.Context, store document.Document, providerID str
 		return nil, err
 	}
 	stored, err := decodeOrderedStore(data)
-	if entry, ok := stored.entries[providerID]; ok && err == nil {
+	if entry, ok := stored.Value(providerID); ok && err == nil {
+		entry := entry.(storedProvider)
 		return &entry, nil
 	}
 	return nil, err
@@ -400,16 +375,10 @@ func ReadStoreEntry(ctx context.Context, store document.Document, providerID str
 // nil deletes it. Other entries keep their order and fields.
 func WriteStoreEntry(ctx context.Context, store document.Document, providerID string, entry *StoreEntry) error {
 	return updateOrderedStore(ctx, store, func(stored *orderedStore) {
-		_, exists := stored.entries[providerID]
-		switch {
-		case entry == nil:
-			delete(stored.entries, providerID)
-			stored.order = slices.DeleteFunc(stored.order, func(id string) bool { return id == providerID })
-		case !exists:
-			stored.order = append(stored.order, providerID)
-			fallthrough
-		default:
-			stored.entries[providerID] = *entry
+		if entry == nil {
+			stored.Delete(providerID)
+		} else {
+			stored.Set(providerID, *entry)
 		}
 	})
 }
@@ -422,10 +391,7 @@ func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModi
 		}
 		slices.Sort(providerIDs)
 		for _, id := range providerIDs {
-			if _, exists := stored.entries[id]; !exists {
-				stored.order = append(stored.order, id)
-			}
-			stored.entries[id] = storedProvider{Models: catalog.Models(id), CheckedAt: checkedAt, LastModified: ptr.Clone(lastModified), ETag: etag}
+			stored.Set(id, storedProvider{Models: catalog.Models(id), CheckedAt: checkedAt, LastModified: ptr.Clone(lastModified), ETag: etag})
 		}
 	})
 }
@@ -438,9 +404,9 @@ func stampStoreResponse(path string, checkedAt int64, unavailable bool, document
 		}
 		slices.Sort(ids)
 		for _, id := range ids {
-			entry, exists := stored.entries[id]
+			value, exists := stored.Value(id)
+			entry, _ := value.(storedProvider)
 			if !exists {
-				stored.order = append(stored.order, id)
 				entry.Models = []ai.Model{}
 			}
 			entry.CheckedAt = checkedAt
@@ -448,7 +414,7 @@ func stampStoreResponse(path string, checkedAt int64, unavailable bool, document
 				entry.LastModified = timestamp(0)
 				entry.ETag = ""
 			}
-			stored.entries[id] = entry
+			stored.Set(id, entry)
 		}
 	})
 }
@@ -456,39 +422,17 @@ func stampStoreResponse(path string, checkedAt int64, unavailable bool, document
 func timestamp(value int64) *int64 { return &value }
 
 func decodeOrderedStore(data []byte) (orderedStore, error) {
-	store := orderedStore{entries: make(map[string]storedProvider)}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	token, err := decoder.Token()
-	if err != nil {
-		return store, err
+	object, ok := jsonwire.ParseRawObject(data)
+	if !ok {
+		return nil, errors.New("model store must be a JSON object")
 	}
-	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
-		return store, errors.New("model store must be an object")
-	}
-	for decoder.More() {
-		providerID, err := decoder.Token()
-		if err != nil {
-			return store, err
-		}
+	store := make(orderedStore, 0, len(object))
+	for _, member := range object {
 		var entry storedProvider
-		if err := decoder.Decode(&entry); err != nil {
-			return store, err
+		if err := json.Unmarshal(member.Value, &entry); err != nil {
+			return nil, err
 		}
-		id := providerID.(string)
-		if _, exists := store.entries[id]; !exists {
-			store.order = append(store.order, id)
-		}
-		store.entries[id] = entry
-	}
-	if _, err := decoder.Token(); err != nil {
-		return store, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			err = errors.New("trailing model store content")
-		}
-		return store, err
+		store = append(store, jsonwire.OrderedMember{Name: member.Name, Value: entry})
 	}
 	return store, nil
 }
