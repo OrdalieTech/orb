@@ -38,7 +38,7 @@ homebrew_casks:
 checksum:
   name_template: checksums.txt
 # checksums.txt.sig: raw Ed25519 over checksums.txt, which `orb update` checks against the key built
-# into the binary (releaseKey in cmd/orb/self_update.go).
+# into the binary (releaseKey in platforms/native/selfupdate).
 signs:
   - artifacts: checksum
     cmd: openssl
