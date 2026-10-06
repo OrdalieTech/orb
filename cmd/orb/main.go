@@ -216,7 +216,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if dependencies.selectMissingSessionCWD == nil {
 		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *agent.MissingSessionCWDError) (string, bool, error) {
 			return modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{
-				Title: formatMissingSessionCWDPrompt(issue),
+				Title: modes.MissingSessionCWDPrompt(issue),
 				Choices: []modes.StartupChoice{
 					{Label: "Continue", Value: issue.FallbackCWD},
 					{Label: "Cancel", Cancel: true},

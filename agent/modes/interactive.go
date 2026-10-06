@@ -3185,7 +3185,7 @@ func (mode *InteractiveMode) resumeSelectedSession(path string) {
 	ctx := context.Background()
 	result, err := mode.options.Host.SwitchSession(ctx, path, "", nil)
 	if err != nil {
-		var missingCWD *MissingSessionCwdError
+		var missingCWD *agent.MissingSessionCWDError
 		if !errors.As(err, &missingCWD) {
 			mode.showError(err)
 			return
@@ -3239,7 +3239,7 @@ func (mode *InteractiveMode) handleImportCommand(text string) {
 		ctx := context.Background()
 		result, err := mode.options.Host.ImportSession(ctx, path, "")
 		if err != nil {
-			var missingCWD *MissingSessionCwdError
+			var missingCWD *agent.MissingSessionCWDError
 			if !errors.As(err, &missingCWD) {
 				mode.showError(err)
 				return
@@ -3267,8 +3267,8 @@ func (mode *InteractiveMode) handleImportCommand(text string) {
 	}()
 }
 
-func (mode *InteractiveMode) promptForMissingSessionCwd(ctx context.Context, err *MissingSessionCwdError) (string, bool, error) {
-	confirmed, confirmErr := mode.interactiveUI.Confirm(ctx, "Session cwd not found", formatMissingSessionCwdPrompt(err), nil)
+func (mode *InteractiveMode) promptForMissingSessionCwd(ctx context.Context, err *agent.MissingSessionCWDError) (string, bool, error) {
+	confirmed, confirmErr := mode.interactiveUI.Confirm(ctx, "Session cwd not found", MissingSessionCWDPrompt(err), nil)
 	if confirmErr != nil || !confirmed {
 		return "", confirmed, confirmErr
 	}

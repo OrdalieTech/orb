@@ -104,10 +104,8 @@ type InteractiveAuthOptions struct {
 	Logout []InteractiveAuthProvider
 }
 
-// MissingSessionCwdError reports a session whose stored cwd no longer exists;
-// the TUI prompts for a cwd override and retries.
-type MissingSessionCwdError = agent.MissingSessionCWDError
-
-func formatMissingSessionCwdPrompt(err *MissingSessionCwdError) string {
+// MissingSessionCWDPrompt asks whether to continue a session whose stored cwd
+// no longer exists in the fallback cwd.
+func MissingSessionCWDPrompt(err *agent.MissingSessionCWDError) string {
 	return "cwd from session file does not exist\n" + err.SessionCWD + "\n\ncontinue in current cwd\n" + err.FallbackCWD
 }

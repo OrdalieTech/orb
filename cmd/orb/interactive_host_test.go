@@ -382,7 +382,7 @@ func TestInteractiveHostSwitchSessionRestoresModelAndRollsBackMissingCwd(t *test
 	_, err = host.SwitchSession(context.Background(), missingFile, "", nil)
 	var missingErr *agent.MissingSessionCWDError
 	if !errors.As(err, &missingErr) {
-		t.Fatalf("expected MissingSessionCwdError, got %v", err)
+		t.Fatalf("expected agent.MissingSessionCWDError, got %v", err)
 	}
 	if !strings.HasPrefix(err.Error(), "Stored session working directory does not exist: ") || !strings.Contains(err.Error(), "Current working directory: ") {
 		t.Fatalf("error text = %q", err.Error())

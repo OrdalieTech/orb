@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/agent/session"
@@ -215,10 +214,6 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 		return nil, session.SessionContext{}, err
 	}
 	return manager, manager.BuildSessionContext(), nil
-}
-
-func formatMissingSessionCWDPrompt(issue *agent.MissingSessionCWDError) string {
-	return "cwd from session file does not exist\n" + issue.SessionCWD + "\n\ncontinue in current cwd\n" + issue.FallbackCWD
 }
 
 func resolveSessionArgument(argument, cwd, sessionDir, agentDir string) (resolvedSession, error) {
