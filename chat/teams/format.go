@@ -153,7 +153,7 @@ func chunkText(text string, limit int) []string {
 				pieceBudget = 1
 			}
 		}
-		for _, piece := range splitLongLine(line, pieceBudget) {
+		for _, piece := range runechunk.SplitLine(line, pieceBudget, utf16.RuneLen, false) {
 			need := runechunk.LenUTF16(piece)
 			// Each flush either empties current or strictly shrinks it, so
 			// this loop terminates.
@@ -181,50 +181,4 @@ func chunkText(text string, limit int) []string {
 	}
 	emit(current)
 	return chunks
-}
-
-func splitLongLine(line string, limit int) []string {
-	if runechunk.LenUTF16(line) <= limit {
-		return []string{line}
-	}
-	var pieces []string
-	for runechunk.LenUTF16(line) > limit {
-		cut := cutIndex(line, limit)
-		pieces = append(pieces, strings.TrimRight(line[:cut], " "))
-		line = strings.TrimLeft(line[cut:], " ")
-	}
-	if line != "" {
-		pieces = append(pieces, line)
-	}
-	return pieces
-}
-
-func cutIndex(line string, limit int) int {
-	units := 0
-	lastSpace, lastAny := 0, 0
-	for i, r := range line {
-		width := utf16.RuneLen(r)
-		if units+width > limit {
-			break
-		}
-		units += width
-		end := i + len(string(r))
-		lastAny = end
-		if r == ' ' {
-			lastSpace = end
-		}
-	}
-	switch {
-	case lastSpace > 0:
-		return lastSpace
-	case lastAny > 0:
-		return lastAny
-	default:
-		for i := range line {
-			if i > 0 {
-				return i
-			}
-		}
-		return len(line)
-	}
 }

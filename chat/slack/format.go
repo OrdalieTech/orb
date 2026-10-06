@@ -138,7 +138,7 @@ func ChunkText(text string, limit int) []string {
 		if inFence {
 			budget = max(limit-8, 1)
 		}
-		for _, piece := range splitLongLine(line, budget) {
+		for _, piece := range runechunk.SplitLine(line, budget, func(rune) int { return 1 }, false) {
 			need := utf8.RuneCountInString(piece)
 			separator := 0
 			if len(current) > 0 {
@@ -165,32 +165,4 @@ func ChunkText(text string, limit int) []string {
 	}
 	flush()
 	return chunks
-}
-
-func splitLongLine(line string, limit int) []string {
-	runes := []rune(line)
-	if len(runes) <= limit {
-		return []string{line}
-	}
-	var pieces []string
-	for len(runes) > limit {
-		cut := limit
-		for i := limit; i > 0; i-- {
-			if runes[i-1] == ' ' {
-				cut = i
-				break
-			}
-		}
-		if piece := strings.TrimRight(string(runes[:cut]), " "); piece != "" {
-			pieces = append(pieces, piece)
-		}
-		runes = runes[cut:]
-		for len(runes) > 0 && runes[0] == ' ' {
-			runes = runes[1:]
-		}
-	}
-	if len(runes) > 0 {
-		pieces = append(pieces, string(runes))
-	}
-	return pieces
 }

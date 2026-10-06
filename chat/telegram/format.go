@@ -237,187 +237,64 @@ func preClose(lang string) string {
 // chunkBlocks packs blocks into chunks of at most limit UTF-16 code units,
 // joined by blank lines, splitting oversize blocks as needed.
 func chunkBlocks(blocks []htmlBlock, limit int) []string {
-	const separator = "\n\n"
-	separatorLen := runechunk.LenUTF16(separator)
-	var chunks []string
-	var current []string
-	currentLen := 0
-	flush := func() {
-		if len(current) > 0 {
-			chunks = append(chunks, strings.Join(current, separator))
-			current = nil
-			currentLen = 0
-		}
-	}
-	for _, block := range blocks {
-		for _, piece := range splitBlock(block, limit) {
-			need := runechunk.LenUTF16(piece)
-			if len(current) > 0 && currentLen+separatorLen+need > limit {
-				flush()
-			}
-			if len(current) > 0 {
-				currentLen += separatorLen
-			}
-			current = append(current, piece)
-			currentLen += need
-		}
-	}
-	flush()
-	return chunks
-}
-
-// splitBlock splits one block into pieces of at most limit UTF-16 code units.
-// Pre blocks split at line boundaries with the pre tags closed and reopened
-// on each side of the split.
-func splitBlock(block htmlBlock, limit int) []string {
-	if block.pre {
-		return splitPreBlock(block, limit)
-	}
-	if runechunk.LenUTF16(block.html) <= limit {
-		return []string{block.html}
-	}
 	var pieces []string
-	var current []string
-	currentLen := 0
-	flush := func() {
-		if len(current) > 0 {
-			pieces = append(pieces, strings.Join(current, "\n"))
-			current = nil
-			currentLen = 0
-		}
+	for _, block := range blocks {
+		pieces = append(pieces, splitBlock(block, limit)...)
 	}
-	for _, line := range strings.Split(block.html, "\n") {
-		for _, part := range splitLongLine(line, limit) {
-			need := runechunk.LenUTF16(part)
-			if len(current) > 0 && currentLen+1+need > limit {
-				flush()
-			}
-			if len(current) > 0 {
-				currentLen++
-			}
-			current = append(current, part)
-			currentLen += need
-		}
-	}
-	flush()
-	return pieces
+	return pack(pieces, "\n\n", limit)
 }
 
-// splitPreBlock splits a code fence at line boundaries so that every piece,
-// including its open and close tags, fits the limit.
-func splitPreBlock(block htmlBlock, limit int) []string {
+// splitBlock splits one block into pieces of at most limit UTF-16 code units
+// at line boundaries. Pre blocks keep their tags closed and reopened on each
+// side of a split.
+//
+// ponytail: hard cuts may still unbalance inline formatting tags on
+// pathological single-line input; the plain-text resend fallback covers it.
+func splitBlock(block htmlBlock, limit int) []string {
+	if !block.pre {
+		if runechunk.LenUTF16(block.html) <= limit {
+			return []string{block.html}
+		}
+		return pack(splitLines(block.html, limit), "\n", limit)
+	}
 	whole := renderPre(block.lang, block.code)
 	if runechunk.LenUTF16(whole) <= limit {
 		return []string{whole}
 	}
-	overhead := runechunk.LenUTF16(preOpen(block.lang)) + runechunk.LenUTF16(preClose(block.lang))
-	budget := max(limit-overhead, 1)
-	var pieces []string
-	var current []string
+	budget := max(limit-runechunk.LenUTF16(preOpen(block.lang)+preClose(block.lang)), 1)
+	pieces := pack(splitLines(block.code, budget), "\n", budget)
+	for i, piece := range pieces {
+		pieces[i] = renderPre(block.lang, piece)
+	}
+	return pieces
+}
+
+func splitLines(text string, limit int) []string {
+	var parts []string
+	for _, line := range strings.Split(text, "\n") {
+		parts = append(parts, runechunk.SplitLine(line, limit, utf16.RuneLen, true)...)
+	}
+	return parts
+}
+
+// pack joins pieces with sep into chunks of at most limit UTF-16 code units.
+func pack(pieces []string, sep string, limit int) []string {
+	var chunks, current []string
 	currentLen := 0
-	flush := func() {
+	for _, piece := range pieces {
+		need := runechunk.LenUTF16(piece)
+		if len(current) > 0 && currentLen+len(sep)+need > limit {
+			chunks = append(chunks, strings.Join(current, sep))
+			current, currentLen = nil, 0
+		}
 		if len(current) > 0 {
-			pieces = append(pieces, renderPre(block.lang, strings.Join(current, "\n")))
-			current = nil
-			currentLen = 0
+			currentLen += len(sep)
 		}
+		current = append(current, piece)
+		currentLen += need
 	}
-	for _, line := range strings.Split(block.code, "\n") {
-		for _, part := range splitLongLine(line, budget) {
-			need := runechunk.LenUTF16(part)
-			if len(current) > 0 && currentLen+1+need > budget {
-				flush()
-			}
-			if len(current) > 0 {
-				currentLen++
-			}
-			current = append(current, part)
-			currentLen += need
-		}
+	if len(current) > 0 {
+		chunks = append(chunks, strings.Join(current, sep))
 	}
-	flush()
-	return pieces
-}
-
-// splitLongLine cuts one line into pieces of at most limit UTF-16 code units,
-// preferring space boundaries and never cutting inside a surrogate pair or an
-// HTML tag.
-// ponytail: hard cuts may still unbalance inline formatting tags on
-// pathological single-line input; the plain-text resend fallback covers it.
-func splitLongLine(line string, limit int) []string {
-	if runechunk.LenUTF16(line) <= limit {
-		return []string{line}
-	}
-	var pieces []string
-	for runechunk.LenUTF16(line) > limit {
-		cut := cutIndex(line, limit)
-		pieces = append(pieces, strings.TrimRight(line[:cut], " "))
-		line = strings.TrimLeft(line[cut:], " ")
-	}
-	if line != "" {
-		pieces = append(pieces, line)
-	}
-	return pieces
-}
-
-// cutIndex returns the byte index to cut line at so the head fits limit
-// UTF-16 code units: the last in-budget space outside a tag or entity when
-// one exists, else the last in-budget rune boundary outside a tag or entity,
-// else any in-budget rune boundary. '&…;' escape runs are atomic like tags:
-// a cut inside one would surface as literal "amp;"-style garbage, and unlike
-// a broken tag it is not a parse-entities error, so no fallback catches it.
-func cutIndex(line string, limit int) int {
-	units := 0
-	inTag := false
-	entityLen := 0 // runes since an unclosed '&' (0 = not in an entity)
-	lastSpace, lastSafe, lastAny := 0, 0, 0
-	for i, r := range line {
-		width := utf16.RuneLen(r)
-		if units+width > limit {
-			break
-		}
-		units += width
-		end := i + len(string(r))
-		lastAny = end
-		switch r {
-		case '<':
-			inTag = true
-		case '>':
-			inTag = false
-		}
-		switch {
-		case r == '&':
-			entityLen = 1
-		case entityLen > 0:
-			entityLen++
-			// The longest escape emitted here is 6 runes ("&quot;"); a run
-			// exceeding that (or hitting a space) is a bare ampersand.
-			if r == ';' || r == ' ' || entityLen > 6 {
-				entityLen = 0
-			}
-		}
-		if !inTag && entityLen == 0 {
-			lastSafe = end
-			if r == ' ' {
-				lastSpace = end
-			}
-		}
-	}
-	switch {
-	case lastSpace > 0:
-		return lastSpace
-	case lastSafe > 0:
-		return lastSafe
-	case lastAny > 0:
-		return lastAny
-	default:
-		// A single rune wider than the limit: emit it anyway to guarantee
-		// progress.
-		for i := range line {
-			if i > 0 {
-				return i
-			}
-		}
-		return len(line)
-	}
+	return chunks
 }
