@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/qr"
+	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
 )
 
 // runBridgePair is pairing in one command: a QR code a phone photographs, then an explicit
@@ -26,7 +27,7 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 	}
 	defer func() { _ = client.Close() }()
 	var inv bridge.Invitation
-	if err = client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{fullBridgeGrant("")}}, &inv); err != nil {
+	if err = client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{bridge.FullGrant("")}}, &inv); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
 	code := bridgeInvitationCode(inv)
@@ -64,11 +65,11 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 	_, _ = fmt.Fprintln(streams.Stdout, "Paired. The device reconnects on its own from now on; orb bridge block <fingerprint> revokes it.")
 	shareOrbsOnBridge(ctx)
 	// On a server, pairing is only half the job: the Bridge has to outlive this SSH session.
-	if runtime.GOOS == "linux" && !bridgeServiceInstalled(profile) {
+	if runtime.GOOS == "linux" && !daemon.Installed(profile) {
 		if _, err := exec.LookPath("systemctl"); err == nil {
 			_, _ = fmt.Fprint(streams.Stdout, "Keep Bridge running after you log out and across reboots (systemd user service)? [Y/n] ")
 			if yes(in, true) {
-				note, err := installBridgeService(ctx, profile)
+				note, err := daemon.Install(ctx, stateFromContext(ctx).native(), profile)
 				if err != nil {
 					return reportCLIError(streams.Stderr, err)
 				}

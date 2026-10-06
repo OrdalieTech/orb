@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrdalieTech/orb/platforms/native"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 )
 
@@ -20,16 +21,16 @@ import (
 // `orb bridge service install` runs it as a systemd user service. Elsewhere Orb starts the
 // Bridge whenever it needs it, so this is Linux only.
 
-func bridgeUnitName(profile string) string {
+func UnitName(profile string) string {
 	if profile == "personal" {
 		return "orb-bridge.service"
 	}
 	return "orb-bridge-" + profile + ".service"
 }
 
-// bridgeUnit restarts a crashed Bridge but not a deliberately stopped one (`orb bridge stop`
+// unit restarts a crashed Bridge but not a deliberately stopped one (`orb bridge stop`
 // exits cleanly). It carries PATH so the Orbs it starts for peers find the owner's tools.
-func bridgeUnit(exe, profile string, env map[string]string) string {
+func unit(exe, profile string, env map[string]string) string {
 	lines := []string{"[Unit]", "Description=Orb Bridge (" + profile + ")", "Wants=network-online.target", "After=network-online.target", "",
 		"[Service]", fmt.Sprintf("ExecStart=%s bridge run --profile %s", systemdQuote(exe, true), systemdQuote(profile, true)), "Restart=on-failure", "RestartSec=2"}
 	for _, k := range []string{"PATH", "ORB_BRIDGE_HOME", "ORB_STATE_HOME"} {
@@ -50,17 +51,17 @@ func systemdQuote(s string, command bool) string {
 	return s
 }
 
-func bridgeUnitPath(profile string) (string, error) {
+func unitPath(profile string) (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "systemd", "user", bridgeUnitName(profile)), nil
+	return filepath.Join(dir, "systemd", "user", UnitName(profile)), nil
 }
 
-// bridgeServiceInstalled reports whether this profile's Bridge already runs as a user service.
-func bridgeServiceInstalled(profile string) bool {
-	path, err := bridgeUnitPath(profile)
+// Installed reports whether this profile's Bridge already runs as a user service.
+func Installed(profile string) bool {
+	path, err := unitPath(profile)
 	if err != nil {
 		return false
 	}
@@ -68,7 +69,7 @@ func bridgeServiceInstalled(profile string) bool {
 	return err == nil
 }
 
-func systemctlUser(ctx context.Context, args ...string) error {
+func Systemctl(ctx context.Context, args ...string) error {
 	out, err := exec.CommandContext(ctx, "systemctl", append([]string{"--user"}, args...)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("systemctl --user %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
@@ -76,9 +77,9 @@ func systemctlUser(ctx context.Context, args ...string) error {
 	return nil
 }
 
-// installBridgeService writes and starts the unit. The returned note says what is left for the
+// Install writes and starts the unit. The returned note says what is left for the
 // owner, if anything (lingering, which may need sudo).
-func installBridgeService(ctx context.Context, profile string) (string, error) {
+func Install(ctx context.Context, state *native.State, profile string) (string, error) {
 	if runtime.GOOS != "linux" {
 		return "", errors.New("the Bridge service is for Linux servers; elsewhere Orb starts Bridge when it needs it")
 	}
@@ -92,7 +93,7 @@ func installBridgeService(ctx context.Context, profile string) (string, error) {
 	if exe, err = filepath.EvalSymlinks(exe); err != nil {
 		return "", err
 	}
-	path, err := bridgeUnitPath(profile)
+	path, err := unitPath(profile)
 	if err != nil {
 		return "", err
 	}
@@ -103,33 +104,33 @@ func installBridgeService(ctx context.Context, profile string) (string, error) {
 	for _, k := range []string{"PATH", "ORB_BRIDGE_HOME", "ORB_STATE_HOME"} {
 		env[k] = os.Getenv(k)
 	}
-	if err = os.WriteFile(path, []byte(bridgeUnit(exe, profile, env)), 0o644); err != nil {
+	if err = os.WriteFile(path, []byte(unit(exe, profile, env)), 0o644); err != nil {
 		return "", err
 	}
 	// A Bridge started by hand holds the socket; it hands over to the service.
-	if c, err := bridgeAdmin(ctx, profile); err == nil {
+	if c, err := Admin(ctx, state, profile); err == nil {
 		if c.Call(ctx, "stop", struct{}{}, nil) == nil {
-			_ = waitBridgeStopped(ctx, c)
+			_ = WaitStopped(ctx, c)
 		}
 		_ = c.Close()
 	}
 	// The service is an explicit start: a stop marker from before no longer applies.
 	if dir, err := nativebridge.Dir(profile); err == nil {
-		_ = stateFromContext(ctx).native().Write(ctx, filepath.Join(dir, "stopped"), nil)
+		_ = state.Write(ctx, filepath.Join(dir, "stopped"), nil)
 	}
-	if err = systemctlUser(ctx, "daemon-reload"); err == nil {
-		err = systemctlUser(ctx, "enable", "--now", bridgeUnitName(profile))
+	if err = Systemctl(ctx, "daemon-reload"); err == nil {
+		err = Systemctl(ctx, "enable", "--now", UnitName(profile))
 	}
 	if err != nil {
 		return "", err
 	}
 	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(200 * time.Millisecond) {
-		if c, err := bridgeAdmin(ctx, profile); err == nil {
+		if c, err := Admin(ctx, state, profile); err == nil {
 			_ = c.Close()
 			break
 		}
 		if time.Now().After(deadline) {
-			return "", errors.New("the service did not start; see: journalctl --user -u " + bridgeUnitName(profile))
+			return "", errors.New("the service did not start; see: journalctl --user -u " + UnitName(profile))
 		}
 	}
 	// Without lingering, systemd stops user services when the owner's last session ends.
@@ -146,38 +147,17 @@ func installBridgeService(ctx context.Context, profile string) (string, error) {
 	return "To keep it running while you are logged out, run: sudo loginctl enable-linger " + u.Username, nil
 }
 
-func removeBridgeService(ctx context.Context, profile string) error {
-	path, err := bridgeUnitPath(profile)
+func Remove(ctx context.Context, profile string) error {
+	path, err := unitPath(profile)
 	if err != nil {
 		return err
 	}
 	if _, err = os.Stat(path); err != nil {
 		return errors.New("no Bridge service is installed")
 	}
-	_ = systemctlUser(ctx, "disable", "--now", bridgeUnitName(profile))
+	_ = Systemctl(ctx, "disable", "--now", UnitName(profile))
 	if err = os.Remove(path); err != nil {
 		return err
 	}
-	return systemctlUser(ctx, "daemon-reload")
-}
-
-func runBridgeServiceCommand(ctx context.Context, profile string, args []string, streams cliStreams) int {
-	var err error
-	switch strings.Join(args, " ") {
-	case "install":
-		var note string
-		if note, err = installBridgeService(ctx, profile); err == nil {
-			_, _ = fmt.Fprintln(streams.Stdout, strings.TrimSpace("Bridge runs as a service now: it starts with the machine and restarts if it crashes.\n"+note))
-		}
-	case "remove":
-		if err = removeBridgeService(ctx, profile); err == nil {
-			_, _ = fmt.Fprintln(streams.Stdout, "Bridge service removed; Bridge now runs only while Orb needs it.")
-		}
-	default:
-		err = errors.New("usage: orb bridge service install|remove")
-	}
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-	return 0
+	return Systemctl(ctx, "daemon-reload")
 }

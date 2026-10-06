@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"bufio"
@@ -48,9 +48,8 @@ type launched struct {
 // host serves a peer's machine-level calls. host.sessions pages the threads stored on this
 // machine across folders, newest created first; host.launch starts Orb in a folder, on a new thread or resuming one,
 // and answers once that Orb is on Bridge.
-func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method string, params json.RawMessage) (json.RawMessage, error) {
-	state := stateFromContext(s.ctx)
-	if state == nil {
+func (s *Service) host(ctx context.Context, p bridge.Principal, method string, params json.RawMessage) (json.RawMessage, error) {
+	if s.state == nil {
 		return nil, bridge.Fail("unavailable")
 	}
 	switch method {
@@ -61,7 +60,7 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 		if err := protocol.Decode(params, &q); err != nil {
 			return nil, err
 		}
-		page, err := state.sessions().Catalog(ctx, sqlite.CatalogQuery{Cursor: q.Cursor, Limit: min(max(protocol.PageLimit(ctx), 1), 128)})
+		page, err := s.state.Sessions().Catalog(ctx, sqlite.CatalogQuery{Cursor: q.Cursor, Limit: min(max(protocol.PageLimit(ctx), 1), 128)})
 		if err != nil {
 			return nil, bridge.Fail("invalid_params")
 		}
@@ -80,7 +79,7 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 			Version string `json:"version"`        // its Orb, so a peer can offer host.update
 			Items   []item `json:"items"`
 			Cursor  string `json:"cursor,omitempty"`
-		}{strings.Split(host, ".")[0], selfupdate.Plain(selfupdate.BuildVersion(version, info, ok)), []item{}, page.Next}
+		}{strings.Split(host, ".")[0], selfupdate.Plain(selfupdate.BuildVersion(s.version, info, ok)), []item{}, page.Next}
 		for _, e := range page.Sessions {
 			if e.MessageCount == 0 {
 				continue // a thread nobody wrote in is not worth reopening
@@ -99,7 +98,7 @@ func (s *bridgeService) host(ctx context.Context, p bridge.Principal, method str
 			return nil, err
 		}
 		if q.SessionID != "" {
-			rows, err := state.sessions().ListInfo(ctx, "", nil)
+			rows, err := s.state.Sessions().ListInfo(ctx, "", nil)
 			if err != nil {
 				return nil, err
 			}
@@ -159,14 +158,10 @@ func (l *hostLogin) add(line json.RawMessage, done bool) {
 	l.wake = make(chan struct{})
 }
 
-// loginExecutable is the orb a host sign-in runs; tests stand in a script.
-var (
-	loginExecutable = os.Executable
-	providerName    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-)
+var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-func (s *bridgeService) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	exe, err := loginExecutable()
+func (s *Service) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	exe, err := s.loginExecutable()
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +246,7 @@ func (s *bridgeService) login(ctx context.Context, method string, params json.Ra
 	}
 }
 
-func (s *bridgeService) startLogin(exe, provider, method string) (json.RawMessage, error) {
+func (s *Service) startLogin(exe, provider, method string) (json.RawMessage, error) {
 	s.mu.Lock()
 	if len(s.logins) >= maxLogins {
 		s.mu.Unlock()
@@ -298,7 +293,7 @@ func (s *bridgeService) startLogin(exe, provider, method string) (json.RawMessag
 	return bridge.JSON(map[string]string{"login_id": id}), nil
 }
 
-func (s *bridgeService) endLogin(id string) {
+func (s *Service) endLogin(id string) {
 	s.mu.Lock()
 	delete(s.logins, id)
 	s.mu.Unlock()
@@ -324,7 +319,7 @@ type hostTerminal struct {
 	wake chan struct{}
 }
 
-func (s *bridgeService) terminal(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+func (s *Service) terminal(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	var q struct {
 		ID     string `json:"terminal_id,omitempty"`
 		CWD    string `json:"cwd,omitempty"`
@@ -385,7 +380,7 @@ func (s *bridgeService) terminal(ctx context.Context, method string, params json
 	}
 }
 
-func (s *bridgeService) openTerminal(cwd string, size *pty.Winsize) (json.RawMessage, error) {
+func (s *Service) openTerminal(cwd string, size *pty.Winsize) (json.RawMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.terminals) >= maxTerminals {
@@ -425,7 +420,7 @@ func (s *bridgeService) openTerminal(cwd string, size *pty.Winsize) (json.RawMes
 }
 
 // endTerminal hangs up a terminal: closing its side of the pty ends the shell and what it started.
-func (s *bridgeService) endTerminal(id string) {
+func (s *Service) endTerminal(id string) {
 	s.mu.Lock()
 	t := s.terminals[id]
 	delete(s.terminals, id)
@@ -438,8 +433,8 @@ func (s *bridgeService) endTerminal(id string) {
 
 // update brings this machine's orb to the latest release, as `orb update` does, then restarts
 // the Bridge on the new binary; peers see it back within seconds. The answer says what happened.
-func (s *bridgeService) update(ctx context.Context) json.RawMessage {
-	u := selfupdate.New(version, false)
+func (s *Service) update(ctx context.Context) json.RawMessage {
+	u := selfupdate.New(s.version, false)
 	result := map[string]string{"from": selfupdate.Plain(u.CurrentVersion)}
 	tag, target, err := u.Update(ctx, func(string) func() { return func() {} })
 	switch {
@@ -475,7 +470,7 @@ func launchFolder(path string) (string, error) {
 	return path, nil
 }
 
-func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, session string) (json.RawMessage, error) {
+func (s *Service) launch(ctx context.Context, p bridge.Principal, cwd, session string) (json.RawMessage, error) {
 	s.mu.Lock()
 	for _, l := range s.launched {
 		// A thread already open in an Orb this Bridge started is opened again, not twice.
@@ -500,8 +495,8 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 	}
 	// A thread open in another Orb on this machine, one in a terminal say, cannot open twice: the
 	// peer hears so at once instead of an Orb that exits before it is on Bridge.
-	if state := stateFromContext(s.ctx); session != "" && state != nil {
-		if lock, err := state.OwnerLock(session); err == nil {
+	if session != "" && s.state != nil {
+		if lock, err := s.state.OwnerLock(session); err == nil {
 			free, _ := lock.TryLock()
 			_ = lock.Close()
 			if !free {
@@ -556,12 +551,12 @@ func (s *bridgeService) launch(ctx context.Context, p bridge.Principal, cwd, ses
 }
 
 // holding is the Orb on Bridge that has the thread open, as host.launch answers it, or nil.
-func (s *bridgeService) holding(ctx context.Context, p bridge.Principal, session string) json.RawMessage {
-	for _, i := range s.b.Catalog(p) {
+func (s *Service) holding(ctx context.Context, p bridge.Principal, session string) json.RawMessage {
+	for _, i := range s.Bridge.Catalog(p) {
 		if !i.Available {
 			continue
 		}
-		raw, err := s.b.Handle(ctx, p.PeerID, "instances.describe", bridge.JSON(map[string]string{"instance_id": i.ID}))
+		raw, err := s.Bridge.Handle(ctx, p.PeerID, "instances.describe", bridge.JSON(map[string]string{"instance_id": i.ID}))
 		var d struct {
 			Target struct {
 				SessionID string `json:"session_id"`
@@ -613,7 +608,7 @@ func idle(events io.Reader, l *launched, limit time.Duration) {
 
 // launchedInstance waits until the Orb with alias is on Bridge and names it: a minute at most,
 // and not past the process, whose exit releases its slot.
-func (s *bridgeService) launchedInstance(ctx context.Context, p bridge.Principal, alias string) (json.RawMessage, error) {
+func (s *Service) launchedInstance(ctx context.Context, p bridge.Principal, alias string) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	for {
@@ -623,7 +618,7 @@ func (s *bridgeService) launchedInstance(ctx context.Context, p bridge.Principal
 		if !running {
 			return nil, bridge.Fail("unavailable")
 		}
-		for _, i := range s.b.Catalog(p) {
+		for _, i := range s.Bridge.Catalog(p) {
 			if i.Alias == alias && i.Available {
 				s.mu.Lock()
 				if l := s.launched[alias]; l != nil {
@@ -643,10 +638,10 @@ func (s *bridgeService) launchedInstance(ctx context.Context, p bridge.Principal
 
 // stopLaunched ends every Orb this Bridge started by closing its input, and retires their
 // registrations here: with the Bridge going away, they cannot retire themselves.
-func (s *bridgeService) stopLaunched() { s.endLaunched(true) }
+func (s *Service) stopLaunched() { s.endLaunched(true) }
 
 // endLaunched ends the Orbs this Bridge started, or only those between turns, and retires them.
-func (s *bridgeService) endLaunched(busy bool) {
+func (s *Service) endLaunched(busy bool) {
 	s.mu.Lock()
 	ids := []string{}
 	for _, l := range s.launched {
@@ -664,6 +659,6 @@ func (s *bridgeService) endLaunched(busy bool) {
 	if len(ids) > 0 {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), 2*time.Second)
 		defer cancel()
-		_, _ = s.b.Admin(ctx, "retire", bridge.JSON(map[string][]string{"instance_ids": ids}))
+		_, _ = s.Bridge.Admin(ctx, "retire", bridge.JSON(map[string][]string{"instance_ids": ids}))
 	}
 }

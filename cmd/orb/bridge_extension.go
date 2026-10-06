@@ -18,7 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/qr"
-	"github.com/OrdalieTech/orb/platforms/native/sqlite"
+	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -214,7 +214,7 @@ func bridgeSettingsWindow(ctx context.Context, c extensions.CommandContext, args
 					return err
 				}
 				setBridgeStatus(ui, false)
-				if err := waitBridgeStopped(ctx, client); err != nil {
+				if err := daemon.WaitStopped(ctx, client); err != nil {
 					return err
 				}
 				selected = "Start"
@@ -434,7 +434,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		ui.Notify(status.PeerID, extensions.NotifyInfo)
 	case "Invite device":
 		var inv bridge.Invitation
-		if e := client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{fullBridgeGrant("")}}, &inv); e != nil {
+		if e := client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{bridge.FullGrant("")}}, &inv); e != nil {
 			return e
 		}
 
@@ -583,11 +583,9 @@ func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer str
 }
 
 func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile, peer string) error {
-	db, cacheErr := openBridgeCache(ctx, profile)
-	var cache *sqlite.Foreign
+	cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx).native(), profile)
 	if cacheErr == nil {
-		defer func() { _ = db.Close() }()
-		cache = db.Foreign(profile)
+		defer closeCache()
 	}
 	cachedRows := func(th extensions.Theme, active map[string]bool) []tui.GridRow {
 		if cache == nil {
@@ -749,7 +747,7 @@ func shareBridgeInvitation(ctx context.Context, ui extensions.UI, client *protoc
 func approveBridgePairing(ctx context.Context, ui extensions.UI, client *protocol.Conn, claimed bridge.Invitation, groups map[string]string) error {
 	details := "Verify this fingerprint on the joining device:\n" + claimed.Claimant
 	for _, g := range claimed.Grants {
-		if g.GroupID == "*" && g.IncludeFuture && slices.Equal(g.Permissions, fullBridgeGrant("").Permissions) {
+		if g.GroupID == "*" && g.IncludeFuture && slices.Equal(g.Permissions, bridge.FullGrant("").Permissions) {
 			details += "\nAllow full control of all current and future conversations,\nand starting Orb in any folder on this machine."
 			continue
 		}

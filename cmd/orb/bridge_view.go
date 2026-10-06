@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,8 +15,7 @@ import (
 	"unicode"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/platforms/native"
-	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -211,11 +209,9 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 			}
 			return admin.Call(callCtx, "remote", map[string]any{"peer_id": peer, "method": method, "params": p}, result)
 		}
-		db, cacheErr := openBridgeCache(ctx, profile)
-		var cache *sqlite.Foreign
+		cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx).native(), profile)
 		if cacheErr == nil {
-			defer func() { _ = db.Close() }()
-			cache = db.Foreign(profile)
+			defer closeCache()
 		}
 		var saved *sqlite.ForeignSession
 		if len(initial) > 0 {
@@ -720,24 +716,6 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 	}
 }
 
-func openBridgeCache(ctx context.Context, profile string) (*sqlite.DB, error) {
-	if state := stateFromContext(ctx); state != nil {
-		path, err := native.Path(state.agentDir)
-		if err != nil {
-			return nil, err
-		}
-		return sqlite.Open(ctx, path)
-	}
-	dir, err := nativebridge.Dir(profile)
-	if err != nil {
-		return nil, err
-	}
-	root := filepath.Dir(filepath.Dir(dir))
-	if override := os.Getenv("ORB_BRIDGE_HOME"); override != "" {
-		root = override
-	}
-	return sqlite.Open(ctx, filepath.Join(root, "state", "orb.db"))
-}
 func cachedTranscript(s sqlite.ForeignSession) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Cached preview · %s · %s\nLast refreshed %s\n\n", s.Peer, s.ID, s.RefreshedAt.Format(time.RFC3339))

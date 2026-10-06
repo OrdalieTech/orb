@@ -1,8 +1,7 @@
-package main
+package daemon
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/platforms/native"
 )
 
 func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
@@ -32,11 +32,7 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
-	var errs bytes.Buffer
-	if runNativeCLI(t.Context(), []string{"storage", "import", jsonl}, cliStreams{Stdout: io.Discard, Stderr: &errs}) != 0 {
-		t.Fatal("import:", errs.String())
-	}
-	state, err := openNativeState(t.Context(), agentDir, true)
+	state, err := native.Open(t.Context(), agentDir, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +42,10 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = b.Close() }()
-	s := &bridgeService{b: b, launched: map[string]*launched{}, ctx: context.WithValue(t.Context(), nativeStateKey{}, state)}
+	if _, err := state.Sessions().OpenPath(t.Context(), jsonl); err != nil {
+		t.Fatal("import:", err)
+	}
+	s := New(t.Context(), state, "personal", "dev", b, nil, "")
 	p := bridge.Principal{PeerID: "orb:ed25519:x", Subject: bridge.Subject{Kind: "controller"}}
 
 	raw, err := s.host(t.Context(), p, "host.sessions", bridge.JSON(struct{}{}))
@@ -125,14 +124,11 @@ func TestHostLoginRelaysSignInToThePeer(t *testing.T) {
 		"read code\necho \"{\\\"type\\\":\\\"done\\\",\\\"code\\\":\\\"$code\\\"}\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	previous := loginExecutable
-	loginExecutable = func() (string, error) { return script, nil }
-	t.Cleanup(func() { loginExecutable = previous })
 	// A sign-in ends the launched Orbs between turns, so they reopen with the new credential.
 	quiet, working := &closeFlag{}, &closeFlag{}
 	busy := &launched{input: working}
 	busy.turn.Store(true)
-	s := &bridgeService{logins: map[string]*hostLogin{}, launched: map[string]*launched{"quiet": {input: quiet}, "busy": busy}, ctx: t.Context()}
+	s := &Service{loginExecutable: func() (string, error) { return script, nil }, logins: map[string]*hostLogin{}, launched: map[string]*launched{"quiet": {input: quiet}, "busy": busy}, ctx: t.Context()}
 	call := func(method string, params any) map[string]json.RawMessage {
 		t.Helper()
 		raw, err := s.login(t.Context(), method, bridge.JSON(params))
@@ -187,7 +183,7 @@ func TestHostTerminalRunsAShellInTheFolder(t *testing.T) {
 	}
 	t.Setenv("SHELL", "/bin/sh")
 	dir := t.TempDir()
-	s := &bridgeService{terminals: map[string]*hostTerminal{}, ctx: t.Context()}
+	s := &Service{terminals: map[string]*hostTerminal{}, ctx: t.Context()}
 	call := func(method string, params any, result any) {
 		t.Helper()
 		raw, err := s.terminal(t.Context(), method, bridge.JSON(params))

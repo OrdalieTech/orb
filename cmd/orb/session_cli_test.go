@@ -26,6 +26,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
@@ -616,9 +617,9 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err := cache.Put(ctx, ticket, sqlite.ForeignSession{Peer: remote.PeerID(), Namespace: "remote", ID: "session", Instance: "instance"}); err != nil {
 		t.Fatal(err)
 	}
-	service := bridgeService{b: b, profile: "personal", ctx: context.WithValue(ctx, nativeStateKey{}, state)}
+	service := daemon.New(ctx, state.State, "personal", version, b, nil, "")
 	params, _ := json.Marshal(map[string]string{"peer_id": remote.PeerID()})
-	if _, err := service.admin(context.Background(), "block", params); err != nil {
+	if _, err := service.Admin(context.Background(), "block", params); err != nil {
 		t.Fatal(err)
 	}
 	if previews, err := cache.List(ctx, remote.PeerID()); err != nil || len(previews) != 0 {
