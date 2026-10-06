@@ -115,7 +115,7 @@ func runACP(ctx context.Context, args CLIArgs, dependencies cliDependencies, str
 // outside it: then it serves that socket, open to its group, and buzz-acp can
 // run as another user, out of the tools' reach.
 func runBuzz(ctx context.Context, host acpHost) error {
-	stopCLI, err := serveBuzzCLI(ctx)
+	stopCLI, err := serveBuzzCLI(ctx, host.streams.Stderr)
 	if err != nil {
 		return err
 	}
@@ -230,8 +230,8 @@ type buzzResult struct {
 // serveBuzzCLI runs the real buzz CLI (ORB_BUZZ_CLI) for the agent's shell,
 // with the Buzz credentials added to that child alone. Orb answers as `buzz`
 // (runBuzzShim) and reaches it through the socket ORB_BUZZ names, which joins
-// the tools' environment.
-func serveBuzzCLI(ctx context.Context) (func(), error) {
+// the tools' environment. It also publishes the agent's profile.
+func serveBuzzCLI(ctx context.Context, log io.Writer) (func(), error) {
 	cli := os.Getenv("ORB_BUZZ_CLI")
 	if cli == "" {
 		cli = "buzz"
@@ -241,6 +241,28 @@ func serveBuzzCLI(ctx context.Context) (func(), error) {
 		if value, ok := os.LookupEnv(name); ok {
 			credentials = append(credentials, name+"="+value)
 		}
+	}
+	run := func(ctx context.Context, request buzzRequest) buzzResult {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		command := exec.CommandContext(ctx, cli, request.Args...)
+		// ORB_BUZZ emptied: a CLI that is this shim again fails at once instead of looping.
+		command.Dir, command.Env = request.Dir, append(append(toolenv.Environ(), credentials...), "ORB_BUZZ=")
+		command.Stdin = bytes.NewReader(request.Stdin)
+		var stdout, stderr bytes.Buffer
+		command.Stdout, command.Stderr = &stdout, &stderr
+		result := buzzResult{}
+		if err := command.Run(); err != nil {
+			result.Code = 1
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				result.Code = exit.ExitCode()
+			} else {
+				stderr.WriteString("buzz: " + err.Error() + "\n")
+			}
+		}
+		result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
+		return result
 	}
 	socket := filepath.Join(os.TempDir(), fmt.Sprintf("orb-buzz-%d.sock", os.Getpid()))
 	_ = os.Remove(socket)
@@ -264,30 +286,42 @@ func serveBuzzCLI(ctx context.Context) (func(), error) {
 				if json.NewDecoder(conn).Decode(&request) != nil {
 					return
 				}
-				runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-				defer cancel()
-				command := exec.CommandContext(runCtx, cli, request.Args...)
-				// ORB_BUZZ emptied: a CLI that is this shim again fails at once instead of looping.
-				command.Dir, command.Env = request.Dir, append(append(toolenv.Environ(), credentials...), "ORB_BUZZ=")
-				command.Stdin = bytes.NewReader(request.Stdin)
-				var stdout, stderr bytes.Buffer
-				command.Stdout, command.Stderr = &stdout, &stderr
-				result := buzzResult{}
-				if err := command.Run(); err != nil {
-					result.Code = 1
-					var exit *exec.ExitError
-					if errors.As(err, &exit) {
-						result.Code = exit.ExitCode()
-					} else {
-						stderr.WriteString("buzz: " + err.Error() + "\n")
-					}
-				}
-				result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
-				_ = json.NewEncoder(conn).Encode(result)
+				_ = json.NewEncoder(conn).Encode(run(ctx, request))
 			}()
 		}
 	}()
+	go publishBuzzProfile(ctx, run, log)
 	return func() { _ = listener.Close() }, nil
+}
+
+// publishBuzzProfile signs the agent's kind:0 profile with the real CLI, which
+// adds BUZZ_AUTH_TAG to it: Buzz names the agent by it, and lists it in its
+// agent directory only when its owner's tag is there. Each start publishes the
+// same profile again (a replaceable event), merged into the one on the relay,
+// so fields set elsewhere stay; it retries while the relay is unreachable.
+func publishBuzzProfile(ctx context.Context, run func(context.Context, buzzRequest) buzzResult, log io.Writer) {
+	args := []string{"users", "set-profile"}
+	for _, field := range [][2]string{{"--name", "BUZZ_ACP_DISPLAY_NAME"}, {"--about", "ORB_BUZZ_ABOUT"}, {"--avatar", "ORB_BUZZ_AVATAR"}} {
+		if value := os.Getenv(field[1]); value != "" {
+			args = append(args, field[0], value)
+		}
+	}
+	if len(args) == 2 {
+		return
+	}
+	for delay := 5 * time.Second; ; delay = min(2*delay, 5*time.Minute) {
+		result := run(ctx, buzzRequest{Args: args})
+		if result.Code == 0 {
+			_, _ = fmt.Fprintln(log, "buzz: published the agent's profile")
+			return
+		}
+		_, _ = fmt.Fprintf(log, "buzz: could not publish the agent's profile, retrying in %s: %s\n", delay, bytes.TrimSpace(result.Stderr))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+	}
 }
 
 // runBuzzShim is Orb called as `buzz` from the agent's shell: it hands the

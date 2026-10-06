@@ -295,7 +295,8 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 }
 
 // A team agent's tools never see its credentials, yet its shell still posts on
-// Buzz the way Buzz's harness prompt says: `buzz messages send`.
+// Buzz the way Buzz's harness prompt says: `buzz messages send`, and the agent
+// signs its own profile, owner's tag included.
 func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake buzz CLI is a shell script")
@@ -317,6 +318,8 @@ func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
 	for name, value := range secrets {
 		t.Setenv(name, value)
 	}
+	t.Setenv("BUZZ_ACP_DISPLAY_NAME", "Sales")
+	t.Setenv("ORB_BUZZ_ABOUT", "Answers the sales team")
 	t.Setenv(toolenv.Allow, "")
 	t.Setenv("ORB_BUZZ", "")
 	// The shell's buzz is Orb answering as buzz; the real CLI records its run.
@@ -325,8 +328,8 @@ func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	posted, cli := filepath.Join(root, "posted"), filepath.Join(root, "buzz-cli")
-	real := "#!/bin/sh\n{ echo \"args: $*\"; echo \"input: $(cat)\"; env; } > '" + posted + "'\necho '{\"ok\":true}'\n"
+	runs, cli := filepath.Join(root, "runs"), filepath.Join(root, "buzz-cli")
+	real := "#!/bin/sh\n{ echo \"args: $*\"; echo \"input: $(cat)\"; env; } > '" + runs + "'.$$\necho '{\"ok\":true}'\n"
 	if err := os.WriteFile(cli, []byte(real), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +342,7 @@ func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
 		faux.AssistantMessage("Posted."),
 	})
 	agents := teamAgent(context.Background(), scriptedRuntime(provider), cliStreams{Stderr: io.Discard})
-	stop, err := serveBuzzCLI(context.Background())
+	stop, err := serveBuzzCLI(context.Background(), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,20 +373,28 @@ func TestTeamAgentShellSeesNoSecretAndStillPostsOnBuzz(t *testing.T) {
 	if !strings.Contains(shell, "PATH=") || !strings.Contains(sent, `{"ok":true}`) {
 		t.Fatalf("env = %q, buzz = %q", shell, sent)
 	}
-	record, err := os.ReadFile(posted)
-	if err != nil {
-		t.Fatal(err)
+	// The profile is published beside the conversation, so wait for its run.
+	var record string
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(record, "set-profile") && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		files, _ := filepath.Glob(runs + ".*")
+		record = ""
+		for _, file := range files {
+			run, _ := os.ReadFile(file)
+			record += string(run)
+		}
 	}
 	for name, value := range secrets {
 		if strings.Contains(shell, value) {
 			t.Errorf("the shell saw %s", name)
 		}
-		if leaked := strings.Contains(string(record), value); leaked != strings.HasPrefix(name, "BUZZ_") {
+		if leaked := strings.Contains(record, value); leaked != strings.HasPrefix(name, "BUZZ_") {
 			t.Errorf("the buzz CLI holds %s: %t", name, leaked)
 		}
 	}
-	if !strings.Contains(string(record), "args: messages send --channel c1 --content -") || !strings.Contains(string(record), "input: Hello team") {
-		t.Fatalf("the buzz CLI ran with %s", record)
+	for _, run := range []string{"args: messages send --channel c1 --content -\ninput: Hello team", "args: users set-profile --name Sales --about Answers the sales team\n"} {
+		if !strings.Contains(record, run) {
+			t.Fatalf("the buzz CLI ran with %s", record)
+		}
 	}
 }
 

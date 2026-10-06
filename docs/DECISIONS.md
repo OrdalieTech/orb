@@ -305,7 +305,19 @@ Each holds until changed by owner-signed decision.
   and `BUZZ_AUTH_TAG` added to that child alone; standard input goes along only for a `-`
   argument, since the bash tool feeds its script on the shell's stdin. No model-facing tool, no
   buzz-dev-mcp (its tools duplicate Orb's). Orb's only other Buzz code is `orb chat buzz`
-  supervising buzz-acp. Owner, 2026-10-06.
+  supervising buzz-acp and publishing the agent's profile with that same CLI. Owner, 2026-10-06.
+- **The agent signs its profile; its owner signs its record, on the owner's machine.** Buzz names
+  an agent by its kind:0, and its agent directory lists one only when that kind:0 carries a valid
+  NIP-OA tag from its owner and the owner has published a kind:30177 record of it (its name and
+  whom it answers). `orb chat buzz` publishes the kind:0 at every start with the real CLI
+  (`buzz users set-profile`, which adds `BUZZ_AUTH_TAG` and merges into the profile on the relay)
+  from `BUZZ_ACP_DISPLAY_NAME`, `ORB_BUZZ_ABOUT` and `ORB_BUZZ_AVATAR`, retrying in the
+  background until the relay takes it: a replaceable event, so a restart republishes the same
+  profile, and Orb holds no Nostr code. The 30177 needs the owner's key, which never enters the
+  container, and the relay takes events only from their author, so the owner publishes it with
+  `platforms/agent/buzz-owner.py`, the standard-library script that signs the auth tag, posting it
+  to the relay's `/events` under NIP-98. No other owner record is needed: channel membership is
+  the relay's, and team rosters resolve through 30177s. Owner, 2026-10-06.
 - **The Nostr key stays out of the tools' reach by user, not by care.** buzz-acp reads the key
   from its environment and writes a signing keyfile, so it cannot share the tools' user. The team
   agent image starts as root only to run Orb as `agent` and buzz-acp as `buzz` (`setpriv`), and

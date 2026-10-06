@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A team agent shows on Buzz under its name and in Buzz's agent directory: `orb chat buzz`
+  publishes its profile at start (`BUZZ_ACP_DISPLAY_NAME`, `ORB_BUZZ_ABOUT`, `ORB_BUZZ_AVATAR`)
+  signed with its owner's tag, and `platforms/agent/buzz-owner.py`, which replaces
+  `sign-auth-tag.py`, also publishes the owner's record of the agent from the owner's machine.
+
 ## [0.17.3] - 2026-10-06
 
 An agent's live conversations share its memory as it changes.
