@@ -92,7 +92,17 @@ func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*Age
 			Type: "error", Message: fmt.Sprintf("Extension %q error: %s", extensionError.ExtensionPath, extensionError.Error),
 		})
 	})
-	diagnostics = append(diagnostics, applyExtensionFlagValues(registry, options.ExtensionFlagValues)...)
+	flags := make([]ExtensionFlag, 0, len(options.ExtensionFlagValues))
+	for _, name := range slices.Sorted(maps.Keys(options.ExtensionFlagValues)) {
+		flag := ExtensionFlag{Name: name}
+		if value, ok := options.ExtensionFlagValues[name].(string); ok {
+			flag.Value = &value
+		}
+		flags = append(flags, flag)
+	}
+	for _, message := range ApplyExtensionFlags(registry, flags) {
+		diagnostics = append(diagnostics, AgentSessionRuntimeDiagnostic{Type: "error", Message: message})
+	}
 	services := &AgentSessionServices{
 		CWD: cwd, AgentDir: agentDir, SettingsManager: settings, ModelRegistry: modelRegistry,
 		Resources: resources, ResourceLoader: resourceLoader, ExtensionRegistry: registry,
@@ -101,49 +111,46 @@ func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*Age
 	return services, nil
 }
 
-func applyExtensionFlagValues(registry *extensions.Registry, values map[string]any) []AgentSessionRuntimeDiagnostic {
-	if len(values) == 0 {
-		return nil
+// ExtensionFlag is an extension flag given on a command line; Value is nil
+// for a bare --name.
+type ExtensionFlag struct {
+	Name  string
+	Value *string
+}
+
+// ApplyExtensionFlags sets registry's extension flags from flags, in order,
+// and returns a message for each flag it could not set.
+func ApplyExtensionFlags(registry *extensions.Registry, flags []ExtensionFlag) []string {
+	registered := make(map[string]extensions.Flag)
+	if registry != nil {
+		for _, flag := range registry.RegisteredFlags() {
+			if _, exists := registered[flag.Name]; !exists {
+				registered[flag.Name] = flag
+			}
+		}
 	}
-	registered := make(map[string]extensions.FlagType)
-	for _, flag := range registry.RegisteredFlags() {
-		registered[flag.Name] = flag.Type
-	}
-	names := slices.Sorted(maps.Keys(values))
-	var diagnostics []AgentSessionRuntimeDiagnostic
-	var unknown []string
-	for _, name := range names {
-		value := values[name]
-		flagType, ok := registered[name]
-		if !ok {
-			unknown = append(unknown, name)
-			continue
+	var unknown, messages []string
+	for _, supplied := range flags {
+		flag, exists := registered[supplied.Name]
+		switch {
+		case !exists:
+			unknown = append(unknown, supplied.Name)
+		case flag.Type == extensions.FlagBoolean:
+			registry.SetFlagValue(supplied.Name, true)
+		case supplied.Value != nil:
+			registry.SetFlagValue(supplied.Name, *supplied.Value)
+		default:
+			messages = append(messages, fmt.Sprintf("Extension flag \"--%s\" requires a value", supplied.Name))
 		}
-		if flagType == extensions.FlagBoolean {
-			registry.SetFlagValue(name, true)
-			continue
-		}
-		if stringValue, ok := value.(string); ok {
-			registry.SetFlagValue(name, stringValue)
-			continue
-		}
-		diagnostics = append(diagnostics, AgentSessionRuntimeDiagnostic{
-			Type: "error", Message: fmt.Sprintf(`Extension flag "--%s" requires a value`, name),
-		})
 	}
 	if len(unknown) > 0 {
-		label := "Unknown option"
+		option := "option"
 		if len(unknown) > 1 {
-			label += "s"
+			option = "options"
 		}
-		for index := range unknown {
-			unknown[index] = "--" + unknown[index]
-		}
-		diagnostics = append(diagnostics, AgentSessionRuntimeDiagnostic{
-			Type: "error", Message: label + ": " + strings.Join(unknown, ", "),
-		})
+		messages = append(messages, "Unknown "+option+": --"+strings.Join(unknown, ", --"))
 	}
-	return diagnostics
+	return messages
 }
 
 func CreateAgentSessionFromServices(options CreateAgentSessionFromServicesOptions) (*AgentSessionResult, error) {

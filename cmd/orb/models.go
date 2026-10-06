@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/localecompare"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type modelListRow struct{ provider, model, context, maxOut, thinking, images string }
@@ -19,9 +19,7 @@ type modelListWidths struct{ provider, model, context, maxOut, thinking, images 
 
 func formatModelList(models []ai.Model, search string) string {
 	if search != "" {
-		models = slices.DeleteFunc(append([]ai.Model(nil), models...), func(model ai.Model) bool {
-			return !fuzzyModelMatch(search, string(model.Provider)+" "+model.ID)
-		})
+		models = tui.FuzzyFilter(models, search, func(model ai.Model) string { return string(model.Provider) + " " + model.ID })
 	}
 	if len(models) == 0 {
 		if search != "" {
@@ -101,60 +99,4 @@ func yesNo(value bool) string {
 		return "yes"
 	}
 	return "no"
-}
-
-func fuzzyModelMatch(query, text string) bool {
-	text = strings.ToLower(text)
-	for _, token := range strings.FieldsFunc(strings.ToLower(strings.TrimSpace(query)), func(character rune) bool {
-		return character == '/' || unicode.IsSpace(character)
-	}) {
-		if !subsequence(token, text) {
-			swapped := swapAlphaNumeric(token)
-			if swapped == "" || !subsequence(swapped, text) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func subsequence(query, text string) bool {
-	index := 0
-	characters := []rune(query)
-	for _, character := range text {
-		if index < len(characters) && character == characters[index] {
-			index++
-		}
-	}
-	return index == len(characters)
-}
-
-func swapAlphaNumeric(value string) string {
-	if swapped := swapAlphaNumericParts(value, true); swapped != "" {
-		return swapped
-	}
-	return swapAlphaNumericParts(value, false)
-}
-
-func swapAlphaNumericParts(value string, lettersFirst bool) string {
-	index := 0
-	for index < len(value) && isASCIIAlphaNumericPart(value[index], lettersFirst) {
-		index++
-	}
-	if index == 0 || index == len(value) {
-		return ""
-	}
-	for other := index; other < len(value); other++ {
-		if !isASCIIAlphaNumericPart(value[other], !lettersFirst) {
-			return ""
-		}
-	}
-	return value[index:] + value[:index]
-}
-
-func isASCIIAlphaNumericPart(character byte, letters bool) bool {
-	if letters {
-		return character >= 'a' && character <= 'z'
-	}
-	return character >= '0' && character <= '9'
 }

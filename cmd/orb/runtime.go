@@ -13,7 +13,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
-	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
@@ -256,7 +255,12 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 			resourceDiagnostics = append(resourceDiagnostics, startupResourceDiagnostic(diagnostic))
 		}
 
-		selection := ResolveToolSelection(args, defaultBuiltInTools)
+		noTools := ""
+		if args.NoTools || args.NoBuiltinTools {
+			noTools = "builtin"
+		}
+		// The CLI starts from the built-in default, not the defaultTools setting.
+		selection := agent.ResolveInitialTools(args.Tools, noTools, args.ExcludeTools, nil)
 		activeTools, err = createBuiltInTools(cwd, selection, settings, toolSandboxMode)
 		if err != nil {
 			return runtimeInputs{}, err
@@ -268,7 +272,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		baseTools = activeTools
 		initialNames = append([]string(nil), activeNames...)
 		if hasExtensions {
-			baseTools, err = createBuiltInTools(cwd, defaultBuiltInTools, settings, toolSandboxMode)
+			baseTools, err = createBuiltInTools(cwd, nil, settings, toolSandboxMode)
 			if err != nil {
 				return runtimeInputs{}, err
 			}
@@ -645,38 +649,21 @@ func requestAuthResolverWithCredentials(
 	}
 }
 
+// createBuiltInTools builds the named built-in tools (all of them for nil
+// names), confined by the sandbox mode.
 func createBuiltInTools(cwd string, names []string, settings *config.SettingsManager, sandboxMode sandbox.Mode) ([]engine.AgentTool, error) {
 	shellPath, err := settings.GetShellPath()
 	if err != nil {
 		return nil, err
 	}
-	options := permissionnative.ToolOptions(sandboxMode, cwd, shellPath)
-	if options == nil {
-		options = &tools.ToolsOptions{}
+	all, err := agent.BuildBuiltInTools(cwd, settings, permissionnative.ToolOptions(sandboxMode, cwd, shellPath))
+	if err != nil || names == nil {
+		return all, err
 	}
 	result := make([]engine.AgentTool, 0, len(names))
 	for _, name := range names {
-		switch name {
-		case "read":
-			autoResize := settings.GetImageAutoResize()
-			result = append(result, tools.NewReadTool(cwd, &tools.ReadToolOptions{AutoResizeImages: &autoResize}))
-		case "bash":
-			bash := options.Bash
-			if bash == nil {
-				bash = &tools.BashToolOptions{ShellPath: shellPath}
-			}
-			bash.CommandPrefix = settings.GetShellCommandPrefix()
-			result = append(result, tools.NewBashTool(cwd, bash))
-		case "edit":
-			result = append(result, tools.NewEditTool(cwd, options.Edit))
-		case "write":
-			result = append(result, tools.NewWriteTool(cwd, options.Write))
-		case "grep":
-			result = append(result, tools.NewGrepTool(cwd, nil))
-		case "find":
-			result = append(result, tools.NewFindTool(cwd, nil))
-		case "ls":
-			result = append(result, tools.NewLsTool(cwd, nil))
+		if index := slices.IndexFunc(all, func(tool engine.AgentTool) bool { return tool.Spec().Name == name }); index >= 0 {
+			result = append(result, all[index])
 		}
 	}
 	return result, nil

@@ -351,7 +351,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 	systemPrompt = strings.TrimSuffix(systemPrompt, "\nCurrent working directory: "+strings.ReplaceAll(cwd, `\`, "/"))
 
 	// Construct built-in tools for the resolved CWD.
-	baseTools, err := buildBuiltInTools(cwd, settings, opts.ToolOptions)
+	baseTools, err := BuildBuiltInTools(cwd, settings, opts.ToolOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		AllowedToolNames:       allowedToolNames,
 		ExcludedToolNames:      opts.ExcludeTools,
 		RebuildBaseTools: func() ([]engine.AgentTool, error) {
-			return buildBuiltInTools(cwd, settings, opts.ToolOptions)
+			return BuildBuiltInTools(cwd, settings, opts.ToolOptions)
 		},
 		ResourceLoader:      resourceLoader,
 		SystemPromptOptions: promptOptions, SystemPrompt: assembledPrompt,
@@ -582,7 +582,7 @@ func initialModel(opts AgentSessionOptions, modelRegistry *config.ModelRegistry,
 // may ever enable when the options restrict them.
 func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, existing sessionstore.SessionContext, decoded []any) (initialActiveToolNames []string, allowedToolNames *[]string) {
 	hasExisting := len(existing.Messages) > 0
-	initialActiveToolNames = resolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
+	initialActiveToolNames = ResolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
 	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
 		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
 	} else if hasExisting && opts.Tools == nil && opts.NoTools == "" {
@@ -693,7 +693,9 @@ func buildPromptOptions(cwd string, res *Resources, activeTools []string, builti
 	}
 }
 
-func buildBuiltInTools(cwd string, settings *config.SettingsManager, overrides *tools.ToolsOptions) ([]engine.AgentTool, error) {
+// BuildBuiltInTools constructs every built-in tool for cwd from the settings,
+// with overrides' options taking precedence.
+func BuildBuiltInTools(cwd string, settings *config.SettingsManager, overrides *tools.ToolsOptions) ([]engine.AgentTool, error) {
 	shellPath, err := settings.GetShellPath()
 	if err != nil {
 		return nil, err
@@ -731,10 +733,11 @@ func buildBuiltInTools(cwd string, settings *config.SettingsManager, overrides *
 	}, nil
 }
 
-// configuredDefaults is the `defaultTools` setting: it seeds the built-in
-// selection only, never the allowlist, so extension and custom tools stay
-// enabled alongside it.
-func resolveInitialTools(toolsList []string, noTools string, excludeTools []string, configuredDefaults []string) []string {
+// ResolveInitialTools is the initial built-in tool selection. noTools is
+// "all" or "builtin" to start with none. configuredDefaults is the
+// `defaultTools` setting: it seeds the built-in selection only, never the
+// allowlist, so extension and custom tools stay enabled alongside it.
+func ResolveInitialTools(toolsList []string, noTools string, excludeTools []string, configuredDefaults []string) []string {
 	switch {
 	case toolsList != nil:
 		return filterExcluded(toolsList, excludeTools)

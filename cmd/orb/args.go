@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
@@ -19,11 +20,6 @@ var validThinkingLevels = map[string]struct{}{
 type CLIDiagnostic struct {
 	Type    string
 	Message string
-}
-
-type CLIUnknownFlag struct {
-	Name  string
-	Value *string
 }
 
 type CLIArgs struct {
@@ -75,7 +71,7 @@ type CLIArgs struct {
 	Verbose            bool
 	Messages           []string
 	FileArgs           []string
-	UnknownFlags       []CLIUnknownFlag
+	UnknownFlags       []agent.ExtensionFlag
 	Diagnostics        []CLIDiagnostic
 	RestoredModel      bool
 	allowNoModel       bool
@@ -103,7 +99,7 @@ func ParseArgs(argv []string) CLIArgs {
 		CommandArgs:  []string{},
 		Messages:     []string{},
 		FileArgs:     []string{},
-		UnknownFlags: []CLIUnknownFlag{},
+		UnknownFlags: []agent.ExtensionFlag{},
 		Diagnostics:  []CLIDiagnostic{},
 	}
 	if len(argv) > 0 && (argv[0] == "login" || argv[0] == "logout") {
@@ -272,7 +268,7 @@ func ParseArgs(argv []string) CLIArgs {
 			result.FileArgs = append(result.FileArgs, argument[1:])
 		case strings.HasPrefix(argument, "--"):
 			name, value := parseUnknownLongFlag(argv, &index)
-			result.UnknownFlags = setUnknownLongFlag(result.UnknownFlags, CLIUnknownFlag{Name: name, Value: value})
+			result.UnknownFlags = setUnknownLongFlag(result.UnknownFlags, agent.ExtensionFlag{Name: name, Value: value})
 		case strings.HasPrefix(argument, "-"):
 			result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: "Unknown option: " + argument})
 		default:
@@ -309,7 +305,7 @@ func parseUnknownLongFlag(argv []string, index *int) (string, *string) {
 	return name, nil
 }
 
-func setUnknownLongFlag(flags []CLIUnknownFlag, flag CLIUnknownFlag) []CLIUnknownFlag {
+func setUnknownLongFlag(flags []agent.ExtensionFlag, flag agent.ExtensionFlag) []agent.ExtensionFlag {
 	for index := range flags {
 		if flags[index].Name == flag.Name {
 			flags[index].Value = flag.Value

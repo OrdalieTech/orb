@@ -355,7 +355,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if validationCWD, cwdErr := os.Getwd(); cwdErr == nil {
 			registry, _, _, _ = loadStartupExtensions(validationCWD, args)
 		}
-		flagErrors := applyExtensionFlags(registry, args.UnknownFlags)
+		flagErrors := agent.ApplyExtensionFlags(registry, args.UnknownFlags)
 		validationErrors = append(flagErrors, validationErrors...)
 	}
 	for _, message := range validationErrors {
@@ -376,7 +376,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		args.extensionRegistry, args.extensionWarnings = registry, warnings
 		args.extensionsLoaded = true
 		args.resolvedProjectTrust = trusted
-		flagErrors := applyExtensionFlags(args.extensionRegistry, args.UnknownFlags)
+		flagErrors := agent.ApplyExtensionFlags(args.extensionRegistry, args.UnknownFlags)
 		if len(flagErrors) > 0 {
 			for _, warning := range args.extensionWarnings {
 				_, _ = fmt.Fprintln(streams.Stderr, colorizeDiagnostic(streams, colorWarning, "Warning: "+startupDiagnosticText(warning)))
