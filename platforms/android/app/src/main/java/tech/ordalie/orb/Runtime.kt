@@ -47,6 +47,7 @@ class Runtime(context: Context) {
         }
         scope.launch { while (true) { Release.latest()?.let { latest = it }; delay(6 * 3600_000L) } }
         bridge.up // the pipe starts this phone's Bridge
+        scope.launch { snapshotFlow { visible }.collect { bridge.visible = it; if (it) runCatching { bridge.refresh() } } }
         scope.launch { withContext(Dispatchers.IO) { orb.seed() }; setupLinux() }
     }
 

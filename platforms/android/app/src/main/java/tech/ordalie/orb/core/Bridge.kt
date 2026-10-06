@@ -24,7 +24,11 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
     var claim by mutableStateOf<JSONObject?>(null) // an invitation someone claimed, awaiting approval
     var invitation by mutableStateOf<JSONObject?>(null)
 
-    init { scope.launch { while (isActive) { runCatching { refresh() }; delay(if (peers.isEmpty()) 4000 else 2500) } } }
+    /** Whether the app is on screen: only then are the machines' Orbs read, for Home and the pickers. */
+    @Volatile var visible = true
+    private val catalogs = java.util.concurrent.ConcurrentHashMap<String, String>() // per instance, the digest a describe sends back
+
+    init { scope.launch { while (isActive) { runCatching { refresh() }; delay(if (!visible) 15_000 else if (peers.isEmpty()) 4000 else 2500) } } }
 
     suspend fun call(method: String, params: JSONObject = JSONObject()): JSONObject =
         pipe.call(JSONObject().put("method", method).put("params", params), 25_000)
@@ -47,7 +51,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
             }
         peers.clear(); peers.addAll(next)
         // Each machine answers in its own time: a slow or unreachable one never holds the others up.
-        next.filter { fetching.add(it.id) }.forEach { peer ->
+        if (visible) next.filter { fetching.add(it.id) }.forEach { peer ->
             scope.launch {
                 try {
                     val found = runCatching { instances(peer.id) }.getOrNull() ?: return@launch
@@ -73,7 +77,8 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         }
         return running.map {
             val id = it.optString("instance_id")
-            val d = remote(peer, "instances.describe", JSONObject().put("instance_id", id)).optJSONObject("result") ?: JSONObject()
+            val d = remote(peer, "instances.describe", JSONObject().put("instance_id", id).put("catalog", catalogs[id].orEmpty())).optJSONObject("result") ?: JSONObject()
+            d.optString("catalog").takeIf(String::isNotEmpty)?.let { catalogs[id] = it }
             val target = d.optJSONObject("target")
             Instance(peer, id, it.optString("alias"), d.optString("name"), d.optString("cwd"), target?.optString("execution_id").orEmpty().isNotEmpty(), target?.optString("session_id").orEmpty())
         }

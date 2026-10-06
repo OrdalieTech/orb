@@ -4,6 +4,7 @@ import android.util.Base64
 import androidx.compose.runtime.*
 import java.security.SecureRandom
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import org.json.*
 
 /** An error reply's words: Bridge and [Lines] put an object with a message. */
@@ -99,11 +100,12 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         private set
     /** Whether a screen shows this session. Unwatched, it only keeps its state fresh, slowly, unless it [follows]. */
     @Volatile var watched = false
-        set(value) { field = value; if (value) seen = System.currentTimeMillis() }
+        set(value) { field = value; if (value) { seen = System.currentTimeMillis(); wake.trySend(Unit) } }
     /** When a screen last showed it: the app keeps the latest seen following off screen. */
     var seen by mutableLongStateOf(0L)
     /** Keeps streaming off screen, so showing it again is instant. */
     @Volatile var follows = false
+    private val wake = Channel<Unit>(Channel.CONFLATED) // a screen showing it cuts the pause between polls short
     private val job = scope.launch { follow() }
 
     private suspend fun remote(method: String, params: JSONObject) = bridge.remote(peer, method, params)
@@ -113,7 +115,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     private suspend fun follow() {
         while (scope.isActive) {
             val wait = try { step() } catch (e: CancellationException) { if (!currentCoroutineContext().isActive) throw e; 0L } catch (e: Exception) { online = false; status = "reconnecting"; 2000L }
-            delay(wait)
+            withTimeoutOrNull(wait) { wake.receive() }
         }
     }
 
@@ -130,7 +132,8 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     }
 
     private suspend fun describe(): Boolean {
-        val d = remote("instances.describe", JSONObject().put("instance_id", instance))
+        // Its models and commands come only when they changed since the digest this side holds.
+        val d = remote("instances.describe", JSONObject().put("instance_id", instance).put("catalog", info.optString("catalog")))
         val next = d.optJSONObject("result") ?: run {
             online = false
             // Unreachable is a network matter; not found means the Orb itself ended over there.
@@ -140,6 +143,7 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
         }
         val session = next.optJSONObject("target")?.optString("session_id").orEmpty()
         if (session != target?.optString("session_id")) { cursor = ""; from = -1; transcript.clear(); loaded = false }
+        if (next.optString("catalog") == info.optString("catalog")) listOf("models", "commands").forEach { k -> info.opt(k)?.let { next.put(k, it) } }
         info = next; online = true; gone = false
         if (status.startsWith("offline") || status.startsWith("ended") || status == "reconnecting") status = ""
         id = session; cwd = next.optString("cwd")
@@ -174,18 +178,20 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
      */
     private suspend fun snapshot() {
         var snap = ""; var offset = if (from > 0) from.toString() else ""
+        val asked = from // the first message asked for: an Orb's window may begin after it
         val messages = JSONArray()
+        val release = suspend { if (snap.isNotEmpty()) remote("events.unsubscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap)) }
         repeat(64) {
             val p = JSONObject().put("instance_id", instance).put("snapshot_id", snap).put("offset", offset)
             if (snap.isEmpty() && from < 0 && info.optBoolean("waits")) p.put("tail", TAIL)
-            val r = remote("events.subscribe", p).optJSONObject("result") ?: run { from = -1; return } // a compacted conversation may be shorter now
-            if (snap.isEmpty()) { from = r.optInt("from"); earlier = from > 0 }
+            val r = remote("events.subscribe", p).optJSONObject("result") ?: run { from = -1; release(); return } // a compacted conversation may be shorter now
+            if (snap.isEmpty()) { from = r.optInt("from"); earlier = from > 0 && (asked < 0 || from <= asked) }
             r.optJSONArray("messages")?.let { a -> for (i in 0 until a.length()) messages.put(a.get(i)) }
             snap = r.optString("snapshot_id"); offset = r.optString("offset")
             if (offset.isEmpty()) {
                 transcript.clear(); transcript.load(messages); loaded = true
                 r.optJSONObject("partial")?.let { transcript.apply(JSONObject().put("type", "message_update").put("message", it)) }
-                cursor = r.optString("cursor"); remote("events.unsubscribe", JSONObject().put("instance_id", instance).put("snapshot_id", snap)); return
+                cursor = r.optString("cursor"); release(); return
             }
         }
     }

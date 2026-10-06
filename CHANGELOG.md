@@ -10,6 +10,11 @@ shown by `/changelog`.
   provider's plan limits (`usage`: Claude from each turn, Codex and OpenCode Go read behind it).
   Images travel by reference: events and snapshots name each one, and a client fetches it fitted
   to the size it shows (`image`), so a screenshot no longer outgrows a frame or rides every reload.
+- Bridge sends less and sooner: a describe leaves out the models and commands a client already
+  holds (`catalog`), a message update no longer repeats its message, a replay skips the updates a
+  later event replaces, and long tool output keeps its ends. A conversation past 8 MiB or with a
+  message larger than a page opens at its end instead of not at all. The Android app reads its
+  machines' Orbs only while on screen and wakes a conversation as soon as it is shown.
 - The Android app swipes between Home and its tabs, keeps the conversations seen last streaming
   off screen (as many as its memory allows), completes `@` like the TUI, shows the plan window
   nearest its limit beside the context (all windows and their resets a tap away), shows the images

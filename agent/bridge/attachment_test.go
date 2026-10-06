@@ -40,7 +40,8 @@ func attachedWith(t *testing.T, options Options, steps ...faux.ResponseStep) (*A
 	manager, _ := session.InMemory(cwd)
 	provider := faux.New(faux.Options{})
 	provider.SetResponses(steps)
-	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+	skills := []runtime.Skill{{Name: "review", Description: "Review a change", Content: "Read the diff.", FilePath: "/virtual/SKILL.md"}}
+	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &runtime.Resources{Skills: skills}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +204,7 @@ func TestAFollowerSeesANewUsageReading(t *testing.T) {
 		t.Fatalf("follower kept waiting: %s %v", raw, err)
 	}
 	var d Descriptor
-	if json.Unmarshal(a.inspect(), &d) != nil || d.Usage == nil || d.Usage.Windows[0].Remaining != 62 {
+	if json.Unmarshal(a.inspect(""), &d) != nil || d.Usage == nil || d.Usage.Windows[0].Remaining != 62 {
 		t.Fatalf("descriptor = %+v", d)
 	}
 }
@@ -239,13 +240,110 @@ func TestAFollowerFetchesAnImageAtTheSizeItShows(t *testing.T) {
 	}
 }
 
+// A conversation larger than the window, with one output far larger than a page, still opens at
+// its end: the oldest messages fall out of the window and the giant one keeps the ends of its text.
+func TestAFollowerOpensAConversationLargerThanTheWindow(t *testing.T) {
+	a, _ := attached(t)
+	a.mu.Lock()
+	for i := range 50 {
+		role, text := "user", strings.Repeat("x", 200<<10)
+		if i == 49 {
+			role, text = "toolResult", strings.Repeat("y", 3<<20)
+		}
+		b, _ := json.Marshal(map[string]any{"role": role, "content": []map[string]string{{"type": "text", "text": text}}})
+		a.appendMessage(a.swapImages(b))
+	}
+	a.mu.Unlock()
+	var pages []json.RawMessage
+	id, offset, from := "", "", -1
+	for range 10 {
+		raw, err := a.observe("", id, offset, 5)
+		var got struct {
+			ID       string            `json:"snapshot_id"`
+			Messages []json.RawMessage `json:"messages"`
+			From     int               `json:"from"`
+			Offset   string            `json:"offset"`
+		}
+		if err != nil || json.Unmarshal(raw, &got) != nil || len(got.Messages) == 0 {
+			t.Fatalf("page after %d: %v", len(pages), err)
+		}
+		if from < 0 {
+			from = got.From
+		}
+		pages, id, offset = append(pages, got.Messages...), got.ID, got.Offset
+		if offset == "" {
+			break
+		}
+	}
+	if last := pages[len(pages)-1]; from != 45 || len(pages) != 5 || len(last) > 16<<10 || !bytes.Contains(last, []byte("y\\n…\\ny")) {
+		t.Fatalf("from %d, %d messages, last %d bytes", from, len(pages), len(last))
+	}
+	// Paging back from the start reaches where the window begins, past the messages it let go.
+	raw, _ := a.observe("", "", "0", 0)
+	var start struct {
+		From int `json:"from"`
+	}
+	if json.Unmarshal(raw, &start) != nil || start.From == 0 || start.From >= 45 {
+		t.Fatalf("window starts at %d", start.From)
+	}
+}
+
+// A describe that sends the catalog digest it holds gets the descriptor without models and commands.
+func TestADescribeLeavesOutTheCatalogItHolds(t *testing.T) {
+	a, _ := attached(t)
+	var full, brief map[string]json.RawMessage
+	_ = json.Unmarshal(a.inspect(""), &full)
+	var catalog string
+	_ = json.Unmarshal(full["catalog"], &catalog)
+	_ = json.Unmarshal(a.inspect(catalog), &brief)
+	if catalog == "" || full["commands"] == nil || brief["models"] != nil || brief["commands"] != nil || string(brief["catalog"]) != string(full["catalog"]) {
+		t.Fatalf("full %d bytes, brief %v", len(a.inspect("")), brief)
+	}
+}
+
+// A follower that polls after a streamed turn receives the finished message, not every update
+// it replaced, and no update repeats its message.
+func TestAFollowerGetsTheLatestOfWhatStreamed(t *testing.T) {
+	a, host := attachedWith(t, Options{}, faux.AssistantMessage(strings.Repeat("streamed words ", 200)))
+	raw, _ := a.observe("", "", "", 0)
+	var first struct {
+		Cursor string `json:"cursor"`
+	}
+	_ = json.Unmarshal(raw, &first)
+	if err := host.Session().Prompt(t.Context(), "talk"); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := a.stream.Replay(first.Cursor)
+	got, err := a.replay(first.Cursor, protocol.MaxPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates := 0
+	for _, e := range all {
+		if bytes.Contains(e.Data, []byte(`"message_update"`)) {
+			updates++
+			if bytes.Contains(e.Data, []byte("assistantMessageEvent")) {
+				t.Fatal("an update repeats its message")
+			}
+		}
+	}
+	for _, e := range got.Events {
+		if bytes.Contains(e.Data, []byte(`"message_update"`)) {
+			t.Fatalf("sent a replaced update (%d of %d events)", len(got.Events), len(all))
+		}
+	}
+	if updates < 2 || !bytes.Contains(got.Events[len(got.Events)-1].Data, []byte("agent_end")) {
+		t.Fatalf("%d updates streamed, page ends %s", updates, got.Events[len(got.Events)-1].Data)
+	}
+}
+
 // A controller compacts and runs a shell command as RPC's compact and bash would; the command
 // and its output join the conversation, and the descriptor offers both with the instance's
 // commands, reasoning and usage.
 func TestAControllerRunsAShellCommandInTheConversation(t *testing.T) {
 	a, host := attached(t)
 	var d Descriptor
-	if json.Unmarshal(a.inspect(), &d) != nil || !d.Waits || d.Stats == nil || d.Thinking == "" || !strings.Contains(strings.Join(d.Methods, " "), "session.compact shell") {
+	if json.Unmarshal(a.inspect(""), &d) != nil || !d.Waits || d.Stats == nil || d.Thinking == "" || !strings.Contains(strings.Join(d.Methods, " "), "session.compact shell") {
 		t.Fatalf("descriptor = %+v", d)
 	}
 	if goruntime.GOOS == "js" || goruntime.GOOS == "wasip1" {

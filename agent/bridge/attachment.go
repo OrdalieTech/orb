@@ -52,6 +52,7 @@ type Options struct {
 	LedgerQuota int
 }
 type frozen struct {
+	first    int // the index in the conversation of messages[0]
 	messages []json.RawMessage
 	partial  json.RawMessage
 	cursor   string
@@ -72,6 +73,7 @@ type Attachment struct {
 	partial                  json.RawMessage
 	messages                 []json.RawMessage
 	messageBytes             int
+	dropped                  int // the oldest messages the window let go
 	exhausted                bool
 	snapshots                map[string]frozen
 	pictures                 map[string]picture // images the stream carried, by reference (see swapImages)
@@ -118,6 +120,7 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		a.stream = bridge.NewStream(2048, 4<<20)
 		a.messages = nil
 		a.messageBytes = 0
+		a.dropped = 0
 		a.exhausted = false
 		a.snapshots = map[string]frozen{}
 		a.partial = nil
@@ -158,6 +161,10 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 			} else {
 				a.partial = fields.Message
 			}
+			// An update repeats the whole message in its assistantMessageEvent; followers read the message.
+			if _, update := event.(engine.MessageUpdateEvent); update {
+				b = append(append([]byte(`{"type":"message_update","message":`), fields.Message...), '}')
+			}
 		case engine.AgentEndEvent:
 			a.partial = nil
 		}
@@ -193,20 +200,25 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		stop()
 	}
 }
+
+// appendMessage keeps the conversation's newest messages within 8 MiB: a long one still opens at
+// its end, and pages back only as far as the window reaches.
 func (a *Attachment) appendMessage(b []byte) {
-	if a.messageBytes+len(b) > 8<<20 || len(a.messages) >= 16384 {
-		a.exhausted = true
-		return
-	}
 	a.messageBytes += len(b)
 	a.messages = append(a.messages, append(json.RawMessage(nil), b...))
+	for (a.messageBytes > 8<<20 || len(a.messages) > 16384) && len(a.messages) > 1 {
+		a.messageBytes -= len(a.messages[0])
+		a.messages = a.messages[1:]
+		a.dropped++
+	}
 }
 
-// swapImages replaces each image's bytes with a reference a client fetches at the size it shows
-// (the image call), so the stream and snapshots stay small and no image outgrows a frame. The
-// last 32 MiB of images are kept; a.mu is held.
+// swapImages shapes what the stream and snapshots carry: each image becomes a reference a client
+// fetches at the size it shows (the image call), and long tool output keeps its ends, so neither
+// grows with what a follower never shows. The last 32 MiB of images are kept; a.mu is held.
 func (a *Attachment) swapImages(b []byte) []byte {
-	if !bytes.Contains(b, []byte(`"type":"image"`)) {
+	large := len(b) > protocol.MaxFrame/4
+	if len(b) <= 8<<10 && !bytes.Contains(b, []byte(`"type":"image"`)) {
 		return b
 	}
 	decoder := json.NewDecoder(bytes.NewReader(b))
@@ -215,10 +227,23 @@ func (a *Attachment) swapImages(b []byte) []byte {
 	if decoder.Decode(&v) != nil {
 		return b
 	}
+	var tool bool // a tool's result or output, whose text is output too
 	var swap func(any)
 	swap = func(v any) {
 		switch v := v.(type) {
 		case map[string]any:
+			// Long tool output and arguments keep their ends, what a follower shows of them; what anyone
+			// said stays whole unless its message would outgrow a page.
+			for key, x := range v {
+				text, ok := x.(string)
+				switch {
+				case !ok || key == "data":
+				case len(text) > 8<<10 && (tool || key != "text" && key != "thinking"):
+					v[key] = text[:1<<10] + "\n…\n" + text[len(text)-7<<10:]
+				case large && len(text) > 32<<10:
+					v[key] = text[:16<<10] + "\n…\n" + text[len(text)-16<<10:]
+				}
+			}
 			if data, ok := v["data"].(string); ok && v["type"] == "image" && data != "" {
 				sum := sha256.Sum256([]byte(data))
 				ref := base64.RawURLEncoding.EncodeToString(sum[:16])
@@ -244,6 +269,10 @@ func (a *Attachment) swapImages(b []byte) []byte {
 			}
 		}
 	}
+	top, _ := v.(map[string]any)
+	message, _ := top["message"].(map[string]any)
+	kind, _ := top["type"].(string)
+	tool = top["role"] == "toolResult" || message["role"] == "toolResult" || strings.HasPrefix(kind, "tool_execution_")
 	swap(v)
 	var out bytes.Buffer
 	encoder := json.NewEncoder(&out)
@@ -330,6 +359,7 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 			Wait        bool   `json:"wait,omitempty"`
 			State       string `json:"state,omitempty"`
 			Tail        int    `json:"tail,omitempty"`
+			Catalog     string `json:"catalog,omitempty"`
 		} `json:"params"`
 	}
 	if err := protocol.Decode(params, &p); err != nil {
@@ -344,7 +374,7 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 	}
 	switch method {
 	case "instances.describe":
-		return a.inspect(), nil
+		return a.inspect(p.Params.Catalog), nil
 	case "operations.get":
 		receipt, err := a.ledger.Get(p.Principal, p.Params.InstanceID, p.Params.OperationID)
 		return bridge.JSON(receipt), err
@@ -371,7 +401,8 @@ type Descriptor struct {
 	Stats      *runtime.SessionStats `json:"stats,omitempty"`
 	Usage      *usage.Snapshot       `json:"usage,omitempty"`
 	Commands   []Command             `json:"commands,omitempty"`
-	Waits      bool                  `json:"waits"` // events.subscribe takes wait: a follower long-polls
+	Catalog    string                `json:"catalog,omitempty"` // digest of models and commands, which a describe sending it omits
+	Waits      bool                  `json:"waits"`             // events.subscribe takes wait: a follower long-polls
 	Models     []bridge.Model        `json:"models,omitempty"`
 	Name       string                `json:"name,omitempty"`
 	CWD        string                `json:"cwd,omitempty"`
@@ -399,7 +430,9 @@ type Completion struct {
 // methods are the calls an instance takes, before each principal's permissions filter them.
 var methods = []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name", "session.compact", "shell", "complete", "image"}
 
-func (a *Attachment) inspect() json.RawMessage {
+// inspect describes the instance. Its models and commands, most of a descriptor and rarely
+// changed, are left out when [known] is their digest: a client sends the one it holds.
+func (a *Attachment) inspect(known string) json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
@@ -435,6 +468,10 @@ func (a *Attachment) inspect() json.RawMessage {
 		if title := session.Manager().GetSessionName(); title != nil {
 			d.Name = *title
 		}
+		sum := sha256.Sum256(bridge.JSON([]any{d.Models, d.Commands}))
+		if d.Catalog = base64.RawURLEncoding.EncodeToString(sum[:12]); d.Catalog == known {
+			d.Models, d.Commands = nil, nil
+		}
 	}
 	return bridge.JSON(d)
 }
@@ -450,7 +487,7 @@ func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessag
 		if err := protocol.Decode(r.Call.Args, &args); err != nil {
 			return nil, err
 		}
-		return a.inspect(), nil
+		return a.inspect(""), nil
 	}
 	if r.Call.Method == "session.list" {
 		return a.list(protocol.WithPageLimit(ctx, positivePage(r.PageLimit)), r.Call.Args)
@@ -844,7 +881,7 @@ func (a *Attachment) observe(cursor, id, offset string, tail int, limits ...int)
 			return nil, bridge.Fail("resource_exhausted")
 		}
 		id = protocol.NewID()
-		a.snapshots[id] = frozen{partial: append(json.RawMessage(nil), a.partial...), messages: append([]json.RawMessage(nil), a.messages...), cursor: a.stream.Cursor(), expires: time.Now().Add(time.Minute)}
+		a.snapshots[id] = frozen{first: a.dropped, partial: append(json.RawMessage(nil), a.partial...), messages: append([]json.RawMessage(nil), a.messages...), cursor: a.stream.Cursor(), expires: time.Now().Add(time.Minute)}
 	}
 	snap, ok := a.snapshots[id]
 	if !ok {
@@ -855,11 +892,13 @@ func (a *Attachment) observe(cursor, id, offset string, tail int, limits ...int)
 	if offset != "" {
 		n, err = protocol.Counter(offset)
 	} else if tail > 0 && tail < len(snap.messages) {
-		n = uint64(len(snap.messages) - tail)
+		n = uint64(snap.first + len(snap.messages) - tail)
 	}
-	if err != nil || n > uint64(len(snap.messages)) {
+	end := uint64(snap.first + len(snap.messages))
+	if err != nil || n > end {
 		return nil, bridge.Fail("cursor_expired")
 	}
+	n = max(n, uint64(snap.first)) // offsets count the whole conversation; the window starts later
 	out := struct {
 		SnapshotID string            `json:"snapshot_id"`
 		Partial    json.RawMessage   `json:"partial,omitempty"`
@@ -869,8 +908,8 @@ func (a *Attachment) observe(cursor, id, offset string, tail int, limits ...int)
 		From       uint64            `json:"from,omitempty"` // the index of the first message here
 	}{SnapshotID: id, Partial: snap.partial, Messages: []json.RawMessage{}, Cursor: snap.cursor, From: n}
 	size := 0
-	for int(n) < len(snap.messages) && len(out.Messages) < limit {
-		m := snap.messages[n]
+	for n < end && len(out.Messages) < limit {
+		m := snap.messages[int(n)-snap.first]
 		if size+len(m) > protocol.MaxFrame/2 {
 			break
 		}
@@ -878,7 +917,7 @@ func (a *Attachment) observe(cursor, id, offset string, tail int, limits ...int)
 		size += len(m)
 		n++
 	}
-	if int(n) < len(snap.messages) {
+	if n < end {
 		if len(out.Messages) == 0 {
 			return nil, bridge.Fail("resource_exhausted")
 		}
@@ -906,13 +945,35 @@ func (a *Attachment) replay(cursor string, limit int) (page, error) {
 	if err != nil {
 		return out, err
 	}
+	// Each update carries its whole message or tool output, so one a later event in this stretch
+	// replaces is not sent: a follower that polls less often receives less, never older.
+	type kind struct {
+		Type string `json:"type"`
+		Tool string `json:"toolCallId"`
+	}
+	kinds := make([]kind, len(events))
+	for i, e := range events {
+		_ = json.Unmarshal(e.Data, &kinds[i])
+	}
+	replaced := func(i int) bool {
+		for _, later := range kinds[i+1:] {
+			if kinds[i].Type == "message_update" && (later.Type == "message_update" || later.Type == "message_end") ||
+				kinds[i].Type == "tool_execution_update" && later.Tool == kinds[i].Tool && strings.HasPrefix(later.Type, "tool_execution_") {
+				return true
+			}
+		}
+		return false
+	}
 	size := 0
-	for _, e := range events {
+	for i, e := range events {
 		if len(out.Events) >= limit || size+len(e.Data) > protocol.MaxFrame/2 {
 			break
 		}
-		out.Events = append(out.Events, e)
 		out.Cursor = e.Cursor
+		if replaced(i) {
+			continue
+		}
+		out.Events = append(out.Events, e)
 		size += len(e.Data)
 	}
 	if len(events) > 0 && len(out.Events) == 0 {

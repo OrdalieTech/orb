@@ -737,7 +737,9 @@ revision diagnostics and durable withdrawal floors within explicit scopes.
 
 `orb.instance/1` maps inspection, prompt, steer, follow-up, cancel, session list/new/switch/fork,
 `@` completion, and images. Events and snapshots carry each image as a `ref` in place of its
-bytes, so neither outgrows a frame; a client fetches it at the size it shows.
+bytes, so neither outgrows a frame; a client fetches it at the size it shows. Long tool output
+and arguments keep their ends; a message update carries its message once, and a replay leaves
+out the updates a later event in it replaces. Snapshots window the newest 8 MiB of messages.
 Session IDs resolve inside the adapter. Local, extension, and remote work share transition
 ordering and execution identity; control locks never span model streams or interactive approvals.
 Durably record acceptance before acknowledgment or dispatch. Retain compact deduplication
@@ -773,7 +775,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
 | `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
-| `instances.describe` | `instance_id` → current generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods |
+| `instances.describe` | `instance_id`, optional `catalog` → current generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods, and models and commands with their `catalog` digest, left out when the request's matches |
 | `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
 | `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
 | `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |

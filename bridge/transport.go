@@ -367,6 +367,7 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 			Wait        bool   `json:"wait,omitempty"`
 			State       string `json:"state,omitempty"`
 			Tail        int    `json:"tail,omitempty"`
+			Catalog     string `json:"catalog,omitempty"`
 		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
