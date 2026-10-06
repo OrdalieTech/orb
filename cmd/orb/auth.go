@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"cmp"
 	"context"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -367,7 +365,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 		return 0
 	}
 
-	interaction := newHeadlessAuthInteraction(streams.Stdin, streams.Stdout, streams.Stderr)
+	interaction := aiauth.NewTextInteraction(streams.Stdin, streams.Stdout, streams.Stderr)
 	credential, err := method.Login(ctx, withDeviceID(interaction))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -379,83 +377,6 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "Logged in to %s. Credentials saved to %s.\n", provider, authStorageLocation(ctx, agentDir, storage))
 	return 0
-}
-
-type headlessAuthInteraction struct {
-	reader *bufio.Reader
-	out    io.Writer
-	err    io.Writer
-	mu     sync.Mutex
-}
-
-func newHeadlessAuthInteraction(input io.Reader, output, errorOutput io.Writer) *headlessAuthInteraction {
-	return &headlessAuthInteraction{reader: bufio.NewReader(input), out: output, err: errorOutput}
-}
-
-func (interaction *headlessAuthInteraction) Prompt(ctx context.Context, prompt aiauth.AuthPrompt) (string, error) {
-	interaction.mu.Lock()
-	defer interaction.mu.Unlock()
-	_, _ = fmt.Fprintln(interaction.err, prompt.Message)
-	if prompt.Type == aiauth.PromptSelect {
-		for index, option := range prompt.Options {
-			label := option.Label
-			if option.Description != "" {
-				label += " — " + option.Description
-			}
-			_, _ = fmt.Fprintf(interaction.err, "  %d) %s\n", index+1, label)
-		}
-	}
-	type answer struct {
-		value string
-		err   error
-	}
-	result := make(chan answer, 1)
-	go func() {
-		value, err := interaction.reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			result <- answer{err: err}
-			return
-		}
-		result <- answer{value: strings.TrimRight(value, "\r\n")}
-	}()
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case resolved := <-result:
-		if resolved.err != nil || prompt.Type != aiauth.PromptSelect {
-			return resolved.value, resolved.err
-		}
-		return resolveSelectAnswer(prompt.Options, resolved.value)
-	}
-}
-
-// resolveSelectAnswer maps a numbered choice (or a literal option id) typed on
-// stdin to the option id expected by auth flows.
-func resolveSelectAnswer(options []aiauth.PromptOption, answer string) (string, error) {
-	trimmed := strings.TrimSpace(answer)
-	if number, err := strconv.Atoi(trimmed); err == nil && number >= 1 && number <= len(options) {
-		return options[number-1].ID, nil
-	}
-	for _, option := range options {
-		if strings.EqualFold(option.ID, trimmed) {
-			return option.ID, nil
-		}
-	}
-	return "", fmt.Errorf("invalid selection %q", trimmed)
-}
-
-func (interaction *headlessAuthInteraction) Notify(event aiauth.AuthEvent) {
-	switch event.Type {
-	case aiauth.EventAuthURL:
-		if event.Instructions != "" {
-			_, _ = fmt.Fprintln(interaction.out, event.Instructions)
-		}
-		_, _ = fmt.Fprintln(interaction.out, event.URL)
-	case aiauth.EventProgress, aiauth.EventInfo:
-		_, _ = fmt.Fprintln(interaction.out, event.Message)
-	case aiauth.EventDeviceCode:
-		_, _ = fmt.Fprintf(interaction.out, "%s\n%s\n", event.VerificationURI, event.UserCode)
-	}
 }
 
 // withDeviceID gives login flows this installation's stable device ID, kept in
