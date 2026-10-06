@@ -13,9 +13,9 @@ import (
 func TestPrepareTreeCompaction(t *testing.T) {
 	entries := []SessionTreeEntry{
 		{Type: "message", ID: "old-user", Timestamp: timestamp(1), Message: json.RawMessage(`{"role":"user","content":"old request that is long enough to summarize","timestamp":1}`)},
-		{Type: "message", ID: "old-assistant", ParentID: ptr("old-user"), Timestamp: timestamp(2), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"old answer that is long enough to summarize"}],"api":"x","provider":"x","model":"x","usage":{"input":30,"output":30,"cacheRead":0,"cacheWrite":0,"totalTokens":60,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}`)},
-		{Type: "message", ID: "recent-user", ParentID: ptr("old-assistant"), Timestamp: timestamp(3), Message: json.RawMessage(`{"role":"user","content":"recent request","timestamp":3}`)},
-		{Type: "message", ID: "recent-assistant", ParentID: ptr("recent-user"), Timestamp: timestamp(4), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"recent answer"}],"api":"x","provider":"x","model":"x","usage":{"input":50,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":100,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":4}`)},
+		{Type: "message", ID: "old-assistant", ParentID: new("old-user"), Timestamp: timestamp(2), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"old answer that is long enough to summarize"}],"api":"x","provider":"x","model":"x","usage":{"input":30,"output":30,"cacheRead":0,"cacheWrite":0,"totalTokens":60,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}`)},
+		{Type: "message", ID: "recent-user", ParentID: new("old-assistant"), Timestamp: timestamp(3), Message: json.RawMessage(`{"role":"user","content":"recent request","timestamp":3}`)},
+		{Type: "message", ID: "recent-assistant", ParentID: new("recent-user"), Timestamp: timestamp(4), Message: json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"recent answer"}],"api":"x","provider":"x","model":"x","usage":{"input":50,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":100,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":4}`)},
 	}
 
 	prepared, err := PrepareTreeCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 5})
@@ -40,11 +40,11 @@ func TestFindCutPointWeighsPreviousCompactionEntry(t *testing.T) {
 	)
 	entries = append(entries,
 		SessionEntry{
-			Type: "compaction", ID: "compact-1", ParentID: ptr("entry-3"), Timestamp: timestamp(5),
+			Type: "compaction", ID: "compact-1", ParentID: new("entry-3"), Timestamp: timestamp(5),
 			Summary: strings.Repeat("S", 400), FirstKeptEntryID: "entry-2", TokensBefore: 900,
 		},
-		SessionEntry{Type: "message", ID: "entry-5", ParentID: ptr("compact-1"), Timestamp: timestamp(6), Message: user("new request " + strings.Repeat("n", 60))},
-		SessionEntry{Type: "message", ID: "entry-6", ParentID: ptr("entry-5"), Timestamp: timestamp(7), Message: assistant("new answer "+strings.Repeat("m", 60), 0)},
+		SessionEntry{Type: "message", ID: "entry-5", ParentID: new("compact-1"), Timestamp: timestamp(6), Message: user("new request " + strings.Repeat("n", 60))},
+		SessionEntry{Type: "message", ID: "entry-6", ParentID: new("entry-5"), Timestamp: timestamp(7), Message: assistant("new answer "+strings.Repeat("m", 60), 0)},
 	)
 	for _, testCase := range []struct {
 		keepRecentTokens int64
@@ -86,13 +86,13 @@ func TestPrepareCompactionCarriesPreviousSummaryAndFileDetails(t *testing.T) {
 	entries := linearEntries(user("old"), &ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)})
 	fromHook := false
 	entries = append(entries, SessionEntry{
-		Type: "compaction", ID: "compact", ParentID: ptr(entries[len(entries)-1].ID), Timestamp: timestamp(3),
+		Type: "compaction", ID: "compact", ParentID: new(entries[len(entries)-1].ID), Timestamp: timestamp(3),
 		Summary: "old summary", TokensBefore: 20,
 		RetainedTail: engine.AgentMessages{&ai.AssistantMessage{Content: ai.AssistantContent{call}, StopReason: ai.StopReasonStop, Usage: usage(20)}},
 		Details:      CompactionDetails{ReadFiles: []string{"old-read.go"}, ModifiedFiles: []string{"old-edit.go"}}, FromHook: fromHook,
 	})
-	entries = append(entries, SessionEntry{Type: "message", ID: "entry-3", ParentID: ptr("compact"), Timestamp: timestamp(4), Message: user("latest request")})
-	entries = append(entries, SessionEntry{Type: "message", ID: "entry-4", ParentID: ptr("entry-3"), Timestamp: timestamp(5), Message: assistant(strings.Repeat("answer ", 30), 80)})
+	entries = append(entries, SessionEntry{Type: "message", ID: "entry-3", ParentID: new("compact"), Timestamp: timestamp(4), Message: user("latest request")})
+	entries = append(entries, SessionEntry{Type: "message", ID: "entry-4", ParentID: new("entry-3"), Timestamp: timestamp(5), Message: assistant(strings.Repeat("answer ", 30), 80)})
 	prepared, err := PrepareCompaction(entries, CompactionSettings{Enabled: true, ReserveTokens: 100, KeepRecentTokens: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestSummaryRequestsUseFreshSessionsWithoutCacheRetention(t *testing.T) {
 func TestPrepareBranchEntriesProjectsEmptySummaryBranchSummary(t *testing.T) {
 	entries := linearEntries(user("branch request"))
 	entries = append(entries, SessionEntry{
-		Type: "branch_summary", ID: "entry-branch", ParentID: ptr(entries[0].ID),
+		Type: "branch_summary", ID: "entry-branch", ParentID: new(entries[0].ID),
 		Timestamp: timestamp(2), Summary: "", FromID: "entry-0",
 	})
 	prepared := PrepareBranchEntries(entries, 0)
@@ -201,7 +201,7 @@ func linearEntries(messages ...engine.AgentMessage) []SessionEntry {
 	for index, message := range messages {
 		id := "entry-" + string(rune('0'+index))
 		entries = append(entries, SessionEntry{Type: "message", ID: id, ParentID: parent, Timestamp: timestamp(index + 1), Message: message})
-		parent = ptr(id)
+		parent = new(id)
 	}
 	return entries
 }
@@ -210,7 +210,6 @@ func timestamp(second int) string { return "2025-01-01T00:00:" + fmtTwoDigits(se
 func fmtTwoDigits(value int) string {
 	return string([]byte{'0' + byte(value/10), '0' + byte(value%10)})
 }
-func ptr(value string) *string { return &value }
 
 func userMessageTextForTest(message ai.Message) string {
 	userMessage, _ := message.(*ai.UserMessage)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 // SessionErrorCode is the stable failure classification used by harness
@@ -131,36 +132,20 @@ func (entry SessionTreeEntry) RawJSON() json.RawMessage {
 
 func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy := entry
-	copy.ParentID = clonePointer(entry.ParentID)
+	copy.ParentID = ptr.Clone(entry.ParentID)
 	copy.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
 	copy.Message = cloneHarnessRaw(entry.Message)
 	copy.RetainedTail = cloneHarnessRawMessages(entry.RetainedTail)
 	copy.Details = cloneHarnessRaw(entry.Details)
-	copy.Usage = cloneHarnessUsage(entry.Usage)
-	copy.FromHook = clonePointer(entry.FromHook)
+	copy.Usage = entry.Usage.Clone()
+	copy.FromHook = ptr.Clone(entry.FromHook)
 	copy.Data = cloneHarnessRaw(entry.Data)
 	copy.Content = cloneHarnessRaw(entry.Content)
-	copy.TargetID = clonePointer(entry.TargetID)
-	copy.Label = clonePointer(entry.Label)
+	copy.TargetID = ptr.Clone(entry.TargetID)
+	copy.Label = ptr.Clone(entry.Label)
 	copy.Replacement = cloneHarnessRaw(entry.Replacement)
 	copy.raw = cloneHarnessRaw(entry.raw)
 	return copy
-}
-
-func cloneHarnessUsage(usage *ai.Usage) *ai.Usage {
-	if usage == nil {
-		return nil
-	}
-	copy := *usage
-	if usage.Reasoning != nil {
-		value := *usage.Reasoning
-		copy.Reasoning = &value
-	}
-	if usage.CacheWrite1h != nil {
-		value := *usage.CacheWrite1h
-		copy.CacheWrite1h = &value
-	}
-	return &copy
 }
 
 func cloneHarnessEntries(entries []SessionTreeEntry) []SessionTreeEntry {
@@ -169,13 +154,6 @@ func cloneHarnessEntries(entries []SessionTreeEntry) []SessionTreeEntry {
 		copy[index] = entries[index].clone()
 	}
 	return copy
-}
-
-func clonePointer[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
 }
 
 func cloneHarnessRaw(value json.RawMessage) json.RawMessage {

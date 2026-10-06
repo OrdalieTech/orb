@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 type stateHost struct {
@@ -844,13 +845,13 @@ func wireStateProviderAuth(resolved *aiauth.AuthResult) *stateProviderAuthResult
 		return nil
 	}
 	result := &stateProviderAuthResult{
-		Auth:   stateModelAuth{APIKey: clonePointer(resolved.Auth.APIKey), BaseURL: clonePointer(resolved.Auth.BaseURL)},
+		Auth:   stateModelAuth{APIKey: ptr.Clone(resolved.Auth.APIKey), BaseURL: ptr.Clone(resolved.Auth.BaseURL)},
 		Source: resolved.Source,
 	}
 	if resolved.Auth.Headers != nil {
 		headers := make(map[string]*string, len(resolved.Auth.Headers))
 		for name, value := range resolved.Auth.Headers {
-			headers[name] = clonePointer(value)
+			headers[name] = ptr.Clone(value)
 		}
 		result.Auth.Headers = &headers
 	}
@@ -870,7 +871,7 @@ func resolveStateModelAuth(ctx context.Context, registry extensions.ModelRegistr
 	var env *map[string]string
 	var headers *map[string]string
 	if resolved != nil {
-		apiKey = clonePointer(resolved.Auth.APIKey)
+		apiKey = ptr.Clone(resolved.Auth.APIKey)
 		if resolved.Env != nil {
 			copy := maps.Clone(resolved.Env)
 			env = &copy
@@ -1014,7 +1015,7 @@ func (host *stateHost) refreshSnapshot(extensionID string, api extensions.API, c
 		}
 	}
 	if name, ok := stateAPIValue(func() (*string, error) { return api.GetSessionName(context.Background()) }); ok {
-		snapshot.SessionName = clonePointer(name)
+		snapshot.SessionName = ptr.Clone(name)
 	}
 	if active, ok := stateAPIValue(api.GetActiveTools); ok {
 		snapshot.ActiveTools = append([]string(nil), active...)
@@ -1042,13 +1043,13 @@ func (host *stateHost) updateContextSnapshot(snapshot *stateSnapshot, contextVal
 		snapshot.Context.CWD = contextValue.CWD()
 		snapshot.Context.Mode = contextValue.Mode()
 		snapshot.Context.HasUI = contextValue.HasUI()
-		snapshot.Context.Model = clonePointer(contextValue.Model())
+		snapshot.Context.Model = ptr.Clone(contextValue.Model())
 		snapshot.Context.ScopedModels = append([]extensions.ScopedModel{}, contextValue.ScopedModels()...)
 		snapshot.Context.Idle = contextValue.IsIdle()
 		snapshot.Context.ProjectTrusted = contextValue.IsProjectTrusted()
 		snapshot.Context.HasPendingMessages = contextValue.HasPendingMessages()
 		if usage := contextValue.GetContextUsage(); usage != nil {
-			snapshot.Context.ContextUsage = &stateContextUsage{Tokens: clonePointer(usage.Tokens), ContextWindow: usage.ContextWindow, Percent: clonePointer(usage.Percent)}
+			snapshot.Context.ContextUsage = &stateContextUsage{Tokens: ptr.Clone(usage.Tokens), ContextWindow: usage.ContextWindow, Percent: ptr.Clone(usage.Percent)}
 		} else {
 			snapshot.Context.ContextUsage = nil
 		}
@@ -1082,8 +1083,8 @@ func (host *stateHost) captureSession(manager extensions.ReadonlySessionManager)
 	}
 	snapshot := &stateSessionSnapshot{
 		Persisted: manager.IsPersisted(), CWD: manager.GetCWD(), SessionDir: manager.GetSessionDir(), SessionID: manager.GetSessionID(),
-		SessionFile: sessionFile, LeafID: clonePointer(leafID), Entries: append([]session.SessionEntry(nil), entries...),
-		Header: manager.GetHeader(), SessionName: clonePointer(manager.GetSessionName()),
+		SessionFile: sessionFile, LeafID: ptr.Clone(leafID), Entries: append([]session.SessionEntry(nil), entries...),
+		Header: manager.GetHeader(), SessionName: ptr.Clone(manager.GetSessionName()),
 	}
 	host.mu.Lock()
 	if key != host.sessionCacheKey {
@@ -1346,16 +1347,16 @@ func cloneStateSnapshot(value stateSnapshot) stateSnapshot {
 	result := value
 	result.Flags = make(map[string]any, len(value.Flags))
 	maps.Copy(result.Flags, value.Flags)
-	result.SessionName = clonePointer(value.SessionName)
+	result.SessionName = ptr.Clone(value.SessionName)
 	result.ActiveTools = append([]string(nil), value.ActiveTools...)
 	result.AllTools = append([]extensions.ToolInfo(nil), value.AllTools...)
 	result.Commands = append([]extensions.SlashCommandInfo(nil), value.Commands...)
-	result.Context.Model = clonePointer(value.Context.Model)
+	result.Context.Model = ptr.Clone(value.Context.Model)
 	result.Context.ScopedModels = append([]extensions.ScopedModel{}, value.Context.ScopedModels...)
 	if value.Context.ContextUsage != nil {
 		usage := *value.Context.ContextUsage
-		usage.Tokens = clonePointer(usage.Tokens)
-		usage.Percent = clonePointer(usage.Percent)
+		usage.Tokens = ptr.Clone(usage.Tokens)
+		usage.Percent = ptr.Clone(usage.Percent)
 		result.Context.ContextUsage = &usage
 	}
 	return result
@@ -1367,11 +1368,4 @@ func sortedValues[V any](values map[string]V) []V {
 		result = append(result, values[key])
 	}
 	return result
-}
-
-func clonePointer[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
 }

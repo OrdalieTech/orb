@@ -18,6 +18,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const ModelsDevURL = "https://models.dev/api.json"
@@ -424,7 +425,7 @@ func writeStoreResponse(path string, catalog *Catalog, checkedAt int64, lastModi
 			if _, exists := stored.entries[id]; !exists {
 				stored.order = append(stored.order, id)
 			}
-			stored.entries[id] = storedProvider{Models: catalog.Models(id), CheckedAt: checkedAt, LastModified: cloneTimestamp(lastModified), ETag: etag}
+			stored.entries[id] = storedProvider{Models: catalog.Models(id), CheckedAt: checkedAt, LastModified: ptr.Clone(lastModified), ETag: etag}
 		}
 	})
 }
@@ -453,14 +454,6 @@ func stampStoreResponse(path string, checkedAt int64, unavailable bool, document
 }
 
 func timestamp(value int64) *int64 { return &value }
-
-func cloneTimestamp(value *int64) *int64 {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
 
 func decodeOrderedStore(data []byte) (orderedStore, error) {
 	store := orderedStore{entries: make(map[string]storedProvider)}

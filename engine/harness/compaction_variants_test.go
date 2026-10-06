@@ -13,9 +13,9 @@ import (
 func TestFindCutPointTreatsEmptySummaryBranchSummaryAsInvisible(t *testing.T) {
 	entries := []SessionEntry{
 		{Type: "message", ID: "u", Timestamp: timestamp(1), Message: user("hello")},
-		{Type: "message", ID: "a1", ParentID: ptr("u"), Timestamp: timestamp(2), Message: assistant("answer answer", 0)},
-		{Type: "branch_summary", ID: "bs", ParentID: ptr("a1"), Timestamp: timestamp(3), FromID: "u", Summary: ""},
-		{Type: "message", ID: "a2", ParentID: ptr("bs"), Timestamp: timestamp(4), Message: assistant("okokokok", 0)},
+		{Type: "message", ID: "a1", ParentID: new("u"), Timestamp: timestamp(2), Message: assistant("answer answer", 0)},
+		{Type: "branch_summary", ID: "bs", ParentID: new("a1"), Timestamp: timestamp(3), FromID: "u", Summary: ""},
+		{Type: "message", ID: "a2", ParentID: new("bs"), Timestamp: timestamp(4), Message: assistant("okokokok", 0)},
 	}
 	cut := FindCutPoint(entries, 0, len(entries), 2)
 	if cut.FirstKeptEntryIndex != 2 || cut.TurnStartIndex != 0 || !cut.IsSplitTurn {
@@ -71,8 +71,8 @@ func TestHarnessCutPointNeverSplitsToolCallFromResult(t *testing.T) {
 	call.StopReason = ai.StopReasonToolUse
 	entries := linearEntries(user("request"), call)
 	entries = append(entries,
-		SessionEntry{Type: "custom_message", ID: "status", ParentID: ptr("entry-1"), Timestamp: timestamp(3), CustomType: "status", Content: "reading the file", Display: true},
-		SessionEntry{Type: "message", ID: "entry-3", ParentID: ptr("status"), Timestamp: timestamp(4), Message: hugeToolResult(40_000)},
+		SessionEntry{Type: "custom_message", ID: "status", ParentID: new("entry-1"), Timestamp: timestamp(3), CustomType: "status", Content: "reading the file", Display: true},
+		SessionEntry{Type: "message", ID: "entry-3", ParentID: new("status"), Timestamp: timestamp(4), Message: hugeToolResult(40_000)},
 	)
 	cut := harnessFindCutPoint(entries, 0, len(entries), 5_000)
 	if cut.FirstKeptEntryIndex != 1 {

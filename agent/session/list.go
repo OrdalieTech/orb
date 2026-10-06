@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const maxConcurrentSessionInfoLoads = 10
@@ -433,7 +434,7 @@ func buildSessionInfoContext(ctx context.Context, candidate sessionFileCandidate
 	header := entries[0].Header
 	result := &SessionInfo{
 		Path: candidate.path, ID: header.ID, CWD: header.CWD,
-		ParentSessionPath: clonePointer(header.ParentSession),
+		ParentSessionPath: ptr.Clone(header.ParentSession),
 		FirstMessage:      "(no messages)",
 		Modified:          truncateToJSMilliseconds(stat.ModTime()),
 	}

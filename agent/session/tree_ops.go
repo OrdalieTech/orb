@@ -9,6 +9,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 type resolvedLabel struct {
@@ -59,7 +60,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 		}
 		pathRecords = append(pathRecords, record)
 		pathIDs[entry.ID] = struct{}{}
-		parentID = clonePointer(&entry.ID)
+		parentID = ptr.Clone(&entry.ID)
 	}
 
 	now := manager.clock()
@@ -71,7 +72,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 	version := CurrentVersion
 	var parentSession *string
 	if manager.persist {
-		parentSession = clonePointer(&previousSessionFile)
+		parentSession = ptr.Clone(&previousSessionFile)
 	}
 	header := newHeaderRecord(SessionHeader{
 		Type:          "session",
@@ -96,7 +97,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 		labelRecord := newEntryRecord(SessionEntry{
 			Type:      "label",
 			ID:        labelID,
-			ParentID:  clonePointer(parentID),
+			ParentID:  ptr.Clone(parentID),
 			Timestamp: label.timestamp,
 			TargetID:  label.targetID,
 			Label:     &labelValue,

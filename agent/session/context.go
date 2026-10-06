@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 func GetLatestCompactionEntry(entries []SessionEntry) *SessionEntry {
@@ -119,7 +120,7 @@ type contextProjection struct {
 
 func buildContextProjection(entries []SessionEntry, leafID *string) contextProjection {
 	path := buildSessionPath(entries, leafID)
-	projection := contextProjection{context: SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}, leaf: clonePointer(leafID)}
+	projection := contextProjection{context: SessionContext{ThinkingLevel: "off", Messages: []json.RawMessage{}}, leaf: ptr.Clone(leafID)}
 	for index := range path {
 		projection.addFields(&path[index])
 	}

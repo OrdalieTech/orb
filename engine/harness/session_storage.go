@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/ptr"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
 
@@ -56,9 +57,9 @@ func (state *sessionStorageState) updateLabel(entry SessionTreeEntry) {
 
 func leafAfterHarnessEntry(entry SessionTreeEntry) *string {
 	if entry.Type == "leaf" {
-		return clonePointer(entry.TargetID)
+		return ptr.Clone(entry.TargetID)
 	}
-	return clonePointer(&entry.ID)
+	return ptr.Clone(&entry.ID)
 }
 
 func (state *sessionStorageState) metadataValue() SessionMetadata {
@@ -71,7 +72,7 @@ func (state *sessionStorageState) leafValue() (*string, error) {
 			return nil, newSessionError(SessionErrorInvalidSession, "Entry %s not found", *state.leafID)
 		}
 	}
-	return clonePointer(state.leafID), nil
+	return ptr.Clone(state.leafID), nil
 }
 
 func (state *sessionStorageState) createEntryID() (string, error) {
@@ -301,8 +302,8 @@ func (storage *InMemorySessionStorage) setLeafLocked(leafID *string) error {
 		return err
 	}
 	storage.state.append(SessionTreeEntry{
-		Type: "leaf", ID: id, ParentID: clonePointer(storage.state.leafID),
-		Timestamp: FormatTimestamp(time.Now()), TargetID: clonePointer(leafID), HasTargetID: true,
+		Type: "leaf", ID: id, ParentID: ptr.Clone(storage.state.leafID),
+		Timestamp: FormatTimestamp(time.Now()), TargetID: ptr.Clone(leafID), HasTargetID: true,
 	})
 	return nil
 }
@@ -428,7 +429,7 @@ func rehydrateJSONLSessionWithHeader(
 	}
 	metadata := SessionMetadata{
 		ID: header.ID, CreatedAt: header.Timestamp, CWD: header.CWD, Path: filePath,
-		ParentSessionPath: clonePointer(header.ParentSession), Metadata: cloneHarnessRaw(header.Metadata),
+		ParentSessionPath: ptr.Clone(header.ParentSession), Metadata: cloneHarnessRaw(header.Metadata),
 	}
 	state, err := newSessionStorageState(metadata, entries, false)
 	if err != nil {
@@ -535,8 +536,8 @@ func (storage *JSONLSessionStorage) SetLeafID(leafID *string) error {
 		return err
 	}
 	return storage.appendLockedWithLabel(SessionTreeEntry{
-		Type: "leaf", ID: id, ParentID: clonePointer(storage.state.leafID),
-		Timestamp: FormatTimestamp(time.Now()), TargetID: clonePointer(leafID), HasTargetID: true,
+		Type: "leaf", ID: id, ParentID: ptr.Clone(storage.state.leafID),
+		Timestamp: FormatTimestamp(time.Now()), TargetID: ptr.Clone(leafID), HasTargetID: true,
 	}, "session leaf")
 }
 
@@ -650,7 +651,7 @@ func (storage *JSONLSessionStorage) HeaderJSON() []byte {
 
 func cloneHarnessMetadata(metadata SessionMetadata) SessionMetadata {
 	copy := metadata
-	copy.ParentSessionPath = clonePointer(metadata.ParentSessionPath)
+	copy.ParentSessionPath = ptr.Clone(metadata.ParentSessionPath)
 	copy.Metadata = cloneHarnessRaw(metadata.Metadata)
 	return copy
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const CurrentVersion = 3
@@ -119,7 +120,7 @@ func (entry SessionEntry) MarshalJSON() ([]byte, error) {
 // a parentId override in upstream JSONL branch export.
 func (entry SessionEntry) MarshalJSONWithParent(parentID *string) ([]byte, error) {
 	if entry.object == nil {
-		entry.ParentID = clonePointer(parentID)
+		entry.ParentID = ptr.Clone(parentID)
 		return entry.MarshalJSON()
 	}
 	object := slices.Clone(*entry.object)
@@ -362,20 +363,4 @@ func rawUsage(usage *ai.Usage) json.RawMessage {
 		panic(err)
 	}
 	return encoded
-}
-
-func cloneSessionUsage(usage *ai.Usage) *ai.Usage {
-	if usage == nil {
-		return nil
-	}
-	copy := *usage
-	if usage.Reasoning != nil {
-		value := *usage.Reasoning
-		copy.Reasoning = &value
-	}
-	if usage.CacheWrite1h != nil {
-		value := *usage.CacheWrite1h
-		copy.CacheWrite1h = &value
-	}
-	return &copy
 }

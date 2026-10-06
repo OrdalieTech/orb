@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 func (session *Session) LeafID() (*string, error) {
@@ -37,7 +38,7 @@ func (session *Session) Branch(fromID ...string) ([]SessionTreeEntry, error) {
 	}
 	var leaf *string
 	if len(fromID) > 0 {
-		leaf = clonePointer(&fromID[0])
+		leaf = ptr.Clone(&fromID[0])
 	} else {
 		var err error
 		leaf, err = session.storage.LeafID()
@@ -127,8 +128,8 @@ func (session *Session) AppendCompactionWithTail(
 ) (string, error) {
 	entry := SessionTreeEntry{Type: "compaction"}
 	entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore = summary, firstKeptEntryID, tokensBefore
-	entry.FromHook = clonePointer(fromHook)
-	entry.Usage = cloneHarnessUsage(usage)
+	entry.FromHook = ptr.Clone(fromHook)
+	entry.Usage = usage.Clone()
 	if retainedTail != nil {
 		entry.RetainedTail = make([]json.RawMessage, len(retainedTail))
 		for index, message := range retainedTail {
@@ -185,7 +186,7 @@ func (session *Session) AppendLabel(targetID string, label *string) (string, err
 		return "", newSessionError(SessionErrorNotFound, "Entry %s not found", targetID)
 	}
 	entry := SessionTreeEntry{Type: "label"}
-	entry.TargetID, entry.HasTargetID, entry.Label = clonePointer(&targetID), true, clonePointer(label)
+	entry.TargetID, entry.HasTargetID, entry.Label = ptr.Clone(&targetID), true, ptr.Clone(label)
 	return session.appendEntry(entry)
 }
 
@@ -215,13 +216,13 @@ func (session *Session) MoveTo(entryID *string, summary *BranchSummary) (string,
 		return "", nil
 	}
 	entry := SessionTreeEntry{Type: "branch_summary"}
-	entry.ParentID = clonePointer(entryID)
+	entry.ParentID = ptr.Clone(entryID)
 	entry.FromID = "root"
 	if entryID != nil {
 		entry.FromID = *entryID
 	}
-	entry.Summary, entry.FromHook = summary.Summary, clonePointer(summary.FromHook)
-	entry.Usage = cloneHarnessUsage(summary.Usage)
+	entry.Summary, entry.FromHook = summary.Summary, ptr.Clone(summary.FromHook)
+	entry.Usage = summary.Usage.Clone()
 	if summary.Details != nil {
 		encoded, err := marshalHarnessValue(summary.Details)
 		if err != nil {

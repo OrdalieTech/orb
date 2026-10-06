@@ -9,6 +9,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/jstrim"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 type ContextEntryTransform func([]SessionTreeEntry) []SessionTreeEntry
@@ -135,10 +136,10 @@ func projectTreeEntry(entry SessionTreeEntry) SessionEntry {
 		fromHook = *entry.FromHook
 	}
 	return SessionEntry{
-		Type: entry.Type, ID: entry.ID, ParentID: clonePointer(entry.ParentID), Timestamp: entry.Timestamp,
+		Type: entry.Type, ID: entry.ID, ParentID: ptr.Clone(entry.ParentID), Timestamp: entry.Timestamp,
 		Message: entry.Message, Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID,
 		RetainedTail: decodeHarnessAgentMessages(entry.RetainedTail),
-		TokensBefore: entry.TokensBefore, Details: entry.Details, Usage: cloneHarnessUsage(entry.Usage), FromHook: fromHook,
+		TokensBefore: entry.TokensBefore, Details: entry.Details, Usage: entry.Usage.Clone(), FromHook: fromHook,
 		FromID: entry.FromID, CustomType: entry.CustomType, Content: entry.Content, Display: entry.Display,
 	}
 }

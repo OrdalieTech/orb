@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const (
@@ -262,7 +263,7 @@ func providerConfigFromWire(definition *wireProviderConfigDefinition) extensions
 		APIKey:     definition.APIKey,
 		API:        definition.API,
 		Headers:    maps.Clone(definition.Headers),
-		AuthHeader: clonePointer(definition.AuthHeader),
+		AuthHeader: ptr.Clone(definition.AuthHeader),
 		Models:     append([]extensions.ProviderModelConfig(nil), definition.Models...),
 		Defined:    maps.Clone(definition.Defined),
 	}
@@ -723,14 +724,14 @@ func cloneWireProvider(source wireProviderRegistration) wireProviderRegistration
 	cloned := source
 	cloned.Headers = maps.Clone(source.Headers)
 	cloned.Models = append([]ai.Model(nil), source.Models...)
-	cloned.Auth.APIKey = clonePointer(source.Auth.APIKey)
-	cloned.Auth.OAuth = clonePointer(source.Auth.OAuth)
+	cloned.Auth.APIKey = ptr.Clone(source.Auth.APIKey)
+	cloned.Auth.OAuth = ptr.Clone(source.Auth.OAuth)
 	if source.Config != nil {
 		value := *source.Config
 		value.Headers = maps.Clone(source.Config.Headers)
 		value.Models = append([]extensions.ProviderModelConfig(nil), source.Config.Models...)
 		value.Defined = maps.Clone(source.Config.Defined)
-		value.AuthHeader = clonePointer(source.Config.AuthHeader)
+		value.AuthHeader = ptr.Clone(source.Config.AuthHeader)
 		cloned.Config = &value
 	}
 	return cloned

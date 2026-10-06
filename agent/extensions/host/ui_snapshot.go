@@ -5,6 +5,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const wireThemeMarker = "\x00orb-theme-text\x00"
@@ -96,7 +97,7 @@ func snapshotUI(value extensions.Context) *wireUISnapshot {
 		Themes:        []wireThemeInfo{},
 	}
 	for _, info := range ui.GetAllThemes() {
-		entry := wireThemeInfo{Name: info.Name, Path: clonePointer(info.Path)}
+		entry := wireThemeInfo{Name: info.Name, Path: ptr.Clone(info.Path)}
 		entry.Theme = snapshotTheme(ui.GetTheme(info.Name))
 		result.Themes = append(result.Themes, entry)
 	}
