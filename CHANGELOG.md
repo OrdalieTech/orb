@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.17.5] - 2026-10-06
+
+Buzz is one self-contained chat platform package among the others.
+
 - `orb chat` platforms register themselves from their own packages, and all of Orb's Buzz code
   lives in `chat/buzz`; a build without it keeps every other platform. No behaviour change.
 
