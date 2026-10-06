@@ -148,7 +148,6 @@ type SessionManager struct {
 	agentDir           string
 	harnessStorage     harness.SessionStorage
 	harnessRepo        harness.SessionRepo
-	parsedMu           sync.Mutex
 	parsed             map[string]*SessionEntry
 	revision           uint64
 	aggregate          AggregateStats
@@ -1018,43 +1017,39 @@ func (manager *SessionManager) GetSessionFile() string {
 	return manager.sessionFile
 }
 
-func (manager *SessionManager) GetLeafID() *string {
-	if manager.harnessStorage != nil {
-		leaf, err := manager.harnessStorage.LeafID()
-		if err != nil {
-			return nil
-		}
-		return cloneString(leaf)
+// lockIndex locks the index for reading, first bringing a harness-backed one
+// up to date under the write lock; fresh is false when the store's leaf is
+// unreadable, which leaves the index's leaf stale.
+func (manager *SessionManager) lockIndex() (unlock func(), fresh bool) {
+	if manager.harnessStorage == nil {
+		manager.mu.RLock()
+		return manager.mu.RUnlock, true
 	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	manager.mu.Lock()
+	return manager.mu.Unlock, manager.refreshHarnessLocked() == nil
+}
+
+func (manager *SessionManager) GetLeafID() *string {
+	unlock, fresh := manager.lockIndex()
+	defer unlock()
+	if !fresh {
+		return nil
+	}
 	return cloneString(manager.leafID)
 }
 
 func (manager *SessionManager) GetLeafEntry() *SessionEntry {
-	if manager.harnessStorage != nil {
-		leaf, err := manager.harnessStorage.LeafID()
-		if err != nil || leaf == nil {
-			return nil
-		}
-		entry, _ := manager.harnessEntry(*leaf)
-		return cloneEntry(entry)
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	if manager.leafID == nil {
+	unlock, fresh := manager.lockIndex()
+	defer unlock()
+	if !fresh || manager.leafID == nil {
 		return nil
 	}
 	return cloneEntry(manager.byID[*manager.leafID])
 }
 
 func (manager *SessionManager) GetEntry(id string) *SessionEntry {
-	if manager.harnessStorage != nil {
-		entry, _ := manager.harnessEntry(id)
-		return cloneEntry(entry)
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	unlock, _ := manager.lockIndex()
+	defer unlock()
 	return cloneEntry(manager.byID[id])
 }
 
@@ -1077,16 +1072,8 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 }
 
 func (manager *SessionManager) GetEntries() []SessionEntry {
-	if manager.harnessStorage != nil {
-		entries := manager.harnessStorage.Entries()
-		converted := make([]SessionEntry, len(entries))
-		for index := range entries {
-			converted[index] = *cloneEntry(manager.parsedEntry(entries[index]))
-		}
-		return converted
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	unlock, _ := manager.lockIndex()
+	defer unlock()
 	entries := make([]SessionEntry, 0, len(manager.fileEntries)-1)
 	for _, fileEntry := range manager.fileEntries {
 		if fileEntry != nil && fileEntry.Entry != nil && fileEntry.Type != "session" {
@@ -1126,24 +1113,11 @@ func (manager *SessionManager) AggregateStats() (AggregateStats, uint64) {
 }
 
 func (manager *SessionManager) GetHeader() *SessionHeader {
-	if manager.harnessStorage != nil {
-		manager.mu.Lock()
-		defer manager.mu.Unlock()
-		if manager.refreshHarnessLocked() != nil {
-			return nil
-		}
-		for _, entry := range manager.fileEntries {
-			if entry != nil && entry.Header != nil && entry.Type == "session" {
-				copy := *entry.Header
-				copy.ParentSession = cloneString(entry.Header.ParentSession)
-				copy.Metadata = cloneRaw(entry.Header.Metadata)
-				return &copy
-			}
-		}
+	unlock, fresh := manager.lockIndex()
+	defer unlock()
+	if !fresh {
 		return nil
 	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
 	for _, entry := range manager.fileEntries {
 		if entry != nil && entry.Header != nil && entry.Type == "session" {
 			copy := *entry.Header
@@ -1172,15 +1146,8 @@ func (manager *SessionManager) IsEmpty() bool {
 }
 
 func (manager *SessionManager) GetSessionName() *string {
-	if manager.harnessStorage != nil {
-		name, ok := manager.harnessStorage.SessionName()
-		if !ok {
-			return nil
-		}
-		return &name
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	unlock, _ := manager.lockIndex()
+	defer unlock()
 	for index := len(manager.fileEntries) - 1; index >= 0; index-- {
 		entry := manager.fileEntries[index]
 		if entry != nil && entry.Entry != nil && entry.Type == "session_info" {
@@ -1195,15 +1162,8 @@ func (manager *SessionManager) GetSessionName() *string {
 }
 
 func (manager *SessionManager) GetLabel(id string) *string {
-	if manager.harnessStorage != nil {
-		label, ok := manager.harnessStorage.Label(id)
-		if !ok {
-			return nil
-		}
-		return &label
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	unlock, _ := manager.lockIndex()
+	defer unlock()
 	label, ok := manager.labelsByID[id]
 	if !ok {
 		return nil
@@ -1212,19 +1172,12 @@ func (manager *SessionManager) GetLabel(id string) *string {
 }
 
 func (manager *SessionManager) GetChildren(parentID string) []SessionEntry {
-	if manager.harnessStorage != nil {
-		entries := manager.GetEntries()
-		children := make([]SessionEntry, 0)
-		for _, entry := range entries {
-			if entry.ParentID != nil && *entry.ParentID == parentID {
-				children = append(children, entry)
-			}
-		}
-		return children
-	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
+	unlock, _ := manager.lockIndex()
+	defer unlock()
 	var children []SessionEntry
+	if manager.harnessStorage != nil {
+		children = []SessionEntry{}
+	}
 	for _, fileEntry := range manager.fileEntries {
 		if fileEntry == nil || fileEntry.Entry == nil {
 			continue
@@ -1238,56 +1191,23 @@ func (manager *SessionManager) GetChildren(parentID string) []SessionEntry {
 }
 
 func (manager *SessionManager) GetBranch(fromID ...string) []SessionEntry {
-	if manager.harnessStorage != nil {
-		var leaf *string
-		if len(fromID) > 0 {
-			leaf = cloneString(&fromID[0])
-		} else {
-			var err error
-			leaf, err = manager.harnessStorage.LeafID()
-			if err != nil {
-				return nil
-			}
-		}
-		path := []SessionEntry{}
-		for id := leaf; id != nil && *id != ""; {
-			entry, ok := manager.harnessEntry(*id)
-			if !ok {
-				return []SessionEntry{}
-			}
-			path = append(path, *cloneEntry(entry))
-			id = entry.ParentID
-		}
-		slices.Reverse(path)
-		return path
+	unlock, fresh := manager.lockIndex()
+	defer unlock()
+	switch {
+	case manager.harnessStorage == nil:
+		return manager.getBranchLocked(fromID...)
+	case len(fromID) > 0:
+		return manager.harnessBranchLocked(&fromID[0])
+	case !fresh:
+		return nil
 	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	return manager.getBranchLocked(fromID...)
+	return manager.harnessBranchLocked(manager.leafID)
 }
 
-// harnessEntry parses a stored entry once: harness entries never change after
-// append, and parsing a long transcript again on every read made reads O(history).
-func (manager *SessionManager) harnessEntry(id string) (*SessionEntry, bool) {
-	manager.parsedMu.Lock()
-	cached, ok := manager.parsed[id]
-	manager.parsedMu.Unlock()
-	if ok {
-		return cached, true
-	}
-	entry, ok := manager.harnessStorage.Entry(id)
-	if !ok || entry == nil {
-		return nil, false
-	}
-	return manager.parsedEntry(*entry), true
-}
-
-// parsedEntry returns the shared parse of entry; callers clone it before handing it out.
+// parsedEntry returns the shared parse of entry, made once as stored entries
+// never change; callers hold the write lock and clone it before handing it out.
 func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *SessionEntry {
-	manager.parsedMu.Lock()
-	cached, ok := manager.parsed[entry.ID]
-	manager.parsedMu.Unlock()
-	if ok {
+	if cached, ok := manager.parsed[entry.ID]; ok {
 		return cached
 	}
 	converted := sessionEntryFromHarness(entry)
@@ -1298,8 +1218,6 @@ func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *Sess
 			converted.decoded, _ = ai.UnmarshalMessage(converted.Message)
 		}
 	}
-	manager.parsedMu.Lock()
-	defer manager.parsedMu.Unlock()
 	if manager.parsed == nil {
 		manager.parsed = map[string]*SessionEntry{}
 	}
@@ -1414,20 +1332,11 @@ func (manager *SessionManager) BranchWithSummary(
 }
 
 func (manager *SessionManager) GetTree() []*SessionTreeNode {
-	if manager.harnessStorage != nil {
-		manager.mu.Lock()
-		defer manager.mu.Unlock()
-		if manager.refreshHarnessLocked() != nil {
-			return nil
-		}
-		return manager.getTreeLocked()
+	unlock, fresh := manager.lockIndex()
+	defer unlock()
+	if !fresh {
+		return nil
 	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	return manager.getTreeLocked()
-}
-
-func (manager *SessionManager) getTreeLocked() []*SessionTreeNode {
 	nodes := make(map[string]*SessionTreeNode, len(manager.byID))
 	var ordered []*SessionEntry
 	for _, fileEntry := range manager.fileEntries {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"path"
 	"path/filepath"
@@ -118,111 +119,72 @@ func (manager *SessionManager) IsHarnessBacked() bool {
 	return manager.harnessStorage != nil
 }
 
+// refreshHarnessLocked brings the index up to date with the harness store.
 func (manager *SessionManager) refreshHarnessLocked() error {
-	if manager.harnessStorage == nil {
+	journal := manager.harnessStorage
+	if journal == nil {
 		return nil
 	}
 	// Orb's own stores are append-only. Refresh only their tail; rescanning a
 	// long transcript here made every message O(history).
-	var appendOnly bool
-	switch manager.harnessStorage.(type) {
+	switch journal.(type) {
 	case *harness.JSONLSessionStorage, *harness.InMemorySessionStorage:
-		appendOnly = true
+	default:
+		manager.fileEntries = nil
 	}
-	if appendOnly && len(manager.fileEntries) > 0 {
-		journal := manager.harnessStorage
-		entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
-		for _, entry := range entries {
-			// The index shares the manager's parse: entries are never changed in place.
-			converted := manager.parsedEntry(entry)
-			var record *FileEntry
-			if converted.object != nil {
-				record = &FileEntry{Type: converted.Type, Entry: converted, object: converted.object}
-			} else {
-				record = newEntryRecord(*converted)
-			}
-			manager.fileEntries = append(manager.fileEntries, record)
+	if len(manager.fileEntries) == 0 {
+		manager.fileEntries = []*FileEntry{manager.harnessHeaderLocked()}
+		manager.buildIndexLocked()
+	}
+	entries := journal.Entries(harness.SessionEntryCursorOptions{AfterEntrySeq: len(manager.fileEntries) - 1})
+	for _, entry := range entries {
+		// The index shares the manager's parse: entries are never changed in place.
+		converted := manager.parsedEntry(entry)
+		record := &FileEntry{Type: converted.Type, Entry: converted, object: converted.object}
+		if converted.object == nil {
+			record = newEntryRecord(*converted)
+		}
+		manager.fileEntries = append(manager.fileEntries, record)
+		if record.Entry != nil && record.Type != "session" {
 			manager.byID[entry.ID] = record.Entry
 			manager.addAggregateEntryLocked(record.Entry)
-			if entry.Type == "label" && entry.TargetID != nil {
-				if label, exists := journal.Label(*entry.TargetID); exists {
-					manager.labelsByID[*entry.TargetID] = label
-					manager.labelTimestampsID[*entry.TargetID] = entry.Timestamp
-				} else {
-					delete(manager.labelsByID, *entry.TargetID)
-					delete(manager.labelTimestampsID, *entry.TargetID)
-				}
+		}
+		if entry.Type == "label" && entry.TargetID != nil {
+			if label, exists := journal.Label(*entry.TargetID); exists {
+				manager.labelsByID[*entry.TargetID] = label
+				manager.labelTimestampsID[*entry.TargetID] = entry.Timestamp
+			} else {
+				delete(manager.labelsByID, *entry.TargetID)
+				delete(manager.labelTimestampsID, *entry.TargetID)
 			}
 		}
-		leaf, err := journal.LeafID()
-		if err != nil {
-			return err
-		}
-		manager.leafID = cloneString(leaf)
-		if len(entries) > 0 {
-			manager.revision++
-		}
-		return nil
 	}
-	metadata := manager.harnessStorage.Metadata()
-	cwd := metadata.CWD
-	if cwd == "" {
-		cwd = manager.cwd
-	}
-	var header *FileEntry
-	if byteStorage, ok := manager.harnessStorage.(harness.ByteSessionStorage); ok {
-		parsed := ParseSessionEntries(string(byteStorage.HeaderJSON()))
-		if len(parsed) == 1 && parsed[0] != nil && parsed[0].Header != nil {
-			header = parsed[0]
-		}
-	}
-	if header == nil {
-		version := harnessSessionVersion(manager.harnessStorage)
-		header = newHeaderRecord(SessionHeader{
-			Type:          "session",
-			Version:       version,
-			ID:            metadata.ID,
-			Timestamp:     metadata.CreatedAt,
-			CWD:           cwd,
-			ParentSession: cloneString(metadata.ParentSessionPath),
-			Metadata:      cloneRaw(metadata.Metadata),
-		})
-	}
-	entries := manager.harnessStorage.Entries()
-	manager.fileEntries = make([]*FileEntry, 1, len(entries)+1)
-	manager.fileEntries[0] = header
-	for _, entry := range entries {
-		converted := manager.parsedEntry(entry)
-		if converted.object != nil {
-			manager.fileEntries = append(manager.fileEntries, &FileEntry{
-				Type: converted.Type, Entry: converted, object: converted.object,
-			})
-			continue
-		}
-		manager.fileEntries = append(manager.fileEntries, newEntryRecord(*converted))
-	}
-	manager.buildIndexLocked()
-	manager.labelsByID = make(map[string]string)
-	manager.labelTimestampsID = make(map[string]string)
-	for _, entry := range entries {
-		if entry.Type != "label" || entry.TargetID == nil {
-			continue
-		}
-		label, ok := manager.harnessStorage.Label(*entry.TargetID)
-		if !ok {
-			delete(manager.labelsByID, *entry.TargetID)
-			delete(manager.labelTimestampsID, *entry.TargetID)
-			continue
-		}
-		manager.labelsByID[*entry.TargetID] = label
-		manager.labelTimestampsID[*entry.TargetID] = entry.Timestamp
-	}
-	leaf, err := manager.harnessStorage.LeafID()
+	leaf, err := journal.LeafID()
 	if err != nil {
 		return err
 	}
 	manager.leafID = cloneString(leaf)
+	if len(entries) > 0 {
+		manager.revision++
+	}
 	return nil
+}
+
+// harnessHeaderLocked is the store's own header record, or one built from its
+// metadata.
+func (manager *SessionManager) harnessHeaderLocked() *FileEntry {
+	if byteStorage, ok := manager.harnessStorage.(harness.ByteSessionStorage); ok {
+		parsed := ParseSessionEntries(string(byteStorage.HeaderJSON()))
+		if len(parsed) == 1 && parsed[0] != nil && parsed[0].Header != nil {
+			return parsed[0]
+		}
+	}
+	metadata := manager.harnessStorage.Metadata()
+	return newHeaderRecord(SessionHeader{
+		Type: "session", Version: harnessSessionVersion(manager.harnessStorage), ID: metadata.ID,
+		Timestamp: metadata.CreatedAt, CWD: cmp.Or(metadata.CWD, manager.cwd),
+		ParentSession: cloneString(metadata.ParentSessionPath), Metadata: cloneRaw(metadata.Metadata),
+	})
 }
 
 func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {

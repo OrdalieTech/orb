@@ -403,14 +403,15 @@ func timestampMillis(timestamp string) int64 {
 }
 
 func (manager *SessionManager) BuildContextEntries() []SessionEntry {
-	if manager.harnessStorage != nil {
-		branch := manager.GetBranch()
-		leaf := manager.GetLeafID()
-		return BuildContextEntries(branch, leaf)
+	unlock, fresh := manager.lockIndex()
+	defer unlock()
+	switch {
+	case manager.harnessStorage == nil:
+		return BuildContextEntries(manager.entriesLocked(), manager.leafID)
+	case !fresh:
+		return nil
 	}
-	manager.mu.RLock()
-	defer manager.mu.RUnlock()
-	return BuildContextEntries(manager.entriesLocked(), manager.leafID)
+	return BuildContextEntries(manager.harnessBranchLocked(manager.leafID), manager.leafID)
 }
 
 func (manager *SessionManager) BuildSessionContext() SessionContext {
@@ -469,7 +470,7 @@ func (manager *SessionManager) projectionLocked() *contextProjection {
 		}
 	}
 	if manager.harnessStorage != nil {
-		*projection = buildContextProjection(manager.harnessBranchLocked(), manager.leafID)
+		*projection = buildContextProjection(manager.harnessBranchLocked(manager.leafID), manager.leafID)
 	} else {
 		*projection = buildContextProjection(manager.entriesLocked(), manager.leafID)
 	}
@@ -481,11 +482,12 @@ func sameID(left, right *string) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
 
-// harnessBranchLocked is GetBranch over the index refreshHarnessLocked keeps
-// in step with the store: a missing ancestor empties the branch.
-func (manager *SessionManager) harnessBranchLocked() []SessionEntry {
+// harnessBranchLocked is the branch ending at leaf in the index
+// refreshHarnessLocked keeps in step with the store: a missing ancestor
+// empties the branch.
+func (manager *SessionManager) harnessBranchLocked(leaf *string) []SessionEntry {
 	path := []SessionEntry{}
-	for id := manager.leafID; id != nil && *id != ""; {
+	for id := leaf; id != nil && *id != ""; {
 		entry := manager.byID[*id]
 		if entry == nil || len(path) > len(manager.byID) {
 			return []SessionEntry{}
