@@ -629,7 +629,7 @@ func permission(method string) string {
 		return "instance.inspect"
 	case "session.list", "session.new", "session.switch", "session.fork", "session.model", "session.name", "session.compact":
 		return "instance.session.manage"
-	case "shell": // a command in the conversation's shell is what a prompt can already have run
+	case "shell", "complete": // a command in its shell, or the files `@` lists, is what a prompt can already reach
 		return "instance.prompt"
 	default:
 		return "instance." + method

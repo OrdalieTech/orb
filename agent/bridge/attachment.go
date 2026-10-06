@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // Host is the local non-owning attachment boundary shared by the SDK runtime
@@ -37,7 +38,12 @@ type Host interface {
 }
 
 type Options struct {
-	Status      func(*runtime.AgentSession) string
+	Status func(*runtime.AgentSession) string
+	// Usage is the plan limits of the session's provider account; nil when it reports none. A new
+	// reading moves the pulse, so followers describe again. It is called often and must not block.
+	Usage func(*runtime.AgentSession) *usage.Snapshot
+	// Complete is what `@query` completes to in a message, as the TUI offers it.
+	Complete    func(context.Context, *runtime.AgentSession, string) []Completion
 	InstanceID  string
 	Store       document.Document
 	Authorize   func(bridge.Request) bool
@@ -277,6 +283,7 @@ type Descriptor struct {
 	Model      string                `json:"model,omitempty"`
 	Thinking   string                `json:"thinking,omitempty"`
 	Stats      *runtime.SessionStats `json:"stats,omitempty"`
+	Usage      *usage.Snapshot       `json:"usage,omitempty"`
 	Commands   []Command             `json:"commands,omitempty"`
 	Waits      bool                  `json:"waits"` // events.subscribe takes wait: a follower long-polls
 	Models     []bridge.Model        `json:"models,omitempty"`
@@ -296,8 +303,15 @@ type Command struct {
 	Description string `json:"description,omitempty"`
 }
 
+// Completion is one `@` completion: the text that replaces the token, and how to show it.
+type Completion struct {
+	Text   string `json:"text"`
+	Label  string `json:"label"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // methods are the calls an instance takes, before each principal's permissions filter them.
-var methods = []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name", "session.compact", "shell"}
+var methods = []string{"inspect", "prompt", "steer", "follow_up", "cancel", "session.list", "session.new", "session.switch", "session.fork", "input.reply", "session.model", "session.name", "session.compact", "shell", "complete"}
 
 func (a *Attachment) inspect() json.RawMessage {
 	a.mu.Lock()
@@ -313,6 +327,9 @@ func (a *Attachment) inspect() json.RawMessage {
 		d.Thinking = string(state.ThinkingLevel)
 		stats := session.GetSessionStats()
 		d.Stats = &stats
+		if a.options.Usage != nil {
+			d.Usage = a.options.Usage(session)
+		}
 		for _, c := range session.Commands() {
 			d.Commands = append(d.Commands, Command{c.Name, c.Description})
 		}
@@ -351,6 +368,19 @@ func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessag
 	}
 	if r.Call.Method == "session.list" {
 		return a.list(protocol.WithPageLimit(ctx, positivePage(r.PageLimit)), r.Call.Args)
+	}
+	if r.Call.Method == "complete" {
+		var args struct {
+			Query string `json:"query"`
+		}
+		if err := protocol.Decode(r.Call.Args, &args); err != nil {
+			return nil, err
+		}
+		s := a.host.Session()
+		if s == nil || a.options.Complete == nil {
+			return nil, bridge.Fail("unavailable")
+		}
+		return bridge.JSON(map[string]any{"items": append([]Completion{}, a.options.Complete(ctx, s, args.Query)...)}), nil
 	}
 	// Retained receipts are checked before routing/session fences. Their original
 	// preconditions remain part of the semantic digest across reconnects.
@@ -834,11 +864,16 @@ func (a *Attachment) pulse() string {
 	if n := s.Manager().GetSessionName(); n != nil {
 		name = *n
 	}
-	model := ""
+	model, limits := "", ""
 	if state.Model != nil {
 		model = string(state.Model.Provider) + "/" + state.Model.ID
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel)}, "\x00")))
+	if a.options.Usage != nil {
+		if u := a.options.Usage(s); u != nil {
+			limits = u.CheckedAt.String()
+		}
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel), limits}, "\x00")))
 	return base64.RawURLEncoding.EncodeToString(sum[:12])
 }
 

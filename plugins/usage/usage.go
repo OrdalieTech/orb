@@ -17,15 +17,16 @@ import (
 
 var ErrUnavailable = errors.New("usage unavailable")
 
+// Window and Snapshot are also Bridge wire: an instance describes its provider's limits with them.
 type Window struct {
-	Name      string
-	Remaining float64
-	ResetsAt  time.Time
+	Name      string    `json:"name"`
+	Remaining float64   `json:"remaining"` // percent
+	ResetsAt  time.Time `json:"resets_at,omitzero"`
 }
 type Snapshot struct {
-	Plan      string
-	Windows   []Window
-	CheckedAt time.Time
+	Plan      string    `json:"plan,omitempty"`
+	Windows   []Window  `json:"windows"`
+	CheckedAt time.Time `json:"checked_at,omitzero"`
 }
 
 // Client reads provider-reported quota only. URLs are injectable for tests

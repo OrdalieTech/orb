@@ -6,6 +6,7 @@ import (
 	"fmt"
 	goruntime "runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,10 +19,16 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // attached is a faux-model runtime with an attachment at generation 1.
 func attached(t *testing.T, steps ...faux.ResponseStep) (*Attachment, *runtime.AgentSessionRuntime) {
+	t.Helper()
+	return attachedWith(t, Options{}, steps...)
+}
+
+func attachedWith(t *testing.T, options Options, steps ...faux.ResponseStep) (*Attachment, *runtime.AgentSessionRuntime) {
 	t.Helper()
 	ctx := t.Context()
 	cwd := t.TempDir()
@@ -33,7 +40,8 @@ func attached(t *testing.T, steps ...faux.ResponseStep) (*Attachment, *runtime.A
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { host.Dispose(context.Background()) })
-	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
+	options.InstanceID, options.Store, options.Authorize = protocol.NewID(), &document.Memory{}, func(bridge.Request) bool { return true }
+	a, err := Attach(ctx, host, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +175,31 @@ func TestAFollowerWaitsForTheConversationToChange(t *testing.T) {
 	}
 	if got.State == start.State || len(got.Events) != 1 || !strings.Contains(string(got.Events[0].Data), `"session_info_changed"`) {
 		t.Fatalf("after a rename: %+v", got)
+	}
+}
+
+// A new plan-limit reading moves the pulse: a waiting follower answers, and describes it.
+func TestAFollowerSeesANewUsageReading(t *testing.T) {
+	var reading atomic.Pointer[usage.Snapshot]
+	a, _ := attachedWith(t, Options{Usage: func(*runtime.AgentSession) *usage.Snapshot { return reading.Load() }})
+	raw, _ := a.observe("", "", "", 0)
+	var first struct {
+		Cursor string `json:"cursor"`
+	}
+	_ = json.Unmarshal(raw, &first)
+	start, _ := a.replay(first.Cursor, protocol.MaxPage)
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		reading.Store(&usage.Snapshot{Windows: []usage.Window{{Name: "5h", Remaining: 62}}, CheckedAt: time.Now()})
+	}()
+	raw, err := a.Invoke(t.Context(), "events.subscribe", bridge.JSON(map[string]any{"principal": peer, "params": map[string]any{"instance_id": a.options.InstanceID, "cursor": first.Cursor, "wait": true, "state": start.State}}))
+	var got page
+	if err != nil || json.Unmarshal(raw, &got) != nil || got.State == start.State {
+		t.Fatalf("follower kept waiting: %s %v", raw, err)
+	}
+	var d Descriptor
+	if json.Unmarshal(a.inspect(), &d) != nil || d.Usage == nil || d.Usage.Windows[0].Remaining != 62 {
+		t.Fatalf("descriptor = %+v", d)
 	}
 }
 

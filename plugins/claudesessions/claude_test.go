@@ -28,6 +28,7 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 const fakeSDK = `
@@ -1219,13 +1220,13 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 		t.Fatal(got)
 	}
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }, Usage: func(s *agent.AgentSession) *usage.Snapshot { return Limits(s.Manager(), now) }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = attachment.Close() }()
 	data, err := attachment.Invoke(t.Context(), "instances.describe", bridge.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
-	if err != nil || !strings.Contains(string(data), "Claude 7d 40%") {
+	if err != nil || !strings.Contains(string(data), "Claude 7d 40%") || !strings.Contains(string(data), `"windows":[{"name":"5h","remaining":75,"resets_at":`) || !strings.Contains(string(data), `{"name":"7d","remaining":40`) {
 		t.Fatalf("remote quota missing: %s %v", data, err)
 	}
 	if got := LimitsStatus(driver.options.Manager, now.Add(6*time.Minute)); got != "Claude" {

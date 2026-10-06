@@ -735,7 +735,8 @@ UTF-8, malformed IDs, unknown behavioral arguments, and noncanonical decimal cou
 Signed contact payloads use JCS and are bounded at 16 KiB; reconciliation preserves conflicting
 revision diagnostics and durable withdrawal floors within explicit scopes.
 
-`orb.instance/1` maps inspection, prompt, steer, follow-up, cancel, and session list/new/switch/fork.
+`orb.instance/1` maps inspection, prompt, steer, follow-up, cancel, session list/new/switch/fork,
+and `@` completion.
 Session IDs resolve inside the adapter. Local, extension, and remote work share transition
 ordering and execution identity; control locks never span model streams or interactive approvals.
 Durably record acceptance before acknowledgment or dispatch. Retain compact deduplication
@@ -771,7 +772,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
 | `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
-| `instances.describe` | `instance_id` → current generation, session/revision/execution target, optional name/workspace/input request, permitted methods |
+| `instances.describe` | `instance_id` → current generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods |
 | `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
 | `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
 | `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
@@ -784,7 +785,9 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 are `{execution_id, id, value}` and require `instance.input.reply`; session new
 is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
 `{provider, model, thinking?}`. Session list accepts an optional
-`offset`. Read-only inspection needs no operation ID. An optional `subject` on remote calls
+`offset`; completion is `{query}` (the text after `@`) → `items` of `{text, label, detail}`, the
+session's skills then the files fd finds, under `instance.prompt`. Read-only inspection needs no
+operation ID. An optional `subject` on remote calls
 is restricted to an instance subject and comes from the source bridge's credential-bound
 outbound route; administrative methods never appear in this routing table.
 

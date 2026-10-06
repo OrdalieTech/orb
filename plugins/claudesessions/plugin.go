@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/filelock"
 	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/permissions"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // Model selects this capability only for an explicit or restored Claude session.
@@ -720,16 +721,11 @@ func limitsStatus(manager extensions.ReadonlySessionManager, now time.Time) stri
 func quotaStatus(manager extensions.ReadonlySessionManager, now time.Time) string {
 	// An old reading says nothing about the limits now; the account switcher reads them live.
 	if info := latestLimits(manager); info != nil && !info.ObservedAt.IsZero() && now.Sub(info.ObservedAt) <= 5*time.Minute {
-		windows := info.UnifiedWindows
 		remaining := 101.0
 		limiting := ""
-		for _, key := range []string{"five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_overage_included", "overage"} {
-			window, ok := windows[key]
-			if !ok || window.ResetsAt <= now.Unix() || window.Utilization == nil || *window.Utilization < 0 || *window.Utilization > 1 {
-				continue
-			}
-			if left := 100 * (1 - *window.Utilization); left < remaining {
-				remaining, limiting = left, limitLabel(key)
+		for _, window := range info.windows(now) {
+			if window.Remaining < remaining {
+				remaining, limiting = window.Remaining, window.Name
 			}
 		}
 		if remaining <= 100 {
@@ -794,6 +790,28 @@ func limitFooter(api extensions.API) {
 			return nil, nil
 		})
 	}
+}
+
+// Limits is the latest native subscription reading as plan windows, those already reset left
+// out; nil before the first reading.
+func Limits(manager extensions.ReadonlySessionManager, now time.Time) *usage.Snapshot {
+	info := latestLimits(manager)
+	if info == nil || info.ObservedAt.IsZero() {
+		return nil
+	}
+	return &usage.Snapshot{Windows: info.windows(now), CheckedAt: info.ObservedAt}
+}
+
+func (info *subscriptionLimits) windows(now time.Time) []usage.Window {
+	windows := []usage.Window{}
+	for _, key := range []string{"five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_overage_included", "overage"} {
+		window, ok := info.UnifiedWindows[key]
+		if !ok || window.ResetsAt <= now.Unix() || window.Utilization == nil || *window.Utilization < 0 || *window.Utilization > 1 {
+			continue
+		}
+		windows = append(windows, usage.Window{Name: limitLabel(key), Remaining: 100 * (1 - *window.Utilization), ResetsAt: time.Unix(window.ResetsAt, 0)})
+	}
+	return windows
 }
 
 func latestLimits(manager extensions.ReadonlySessionManager) *subscriptionLimits {

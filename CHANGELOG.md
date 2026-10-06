@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A Bridge instance answers what `@` completes to (`complete`: its skills, then the files in its
+  folder, as the TUI offers them; a folder listing where fd cannot run) and describes its
+  provider's plan limits (`usage`: Claude from each turn, Codex and OpenCode Go read behind it).
+
 ## [0.19.0] - 2026-10-06
 
 Buzz turns run tools again; chat platforms compose from one catalog, and layers are enforced.

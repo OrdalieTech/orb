@@ -11,16 +11,20 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/agent"
 	attach "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/document"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
+	"github.com/OrdalieTech/orb/plugins/usage"
+	"github.com/OrdalieTech/orb/tui"
 )
 
 type bridgeInteractiveHost struct{ *interactiveSessionHost }
@@ -173,12 +177,13 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 	if link == nil {
 		link = &cliBridgeLink{}
 	}
+	quota := &providerUsage{cache: args.usageCache}
 	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Status: func(s *agent.AgentSession) string {
 		if model := s.State().Model; model != nil && model.Provider == claudesessions.Name {
 			return claudesessions.LimitsStatus(s.Manager(), time.Now())
 		}
 		return ""
-	}, Authorize: func(r bridge.Request) bool {
+	}, Usage: quota.read, Complete: completeAt, Authorize: func(r bridge.Request) bool {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		var allowed bool
@@ -337,4 +342,90 @@ func (l *cliBridgeLink) configureBridge(enabled bool) error {
 		return nil
 	}
 	return configure(enabled)
+}
+
+// providerUsage reads the plan limits of the session's provider without ever waiting, as the
+// Bridge pulse asks often: Claude's arrive with its turns, so they are read again only when the
+// conversation moves; the others are read behind it, at most once a minute, through the process's
+// quota cache (shared with the TUI footer, cleared when accounts change).
+type providerUsage struct {
+	cache          *usage.Cache
+	mu             sync.Mutex
+	provider, leaf string
+	reading        *usage.Snapshot
+	asked          time.Time
+}
+
+func (u *providerUsage) read(s *agent.AgentSession) *usage.Snapshot {
+	model := s.State().Model
+	if model == nil {
+		return nil
+	}
+	provider, leaf := string(model.Provider), ""
+	if id := s.Manager().GetLeafID(); id != nil {
+		leaf = *id
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if provider != u.provider {
+		u.provider, u.leaf, u.reading, u.asked = provider, "", nil, time.Time{}
+	}
+	switch {
+	case provider == claudesessions.Name && leaf != u.leaf:
+		u.leaf, u.reading = leaf, claudesessions.Limits(s.Manager(), time.Now())
+	case provider != claudesessions.Name && time.Since(u.asked) >= time.Minute:
+		u.asked = time.Now()
+		go u.refresh(s, provider)
+	}
+	return u.reading
+}
+
+func (u *providerUsage) refresh(s *agent.AgentSession, provider string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	runner := s.ExtensionRunner()
+	if runner == nil || runner.ModelRegistry() == nil {
+		return
+	}
+	resolved, err := runner.ModelRegistry().ResolveProviderAuth(ctx, provider, nil)
+	if err != nil || resolved == nil {
+		return
+	}
+	reading, err := usage.Client{Cache: u.cache}.Fetch(ctx, provider, resolved.Auth)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if err == nil && provider == u.provider {
+		u.reading = &reading
+	}
+}
+
+// completeAt is the TUI's `@` completion for a Bridge client: the session's skills, which insert
+// their `/skill:name` token, then the files in its folder. A path query is files only.
+func completeAt(ctx context.Context, s *agent.AgentSession, query string) []attach.Completion {
+	var items []attach.Completion
+	if !strings.ContainsAny(query, `/\"`) {
+		var skills []agent.SlashCommandInfo
+		for _, command := range s.Commands() {
+			if command.Source == agent.SlashCommandSkill {
+				skills = append(skills, command)
+			}
+		}
+		for _, skill := range tui.FuzzyFilter(skills, query, func(c agent.SlashCommandInfo) string { return strings.TrimPrefix(c.Name, "skill:") }) {
+			items = append(items, attach.Completion{Text: "/" + skill.Name, Label: strings.TrimPrefix(skill.Name, "skill:"), Detail: skill.Description})
+		}
+	}
+	var files *tui.AutocompleteSuggestions
+	at := ""
+	if fd := tools.ManagedFDPath(); fd != "" {
+		files = tui.NewCombinedAutocompleteProvider(nil, s.Manager().GetCWD(), fd).GetSuggestions(ctx, []string{"@" + query}, 0, utf8.RuneCountInString(query)+1, false)
+	} else {
+		// Without fd (a phone cannot run one), the folder lists as the TUI's Tab completion lists it.
+		files, at = tui.NewCombinedAutocompleteProvider(nil, s.Manager().GetCWD(), "").GetSuggestions(ctx, []string{query}, 0, utf8.RuneCountInString(query), true), "@"
+	}
+	if files != nil {
+		for _, file := range files.Items {
+			items = append(items, attach.Completion{Text: at + file.Value, Label: file.Label, Detail: file.Description})
+		}
+	}
+	return items
 }

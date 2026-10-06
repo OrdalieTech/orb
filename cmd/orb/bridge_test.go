@@ -40,6 +40,69 @@ func socketTempRoot() string {
 	return "/tmp"
 }
 
+// A phone asks an Orb what `@` completes to, as its message box does: the session's skills,
+// which insert their token, then the files in its folder; a path asks for files only.
+func TestAPhoneCompletesAnAtToken(t *testing.T) {
+	ctx := t.Context()
+	b, err := bridge.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	phone, err := bridge.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = phone.Close() }()
+	cwd := t.TempDir()
+	if err = os.WriteFile(filepath.Join(cwd, "notes.md"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, _ := session.InMemory(cwd)
+	provider := faux.New(faux.Options{})
+	skills := []agent.Skill{{Name: "review", Description: "Review a change", Content: "Read the diff.", FilePath: "/virtual/SKILL.md"}}
+	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &agent.Resources{Skills: skills}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Dispose(ctx)
+	enrolled, token, err := b.Enroll("test", b.PersonalGroup())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := attach.Attach(ctx, host, attach.Options{InstanceID: enrolled.ID, Store: &document.Memory{}, Authorize: b.Authorize, Complete: completeAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = a.Close() }()
+	gen, err := b.Attach(enrolled.ID, token, protocol.NewID(), bridge.NewLocal(a.Invoke))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.SetGeneration(gen); err != nil {
+		t.Fatal(err)
+	}
+	if err = b.AddGrant(bridge.Grant{Principal: phone.Principal(), Instances: []string{enrolled.ID}, Permissions: []string{"instance.prompt"}}); err != nil {
+		t.Fatal(err)
+	}
+	complete := func(query string) string {
+		raw, err := b.Call(ctx, phone.Principal(), bridge.Call{InstanceID: enrolled.ID, Service: protocol.Service, Method: "complete", Args: bridge.JSON(map[string]string{"query": query})})
+		if err != nil {
+			t.Fatal(query, err)
+		}
+		return string(raw)
+	}
+	if got := complete("rev"); !strings.Contains(got, `"text":"/skill:review","label":"review","detail":"Review a change"`) {
+		t.Fatal(got)
+	}
+	if got := complete("note"); !strings.Contains(got, `"text":"@notes.md"`) || strings.Contains(got, "skill") {
+		t.Fatal(got)
+	}
+	if got := complete("./"); strings.Contains(got, "skill") {
+		t.Fatal(got)
+	}
+}
+
 func TestBridgeRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
