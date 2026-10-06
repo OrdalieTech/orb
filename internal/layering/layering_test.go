@@ -51,9 +51,13 @@ var layers = map[string]int{
 	"platforms/agent": assembly, "conformance": assembly,
 }
 
-// processState is the process environment, which only hosts and assemblies
-// read or change: everything below takes configuration as values (P3, P10).
-var processState = map[string]bool{"Getenv": true, "LookupEnv": true, "Environ": true, "Setenv": true, "Unsetenv": true, "Clearenv": true, "ExpandEnv": true}
+// processState is the process's environment, home, working directory and
+// host name, which only hosts and assemblies read or change: everything below
+// takes them as values (P3, P10).
+var processState = map[string]bool{
+	"Getenv": true, "LookupEnv": true, "Environ": true, "Setenv": true, "Unsetenv": true, "Clearenv": true, "ExpandEnv": true,
+	"UserHomeDir": true, "UserConfigDir": true, "UserCacheDir": true, "Getwd": true, "Chdir": true, "Hostname": true,
+}
 
 func layerOf(pkg string) (int, bool) {
 	best, rank, found := "", 0, false

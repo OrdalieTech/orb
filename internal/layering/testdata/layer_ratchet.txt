@@ -2,18 +2,27 @@
 agent	imports agent/extensions/host	1
 agent/clipboard	os.Getenv	3
 agent/extensions/host	os.Getenv	6
+agent/extensions/host	os.UserHomeDir	1
 agent/modes	os.Getenv	4
+agent/modes	os.Getwd	1
+agent/modes	os.UserHomeDir	3
 agent/modes/theme	os.Getenv	2
 internal/chromalexers	func init	3
 internal/localecompare	os.Getenv	1
+internal/nodepath	os.UserHomeDir	1
 internal/qr	func init	1
 internal/skilllocations	os.Getenv	2
 internal/termcaps	os.Getenv	12
 internal/toolenv	os.Environ	1
 plugins/claudesessions	imports platforms/native/sandbox	1
+plugins/claudesessions	os.Getwd	2
+plugins/claudesessions	os.UserHomeDir	1
+plugins/codexsessions	os.UserHomeDir	1
 plugins/herdr	os.Getenv	3
 plugins/permissions	imports platforms/native/sandbox	1
 plugins/permissions/native	imports platforms/native/sandbox	1
 plugins/subagents	imports platforms/native/sandbox	4
 plugins/websearch	os.Getenv	3
+plugins/websearch	os.UserHomeDir	1
 tui	os.Getenv	12
+tui	os.UserHomeDir	2
