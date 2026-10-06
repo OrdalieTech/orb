@@ -14,8 +14,12 @@ const detachedBrowserHelperEnv = "ORB_TEST_DETACHED_BROWSER_HELPER"
 // session, the observable POSIX effect of spawn({ detached: true }).unref().
 func TestLOGM1BrowserLauncherDetachesChildSession(t *testing.T) {
 	if os.Getenv(detachedBrowserHelperEnv) != "" {
+		// Published by rename, so the parent never reads a created but unwritten file.
 		path := os.Getenv(detachedBrowserHelperEnv)
-		if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		if err := os.WriteFile(path+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(path+".tmp", path); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(30 * time.Second)
