@@ -112,6 +112,10 @@ func main() {
 	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
 		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
 	}
+	if err := loadSecrets(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Error: "+err.Error())
+		os.Exit(1)
+	}
 	if os.Getenv(toolenv.Allow) != "" {
 		hideProcess()
 	}

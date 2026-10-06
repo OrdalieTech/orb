@@ -198,7 +198,8 @@ func runChatConnect(socket string, in io.Reader, out io.Writer) int {
 const teamTools = "PATH,HOME,USER,SHELL,LANG,LC_ALL,TERM,TZ,TMPDIR"
 
 // teamAgent prepares this process to run an agent on chat platforms: its
-// tools get the teamTools environment and its own environment is hidden from them.
+// tools get the teamTools environment, its own environment is hidden from them,
+// and its settings.json and models.json stay the configuration of record.
 func teamAgent(ctx context.Context, dependencies cliDependencies, streams cliStreams) acpHost {
 	if os.Getenv(toolenv.Allow) == "" {
 		_ = os.Setenv(toolenv.Allow, teamTools)
@@ -206,6 +207,9 @@ func teamAgent(ctx context.Context, dependencies cliDependencies, streams cliStr
 	hideProcess()
 	args := ParseArgs(nil)
 	args.native, args.useUnknownModel = stateFromContext(ctx), true
+	if args.native != nil {
+		args.native.files = true
+	}
 	return acpHost{args: args, dependencies: dependencies, streams: streams}
 }
 
@@ -263,7 +267,8 @@ func serveBuzzCLI(ctx context.Context) (func(), error) {
 				runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 				defer cancel()
 				command := exec.CommandContext(runCtx, cli, request.Args...)
-				command.Dir, command.Env = request.Dir, append(toolenv.Environ(), credentials...)
+				// ORB_BUZZ emptied: a CLI that is this shim again fails at once instead of looping.
+				command.Dir, command.Env = request.Dir, append(append(toolenv.Environ(), credentials...), "ORB_BUZZ=")
 				command.Stdin = bytes.NewReader(request.Stdin)
 				var stdout, stderr bytes.Buffer
 				command.Stdout, command.Stderr = &stdout, &stderr

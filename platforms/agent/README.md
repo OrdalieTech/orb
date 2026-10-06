@@ -32,7 +32,8 @@ Only the agent's own secrets, as environment:
 | `ORB_CHAT_ALLOWED_SENDERS` | Telegram | Telegram user ids allowed to talk to it |
 | provider key, such as `OPENAI_API_KEY` or `OPENROUTER_API_KEY` | both | the model's |
 
-The agent's tools (bash and the rest) see none of these: `orb chat` gives them only `PATH`, `HOME`
+The entrypoint hands these to the agent on a pipe, not in its environment, and the agent's tools
+(bash and the rest) see none of them: `orb chat` gives them only `PATH`, `HOME`
 and a few locale variables (`ORB_TOOL_ENV` widens that) and hides its own environment. The agent
 posts on Buzz with `buzz messages send` as Buzz's prompt tells it; the `buzz` its shell runs is Orb,
 which has the agent run the real CLI with the Buzz key. The image sets `BUZZ_ACP_NO_MEMORY=true`: the agent's memory
@@ -47,3 +48,16 @@ working directory). Turn the memory plugin on in `config/settings.json`:
 ```json
 { "defaultProvider": "openrouter", "defaultModel": "…", "plugins": { "memory": true } }
 ```
+
+Model logins that need a refresh token (OAuth, such as `openai-codex`) go in
+`/agent/secrets/auth.json`: the entrypoint makes it root's (0600) and hands the agent an open
+descriptor on it, so the agent reads and refreshes it while its tools cannot open it. An
+`auth.json` left in `config/` is moved there on start; if one ever sat in `config/` while the agent
+ran, the store under `state/` may hold a copy, so start such an agent on a fresh volume.
+
+`config/settings.json` and `config/models.json` are read on every start: edit them and restart to
+change the model.
+
+Measured on the pilot (amd64 under emulation): 169 to 200 MiB for the container, before the relay
+moved to `nc`.
+

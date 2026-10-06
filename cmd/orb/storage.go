@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/document"
 	nativeaccounts "github.com/OrdalieTech/orb/platforms/native/accounts"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
@@ -72,6 +73,11 @@ type nativeState struct {
 	sessionLock *flock.Flock
 	db          *sqlite.DB
 	agentDir    string
+	// credentials, when set, holds auth.json instead of the database.
+	credentials document.Document
+	// files keeps settings.json and models.json in the agent dir authoritative,
+	// as a deployed agent's mounted configuration is.
+	files bool
 }
 type nativeStateKey struct{}
 
@@ -112,7 +118,7 @@ func openNativeState(ctx context.Context, agentDir string, migrate bool, session
 	if err != nil {
 		return nil, err
 	}
-	state := &nativeState{agentDir: agentDir}
+	state := &nativeState{agentDir: agentDir, credentials: authDescriptor()}
 	if done {
 		if len(sessionDirs) > 0 {
 			return nil, errors.New("native storage is already migrated; import additional JSONL files with orb storage import <path>")
@@ -258,7 +264,7 @@ func (state *nativeState) migrationSources(sessionDirs []string) ([]sqlite.Migra
 
 func (state *nativeState) settings(cwd, agentDir string, options ...config.Option) (*config.SettingsManager, error) {
 	options = append(options, config.WithAgentDir(agentDir))
-	if state != nil {
+	if state != nil && !state.files {
 		options = append(options, config.WithGlobalDocument(state.document(filepath.Join(agentDir, "settings.json"))))
 	}
 	return config.NewSettingsManager(cwd, options...)
@@ -266,6 +272,9 @@ func (state *nativeState) settings(cwd, agentDir string, options ...config.Optio
 func (state *nativeState) auth(agentDir string) (*config.AuthStorage, error) {
 	if state == nil {
 		return config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	}
+	if state.credentials != nil {
+		return config.NewAuthStorageWithDocument(state.credentials)
 	}
 	return config.NewAuthStorageWithDocument(state.document(filepath.Join(agentDir, "auth.json")))
 }
@@ -467,7 +476,7 @@ func (state *nativeState) accounts(agentDir string, base auth.CredentialStore) *
 }
 
 func (state *nativeState) models(agentDir string, credentials auth.CredentialStore, offline bool) (*config.ModelRegistry, error) {
-	if state == nil {
+	if state == nil || state.files {
 		if offline {
 			return config.NewOfflineModelRegistry(agentDir)
 		}
@@ -605,7 +614,7 @@ func (state *nativeState) conversation() *nativeState {
 	if state == nil {
 		return nil
 	}
-	return &nativeState{db: state.db, agentDir: state.agentDir}
+	return &nativeState{db: state.db, agentDir: state.agentDir, credentials: state.credentials, files: state.files}
 }
 
 // release drops the conversation claim, discarding a conversation left empty.

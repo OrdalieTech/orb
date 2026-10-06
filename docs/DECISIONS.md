@@ -307,6 +307,20 @@ Each holds until changed by owner-signed decision.
   non-dumpable and its environment stays unreadable. Chosen over a sidecar container: one container,
   one script. Without `ORB_ACP_SOCKET`, `orb chat buzz` starts buzz-acp as its own user, which
   leaves the key readable by the agent's tools: fit for development, not for a team agent.
+- **A team agent holds its credentials on descriptors, never by path.** Its in-process tools
+  (read, edit, write) run as Orb itself, so no file Orb can open by name may hold a secret, and
+  neither may `/proc/self/environ`. The entrypoint, still root, passes every variable outside a
+  plain list (`PATH`, `HOME`, locale, `ORB_*`, `PI_*`) as KEY=VALUE lines on `ORB_SECRETS_FD`,
+  which Orb loads into its environment (`/proc/self/environ` keeps the exec-time one), and opens
+  `/agent/secrets/auth.json` (root, 0600) for OAuth logins as `ORB_AUTH_FD`, close-on-exec, which
+  Orb reads and refreshes in place; reopening it through `/proc/self/fd` checks the file's own
+  permissions and fails. A third user for tools was not enough: the read tool is Orb.
+- **A team agent's settings.json and models.json stay its configuration of record**: `orb chat`
+  reads them from the agent dir on every start instead of the copies the native store imported,
+  so editing the mounted file and restarting changes the model.
+- **buzz-acp reaches the agent through `nc -N -U`** in the image (about 1 MB), not an Orb relay
+  (about 45 MB of runtime to copy bytes). The entrypoint waits for the agent's socket before
+  starting buzz-acp, which launches its agent at once.
 
 ### Storage, release and platforms
 

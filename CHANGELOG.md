@@ -5,6 +5,15 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A team agent's credentials stay out of every tool's reach, its in-process read tool included:
+  the image's entrypoint hands them over on descriptors (`ORB_SECRETS_FD`, and `ORB_AUTH_FD` for
+  OAuth logins in `/agent/secrets/auth.json`), so neither its environment nor any file it can open
+  holds one. In 0.17.0 the read tool could open `/proc/self/environ`.
+- A team agent reads `settings.json` and `models.json` from its agent dir on every start, so
+  editing them and restarting changes its model.
+- The team agent image starts buzz-acp once the agent's socket is up, instead of failing its first
+  start, and relays it with `nc` instead of a 45 MB Orb process.
+
 ## [0.17.0] - 2026-10-06
 
 Orb runs Ordalie's team agents: `orb --mode acp` speaks the Agent Client Protocol natively, and

@@ -18,7 +18,7 @@ RUN echo "$(grep " orb_${ORB_VERSION}_linux_amd64.tar.gz$" /checksums.txt | cut 
 # The .deb binaries need glibc 2.39+.
 FROM debian:trixie-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends bash ca-certificates curl git \
+ && apt-get install -y --no-install-recommends bash ca-certificates curl git netcat-openbsd \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --home-dir /agent --no-create-home agent \
  && useradd --uid 10002 --create-home --groups agent buzz \
@@ -36,8 +36,8 @@ ENV HOME=/agent \
     ORB_STATE_HOME=/agent/state \
     ORB_BUZZ_CLI=/usr/local/libexec/buzz \
     ORB_ACP_SOCKET=/run/orb/acp.sock \
-    BUZZ_ACP_AGENT_COMMAND=/usr/local/bin/orb \
-    BUZZ_ACP_AGENT_ARGS=chat,connect,/run/orb/acp.sock \
+    BUZZ_ACP_AGENT_COMMAND=/usr/bin/nc \
+    BUZZ_ACP_AGENT_ARGS=-N,-U,/run/orb/acp.sock \
     BUZZ_ACP_NO_MEMORY=true
 WORKDIR /agent/workspace
 VOLUME /agent

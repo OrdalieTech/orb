@@ -612,8 +612,11 @@ agent-entrypoint (root, PID 1)            starts both, ends with the first to ex
 │   ├── ACP socket  agent/acp at ORB_ACP_SOCKET, one connection per buzz-acp agent process
 │   └── buzz socket runs the real buzz CLI (execute-only) with the Buzz key for the shell's `buzz`
 └── buzz-acp                         user buzz: relay identity, author gate, queues, owner commands
-    └── orb chat connect <socket>    byte relay to the agent's ACP socket
+    └── nc -N -U <socket>            byte relay to the agent's ACP socket (`orb chat connect` outside the image)
 ```
+
+The agent receives its credentials on descriptors: secrets as KEY=VALUE lines (`ORB_SECRETS_FD`),
+OAuth logins as an open `auth.json` (`ORB_AUTH_FD`), so no path its in-process tools can open holds one.
 
 Without `ORB_ACP_SOCKET` (development), `orb chat buzz` starts buzz-acp itself, as its own user.
 
