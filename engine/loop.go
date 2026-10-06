@@ -13,6 +13,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 var errNoModel = errors.New("agent: loop requires a model")
@@ -78,7 +79,7 @@ func RunLoopContinue(
 	if loopContext == nil || len(loopContext.Messages) == 0 {
 		return nil, upstreamError("Cannot continue: no messages in context")
 	}
-	if agentMessageRole(loopContext.Messages[len(loopContext.Messages)-1]) == "assistant" {
+	if MessageRole(loopContext.Messages[len(loopContext.Messages)-1]) == "assistant" {
 		return nil, upstreamError("Cannot continue from message role: assistant")
 	}
 
@@ -1282,24 +1283,18 @@ func copyAgentContext(source AgentContext) AgentContext {
 	}
 }
 
-func agentMessageRole(message AgentMessage) string {
+// MessageRole is the role message carries on the wire, or "" when it has none.
+func MessageRole(message AgentMessage) string {
 	switch message.(type) {
-	case *ai.UserMessage:
+	case *ai.UserMessage, ai.UserMessage:
 		return "user"
-	case *ai.AssistantMessage:
+	case *ai.AssistantMessage, ai.AssistantMessage:
 		return "assistant"
-	case *ai.ToolResultMessage:
+	case *ai.ToolResultMessage, ai.ToolResultMessage:
 		return "toolResult"
 	}
-	data, err := ai.Marshal(message)
-	if err != nil {
-		return ""
-	}
-	var header struct {
-		Role string `json:"role"`
-	}
-	_ = json.Unmarshal(data, &header)
-	return header.Role
+	encoded, _ := ai.Marshal(message)
+	return jsonwire.MessageRole(encoded)
 }
 
 func loopNow(config AgentLoopConfig) int64 {

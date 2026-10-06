@@ -1882,11 +1882,7 @@ func (runtime *SessionRuntime) trailingTurnEntryIDs() (string, []string) {
 		if branch[index].Type != "message" {
 			continue
 		}
-		var header struct {
-			Role string `json:"role"`
-		}
-		_ = json.Unmarshal(branch[index].Message, &header)
-		switch header.Role {
+		switch jsonwire.MessageRole(branch[index].Message) {
 		case "toolResult":
 			toolResults = append([]string{branch[index].ID}, toolResults...)
 		case "assistant":
@@ -1951,10 +1947,7 @@ func asAssistant(message engine.AgentMessage) *ai.AssistantMessage {
 		copy := typed
 		return &copy
 	case json.RawMessage:
-		var envelope struct {
-			Role string `json:"role"`
-		}
-		if json.Unmarshal(typed, &envelope) == nil && envelope.Role == "assistant" {
+		if jsonwire.MessageRole(typed) == "assistant" {
 			var assistant ai.AssistantMessage
 			if json.Unmarshal(typed, &assistant) == nil {
 				return &assistant

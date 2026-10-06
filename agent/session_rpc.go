@@ -962,13 +962,7 @@ func (runtime *SessionRuntime) GetSessionStats() SessionStats {
 			continue
 		}
 		stats.TotalMessages++
-		var role struct {
-			Role string `json:"role"`
-		}
-		if json.Unmarshal(entry.Message, &role) != nil {
-			continue
-		}
-		switch role.Role {
+		switch jsonwire.MessageRole(entry.Message) {
 		case "user":
 			stats.UserMessages++
 		case "toolResult":

@@ -13,7 +13,6 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const estimatedImageChars int64 = 4800
@@ -998,15 +997,9 @@ func harnessEntryMessage(entry SessionEntry, includeCompaction bool) engine.Agen
 	return nil
 }
 
-// MessageRole is the role message carries on the wire, or "" when it has none.
+// MessageRole is engine.MessageRole without encoding this package's messages.
 func MessageRole(message engine.AgentMessage) string {
 	switch typed := message.(type) {
-	case *ai.UserMessage, ai.UserMessage:
-		return "user"
-	case *ai.AssistantMessage, ai.AssistantMessage:
-		return "assistant"
-	case *ai.ToolResultMessage, ai.ToolResultMessage:
-		return "toolResult"
 	case CustomMessage, *CustomMessage:
 		return "custom"
 	case BashExecutionMessage, *BashExecutionMessage:
@@ -1016,8 +1009,7 @@ func MessageRole(message engine.AgentMessage) string {
 	case *SummaryMessage:
 		return typed.Role
 	}
-	encoded, _ := ai.Marshal(message)
-	return jsonwire.MessageRole(encoded)
+	return engine.MessageRole(message)
 }
 
 func userContentChars(content ai.UserContent) int64 {

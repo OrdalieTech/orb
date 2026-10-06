@@ -34,6 +34,7 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // StartupDiagnostic kinds; anything else renders as a plain message.
@@ -4894,13 +4895,7 @@ func (mode *InteractiveMode) maybeShowCacheMiss(message *ai.AssistantMessage) {
 }
 
 func (mode *InteractiveMode) renderRawAgentMessage(raw json.RawMessage) {
-	var envelope struct {
-		Role string `json:"role"`
-	}
-	if json.Unmarshal(raw, &envelope) != nil {
-		return
-	}
-	switch envelope.Role {
+	switch jsonwire.MessageRole(raw) {
 	case "bashExecution":
 		var message harness.BashExecutionMessage
 		if json.Unmarshal(raw, &message) == nil {

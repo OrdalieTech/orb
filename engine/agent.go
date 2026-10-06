@@ -347,7 +347,7 @@ func (agent *Agent) Continue(ctx context.Context) error {
 		return upstreamError("No messages to continue from")
 	}
 	last := agent.state.Messages[len(agent.state.Messages)-1]
-	if agentMessageRole(last) == "assistant" {
+	if MessageRole(last) == "assistant" {
 		steering := agent.drainQueueLocked(&agent.steering, agent.steeringMode)
 		if len(steering) > 0 {
 			active := agent.beginRunLocked(ctx)
