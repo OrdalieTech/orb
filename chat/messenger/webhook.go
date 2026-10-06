@@ -1,17 +1,13 @@
 package messenger
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/graphhook"
 )
-
-const maxWebhookBody = 5 << 20
 
 // Watermark is one delivery/read receipt from the message_deliveries or
 // message_reads webhook fields. Messenger receipts are watermarks, not
@@ -91,61 +87,34 @@ type inboundMessage struct {
 // return (Meta requires a 200 within ~5s and disables webhooks that keep
 // failing).
 func (a *Adapter) Webhook(publish func(chat.Message) error) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			graphhook.HandleVerify(w, r, a.opts.VerifyToken)
-		case http.MethodPost:
-			a.handleEvent(w, r, publish)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	return graphhook.Handler(a.opts.VerifyToken, a.opts.AppSecret, func(payload *webhookPayload) error {
+		if payload.Object != "page" {
+			return nil
 		}
-	})
-}
-
-func (a *Adapter) handleEvent(w http.ResponseWriter, r *http.Request, publish func(chat.Message) error) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
-	if err != nil {
-		http.Error(w, "unreadable body", http.StatusBadRequest)
-		return
-	}
-	if !graphhook.ValidSignature(r.Header.Get("X-Hub-Signature-256"), body, a.opts.AppSecret) {
-		http.Error(w, "invalid signature", http.StatusForbidden)
-		return
-	}
-	var payload webhookPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		http.Error(w, "malformed payload", http.StatusBadRequest)
-		return
-	}
-	if payload.Object != "page" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	for _, entry := range payload.Entry {
-		pageID := entry.ID
-		if pageID == "" {
-			pageID = a.opts.PageID
-		}
-		for i := range entry.Messaging {
-			event := &entry.Messaging[i]
-			if watermark, ok := watermarkFrom(pageID, event); ok {
-				if a.opts.OnWatermark != nil {
-					a.opts.OnWatermark(watermark)
+		for _, entry := range payload.Entry {
+			pageID := entry.ID
+			if pageID == "" {
+				pageID = a.opts.PageID
+			}
+			for i := range entry.Messaging {
+				event := &entry.Messaging[i]
+				if watermark, ok := watermarkFrom(pageID, event); ok {
+					if a.opts.OnWatermark != nil {
+						a.opts.OnWatermark(watermark)
+					}
+					continue
 				}
-				continue
-			}
-			msg, ok := a.normalize(pageID, event)
-			if !ok {
-				continue
-			}
-			if err := publish(msg); err != nil {
-				http.Error(w, "publish failed", http.StatusInternalServerError)
-				return
+				msg, ok := a.normalize(pageID, event)
+				if !ok {
+					continue
+				}
+				if err := publish(msg); err != nil {
+					return err
+				}
 			}
 		}
-	}
-	w.WriteHeader(http.StatusOK)
+		return nil
+	})
 }
 
 func watermarkFrom(pageID string, event *messagingEvent) (Watermark, bool) {

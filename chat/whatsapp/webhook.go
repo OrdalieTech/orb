@@ -1,8 +1,6 @@
 package whatsapp
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,9 +8,6 @@ import (
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/internal/graphhook"
 )
-
-// maxWebhookBody bounds inbound webhook bodies.
-const maxWebhookBody = 5 << 20
 
 // Status is one entry of the statuses[] webhook array. The lifecycle per
 // message id is sent → delivered → read (or the terminal failed), but
@@ -106,56 +101,30 @@ type inboundMessage struct {
 // error yields a 500 so Meta redelivers (the wamid EventID dedupes
 // downstream).
 func (a *Adapter) Webhook(publish func(chat.Message) error) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			graphhook.HandleVerify(w, r, a.opts.VerifyToken)
-		case http.MethodPost:
-			a.handleEvent(w, r, publish)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-}
-
-func (a *Adapter) handleEvent(w http.ResponseWriter, r *http.Request, publish func(chat.Message) error) {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
-	if err != nil {
-		http.Error(w, "unreadable body", http.StatusBadRequest)
-		return
-	}
-	if !graphhook.ValidSignature(r.Header.Get("X-Hub-Signature-256"), body, a.opts.AppSecret) {
-		http.Error(w, "invalid signature", http.StatusForbidden)
-		return
-	}
-	var payload webhookPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		http.Error(w, "malformed payload", http.StatusBadRequest)
-		return
-	}
-	for _, entry := range payload.Entry {
-		for _, change := range entry.Changes {
-			if change.Field != "messages" {
-				continue
-			}
-			for _, status := range change.Value.Statuses {
-				if a.opts.OnStatus != nil {
-					a.opts.OnStatus(status)
-				}
-			}
-			for i := range change.Value.Messages {
-				msg, ok := a.normalize(&change.Value, &change.Value.Messages[i])
-				if !ok {
+	return graphhook.Handler(a.opts.VerifyToken, a.opts.AppSecret, func(payload *webhookPayload) error {
+		for _, entry := range payload.Entry {
+			for _, change := range entry.Changes {
+				if change.Field != "messages" {
 					continue
 				}
-				if err := publish(msg); err != nil {
-					http.Error(w, "publish failed", http.StatusInternalServerError)
-					return
+				for _, status := range change.Value.Statuses {
+					if a.opts.OnStatus != nil {
+						a.opts.OnStatus(status)
+					}
+				}
+				for i := range change.Value.Messages {
+					msg, ok := a.normalize(&change.Value, &change.Value.Messages[i])
+					if !ok {
+						continue
+					}
+					if err := publish(msg); err != nil {
+						return err
+					}
 				}
 			}
 		}
-	}
-	w.WriteHeader(http.StatusOK)
+		return nil
+	})
 }
 
 // normalize converts one inbound Cloud API message to a chat.Message. The

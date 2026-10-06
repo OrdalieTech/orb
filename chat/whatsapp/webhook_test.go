@@ -107,6 +107,12 @@ func TestWebhookSignatureRawBodyFidelity(t *testing.T) {
 			t.Fatalf("status = %d, want 403", rec.Code)
 		}
 	})
+	t.Run("header without sha256= prefix rejected", func(t *testing.T) {
+		rec := postEvent(adapter.Webhook(noPublish(t)), body, strings.TrimPrefix(signBody("app-secret", body), "sha256="))
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", rec.Code)
+		}
+	})
 	t.Run("rejected before parsing", func(t *testing.T) {
 		// Invalid JSON with a bad signature must yield the signature 403,
 		// not a parse 400: verification runs first.
