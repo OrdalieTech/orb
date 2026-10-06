@@ -161,7 +161,7 @@ func (a *Adapter) normalize(envelope *eventEnvelope) (chat.Message, bool) {
 			continue
 		}
 		attachments = append(attachments, chat.AttachmentRef{
-			Kind: fileKind(file.Mimetype),
+			Kind: chat.AttachmentKind(file.Mimetype),
 			ID:   file.URLPrivateDownload,
 			Name: file.Name,
 			MIME: file.Mimetype,
@@ -200,19 +200,6 @@ func (a *Adapter) normalize(envelope *eventEnvelope) (chat.Message, bool) {
 
 func eventID(channel, ts string) string {
 	return "sl:" + channel + ":" + ts
-}
-
-func fileKind(mime string) string {
-	switch {
-	case strings.HasPrefix(mime, "image/"):
-		return "photo"
-	case strings.HasPrefix(mime, "video/"):
-		return "video"
-	case strings.HasPrefix(mime, "audio/"):
-		return "audio"
-	default:
-		return "document"
-	}
 }
 
 var inboundUnescaper = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&amp;", "&")

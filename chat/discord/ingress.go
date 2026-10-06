@@ -140,7 +140,7 @@ func attachmentsOf(msg *gwMessage) []chat.AttachmentRef {
 			continue
 		}
 		refs = append(refs, chat.AttachmentRef{
-			Kind: attachmentKind(att.ContentType),
+			Kind: chat.AttachmentKind(att.ContentType),
 			ID:   att.URL,
 			Name: att.Filename,
 			MIME: att.ContentType,
@@ -148,16 +148,4 @@ func attachmentsOf(msg *gwMessage) []chat.AttachmentRef {
 		})
 	}
 	return refs
-}
-
-func attachmentKind(contentType string) string {
-	switch {
-	case strings.HasPrefix(contentType, "image/"):
-		return "photo"
-	case strings.HasPrefix(contentType, "audio/"):
-		return "audio"
-	case strings.HasPrefix(contentType, "video/"):
-		return "video"
-	}
-	return "document"
 }

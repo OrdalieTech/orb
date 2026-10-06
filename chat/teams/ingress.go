@@ -190,17 +190,8 @@ func attachmentsOf(attachments []inboundAttachment) []chat.AttachmentRef {
 		if attachment.ContentURL == "" || strings.HasPrefix(attachment.ContentType, "text/html") {
 			continue
 		}
-		kind := "document"
-		switch {
-		case strings.HasPrefix(attachment.ContentType, "image/"):
-			kind = "photo"
-		case strings.HasPrefix(attachment.ContentType, "audio/"):
-			kind = "audio"
-		case strings.HasPrefix(attachment.ContentType, "video/"):
-			kind = "video"
-		}
 		refs = append(refs, chat.AttachmentRef{
-			Kind: kind,
+			Kind: chat.AttachmentKind(attachment.ContentType),
 			ID:   attachment.ContentURL,
 			Name: attachment.Name,
 			MIME: attachment.ContentType,

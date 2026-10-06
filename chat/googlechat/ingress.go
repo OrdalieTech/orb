@@ -149,7 +149,7 @@ func (a *Adapter) normalize(ev *event) (chat.Message, bool) {
 	for _, att := range m.Attachment {
 		if att.Source == "UPLOADED_CONTENT" && att.AttachmentDataRef != nil && att.AttachmentDataRef.ResourceName != "" {
 			msg.Attachments = append(msg.Attachments, chat.AttachmentRef{
-				Kind: attachmentKind(att.ContentType),
+				Kind: chat.AttachmentKind(att.ContentType),
 				ID:   att.AttachmentDataRef.ResourceName,
 				Name: att.ContentName,
 				MIME: att.ContentType,
@@ -189,16 +189,4 @@ func eventSentAt(createTime, eventTime string) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-func attachmentKind(mime string) string {
-	switch {
-	case strings.HasPrefix(mime, "image/"):
-		return "photo"
-	case strings.HasPrefix(mime, "video/"):
-		return "video"
-	case strings.HasPrefix(mime, "audio/"):
-		return "audio"
-	}
-	return "document"
 }
