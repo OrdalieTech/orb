@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const (
@@ -491,8 +492,8 @@ func AssistantMessage(content any, options ...AssistantMessageOptions) *ai.Assis
 		Model:        defaultModelID,
 		Usage:        defaultUsage,
 		StopReason:   stopReason,
-		ErrorMessage: cloneString(settings.ErrorMessage),
-		ResponseID:   cloneString(settings.ResponseID),
+		ErrorMessage: ptr.Clone(settings.ErrorMessage),
+		ResponseID:   ptr.Clone(settings.ResponseID),
 		Timestamp:    timestamp,
 	}
 	if message.ErrorMessage != nil {
@@ -536,14 +537,6 @@ func randomIDAt(prefix string, timestamp int64) string {
 
 func wallClockNow() int64 {
 	return time.Now().UnixMilli()
-}
-
-func cloneString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }
 
 func joinContextParts(parts []string) string {

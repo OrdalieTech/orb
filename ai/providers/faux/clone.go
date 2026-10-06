@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {
@@ -12,9 +13,9 @@ func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {
 		return nil, fmt.Errorf("faux: response is nil")
 	}
 	clone := *source
-	clone.ResponseID = cloneString(source.ResponseID)
-	clone.ResponseModel = cloneString(source.ResponseModel)
-	clone.ErrorMessage = cloneString(source.ErrorMessage)
+	clone.ResponseID = ptr.Clone(source.ResponseID)
+	clone.ResponseModel = ptr.Clone(source.ResponseModel)
+	clone.ErrorMessage = ptr.Clone(source.ErrorMessage)
 	if source.Diagnostics != nil {
 		diagnostics := make([]ai.AssistantMessageDiagnostic, len(*source.Diagnostics))
 		for index, diagnostic := range *source.Diagnostics {
@@ -22,8 +23,8 @@ func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {
 			diagnostics[index].Details = bytes.Clone(diagnostic.Details)
 			if diagnostic.Error != nil {
 				errorCopy := *diagnostic.Error
-				errorCopy.Name = cloneString(diagnostic.Error.Name)
-				errorCopy.Stack = cloneString(diagnostic.Error.Stack)
+				errorCopy.Name = ptr.Clone(diagnostic.Error.Name)
+				errorCopy.Stack = ptr.Clone(diagnostic.Error.Stack)
 				errorCopy.Code = bytes.Clone(diagnostic.Error.Code)
 				diagnostics[index].Error = &errorCopy
 			}
@@ -35,15 +36,12 @@ func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {
 		switch block := rawBlock.(type) {
 		case *ai.TextContent:
 			copy := *block
-			copy.TextSignature = cloneString(block.TextSignature)
+			copy.TextSignature = ptr.Clone(block.TextSignature)
 			clone.Content = append(clone.Content, &copy)
 		case *ai.ThinkingContent:
 			copy := *block
-			copy.ThinkingSignature = cloneString(block.ThinkingSignature)
-			if block.Redacted != nil {
-				redacted := *block.Redacted
-				copy.Redacted = &redacted
-			}
+			copy.ThinkingSignature = ptr.Clone(block.ThinkingSignature)
+			copy.Redacted = ptr.Clone(block.Redacted)
 			clone.Content = append(clone.Content, &copy)
 		case *ai.ToolCall:
 			arguments, err := ai.MarshalToolCallArguments(block)
@@ -53,13 +51,10 @@ func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {
 			copy := &ai.ToolCall{
 				ID:               block.ID,
 				Name:             block.Name,
-				ThoughtSignature: cloneString(block.ThoughtSignature),
-				PartialJSON:      cloneString(block.PartialJSON),
-				PartialArgs:      cloneString(block.PartialArgs),
-			}
-			if block.StreamIndex != nil {
-				streamIndex := *block.StreamIndex
-				copy.StreamIndex = &streamIndex
+				ThoughtSignature: ptr.Clone(block.ThoughtSignature),
+				PartialJSON:      ptr.Clone(block.PartialJSON),
+				PartialArgs:      ptr.Clone(block.PartialArgs),
+				StreamIndex:      ptr.Clone(block.StreamIndex),
 			}
 			if err := ai.SetToolCallArgumentsJSON(copy, arguments); err != nil {
 				return nil, err

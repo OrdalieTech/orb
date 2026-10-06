@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 type CacheRetention string
@@ -99,6 +101,33 @@ type Model struct {
 	Compat         json.RawMessage    `json:"compat,omitempty"`
 	// Type is the catalog operation; chat models may omit it.
 	Type string `json:"type,omitempty"`
+}
+
+// Clone returns a copy of model that shares no mutable input, cost-tier,
+// thinking-level, header or compat storage with it; nil stays nil.
+func (model *Model) Clone() *Model {
+	if model == nil {
+		return nil
+	}
+	copy := *model
+	copy.Input = append(InputModalities(nil), model.Input...)
+	if model.Cost.Tiers != nil {
+		copy.Cost.Tiers = new(append([]ModelCostTier(nil), (*model.Cost.Tiers)...))
+	}
+	if model.ThinkingLevelMap != nil {
+		levels := make(map[ModelThinkingLevel]*string, len(*model.ThinkingLevelMap))
+		for level, value := range *model.ThinkingLevelMap {
+			levels[level] = ptr.Clone(value)
+		}
+		copy.ThinkingLevelMap = &levels
+	}
+	if model.Headers != nil {
+		headers := make(map[string]string, len(*model.Headers))
+		maps.Copy(headers, *model.Headers)
+		copy.Headers = &headers
+	}
+	copy.Compat = append(json.RawMessage(nil), model.Compat...)
+	return &copy
 }
 
 // ModelInputLimits are a model's provider input limits and cache-safe

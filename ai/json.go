@@ -17,6 +17,7 @@ import (
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/partialjson"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 var (
@@ -696,7 +697,7 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		ToolName:       toolName,
 		Content:        raw.Content,
 		Details:        bytes.Clone(raw.Details),
-		Usage:          cloneUsage(raw.Usage),
+		Usage:          raw.Usage.Clone(),
 		AddedToolNames: addedToolNames,
 		IsError:        raw.IsError,
 		Timestamp:      raw.Timestamp,
@@ -705,19 +706,14 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func cloneUsage(usage *Usage) *Usage {
+// Clone returns a deep copy of usage; nil stays nil.
+func (usage *Usage) Clone() *Usage {
 	if usage == nil {
 		return nil
 	}
 	copy := *usage
-	if usage.Reasoning != nil {
-		value := *usage.Reasoning
-		copy.Reasoning = &value
-	}
-	if usage.CacheWrite1h != nil {
-		value := *usage.CacheWrite1h
-		copy.CacheWrite1h = &value
-	}
+	copy.Reasoning = ptr.Clone(usage.Reasoning)
+	copy.CacheWrite1h = ptr.Clone(usage.CacheWrite1h)
 	return &copy
 }
 
@@ -1021,7 +1017,7 @@ func (content *ToolCall) setNormalizedArguments(normalizedArguments []byte) erro
 	if err != nil {
 		return err
 	}
-	arguments, ok := copyJSONContainers(value).(map[string]any)
+	arguments, ok := CloneJSONValue(value).(map[string]any)
 	if !ok {
 		arguments = map[string]any{}
 	}
@@ -1031,24 +1027,87 @@ func (content *ToolCall) setNormalizedArguments(normalizedArguments []byte) erro
 	return nil
 }
 
-// copyJSONContainers copies a decoded JSON value's objects and arrays; the
-// immutable scalars are shared.
-func copyJSONContainers(value any) any {
+// CloneJSONValue deep-copies a JSON-shaped value: objects, arrays and raw
+// JSON are copied, immutable scalars shared, and other Go values copied by
+// reflection.
+func CloneJSONValue(value any) any {
 	switch typed := value.(type) {
+	case nil, string, float64, bool, json.Number:
+		return value
 	case map[string]any:
-		copied := make(map[string]any, len(typed))
+		if typed == nil {
+			return typed
+		}
+		copy := make(map[string]any, len(typed))
 		for key, item := range typed {
-			copied[key] = copyJSONContainers(item)
+			copy[key] = CloneJSONValue(item)
 		}
-		return copied
+		return copy
 	case []any:
-		copied := make([]any, len(typed))
+		copy := make([]any, len(typed))
 		for index, item := range typed {
-			copied[index] = copyJSONContainers(item)
+			copy[index] = CloneJSONValue(item)
 		}
-		return copied
+		return copy
+	case json.RawMessage:
+		return json.RawMessage(bytes.Clone(typed))
 	}
-	return value
+	return cloneReflect(reflect.ValueOf(value)).Interface()
+}
+
+func cloneReflect(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		copy := reflect.New(value.Type()).Elem()
+		copy.Set(cloneReflect(value.Elem()))
+		return copy
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		copy := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iterator := value.MapRange()
+		for iterator.Next() {
+			copy.SetMapIndex(iterator.Key(), cloneReflect(iterator.Value()))
+		}
+		return copy
+	case reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		copy := reflect.New(value.Type().Elem())
+		copy.Elem().Set(cloneReflect(value.Elem()))
+		return copy
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		copy := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for index := 0; index < value.Len(); index++ {
+			copy.Index(index).Set(cloneReflect(value.Index(index)))
+		}
+		return copy
+	case reflect.Array:
+		copy := reflect.New(value.Type()).Elem()
+		for index := 0; index < value.Len(); index++ {
+			copy.Index(index).Set(cloneReflect(value.Index(index)))
+		}
+		return copy
+	case reflect.Struct:
+		copy := reflect.New(value.Type()).Elem()
+		copy.Set(value)
+		for index := 0; index < value.NumField(); index++ {
+			if copy.Field(index).CanSet() && value.Field(index).CanInterface() {
+				copy.Field(index).Set(cloneReflect(value.Field(index)))
+			}
+		}
+		return copy
+	default:
+		return value
+	}
 }
 
 // jsonValuesEqual is reflect.DeepEqual for decoded JSON values, without the

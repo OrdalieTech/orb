@@ -88,7 +88,8 @@ func (catalog *Catalog) Models(provider ...string) []ai.Model {
 		}
 		slices.Sort(ids)
 		for _, id := range ids {
-			result = append(result, cloneModel(catalog.providers[providerID][id]))
+			model := catalog.providers[providerID][id]
+			result = append(result, *model.Clone())
 		}
 	}
 	return result
@@ -97,7 +98,7 @@ func (catalog *Catalog) Models(provider ...string) []ai.Model {
 // Find returns a detached model value.
 func (catalog *Catalog) Find(provider, id string) (ai.Model, bool) {
 	model, ok := catalog.providers[provider][id]
-	return cloneModel(model), ok
+	return *model.Clone(), ok
 }
 
 // Merge overlays models by provider and id.
@@ -114,7 +115,7 @@ func (catalog *Catalog) Merge(overlay *Catalog) *Catalog {
 			merged[providerID] = make(map[string]ai.Model)
 		}
 		for id, model := range entries {
-			merged[providerID][id] = cloneModel(model)
+			merged[providerID][id] = *model.Clone()
 		}
 	}
 	return &Catalog{providers: merged}
@@ -174,7 +175,7 @@ func (catalog *Catalog) MergedModels(overlay *Catalog) []ai.Model {
 			if !ok {
 				model = base[id]
 			}
-			result = append(result, cloneModel(model))
+			result = append(result, *model.Clone())
 		}
 	}
 	return result
@@ -203,37 +204,8 @@ func cloneProviders(source map[string]map[string]ai.Model) map[string]map[string
 	for providerID, entries := range source {
 		result[providerID] = make(map[string]ai.Model, len(entries))
 		for id, model := range entries {
-			result[providerID][id] = cloneModel(model)
+			result[providerID][id] = *model.Clone()
 		}
 	}
 	return result
-}
-
-func cloneModel(model ai.Model) ai.Model {
-	model.Input = append(ai.InputModalities(nil), model.Input...)
-	if model.Cost.Tiers != nil {
-		tiers := append([]ai.ModelCostTier(nil), (*model.Cost.Tiers)...)
-		model.Cost.Tiers = &tiers
-	}
-	if model.ThinkingLevelMap != nil {
-		mapping := make(map[ai.ModelThinkingLevel]*string, len(*model.ThinkingLevelMap))
-		for level, value := range *model.ThinkingLevelMap {
-			if value == nil {
-				mapping[level] = nil
-				continue
-			}
-			copy := *value
-			mapping[level] = &copy
-		}
-		model.ThinkingLevelMap = &mapping
-	}
-	if model.Headers != nil {
-		headers := make(map[string]string, len(*model.Headers))
-		for name, value := range *model.Headers {
-			headers[name] = value
-		}
-		model.Headers = &headers
-	}
-	model.Compat = append(json.RawMessage(nil), model.Compat...)
-	return model
 }

@@ -337,7 +337,7 @@ func streamAssistantResponse(
 		llmContext.Tools = &tools
 	}
 
-	requestModel := cloneModel(config.Model)
+	requestModel := config.Model.Clone()
 	options := config.SimpleStreamOptions
 	if config.GetRequestAuth != nil {
 		resolved, authErr := config.GetRequestAuth(ctx, requestModel.Provider)
@@ -881,7 +881,7 @@ func prepareToolCall(
 	argumentJSON, err := ai.MarshalToolCallArguments(toolCall)
 	if err == nil && spec.PrepareArguments != nil {
 		originalArgs := args
-		originalSnapshot := cloneJSONValue(originalArgs)
+		originalSnapshot := ai.CloneJSONValue(originalArgs)
 		args, err = spec.PrepareArguments(originalArgs)
 		if err == nil && (!sameReference(originalArgs, args) || !reflect.DeepEqual(originalSnapshot, args)) {
 			argumentJSON, err = ai.Marshal(args)
@@ -913,7 +913,7 @@ func prepareToolCall(
 		outcome := finalizedToolCall{toolCall: toolCall, result: createErrorToolResult(err.Error()), isError: true}
 		return nil, &outcome
 	}
-	return &preparedToolCall{toolCall: toolCall, tool: tool, args: args, model: cloneModel(config.Model)}, nil
+	return &preparedToolCall{toolCall: toolCall, tool: tool, args: args, model: config.Model.Clone()}, nil
 }
 
 func sameReference(left, right any) bool {

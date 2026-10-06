@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 const alreadyPromptingMessage = "Agent is already processing a prompt. Use Steer() or FollowUp() to queue messages, or wait for completion."
@@ -598,13 +599,13 @@ func (agent *Agent) DisplayState() AgentDisplayState {
 // the next run without changing transcript persistence.
 func (agent *Agent) SetRequestSystemPromptOverride(prompt *string) {
 	agent.mu.Lock()
-	agent.requestSystemPromptOverride = clonePointer(prompt)
+	agent.requestSystemPromptOverride = ptr.Clone(prompt)
 	agent.mu.Unlock()
 }
 
 func (agent *Agent) SetModel(model *ai.Model) {
 	agent.mu.Lock()
-	agent.state.Model = cloneModel(model)
+	agent.state.Model = model.Clone()
 	if agent.state.Model == nil {
 		agent.state.Model = defaultAgentModel()
 	}
@@ -934,7 +935,7 @@ func (agent *Agent) contextSnapshot() AgentContext {
 
 func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	agent.mu.Lock()
-	model := cloneModel(agent.state.Model)
+	model := agent.state.Model.Clone()
 	thinking := agent.state.ThinkingLevel
 	config := AgentLoopConfig{
 		SimpleStreamOptions: agent.streamOptions,
@@ -954,7 +955,7 @@ func (agent *Agent) loopConfig(skipInitialSteeringPoll bool) AgentLoopConfig {
 	}
 	prepare := agent.prepareNextTurn
 	externalSteering := agent.getSteeringMessages
-	forcedPrompt := clonePointer(agent.requestSystemPromptOverride)
+	forcedPrompt := ptr.Clone(agent.requestSystemPromptOverride)
 	agent.mu.Unlock()
 	if forcedPrompt != nil {
 		previous := config.TransformContext
@@ -1074,7 +1075,7 @@ func (agent *Agent) clockNow() int64 {
 func (agent *Agent) currentModel() *ai.Model {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
-	model := cloneModel(agent.state.Model)
+	model := agent.state.Model.Clone()
 	if model == nil {
 		return defaultAgentModel()
 	}
@@ -1117,7 +1118,7 @@ func defaultConvertToLLMFunc(_ context.Context, messages AgentMessages) (ai.Mess
 
 func copyAgentState(source AgentState) AgentState {
 	copy := source
-	copy.Model = cloneModel(source.Model)
+	copy.Model = source.Model.Clone()
 	copy.Tools = cloneAgentTools(source.Tools)
 	copy.Messages = cloneAgentMessages(source.Messages)
 	copy.StreamingMessage = cloneAgentMessage(source.StreamingMessage)
@@ -1135,36 +1136,6 @@ func copyPendingToolCalls(source map[string]struct{}) map[string]struct{} {
 		copy[id] = struct{}{}
 	}
 	return copy
-}
-
-func cloneModel(model *ai.Model) *ai.Model {
-	if model == nil {
-		return nil
-	}
-	copy := *model
-	copy.Input = append(ai.InputModalities(nil), model.Input...)
-	if model.ThinkingLevelMap != nil {
-		levelMap := make(map[ai.ModelThinkingLevel]*string, len(*model.ThinkingLevelMap))
-		for level, value := range *model.ThinkingLevelMap {
-			levelMap[level] = clonePointer(value)
-		}
-		copy.ThinkingLevelMap = &levelMap
-	}
-	if model.Cost.Tiers != nil {
-		tiers := append([]ai.ModelCostTier(nil), (*model.Cost.Tiers)...)
-		copy.Cost.Tiers = &tiers
-	}
-	if model.Headers != nil {
-		headers := make(map[string]string, len(*model.Headers))
-		for key, value := range *model.Headers {
-			headers[key] = value
-		}
-		copy.Headers = &headers
-	}
-	if model.Compat != nil {
-		copy.Compat = append([]byte(nil), model.Compat...)
-	}
-	return &copy
 }
 
 func cloneAgentMessages(messages AgentMessages) AgentMessages {

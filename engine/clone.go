@@ -2,10 +2,9 @@ package engine
 
 import (
 	"bytes"
-	"encoding/json"
-	"reflect"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 func cloneAgentMessage(message AgentMessage) AgentMessage {
@@ -44,7 +43,7 @@ func cloneAgentMessage(message AgentMessage) AgentMessage {
 		copy := *value
 		copy.Content = cloneToolResultContent(value.Content)
 		copy.Details = bytes.Clone(value.Details)
-		copy.Usage = cloneUsage(value.Usage)
+		copy.Usage = value.Usage.Clone()
 		copy.AddedToolNames = cloneStringSlicePointer(value.AddedToolNames)
 		if value.NestedCalls != nil {
 			nested := *value.NestedCalls
@@ -53,7 +52,7 @@ func cloneAgentMessage(message AgentMessage) AgentMessage {
 		}
 		return &copy
 	default:
-		return cloneJSONValue(message)
+		return ai.CloneJSONValue(message)
 	}
 }
 
@@ -68,24 +67,24 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 		case *ai.TextContent:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.TextSignature = clonePointer(block.TextSignature)
+				blockCopy.TextSignature = ptr.Clone(block.TextSignature)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.ThinkingContent:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.ThinkingSignature = clonePointer(block.ThinkingSignature)
-				blockCopy.Redacted = clonePointer(block.Redacted)
+				blockCopy.ThinkingSignature = ptr.Clone(block.ThinkingSignature)
+				blockCopy.Redacted = ptr.Clone(block.Redacted)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.ToolCall:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.Arguments = cloneJSONObject(block.Arguments)
-				blockCopy.ThoughtSignature = clonePointer(block.ThoughtSignature)
-				blockCopy.PartialJSON = clonePointer(block.PartialJSON)
-				blockCopy.PartialArgs = clonePointer(block.PartialArgs)
-				blockCopy.StreamIndex = clonePointer(block.StreamIndex)
+				blockCopy.Arguments, _ = ai.CloneJSONValue(block.Arguments).(map[string]any)
+				blockCopy.ThoughtSignature = ptr.Clone(block.ThoughtSignature)
+				blockCopy.PartialJSON = ptr.Clone(block.PartialJSON)
+				blockCopy.PartialArgs = ptr.Clone(block.PartialArgs)
+				blockCopy.StreamIndex = ptr.Clone(block.StreamIndex)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.UnknownContentBlock:
@@ -96,9 +95,9 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 			copy.Content[index] = rawBlock
 		}
 	}
-	copy.ResponseID = clonePointer(message.ResponseID)
-	copy.ResponseModel = clonePointer(message.ResponseModel)
-	copy.ErrorMessage = clonePointer(message.ErrorMessage)
+	copy.ResponseID = ptr.Clone(message.ResponseID)
+	copy.ResponseModel = ptr.Clone(message.ResponseModel)
+	copy.ErrorMessage = ptr.Clone(message.ErrorMessage)
 	if message.Diagnostics != nil {
 		diagnostics := make([]ai.AssistantMessageDiagnostic, len(*message.Diagnostics))
 		for index, diagnostic := range *message.Diagnostics {
@@ -106,8 +105,8 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 			diagnostics[index].Details = bytes.Clone(diagnostic.Details)
 			if diagnostic.Error != nil {
 				errorCopy := *diagnostic.Error
-				errorCopy.Name = clonePointer(diagnostic.Error.Name)
-				errorCopy.Stack = clonePointer(diagnostic.Error.Stack)
+				errorCopy.Name = ptr.Clone(diagnostic.Error.Name)
+				errorCopy.Stack = ptr.Clone(diagnostic.Error.Stack)
 				errorCopy.Code = bytes.Clone(diagnostic.Error.Code)
 				diagnostics[index].Error = &errorCopy
 			}
@@ -119,7 +118,7 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 
 func cloneUserContent(content ai.UserContent) ai.UserContent {
 	copy := content
-	copy.Text = clonePointer(content.Text)
+	copy.Text = ptr.Clone(content.Text)
 	if content.Blocks != nil {
 		copy.Blocks = make(ai.UserContentBlocks, len(content.Blocks))
 		for index, rawBlock := range content.Blocks {
@@ -127,7 +126,7 @@ func cloneUserContent(content ai.UserContent) ai.UserContent {
 			case *ai.TextContent:
 				if block != nil {
 					blockCopy := *block
-					blockCopy.TextSignature = clonePointer(block.TextSignature)
+					blockCopy.TextSignature = ptr.Clone(block.TextSignature)
 					copy.Blocks[index] = &blockCopy
 				}
 			case *ai.ImageContent:
@@ -157,7 +156,7 @@ func cloneToolResultContent(content ai.ToolResultContent) ai.ToolResultContent {
 		case *ai.TextContent:
 			if block != nil {
 				blockCopy := *block
-				blockCopy.TextSignature = clonePointer(block.TextSignature)
+				blockCopy.TextSignature = ptr.Clone(block.TextSignature)
 				copy[index] = &blockCopy
 			}
 		case *ai.ImageContent:
@@ -179,123 +178,12 @@ func cloneToolResultContent(content ai.ToolResultContent) ai.ToolResultContent {
 func cloneAgentToolResult(result AgentToolResult) AgentToolResult {
 	copy := result
 	copy.Content = cloneToolResultContent(result.Content)
-	copy.Details = cloneJSONValue(result.Details)
-	copy.StructuredContent = cloneJSONValue(result.StructuredContent)
-	copy.Usage = cloneUsage(result.Usage)
+	copy.Details = ai.CloneJSONValue(result.Details)
+	copy.StructuredContent = ai.CloneJSONValue(result.StructuredContent)
+	copy.Usage = result.Usage.Clone()
 	copy.AddedToolNames = cloneStringSlicePointer(result.AddedToolNames)
-	copy.Terminate = clonePointer(result.Terminate)
+	copy.Terminate = ptr.Clone(result.Terminate)
 	return copy
-}
-
-func cloneUsage(usage *ai.Usage) *ai.Usage {
-	if usage == nil {
-		return nil
-	}
-	copy := *usage
-	if usage.Reasoning != nil {
-		value := *usage.Reasoning
-		copy.Reasoning = &value
-	}
-	if usage.CacheWrite1h != nil {
-		value := *usage.CacheWrite1h
-		copy.CacheWrite1h = &value
-	}
-	return &copy
-}
-
-func cloneJSONObject(source map[string]any) map[string]any {
-	if source == nil {
-		return nil
-	}
-	copy := make(map[string]any, len(source))
-	for key, value := range source {
-		copy[key] = cloneJSONValue(value)
-	}
-	return copy
-}
-
-func cloneJSONValue(value any) any {
-	if value == nil {
-		return nil
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		return cloneJSONObject(typed)
-	case []any:
-		copy := make([]any, len(typed))
-		for index, item := range typed {
-			copy[index] = cloneJSONValue(item)
-		}
-		return copy
-	case json.RawMessage:
-		return json.RawMessage(bytes.Clone(typed))
-	}
-	return cloneJSONReflect(reflect.ValueOf(value)).Interface()
-}
-
-func cloneJSONReflect(value reflect.Value) reflect.Value {
-	if !value.IsValid() {
-		return value
-	}
-	switch value.Kind() {
-	case reflect.Interface:
-		if value.IsNil() {
-			return reflect.Zero(value.Type())
-		}
-		copy := reflect.New(value.Type()).Elem()
-		copy.Set(cloneJSONReflect(value.Elem()))
-		return copy
-	case reflect.Map:
-		if value.IsNil() {
-			return reflect.Zero(value.Type())
-		}
-		copy := reflect.MakeMapWithSize(value.Type(), value.Len())
-		iterator := value.MapRange()
-		for iterator.Next() {
-			copy.SetMapIndex(iterator.Key(), cloneJSONReflect(iterator.Value()))
-		}
-		return copy
-	case reflect.Pointer:
-		if value.IsNil() {
-			return reflect.Zero(value.Type())
-		}
-		copy := reflect.New(value.Type().Elem())
-		copy.Elem().Set(cloneJSONReflect(value.Elem()))
-		return copy
-	case reflect.Slice:
-		if value.IsNil() {
-			return reflect.Zero(value.Type())
-		}
-		copy := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
-		for index := 0; index < value.Len(); index++ {
-			copy.Index(index).Set(cloneJSONReflect(value.Index(index)))
-		}
-		return copy
-	case reflect.Array:
-		copy := reflect.New(value.Type()).Elem()
-		for index := 0; index < value.Len(); index++ {
-			copy.Index(index).Set(cloneJSONReflect(value.Index(index)))
-		}
-		return copy
-	case reflect.Struct:
-		copy := reflect.New(value.Type()).Elem()
-		copy.Set(value)
-		for index := 0; index < value.NumField(); index++ {
-			if copy.Field(index).CanSet() && value.Field(index).CanInterface() {
-				copy.Field(index).Set(cloneJSONReflect(value.Field(index)))
-			}
-		}
-		return copy
-	default:
-		return value
-	}
-}
-
-func clonePointer[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
 }
 
 func cloneStringSlicePointer(value *[]string) *[]string {

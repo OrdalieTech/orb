@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 // TranscriptContext is the normalized provider request context. Context is
@@ -208,10 +209,10 @@ func CurrentSystemMessage(messages MessageList) *SystemMessage {
 				continue
 			}
 			if index, exists := sectionIndex[section.Name]; exists {
-				sections[index].Text = cloneString(section.Text)
+				sections[index].Text = ptr.Clone(section.Text)
 			} else {
 				sectionIndex[section.Name] = len(sections)
-				sections = append(sections, SystemPromptSection{Name: section.Name, Text: cloneString(section.Text)})
+				sections = append(sections, SystemPromptSection{Name: section.Name, Text: ptr.Clone(section.Text)})
 			}
 		}
 	}
@@ -271,7 +272,7 @@ func CloneSystemMessage(message *SystemMessage) (*SystemMessage, bool) {
 		if !plain(section.Name) || section.Text != nil && !plain(*section.Text) {
 			return nil, false
 		}
-		clone.Sections = append(clone.Sections, SystemPromptSection{Name: section.Name, Text: cloneString(section.Text)})
+		clone.Sections = append(clone.Sections, SystemPromptSection{Name: section.Name, Text: ptr.Clone(section.Text)})
 	}
 	for _, tool := range message.ToolsAdded {
 		parameters := []byte(tool.Parameters)
@@ -375,14 +376,6 @@ func systemContentText(content any) string {
 func joinNonEmpty(parts []string) string { return strings.Join(parts, "\n\n") }
 
 func cloneTools(tools []Tool) []Tool { return append([]Tool(nil), tools...) }
-
-func cloneString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
 
 func indexSections(sections SystemPromptSections) map[string]int {
 	result := make(map[string]int, len(sections))

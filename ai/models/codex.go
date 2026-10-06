@@ -105,7 +105,7 @@ func codexModels(known *Catalog, live []codexLiveModel) []ai.Model {
 			if template.ID == "" {
 				continue
 			}
-			model = cloneModel(template)
+			model = *template.Clone()
 			model.ID, model.Name, model.Cost = item.Slug, cmp.Or(item.DisplayName, item.Slug), ai.ModelCost{}
 			if api, ok := known.Find("openai", item.Slug); ok {
 				model.Name, model.Cost, model.MaxTokens = api.Name, api.Cost, api.MaxTokens
