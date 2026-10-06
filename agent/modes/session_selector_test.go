@@ -485,6 +485,7 @@ type selectorLifecycleTerminal struct {
 	stop    int
 	stopErr error
 	handle  func(string)
+	stopped chan struct{}
 }
 
 func (terminal *selectorLifecycleTerminal) Start(handleInput func(string), _ func()) error {
@@ -492,16 +493,30 @@ func (terminal *selectorLifecycleTerminal) Start(handleInput func(string), _ fun
 	terminal.start++
 	terminal.handle = handleInput
 	input := terminal.input
+	stopped := make(chan struct{})
+	terminal.stopped = stopped
 	terminal.mu.Unlock()
+	// Enter selects only once the sessions have loaded, which a busy machine
+	// can delay past any fixed wait: it is pressed until the selector stops.
 	go func() {
-		time.Sleep(5 * time.Millisecond)
-		handleInput(input)
+		for {
+			select {
+			case <-stopped:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+			handleInput(input)
+			if input != "\r" {
+				return
+			}
+		}
 	}()
 	return nil
 }
 func (terminal *selectorLifecycleTerminal) Stop() error {
 	terminal.mu.Lock()
 	terminal.stop++
+	close(terminal.stopped)
 	terminal.mu.Unlock()
 	return terminal.stopErr
 }
