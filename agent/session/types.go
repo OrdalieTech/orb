@@ -2,9 +2,11 @@ package session
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
@@ -19,7 +21,7 @@ type SessionHeader struct {
 	ParentSession *string
 	Metadata      json.RawMessage
 
-	object *orderedObject
+	object *jsonwire.RawObject
 }
 
 type SessionEntry struct {
@@ -53,7 +55,7 @@ type SessionEntry struct {
 	Label        *string
 	Name         string
 
-	object *orderedObject
+	object *jsonwire.RawObject
 	// decoded is Message decoded when the entry was read, or the message
 	// appended, before the entry was shared; nil when not decoded or invalid.
 	// Never modified.
@@ -76,7 +78,7 @@ type FileEntry struct {
 	Header *SessionHeader
 	Entry  *SessionEntry
 
-	object *orderedObject
+	object *jsonwire.RawObject
 	raw    json.RawMessage
 }
 
@@ -92,7 +94,7 @@ func (entry *FileEntry) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	if entry.object != nil {
-		return entry.object.marshal()
+		return entry.object.MarshalJSON()
 	}
 	if len(entry.raw) != 0 {
 		return cloneRaw(entry.raw), nil
@@ -102,14 +104,14 @@ func (entry *FileEntry) MarshalJSON() ([]byte, error) {
 
 func (header SessionHeader) MarshalJSON() ([]byte, error) {
 	if header.object != nil {
-		return header.object.marshal()
+		return header.object.MarshalJSON()
 	}
 	return newHeaderRecord(header).MarshalJSON()
 }
 
 func (entry SessionEntry) MarshalJSON() ([]byte, error) {
 	if entry.object != nil {
-		return entry.object.marshal()
+		return entry.object.MarshalJSON()
 	}
 	return newEntryRecord(entry).MarshalJSON()
 }
@@ -122,34 +124,31 @@ func (entry SessionEntry) MarshalJSONWithParent(parentID *string) ([]byte, error
 		entry.ParentID = cloneString(parentID)
 		return entry.MarshalJSON()
 	}
-	object := &orderedObject{members: make([]jsonMember, len(entry.object.members))}
-	for index, value := range entry.object.members {
-		object.members[index] = member(value.name, value.value)
-	}
+	object := slices.Clone(*entry.object)
 	parent := rawNull()
 	if parentID != nil {
 		parent = mustRawString(*parentID)
 	}
-	object.set("parentId", parent)
-	return object.marshal()
+	object.Set("parentId", parent)
+	return object.MarshalJSON()
 }
 
 func (entry *FileEntry) Raw() ([]byte, error) {
 	return entry.MarshalJSON()
 }
 
-func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
+func decodeFileEntry(object *jsonwire.RawObject, raw json.RawMessage) *FileEntry {
 	// An object marshals itself; raw is only kept for other values.
 	fileEntry := &FileEntry{object: object}
 	if object == nil {
 		fileEntry.raw = cloneRaw(raw)
 		return fileEntry
 	}
-	typeRaw, _ := object.get("type")
+	typeRaw, _ := object.Get("type")
 	fileEntry.Type, _ = decodeString(typeRaw)
 	if fileEntry.Type == "session" {
 		header := &SessionHeader{Type: "session", object: object}
-		if value, ok := object.get("version"); ok {
+		if value, ok := object.Get("version"); ok {
 			if version, valid := decodeInt(value); valid {
 				converted := int(version)
 				header.Version = &converted
@@ -158,66 +157,66 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 		header.ID, _ = stringMember(object, "id")
 		header.Timestamp, _ = stringMember(object, "timestamp")
 		header.CWD, _ = stringMember(object, "cwd")
-		if value, ok := object.get("parentSession"); ok {
+		if value, ok := object.Get("parentSession"); ok {
 			if parent, valid := decodeString(value); valid {
 				header.ParentSession = &parent
 			}
 		}
-		header.Metadata, _ = object.get("metadata")
+		header.Metadata, _ = object.Get("metadata")
 		fileEntry.Header = header
 		return fileEntry
 	}
 
 	entry := &SessionEntry{Type: fileEntry.Type, object: object}
 	entry.ID, _ = stringMember(object, "id")
-	if value, ok := object.get("parentId"); ok && string(value) != "null" {
+	if value, ok := object.Get("parentId"); ok && string(value) != "null" {
 		if parent, valid := decodeString(value); valid {
 			entry.ParentID = &parent
 		}
 	}
 	entry.Timestamp, _ = stringMember(object, "timestamp")
-	entry.Message, _ = object.view("message")
+	entry.Message, _ = object.Get("message")
 	entry.ThinkingLevel, _ = stringMember(object, "thinkingLevel")
 	entry.Provider, _ = stringMember(object, "provider")
 	entry.ModelID, _ = stringMember(object, "modelId")
-	if value, ok := object.get("activeToolNames"); ok {
+	if value, ok := object.Get("activeToolNames"); ok {
 		_ = json.Unmarshal(value, &entry.ActiveToolNames)
 	}
 	entry.Summary, _ = stringMember(object, "summary")
 	entry.FirstKeptEntryID, _ = stringMember(object, "firstKeptEntryId")
-	if value, ok := object.get("tokensBefore"); ok {
+	if value, ok := object.Get("tokensBefore"); ok {
 		entry.TokensBefore, _ = decodeNumber(value)
 	}
-	entry.Details, _ = object.view("details")
-	if value, ok := object.get("usage"); ok {
+	entry.Details, _ = object.Get("details")
+	if value, ok := object.Get("usage"); ok {
 		var usage ai.Usage
 		if json.Unmarshal(value, &usage) == nil {
 			entry.Usage = &usage
 		}
 	}
-	if value, ok := object.get("fromHook"); ok {
+	if value, ok := object.Get("fromHook"); ok {
 		entry.FromHook, _ = decodeBool(value)
 	}
 	entry.FromID, _ = stringMember(object, "fromId")
-	entry.SystemMessage, _ = object.view("systemMessage")
+	entry.SystemMessage, _ = object.Get("systemMessage")
 	entry.CustomType, _ = stringMember(object, "customType")
-	entry.Data, _ = object.view("data")
-	entry.Content, _ = object.view("content")
-	if value, ok := object.get("display"); ok {
+	entry.Data, _ = object.Get("data")
+	entry.Content, _ = object.Get("content")
+	if value, ok := object.Get("display"); ok {
 		if display, valid := decodeBool(value); valid {
 			entry.Display = *display
 		}
 	}
 	entry.TargetID, _ = stringMember(object, "targetId")
-	entry.Replacement, _ = object.get("replacement")
+	entry.Replacement, _ = object.Get("replacement")
 	if entry.Type == "leaf" {
-		if value, ok := object.get("targetId"); ok {
+		if value, ok := object.Get("targetId"); ok {
 			if targetID, valid := decodeString(value); valid {
 				entry.LeafTargetID = &targetID
 			}
 		}
 	}
-	if value, ok := object.get("label"); ok {
+	if value, ok := object.Get("label"); ok {
 		if label, valid := decodeString(value); valid {
 			entry.Label = &label
 		}
@@ -227,16 +226,16 @@ func decodeFileEntry(object *orderedObject, raw json.RawMessage) *FileEntry {
 	return fileEntry
 }
 
-func stringMember(object *orderedObject, name string) (string, bool) {
-	raw, ok := object.get(name)
-	if !ok {
+func stringMember(object *jsonwire.RawObject, name string) (string, bool) {
+	if object == nil {
 		return "", false
 	}
+	raw, _ := object.Get(name)
 	return decodeString(raw)
 }
 
 func newHeaderRecord(header SessionHeader) *FileEntry {
-	members := []jsonMember{
+	members := jsonwire.RawObject{
 		member("type", mustRawString("session")),
 	}
 	if header.Version != nil {
@@ -253,8 +252,7 @@ func newHeaderRecord(header SessionHeader) *FileEntry {
 	if header.Metadata != nil {
 		members = append(members, member("metadata", header.Metadata))
 	}
-	object := newOrderedObject(members...)
-	return decodeFileEntry(object, nil)
+	return decodeFileEntry(&members, nil)
 }
 
 func newEntryRecord(entry SessionEntry) *FileEntry {
@@ -262,13 +260,13 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 	if entry.ParentID != nil {
 		parent = mustRawString(*entry.ParentID)
 	}
-	base := []jsonMember{
+	base := jsonwire.RawObject{
 		member("type", mustRawString(entry.Type)),
 		member("id", mustRawString(entry.ID)),
 		member("parentId", parent),
 		member("timestamp", mustRawString(entry.Timestamp)),
 	}
-	var members []jsonMember
+	var members jsonwire.RawObject
 	switch entry.Type {
 	case "message":
 		members = append(base, member("message", entry.Message))
@@ -314,7 +312,7 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 			members = append(members, member("fromHook", rawBool(*entry.FromHook)))
 		}
 	case "custom":
-		members = []jsonMember{
+		members = jsonwire.RawObject{
 			member("type", mustRawString("custom")),
 			member("customType", mustRawString(entry.CustomType)),
 		}
@@ -323,7 +321,7 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 		}
 		members = append(members, base[1:]...)
 	case "custom_message":
-		members = []jsonMember{
+		members = jsonwire.RawObject{
 			member("type", mustRawString("custom_message")),
 			member("customType", mustRawString(entry.CustomType)),
 			member("content", entry.Content),
@@ -357,8 +355,7 @@ func newEntryRecord(entry SessionEntry) *FileEntry {
 	default:
 		members = base
 	}
-	object := newOrderedObject(members...)
-	return decodeFileEntry(object, nil)
+	return decodeFileEntry(&members, nil)
 }
 
 func rawUsage(usage *ai.Usage) json.RawMessage {

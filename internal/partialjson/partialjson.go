@@ -170,13 +170,6 @@ type parser struct {
 	preserveObjectOrder bool
 }
 
-type orderedMember struct {
-	name  string
-	value any
-}
-
-type orderedObject []orderedMember
-
 func (p *parser) parseAny() (any, error) {
 	p.skipBlank()
 	if p.index >= len(p.input) {
@@ -276,8 +269,7 @@ func (p *parser) parseObject() (any, error) {
 	p.index++
 	p.skipBlank()
 	object := make(map[string]any)
-	ordered := make(orderedObject, 0)
-	orderedIndexes := make(map[string]int)
+	ordered := jsonwire.OrderedObject{}
 	result := func() any {
 		if p.preserveObjectOrder {
 			return ordered
@@ -285,13 +277,12 @@ func (p *parser) parseObject() (any, error) {
 		return object
 	}
 	add := func(key string, value any) {
-		object[key] = value
-		if index, exists := orderedIndexes[key]; exists {
-			ordered[index].value = value
-			return
+		if _, exists := object[key]; exists {
+			ordered.Set(key, value)
+		} else {
+			ordered = append(ordered, jsonwire.OrderedMember{Name: key, Value: value})
 		}
-		orderedIndexes[key] = len(ordered)
-		ordered = append(ordered, orderedMember{name: key, value: value})
+		object[key] = value
 	}
 
 	for {

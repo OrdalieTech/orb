@@ -52,7 +52,7 @@ func (manager *SessionManager) CreateBranchedSession(leafID string) (string, err
 		}
 		if entry.Type == "compaction" {
 			if replacement, ok := replacementByLabelID[entry.FirstKeptEntryID]; ok {
-				record.object.set("firstKeptEntryId", mustRawString(replacement))
+				record.object.Set("firstKeptEntryId", mustRawString(replacement))
 				record = decodeFileEntry(record.object, nil)
 			}
 		}
@@ -135,15 +135,15 @@ func cloneEntryRecordWithParent(entry *SessionEntry, parentID *string) (*FileEnt
 	if err != nil {
 		return nil, err
 	}
-	object, err := parseOrderedObject(normalized)
-	if err != nil {
-		return nil, err
+	object := parseObject(normalized)
+	if object == nil {
+		return nil, errors.New("session: JSON record is not an object")
 	}
 	parent := rawNull()
 	if parentID != nil {
 		parent = mustRawString(*parentID)
 	}
-	object.set("parentId", parent)
+	object.Set("parentId", parent)
 	return decodeFileEntry(object, nil), nil
 }
 

@@ -1110,6 +1110,7 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 	copy.Usage = cloneSessionUsage(entry.Usage)
 	copy.Data = cloneRaw(entry.Data)
 	copy.Content = cloneRaw(entry.Content)
+	copy.Replacement = cloneRaw(entry.Replacement)
 	return &copy
 }
 

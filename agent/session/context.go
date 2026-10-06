@@ -328,13 +328,9 @@ func applyContextEdit(messages []json.RawMessage, replacement json.RawMessage) [
 	}
 	edited := make([]json.RawMessage, 0, len(messages))
 	for _, raw := range messages {
-		object, err := parseOrderedObject(raw)
-		if err != nil {
-			edited = append(edited, raw)
-			continue
-		}
+		object := parseObject(raw)
 		role, _ := stringMember(object, "role")
-		if role != "user" && role != "assistant" && role != "toolResult" && role != "custom" {
+		if object == nil || role != "user" && role != "assistant" && role != "toolResult" && role != "custom" {
 			edited = append(edited, raw)
 			continue
 		}
@@ -342,12 +338,8 @@ func applyContextEdit(messages []json.RawMessage, replacement json.RawMessage) [
 		if text, isString := decodeString(content); isString && (role == "assistant" || role == "toolResult") {
 			content, _ = ai.Marshal([]map[string]string{{"type": "text", "text": text}})
 		}
-		object.set("content", content)
-		encoded, err := object.marshal()
-		if err != nil {
-			edited = append(edited, raw)
-			continue
-		}
+		object.Set("content", content)
+		encoded, _ := object.MarshalJSON()
 		edited = append(edited, encoded)
 	}
 	return edited

@@ -492,7 +492,7 @@ func listedSessionName(entry *SessionEntry) (*string, bool) {
 	if entry.object == nil {
 		return nil, true
 	}
-	raw, exists := entry.object.get("name")
+	raw, exists := entry.object.Get("name")
 	if !exists || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, true
 	}

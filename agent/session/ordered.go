@@ -3,7 +3,6 @@ package session
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -12,136 +11,18 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
-type jsonMember struct {
-	name  string
-	value json.RawMessage
+// parseObject keeps a JSON object record's members in order with their exact
+// bytes, which it shares; nil when raw is not an object.
+func parseObject(raw []byte) *jsonwire.RawObject {
+	object, ok := jsonwire.ParseRawObject(raw)
+	if !ok {
+		return nil
+	}
+	return &object
 }
 
-type orderedObject struct {
-	members []jsonMember
-}
-
-// parseOrderedObject keeps a record's members in order with their exact
-// bytes, which share data: raw JSON is replaced, never changed in place.
-func parseOrderedObject(data []byte) (*orderedObject, error) {
-	if !jsonwire.Valid(data) {
-		return nil, errors.New("session: invalid JSON record")
-	}
-	if trimmed := bytes.TrimLeft(data, " \t\r\n"); trimmed[0] != '{' {
-		return nil, errors.New("session: JSON record is not an object")
-	}
-	object := &orderedObject{}
-	jsonwire.EachMember(data, func(name, value []byte) bool {
-		object.setOwned(memberName(name), value[:len(value):len(value)])
-		return true
-	})
-	return object, nil
-}
-
-// memberName spares an allocation for the members every entry has.
-func memberName(name []byte) string {
-	switch string(name) {
-	case "type":
-		return "type"
-	case "id":
-		return "id"
-	case "parentId":
-		return "parentId"
-	case "timestamp":
-		return "timestamp"
-	case "message":
-		return "message"
-	}
-	return string(name)
-}
-
-func newOrderedObject(members ...jsonMember) *orderedObject {
-	object := &orderedObject{members: make([]jsonMember, 0, len(members))}
-	for _, member := range members {
-		object.set(member.name, member.value)
-	}
-	return object
-}
-
-func member(name string, value json.RawMessage) jsonMember {
-	return jsonMember{name: name, value: cloneRaw(value)}
-}
-
-func (object *orderedObject) get(name string) (json.RawMessage, bool) {
-	if object == nil {
-		return nil, false
-	}
-	for _, member := range object.members {
-		if member.name == name {
-			return cloneRaw(member.value), true
-		}
-	}
-	return nil, false
-}
-
-// view returns a member without copying it: the entry parsed from object shares
-// its largest fields (messages, data) instead of holding them twice. Members
-// are replaced, never changed in place, and entries leave the manager cloned.
-func (object *orderedObject) view(name string) (json.RawMessage, bool) {
-	if object == nil {
-		return nil, false
-	}
-	for _, member := range object.members {
-		if member.name == name {
-			return member.value, true
-		}
-	}
-	return nil, false
-}
-
-func (object *orderedObject) set(name string, value json.RawMessage) {
-	object.setOwned(name, cloneRaw(value))
-}
-
-// setOwned stores value without cloning; the caller must hand over ownership.
-func (object *orderedObject) setOwned(name string, value json.RawMessage) {
-	for index := range object.members {
-		if object.members[index].name == name {
-			object.members[index].value = value
-			return
-		}
-	}
-	object.members = append(object.members, jsonMember{name: name, value: value})
-}
-
-func (object *orderedObject) delete(name string) {
-	for index := range object.members {
-		if object.members[index].name == name {
-			object.members = append(object.members[:index], object.members[index+1:]...)
-			return
-		}
-	}
-}
-
-func (object *orderedObject) marshal() ([]byte, error) {
-	if object == nil {
-		return []byte("null"), nil
-	}
-	var output bytes.Buffer
-	output.WriteByte('{')
-	for index, member := range object.members {
-		if index > 0 {
-			output.WriteByte(',')
-		}
-		name, err := jsonwire.MarshalString(member.name)
-		if err != nil {
-			return nil, err
-		}
-		output.Write(name)
-		output.WriteByte(':')
-		if len(member.value) == 0 {
-			output.WriteString("null")
-		} else {
-			output.Write(member.value)
-		}
-	}
-	output.WriteByte('}')
-	return output.Bytes(), nil
+func member(name string, value json.RawMessage) jsonwire.RawMember {
+	return jsonwire.RawMember{Name: name, Value: value}
 }
 
 func rawValue(value any) (json.RawMessage, error) {
@@ -159,11 +40,7 @@ func rawValue(value any) (json.RawMessage, error) {
 }
 
 func mustRawString(value string) json.RawMessage {
-	encoded, err := jsonwire.MarshalString(value)
-	if err != nil {
-		panic(err)
-	}
-	return json.RawMessage(encoded)
+	return jsonwire.AppendString(nil, value)
 }
 
 func rawInt(value int64) json.RawMessage {
@@ -183,16 +60,14 @@ func rawBool(value bool) json.RawMessage {
 }
 
 func rawStringArray(values []string) json.RawMessage {
-	var output bytes.Buffer
-	output.WriteByte('[')
+	output := []byte{'['}
 	for index, value := range values {
 		if index > 0 {
-			output.WriteByte(',')
+			output = append(output, ',')
 		}
-		output.Write(mustRawString(value))
+		output = jsonwire.AppendString(output, value)
 	}
-	output.WriteByte(']')
-	return output.Bytes()
+	return append(output, ']')
 }
 
 func rawNull() json.RawMessage {

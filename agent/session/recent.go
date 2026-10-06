@@ -91,7 +91,7 @@ func readSessionHeader(path string) *SessionHeader {
 			if entry.Type != "session" || entry.Header == nil {
 				return nil
 			}
-			rawID, ok := entry.object.get("id")
+			rawID, ok := entry.object.Get("id")
 			if !ok {
 				return nil
 			}

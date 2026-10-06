@@ -72,6 +72,101 @@ func (object *OrderedObject) Delete(name string) {
 	}
 }
 
+// RawMember is one member of a RawObject: a name and its exact JSON bytes.
+type RawMember struct {
+	Name  string
+	Value json.RawMessage
+}
+
+// RawObject is a JSON object kept as its members' exact bytes in order, so
+// rewriting some members preserves the others byte for byte. Values are
+// replaced, never changed in place, so objects may share them.
+type RawObject []RawMember
+
+// ParseRawObject reads the JSON object data, sharing its bytes. A repeated
+// name keeps its first position and its last value, as JSON.parse does.
+func ParseRawObject(data []byte) (RawObject, bool) {
+	if index := skipSpace(data, 0); index >= len(data) || data[index] != '{' || !Valid(data) {
+		return nil, false
+	}
+	object := RawObject{}
+	EachMember(data, func(name, value []byte) bool {
+		object.Set(memberName(name), value[:len(value):len(value)])
+		return true
+	})
+	return object, true
+}
+
+// memberName spares an allocation for the members every session entry has.
+func memberName(name []byte) string {
+	switch string(name) {
+	case "type":
+		return "type"
+	case "id":
+		return "id"
+	case "parentId":
+		return "parentId"
+	case "timestamp":
+		return "timestamp"
+	case "message":
+		return "message"
+	}
+	return string(name)
+}
+
+// Get returns the value of the member name, sharing its bytes.
+func (object RawObject) Get(name string) (json.RawMessage, bool) {
+	for _, member := range object {
+		if member.Name == name {
+			return member.Value, true
+		}
+	}
+	return nil, false
+}
+
+// Set replaces the value of the member name in place, or appends the member.
+func (object *RawObject) Set(name string, value json.RawMessage) {
+	for index := range *object {
+		if (*object)[index].Name == name {
+			(*object)[index].Value = value
+			return
+		}
+	}
+	*object = append(*object, RawMember{Name: name, Value: value})
+}
+
+// Delete removes the member name, if present.
+func (object *RawObject) Delete(name string) {
+	for index := range *object {
+		if (*object)[index].Name == name {
+			*object = append((*object)[:index], (*object)[index+1:]...)
+			return
+		}
+	}
+}
+
+// MarshalJSON writes the members in order into a fresh buffer with room for a
+// trailing line feed; an empty value is written as null.
+func (object RawObject) MarshalJSON() ([]byte, error) {
+	size := 3
+	for _, member := range object {
+		size += len(member.Name) + max(len(member.Value), 4) + 4
+	}
+	output := append(make([]byte, 0, size), '{')
+	for index, member := range object {
+		if index > 0 {
+			output = append(output, ',')
+		}
+		output = append(AppendString(output, member.Name), ':')
+		if len(member.Value) == 0 {
+			output = append(output, "null"...)
+		} else {
+			output = append(output, member.Value...)
+		}
+	}
+	return append(output, '}'), nil
+}
+
 // EachMember calls visit with the name, unescaped, and the raw value of each
 // member of the JSON object data until visit returns false. data must be
 // valid JSON; a value that is not an object has no members. Scanning

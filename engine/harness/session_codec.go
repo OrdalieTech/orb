@@ -169,24 +169,16 @@ func decodeHarnessStringInto(raw []byte, target *string) bool {
 	return true
 }
 
-type harnessJSONMember struct {
-	name  string
-	value json.RawMessage
-	// raw marks a value the caller supplied, checked before it is written;
-	// the codec's own encodings are valid by construction.
-	raw bool
-}
-
 func marshalHarnessHeader(metadata SessionMetadata) ([]byte, error) {
-	members := []harnessJSONMember{
-		harnessStringMember("type", "session"),
-		{name: "version", value: json.RawMessage("3")},
-		harnessStringMember("id", metadata.ID),
-		harnessStringMember("timestamp", metadata.CreatedAt),
-		harnessStringMember("cwd", metadata.CWD),
+	members := jsonwire.RawObject{
+		harnessString("type", "session"),
+		{Name: "version", Value: json.RawMessage("3")},
+		harnessString("id", metadata.ID),
+		harnessString("timestamp", metadata.CreatedAt),
+		harnessString("cwd", metadata.CWD),
 	}
 	if metadata.ParentSessionPath != nil {
-		members = append(members, harnessStringMember("parentSession", *metadata.ParentSessionPath))
+		members = append(members, harnessString("parentSession", *metadata.ParentSessionPath))
 	}
 	if len(metadata.Metadata) != 0 {
 		if !json.Valid(metadata.Metadata) {
@@ -196,7 +188,7 @@ func marshalHarnessHeader(metadata SessionMetadata) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		members = append(members, harnessJSONMember{name: "metadata", value: normalized})
+		members = append(members, jsonwire.RawMember{Name: "metadata", Value: normalized})
 	}
 	return marshalHarnessMembers(members)
 }
@@ -254,126 +246,111 @@ func marshalHarnessEntry(entry SessionTreeEntry) ([]byte, error) {
 	}
 	parent := json.RawMessage("null")
 	if entry.ParentID != nil {
-		parent = harnessRawString(*entry.ParentID)
+		parent = jsonwire.AppendString(nil, *entry.ParentID)
 	}
-	members := []harnessJSONMember{
-		harnessStringMember("type", entry.Type),
-		harnessStringMember("id", entry.ID),
-		{name: "parentId", value: parent},
-		harnessStringMember("timestamp", entry.Timestamp),
+	members := jsonwire.RawObject{
+		harnessString("type", entry.Type),
+		harnessString("id", entry.ID),
+		{Name: "parentId", Value: parent},
+		harnessString("timestamp", entry.Timestamp),
+	}
+	optional := func(name string, value json.RawMessage) {
+		if len(value) != 0 {
+			members = append(members, jsonwire.RawMember{Name: name, Value: value})
+		}
+	}
+	summaryFields := func() {
+		optional("details", entry.Details)
+		if entry.Usage != nil {
+			members = append(members, harnessJSON("usage", entry.Usage))
+		}
+		if entry.FromHook != nil {
+			members = append(members, harnessJSON("fromHook", *entry.FromHook))
+		}
+	}
+	target := json.RawMessage("null")
+	if entry.TargetID != nil {
+		target = jsonwire.AppendString(nil, *entry.TargetID)
 	}
 	switch entry.Type {
 	case "message":
-		members = append(members, harnessRawMember("message", entry.Message))
+		members = append(members, jsonwire.RawMember{Name: "message", Value: entry.Message})
 	case "thinking_level_change":
-		members = append(members, harnessStringMember("thinkingLevel", entry.ThinkingLevel))
+		members = append(members, harnessString("thinkingLevel", entry.ThinkingLevel))
 	case "model_change":
-		members = append(members, harnessStringMember("provider", entry.Provider), harnessStringMember("modelId", entry.ModelID))
+		members = append(members, harnessString("provider", entry.Provider), harnessString("modelId", entry.ModelID))
 	case "active_tools_change":
 		encoded, err := jsonwire.Marshal(entry.ActiveToolNames)
 		if err != nil {
 			return nil, err
 		}
-		members = append(members, harnessJSONMember{name: "activeToolNames", value: encoded})
+		members = append(members, jsonwire.RawMember{Name: "activeToolNames", Value: encoded})
 	case "compaction":
-		members = append(members, harnessStringMember("summary", entry.Summary))
+		members = append(members, harnessString("summary", entry.Summary))
 		if entry.FirstKeptEntryID != "" {
-			members = append(members, harnessStringMember("firstKeptEntryId", entry.FirstKeptEntryID))
+			members = append(members, harnessString("firstKeptEntryId", entry.FirstKeptEntryID))
 		}
-		members = append(members, harnessJSONMember{name: "tokensBefore", value: mustHarnessJSON(entry.TokensBefore)})
+		members = append(members, harnessJSON("tokensBefore", entry.TokensBefore))
 		if entry.RetainedTail != nil {
 			encoded, err := jsonwire.Marshal(entry.RetainedTail)
 			if err != nil {
 				return nil, err
 			}
-			members = append(members, harnessJSONMember{name: "retainedTail", value: encoded})
+			members = append(members, jsonwire.RawMember{Name: "retainedTail", Value: encoded})
 		}
-		if len(entry.Details) != 0 {
-			members = append(members, harnessRawMember("details", entry.Details))
-		}
-		if entry.Usage != nil {
-			members = append(members, harnessJSONMember{name: "usage", value: mustHarnessJSON(entry.Usage)})
-		}
-		if entry.FromHook != nil {
-			members = append(members, harnessJSONMember{name: "fromHook", value: mustHarnessJSON(*entry.FromHook)})
-		}
+		summaryFields()
 	case "branch_summary":
-		members = append(members, harnessStringMember("fromId", entry.FromID), harnessStringMember("summary", entry.Summary))
-		if len(entry.Details) != 0 {
-			members = append(members, harnessRawMember("details", entry.Details))
-		}
-		if entry.Usage != nil {
-			members = append(members, harnessJSONMember{name: "usage", value: mustHarnessJSON(entry.Usage)})
-		}
-		if entry.FromHook != nil {
-			members = append(members, harnessJSONMember{name: "fromHook", value: mustHarnessJSON(*entry.FromHook)})
-		}
+		members = append(members, harnessString("fromId", entry.FromID), harnessString("summary", entry.Summary))
+		summaryFields()
 	case "custom":
-		members = append(members, harnessStringMember("customType", entry.CustomType))
-		if len(entry.Data) != 0 {
-			members = append(members, harnessRawMember("data", entry.Data))
-		}
+		members = append(members, harnessString("customType", entry.CustomType))
+		optional("data", entry.Data)
 	case "custom_message":
-		members = append(members,
-			harnessStringMember("customType", entry.CustomType),
-			harnessRawMember("content", entry.Content),
-			harnessJSONMember{name: "display", value: mustHarnessJSON(entry.Display)},
-		)
-		if len(entry.Details) != 0 {
-			members = append(members, harnessRawMember("details", entry.Details))
-		}
+		members = append(members, harnessString("customType", entry.CustomType),
+			jsonwire.RawMember{Name: "content", Value: entry.Content}, harnessJSON("display", entry.Display))
+		optional("details", entry.Details)
 	case "label":
-		target := json.RawMessage("null")
-		if entry.TargetID != nil {
-			target = harnessRawString(*entry.TargetID)
-		}
-		members = append(members, harnessJSONMember{name: "targetId", value: target})
+		members = append(members, jsonwire.RawMember{Name: "targetId", Value: target})
 		if entry.Label != nil {
-			members = append(members, harnessStringMember("label", *entry.Label))
+			members = append(members, harnessString("label", *entry.Label))
 		}
 	case "session_info":
-		members = append(members, harnessStringMember("name", entry.Name))
+		members = append(members, harnessString("name", entry.Name))
 	case "context_edit":
-		target := ""
-		if entry.TargetID != nil {
-			target = *entry.TargetID
+		if entry.TargetID == nil {
+			target = json.RawMessage(`""`)
 		}
-		members = append(members, harnessStringMember("targetId", target), harnessRawMember("replacement", entry.Replacement))
+		members = append(members, jsonwire.RawMember{Name: "targetId", Value: target}, jsonwire.RawMember{Name: "replacement", Value: entry.Replacement})
 	case "leaf":
-		target := json.RawMessage("null")
-		if entry.TargetID != nil {
-			target = harnessRawString(*entry.TargetID)
-		}
-		members = append(members, harnessJSONMember{name: "targetId", value: target})
+		members = append(members, jsonwire.RawMember{Name: "targetId", Value: target})
 	}
 	return marshalHarnessMembers(members)
 }
 
-func harnessStringMember(name, value string) harnessJSONMember {
-	return harnessJSONMember{name: name, value: harnessRawString(value)}
-}
-
-func harnessRawString(value string) json.RawMessage {
-	encoded, err := jsonwire.MarshalString(value)
-	if err != nil {
-		panic(err)
+// marshalHarnessMembers checks the values callers supply raw, which the
+// codec's own encodings need not be, before encoding the object.
+func marshalHarnessMembers(members jsonwire.RawObject) ([]byte, error) {
+	for _, member := range members {
+		switch member.Name {
+		case "message", "details", "data", "content", "replacement":
+			if len(member.Value) != 0 && !jsonwire.Valid(member.Value) {
+				return nil, fmt.Errorf("harness: invalid raw JSON member %s", member.Name)
+			}
+		}
 	}
-	return encoded
+	return members.MarshalJSON()
 }
 
-func harnessRawMember(name string, value json.RawMessage) harnessJSONMember {
-	if len(value) == 0 {
-		value = json.RawMessage("null")
-	}
-	return harnessJSONMember{name: name, value: value, raw: true}
+func harnessString(name, value string) jsonwire.RawMember {
+	return jsonwire.RawMember{Name: name, Value: jsonwire.AppendString(nil, value)}
 }
 
-func mustHarnessJSON(value any) json.RawMessage {
+func harnessJSON(name string, value any) jsonwire.RawMember {
 	encoded, err := marshalHarnessValue(value)
 	if err != nil {
 		panic(err)
 	}
-	return encoded
+	return jsonwire.RawMember{Name: name, Value: encoded}
 }
 
 func marshalHarnessValue(value any) ([]byte, error) {
@@ -413,24 +390,4 @@ func normalizeHarnessJSONStringifyValue(value any) any {
 	default:
 		return value
 	}
-}
-
-// marshalHarnessMembers encodes members as one object in a fresh buffer with
-// room for the journal's line feed.
-func marshalHarnessMembers(members []harnessJSONMember) ([]byte, error) {
-	size := 3
-	for _, member := range members {
-		size += len(member.name) + len(member.value) + 4
-	}
-	output := append(make([]byte, 0, size), '{')
-	for index, member := range members {
-		if member.raw && !jsonwire.Valid(member.value) {
-			return nil, fmt.Errorf("harness: invalid raw JSON member %s", member.name)
-		}
-		if index > 0 {
-			output = append(output, ',')
-		}
-		output = append(append(jsonwire.AppendString(output, member.name), ':'), member.value...)
-	}
-	return append(output, '}'), nil
 }

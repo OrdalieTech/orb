@@ -26,7 +26,7 @@ func StringifyStreamingJSON(input string) ([]byte, error) {
 func parseStreamingJSONOrdered(input string) any {
 	trimmed := trimSpace(input)
 	if trimmed == "" {
-		return orderedObject{}
+		return jsonwire.OrderedObject{}
 	}
 	repaired := RepairJSON(trimmed)
 	candidates := []string{trimmed}
@@ -48,21 +48,21 @@ func parseStreamingJSONOrdered(input string) any {
 		value, err := (&parser{input: candidate, allow: AllowAll, preserveObjectOrder: true}).parseAny()
 		if err == nil {
 			if value == nil {
-				return orderedObject{}
+				return jsonwire.OrderedObject{}
 			}
 			return value
 		}
 	}
-	return orderedObject{}
+	return jsonwire.OrderedObject{}
 }
 
 func writeStreamingJSON(output *bytes.Buffer, value any) error {
 	switch value := value.(type) {
-	case orderedObject:
-		members := append(orderedObject(nil), value...)
+	case jsonwire.OrderedObject:
+		members := append(jsonwire.OrderedObject(nil), value...)
 		sort.SliceStable(members, func(left, right int) bool {
-			leftIndex, leftIsIndex := streamingJSONArrayIndex(members[left].name)
-			rightIndex, rightIsIndex := streamingJSONArrayIndex(members[right].name)
+			leftIndex, leftIsIndex := streamingJSONArrayIndex(members[left].Name)
+			rightIndex, rightIsIndex := streamingJSONArrayIndex(members[right].Name)
 			if leftIsIndex && rightIsIndex {
 				return leftIndex < rightIndex
 			}
@@ -73,13 +73,13 @@ func writeStreamingJSON(output *bytes.Buffer, value any) error {
 			if index > 0 {
 				output.WriteByte(',')
 			}
-			name, err := jsonwire.MarshalString(member.name)
+			name, err := jsonwire.MarshalString(member.Name)
 			if err != nil {
 				return err
 			}
 			output.Write(name)
 			output.WriteByte(':')
-			if err := writeStreamingJSON(output, member.value); err != nil {
+			if err := writeStreamingJSON(output, member.Value); err != nil {
 				return err
 			}
 		}

@@ -57,15 +57,11 @@ func parseSessionEntryLine(line string) *FileEntry {
 
 // parseSessionEntryRaw parses one record of valid UTF-8, which it keeps.
 func parseSessionEntryRaw(raw json.RawMessage) *FileEntry {
-	object, err := parseOrderedObject(raw)
-	if err != nil {
-		// parseOrderedObject success implies valid JSON, so the validity scan
-		// only runs to keep the original split: invalid JSON is skipped, valid
-		// non-object JSON is kept as a raw entry.
-		if !json.Valid(raw) {
-			return nil
-		}
-		return decodeFileEntry(nil, raw)
+	object := parseObject(raw)
+	// An object is valid JSON; other invalid JSON is skipped, while valid
+	// non-object JSON is kept as a raw entry.
+	if object == nil && !json.Valid(raw) {
+		return nil
 	}
 	return decodeFileEntry(object, raw)
 }
@@ -134,7 +130,7 @@ func validSessionHeader(entries []*FileEntry) bool {
 	if len(entries) == 0 || entries[0] == nil || entries[0].object == nil || entries[0].Type != "session" {
 		return false
 	}
-	id, _ := entries[0].object.get("id")
+	id, _ := entries[0].object.Get("id")
 	_, valid := decodeString(id)
 	return valid
 }
@@ -182,12 +178,7 @@ func normalizeMigratedEntries(entries []*FileEntry) error {
 		if err != nil {
 			return err
 		}
-		object, objectErr := parseOrderedObject(normalized)
-		if objectErr == nil {
-			*entry = *decodeFileEntry(object, nil)
-			continue
-		}
-		*entry = *decodeFileEntry(nil, normalized)
+		*entry = *decodeFileEntry(parseObject(normalized), normalized)
 	}
 	return nil
 }
@@ -200,7 +191,7 @@ func migrateV1ToV2(entries []*FileEntry, generator IDGenerator) error {
 			continue
 		}
 		if fileEntry.Type == "session" {
-			fileEntry.object.set("version", rawInt(2))
+			fileEntry.object.Set("version", rawInt(2))
 			syncFileEntry(fileEntry)
 			continue
 		}
@@ -208,26 +199,26 @@ func migrateV1ToV2(entries []*FileEntry, generator IDGenerator) error {
 		if err != nil {
 			return err
 		}
-		fileEntry.object.set("id", mustRawString(id))
+		fileEntry.object.Set("id", mustRawString(id))
 		if previousID == nil {
-			fileEntry.object.set("parentId", rawNull())
+			fileEntry.object.Set("parentId", rawNull())
 		} else {
-			fileEntry.object.set("parentId", mustRawString(*previousID))
+			fileEntry.object.Set("parentId", mustRawString(*previousID))
 		}
 		currentID := id
 		previousID = &currentID
 
 		if fileEntry.Type == "compaction" {
-			if rawIndex, ok := fileEntry.object.get("firstKeptEntryIndex"); ok {
+			if rawIndex, ok := fileEntry.object.Get("firstKeptEntryIndex"); ok {
 				if index, valid := decodeInt(rawIndex); valid && index >= 0 && index < int64(len(entries)) {
 					target := entries[index]
 					if target != nil && target.Type != "session" && target.object != nil {
 						if targetID, ok := stringMember(target.object, "id"); ok {
-							fileEntry.object.set("firstKeptEntryId", mustRawString(targetID))
+							fileEntry.object.Set("firstKeptEntryId", mustRawString(targetID))
 						}
 					}
 				}
-				fileEntry.object.delete("firstKeptEntryIndex")
+				fileEntry.object.Delete("firstKeptEntryIndex")
 			}
 		}
 		syncFileEntry(fileEntry)
@@ -241,32 +232,29 @@ func migrateV2ToV3(entries []*FileEntry) {
 			continue
 		}
 		if fileEntry.Type == "session" {
-			fileEntry.object.set("version", rawInt(CurrentVersion))
+			fileEntry.object.Set("version", rawInt(CurrentVersion))
 			syncFileEntry(fileEntry)
 			continue
 		}
 		if fileEntry.Type != "message" {
 			continue
 		}
-		messageRaw, ok := fileEntry.object.get("message")
+		messageRaw, ok := fileEntry.object.Get("message")
 		if !ok || len(messageRaw) == 0 || bytes.TrimSpace(messageRaw)[0] != '{' {
 			continue
 		}
-		message, err := parseOrderedObject(messageRaw)
-		if err != nil {
+		message := parseObject(messageRaw)
+		if message == nil {
 			continue
 		}
-		roleRaw, ok := message.get("role")
+		roleRaw, ok := message.Get("role")
 		role, valid := decodeString(roleRaw)
 		if !ok || !valid || role != "hookMessage" {
 			continue
 		}
-		message.set("role", mustRawString("custom"))
-		encoded, err := message.marshal()
-		if err != nil {
-			continue
-		}
-		fileEntry.object.set("message", encoded)
+		message.Set("role", mustRawString("custom"))
+		encoded, _ := message.MarshalJSON()
+		fileEntry.object.Set("message", encoded)
 		syncFileEntry(fileEntry)
 	}
 }
