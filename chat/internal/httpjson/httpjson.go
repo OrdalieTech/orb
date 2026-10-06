@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,14 +102,14 @@ func readAll(resp *http.Response) (*Response, error) {
 	return r, nil
 }
 
-// RetryAfter parses a Retry-After header given in seconds; zero when absent,
-// malformed or not positive.
+// RetryAfter parses a Retry-After header given in seconds, at most an hour;
+// zero when absent, malformed, not positive or not finite.
 func RetryAfter(header http.Header) time.Duration {
 	seconds, err := strconv.ParseFloat(header.Get("Retry-After"), 64)
-	if err != nil || seconds <= 0 {
+	if err != nil || !(seconds > 0) || math.IsInf(seconds, 1) {
 		return 0
 	}
-	return time.Duration(seconds * float64(time.Second))
+	return time.Duration(min(seconds, 3600) * float64(time.Second))
 }
 
 // Snippet bounds an error body quoted into an error message.

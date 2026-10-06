@@ -119,7 +119,12 @@ func (s *Store) Update(ctx context.Context, change func([]byte) ([]byte, error))
 			err = nil
 		}
 	default:
-		err = filelock.WriteFile(s.path, b, 0o600)
+		// The identity key never goes through a link swapped in for the file.
+		if info, statErr := os.Lstat(s.path); statErr == nil && !info.Mode().IsRegular() {
+			err = errors.New("bridge store: " + s.path + " is not a regular file")
+		} else {
+			err = filelock.WriteFile(s.path, b, 0o600)
+		}
 	}
 	s.failed = err != nil
 	s.cached = b

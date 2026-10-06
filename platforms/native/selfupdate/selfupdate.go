@@ -46,10 +46,10 @@ const (
 	releaseBase      = "https://github.com/OrdalieTech/orb/releases/download"
 )
 
-// ReleaseKey signs every release's checksums.txt (checksums.txt.sig, raw Ed25519): an update
+// releaseKey signs every release's checksums.txt (checksums.txt.sig, raw Ed25519): an update
 // trusts no file GitHub serves unless this key vouches for it. The private half is the
 // ORB_RELEASE_SIGNING_KEY secret, with a backup at ~/.config/orb/release-signing.pem.
-var ReleaseKey = ed25519.PublicKey(mustBase64("/xaew4KpYjMRLnDkPbbkbUgToYycCEv5Ur5LWpfLMTc="))
+var releaseKey = ed25519.PublicKey(mustBase64("/xaew4KpYjMRLnDkPbbkbUgToYycCEv5Ur5LWpfLMTc="))
 
 func mustBase64(s string) []byte {
 	b, err := base64.StdEncoding.DecodeString(s)
@@ -82,7 +82,7 @@ type Updater struct {
 func New(stamped string, offline bool) Updater {
 	info, ok := debug.ReadBuildInfo()
 	return Updater{
-		Key:            ReleaseKey,
+		Key:            releaseKey,
 		CurrentVersion: BuildVersion(stamped, info, ok),
 		ReleaseURL:     LatestReleaseURL,
 		ReleaseBase:    releaseBase,

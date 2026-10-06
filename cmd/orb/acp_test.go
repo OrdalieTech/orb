@@ -57,14 +57,15 @@ func startACP(t *testing.T, provider *faux.Provider) *acpClient {
 	return startACPIn(context.Background(), t, provider)
 }
 
-// startACPIn runs `orb --mode acp` in ctx, which may carry the native store.
-func startACPIn(ctx context.Context, t *testing.T, provider *faux.Provider) *acpClient {
+// startACPIn runs `orb --mode acp` with flags in ctx, which may carry the
+// native store.
+func startACPIn(ctx context.Context, t *testing.T, provider *faux.Provider, flags ...string) *acpClient {
 	t.Helper()
 	stdinReader, stdinWriter := io.Pipe()
 	stdoutReader, stdoutWriter := io.Pipe()
 	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
 	go func() {
-		client.done <- runCLIWithDependencies(ctx, []string{"--mode", "acp"}, cliStreams{
+		client.done <- runCLIWithDependencies(ctx, append([]string{"--mode", "acp"}, flags...), cliStreams{
 			Stdin: stdinReader, Stdout: stdoutWriter, Stderr: io.Discard,
 		}, scriptedRuntime(provider))
 		_ = stdoutWriter.Close()
@@ -493,4 +494,19 @@ func sessionsWorkWhereTheirClientSays(t *testing.T, native bool) {
 	if output := results[0]["content"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string); !strings.Contains(output, moved) {
 		t.Fatalf("the loaded session's bash ran in %q, want %s", output, moved)
 	}
+}
+
+// An ACP client names its sessions, so the CLI's session flags do not reach
+// them: `orb --mode acp --resume` used to crash on the first session/new.
+func TestACPIgnoresTheCLIsSessionFlags(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	client := startACPIn(context.Background(), t, faux.New(faux.Options{API: "faux", Provider: "faux"}), "--resume")
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	if created, _ := client.call("session/new", map[string]any{"cwd": root, "mcpServers": []any{}}); created["result"] == nil {
+		t.Fatalf("session/new = %v", created)
+	}
+	client.close()
 }

@@ -15,7 +15,11 @@ func TestKeepaliveClosesAPeerThatStoppedAnswering(t *testing.T) {
 	defer close(gone)
 	for _, answers := range []bool{true, false} {
 		x, y := net.Pipe()
-		server := protocol.NewConn(y, func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		server := protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
+			if method != "bridge.ping" {
+				// Peers serve bridge.ping alone: anything else breaks the wire contract.
+				t.Errorf("keepalive called %q", method)
+			}
 			if !answers {
 				<-gone // half-open: the peer is gone but nothing says so
 			}

@@ -184,7 +184,7 @@ func Keepalive(ctx context.Context, c *protocol.Conn, every time.Duration) {
 		case <-t.C:
 		}
 		ping, cancel := context.WithTimeout(ctx, every)
-		err := c.Call(ping, "ping", struct{}{}, nil)
+		err := c.Call(ping, "bridge.ping", struct{}{}, nil)
 		cancel()
 		var rpc *protocol.RPCError
 		if err != nil && !errors.As(err, &rpc) && ctx.Err() == nil {

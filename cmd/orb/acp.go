@@ -39,7 +39,8 @@ func (host acpHost) Open(ctx context.Context, options acp.Options) (*agent.Agent
 	_ = directory.Close()
 	// The client says where the session runs, including a stored one it loads.
 	args.clientCWD = true
-	args.Session, args.SystemPrompt = nil, options.SystemPrompt
+	// The client names its session: the CLI's own session flags do not apply.
+	args.Session, args.Resume, args.Continue, args.Fork, args.SystemPrompt = nil, false, false, nil, options.SystemPrompt
 	if options.ID != "" {
 		args.Session = &options.ID
 	}
