@@ -30,6 +30,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	work "github.com/OrdalieTech/orb/plugins/activity"
@@ -610,12 +611,11 @@ func (d *Driver) approve(ctx context.Context, tool, toolID, cwd string, args map
 	if !filepath.IsAbs(cwd) {
 		cwd = d.options.Manager.GetCWD()
 	}
+	// Resolved as the file tools and the policy's own rules are, so a rule
+	// path and a call path name the same file on every platform.
 	for _, key := range []string{"file_path", "notebook_path", "path"} {
 		if path, ok := args[key].(string); ok && path != "" {
-			if !filepath.IsAbs(path) && path != "~" && !strings.HasPrefix(path, "~/") {
-				path = filepath.Join(cwd, path)
-			}
-			args[key] = path
+			args[key] = nodepath.Resolve(path, cwd)
 		}
 	}
 	call := &ai.ToolCall{ID: toolID, Name: name, Arguments: args}
