@@ -284,6 +284,13 @@ Each holds until changed by owner-signed decision.
   `orb chat connect` relay it runs as its agent command. Its exit ends the agent, so an owner's
   `!shutdown` stays final under the container's restart policy. A Go Nostr front is deferred until
   buzz-acp gets in the way. Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
+- **Memory is the agent's; each session is a view of it.** A session's prompt carries the memory
+  profile as it stood when the session began, so the prefix stays cacheable. Whatever changed
+  since, written by any other session of the agent on any front or process, joins the session at
+  its next turn as one `orb.memory` message listing what was saved, replaced or forgotten; a
+  session's own changes are already in its transcript, and a compaction reloads the snapshot.
+  Rejected: a live system prompt (every write would void every live session's cache and rewrite
+  what earlier turns saw), and relying on the model to call recall. Owner, 2026-10-06.
 - **A team agent's tools never hold its credentials.** Tool processes (bash, MCP servers,
   extension hosts, external agents) inherit only the `ORB_TOOL_ENV` allowlist when it is set, and
   `orb chat` sets one (`PATH,HOME,USER,SHELL,LANG,LC_ALL,TERM,TZ,TMPDIR`) unless its operator

@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- An agent's live conversations share its memory as it changes: what one saves, replaces or
+  forgets reaches the others at their next turn, on any front, while each keeps the prompt it
+  started with so provider caches hold. Before, a conversation saw only the memory it began with.
+
 ## [0.17.2] - 2026-10-06
 
 A team agent with an OAuth login answers again from its first start.

@@ -394,3 +394,72 @@ func TestBuzzShimHelper(t *testing.T) {
 	args := os.Args[slices.Index(os.Args, "--")+1:]
 	os.Exit(runBuzzShim(args, os.Stdin, os.Stdout, os.Stderr))
 }
+
+// One agent, two live conversations: what one saves, the other knows from
+// its next turn, without its prompt changing (so a provider's cache holds) and
+// without telling the saver what it already did.
+func TestLiveConversationsShareMemoryAsItChanges(t *testing.T) {
+	root := t.TempDir()
+	project, agentDir := filepath.Join(root, "workspace"), filepath.Join(root, "agent")
+	for _, dir := range []string{project, agentDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"plugins":{"memory":true}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(project)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, agentDir)
+
+	type seen struct{ prompt, context string }
+	var requests []seen
+	record := func(reply ai.AssistantContentBlock, stop ai.StopReason) faux.ResponseStep {
+		return faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			context, _ := json.Marshal(request.Messages)
+			requests = append(requests, seen{*request.SystemPrompt, string(context)})
+			return faux.AssistantMessage(reply, faux.AssistantMessageOptions{StopReason: stop}), nil
+		})
+	}
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		record(faux.Text("Hello."), ai.StopReasonStop),
+		record(faux.ToolCall("remember", map[string]any{"target": "memory", "content": "The code of the day is tournesol."}), ai.StopReasonToolUse),
+		record(faux.Text("Saved."), ai.StopReasonStop),
+		record(faux.Text("Tournesol."), ai.StopReasonStop),
+		record(faux.Text("Still tournesol."), ai.StopReasonStop),
+	})
+	client := startACP(t, provider)
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	open := func() string {
+		created, _ := client.call("session/new", map[string]any{"cwd": project, "mcpServers": []any{}, "systemPrompt": "BUZZ_BASE"})
+		return created["result"].(map[string]any)["sessionId"].(string)
+	}
+	ask := func(session, text string) {
+		answer, _ := client.call("session/prompt", map[string]any{"sessionId": session, "prompt": []any{map[string]any{"type": "text", "text": text}}})
+		if answer["error"] != nil {
+			t.Fatalf("prompt %q: %v", text, answer["error"])
+		}
+	}
+	channel, thread := open(), open()
+	ask(channel, "Hello")
+	ask(thread, "Remember the code of the day: tournesol.")
+	ask(channel, "What is the code of the day?")
+	ask(thread, "And now?")
+	client.close()
+
+	if len(requests) != 5 {
+		t.Fatalf("model calls = %d", len(requests))
+	}
+	before, after, saver := requests[0], requests[3], requests[4]
+	if after.prompt != before.prompt {
+		t.Fatalf("the channel's prompt changed:\n%s\n---\n%s", before.prompt, after.prompt)
+	}
+	if !strings.Contains(after.context, "MEMORY: The code of the day is tournesol.") {
+		t.Fatalf("the channel did not learn the saved memory: %s", after.context)
+	}
+	if strings.Contains(saver.context, "Persistent memory changed") {
+		t.Fatalf("the saver was told its own change: %s", saver.context)
+	}
+}

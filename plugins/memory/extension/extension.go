@@ -30,13 +30,29 @@ func Extension(store memorysdk.Store) extensions.Factory {
 		api.On(extensions.EventSessionStart, func(ctx context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
 			return nil, runtime.Load(ctx)
 		})
-		api.On(extensions.EventBeforeAgentStart, func(_ context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
+		// A compaction rewrites the context anyway: it takes the memory as it is now.
+		api.On(extensions.EventSessionCompact, func(ctx context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
+			return nil, runtime.Load(ctx)
+		})
+		// The prompt keeps the memory the session started with; what the agent's
+		// other sessions changed since joins the conversation at the next turn.
+		api.On(extensions.EventBeforeAgentStart, func(ctx context.Context, raw extensions.Event, _ extensions.Context) (any, error) {
 			event := raw.(extensions.BeforeAgentStartEvent)
-			prompt := runtime.SystemPrompt(event.SystemPrompt)
-			if prompt == event.SystemPrompt {
+			var result extensions.BeforeAgentStartResult
+			if prompt := runtime.SystemPrompt(event.SystemPrompt); prompt != event.SystemPrompt {
+				result.SystemPrompt = &prompt
+			}
+			changes, err := runtime.Changes(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if changes != "" {
+				result.Message = &extensions.CustomMessage{CustomType: "orb.memory", Content: changes}
+			}
+			if result.SystemPrompt == nil && result.Message == nil {
 				return nil, nil
 			}
-			return extensions.BeforeAgentStartResult{SystemPrompt: &prompt}, nil
+			return result, nil
 		})
 		return nil
 	}

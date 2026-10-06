@@ -58,6 +58,6 @@ ran, the store under `state/` may hold a copy, so start such an agent on a fresh
 `config/settings.json` and `config/models.json` are read on every start: edit them and restart to
 change the model.
 
-Measured on the pilot (amd64 under emulation): 169 to 200 MiB for the container, before the relay
-moved to `nc`.
+Measured on the lab-3 pilot (0.17.2, Buzz and Telegram, Codex model): 12 to 27 MiB for the whole
+container.
 
