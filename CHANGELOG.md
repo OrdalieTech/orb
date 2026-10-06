@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-07
+
+Bridge sends less and opens any conversation, the Android app swipes and completes `@`, Buzz turns
+run tools again, and Orb's layers are enforced, with one copy of each primitive.
+
 - A Bridge instance answers what `@` completes to (`complete`: its skills, then the files in its
   folder, as the TUI offers them; a folder listing where fd cannot run) and describes its
   provider's plan limits (`usage`: Claude from each turn, Codex and OpenCode Go read behind it).
