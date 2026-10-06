@@ -70,8 +70,14 @@ const ratchetFile = "testdata/core_ratchet.txt"
 // refuses to record any growth.
 func TestPortableCoreRatchet(t *testing.T) {
 	root := moduleRoot(t)
-	current := coreViolations(t, root)
-	recorded := readRatchet(t)
+	checkRatchet(t, root, ratchetFile, coreViolations(t, root), "portable core gained platform access; route it through a host port (DECISIONS.md P10)")
+}
+
+// checkRatchet fails when a count grew past its recorded value and, when
+// counts only shrank, asks to record the gain (ORB_UPDATE_CORE_RATCHET=1).
+func checkRatchet(t *testing.T, root, file string, current map[string]int, rule string) {
+	t.Helper()
+	recorded := readRatchet(t, file)
 	var grown, shrunk []string
 	for _, key := range slices.Sorted(maps.Keys(current)) {
 		if current[key] > recorded[key] {
@@ -84,20 +90,22 @@ func TestPortableCoreRatchet(t *testing.T) {
 		}
 	}
 	if len(grown) > 0 {
-		t.Fatalf("portable core gained platform access; route it through a host port (DECISIONS.md P10):\n%s", strings.Join(grown, "\n"))
+		t.Fatalf("%s:\n%s", rule, strings.Join(grown, "\n"))
 	}
 	if len(shrunk) == 0 {
 		return
 	}
 	if os.Getenv("ORB_UPDATE_CORE_RATCHET") != "1" {
-		t.Fatalf("portable core shrank; lock the gain with ORB_UPDATE_CORE_RATCHET=1:\n%s", strings.Join(shrunk, "\n"))
+		t.Fatalf("%s shrank; lock the gain with ORB_UPDATE_CORE_RATCHET=1:\n%s", file, strings.Join(shrunk, "\n"))
 	}
 	var out strings.Builder
-	out.WriteString("# P10 portable-core ratchet: package<TAB>symbol<TAB>count. Counts only shrink.\n")
+	out.WriteString("# Ratchet: package<TAB>violation<TAB>count. Counts only shrink.\n")
 	for _, key := range slices.Sorted(maps.Keys(current)) {
-		fmt.Fprintf(&out, "%s\t%d\n", key, current[key])
+		if current[key] > 0 {
+			fmt.Fprintf(&out, "%s\t%d\n", key, current[key])
+		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "internal/layering", ratchetFile), []byte(out.String()), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "internal/layering", file), []byte(out.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -167,9 +175,12 @@ func coreViolations(t *testing.T, root string) map[string]int {
 	return counts
 }
 
-func readRatchet(t *testing.T) map[string]int {
+func readRatchet(t *testing.T, file string) map[string]int {
 	t.Helper()
-	data, err := os.ReadFile(ratchetFile)
+	data, err := os.ReadFile(file)
+	if os.IsNotExist(err) {
+		return map[string]int{}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@
 package layering
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -23,20 +25,46 @@ const module = "github.com/OrdalieTech/orb/"
 // Layers absent from the map (agent, chat, cmd, conformance) are assemblies or
 // the product runtime and may import anything below them; a new self-contained
 // package should get an entry here (platforms/native/sandbox is the model).
-var allowedImports = map[string][]string{
-	"internal":                 {"internal"},
-	"ai":                       {"ai", "internal"},
-	"engine":                   {"engine", "ai", "internal"},
-	"tui":                      {"tui", "internal"},
-	"platforms/native/sandbox": {"platforms/native/sandbox", "internal"},
-	"host":                     {"host", "engine", "ai", "internal"},
-	"bridge":                   {"bridge", "internal"},
+// Layers rank every package; an import points to its own layer or below.
+const (
+	library    = iota // internal and tui: leaf code
+	providers         // ai
+	loop              // engine
+	core              // agent, bridge, host: the closed core (P10)
+	capability        // plugins (P3)
+	driver            // interfaces: TUI mode, RPC, ACP, chat platforms (P1)
+	hostLayer         // platforms: port implementations
+	assembly          // binaries, catalogs, examples: the only layer that composes and configures
+)
+
+// layers maps package paths to their layer; the longest prefix wins, and a
+// package no entry covers fails the test.
+var layers = map[string]int{
+	".": library, "internal": library, "tui": library,
+	"ai": providers, "engine": loop,
+	"agent": core, "bridge": core, "host": core,
+	"plugins":     capability,
+	"agent/modes": driver, "agent/rpc": driver, "agent/acp": driver, "agent/bridge": driver,
+	"agent/clipboard": driver, "agent/extensions/host": driver, "chat": driver,
+	"platforms": hostLayer,
+	"cmd":       assembly, "agent/assembly": assembly, "agent/examples": assembly, "chat/examples": assembly,
+	"platforms/agent": assembly, "conformance": assembly,
 }
 
-// tuiImporters are the only places allowed to link the TUI: assemblies, the
-// interactive mode, and plugin/extension custom UI (the D15 component
-// contract is exactly for them). Everything else must stay headless so a
-// binary that skips the interface contains none of its code (P1).
+// processState is the process environment, which only hosts and assemblies
+// read or change: everything below takes configuration as values (P3, P10).
+var processState = map[string]bool{"Getenv": true, "LookupEnv": true, "Environ": true, "Setenv": true, "Unsetenv": true, "Clearenv": true, "ExpandEnv": true}
+
+func layerOf(pkg string) (int, bool) {
+	best, rank, found := "", 0, false
+	for prefix, layer := range layers {
+		if (pkg == prefix || prefix == "." || strings.HasPrefix(pkg, prefix+"/")) && (!found || len(prefix) > len(best)) {
+			best, rank, found = prefix, layer, true
+		}
+	}
+	return rank, found
+}
+
 var tuiImporters = []string{
 	"tui/", "cmd/", "agent/modes/", "agent/assembly/", "plugins/tasks/", "plugins/questions/", "plugins/permissions/", "plugins/mcp/", "agent/extensions/", "agent/examples/",
 }
@@ -46,10 +74,16 @@ var skipDirs = map[string]bool{
 	"node_modules": true, "testdata": true,
 }
 
+const layerRatchet = "testdata/layer_ratchet.txt"
+
+// TestLayerEdges enforces the layers: imports point down, process state and
+// init-time registration stay in hosts and assemblies, Tailcat in its
+// adapter, tui with its importers. Existing violations are recorded in
+// layerRatchet and may only shrink (ORB_UPDATE_CORE_RATCHET=1 records a gain).
 func TestLayerEdges(t *testing.T) {
 	root := moduleRoot(t)
 	fileSet := token.NewFileSet()
-	var violations []string
+	counts := map[string]int{}
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -68,50 +102,67 @@ func TestLayerEdges(t *testing.T) {
 			return err
 		}
 		relative = filepath.ToSlash(relative)
-		parsed, err := parser.ParseFile(fileSet, path, nil, parser.ImportsOnly)
+		pkg := filepath.ToSlash(filepath.Dir(relative))
+		source, ok := layerOf(pkg)
+		if !ok {
+			t.Errorf("%s is in no layer; add it to layers", pkg)
+			return nil
+		}
+		file, err := parser.ParseFile(fileSet, path, nil, parser.SkipObjectResolution)
 		if err != nil {
 			return err
 		}
-		layer, _, _ := strings.Cut(relative, "/")
-		for _, spec := range parsed.Imports {
-			target := strings.Trim(spec.Path.Value, `"`)
-			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "platforms/native/tailcat/") {
-				violations = append(violations, relative+" imports Tailcat outside its native transport adapter")
+		names := map[string]string{}
+		for _, spec := range file.Imports {
+			target, _ := strconv.Unquote(spec.Path.Value)
+			names[target[strings.LastIndex(target, "/")+1:]] = target
+			if spec.Name != nil {
+				names[spec.Name.Name] = target
 			}
-			if !strings.HasPrefix(target, module) {
+			if (strings.HasPrefix(target, "github.com/tailscale/") || strings.HasPrefix(target, "tailscale.com/")) && !strings.HasPrefix(relative, "platforms/native/tailcat/") {
+				t.Errorf("%s imports Tailcat outside its native transport adapter", relative)
+			}
+			targetPath, internal := strings.CutPrefix(target, module)
+			if !internal {
 				continue
 			}
-			targetPath := strings.TrimPrefix(target, module)
-			// platforms/native holds native port implementations, which native-only
-			// capability plugins may link; every other platform package is an assembly.
-			if strings.HasPrefix(targetPath, "platforms/") && layer != "platforms" && layer != "cmd" &&
-				(layer != "plugins" || !strings.HasPrefix(targetPath, "platforms/native/")) {
-				violations = append(violations, relative+" imports a platform assembly into a reusable layer")
+			if rank, _ := layerOf(targetPath); rank > source {
+				counts[pkg+"\timports "+targetPath]++
 			}
-			if (relative == "plugins/memory/memory.go" || strings.HasPrefix(relative, "plugins/memory/agent/")) &&
-				!hasAnyPrefix(targetPath, []string{"plugins/memory", "engine", "ai", "internal"}) {
-				violations = append(violations, relative+" imports "+targetPath+" outside the memory SDK layers")
-			}
-			targetLayer, _, _ := strings.Cut(targetPath, "/")
-			if scope, allowed := restriction(relative); allowed != nil && !hasAnyPath(targetPath, allowed) {
-				violations = append(violations, relative+" imports "+targetPath+" ("+scope+" may only import "+strings.Join(allowed, ", ")+")")
-			}
-			if targetLayer == "tui" && !hasAnyPrefix(relative, tuiImporters) {
-				violations = append(violations, relative+" imports "+targetPath+" (tui is presentation: only "+strings.Join(tuiImporters, " ")+" may link it)")
+			if (targetPath == "tui" || strings.HasPrefix(targetPath, "tui/")) && !hasAnyPrefix(relative, tuiImporters) {
+				t.Errorf("%s imports %s (tui is presentation: only %s may link it)", relative, targetPath, strings.Join(tuiImporters, " "))
 			}
 		}
+		if source >= hostLayer || isCore(pkg) {
+			return nil // the core's platform access has its own ratchet
+		}
+		for _, declaration := range file.Decls {
+			if function, ok := declaration.(*ast.FuncDecl); ok && function.Recv == nil && function.Name.Name == "init" && source < assembly {
+				counts[pkg+"\tfunc init"]++
+			}
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			if selector, ok := node.(*ast.SelectorExpr); ok {
+				if ident, ok := selector.X.(*ast.Ident); ok && names[ident.Name] == "os" && processState[selector.Sel.Name] {
+					counts[pkg+"\tos."+selector.Sel.Name]++
+				}
+			}
+			return true
+		})
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, violation := range violations {
-		t.Error(violation)
-	}
+	checkRatchet(t, root, layerRatchet, counts, "layers: imports point down, and only hosts and assemblies read the environment or register at init")
 }
 
-// TestEngineIsHeadless proves the P1 linkage promise at the layer served at
-// scale: no package under engine/ or ai/ links TUI code, transitively.
+// isCore reports whether pkg is in the P10 portable core.
+func isCore(pkg string) bool {
+	return slices.ContainsFunc(corePackages, func(top string) bool { return pkg == top || strings.HasPrefix(pkg, top+"/") }) &&
+		!slices.ContainsFunc(coreExcluded, func(excluded string) bool { return pkg == excluded || strings.HasPrefix(pkg, excluded+"/") })
+}
+
 func TestEngineIsHeadless(t *testing.T) {
 	root := moduleRoot(t)
 	command := exec.Command("go", "list", "-deps", "./engine/...", "./ai/...")
@@ -163,22 +214,6 @@ func moduleRoot(t *testing.T) string {
 		}
 		directory = parent
 	}
-}
-
-// restriction returns the most specific allowedImports entry covering a file.
-func restriction(relative string) (string, []string) {
-	scope := ""
-	for key := range allowedImports {
-		if strings.HasPrefix(relative, key+"/") && len(key) > len(scope) {
-			scope = key
-		}
-	}
-	return scope, allowedImports[scope]
-}
-
-// hasAnyPath reports whether value is one of paths or inside one of them.
-func hasAnyPath(value string, paths []string) bool {
-	return slices.ContainsFunc(paths, func(path string) bool { return value == path || strings.HasPrefix(value, path+"/") })
 }
 
 func hasAnyPrefix(value string, prefixes []string) bool {

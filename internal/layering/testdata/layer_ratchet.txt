@@ -1,0 +1,39 @@
+# Ratchet: package<TAB>violation<TAB>count. Counts only shrink.
+agent	imports agent/extensions/host	1
+agent/clipboard	os.Getenv	3
+agent/extensions/host	os.Getenv	6
+agent/modes	os.Getenv	4
+agent/modes/theme	os.Getenv	2
+chat/buzz	func init	1
+chat/buzz	os.Environ	1
+chat/buzz	os.Getenv	4
+chat/buzz	os.LookupEnv	3
+chat/discord	func init	1
+chat/discord	os.Getenv	1
+chat/googlechat	func init	1
+chat/googlechat	os.Getenv	2
+chat/messenger	func init	1
+chat/messenger	os.Getenv	4
+chat/slack	func init	1
+chat/slack	os.Getenv	3
+chat/teams	func init	1
+chat/teams	os.Getenv	3
+chat/telegram	func init	1
+chat/telegram	os.Getenv	1
+chat/whatsapp	func init	1
+chat/whatsapp	os.Getenv	4
+internal/chromalexers	func init	3
+internal/localecompare	os.Getenv	1
+internal/qr	func init	1
+internal/skilllocations	os.Getenv	2
+internal/termcaps	os.Getenv	12
+internal/toolenv	os.Environ	1
+internal/toolenv	os.Getenv	1
+plugins/claudesessions	imports platforms/native/sandbox	1
+plugins/herdr	os.Getenv	3
+plugins/mcp	func init	1
+plugins/permissions	imports platforms/native/sandbox	1
+plugins/permissions/native	imports platforms/native/sandbox	1
+plugins/subagents	imports platforms/native/sandbox	4
+plugins/websearch	os.Getenv	3
+tui	os.Getenv	12
