@@ -88,15 +88,15 @@ type Adapter struct {
 var _ chat.Adapter = (*Adapter)(nil)
 
 func init() {
-	chat.Register("messenger", chat.Platform{Help: "MESSENGER_TOKEN, MESSENGER_PAGE_ID, MESSENGER_APP_SECRET, MESSENGER_VERIFY_TOKEN", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+	chat.Register("messenger", chat.Platform{Env: []string{"MESSENGER_TOKEN", "MESSENGER_PAGE_ID", "MESSENGER_APP_SECRET", "MESSENGER_VERIFY_TOKEN"}, Open: func() (chat.Adapter, chat.Inbound, error) {
 		adapter, err := New(Options{
 			Token: os.Getenv("MESSENGER_TOKEN"), PageID: os.Getenv("MESSENGER_PAGE_ID"),
 			AppSecret: os.Getenv("MESSENGER_APP_SECRET"), VerifyToken: os.Getenv("MESSENGER_VERIFY_TOKEN"),
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, chat.Inbound{}, err
 		}
-		return adapter, chat.WebhookIngress("messenger", adapter.Webhook), nil
+		return adapter, chat.Inbound{Webhook: adapter.Webhook}, nil
 	}})
 }
 

@@ -103,15 +103,15 @@ type Adapter struct {
 var _ chat.Adapter = (*Adapter)(nil)
 
 func init() {
-	chat.Register("teams", chat.Platform{Help: "TEAMS_APP_ID, TEAMS_APP_PASSWORD, TEAMS_TENANT_ID", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+	chat.Register("teams", chat.Platform{Env: []string{"TEAMS_APP_ID", "TEAMS_APP_PASSWORD", "TEAMS_TENANT_ID"}, Open: func() (chat.Adapter, chat.Inbound, error) {
 		adapter, err := New(Options{
 			AppID: os.Getenv("TEAMS_APP_ID"), AppPassword: os.Getenv("TEAMS_APP_PASSWORD"),
 			TenantID: os.Getenv("TEAMS_TENANT_ID"),
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, chat.Inbound{}, err
 		}
-		return adapter, chat.WebhookIngress("teams", adapter.Webhook), nil
+		return adapter, chat.Inbound{Webhook: adapter.Webhook}, nil
 	}})
 }
 

@@ -116,18 +116,18 @@ type Adapter struct {
 var _ chat.Adapter = (*Adapter)(nil)
 
 func init() {
-	chat.Register("googlechat", chat.Platform{Help: "GOOGLE_CHAT_PROJECT_NUMBER, GOOGLE_CHAT_CREDENTIALS_FILE", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+	chat.Register("googlechat", chat.Platform{Env: []string{"GOOGLE_CHAT_PROJECT_NUMBER", "GOOGLE_CHAT_CREDENTIALS_FILE"}, Open: func() (chat.Adapter, chat.Inbound, error) {
 		credentials, err := os.ReadFile(os.Getenv("GOOGLE_CHAT_CREDENTIALS_FILE"))
 		if err != nil {
-			return nil, nil, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", err)
+			return nil, chat.Inbound{}, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", err)
 		}
 		adapter, err := New(Options{
 			ProjectNumber: os.Getenv("GOOGLE_CHAT_PROJECT_NUMBER"), CredentialsJSON: credentials,
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, chat.Inbound{}, err
 		}
-		return adapter, chat.WebhookIngress("googlechat", adapter.Webhook), nil
+		return adapter, chat.Inbound{Webhook: adapter.Webhook}, nil
 	}})
 }
 

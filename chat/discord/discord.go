@@ -75,16 +75,16 @@ type Adapter struct {
 var _ chat.Adapter = (*Adapter)(nil)
 
 func init() {
-	chat.Register("discord", chat.Platform{Help: "DISCORD_BOT_TOKEN         Discord bot token", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+	chat.Register("discord", chat.Platform{Env: []string{"DISCORD_BOT_TOKEN"}, About: "Discord bot token", Open: func() (chat.Adapter, chat.Inbound, error) {
 		token := strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN"))
 		if token == "" {
-			return nil, nil, errors.New("DISCORD_BOT_TOKEN is required")
+			return nil, chat.Inbound{}, errors.New("DISCORD_BOT_TOKEN is required")
 		}
 		adapter, err := New(Options{Token: token})
 		if err != nil {
-			return nil, nil, err
+			return nil, chat.Inbound{}, err
 		}
-		return adapter, adapter.Run, nil
+		return adapter, chat.Inbound{Poll: adapter.Run}, nil
 	}})
 }
 

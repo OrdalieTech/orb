@@ -2,12 +2,9 @@ package chat
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
-	"os"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -60,14 +57,33 @@ type Adapter interface {
 // platform either brings messages in for the processor to route (Open) or
 // drives the agent's sessions itself as an ACP client (Front).
 type Platform struct {
-	// Help is the platform's environment, as lines of `orb chat --help`.
-	Help string
-	// Open builds the platform's adapter, and the ingress that feeds it
-	// messages until ctx ends, from the environment.
-	Open func() (Adapter, func(ctx context.Context, publish func(Message) error) error, error)
-	// Front runs the platform until ctx ends; serve runs the agent's ACP
-	// server on one connection, and log is the agent's diagnostics.
-	Front func(ctx context.Context, serve func(ctx context.Context, in io.Reader, out io.Writer) error, log io.Writer) error
+	// Env names the environment variables the platform reads, and About
+	// says what it does, for `orb chat --help`.
+	Env   []string
+	About string
+	// Open builds the platform's adapter, and how messages come in, from the
+	// environment.
+	Open func() (Adapter, Inbound, error)
+	// Front runs the platform until ctx ends.
+	Front func(ctx context.Context, agent Agent) error
+}
+
+// Inbound is how a platform's messages reach the processor: it fetches them
+// itself (Poll), or it is called and `orb chat` serves its handler (Webhook).
+type Inbound struct {
+	Poll    func(ctx context.Context, publish func(Message) error) error
+	Webhook func(publish func(Message) error) http.Handler
+}
+
+// Agent is the running agent as a platform's Front reaches it.
+type Agent struct {
+	// Serve runs the agent's ACP server on one connection until it closes.
+	Serve func(ctx context.Context, in io.Reader, out io.Writer) error
+	// Connect returns the command line of a process that relays its stdio to
+	// the ACP socket at path, for a client that starts its agent as a command.
+	Connect func(socket string) ([]string, error)
+	// Log receives the platform's diagnostics.
+	Log io.Writer
 }
 
 var platforms = map[string]Platform{}
@@ -89,46 +105,4 @@ func PlatformNames() []string {
 	}
 	slices.Sort(names)
 	return names
-}
-
-// WebhookIngress serves a platform's webhook on ORB_CHAT_LISTEN (default
-// 127.0.0.1:8080) at ORB_CHAT_PATH (default /<platform>) until ctx ends.
-func WebhookIngress(
-	platform string,
-	webhook func(func(Message) error) http.Handler,
-) func(context.Context, func(Message) error) error {
-	return func(ctx context.Context, publish func(Message) error) error {
-		listen := strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN"))
-		if listen == "" {
-			listen = "127.0.0.1:8080"
-		}
-		webhookPath := strings.TrimSpace(os.Getenv("ORB_CHAT_PATH"))
-		if webhookPath == "" {
-			webhookPath = "/" + platform
-		}
-		if !strings.HasPrefix(webhookPath, "/") || strings.ContainsAny(webhookPath, "{} \t\r\n") {
-			return errors.New("ORB_CHAT_PATH must be a literal path starting with /")
-		}
-		mux := http.NewServeMux()
-		mux.Handle(webhookPath, webhook(publish))
-		// ponytail: one stdlib webhook server per process; terminate TLS and
-		// multiplex public routes in the deployment's reverse proxy.
-		server := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-		result := make(chan error, 1)
-		go func() { result <- server.ListenAndServe() }()
-		select {
-		case err := <-result:
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return err
-		case <-ctx.Done():
-			shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := server.Shutdown(shutdownContext); err != nil {
-				return err
-			}
-			return ctx.Err()
-		}
-	}
 }

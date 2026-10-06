@@ -72,15 +72,15 @@ type Adapter struct {
 var _ chat.Adapter = (*Adapter)(nil)
 
 func init() {
-	chat.Register("slack", chat.Platform{Help: "SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_BOT_USER_ID", Open: func() (chat.Adapter, func(context.Context, func(chat.Message) error) error, error) {
+	chat.Register("slack", chat.Platform{Env: []string{"SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_BOT_USER_ID"}, Open: func() (chat.Adapter, chat.Inbound, error) {
 		adapter, err := New(Options{
 			Token: os.Getenv("SLACK_BOT_TOKEN"), SigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
 			BotUserID: os.Getenv("SLACK_BOT_USER_ID"),
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, chat.Inbound{}, err
 		}
-		return adapter, chat.WebhookIngress("slack", adapter.Webhook), nil
+		return adapter, chat.Inbound{Webhook: adapter.Webhook}, nil
 	}})
 }
 

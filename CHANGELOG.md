@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Chat platforms reach Orb only through declared interfaces: a front gets the agent as one
+  `chat.Agent` value, webhook platforms are served by `orb chat` with its own settings, help text
+  comes from each platform's declared variables, and Buzz hands its socket to the agent's tools
+  with `toolenv.Export` instead of editing `ORB_TOOL_ENV`, so its shim works whichever starts
+  first. No behaviour change.
 - Over-wide TUI lines are clipped safely instead of crashing the session, including during redraws and terminal resizes.
 - Harden UI recovery: faulty tool renderers fall back to built-in output, invalid or stale
   completions leave the editor intact, negative list sizes and padding are clamped, and debug-log

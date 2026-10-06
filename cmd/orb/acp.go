@@ -104,6 +104,14 @@ func runACP(ctx context.Context, args CLIArgs, dependencies cliDependencies, str
 	return 0
 }
 
+// chatConnectCommand is the command line of `orb chat connect` to socket,
+// which a chat platform's front gives an ACP client that starts its agent as
+// a command.
+func chatConnectCommand(socket string) ([]string, error) {
+	self, err := os.Executable()
+	return []string{self, "chat", "connect", socket}, err
+}
+
 // runChatConnect relays stdio to a running `orb chat` agent's ACP socket, for
 // an ACP client that starts its agent as a command. It inherits that client's
 // environment, which may hold the client's own keys, so it hides it.

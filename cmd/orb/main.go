@@ -853,7 +853,9 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	var chats []string
 	for _, name := range platforms {
 		if platform, _ := chat.LookupPlatform(name); platform.Front != nil {
-			fronts = append(fronts, func(ctx context.Context) error { return platform.Front(ctx, agents.serve, streams.Stderr) })
+			fronts = append(fronts, func(ctx context.Context) error {
+				return platform.Front(ctx, chat.Agent{Serve: agents.serve, Connect: chatConnectCommand, Log: streams.Stderr})
+			})
 		} else {
 			chats = append(chats, name)
 		}
@@ -877,9 +879,13 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	var ingresses []func(context.Context, func(chat.Message) error) error
 	for _, platform := range chats {
 		open, _ := chat.LookupPlatform(platform)
-		adapter, ingress, err := open.Open()
+		adapter, inbound, err := open.Open()
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
+		}
+		ingress := inbound.Poll
+		if inbound.Webhook != nil {
+			ingress = webhookIngress(platform, inbound.Webhook)
 		}
 		adapters, ingresses = append(adapters, adapter), append(ingresses, ingress)
 	}
@@ -906,6 +912,46 @@ func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
 		}
 		return runtime.Session(), close, nil
 	})
+}
+
+func webhookIngress(
+	platform string,
+	webhook func(func(chat.Message) error) http.Handler,
+) func(context.Context, func(chat.Message) error) error {
+	return func(ctx context.Context, publish func(chat.Message) error) error {
+		listen := strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN"))
+		if listen == "" {
+			listen = "127.0.0.1:8080"
+		}
+		webhookPath := strings.TrimSpace(os.Getenv("ORB_CHAT_PATH"))
+		if webhookPath == "" {
+			webhookPath = "/" + platform
+		}
+		if !strings.HasPrefix(webhookPath, "/") || strings.ContainsAny(webhookPath, "{} \t\r\n") {
+			return errors.New("ORB_CHAT_PATH must be a literal path starting with /")
+		}
+		mux := http.NewServeMux()
+		mux.Handle(webhookPath, webhook(publish))
+		// ponytail: one stdlib webhook server per process; terminate TLS and
+		// multiplex public routes in the deployment's reverse proxy.
+		server := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		result := make(chan error, 1)
+		go func() { result <- server.ListenAndServe() }()
+		select {
+		case err := <-result:
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		case <-ctx.Done():
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := server.Shutdown(shutdownContext); err != nil {
+				return err
+			}
+			return ctx.Err()
+		}
+	}
 }
 
 func runLocalChat(
@@ -1025,7 +1071,11 @@ func chatHelpText() string {
 	var credentials strings.Builder
 	for _, name := range names {
 		platform, _ := chat.LookupPlatform(name)
-		credentials.WriteString("  " + platform.Help + "\n")
+		line := fmt.Sprintf("  %-25s %s", strings.Join(platform.Env, ", "), platform.About)
+		if len(strings.Join(platform.Env, ", ")) > 25 && platform.About != "" {
+			line = "  " + strings.Join(platform.Env, ", ") + "\n" + strings.Repeat(" ", 28) + platform.About
+		}
+		credentials.WriteString(strings.TrimRight(line, " ") + "\n")
 	}
 	return `Usage: orb chat <platform>... [--tools]
 

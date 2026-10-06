@@ -26,23 +26,24 @@ import (
 )
 
 func init() {
-	chat.Register("buzz", chat.Platform{Help: help, Front: front})
+	chat.Register("buzz", chat.Platform{
+		Env:   []string{"BUZZ_PRIVATE_KEY", "BUZZ_RELAY_URL", "BUZZ_AUTH_TAG", "BUZZ_ACP_*"},
+		About: "starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's Buzz identity and reaches it over ACP",
+		Front: front,
+	})
 	multicall.Register("buzz", shim)
 }
 
-const help = `BUZZ_PRIVATE_KEY, BUZZ_RELAY_URL, BUZZ_AUTH_TAG, BUZZ_ACP_*
-                            buzz starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's
-                            Buzz identity and reaches this agent over ACP`
-
 // front serves this agent on Buzz: buzz-acp reaches this process's sessions
-// through an ACP socket, by the `orb chat connect` relay it runs as its agent.
+// through an ACP socket, by the relay command agent.Connect names, which it
+// runs as its agent.
 // This process starts buzz-acp and ends with it, so a clean exit (an owner's
 // !shutdown) stays final under the container's restart policy, unless
 // ORB_ACP_SOCKET says buzz-acp runs outside it: then it serves that socket,
 // open to its group, and buzz-acp can run as another user, out of the tools'
 // reach.
-func front(ctx context.Context, serve func(context.Context, io.Reader, io.Writer) error, log io.Writer) error {
-	stopCLI, err := serveCLI(ctx, log)
+func front(ctx context.Context, agent chat.Agent) error {
+	stopCLI, err := serveCLI(ctx, agent.Log)
 	if err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func front(ctx context.Context, serve func(context.Context, io.Reader, io.Writer
 			}
 			go func() {
 				defer func() { _ = conn.Close() }()
-				_ = serve(ctx, conn, conn)
+				_ = agent.Serve(ctx, conn, conn)
 			}()
 		}
 	}()
@@ -78,7 +79,7 @@ func front(ctx context.Context, serve func(context.Context, io.Reader, io.Writer
 		<-ctx.Done()
 		return nil
 	}
-	self, err := os.Executable()
+	relay, err := agent.Connect(socket)
 	if err != nil {
 		return err
 	}
@@ -95,8 +96,8 @@ func front(ctx context.Context, serve func(context.Context, io.Reader, io.Writer
 			command.Env = append(command.Env, entry)
 		}
 	}
-	command.Env = append(command.Env, "BUZZ_ACP_AGENT_COMMAND="+self, "BUZZ_ACP_AGENT_ARGS=chat,connect,"+socket)
-	command.Stdout, command.Stderr = log, log
+	command.Env = append(command.Env, "BUZZ_ACP_AGENT_COMMAND="+relay[0], "BUZZ_ACP_AGENT_ARGS="+strings.Join(relay[1:], ","))
+	command.Stdout, command.Stderr = agent.Log, agent.Log
 	// buzz-acp removes its signing keyfile on SIGTERM.
 	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 	command.WaitDelay = 30 * time.Second
@@ -119,8 +120,8 @@ type result struct {
 
 // serveCLI runs the real buzz CLI (ORB_BUZZ_CLI) for the agent's shell, with
 // the Buzz credentials added to that child alone. Orb answers as `buzz`
-// (shim) and reaches it through the socket ORB_BUZZ names, which joins the
-// tools' environment. It also publishes the agent's profile.
+// (shim) and reaches it through the socket ORB_BUZZ names, which it exports
+// to the tools. It also publishes the agent's profile.
 func serveCLI(ctx context.Context, log io.Writer) (func(), error) {
 	cli := os.Getenv("ORB_BUZZ_CLI")
 	if cli == "" {
@@ -160,10 +161,7 @@ func serveCLI(ctx context.Context, log io.Writer) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = os.Setenv("ORB_BUZZ", socket)
-	if allowed := os.Getenv(toolenv.Allow); allowed != "" {
-		_ = os.Setenv(toolenv.Allow, allowed+",ORB_BUZZ")
-	}
+	toolenv.Export("ORB_BUZZ", socket)
 	go func() {
 		for {
 			conn, err := listener.Accept()
