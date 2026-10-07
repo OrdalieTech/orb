@@ -21,6 +21,8 @@ func Isolate(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
+func expendable(int) {}
+
 // Kill runs System32's taskkill over pid's tree, detached and not awaited,
 // matching upstream's fire-and-forget spawn; its error is only the spawn's.
 func Kill(pid int) error {

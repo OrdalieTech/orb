@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -15,6 +16,16 @@ import (
 // Isolate starts cmd in a new session, so it leads a process group Kill can reach.
 func Isolate(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+}
+
+// expendable makes the process the kernel's first victim when memory runs out,
+// so a runaway command dies before the agent that ran it; raising the score
+// needs no privilege. Linux only: elsewhere /proc has no such file.
+func expendable(pid int) {
+	if file, err := os.OpenFile("/proc/"+strconv.Itoa(pid)+"/oom_score_adj", os.O_WRONLY, 0); err == nil {
+		_, _ = file.WriteString("1000")
+		_ = file.Close()
+	}
 }
 
 // Kill kills the process group led by pid, which Isolate started; a group

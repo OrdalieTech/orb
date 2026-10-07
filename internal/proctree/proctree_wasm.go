@@ -9,6 +9,7 @@ import (
 // Wasm cannot spawn a process; os/exec rejects execution before these run.
 func Isolate(*exec.Cmd) {}
 func Kill(int) error    { return nil }
+func expendable(int)    {}
 
 // defaultShell still resolves through the host filesystem a Wasm runtime may
 // expose, so run failures read as they do natively.

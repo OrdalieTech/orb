@@ -142,6 +142,9 @@ func Run(ctx context.Context, command Command) (int, error) {
 		return 0, &Error{Kind: Spawn, Err: err}
 	}
 	pid := child.Process.Pid
+	// Set before the shell has had time to start the command's own processes,
+	// which inherit it.
+	expendable(pid)
 	if command.Started != nil {
 		command.Started(pid)
 	}
