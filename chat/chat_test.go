@@ -38,17 +38,8 @@ type fauxDelivery struct {
 	finalizeFails   int
 	notifyFails     int
 	previewPanics   int
-	files           []string // name:content of each file sent
 	// notifyHook, when set, runs before the notice is recorded.
 	notifyHook func(context.Context) error
-}
-
-func (d *fauxDelivery) SendFile(_ context.Context, name string, _ int64, content io.Reader) error {
-	data, err := io.ReadAll(content)
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.files = append(d.files, name+":"+string(data))
-	return err
 }
 
 func (d *fauxDelivery) Typing(context.Context) error {
@@ -142,6 +133,15 @@ type fauxAdapter struct {
 	downloadStarted chan struct{}
 	// downloadGate, when set, blocks Download until closed or ctx ends.
 	downloadGate chan struct{}
+	files        []string // chat:name:content of each file sent
+}
+
+func (a *fauxAdapter) SendFile(_ context.Context, key ConversationKey, name string, _ int64, content io.Reader) error {
+	data, err := io.ReadAll(content)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.files = append(a.files, key.ChatID+":"+name+":"+string(data))
+	return err
 }
 
 func (a *fauxAdapter) Platform() string { return "faux" }

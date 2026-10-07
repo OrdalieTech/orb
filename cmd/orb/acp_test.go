@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -225,11 +226,23 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 
 	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
 	var acpPrompt string
+	var telegramTools, acpTools []string
+	toolNames := func(request ai.Context) (names []string) {
+		if request.Tools != nil {
+			for _, tool := range *request.Tools {
+				names = append(names, tool.Name)
+			}
+		}
+		return names
+	}
 	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("remember", map[string]any{"target": "memory", "content": "The launch is on Tuesday."}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			telegramTools = toolNames(request)
+			return faux.AssistantMessage(faux.ToolCall("remember", map[string]any{"target": "memory", "content": "The launch is on Tuesday."}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}), nil
+		}),
 		faux.AssistantMessage("Noted."),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
-			acpPrompt = *request.SystemPrompt
+			acpPrompt, acpTools = *request.SystemPrompt, toolNames(request)
 			return faux.AssistantMessage("Tuesday."), nil
 		}),
 	})
@@ -274,7 +287,7 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	go func() {
 		done <- runLocalChat(ctx, filepath.Join(agentDir, "chat", "telegram"), []chat.Adapter{adapter},
 			[]func(context.Context, func(chat.Message) error) error{adapter.Poll}, nil,
-			func(chat.Message) error { return nil }, []chat.LocalProviderOption{agentWorkspace(agents, project)}, agents.streams)
+			func(chat.Message) error { return nil }, []chat.LocalProviderOption{agentWorkspace(agents, project, []chat.Adapter{adapter})}, agents.streams)
 	}()
 	for reply := ""; reply != "Noted."; {
 		select {
@@ -297,6 +310,11 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	client.close()
 	if !strings.Contains(acpPrompt, "The launch is on Tuesday.") {
 		t.Fatalf("the ACP session's prompt lacks the memory: %q", acpPrompt)
+	}
+	// Telegram takes files, so its conversation can send them; an ACP session
+	// has no conversation to send to.
+	if !slices.Contains(telegramTools, "send_file") || slices.Contains(acpTools, "send_file") {
+		t.Fatalf("send_file: telegram tools %v, ACP tools %v", telegramTools, acpTools)
 	}
 }
 

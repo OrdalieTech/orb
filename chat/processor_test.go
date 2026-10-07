@@ -854,10 +854,10 @@ func TestAgentSendsAFileFromItsWorkingDirectory(t *testing.T) {
 	if err := env.proc.Handle(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
-	delivery := env.adapter.delivery(t, 0)
-	if !reflect.DeepEqual(delivery.files, []string{"report.csv:a,b\n"}) {
-		t.Fatalf("files sent = %q", delivery.files)
+	if !reflect.DeepEqual(env.adapter.files, []string{"chat-1:report.csv:a,b\n"}) {
+		t.Fatalf("files sent = %q", env.adapter.files)
 	}
+	delivery := env.adapter.delivery(t, 0)
 	raw, _ := json.Marshal(env.sessions.manager(t, m.Key()).GetEntries())
 	if !strings.Contains(string(raw), "outside the working directory") {
 		t.Fatal("the refusal did not reach the agent")

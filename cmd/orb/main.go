@@ -839,18 +839,24 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		workspace = append(workspace, agentWorkspace(agents, cwd))
+		workspace = append(workspace, agentWorkspace(agents, cwd, adapters))
 	}
 	return runLocalChat(ctx, dataDir, adapters, ingresses, fronts, authorize, workspace, streams)
 }
 
 // agentWorkspace makes chat conversations full sessions of the agent, built as
-// its ACP sessions are, with its tools working in cwd.
-func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
-	return chat.WithWorkspace(cwd, func(ctx context.Context, manager *session.SessionManager) (*agent.AgentSession, func(), error) {
+// its ACP sessions are, with its tools working in cwd; a conversation whose
+// platform takes files can send them.
+func agentWorkspace(agents acpHost, cwd string, adapters []chat.Adapter) chat.LocalProviderOption {
+	return chat.WithWorkspace(cwd, func(ctx context.Context, key chat.ConversationKey, manager *session.SessionManager) (*agent.AgentSession, func(), error) {
 		args := agents.args
 		args.native = args.native.Conversation()
-		args.compiled = append(args.compiled, extensions.CompiledExtension{Name: "chat", Hidden: true, DefaultEnabled: true, Factory: chat.SendFile})
+		if slices.ContainsFunc(adapters, func(adapter chat.Adapter) bool {
+			_, files := adapter.(chat.FileSender)
+			return files && adapter.Platform() == key.Platform
+		}) {
+			args.compiled = append(args.compiled, extensions.CompiledExtension{Name: "chat", Hidden: true, DefaultEnabled: true, Factory: chat.SendFile})
+		}
 		runtime, close, err := openHeadless(ctx, args, agents.dependencies, agents.streams, manager)
 		if err != nil {
 			return nil, nil, err

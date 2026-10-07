@@ -120,11 +120,12 @@ survive tool rebuilds. `WithAgentDir` overrides the global agent config director
 ### Sending files
 
 `chat.SendFile` is an extension whose `send_file` tool sends a regular file under the session's
-working directory to the person the agent is talking with. It reaches the running turn's
-`Delivery`, which sends it when it implements `chat.FileSender` (Telegram: `sendDocument`, up to
-50 MB); otherwise, or past a platform's limit, the tool returns the reason to the agent. `orb chat
---tools` attaches it to every conversation. A front platform's agent posts through that
-platform's own client instead: on Buzz, `buzz messages send --file`.
+working directory to the person the agent is talking with. A platform takes files when its
+`Adapter` implements `chat.FileSender` (Telegram: `sendDocument`, up to 50 MB), and `orb chat
+--tools` attaches the extension only to such a platform's conversations, so the tool is neither
+listed nor offered elsewhere; a file the platform refuses, a size limit included, comes back to
+the agent as the tool's error. A front platform's agent posts through that platform's own client
+instead: on Buzz, `buzz messages send --file`.
 
 ## Turn ledger and at-least-once semantics
 

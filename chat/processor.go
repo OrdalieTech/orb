@@ -335,7 +335,7 @@ func (p *Processor) runPromptTurn(ctx context.Context, adapter Adapter, conv *Co
 	// promptCtx is cancelled by /stop so a preemption landing before the agent
 	// run starts (attachment downloads, preflight) still aborts the turn
 	// instead of silently running it after the user was told "stopped".
-	promptCtx, cancelPrompt := context.WithCancel(context.WithValue(ctx, turnDelivery{}, delivery))
+	promptCtx, cancelPrompt := context.WithCancel(context.WithValue(ctx, turn{}, turn{adapter, key}))
 	defer cancelPrompt()
 
 	co := new(coalescer)

@@ -42,8 +42,9 @@ func WithSessionOptions(hook func(key ConversationKey, o *agent.AgentSessionOpti
 	return func(p *LocalProvider) { p.hook = hook }
 }
 
-// Open builds a conversation's agent session on its manager; close disposes it.
-type Open func(ctx context.Context, manager *sessionstore.SessionManager) (session *agent.AgentSession, close func(), err error)
+// Open builds the agent session of the conversation key on its manager; close
+// disposes it.
+type Open func(ctx context.Context, key ConversationKey, manager *sessionstore.SessionManager) (session *agent.AgentSession, close func(), err error)
 
 // WithWorkspace runs conversations as full agents working in cwd, each session
 // built by open: the way to give an isolated deployment its tools. Without it
@@ -246,7 +247,7 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 	if p.hook != nil {
 		p.hook(key, &options)
 	}
-	session, dispose, err := p.session(ctx, options)
+	session, dispose, err := p.session(ctx, key, options)
 	if err != nil {
 		release(nil)
 		return nil, fmt.Errorf("chat: create agent session: %w", err)
@@ -299,7 +300,7 @@ func (p *LocalProvider) Acquire(ctx context.Context, key ConversationKey) (*Conv
 				return err
 			}
 			options.SessionManager = replacement
-			next, closeNext, err := p.session(context.Background(), options)
+			next, closeNext, err := p.session(context.Background(), key, options)
 			if err != nil {
 				return err
 			}
@@ -321,9 +322,9 @@ func (p *LocalProvider) workspace() string {
 
 // session builds a conversation's agent: through the workspace's Open, or as a
 // tool-less SDK session.
-func (p *LocalProvider) session(ctx context.Context, options agent.AgentSessionOptions) (*agent.AgentSession, func(), error) {
+func (p *LocalProvider) session(ctx context.Context, key ConversationKey, options agent.AgentSessionOptions) (*agent.AgentSession, func(), error) {
 	if p.open != nil {
-		return p.open(ctx, options.SessionManager)
+		return p.open(ctx, key, options.SessionManager)
 	}
 	result, err := agent.NewAgentSession(options)
 	if err != nil {

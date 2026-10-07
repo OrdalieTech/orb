@@ -50,20 +50,19 @@ type delivery struct {
 	typing        typing.Refresher
 }
 
-var (
-	_ chat.Delivery   = (*delivery)(nil)
-	_ chat.FileSender = (*delivery)(nil)
-)
+var _ chat.Delivery = (*delivery)(nil)
 
 // maxDocument is the Bot API's limit on a file a bot uploads.
 const maxDocument = 50 << 20
 
 // SendFile implements [chat.FileSender] with sendDocument.
-func (d *delivery) SendFile(ctx context.Context, name string, size int64, content io.Reader) error {
+func (a *Adapter) SendFile(ctx context.Context, key chat.ConversationKey, name string, size int64, content io.Reader) error {
 	if size > maxDocument {
 		return fmt.Errorf("telegram: %s is %d MB; bots can send files up to 50 MB", name, size>>20)
 	}
-	return d.adapter.client.sendDocument(ctx, d.chatID, d.threadID, name, content)
+	chatID, _ := strconv.ParseInt(key.ChatID, 10, 64)
+	threadID, _ := strconv.ParseInt(key.ThreadID, 10, 64)
+	return a.client.sendDocument(ctx, chatID, threadID, name, content)
 }
 
 // Typing implements [chat.Delivery]: an immediate sendChatAction plus a

@@ -29,20 +29,24 @@ func AttachmentKind(mime string) string {
 	return "document"
 }
 
-// FileSender is a [Delivery] whose platform takes files from the agent. Unlike
-// the Delivery calls, SendFile runs on a tool call, alongside Preview.
+// FileSender is an [Adapter] whose platform takes files from the agent: the
+// conversations of its platform get [SendFile].
 type FileSender interface {
-	// SendFile sends size bytes of content as the file name, or fails with
-	// the platform's reason, a size limit included.
-	SendFile(ctx context.Context, name string, size int64, content io.Reader) error
+	// SendFile sends size bytes of content as the file name to the
+	// conversation key, or fails with the platform's reason, a size limit
+	// included.
+	SendFile(ctx context.Context, key ConversationKey, name string, size int64, content io.Reader) error
 }
 
-// turnDelivery carries the running turn's Delivery to its tool calls.
-type turnDelivery struct{}
+// turn carries the running turn's conversation and adapter to its tool calls.
+type turn struct {
+	adapter Adapter
+	key     ConversationKey
+}
 
-// SendFile is the send_file tool, for the sessions of chat conversations: it
-// sends a file under the working directory to the person the agent is
-// talking with, through the turn's delivery.
+// SendFile is the send_file tool, for the conversations of a [FileSender]
+// platform: it sends a file under the working directory to the person the
+// agent is talking with.
 func SendFile(api extensions.API) error {
 	api.RegisterTool(extensions.ToolDefinition{
 		Name: "send_file", Label: "Send File",
@@ -56,7 +60,8 @@ func SendFile(api extensions.API) error {
 			if err := json.Unmarshal(data, &input); err != nil || input.Path == "" {
 				return engine.AgentToolResult{}, errors.New("send_file: path is required")
 			}
-			sender, ok := ctx.Value(turnDelivery{}).(FileSender)
+			current, _ := ctx.Value(turn{}).(turn)
+			sender, ok := current.adapter.(FileSender)
 			if !ok {
 				return engine.AgentToolResult{}, errors.New("send_file: this conversation's platform does not take files")
 			}
@@ -67,7 +72,7 @@ func SendFile(api extensions.API) error {
 			defer func() { _ = file.Close() }()
 			info, err := file.Stat()
 			if err == nil {
-				err = sender.SendFile(ctx, filepath.Base(file.Name()), info.Size(), file)
+				err = sender.SendFile(ctx, current.key, filepath.Base(file.Name()), info.Size(), file)
 			}
 			if err != nil {
 				return engine.AgentToolResult{}, fmt.Errorf("send_file: %w", err)
