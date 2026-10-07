@@ -8,6 +8,10 @@ shown by `/changelog`.
 - The Android app describes Orbs before 0.19 again: 0.19.0's app sent its catalog digest, even
   empty, and their Bridge refuses parameters it does not know, so their conversations stalled.
   It now sends one only once an Orb has given one.
+- Out of memory, the kernel kills a command the shell tool ran before the agent that ran it: its
+  processes start with the highest `oom_score_adj`. In the team agent image, every process that
+  exits is logged with its status or signal (and the container's OOM kills, when there were any),
+  and a socket left by a crash no longer turns restarts into a loop.
 
 ## [0.19.0] - 2026-10-07
 

@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -52,6 +53,11 @@ func run(args []string, image layout) (int, error) {
 	}
 	auth, err := authFile(image)
 	if err != nil {
+		return 0, err
+	}
+	// A socket left by a process that died is not one the agent listens on:
+	// sidecars wait for the agent's own, and a restart is not blocked.
+	if err := os.Remove(image.socket); err != nil && !os.IsNotExist(err) {
 		return 0, err
 	}
 	orb := agentProcess(args, os.Environ(), rendered, image, len(sidecars) > 0)
@@ -132,10 +138,12 @@ func (p process) command(as account) *exec.Cmd {
 }
 
 // supervise waits for the first process to exit, stops the others and
-// returns its status; SIGTERM and SIGINT go to every process.
+// returns its status; SIGTERM and SIGINT go to every process. Every exit is
+// logged with its status or signal, so no death goes unexplained.
 func supervise(running []*exec.Cmd) int {
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	oomKills := oomKillCount()
 	exited := make(chan *exec.Cmd, len(running))
 	for _, process := range running {
 		go func() { _ = process.Wait(); exited <- process }()
@@ -145,22 +153,46 @@ func supervise(running []*exec.Cmd) int {
 			_ = process.Process.Signal(signal)
 		}
 	}
+	report := func(process *exec.Cmd) {
+		status := process.ProcessState.Sys().(syscall.WaitStatus)
+		how := fmt.Sprintf("exited with status %d", status.ExitStatus())
+		if status.Signaled() {
+			how = fmt.Sprintf("was killed by signal %d (%s)", status.Signal(), status.Signal())
+			if killed := oomKillCount() - oomKills; status.Signal() == syscall.SIGKILL && killed > 0 {
+				how += fmt.Sprintf("; the kernel's OOM killer has killed %d process(es) in this container since it started", killed)
+			}
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "orb-agent: %s (pid %d) %s\n", process.Args[0], process.Process.Pid, how)
+	}
 	var first *exec.Cmd
 	select {
 	case first = <-exited:
+		report(first)
+		_, _ = fmt.Fprintln(os.Stderr, "orb-agent: stopping the container")
 		stop(syscall.SIGTERM)
 	case received := <-signals:
+		_, _ = fmt.Fprintf(os.Stderr, "orb-agent: received %s, stopping the container\n", received)
 		stop(received)
 		first = <-exited
+		report(first)
 	}
 	for range len(running) - 1 {
-		<-exited
+		report(<-exited)
 	}
 	status := first.ProcessState.Sys().(syscall.WaitStatus)
 	if status.Signaled() {
 		return 128 + int(status.Signal())
 	}
 	return status.ExitStatus()
+}
+
+// oomKillCount is how many processes the kernel's OOM killer has killed in
+// the container (its cgroup v2 memory.events), or 0 when it does not tell.
+func oomKillCount() int {
+	data, _ := os.ReadFile("/sys/fs/cgroup/memory.events")
+	_, rest, _ := strings.Cut(string(data), "oom_kill ")
+	count, _ := strconv.Atoi(strings.TrimSpace(strings.SplitN(rest, "\n", 2)[0]))
+	return count
 }
 
 // authFile is the agent's OAuth logins, root's, on a descriptor the agent
