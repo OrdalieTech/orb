@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The Android app describes Orbs before 0.19 again: 0.19.0's app sent its catalog digest, even
+  empty, and their Bridge refuses parameters it does not know, so their conversations stalled.
+  It now sends one only once an Orb has given one.
+
 ## [0.19.0] - 2026-10-07
 
 Bridge sends less and opens any conversation, the Android app swipes and completes `@`, Buzz turns

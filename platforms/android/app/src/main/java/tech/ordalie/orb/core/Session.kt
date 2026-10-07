@@ -132,8 +132,9 @@ class Session(private val scope: CoroutineScope, private val bridge: Bridge, val
     }
 
     private suspend fun describe(): Boolean {
-        // Its models and commands come only when they changed since the digest this side holds.
-        val d = remote("instances.describe", JSONObject().put("instance_id", instance).put("catalog", info.optString("catalog")))
+        // Its models and commands come only when they changed since the digest this side holds; an
+        // Orb that never gave one (before 0.19) takes no such parameter.
+        val d = remote("instances.describe", JSONObject().put("instance_id", instance).apply { info.optString("catalog").ifEmpty { null }?.let { put("catalog", it) } })
         val next = d.optJSONObject("result") ?: run {
             online = false
             // Unreachable is a network matter; not found means the Orb itself ended over there.

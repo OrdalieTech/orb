@@ -77,7 +77,7 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         }
         return running.map {
             val id = it.optString("instance_id")
-            val d = remote(peer, "instances.describe", JSONObject().put("instance_id", id).put("catalog", catalogs[id].orEmpty())).optJSONObject("result") ?: JSONObject()
+            val d = remote(peer, "instances.describe", JSONObject().put("instance_id", id).apply { catalogs[id]?.let { put("catalog", it) } }).optJSONObject("result") ?: JSONObject()
             d.optString("catalog").takeIf(String::isNotEmpty)?.let { catalogs[id] = it }
             val target = d.optJSONObject("target")
             Instance(peer, id, it.optString("alias"), d.optString("name"), d.optString("cwd"), target?.optString("execution_id").orEmpty().isNotEmpty(), target?.optString("session_id").orEmpty())
