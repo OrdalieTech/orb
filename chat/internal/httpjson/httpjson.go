@@ -37,13 +37,14 @@ func ClientOr(client *http.Client) *http.Client {
 // OK reports a 2xx status.
 func (r *Response) OK() bool { return r.Status >= 200 && r.Status < 300 }
 
-// Do sends payload as a JSON body (no body when nil) with the given header
-// name/value pairs, which override the default Content-Type, and reads the
-// response. On a 2xx status a non-empty body is decoded into out when out is
-// non-nil. Errors name the failing stage; transport errors pass through.
+// Do sends payload as a JSON body (no body when nil, a reader as is) with the
+// given header name/value pairs, which override the default Content-Type, and
+// reads the response. On a 2xx status a non-empty body is decoded into out
+// when out is non-nil. Errors name the failing stage; transport errors pass
+// through.
 func Do(ctx context.Context, client *http.Client, method, url string, payload, out any, header ...string) (*Response, error) {
-	var body io.Reader
-	if payload != nil {
+	body, raw := payload.(io.Reader)
+	if payload != nil && !raw {
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return nil, fmt.Errorf("encode request: %w", err)

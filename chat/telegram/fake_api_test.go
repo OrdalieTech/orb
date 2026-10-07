@@ -7,6 +7,7 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -134,7 +135,18 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := map[string]any{}
-	_ = json.NewDecoder(r.Body).Decode(&params)
+	if r.ParseMultipartForm(1<<20) == nil {
+		for name, values := range r.MultipartForm.Value {
+			params[name] = values[0]
+		}
+		for name, files := range r.MultipartForm.File {
+			file, _ := files[0].Open()
+			content, _ := io.ReadAll(file)
+			params[name] = files[0].Filename + ":" + string(content)
+		}
+	} else {
+		_ = json.NewDecoder(r.Body).Decode(&params)
+	}
 
 	f.mu.Lock()
 	f.calls = append(f.calls, apiCall{method: method, params: params})
@@ -153,7 +165,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, apiUser{ID: 42, IsBot: true, Username: "orbbot", FirstName: "orb"})
 	case "deleteWebhook", "sendChatAction":
 		writeResult(w, true)
-	case "sendMessage", "editMessageText":
+	case "sendMessage", "editMessageText", "sendDocument":
 		f.mu.Lock()
 		id := f.nextMessageID
 		f.nextMessageID++

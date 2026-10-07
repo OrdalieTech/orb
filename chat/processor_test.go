@@ -3,8 +3,12 @@ package chat
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"strings"
 	"sync"
@@ -826,4 +830,39 @@ func (m *keyedMutex) size() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.entries)
+}
+
+// The agent sends a file from its working directory through the turn's
+// delivery, and one outside it is refused with the reason.
+func TestAgentSendsAFileFromItsWorkingDirectory(t *testing.T) {
+	env := newTestEnv(t, nil)
+	env.sessions.extension = SendFile
+	if err := os.WriteFile(filepath.Join(env.sessions.cwd, "report.csv"), []byte("a,b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("no"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	toolUse := faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}
+	env.provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("send_file", map[string]any{"path": "report.csv"}), toolUse),
+		faux.AssistantMessage(faux.ToolCall("send_file", map[string]any{"path": outside}), toolUse),
+		faux.AssistantMessage("Here it is"),
+	})
+	m := testMessage("ev-1", "chat-1", "send me the report")
+	if err := env.proc.Handle(context.Background(), m); err != nil {
+		t.Fatal(err)
+	}
+	delivery := env.adapter.delivery(t, 0)
+	if !reflect.DeepEqual(delivery.files, []string{"report.csv:a,b\n"}) {
+		t.Fatalf("files sent = %q", delivery.files)
+	}
+	raw, _ := json.Marshal(env.sessions.manager(t, m.Key()).GetEntries())
+	if !strings.Contains(string(raw), "outside the working directory") {
+		t.Fatal("the refusal did not reach the agent")
+	}
+	if got := delivery.snapshotFinalized(); len(got) != 1 || got[0] != "Here it is" {
+		t.Fatalf("finalized = %q", got)
+	}
 }

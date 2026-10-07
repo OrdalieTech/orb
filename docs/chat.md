@@ -117,6 +117,15 @@ VFS/sandboxed execution — into the built-in tools; nil fields keep defaults, a
 survive tool rebuilds. `WithAgentDir` overrides the global agent config directory (default
 `~/.pi/agent`).
 
+### Sending files
+
+`chat.SendFile` is an extension whose `send_file` tool sends a regular file under the session's
+working directory to the person the agent is talking with. It reaches the running turn's
+`Delivery`, which sends it when it implements `chat.FileSender` (Telegram: `sendDocument`, up to
+50 MB); otherwise, or past a platform's limit, the tool returns the reason to the agent. `orb chat
+--tools` attaches it to every conversation. A front platform's agent posts through that
+platform's own client instead: on Buzz, `buzz messages send --file`.
+
 ## Turn ledger and at-least-once semantics
 
 Delivery state lives in the session JSONL itself, as `type:"custom"` entries with custom type

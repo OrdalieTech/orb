@@ -5,12 +5,15 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -170,8 +173,8 @@ func (c *client) call(ctx context.Context, httpClient *http.Client, method strin
 }
 
 // doCall's URL embeds the bot token, so its errors are redacted.
-func (c *client) doCall(ctx context.Context, httpClient *http.Client, method string, params any, out any) error {
-	response, err := httpjson.Do(ctx, httpClient, http.MethodPost, c.baseURL+"/bot"+c.token+"/"+method, params, nil)
+func (c *client) doCall(ctx context.Context, httpClient *http.Client, method string, params any, out any, header ...string) error {
+	response, err := httpjson.Do(ctx, httpClient, http.MethodPost, c.baseURL+"/bot"+c.token+"/"+method, params, nil, header...)
 	if err != nil {
 		return fmt.Errorf("telegram: %s: %w", method, httpjson.Redact(err, c.token))
 	}
@@ -228,6 +231,28 @@ func (c *client) sendMessage(ctx context.Context, params sendMessageParams) (*ap
 		return nil, err
 	}
 	return &message, nil
+}
+
+// sendDocument uploads content as the file name; the Bot API takes files as
+// multipart form data only. It is not retried: content is read once.
+func (c *client) sendDocument(ctx context.Context, chatID, threadID int64, name string, content io.Reader) error {
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	err := form.WriteField("chat_id", strconv.FormatInt(chatID, 10))
+	if err == nil && threadID != 0 {
+		err = form.WriteField("message_thread_id", strconv.FormatInt(threadID, 10))
+	}
+	var part io.Writer
+	if err == nil {
+		part, err = form.CreateFormFile("document", name)
+	}
+	if err == nil {
+		_, err = io.Copy(part, content)
+	}
+	if err = errors.Join(err, form.Close()); err != nil {
+		return err
+	}
+	return c.doCall(ctx, c.http, "sendDocument", &body, nil, "Content-Type", form.FormDataContentType())
 }
 
 func (c *client) editMessageText(ctx context.Context, params editMessageParams) error {

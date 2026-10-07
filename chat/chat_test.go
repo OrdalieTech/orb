@@ -18,6 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
@@ -37,8 +38,17 @@ type fauxDelivery struct {
 	finalizeFails   int
 	notifyFails     int
 	previewPanics   int
+	files           []string // name:content of each file sent
 	// notifyHook, when set, runs before the notice is recorded.
 	notifyHook func(context.Context) error
+}
+
+func (d *fauxDelivery) SendFile(_ context.Context, name string, _ int64, content io.Reader) error {
+	data, err := io.ReadAll(content)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.files = append(d.files, name+":"+string(data))
+	return err
 }
 
 func (d *fauxDelivery) Typing(context.Context) error {
@@ -198,6 +208,8 @@ type fauxSessions struct {
 	provider *faux.Provider
 	settings *config.SettingsManager
 	cwd      string
+	// extension, when set, is the extension every session gets.
+	extension extensions.Factory
 
 	mu       sync.Mutex
 	managers map[string]*sessionstore.SessionManager
@@ -259,11 +271,19 @@ func (s *fauxSessions) Acquire(_ context.Context, key ConversationKey) (*Convers
 		s.provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: s.provider.GetModel()}),
 		engine.WithConvertToLLM(agent.ConvertToLLM),
 	)
+	var registry *extensions.Registry
+	if s.extension != nil {
+		registry = extensions.NewRegistry(s.cwd)
+		if err := registry.Register("chat", s.extension); err != nil {
+			return nil, err
+		}
+	}
 	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent:          created,
-		SessionManager: manager,
-		Settings:       s.settings,
-		StreamFn:       s.provider.StreamSimple,
+		Agent:             created,
+		SessionManager:    manager,
+		Settings:          s.settings,
+		StreamFn:          s.provider.StreamSimple,
+		ExtensionRegistry: registry,
 	})
 	if err != nil {
 		return nil, err

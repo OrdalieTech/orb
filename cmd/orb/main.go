@@ -850,6 +850,7 @@ func agentWorkspace(agents acpHost, cwd string) chat.LocalProviderOption {
 	return chat.WithWorkspace(cwd, func(ctx context.Context, manager *session.SessionManager) (*agent.AgentSession, func(), error) {
 		args := agents.args
 		args.native = args.native.Conversation()
+		args.compiled = append(args.compiled, extensions.CompiledExtension{Name: "chat", Hidden: true, DefaultEnabled: true, Factory: chat.SendFile})
 		runtime, close, err := openHeadless(ctx, args, agents.dependencies, agents.streams, manager)
 		if err != nil {
 			return nil, nil, err

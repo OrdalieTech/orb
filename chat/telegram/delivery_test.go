@@ -215,3 +215,23 @@ func TestDeliveryPreviewRateLimitSkips(t *testing.T) {
 		t.Fatalf("Preview unchanged = %v, want nil", err)
 	}
 }
+
+// A file goes to the conversation's chat as a document; one over the Bot
+// API's 50 MB is refused before any upload.
+func TestDeliverySendsAFileAsADocument(t *testing.T) {
+	f := newFakeAPI(t)
+	sender := newTestAdapter(t, f).NewDelivery(testKey("77"), "tg:77:55", "").(chat.FileSender)
+	if err := sender.SendFile(context.Background(), "report.csv", 4, strings.NewReader("a,b\n")); err != nil {
+		t.Fatal(err)
+	}
+	calls := f.callsTo("sendDocument")
+	if len(calls) != 1 || calls[0].params["chat_id"] != "77" || calls[0].params["document"] != "report.csv:a,b\n" {
+		t.Fatalf("sendDocument calls = %+v", calls)
+	}
+	if err := sender.SendFile(context.Background(), "huge.bin", 51<<20, strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "50 MB") {
+		t.Fatalf("oversized file: %v", err)
+	}
+	if len(f.callsTo("sendDocument")) != 1 {
+		t.Fatal("an oversized file was uploaded")
+	}
+}

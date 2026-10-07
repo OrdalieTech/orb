@@ -83,6 +83,9 @@ type CLIArgs struct {
 	metadataOnly      bool
 	extensionsLoaded  bool
 	extensionRegistry *extensions.Registry
+	// compiled are extensions the session's assembly adds, such as a chat
+	// conversation's tools.
+	compiled          []extensions.CompiledExtension
 	extensionWarnings []modes.StartupDiagnostic
 	// resolvedProjectTrust carries the trust decision loadStartupExtensions
 	// already made in this process, so the runtime neither re-fires the

@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A chat agent can send a file from its working directory to the person it is talking with: the
+  `send_file` tool delivers it through the conversation's platform (Telegram as a document, up to
+  50 MB) and tells the agent why when the platform cannot. On Buzz the agent already attaches
+  files with `buzz messages send --file`.
 - The Android app describes Orbs before 0.19 again: 0.19.0's app sent its catalog digest, even
   empty, and their Bridge refuses parameters it does not know, so their conversations stalled.
   It now sends one only once an Orb has given one.

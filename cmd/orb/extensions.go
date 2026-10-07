@@ -122,7 +122,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			}
 			return built[0], nil
 		},
-		Compiled:   compiledExtensionsForEnvironment(os.Getenv),
+		Compiled:   append(compiledExtensionsForEnvironment(os.Getenv), args.compiled...),
 		MCP:        !args.NoExtensions && !args.metadataOnly,
 		MCPServers: args.mcpServers,
 	})
