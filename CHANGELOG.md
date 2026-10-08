@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-10-08
+
+Every account's quotas on one screen, switching in two keys, an offer to continue on another
+account when one runs out, and steadier tool groups.
+
 - One Providers view replaces Providers, Switch account and the per-account Usage menu. Every
   account sits there with each of its plan windows in its own aligned column (5h under 5h, 7d
   under 7d), a bar that turns orange then red as it runs low, and the resets below. Enter switches
