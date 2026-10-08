@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A conversation as the view sends it: its rows grouped in turns, what streams in followed only by
-/// a reader at the bottom, and the prompt (or the question it asks) under it.
+/// a reader at the bottom, earlier messages loading as the reader reaches them, the prompt (or the
+/// question it asks) under it, and the terminal where it runs, when asked for.
 struct Conversation: View {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
@@ -9,53 +10,84 @@ struct Conversation: View {
     let t: Tab
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var follow = true
+    @State private var kept: String? = nil // the turn read at the top while earlier messages load above it
 
     var body: some View {
-        let turns = turns(orb.rows[t.id] ?? [])
-        VStack(spacing: 0) {
-            if !t.remote && orb.state.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if t.earlier {
-                        Button("earlier messages") { orb.send("earlier", ["tab": t.id]) }
-                            .buttonStyle(.plain).font(.mono(Size.small, .medium)).foregroundStyle(Ink.meta)
-                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+        VSplitView {
+            VStack(spacing: 0) {
+                if !t.remote && orb.state.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
+                transcript
+                if !t.status.isEmpty || !t.online {
+                    HStack(spacing: 8) {
+                        if !t.online { Dot(color: Ink.meta, size: 6, pulse: !t.status.hasPrefix("ended")) }
+                        Text(t.status.isEmpty ? "reconnecting" : t.status).font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(2)
                     }
-                    ForEach(turns, id: \.first!.k) { Turn(rows: $0, t: t) }
-                    // Room under the last message, where the caret waits while Orb writes.
-                    Rectangle().fill(t.streaming ? Ink.rupture : .clear).frame(width: 8, height: 16).padding(.leading, 28).padding(.top, 6).padding(.bottom, 24)
+                    .frame(maxWidth: 820, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 4)
                 }
-                .frame(maxWidth: 820).frame(maxWidth: .infinity)
-                .textSelection(.enabled)
-            }
-            .scrollPosition($position)
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .overlay { if turns.isEmpty { Caps(t.loaded ? "ready" : "standby") } }
-            // Anchored at the top, the list never moves on its own: what streams in follows only a
-            // reader at the bottom. Scrolling away leaves them where they read until they come back down, or send.
-            .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { _, _ in if follow { position.scrollTo(edge: .bottom) } }
-            .onScrollPhaseChange { _, phase, context in
-                if phase == .idle {
-                    let g = context.geometry
-                    follow = g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 32
+                if let ask = t.ask {
+                    Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
+                } else {
+                    PromptBox(tab: t, place: Text(t.remote ? t.where : "this Mac").foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
+                        follow = true
+                        position.scrollTo(edge: .bottom)
+                        Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
+                    }
                 }
             }
-            if !t.status.isEmpty {
-                Text(t.status).font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 4)
-            }
-            if let ask = t.ask {
-                Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
-            } else {
-                PromptBox(tab: t, place: Text(t.remote ? t.where : "this Mac").foregroundStyle(t.remote ? Ink.blue.mix(with: Ink.fg, by: 0.3) : Ink.mute)) { text in
-                    follow = true
-                    position.scrollTo(edge: .bottom)
-                    Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
-                }
-            }
+            .frame(minHeight: 240)
+            if nav.terminals.contains(t.id) { TerminalPane(t: t).frame(minHeight: 120, idealHeight: 280) }
         }
         .navigationTitle(t.title.isEmpty ? "new session" : t.title)
         .navigationSubtitle(dotted(t.remote ? t.where : "", t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"), t.busy ? "working" : t.online ? "" : "offline"))
+        .toolbar {
+            Button { nav.toggleTerminal(t.id) } label: { Label("Terminal", systemImage: "terminal") }.help("Terminal where it runs  ⌘J")
+            Button { nav.inspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }.help("Model, usage and where it runs  ⌥⌘I")
+        }
+        .inspector(isPresented: Bindable(nav).inspector) { Details(t: t).inspectorColumnWidth(min: 260, ideal: 300, max: 400) }
+    }
+
+    private var transcript: some View {
+        let turns = turns(orb.feed(t.id).rows)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                // Reaching the top loads the hundred messages before it; what was read stays in place.
+                if t.earlier {
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .onAppear {
+                            kept = turns.first?.first?.k
+                            orb.send("earlier", ["tab": t.id])
+                        }
+                }
+                ForEach(turns, id: \.first!.k) { Turn(rows: $0, tab: t.id).equatable() }
+                // Room under the last message, where the caret waits while Orb writes.
+                Rectangle().fill(t.streaming ? Ink.rupture : .clear).frame(width: 8, height: 16).padding(.leading, 28).padding(.top, 6).padding(.bottom, 24)
+            }
+            .scrollTargetLayout()
+            .frame(maxWidth: 820).frame(maxWidth: .infinity)
+            .textSelection(.enabled)
+        }
+        .scrollPosition($position)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .overlay {
+            if turns.isEmpty {
+                if t.loaded { Caps("ready") } else { ProgressView().controlSize(.small) }
+            }
+        }
+        .onChange(of: turns.first?.first?.k) {
+            if let k = kept {
+                position.scrollTo(id: k, anchor: .top)
+                kept = nil
+            }
+        }
+        // Anchored at the top, the list never moves on its own: what streams in follows only a
+        // reader at the bottom. Scrolling away leaves them where they read until they come back down, or send.
+        .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { _, _ in if follow { position.scrollTo(edge: .bottom) } }
+        .onScrollPhaseChange { _, phase, context in
+            if phase == .idle {
+                let g = context.geometry
+                follow = g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 32
+            }
+        }
     }
 
     /// A turn is one speaker's run: what the person said, or everything Orb said and did until the next one.
@@ -74,16 +106,16 @@ struct Conversation: View {
 }
 
 /// What the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb just
-/// speaks, full width, its actions inline.
-private struct Turn: View {
+/// speaks, full width, its actions inline. A turn redraws only when its rows change.
+private struct Turn: View, Equatable {
     let rows: [Row]
-    let t: Tab
+    let tab: String
 
     var body: some View {
         if rows.count == 1, let you = rows.first, you.kind == "you" {
             VStack(alignment: .trailing, spacing: 6) {
                 if !you.via.isEmpty { Caps("from a peer", color: Ink.blue) }
-                Pictures(refs: you.images, tab: t.id)
+                Pictures(refs: you.images, tab: tab)
                 if !you.text.isEmpty {
                     Text(tokens(you.text)).lineSpacing(3).padding(.horizontal, 12).padding(.vertical, 8)
                         .background(Ink.fg.opacity(0.07), in: .rect(cornerRadius: 10))
@@ -95,12 +127,12 @@ private struct Turn: View {
                 ForEach(rows) { r in
                     switch r.kind {
                     case "md": if let b = r.block { Markdown(b: b) }
-                    case "run": if r.actions.count == 1 { ActionView(a: r.actions[0], tab: t.id) } else { Worked(r: r, tab: t.id) }
+                    case "run": if r.actions.count == 1 { ActionView(a: r.actions[0], tab: tab) } else { Worked(r: r, tab: tab) }
                     case "note": Folded(text: r.text, color: r.alarm ? Ink.rupture : Ink.meta)
                     default: EmptyView()
                     }
                     // What the tools showed the model stays in view, even while their run is folded.
-                    if r.kind == "run" { Pictures(refs: r.images, tab: t.id) }
+                    if r.kind == "run" { Pictures(refs: r.images, tab: tab) }
                 }
             }
             .padding(.horizontal, 24).padding(.vertical, 6)
@@ -341,5 +373,52 @@ private struct PatternBlue: View {
                 .padding(.horizontal, 14).padding(.vertical, 6).background(Ink.paper, in: .capsule)
         }
         .padding(.horizontal, 24).padding(.vertical, 14).background(Ink.blue)
+    }
+}
+
+/// What a conversation is and where it runs, in the inspector: its name, machine and folder, its
+/// model and reasoning, how full its context is, what its plan has left and what it cost.
+private struct Details: View {
+    @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
+    @Environment(\.go) private var go
+    let t: Tab
+    @State private var name = ""
+
+    var body: some View {
+        Form {
+            Section("Conversation") {
+                TextField("Name", text: $name).onSubmit { orb.send("rename", ["tab": t.id, "name": name]) }
+                LabeledContent("Machine", value: t.remote ? t.where : "this Mac")
+                LabeledContent("Folder") { Text(t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~")).textSelection(.enabled) }
+                HStack {
+                    Button("Terminal") { nav.toggleTerminal(t.id) }
+                    if !t.remote && !t.cwd.isEmpty { Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: t.cwd) } }
+                }
+            }
+            Section("Model") {
+                Picker("Model", selection: Binding { t.model } set: { orb.send("model", ["tab": t.id, "name": $0]) }) {
+                    ForEach(t.catalog, id: \.provider) { p in Section(p.provider) { ForEach(p.models, id: \.self) { Text($0.dropFirst(p.provider.count + 1)).tag($0) } } }
+                }
+                if !t.levels.isEmpty {
+                    Picker("Reasoning", selection: Binding { t.thinking } set: { orb.send("thinking", ["tab": t.id, "name": $0]) }) {
+                        ForEach(t.levels, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+            }
+            Section("Usage") {
+                Gauge(value: min(t.context, 1)) { Text("Context") } currentValueLabel: { Text("\(Int(t.context * 100))%") }
+                    .tint(t.context > 0.8 ? Ink.rupture : Ink.fg)
+                if t.cost > 0 { LabeledContent("Cost", value: String(format: "$%.2f", t.cost)) }
+                if let u = t.usage { ForEach(u.windows, id: \.self) { Quota(w: $0) } }
+            }
+            Section {
+                ForEach([("Copy Last Answer", "/copy"), ("Compact Context", "/compact"), ("New Session Here", "/new")], id: \.1) { label, command in
+                    Button(label) { Task { (try? await orb.ask("send", ["tab": t.id, "text": command], as: Outcome.self)).map(go) } }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onChange(of: t.title, initial: true) { name = t.title }
     }
 }

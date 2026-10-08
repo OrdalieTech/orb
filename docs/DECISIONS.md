@@ -427,6 +427,7 @@ Each holds until changed by owner-signed decision.
 - **The macOS app is SwiftUI built by SwiftPM, without an Xcode project.** `platforms/macos/build.sh`
   assembles `Orb.app` with its `orb` as a helper, the Android app's face and mark, and a hardened
   signature; it renders `orb app` like every app, its own code being the drawing and AppKit's text.
+  Its one dependency is SwiftTerm (MIT), a native terminal view: idle, it costs nothing.
 - **The Android app runs the orb binary, not a gomobile library.** It executes the unmodified
   `CGO_ENABLED=0` CLI (`liborb.so`) and drives every conversation through `orb bridge pipe`, its
   own included: the phone is a Bridge peer of itself (the owner reaches its own machine's

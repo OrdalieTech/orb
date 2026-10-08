@@ -1,3 +1,4 @@
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 /// Settings: the providers and accounts of each machine, Bridge and its devices, and Orb's plugins.
@@ -10,52 +11,52 @@ struct Preferences: View {
             Devices().tabItem { Label("Bridge", systemImage: "point.3.connected.trianglepath.dotted") }.tag("pair")
             Plugins().tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }.tag("plugins")
         }
-        .frame(width: 620, height: 560)
+        .frame(width: 780, height: 600)
         .font(.mono())
     }
 }
 
-/// Every provider a machine offers, signed in or not, and its accounts with what their plans have left.
+/// Every provider a machine offers and its accounts, as Internet Accounts shows them: the list at
+/// left, ready ones first, and what the selected one holds and offers at right; with none
+/// selected, every account's quota on one screen.
 private struct Providers: View {
     @Environment(Orb.self) private var orb
     @State private var machine = ""
     @State private var providers: [Provider] = []
     @State private var accounts: [Account] = []
+    @State private var selected: String? = nil
+    @State private var search = ""
     @State private var note = ""
 
     /// The machine shown: "" is this Mac.
     private var here: String { machine.isEmpty ? orb.state.here : machine }
 
     var body: some View {
-        Form {
-            Picker("Machine", selection: $machine) {
-                ForEach(orb.home.machines.filter { $0.here || $0.launch }) { Text($0.name).tag($0.here ? "" : $0.id) }
-            }
-            if !accounts.isEmpty {
-                Section("Accounts · quota left") {
-                    // An account's id is its provider's: two providers may each have a "default".
-                    ForEach(accounts.indices, id: \.self) { i in
-                        let a = accounts[i]
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(a.name).fontWeight(a.active ? .semibold : .regular)
-                                Text(dotted(a.provider_name, a.plan.capitalized)).foregroundStyle(Ink.meta)
-                                Spacer()
-                                if a.active { Text("in use").foregroundStyle(Ink.meta) } else {
-                                    Button("Use") { Task { note = await run("account", ["machine": here, "provider": a.provider, "account": a.id]); await load() } }
-                                }
-                            }
-                            ForEach(a.windows, id: \.self) { Quota(w: $0) }
-                        }
-                    }
+        let shown = providers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
+        HSplitView {
+            VStack(spacing: 8) {
+                Picker("Machine", selection: $machine) {
+                    ForEach(orb.home.machines.filter { $0.here || $0.launch }) { Text($0.name).tag($0.here ? "" : $0.id) }
                 }
+                .labelsHidden()
+                TextField("Search providers", text: $search).textFieldStyle(.roundedBorder)
+                List(selection: $selected) {
+                    group("Ready", shown.filter(\.ready))
+                    group("Your subscription", shown.filter { !$0.ready && $0.methods.contains(where: \.account) })
+                    group("API key", shown.filter { !$0.ready && !$0.methods.contains(where: \.account) })
+                }
+                .listStyle(.sidebar)
+                .overlay { if providers.isEmpty { ProgressView() } }
             }
-            if !note.isEmpty { Text(note).foregroundStyle(Ink.rupture) }
-            section("Ready", providers.filter(\.ready))
-            section("Your subscription", providers.filter { !$0.ready && $0.methods.contains(where: \.account) })
-            section("API key", providers.filter { !$0.ready && !$0.methods.contains(where: \.account) })
+            .padding(.top, 8).padding(.horizontal, 8)
+            .frame(minWidth: 230, idealWidth: 250, maxWidth: 300)
+            Form {
+                if !note.isEmpty { Text(note).foregroundStyle(Ink.rupture) }
+                if let p = providers.first(where: { $0.id == selected }) { detail(p) } else { quotas }
+            }
+            .formStyle(.grouped)
+            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .formStyle(.grouped)
         .task(id: machine) { await load() }
         .onChange(of: orb.state.login?.state) { if orb.state.login?.state == "done" { Task { await load() } } }
         .sheet(isPresented: .constant(orb.state.login != nil)) {
@@ -63,30 +64,72 @@ private struct Providers: View {
         }
     }
 
-    @ViewBuilder private func section(_ name: String, _ rows: [Provider]) -> some View {
+    @ViewBuilder private func group(_ name: String, _ rows: [Provider]) -> some View {
         if !rows.isEmpty {
             Section(name) {
                 ForEach(rows) { p in
-                    HStack(alignment: .firstTextBaseline) {
-                        Dot(color: p.ready ? Ink.fg : Ink.rule)
-                        VStack(alignment: .leading) {
-                            Text(p.name).fontWeight(p.ready ? .semibold : .regular)
-                            Text(p.ready ? "\(p.holds) · \(p.models) models" : p.methods.map(\.about).joined(separator: " · ")).font(.mono(Size.small)).foregroundStyle(Ink.meta)
-                        }
-                        Spacer()
-                        ForEach(p.methods, id: \.self) { m in
-                            Button(m.account ? (p.ready ? "Sign in again" : "Sign in") : (p.ready ? "Replace key" : "Add key")) {
-                                orb.send("login", ["machine": here, "provider": p.id, "auth": m.auth])
-                            }
-                        }
-                        // Only this Mac's own store; a credential configured elsewhere is changed there.
-                        if p.ready && machine.isEmpty && (p.status == "oauth" || p.source == "stored") {
-                            Button(p.status == "oauth" ? "Sign out" : "Remove key") { Task { note = await run("logout", ["provider": p.id]); await load() } }
-                        }
-                    }
+                    Label(p.name, systemImage: p.ready ? "checkmark.circle.fill" : p.methods.contains(where: \.account) ? "person.crop.circle" : "key")
+                        .badge(p.ready ? p.models : 0)
+                        .tag(p.id)
                 }
             }
         }
+    }
+
+    @ViewBuilder private func detail(_ p: Provider) -> some View {
+        Section {
+            LabeledContent("Status", value: p.ready ? "Ready · \(p.holds)" : "Not signed in")
+            if p.ready { LabeledContent("Models", value: "\(p.models)") }
+        } header: { Text(p.name).font(.mono(Size.body + 4, .semibold)) }
+        Section("Sign in") {
+            ForEach(p.methods, id: \.self) { m in
+                LabeledContent {
+                    Button(m.account ? (p.ready ? "Sign In Again" : "Sign In…") : (p.ready ? "Replace Key…" : "Add Key…")) {
+                        note = ""
+                        orb.send("login", ["machine": here, "provider": p.id, "auth": m.auth])
+                    }
+                } label: {
+                    Text(m.label)
+                    Text(m.about)
+                }
+            }
+            // Only this Mac's own store; a credential configured elsewhere is changed there.
+            if p.ready && machine.isEmpty {
+                if p.status == "oauth" || p.source == "stored" {
+                    Button(p.status == "oauth" ? "Sign Out" : "Remove Key", role: .destructive) { Task { note = await run("logout", ["provider": p.id]); await load() } }
+                } else {
+                    Text("Configured outside Orb (\(p.source)): change it there.").foregroundStyle(Ink.meta)
+                }
+            }
+        }
+        let mine = accounts.filter { $0.provider == p.id }
+        if !mine.isEmpty { Section("Accounts") { ForEach(mine.indices, id: \.self) { account(mine[$0]) } } }
+    }
+
+    /// Every account's plan windows on one screen, as the TUI's Providers view shows them.
+    @ViewBuilder private var quotas: some View {
+        if accounts.isEmpty {
+            ContentUnavailableView("Choose a provider", systemImage: "key", description: Text("Sign in with an account or add an API key; accounts and their quotas show here."))
+        } else {
+            // An account's id is its provider's: two providers may each have a "default".
+            Section("Accounts · quota left") { ForEach(accounts.indices, id: \.self) { account(accounts[$0]) } }
+        }
+    }
+
+    private func account(_ a: Account) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(a.name, systemImage: a.active ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                    .fontWeight(a.active ? .semibold : .regular)
+                Text(dotted(a.provider_name, a.plan.capitalized)).foregroundStyle(Ink.meta)
+                Spacer()
+                if a.active { Text("in use").foregroundStyle(Ink.meta) } else {
+                    Button("Use") { Task { note = await run("account", ["machine": here, "provider": a.provider, "account": a.id]); await load() } }
+                }
+            }
+            ForEach(a.windows, id: \.self) { Quota(w: $0) }
+        }
+        .padding(.vertical, 2)
     }
 
     private func load() async {
@@ -102,16 +145,19 @@ private struct Providers: View {
     }
 }
 
-/// One plan window: the share left as a bar, in the rupture red once it runs low, and its reset.
-private struct Quota: View {
+/// One plan window: what is left as a gauge, in the rupture red once it runs low, and when it resets.
+struct Quota: View {
     let w: Window
     var body: some View {
         HStack(spacing: 10) {
-            Text(w.name).foregroundStyle(Ink.meta).frame(width: 70, alignment: .leading)
-            ProgressView(value: min(max(w.left / 100, 0), 1)).tint(w.left < 15 ? Ink.rupture : Ink.fg)
-            Text("\(Int(w.left))%").frame(width: 40, alignment: .trailing)
-            Text(w.resets > 0 ? Date(timeIntervalSince1970: Double(w.resets) / 1000).formatted(.dateTime.weekday().hour().minute()) : "")
-                .foregroundStyle(Ink.meta).frame(width: 90, alignment: .trailing)
+            Text(w.name).foregroundStyle(Ink.meta).frame(width: 64, alignment: .leading)
+            Gauge(value: min(max(w.left, 0), 100), in: 0...100) {}.gaugeStyle(.linearCapacity).labelsHidden()
+                .tint(w.left < 15 ? Ink.rupture : w.left < 40 ? .orange : Ink.fg)
+            Text("\(Int(w.left))%").monospacedDigit().frame(width: 40, alignment: .trailing)
+            Group {
+                if w.resets > 0 { Text(Date(timeIntervalSince1970: Double(w.resets) / 1000), style: .relative) } else { Text("") }
+            }
+            .foregroundStyle(Ink.meta).frame(width: 96, alignment: .trailing)
         }
         .font(.mono(Size.small))
     }
@@ -207,13 +253,17 @@ private struct Devices: View {
         Form {
             Section("Devices") {
                 let peers = orb.home.machines.filter { !$0.here }
-                if peers.isEmpty { Text("None yet. Pair one below.").foregroundStyle(Ink.meta) }
+                if peers.isEmpty {
+                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text("Invite one below, or join one that ran orb bridge pair."))
+                }
                 ForEach(peers) { m in
                     HStack {
-                        Dot(color: m.connected ? Ink.fg : Ink.rule, pulse: m.running.contains(where: \.busy))
-                        VStack(alignment: .leading) {
+                        Label {
                             Text(m.name).fontWeight(m.connected ? .semibold : .regular)
-                            Text(dotted(m.connected ? "\(m.running.count) running" : "disconnected", String(m.id.split(separator: ":").last?.prefix(6) ?? ""), m.version.isEmpty ? "" : "orb " + m.version, updating[m.id] ?? "")).font(.mono(Size.small)).foregroundStyle(Ink.meta)
+                            Text(dotted(m.connected ? "\(m.running.count) running" : "disconnected", String(m.id.split(separator: ":").last?.prefix(6) ?? ""), m.version.isEmpty ? "" : "orb " + m.version, updating[m.id] ?? ""))
+                        } icon: {
+                            Image(systemName: m.launch ? "desktopcomputer" : "iphone").symbolEffect(.pulse, isActive: m.running.contains(where: \.busy))
+                                .foregroundStyle(m.connected ? Ink.fg : Ink.rule)
                         }
                         Spacer()
                         // A device behind the latest release updates from here (its Orb swaps itself and restarts Bridge).
@@ -231,31 +281,41 @@ private struct Devices: View {
             }
             Section("Invite a device") {
                 if let inv = orb.state.invitation {
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        let left = max(0, Int(inv.expires) - Int(ctx.date.timeIntervalSince1970))
-                        LabeledContent("On it, run") { Text(String(format: "%d:%02d · single use", left / 60, left % 60)).foregroundStyle(Ink.meta) }
+                    let expires = Date(timeIntervalSince1970: TimeInterval(inv.expires))
+                    LabeledContent("Single use, for") { Text(timerInterval: .now...max(.now, expires), countsDown: true).monospacedDigit() }
+                    // A phone scans the code; a computer runs the command.
+                    HStack(alignment: .top, spacing: 16) {
+                        if let qr = qr(inv.code) { Image(nsImage: qr).interpolation(.none).resizable().frame(width: 168, height: 168) }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
+                            HStack {
+                                Button("Copy Command") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString("orb bridge join " + inv.code, forType: .string)
+                                }
+                                ShareLink(item: "orb bridge join " + inv.code)
+                            }
+                            Text("You approve it here by fingerprint once it runs the command.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
+                        }
                     }
-                    Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(3)
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("orb bridge join " + inv.code, forType: .string)
-                    }
-                    Text("You approve it here by fingerprint once it runs the command.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
                 } else {
-                    Button("Create an invitation") { orb.send("invite") }
+                    Button("Create an Invitation") { orb.send("invite") }
                 }
             }
             Section("Join a device") {
                 switch orb.state.joining {
                 case "":
                     TextField("orb-bridge:v1:…", text: $code, axis: .vertical).lineLimit(2...4).font(.mono(Size.small))
-                    Button("Pair") {
-                        error = ""
-                        Task {
-                            do { _ = try await orb.ask("join", ["text": code]) } catch where error.localizedDescription != "cancelled" { self.error = error.localizedDescription } catch {}
+                    HStack {
+                        PasteButton(payloadType: String.self) { code = $0.first ?? code }
+                        Button("Pair") {
+                            error = ""
+                            Task {
+                                do { _ = try await orb.ask("join", ["text": code]) } catch where error.localizedDescription != "cancelled" { self.error = error.localizedDescription } catch {}
+                            }
                         }
+                        .disabled(code.isEmpty)
                     }
-                    .disabled(code.isEmpty)
                     if !error.isEmpty { Text(error).foregroundStyle(Ink.rupture) }
                 case "paired":
                     Text("Paired. Its conversations appear in the sidebar.")
@@ -280,6 +340,17 @@ private struct Devices: View {
             Button("Cancel", role: .cancel) { forgetting = nil }
         } message: { _ in Text("It loses its access to this Mac; pairing again takes a new code.") }
     }
+}
+
+/// A QR code of [text], drawn sharp at any size.
+private func qr(_ text: String) -> NSImage? {
+    let filter = CIFilter.qrCodeGenerator()
+    filter.message = Data(text.utf8)
+    guard let code = filter.outputImage else { return nil }
+    let image = NSCIImageRep(ciImage: code)
+    let out = NSImage(size: image.size)
+    out.addRepresentation(image)
+    return out
 }
 
 /// Orb's bundled plugins on this Mac. Each one only ever renders into a slot or raises an interrupt.

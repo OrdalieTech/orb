@@ -2,7 +2,7 @@
 
 A native SwiftUI app that draws `orb app` (`bridge/view`): the conversations open on this Mac's
 Bridge, the CLI's own, and on its paired machines. It holds no logic of its own; the view, shared
-with the Android app, does. macOS 15 or later.
+with the Android app, does. Its terminal (⌘J) is SwiftTerm's native view. macOS 15 or later.
 
 ## Build
 

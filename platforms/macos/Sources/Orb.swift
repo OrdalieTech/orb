@@ -31,13 +31,18 @@ enum Message: Sendable {
 
 struct Failure: LocalizedError { let errorDescription: String? }
 
+/// A followed conversation's rows, observed on their own: a patch to one redraws its conversation only.
+@MainActor @Observable final class Feed {
+    var rows: [Row] = []
+}
+
 /// The app's side of `orb app`, the view every Orb app draws (bridge/view): what it shows, kept as
 /// the view sends it, and the intents it sends back. Everything the app does with Orb goes here.
 @MainActor @Observable final class Orb {
     private(set) var state = ViewState.blank
     private(set) var home = Home.blank
     /// Each followed conversation's rows, as the view last patched them.
-    private(set) var rows: [String: [Row]] = [:]
+    @ObservationIgnored private var feeds: [String: Feed] = [:]
     @ObservationIgnored var alert: (_ tab: String, _ title: String, _ text: String) -> Void = { _, _, _ in }
     @ObservationIgnored private var input: FileHandle?
     @ObservationIgnored private var replies: [String: CheckedContinuation<Data, Never>] = [:]
@@ -103,9 +108,11 @@ struct Failure: LocalizedError { let errorDescription: String? }
         switch m {
         case .state(let s):
             state = s
-            rows = rows.filter { id, _ in s.tabs.contains { $0.id == id } }
+            feeds = feeds.filter { id, _ in s.tabs.contains { $0.id == id } }
         case .home(let h): home = h
-        case .rows(let tab, let at, let new): rows[tab] = Array((rows[tab] ?? []).prefix(at)) + new
+        case .rows(let tab, let at, let new):
+            let feed = feed(tab)
+            feed.rows = Array(feed.rows.prefix(at)) + new
         case .reply(let id, let line): replies.removeValue(forKey: id)?.resume(returning: line)
         case .alert(let tab, let title, let text): alert(tab, title, text)
         }
@@ -137,6 +144,12 @@ struct Failure: LocalizedError { let errorDescription: String? }
     func visible(_ on: Bool) { visible = on; send("visible", ["on": on]) }
     func show(_ tabs: [String]) { if tabs != shown { shown = tabs; send("show", ["tabs": tabs]) } }
     func tab(_ id: String?) -> Tab? { state.tabs.first { $0.id == id } }
+    func feed(_ tab: String) -> Feed {
+        if let feed = feeds[tab] { return feed }
+        let feed = Feed()
+        feeds[tab] = feed
+        return feed
+    }
     func machine(_ id: String) -> Machine? { home.machines.first { $0.id == id } }
 }
 

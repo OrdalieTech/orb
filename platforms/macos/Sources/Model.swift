@@ -80,6 +80,16 @@ struct Tab: Decodable, Equatable, Identifiable {
     @D var models: [String]
 }
 
+extension Tab {
+    /// The models by provider ("anthropic/claude-…"), in the order the Orb lists them.
+    var catalog: [(provider: String, models: [String])] {
+        models.reduce(into: []) { out, m in
+            let provider = String(m.prefix { $0 != "/" })
+            if out.last?.provider == provider { out[out.count - 1].models.append(m) } else { out.append((provider, [m])) }
+        }
+    }
+}
+
 struct Claim: Decodable, Equatable {
     @D var invitation: String
     @D var claimant: String
@@ -157,6 +167,7 @@ struct Machine: Decodable, Equatable, Identifiable {
     @D var connected: Bool
     @D var version: String
     @D var launch: Bool
+    @D var hue: Int
     @D var running: [Running]
     @D var folders: [Folder]
 }

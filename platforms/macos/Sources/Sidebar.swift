@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// The conversations open in tabs, then every thread on every machine, newest first. Selecting a
-/// thread opens it in a tab.
+/// The conversations open in tabs, then each machine's threads, newest first, in a section that
+/// folds. Selecting a thread opens it in a tab.
 struct Sidebar: View {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
     @State private var search = ""
+    @State private var folded: Set<String> = []
     @State private var renaming: (intent: [String: String], name: String)? = nil
     @State private var deleting: Entry? = nil
 
@@ -13,9 +14,22 @@ struct Sidebar: View {
         @Bindable var nav = nav
         List(selection: $nav.tab) {
             Section("Open") { ForEach(orb.state.tabs) { tabRow($0) } }
-            Section("Threads") { ForEach(entries) { entryRow($0) } }
+            ForEach(orb.home.machines) { m in
+                let threads = entries.filter { $0.machine == m.id }
+                if !threads.isEmpty {
+                    Section(isExpanded: Binding { !folded.contains(m.id) } set: { if $0 { folded.remove(m.id) } else { folded.insert(m.id) } }) {
+                        ForEach(threads.prefix(100)) { entryRow($0) }
+                    } header: {
+                        HStack(spacing: 6) {
+                            if !m.here { Circle().fill(Ink.hue(m.hue)).frame(width: 7, height: 7) }
+                            Text(m.name)
+                        }
+                    }
+                }
+            }
         }
         .searchable(text: $search, placement: .sidebar, prompt: "Threads")
+        .toolbar { Button { nav.tab = nil } label: { Label("New Conversation", systemImage: "square.and.pencil") }.help("New conversation  ⌘N") }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(orb.state.up ? orb.state.summary : "starting Bridge…").font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(1)
@@ -39,21 +53,21 @@ struct Sidebar: View {
         } message: { _ in Text("It is removed from this Mac for good.") }
     }
 
-    private var entries: ArraySlice<Entry> {
-        orb.home.entries.filter { !$0.open && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }.prefix(200)
+    private var entries: [Entry] {
+        orb.home.entries.filter { !$0.open && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
     }
 
     private func tabRow(_ t: Tab) -> some View {
-        Line(title: t.title.isEmpty ? "new session" : t.title, sub: dotted(t.where, base(t.cwd)), live: t.busy, asks: t.ask != nil, remote: t.remote)
+        Line(title: t.title.isEmpty ? "new session" : t.title, sub: dotted(t.where, base(t.cwd)), live: t.busy, asks: t.ask != nil, hue: t.remote ? orb.hue(t.peer) : nil)
             .tag(t.id)
             .contextMenu {
                 Button("Rename…") { renaming = (["tab": t.id], t.title) }
-                Button("Close") { orb.send("close", ["tab": t.id]); if nav.tab == t.id { nav.tab = nil } }
+                Button("Close") { nav.close(t.id, orb) }
             }
     }
 
     private func entryRow(_ e: Entry) -> some View {
-        Line(title: e.title, sub: dotted(orb.machine(e.machine)?.name ?? "", base(e.cwd), e.modified.ago), live: e.live, asks: e.asks, remote: e.machine != orb.state.here)
+        Line(title: e.title, sub: dotted(base(e.cwd), e.modified.ago), live: e.live, asks: e.asks, hue: nil)
             .tag("e:" + e.key)
             .contextMenu {
                 if !e.unstored { Button("Rename…") { renaming = (["key": e.key], e.title) } }
@@ -62,16 +76,18 @@ struct Sidebar: View {
     }
 }
 
-/// A conversation in the sidebar: its name, where and when, and a mark when it works or asks.
+/// A conversation in the sidebar: its name, where and when (a peer's in its hue), and a mark when
+/// it works or asks.
 private struct Line: View {
     let title: String, sub: String
-    let live: Bool, asks: Bool, remote: Bool
+    let live: Bool, asks: Bool
+    let hue: Color?
 
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.mono()).lineLimit(1)
-                Text(sub).font(.mono(Size.small)).foregroundStyle(remote ? Ink.blue.mix(with: Ink.meta, by: 0.4) : Ink.meta).lineLimit(1)
+                Text(sub).font(.mono(Size.small)).foregroundStyle(hue ?? Ink.meta).lineLimit(1)
             }
             Spacer(minLength: 0)
             if asks { Dot() } else if live { Dot(pulse: true) }
@@ -92,6 +108,16 @@ struct Start: View {
             Stretch(text: "ORB", height: 44)
             Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
                 .font(.mono(Size.small)).foregroundStyle(Ink.meta).padding(.top, 14)
+            // Where this Mac worked last: one click picks the folder the next message starts in.
+            if let mine = orb.machine(orb.state.here), !mine.folders.isEmpty {
+                HStack {
+                    ForEach(mine.folders.prefix(4), id: \.cwd) { f in
+                        Button(base(f.cwd)) { target = target?.cwd == f.cwd ? nil : (mine.id, f.cwd, "this Mac · " + base(f.cwd)) }
+                            .buttonStyle(.bordered).tint(target?.cwd == f.cwd ? Ink.rupture : nil).help(f.cwd)
+                    }
+                }
+                .controlSize(.small).padding(.top, 18)
+            }
             Spacer()
             PromptBox(tab: nil, place: whereMenu) { text in
                 Task {

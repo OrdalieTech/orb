@@ -87,7 +87,7 @@ struct PromptBox<Place: View>: View {
                 }
                 Rule()
             }
-            Editor(text: draft, cursor: $cursor, height: $height) { key in
+            Editor(text: draft, cursor: $cursor, height: $height, focus: nav.focus) { key in
                 switch key {
                 case .up where !choices.isEmpty: picked = max(0, picked - 1)
                 case .down where !choices.isEmpty: picked = min(choices.count - 1, picked + 1)
@@ -112,7 +112,11 @@ struct PromptBox<Place: View>: View {
                 place.font(.mono(Size.small, .semibold))
                 if let tab { Model(t: tab) }
                 Spacer(minLength: 0)
-                if let tab { Gauges(t: tab) }
+                if let tab {
+                    Gauges(t: tab)
+                    Button(">_") { nav.toggleTerminal(tab.id) }.buttonStyle(.plain).font(.mono(Size.body, .semibold))
+                        .foregroundStyle(nav.terminals.contains(tab.id) ? Ink.fg : Ink.mute).help("Terminal where it runs  ⌘J")
+                }
                 if busy && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Pill("stop", color: Ink.rupture) { orb.send("abort", ["tab": tab!.id]) }
                 } else if busy {
@@ -127,6 +131,13 @@ struct PromptBox<Place: View>: View {
         .background(Ink.raised).clipShape(.rect(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Ink.rule.opacity(0.7)))
         .frame(maxWidth: 820).padding(.horizontal, 16).padding(.bottom, 16)
+        // Files dropped from the Finder are cited, as `@` would: this Mac's own, for a conversation here.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard tab?.remote == false else { return false }
+            let cites = urls.map { $0.path.contains(" ") ? "@\"\($0.path)\"" : "@" + $0.path }
+            draft.wrappedValue += (draft.wrappedValue.isEmpty || draft.wrappedValue.hasSuffix(" ") ? "" : " ") + cites.joined(separator: " ") + " "
+            return true
+        }
         .onChange(of: choices.count) { picked = 0 }
         .task(id: at) {
             guard let at, let tab else { found = []; return }
@@ -143,62 +154,125 @@ struct PromptBox<Place: View>: View {
     }
 }
 
-/// The model, and its reasoning as a small meter: one bar per level it takes, lit up to the current one.
+/// The model and its reasoning as a small meter (one bar per level it takes, lit up to the
+/// current one); a click, ⌘⇧M or /model opens the picker.
 private struct Model: View {
+    @Environment(Nav.self) private var nav
+    let t: Tab
+
+    var body: some View {
+        let at = t.levels.firstIndex(of: t.thinking) ?? -1
+        Button { nav.picking.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(t.model.isEmpty ? "model" : String(t.model.drop { $0 != "/" }.dropFirst())).lineLimit(1)
+                HStack(alignment: .bottom, spacing: 2) {
+                    ForEach(t.levels.indices, id: \.self) { i in
+                        Rectangle().fill(i <= at && t.levels[i] != "off" ? Ink.fg : Ink.rule).frame(width: 3, height: CGFloat(5 + 2 * i))
+                    }
+                }
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain).foregroundStyle(Ink.mute).help(dotted(t.model, t.thinking))
+        .popover(isPresented: Bindable(nav).picking, arrowEdge: .top) { ModelPicker(t: t) { nav.picking = false } }
+    }
+}
+
+/// The models a conversation can switch to, by provider, filtered as you type: ↩ takes the one
+/// selected or the first match, ↑↓ move, a double click works too; its reasoning levels under them.
+private struct ModelPicker: View {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
     @Environment(\.openSettings) private var openSettings
     let t: Tab
-
-    /// The models by provider ("anthropic/claude-…"), in the order the Orb lists them.
-    private var providers: [(name: String, models: [String])] {
-        t.models.reduce(into: []) { out, m in
-            let provider = String(m.prefix { $0 != "/" })
-            if out.last?.name == provider { out[out.count - 1].models.append(m) } else { out.append((provider, [m])) }
-        }
-    }
+    let done: () -> Void
+    @State private var query = ""
+    @State private var selected: String? = nil
+    @FocusState private var searching: Bool
 
     var body: some View {
-        Menu {
-            if t.models.isEmpty { Button("Providers…") { nav.pane = "providers"; openSettings() } }
-            ForEach(providers, id: \.name) { p in
-                Section(p.name) { ForEach(p.models, id: \.self) { m in pick(String(m.dropFirst(p.name.count + 1)), m == t.model) { orb.send("model", ["tab": t.id, "name": m]) } } }
+        let shown = t.catalog.map { ($0.provider, $0.models.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }) }.filter { !$0.1.isEmpty }
+        let flat = shown.flatMap(\.1)
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(Ink.meta)
+                TextField("Search \(t.models.count) models", text: $query).textFieldStyle(.plain).focused($searching)
+                    .onSubmit { pick(selected.flatMap { flat.contains($0) ? $0 : nil } ?? flat.first) }
+                    .onKeyPress(.downArrow) { selected = step(flat, 1); return .handled }
+                    .onKeyPress(.upArrow) { selected = step(flat, -1); return .handled }
             }
-        } label: { Text(t.model.isEmpty ? "model" : String(t.model.drop { $0 != "/" }.dropFirst())) }
-            .menuStyle(.borderlessButton).fixedSize().foregroundStyle(Ink.mute).help(t.model)
-        if !t.levels.isEmpty {
-            Menu {
-                ForEach(t.levels, id: \.self) { l in pick(l, l == t.thinking) { orb.send("thinking", ["tab": t.id, "name": l]) } }
-            } label: { meter }
-                .menuStyle(.button).buttonStyle(.plain).fixedSize().help("reasoning: \(t.thinking)")
+            .font(.mono(Size.body + 1)).padding(12)
+            Divider()
+            if t.models.isEmpty {
+                ContentUnavailableView {
+                    Label("No model yet", systemImage: "key")
+                } description: { Text("Sign in to a provider, or add an API key.") } actions: {
+                    Button("Providers…") { done(); nav.pane = "providers"; openSettings() }
+                }
+            } else {
+                ScrollViewReader { scroll in
+                    List(selection: $selected) {
+                        ForEach(shown, id: \.0) { provider, models in
+                            Section(provider) {
+                                ForEach(models, id: \.self) { m in
+                                    HStack {
+                                        Text(m.dropFirst(provider.count + 1))
+                                        Spacer()
+                                        if m == t.model { Image(systemName: "checkmark").foregroundStyle(Ink.rupture) }
+                                    }
+                                    .tag(m)
+                                }
+                            }
+                        }
+                    }
+                    .contextMenu(forSelectionType: String.self, menu: { _ in }, primaryAction: { pick($0.first) })
+                    .onChange(of: selected) { if let selected { scroll.scrollTo(selected) } }
+                }
+            }
+            if !t.levels.isEmpty {
+                Divider()
+                Picker("Reasoning", selection: Binding { t.thinking } set: { orb.send("thinking", ["tab": t.id, "name": $0]) }) {
+                    ForEach(t.levels, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.segmented).controlSize(.small).padding(10)
+            }
+        }
+        .frame(width: 400, height: 460)
+        .onAppear {
+            searching = true
+            selected = t.model
         }
     }
 
-    private var meter: some View {
-        let at = t.levels.firstIndex(of: t.thinking) ?? -1
-        return HStack(alignment: .bottom, spacing: 2) {
-            ForEach(t.levels.indices, id: \.self) { i in
-                Rectangle().fill(i <= at && t.levels[i] != "off" ? Ink.fg : Ink.rule).frame(width: 3, height: CGFloat(5 + 2 * i))
-            }
-        }
+    private func step(_ flat: [String], _ by: Int) -> String? {
+        guard !flat.isEmpty else { return nil }
+        let at = selected.flatMap { flat.firstIndex(of: $0) } ?? (by > 0 ? -1 : flat.count)
+        return flat[min(max(at + by, 0), flat.count - 1)]
     }
 
-    private func pick(_ label: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
-        Toggle(label, isOn: Binding { on } set: { _ in action() })
+    private func pick(_ model: String?) {
+        if let model, model != t.model { orb.send("model", ["tab": t.id, "name": model]) }
+        done()
     }
 }
 
-/// What the context holds, the plan's window nearest its limit (all of them on hover), what it cost.
+/// What the context holds, the plan's window nearest its limit (a click shows them all), what it cost.
 private struct Gauges: View {
     let t: Tab
+    @State private var plan = false
     var body: some View {
         HStack(spacing: 12) {
             if t.context >= 0.01 { Text("\(Int(t.context * 100))%").foregroundStyle(t.context > 0.8 ? Ink.rupture : Ink.meta).help("of the context window in use") }
             if let u = t.usage, let w = u.windows.min(by: { $0.left < $1.left }) {
-                Text("\(w.name) \(Int(w.left))% left").foregroundStyle(w.left < 15 ? Ink.rupture : Ink.meta)
-                    .help(([u.plan] + u.windows.map { w in
-                        "\(w.name) · \(Int(w.left))% left" + (w.resets > 0 ? " · resets " + Date(timeIntervalSince1970: Double(w.resets) / 1000).formatted(.dateTime.weekday().hour().minute()) : "")
-                    }).filter { !$0.isEmpty }.joined(separator: "\n"))
+                Button("\(w.name) \(Int(w.left))% left") { plan.toggle() }.buttonStyle(.plain).foregroundStyle(w.left < 15 ? Ink.rupture : Ink.meta)
+                    .popover(isPresented: $plan) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Caps(dotted(String(t.model.prefix { $0 != "/" }), u.plan, "read " + u.at.ago))
+                            ForEach(u.windows, id: \.self) { Quota(w: $0) }
+                        }
+                        .padding(14).frame(width: 340).font(.mono())
+                    }
             }
             if t.cost >= 0.005 { Text(String(format: "$%.2f", t.cost)).foregroundStyle(Ink.meta) }
         }
@@ -273,6 +347,7 @@ private struct Editor: NSViewRepresentable {
     @Binding var text: String
     @Binding var cursor: Int
     @Binding var height: CGFloat
+    let focus: Int // grows each time the box is asked for (⌘L)
     let key: (Key) -> Bool
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -297,6 +372,7 @@ private struct Editor: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let view = scroll.documentView as! NSTextView
+        if focus != context.coordinator.parent.focus { view.window?.makeFirstResponder(view) }
         context.coordinator.parent = self
         if view.string != text {
             view.string = text

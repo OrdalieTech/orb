@@ -13,9 +13,21 @@ enum Ink {
     static let blue = Color(rgb: 0x173E78)
     static let paper = Color(rgb: 0xFAF9F6)
 
+    /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six tones
+    /// apart from each other and from the rupture red, as on Android.
+    static func hue(_ n: Int) -> Color {
+        let tones: [(UInt32, UInt32)] = [(0x2F5FA8, 0x6E9BE0), (0x1F7F73, 0x4FBFAE), (0x9A6A12, 0xD9A441), (0x6A47A8, 0xA88BE0), (0x4A7A22, 0x8CC255), (0x9C3F86, 0xD77CC4)]
+        return n > 0 ? tone(tones[(n - 1) % tones.count].0, tones[(n - 1) % tones.count].1) : fg
+    }
+
     private static func tone(_ light: UInt32, _ dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(rgb: dark) : NSColor(rgb: light) })
     }
+}
+
+extension Orb {
+    /// The colour a machine's conversations are told apart by.
+    func hue(_ machine: String) -> Color { Ink.hue(self.machine(machine)?.hue ?? 0) }
 }
 
 extension NSColor {
