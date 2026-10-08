@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-08
+
+Team agents send files, enable bundled plugins, survive a runaway tool and restart cleanly.
+
 - A team agent's file turns bundled plugins on or off with `plugins: {websearch: true}`, checked
   against the plugins Orb ships; memory stays on unless set false, and `memory:` still works.
 - A chat agent can send a file from its working directory to the person it is talking with: the
