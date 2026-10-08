@@ -21,7 +21,7 @@ struct Preferences: View {
 /// selected, every account's quota on one screen.
 private struct Providers: View {
     @Environment(Orb.self) private var orb
-    @State private var machine = ""
+    @Environment(Nav.self) private var nav
     @State private var providers: [Provider] = []
     @State private var accounts: [Account] = []
     @State private var selected: String? = nil
@@ -29,13 +29,14 @@ private struct Providers: View {
     @State private var note = ""
 
     /// The machine shown: "" is this Mac.
+    private var machine: String { nav.machine }
     private var here: String { machine.isEmpty ? orb.state.here : machine }
 
     var body: some View {
         let shown = providers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
         HSplitView {
             VStack(spacing: 8) {
-                Picker("Machine", selection: $machine) {
+                Picker("Machine", selection: Bindable(nav).machine) {
                     ForEach(orb.home.machines.filter { $0.here || $0.launch }) { Text($0.name).tag($0.here ? "" : $0.id) }
                 }
                 .labelsHidden()

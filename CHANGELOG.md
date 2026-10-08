@@ -44,6 +44,9 @@ shown by `/changelog`.
   to give it (any app on the view can offer it); its conversations carry the new name at once.
 - Tabs reorder by dragging them; the view keeps the order with the tabs, for every app (on the
   Mac, in the sidebar's Open section).
+- From a conversation, providers and accounts are those of the machine it runs on: the Mac's
+  model picker switches that machine's account for the model's provider, and opens Settings on
+  its providers. A machine that does not allow it, or runs an Orb too old for it, says so.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

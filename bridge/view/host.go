@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -106,7 +107,10 @@ func (a *App) slow(in intent) func() (any, error) {
 	t, self := a.tab(in.Tab), a.self
 	a.mu.Unlock()
 	machine := cmp.Or(in.Machine, self)
-	host := func(method string, params, result any) error { return a.remote(ctx, machine, method, params, result) }
+	// A machine's own calls; a refusal says why: it does not let this app, or its Orb is too old.
+	host := func(method, what string, params, result any) error {
+		return a.refused(machine, what, a.remote(ctx, machine, method, params, result))
+	}
 	switch in.Do {
 	case "open":
 		return call(func() (any, error) { return a.open(in.Key) })
@@ -145,7 +149,7 @@ func (a *App) slow(in intent) func() (any, error) {
 	case "providers":
 		return call(func() (any, error) {
 			var r struct{ Providers []json.RawMessage }
-			if err := host("host.providers", struct{}{}, &r); err != nil {
+			if err := host("host.providers", "list its providers", struct{}{}, &r); err != nil {
 				return nil, err
 			}
 			return providers(r.Providers), nil
@@ -153,7 +157,7 @@ func (a *App) slow(in intent) func() (any, error) {
 	case "accounts":
 		return call(func() (any, error) {
 			var r struct{ Accounts []json.RawMessage }
-			if err := host("host.accounts", struct{}{}, &r); err != nil {
+			if err := host("host.accounts", "list its accounts", struct{}{}, &r); err != nil {
 				return nil, err
 			}
 			return accounts(r.Accounts), nil
@@ -163,10 +167,7 @@ func (a *App) slow(in intent) func() (any, error) {
 			var r struct {
 				Accounts []struct{ Type, Message string }
 			}
-			err := host("host.accounts.use", map[string]string{"provider": in.Provider, "id": in.Account}, &r)
-			if bridge.Code(err) == "unauthorized" {
-				return nil, errors.New("that device does not let " + a.o.Name + " switch its accounts")
-			}
+			err := host("host.accounts.use", "switch its accounts", map[string]string{"provider": in.Provider, "id": in.Account}, &r)
 			for _, row := range r.Accounts {
 				if row.Type == "error" {
 					return nil, errors.New(row.Message)
@@ -181,10 +182,7 @@ func (a *App) slow(in intent) func() (any, error) {
 	case "update":
 		return call(func() (any, error) {
 			var r struct{ Status, To string }
-			err := host("host.update", struct{}{}, &r)
-			if bridge.Code(err) == "unauthorized" {
-				return nil, errors.New("that device does not let " + a.o.Name + " update it")
-			}
+			err := host("host.update", "update itself", struct{}{}, &r)
 			return strings.Trim(r.Status+" · "+r.To, " ·"), err
 		})
 	case "invite":
@@ -259,6 +257,24 @@ func (a *App) slow(in intent) func() (any, error) {
 	}
 	cancel()
 	return nil
+}
+
+// refused says why a machine did not do [what]: it does not let this app, or its Orb predates the
+// call; other errors stand.
+func (a *App) refused(machine, what string, err error) error {
+	a.mu.Lock()
+	name := "that device"
+	if m := a.machine(machine); m != nil {
+		name = a.name(m)
+	}
+	a.mu.Unlock()
+	switch bridge.Code(err) {
+	case "unauthorized":
+		return fmt.Errorf("%s does not let %s %s", name, a.o.Name, what)
+	case "method_not_found":
+		return fmt.Errorf("%s runs an Orb too old to %s from here: update it", name, what)
+	}
+	return err
 }
 
 // providers groups `orb login --json` rows by provider, the way /login lists them.
@@ -415,9 +431,7 @@ func (a *App) signIn(machine, provider, auth string) {
 		ID string `json:"login_id"`
 	}
 	if err := a.remote(ctx, machine, "host.login.start", map[string]string{"provider": provider, "method": auth}, &started); err != nil {
-		if bridge.Code(err) == "unauthorized" {
-			err = errors.New("that device does not let " + a.o.Name + " sign it in")
-		}
+		err = a.refused(machine, "sign it in", err)
 		update(func(l *Login) { l.State, l.Detail = "failed", err.Error() })
 		return
 	}

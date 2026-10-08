@@ -198,6 +198,8 @@ private struct ModelPicker: View {
     let done: () -> Void
     @State private var query = ""
     @State private var selected: String? = nil
+    @State private var accounts: [Account] = [] // of the machine the conversation runs on
+    @State private var note = ""
     @FocusState private var searching: Bool
 
     var body: some View {
@@ -218,7 +220,7 @@ private struct ModelPicker: View {
                     ContentUnavailableView {
                         Label("No model yet", systemImage: "key")
                     } description: { Text("Sign in to a provider, or add an API key.") } actions: {
-                        Button("Providers…") { done(); nav.pane = "providers"; openSettings() }
+                        Button("Providers…") { done(); nav.providers(of: t, openSettings) }
                     }
                 } else if flat.isEmpty {
                     ContentUnavailableView.search(text: query)
@@ -245,24 +247,51 @@ private struct ModelPicker: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            if !t.levels.isEmpty {
-                Divider()
-                HStack {
-                    Label("Reasoning", systemImage: "brain").foregroundStyle(.secondary)
-                    Spacer()
+            Divider()
+            HStack(spacing: 12) {
+                account
+                Spacer()
+                if !t.levels.isEmpty {
+                    Image(systemName: "brain").foregroundStyle(.secondary).help("Reasoning")
                     Picker("Reasoning", selection: Binding { t.thinking } set: { orb.send("thinking", ["tab": t.id, "name": $0]) }) {
                         ForEach(t.levels, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden().pickerStyle(.menu).fixedSize()
                 }
-                .font(.mono(Size.small + 1)).padding(.horizontal, 14).padding(.vertical, 8)
             }
+            .font(.mono(Size.small + 1)).padding(.horizontal, 14).padding(.vertical, 8)
+            if !note.isEmpty { Text(note).font(.mono(Size.small)).foregroundStyle(Ink.rupture).padding(.horizontal, 14).padding(.bottom, 8) }
         }
-        .frame(width: 360, height: 420)
+        .frame(width: 380, height: 440)
         .onAppear {
             searching = true
             selected = t.model
         }
+        .task(id: t.peer) { accounts = (try? await orb.ask("accounts", ["machine": t.peer], as: [Account].self)) ?? [] }
+    }
+
+    /// The account the model's provider uses on the machine the conversation runs on, the others a
+    /// click away with what their plans have left; its providers and accounts in Settings.
+    private var account: some View {
+        let provider = String(t.model.prefix { $0 != "/" })
+        let mine = accounts.filter { $0.provider == provider }
+        let place = t.remote ? t.where : "this Mac"
+        return Menu {
+            ForEach(mine.indices, id: \.self) { i in
+                let a = mine[i]
+                Toggle(dotted(a.name, a.windows.min { $0.left < $1.left }.map { "\($0.name) \(Int($0.left))% left" } ?? ""), isOn: Binding { a.active } set: { _ in
+                    Task {
+                        do { _ = try await orb.ask("account", ["machine": t.peer, "provider": a.provider, "account": a.id]); note = "" } catch { note = error.localizedDescription }
+                        accounts = (try? await orb.ask("accounts", ["machine": t.peer], as: [Account].self)) ?? accounts
+                    }
+                })
+            }
+            if !mine.isEmpty { Divider() }
+            Button("Providers and Accounts on \(place)…") { done(); nav.providers(of: t, openSettings) }
+        } label: {
+            Label(mine.first(where: \.active)?.name ?? place, systemImage: "person.crop.circle")
+        }
+        .menuStyle(.borderlessButton).fixedSize().help("The account \(provider) uses on \(place)")
     }
 
     private func step(_ flat: [String], _ by: Int) -> String? {
