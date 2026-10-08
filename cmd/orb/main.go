@@ -227,6 +227,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if len(argv) > 0 && argv[0] == "bridge" {
 		return runBridgeCommand(ctx, argv[1:], streams)
 	}
+	if len(argv) > 0 && argv[0] == "app" {
+		return runApp(ctx, argv[1:], streams)
+	}
 	if len(argv) > 0 && argv[0] == "chat" {
 		return runChatCommand(ctx, argv[1:], streams, dependencies)
 	}

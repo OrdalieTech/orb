@@ -3,7 +3,6 @@ package main
 import (
 	"cmp"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
@@ -444,7 +443,7 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		if e != nil {
 			return e
 		}
-		inv, e := parseBridgeInvitation(text)
+		inv, e := bridge.ParseInvitation(text)
 		if e != nil {
 			return e
 		}
@@ -509,38 +508,6 @@ func bridgeSettingsAction(ctx context.Context, ui extensions.UI, profile, action
 		return openSharedBridgeConversation(ctx, ui, profile, peer)
 	}
 	return nil
-}
-
-func bridgeInvitationCode(inv bridge.Invitation) string {
-	// Only what the joiner uses: grants stay with the inviter, which keeps the QR code small.
-	inv = bridge.Invitation{ID: inv.ID, PeerID: inv.PeerID, Token: inv.Token, Locator: inv.Locator, Expires: inv.Expires}
-	return "orb-bridge:v1:" + base64.RawURLEncoding.EncodeToString(bridge.JSON(inv))
-}
-
-func parseBridgeInvitation(text string) (bridge.Invitation, error) {
-	var inv bridge.Invitation
-	text = strings.TrimSpace(text)
-	if len(text) > protocol.MaxFrame {
-		return inv, fmt.Errorf("invitation is too large")
-	}
-	raw := []byte(text)
-	if code, ok := strings.CutPrefix(text, "orb-bridge:v1:"); ok {
-		var err error
-		raw, err = base64.RawURLEncoding.Strict().DecodeString(code)
-		if err != nil {
-			return inv, fmt.Errorf("invalid invitation; copy it again from Create an invitation")
-		}
-	}
-	if err := protocol.Decode(raw, &inv); err != nil {
-		return inv, fmt.Errorf("invalid invitation; paste the complete invitation")
-	}
-	if _, err := bridge.ParsePeerID(inv.PeerID); err != nil || !protocol.ValidID(inv.ID) || inv.Token == "" || inv.Locator == "" {
-		return inv, fmt.Errorf("incomplete invitation; create a new one on the other device")
-	}
-	if inv.Expires <= time.Now().Unix() {
-		return inv, fmt.Errorf("invitation expired; create a new one on the other device")
-	}
-	return inv, nil
 }
 
 func bridgeConversationRows(ctx context.Context, client *protocol.Conn, peer string, th extensions.Theme) ([]tui.GridRow, error) {
@@ -726,7 +693,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 }
 
 func shareBridgeInvitation(ctx context.Context, ui extensions.UI, client *protocol.Conn, inv bridge.Invitation, groups map[string]string) error {
-	claimed, err := waitBridgePairing(ctx, ui, "Create invitation", "Paste in Bridge → Add device → Paste an invitation on the other Orb.", inv, bridgeInvitationCode(inv), func(ctx context.Context) (bridge.Invitation, error) {
+	claimed, err := waitBridgePairing(ctx, ui, "Create invitation", "Paste in Bridge → Add device → Paste an invitation on the other Orb.", inv, bridge.InvitationCode(inv), func(ctx context.Context) (bridge.Invitation, error) {
 		var status bridgeSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
 			return bridge.Invitation{}, err

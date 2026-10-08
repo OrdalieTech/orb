@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -23,7 +24,7 @@ func TestSkillSubmissionKeepsInvocationInPlace(t *testing.T) {
 		{name: "two skills", text: "/skill:docx and /skill:pdf", want: "/skill:docx /skill:pdf /skill:docx and /skill:pdf"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := skillSubmission(test.text, known); got != test.want {
+			if got := exporthtml.SkillSubmission(test.text, known); got != test.want {
 				t.Fatalf("submission = %q; want %q", got, test.want)
 			}
 		})
@@ -53,7 +54,7 @@ func TestInlineSkillExpandsToKernelEnvelopeWithOriginalText(t *testing.T) {
 		{text: "/skill:docx", blocks: block, shown: "◆ docx"},
 		{text: "turn /skill:pdf into /skill:docx", blocks: pdfBlock + "\n\n" + block, after: "turn /skill:pdf into /skill:docx", shown: "turn ◆ pdf into ◆ docx"},
 	} {
-		expanded, err := agent.ExpandSkillCommand(skillSubmission(test.text, known), skills)
+		expanded, err := agent.ExpandSkillCommand(exporthtml.SkillSubmission(test.text, known), skills)
 		if err != nil {
 			t.Fatal(err)
 		}

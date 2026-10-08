@@ -1,7 +1,6 @@
 package modes
 
 import (
-	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -16,26 +15,6 @@ import (
 // Skill invocations stay canonical `/skill:name` text on every kernel surface
 // (editor text, history, session JSONL, RPC). Interactive mode only draws them
 // as chips, and lets the token sit anywhere in the message.
-
-// skillSubmission rewrites an interactive message so the kernel's
-// start-of-message expansion sees an inline invocation. A message already
-// starting with the token passes through for upstream's exact expansion;
-// otherwise `/skill:name ` is prepended for each skill, in order, to the untouched
-// text, so the envelopes carry the user's full message, tokens in place, after
-// the skill blocks.
-func skillSubmission(text string, known func(string) bool) string {
-	var names []string
-	tokens := exporthtml.FindSkillTokens(text)
-	for _, token := range tokens {
-		if known(token.Name) && !slices.Contains(names, token.Name) {
-			names = append(names, token.Name)
-		}
-	}
-	if len(names) == 0 || len(names) == 1 && tokens[0].Start == 0 && tokens[0].Name == names[0] {
-		return text
-	}
-	return exporthtml.SkillTokenPrefix + strings.Join(names, " "+exporthtml.SkillTokenPrefix) + " " + text
-}
 
 // skillChip draws an invocation; the no-break space keeps glyph and name on
 // one wrapped line.

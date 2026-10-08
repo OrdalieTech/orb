@@ -2,8 +2,10 @@ package bridge
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -420,6 +422,41 @@ func FullGrant(peer string) Grant {
 	g := ConversationGrant(peer)
 	g.Permissions = append(g.Permissions, "host.launch")
 	return g
+}
+
+const invitationPrefix = "orb-bridge:v1:"
+
+// InvitationCode is what a joining device copies or scans: only what it uses, so grants stay
+// with the inviter and the QR code stays small.
+func InvitationCode(inv Invitation) string {
+	inv = Invitation{ID: inv.ID, PeerID: inv.PeerID, Token: inv.Token, Locator: inv.Locator, Expires: inv.Expires}
+	return invitationPrefix + base64.RawURLEncoding.EncodeToString(JSON(inv))
+}
+
+// ParseInvitation reads an invitation from its code, its JSON, or a message that holds the code.
+func ParseInvitation(text string) (Invitation, error) {
+	var inv Invitation
+	text = strings.TrimSpace(text)
+	if len(text) > protocol.MaxFrame {
+		return inv, fmt.Errorf("invitation is too large")
+	}
+	raw := []byte(text)
+	if _, code, ok := strings.Cut(text, invitationPrefix); ok {
+		var err error
+		if raw, err = base64.RawURLEncoding.Strict().DecodeString(strings.Fields(code + " ")[0]); err != nil {
+			return inv, fmt.Errorf("invalid invitation; copy it again from Create an invitation")
+		}
+	}
+	if err := protocol.Decode(raw, &inv); err != nil {
+		return inv, fmt.Errorf("invalid invitation; paste the complete invitation")
+	}
+	if _, err := ParsePeerID(inv.PeerID); err != nil || !protocol.ValidID(inv.ID) || inv.Token == "" || inv.Locator == "" {
+		return inv, fmt.Errorf("incomplete invitation; create a new one on the other device")
+	}
+	if inv.Expires <= time.Now().Unix() {
+		return inv, fmt.Errorf("invitation expired; create a new one on the other device")
+	}
+	return inv, nil
 }
 
 // ConversationGrant is control of every conversation without the machine: what a joining

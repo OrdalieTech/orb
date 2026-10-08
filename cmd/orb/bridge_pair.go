@@ -30,7 +30,7 @@ func runBridgePair(ctx context.Context, profile string, streams cliStreams) int 
 	if err = client.Call(ctx, "invite", map[string]any{"grants": []bridge.Grant{bridge.FullGrant("")}}, &inv); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	code := bridgeInvitationCode(inv)
+	code := bridge.InvitationCode(inv)
 	if q, err := qr.Encode([]byte(code)); err == nil {
 		_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
 	}
@@ -109,7 +109,7 @@ func runBridgeJoin(ctx context.Context, profile string, args []string, streams c
 		}
 		text = string(raw)
 	}
-	inv, err := parseBridgeInvitation(text)
+	inv, err := bridge.ParseInvitation(text)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}

@@ -299,6 +299,26 @@ func FindSkillTokens(text string) []SkillToken {
 	return tokens
 }
 
+// SkillSubmission rewrites an interactive message so the kernel's
+// start-of-message expansion sees an inline invocation. A message already
+// starting with the token passes through for upstream's exact expansion;
+// otherwise `/skill:name ` is prepended for each skill, in order, to the untouched
+// text, so the envelopes carry the user's full message, tokens in place, after
+// the skill blocks.
+func SkillSubmission(text string, known func(string) bool) string {
+	var names []string
+	tokens := FindSkillTokens(text)
+	for _, token := range tokens {
+		if known(token.Name) && !slices.Contains(names, token.Name) {
+			names = append(names, token.Name)
+		}
+	}
+	if len(names) == 0 || len(names) == 1 && tokens[0].Start == 0 && tokens[0].Name == names[0] {
+		return text
+	}
+	return SkillTokenPrefix + strings.Join(names, " "+SkillTokenPrefix) + " " + text
+}
+
 // ReplaceSkillTokens substitutes every invocation of the named skills.
 func ReplaceSkillTokens(text string, names []string, chip func(string) string) string {
 	var out strings.Builder

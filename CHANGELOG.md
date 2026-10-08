@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb app` serves the view every Orb app draws, as JSON lines: the conversations open on Bridge
+  (this machine's and its peers') folded into rows ready to render (markdown parsed once, tool
+  calls grouped, images by reference), Home's machines, folders and threads, and the intents an
+  app sends back. The apps' logic now lives once, in Go, for Android, macOS and those to come.
+
 ## [0.19.2] - 2026-10-08
 
 Every account's quotas on one screen, switching in two keys, an offer to continue on another

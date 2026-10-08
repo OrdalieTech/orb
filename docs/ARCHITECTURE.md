@@ -823,9 +823,9 @@ Receipts retain the operation ID, target, expected revision/generation, method, 
 canonical payload digest, status, and bounded result/error. Terminal deduplication entries are
 never evicted. A failed storage barrier makes the writer unavailable until reopened; unfinished
 receipts recover as `outcome_unknown`. Bridge profiles and ledgers each cap storage at 1 MiB.
-Snapshot retention is four snapshots per attachment for one minute, with an 8 MiB/16,384-message
-transcript mirror. Replay retains 2,048 events within 4 MiB. `cursor_expired` explicitly requests
-resnapshotting; oversized individual messages fail with `resource_exhausted`. Catalog/contact
+Snapshot retention is four snapshots per attachment for one minute, over a transcript mirror of
+the newest 8 MiB/16,384 messages; a message larger than a page keeps the ends of its texts.
+Replay retains 2,048 events within 4 MiB. `cursor_expired` explicitly requests resnapshotting. Catalog/contact
 cursors bind the complete ordered content digest and expire if that content changes. Catalog
 observers return an empty replay while unchanged and explicitly request a fresh snapshot after
 a catalog or visibility change; the bridge retains no per-client catalog history.
@@ -837,6 +837,27 @@ Transport metadata contains the pinned server key, PSK, relay region, and per-pe
 No remote-supplied relay map or embedded relay definition is accepted. Contact changes trigger
 reconciliation, with a 15-second retry sweep; signed recovery locators must authenticate the
 already-pinned PeerID. Native direct and forced-relay tests are separate from the hermetic gate.
+
+### App view (`orb app`)
+
+Every Orb app renders one view and holds no logic of its own. `bridge/view`, in the portable
+core, follows the conversations open on Bridge (this machine's and its peers', with the owner
+calls above), folds their events into rows, keeps machines, threads and tabs, and runs what the
+app asks; the host injects the owner API, this machine's CLI (plugins, logout, storage), tab
+persistence and the latest release. `orb app [--name "this phone"]` serves it as JSON lines:
+
+- in, intents `{"do": …}`, with an `id` when a reply is expected;
+- out, `state` (tabs with their strip, model catalog and pending ask, pairing, sign-in, summary)
+  and `home` (machines, their running Orbs and folders, Home's entries), each sent only when it
+  changed; `rows` for a followed tab, `{tab, at, rows}` replacing its rows from `at`; `reply`;
+  and `alert` for a turn ending or a question arriving out of the app's sight.
+
+Rows are what the app draws: `you`, `md` (one markdown block, parsed once in Go, so a streamed
+token resends one paragraph), `run` (thoughts and tool calls folded with their summary; inputs,
+outputs and thoughts in full come with `detail`) and `note`. Images are references fetched at
+the size shown. The app reports the tabs on screen and how many it can keep following off
+screen; the view paces the rest. Transports differ per platform (a pipe to the bundled `orb` on
+Android and macOS; in-process for iOS and wasm later); the protocol does not.
 
 
 ## 6. Conformance architecture
@@ -888,7 +909,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2/config | ai/api/bedrock (native hosts) | AWS shared config and credential chain for Bedrock (D10) |
 | modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
-| yuin/goldmark | tui, chat | CommonMark parsing (render stays ours) |
+| yuin/goldmark | tui, chat, bridge/view | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |
 | rivo/uniseg | tui | grapheme/East-Asian width |
 | golang.org/x/{term,sys,image,text} | cli, tui, tools | terminal detection/raw mode, signals, image decode/resize, encoding |

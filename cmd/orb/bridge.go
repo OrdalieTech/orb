@@ -260,7 +260,48 @@ func runBridgePipe(ctx context.Context, profile string, streams cliStreams) int 
 	if err := startBridge(ctx, profile, true); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	var mu sync.Mutex // guards client and output
+	call, done := bridgeOwner(ctx, profile)
+	defer done()
+	var mu sync.Mutex // guards output
+	out := json.NewEncoder(streams.Stdout)
+	lines := bufio.NewScanner(streams.Stdin)
+	lines.Buffer(make([]byte, 64<<10), protocol.MaxFrame+1024)
+	var calls sync.WaitGroup
+	for lines.Scan() {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(lines.Bytes(), &req) != nil || req.Method == "" {
+			continue
+		}
+		if len(req.Params) == 0 {
+			req.Params = json.RawMessage("{}")
+		}
+		calls.Add(1)
+		go func() {
+			defer calls.Done()
+			reply := map[string]any{"id": req.ID}
+			var result json.RawMessage
+			if err := call(ctx, req.Method, req.Params, &result); err != nil {
+				reply["error"] = map[string]string{"code": bridge.Code(err), "message": err.Error()}
+			} else {
+				reply["result"] = result
+			}
+			mu.Lock()
+			_ = out.Encode(reply)
+			mu.Unlock()
+		}()
+	}
+	calls.Wait()
+	return 0
+}
+
+// bridgeOwner calls this machine's Bridge owner API over one long-lived connection, which it
+// opens again, and the Bridge with it, when either went away. done closes it.
+func bridgeOwner(ctx context.Context, profile string) (call func(ctx context.Context, method string, params, result any) error, done func()) {
+	var mu sync.Mutex
 	var client *protocol.Conn
 	connect := func() (*protocol.Conn, error) {
 		mu.Lock()
@@ -283,46 +324,20 @@ func runBridgePipe(ctx context.Context, profile string, streams cliStreams) int 
 		client = c
 		return c, err
 	}
-	out := json.NewEncoder(streams.Stdout)
-	lines := bufio.NewScanner(streams.Stdin)
-	lines.Buffer(make([]byte, 64<<10), protocol.MaxFrame+1024)
-	var calls sync.WaitGroup
-	for lines.Scan() {
-		var req struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
+	call = func(ctx context.Context, method string, params, result any) error {
+		c, err := connect()
+		if err != nil {
+			return err
 		}
-		if json.Unmarshal(lines.Bytes(), &req) != nil || req.Method == "" {
-			continue
-		}
-		if len(req.Params) == 0 {
-			req.Params = json.RawMessage("{}")
-		}
-		calls.Add(1)
-		go func() {
-			defer calls.Done()
-			reply := map[string]any{"id": req.ID}
-			var result json.RawMessage
-			c, err := connect()
-			if err == nil {
-				err = c.Call(ctx, req.Method, req.Params, &result)
-			}
-			if err != nil {
-				reply["error"] = map[string]string{"code": bridge.Code(err), "message": err.Error()}
-			} else {
-				reply["result"] = result
-			}
-			mu.Lock()
-			_ = out.Encode(reply)
-			mu.Unlock()
-		}()
+		return c.Call(ctx, method, params, result)
 	}
-	calls.Wait()
-	if client != nil {
-		_ = client.Close()
+	return call, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if client != nil {
+			_ = client.Close()
+		}
 	}
-	return 0
 }
 
 func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, target, remoteProfile, remoteOrb string) (string, error) {
@@ -338,7 +353,7 @@ func connectBridgeSSH(ctx context.Context, client *protocol.Conn, localPeer, tar
 	if err != nil {
 		return "", err
 	}
-	inv, err := parseBridgeInvitation(string(raw))
+	inv, err := bridge.ParseInvitation(string(raw))
 	if err != nil {
 		return "", err
 	}

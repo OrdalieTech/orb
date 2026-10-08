@@ -420,6 +420,10 @@ Each holds until changed by owner-signed decision.
   source archives that must rebuild with `CGO_ENABLED=0 -buildvcs=false`.
 - **Windows CI blocks every commit.** Windows artifacts join releases once the release workflow
   packages and verifies them.
+- **Apps render `orb app`; their logic lives once, in Go.** `bridge/view` follows every
+  conversation on Bridge and serves apps state and rows ready to draw; an app renders them and
+  sends intents back, so Android, macOS and the platforms that follow behave the same and a fix
+  lands everywhere. Each app bundles its `orb` and talks to the machine's Bridge, the CLI's own.
 - **The Android app runs the orb binary, not a gomobile library.** It executes the unmodified
   `CGO_ENABLED=0` CLI (`liborb.so`) and drives every conversation through `orb bridge pipe`, its
   own included: the phone is a Bridge peer of itself (the owner reaches its own machine's

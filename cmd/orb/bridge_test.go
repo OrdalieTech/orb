@@ -540,7 +540,7 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 				if err != nil || string(clipboard) != code {
 					t.Fatal("Copy invitation did not copy the complete invitation shown in the editor")
 				}
-				parsed, err := parseBridgeInvitation(code)
+				parsed, err := bridge.ParseInvitation(code)
 				if err != nil {
 					t.Error(err)
 					return
@@ -693,7 +693,7 @@ func TestBridgePairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
 		})
 		var out, errs bytes.Buffer
 		code := runBridgeCommand(t.Context(), []string{"pair"}, cliStreams{Stdin: strings.NewReader(answer), Stdout: &out, Stderr: &errs})
-		if !strings.Contains(out.String(), "▀") || !strings.Contains(out.String(), bridgeInvitationCode(inv)) || !strings.Contains(out.String(), "orb:ed25519:phone") {
+		if !strings.Contains(out.String(), "▀") || !strings.Contains(out.String(), bridge.InvitationCode(inv)) || !strings.Contains(out.String(), "orb:ed25519:phone") {
 			t.Fatalf("output lacks the QR, code or claimant: %s %s", out.String(), errs.String())
 		}
 		if yes := answer == "y\n"; (code == 0) != yes || (approved != "") != yes || yes && !strings.Contains(approved, `"claimant":"orb:ed25519:phone"`) {
@@ -734,11 +734,11 @@ func TestBridgeJoinTrustsTheInviterOnceItApproves(t *testing.T) {
 		return nil, bridge.Fail("not_found")
 	})
 	var out, errs bytes.Buffer
-	if code := runBridgeCommand(t.Context(), []string{"join", bridgeInvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("\n"), Stdout: &out, Stderr: &errs}); code == 0 || polls != 0 {
+	if code := runBridgeCommand(t.Context(), []string{"join", bridge.InvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("\n"), Stdout: &out, Stderr: &errs}); code == 0 || polls != 0 {
 		t.Fatalf("joined without a yes: %s", out.String())
 	}
 	out.Reset()
-	if code := runBridgeCommand(t.Context(), []string{"join", bridgeInvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("y\n"), Stdout: &out, Stderr: &errs}); code != 0 {
+	if code := runBridgeCommand(t.Context(), []string{"join", bridge.InvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("y\n"), Stdout: &out, Stderr: &errs}); code != 0 {
 		t.Fatalf("join: %s", errs.String())
 	}
 	// The inviter gets the conversations back, never the machine: that is the owner's own call.

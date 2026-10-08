@@ -1724,7 +1724,7 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 		// Normal message submission
 		prompt := text
 		if skills, ok := mode.autocompleteProvider.(*skillAutocompleteProvider); ok {
-			prompt = skillSubmission(text, skills.known)
+			prompt = exporthtml.SkillSubmission(text, skills.known)
 		}
 		mode.mu.Lock()
 		images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
