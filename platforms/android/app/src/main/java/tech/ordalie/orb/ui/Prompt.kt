@@ -43,9 +43,9 @@ private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTran
 
 @Composable
 fun PromptBox(
-    session: Session?, cites: SnapshotStateList<String>, onCite: () -> Unit, onWhere: () -> Unit, onModel: () -> Unit, commands: List<Command> = emptyList(),
-    placeholder: String = "What should we work on?", modifier: Modifier = Modifier, onSend: (String) -> Unit,
+    session: Tab?, c: Ctx, commands: List<Command>, placeholder: String = "What should we work on?", modifier: Modifier = Modifier, onSend: (String) -> Unit,
 ) {
+    val cites = c.cites
     // Saved per page: each tab keeps its draft while you swipe away.
     var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
     var extra by remember { mutableFloatStateOf(0f) }
@@ -72,7 +72,7 @@ fun PromptBox(
         }, contentAlignment = Alignment.Center) { Box(Modifier.size(36.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(if (extra > 0f) p.fg else Color.Transparent)) }
         if (cites.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             cites.toList().forEach { c -> Box(Modifier.press { cites.remove(c) }) { Chip("@ ${c.substringAfterLast('/')}  ×", caps = false) } }
-            Box(Modifier.press(onClick = onCite)) { Chip("+ cite", ChipKind.Quiet) }
+            Box(Modifier.press(onClick = c.onCite)) { Chip("+ cite", ChipKind.Quiet) }
         }
         // Typing / opens the palette: the app's commands and the core's, filtered as you type.
         val query = value.text.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }?.drop(1)
@@ -81,10 +81,10 @@ fun PromptBox(
         val cursor = value.selection.start
         val at = value.text.take(cursor).let { it.substring(it.indexOfLast(Char::isWhitespace) + 1) }.takeIf { it.startsWith("@") && session != null }
         var found by remember { mutableStateOf(emptyList<Completion>()) }
-        LaunchedEffect(at) { if (at == null) found = emptyList() else { delay(120); found = session!!.complete(at.drop(1)) } }
+        LaunchedEffect(at) { if (at == null) found = emptyList() else { delay(120); found = completions(c.v.ask("complete", "tab" to session!!.id, "text" to at.drop(1)).array) } }
         val rows = if (matches.isNotEmpty()) matches.map { cmd ->
             Command("/" + cmd.name, cmd.hint) to {
-                if (cmd.name in NOW) { value = TextFieldValue(""); onSend("/" + cmd.name) }
+                if (cmd.now) { value = TextFieldValue(""); onSend("/" + cmd.name) }
                 else ("/" + cmd.name + " ").let { value = TextFieldValue(it, TextRange(it.length)) }
             }
         } else found.takeIf { at != null }.orEmpty().map { f ->
@@ -116,12 +116,12 @@ fun PromptBox(
             Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(Modifier.press(onClick = onWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Where(session?.remote == true, phone = p.fg); Spacer(Modifier.width(7.dp))
+            Row(Modifier.press(onClick = c::chooseWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Where(c.v.hue(session?.peer), phone = p.fg); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
                 T((session?.where?.takeIf { session.remote } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + " ▾", size = 14.sp, weight = Strong, lines = 1)
             }
-            Row(Modifier.weight(1f).press(onClick = onModel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).press { c.chooseModel(session) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 T((session?.model?.substringAfter('/')?.ifEmpty { null } ?: "model") + " ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)
                 // Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
                 val levels = session?.levels.orEmpty()
@@ -130,13 +130,16 @@ fun PromptBox(
                     levels.forEachIndexed { i, l -> Box(Modifier.size(3.dp, (5 + 2 * i).dp).background(if (i <= at && l != "off") p.fg else p.rule)) }
                 }
             }
-            if (cites.isEmpty()) Box(Modifier.press(onClick = onCite).padding(6.dp)) { T("@", size = 19.sp, color = p.mute) }
+            if (cites.isEmpty()) Box(Modifier.press(onClick = c.onCite).padding(6.dp)) { T("@", size = 19.sp, color = p.mute) }
             val mode = when { busy && value.text.isBlank() -> 0; busy -> 1; else -> 2 }
             AnimatedContent(mode, transitionSpec = { (fadeIn(tween(180)) + scaleIn(tween(180), 0.9f)) togetherWith fadeOut(tween(120)) }, label = "act") { m ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (m) {
-                        0 -> Btn("stop", color = Ink.Rupture, shape = Pill) { session?.abort() }
-                        1 -> { Btn("queue", shape = Pill) { take()?.let { session?.prompt(it) } }; Btn("steer", inverted = true, shape = Pill) { take()?.let { session?.steer(it) } } }
+                        0 -> Btn("stop", color = Ink.Rupture, shape = Pill) { session?.let { c.v.send("abort", "tab" to it.id) } }
+                        1 -> {
+                            Btn("queue", shape = Pill) { take()?.let(onSend) }
+                            Btn("steer", inverted = true, shape = Pill) { take()?.let { text -> session?.let { c.v.send("steer", "tab" to it.id, "text" to text) } } }
+                        }
                         else -> Btn("send", inverted = true, shape = Pill) { take()?.let(onSend) }
                     }
                 }

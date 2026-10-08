@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -15,6 +16,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.*
@@ -23,8 +26,9 @@ import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.*
 import kotlin.math.abs
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.Runtime
-import tech.ordalie.orb.core.Session
+import tech.ordalie.orb.core.Tab
 
 sealed interface Screen {
     /** Home and the open conversations, side by side ([Nav.pager]). */
@@ -39,24 +43,28 @@ sealed interface Screen {
     data class Device(val peer: String) : Screen
     data class Folder(val peer: String, val cwd: String) : Screen
     /** The terminal where [on] runs: this phone's Linux, or its machine over Bridge. */
-    data class Terminal(val on: Session? = null) : Screen
+    data class Terminal(val on: Tab? = null) : Screen
 }
 
 class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
     val stack = mutableStateListOf<Screen>(Screen.Home)
     var forward by mutableStateOf(true) // which way the last move went, so screens slide the right way
     /** Home is the first page, then a page per open conversation, in tab order: a swipe moves between them. */
-    val pager = PagerState { 1 + rt.sessions.size }
+    val pager = PagerState { 1 + rt.view.state.tabs.size }
     /** The conversation on screen, or the one a swipe is nearest; null on Home. */
-    val open: Session? get() = rt.sessions.getOrNull(pager.currentPage - 1)
+    val open: Tab? get() = rt.view.state.tabs.getOrNull(pager.currentPage - 1)
     fun go(s: Screen) { forward = true; stack += s }
     fun back() { if (stack.size > 1) { forward = false; stack.removeAt(stack.lastIndex) } }
     fun home() = show(null)
-    /** Slides to a conversation, Home for null, closing any screen above them. */
-    fun show(s: Session?) {
+    /** Slides to a conversation by its tab id, Home for null, closing any screen above them; a tab
+     *  just opened slides in once the view lists it. */
+    fun show(tab: String?) {
         forward = false
         while (stack.size > 1) stack.removeAt(stack.lastIndex)
-        scope.launch { pager.animateScrollToPage(s?.let { 1 + rt.sessions.indexOf(it) } ?: 0) }
+        scope.launch {
+            val page = if (tab == null) 0 else withTimeoutOrNull(5000) { snapshotFlow { rt.view.state.tabs.indexOfFirst { it.id == tab } }.first { it >= 0 } }?.plus(1) ?: return@launch
+            pager.animateScrollToPage(page)
+        }
     }
 }
 
@@ -71,14 +79,14 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     val scope = rememberCoroutineScope()
     val nav = remember { Nav(rt, scope) }
     var picker by remember { mutableStateOf<Picker?>(null) }
-    var deck by remember { mutableStateOf<Session?>(null) }
+    var deck by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<Rename?>(null) }
-    var viewing by remember { mutableStateOf<Pair<String, Session>?>(null) }
+    var viewing by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Shared text is either a Bridge invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
         shared.value = null
-        if (text.contains("invitation_id") || text.contains(tech.ordalie.orb.core.Bridge.PREFIX)) nav.go(Screen.Join(text))
+        if (text.contains("invitation_id") || text.contains("orb-bridge:v1:")) nav.go(Screen.Join(text))
         else java.io.File(rt.orb.cwd, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
     }
     BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || deck != null || renaming != null || viewing != null) {
@@ -86,7 +94,9 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     // A notification asked for a conversation: show its tab.
     LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
-    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }, { picker = it }) { ref, s -> viewing = ref to s }
+    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
+    // The view follows the conversation a page shows at full pace.
+    LaunchedEffect(nav) { snapshotFlow { nav.open?.id?.takeIf { nav.stack.last() is Screen.Home } }.collect { rt.view.show(listOfNotNull(it)) } }
     Box(Modifier.fillMaxSize().background(p.bg)) {
         val top = nav.stack.last()
         Column(Modifier.fillMaxSize()) {
@@ -115,33 +125,34 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
             }
         }
         // Interrupts belong to their owner and stop the world wherever you are.
-        val asking = nav.open?.takeIf { top is Screen.Home } ?: rt.sessions.firstOrNull { it.ask != null }
-        Overlay(asking?.ask, rise = true) { Interrupt(it) { v -> asking?.answer(v) } }
-        Overlay(rt.bridge.claim, rise = true) { PairRequest(it, ctx) }
+        val tabs = rt.view.state.tabs
+        val asking = nav.open?.takeIf { top is Screen.Home } ?: tabs.firstOrNull { it.ask != null }
+        Overlay(asking?.ask, rise = true) { Interrupt(it) { v -> asking?.let { t -> rt.view.send("answer", "tab" to t.id, "value" to v) } } }
+        Overlay(rt.view.state.claim, rise = true) { PairRequest(it, ctx) }
         Overlay(picker) { pk -> PickerSheet(pk) { picker = null } }
-        Overlay(deck) { s -> ModelSheet(s, ctx) { deck = null } }
+        Overlay(deck?.let(rt.view::tab)) { t -> ModelSheet(t, ctx) { deck = null } }
         Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
-        Overlay(viewing) { (ref, s) -> Viewer(ref, s) { viewing = null } }
+        Overlay(viewing) { (ref, tab) -> Viewer(ref, tab, ctx) { viewing = null } }
     }
 }
 
 /** An image full screen, fetched at screen size: pinch to zoom, drag to look around, a tap closes it. */
 @Composable
-private fun Viewer(ref: String, s: Session, close: () -> Unit) {
+private fun Viewer(ref: String, tab: String, c: Ctx, close: () -> Unit) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) {
         detectTransformGestures { _, move, scale, _ -> zoom = (zoom * scale).coerceIn(1f, 8f); pan = if (zoom == 1f) Offset.Zero else pan + move }
     }.press(onClick = close), contentAlignment = Alignment.Center) {
-        Picture(ref, 2048, { s.image(ref, it) }, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y })
+        Picture(ref, 2048, { c.image(tab, ref, it) }, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y })
     }
 }
 
 /** Home, then each open conversation, a swipe apart; a hairline shows between two pages as they move. */
 @Composable
 private fun Deck(c: Ctx) = HorizontalPager(c.nav.pager, Modifier.fillMaxSize().background(p.rule), pageSpacing = 1.dp,
-    key = { if (it == 0) 0 else System.identityHashCode(c.rt.sessions[it - 1]) }) { page ->
-    Column(Modifier.fillMaxSize().background(p.bg)) { if (page == 0) Home(c) else c.rt.sessions.getOrNull(page - 1)?.let { Chat(c, it) } }
+    key = { if (it == 0) "home" else c.rt.view.state.tabs.getOrNull(it - 1)?.id ?: it }) { page ->
+    Column(Modifier.fillMaxSize().background(p.bg)) { if (page == 0) Home(c) else c.rt.view.state.tabs.getOrNull(page - 1)?.let { Chat(c, it) } }
 }
 
 /**
@@ -154,9 +165,50 @@ private fun TopBar(c: Ctx) = Column(Modifier.statusBarsPadding()) {
     val pager = c.nav.pager
     Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (pager.currentPage == 0) p.fg else p.meta) }
-        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()).padding(start = 10.dp)) {
-            c.rt.sessions.forEachIndexed { i, s ->
-                Tab(s, pager.currentPage == i + 1, { (1f - abs(pager.getOffsetDistanceInPages(i + 1))).coerceIn(0f, 1f) }, onLong = { c.tabMenu(s) }) { c.nav.show(s) }
+        // A tab held then dragged along the bar takes another place, its neighbours making room as it
+        // passes them; held and let go, it opens its menu.
+        val ids = c.rt.view.state.tabs.map { it.id }
+        var order by remember { mutableStateOf(ids) }
+        var dragged by remember { mutableStateOf<String?>(null) }
+        var dx by remember { mutableFloatStateOf(0f) }
+        val widths = remember { mutableStateMapOf<String, Int>() }
+        val haptic = LocalHapticFeedback.current
+        LaunchedEffect(ids) { if (dragged == null) order = ids }
+        LazyRow(Modifier.weight(1f).fillMaxHeight(), contentPadding = PaddingValues(start = 10.dp)) {
+            items(order, key = { it }) { id ->
+                val t = c.rt.view.state.tabs.firstOrNull { it.id == id } ?: return@items
+                val page = ids.indexOf(id) + 1
+                val drag = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = if (dragged == id) null else spring(stiffness = Spring.StiffnessMediumLow))
+                    .onSizeChanged { widths[id] = it.width }.zIndex(if (dragged == id) 1f else 0f)
+                    .graphicsLayer { translationX = if (dragged == id) dx else 0f }
+                    .pointerInput(id) {
+                        var net = 0f // how far the finger went, whatever the swaps: a hold that stays put opens the menu
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { dragged = id; dx = 0f; net = 0f; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+                            onDrag = { change, d ->
+                                change.consume()
+                                dx += d.x
+                                net += d.x
+                                val at = order.indexOf(id)
+                                val next = order.getOrNull(at + 1)?.let { it to (widths[it] ?: 0) }
+                                val prev = order.getOrNull(at - 1)?.let { it to (widths[it] ?: 0) }
+                                if (next != null && dx > next.second / 2f) {
+                                    order = order.toMutableList().apply { removeAt(at); add(at + 1, id) }
+                                    dx -= next.second
+                                } else if (prev != null && dx < -prev.second / 2f) {
+                                    order = order.toMutableList().apply { removeAt(at); add(at - 1, id) }
+                                    dx += prev.second
+                                }
+                            },
+                            onDragCancel = { order = ids; dragged = null; dx = 0f },
+                            onDragEnd = {
+                                if (abs(net) < viewConfiguration.touchSlop) c.tabMenu(t) else if (order.indexOf(id) != ids.indexOf(id)) c.v.send("move", "tab" to id, "to" to order.indexOf(id))
+                                dragged = null
+                                dx = 0f
+                            },
+                        )
+                    }
+                TabMark(t, c.v.hue(t.peer), pager.currentPage == page, { (1f - abs(pager.getOffsetDistanceInPages(page))).coerceIn(0f, 1f) }, drag, { c.close(t) }) { c.nav.show(id) }
             }
         }
         MenuMark(c::menu)
@@ -166,14 +218,18 @@ private fun TopBar(c: Ctx) = Column(Modifier.statusBarsPadding()) {
 
 /** [near] is how close the pager is to this tab's page, read at draw time so a swipe redraws only the line. */
 @Composable
-private fun Tab(s: Session, on: Boolean, near: () -> Float, onLong: () -> Unit, open: () -> Unit) {
+private fun TabMark(s: Tab, hue: Int, on: Boolean, near: () -> Float, modifier: Modifier, close: () -> Unit, open: () -> Unit) {
     val view = remember { BringIntoViewRequester() }
     LaunchedEffect(on) { if (on) view.bringIntoView() }
-    Column(Modifier.fillMaxHeight().width(IntrinsicSize.Max).bringIntoViewRequester(view).press(onLong = onLong, onClick = open).padding(horizontal = 8.dp)) {
+    Column(modifier.fillMaxHeight().width(IntrinsicSize.Max).bringIntoViewRequester(view).press(onClick = open).padding(horizontal = 8.dp)) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Where(s.remote, s.busy, s.ask != null, if (on) p.fg else p.mute)
+            Where(hue, s.busy, s.ask != null, if (on) p.fg else p.mute)
             Spacer(Modifier.width(7.dp))
-            T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 150.dp), size = 14.sp, weight = if (on) Strong else Regular, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
+            T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 150.dp), size = 14.sp, weight = if (on || s.unread > 0) Strong else Regular, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
+            // Answers that came while it was out of sight, until it shows.
+            if (s.unread > 0) T("${s.unread}", Modifier.padding(start = 6.dp), size = Size.Label, weight = Strong, color = p.fg)
+            // The tab on screen closes from its own ×; any tab from its menu, held down.
+            if (on) Box(Modifier.press(onClick = close).padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp)) { T("×", size = 16.sp, color = p.meta) }
         }
         Box(Modifier.fillMaxWidth().height(2.dp).graphicsLayer { alpha = near() }.background(p.fg))
     }

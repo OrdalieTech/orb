@@ -10,108 +10,77 @@ import tech.ordalie.orb.core.*
 /** What every screen needs, passed as one value, and the app's actions on conversations. */
 class Ctx(
     val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context,
-    val deck: (Session) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (String, Session) -> Unit,
+    val deck: (String) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (ref: String, tab: String) -> Unit,
 ) {
-    /** This phone, the first machine on Bridge; null until its Bridge has answered. */
-    val phone: Peer? get() = rt.bridge.peers.firstOrNull { it.id == rt.bridge.self }
+    val v get() = rt.view
 
     /** The slash palette: the app's own commands, then the Orb's (extensions, templates, skills). */
-    fun palette(s: Session?): List<Command> = BUILTINS + s?.commands.orEmpty()
+    fun palette(t: Tab?): List<Command> = v.state.commands + t?.commands.orEmpty()
 
-    /** Runs a built-in command; false when the text is a prompt for the Orb. */
-    fun command(s: Session?, text: String): Boolean {
-        // `!command` runs in the conversation's shell and joins it, as in the TUI.
-        if (text.startsWith("!") && s != null && text.length > 1) { s.shell(text.drop(1).trim()); return true }
-        if (!text.startsWith("/")) return false
-        val name = text.drop(1).substringBefore(' ')
-        val arg = text.substringAfter(' ', "").trim()
-        when (name) {
-            "new" -> s?.newSession(arg.ifEmpty { null }) ?: phone?.let { start(it, rt.orb.cwd.path, first = arg.ifEmpty { null }) }
-            "compact" -> s?.compact(arg)
-            "name" -> if (arg.isNotEmpty()) s?.rename(arg) else return false
-            "model" -> chooseModel(s)
-            "copy" -> s?.lastText()?.let { context.copy(it, "copied the last answer") }
-            "sessions", "resume" -> nav.home()
-            "bridge", "pair" -> nav.go(Screen.Bridge)
-            "login", "providers", "accounts" -> nav.go(Screen.Providers(s?.peer ?: rt.bridge.self))
+    /** Sends what the prompt box holds: the view runs commands and messages, and names what only the app does. */
+    fun send(t: Tab?, text: String) = rt.scope.launch {
+        val r = v.ask("send", "tab" to t?.id.orEmpty(), "text" to text)
+        r.obj?.optString("tab")?.takeIf { it.isNotEmpty() }?.let(nav::show)
+        r.obj?.optString("copy")?.takeIf { it.isNotEmpty() }?.let { context.copy(it, "copied the last answer") }
+        when (r.obj?.optString("nav")) {
+            "model" -> chooseModel(t)
+            "home" -> nav.home()
+            "pair" -> nav.go(Screen.Bridge)
+            "providers" -> nav.go(Screen.Providers(t?.peer ?: v.state.self))
             "plugins" -> nav.go(Screen.Plugins)
-            else -> return false
         }
-        return true
     }
+
+    /** Opens a Home row or a running Orb in its tab. */
+    fun open(key: String) = rt.scope.launch { v.ask("open", "key" to key).obj?.optString("tab")?.let(nav::show) }
+
+    /** Starts Orb on a machine, in a folder or (cwd empty) where it starts, and opens it. */
+    fun start(machine: String, cwd: String = "") = rt.scope.launch { v.ask("start", "machine" to machine, "cwd" to cwd).obj?.optString("tab")?.let(nav::show) }
+
+    suspend fun image(tab: String, ref: String, px: Int): String? = v.ask("image", "tab" to tab, "ref" to ref, "px" to px).obj?.optString("data")?.ifEmpty { null }
 
     /** Where the next message goes: a new conversation on this phone, an Orb running somewhere, or a folder of a machine. */
     fun chooseWhere() {
-        val running = rt.bridge.peers.flatMap { p -> p.instances.map { i -> p to i } }
-        val hosts = rt.bridge.peers.filter { it.id != rt.bridge.self && rt.bridge.threads.containsKey(it.id) }
-        val labels = mutableListOf("new on this phone")
-        running.forEach { (p, i) ->
-            val what = rt.opened(i.id)?.title?.ifEmpty { null } ?: i.title.ifEmpty { null }
-                ?: rt.bridge.threads[p.id]?.firstOrNull { it.id == i.session }?.title ?: "new thread"
-            val label = listOfNotNull(p.name, i.cwd.substringAfterLast('/').ifEmpty { null }, what).joinToString(" · ")
-            labels += generateSequence(label) { "$it ·" }.first { it !in labels } // two Orbs may share a folder
-        }
-        hosts.forEach { labels += "a folder on ${it.name}…" }
+        val running = v.home.machines.flatMap { it.running }
+        val hosts = v.home.machines.filter { !it.self && it.launch }
+        val labels = listOf("new on this phone") + running.map { it.label } + hosts.map { "a folder on ${it.name}…" }
         pick(Picker("run on", labels) { choice ->
             val at = labels.indexOf(choice)
             when {
-                at == 0 -> phone?.let { start(it, rt.orb.cwd.path) }
-                at <= running.size -> nav.show(rt.open(running[at - 1].second))
+                at == 0 -> start(v.state.self)
+                at <= running.size -> open("i:" + running[at - 1].instance)
                 else -> nav.go(Screen.Device(hosts[at - 1 - running.size].id))
             }
         })
     }
-    fun chooseModel(s: Session?) {
-        if (s == null || s.models().isEmpty()) nav.go(Screen.Providers(s?.peer ?: rt.bridge.self)) else deck(s)
+
+    fun chooseModel(t: Tab?) {
+        if (t == null || t.models.isEmpty()) nav.go(Screen.Providers(t?.peer ?: v.state.self)) else deck(t.id)
     }
 
-    /** Renames a thread through the Orb that has it open, starting one if none does; [delete] offers deleting it. */
-    fun renameThread(peer: Peer, t: Thread, delete: (() -> Unit)? = null) = rename(Rename(t.title, delete) { name ->
-        rt.scope.launch {
-            val i = peer.instances.firstOrNull { it.session == t.id } ?: rt.bridge.launch(peer.id, session = t.id).getOrNull() ?: return@launch
-            rt.open(i).rename(name)
-            delay(1500); rt.reload()
-        }
-    })
-
-    /** Opens a thread where it lives: the Orb that has it open, or one started on it. */
-    fun openThread(peer: Peer, t: Thread) {
-        rt.tab(peer.id, t.id)?.let { return nav.show(it) }
-        peer.instances.firstOrNull { it.session == t.id }?.let { nav.show(rt.open(it)) } ?: start(peer, session = t.id)
-    }
-
-    /** Starts Orb on a machine, in a folder or on a thread, opens it and sends [first]; [Runtime.launching] says how it goes. */
-    fun start(peer: Peer, cwd: String? = null, session: String? = null, first: String? = null) = rt.scope.launch {
-        rt.launching = "starting Orb on ${peer.name}…"
-        rt.bridge.launch(peer.id, cwd, session).onSuccess {
-            rt.launching = ""
-            nav.show(rt.open(it).also { s -> first?.let(s::prompt) })
-        }.onFailure { rt.launching = it.message.orEmpty() }
-    }
+    /** Renames a Home row's thread through the Orb that has it open; [delete] offers deleting it. */
+    fun renameThread(e: Entry) = rename(Rename(e.title, if (e.deletable) ({ v.send("delete", "key" to e.key) }) else null) { name -> v.send("rename", "key" to e.key, "name" to name) })
 
     /** A tab held down: rename its conversation, or stop following it. */
-    fun tabMenu(s: Session) = pick(Picker(s.title.ifEmpty { "new session" }, listOf("rename", "close tab")) {
-        if (it == "rename") rename(Rename(s.title) { name -> s.rename(name) })
-        else { if (nav.open == s) nav.home(); rt.close(s) }
+    fun tabMenu(t: Tab) = pick(Picker(t.title.ifEmpty { "new session" }, listOf("rename", "close tab")) {
+        if (it == "rename") rename(Rename(t.title) { name -> v.send("rename", "tab" to t.id, "name" to name) }) else close(t)
     })
 
-    /** A session's plan windows: what is left of each and when it resets, from its Orb's last reading. */
-    fun usage(s: Session) = s.usage?.let { u ->
+    /** Stops following a conversation; Home shows if it was on screen. Its thread stays where it runs. */
+    fun close(t: Tab) {
+        if (nav.open?.id == t.id) nav.home()
+        v.send("close", "tab" to t.id)
+    }
+
+    /** A conversation's plan windows: what is left of each and when it resets, from its Orb's last reading. */
+    fun usage(t: Tab) = t.usage?.let { u ->
         val time = java.text.SimpleDateFormat("EEE HH:mm", java.util.Locale.getDefault())
-        pick(Picker(listOf(s.model.substringBefore('/'), u.plan, "read " + ago(u.at)).filter(String::isNotEmpty).joinToString(" · "),
-            u.open().map { "${it.name} · ${it.left.roundToInt()}% left" + if (it.resets > 0) " · resets ${time.format(it.resets)}" else "" }) {})
+        pick(Picker(listOf(t.model.substringBefore('/'), u.plan, "read " + ago(u.at)).filter(String::isNotEmpty).joinToString(" · "),
+            u.windows.map { "${it.name} · ${it.left.roundToInt()}% left" + if (it.resets > 0) " · resets ${time.format(it.resets)}" else "" }) {})
     }
 
     fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) {
         val open = nav.open
-        nav.go(when (it) { "terminal" -> Screen.Terminal(open); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers(open?.peer ?: rt.bridge.self) })
+        nav.go(when (it) { "terminal" -> Screen.Terminal(open); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers(open?.peer ?: v.state.self) })
     })
 }
-
-/** The app's commands, named like the TUI's. Those in [NOW] run on tap; the rest take an argument. */
-val BUILTINS = listOf(
-    Command("new", "fresh session · optional first message"), Command("compact", "summarize to free context · optional focus"),
-    Command("name", "name this session"), Command("model", "model and reasoning"), Command("copy", "copy the last answer"),
-    Command("sessions", "all sessions"), Command("pair", "Bridge: scan or share a code"), Command("login", "providers and accounts"), Command("plugins", "turn plugins on and off"),
-)
-val NOW = setOf("model", "copy", "sessions", "pair", "login", "plugins")

@@ -8,7 +8,7 @@ import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.*
-import tech.ordalie.orb.core.Plugin
+import tech.ordalie.orb.core.*
 
 /** The app manages Bridge itself, and these read a computer's Claude Code, Codex or footer: none belongs on a phone. */
 private val MANAGED = setOf("bridge", "bridge-agent-calls", "claude-sessions", "codex-sessions", "provider-usage")
@@ -20,14 +20,14 @@ fun ColumnScope.PluginsScreen(c: Ctx) {
     var list by remember { mutableStateOf<List<Plugin>>(emptyList()) }
     var dirty by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(c.rt.orb.permissions) }
-    LaunchedEffect(Unit) { list = withContext(Dispatchers.IO) { c.rt.orb.plugins() }.filter { it.name !in MANAGED } }
+    LaunchedEffect(Unit) { list = plugins(c.v.ask("plugins").array).filter { it.name !in MANAGED } }
     Header("Plugins", sub = if (list.isEmpty()) "reading" else "${list.count { it.on }} of ${list.size} on", back = c.nav::back)
     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
         items(list, key = { it.name }) { pl ->
             Row(
                 Modifier.fillMaxWidth().press {
                     scope.launch {
-                        if (withContext(Dispatchers.IO) { c.rt.orb.plugin(pl.name, !pl.on) }) {
+                        if (c.v.ask("plugin", "name" to pl.name, "on" to !pl.on).error == null) {
                             list = list.map { if (it.name == pl.name) it.copy(on = !it.on) else it }; dirty = true
                         }
                     }
@@ -42,14 +42,15 @@ fun ColumnScope.PluginsScreen(c: Ctx) {
                     T(pl.about, size = 13.sp, color = p.meta)
                 }
                 if (pl.name == "permissions" && pl.on) Box(Modifier.press {
-                    scope.launch { withContext(Dispatchers.IO) { c.rt.orb.permissions = if (mode == "auto") "enforce" else "auto" }; mode = c.rt.orb.permissions; dirty = true }
+                    val next = if (mode == "auto") "enforce" else "auto"
+                    scope.launch { if (c.v.ask("permissions", "name" to next).error == null) { c.rt.orb.permissions = next; mode = next; dirty = true } }
                 }) { Chip(mode.uppercase(), if (mode == "enforce") ChipKind.Inverted else ChipKind.Outline) }
             }
             Rule(Modifier.padding(horizontal = 20.dp))
         }
     }
     Column(Modifier.padding(20.dp)) {
-        if (dirty) Btn("apply · restart Orbs", inverted = true) { c.rt.scope.launch { c.rt.bridge.restart() }; c.nav.back() }
+        if (dirty) Btn("apply · restart Orbs", inverted = true) { c.v.restart(); c.nav.back() }
         else T("Toggles write Orb's own settings, the same as orb plugins enable.", size = Size.Label, color = p.meta)
     }
 }

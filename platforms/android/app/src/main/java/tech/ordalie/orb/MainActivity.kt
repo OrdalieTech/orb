@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
     private fun receive(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND) shared.value = intent.getStringExtra(Intent.EXTRA_TEXT)
         if (intent?.action == Intent.ACTION_VIEW) shared.value = intent.dataString
-        intent?.getStringExtra(OrbService.SESSION)?.let { id -> runtime.show = runtime.sessions.firstOrNull { it.id == id } }
+        intent?.getStringExtra(OrbService.TAB)?.let { runtime.show = it }
     }
 
     private fun cite(uri: Uri) {

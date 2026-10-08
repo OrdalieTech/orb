@@ -11,18 +11,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.unit.*
-import tech.ordalie.orb.core.Session
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
+import tech.ordalie.orb.core.*
 
 /**
  * The model sheet rises from the bottom: the model and its reasoning on top, every model below,
  * grouped by provider and narrowed by search. Choices are remembered for the sessions that follow.
  */
 @Composable
-fun AnimatedVisibilityScope.ModelSheet(session: Session, c: Ctx, dismiss: () -> Unit) = Sheet(dismiss, Modifier.heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.8f)) {
+fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit) = Sheet(dismiss, Modifier.heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.8f)) {
     var query by remember { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { keyboard?.hide() }
-    val groups = session.models().filter { query.isBlank() || it.contains(query.trim(), ignoreCase = true) }.groupBy { it.substringBefore('/') }
+    val groups = session.models.filter { query.isBlank() || it.contains(query.trim(), ignoreCase = true) }.groupBy { it.substringBefore('/') }
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 18.dp), verticalAlignment = Alignment.Bottom) {
         Column(Modifier.weight(1f)) {
             T("model", label = true, color = p.meta)
@@ -36,7 +38,7 @@ fun AnimatedVisibilityScope.ModelSheet(session: Session, c: Ctx, dismiss: () -> 
             item(key = "h:$provider") { T("$provider · ${ids.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta) }
             items(ids, key = { it }) { id ->
                 val on = id == session.model
-                Row(Modifier.fillMaxWidth().press { session.useModel(id); dismiss() }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().press { c.v.send("model", "tab" to session.id, "name" to id); dismiss() }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                     T(id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
                     if (on) Dot(p.fg)
                 }
@@ -46,8 +48,43 @@ fun AnimatedVisibilityScope.ModelSheet(session: Session, c: Ctx, dismiss: () -> 
             Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(session.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ Provider", weight = Medium, color = p.mute) }
         }
     }
+    Accounts(session, c)
     // Reasoning is what changes most often: it sits last, where the thumb already is.
-    if (session.levels.isNotEmpty()) { Rule(); Reasoning(session.levels, session.thinking, session::useThinking) }
+    if (session.levels.isNotEmpty()) { Rule(); Reasoning(session.levels, session.thinking) { c.v.send("thinking", "tab" to session.id, "name" to it) } }
+}
+
+/**
+ * The accounts the model's provider has on the machine the session runs on, as that machine lists
+ * them (its own, not this phone's): the one in use marked, the others a tap away with what their
+ * plans have left.
+ */
+@Composable
+private fun Accounts(session: Tab, c: Ctx) {
+    val scope = rememberCoroutineScope()
+    var list by remember { mutableStateOf(emptyList<Account>()) }
+    var note by remember { mutableStateOf("") }
+    LaunchedEffect(session.peer) { list = accounts(c.v.ask("accounts", "machine" to session.peer).array) }
+    val mine = list.filter { it.provider == session.model.substringBefore('/') }
+    if (mine.isEmpty()) return
+    Rule()
+    Column(Modifier.padding(start = Margin, end = Margin, top = 12.dp, bottom = 4.dp)) {
+        T("account · ${session.where}", label = true, color = p.meta)
+        mine.forEach { a ->
+            Row(Modifier.fillMaxWidth().press(enabled = !a.active) {
+                scope.launch {
+                    note = c.v.ask("account", "machine" to session.peer, "provider" to a.provider, "account" to a.id).error.orEmpty()
+                    list = accounts(c.v.ask("accounts", "machine" to session.peer).array)
+                }
+            }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Dot(if (a.active) p.fg else p.rule)
+                T(a.name, Modifier.weight(1f), size = 15.sp, weight = if (a.active) Strong else Regular, lines = 1)
+                a.windows.minByOrNull { it.left }?.let { w ->
+                    T("${w.name} ${w.left.roundToInt()}% left", size = 13.sp, color = if (w.left < 15) Ink.Rupture else p.meta, lines = 1)
+                }
+            }
+        }
+        if (note.isNotEmpty()) T(note, size = 13.sp, color = Ink.Rupture)
+    }
 }
 
 /** Reasoning as one segmented control: the levels this model takes, the chosen one said in words. */

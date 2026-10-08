@@ -87,12 +87,12 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
 }
 
 @Composable
-fun ColumnScope.TerminalScreen(c: Ctx, on: Session?) {
+fun ColumnScope.TerminalScreen(c: Ctx, on: Tab?) {
     val linux = c.rt.orb.linux
-    val peer = on?.peer ?: c.rt.bridge.self
+    val peer = on?.peer ?: c.v.state.self
     val cwd = on?.cwd?.ifEmpty { null } ?: c.rt.orb.cwd.path
     Header("Terminal", sub = (on?.where ?: "this phone") + " · " + cwd.replace(c.rt.orb.linux.home.path, "~").replace(Regex("^/(Users|home)/[^/]+"), "~"), back = c.nav::back)
-    if (peer == c.rt.bridge.self && !linux.ready) {
+    if (peer == c.v.state.self && !linux.ready) {
         T(linux.state.ifEmpty { "Linux is not set up yet: it installs by itself when Orb starts." }, Modifier.padding(horizontal = Margin), color = p.mute)
         return
     }

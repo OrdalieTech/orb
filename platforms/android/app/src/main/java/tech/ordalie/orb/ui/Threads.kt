@@ -15,9 +15,9 @@ private fun tidy(path: String) = path.replace(Regex("^/(Users|home)/[^/]+"), "~"
 
 /** What starting Orb on a device is doing, on whichever screen started it. */
 @Composable
-fun Launching(c: Ctx) = AnimatedVisibility(c.rt.launching.isNotEmpty()) {
-    val text = c.rt.launching
-    Row(Modifier.fillMaxWidth().press { if (!text.startsWith("starting")) c.rt.launching = "" }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+fun Launching(c: Ctx) = AnimatedVisibility(c.v.state.launching.isNotEmpty()) {
+    val text = c.v.state.launching
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Dot(if (text.startsWith("starting")) p.mute else Ink.Rupture, pulse = text.startsWith("starting")); Spacer(Modifier.width(10.dp))
         T(text, Modifier.weight(1f), size = 13.sp, color = if (text.startsWith("starting")) p.mute else Ink.Rupture, lines = 3)
     }
@@ -26,11 +26,10 @@ fun Launching(c: Ctx) = AnimatedVisibility(c.rt.launching.isNotEmpty()) {
 /** One machine: its folders, most recently worked in first, and any other folder by path. */
 @Composable
 fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
-    val peer = c.rt.bridge.peers.firstOrNull { it.id == peerId } ?: return
-    val threads = c.rt.bridge.threads[peer.id].orEmpty()
-    val folders = threads.groupBy { it.cwd }.map { (cwd, ts) -> Triple(cwd, ts.size, ts.maxOf { it.modified }) }.sortedByDescending { it.third }
+    val peer = c.v.machine(peerId) ?: return
+    val folders = peer.folders
     var path by remember { mutableStateOf("") }
-    Header(peer.name, sub = listOfNotNull("${folders.size} folders · ${threads.size} threads", peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), back = c.nav::back) {
+    Header(peer.name, sub = listOfNotNull("${folders.size} folders · ${folders.sumOf { it.threads }} threads", peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), back = c.nav::back) {
         Btn("providers") { c.nav.go(Screen.Providers(peer.id)) }
     }
     Column(Modifier.padding(horizontal = Margin)) {
@@ -43,9 +42,9 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
         T("folders", Modifier.padding(top = 18.dp, bottom = 4.dp), label = true)
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
-        items(folders, key = { it.first }) { (cwd, n, last) ->
-            SessionRow(cwd.substringAfterLast('/').ifEmpty { "/" }, "$n", ago(last), live = peer.instances.any { it.cwd == cwd && it.busy }, asks = false, remote = true) {
-                c.nav.go(Screen.Folder(peer.id, cwd))
+        items(folders, key = { it.cwd }) { f ->
+            SessionRow(f.cwd.substringAfterLast('/').ifEmpty { "/" }, "${f.threads}", ago(f.modified), live = f.live, asks = false, hue = c.v.hue(peerId)) {
+                c.nav.go(Screen.Folder(peer.id, f.cwd))
             }
         }
     }
@@ -54,19 +53,17 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
 /** One folder on a machine: start a thread here, or open one of its threads. */
 @Composable
 fun ColumnScope.FolderScreen(c: Ctx, peerId: String, cwd: String) {
-    val peer = c.rt.bridge.peers.firstOrNull { it.id == peerId } ?: return
-    val threads = c.rt.bridge.threads[peer.id].orEmpty().filter { it.cwd == cwd }.sortedByDescending { it.modified }
+    val peer = c.v.machine(peerId) ?: return
+    val threads = c.v.home.entries.filter { it.machine == peerId && it.cwd == cwd && !it.unstored }
     Header(cwd.substringAfterLast('/').ifEmpty { cwd }, sub = peer.name + " · " + tidy(cwd), back = c.nav::back)
     Column(Modifier.padding(horizontal = Margin)) {
-        Btn("new thread here", inverted = true, modifier = Modifier.fillMaxWidth()) { c.start(peer, cwd = cwd) }
+        Btn("new thread here", inverted = true, modifier = Modifier.fillMaxWidth()) { c.start(peer.id, cwd) }
         Launching(c)
         T(if (threads.isEmpty()) "no threads here yet" else "threads", Modifier.padding(top = 18.dp, bottom = 4.dp), label = true, color = if (threads.isEmpty()) p.meta else p.fg)
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
-        items(threads, key = { it.id }) { t ->
-            val running = peer.instances.firstOrNull { it.session == t.id }
-            val s = running?.let { c.rt.opened(it.id) }
-            SessionRow(t.title, if (running != null) "open" else "", ago(t.modified), s?.busy ?: running?.busy == true, s?.ask != null, remote = true, rename = { c.renameThread(peer, t) }) { c.openThread(peer, t) }
+        items(threads, key = { it.key }) { e ->
+            SessionRow(e.title, if (e.open) "open" else "", ago(e.modified), e.live, e.asks, hue = c.v.hue(peerId), rename = { c.renameThread(e) }) { c.open(e.key) }
         }
     }
 }

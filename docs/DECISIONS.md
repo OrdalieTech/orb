@@ -429,12 +429,11 @@ Each holds until changed by owner-signed decision.
   signature; it renders `orb app` like every app, its own code being the drawing and AppKit's text.
   Its one dependency is SwiftTerm (MIT), a native terminal view: idle, it costs nothing.
 - **The Android app runs the orb binary, not a gomobile library.** It executes the unmodified
-  `CGO_ENABLED=0` CLI (`liborb.so`) and drives every conversation through `orb bridge pipe`, its
-  own included: the phone is a Bridge peer of itself (the owner reaches its own machine's
-  instances and `host.*` with the calls it makes on any peer), so one client follows every Orb,
-  with long polls. Each phone conversation is an Orb its Bridge launches, as on a server; the
-  phone runs exactly what desktops run. P2's library embedding remains the path for iOS, which
-  cannot spawn processes.
+  `CGO_ENABLED=0` CLI (`liborb.so`) as `orb app`, its own conversations included: the phone is a
+  Bridge peer of itself (the owner reaches its own machine's instances and `host.*` with the
+  calls it makes on any peer), so one client follows every Orb, with long polls. Each phone
+  conversation is an Orb its Bridge launches, as on a server; the phone runs exactly what
+  desktops run. P2's library embedding remains the path for iOS, which cannot spawn processes.
 - **The Android app's agent works in a Linux the app carries.** Android 10+ refuses to execute
   files from app data, so the app ships proot and its loader as `lib*.so` (GPL-2.0, from Termux's
   package repository) and downloads Termux's `bootstrap-aarch64.zip` at first start, checked

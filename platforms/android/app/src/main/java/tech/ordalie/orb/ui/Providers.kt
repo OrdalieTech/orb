@@ -31,7 +31,7 @@ private fun known(peer: String) = listings[peer].orEmpty()
 private val accountListings = mutableStateMapOf<String, List<Account>>()
 
 private suspend fun Ctx.reload(peer: String) {
-    listings[peer] = rt.bridge.providers(peer)
+    v.ask("providers", "machine" to peer).array?.let { listings[peer] = providers(it) }
 }
 
 /** Opens a page in a Custom Tab tinted like the app, or the browser when there is none. */
@@ -48,11 +48,11 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
     var note by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     LaunchedEffect(peer) { c.reload(peer) }
-    LaunchedEffect(peer) { accountListings[peer] = c.rt.bridge.accounts(peer) }
+    LaunchedEffect(peer) { c.v.ask("accounts", "machine" to peer).array?.let { accountListings[peer] = accounts(it) } }
     val known = known(peer)
     val accounts = accountListings[peer].orEmpty().filter { query.isBlank() || it.name.contains(query.trim(), true) || it.providerName.contains(query.trim(), true) }
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
-    val device = c.rt.bridge.peers.firstOrNull { it.id == peer }?.name ?: "that device"
+    val device = c.v.machine(peer)?.name ?: "that device"
     Header("Providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready }} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
     Field(query, "Anthropic, OpenAI, Groq…", Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth()) { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
@@ -64,8 +64,8 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
                     switching = a
                     note = ""
                     scope.launch {
-                        note = c.rt.bridge.use(peer, a).orEmpty()
-                        accountListings[peer] = c.rt.bridge.accounts(peer)
+                        note = c.v.ask("account", "machine" to peer, "provider" to a.provider, "account" to a.id).error.orEmpty()
+                        c.v.ask("accounts", "machine" to peer).array?.let { accountListings[peer] = accounts(it) }
                         switching = null
                     }
                 }
@@ -118,8 +118,8 @@ private fun Quota(w: Window) = Row(Modifier.padding(start = 20.dp), verticalAlig
 }
 
 /** When a window resets, as briefly as it stays unambiguous. */
-private fun resets(at: String): String = runCatching {
-    val time = java.time.OffsetDateTime.parse(at).atZoneSameInstant(java.time.ZoneId.systemDefault())
+private fun resets(at: Long): String = if (at <= 0) "" else runCatching {
+    val time = java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault())
     val hours = java.time.Duration.between(java.time.ZonedDateTime.now(), time).toHours()
     time.format(java.time.format.DateTimeFormatter.ofPattern(if (hours < 20) "HH:mm" else if (hours < 6 * 24) "EEE HH:mm" else "d MMM"))
 }.getOrDefault("")
@@ -140,21 +140,21 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tint = p.bg
-    val pr = known(peer).firstOrNull { it.id == id } ?: Provider(id, id, emptyList(), 0, null, "")
-    var flow by remember { mutableStateOf<Login?>(null) }
+    val pr = known(peer).firstOrNull { it.id == id } ?: Provider(id, id, emptyList(), 0, false, "", "", "")
+    // The sign-in the view runs for this provider on this machine, if any.
+    val flow = c.v.state.login?.takeIf { it.machine == peer && it.provider == id }
     var note by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { if (known(peer).none { it.id == id }) c.reload(peer) }
-    DisposableEffect(Unit) { onDispose { flow?.takeIf { it.state != "done" }?.cancel() } }
-    // Signed in: this phone's core restarts with the credential and the listing says what it unlocked.
-    LaunchedEffect(flow?.state) { if (flow?.state == "done") { c.reload(peer); note = "" } }
-    fun start(m: Method) {
-        note = ""
-        val app = context.applicationContext
-        flow = Login(scope, SignIn(c.rt.bridge, peer, m), m) { ok ->
-            // The browser is in front: bring the app back the moment Orb has the credential.
-            if (ok) app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+    DisposableEffect(Unit) { onDispose { if (c.v.state.login?.state !in listOf(null, "done", "failed")) c.v.send("login.cancel") } }
+    // Signed in: the listing says what it unlocked, and the browser in front gives way to the app.
+    LaunchedEffect(flow?.state) {
+        if (flow?.state == "done") {
+            c.reload(peer); note = ""
+            val app = context.applicationContext
+            app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
     }
+    fun start(m: Method) { note = ""; c.v.send("login", "machine" to peer, "provider" to id, "auth" to m.auth) }
     Header(pr.name, sub = pr.methods.joinToString(" · ") { it.about }, back = c.nav::back)
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Margin).animateContentSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         T(if (pr.ready) "Ready through ${pr.holds} · ${pr.models} models" else "Not signed in", size = 15.sp, weight = Medium, color = if (pr.ready) p.fg else p.mute)
@@ -163,8 +163,8 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String) {
             if (state.isEmpty() || f == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (f?.state == "failed") T(f.detail.ifEmpty { "sign-in failed" }, color = Ink.Rupture)
                 pr.methods.forEach { m -> MethodCard(m, pr.ready) { start(m) } }
-                if (pr.ready && peer == c.rt.bridge.self) SignOut(c, pr) { note = it; scope.launch { c.reload(peer) } }
-            } else Flow(f, state, tint, remote = peer != c.rt.bridge.self) { flow = null }
+                if (pr.ready && peer == c.v.state.self) SignOut(c, pr) { note = it; scope.launch { c.reload(peer) } }
+            } else Flow(f, state, tint, remote = peer != c.v.state.self, c) { c.v.send("login.cancel") }
         }
         if (note.isNotEmpty()) T(note, color = p.mute)
         Spacer(Modifier.height(20.dp))
@@ -188,7 +188,7 @@ private fun SignOut(c: Ctx, pr: Provider, done: (String) -> Unit) {
     if (pr.status != "oauth" && pr.source != "stored") return T("Configured outside the app (${pr.source}); change it there.", size = 13.sp, color = p.meta)
     Row { Btn(if (pr.status == "oauth") "sign out" else "remove key") {
         scope.launch {
-            withContext(Dispatchers.IO) { c.rt.orb.run("logout", pr.id) }
+            c.v.ask("logout", "provider" to pr.id)
             done(if (pr.status == "oauth") "signed out of ${pr.name}" else "key removed")
         }
     } }
@@ -196,38 +196,39 @@ private fun SignOut(c: Ctx, pr: Provider, done: (String) -> Unit) {
 
 /** A sign-in in progress: a browser page, a device code, or a question, as the TUI shows them. */
 @Composable
-private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Color, remote: Boolean, close: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Color, remote: Boolean, c: Ctx, close: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val answer = { text: String -> c.v.send("login.answer", "text" to text) }
     val context = LocalContext.current
     when (state) {
         "starting" -> Row(verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(f.detail.ifEmpty { "starting…" }, color = p.mute) }
         "browser" -> {
-            LaunchedEffect(f.url) { f.url?.let { context.browse(it, tint) } }
+            LaunchedEffect(f.url) { f.url.takeIf { it.isNotEmpty() }?.let { context.browse(it, tint) } }
             T("Continue in the browser", size = Size.Title, weight = Strong)
             // A device signing in over Bridge listens on its own localhost: the code or final URL comes back by paste.
             T(if (remote) "Finish on the page that opened, then paste the code it shows or the final redirect URL here." else "Finish on the page that opened. It redirects to Orb on this phone, which brings you back here.", color = p.mute)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open again", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open again", inverted = true) { f.url.takeIf { it.isNotEmpty() }?.let { context.browse(it, tint) } }; Btn("cancel", onClick = close) }
             f.prompt?.takeIf { it.kind == "manual_code" }?.let { pr ->
                 var paste by remember { mutableStateOf(remote) }
                 if (!paste) Box(Modifier.press { paste = true }) { T("signing in from another device? paste the code or redirect URL", size = 13.sp, color = p.meta) }
-                else Answer(pr.message, pr.placeholder, secret = false) { f.answer(it) }
+                else Answer(pr.message, pr.placeholder, secret = false) { answer(it) }
             }
         }
         "code" -> {
-            val code = f.code.orEmpty()
+            val code = f.code
             // The code rides the clipboard to the page, which opens by itself.
-            LaunchedEffect(code) { context.copy(code, "code copied"); f.url?.let { context.browse(it, tint) } }
+            LaunchedEffect(code) { context.copy(code, "code copied"); f.url.takeIf { it.isNotEmpty() }?.let { context.browse(it, tint) } }
             T("enter this code", label = true, color = p.meta)
             Box(Modifier.press { context.copy(code, "code copied") }) { T(code, size = 34.sp, weight = Strong) }
-            T("It is on your clipboard. The page is " + f.url.orEmpty().removePrefix("https://"), size = 13.sp, color = p.mute)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open page", inverted = true) { f.url?.let { context.browse(it, tint) } }; Btn("cancel") { f.cancel(); close() } }
+            T("It is on your clipboard. The page is " + f.url.removePrefix("https://"), size = 13.sp, color = p.mute)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open page", inverted = true) { f.url.takeIf { it.isNotEmpty() }?.let { context.browse(it, tint) } }; Btn("cancel", onClick = close) }
             if (f.detail.isNotEmpty()) T(f.detail, size = 13.sp, color = p.meta)
         }
         "asking" -> f.prompt?.let { pr ->
             if (pr.options.isNotEmpty()) {
                 T(pr.message, color = p.mute)
-                pr.options.forEachIndexed { i, (id, label) -> Btn(label, inverted = i == 0) { f.answer(id) } }
-            } else Answer(pr.message, pr.placeholder, secret = pr.kind == "secret") { f.answer(it) }
-            Btn("cancel") { f.cancel(); close() }
+                pr.options.forEachIndexed { i, (id, label) -> Btn(label, inverted = i == 0) { answer(id) } }
+            } else Answer(pr.message, pr.placeholder, secret = pr.kind == "secret") { answer(it) }
+            Btn("cancel", onClick = close)
         }
         "done" -> {
             T("Signed in", size = Size.Title, weight = Strong)

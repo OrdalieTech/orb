@@ -25,7 +25,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import kotlin.math.roundToInt
 import kotlinx.coroutines.*
-import tech.ordalie.orb.core.Tool
 
 /** A hairline separates regions — turns, table rows, the prompt — never words. */
 @Composable
@@ -139,8 +138,6 @@ fun ActionLine(verb: String, target: String, result: String, live: Boolean = fal
         T(result, Modifier.fillMaxWidth(0.3f), size = 13.sp, color = if (failed) Ink.Rupture else p.meta, lines = 1)
     }
 
-@Composable
-fun ToolLine(t: Tool, open: Boolean? = null) = ActionLine(t.verb, t.target, t.result, t.live, t.failed, open)
 
 /** A labelled region of a screen: a rule, its name, its state at right. */
 @Composable

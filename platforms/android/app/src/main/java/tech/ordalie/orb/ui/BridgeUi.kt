@@ -28,12 +28,10 @@ fun Context.scan(found: (String) -> Unit) {
 
 @Composable
 fun ColumnScope.BridgeScreen(c: Ctx) {
-    val b = c.rt.bridge
+    val v = c.v
     val context = LocalContext.current
-    Header("Bridge", sub = if (b.up) "on · peer to peer" else "starting", back = c.nav::back)
-    // Each device's thread list carries its name and Orb version, which its row and update show.
-    LaunchedEffect(b.peers.size) { c.rt.reload() }
-    if (c.rt.acting) PatternBlue { c.rt.sessions.filter { !it.remote && it.busy }.forEach { it.abort() } }
+    Header("Bridge", sub = if (v.state.up) "on · peer to peer" else "starting", back = c.nav::back)
+    if (v.state.acting) PatternBlue { v.state.tabs.filter { !it.remote && it.busy }.forEach { v.send("abort", "tab" to it.id) } }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         item {
             // One gesture pairs a computer: it shows a QR code, this phone photographs it, the computer says yes.
@@ -49,12 +47,12 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
                 }
             }
         }
-        val devices = b.peers.filter { it.id != b.self }
+        val devices = v.home.machines.filter { !it.self }
         item { Slot("devices", if (devices.isEmpty()) "none yet" else "${devices.count { it.connected }} / ${devices.size} connected") {} }
         items(devices, key = { it.id }) { PeerRow(it, c) }
         item {
             Slot("this phone", modifier = Modifier.padding(top = 18.dp)) {
-                T(b.self, size = 13.sp, color = p.mute)
+                T(v.state.self, size = 13.sp, color = p.mute)
                 Row(Modifier.padding(vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("invite a computer") { c.nav.go(Screen.Invite) } }
                 T("Each device is approved by fingerprint on its own screen. Pairs stay paired and reconnect by themselves; forget revokes one.", Modifier.padding(bottom = 24.dp), size = Size.Label, color = p.meta)
             }
@@ -63,24 +61,30 @@ fun ColumnScope.BridgeScreen(c: Ctx) {
 }
 
 @Composable
-private fun PeerRow(peer: Peer, c: Ctx) = Column(Modifier.animateContentSize()) {
+private fun PeerRow(peer: Machine, c: Ctx) = Column(Modifier.animateContentSize()) {
     val scope = rememberCoroutineScope()
     var updating by remember(peer.version) { mutableStateOf("") }
     Row(
-        Modifier.fillMaxWidth().press { peer.instances.firstOrNull()?.let { c.nav.show(c.rt.open(it)) } }.padding(vertical = 12.dp),
+        Modifier.fillMaxWidth().press { peer.running.firstOrNull()?.let { c.open("i:" + it.instance) } }.padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Dot(if (peer.connected) p.fg else p.rule, 8.dp, pulse = peer.instances.any { it.busy })
+        Dot(if (peer.connected) p.fg else p.rule, 8.dp, pulse = peer.running.any { it.busy })
         Column(Modifier.weight(1f)) {
             T(peer.name, size = 17.sp, weight = if (peer.connected) Strong else Regular, color = if (peer.connected) p.fg else p.meta)
-            T(listOfNotNull(if (peer.connected) "${peer.instances.size} session" + (if (peer.instances.size == 1) "" else "s") else peer.state, peer.id.substringAfterLast(":").take(6), peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), size = Size.Label, color = p.meta)
+            T(listOfNotNull(if (peer.connected) "${peer.running.size} session" + (if (peer.running.size == 1) "" else "s") else "disconnected", peer.id.substringAfterLast(":").take(6), peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), size = Size.Label, color = p.meta)
             if (updating.isNotEmpty()) T(updating, size = Size.Label, color = p.mute)
         }
         // A device behind the latest release updates from here (its Orb swaps itself and restarts Bridge).
-        c.rt.latest?.takeIf { peer.version.isNotEmpty() && peer.connected && Release.newer(it, peer.version) && updating.isEmpty() }?.let { next ->
-            Btn("update") { updating = "updating to $next…"; scope.launch { updating = c.rt.bridge.update(peer.id) } }
+        c.v.state.latest.takeIf { it.isNotEmpty() && peer.version.isNotEmpty() && peer.connected && Release.newer(it, peer.version) && updating.isEmpty() }?.let { next ->
+            Btn("update") { updating = "updating to $next…"; scope.launch { c.v.ask("update", "machine" to peer.id).let { updating = it.error ?: it.result?.toString().orEmpty() } } }
         }
-        Box(Modifier.press { c.pick(Picker("forget ${peer.name}?", listOf("forget · revoke its access", "keep")) { if (it.startsWith("forget")) c.rt.scope.launch { c.rt.bridge.forget(peer.id) } }) }.padding(8.dp)) { T("×", size = 20.sp, color = p.meta) }
+        // Named here (it may not say its own name), or forgotten.
+        Box(Modifier.press {
+            c.pick(Picker(peer.name, listOf("rename", "forget · revoke its access")) {
+                if (it == "rename") c.rename(Rename(peer.name) { name -> c.v.send("rename", "machine" to peer.id, "name" to name) })
+                else c.v.send("forget", "machine" to peer.id)
+            })
+        }.padding(8.dp)) { T("⋯", size = 20.sp, color = p.meta) }
     }
     Rule()
 }
@@ -88,11 +92,11 @@ private fun PeerRow(peer: Peer, c: Ctx) = Column(Modifier.animateContentSize()) 
 @Composable
 fun ColumnScope.InviteScreen(c: Ctx) {
     val context = LocalContext.current
-    var inv by remember { mutableStateOf(c.rt.bridge.invitation) }
+    val inv = c.v.state.invitation
     var now by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
-    LaunchedEffect(Unit) { if (inv == null) inv = c.rt.bridge.invite(); while (true) { delay(1000); now = System.currentTimeMillis() / 1000 } }
-    val left = ((inv?.optLong("expires") ?: now) - now).coerceAtLeast(0)
-    val code = inv?.let(c.rt.bridge::code).orEmpty()
+    LaunchedEffect(Unit) { if (inv == null) c.v.send("invite"); while (true) { delay(1000); now = System.currentTimeMillis() / 1000 } }
+    val left = ((inv?.expires ?: now) - now).coerceAtLeast(0)
+    val code = inv?.code.orEmpty()
     Header("Invite a computer", back = c.nav::back)
     Column(Modifier.weight(1f).padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row { T("on the computer, run", Modifier.weight(1f), label = true); T(if (inv == null) "creating" else "%d:%02d · single use".format(left / 60, left % 60), size = Size.Label, color = p.meta) }
@@ -112,22 +116,25 @@ fun ColumnScope.InviteScreen(c: Ctx) {
 
 @Composable
 fun ColumnScope.JoinScreen(c: Ctx, text: String) {
-    val b = c.rt.bridge
+    val v = c.v
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var value by remember { mutableStateOf(text) }
     var error by remember { mutableStateOf("") }
-    val inviter = Bridge.parse(value)?.optString("peer_id").orEmpty()
-    fun pair() { error = ""; scope.launch { b.join(value)?.let { error = it } } }
-    LaunchedEffect(b.joining) { if (b.joining == "paired") { delay(1100); b.cancelJoin(); while (c.nav.stack.size > 1) c.nav.back() } }
-    Header("Pair", back = { b.cancelJoin(); c.nav.back() })
-    AnimatedContent(b.joining, Modifier.weight(1f), transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(160)) }, label = "join") { state ->
+    // What the code is, as the view reads it: an invitation from which device, until when.
+    var inviter by remember { mutableStateOf("") }
+    var expires by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(value) { v.ask("invitation", "text" to value).obj.let { inviter = it?.optString("peer").orEmpty(); expires = it?.optLong("expires") ?: 0 } }
+    fun pair() { error = ""; scope.launch { v.ask("join", "text" to value).error?.let { if (it != "cancelled") error = it } } }
+    LaunchedEffect(v.state.joining) { if (v.state.joining == "paired") { delay(1100); v.send("join.cancel"); while (c.nav.stack.size > 1) c.nav.back() } }
+    Header("Pair", back = { v.send("join.cancel"); c.nav.back() })
+    AnimatedContent(v.state.joining, Modifier.weight(1f), transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(160)) }, label = "join") { state ->
         Column(Modifier.padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.isEmpty()) {
                 var editing by remember { mutableStateOf(inviter.isEmpty()) }
                 if (!editing && inviter.isNotEmpty()) {
                     // A valid code reads as what it is: an invitation from one machine, for a while.
-                    val left = ((Bridge.parse(value)?.optLong("expires") ?: 0) - System.currentTimeMillis() / 1000).coerceAtLeast(0)
+                    val left = (expires - System.currentTimeMillis() / 1000).coerceAtLeast(0)
                     Column(Modifier.fillMaxWidth().border(1.dp, p.fg, Pane).padding(16.dp)) {
                         T("invitation from", label = true, color = p.meta)
                         T(inviter.substringAfterLast(':').take(8), Modifier.padding(vertical = 8.dp), size = 28.sp, weight = Strong)
@@ -157,11 +164,11 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                 T(if (state == "paired") "The computer said yes. Its sessions appear on Home." else "On the computer, answer y. It shows this phone as", color = p.mute)
                 if (state != "paired") {
                     // The fingerprint exactly as the terminal prints it, its start large enough to compare at a glance.
-                    T(b.self.substringAfterLast(':').take(8), size = 28.sp, weight = Strong)
-                    T(b.self, size = 13.sp, color = p.meta)
+                    T(v.state.self.substringAfterLast(':').take(8), size = 28.sp, weight = Strong)
+                    T(v.state.self, size = 13.sp, color = p.meta)
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T(if (state == "claiming") "reaching the computer" else "waiting for the yes", Modifier.weight(1f), color = p.mute)
-                        Btn("cancel") { b.cancelJoin() }
+                        Btn("cancel") { v.send("join.cancel") }
                     }
                 }
             }

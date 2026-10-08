@@ -28,6 +28,12 @@ data class Palette(val bg: Color, val fg: Color, val mute: Color, val meta: Colo
 val LightPalette = Palette(Color(0xFFE3E7E0), Ink.Charcoal, Color(0xFF4F5550), Color(0xFF7E847F), Color(0xFF9EA49F), Color(0xFFECEFE9))
 val DarkPalette = Palette(Color(0xFF1C201E), Color(0xFFDADFD8), Color(0xFFA8AEA9), Color(0xFF7A817C), Color(0xFF4E5550), Color(0xFF242927))
 val LocalPalette = staticCompositionLocalOf { LightPalette }
+
+/** A peer's hue (1 to 6, as the view assigns them; 0, this phone, takes the ink): six tones apart
+ *  from each other and from the rupture red, as on macOS. */
+private val Hues = listOf(0xFF2F5FA8 to 0xFF6E9BE0, 0xFF1F7F73 to 0xFF4FBFAE, 0xFF9A6A12 to 0xFFD9A441, 0xFF6A47A8 to 0xFFA88BE0, 0xFF4A7A22 to 0xFF8CC255, 0xFF9C3F86 to 0xFFD77CC4)
+@Composable
+fun hue(n: Int, phone: Color = p.mute): Color = if (n <= 0) phone else Hues[(n - 1) % Hues.size].let { (light, dark) -> Color(if (p == DarkPalette) dark else light) }
 val p: Palette @Composable get() = LocalPalette.current
 
 /** Ubuntu Sans Mono, variable, so its weights are real; set a touch tight, as words rather than a grid. */

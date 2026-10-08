@@ -44,6 +44,12 @@ shown by `/changelog`.
   to give it (any app on the view can offer it); its conversations carry the new name at once.
 - Tabs reorder by dragging them; the view keeps the order with the tabs, for every app (on the
   Mac, in the sidebar's Open section).
+- The Android app draws `orb app` too: its own Kotlin client, transcript and markdown are gone,
+  and it gains what the view gives every app, machines by name in a colour of their own, unread
+  answers counted on their tabs, a paired machine named on the phone, tabs reordered by holding
+  and dragging one (its neighbours make room as it passes), the open tab closed from its ×, and
+  in the model sheet the accounts the model's provider has on the conversation's machine, one tap
+  to switch. The phone gives its device name to its peers.
 - From a conversation, providers and accounts are those of the machine it runs on: the Mac's
   model picker switches that machine's account for the model's provider, and opens Settings on
   its providers. A machine that does not allow it, or runs an Orb too old for it, says so.

@@ -8,11 +8,14 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 
 /**
- * One long-lived orb process answering JSON lines — `orb bridge pipe`: a line carrying an id
- * this side issued resolves [call]. The process is supervised: when it dies it starts again
- * (backing off to 30 s, with a fresh [env]).
+ * One long-lived orb process speaking JSON lines: a line carrying an id this side issued resolves
+ * [call]; any other goes to [heard]. The process is supervised: when it dies it starts again
+ * (backing off to 30 s, with a fresh [env]) and [started] runs, as after the first start.
  */
-class Lines(scope: CoroutineScope, private val args: List<String>, private val env: () -> Map<String, String>, private val dir: () -> File, private val tag: String) {
+class Lines(
+    scope: CoroutineScope, private val args: List<String>, private val env: () -> Map<String, String>, private val dir: () -> File, private val tag: String,
+    private val heard: (JSONObject) -> Unit = {}, private val started: () -> Unit = {},
+) {
     @Volatile private var process = spawn()
     @Volatile private var closed = false
     @Volatile private var soon = false // an asked-for restart comes back at once
@@ -30,7 +33,7 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
                 launch { runCatching { p.errorStream.bufferedReader().forEachLine { Log.i(tag, it) } } }
                 runCatching {
                     p.inputStream.bufferedReader().forEachLine { line ->
-                        runCatching { JSONObject(line) }.getOrNull()?.let { pending.remove(it.optString("id"))?.complete(it) }
+                        runCatching { JSONObject(line) }.getOrNull()?.let { pending.remove(it.optString("id"))?.complete(it) ?: heard(it) }
                     }
                 }
                 runCatching { p.waitFor() }
@@ -40,7 +43,7 @@ class Lines(scope: CoroutineScope, private val args: List<String>, private val e
                 if (!soon) delay(backoff).also { backoff = (backoff * 2).coerceAtMost(30_000) }
                 soon = false
                 if (closed) break
-                runCatching { spawn() }.onSuccess { process = it }
+                runCatching { spawn() }.onSuccess { process = it; started() }
                     .onFailure { Log.w(tag, "restart failed", it) }
             }
         }

@@ -6,20 +6,16 @@ plugins, and is a full Bridge peer: paired Orbs see and drive its session, and i
 ## How it is built
 
 ```
-Compose UI ── Session (one contract) ──┬── LocalSession ── orb --mode rpc --continue --bridge personal
-                                       └── RemoteSession ─┐
-Bridge ─────────────────────────────── orb bridge pipe ───┴── Bridge service ── Tailcat ── peers
+Compose UI ── core/View ── orb app (bridge/view) ── this phone's Bridge ── Tailcat ── peers
 ```
 
-- `core/Lines` is the only transport: one long-lived orb process speaking JSON lines.
-- `core/Transcript` turns Orb's agent events into turns, prose and tool lines. Local RPC and a
-  peer's `events.subscribe` emit the same events, so both sessions share it.
-- `core/Session` holds the interrupts (`Ask`): approvals, questions (walked and answered with
-  the plugin's JSON `Result`) and Bridge pairing.
+- `core/Lines` is the only transport: one long-lived `orb app` process speaking JSON lines.
+- `core/View` keeps what the view sends (its state, Home, each followed conversation's rows) and
+  sends intents back. Following Orbs, folding their events into rows, markdown, interrupts,
+  pairing and sign-in are the view's, in Go, shared with the macOS app.
 - `ui/` draws six primitives — session row, turn, tool line, prompt box, slot, interrupt — in
   Ubuntu Sans Mono (variable, so medium and semibold are real) on Ordalie's palette. One bar holds
-  the wordmark (Home), a tab per open session once there are several, and the menu. Plugins toggle through
-  `orb plugins`; sign-ins and keys go through `orb login --json` into Orb's own store, as `/login`.
+  the wordmark (Home), a tab per open session once there are several, and the menu.
 
 The Gradle task `orbCore` cross-compiles `./cmd/orb` (`GOOS=android GOARCH=arm64 CGO_ENABLED=0`)
 into `liborb.so`; the APK installs it extracted because Android executes only files in

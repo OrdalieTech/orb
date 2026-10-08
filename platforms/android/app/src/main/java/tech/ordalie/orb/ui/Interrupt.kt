@@ -7,8 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.unit.*
-import kotlinx.coroutines.launch
-import tech.ordalie.orb.core.Ask
+import tech.ordalie.orb.core.*
 
 /** A plugin stopping the world: the only place red fills space. The word names who is asking. */
 @Composable
@@ -51,12 +50,10 @@ fun Interrupt(a: Ask, answer: (String?) -> Unit) {
     }
 }
 
+/** Someone claimed this phone's invitation: its fingerprint, and the owner's yes or no. */
 @Composable
-fun PairRequest(claim: org.json.JSONObject, c: Ctx) {
-    val scope = rememberCoroutineScope()
-    val claimant = claim.optString("claimant")
-    Interrupt(Ask("pair:$claimant", "bridge", "Pair with ${claimant.substringAfterLast(':').take(8)}?",
-        "Check the other device shows this fingerprint:\n$claimant\nAllowing lets it read and drive this phone's conversations, run what they run, and start Orb here.", listOf("allow", "deny"))) { v ->
-        scope.launch { if (v == "allow") c.rt.bridge.approve(claim) else c.rt.bridge.forget(claimant) }
+fun PairRequest(claim: Claim, c: Ctx) =
+    Interrupt(Ask("pair:${claim.claimant}", "bridge", "Pair with ${claim.claimant.substringAfterLast(':').take(8)}?",
+        "Check the other device shows this fingerprint:\n${claim.claimant}\nAllowing lets it read and drive this phone's conversations, run what they run, and start Orb here.", listOf("allow", "deny"), false)) { v ->
+        c.v.send(if (v == "allow") "approve" else "deny")
     }
-}
