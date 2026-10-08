@@ -397,6 +397,7 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 type Descriptor struct {
 	Status     string                `json:"status,omitempty"`
 	Model      string                `json:"model,omitempty"`
+	Provider   string                `json:"provider,omitempty"` // the model's: two providers may offer one name
 	Thinking   string                `json:"thinking,omitempty"`
 	Stats      *runtime.SessionStats `json:"stats,omitempty"`
 	Usage      *usage.Snapshot       `json:"usage,omitempty"`
@@ -441,7 +442,7 @@ func (a *Attachment) inspect(known string) json.RawMessage {
 		d.CWD = session.Manager().GetCWD()
 		state := session.State()
 		if state.Model != nil {
-			d.Model = state.Model.Name
+			d.Model, d.Provider = state.Model.Name, string(state.Model.Provider)
 		}
 		d.Thinking = string(state.ThinkingLevel)
 		stats := session.GetSessionStats()

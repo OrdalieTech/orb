@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: 24
       - run: make check
+      - name: Build the macOS app
+        if: runner.os == 'macOS'
+        run: swift build --package-path platforms/macos
       - name: Verify conformance fixtures
         if: runner.os == 'Linux'
         run: make fixtures-check

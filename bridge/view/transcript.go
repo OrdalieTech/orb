@@ -357,7 +357,7 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 		q, _ := qs[0].(map[string]any)
 		target, _ = q["question"].(string)
 	}
-	for _, k := range []string{"path", "command", "pattern", "url", "query"} {
+	for _, k := range []string{"path", "file_path", "command", "pattern", "url", "query"} {
 		if s, _ := args[k].(string); target == "" && strings.TrimSpace(s) != "" {
 			target = s
 		}
@@ -374,7 +374,11 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 	if len(args) == 0 {
 		pretty = nil
 	}
-	it := &item{kind: "t", verb: cmp.Or(verbs[name], name), target: firstLine(target, 120), args: clip(string(pretty), 2000), live: !t.replaying}
+	verb := cmp.Or(verbs[name], name)
+	if strings.HasPrefix(name, "mcp__") {
+		verb = name[strings.LastIndex(name, "__")+2:] // mcp__server__tool: the tool says what it did
+	}
+	it := &item{kind: "t", verb: verb, target: firstLine(target, 120), args: clip(string(pretty), 2000), live: !t.replaying}
 	t.tools[id] = t.keyed(it)
 	// A call lands right after the message that made it, ahead of what a live stream added since.
 	if at := slices.Index(t.items, t.said); t.said != nil && at >= 0 {
@@ -436,7 +440,7 @@ func runRow(run []*item) Row {
 	count := map[string]int{}
 	for _, it := range run {
 		a := Action{Key: it.key, Verb: it.verb, Target: it.target, Result: it.result, Live: it.live, Failed: it.failed}
-		kind := cmp.Or(kinds[it.verb], it.verb)
+		kind := cmp.Or(kinds[strings.ToLower(it.verb)], it.verb) // Claude Code names its tools Bash, Read…
 		if it.kind == "s" {
 			thought := strings.TrimSpace(it.thinking)
 			title, _, _ := strings.Cut(strings.TrimPrefix(firstLine(thought, 200), "**"), "**")

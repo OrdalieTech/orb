@@ -75,11 +75,11 @@ type Command struct {
 
 // descriptor is what `instances.describe` says of an Orb.
 type descriptor struct {
-	Name, CWD, Model, Status, Catalog string
-	Thinking                          *string
-	Waits                             bool
-	Generation                        string `json:"registration_generation"`
-	Target                            struct {
+	Name, CWD, Model, Provider, Status, Catalog string
+	Thinking                                    *string
+	Waits                                       bool
+	Generation                                  string `json:"registration_generation"`
+	Target                                      struct {
 		Session   string `json:"session_id"`
 		Revision  string `json:"session_revision"`
 		Execution string `json:"execution_id"`
@@ -275,12 +275,14 @@ func (t *tab) describe() bool {
 	if t.Title == "" {
 		t.Title = path.Base(d.CWD)
 	}
-	// The Orb names its model by display name; its catalog maps that to an id and the levels it takes.
+	// The Orb names its model by display name and provider (an older one, the name alone); its
+	// catalog maps that to an id and the levels it takes.
 	t.Model, t.Levels, t.Models = d.Model, nil, nil
+	known := false
 	for _, m := range d.Models {
 		t.Models = append(t.Models, m.Provider+"/"+m.ID)
-		if m.Name == d.Model {
-			t.Model, t.Levels = m.Provider+"/"+m.ID, m.Thinking
+		if !known && m.Name == d.Model && (d.Provider == "" || m.Provider == d.Provider) {
+			t.Model, t.Levels, known = m.Provider+"/"+m.ID, m.Thinking, true
 		}
 	}
 	if d.Thinking != nil {

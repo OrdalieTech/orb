@@ -9,6 +9,15 @@ shown by `/changelog`.
   (this machine's and its peers') folded into rows ready to render (markdown parsed once, tool
   calls grouped, images by reference), Home's machines, folders and threads, and the intents an
   app sends back. The apps' logic now lives once, in Go, for Android, macOS and those to come.
+- Orb for macOS (`platforms/macos`, built by `build.sh` into `Orb.app`): a native SwiftUI app on
+  the Mac's own Bridge. Open conversations and every machine's threads in the sidebar, streaming
+  answers with folded tool runs, tables and code, a prompt with the slash palette, `@` completion,
+  model, reasoning, context and plan quota, approvals and questions inline, notifications for what
+  finishes out of sight, and Settings for providers, accounts, pairing and plugins.
+- A conversation on a model two providers offer under one name no longer moves to the other
+  provider when its reasoning level changes: `instances.describe` names the model's provider.
+- Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
+  tool call is named by its tool.
 
 ## [0.19.2] - 2026-10-08
 

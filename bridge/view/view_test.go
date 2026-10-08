@@ -218,3 +218,18 @@ func TestQuestionsAreWalkedAndAnsweredAsOne(t *testing.T) {
 		t.Fatalf("answers: %s", bridge.JSON(tb.answers))
 	}
 }
+
+// Two providers may offer a model of one name: the conversation's is the one its Orb runs, so a
+// change of reasoning level keeps it on that provider.
+func TestAModelIsKnownByItsProvider(t *testing.T) {
+	describe := `{"model":"GPT-6 Luna","provider":"openai-codex","target":{"session_id":"s"},"models":[
+		{"id":"gpt-6-luna","provider":"openai-codex","name":"GPT-6 Luna","thinking":["low","high"]},
+		{"id":"gpt-6-luna","provider":"opencode-go","name":"GPT-6 Luna"}]}`
+	a := &App{ctx: t.Context(), marks: map[*tab][2]bool{}, o: Options{Emit: func(any) {}, Call: func(_ context.Context, _ string, _, result any) error {
+		return json.Unmarshal([]byte(describe), result)
+	}}}
+	tb := &tab{a: a, instance: "i"}
+	if !tb.describe() || tb.Model != "openai-codex/gpt-6-luna" || len(tb.Levels) != 2 {
+		t.Fatalf("model %q, levels %v", tb.Model, tb.Levels)
+	}
+}
