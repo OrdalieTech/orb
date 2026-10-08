@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -72,14 +73,13 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 			Messages int    `json:"messages"`
 			First    string `json:"first"`
 		}
-		host, _ := os.Hostname()
 		info, ok := debug.ReadBuildInfo()
 		out := struct {
 			Host    string `json:"host,omitempty"` // what the machine calls itself: peers have no names on the wire
 			Version string `json:"version"`        // its Orb, so a peer can offer host.update
 			Items   []item `json:"items"`
 			Cursor  string `json:"cursor,omitempty"`
-		}{strings.Split(host, ".")[0], selfupdate.Plain(selfupdate.BuildVersion(s.version, info, ok)), []item{}, page.Next}
+		}{machineName(), selfupdate.Plain(selfupdate.BuildVersion(s.version, info, ok)), []item{}, page.Next}
 		for _, e := range page.Sessions {
 			if e.MessageCount == 0 {
 				continue // a thread nobody wrote in is not worth reopening
@@ -701,3 +701,18 @@ func (s *Service) endLaunched(busy bool) {
 		_, _ = s.Bridge.Admin(ctx, "retire", bridge.JSON(map[string][]string{"instance_ids": ids}))
 	}
 }
+
+// machineName is what this machine is called on its peers' screens, read once: ORB_BRIDGE_NAME
+// when set (the Android app names the phone), else a Mac's computer name, else the host name.
+var machineName = sync.OnceValue(func() string {
+	if name := os.Getenv("ORB_BRIDGE_NAME"); name != "" {
+		return name
+	}
+	if runtime.GOOS == "darwin" {
+		if out, err := exec.Command("scutil", "--get", "ComputerName").Output(); err == nil && strings.TrimSpace(string(out)) != "" {
+			return strings.TrimSpace(string(out))
+		}
+	}
+	host, _ := os.Hostname()
+	return strings.Split(host, ".")[0]
+})

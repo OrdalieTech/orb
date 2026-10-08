@@ -787,7 +787,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 
 | Method | Parameters and result |
 |---|---|
-| `bridge.ping` | `{}` → `{}` |
+| `bridge.ping` | `{}` → optional `name`, what the machine is called, for a peer granted anything there |
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
 | `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
@@ -848,8 +848,8 @@ persistence and the latest release. `orb app [--name "this phone"]` serves it as
 
 - in, intents `{"do": …}`, with an `id` when a reply is expected;
 - out, `state` (tabs with their strip, model catalog and pending ask, pairing, sign-in, summary)
-  and `home` (machines, their running Orbs and folders, Home's entries), each sent only when it
-  changed; `rows` for a followed tab, `{tab, at, rows}` replacing its rows from `at`; `reply`;
+  and `home` (machines by name, each peer with a hue of its own so every app colours it alike,
+  their running Orbs and folders, Home's entries), each sent only when it changed; `rows` for a followed tab, `{tab, at, rows}` replacing its rows from `at`; `reply`;
   and `alert` for a turn ending or a question arriving out of the app's sight.
 
 Rows are what the app draws: `you`, `md` (one markdown block, parsed once in Go, so a streamed

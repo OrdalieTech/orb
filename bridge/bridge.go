@@ -86,6 +86,7 @@ type Bridge struct {
 	boot           string
 	changes        chan struct{}
 	host           Host
+	name           string
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -95,6 +96,13 @@ type Host func(ctx context.Context, p Principal, method string, params json.RawM
 func (b *Bridge) SetHost(h Host) {
 	b.mu.Lock()
 	b.host = h
+	b.mu.Unlock()
+}
+
+// SetName is what this machine is called on its peers' screens ("Baudouin's MacBook Pro").
+func (b *Bridge) SetName(name string) {
+	b.mu.Lock()
+	b.name = name
 	b.mu.Unlock()
 }
 

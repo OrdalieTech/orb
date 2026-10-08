@@ -11,9 +11,14 @@ shown by `/changelog`.
   app sends back. The apps' logic now lives once, in Go, for Android, macOS and those to come.
 - Orb for macOS (`platforms/macos`, built by `build.sh` into `Orb.app`): a native SwiftUI app on
   the Mac's own Bridge. Open conversations and every machine's threads in the sidebar, streaming
-  answers with folded tool runs, tables and code, a prompt with the slash palette, `@` completion,
-  model, reasoning, context and plan quota, approvals and questions inline, notifications for what
-  finishes out of sight, and Settings for providers, accounts, pairing and plugins.
+  answers with folded tool runs, tables and code, earlier messages loading as you scroll up, a
+  prompt with the slash palette, `@` completion and files dropped from the Finder, a model picker
+  searched as you type (⌘⇧M) with the reasoning levels under it, context and plan quota,
+  approvals and questions inline, an inspector (⌥⌘I), a terminal where each conversation runs (⌘J,
+  SwiftTerm: a login shell here, `orb bridge shell` on a peer), the Dock and menu bar showing
+  what works or waits for you, notifications for what finishes out of sight, and Settings for
+  providers and accounts (with their quotas as gauges), plugins and pairing (with a QR code a
+  phone scans).
 - A conversation on a model two providers offer under one name no longer moves to the other
   provider when its reasoning level changes: `instances.describe` names the model's provider.
 - A conversation followed over Bridge no longer shows "working" for up to 15 seconds after a
@@ -22,6 +27,10 @@ shown by `/changelog`.
 - The apps' view encodes again only the rows of what changed, so a streamed token costs its
   message, not the conversation: 0.16 ms per update on a 1,000-row conversation instead of 2.3.
   Rows keep their keys when earlier messages load above them.
+- The apps name paired machines as they call themselves instead of by a fingerprint: a Bridge
+  answers `bridge.ping` with its machine's name (a Mac's computer name, the phone's device name)
+  to the peers it granted something. Each peer also gets a colour of its own, the same on
+  Android and macOS, so a conversation's machine reads at a glance.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

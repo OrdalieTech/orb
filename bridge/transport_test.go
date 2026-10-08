@@ -184,3 +184,28 @@ func TestHostCallsNeedAMachineWideLaunchGrant(t *testing.T) {
 		t.Fatalf("granted host call: %v %q", err, called)
 	}
 }
+
+// A machine's name reaches the peers it granted something, as their screens show it; a stranger
+// learns nothing.
+func TestAPeerLearnsTheNameOnlyOnceGranted(t *testing.T) {
+	b := newBridge(t)
+	defer func() { _ = b.Close() }()
+	peer := newBridge(t)
+	defer func() { _ = peer.Close() }()
+	b.SetName("Studio Mac")
+	name := func() string {
+		raw, _ := b.Handle(t.Context(), peer.PeerID(), "bridge.ping", JSON(struct{}{}))
+		var r struct{ Name string }
+		_ = json.Unmarshal(raw, &r)
+		return r.Name
+	}
+	if got := name(); got != "" {
+		t.Fatalf("a stranger learned %q", got)
+	}
+	if err := b.AddGrant(Grant{Principal: Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := name(); got != "Studio Mac" {
+		t.Fatalf("a granted peer learned %q", got)
+	}
+}

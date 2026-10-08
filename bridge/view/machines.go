@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"path"
 	"slices"
 	"strings"
@@ -21,6 +22,7 @@ type Machine struct {
 	Connected bool      `json:"connected,omitempty"`
 	Version   string    `json:"version,omitempty"`
 	Launch    bool      `json:"launch,omitempty"` // it lets this app start Orb there
+	Hue       int       `json:"hue,omitempty"`    // 1 to 6 for a peer, its own while hues last; 0 for this machine
 	Running   []Running `json:"running,omitempty"`
 	Folders   []Folder  `json:"folders,omitempty"`
 }
@@ -192,10 +194,20 @@ func (a *App) refresh() {
 }
 
 // fetch reads a machine's running Orbs; its catalog is paged and may remember many past
-// registrations, so only the running ones count.
+// registrations, so only the running ones count. A peer not named yet is asked its name.
 func (a *App) fetch(peer string) {
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
 	defer cancel()
+	a.mu.Lock()
+	m := a.machine(peer)
+	unnamed := m != nil && peer != a.self && m.host == ""
+	a.mu.Unlock()
+	var named struct{ Name string }
+	if unnamed && a.remote(ctx, peer, "bridge.ping", struct{}{}, &named) == nil && named.Name != "" {
+		a.mu.Lock()
+		m.host = named.Name
+		a.mu.Unlock()
+	}
 	var found []instance
 	var err error
 	defer func() {
@@ -310,9 +322,10 @@ func (a *App) loadThreads(peer string) {
 func (a *App) machinesState() ([]Machine, []Entry) {
 	machines, home := []Machine{}, []Entry{}
 	now := time.Now().UnixMilli()
+	hues := hues(a.machines, a.self)
 	for _, m := range a.machines {
 		name := a.name(m)
-		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Version: m.version, Launch: m.launch}
+		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Version: m.version, Launch: m.launch, Hue: hues[m.id]}
 		for _, i := range m.instances {
 			what := cmp.Or(a.tabTitle(i.id), i.title)
 			for _, th := range m.threads {
@@ -367,6 +380,30 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 	}
 	slices.SortStableFunc(home, func(x, y Entry) int { return cmp.Compare(y.Modified, x.Modified) })
 	return machines, home
+}
+
+// hues gives each peer a hue of its own while there are enough: its id picks one, the next free
+// one when taken, the peers taken in id order so each keeps its hue as others come and go.
+func hues(machines []*machine, self string) map[string]int {
+	const n = 6
+	out, taken := map[string]int{}, map[int]bool{}
+	ids := []string{}
+	for _, m := range machines {
+		if m.id != self {
+			ids = append(ids, m.id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(id))
+		hue := 1 + int(h.Sum32()%n)
+		for i := 0; i < n && taken[hue]; i++ {
+			hue = hue%n + 1
+		}
+		out[id], taken[hue] = hue, true
+	}
+	return out
 }
 
 func base(dir string) string {

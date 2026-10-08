@@ -179,6 +179,13 @@ func TestAFollowerWaitsForTheConversationToChange(t *testing.T) {
 	if waited := time.Since(began); waited < 200*time.Millisecond || waited > 5*time.Second {
 		t.Fatalf("answered after %v", waited)
 	}
+	// The session stores the name before it says so: the event comes in this page or the next.
+	if len(got.Events) == 0 {
+		raw, _ = a.await(t.Context(), got.Cursor, got.State, protocol.MaxPage)
+		var next page
+		_ = json.Unmarshal(raw, &next)
+		got.Events = next.Events
+	}
 	if got.State == start.State || len(got.Events) != 1 || !strings.Contains(string(got.Events[0].Data), `"session_info_changed"`) {
 		t.Fatalf("after a rename: %+v", got)
 	}

@@ -285,6 +285,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	}
 	service := New(serviceCtx, state, profile, version, b, node, web.URL)
 	b.SetHost(service.host)
+	b.SetName(machineName())
 	defer service.stopLaunched()
 	reexec := ""
 	service.restart = func(path string) { reexec = path; time.AfterFunc(300*time.Millisecond, stop) }
