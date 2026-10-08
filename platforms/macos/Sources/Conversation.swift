@@ -19,6 +19,13 @@ struct Conversation: View {
                 // The conversation scrolls on under the box, as in Messages.
                 transcript.safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 6) {
+                        // Read further up, the latest is a click away.
+                        if !follow {
+                            Button { follow = true; withAnimation { position.scrollTo(edge: .bottom) } } label: {
+                                Image(systemName: "arrow.down").font(.system(size: 13, weight: .semibold)).frame(width: 30, height: 30).contentShape(.circle)
+                            }
+                            .buttonStyle(.plain).surface(15).help("Latest").transition(.opacity.combined(with: .scale(scale: 0.8)))
+                        }
                         if !t.status.isEmpty || !t.online {
                             HStack(spacing: 8) {
                                 if !t.online { Dot(color: Ink.meta, size: 6, pulse: !t.status.hasPrefix("ended")) }
@@ -39,6 +46,7 @@ struct Conversation: View {
                 }
             }
             .frame(minHeight: 240)
+            .animation(.easeOut(duration: 0.15), value: follow)
             if nav.terminals.contains(t.id) { TerminalPane(t: t).frame(minHeight: 120, idealHeight: 280) }
         }
         .navigationTitle(t.title.isEmpty ? "new session" : t.title)
@@ -112,8 +120,12 @@ struct Conversation: View {
 /// What the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb just
 /// speaks, full width, its actions inline. A turn redraws only when its rows change.
 private struct Turn: View, Equatable {
+    @Environment(Nav.self) private var nav
     let rows: [Row]
     let tab: String
+    @State private var hovering = false
+
+    nonisolated static func == (a: Turn, b: Turn) -> Bool { a.rows == b.rows && a.tab == b.tab }
 
     var body: some View {
         if rows.count == 1, let you = rows.first, you.kind == "you" {
@@ -123,23 +135,61 @@ private struct Turn: View, Equatable {
                 if !you.text.isEmpty {
                     Text(tokens(you.text)).lineSpacing(3).padding(.horizontal, 12).padding(.vertical, 8)
                         .background(Ink.fg.opacity(0.07), in: .rect(cornerRadius: 10))
+                        .contextMenu {
+                            Button("Copy") { copy(you.text) }
+                            Button("Edit as New Message") { nav.drafts[tab] = you.text; nav.focus += 1 }
+                        }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing).padding(.leading, 96).padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 12)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(rows) { r in
-                    switch r.kind {
-                    case "md": if let b = r.block { Markdown(b: b) }
-                    case "run": if r.actions.count == 1 { ActionView(a: r.actions[0], tab: tab) } else { Worked(r: r, tab: tab) }
-                    case "note": Folded(text: r.text, color: r.alarm ? Ink.rupture : Ink.meta)
-                    default: EmptyView()
+                ForEach(pieces, id: \.first!.k) { piece in
+                    if piece.count > 1 || piece[0].block.map(Prose.holds) == true {
+                        Prose(blocks: piece.compactMap(\.block))
+                    } else if let r = piece.first {
+                        switch r.kind {
+                        case "md": if let b = r.block { Markdown(b: b) }
+                        case "run": if r.actions.count == 1 { ActionView(a: r.actions[0], tab: tab) } else { Worked(r: r, tab: tab) }
+                        case "note": Folded(text: r.text, color: r.alarm ? Ink.rupture : Ink.meta)
+                        default: EmptyView()
+                        }
+                        // What the tools showed the model stays in view, even while their run is folded.
+                        if r.kind == "run" { Pictures(refs: r.images, tab: tab) }
                     }
-                    // What the tools showed the model stays in view, even while their run is folded.
-                    if r.kind == "run" { Pictures(refs: r.images, tab: tab) }
                 }
             }
             .padding(.horizontal, 24).padding(.vertical, 6)
+            .onHover { hovering = $0 }
+            .overlay(alignment: .topTrailing) {
+                if hovering && rows.contains(where: { $0.block != nil }) {
+                    Button { copy(plain) } label: { Image(systemName: "doc.on.doc").frame(width: 24, height: 22) }
+                        .buttonStyle(.borderless).foregroundStyle(Ink.meta).help("Copy the answer").padding(.trailing, 12)
+                }
+            }
+        }
+    }
+
+    /// What Orb wrote in the turn, as text: prose as it reads, code and tables as they are.
+    private var plain: String {
+        rows.compactMap(\.block).map { b in
+            switch b.type {
+            case "code", "art": b.text
+            case "table": b.rows.map { $0.map { $0.map(\.t).joined() }.joined(separator: "\t") }.joined(separator: "\n")
+            default: Prose.text([b]).string
+            }
+        }
+        .joined(separator: "\n\n")
+    }
+
+    /// The turn's rows, consecutive prose together as one text a selection runs across.
+    private var pieces: [[Row]] {
+        rows.reduce(into: []) { out, r in
+            if let b = r.block, Prose.holds(b), let last = out.last?.last?.block, Prose.holds(last) {
+                out[out.count - 1].append(r)
+            } else {
+                out.append([r])
+            }
         }
     }
 
@@ -233,34 +283,13 @@ private struct Folded: View {
     }
 }
 
-/// One block of what Orb wrote, parsed by the view: a paragraph, heading, list item, quote, code,
-/// drawing, table or rule.
+/// A block of what Orb wrote that is not prose: code, a drawing, or a table.
 struct Markdown: View {
     let b: Block
-    var ink = Ink.fg
 
     var body: some View {
-        Group {
-            switch b.type {
-            case "p": Text(spans(b.spans)).lineSpacing(4)
-            case "h": Text(spans(b.spans)).font(.mono(b.level <= 2 ? Size.body + 4 : Size.body + 1, .semibold)).padding(.top, 6)
-            case "li":
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(b.mark).font(.mono(Size.body, .medium)).foregroundStyle(Ink.meta).frame(width: b.mark == "·" ? 16 : 26, alignment: .leading)
-                    Text(spans(b.spans)).lineSpacing(4)
-                }
-            // A quote holds blocks of its own, its bar as tall as they are.
-            case "quote":
-                VStack(alignment: .leading, spacing: 8) { ForEach(b.blocks.indices, id: \.self) { Markdown(b: b.blocks[$0], ink: Ink.mute) } }
-                    .padding(.leading, 14).overlay(alignment: .leading) { Rectangle().fill(Ink.rule).frame(width: 2) }
-            case "code", "art": Code(b: b)
-            case "table": Table(rows: b.rows)
-            case "rule": Rule().padding(.vertical, 6)
-            default: EmptyView()
-            }
-        }
-        .foregroundStyle(ink)
-        .padding(.leading, CGFloat(b.depth) * 18)
+        Group { if b.type == "table" { Table(rows: b.rows) } else { Code(b: b) } }
+            .padding(.leading, CGFloat(b.depth) * 18)
     }
 }
 
@@ -280,16 +309,18 @@ func spans(_ spans: [Span]) -> AttributedString {
 /// Code and drawings keep their lines: a long one scrolls sideways.
 private struct Code: View {
     let b: Block
+    @State private var copied = false
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Caps(b.lang)
                 Spacer()
-                Button("copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(b.text, forType: .string)
+                Button(copied ? "copied" : "copy") {
+                    copy(b.text)
+                    copied = true
+                    Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 }
-                .buttonStyle(.plain).font(.mono(Size.label, .medium)).foregroundStyle(Ink.meta)
+                .buttonStyle(.plain).font(.mono(Size.label, .medium)).foregroundStyle(copied ? Ink.fg : Ink.meta)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(b.text).font(.mono(Size.small)).lineSpacing(b.type == "art" ? 0 : 2).fixedSize()

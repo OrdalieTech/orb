@@ -117,7 +117,7 @@ func (a *App) slow(in intent) func() (any, error) {
 		}
 		return call(func() (any, error) { return a.start(machine, cwd, "", in.Text) })
 	case "send", "rename":
-		if in.Tab != "" {
+		if in.Tab != "" || in.Machine != "" && in.Do == "rename" {
 			break
 		}
 		if in.Do == "send" {

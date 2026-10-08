@@ -24,6 +24,7 @@ struct Sidebar: View {
                             if !m.here { Circle().fill(Ink.hue(m.hue)).frame(width: 7, height: 7) }
                             Text(m.name)
                         }
+                        .contextMenu { if !m.here { Button("Rename…") { renaming = (["machine": m.id], m.name) } } }
                     }
                 }
             }
@@ -34,7 +35,8 @@ struct Sidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(orb.state.up ? orb.state.summary : "starting Bridge…").font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(1)
                 if let mine = orb.machine(orb.state.here), orb.state.behind(mine.version) {
-                    Text("Orb \(orb.state.latest) is out").font(.mono(Size.small)).foregroundStyle(Ink.rupture)
+                    Text("Orb \(orb.state.latest) is out").font(.mono(Size.small)).foregroundStyle(Ink.mute)
+                        .help("This Mac's Bridge runs \(mine.version): orb update, then orb bridge stop && orb bridge start")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(12).background(.bar)
@@ -94,6 +96,7 @@ private struct Line: View {
             if asks { Dot() } else if live { Dot(pulse: true) }
         }
         .padding(.vertical, 2)
+        .help(title)
     }
 }
 

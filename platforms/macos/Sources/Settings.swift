@@ -211,10 +211,7 @@ private struct SignIn: View {
         .onChange(of: l.url, initial: true) { if ["browser", "code"].contains(l.state) { open(l.url) } }
         .onChange(of: l.code, initial: true) {
             // The code rides the clipboard to the page.
-            if !l.code.isEmpty {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(l.code, forType: .string)
-            }
+            if !l.code.isEmpty { copy(l.code) }
         }
     }
 
@@ -248,6 +245,8 @@ private struct Devices: View {
     @State private var error = ""
     @State private var updating: [String: String] = [:]
     @State private var forgetting: Machine? = nil
+    @State private var naming: Machine? = nil
+    @State private var name = ""
 
     var body: some View {
         Form {
@@ -275,6 +274,7 @@ private struct Devices: View {
                                 }
                             }
                         }
+                        Button("Rename…") { name = m.name; naming = m }
                         Button("Forget…") { forgetting = m }
                     }
                 }
@@ -289,10 +289,7 @@ private struct Devices: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
                             HStack {
-                                Button("Copy Command") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString("orb bridge join " + inv.code, forType: .string)
-                                }
+                                Button("Copy Command") { copy("orb bridge join " + inv.code) }
                                 ShareLink(item: "orb bridge join " + inv.code)
                             }
                             Text("You approve it here by fingerprint once it runs the command.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
@@ -335,6 +332,12 @@ private struct Devices: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Rename this device", isPresented: .constant(naming != nil), presenting: naming) { m in
+            TextField("name", text: $name)
+            Button("Rename") { orb.send("rename", ["machine": m.id, "name": name]); naming = nil }
+            Button("Use Its Own Name") { orb.send("rename", ["machine": m.id, "name": ""]); naming = nil }
+            Button("Cancel", role: .cancel) { naming = nil }
+        } message: { _ in Text("The name it shows under on this Mac, until you give it back its own.") }
         .confirmationDialog("Forget this device?", isPresented: .constant(forgetting != nil), presenting: forgetting) { m in
             Button("Forget \(m.name)", role: .destructive) { orb.send("forget", ["machine": m.id]); forgetting = nil }
             Button("Cancel", role: .cancel) { forgetting = nil }

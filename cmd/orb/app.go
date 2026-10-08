@@ -42,8 +42,9 @@ func runApp(ctx context.Context, args []string, streams cliStreams) int {
 	call, done := bridgeOwner(ctx, *profile)
 	defer done()
 	cwd, _ := os.Getwd()
-	tabs := filepath.Join(dir, "app-tabs.json")
+	tabs, names := filepath.Join(dir, "app-tabs.json"), filepath.Join(dir, "app-names.json")
 	saved, _ := os.ReadFile(tabs)
+	named, _ := os.ReadFile(names)
 	out := json.NewEncoder(streams.Stdout)
 	app := view.New(ctx, view.Options{
 		Call: call,
@@ -55,8 +56,10 @@ func runApp(ctx context.Context, args []string, streams cliStreams) int {
 			}
 			return string(out), err
 		},
-		Tabs:     saved,
-		SaveTabs: func(b []byte) { _ = os.WriteFile(tabs, b, 0o600) },
+		Tabs:      saved,
+		SaveTabs:  func(b []byte) { _ = os.WriteFile(tabs, b, 0o600) },
+		Names:     named,
+		SaveNames: func(b []byte) { _ = os.WriteFile(names, b, 0o600) },
 		Latest: func(ctx context.Context) string {
 			tag, _ := selfupdate.LatestTag(ctx, version, http.DefaultClient, latestReleaseURL, 20*time.Second)
 			return selfupdate.Plain(tag)

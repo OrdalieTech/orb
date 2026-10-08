@@ -13,6 +13,7 @@ struct PromptBox<Place: View>: View {
     @State private var found: [Completion] = []
     @State private var picked = 0
     @State private var height: CGFloat = 22
+    @State private var recalled: Int? = nil // which of the messages sent here the box holds, ↑ walking back
 
     init(tab: Tab?, place: Place, send: @escaping (String) -> Void) {
         self.tab = tab
@@ -91,6 +92,14 @@ struct PromptBox<Place: View>: View {
                 switch key {
                 case .up where !choices.isEmpty: picked = max(0, picked - 1)
                 case .down where !choices.isEmpty: picked = min(choices.count - 1, picked + 1)
+                // ↑ in an empty box brings back what was sent before, as in the TUI; ↓ comes forward.
+                case .up, .down:
+                    let sent = tab.map { orb.feed($0.id).rows.filter { $0.kind == "you" && $0.via.isEmpty }.map(\.text) } ?? []
+                    guard draft.wrappedValue.isEmpty || recalled.map({ sent.indices.contains($0) && sent[$0] == draft.wrappedValue }) == true else { return false }
+                    let next = (recalled ?? sent.count) + (key == .up ? -1 : 1)
+                    guard next >= 0 else { return true }
+                    recalled = next < sent.count ? next : nil
+                    draft.wrappedValue = recalled.map { sent[$0] } ?? ""
                 // ↩ on a command typed in full runs it; otherwise ↩ and ⇥ take the choice.
                 case .enter where commands.indices.contains(picked) && draft.wrappedValue == "/" + commands[picked].name: take().map(send)
                 case .tab where !choices.isEmpty, .enter where !choices.isEmpty: choices[min(picked, choices.count - 1)].pick()
@@ -149,6 +158,7 @@ struct PromptBox<Place: View>: View {
         let text = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         draft.wrappedValue = ""
+        recalled = nil
         return text
     }
 }

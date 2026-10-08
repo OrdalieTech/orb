@@ -97,7 +97,8 @@ extension View {
         let shape = RoundedRectangle(cornerRadius: radius)
         #if compiler(>=6.2)
         if #available(macOS 26, *) {
-            glassEffect(.regular, in: shape).overlay(shape.stroke(accent ?? .clear))
+            // Tinted with the page, so what scrolls under it never competes with what is typed.
+            glassEffect(.regular.tint(Ink.bg.opacity(0.65)), in: shape).overlay(shape.stroke(accent ?? .clear))
         } else {
             background(Ink.raised, in: shape).overlay(shape.stroke(accent ?? Ink.rule.opacity(0.7)))
         }
@@ -110,6 +111,12 @@ extension View {
 /// A hairline separates regions, never words.
 struct Rule: View {
     var body: some View { Rectangle().fill(Ink.rule.opacity(0.6)).frame(height: 1) }
+}
+
+/// Puts [text] on the clipboard.
+@MainActor func copy(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }
 
 /// Parts of a line that are there, between dots: "mac · orb · 3h".

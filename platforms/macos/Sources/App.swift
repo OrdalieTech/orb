@@ -67,9 +67,7 @@ struct Outcome: Decodable, Empty {
                 Button("Copy Last Answer") {
                     guard let tab = nav.tab else { return }
                     Task {
-                        guard let copy = try? await orb.ask("send", ["tab": tab, "text": "/copy"], as: Outcome.self).copy, !copy.isEmpty else { return }
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(copy, forType: .string)
+                        if let answer = try? await orb.ask("send", ["tab": tab, "text": "/copy"], as: Outcome.self).copy, !answer.isEmpty { copy(answer) }
                     }
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(nav.tab == nil)
@@ -116,6 +114,7 @@ struct Main: View {
             }
             .background(Ink.bg)
         }
+        .frame(minWidth: 720, minHeight: 480)
         .font(.mono())
         .foregroundStyle(Ink.fg)
         .tint(Ink.fg)
@@ -138,10 +137,7 @@ struct Main: View {
         }
         .environment(\.go) { outcome in
             if !outcome.tab.isEmpty { nav.tab = outcome.tab }
-            if !outcome.copy.isEmpty {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(outcome.copy, forType: .string)
-            }
+            if !outcome.copy.isEmpty { copy(outcome.copy) }
             switch outcome.nav {
             case "home": nav.tab = nil
             // A conversation's models are in its picker; with none shown, they come from the providers.

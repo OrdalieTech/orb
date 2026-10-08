@@ -14,7 +14,8 @@ shown by `/changelog`.
   answers with folded tool runs, tables and code, earlier messages loading as you scroll up, a
   prompt with the slash palette, `@` completion and files dropped from the Finder, a model picker
   searched as you type (⌘⇧M) with the reasoning levels under it, context and plan quota,
-  approvals and questions inline, an inspector (⌥⌘I), a terminal where each conversation runs (⌘J,
+  approvals and questions inline, answers whose paragraphs, lists and quotes select and copy as
+  one text, ↑ for the messages sent before, a button back to the latest, an inspector (⌥⌘I), a terminal where each conversation runs (⌘J,
   SwiftTerm: a login shell here, `orb bridge shell` on a peer), the Dock and menu bar showing
   what works or waits for you (unread answers included), notifications for what finishes out of
   sight, a prompt box of Liquid Glass the conversation scrolls under on macOS 26, and Settings for
@@ -39,6 +40,8 @@ shown by `/changelog`.
   has its thread open there instead of trying to start another, which a machine that does not let
   the app start Orb refused (the tab stayed empty). Listing an Orb's commands no longer writes the
   resolver it expands prompts with, a race when two followers described it at once.
+- A paired machine can be named in the Mac app, over the name it gives itself or for one too old
+  to give it (any app on the view can offer it); its conversations carry the new name at once.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

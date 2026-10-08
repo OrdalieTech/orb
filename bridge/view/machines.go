@@ -89,10 +89,29 @@ func (a *App) name(m *machine) string {
 	if m.id == a.self {
 		return a.o.Name
 	}
+	if n := a.names[m.id]; n != "" {
+		return n
+	}
 	if m.host != "" && m.host != "localhost" {
 		return m.host
 	}
 	return clip(m.id[strings.LastIndex(m.id, ":")+1:], 6)
+}
+
+// nameMachine names a peer on this machine, over what it calls itself; "" gives it back its own.
+// Called with the lock held.
+func (a *App) nameMachine(id, name string) {
+	if a.names == nil {
+		a.names = map[string]string{}
+	}
+	if name == "" {
+		delete(a.names, id)
+	} else {
+		a.names[id] = name
+	}
+	if a.o.SaveNames != nil {
+		a.o.SaveNames(bridge.JSON(a.names))
+	}
 }
 
 func (a *App) wakeMachines() {

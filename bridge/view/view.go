@@ -33,6 +33,9 @@ type Options struct {
 	// Tabs is what SaveTabs last kept, so the tabs come back when the app starts again.
 	Tabs     []byte
 	SaveTabs func([]byte)
+	// Names is what SaveNames last kept: the names given to machines here, over their own.
+	Names     []byte
+	SaveNames func([]byte)
 	// Latest is the newest Orb release, "" when unknown.
 	Latest func(ctx context.Context) string
 	// Name is what this machine is called in the app ("this phone"); CWD is where a new
@@ -82,10 +85,11 @@ type App struct {
 	launching  string
 	login      *signIn
 	latest     string
-	sent, home []byte        // the last state and home the app received
-	saved      []byte        // the tabs last kept
-	asked      map[*tab]bool // whether each tab had a question pending at the last flush
-	threadsAt  time.Time     // when every machine's threads were read
+	sent, home []byte            // the last state and home the app received
+	names      map[string]string // machines named here, by peer id
+	saved      []byte            // the tabs last kept
+	asked      map[*tab]bool     // whether each tab had a question pending at the last flush
+	threadsAt  time.Time         // when every machine's threads were read
 	refreshNow chan struct{}
 }
 
@@ -94,6 +98,7 @@ func New(ctx context.Context, o Options) *App {
 	a := &App{o: o, ctx: ctx, budget: 4, asked: map[*tab]bool{}, refreshNow: make(chan struct{}, 1)}
 	var saved []struct{ ID, Peer, Session, Title, Where string }
 	_ = json.Unmarshal(o.Tabs, &saved)
+	_ = json.Unmarshal(o.Names, &a.names)
 	a.mu.Lock()
 	for _, s := range saved {
 		t := a.newTab(s.Peer, "", s.Where, s.Session)
@@ -189,6 +194,10 @@ func (a *App) tab(id string) *tab {
 
 // now runs an intent that only changes what the view holds, with the lock held.
 func (a *App) now(in intent) (any, error) {
+	if in.Do == "rename" && in.Machine != "" {
+		a.nameMachine(in.Machine, strings.TrimSpace(in.Name))
+		return nil, nil
+	}
 	t := a.tab(in.Tab)
 	switch in.Do {
 	case "hello":
@@ -374,6 +383,9 @@ func (a *App) state() State {
 	}
 	var asking, working *tab
 	for _, t := range a.tabs {
+		if m := a.machine(t.Peer); m != nil {
+			t.Where = a.name(m) // as named here, or as it calls itself once it said so
+		}
 		n := len(t.tr.items)
 		t.Streaming = n > 0 && t.tr.items[n-1].kind == "s" && t.tr.items[n-1].live
 		t.Remote = t.Peer != a.self
