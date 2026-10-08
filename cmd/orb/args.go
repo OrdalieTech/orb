@@ -106,7 +106,7 @@ func ParseArgs(argv []string) CLIArgs {
 		UnknownFlags: []agent.ExtensionFlag{},
 		Diagnostics:  []CLIDiagnostic{},
 	}
-	if len(argv) > 0 && (argv[0] == "login" || argv[0] == "logout") {
+	if len(argv) > 0 && (argv[0] == "login" || argv[0] == "logout" || argv[0] == "accounts") {
 		result.Command = argv[0]
 		result.CommandArgs = append(result.CommandArgs, argv[1:]...)
 		return result

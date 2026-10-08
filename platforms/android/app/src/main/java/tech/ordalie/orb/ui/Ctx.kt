@@ -33,7 +33,7 @@ class Ctx(
             "copy" -> s?.lastText()?.let { context.copy(it, "copied the last answer") }
             "sessions", "resume" -> nav.home()
             "bridge", "pair" -> nav.go(Screen.Bridge)
-            "login", "providers" -> nav.go(Screen.Providers(s?.peer ?: rt.bridge.self))
+            "login", "providers", "accounts" -> nav.go(Screen.Providers(s?.peer ?: rt.bridge.self))
             "plugins" -> nav.go(Screen.Plugins)
             else -> return false
         }

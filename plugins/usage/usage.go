@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -16,6 +17,15 @@ import (
 )
 
 var ErrUnavailable = errors.New("usage unavailable")
+
+// Event is the extension bus channel on which a provider publishes a Reading it observed itself,
+// such as limits reported alongside a turn; Client covers the providers read over HTTP.
+const Event = "orb.usage"
+
+type Reading struct {
+	Provider string
+	Snapshot Snapshot
+}
 
 // Window and Snapshot are also Bridge wire: an instance describes its provider's limits with them.
 type Window struct {
@@ -48,23 +58,22 @@ func (c Client) Fetch(ctx context.Context, provider string, credential auth.Mode
 	return c.fetch(ctx, provider, credential)
 }
 
-func (c Client) fetch(ctx context.Context, provider string, credential auth.ModelAuth) (Snapshot, error) {
-	endpoint := ""
+// Reads reports whether the client knows the provider's usage endpoint.
+func (c Client) Reads(provider string) bool { return c.endpoint(provider) != "" }
+
+func (c Client) endpoint(provider string) string {
 	switch provider {
 	case "openai-codex":
-		endpoint = c.CodexURL
-		if endpoint == "" {
-			endpoint = "https://chatgpt.com/backend-api/wham/usage"
-		}
+		return cmp.Or(c.CodexURL, "https://chatgpt.com/backend-api/wham/usage")
 	case "opencode-go":
-		endpoint = c.OpenCodeGoURL
-		if endpoint == "" {
-			endpoint = "https://opencode.ai/zen/go/v1/usage"
-		}
-	default:
-		return Snapshot{}, ErrUnavailable
+		return cmp.Or(c.OpenCodeGoURL, "https://opencode.ai/zen/go/v1/usage")
 	}
-	if credential.APIKey == nil || *credential.APIKey == "" {
+	return ""
+}
+
+func (c Client) fetch(ctx context.Context, provider string, credential auth.ModelAuth) (Snapshot, error) {
+	endpoint := c.endpoint(provider)
+	if endpoint == "" || credential.APIKey == nil || *credential.APIKey == "" {
 		return Snapshot{}, ErrUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

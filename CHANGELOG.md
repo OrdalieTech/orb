@@ -5,6 +5,19 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- One Providers view replaces Providers, Switch account and the per-account Usage menu. Every
+  account sits there with each of its plan windows in its own aligned column (5h under 5h, 7d
+  under 7d), a bar that turns orange then red as it runs low, and the resets below. Enter switches
+  to the selected account and keeps the model; the cursor opens on the current provider's other
+  account with the most quota left, so switching is two keys. Tab manages an account. With quotas
+  on, Orb reads them once at start, so the view opens full.
+- Clicking the provider in the footer opens Providers. With quotas on, the footer shows the
+  provider in use and its tightest window for Claude too: Claude Sessions publishes the limits its
+  turns carry on a bus any provider plugin can use (`usage.Event`).
+- `orb accounts --json` lists the accounts and their plan limits, and `orb accounts use <provider>
+  <id>` switches; Bridge serves both as `host.accounts`. The Android app shows them at the top of a
+  device's providers, a bar per window, and switches an account with a tap.
+
 ## [0.19.1] - 2026-10-08
 
 Team agents send files, enable bundled plugins, survive a runaway tool and restart cleanly.

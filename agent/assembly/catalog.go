@@ -57,7 +57,7 @@ var descriptions = map[string]string{
 	"memtree":            "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
 	"codex-sessions":     "Open Codex CLI threads as Orb conversations with orb --session <id>",
-	"provider-usage":     "Remaining Codex and OpenCode Go quota in the footer",
+	"provider-usage":     "The provider in use and its remaining quota in the footer, quotas in Providers",
 }
 
 // Names returns the stable first-party plugin order.

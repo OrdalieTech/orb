@@ -314,7 +314,7 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 		}
 		r, err := b.Claim(peer, p.ID, p.Token, p.Locator)
 		return JSON(r), err
-	case "host.sessions", "host.launch", "host.update", "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel",
+	case "host.sessions", "host.launch", "host.update", "host.providers", "host.accounts", "host.accounts.use", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel",
 		"host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
 		b.mu.Lock()
 		allowed, host := b.hostAllowed(principal), b.host

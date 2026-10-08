@@ -3,6 +3,7 @@ package footer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,8 +11,9 @@ import (
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
-// Extension attaches a bounded quota reader through the existing footer
-// status API. It does no work until an interactive session starts.
+// Extension shows the session's provider in the footer with its tightest plan limit. Providers
+// the client reads are polled once a minute and after each turn; any other provider publishes
+// its readings on usage.Event. It does no work until an interactive session starts.
 func Extension(client usage.Client) extensions.Factory {
 	return func(api extensions.API) error {
 		client := client
@@ -19,98 +21,122 @@ func Extension(client usage.Client) extensions.Factory {
 			client.Cache = &usage.Cache{}
 		}
 		var mu sync.Mutex
-		var stop context.CancelFunc
-		var requestCancel context.CancelFunc
+		var session extensions.Context
+		var stop, requestCancel context.CancelFunc
 		var done chan struct{}
-		var ui extensions.UI
 		var generation uint64
+		readings := map[string]usage.Snapshot{}
 		wake := make(chan struct{}, 1)
-		invalidate := func() {
-			mu.Lock()
-			generation++
-			if requestCancel != nil {
-				requestCancel()
-			}
-			if ui != nil {
-				ui.SetStatus("provider-usage", nil)
-			}
-			mu.Unlock()
+		poke := func() {
 			select {
 			case wake <- struct{}{}:
 			default:
 			}
 		}
+		// show holds mu.
+		show := func() {
+			if session == nil {
+				return
+			}
+			model := session.Model()
+			if model == nil {
+				session.UI().SetStatus("provider-usage", nil)
+				return
+			}
+			provider := string(model.Provider)
+			text, _, _ := strings.Cut(session.ModelRegistry().ProviderDisplayName(provider), " (")
+			if window, ok := tightest(readings[provider]); ok {
+				text += fmt.Sprintf(" %s %.0f%%", window.Name, window.Remaining)
+			}
+			session.UI().SetStatus("provider-usage", &text)
+		}
 		shutdown := func() {
 			mu.Lock()
 			cancel, finished := stop, done
-			stop, done = nil, nil
+			stop, done, session = nil, nil, nil
 			mu.Unlock()
 			if cancel != nil {
 				cancel()
 				<-finished
 			}
 		}
-		api.Events().On("orb.accounts.changed", func(context.Context, any) error { invalidate(); return nil })
+		api.Events().On("orb.accounts.changed", func(context.Context, any) error {
+			mu.Lock()
+			generation++
+			if requestCancel != nil {
+				requestCancel()
+			}
+			clear(readings)
+			show()
+			mu.Unlock()
+			poke()
+			return nil
+		})
+		api.Events().On(usage.Event, func(_ context.Context, data any) error {
+			if reading, ok := data.(usage.Reading); ok {
+				mu.Lock()
+				readings[reading.Provider] = reading.Snapshot
+				show()
+				mu.Unlock()
+			}
+			return nil
+		})
 		api.On(extensions.EventModelSelect, func(context.Context, extensions.Event, extensions.Context) (any, error) {
-			invalidate()
+			mu.Lock()
+			show()
+			mu.Unlock()
+			poke()
 			return nil, nil
 		})
+		api.On(extensions.EventAgentEnd, func(context.Context, extensions.Event, extensions.Context) (any, error) { poke(); return nil, nil })
 		api.On(extensions.EventSessionShutdown, func(context.Context, extensions.Event, extensions.Context) (any, error) { shutdown(); return nil, nil })
-		api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
+		api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, started extensions.Context) (any, error) {
 			shutdown()
-			if session.Mode() != extensions.ModeTUI || !session.HasUI() {
+			if started.Mode() != extensions.ModeTUI || !started.HasUI() {
 				return nil, nil
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			finished := make(chan struct{})
 			mu.Lock()
-			stop, done, ui = cancel, finished, session.UI()
+			stop, done, session = cancel, finished, started
+			show()
 			mu.Unlock()
+			refresh := func() {
+				mu.Lock()
+				version := generation
+				mu.Unlock()
+				model := started.Model()
+				if model == nil || !client.Reads(string(model.Provider)) {
+					mu.Lock()
+					show() // drops windows that have reset
+					mu.Unlock()
+					return
+				}
+				provider := string(model.Provider)
+				requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+				mu.Lock()
+				requestCancel = cancel
+				mu.Unlock()
+				resolved, err := started.ModelRegistry().ResolveProviderAuth(requestCtx, provider, nil)
+				var snapshot usage.Snapshot
+				if err == nil && resolved != nil {
+					snapshot, err = client.Fetch(requestCtx, provider, resolved.Auth)
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				if ctx.Err() != nil || generation != version {
+					return
+				}
+				if err == nil && resolved != nil {
+					readings[provider] = snapshot
+				}
+				show()
+			}
 			go func() {
 				defer close(finished)
 				ticker := time.NewTicker(time.Minute)
 				defer ticker.Stop()
-				refresh := func() {
-					mu.Lock()
-					version := generation
-					mu.Unlock()
-					model := session.Model()
-					if model == nil {
-						return
-					}
-					provider := string(model.Provider)
-					label := ""
-					switch provider {
-					case "openai-codex":
-						label = "Codex"
-					case "opencode-go":
-						label = "Go"
-					default:
-						return
-					}
-					requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-					defer cancel()
-					mu.Lock()
-					requestCancel = cancel
-					mu.Unlock()
-					resolved, err := session.ModelRegistry().ResolveProviderAuth(requestCtx, provider, nil)
-					text := label + " usage unavailable"
-					if err == nil && resolved != nil && resolved.Auth.APIKey != nil {
-						usage, fetchErr := client.Fetch(requestCtx, provider, resolved.Auth)
-						if fetchErr == nil {
-							remaining := 100.0
-							for _, window := range usage.Windows {
-								remaining = min(remaining, window.Remaining)
-							}
-							text = fmt.Sprintf("%s %.0f%% left", label, remaining)
-						}
-					}
-					mu.Lock()
-					if ctx.Err() == nil && generation == version {
-						session.UI().SetStatus("provider-usage", &text)
-					}
-					mu.Unlock()
-				}
 				refresh()
 				for {
 					select {
@@ -127,4 +153,16 @@ func Extension(client usage.Client) extensions.Factory {
 		})
 		return nil
 	}
+}
+
+// tightest is the window closest to its limit among those not yet reset.
+func tightest(snapshot usage.Snapshot) (usage.Window, bool) {
+	var result usage.Window
+	found := false
+	for _, window := range snapshot.Windows {
+		if (window.ResetsAt.IsZero() || window.ResetsAt.After(time.Now())) && (!found || window.Remaining < result.Remaining) {
+			result, found = window, true
+		}
+	}
+	return result, found
 }

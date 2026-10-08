@@ -121,10 +121,49 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 		return s.update(ctx), nil
 	case "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel":
 		return s.login(ctx, method, params)
+	case "host.accounts", "host.accounts.use":
+		return s.accounts(ctx, method, params)
 	case "host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
 		return s.terminal(ctx, method, params)
 	}
 	return nil, bridge.Fail("method_not_found")
+}
+
+// accounts is the Providers view for a peer: `orb accounts` on this machine, its connected
+// accounts with their plan limits, and the switch between them.
+func (s *Service) accounts(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	exe, err := s.loginExecutable()
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"accounts", "--json"}
+	if method == "host.accounts.use" {
+		var q struct {
+			Provider string `json:"provider"`
+			ID       string `json:"id"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		if !providerName.MatchString(q.Provider) || !providerName.MatchString(q.ID) {
+			return nil, bridge.Fail("invalid_params")
+		}
+		args = []string{"accounts", "use", q.Provider, q.ID}
+	} else if err := protocol.Decode(params, &struct{}{}); err != nil {
+		return nil, err
+	}
+	// A refused switch still reports why, as an error line.
+	output, err := exec.CommandContext(ctx, exe, args...).Output()
+	if err != nil && len(output) == 0 {
+		return nil, bridge.Fail("unavailable")
+	}
+	rows := []json.RawMessage{}
+	for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte("\n")) {
+		if json.Valid(line) {
+			rows = append(rows, append(json.RawMessage(nil), line...))
+		}
+	}
+	return bridge.JSON(map[string]any{"accounts": rows}), nil
 }
 
 // maxLogins bounds the sign-ins one Bridge runs at once; loginPoll is how long a poll waits for

@@ -561,8 +561,14 @@ modals dim the background; non-capturing extension overlays keep their opt-in ba
 composer reserves Shift+Enter for newlines, including ambiguous legacy Escape+Return input;
 explicit protocol Alt+Enter continues to queue follow-ups.
 
-**Provider accounts and usage:** Ctrl+P → Providers groups connected accounts with Add account
-under every provider. `accounts.Store` (`ai/auth/accounts`) wraps an explicit `ai/auth.CredentialStore`, keeping the
+**Provider accounts and usage:** one Providers view (Ctrl+P → Providers, `/login`, or a click on
+the footer's provider) lists every connected account, the provider in use first, each with its
+plan-limit windows inline and their resets below. Enter switches to the selected account, keeping
+the model when the provider has it; the cursor opens on the current provider's other account with
+the most quota left. Tab, or Enter on the account in use, renames, reconnects or disconnects it.
+`accountBook` (`cmd/orb`) lists accounts, reads limits and switches; the TUI and `orb accounts
+--json` / `orb accounts use`, which Bridge serves as `host.accounts` to the apps, share it.
+`accounts.Store` (`ai/auth/accounts`) wraps an explicit `ai/auth.CredentialStore`, keeping the
 provider-keyed `auth.json` unchanged when adding accounts and recording extra credentials and
 selection in an atomic, locked, 0600 `accounts.json` sidecar (`platforms/native/accounts`). The CLI attaches it; importing the
 engine or auth package alone does not pull it in. `BindCredentialStore` pins one account through
@@ -573,20 +579,17 @@ requires restarting without the override. No account file is created until an ac
 The independent `usage.Client` reads Codex's `backend-api/wham/usage` and OpenCode Go's
 `zen/go/v1/usage` endpoints with bounded requests and no credential-bearing redirects. It reports
 remaining quota from provider data; missing data stays unavailable. Its cache holds at most 64
-account identities. Footer and account reads share a bounded request cache keyed by provider,
-endpoint and credential digest; the account UI retains its nonblocking snapshot cache.
-`plugins.ProviderUsage` attaches through extension lifecycle events and footer
-statuses as the default-off `provider-usage` assembly row, enabled by Show usage in footer in
-Providers; it is hidden from the general Plugins menu. It polls once per minute and cancels on
-account/model changes and shutdown. Clicking
-that footer status opens a native account switcher with cached percentages and at most four
-concurrent refreshes; closing it cancels requests. Switching providers keeps an identical model
-when available, otherwise opens the model picker. Neither accounts nor usage imports agent/TUI
-code, and no quota network request blocks startup or rendering. The compact footer keeps the model
-and reasoning level on the left, with the current session working directory, the most limited
-remaining quota, and a rounded context percentage on the right. Healthy Bridge adds no redundant
-footer label; startup disconnection stays visible. Detailed windows and resets stay in the account menu; compact rendering
-does not probe Git metadata.
+account identities. Providers it cannot read publish what they observe on the extension bus
+(`usage.Event`): Claude Sessions sends each fresh subscription reading its turns carry. The
+default-off `provider-usage` plugin (Show quotas in Providers; hidden from the general Plugins
+menu) shows the session's provider and its tightest window in the footer, polls readable
+providers once a minute and after each turn, cancels on account/model changes and shutdown, and
+gates the quotas in the Providers view, which shows cached readings at once and refreshes at most
+four accounts at a time. Neither accounts nor usage imports agent/TUI code, and no quota network
+request blocks startup or rendering. The compact footer keeps the model and reasoning level on the
+left, with the current session working directory, the provider quota, and a rounded context
+percentage on the right. Healthy Bridge adds no redundant
+footer label; startup disconnection stays visible. Compact rendering does not probe Git metadata.
 
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
 `/skill:name` → template. Orb also discovers the standard project/user skill roots of Claude Code,

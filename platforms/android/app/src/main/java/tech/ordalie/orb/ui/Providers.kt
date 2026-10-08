@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.*
+import kotlin.math.roundToInt
 import tech.ordalie.orb.MainActivity
 import tech.ordalie.orb.core.*
 
@@ -25,6 +26,9 @@ import tech.ordalie.orb.core.*
 private val listings = mutableStateMapOf<String, List<Provider>>()
 
 private fun known(peer: String) = listings[peer].orEmpty()
+
+/** The last accounts listing per machine, with plan limits: they take a few seconds to read. */
+private val accountListings = mutableStateMapOf<String, List<Account>>()
 
 private suspend fun Ctx.reload(peer: String) {
     listings[peer] = rt.bridge.providers(peer)
@@ -40,13 +44,33 @@ fun Context.browse(url: String, tint: androidx.compose.ui.graphics.Color) = runC
 @Composable
 fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
     var query by remember { mutableStateOf("") }
+    var switching by remember { mutableStateOf<Account?>(null) }
+    var note by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(peer) { c.reload(peer) }
+    LaunchedEffect(peer) { accountListings[peer] = c.rt.bridge.accounts(peer) }
     val known = known(peer)
+    val accounts = accountListings[peer].orEmpty().filter { query.isBlank() || it.name.contains(query.trim(), true) || it.providerName.contains(query.trim(), true) }
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
     val device = c.rt.bridge.peers.firstOrNull { it.id == peer }?.name ?: "that device"
     Header("Providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready }} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
     Field(query, "Anthropic, OpenAI, Groq…", Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth()) { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
+        if (accounts.isNotEmpty()) {
+            item(key = "s:accounts") { T("accounts", Modifier.padding(top = 22.dp, bottom = 4.dp).animateItem(), label = true, color = p.meta) }
+            if (note.isNotEmpty()) item(key = "note") { T(note, Modifier.padding(vertical = 6.dp), size = 13.sp, color = Ink.Rupture) }
+            items(accounts, key = { "a:${it.provider}/${it.id}" }) { a ->
+                AccountRow(a, switching == a, Modifier.animateItem()) {
+                    switching = a
+                    note = ""
+                    scope.launch {
+                        note = c.rt.bridge.use(peer, a).orEmpty()
+                        accountListings[peer] = c.rt.bridge.accounts(peer)
+                        switching = null
+                    }
+                }
+            }
+        }
         fun section(name: String, rows: List<Provider>) {
             if (rows.isEmpty()) return
             item(key = "s:$name") { T(name, Modifier.padding(top = 22.dp, bottom = 4.dp).animateItem(), label = true, color = p.meta) }
@@ -63,6 +87,42 @@ private fun ProviderRow(pr: Provider, modifier: Modifier, open: () -> Unit) = Li
     pr.name, if (pr.ready) pr.holds else pr.methods.joinToString(" · ") { if (it.account) "account" else "api key" },
     when { pr.ready -> "${pr.models} models"; pr.methods.any(Method::account) -> "sign in ›"; else -> "add key ›" }, pr.ready, modifier, open,
 )
+
+/** An account: tap to make it the one its provider uses; each plan-limit window below as a bar. */
+@Composable
+private fun AccountRow(a: Account, busy: Boolean, modifier: Modifier, use: () -> Unit) = Column(modifier) {
+    Column(Modifier.fillMaxWidth().press(enabled = !a.active && !busy, onClick = use).padding(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Dot(if (a.active) p.fg else p.rule, 8.dp)
+            Column(Modifier.weight(1f)) {
+                T(a.name, size = 17.sp, weight = if (a.active) Strong else Regular, lines = 1)
+                T(listOf(a.providerName.substringBefore(" ("), a.plan.replaceFirstChar(Char::uppercase)).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = p.meta, lines = 1)
+            }
+            T(when { busy -> "switching…"; a.active -> "in use"; else -> "use ›" }, size = 14.sp, weight = Medium, color = if (a.active) p.fg else p.mute)
+        }
+        a.windows.forEach { Quota(it) }
+    }
+    Rule()
+}
+
+/** One plan-limit window: the share left as a bar, in the rupture red once it runs low, and its reset. */
+@Composable
+private fun Quota(w: Window) = Row(Modifier.padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    val ink = if (w.left < 15) Ink.Rupture else p.fg
+    T(w.name, Modifier.width(76.dp), size = 13.sp, color = p.meta, lines = 1)
+    Box(Modifier.weight(1f).height(4.dp).clip(Soft).background(p.rule)) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth((w.left / 100).toFloat().coerceIn(0f, 1f)).background(ink))
+    }
+    T("${w.left.roundToInt()}%", Modifier.width(40.dp), size = 13.sp, weight = Medium, color = ink)
+    T(resets(w.resets), Modifier.width(76.dp), size = 12.sp, color = p.meta, lines = 1)
+}
+
+/** When a window resets, as briefly as it stays unambiguous. */
+private fun resets(at: String): String = runCatching {
+    val time = java.time.OffsetDateTime.parse(at).atZoneSameInstant(java.time.ZoneId.systemDefault())
+    val hours = java.time.Duration.between(java.time.ZonedDateTime.now(), time).toHours()
+    time.format(java.time.format.DateTimeFormatter.ofPattern(if (hours < 20) "HH:mm" else if (hours < 6 * 24) "EEE HH:mm" else "d MMM"))
+}.getOrDefault("")
 
 @Composable
 private fun Line(name: String, sub: String, state: String, on: Boolean, modifier: Modifier = Modifier, open: () -> Unit) = Column(modifier) {

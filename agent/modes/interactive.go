@@ -159,7 +159,7 @@ type InteractiveMode struct {
 	themeSetting           string // --use-theme override; "" defers to settings
 	authContext            context.Context
 	authCancel             context.CancelFunc
-	accountSwitcherOpen    bool
+	providersOpen          bool
 	modelSelectorCancel    context.CancelFunc
 	modelSelectorDone      chan struct{}
 	logoCancel             context.CancelFunc
@@ -4024,7 +4024,7 @@ func (mode *InteractiveMode) StatusAction(key string) func() {
 	}
 	if key == "provider-usage" {
 		if host, ok := mode.options.Host.(InteractiveProviderHost); ok {
-			return func() { go mode.showAccountSwitcher(host) }
+			return func() { go mode.showProviders(host) }
 		}
 	}
 	// An extension status keyed by its own command opens that command.
@@ -4043,7 +4043,7 @@ func (mode *InteractiveMode) StatusLabel(key string) string {
 	case "orb:thinking":
 		return "Thinking: " + string(mode.session.State().ThinkingLevel)
 	case "provider-usage":
-		return "Accounts"
+		return "Providers"
 	}
 	if mode.session != nil {
 		if runner := mode.session.ExtensionRunner(); runner != nil {

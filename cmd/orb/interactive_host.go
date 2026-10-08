@@ -66,7 +66,30 @@ func newInteractiveSessionHost(
 	}
 	host.AgentSessionRuntime = runtime
 	runtime.SetReload(host.Reload)
+	if host.UsageEnabled() {
+		go host.warmUsage()
+	}
 	return host, nil
+}
+
+// warmUsage reads every account's limits once at start, so Providers opens with them.
+func (host *interactiveSessionHost) warmUsage() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	rows, err := host.ProviderAccounts(ctx)
+	if err != nil {
+		return
+	}
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, 4)
+	for _, row := range rows {
+		wg.Go(func() {
+			limit <- struct{}{}
+			defer func() { <-limit }()
+			_, _ = host.AccountUsage(ctx, row.Provider, row.ID)
+		})
+	}
+	wg.Wait()
 }
 
 var _ modes.InteractiveSessionHost = (*interactiveSessionHost)(nil)
@@ -493,51 +516,25 @@ func (host *interactiveSessionHost) accountStore() (*accounts.Store, error) {
 	return host.args.native.Accounts(host.agentDir, base), nil
 }
 
-func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]accounts.Account, error) {
+func (host *interactiveSessionHost) book() (accountBook, error) {
 	store, err := host.accountStore()
 	if err != nil {
-		return nil, err
+		return accountBook{}, err
 	}
-	rows, err := store.Accounts(ctx)
+	credentials, err := host.authCredentials()
+	if err != nil {
+		return accountBook{}, err
+	}
+	inputs := host.currentInputs()
+	return accountBook{store: store, credentials: credentials, registry: inputs.ModelRegistry, runtime: inputs.RuntimeAuth, settings: inputs.Settings, agentDir: host.agentDir, requests: host.args.usageCache, session: host.Session()}, nil
+}
+
+func (host *interactiveSessionHost) ProviderAccounts(ctx context.Context) ([]accounts.Account, error) {
+	book, err := host.book()
 	if err != nil {
 		return nil, err
 	}
-	options, err := host.AuthOptions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	for _, row := range rows {
-		seen[row.Provider] = true
-	}
-	claudeLogin := host.claudeAmbientAccount(ctx, rows)
-	for _, option := range options.Login {
-		if option.ID == claudesessions.Name || option.Status == nil || seen[option.ID] {
-			continue
-		}
-		seen[option.ID] = true
-		if option.Status.Source == "runtime" {
-			continue
-		}
-		rows = append(rows, accounts.Account{ID: "ambient", Provider: option.ID, Name: option.Status.Source, Type: aiauth.CredentialType(option.Status.Type), Active: true})
-	}
-	if claudeLogin != nil {
-		rows = append(rows, *claudeLogin)
-	}
-	if runtime := host.currentInputs().RuntimeAuth; runtime != nil {
-		for provider := range seen {
-			if runtime.HasRuntimeAPIKey(provider) {
-				for i := range rows {
-					if rows[i].Provider == provider {
-						rows[i].Active = false
-					}
-				}
-				rows = append(rows, accounts.Account{ID: "runtime", Provider: provider, Name: "Command-line API key", Type: aiauth.CredentialAPIKey, Active: true})
-			}
-		}
-	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Provider < rows[j].Provider })
-	return rows, store.ApplyNames(rows)
+	return book.list(ctx)
 }
 
 // ProviderName is a provider's display name, as /login shows it.
@@ -547,22 +544,6 @@ func (host *interactiveSessionHost) ProviderName(id string) string {
 		return ""
 	}
 	return registry.ProviderDisplayName(id)
-}
-
-// claudeAmbientAccount is the user's own Claude Code login as an account row.
-// Unlike other providers' ambient sources it stays listed beside added
-// accounts, since selecting it is how Claude returns to that login.
-func (host *interactiveSessionHost) claudeAmbientAccount(ctx context.Context, rows []accounts.Account) *accounts.Account {
-	settings := host.currentInputs().Settings
-	if settings == nil || !settings.GetPlugins()[claudesessions.Name] {
-		return nil
-	}
-	label, ok := claudesessions.AmbientAccount(ctx, settings, os.Environ())
-	if !ok {
-		return nil
-	}
-	active := !slices.ContainsFunc(rows, func(row accounts.Account) bool { return row.Provider == claudesessions.Name && row.Active })
-	return &accounts.Account{ID: "ambient", Provider: claudesessions.Name, Name: label, Type: aiauth.CredentialOAuth, Active: active}
 }
 
 // forgetClaudeAccount signs out the Claude directory an account ran with once
@@ -592,14 +573,10 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	var removed *aiauth.Credential
 	switch action {
 	case "select":
-		if runtimeAuth := host.currentInputs().RuntimeAuth; runtimeAuth != nil && runtimeAuth.HasRuntimeAPIKey(provider) {
-			return errors.New("restart without --api-key to switch this provider account")
+		var book accountBook
+		if book, err = host.book(); err == nil {
+			err = book.use(ctx, provider, id)
 		}
-		if provider == claudesessions.Name && id == "ambient" {
-			err = store.Deselect(ctx, provider)
-			break
-		}
-		err = store.Select(ctx, provider, id)
 	case "remove":
 		if provider == claudesessions.Name {
 			removed, _ = store.View(provider, id).Read(ctx, provider)
@@ -657,46 +634,11 @@ func (host *interactiveSessionHost) AccountUsage(ctx context.Context, provider, 
 	return host.usageCache.Fetch(ctx, provider+"/"+id, func(ctx context.Context) (usage.Snapshot, error) { return host.fetchAccountUsage(ctx, provider, id) })
 }
 func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provider, id string) (usage.Snapshot, error) {
-	store, err := host.accountStore()
+	book, err := host.book()
 	if err != nil {
 		return usage.Snapshot{}, err
 	}
-	if provider == claudesessions.Name {
-		settings := host.currentInputs().Settings
-		var credential *aiauth.Credential
-		if id != "ambient" {
-			if credential, err = store.View(provider, id).Read(ctx, provider); err != nil {
-				return usage.Snapshot{}, err
-			}
-		}
-		return claudesessions.Usage(ctx, settings, host.agentDir, os.Environ(), credential)
-	}
-	inputs := host.currentInputs()
-	registry, runtime := inputs.ModelRegistry, inputs.RuntimeAuth
-	if registry == nil {
-		return usage.Snapshot{}, usage.ErrUnavailable
-	}
-	credentials := store.View(provider, id)
-	if id == "ambient" || id == "runtime" {
-		if runtime != nil {
-			credentials = runtime
-		} else {
-			credentials = aiauth.NewMemoryStore(nil)
-		}
-	}
-	if credentials == nil {
-		return usage.Snapshot{}, usage.ErrUnavailable
-	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	result, err := aiauth.ResolveProviderAuth(ctx, provider, registry.ProviderAuth(provider), credentials, aiauth.EnvironmentContext{}, nil)
-	if err != nil {
-		return usage.Snapshot{}, err
-	}
-	if result == nil {
-		return usage.Snapshot{}, usage.ErrUnavailable
-	}
-	return (usage.Client{Cache: host.args.usageCache}).Fetch(ctx, provider, result.Auth)
+	return book.usage(ctx, provider, id)
 }
 
 func (host *interactiveSessionHost) UsageEnabled() bool {

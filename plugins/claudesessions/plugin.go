@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -750,40 +749,28 @@ func quotaStatus(manager extensions.ReadonlySessionManager, now time.Time) strin
 	return "Claude"
 }
 
+// limitFooter publishes each fresh subscription reading to the footer quota (usage.Event) and
+// shows a permission mode other than the default.
 func limitFooter(api extensions.API) {
-	var mu sync.Mutex
-	var timer *time.Timer
-	var generation uint64
 	for _, kind := range []extensions.EventType{extensions.EventSessionStart, extensions.EventModelSelect, extensions.EventMessageEnd, extensions.EventAgentEnd, extensions.EventSessionShutdown} {
-		api.On(kind, func(_ context.Context, event extensions.Event, ctx extensions.Context) (any, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			generation++
-			if timer != nil {
-				timer.Stop()
-				timer = nil
-			}
-			_, shutdown := event.(extensions.SessionShutdownEvent)
-			if shutdown || ctx.Mode() != extensions.ModeTUI || !ctx.HasUI() || ctx.Model() == nil || ctx.Model().Provider != Name {
-				if ctx.Mode() == extensions.ModeTUI && ctx.HasUI() {
-					ctx.UI().SetStatus(Name+".limits", nil)
-				}
+		api.On(kind, func(ctx context.Context, event extensions.Event, session extensions.Context) (any, error) {
+			if session.Mode() != extensions.ModeTUI || !session.HasUI() {
 				return nil, nil
 			}
-			current := generation
-			var refresh func()
-			refresh = func() {
-				text := limitsStatus(ctx.SessionManager(), time.Now())
-				ctx.UI().SetStatus(Name+".limits", &text)
-				timer = time.AfterFunc(time.Minute, func() {
-					mu.Lock()
-					defer mu.Unlock()
-					if generation == current {
-						refresh()
-					}
-				})
+			_, shutdown := event.(extensions.SessionShutdownEvent)
+			if shutdown || session.Model() == nil || session.Model().Provider != Name {
+				session.UI().SetStatus(Name+".mode", nil)
+				return nil, nil
 			}
-			refresh()
+			// An old reading says nothing about the limits now.
+			if limits := Limits(session.SessionManager(), time.Now()); limits != nil && time.Since(limits.CheckedAt) <= 5*time.Minute {
+				api.Events().Emit(ctx, usage.Event, usage.Reading{Provider: Name, Snapshot: *limits})
+			}
+			var mode *string
+			if current := nativeMode(session.SessionManager()); current != "default" {
+				mode = &current
+			}
+			session.UI().SetStatus(Name+".mode", mode)
 			return nil, nil
 		})
 	}

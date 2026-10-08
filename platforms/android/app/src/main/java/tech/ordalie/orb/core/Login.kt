@@ -31,6 +31,22 @@ data class Provider(val id: String, val name: String, val methods: List<Method>,
     }
 }
 
+/** A plan-limit window: the share left (percent) and when it resets, as `orb accounts --json` reports it. */
+data class Window(val name: String, val left: Double, val resets: String)
+
+/** A connected account and its plan limits, as `orb accounts --json` lists it: the TUI's Providers view, row for row. */
+data class Account(val provider: String, val providerName: String, val id: String, val name: String, val active: Boolean, val plan: String, val windows: List<Window>) {
+    companion object {
+        fun parse(o: JSONObject): Account {
+            val usage = o.optJSONObject("usage")
+            val windows = usage?.optJSONArray("windows")?.let { a ->
+                (0 until a.length()).map { a.getJSONObject(it).let { w -> Window(w.optString("name"), w.optDouble("remaining"), w.optString("resets_at")) } }
+            }.orEmpty()
+            return Account(o.optString("provider"), o.optString("provider_name"), o.optString("id"), o.optString("name"), o.optBoolean("active"), usage?.optString("plan").orEmpty(), windows)
+        }
+    }
+}
+
 /** What a sign-in is asking for: a menu, a line of text, a secret, or a pasted code or redirect URL. */
 data class Prompt(val kind: String, val message: String, val placeholder: String, val options: List<Pair<String, String>>)
 

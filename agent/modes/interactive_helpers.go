@@ -216,13 +216,20 @@ type commandPalette struct {
 	bindings      *tui.KeybindingsManager
 	height        func() int
 	onCancel      func()
-	pending       func()
+	// onTab, when set, is a second action on the selected row.
+	onTab func(string)
+	// styled cells keep their own colors past the first column.
+	styled  bool
+	pending func()
 }
 
 func newCommandPalette(rows []tui.GridRow, bindings *tui.KeybindingsManager, height func() int, selectItem func(string), cancel func()) *commandPalette {
 	palette := &commandPalette{input: newSearchInput(), bindings: bindings, height: height, onCancel: cancel}
 	palette.list = tui.NewGridList(rows, 10, tui.GridListTheme{
 		Cell: func(row tui.GridRow, column int, text string) string {
+			if palette.styled && column > 0 {
+				return text
+			}
 			color := "text"
 			if column > 0 && row.Value != palette.list.SelectedValue() || strings.HasPrefix(row.Value, "add:") {
 				color = "muted"
@@ -279,6 +286,10 @@ func (palette *commandPalette) HandleInput(event tui.KeyEvent) {
 	switch {
 	case bindings.Matches(event.Raw, "tui.select.cancel"), bindings.Matches(event.Raw, "app.commandPalette"):
 		palette.pending = palette.onCancel
+	case palette.onTab != nil && bindings.Matches(event.Raw, "tui.input.tab"):
+		if value := palette.list.SelectedValue(); value != "" {
+			palette.pending = func() { palette.onTab(value) }
+		}
 	case palette.modelShortcut && event.Raw != "\r" && event.Raw != "\n" && bindings.Matches(event.Raw, "app.model.select"):
 		palette.list.OnConfirm("model")
 	case bindings.Matches(event.Raw, "tui.select.up"), bindings.Matches(event.Raw, "tui.select.down"),

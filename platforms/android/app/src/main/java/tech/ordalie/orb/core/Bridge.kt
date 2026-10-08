@@ -132,6 +132,20 @@ class Bridge(private val scope: CoroutineScope, private val orb: Orb) {
         return Provider.parse((0 until rows.length()).joinToString("\n") { rows.get(it).toString() })
     }
 
+    /** A peer's accounts with their plan limits, as `orb accounts --json` lists them there (host.accounts). */
+    suspend fun accounts(peer: String): List<Account> {
+        val rows = remote(peer, "host.accounts", JSONObject()).optJSONObject("result")?.optJSONArray("accounts") ?: return emptyList()
+        return (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.takeIf { o -> o.has("provider") }?.let(Account::parse) }
+    }
+
+    /** Makes [account] the one its provider uses there (host.accounts.use); null once done, else why not. */
+    suspend fun use(peer: String, account: Account): String? {
+        val r = remote(peer, "host.accounts.use", JSONObject().put("provider", account.provider).put("id", account.id))
+        r.optJSONObject("error")?.let { return if (it.optString("code") == "unauthorized") "that device does not let this phone switch its accounts" else it.optString("message") }
+        val rows = r.optJSONObject("result")?.optJSONArray("accounts") ?: return "the device did not answer"
+        return (0 until rows.length()).firstNotNullOfOrNull { rows.optJSONObject(it)?.takeIf { o -> o.optString("type") == "error" }?.optString("message") }
+    }
+
     /** Brings a peer's Orb to the latest release (host.update); the words say what happened. */
     suspend fun update(peer: String): String {
         val r = remote(peer, "host.update", JSONObject())

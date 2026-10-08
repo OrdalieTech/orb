@@ -35,6 +35,8 @@ func (registry *quotaRegistry) ResolveProviderAuth(context.Context, string, map[
 	return &aiauth.AuthResult{Auth: aiauth.ModelAuth{APIKey: &key}}, nil
 }
 
+func (*quotaRegistry) ProviderDisplayName(string) string { return "Go" }
+
 type quotaUI struct {
 	extensions.NoopUI
 	statuses chan string
@@ -87,7 +89,7 @@ func TestProviderUsageCancelsOldAccountRequestsAndStopsOnShutdown(t *testing.T) 
 			if strings.Contains(value, "75%") {
 				goto refreshed
 			}
-			if value != "" {
+			if value != "Go" {
 				t.Fatalf("stale or unexpected status: %q", value)
 			}
 		case <-deadline:

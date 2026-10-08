@@ -1,8 +1,11 @@
 package modes
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"runtime"
 	"slices"
 	"strconv"
@@ -612,12 +615,7 @@ func (mode *InteractiveMode) providerMenu(ctx context.Context, title string, row
 		}
 	}
 	palette := newCommandPalette(rows, mode.keybindings, mode.Height, resolve, func() { resolve("") })
-	frame := menuFrame(title, palette)
-	if title == "Providers" {
-		frame.Action = "+ Connect provider"
-		frame.OnAction = func() { resolve("connect") }
-	}
-	handle := mode.ui.ShowOverlay(frame, configOverlayOptions())
+	handle := mode.ui.ShowOverlay(menuFrame(title, palette), configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() { handle.Hide(); mode.ui.RequestRender() }()
 	select {
@@ -641,71 +639,292 @@ func providerLabel(host any, provider string) string {
 	return provider
 }
 
-func providerAccountRows(connected []accounts.Account, enabled bool, label func(string) string) []tui.GridRow {
-	rows := make([]tui.GridRow, 0, len(connected)+4)
-	provider := ""
+// showProviders lists every connected account, the provider in use first, with its plan limits
+// while the provider-usage plugin is on. Enter switches to the selected account, keeping the
+// model, and the cursor starts on the current provider's other account with the most quota left;
+// Tab, or Enter on the account in use, manages an account.
+func (mode *InteractiveMode) showProviders(host InteractiveProviderHost) {
+	mode.mu.Lock()
+	if mode.providersOpen {
+		mode.mu.Unlock()
+		return
+	}
+	mode.providersOpen = true
+	mode.mu.Unlock()
+	defer func() {
+		mode.mu.Lock()
+		mode.providersOpen = false
+		mode.mu.Unlock()
+	}()
+	ctx, cancel := context.WithCancel(mode.authenticationContext())
+	defer cancel()
+	connected, err := host.ProviderAccounts(ctx)
+	if err != nil {
+		mode.showError(err)
+		return
+	}
+	current := ""
+	if mode.session != nil {
+		if model := mode.session.State().Model; model != nil {
+			current = string(model.Provider)
+		}
+	}
+	slices.SortStableFunc(connected, func(a, b accounts.Account) int {
+		switch {
+		case a.Provider == b.Provider:
+			return 0
+		case a.Provider == current:
+			return -1
+		case b.Provider == current:
+			return 1
+		}
+		return 0
+	})
+	showUsage := host.UsageEnabled()
+	readings := make([]*usage.Snapshot, len(connected))
+	states := make([]string, len(connected)) // "" while reading, then "read", "none" or "failed"
+	if showUsage {
+		for i, account := range connected {
+			if cached, ok := host.CachedAccountUsage(account.Provider, account.ID); ok {
+				readings[i] = &cached
+			}
+		}
+	}
+	rows := func() []tui.GridRow {
+		// Each window has its own column across accounts: 5h under 5h, 7d under 7d.
+		var windows []string
+		for _, reading := range readings {
+			if reading != nil {
+				for _, window := range reading.Windows {
+					if !slices.Contains(windows, window.Name) {
+						windows = append(windows, window.Name)
+					}
+				}
+			}
+		}
+		slices.SortStableFunc(windows, func(a, b string) int { return cmp.Compare(windowHours(a), windowHours(b)) })
+		result := make([]tui.GridRow, 0, 2*len(connected)+2)
+		for i, account := range connected {
+			if i == 0 || connected[i-1].Provider != account.Provider {
+				result = append(result, tui.GridRow{Header: true, Cells: []string{theme.Bold(theme.FG("text", providerLabel(host, account.Provider)))}})
+			}
+			name, kind := account.Name, "API key"
+			if account.Active {
+				name += " ✓"
+			}
+			if account.Type == aiauth.CredentialOAuth {
+				kind = "Subscription"
+			}
+			cells, detail := []string{name}, []string(nil)
+			switch reading := readings[i]; {
+			case reading != nil && len(reading.Windows) > 0:
+				for _, column := range windows {
+					cell := ""
+					if index := slices.IndexFunc(reading.Windows, func(window usage.Window) bool { return window.Name == column }); index >= 0 {
+						cell = quotaCell(reading.Windows[index])
+					}
+					cells = append(cells, cell)
+				}
+				detail = []string{quotaDetail(*reading, states[i] == "failed")}
+			case !showUsage || states[i] == "none":
+				cells = append(cells, theme.FG("dim", kind))
+			case states[i] == "failed":
+				cells = append(cells, theme.FG("dim", "unavailable"))
+				detail = []string{"Usage unavailable · reconnect the account if it lasts"}
+			default:
+				cells = append(cells, theme.FG("dim", "…"))
+			}
+			result = append(result, tui.GridRow{Value: strconv.Itoa(i), Cells: cells, Search: account.Provider + " " + account.Name, Detail: detail})
+			if i+1 == len(connected) || connected[i+1].Provider != account.Provider {
+				result = append(result, tui.GridRow{Value: "add:" + account.Provider, Cells: []string{"+ Add account"}, Search: account.Provider + " add account"})
+			}
+		}
+		toggle := "Show quotas"
+		if showUsage {
+			toggle = "Hide quotas"
+		}
+		return append(result,
+			tui.GridRow{Value: "connect", Cells: []string{"+ Connect provider"}, Search: "connect provider login"},
+			tui.GridRow{Value: "usage", Cells: []string{toggle}, Search: "usage quota limits"})
+	}
+	left := func(i int) float64 {
+		remaining := -1.0
+		if readings[i] != nil {
+			for _, window := range readings[i].Windows {
+				if remaining < 0 || window.Remaining < remaining {
+					remaining = window.Remaining
+				}
+			}
+		}
+		return remaining
+	}
+	target := -1
 	for i, account := range connected {
-		if provider != account.Provider {
-			provider = account.Provider
-			rows = append(rows, tui.GridRow{Header: true, Cells: []string{theme.Bold(theme.FG("text", label(provider)))}})
-		}
-		name := account.Name
-		if account.Active {
-			name += " ✓"
-		}
-		kind := "API key"
-		if account.Type == aiauth.CredentialOAuth {
-			kind = "Subscription"
-		}
-		rows = append(rows, tui.GridRow{Value: strconv.Itoa(i), Cells: []string{name, theme.FG("muted", kind)}, Search: account.Provider + " " + account.Name + " " + kind, Detail: []string{"Manage " + label(account.Provider) + " · " + account.Name}})
-		if i+1 == len(connected) || connected[i+1].Provider != provider {
-			rows = append(rows, tui.GridRow{Value: "add:" + provider, Cells: []string{theme.FG("muted", "+ Add account")}, Search: provider + " add account"})
+		if account.Provider == current && !account.Active && (target < 0 || left(i) > left(target)) {
+			target = i
 		}
 	}
-	toggle := "Show usage in footer"
-	if enabled {
-		toggle = "Hide usage from footer"
+	if target < 0 {
+		target = slices.IndexFunc(connected, func(account accounts.Account) bool { return account.Provider == current && account.Active })
 	}
-	rows = append(rows, tui.GridRow{Value: "usage", Cells: []string{toggle}, Search: "usage quota limits footer"})
-	return rows
+	selected := make(chan string, 1)
+	choose := func(value string) {
+		select {
+		case selected <- value:
+		default:
+		}
+	}
+	palette := newCommandPalette(rows(), mode.keybindings, mode.Height, choose, func() { choose("") })
+	palette.onTab = func(value string) { choose("manage:" + value) }
+	palette.styled = true
+	if target >= 0 {
+		palette.list.ListSelectRow(slices.IndexFunc(rows(), func(row tui.GridRow) bool { return row.Value == strconv.Itoa(target) }))
+	}
+	frame := menuFrame("Providers", palette)
+	frame.Footer = "enter switch · tab manage"
+	handle := mode.ui.ShowOverlay(frame, configOverlayOptions())
+	mode.ui.RequestRender()
+	defer func() { handle.Hide(); mode.ui.RequestRender() }()
+	type update struct {
+		index    int
+		snapshot usage.Snapshot
+		err      error
+	}
+	updates := make(chan update, len(connected))
+	jobs := make(chan int, len(connected))
+	if showUsage {
+		for i := range connected {
+			jobs <- i
+		}
+	}
+	close(jobs)
+	for range min(4, len(connected)) {
+		go func() {
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				snapshot, err := host.AccountUsage(ctx, connected[index].Provider, connected[index].ID)
+				updates <- update{index: index, snapshot: snapshot, err: err}
+			}
+		}()
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case update := <-updates:
+			switch {
+			case update.err == nil:
+				readings[update.index], states[update.index] = &update.snapshot, "read"
+			case errors.Is(update.err, usage.ErrUnavailable):
+				readings[update.index], states[update.index] = nil, "none"
+			default:
+				states[update.index] = "failed"
+			}
+			palette.mu.Lock()
+			palette.list.SetRows(rows())
+			palette.mu.Unlock()
+			mode.ui.RequestRender()
+		case value := <-selected:
+			handle.Hide()
+			cancel()
+			mode.chooseProvider(host, connected, value)
+			return
+		}
+	}
 }
 
-func (mode *InteractiveMode) showProviders(host InteractiveProviderHost) {
+func (mode *InteractiveMode) chooseProvider(host InteractiveProviderHost, connected []accounts.Account, value string) {
 	ctx := mode.authenticationContext()
-	for ctx.Err() == nil {
-		connected, err := host.ProviderAccounts(ctx)
-		if err != nil {
+	value, manage := strings.CutPrefix(value, "manage:")
+	if provider, add := strings.CutPrefix(value, "add:"); add {
+		mode.connectProviderAccount(ctx, provider, nil)
+		return
+	}
+	switch value {
+	case "":
+	case "connect":
+		mode.connectProviderAccount(ctx, "", nil)
+	case "usage":
+		if err := host.SetUsageEnabled(!host.UsageEnabled()); err != nil {
 			mode.showError(err)
 			return
 		}
-		selected, ok := mode.providerMenu(ctx, "Providers", providerAccountRows(connected, host.UsageEnabled(), func(id string) string { return providerLabel(host, id) }))
-		if !ok {
+		// Loading/unloading the optional module uses the normal assembly lifecycle.
+		if err := mode.options.Host.Reload(ctx); err != nil {
+			mode.showError(err)
+		}
+	default:
+		index, err := strconv.Atoi(value)
+		if err != nil || index < 0 || index >= len(connected) {
 			return
 		}
-		if provider, add := strings.CutPrefix(selected, "add:"); add {
-			mode.connectProviderAccount(ctx, provider, nil)
-			continue
-		}
-		switch selected {
-		case "connect":
-			mode.connectProviderAccount(ctx, "", nil)
-		case "usage":
-			if err := host.SetUsageEnabled(!host.UsageEnabled()); err != nil {
-				mode.showError(err)
-				continue
-			}
-			// Loading/unloading the optional module uses the normal assembly lifecycle.
-			if err := mode.options.Host.Reload(ctx); err != nil {
-				mode.showError(err)
-			}
-			return
-		default:
-			index, err := strconv.Atoi(selected)
-			if err == nil && index >= 0 && index < len(connected) {
-				mode.manageProviderAccount(ctx, host, connected[index])
-			}
+		if manage || connected[index].Active {
+			mode.manageProviderAccount(ctx, host, connected[index])
+		} else {
+			mode.switchProviderAccount(ctx, host, connected[index])
 		}
 	}
+}
+
+// quotaCell is a window's name, an eight-step bar and the share left, colored as it runs low.
+func quotaCell(window usage.Window) string {
+	color := "text"
+	switch {
+	case window.Remaining < 15:
+		color = "error"
+	case window.Remaining < 35:
+		color = "warning"
+	}
+	filled := max(0, min(8, int(math.Round(window.Remaining/12.5))))
+	return theme.FG("muted", window.Name) + " " + theme.FG(color, strings.Repeat("━", filled)) + theme.FG("dim", strings.Repeat("─", 8-filled)) + theme.FG(color, fmt.Sprintf(" %3.0f%%", window.Remaining))
+}
+
+// quotaDetail is the plan and when each window resets.
+func quotaDetail(reading usage.Snapshot, stale bool) string {
+	var parts []string
+	if reading.Plan != "" {
+		parts = append(parts, strings.ToUpper(reading.Plan[:1])+reading.Plan[1:])
+	}
+	for _, window := range reading.Windows {
+		if !window.ResetsAt.IsZero() {
+			parts = append(parts, window.Name+" resets "+resetTime(window.ResetsAt))
+		}
+	}
+	if stale {
+		parts = append(parts, "read at "+resetTime(reading.CheckedAt)+", now unavailable")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// windowHours orders windows by length, a model's own window after the shared one of that length.
+func windowHours(name string) float64 {
+	fields := strings.Fields(name)
+	if len(fields) == 0 {
+		return math.MaxFloat64
+	}
+	last, hours := fields[len(fields)-1], 1e6
+	if count, err := strconv.Atoi(last[:len(last)-1]); err == nil && strings.HasSuffix(last, "h") {
+		hours = float64(count)
+	} else if err == nil && strings.HasSuffix(last, "d") {
+		hours = float64(24 * count)
+	} else if last == "month" {
+		hours = 720
+	}
+	return hours + float64(len(fields)-1)/2
+}
+
+// resetTime is a reset moment as briefly as it stays unambiguous.
+func resetTime(at time.Time) string {
+	at = at.Local()
+	switch {
+	case time.Until(at) < 20*time.Hour:
+		return at.Format("15:04")
+	case time.Until(at) < 6*24*time.Hour:
+		return at.Format("Mon 15:04")
+	}
+	return at.Format("2 Jan 15:04")
 }
 
 func (mode *InteractiveMode) connectProviderAccount(ctx context.Context, provider string, reconnect *accounts.Account) {
@@ -769,36 +988,17 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	add := func(value, label string) {
 		rows = append(rows, tui.GridRow{Value: value, Cells: []string{label}, Search: label})
 	}
-	// An ambient login is listed inactive only beside added accounts, and
-	// selecting it returns the provider to that login.
-	if account.ID != "runtime" && !account.Active {
-		add("select", "Use this account")
-	}
-	add("add", "Add another account")
 	add("rename", "Rename account")
 	if mutable {
 		add("reconnect", "Reconnect")
 		add("remove", "Disconnect")
 	}
-	if hasAccountUsage(account.Provider) {
-		add("usage", "Usage and reset times")
-	}
 	action, ok := mode.providerMenu(ctx, providerLabel(host, account.Provider)+" · "+account.Name, rows)
 	if !ok {
 		return
 	}
-	switch action {
-	case "add":
-		mode.connectProviderAccount(ctx, account.Provider, nil)
-		return
-	case "reconnect":
+	if action == "reconnect" {
 		mode.connectProviderAccount(ctx, account.Provider, &account)
-		return
-	case "usage":
-		mode.showAccountUsage(ctx, host, account)
-		return
-	case "select":
-		mode.switchProviderAccount(ctx, host, account)
 		return
 	}
 	name := ""
@@ -820,207 +1020,6 @@ func (mode *InteractiveMode) manageProviderAccount(ctx context.Context, host Int
 	}
 }
 
-// hasAccountUsage names the providers whose accounts report plan limits.
-func hasAccountUsage(provider string) bool {
-	return provider == "openai-codex" || provider == "opencode-go" || provider == "claude-sessions"
-}
-
-func usageResetTime(window usage.Window) string {
-	if window.ResetsAt.IsZero() {
-		return "Reset time unavailable"
-	}
-	return "Resets " + window.ResetsAt.Local().Format("Mon 15:04 · 2 Jan MST")
-}
-
-func (mode *InteractiveMode) showAccountUsage(parent context.Context, host InteractiveProviderHost, account accounts.Account) {
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	closed := make(chan struct{}, 1)
-	closeMenu := func() {
-		select {
-		case closed <- struct{}{}:
-		default:
-		}
-	}
-	palette := newCommandPalette([]tui.GridRow{{Cells: []string{"Checking usage…"}}}, mode.keybindings, mode.Height, func(string) { closeMenu() }, closeMenu)
-	handle := mode.ui.ShowOverlay(menuFrame("Usage · "+account.Name, palette), configOverlayOptions())
-	mode.ui.RequestRender()
-	defer func() { handle.Hide(); mode.ui.RequestRender() }()
-	result := make(chan []tui.GridRow, 1)
-	go func() {
-		snapshot, err := host.AccountUsage(ctx, account.Provider, account.ID)
-		rows := []tui.GridRow{{Value: "close", Cells: []string{"Usage unavailable"}, Detail: []string{"Try again later or reconnect this account."}}}
-		if err == nil {
-			rows = nil
-			for _, window := range snapshot.Windows {
-				rows = append(rows, tui.GridRow{Value: "close", Cells: []string{window.Name, fmt.Sprintf("%.0f%% left", window.Remaining)}, Detail: []string{usageResetTime(window)}})
-			}
-		}
-		result <- rows
-	}()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-closed:
-			return
-		case rows := <-result:
-			palette.mu.Lock()
-			palette.list.SetRows(rows)
-			palette.mu.Unlock()
-			mode.ui.RequestRender()
-		}
-	}
-}
-
-func (mode *InteractiveMode) showAccountSwitcher(host InteractiveProviderHost) {
-	mode.mu.Lock()
-	if mode.accountSwitcherOpen {
-		mode.mu.Unlock()
-		return
-	}
-	mode.accountSwitcherOpen = true
-	mode.mu.Unlock()
-	defer func() {
-		mode.mu.Lock()
-		mode.accountSwitcherOpen = false
-		mode.mu.Unlock()
-	}()
-	ctx, cancel := context.WithCancel(mode.authenticationContext())
-	defer cancel()
-	connected, err := host.ProviderAccounts(ctx)
-	if err != nil {
-		mode.showError(err)
-		return
-	}
-	if len(connected) == 0 {
-		mode.showProviders(host)
-		return
-	}
-	summaries := make([]string, len(connected))
-	details := make([][]string, len(connected))
-	applyUsage := func(index int, snapshot usage.Snapshot, ok bool) {
-		summaries[index] = "Unavailable"
-		details[index] = []string{"Usage unavailable · try again later or reconnect this account."}
-		if !ok || len(snapshot.Windows) == 0 {
-			return
-		}
-		limited := snapshot.Windows[0]
-		for _, window := range snapshot.Windows {
-			if window.Remaining < limited.Remaining {
-				limited = window
-			}
-		}
-		summaries[index] = fmt.Sprintf("%s %.0f%% left", limited.Name, limited.Remaining)
-		details[index] = nil
-		for _, window := range snapshot.Windows {
-			details[index] = append(details[index], fmt.Sprintf("%s %.0f%% left · %s", window.Name, window.Remaining, usageResetTime(window)))
-		}
-		if time.Since(snapshot.CheckedAt) > time.Minute {
-			summaries[index] += " · stale"
-		}
-	}
-	for i, account := range connected {
-		if !hasAccountUsage(account.Provider) {
-			continue
-		}
-		summaries[i] = "Checking…"
-		if cached, ok := host.CachedAccountUsage(account.Provider, account.ID); ok {
-			applyUsage(i, cached, true)
-		}
-	}
-	rows := func() []tui.GridRow {
-		result := providerAccountRows(connected, false, func(id string) string { return providerLabel(host, id) })
-		result = result[:len(result)-1]
-		for i := range result {
-			index, err := strconv.Atoi(result[i].Value)
-			if err == nil && index >= 0 && index < len(summaries) && summaries[index] != "" {
-				result[i].Cells[1] = theme.FG("muted", summaries[index])
-				result[i].Detail = details[index]
-			}
-		}
-		return append(result, tui.GridRow{Value: "manage", Cells: []string{"Manage providers"}, Search: "manage connect disconnect providers"})
-	}
-	selected := make(chan string, 1)
-	choose := func(value string) {
-		select {
-		case selected <- value:
-		default:
-		}
-	}
-	palette := newCommandPalette(rows(), mode.keybindings, mode.Height, choose, func() { choose("") })
-	palette.list.DetailHeight = 3
-	if mode.session != nil {
-		current := mode.session.State().Model
-		if current != nil {
-			for index, row := range rows() {
-				account, err := strconv.Atoi(row.Value)
-				if err == nil && connected[account].Active && connected[account].Provider == string(current.Provider) {
-					palette.list.ListSelectRow(index)
-					break
-				}
-			}
-		}
-	}
-	handle := mode.ui.ShowOverlay(menuFrame("Switch account", palette), configOverlayOptions())
-	mode.ui.RequestRender()
-	defer func() { handle.Hide(); mode.ui.RequestRender() }()
-	type updated struct {
-		index    int
-		snapshot usage.Snapshot
-		err      error
-	}
-	updates := make(chan updated, len(connected))
-	jobs := make(chan int, len(connected))
-	for i, account := range connected {
-		if hasAccountUsage(account.Provider) {
-			jobs <- i
-		}
-	}
-	close(jobs)
-	for range min(4, len(connected)) {
-		go func() {
-			for index := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				account := connected[index]
-				snapshot, err := host.AccountUsage(ctx, account.Provider, account.ID)
-				updates <- updated{index: index, snapshot: snapshot, err: err}
-			}
-		}()
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case update := <-updates:
-			applyUsage(update.index, update.snapshot, update.err == nil)
-			palette.mu.Lock()
-			palette.list.SetRows(rows())
-			palette.mu.Unlock()
-			mode.ui.RequestRender()
-		case value := <-selected:
-			handle.Hide()
-			cancel()
-			if value == "manage" {
-				mode.showProviders(host)
-				return
-			}
-			if provider, add := strings.CutPrefix(value, "add:"); add {
-				mode.connectProviderAccount(mode.authenticationContext(), provider, nil)
-				return
-			}
-			index, err := strconv.Atoi(value)
-			if err != nil || index < 0 || index >= len(connected) {
-				return
-			}
-			mode.switchProviderAccount(mode.authenticationContext(), host, connected[index])
-			return
-		}
-	}
-}
-
 func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host InteractiveProviderHost, account accounts.Account) {
 	if mode.session != nil && mode.session.State().IsStreaming {
 		mode.showError(fmt.Errorf("wait for the current response before switching providers"))
@@ -1032,6 +1031,7 @@ func (mode *InteractiveMode) switchProviderAccount(ctx context.Context, host Int
 			return
 		}
 	}
+	mode.showStatusMessage("Using " + providerLabel(host, account.Provider) + " · " + account.Name)
 	if mode.session == nil {
 		return
 	}
