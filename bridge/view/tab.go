@@ -75,11 +75,11 @@ type Command struct {
 
 // descriptor is what `instances.describe` says of an Orb.
 type descriptor struct {
-	Name, CWD, Model, Provider, Status, Catalog string
-	Thinking                                    *string
-	Waits                                       bool
-	Generation                                  string `json:"registration_generation"`
-	Target                                      struct {
+	Name, CWD, Model, Provider, Status, Catalog, State string
+	Thinking                                           *string
+	Waits                                              bool
+	Generation                                         string `json:"registration_generation"`
+	Target                                             struct {
 		Session   string `json:"session_id"`
 		Revision  string `json:"session_revision"`
 		Execution string `json:"execution_id"`
@@ -137,6 +137,7 @@ type tab struct {
 	nextTry                time.Time
 	tr                     transcript
 	rows                   []json.RawMessage // what the app last received
+	drawn                  []*item           // the items those rows showed
 	wake                   chan struct{}
 	done                   chan struct{}
 	cancelPoll             context.CancelFunc
@@ -264,6 +265,9 @@ func (t *tab) describe() bool {
 		d.Models, d.Commands = t.info.Models, t.info.Commands
 	}
 	t.info, t.Online, t.gone = d, true, false
+	// The next long poll waits for a change since what this describes, not since the last page:
+	// a turn begun and ended in between would otherwise leave the tab working.
+	t.pulse = cmp.Or(d.State, t.pulse)
 	if strings.HasPrefix(t.Status, "offline") || strings.HasPrefix(t.Status, "ended") || t.Status == "reconnecting" {
 		t.Status = ""
 	}
@@ -411,7 +415,7 @@ func (t *tab) snapshot() {
 	defer a.flush()
 	t.from, t.Earlier = from, from > 0 && (asked < 0 || from <= asked)
 	t.tr.clear()
-	t.tr.load(messages)
+	t.tr.load(messages, from)
 	if partial != nil {
 		t.tr.apply(json.RawMessage(`{"type":"message_update","message":` + string(partial) + `}`))
 	}
@@ -616,19 +620,35 @@ func (t *tab) earlier() {
 }
 
 // render sends the app what changed in the conversation: the rows from the first that differs.
-// Called with the lock held, for tabs a screen shows or that follow off screen.
+// Rows showing only items unchanged since the last render keep their encoding, so a streamed
+// token costs the rows of its message, not the conversation's. Called with the lock held, for
+// tabs a screen shows or that follow off screen.
 func (t *tab) render() {
-	var rows []json.RawMessage
-	for _, r := range t.tr.rows() {
-		rows = append(rows, bridge.JSON(r))
+	items := t.tr.items
+	from := 0
+	for from < len(items) && from < len(t.drawn) && items[from] == t.drawn[from] && items[from].face() == items[from].drawn {
+		from++
+	}
+	rows, last := t.tr.rows()
+	k := 0
+	for k < len(rows) && k < len(t.rows) && last[k] < from {
+		k++
+	}
+	tail := make([]json.RawMessage, 0, len(rows)-k)
+	for _, r := range rows[k:] {
+		tail = append(tail, bridge.JSON(r))
 	}
 	at := 0
-	for at < len(rows) && at < len(t.rows) && string(rows[at]) == string(t.rows[at]) {
+	for at < len(tail) && k+at < len(t.rows) && string(tail[at]) == string(t.rows[k+at]) {
 		at++
 	}
-	if at == len(rows) && at == len(t.rows) {
-		return
+	unchanged := at == len(tail) && k+at == len(t.rows)
+	t.rows = append(t.rows[:k], tail...)
+	for _, it := range items[from:] {
+		it.drawn = it.face()
 	}
-	t.rows = rows
-	t.a.o.Emit(map[string]any{"t": "rows", "tab": t.ID, "at": at, "rows": append([]json.RawMessage{}, rows[at:]...)})
+	t.drawn = append(t.drawn[:0], items...)
+	if !unchanged {
+		t.a.o.Emit(map[string]any{"t": "rows", "tab": t.ID, "at": k + at, "rows": tail[at:]})
+	}
 }

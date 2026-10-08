@@ -233,3 +233,22 @@ func TestAModelIsKnownByItsProvider(t *testing.T) {
 		t.Fatalf("model %q, levels %v", tb.Model, tb.Levels)
 	}
 }
+
+// Earlier messages loaded above keep the keys of the rows already drawn, so an app keeps its place.
+func TestEarlierMessagesKeepTheRowsKeys(t *testing.T) {
+	var msgs []json.RawMessage
+	for i := range 4 {
+		msgs = append(msgs, json.RawMessage(fmt.Sprintf(`{"role":"user","content":[{"type":"text","text":"q%d"}]}`, i)),
+			json.RawMessage(fmt.Sprintf(`{"role":"assistant","content":[{"type":"text","text":"a%d\n\nmore"}]}`, i)))
+	}
+	var window, all transcript
+	window.load(msgs[4:], 4)
+	all.load(msgs, 0)
+	shown, _ := window.rows()
+	grown, _ := all.rows()
+	for i, r := range shown {
+		if g := grown[len(grown)-len(shown)+i]; g.Key != r.Key {
+			t.Fatalf("row %d: %q became %q", i, r.Key, g.Key)
+		}
+	}
+}

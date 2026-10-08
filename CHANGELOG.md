@@ -16,6 +16,12 @@ shown by `/changelog`.
   finishes out of sight, and Settings for providers, accounts, pairing and plugins.
 - A conversation on a model two providers offer under one name no longer moves to the other
   provider when its reasoning level changes: `instances.describe` names the model's provider.
+- A conversation followed over Bridge no longer shows "working" for up to 15 seconds after a
+  short turn: `instances.describe` names the state it describes, a follower's long poll waits
+  for a change since then, and a page's state is read after its events.
+- The apps' view encodes again only the rows of what changed, so a streamed token costs its
+  message, not the conversation: 0.16 ms per update on a 1,000-row conversation instead of 2.3.
+  Rows keep their keys when earlier messages load above them.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

@@ -404,6 +404,7 @@ type Descriptor struct {
 	Commands   []Command             `json:"commands,omitempty"`
 	Catalog    string                `json:"catalog,omitempty"` // digest of models and commands, which a describe sending it omits
 	Waits      bool                  `json:"waits"`             // events.subscribe takes wait: a follower long-polls
+	State      string                `json:"state,omitempty"`   // the pulse this describes, read first: a follower waits for a change since
 	Models     []bridge.Model        `json:"models,omitempty"`
 	Name       string                `json:"name,omitempty"`
 	CWD        string                `json:"cwd,omitempty"`
@@ -437,7 +438,7 @@ func (a *Attachment) inspect(known string) json.RawMessage {
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
-	d := Descriptor{InstanceID: a.options.InstanceID, Service: protocol.Service, Generation: generation, Target: a.control.Target(), Methods: methods, Waits: true}
+	d := Descriptor{InstanceID: a.options.InstanceID, Service: protocol.Service, Generation: generation, State: a.pulse(), Target: a.control.Target(), Methods: methods, Waits: true}
 	if session := a.host.Session(); session != nil {
 		d.CWD = session.Manager().GetCWD()
 		state := session.State()
@@ -935,8 +936,15 @@ type page struct {
 	State  string         `json:"state"`
 }
 
+// replay reads the events after cursor, then the pulse: a page never says less than its events show.
 func (a *Attachment) replay(cursor string, limit int) (page, error) {
-	out := page{Events: []bridge.Event{}, Cursor: cursor, State: a.pulse()}
+	out, err := a.stretch(cursor, limit)
+	out.State = a.pulse()
+	return out, err
+}
+
+func (a *Attachment) stretch(cursor string, limit int) (page, error) {
+	out := page{Events: []bridge.Event{}, Cursor: cursor}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.stream == nil {

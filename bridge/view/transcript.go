@@ -50,16 +50,30 @@ type item struct {
 	live, failed, alarm                bool
 	verb, target, args, result, output string
 	blocks                             []Block
-	parsed                             string // the text and state blocks were parsed for
+	parsed                             *face // the text and state blocks were parsed for
+	drawn                              face  // what its rows showed when last sent
 }
 
-// transcript folds Orb's agent events, live or replayed from a snapshot, into items. Keys restart
-// with it, so a reload of the same messages keeps its rows.
+// face is what an item's rows show of it: an item whose face is unchanged needs no new rows.
+type face struct {
+	text, via, thinking, verb, target, result string
+	live, failed, alarm                       bool
+	images                                    int
+}
+
+func (it *item) face() face {
+	return face{it.text, it.via, it.thinking, it.verb, it.target, it.result, it.live, it.failed, it.alarm, len(it.images)}
+}
+
+// transcript folds Orb's agent events, live or replayed from a snapshot, into items. An item's
+// key is its message's place in the session and its own in the message, so loading earlier
+// messages, or the same ones again, keeps the keys of the rows already drawn.
 type transcript struct {
 	items               []*item
 	said, retry         *item
 	tools               map[string]*item
-	n                   int
+	msg, seq            int      // the message items are keyed under, and the next item's place in it
+	next                int      // the place of the next message
 	sent                []string // texts this side sent: a user message not among them came by Bridge
 	userOpen, replaying bool
 	index, last         int
@@ -85,8 +99,8 @@ func (t *transcript) add(it *item) *item {
 }
 
 func (t *transcript) keyed(it *item) *item {
-	it.key = fmt.Sprintf("i%d", t.n)
-	t.n++
+	it.key = fmt.Sprintf("%d.%d", t.msg, t.seq)
+	t.seq++
 	return it
 }
 
@@ -189,6 +203,9 @@ func (t *transcript) apply(raw json.RawMessage) bool {
 	}
 	switch e.Type {
 	case "message_start", "message_update", "message_end":
+		if e.Type == "message_start" {
+			t.begin()
+		}
 		var m wireMessage
 		if json.Unmarshal(e.Message, &m) != nil {
 			return false
@@ -258,11 +275,19 @@ func (t *transcript) retrying(text string, alarm bool) {
 	}
 }
 
-// load replays whole messages: a snapshot's, or a page of history.
-func (t *transcript) load(messages []json.RawMessage) {
-	t.replaying, t.last = true, len(messages)-1
+// begin starts the next message: what it adds is keyed under its place in the session.
+func (t *transcript) begin() {
+	t.msg, t.seq = t.next, 0
+	t.next++
+}
+
+// load replays whole messages, the first at place from in the session: a snapshot's, or a page
+// of history.
+func (t *transcript) load(messages []json.RawMessage, from int) {
+	t.replaying, t.last, t.next = true, len(messages)-1, max(from, 0)
 	for i, raw := range messages {
 		var m wireMessage
+		t.begin()
 		if json.Unmarshal(raw, &m) == nil {
 			t.index = i
 			t.message(m, true)
@@ -389,45 +414,48 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 }
 
 // rows is the transcript as an app draws it: consecutive thoughts and tool calls make one run,
-// prose a row per markdown block, notes and what someone said a row each.
-func (t *transcript) rows() []Row {
-	var rows []Row
+// prose a row per markdown block, notes and what someone said a row each. last holds, per row,
+// the index of the last item it shows: a row changes only when an item up to there does.
+func (t *transcript) rows() (rows []Row, last []int) {
+	rows, last = make([]Row, 0, len(t.items)+8), make([]int, 0, len(t.items)+8)
 	var run []*item
+	end := 0
 	flush := func() {
 		if len(run) > 0 {
-			rows = append(rows, runRow(run))
-			run = nil
+			rows, last, run = append(rows, runRow(run)), append(last, end), nil
 		}
 	}
-	for _, it := range t.items {
+	for i, it := range t.items {
 		switch it.kind {
 		case "y":
 			flush()
-			rows = append(rows, Row{Key: it.key, Kind: "you", Text: it.text, Via: it.via, Images: it.images})
+			rows, last = append(rows, Row{Key: it.key, Kind: "you", Text: it.text, Via: it.via, Images: it.images}), append(last, i)
 		case "s":
 			if strings.TrimSpace(it.thinking) != "" {
-				run = append(run, it)
+				run, end = append(run, it), i
 			}
 			if strings.TrimSpace(it.text) != "" {
 				flush()
-				for i, b := range it.markdown() {
-					rows = append(rows, Row{Key: fmt.Sprintf("%s.%d", it.key, i), Kind: "md", Block: &b})
+				for j, b := range it.markdown() {
+					rows, last = append(rows, Row{Key: fmt.Sprintf("%s.%d", it.key, j), Kind: "md", Block: &b}), append(last, i)
 				}
 			}
 		case "t":
-			run = append(run, it)
+			run, end = append(run, it), i
 		case "n":
 			flush()
-			rows = append(rows, Row{Key: it.key, Kind: "note", Text: it.text, Alarm: it.alarm})
+			rows, last = append(rows, Row{Key: it.key, Kind: "note", Text: it.text, Alarm: it.alarm}), append(last, i)
 		}
 	}
 	flush()
-	return rows
+	return rows, last
 }
 
+// markdown is the item's text as blocks, parsed again only when the text or its state changed
+// (comparing a string kept by reference costs nothing).
 func (it *item) markdown() []Block {
-	if state := fmt.Sprint(it.live, it.text); it.parsed != state {
-		it.blocks, it.parsed = Blocks(it.text, !it.live), state
+	if it.parsed == nil || it.parsed.text != it.text || it.parsed.live != it.live {
+		it.blocks, it.parsed = Blocks(it.text, !it.live), &face{text: it.text, live: it.live}
 	}
 	return it.blocks
 }

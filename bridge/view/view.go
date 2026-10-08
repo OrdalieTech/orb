@@ -195,7 +195,7 @@ func (a *App) now(in intent) (any, error) {
 		// A fresh app has nothing drawn: everything is sent again.
 		a.budget, a.sent, a.home = cmp.Or(in.Budget, a.budget), nil, nil
 		for _, t := range a.tabs {
-			t.rows = nil
+			t.rows, t.drawn = nil, nil
 		}
 		return nil, nil
 	case "visible":
