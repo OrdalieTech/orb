@@ -300,3 +300,19 @@ func TestARestoredTabFollowsTheOrbThatHasItsThread(t *testing.T) {
 		return len(rows) == 2 && rows[1].Block != nil && rows[1].Block.Spans[0].Text == "hello again" && again.tab(opened.Tab).Status == ""
 	})
 }
+
+// Only web and mail links stay links: what a model writes cannot point an app at a file, a script
+// or another app.
+func TestOnlyWebAndMailLinksStayLinks(t *testing.T) {
+	spans := Blocks("[site](https://orb.dev/a?b=1) [file](file:///etc/passwd) [js](javascript:alert(1)) [app](x-apple.systempreferences:x) [rel](notes.md) <me@orb.dev> https://ordalie.tech", true)[0].Spans
+	links := map[string]string{}
+	for _, s := range spans {
+		links[strings.TrimSpace(s.Text)] = s.Href
+	}
+	want := map[string]string{"site": "https://orb.dev/a?b=1", "file": "", "js": "", "app": "", "rel": "", "me@orb.dev": "mailto:me@orb.dev", "https://ordalie.tech": "https://ordalie.tech"}
+	for text, href := range want {
+		if links[text] != href {
+			t.Errorf("%q links to %q, want %q (spans %+v)", text, links[text], href, spans)
+		}
+	}
+}

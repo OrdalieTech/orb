@@ -128,6 +128,8 @@ struct Failure: LocalizedError { let errorDescription: String? }
 
     /// Asks the view something and waits for its reply.
     func ask<T: Decodable>(_ name: String, _ args: [String: Any] = [:], as: T.Type = Ignored.self) async throws -> T {
+        // No view to answer (it failed to start, or restarts): say so instead of waiting for ever.
+        guard input != nil else { throw Failure(errorDescription: "Orb is not running yet") }
         asked += 1
         let id = String(asked)
         let line = await withCheckedContinuation { r in

@@ -53,6 +53,8 @@ shown by `/changelog`.
 - From a conversation, providers and accounts are those of the machine it runs on: the Mac's
   model picker switches that machine's account for the model's provider, and opens Settings on
   its providers. A machine that does not allow it, or runs an Orb too old for it, says so.
+- A link in an answer, or a sign-in page a machine sends, opens only when it leads to the web (or
+  mail): what a model writes cannot point an app at a file, a script or another app.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

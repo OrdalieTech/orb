@@ -1,6 +1,8 @@
 package view
 
 import (
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -111,6 +113,16 @@ func block(n ast.Node, src []byte, depth int, done bool) []Block {
 	return nil
 }
 
+// web is [href] when it leads to the web (or one of [also]'s schemes), "" otherwise: what a model
+// writes, or a peer sends, never points an app at a file, a script or another app.
+func web(href string, also ...string) string {
+	u, err := url.Parse(strings.TrimSpace(href))
+	if err != nil || u.Host == "" && u.Opaque == "" || !slices.Contains(append([]string{"http", "https"}, also...), strings.ToLower(u.Scheme)) {
+		return ""
+	}
+	return u.String()
+}
+
 // raw is a block's own lines, as written.
 func raw(n ast.Node, src []byte) string {
 	var b strings.Builder
@@ -169,11 +181,14 @@ func spans(n ast.Node, src []byte) []Span {
 				walk(c, struck)
 			case *ast.Link:
 				link := style
-				link.Href = string(c.Destination)
+				link.Href = web(string(c.Destination), "mailto")
 				walk(c, link)
 			case *ast.AutoLink:
-				link := style
-				link.Href = string(c.URL(src))
+				link, href := style, string(c.URL(src))
+				if c.AutoLinkType == ast.AutoLinkEmail && !strings.HasPrefix(href, "mailto:") {
+					href = "mailto:" + href
+				}
+				link.Href = web(href, "mailto")
 				add(link, string(c.Label(src)))
 			case *ast.RawHTML:
 				for i := 0; i < c.Segments.Len(); i++ {

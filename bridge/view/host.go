@@ -250,6 +250,9 @@ func (a *App) slow(in intent) func() (any, error) {
 			return nil, err
 		})
 	case "permissions":
+		if in.Name != "auto" && in.Name != "enforce" {
+			break
+		}
 		return call(func() (any, error) {
 			_, err := a.o.Run(ctx, "plugins", "set", "permissions", "mode", `"`+in.Name+`"`)
 			return nil, err
@@ -457,9 +460,9 @@ func (a *App) signIn(machine, provider, auth string) {
 			update(func(l *Login) {
 				switch e.Type {
 				case "auth_url":
-					l.URL, l.Instructions, l.State = e.URL, e.Instructions, "browser"
+					l.URL, l.Instructions, l.State = web(e.URL), e.Instructions, "browser"
 				case "device_code":
-					l.Code, l.URL, l.State = e.Code, e.URI, "code"
+					l.Code, l.URL, l.State = e.Code, web(e.URI), "code"
 				case "progress", "info":
 					l.Detail = e.Message
 				case "prompt":
