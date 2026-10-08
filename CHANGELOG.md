@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A team agent's file turns bundled plugins on or off with `plugins: {websearch: true}`, checked
+  against the plugins Orb ships; memory stays on unless set false, and `memory:` still works.
 - A chat agent can send a file from its working directory to the person it is talking with: the
   `send_file` tool delivers it through the conversation's platform (Telegram as a document, up to
   50 MB) and tells the agent why when the platform cannot. On Buzz the agent already attaches

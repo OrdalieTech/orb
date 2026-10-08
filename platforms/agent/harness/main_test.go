@@ -44,6 +44,7 @@ persona: |
   You are the sales team's agent.
 skills: [skills/revops]
 browser: lightpanda
+plugins: {websearch: true}
 mcp:
   notion: {command: notion-mcp, args: [--stdio]}
 platforms:
@@ -65,7 +66,7 @@ platforms:
 		t.Fatal(err)
 	}
 	if settings["defaultProvider"] != "openai-codex" || settings["defaultModel"] != "gpt-5.4" || settings["defaultThinkingLevel"] != "medium" ||
-		settings["plugins"].(map[string]any)["memory"] != true {
+		settings["plugins"].(map[string]any)["memory"] != true || settings["plugins"].(map[string]any)["websearch"] != true {
 		t.Fatalf("settings = %v", settings)
 	}
 	skills := settings["skills"].([]any)
@@ -108,6 +109,7 @@ func TestAgentFileMistakesAreRefused(t *testing.T) {
 		"takes no settings besides allow":  "model: a/b\nplatforms: {telegram: {token: x}}\n",
 		"this image has no":                "model: a/b\nbrowser: chromium\nplatforms: {telegram: {}}\n",
 		"mcp.broken":                       "model: a/b\nmcp: {broken: {}}\nplatforms: {telegram: {}}\n",
+		`unknown plugin "websearh"`:        "model: a/b\nplugins: {websearh: true}\nplatforms: {telegram: {}}\n",
 	} {
 		if _, err := load(agentFileAt(t, content), image); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: error = %v, want %q", content, err, want)

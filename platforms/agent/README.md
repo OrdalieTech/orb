@@ -48,7 +48,8 @@ mcp:                             # MCP servers, as in mcp.json
   notion: {command: notion-mcp, args: [--stdio]}
 providers: {}                    # custom model providers, as in models.json
 browser: lightpanda              # or chromium; needs the browser image
-memory: true                     # the memory plugin, on by default
+plugins: {websearch: true}       # bundled plugins to turn on or off (orb plugins list --all);
+                                 # memory is on unless set false
 platforms:
   buzz:
     respond_to: allowlist        # who it answers: owner-only, allowlist or anyone

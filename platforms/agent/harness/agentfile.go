@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/OrdalieTech/orb/agent/assembly"
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/chat/platforms"
 	"github.com/OrdalieTech/orb/plugins/mcp"
@@ -28,7 +29,8 @@ type agentFile struct {
 	Model     string                    `yaml:"model"`
 	Thinking  string                    `yaml:"thinking"`
 	Persona   string                    `yaml:"persona"`
-	Memory    *bool                     `yaml:"memory"`
+	Plugins   map[string]bool           `yaml:"plugins"`
+	Memory    *bool                     `yaml:"memory"` // plugins.memory, as files spelled it before plugins
 	Skills    []string                  `yaml:"skills"`
 	MCP       map[string]map[string]any `yaml:"mcp"`
 	Providers map[string]any            `yaml:"providers"`
@@ -131,14 +133,24 @@ func parse(path string) (agentFile, error) {
 	case len(file.Platforms) == 0:
 		return agentFile{}, errors.New("platforms: name at least one")
 	}
+	for name := range file.Plugins {
+		if !slices.Contains(assembly.Names(), name) {
+			return agentFile{}, fmt.Errorf("plugins: unknown plugin %q (known: %s)", name, strings.Join(assembly.Names(), ", "))
+		}
+	}
 	return file, nil
 }
 
-// settingsFile is Orb's settings.json: the model, the memory plugin and the
-// skills, agent-browser's included when the agent has a browser.
+// settingsFile is Orb's settings.json: the model, the plugins (memory on unless
+// turned off) and the skills, agent-browser's included when the agent has a
+// browser.
 func settingsFile(file agentFile, image layout, browser bool) []byte {
 	provider, model, _ := strings.Cut(file.Model, "/")
-	settings := map[string]any{"defaultProvider": provider, "defaultModel": model, "plugins": map[string]any{"memory": file.Memory == nil || *file.Memory}}
+	plugins := map[string]any{"memory": file.Memory == nil || *file.Memory}
+	for name, on := range file.Plugins {
+		plugins[name] = on
+	}
+	settings := map[string]any{"defaultProvider": provider, "defaultModel": model, "plugins": plugins}
 	if file.Thinking != "" {
 		settings["defaultThinkingLevel"] = file.Thinking
 	}
