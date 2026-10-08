@@ -5,6 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-10-08
+
+Orb for macOS, and the Android app on the same view: machines by name and in a colour of their
+own, unread answers, tabs reordered by dragging, and followed conversations that stay exact.
+
 - `orb app` serves the view every Orb app draws, as JSON lines: the conversations open on Bridge
   (this machine's and its peers') folded into rows ready to render (markdown parsed once, tool
   calls grouped, images by reference), Home's machines, folders and threads, and the intents an
