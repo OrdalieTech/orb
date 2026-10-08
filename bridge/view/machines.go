@@ -502,6 +502,7 @@ func (a *App) open(key string) (any, error) {
 	}
 	if t == nil && m != nil && running != "" {
 		t = a.newTab(peer, running, a.name(m), session)
+		a.balance()
 	}
 	a.mu.Unlock()
 	if t != nil {

@@ -82,16 +82,16 @@ type App struct {
 	launching  string
 	login      *signIn
 	latest     string
-	sent, home []byte // the last state and home the app received
-	saved      []byte // the tabs last kept
-	marks      map[*tab][2]bool
-	threadsAt  time.Time // when every machine's threads were read
+	sent, home []byte        // the last state and home the app received
+	saved      []byte        // the tabs last kept
+	asked      map[*tab]bool // whether each tab had a question pending at the last flush
+	threadsAt  time.Time     // when every machine's threads were read
 	refreshNow chan struct{}
 }
 
 // New starts the view: it brings back the saved tabs and keeps machines and threads current.
 func New(ctx context.Context, o Options) *App {
-	a := &App{o: o, ctx: ctx, budget: 4, marks: map[*tab][2]bool{}, refreshNow: make(chan struct{}, 1)}
+	a := &App{o: o, ctx: ctx, budget: 4, asked: map[*tab]bool{}, refreshNow: make(chan struct{}, 1)}
 	var saved []struct{ ID, Peer, Session, Title, Where string }
 	_ = json.Unmarshal(o.Tabs, &saved)
 	a.mu.Lock()
@@ -200,6 +200,11 @@ func (a *App) now(in intent) (any, error) {
 		return nil, nil
 	case "visible":
 		a.visible = in.On
+		for _, t := range a.tabs {
+			if a.visible && t.watched {
+				t.Unread = 0
+			}
+		}
 		a.balance()
 		a.wakeMachines()
 		return nil, nil
@@ -209,7 +214,7 @@ func (a *App) now(in intent) (any, error) {
 			if shown := slices.Contains(in.Tabs, t.ID); shown != t.watched {
 				t.watched = shown
 				if shown {
-					t.seen = time.Now()
+					t.seen, t.Unread = time.Now(), 0
 					t.wakeUp()
 				}
 			}
@@ -219,7 +224,7 @@ func (a *App) now(in intent) (any, error) {
 	case "close":
 		if t != nil {
 			a.tabs = slices.DeleteFunc(a.tabs, func(x *tab) bool { return x == t })
-			delete(a.marks, t)
+			delete(a.asked, t)
 			close(t.done)
 		}
 		return nil, nil
@@ -340,6 +345,7 @@ func (a *App) balance() {
 // flush sends the app what changed: its state, the rows of the conversations it follows, and
 // alerts for what happened out of its sight. Called with the lock held.
 func (a *App) flush() {
+	a.alert() // first: an answer it counts unread goes out with this state
 	machines, entries := a.machinesState()
 	if b := bridge.JSON(map[string]any{"t": "home", "machines": machines, "entries": entries}); !bytes.Equal(b, a.home) {
 		a.home = b
@@ -357,7 +363,6 @@ func (a *App) flush() {
 			t.render()
 		}
 	}
-	a.alert()
 	a.save()
 }
 
@@ -411,16 +416,16 @@ func lastYou(t *transcript) *item {
 	return nil
 }
 
-// alert tells the app once when a conversation it does not show finishes a turn or asks something.
+// alert tells the app once when a conversation it does not show finishes a turn or asks something;
+// an answer finished out of sight counts as unread until the tab shows.
 func (a *App) alert() {
 	for _, t := range a.tabs {
-		now := [2]bool{t.Busy, t.Ask != nil}
-		was, known := a.marks[t]
-		a.marks[t] = now
-		if !known || was == now {
-			continue
-		}
-		if was[0] && !now[0] {
+		asks := t.Ask != nil
+		was, known := a.asked[t]
+		a.asked[t] = asks
+		ended := t.ended
+		t.ended = false
+		if ended {
 			a.threadsAt = time.Time{} // the turn changed a thread: Home reads them again
 		}
 		if a.visible && t.watched {
@@ -428,10 +433,11 @@ func (a *App) alert() {
 		}
 		text := ""
 		switch {
-		case !was[1] && now[1]:
+		case known && asks && !was:
 			text = "Needs you · " + firstLine(t.Ask.Title, 160)
-		case was[0] && !now[0]:
+		case ended:
 			text = cmp.Or(firstLine(strings.TrimSpace(t.tr.lastText()), 160), "Finished")
+			t.Unread++
 		default:
 			continue
 		}

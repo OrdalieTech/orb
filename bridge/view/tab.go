@@ -37,6 +37,7 @@ type Tab struct {
 	Cost      float64   `json:"cost,omitempty"`
 	Usage     *Usage    `json:"usage,omitempty"`
 	Ask       *Ask      `json:"ask,omitempty"`
+	Unread    int       `json:"unread,omitempty"` // answers that finished out of sight since it was last shown
 	Commands  []Command `json:"commands,omitempty"`
 	Models    []string  `json:"models,omitempty"`
 }
@@ -128,6 +129,7 @@ type tab struct {
 	cursor, pulse          string
 	from                   int // the first message shown, once known: reloads keep the window, so rows keep their keys
 	stale, gone, reopening bool
+	ended                  bool // a turn ended since the last flush, as the stream said
 	watched, follows       bool
 	seen                   time.Time
 	asked                  string
@@ -451,6 +453,7 @@ func (t *tab) events(waits bool) {
 		if json.Unmarshal(e.Data, &info) == nil && info.Type == "session_info_changed" && info.Name != "" {
 			t.Title = info.Name
 		}
+		t.ended = t.ended || info.Type == "agent_end"
 		t.tr.apply(e.Data)
 	}
 	t.cursor = cmp.Or(r.Cursor, t.cursor)

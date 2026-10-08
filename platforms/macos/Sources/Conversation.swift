@@ -16,21 +16,25 @@ struct Conversation: View {
         VSplitView {
             VStack(spacing: 0) {
                 if !t.remote && orb.state.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
-                transcript
-                if !t.status.isEmpty || !t.online {
-                    HStack(spacing: 8) {
-                        if !t.online { Dot(color: Ink.meta, size: 6, pulse: !t.status.hasPrefix("ended")) }
-                        Text(t.status.isEmpty ? "reconnecting" : t.status).font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(2)
-                    }
-                    .frame(maxWidth: 820, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 4)
-                }
-                if let ask = t.ask {
-                    Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
-                } else {
-                    PromptBox(tab: t, place: Text(t.remote ? t.where : "this Mac").foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
-                        follow = true
-                        position.scrollTo(edge: .bottom)
-                        Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
+                // The conversation scrolls on under the box, as in Messages.
+                transcript.safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 6) {
+                        if !t.status.isEmpty || !t.online {
+                            HStack(spacing: 8) {
+                                if !t.online { Dot(color: Ink.meta, size: 6, pulse: !t.status.hasPrefix("ended")) }
+                                Text(t.status.isEmpty ? "reconnecting" : t.status).font(.mono(Size.small)).foregroundStyle(Ink.mute).lineLimit(2)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 6).surface(10)
+                        }
+                        if let ask = t.ask {
+                            Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
+                        } else {
+                            PromptBox(tab: t, place: Text(t.remote ? t.where : "this Mac").foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
+                                follow = true
+                                position.scrollTo(edge: .bottom)
+                                Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
+                            }
+                        }
                     }
                 }
             }

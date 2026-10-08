@@ -90,6 +90,23 @@ struct Dot: View {
     }
 }
 
+extension View {
+    /// The surface a box floats on over the conversation: Liquid Glass where macOS has it (built
+    /// with its SDK), the raised ink with a hairline before; [accent] edges it either way.
+    @ViewBuilder func surface(_ radius: CGFloat, accent: Color? = nil) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius)
+        #if compiler(>=6.2)
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: shape).overlay(shape.stroke(accent ?? .clear))
+        } else {
+            background(Ink.raised, in: shape).overlay(shape.stroke(accent ?? Ink.rule.opacity(0.7)))
+        }
+        #else
+        background(Ink.raised, in: shape).overlay(shape.stroke(accent ?? Ink.rule.opacity(0.7)))
+        #endif
+    }
+}
+
 /// A hairline separates regions, never words.
 struct Rule: View {
     var body: some View { Rectangle().fill(Ink.rule.opacity(0.6)).frame(height: 1) }

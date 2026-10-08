@@ -225,7 +225,7 @@ func TestAModelIsKnownByItsProvider(t *testing.T) {
 	describe := `{"model":"GPT-6 Luna","provider":"openai-codex","target":{"session_id":"s"},"models":[
 		{"id":"gpt-6-luna","provider":"openai-codex","name":"GPT-6 Luna","thinking":["low","high"]},
 		{"id":"gpt-6-luna","provider":"opencode-go","name":"GPT-6 Luna"}]}`
-	a := &App{ctx: t.Context(), marks: map[*tab][2]bool{}, o: Options{Emit: func(any) {}, Call: func(_ context.Context, _ string, _, result any) error {
+	a := &App{ctx: t.Context(), asked: map[*tab]bool{}, o: Options{Emit: func(any) {}, Call: func(_ context.Context, _ string, _, result any) error {
 		return json.Unmarshal([]byte(describe), result)
 	}}}
 	tb := &tab{a: a, instance: "i"}
@@ -251,4 +251,19 @@ func TestEarlierMessagesKeepTheRowsKeys(t *testing.T) {
 			t.Fatalf("row %d: %q became %q", i, r.Key, g.Key)
 		}
 	}
+}
+
+// An answer that finishes out of sight alerts once and counts as unread until its tab shows.
+func TestAnAnswerOutOfSightIsUnreadUntilShown(t *testing.T) {
+	app, c, instance := orb(t, 0, faux.AssistantMessage("done"))
+	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["1"], &opened)
+	c.until(t, "followed off screen", func() bool { return c.tab(opened.Tab).Loaded })
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"go"}`))
+	c.until(t, "an unread answer", func() bool { return c.tab(opened.Tab).Unread == 1 && len(c.alerts) == 1 })
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	c.until(t, "read once shown", func() bool { return c.tab(opened.Tab).Unread == 0 })
 }

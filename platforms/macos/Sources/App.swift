@@ -81,7 +81,7 @@ struct Outcome: Decodable, Empty {
         Settings { Preferences().environment(orb).environment(nav) }
         MenuBarExtra { Status().environment(orb).environment(nav) } label: {
             let tabs = orb.state.tabs
-            Image(systemName: tabs.contains { $0.ask != nil } ? "circle.inset.filled" : tabs.contains(where: \.busy) ? "circle.dotted" : "circle")
+            Image(systemName: tabs.contains { $0.ask != nil || $0.unread > 0 } ? "circle.inset.filled" : tabs.contains(where: \.busy) ? "circle.dotted" : "circle")
         }
     }
 
@@ -126,8 +126,8 @@ struct Main: View {
             }
             orb.show(nav.tab.map { [$0] } ?? [])
         }
-        // The Dock says how many conversations wait for an answer.
-        .onChange(of: orb.state.tabs.count { $0.ask != nil }, initial: true) { _, asks in NSApp.dockTile.badgeLabel = asks > 0 ? "\(asks)" : nil }
+        // The Dock counts what waits for you: questions, and answers not read yet.
+        .onChange(of: orb.state.tabs.reduce(0) { $0 + $1.unread + ($1.ask == nil ? 0 : 1) }, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in orb.visible(true) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in orb.visible(false) }
         .alert("Pair a device?", isPresented: .constant(orb.state.claim.map { $0.id != nav.answered } ?? false), presenting: orb.state.claim) { claim in
@@ -165,7 +165,7 @@ private struct Status: View {
         Text(orb.state.summary)
         Divider()
         ForEach(orb.state.tabs) { t in
-            Button(dotted(t.ask != nil ? "needs you" : t.busy ? "working" : "", t.title.isEmpty ? "new session" : t.title, t.remote ? t.where : "")) { show(t.id) }
+            Button(dotted(t.ask != nil ? "needs you" : t.unread > 0 ? "\(t.unread) new" : t.busy ? "working" : "", t.title.isEmpty ? "new session" : t.title, t.remote ? t.where : "")) { show(t.id) }
         }
         Divider()
         Button("Open Orb") { show(nav.tab) }

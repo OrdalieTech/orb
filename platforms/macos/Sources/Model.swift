@@ -76,6 +76,7 @@ struct Tab: Decodable, Equatable, Identifiable {
     @D var cost: Double
     var usage: Usage?
     var ask: Ask?
+    @D var unread: Int
     @D var commands: [Command]
     @D var models: [String]
 }

@@ -16,7 +16,8 @@ shown by `/changelog`.
   searched as you type (⌘⇧M) with the reasoning levels under it, context and plan quota,
   approvals and questions inline, an inspector (⌥⌘I), a terminal where each conversation runs (⌘J,
   SwiftTerm: a login shell here, `orb bridge shell` on a peer), the Dock and menu bar showing
-  what works or waits for you, notifications for what finishes out of sight, and Settings for
+  what works or waits for you (unread answers included), notifications for what finishes out of
+  sight, a prompt box of Liquid Glass the conversation scrolls under on macOS 26, and Settings for
   providers and accounts (with their quotas as gauges), plugins and pairing (with a QR code a
   phone scans).
 - A conversation on a model two providers offer under one name no longer moves to the other
@@ -31,6 +32,9 @@ shown by `/changelog`.
   answers `bridge.ping` with its machine's name (a Mac's computer name, the phone's device name)
   to the peers it granted something. Each peer also gets a colour of its own, the same on
   Android and macOS, so a conversation's machine reads at a glance.
+- The apps count the answers that finished out of sight in each conversation, a badge until it
+  shows, and alert once per finished turn: the view reads the turn's end from the stream, so a
+  quick turn between two polls no longer slips past.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

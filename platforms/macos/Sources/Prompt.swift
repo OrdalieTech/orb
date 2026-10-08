@@ -128,8 +128,7 @@ struct PromptBox<Place: View>: View {
             }
             .padding(.horizontal, 14).padding(.bottom, 10)
         }
-        .background(Ink.raised).clipShape(.rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Ink.rule.opacity(0.7)))
+        .surface(14)
         .frame(maxWidth: 820).padding(.horizontal, 16).padding(.bottom, 16)
         // Files dropped from the Finder are cited, as `@` would: this Mac's own, for a conversation here.
         .dropDestination(for: URL.self) { urls, _ in
@@ -195,50 +194,61 @@ private struct ModelPicker: View {
         let shown = t.catalog.map { ($0.provider, $0.models.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }) }.filter { !$0.1.isEmpty }
         let flat = shown.flatMap(\.1)
         VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(Ink.meta)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search \(t.models.count) models", text: $query).textFieldStyle(.plain).focused($searching)
                     .onSubmit { pick(selected.flatMap { flat.contains($0) ? $0 : nil } ?? flat.first) }
                     .onKeyPress(.downArrow) { selected = step(flat, 1); return .handled }
                     .onKeyPress(.upArrow) { selected = step(flat, -1); return .handled }
             }
-            .font(.mono(Size.body + 1)).padding(12)
+            .font(.mono(Size.body + 1)).padding(.horizontal, 14).padding(.vertical, 11)
             Divider()
-            if t.models.isEmpty {
-                ContentUnavailableView {
-                    Label("No model yet", systemImage: "key")
-                } description: { Text("Sign in to a provider, or add an API key.") } actions: {
-                    Button("Providers…") { done(); nav.pane = "providers"; openSettings() }
-                }
-            } else {
-                ScrollViewReader { scroll in
-                    List(selection: $selected) {
-                        ForEach(shown, id: \.0) { provider, models in
-                            Section(provider) {
+            Group {
+                if t.models.isEmpty {
+                    ContentUnavailableView {
+                        Label("No model yet", systemImage: "key")
+                    } description: { Text("Sign in to a provider, or add an API key.") } actions: {
+                        Button("Providers…") { done(); nav.pane = "providers"; openSettings() }
+                    }
+                } else if flat.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    ScrollViewReader { scroll in
+                        List(selection: $selected) {
+                            ForEach(shown, id: \.0) { provider, models in
+                                // A quiet heading, not a sticky one: it scrolls with its models.
+                                Caps(provider).padding(.top, 8).selectionDisabled().listRowSeparator(.hidden)
                                 ForEach(models, id: \.self) { m in
                                     HStack {
-                                        Text(m.dropFirst(provider.count + 1))
+                                        Text(m.dropFirst(provider.count + 1)).font(.mono(Size.body))
                                         Spacer()
-                                        if m == t.model { Image(systemName: "checkmark").foregroundStyle(Ink.rupture) }
+                                        if m == t.model { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)) }
                                     }
-                                    .tag(m)
+                                    .tag(m).listRowSeparator(.hidden)
                                 }
                             }
                         }
+                        .listStyle(.plain).scrollContentBackground(.hidden)
+                        .contextMenu(forSelectionType: String.self, menu: { _ in }, primaryAction: { pick($0.first) })
+                        .onChange(of: selected) { if let selected { scroll.scrollTo(selected) } }
                     }
-                    .contextMenu(forSelectionType: String.self, menu: { _ in }, primaryAction: { pick($0.first) })
-                    .onChange(of: selected) { if let selected { scroll.scrollTo(selected) } }
                 }
             }
+            .frame(maxHeight: .infinity)
             if !t.levels.isEmpty {
                 Divider()
-                Picker("Reasoning", selection: Binding { t.thinking } set: { orb.send("thinking", ["tab": t.id, "name": $0]) }) {
-                    ForEach(t.levels, id: \.self) { Text($0).tag($0) }
+                HStack {
+                    Label("Reasoning", systemImage: "brain").foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("Reasoning", selection: Binding { t.thinking } set: { orb.send("thinking", ["tab": t.id, "name": $0]) }) {
+                        ForEach(t.levels, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden().pickerStyle(.menu).fixedSize()
                 }
-                .pickerStyle(.segmented).controlSize(.small).padding(10)
+                .font(.mono(Size.small + 1)).padding(.horizontal, 14).padding(.vertical, 8)
             }
         }
-        .frame(width: 400, height: 460)
+        .frame(width: 360, height: 420)
         .onAppear {
             searching = true
             selected = t.model
@@ -334,7 +344,7 @@ struct Interrupt: View {
             }
         }
         .padding(16)
-        .background(Ink.raised, in: .rect(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Ink.rupture.opacity(0.7)))
+        .surface(14, accent: Ink.rupture.opacity(0.7))
         .frame(maxWidth: 820).padding(.horizontal, 16).padding(.bottom, 16)
     }
 }

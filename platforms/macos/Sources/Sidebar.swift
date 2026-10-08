@@ -59,6 +59,7 @@ struct Sidebar: View {
 
     private func tabRow(_ t: Tab) -> some View {
         Line(title: t.title.isEmpty ? "new session" : t.title, sub: dotted(t.where, base(t.cwd)), live: t.busy, asks: t.ask != nil, hue: t.remote ? orb.hue(t.peer) : nil)
+            .badge(t.unread)
             .tag(t.id)
             .contextMenu {
                 Button("Rename…") { renaming = (["tab": t.id], t.title) }
