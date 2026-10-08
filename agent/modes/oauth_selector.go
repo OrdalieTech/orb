@@ -781,7 +781,7 @@ func (mode *InteractiveMode) showProviders(host InteractiveProviderHost) {
 		palette.list.ListSelectRow(slices.IndexFunc(rows(), func(row tui.GridRow) bool { return row.Value == strconv.Itoa(target) }))
 	}
 	frame := menuFrame("Providers", palette)
-	frame.Footer = "enter switch · tab manage"
+	frame.Footer = "quotas show what is left · enter switch · tab manage"
 	handle := mode.ui.ShowOverlay(frame, configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() { handle.Hide(); mode.ui.RequestRender() }()

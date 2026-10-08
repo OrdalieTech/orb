@@ -25,6 +25,7 @@ type CLIDiagnostic struct {
 
 type CLIArgs struct {
 	usageCache         *usage.Cache
+	accounts           *hostAccounts
 	native             *native.State
 	BridgeProfile      string
 	InstanceAlias      string

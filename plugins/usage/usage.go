@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 )
 
 var ErrUnavailable = errors.New("usage unavailable")
@@ -25,6 +26,14 @@ const Event = "orb.usage"
 type Reading struct {
 	Provider string
 	Snapshot Snapshot
+}
+
+// Accounts is the host's account book: its connected accounts, their plan limits, and the switch
+// between them. A plugin offers another account when one runs out only where the host supplies it.
+type Accounts interface {
+	List(context.Context) ([]accounts.Account, error)
+	Usage(ctx context.Context, provider, id string) (Snapshot, error)
+	Use(ctx context.Context, provider, id string) error
 }
 
 // Window and Snapshot are also Bridge wire: an instance describes its provider's limits with them.

@@ -585,7 +585,11 @@ default-off `provider-usage` plugin (Show quotas in Providers; hidden from the g
 menu) shows the session's provider and its tightest window in the footer, polls readable
 providers once a minute and after each turn, cancels on account/model changes and shutdown, and
 gates the quotas in the Providers view, which shows cached readings at once and refreshes at most
-four accounts at a time. Neither accounts nor usage imports agent/TUI code, and no quota network
+four accounts at a time. When a turn ends on a limit (after the session's own retries), the
+plugin offers the provider's other accounts that are not spent, most quota first, through the
+host-supplied `usage.Accounts` port (assembly `Accounts`; only the interactive host supplies it),
+switches to the one chosen and continues with a visible `provider-usage` message. Neither accounts
+nor usage imports agent/TUI code, and no quota network
 request blocks startup or rendering. The compact footer keeps the model and reasoning level on the
 left, with the current session working directory, the provider quota, and a rounded context
 percentage on the right. Healthy Bridge adds no redundant

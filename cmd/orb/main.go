@@ -250,6 +250,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	args.native = stateFromContext(ctx)
 	args.bridgeLink = &cliBridgeLink{}
 	args.usageCache = &usage.Cache{}
+	args.accounts = &hostAccounts{}
 	offlineValue, networkDisabled := os.LookupEnv("PI_OFFLINE")
 	offlineValue = strings.ToLower(offlineValue)
 	offlineMode := args.Offline || offlineValue == "1" || offlineValue == "true" || offlineValue == "yes"

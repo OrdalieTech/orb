@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -146,6 +147,33 @@ func (b accountBook) usage(ctx context.Context, provider, id string) (usage.Snap
 		return usage.Snapshot{}, usage.ErrUnavailable
 	}
 	return client.Fetch(ctx, provider, result.Auth)
+}
+
+// hostAccounts gives plugins the interactive host's accounts once it exists; elsewhere (print,
+// RPC, Bridge-launched Orbs) there is no one to ask which account to switch to.
+type hostAccounts struct {
+	host atomic.Pointer[interactiveSessionHost]
+}
+
+func (h *hostAccounts) List(ctx context.Context) ([]accounts.Account, error) {
+	if host := h.host.Load(); host != nil {
+		return host.ProviderAccounts(ctx)
+	}
+	return nil, usage.ErrUnavailable
+}
+
+func (h *hostAccounts) Usage(ctx context.Context, provider, id string) (usage.Snapshot, error) {
+	if host := h.host.Load(); host != nil {
+		return host.AccountUsage(ctx, provider, id)
+	}
+	return usage.Snapshot{}, usage.ErrUnavailable
+}
+
+func (h *hostAccounts) Use(ctx context.Context, provider, id string) error {
+	if host := h.host.Load(); host != nil {
+		return host.ChangeAccount(ctx, provider, id, "select", "")
+	}
+	return usage.ErrUnavailable
 }
 
 // runAccounts is the Providers view for apps that draw their own screens.

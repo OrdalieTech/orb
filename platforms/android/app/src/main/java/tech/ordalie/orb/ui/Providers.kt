@@ -57,7 +57,7 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
     Field(query, "Anthropic, OpenAI, Groq…", Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth()) { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         if (accounts.isNotEmpty()) {
-            item(key = "s:accounts") { T("accounts", Modifier.padding(top = 22.dp, bottom = 4.dp).animateItem(), label = true, color = p.meta) }
+            item(key = "s:accounts") { T("accounts · quota left", Modifier.padding(top = 22.dp, bottom = 4.dp).animateItem(), label = true, color = p.meta) }
             if (note.isNotEmpty()) item(key = "note") { T(note, Modifier.padding(vertical = 6.dp), size = 13.sp, color = Ink.Rupture) }
             items(accounts, key = { "a:${it.provider}/${it.id}" }) { a ->
                 AccountRow(a, switching == a, Modifier.animateItem()) {

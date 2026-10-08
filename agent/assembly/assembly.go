@@ -43,6 +43,7 @@ type Row struct {
 // environment.
 type Options struct {
 	UsageCache *usage.Cache
+	Accounts   usage.Accounts
 	Memory     memory.Store
 	// BridgeManagement exposes the host-supplied settings page before service activation.
 	BridgeManagement bool
@@ -81,7 +82,7 @@ func Rows(options Options) []Row {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions, CodexSessions: options.CodexSessions, Bash: options.Bash})
+	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Accounts: options.Accounts, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions, CodexSessions: options.CodexSessions, Bash: options.Bash})
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: Description(name),

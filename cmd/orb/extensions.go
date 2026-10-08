@@ -99,6 +99,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// skip them rather than eagerly spawn and connect every configured server.
 	rows := assembly.Rows(assembly.Options{
 		UsageCache: args.usageCache,
+		Accounts:   args.accounts,
 		Memory:     args.native.Memory(),
 		Policy:     policy,
 		CWD:        cwd, AgentDir: agentDir, Settings: settings,

@@ -53,6 +53,9 @@ func newInteractiveSessionHost(
 	stderr io.Writer,
 ) (*interactiveSessionHost, error) {
 	host := &interactiveSessionHost{args: args, agentDir: agentDir}
+	if args.accounts != nil {
+		args.accounts.host.Store(host)
+	}
 	runtime, err := newCLISessionRuntimeHost(ctx, cliSessionRuntimeHostOptions{
 		Args: &host.args, Manager: manager, Dependencies: dependencies, Stderr: stderr, ExtensionMode: extensions.ModeTUI,
 		Created: func(inputs runtimeInputs) {

@@ -14,6 +14,11 @@ shown by `/changelog`.
 - Clicking the provider in the footer opens Providers. With quotas on, the footer shows the
   provider in use and its tightest window for Claude too: Claude Sessions publishes the limits its
   turns carry on a bus any provider plugin can use (`usage.Event`).
+- When a turn stops on an account limit and the provider has other accounts, Orb asks which one to
+  continue on, most quota left first (spent ones are left out, "Not now" keeps things as they
+  are), switches and resumes the turn there. It lives in the quotas plugin; the host only lends it
+  the account list and the switch.
+- Quotas say what is left: "Claude 7d 45% left" in the footer, and the Providers view says so too.
 - `orb accounts --json` lists the accounts and their plan limits, and `orb accounts use <provider>
   <id>` switches; Bridge serves both as `host.accounts`. The Android app shows them at the top of a
   device's providers, a bar per window, and switches an account with a tap.

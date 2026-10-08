@@ -23,7 +23,9 @@ import (
 
 // CatalogOptions supplies explicit runtime seams so bundled plugins remain instance-scoped.
 type CatalogOptions struct {
-	UsageCache       *usage.Cache
+	UsageCache *usage.Cache
+	// Accounts is host-supplied: provider-usage switches accounts through it.
+	Accounts         usage.Accounts
 	Memory           memorysdk.Store
 	Bridge           extensions.Factory
 	BridgeAgentCalls extensions.Factory
@@ -111,7 +113,7 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
 		"memtree":        memtreeExtension(options.Settings),
-		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}),
+		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}, options.Accounts),
 	}
 }
 
