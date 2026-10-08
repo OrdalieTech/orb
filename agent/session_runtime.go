@@ -748,14 +748,14 @@ func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageCon
 }
 
 func (runtime *SessionRuntime) Commands() []SlashCommandInfo {
-	if runtime == nil {
+	if runtime == nil || runtime.slashResolver == nil {
 		return []SlashCommandInfo{}
 	}
-	runtime.syncExtensionCommands()
-	if runtime.slashResolver == nil {
-		return []SlashCommandInfo{}
-	}
-	return runtime.slashResolver.Commands(runtime.settings.GetEnableSkillCommands())
+	// A copy with the extensions' commands as of now: callers list commands concurrently (every
+	// follower's describe), and must not write the resolver prompts are expanded with.
+	resolver := *runtime.slashResolver
+	resolver.ExtensionCommands = runtime.registeredExtensionCommands()
+	return resolver.Commands(runtime.settings.GetEnableSkillCommands())
 }
 
 // State is the agent's state with the session's effective system prompt,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +28,11 @@ type client struct {
 	replies map[string]json.RawMessage
 	alerts  []string
 	patches map[string][][2]int // each patch of a tab's rows: where it started, how many rows after it
+	saved   atomic.Pointer[[]byte]
+}
+
+func newClient() *client {
+	return &client{out: make(chan json.RawMessage, 4096), rows: map[string][]Row{}, replies: map[string]json.RawMessage{}, patches: map[string][][2]int{}}
 }
 
 func (c *client) apply(raw json.RawMessage) {
@@ -106,7 +112,7 @@ func orb(t *testing.T, speed float64, steps ...faux.ResponseStep) (*App, *client
 		t.Fatal(err)
 	}
 	_ = a.SetGeneration(generation)
-	c := &client{out: make(chan json.RawMessage, 4096), rows: map[string][]Row{}, replies: map[string]json.RawMessage{}, patches: map[string][][2]int{}}
+	c := newClient()
 	app := New(ctx, Options{
 		Call: func(ctx context.Context, method string, params, result any) error {
 			raw, err := peers.Admin(ctx, method, bridge.JSON(params))
@@ -115,8 +121,9 @@ func orb(t *testing.T, speed float64, steps ...faux.ResponseStep) (*App, *client
 			}
 			return json.Unmarshal(raw, result)
 		},
-		Name: "this phone",
-		Emit: func(m any) { c.out <- bridge.JSON(m) },
+		SaveTabs: func(b []byte) { c.saved.Store(&b) },
+		Name:     "this phone",
+		Emit:     func(m any) { c.out <- bridge.JSON(m) },
 	})
 	app.Do([]byte(`{"do":"hello","budget":4}`))
 	app.Do([]byte(`{"do":"visible","on":true}`))
@@ -266,4 +273,30 @@ func TestAnAnswerOutOfSightIsUnreadUntilShown(t *testing.T) {
 	c.until(t, "an unread answer", func() bool { return c.tab(opened.Tab).Unread == 1 && len(c.alerts) == 1 })
 	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
 	c.until(t, "read once shown", func() bool { return c.tab(opened.Tab).Unread == 0 })
+}
+
+// A tab brought back after a restart follows the Orb that has its thread open, even on a machine
+// that does not let this app start Orb (this one has no launcher at all).
+func TestARestoredTabFollowsTheOrbThatHasItsThread(t *testing.T) {
+	app, c, instance := orb(t, 0, faux.AssistantMessage("hello again"))
+	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	c.until(t, "ready", func() bool { return c.tab(opened.Tab).Loaded })
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"hi"}`))
+	c.until(t, "kept to bring back", func() bool {
+		return len(c.rows[opened.Tab]) == 2 && c.saved.Load() != nil && strings.Contains(string(*c.saved.Load()), opened.Tab)
+	})
+	again := newClient()
+	restarted := New(t.Context(), Options{Call: app.o.Call, Tabs: *c.saved.Load(), Name: "this phone", Emit: func(m any) { again.out <- bridge.JSON(m) }})
+	restarted.Do([]byte(`{"do":"hello","budget":4}`))
+	restarted.Do([]byte(`{"do":"visible","on":true}`))
+	restarted.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	again.until(t, "the conversation back", func() bool {
+		rows := again.rows[opened.Tab]
+		return len(rows) == 2 && rows[1].Block != nil && rows[1].Block.Spans[0].Text == "hello again" && again.tab(opened.Tab).Status == ""
+	})
 }

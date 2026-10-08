@@ -518,22 +518,39 @@ func (t *tab) prompt(text string) {
 	}
 }
 
-// reopen starts Orb on the thread again over there, or joins the one that has it open.
+// reopen follows the Orb that has the thread open over there (a restored tab's, or another since
+// this one's ended), or starts Orb on it: a machine may not let this app start one at all.
 func (t *tab) reopen(text string) {
 	a := t.a
 	a.mu.Lock()
 	if text != "" {
 		t.queued, t.queuedFrom = text, ""
 	}
-	if t.reopening {
+	// Being reopened, or its machine not read yet (just after a restart): the next step tries again.
+	m := a.machine(t.Peer)
+	if t.reopening || m == nil {
 		a.mu.Unlock()
 		return
 	}
 	t.reopening, t.Status = true, "opening the thread…"
-	session := t.session
+	session, read := t.session, m.read
 	a.flush()
 	a.mu.Unlock()
-	instance, err := a.launch(t.Peer, "", session)
+	if !read {
+		a.fetch(t.Peer)
+	}
+	a.mu.Lock()
+	running := ""
+	for _, i := range m.instances {
+		if i.session == session && session != "" {
+			running = i.id
+		}
+	}
+	a.mu.Unlock()
+	instance, err := running, error(nil)
+	if running == "" {
+		instance, err = a.launch(t.Peer, "", session)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	t.reopening, t.Status = false, ""

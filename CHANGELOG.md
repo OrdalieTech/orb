@@ -35,6 +35,10 @@ shown by `/changelog`.
 - The apps count the answers that finished out of sight in each conversation, a badge until it
   shows, and alert once per finished turn: the view reads the turn's end from the stream, so a
   quick turn between two polls no longer slips past.
+- A conversation on a paired machine, brought back when the app restarts, follows the Orb that
+  has its thread open there instead of trying to start another, which a machine that does not let
+  the app start Orb refused (the tab stayed empty). Listing an Orb's commands no longer writes the
+  resolver it expands prompts with, a race when two followers described it at once.
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

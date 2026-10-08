@@ -61,7 +61,7 @@ type machine struct {
 	id, host, version, state string
 	instances                []instance
 	threads                  []thread
-	launch, fetching         bool
+	launch, fetching, read   bool              // read: its running Orbs were read at least once
 	catalogs                 map[string]string // per instance, the digest a describe sends back
 }
 
@@ -216,7 +216,7 @@ func (a *App) fetch(peer string) {
 		if m := a.machine(peer); m != nil {
 			m.fetching = false
 			if err == nil {
-				m.instances = found
+				m.instances, m.read = found, true
 				if len(found) > 0 {
 					m.state = "connected"
 				}
