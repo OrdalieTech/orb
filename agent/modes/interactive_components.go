@@ -1070,8 +1070,8 @@ type toolActivityGroup struct {
 }
 
 type toolActivityRow struct {
-	tool       *ToolExecutionComponent
-	start, end int
+	tool               *ToolExecutionComponent
+	start, end, indent int
 }
 
 // fallbackToolTitle names a tool without a renderer by its most telling
@@ -1226,8 +1226,21 @@ func (group *toolActivityGroup) Render(width int) []string {
 			lines = append([]string{""}, row...)
 		}
 	}
-	// Rows sit tight under a header, and a step under its reasoning.
+	// Rows sit tight under a header, and a step under its reasoning; under a header they are
+	// indented, as what it holds.
 	tight := len(group.tools) > 1 || group.headed
+	indent := 0
+	if len(group.tools) > 1 {
+		indent = groupIndent
+	}
+	nest := func(rendered []string) []string {
+		for index, line := range rendered {
+			if line != "" {
+				rendered[index] = strings.Repeat(" ", indent) + line
+			}
+		}
+		return rendered
+	}
 	for _, item := range group.items {
 		switch item := item.(type) {
 		case *ToolExecutionComponent:
@@ -1235,19 +1248,19 @@ func (group *toolActivityGroup) Render(width int) []string {
 			visible := len(group.tools) == 1 || group.expanded || item.result != nil && item.result.IsError
 			item.mu.Unlock()
 			if visible {
-				rendered := item.Render(width)
+				rendered := item.Render(width - indent)
 				if tight && len(rendered) > 0 && rendered[0] == "" {
 					rendered = rendered[1:]
 				}
 				start := len(lines)
-				lines = append(lines, rendered...)
-				group.rows = append(group.rows, toolActivityRow{tool: item, start: start, end: len(lines)})
+				lines = append(lines, nest(rendered)...)
+				group.rows = append(group.rows, toolActivityRow{tool: item, start: start, end: len(lines), indent: indent})
 				tight = len(group.tools) > 1
 			}
 		case *AssistantMessageComponent:
 			if group.expanded || len(group.tools) == 1 {
-				if rendered := item.renderUnfolded(width); len(rendered) > 0 {
-					lines = append(lines, rendered...)
+				if rendered := item.renderUnfolded(width - indent); len(rendered) > 0 {
+					lines = append(lines, nest(rendered)...)
 					tight = true
 				}
 			}
@@ -1255,6 +1268,9 @@ func (group *toolActivityGroup) Render(width int) []string {
 	}
 	return lines
 }
+
+// groupIndent sets a group's actions in under its header.
+const groupIndent = 3
 
 // headerRow is the header's line in the group's render.
 func (group *toolActivityGroup) headerRow() int {
@@ -1282,6 +1298,7 @@ func (group *toolActivityGroup) HandleMouse(event tui.MouseEvent) bool {
 		if event.Row >= row.start && event.Row < row.end {
 			target = row.tool
 			local.Row -= row.start
+			local.Column -= row.indent
 			break
 		}
 	}
