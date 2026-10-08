@@ -154,7 +154,7 @@ private val KIND = mapOf("bash" to "command", "read" to "read", "grep" to "searc
 
 /**
  * A run of actions folds into one line, as the TUI folds exploration: "worked · 2 thoughts ·
- * 3 commands", failures counted at its end. It opens to the actions; running ones stay in view.
+ * 3 commands", failures counted at its end, and what runs now. It opens to the actions.
  */
 @Composable
 private fun Worked(run: List<Act>) = Column(Modifier.fillMaxWidth().animateContentSize()) {
@@ -165,9 +165,10 @@ private fun Worked(run: List<Act>) = Column(Modifier.fillMaxWidth().animateConte
         "$n " + if (n == 1) k else if (k == "search") "searches" else k + "s"
     }
     val failed = run.count { it is Act.Call && it.tool.failed }
-    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", what, if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open) }
-    // Folded, only the latest running action shows: a run never jumps a line per tool.
-    (if (open) run else listOfNotNull(run.lastOrNull { it is Act.Call && it.tool.live })).forEach {
+    // Folded, the line names the running action itself: a row shown below would vanish when it ends.
+    val now = (run.lastOrNull { it is Act.Call && it.tool.live } as? Act.Call)?.tool?.target?.takeIf { !open && it.isNotBlank() }
+    Box(Modifier.press { open = !open }) { ActionLine(if (live) "working" else "worked", listOfNotNull(what, now).joinToString(" · "), if (failed > 0) "$failed failed" else "", live = live, failed = failed > 0, open = open) }
+    if (open) run.forEach {
         Box(Modifier.padding(start = 16.dp)) { if (it is Act.Call) ToolView(it.tool) else if (it is Act.Thought) Thought(it.said) }
     }
 }

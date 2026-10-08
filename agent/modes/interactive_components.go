@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -1180,11 +1181,17 @@ func (group *toolActivityGroup) Render(width int) []string {
 	var lines []string
 	if len(group.tools) > 1 {
 		counts := map[string]int{}
-		active := false
+		active, running := false, ""
 		for _, tool := range group.tools {
 			counts[toolActivityKind(tool.toolName)]++
 			tool.mu.Lock()
-			active = active || tool.isPartial
+			if tool.isPartial {
+				active = true
+				title, _ := fallbackToolTitle(tool.toolName, tool.args)
+				if argument, ok := strings.CutPrefix(tui.StripANSI(title), tool.toolName+" "); ok {
+					running = argument
+				}
+			}
 			tool.mu.Unlock()
 		}
 		var labels []string
@@ -1205,8 +1212,9 @@ func (group *toolActivityGroup) Render(width int) []string {
 			color = "toolTitle"
 		}
 		header := theme.FG(color, marker+"  "+theme.Bold(activityVerb(counts, len(group.tools), active))) + theme.FG("toolTitle", " · "+strings.Join(labels, " · "))
-		// While it works, the group says what it is doing now.
-		if step := group.stepLocked(); active && !group.expanded && step != "" {
+		// While it works, the header says what it is doing now: a closed group keeps its height
+		// instead of showing each running tool below and then swallowing it.
+		if step := cmp.Or(group.stepLocked(), running); active && !group.expanded && step != "" {
 			header += theme.FG("muted", " · "+theme.Italic(step))
 		}
 		row := []string{tui.TruncateToWidth(header, width, "…", false)}
@@ -1224,7 +1232,7 @@ func (group *toolActivityGroup) Render(width int) []string {
 		switch item := item.(type) {
 		case *ToolExecutionComponent:
 			item.mu.Lock()
-			visible := len(group.tools) == 1 || group.expanded || item.isPartial || item.result != nil && item.result.IsError
+			visible := len(group.tools) == 1 || group.expanded || item.result != nil && item.result.IsError
 			item.mu.Unlock()
 			if visible {
 				rendered := item.Render(width)

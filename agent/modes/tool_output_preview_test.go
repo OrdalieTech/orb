@@ -180,8 +180,10 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			start("read", "a")
 			finish("read", "a", "beginning\none\ntwo\nthree\nfirst file", false)
 			start("Grep", "b")
-			if got := render(); !strings.Contains(got, "1 read · 1 search") || !strings.Contains(got, "●  Grep") || strings.Contains(got, "first file") {
-				t.Fatalf("active search should remain visible beside the batch: %q", got)
+			// A closed batch names its running tool in the header and keeps its height, so the
+			// tool never shows below it only to vanish when it finishes.
+			if got := render(); !strings.Contains(got, "Exploring · 1 read · 1 search") || mode.chat.LineCount(80) != 2 || strings.Contains(got, "first file") {
+				t.Fatalf("running search should sit in the batch header without growing it: %q", got)
 			}
 			finish("Grep", "b", "search result", false)
 			if got := render(); mode.chat.LineCount(80) != 2 || strings.Contains(got, "search result") {

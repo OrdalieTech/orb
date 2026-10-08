@@ -19,6 +19,9 @@ shown by `/changelog`.
   are), switches and resumes the turn there. It lives in the quotas plugin; the host only lends it
   the account list and the switch.
 - Quotas say what is left: "Claude 7d 45% left" in the footer, and the Providers view says so too.
+- A folded group of commands or reads no longer flickers while it works: the running one is named
+  in the group's line ("Running · 3 commands · go test ./...") instead of showing below it and
+  vanishing when it ends. The Android app folds its runs the same way.
 - `orb accounts --json` lists the accounts and their plan limits, and `orb accounts use <provider>
   <id>` switches; Bridge serves both as `host.accounts`. The Android app shows them at the top of a
   device's providers, a bar per window, and switches an account with a tap.
