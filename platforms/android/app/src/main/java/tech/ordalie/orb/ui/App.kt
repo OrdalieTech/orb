@@ -200,9 +200,10 @@ private fun TopBar(c: Ctx) = Column(Modifier.statusBarsPadding()) {
                                     dx += prev.second
                                 }
                             },
-                            onDragCancel = { order = ids; dragged = null; dx = 0f },
+                            // Read live, never captured: this gesture outlives compositions, and the order with them.
+                            onDragCancel = { order = c.rt.view.state.tabs.map { it.id }; dragged = null; dx = 0f },
                             onDragEnd = {
-                                if (abs(net) < viewConfiguration.touchSlop) c.tabMenu(t) else if (order.indexOf(id) != ids.indexOf(id)) c.v.send("move", "tab" to id, "to" to order.indexOf(id))
+                                if (abs(net) < viewConfiguration.touchSlop) c.tabMenu(t) else c.v.send("move", "tab" to id, "to" to order.indexOf(id))
                                 dragged = null
                                 dx = 0f
                             },
