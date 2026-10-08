@@ -42,6 +42,8 @@ shown by `/changelog`.
   resolver it expands prompts with, a race when two followers described it at once.
 - A paired machine can be named in the Mac app, over the name it gives itself or for one too old
   to give it (any app on the view can offer it); its conversations carry the new name at once.
+- Tabs reorder by dragging them; the view keeps the order with the tabs, for every app (on the
+  Mac, in the sidebar's Open section).
 - Claude Code's tool calls fold by kind in the apps ("12 commands", not "12 Bashs"), and an MCP
   tool call is named by its tool.
 

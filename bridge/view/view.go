@@ -144,6 +144,7 @@ type intent struct {
 	On       bool     `json:"on"`
 	Tabs     []string `json:"tabs"`
 	Budget   int      `json:"budget"`
+	To       int      `json:"to"`
 	Provider string   `json:"provider"`
 	Account  string   `json:"account"`
 	Auth     string   `json:"auth"`
@@ -272,6 +273,10 @@ func (a *App) now(in intent) (any, error) {
 		t.rename(in.Name)
 	case "earlier":
 		t.earlier()
+	case "move":
+		// A tab dragged to another place among them; the order is kept with them.
+		a.tabs = slices.DeleteFunc(a.tabs, func(x *tab) bool { return x == t })
+		a.tabs = slices.Insert(a.tabs, min(max(in.To, 0), len(a.tabs)), t)
 	case "detail":
 		return t.tr.detail(in.Key), nil
 	default:

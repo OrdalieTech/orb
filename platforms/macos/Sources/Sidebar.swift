@@ -13,7 +13,14 @@ struct Sidebar: View {
     var body: some View {
         @Bindable var nav = nav
         List(selection: $nav.tab) {
-            Section("Open") { ForEach(orb.state.tabs) { tabRow($0) } }
+            Section("Open") {
+                ForEach(orb.state.tabs) { tabRow($0) }
+                    // Dragged into another place: the view keeps the order, for every app.
+                    .onMove { from, to in
+                        guard let i = from.first else { return }
+                        orb.send("move", ["tab": orb.state.tabs[i].id, "to": to > i ? to - 1 : to])
+                    }
+            }
             ForEach(orb.home.machines) { m in
                 let threads = entries.filter { $0.machine == m.id }
                 if !threads.isEmpty {
