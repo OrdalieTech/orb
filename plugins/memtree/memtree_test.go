@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -360,25 +361,60 @@ func TestCompactionStoresTheViewOfWhatItCuts(t *testing.T) {
 	}
 }
 
-func TestAFreshRunWaitsForTheCompactorUntilAborted(t *testing.T) {
-	runtime, _, requests := sessionRuntime(t, Options{}, faux.AssistantMessage("ok"), faux.AssistantMessage("late"))
-	if err := runtime.Prompt(context.Background(), strings.Repeat("a long first message ", 40)); err != nil {
+// Without a compactor (none configured, no credentials), a run starts at once from the messages
+// cut to size instead of waiting for summaries that cannot come.
+func TestAFreshRunGoesOnWithoutACompactor(t *testing.T) {
+	runtime, _, requests := sessionRuntime(t, Options{}, faux.AssistantMessage("ok"), faux.AssistantMessage("later"))
+	first := strings.Repeat("a long first message ", 40)
+	if err := runtime.Prompt(context.Background(), first); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan struct{})
-	go func() {
-		_ = runtime.Prompt(context.Background(), "second") // no compactor model: message 0 never gets its line
-		close(done)
-	}()
-	time.Sleep(300 * time.Millisecond)
-	if len(*requests) != 1 {
-		t.Fatalf("a request went out before the view was ready: %d", len(*requests))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runtime.Prompt(ctx, "second"); err != nil {
+		t.Fatal(err)
 	}
-	runtime.Abort()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Abort did not end the wait")
+	if view := userTexts((*requests)[len(*requests)-1])[0]; len(*requests) != 2 || !strings.HasPrefix(view, "<chat>\n0+1|user: a long first message a long") || strings.Contains(view, unbuilt) {
+		t.Fatalf("the second run did not start from the cut message: %q", userTexts((*requests)[len(*requests)-1]))
+	}
+}
+
+// A message the compactor keeps failing on (a refusal, an empty reply) gets giveUp calls, then
+// keeps its text cut to size, saved with the session: later messages summarize past it, and
+// nothing calls again, in this process or the next.
+func TestAMessageTheCompactorCannotSummarizeIsCutToSize(t *testing.T) {
+	sessions := longSession(4)
+	tr := newTree(sessions, sessions.save)
+	defer tr.stop()
+	model := &compactor{}
+	var poisoned atomic.Int32
+	tr.ask = func(ctx context.Context, messages ai.MessageList) (*ai.AssistantMessage, error) {
+		if step := messages[0].(*ai.UserMessage).Content.Blocks[1].(*ai.TextContent).Text; strings.HasPrefix(step, "Compress") && strings.Contains(step, "message 1 x") {
+			poisoned.Add(1)
+			return &ai.AssistantMessage{}, nil
+		}
+		return model.ask(ctx, messages)
+	}
+	tr.retry, tr.budget = time.Millisecond, 4000
+	tr.pump()
+	if !settled(tr, 4) {
+		t.Fatal("messages after the failing one were never summarized")
+	}
+	idle(t, tr)
+	time.Sleep(20 * time.Millisecond)
+	if got := tr.zoom(1, 1); !strings.HasPrefix(got, "1+0|user: message 1 x") || poisoned.Load() != giveUp {
+		t.Fatalf("after %d calls, message 1 reads %.40q", poisoned.Load(), got)
+	}
+	if model.compressed[len(model.compressed)-1] != 3 {
+		t.Fatalf("compressed %v", model.compressed)
+	}
+	again := newTree(sessions, sessions.save)
+	again.mu.Lock()
+	again.syncLocked()
+	saved := again.builtLocked(0, 1)
+	again.mu.Unlock()
+	if !saved {
+		t.Fatal("the next start would ask about message 1 again")
 	}
 }
 

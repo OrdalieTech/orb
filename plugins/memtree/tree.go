@@ -22,6 +22,7 @@ const (
 	jobs        = 8       // compactor calls running at once
 	tries       = 5       // attempts per node to get under nodeBytes
 	retryAfter  = 10 * time.Second
+	giveUp      = 3 // failed calls before a node keeps its messages cut to size
 	callTimeout = 5 * time.Minute
 	unbuilt     = "(not summarized yet: zoom it)"
 )
@@ -63,7 +64,8 @@ type tree struct {
 	nodes    map[nodeKey]string
 	pending  []nodeKey // built, not yet saved
 	busy     map[nodeKey]bool
-	failing  map[nodeKey]bool
+	failing  map[nodeKey]int // failed calls per node
+	retry    time.Duration
 	path     []string // entry IDs of the folded branch
 	log      []message
 	view     []part
@@ -77,7 +79,7 @@ func newTree(sessions extensions.ReadonlySessionManager, save func(nodeKey, stri
 	ctx, stop := context.WithCancel(context.Background())
 	t := &tree{
 		sessions: sessions, id: sessions.GetSessionID(), save: save, ctx: ctx, stop: stop, budget: viewBytes, status: func(string) {},
-		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]bool{}, progress: make(chan struct{}),
+		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]int{}, retry: retryAfter, progress: make(chan struct{}),
 	}
 	for _, entry := range sessions.GetEntries() {
 		var node savedNode
@@ -253,16 +255,16 @@ func (t *tree) pumpLocked() {
 }
 
 func (t *tree) startLocked(l, i int, key nodeKey) {
-	var step string
+	var step, fallback string
 	if l == 0 {
-		step = "Compress this message into one line, in at most 512 bytes:\n" + t.log[i].line
+		step, fallback = "Compress this message into one line, in at most 512 bytes:\n"+t.log[i].line, cut(flat(t.log[i].line), nodeBytes)
 	} else {
 		a, b := flat(t.textLocked(l-1, 2*i)), flat(t.textLocked(l-1, 2*i+1))
 		if len(a)+1+len(b) <= nodeBytes {
 			t.saveLocked(key, a+"\n"+b)
 			return
 		}
-		step = "Merge these two lines into one, in at most 512 bytes:\n" + a + "\n" + b
+		step, fallback = "Merge these two lines into one, in at most 512 bytes:\n"+a+"\n"+b, cut(a, nodeBytes/2-1)+" "+cut(b, nodeBytes/2)
 	}
 	var chat strings.Builder
 	for _, p := range t.view {
@@ -276,32 +278,37 @@ func (t *tree) startLocked(l, i int, key nodeKey) {
 		&ai.TextContent{Text: step},
 	}}}}
 	t.busy[key] = true
-	go t.build(key, t.ask, request)
+	go t.build(key, t.ask, request, fallback)
 }
 
-func (t *tree) build(key nodeKey, ask ask, request ai.MessageList) {
+func (t *tree) build(key nodeKey, ask ask, request ai.MessageList, fallback string) {
 	text, err := compress(t.ctx, ask, request)
 	t.mu.Lock()
-	if err != nil {
-		if !t.failing[key] && t.ctx.Err() == nil {
+	switch {
+	case err != nil:
+		if t.failing[key] == 0 && t.ctx.Err() == nil {
 			t.status("compactor failed: " + err.Error())
 		}
-		t.failing[key] = true
-		t.mu.Unlock()
-		time.AfterFunc(retryAfter, func() {
-			t.mu.Lock()
-			delete(t.busy, key)
+		// A node the compactor keeps failing on (a refusal, no model) keeps its messages cut to
+		// size, saved like a summary: the session goes on, and nothing calls again, now or at the
+		// next start.
+		if t.failing[key]++; t.failing[key] < giveUp && ask != nil {
 			t.mu.Unlock()
-			t.pump()
-		})
-		return
-	}
-	if t.failing[key] {
+			time.AfterFunc(t.retry, func() {
+				t.mu.Lock()
+				delete(t.busy, key)
+				t.mu.Unlock()
+				t.pump()
+			})
+			return
+		}
+		text = fallback
+	case t.failing[key] > 0:
 		delete(t.failing, key)
 		t.status("")
 	}
-	delete(t.busy, key)
 	t.saveLocked(key, text)
+	delete(t.busy, key)
 	// The line replaces a placeholder when it is in the view.
 	t.size = 0
 	for _, p := range t.view {

@@ -169,7 +169,9 @@ message with `zoom(id, n)`, and `date(id)` dates a message.
   reuse no cache across these calls.
 
 A turn, or a compaction, waits until every earlier message is summarized, showing
-`memtree: summarizing N messages`; Escape ends the wait. Summaries are kept in the session as
+`memtree: summarizing N messages`; Escape ends the wait. A line the compactor fails three times
+on (a refusal, an empty reply, no model or credentials) keeps its text cut to 512 bytes, saved
+like a summary, so the session goes on and nothing asks about it again. Summaries are kept in the session as
 hidden `memtree` entries, so they follow it across forks, exports and hosts (the Worker and Celld
 host turns the plugin on from `plugins.memtree` in its settings). Claude and Codex sessions run
 their own loop and bypass the plugin.
