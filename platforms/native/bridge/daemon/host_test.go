@@ -215,3 +215,41 @@ func TestHostTerminalRunsAShellInTheFolder(t *testing.T) {
 		t.Fatalf("a closed terminal still answers: %v", err)
 	}
 }
+
+// A Bridge whose binary is replaced restarts into the new one, once it runs: a
+// replacement that fails is not one to restart into.
+func TestBridgeFollowsAReplacedBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Bridge cannot exec on Windows")
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "orb")
+	install := func(name, script string) {
+		staged := filepath.Join(dir, name)
+		if err := os.WriteFile(staged, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(staged, exe); err != nil {
+			t.Fatal(err)
+		}
+	}
+	install("v1", "echo 1")
+	restarted := make(chan string, 1)
+	go followBinary(t.Context(), exe, 10*time.Millisecond, func(path string) { restarted <- path })
+	time.Sleep(50 * time.Millisecond)
+	install("broken", "exit 1")
+	select {
+	case <-restarted:
+		t.Fatal("restarted into a binary that does not run")
+	case <-time.After(200 * time.Millisecond):
+	}
+	install("v2", "echo 2")
+	select {
+	case path := <-restarted:
+		if path != exe {
+			t.Fatalf("restarted into %s", path)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the Bridge did not restart into its new binary")
+	}
+}

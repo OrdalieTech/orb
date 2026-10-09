@@ -5,6 +5,9 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A running Bridge restarts into its binary when that binary is replaced, by `orb update`, an
+  installer or a package manager, once the new one runs: a long-lived Bridge no longer serves an
+  old version until someone restarts it. Its instances and peers reconnect on their own.
 - Orb now owns `~/.orb/agent`, project `.orb` and `ORB_*` configuration controls, without reading or modifying Pi’s directories by default. Existing native Orb sessions remain in `~/.orb/state/orb.db`; file formats and extension APIs remain compatible.
 - Herdr identifies Orb as Orb and restores it with `orb --session`, rather than passing Orb sessions to Pi. Custom restore requires released Herdr 0.9.2 or later; older versions retain lifecycle reporting.
 
