@@ -230,17 +230,33 @@ func TestOldHerdrFallsBackToOrbStateOnly(t *testing.T) {
 	if strings.Contains(lines[2], "-- orb") {
 		t.Fatalf("old CLI was reprobed: %v", lines)
 	}
+	var previous uint64
+	for _, line := range lines {
+		seq, err := strconv.ParseUint(option(strings.Fields(line), "--seq"), 10, 64)
+		if err != nil || seq <= previous {
+			t.Fatalf("fallback sequence: %v", lines)
+		}
+		previous = seq
+	}
 	runner.Emit(t.Context(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
 }
 
 func TestResumeArgumentsRespectHerdrValidation(t *testing.T) {
-	for _, value := range []string{"apostrophe'", "newline\n", "tab\t", "control\x7f", strings.Repeat("x", 8193)} {
+	for _, value := range []string{"apostrophe'", "newline\n", "tab\t", "control\x00", "control\x1f", "control\x7f", "control\u0085", "control\u009f", strings.Repeat("x", 8193)} {
 		if validResume([]string{"orb", "--session", value}) {
 			t.Fatalf("accepted %q", value)
 		}
 	}
-	if !validResume([]string{"orb", "--pi-files", "--session", "/directory with spaces/file.jsonl"}) {
-		t.Fatal("space in argument rejected")
+	for _, args := range [][]string{
+		{"orb", "--pi-files", "--session", "/directory with spaces/file.jsonl"},
+		{"unicode\u00a0"}, {strings.Repeat("x", 8192)}, slices.Repeat([]string{"x"}, 64),
+	} {
+		if !validResume(args) {
+			t.Fatalf("valid arguments rejected: %q", args)
+		}
+	}
+	if validResume(slices.Repeat([]string{"x"}, 65)) {
+		t.Fatal("excess argument count accepted")
 	}
 }
 
