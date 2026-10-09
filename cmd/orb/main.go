@@ -115,9 +115,7 @@ func main() {
 	if os.Getenv(toolenv.Allow) != "" {
 		teamenv.Hide()
 	}
-	// Process markers, entry points only — not set when embedded through the SDK.
-	_ = os.Setenv("AI_AGENT", "orb")
-	_ = os.Setenv("PI_CODING_AGENT", "true")
+	setEntryIdentity()
 	os.Exit(runNativeCLI(context.Background(), os.Args[1:], cliStreams{
 		Stdin:     os.Stdin,
 		Stdout:    os.Stdout,
@@ -126,6 +124,16 @@ func main() {
 		StdoutTTY: isTerminalFile(os.Stdout),
 		StderrTTY: isTerminalFile(os.Stderr),
 	}))
+}
+
+// Process markers belong to CLI entry, never to an embedded SDK instance.
+func setEntryIdentity() {
+	_ = os.Setenv("AI_AGENT", "orb")
+	_ = os.Setenv("ORB_CODING_AGENT", "true")
+	_ = os.Unsetenv("PI_CODING_AGENT")
+	if os.Getenv("HERDR_AGENT") == "pi" {
+		_ = os.Unsetenv("HERDR_AGENT")
+	}
 }
 
 // runMermaid draws the Mermaid diagram on stdin as the TUI shows it, Unicode text, for clients
@@ -254,12 +262,12 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	args.bridgeLink = &cliBridgeLink{}
 	args.usageCache = &usage.Cache{}
 	args.accounts = &hostAccounts{}
-	offlineValue, networkDisabled := os.LookupEnv("PI_OFFLINE")
+	offlineValue, networkDisabled := os.LookupEnv("ORB_OFFLINE")
 	offlineValue = strings.ToLower(offlineValue)
 	offlineMode := args.Offline || offlineValue == "1" || offlineValue == "true" || offlineValue == "yes"
 	if offlineMode {
-		_ = os.Setenv("PI_OFFLINE", "1")
-		_ = os.Setenv("PI_SKIP_VERSION_CHECK", "1")
+		_ = os.Setenv("ORB_OFFLINE", "1")
+		_ = os.Setenv("ORB_SKIP_VERSION_CHECK", "1")
 		networkDisabled = true
 	}
 	hasErrors := false
@@ -658,7 +666,7 @@ func versionOutput() string {
 
 func newStartupVersionCheck(currentVersion string, client *http.Client, endpoint string, timeout time.Duration) func(context.Context, extensions.UI) {
 	return func(ctx context.Context, ui extensions.UI) {
-		if os.Getenv("PI_SKIP_VERSION_CHECK") != "" || os.Getenv("PI_OFFLINE") != "" {
+		if os.Getenv("ORB_SKIP_VERSION_CHECK") != "" || os.Getenv("ORB_OFFLINE") != "" {
 			return
 		}
 		tag, err := selfupdate.LatestTag(ctx, currentVersion, client, endpoint, timeout)
@@ -939,7 +947,7 @@ Platforms: ` + strings.Join(platforms.Names(), ", ") + `
 
 Common environment:
   ORB_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required for chat platforms)
-  ORB_CHAT_DATA_DIR        Session and spool directory (default ~/.pi/agent/chat/<platform>)
+  ORB_CHAT_DATA_DIR        Session and spool directory (default ~/.orb/agent/chat/<platform>)
   ORB_CHAT_LISTEN          Webhook listen address (default 127.0.0.1:8080)
   ORB_CHAT_PATH            Webhook path (default /<platform>)
 
@@ -974,6 +982,14 @@ Commands:
   orb storage <command>        Migrate, import/export, back up, or recover conversations
   orb <command> --help        Show help for chat/install/remove/uninstall/update/upgrade/list/config/auth/mcp
 
+Global prefixes (before runtime options/subcommands):
+  --agent-dir <dir>              Agent resources/config directory (ORB_AGENT_DIR; default ~/.orb/agent)
+  --state-home <dir>             Native database directory (ORB_STATE_HOME; default ~/.orb/state)
+  --bridge-home <dir>            Bridge directory (ORB_BRIDGE_HOME; default ~/.orb/bridge)
+  --pi-files                     Use Pi-compatible file storage in Orb's selected agent directory
+  Directory prefixes and --pi-files may appear in any order.
+  An explicit agent directory defaults state to <agent-dir>/state unless --state-home or ORB_STATE_HOME is set.
+
   --provider <name>              Provider to search for --model (requires --model)
   --model <id>                   Model ID
   --models <patterns>            Comma-separated model cycling patterns
@@ -990,7 +1006,6 @@ Commands:
   --session-id <id>              Use exact project session ID, creating it if missing
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --name, -n <name>              Set the session display name
-  --pi-files                     Use Pi-compatible files (must be the first argument)
   --session-dir <dir>            Session directory in --pi-files compatibility mode
   --no-session                   Don't save session (ephemeral)
   --export <path|id> [output]    Export a session to HTML or Markdown and exit
@@ -1010,7 +1025,7 @@ Commands:
   --approve, -a                  Trust project-local resources for this run
   --auto                         Auto-approve tool requests; enforce permission denials
   --no-approve, -na              Ignore project-local resources for this run
-  --offline                      Disable startup network operations (same as PI_OFFLINE=1)
+  --offline                      Disable startup network operations (same as ORB_OFFLINE=1)
   --help, -h                     Show help
   --version, -v                  Show version
 `

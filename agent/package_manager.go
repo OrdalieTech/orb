@@ -35,7 +35,7 @@ const (
 )
 
 func isOfflineModeEnabled() bool {
-	value := os.Getenv("PI_OFFLINE")
+	value := os.Getenv("ORB_OFFLINE")
 	if value == "" {
 		return false
 	}

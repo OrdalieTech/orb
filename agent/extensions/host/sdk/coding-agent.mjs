@@ -34,11 +34,11 @@ function expandTildePath(path) {
 	return path;
 }
 
-/** The agent config directory: $PI_CODING_AGENT_DIR (exported by the orb host) or ~/.pi/agent. */
+/** The agent config directory: $ORB_AGENT_DIR (exported by the orb host) or ~/.orb/agent. */
 export function getAgentDir() {
-	const envDir = process.env.PI_CODING_AGENT_DIR;
+	const envDir = process.env.ORB_AGENT_DIR;
 	if (envDir) return expandTildePath(envDir);
-	return join(homedir(), ".pi", "agent");
+	return join(homedir(), ".orb", "agent");
 }
 
 const EXT_TO_LANG = {
@@ -244,7 +244,7 @@ const BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write"];
 const CODING_TOOL_PROMPTS = {
 	bash: {
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
-		promptGuidelines: ["You can inspect PI_* environment variables for current model and session details."],
+		promptGuidelines: ["You can inspect ORB_* environment variables for current model and session details."],
 	},
 };
 

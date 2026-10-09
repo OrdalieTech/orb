@@ -93,11 +93,11 @@ func Resolve(path, base string) string {
 	return filepath.Join(base, path)
 }
 
-// AgentDirEnv names the variable that moves upstream's agent directory.
-const AgentDirEnv = "PI_CODING_AGENT_DIR"
+// AgentDirEnv names the variable that moves Orb's agent directory.
+const AgentDirEnv = "ORB_AGENT_DIR"
 
-// AgentDir is upstream's agent directory: configured, the value of
-// AgentDirEnv, when it is set, else ~/.pi/agent.
+// AgentDir is Orb's agent directory: configured, the value of
+// AgentDirEnv, when it is set, else ~/.orb/agent.
 func AgentDir(configured string) (string, error) {
 	if configured != "" {
 		return Expand(NormalizeShellPath(configured))
@@ -106,7 +106,7 @@ func AgentDir(configured string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".pi", "agent"), nil
+	return filepath.Join(home, ".orb", "agent"), nil
 }
 
 // HomeDir is the user's home directory, from the account database when $HOME is unset.

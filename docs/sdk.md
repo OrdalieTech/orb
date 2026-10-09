@@ -43,7 +43,7 @@ orchestration for hosts that support new, resume, fork, import, and reload flows
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `CWD` | `string` | `"."` | Working directory for tool execution and resource discovery |
-| `AgentDir` | `string` | `~/.pi/agent` | Global config directory |
+| `AgentDir` | `string` | `~/.orb/agent` | Global config directory |
 | `Model` | `*ai.Model` | restored/settings/available | Initial model; nil restores the session model, then tries settings and available authenticated models |
 | `ThinkingLevel` | `ai.ModelThinkingLevel` | medium/off | Clamped to model's supported range |
 | `ScopedModels` | `[]ScopedModel` | `nil` | Restricts CycleModel |
@@ -266,7 +266,7 @@ visible user/assistant messages, 4 KiB per message and 32 KiB encoded per sessio
 expiry and 128-per-peer / 1,024-per-profile limits bound retention. Allocate a refresh token
 before network I/O with `Begin`; `Forget` fences older responses as well as deleting content.
 The CLI uses SQLite by default at `$ORB_STATE_HOME/orb.db`, or `~/.orb/state/orb.db`.
-An explicit `PI_CODING_AGENT_DIR` defaults to `<agentDir>/state/orb.db`; otherwise an explicit
+An explicit `ORB_AGENT_DIR` defaults to `<agentDir>/state/orb.db`; otherwise an explicit
 `ORB_BRIDGE_HOME` defaults to `<bridgeHome>/state/orb.db`. These are assembly choices, never
 implicit SDK configuration.
 Only visited conversations are cached; reopening always consults the owning Bridge.
@@ -491,7 +491,7 @@ server embedder:
   never fall through to the process environment.
 - **Sessions per instance.** Give each instance its own session directory or
   an in-memory session; never share the process working directory or the
-  default `~/.pi/agent/sessions` layout between tenants.
+  default `~/.orb/agent/sessions` layout between tenants.
 - **Shared vs per-instance.** Safe to share process-wide (immutable or
   deliberately global): the builtin model catalog (`ai/models.Builtin`,
   `sync.OnceValue`), provider constructors, HTTP transports, terminal

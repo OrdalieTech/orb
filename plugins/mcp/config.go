@@ -16,7 +16,7 @@ import (
 )
 
 // Servers are read from mcp.json in the agent directory and, for trusted
-// projects, from <project>/.pi/mcp.json, in the mcpServers shape other MCP
+// projects, from <project>/.orb/mcp.json, in the mcpServers shape other MCP
 // clients share, so their configurations copy over. Project entries replace
 // global entries of the same name.
 //

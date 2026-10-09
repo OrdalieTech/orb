@@ -28,7 +28,7 @@ var builtInToolPromptMetadata = map[string]toolPromptMetadata{
 	},
 	"bash": {
 		snippet:    "Execute bash commands (ls, grep, find, etc.)",
-		guidelines: []string{"You can inspect PI_* environment variables for current model and session details."},
+		guidelines: []string{"You can inspect ORB_* environment variables for current model and session details."},
 	},
 	"edit": {
 		snippet: "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
@@ -294,7 +294,7 @@ func hasPromptDocs(packageDir string, paths ...string) bool {
 
 func resolvePromptPackageDir(packageDir string) string {
 	if packageDir == "" {
-		packageDir = os.Getenv("PI_PACKAGE_DIR")
+		packageDir = os.Getenv("ORB_PACKAGE_DIR")
 	}
 	if packageDir == "" {
 		if executable, err := os.Executable(); err == nil {

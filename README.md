@@ -96,7 +96,7 @@ most-downloaded Pi packages loaded, and of 30 popular packages installed by real
 and 15 completed live tool or hook workflows. The harness and raw results are in
 [conformance/extensions](conformance/extensions); the remaining runtime ceilings are listed in
 [docs/DECISIONS.md](docs/DECISIONS.md).
-`.pi/extensions/` in a trusted project and the global agent directory are discovered like upstream.
+`.orb/extensions/` in a trusted project and the global agent directory are discovered like upstream.
 
 ## Plugins, permissions, and MCP
 
@@ -116,3 +116,19 @@ Every GitHub release includes a checksummed `orb_<version>_source.tar.gz`. To ve
 independently, download it with `checksums.txt`, run `sha256sum -c checksums.txt`, extract it, and
 run `CGO_ENABLED=0 go build -buildvcs=false ./cmd/orb`; release CI performs the same rebuild before
 publishing. The flag is required because a source archive intentionally contains no `.git` metadata.
+
+### Independent configuration
+
+Orb uses `~/.orb/agent` (`ORB_AGENT_DIR`) and project `.orb`; file-backed sessions can use
+`ORB_SESSION_DIR`. Runtime controls use `ORB_*` (`ORB_OFFLINE`, `ORB_PACKAGE_DIR`,
+`ORB_SKIP_VERSION_CHECK`, and TUI controls), not Pi’s environment. Native CLI state remains
+`~/.orb/state/orb.db`, including existing conversations and credentials. Pi directories are not
+scanned, imported or rewritten automatically. `--pi-files` selects compatible file storage,
+not Pi’s default directory.
+
+To reuse selected Pi resources, explicitly copy them into Orb’s directory or use an explicit
+resource path; leave the original files in place. Import selected JSONL sessions with
+`orb storage import <path>`, and native configuration with
+`orb storage config import <document-name> <path>`. Review copied settings for absolute Pi
+paths before enabling extensions. Do not copy Herdr’s managed Pi integration: Orb reports
+its own lifecycle and resume command, supported by Herdr 0.9.2 and later.

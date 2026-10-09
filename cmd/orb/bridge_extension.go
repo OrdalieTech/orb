@@ -86,7 +86,7 @@ type bridgeSettingsStatus struct {
 
 func setBridgeSetting(settings *config.SettingsManager, name string, enabled bool) error {
 	if settings.ProjectDefinesPlugin(name) {
-		return fmt.Errorf("%s is configured in project settings; edit .pi/settings.json", name)
+		return fmt.Errorf("%s is configured in project settings; edit .orb/settings.json", name)
 	}
 	settings.SetPluginEnabled(name, enabled)
 	for _, err := range settings.DrainErrors() {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,8 +32,9 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			os.Exit(1)
 		}
-		if len(os.Args) > 2 && os.Args[1] == "agent" && os.Args[2] == "get" {
-			fmt.Print(os.Getenv("HERDR_TEST_AGENT_RESPONSE"))
+		if os.Getenv("HERDR_TEST_LEGACY") != "" && slices.Contains(os.Args, "--") {
+			fmt.Fprintln(os.Stderr, "unexpected argument '--' found")
+			os.Exit(2)
 		}
 		os.Exit(0)
 	}
@@ -50,8 +52,9 @@ func TestExtensionReportsInteractiveLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{
-		Mode: extensions.ModeTUI,
-		UI:   &interactiveTestUI{},
+		Mode:           extensions.ModeTUI,
+		UI:             &interactiveTestUI{},
+		SessionManager: &testSession{id: "lifecycle", persisted: true},
 		ContextActions: extensions.ContextActions{
 			IsIdle: func() bool { return idle },
 		},
@@ -117,7 +120,7 @@ func fakeHerdr(t *testing.T, root, logPath string) string {
 		}
 		binary = executable
 		t.Setenv(fakeHerdrEnv, "1")
-	} else if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\nif [ \"$1\" = agent ] && [ \"$2\" = get ]; then printf '%s' \"$HERDR_TEST_AGENT_RESPONSE\"; fi\n"), 0o755); err != nil {
+	} else if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\nif [ -n \"$HERDR_TEST_LEGACY\" ]; then for arg in \"$@\"; do if [ \"$arg\" = -- ]; then echo \"unexpected argument --\" >&2; exit 2; fi; done; fi\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HERDR_TEST_LOG", logPath)
@@ -150,4 +153,139 @@ func option(fields []string, name string) string {
 		}
 	}
 	return ""
+}
+
+type testSession struct {
+	extensions.ReadonlySessionManager
+	id, file  string
+	persisted bool
+}
+
+func (s *testSession) GetSessionID() string   { return s.id }
+func (s *testSession) GetSessionFile() string { return s.file }
+func (s *testSession) IsPersisted() bool      { return s.persisted }
+
+func TestNativeResumeAndSessionReplacement(t *testing.T) {
+	root := t.TempDir()
+	logPath := filepath.Join(root, "calls")
+	registry := extensions.NewRegistry(root)
+	if err := registry.Register("builtin:herdr", Extension(fakeHerdr(t, root, logPath), "pane", "--auto")); err != nil {
+		t.Fatal(err)
+	}
+	manager := &testSession{id: "native-id", persisted: true}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &interactiveTestUI{}, SessionManager: manager})
+	runner.Emit(t.Context(), extensions.SessionStartEvent{})
+	line := waitForLines(t, logPath, 1)[0]
+	if !strings.Contains(line, "-- orb --auto --session native-id") {
+		t.Fatalf("resume = %s", line)
+	}
+	manager.id = "second-id"
+	runner.Emit(t.Context(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownNew})
+	runner.Emit(t.Context(), extensions.SessionStartEvent{Reason: extensions.SessionStartNew})
+	line = waitForLines(t, logPath, 2)[1]
+	if !strings.Contains(line, "-- orb --auto --session second-id") || strings.Contains(line, "release-agent") {
+		t.Fatalf("replacement = %s", line)
+	}
+	manager.file = filepath.Join(root, "session.jsonl")
+	runner.Emit(t.Context(), extensions.SessionStartEvent{Reason: extensions.SessionStartResume})
+	line = waitForLines(t, logPath, 3)[2]
+	if !strings.Contains(line, "-- orb --pi-files --auto --session "+manager.file) {
+		t.Fatalf("file resume = %s", line)
+	}
+	runner.Emit(t.Context(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
+}
+
+func TestEphemeralSessionHasNoResume(t *testing.T) {
+	root := t.TempDir()
+	logPath := filepath.Join(root, "calls")
+	registry := extensions.NewRegistry(root)
+	if err := registry.Register("builtin:herdr", Extension(fakeHerdr(t, root, logPath), "pane")); err != nil {
+		t.Fatal(err)
+	}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &interactiveTestUI{}, SessionManager: &testSession{id: "ephemeral"}})
+	runner.Emit(t.Context(), extensions.SessionStartEvent{})
+	lines := waitForLines(t, logPath, 2)
+	if !strings.Contains(lines[0], "release-agent") || !strings.Contains(lines[1], "report-agent") || strings.Contains(lines[1], "--session") {
+		t.Fatalf("ephemeral resume = %v", lines)
+	}
+	runner.Emit(t.Context(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
+}
+
+func TestOldHerdrFallsBackToOrbStateOnly(t *testing.T) {
+	root := t.TempDir()
+	logPath := filepath.Join(root, "calls")
+	t.Setenv("HERDR_TEST_LEGACY", "1")
+	registry := extensions.NewRegistry(root)
+	if err := registry.Register("builtin:herdr", Extension(fakeHerdr(t, root, logPath), "pane")); err != nil {
+		t.Fatal(err)
+	}
+	runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &interactiveTestUI{}, SessionManager: &testSession{id: "native", persisted: true}})
+	runner.Emit(t.Context(), extensions.SessionStartEvent{})
+	lines := waitForLines(t, logPath, 2)
+	if !strings.Contains(lines[0], "-- orb --session native") || strings.Contains(lines[1], "-- orb") || !strings.Contains(lines[1], "--agent orb") {
+		t.Fatalf("fallback = %v", lines)
+	}
+	runner.Emit(t.Context(), extensions.AgentStartEvent{})
+	lines = waitForLines(t, logPath, 3)
+	if strings.Contains(lines[2], "-- orb") {
+		t.Fatalf("old CLI was reprobed: %v", lines)
+	}
+	runner.Emit(t.Context(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
+}
+
+func TestResumeArgumentsRespectHerdrValidation(t *testing.T) {
+	for _, value := range []string{"apostrophe'", "newline\n", "tab\t", "control\x7f", strings.Repeat("x", 8193)} {
+		if validResume([]string{"orb", "--session", value}) {
+			t.Fatalf("accepted %q", value)
+		}
+	}
+	if !validResume([]string{"orb", "--pi-files", "--session", "/directory with spaces/file.jsonl"}) {
+		t.Fatal("space in argument rejected")
+	}
+}
+
+func TestHeadlessNeverReportsOrReleases(t *testing.T) {
+	for _, mode := range []extensions.Mode{extensions.ModePrint, extensions.ModeJSON, extensions.ModeRPC, extensions.ModeTUI} {
+		t.Run(string(mode), func(t *testing.T) {
+			root := t.TempDir()
+			logPath := filepath.Join(root, "calls")
+			registry := extensions.NewRegistry(root)
+			if err := registry.Register("builtin:herdr", Extension(fakeHerdr(t, root, logPath), "pane")); err != nil {
+				t.Fatal(err)
+			}
+			runner := extensions.NewRunner(registry, extensions.RunnerOptions{Mode: mode, SessionManager: &testSession{id: "native", persisted: true}})
+			runner.Emit(t.Context(), extensions.SessionStartEvent{})
+			runner.Emit(t.Context(), extensions.AgentStartEvent{})
+			runner.Emit(t.Context(), extensions.AgentSettledEvent{})
+			runner.Emit(t.Context(), extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
+			time.Sleep(20 * time.Millisecond)
+			if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+				t.Fatalf("headless reported: %v", err)
+			}
+		})
+	}
+}
+
+func TestReportsKeepOnlyLatestPendingState(t *testing.T) {
+	root := t.TempDir()
+	logPath := filepath.Join(root, "calls")
+	reporter := &reporter{binaryPath: fakeHerdr(t, root, logPath), paneID: "pane"}
+	reporter.active.Store(true)
+	reporter.claimed.Store(true)
+	runner := extensions.NewRunner(extensions.NewRegistry(root), extensions.RunnerOptions{Mode: extensions.ModeTUI, UI: &interactiveTestUI{}})
+	reporter.command.Lock()
+	for range 100 {
+		reporter.report(runner.CreateContext(), "working")
+	}
+	reporter.report(runner.CreateContext(), "idle")
+	reporter.command.Unlock()
+	lines := waitForLines(t, logPath, 1)
+	if len(lines) != 1 || !strings.Contains(lines[0], "--state idle") {
+		t.Fatalf("pending reports were not coalesced: %v", lines)
+	}
+	reporter.release()
+	lines = waitForLines(t, logPath, 2)
+	if len(lines) != 2 || !strings.Contains(lines[1], "release-agent") {
+		t.Fatalf("reports escaped after release: %v", lines)
+	}
 }

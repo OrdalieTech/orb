@@ -13,9 +13,9 @@ var (
 	defaultListen     = net.Listen
 )
 
-// callbackHost is PI_OAUTH_CALLBACK_HOST, or 127.0.0.1.
+// callbackHost is ORB_OAUTH_CALLBACK_HOST, or 127.0.0.1.
 func callbackHost() string {
-	if host := os.Getenv("PI_OAUTH_CALLBACK_HOST"); host != "" {
+	if host := os.Getenv("ORB_OAUTH_CALLBACK_HOST"); host != "" {
 		return host
 	}
 	return "127.0.0.1"

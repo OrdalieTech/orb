@@ -30,12 +30,12 @@ func (manager *SettingsManager) GetDoubleEscapeAction() string {
 	return "tree"
 }
 
-// Settings value takes precedence, then PI_CLEAR_ON_SHRINK, then false.
+// Settings value takes precedence, then ORB_CLEAR_ON_SHRINK, then false.
 func (manager *SettingsManager) GetClearOnShrink() bool {
 	if value, ok := manager.objectValue("terminal")["clearOnShrink"].(bool); ok {
 		return value
 	}
-	return os.Getenv("PI_CLEAR_ON_SHRINK") == "1"
+	return os.Getenv("ORB_CLEAR_ON_SHRINK") == "1"
 }
 
 func (manager *SettingsManager) GetHideThinkingBlock() bool {
@@ -48,12 +48,12 @@ func (manager *SettingsManager) GetShowCacheMissNotices() bool {
 	return value
 }
 
-// Settings value takes precedence, then PI_HARDWARE_CURSOR, then false.
+// Settings value takes precedence, then ORB_HARDWARE_CURSOR, then false.
 func (manager *SettingsManager) GetShowHardwareCursor() bool {
 	if value, ok := manager.boolValue("showHardwareCursor"); ok {
 		return value
 	}
-	return os.Getenv("PI_HARDWARE_CURSOR") == "1"
+	return os.Getenv("ORB_HARDWARE_CURSOR") == "1"
 }
 
 func (manager *SettingsManager) GetEditorPaddingX() int {

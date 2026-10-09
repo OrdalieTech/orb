@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/platforms/native/teamenv"
 	"github.com/OrdalieTech/orb/tui"
@@ -79,7 +80,7 @@ func configureChild(state *native.State) func(*agent.AgentSessionOptions) error 
 			if err != nil {
 				return err
 			}
-			if options.ModelRegistry, err = state.Models(state.AgentDir, state.Accounts(state.AgentDir, credentials), os.Getenv("PI_OFFLINE") != ""); err != nil {
+			if options.ModelRegistry, err = state.Models(state.AgentDir, state.Accounts(state.AgentDir, credentials), os.Getenv("ORB_OFFLINE") != ""); err != nil {
 				return err
 			}
 		}
@@ -104,7 +105,55 @@ func authStorageLocation(ctx context.Context, agentDir string, auth *config.Auth
 	return path
 }
 
+// nativeRootOptions consumes only global prefixes, never strings belonging to a
+// runtime flag or a prompt. Validate all values before changing the environment.
+func nativeRootOptions(argv []string) ([]string, bool, error) {
+	values := map[string]string{}
+	files := false
+	index := 0
+	for index < len(argv) {
+		name := ""
+		switch argv[index] {
+		case "--pi-files":
+			files = true
+			index++
+			continue
+		case "--agent-dir":
+			name = config.EnvAgentDir
+		case "--state-home":
+			name = "ORB_STATE_HOME"
+		case "--bridge-home":
+			name = "ORB_BRIDGE_HOME"
+		default:
+			goto apply
+		}
+		if index+1 >= len(argv) || argv[index+1] == "" || strings.HasPrefix(argv[index+1], "--") {
+			return nil, false, fmt.Errorf("%s requires a directory", argv[index])
+		}
+		path, err := nodepath.Expand(argv[index+1])
+		if err == nil {
+			path, err = filepath.Abs(path)
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		values[name] = path
+		index += 2
+	}
+apply:
+	for name, value := range values {
+		if err := os.Setenv(name, value); err != nil {
+			return nil, false, err
+		}
+	}
+	return argv[index:], files, nil
+}
+
 func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
+	argv, files, err := nativeRootOptions(argv)
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
 	if len(argv) > 0 && (argv[0] == "--version" || argv[0] == "-v") {
 		return runCLI(ctx, argv, streams)
 	}
@@ -112,15 +161,15 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	if len(argv) > 0 && argv[0] == "--pi-files" {
+	if files {
 		migrated, err := native.Migrated(ctx, agentDir)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
 		if migrated {
-			return reportCLIError(streams.Stderr, errors.New("this root uses native SQLite; select a separate PI_CODING_AGENT_DIR for Pi-file compatibility"))
+			return reportCLIError(streams.Stderr, errors.New("this root uses native SQLite; select a separate ORB_AGENT_DIR for Pi-file compatibility"))
 		}
-		return runCLI(ctx, argv[1:], streams)
+		return runCLI(ctx, argv, streams)
 	}
 	migrate := len(argv) > 1 && argv[0] == "storage" && argv[1] == "migrate"
 	if migrate {

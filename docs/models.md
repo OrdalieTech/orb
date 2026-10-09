@@ -1,6 +1,6 @@
 # Models
 
-orb ships a built-in model catalog (mirrored from upstream pi's generated model registry) and
+Orb ships a built-in model catalog from models.dev and provider catalogs and
 lets you add or override models through `models.json`. List what is available with:
 
 ```sh
@@ -13,9 +13,16 @@ provider is authenticated (see [providers.md](providers.md)), its models appear 
 
 ## Adding models
 
-Drop a `models.json` next to your settings (`~/.pi/agent/models.json`, or `.pi/models.json` in a
-trusted project) to register custom providers and models. Each provider entry names an API shape
-and a base URL; each model names its provider, context window, and pricing:
+For the native CLI, import a model configuration into the database:
+
+```sh
+orb storage config import models.json /path/to/models.json
+```
+
+File-backed SDK sessions and `--pi-files` mode instead read `~/.orb/agent/models.json`
+(or the agent directory selected by `ORB_AGENT_DIR`). Editing that file after native
+cutover does not update the database. Each provider entry names an API shape and a
+base URL; each model names its provider, context window, and pricing:
 
 ```json
 {
@@ -51,5 +58,6 @@ providers participate in `--list-models` and `/model` exactly like configured on
 
 ## Offline / cached catalogs
 
-Authenticated providers may refresh a newer catalog and cache it under `~/.pi/agent`, so recently
+Authenticated providers may refresh a newer catalog and cache it in the selected store
+(SQLite for the native CLI, under `~/.orb/agent` for file-backed sessions), so recently
 seen models remain listable without a network round trip.

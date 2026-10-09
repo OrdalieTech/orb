@@ -76,7 +76,7 @@ func Load(options LoadOptions) *Registry {
 	}
 	agentDir := themefile.CleanPath(options.AgentDir)
 	if options.ProjectTrusted && cwd != "" {
-		projectDir := filepath.Join(cwd, ".pi")
+		projectDir := filepath.Join(cwd, ".orb")
 		registry.loadPaths(themefile.ResolvePaths(options.ProjectPaths, projectDir))
 		registry.loadDefaultDirectory(filepath.Join(projectDir, "themes"))
 	}

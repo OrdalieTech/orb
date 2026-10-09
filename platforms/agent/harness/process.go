@@ -12,7 +12,7 @@ import (
 // plain is the environment the agent gets as environment; everything else,
 // secrets included, reaches it as KEY=VALUE lines on ORB_SECRETS_FD, which it
 // loads into an environment its tools cannot read.
-var plain = regexp.MustCompile(`^(PATH|HOME|TERM|LANG|LC_[A-Z]+|TZ|ORB_[A-Z_]+|PI_[A-Z_]+)=`)
+var plain = regexp.MustCompile(`^(PATH|HOME|TERM|LANG|LC_[A-Z]+|TZ|ORB_[A-Z_]+)=`)
 
 // process is a command, its working directory and environment, and for the
 // agent the lines it reads on its secrets descriptor.

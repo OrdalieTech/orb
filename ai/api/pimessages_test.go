@@ -65,7 +65,7 @@ func TestPiMessagesRoundTripAgainstServer(t *testing.T) {
 		StreamOptions: ai.StreamOptions{
 			APIKey: &apiKey, MaxTokens: &maxTokens, SessionID: &sessionID,
 			Headers: ai.ProviderHeaders{"x-custom": &customHeader, "x-ignored": nilHeader},
-			Env:     ai.ProviderEnv{"PI_CACHE_RETENTION": "long"},
+			Env:     ai.ProviderEnv{"ORB_CACHE_RETENTION": "long"},
 			OnResponse: func(_ context.Context, response ai.ProviderResponse, _ *ai.Model) error {
 				responseHeaders = response.Headers
 				return nil

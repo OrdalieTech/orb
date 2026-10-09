@@ -58,7 +58,7 @@ type BashSpawnContext struct {
 type BashSpawnHook func(BashSpawnContext) BashSpawnContext
 
 // BashSessionEnvironment carries the session metadata exposed to bash commands
-// as PI_* environment variables. It mirrors what the upstream bash tool reads
+// as ORB_* environment variables. It mirrors what the upstream bash tool reads
 // from the ExtensionContext in resolveSpawnContext.
 type BashSessionEnvironment struct {
 	SessionID      string
@@ -84,7 +84,7 @@ type BashToolOptions struct {
 	Operations    BashOperations
 	CommandPrefix string
 	ShellPath     string
-	// ExposeSessionEnvironment exposes current Pi session metadata as PI_*
+	// ExposeSessionEnvironment exposes current Orb session metadata as ORB_*
 	// environment variables. Default: true.
 	ExposeSessionEnvironment *bool
 	SpawnHook                BashSpawnHook
@@ -176,26 +176,25 @@ func (tool *bashTool) Execute(
 	if err != nil {
 		return engine.AgentToolResult{}, err
 	}
-	// Ambient PI_* variables are always scrubbed so children never inherit
-	// stale session metadata (upstream resolveSpawnContext).
-	delete(environment, "PI_SESSION_ID")
-	delete(environment, "PI_SESSION_FILE")
-	delete(environment, "PI_PROVIDER")
-	delete(environment, "PI_MODEL")
-	delete(environment, "PI_REASONING_LEVEL")
+	// Nested agents must not inherit another Orb's or Pi's session identity.
+	for _, prefix := range []string{"ORB_", "PI_"} {
+		for _, key := range []string{"SESSION_ID", "SESSION_FILE", "PROVIDER", "MODEL", "REASONING_LEVEL"} {
+			delete(environment, prefix+key)
+		}
+	}
 	if tool.exposeSessionEnvironment {
 		if info := tool.sessionEnvironmentInfo(); info != nil {
-			environment["PI_SESSION_ID"] = info.SessionID
+			environment["ORB_SESSION_ID"] = info.SessionID
 			if info.SessionFile != "" {
-				environment["PI_SESSION_FILE"] = info.SessionFile
+				environment["ORB_SESSION_FILE"] = info.SessionFile
 			}
 			// Provider and model are set together, gated on model presence.
 			if info.Provider != "" || info.Model != "" {
-				environment["PI_PROVIDER"] = info.Provider
-				environment["PI_MODEL"] = info.Model
+				environment["ORB_PROVIDER"] = info.Provider
+				environment["ORB_MODEL"] = info.Model
 			}
 			if info.ReasoningLevel != "" {
-				environment["PI_REASONING_LEVEL"] = info.ReasoningLevel
+				environment["ORB_REASONING_LEVEL"] = info.ReasoningLevel
 			}
 		}
 	}

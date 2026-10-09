@@ -48,8 +48,8 @@ func (roundTrip versionRoundTrip) RoundTrip(request *http.Request) (*http.Respon
 }
 
 func TestStartupVersionCheckNotifiesAndHonorsNetworkCeilings(t *testing.T) {
-	t.Setenv("PI_SKIP_VERSION_CHECK", "")
-	t.Setenv("PI_OFFLINE", "")
+	t.Setenv("ORB_SKIP_VERSION_CHECK", "")
+	t.Setenv("ORB_OFFLINE", "")
 	if !isNewerPackageVersion("v5.0.0-beta.20", "5.0.0-beta.9") || isNewerPackageVersion("v1.2.3", "1.2.3") {
 		t.Fatal("semver precedence mismatch")
 	}
@@ -72,7 +72,7 @@ func TestStartupVersionCheckNotifiesAndHonorsNetworkCeilings(t *testing.T) {
 		t.Fatalf("requests=%d notifications=%q", requests, ui.messages)
 	}
 
-	for _, variable := range []string{"PI_SKIP_VERSION_CHECK", "PI_OFFLINE"} {
+	for _, variable := range []string{"ORB_SKIP_VERSION_CHECK", "ORB_OFFLINE"} {
 		t.Setenv(variable, "1")
 		check(context.Background(), &versionNotificationUI{})
 		t.Setenv(variable, "")
@@ -93,15 +93,15 @@ func TestStartupVersionCheckNotifiesAndHonorsNetworkCeilings(t *testing.T) {
 }
 
 func TestStartupModelRefreshIsNonBlockingAndRefreshesRegisteredProviders(t *testing.T) {
-	original, present := os.LookupEnv("PI_OFFLINE")
-	if err := os.Unsetenv("PI_OFFLINE"); err != nil {
+	original, present := os.LookupEnv("ORB_OFFLINE")
+	if err := os.Unsetenv("ORB_OFFLINE"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		if present {
-			_ = os.Setenv("PI_OFFLINE", original)
+			_ = os.Setenv("ORB_OFFLINE", original)
 		} else {
-			_ = os.Unsetenv("PI_OFFLINE")
+			_ = os.Unsetenv("ORB_OFFLINE")
 		}
 	})
 	agentDir := t.TempDir()
@@ -163,7 +163,7 @@ func TestStartupModelRefreshIsNonBlockingAndRefreshesRegisteredProviders(t *test
 }
 
 func TestRPCStartupModelRefreshWithPresentFalseEnvIsCacheOnly(t *testing.T) {
-	t.Setenv("PI_OFFLINE", "0")
+	t.Setenv("ORB_OFFLINE", "0")
 	registry, err := config.NewModelRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestRPCStartupModelRefreshWithPresentFalseEnvIsCacheOnly(t *testing.T) {
 func TestRunCLIListModelsIsReadOnly(t *testing.T) {
 	// Models are listed after full runtime creation so extension-registered
 	// providers are listed; the run must stay read-only.
-	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	t.Setenv("ORB_AGENT_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(t.TempDir())
 	var stdout bytes.Buffer
@@ -224,7 +224,7 @@ func TestRunCLIListModelsIsReadOnly(t *testing.T) {
 	}
 	// Runtime creation writes only benign config (auth.json); it must never
 	// persist a session for a metadata-only command.
-	if _, err := os.Stat(filepath.Join(os.Getenv("PI_CODING_AGENT_DIR"), "sessions")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(os.Getenv("ORB_AGENT_DIR"), "sessions")); !os.IsNotExist(err) {
 		t.Fatalf("--list-models persisted a session (stat err = %v)", err)
 	}
 }

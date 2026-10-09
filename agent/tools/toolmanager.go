@@ -177,7 +177,7 @@ func (manager *toolManager) ensureTool(ctx context.Context, tool managedTool) st
 }
 
 func offlineModeEnabled() bool {
-	switch strings.ToLower(os.Getenv("PI_OFFLINE")) {
+	switch strings.ToLower(os.Getenv("ORB_OFFLINE")) {
 	case "1", "true", "yes":
 		return true
 	default:

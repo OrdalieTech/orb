@@ -2,7 +2,7 @@
 // Run by TestSDKJavaScriptUnitTests (sdk_script_test.go) via `node --test`.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
@@ -336,12 +336,29 @@ test("modelsAreEqual compares only id and provider", () => {
 	assert.equal(ai.modelsAreEqual(null, { id: "m", provider: "p" }), false);
 });
 
+test("getAgentDir ignores Pi configuration and uses Orb's own root", () => {
+	const orb = process.env.ORB_AGENT_DIR;
+	const pi = process.env.PI_CODING_AGENT_DIR;
+	try {
+		delete process.env.ORB_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = "/pi-only";
+		assert.equal(codingAgent.getAgentDir(), join(homedir(), ".orb", "agent"));
+		process.env.ORB_AGENT_DIR = "~/orb-custom";
+		assert.equal(codingAgent.getAgentDir(), join(homedir(), "orb-custom"));
+	} finally {
+		if (orb === undefined) delete process.env.ORB_AGENT_DIR;
+		else process.env.ORB_AGENT_DIR = orb;
+		if (pi === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = pi;
+	}
+});
+
 // ── Thin handles ─────────────────────────────────────────────────────────────
 
 test("SessionManager.create yields a real writable session dir; inMemory does not", () => {
 	const agentDir = mkdtempSync(join(tmpdir(), "orb-sdk-test-"));
-	const previous = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = agentDir;
+	const previous = process.env.ORB_AGENT_DIR;
+	process.env.ORB_AGENT_DIR = agentDir;
 	try {
 		const cwd = mkdtempSync(join(tmpdir(), "orb-sdk-cwd-"));
 		const manager = codingAgent.SessionManager.create(cwd);
@@ -361,8 +378,8 @@ test("SessionManager.create yields a real writable session dir; inMemory does no
 		assert.equal(memory.persist, false);
 		rmSync(cwd, { recursive: true, force: true });
 	} finally {
-		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previous;
+		if (previous === undefined) delete process.env.ORB_AGENT_DIR;
+		else process.env.ORB_AGENT_DIR = previous;
 		rmSync(agentDir, { recursive: true, force: true });
 	}
 });

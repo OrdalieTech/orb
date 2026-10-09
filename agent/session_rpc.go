@@ -774,7 +774,7 @@ func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
 func authGuidanceDocPaths() (providersDoc, modelsDoc string) {
 	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
 	providersDoc = filepath.Join(docsDir, "providers.md")
-	if _, err := os.Stat(providersDoc); err != nil && os.Getenv("PI_PACKAGE_DIR") == "" {
+	if _, err := os.Stat(providersDoc); err != nil && os.Getenv("ORB_PACKAGE_DIR") == "" {
 		return "https://github.com/OrdalieTech/orb/blob/main/docs/providers.md",
 			"https://github.com/OrdalieTech/orb/blob/main/docs/models.md"
 	}

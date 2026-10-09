@@ -63,7 +63,7 @@ COPY --from=fetch --chmod=0111 /deb/usr/bin/buzz /usr/local/libexec/buzz
 RUN ln -s orb /usr/local/bin/buzz
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     HOME=/agent \
-    PI_CODING_AGENT_DIR=/agent/config \
+    ORB_AGENT_DIR=/agent/config \
     ORB_STATE_HOME=/agent/state \
     ORB_BUZZ_CLI=/usr/local/libexec/buzz
 WORKDIR /agent/workspace

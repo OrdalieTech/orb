@@ -242,8 +242,8 @@ func TestLoadResourcesPromptPrecedenceTrustAndNoContext(t *testing.T) {
 	cwd := filepath.Join(root, "project")
 	agentDir := filepath.Join(root, "agent")
 	mustWriteResource(t, filepath.Join(cwd, "AGENTS.md"), "context")
-	mustWriteResource(t, filepath.Join(cwd, ".pi", "SYSTEM.md"), "project system")
-	mustWriteResource(t, filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md"), "project append")
+	mustWriteResource(t, filepath.Join(cwd, ".orb", "SYSTEM.md"), "project system")
+	mustWriteResource(t, filepath.Join(cwd, ".orb", "APPEND_SYSTEM.md"), "project append")
 	mustWriteResource(t, filepath.Join(agentDir, "SYSTEM.md"), "global system")
 	mustWriteResource(t, filepath.Join(agentDir, "APPEND_SYSTEM.md"), "global append")
 
@@ -286,8 +286,8 @@ func TestLoadResourcesCLIOverridesFileLiteralAndExplicitEmpty(t *testing.T) {
 	appendPath := filepath.Join(root, "cli-append.md")
 	mustWriteResource(t, systemPath, "system file")
 	mustWriteResource(t, appendPath, "append file")
-	mustWriteResource(t, filepath.Join(cwd, ".pi", "SYSTEM.md"), "discovered system")
-	mustWriteResource(t, filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md"), "discovered append")
+	mustWriteResource(t, filepath.Join(cwd, ".orb", "SYSTEM.md"), "discovered system")
+	mustWriteResource(t, filepath.Join(cwd, ".orb", "APPEND_SYSTEM.md"), "discovered append")
 
 	resources := LoadResources(ResourceOptions{
 		CWD:                cwd,

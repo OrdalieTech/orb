@@ -71,7 +71,7 @@ worker-e2e-deployed:
 	node platforms/worker/e2e/e2e.mjs --runtime remote --url "$(ORB_WORKER_URL)" --phase $(WORKER_E2E_PHASE)
 
 # The laptop side of the Bridge checks: this tree's `orb`, run with HOME,
-# ORB_STATE_HOME, ORB_BRIDGE_HOME and PI_CODING_AGENT_DIR under $(WORKER_BRIDGE_DIR).
+# ORB_STATE_HOME, ORB_BRIDGE_HOME and ORB_AGENT_DIR under $(WORKER_BRIDGE_DIR).
 worker-bridge-orb:
 	mkdir -p $(WORKER_BRIDGE_DIR)
 	$(WORKER_GO_ENV) CGO_ENABLED=0 go build -o $(WORKER_BRIDGE_DIR)/orb ./cmd/orb

@@ -138,8 +138,8 @@ func TestDefaultResourceLoaderPromptSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	systemPath := filepath.Join(cwd, ".pi", "SYSTEM.md")
-	appendPath := filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md")
+	systemPath := filepath.Join(cwd, ".orb", "SYSTEM.md")
+	appendPath := filepath.Join(cwd, ".orb", "APPEND_SYSTEM.md")
 	writeResourceFixture(t, systemPath, "system")
 	writeResourceFixture(t, appendPath, "append")
 

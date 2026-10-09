@@ -27,7 +27,7 @@ func TestSettingsLoadMigrateMergeAndPreserveUnknown(t *testing.T) {
 		// A wrong-typed known key must not reject the document.
 		"defaultProvider": 42,
 	})
-	writeSettings(t, filepath.Join(projectDir, ".pi", "settings.json"), map[string]any{
+	writeSettings(t, filepath.Join(projectDir, ".orb", "settings.json"), map[string]any{
 		"terminal":   map[string]any{"imageWidthCells": 80},
 		"extensions": []string{"project.ts"},
 	})
@@ -146,7 +146,7 @@ func TestProjectSettingsLoadAndReadDoesNotCreateProjectDirectory(t *testing.T) {
 	agentDir := filepath.Join(root, "agent")
 	projectDir := filepath.Join(root, "project")
 	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{"marker": "global"})
-	writeSettings(t, filepath.Join(projectDir, ".pi", "settings.json"), map[string]any{"marker": "project"})
+	writeSettings(t, filepath.Join(projectDir, ".orb", "settings.json"), map[string]any{"marker": "project"})
 
 	manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
 	if err != nil {
@@ -163,8 +163,8 @@ func TestProjectSettingsLoadAndReadDoesNotCreateProjectDirectory(t *testing.T) {
 	if _, err := NewSettingsManager(projectWithoutConfig, WithAgentDir(agentDir)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(projectWithoutConfig, ".pi")); !os.IsNotExist(err) {
-		t.Fatalf("read created .pi directory: %v", err)
+	if _, err := os.Stat(filepath.Join(projectWithoutConfig, ".orb")); !os.IsNotExist(err) {
+		t.Fatalf("read created .orb directory: %v", err)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestLoadErrorsAndReloadKeepPreviousScope(t *testing.T) {
 	agentDir := filepath.Join(root, "agent")
 	projectDir := filepath.Join(root, "project")
 	writeRaw(t, filepath.Join(agentDir, "settings.json"), `{ invalid`)
-	writeRaw(t, filepath.Join(projectDir, ".pi", "settings.json"), `{ also invalid`)
+	writeRaw(t, filepath.Join(projectDir, ".orb", "settings.json"), `{ also invalid`)
 	manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestLoadErrorsAndReloadKeepPreviousScope(t *testing.T) {
 	}
 
 	writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{"marker": "valid"})
-	writeSettings(t, filepath.Join(projectDir, ".pi", "settings.json"), map[string]any{})
+	writeSettings(t, filepath.Join(projectDir, ".orb", "settings.json"), map[string]any{})
 	manager.Reload()
 	if got := manager.GetSettings()["marker"]; got != "valid" {
 		t.Fatalf("marker after valid reload = %#v", got)
@@ -489,7 +489,7 @@ func TestDefaultToolsModifiersLayerProjectOverUser(t *testing.T) {
 	load := func(user, project any) []string {
 		t.Helper()
 		writeSettings(t, filepath.Join(agentDir, "settings.json"), map[string]any{"defaultTools": user})
-		writeSettings(t, filepath.Join(projectDir, ".pi", "settings.json"), map[string]any{"defaultTools": project})
+		writeSettings(t, filepath.Join(projectDir, ".orb", "settings.json"), map[string]any{"defaultTools": project})
 		manager, err := NewSettingsManager(projectDir, WithAgentDir(agentDir))
 		if err != nil {
 			t.Fatal(err)

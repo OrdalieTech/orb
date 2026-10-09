@@ -364,7 +364,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 }
 
 // bindBashSessionEnvironment gives built-in bash tools access to the current
-// session metadata for PI_* variables. It is the orb counterpart of upstream
+// session metadata for ORB_* variables. It is the orb counterpart of upstream
 // wrapping built-in tool definitions with the extension runner's ctx factory.
 func (runtime *SessionRuntime) bindBashSessionEnvironment(baseTools []engine.AgentTool) {
 	for _, tool := range baseTools {

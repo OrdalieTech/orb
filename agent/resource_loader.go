@@ -428,7 +428,7 @@ func defaultThemeSourceInfo(path string, options DefaultResourceLoaderOptions) *
 	for _, candidate := range []struct {
 		root  string
 		scope extensions.SourceScope
-	}{{filepath.Join(options.AgentDir, "themes"), extensions.SourceScopeUser}, {filepath.Join(options.CWD, ".pi", "themes"), extensions.SourceScopeProject}} {
+	}{{filepath.Join(options.AgentDir, "themes"), extensions.SourceScopeUser}, {filepath.Join(options.CWD, ".orb", "themes"), extensions.SourceScopeProject}} {
 		if pathIsWithin(path, candidate.root) {
 			baseDir, scope = candidate.root, candidate.scope
 			break

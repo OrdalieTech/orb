@@ -306,7 +306,7 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 
 	accountStore := args.native.Accounts(agentDir, authStorage)
 	runtimeAuth := newRuntimeCredentials(accountStore)
-	registry, err := args.native.Models(agentDir, runtimeAuth, os.Getenv("PI_OFFLINE") != "")
+	registry, err := args.native.Models(agentDir, runtimeAuth, os.Getenv("ORB_OFFLINE") != "")
 	if err != nil {
 		return runtimeInputs{}, err
 	}

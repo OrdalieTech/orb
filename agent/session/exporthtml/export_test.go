@@ -149,7 +149,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(themeDir, "custom-export.json"), []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
+	t.Setenv("ORB_AGENT_DIR", agentDir)
 
 	output := filepath.Join(t.TempDir(), "session.html")
 	if _, err := ExportFromFile(fixturePath(t), Options{OutputPath: output, ThemeName: "custom-export"}); err != nil {

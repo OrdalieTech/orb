@@ -13,7 +13,7 @@ import (
 func TestRegistryDiscoveryTrustAndContentNames(t *testing.T) {
 	agentDir, cwd := t.TempDir(), t.TempDir()
 	writeTestTheme(t, filepath.Join(agentDir, "themes", "filename.json"), "user-name", "#112233")
-	projectPath := filepath.Join(cwd, ".pi", "themes", "project.json")
+	projectPath := filepath.Join(cwd, ".orb", "themes", "project.json")
 	userPath := filepath.Join(agentDir, "themes", "filename.json")
 	writeTestTheme(t, projectPath, "user-name", "#223344")
 
@@ -52,8 +52,8 @@ func TestRegistryDiscoveryTrustAndContentNames(t *testing.T) {
 func TestRegistryThemePrecedenceIsFirstWins(t *testing.T) {
 	root := t.TempDir()
 	agentDir, cwd := filepath.Join(root, "agent"), filepath.Join(root, "project")
-	projectSettings := filepath.Join(cwd, ".pi", "configured.json")
-	projectAuto := filepath.Join(cwd, ".pi", "themes", "auto.json")
+	projectSettings := filepath.Join(cwd, ".orb", "configured.json")
+	projectAuto := filepath.Join(cwd, ".orb", "themes", "auto.json")
 	userSettings := filepath.Join(agentDir, "configured.json")
 	userAuto := filepath.Join(agentDir, "themes", "auto.json")
 	packagePath := filepath.Join(root, "package.json")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/codexsessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
@@ -57,15 +59,89 @@ var (
 
 var compiledExtensions []extensions.CompiledExtension
 
-func compiledExtensionsForEnvironment(getenv func(string) string) []extensions.CompiledExtension {
+func compiledExtensionsForEnvironment(getenv func(string) string, resumeArgs ...string) []extensions.CompiledExtension {
 	rows := append([]extensions.CompiledExtension(nil), compiledExtensions...)
 	if getenv("HERDR_ENV") != "1" || getenv("HERDR_BIN_PATH") == "" || getenv("HERDR_PANE_ID") == "" {
 		return rows
 	}
 	return append(rows, extensions.CompiledExtension{
 		Name: "herdr", Hidden: true, DefaultEnabled: true,
-		Factory: herdrext.Extension(herdrBinary(getenv("HERDR_BIN_PATH")), getenv("HERDR_PANE_ID")),
+		Factory: herdrext.Extension(herdrBinary(getenv("HERDR_BIN_PATH")), getenv("HERDR_PANE_ID"), resumeArgs...),
 	})
+}
+
+// herdrResumeArguments deliberately excludes credentials, prompts, messages and
+// unknown extension flags. Model selection is already persisted in the session.
+func herdrResumeArguments(args CLIArgs) []string {
+	var result []string
+	for _, option := range []struct {
+		enabled bool
+		flag    string
+	}{
+		{args.Auto, "--auto"},
+		{args.NoExtensions, "--no-extensions"},
+		{args.NoTools, "--no-tools"},
+		{args.NoBuiltinTools, "--no-builtin-tools"},
+		{args.NoContextFiles, "--no-context-files"},
+		{args.NoSkills, "--no-skills"},
+		{args.NoPromptTemplates, "--no-prompt-templates"},
+		{args.NoThemes, "--no-themes"},
+		{args.Offline, "--offline"},
+	} {
+		if option.enabled {
+			result = append(result, option.flag)
+		}
+	}
+	for _, option := range []struct{ flag, value string }{
+		{"--tools", strings.Join(args.Tools, ",")},
+		{"--exclude-tools", strings.Join(args.ExcludeTools, ",")},
+		{"--bridge", args.BridgeProfile},
+		{"--instance", args.InstanceAlias},
+	} {
+		if option.value != "" {
+			result = append(result, option.flag, option.value)
+		}
+	}
+	for _, group := range []struct {
+		flag   string
+		values []string
+	}{
+		{"--extension", args.Extensions}, {"--skill", args.Skills},
+		{"--prompt-template", args.PromptTemplates}, {"--theme", args.Themes},
+	} {
+		for _, value := range group.values {
+			result = append(result, group.flag, value)
+		}
+	}
+	if args.UseTheme != "" {
+		result = append(result, "--use-theme", args.UseTheme)
+	}
+	if args.ProjectTrusted != nil && !*args.ProjectTrusted {
+		result = append(result, "--no-approve")
+	}
+	return result
+}
+
+// Both roots are necessary: making the default agent directory explicit would
+// otherwise change native.Path's precedence and select a different database.
+func herdrResumeRoots(agentDir string) ([]string, error) {
+	agentDir, err := filepath.Abs(agentDir)
+	if err != nil {
+		return nil, err
+	}
+	statePath, err := native.Path(agentDir)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"--agent-dir", agentDir, "--state-home", filepath.Dir(statePath)}
+	if bridgeHome := os.Getenv("ORB_BRIDGE_HOME"); bridgeHome != "" {
+		bridgeHome, err = filepath.Abs(bridgeHome)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--bridge-home", bridgeHome)
+	}
+	return args, nil
 }
 
 // herdrBinary is the Herdr client to report through. A Herdr server updated
@@ -97,6 +173,13 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 	// metadataOnly runs (e.g. --list-models) build the runtime purely to
 	// enumerate models/providers; MCP servers contribute tools, not models, so
 	// skip them rather than eagerly spawn and connect every configured server.
+	resumeRoots, resumeErr := herdrResumeRoots(agentDir)
+	var hostCompiled []extensions.CompiledExtension
+	if resumeErr == nil {
+		hostCompiled = compiledExtensionsForEnvironment(os.Getenv, append(resumeRoots, herdrResumeArguments(args)...)...)
+	} else {
+		hostCompiled = append([]extensions.CompiledExtension(nil), compiledExtensions...)
+	}
 	rows := assembly.Rows(assembly.Options{
 		UsageCache: args.usageCache,
 		Accounts:   args.accounts,
@@ -123,7 +206,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			}
 			return built[0], nil
 		},
-		Compiled:   append(compiledExtensionsForEnvironment(os.Getenv), args.compiled...),
+		Compiled:   append(hostCompiled, args.compiled...),
 		MCP:        !args.NoExtensions && !args.metadataOnly,
 		MCPServers: args.mcpServers,
 	})
@@ -172,17 +255,12 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 			}
 		}
 		options := extensionDiscoveryOptions(cwd, agentDir, args.NoExtensions, settings, packages, explicitPaths)
-		if paths := extensionhost.Discover(options); len(paths) > 0 {
+		paths := slices.DeleteFunc(extensionhost.Discover(options), herdrext.IsPiIntegration)
+		if len(paths) > 0 {
 			if registry == nil {
 				registry = extensions.NewRegistry(cwd)
 			}
 			hostOptions := extensionhost.Options{AgentDir: agentDir, CWD: cwd, Version: version, Stderr: os.Stderr}
-			// The CLI sets allowNoModel only for interactive runtime construction;
-			// headless hosts never claim the Herdr pane.
-			if args.allowNoModel && herdrext.InPane() {
-				hostOptions.WrapFactory = herdrext.WrapPiIntegration
-				hostOptions.ChildEnv = herdrext.PiForegroundHint
-			}
 			manager := extensionhost.NewManager(hostOptions)
 			// Child agent sessions (agent_session_v1 / sdk_v1 resource reload)
 			// run on the real NewAgentSession-backed runtime.

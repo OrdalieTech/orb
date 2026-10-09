@@ -15,7 +15,7 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	binary := writeFakeCommand(t, filepath.Join(root, "configured-orb"),
 		"printf '%s\\n' 'orb configured-version'\n", "echo orb configured-version\n")
 
-	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: binary}, []string{"PATH=" + shellSearchPath, "KEEP=value"}, "")
+	environment, err := prepareHostEnvironment(Options{AgentDir: agentDir, OrbExecutable: binary}, []string{"PATH=" + shellSearchPath, "KEEP=value", "PI_CODING_AGENT=true", "PI_CODING_AGENT_DIR=/pi-only", "HERDR_AGENT=pi", "AI_AGENT=pi", "PI_SESSION_ID=pi-session", "PI_CODING_AGENT_SESSION_DIR=/pi-sessions"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +35,15 @@ func TestPrepareHostEnvironmentMakesPiResolveConfiguredBinary(t *testing.T) {
 	if got := environmentValue(environment, nodepath.AgentDirEnv); got != agentDir {
 		t.Fatalf("%s = %q, want %q", nodepath.AgentDirEnv, got, agentDir)
 	}
-	if got := environmentValue(environment, piAgentMarkerEnv); got != "true" {
-		t.Fatalf("%s = %q", piAgentMarkerEnv, got)
+	for key, want := range map[string]string{
+		"ORB_AGENT_DIR": agentDir, "PI_CODING_AGENT_DIR": agentDir,
+		"AI_AGENT": "orb", "ORB_CODING_AGENT": "true",
+		"PI_CODING_AGENT": "", "HERDR_AGENT": "",
+		"PI_SESSION_ID": "", "PI_CODING_AGENT_SESSION_DIR": "",
+	} {
+		if got := environmentValue(environment, key); got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
 	}
 	if got := environmentValue(environment, "KEEP"); got != "value" {
 		t.Fatalf("preserved environment = %q", got)

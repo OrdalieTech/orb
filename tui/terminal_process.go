@@ -49,7 +49,7 @@ type ProcessTerminal struct {
 
 func NewProcessTerminal() *ProcessTerminal { return NewProcessTerminalFiles(os.Stdin, os.Stdout) }
 func NewProcessTerminalFiles(input, output *os.File) *ProcessTerminal {
-	return &ProcessTerminal{input: input, output: output, writeLogPath: resolveTerminalWriteLogPath(os.Getenv("PI_TUI_WRITE_LOG"))}
+	return &ProcessTerminal{input: input, output: output, writeLogPath: resolveTerminalWriteLogPath(os.Getenv("ORB_TUI_WRITE_LOG"))}
 }
 
 func resolveTerminalWriteLogPath(value string) string {

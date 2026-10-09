@@ -490,7 +490,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
 	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
 	t.Setenv("ORB_CHAT_DATA_DIR", "")
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "1")
 	if err := os.MkdirAll(agentDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -656,7 +656,7 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
 	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
 	t.Setenv("ORB_CHAT_DATA_DIR", "")
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "1")
 	state, err := openNativeState(ctx, agentDir, true)
 	if err != nil {
 		t.Fatal(err)
@@ -731,7 +731,7 @@ func TestStorageSessionsListsStoredConversationsAsJSONLines(t *testing.T) {
 	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
 	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "1")
 	jsonl := filepath.Join(root, "s.jsonl")
 	if err := os.WriteFile(jsonl, []byte(`{"type":"session","version":3,"id":"11111111-2222-4333-8444-555555555555","timestamp":"2026-09-27T10:00:00.000Z","cwd":"/work"}
 {"type":"message","id":"a1b2c3d4","parentId":null,"timestamp":"2026-09-27T10:00:01.000Z","message":{"role":"user","content":"hello phone","timestamp":1790503201000}}

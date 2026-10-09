@@ -10,7 +10,7 @@ Dependency direction is strictly `chat → agent`; nothing in the SDK imports `c
 ## Quick start — local Telegram bot
 
 `orb chat telegram` runs the complete local gateway: long-poll ingress, the durable local spool,
-and per-conversation sessions under `~/.pi/agent/chat/telegram` by default.
+and per-conversation sessions under `~/.orb/agent/chat/telegram` by default.
 
 ```bash
 TELEGRAM_BOT_TOKEN=<token from @BotFather> \
@@ -115,7 +115,7 @@ conversation before session construction. `AgentSessionOptions.ToolOptions` (the
 divergence) injects per-tool construction options — including `Operations` backends for
 VFS/sandboxed execution — into the built-in tools; nil fields keep defaults, and the overrides
 survive tool rebuilds. `WithAgentDir` overrides the global agent config directory (default
-`~/.pi/agent`).
+`~/.orb/agent`).
 
 ### Sending files
 

@@ -105,7 +105,7 @@ func LoadPromptTemplates(options LoadPromptTemplatesOptions) ([]PromptTemplate, 
 	cwd := resolveResourcePath(options.CWD)
 	agentDir := resolveResourcePath(options.AgentDir)
 	globalDir := filepath.Join(agentDir, "prompts")
-	projectDir := filepath.Join(cwd, ".pi", "prompts")
+	projectDir := filepath.Join(cwd, ".orb", "prompts")
 	templates := make([]PromptTemplate, 0)
 	var diagnostics []ResourceDiagnostic
 

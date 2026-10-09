@@ -74,3 +74,27 @@ func TestAddAndRemoveServerKeepOtherContent(t *testing.T) {
 		t.Fatalf("remove: %v, %v", err, removed)
 	}
 }
+
+func TestProjectConfigDoesNotReadOrWritePi(t *testing.T) {
+	agentDir, cwd := t.TempDir(), t.TempDir()
+	piPath := filepath.Join(cwd, ".pi", "mcp.json")
+	sentinel := `{"mcpServers":{"pi-only":{"command":"pi-only"}}}`
+	writeConfig(t, piPath, sentinel)
+	entries, problems := Load(agentDir, cwd, true)
+	if len(entries) != 0 || len(problems) != 0 {
+		t.Fatalf("Pi MCP config discovered: %v, %v", entries, problems)
+	}
+	if _, err := AddServer(ProjectPath(cwd), "orb-only", ServerConfig{Command: "orb-only"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ProjectPath(cwd), filepath.Join(cwd, ".orb", "mcp.json"); got != want {
+		t.Fatalf("MCP path = %q, want %q", got, want)
+	}
+	if got, err := os.ReadFile(piPath); err != nil || string(got) != sentinel {
+		t.Fatalf("Pi MCP config changed: %q, %v", got, err)
+	}
+	entries, problems = Load(agentDir, cwd, true)
+	if len(entries) != 1 || entries[0].Name != "orb-only" || len(problems) != 0 {
+		t.Fatalf("Orb MCP config = %v, %v", entries, problems)
+	}
+}

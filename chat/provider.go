@@ -54,7 +54,7 @@ func WithWorkspace(cwd string, open Open) LocalProviderOption {
 }
 
 // WithAgentDir overrides the global agent config directory used for the
-// shared model registry and settings. Defaults to ~/.pi/agent.
+// shared model registry and settings. Defaults to ~/.orb/agent.
 func WithAgentDir(dir string) LocalProviderOption {
 	return func(p *LocalProvider) { p.agentDir = dir }
 }

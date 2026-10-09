@@ -56,14 +56,14 @@ func WithEnvironment(environment aiauth.AuthContext) ModelRegistryOption {
 }
 
 func NewModelRegistry(agentDir string) (*ModelRegistry, error) {
-	_, offline := os.LookupEnv("PI_OFFLINE")
+	_, offline := os.LookupEnv("ORB_OFFLINE")
 	return newModelRegistry(agentDir, !offline)
 }
 
 // NewModelRegistryWithCredentials uses an instance-owned credential source for
 // both model availability and refresh, without changing the disk format.
 func NewModelRegistryWithCredentials(agentDir string, credentials aiauth.CredentialStore) (*ModelRegistry, error) {
-	_, offline := os.LookupEnv("PI_OFFLINE")
+	_, offline := os.LookupEnv("ORB_OFFLINE")
 	return newModelRegistry(agentDir, !offline, credentials)
 }
 

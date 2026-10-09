@@ -12,12 +12,13 @@ func TestDiscoverMatchesUpstreamOrderAndDirectoryRules(t *testing.T) {
 	root := t.TempDir()
 	cwd := filepath.Join(root, "project")
 	agentDir := filepath.Join(root, "agent")
-	projectDir := filepath.Join(cwd, ".pi", "extensions")
+	projectDir := filepath.Join(cwd, ".orb", "extensions")
 	globalDir := filepath.Join(agentDir, "extensions")
 	configuredDir := filepath.Join(root, "configured")
 	packageDir := filepath.Join(root, "package")
 	explicit := filepath.Join(root, "explicit.ts")
 
+	writeFile(t, filepath.Join(cwd, ".pi", "extensions", "pi-only.ts"), "export default () => {}", 0o644)
 	writeFile(t, filepath.Join(projectDir, "a.ts"), "export default () => {}", 0o644)
 	writeFile(t, filepath.Join(projectDir, "b.js"), "module.exports = () => {}", 0o644)
 	writeFile(t, filepath.Join(projectDir, "bundle", "index.ts"), "export default () => {}", 0o644)
@@ -58,7 +59,7 @@ func TestDiscoverTrustAndMissingExplicitPath(t *testing.T) {
 	root := t.TempDir()
 	cwd := filepath.Join(root, "project")
 	agentDir := filepath.Join(root, "agent")
-	project := filepath.Join(cwd, ".pi", "extensions", "project.ts")
+	project := filepath.Join(cwd, ".orb", "extensions", "project.ts")
 	projectConfigured := filepath.Join(cwd, "project-configured.ts")
 	global := filepath.Join(agentDir, "extensions", "global.ts")
 	missing := filepath.Join(root, "missing.ts")
@@ -84,7 +85,7 @@ func TestDiscoverFollowsDirectorySymlinks(t *testing.T) {
 	cwd := filepath.Join(root, "project")
 	target := filepath.Join(root, "target")
 	writeFile(t, filepath.Join(target, "index.ts"), "export default () => {}", 0o644)
-	link := filepath.Join(cwd, ".pi", "extensions", "linked")
+	link := filepath.Join(cwd, ".orb", "extensions", "linked")
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
 	}

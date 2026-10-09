@@ -208,9 +208,9 @@ func TestWebSearchHonoursConfiguredProvider(t *testing.T) {
 	}
 	home := t.TempDir()
 	setHome(t, home)
-	mustOK(os.MkdirAll(filepath.Join(home, ".pi"), 0o755))
+	mustOK(os.MkdirAll(filepath.Join(home, ".orb"), 0o755))
 	config := `{"provider":"brave","exaApiKey":"exa-key","braveApiKey":"brave-key"}`
-	mustOK(os.WriteFile(filepath.Join(home, ".pi", "web-search.json"), []byte(config), 0o600))
+	mustOK(os.WriteFile(filepath.Join(home, ".orb", "web-search.json"), []byte(config), 0o600))
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		require(t, strings.Contains(request.URL.Host, "brave"), "provider ignored: %s", request.URL)
 		return response(http.StatusOK, "application/json", `{"web":{"results":[]}}`), nil
@@ -253,4 +253,28 @@ func setHome(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
+}
+
+func TestWebSearchDoesNotReadPiConfiguration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	for _, key := range []string{"EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY"} {
+		t.Setenv(key, "")
+	}
+	piPath := filepath.Join(home, ".pi", "web-search.json")
+	if err := os.MkdirAll(filepath.Dir(piPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := `{"exa":"pi-secret"}`
+	if err := os.WriteFile(piPath, []byte(sentinel), 0600); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := loadWebKeys()
+	if err != nil || keys.Exa != "" {
+		t.Fatalf("Pi key discovered: %v", err)
+	}
+	if got, err := os.ReadFile(piPath); err != nil || string(got) != sentinel {
+		t.Fatal("Pi config changed")
+	}
 }

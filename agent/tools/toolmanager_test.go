@@ -49,7 +49,7 @@ func TestToolManagerResolutionAndOfflineMode(t *testing.T) {
 
 	var requests atomic.Int32
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv("PI_OFFLINE", "YeS")
+	t.Setenv("ORB_OFFLINE", "YeS")
 	manager = testManagedToolManager(t, "linux", func(*http.Request) (*http.Response, error) {
 		requests.Add(1)
 		return testHTTPResponse(http.StatusInternalServerError, nil), nil
@@ -359,8 +359,8 @@ func TestSearchToolsLiveMiniTree(t *testing.T) {
 			t.Fatalf("download %s: %v", managed, err)
 		}
 	}
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_AGENT_DIR", agentDir)
+	t.Setenv("ORB_OFFLINE", "1")
 	root := searchTreeRoot(t)
 	grepResult, err := NewGrepTool(root, nil).Execute(context.Background(), "grep", map[string]any{
 		"pattern": "match", "path": filepath.Join(root, "context.txt"), "context": 1,
@@ -389,5 +389,17 @@ func TestSearchToolsLiveMiniTree(t *testing.T) {
 		if slices.Contains(paths, ignored) {
 			t.Fatalf("live find output %q includes ignored %q", paths, ignored)
 		}
+	}
+}
+
+func TestToolOfflineModeIgnoresPiEnvironment(t *testing.T) {
+	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "")
+	if offlineModeEnabled() {
+		t.Fatal("Pi's offline mode affected Orb")
+	}
+	t.Setenv("ORB_OFFLINE", "yes")
+	if !offlineModeEnabled() {
+		t.Fatal("Orb's offline mode was ignored")
 	}
 }

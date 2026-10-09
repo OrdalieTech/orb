@@ -165,7 +165,7 @@ type TUI struct {
 }
 
 func NewTUI(terminal Terminal) *TUI {
-	return &TUI{terminal: terminal, clearOnShrink: os.Getenv("PI_CLEAR_ON_SHRINK") == "1", showHardwareCursor: os.Getenv("PI_HARDWARE_CURSOR") == "1", stopped: true}
+	return &TUI{terminal: terminal, clearOnShrink: os.Getenv("ORB_CLEAR_ON_SHRINK") == "1", showHardwareCursor: os.Getenv("ORB_HARDWARE_CURSOR") == "1", stopped: true}
 }
 
 func (ui *TUI) setStopped(stopped bool) {

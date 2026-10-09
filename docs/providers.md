@@ -1,9 +1,11 @@
 # Providers
 
-orb authenticates the same way as upstream pi and shares its on-disk layout: OAuth tokens and
-API keys live in `~/.pi/agent/auth.json` (override the agent directory with `PI_CODING_AGENT_DIR`).
-A session written by orb opens in TS pi and vice versa, so any provider you can reach from
-upstream pi you can reach here.
+Orb supports Pi-compatible authentication and session formats without sharing Pi's files.
+The native CLI stores credentials and sessions in `~/.orb/state/orb.db`; `ORB_STATE_HOME`
+overrides its directory. File-backed SDK sessions and explicit `--pi-files` mode use
+`~/.orb/agent/auth.json` (`ORB_AGENT_DIR` overrides the agent directory).
+Transfer sessions through `orb storage export <id> <file.jsonl>` and
+`orb storage import <file.jsonl>`, not by pointing Pi at Orb's live database.
 
 ## Subscriptions (OAuth)
 
@@ -39,7 +41,10 @@ Vertex (application-default credentials). The full mapping matches upstream pi's
 
 ## Auth file
 
-Keys and OAuth tokens can also be written directly to `~/.pi/agent/auth.json`:
+For the native CLI, prefer `orb login`. To supply a credential document explicitly, save
+this JSON in a private file and run `orb storage config import auth.json <file>`.
+After native cutover, editing `~/.orb/agent/auth.json` does not update the database.
+File-backed SDK sessions and `--pi-files` mode read that file directly (keep it mode 0600):
 
 ```json
 {
@@ -61,6 +66,6 @@ their own `baseUrl`, headers, and auth resolver.
 
 ## Resolution order
 
-For a selected model, credentials resolve as: explicit `--api-key` → `auth.json` (API key or
-OAuth) → environment variable. The first that yields a usable credential wins; if none do,
+For a selected model, credentials resolve as: explicit `--api-key` → stored credentials
+(API key or OAuth, in SQLite or the selected file store) → environment variable. The first that yields a usable credential wins; if none do,
 orb reports "No API key found" and points you back here.

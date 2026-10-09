@@ -52,7 +52,7 @@ type AgentSessionOptions struct {
 	CWD string
 
 	// AgentDir is the global config directory (auth.json, models.json, skills,
-	// extensions). Defaults to Host.AgentDir, else ~/.pi/agent.
+	// extensions). Defaults to Host.AgentDir, else ~/.orb/agent.
 	AgentDir string
 
 	// Host supplies the platform ports (DECISIONS.md P10). When set, services

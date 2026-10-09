@@ -1,8 +1,8 @@
 # Plugins, permissions, and MCP — configuration reference
 
 Settings use the `settings.json` schema. Native global settings live in SQLite; trusted project
-overrides remain in `.pi/settings.json` (merged one level deep, project wins). File-backed SDK
-and explicit Pi-file compatibility keep global settings at `~/.pi/agent/settings.json`.
+overrides remain in `.orb/settings.json` (merged one level deep, project wins). File-backed SDK
+and explicit Pi-file compatibility keep global settings at `~/.orb/agent/settings.json`.
 
 Three surfaces expose the same configuration:
 
@@ -182,7 +182,7 @@ in native SQLite (or under the agent dir for file-backed SDKs); `tasks` adds the
 
 ## MCP servers
 
-Servers live in `mcp.json`: `~/.pi/agent/mcp.json`, plus `.pi/mcp.json` in a
+Servers live in `mcp.json`: `~/.orb/agent/mcp.json`, plus `.orb/mcp.json` in a
 trusted project (its entries replace global ones of the same name). The shape is
 the `mcpServers` object other MCP clients use:
 
@@ -208,7 +208,7 @@ From the shell (no session):
 orb mcp list [--json]          # connects each server once and reports it
 orb mcp add files --env TOKEN=x -- mcp-files --root .
 orb mcp add remote --url https://example.com/mcp --bearer-token-env-var REMOTE_TOKEN
-orb mcp remove <name> [-l]     # -l / --local edits the project's .pi/mcp.json
+orb mcp remove <name> [-l]     # -l / --local edits the project's .orb/mcp.json
 orb mcp login <name>           # OAuth sign-in through the browser
 orb mcp logout <name>
 ```

@@ -230,9 +230,9 @@ func f7CLIEnvironment(homeDir, agentDir string) []string {
 		"TERM=dumb",
 		"CI=1",
 		"NO_COLOR=1",
-		"PI_OFFLINE=1",
-		"PI_SKIP_VERSION_CHECK=1",
-		"PI_PACKAGE_DIR=" + f7CLIPackageDir,
+		"ORB_OFFLINE=1",
+		"ORB_SKIP_VERSION_CHECK=1",
+		"ORB_PACKAGE_DIR=" + f7CLIPackageDir,
 		config.EnvAgentDir + "=" + agentDir,
 	}
 	if path := os.Getenv("PATH"); path != "" {
@@ -243,7 +243,7 @@ func f7CLIEnvironment(homeDir, agentDir string) []string {
 
 // f7CLINormalizePackageDir maps the package docs paths to the fixture's
 // "<package>/docs/..." form. On win32 upstream's getDocsPath resolves the
-// POSIX PI_PACKAGE_DIR onto the cwd's drive and joins with backslashes, which
+// POSIX ORB_PACKAGE_DIR onto the cwd's drive and joins with backslashes, which
 // JSON output (RPC frames) escapes.
 func f7CLINormalizePackageDir(output []byte, projectDir string) []byte {
 	if runtime.GOOS == "windows" {

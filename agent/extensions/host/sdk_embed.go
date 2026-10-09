@@ -14,7 +14,7 @@ import (
 // The embedded orb-extension-sdk: orb's own implementation of the
 // @earendil-works/pi-* SDK surface (sdk/sdk.json carries its version and
 // capability manifest). It is materialized to disk at host start exactly like
-// host.mjs — never npm-installed, never resolved from ~/.pi — and loader.mjs
+// host.mjs — never npm-installed or borrowed from an installed Pi — and loader.mjs
 // repoints the legacy SDK specifiers at the materialized tree via the
 // ORB_EXTENSION_SDK_ROOT environment variable set in startLocked.
 //

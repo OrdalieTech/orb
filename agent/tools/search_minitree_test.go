@@ -103,8 +103,8 @@ func installMiniTreeSearchHelpers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_AGENT_DIR", agentDir)
+	t.Setenv("ORB_OFFLINE", "1")
 }
 
 func miniTreeHelperArgs(args []string) []string {

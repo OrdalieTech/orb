@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	EnvAgentDir   = "PI_CODING_AGENT_DIR"
-	EnvSessionDir = "PI_CODING_AGENT_SESSION_DIR"
+	EnvAgentDir   = nodepath.AgentDirEnv
+	EnvSessionDir = "ORB_SESSION_DIR"
 )
 
 func normalizePath(path string) string {
@@ -45,7 +45,7 @@ func defaultAgentDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".pi", "agent"), nil
+	return filepath.Join(home, ".orb", "agent"), nil
 }
 
 // DefaultSessionDirPath computes the cwd-specific directory without creating

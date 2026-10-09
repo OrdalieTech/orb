@@ -55,12 +55,12 @@ func runPackageCLI(t *testing.T, argv []string) (code int, stdout, stderr string
 	return code, outBuffer.String(), errBuffer.String()
 }
 
-func writeProjectPiSettings(t *testing.T, env packageCLIEnv, contents string) {
+func writeProjectOrbSettings(t *testing.T, env packageCLIEnv, contents string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(env.projectDir, ".pi"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(env.projectDir, ".orb"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(env.projectDir, ".pi", "settings.json"), []byte(contents), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(env.projectDir, ".orb", "settings.json"), []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -128,7 +128,7 @@ func TestPackageCLIInstallPersistsRelativeLocalPath(t *testing.T) {
 func TestPackageCLIListTrustFlow(t *testing.T) {
 	t.Run("untrusted skips project settings", func(t *testing.T) {
 		env := setupPackageCLI(t)
-		writeProjectPiSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
+		writeProjectOrbSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
 		code, stdout, _ := runPackageCLI(t, []string{"list"})
 		if code != 0 || !strings.Contains(stdout, "No packages installed.") || strings.Contains(stdout, "Project packages:") {
 			t.Fatalf("code=%d stdout=%q", code, stdout)
@@ -137,7 +137,7 @@ func TestPackageCLIListTrustFlow(t *testing.T) {
 
 	t.Run("remembered trust", func(t *testing.T) {
 		env := setupPackageCLI(t)
-		writeProjectPiSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
+		writeProjectOrbSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
 		trusted := true
 		if err := config.NewProjectTrustStore(env.agentDir).Set(env.projectDir, &trusted); err != nil {
 			t.Fatal(err)
@@ -150,7 +150,7 @@ func TestPackageCLIListTrustFlow(t *testing.T) {
 
 	t.Run("--no-approve overrides remembered trust", func(t *testing.T) {
 		env := setupPackageCLI(t)
-		writeProjectPiSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
+		writeProjectOrbSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
 		trusted := true
 		if err := config.NewProjectTrustStore(env.agentDir).Set(env.projectDir, &trusted); err != nil {
 			t.Fatal(err)
@@ -163,7 +163,7 @@ func TestPackageCLIListTrustFlow(t *testing.T) {
 
 	t.Run("--approve grants trust", func(t *testing.T) {
 		env := setupPackageCLI(t)
-		writeProjectPiSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
+		writeProjectOrbSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
 		code, stdout, _ := runPackageCLI(t, []string{"list", "--approve"})
 		if code != 0 || !strings.Contains(stdout, "Project packages:") {
 			t.Fatalf("code=%d stdout=%q", code, stdout)
@@ -175,7 +175,7 @@ func TestPackageCLIListTrustFlow(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(env.agentDir, "settings.json"), []byte(`{"defaultProjectTrust":"always"}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		writeProjectPiSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
+		writeProjectOrbSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
 		code, stdout, _ := runPackageCLI(t, []string{"list"})
 		if code != 0 || !strings.Contains(stdout, "Project packages:") {
 			t.Fatalf("code=%d stdout=%q", code, stdout)
@@ -187,7 +187,7 @@ func TestPackageCLIListTrustFlow(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(env.agentDir, "settings.json"), []byte(`{"defaultProjectTrust":"always"}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		writeProjectPiSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
+		writeProjectOrbSettings(t, env, `{"packages":["npm:@project/pkg"]}`)
 		untrusted := false
 		if err := config.NewProjectTrustStore(env.agentDir).Set(env.projectDir, &untrusted); err != nil {
 			t.Fatal(err)
@@ -201,7 +201,7 @@ func TestPackageCLIListTrustFlow(t *testing.T) {
 
 func TestPackageCLIBlocksUntrustedLocalChanges(t *testing.T) {
 	env := setupPackageCLI(t)
-	writeProjectPiSettings(t, env, "{}")
+	writeProjectOrbSettings(t, env, "{}")
 	code, _, stderr := runPackageCLI(t, []string{"install", "-l", "./local-package"})
 	if code != 1 || !strings.Contains(stderr, "Project is not trusted. Use --approve to modify local package config.") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
@@ -214,7 +214,7 @@ func TestPackageCLILocalInstallInitializesFreshProjectSettings(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
-	contents, err := os.ReadFile(filepath.Join(env.projectDir, ".pi", "settings.json"))
+	contents, err := os.ReadFile(filepath.Join(env.projectDir, ".orb", "settings.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestPackageCLILocalInstallInitializesFreshProjectSettings(t *testing.T) {
 	if len(settings.Packages) != 1 {
 		t.Fatalf("packages = %v", settings.Packages)
 	}
-	resolved := filepath.Clean(filepath.Join(env.projectDir, ".pi", settings.Packages[0]))
+	resolved := filepath.Clean(filepath.Join(env.projectDir, ".orb", settings.Packages[0]))
 	if canonical, err := filepath.EvalSymlinks(resolved); err == nil {
 		resolved = canonical
 	}
@@ -267,12 +267,12 @@ func TestPackageCLIUpdateTargets(t *testing.T) {
 	}
 }
 
-// PI_SKIP_VERSION_CHECK only disables the automatic startup check; an explicit
+// ORB_SKIP_VERSION_CHECK only disables the automatic startup check; an explicit
 // update command still checks for a new release.
 func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
 	setupPackageCLI(t)
-	t.Setenv("PI_SKIP_VERSION_CHECK", "1")
-	t.Setenv("PI_OFFLINE", "")
+	t.Setenv("ORB_SKIP_VERSION_CHECK", "1")
+	t.Setenv("ORB_OFFLINE", "")
 	previousVersion := version
 	version = "0.2.1"
 	previousTransport := http.DefaultClient.Transport
@@ -294,7 +294,7 @@ func TestPackageCLIExplicitUpdateBypassesSkipVersionCheck(t *testing.T) {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if requests != 1 {
-		t.Fatalf("release requests = %d, want the explicit check to bypass PI_SKIP_VERSION_CHECK", requests)
+		t.Fatalf("release requests = %d, want the explicit check to bypass ORB_SKIP_VERSION_CHECK", requests)
 	}
 	if !strings.Contains(stdout, "0.2.1") || !strings.Contains(stdout, "already current ✓") {
 		t.Fatalf("stdout = %q", stdout)
@@ -305,7 +305,7 @@ func TestPackageCLIUpdateUsesSavedTrustOnly(t *testing.T) {
 	env := setupPackageCLI(t)
 	// An untrusted project with project packages: update must not touch
 	// project scope and must not prompt.
-	writeProjectPiSettings(t, env, `{"packages":["npm:fake-package"]}`)
+	writeProjectOrbSettings(t, env, `{"packages":["npm:fake-package"]}`)
 	code, _, stderr := runPackageCLI(t, []string{"update", "--extensions"})
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%q", code, stderr)

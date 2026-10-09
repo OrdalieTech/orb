@@ -106,16 +106,16 @@ func loadWebKeys() (webKeys, error) {
 	if err != nil {
 		return keys, nil
 	}
-	contents, err := os.ReadFile(filepath.Join(home, ".pi", "web-search.json"))
+	contents, err := os.ReadFile(filepath.Join(home, ".orb", "web-search.json"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return keys, nil
 		}
-		return webKeys{}, fmt.Errorf("web_search: read ~/.pi/web-search.json: %w", err)
+		return webKeys{}, fmt.Errorf("web_search: read ~/.orb/web-search.json: %w", err)
 	}
 	var stored webKeys
 	if err := json.Unmarshal(contents, &stored); err != nil {
-		return webKeys{}, fmt.Errorf("web_search: parse ~/.pi/web-search.json: %w", err)
+		return webKeys{}, fmt.Errorf("web_search: parse ~/.orb/web-search.json: %w", err)
 	}
 	keys.Provider = strings.ToLower(strings.TrimSpace(stored.Provider))
 	if keys.Exa == "" {
@@ -151,14 +151,14 @@ func searchWeb(ctx context.Context, client *http.Client, query string) ([]search
 			if keys.Provider == "" {
 				continue
 			}
-			return nil, fmt.Errorf("web_search: ~/.pi/web-search.json selects provider %q but no %s key is set", keys.Provider, backend.name)
+			return nil, fmt.Errorf("web_search: ~/.orb/web-search.json selects provider %q but no %s key is set", keys.Provider, backend.name)
 		}
 		return backend.search(ctx, client, query, backend.key)
 	}
 	if keys.Provider != "" {
-		return nil, fmt.Errorf("web_search: unknown provider %q in ~/.pi/web-search.json", keys.Provider)
+		return nil, fmt.Errorf("web_search: unknown provider %q in ~/.orb/web-search.json", keys.Provider)
 	}
-	return nil, fmt.Errorf("web_search: set EXA_API_KEY, BRAVE_API_KEY, or TAVILY_API_KEY, or add one to ~/.pi/web-search.json")
+	return nil, fmt.Errorf("web_search: set EXA_API_KEY, BRAVE_API_KEY, or TAVILY_API_KEY, or add one to ~/.orb/web-search.json")
 }
 
 func searchExa(ctx context.Context, client *http.Client, query, key string) ([]searchResult, error) {

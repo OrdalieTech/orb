@@ -3,10 +3,12 @@ package herdr
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,55 +22,47 @@ const (
 )
 
 type reporter struct {
-	binaryPath  string
-	paneID      string
-	command     sync.Mutex
-	active      atomic.Bool
-	claimed     atomic.Bool
-	piLifecycle atomic.Bool
-	seq         atomic.Uint64
+	binaryPath, paneID string
+	resumeArgs         []string
+	command            sync.Mutex
+	active             atomic.Bool
+	claimed            atomic.Bool
+	seq                atomic.Uint64
+	pendingMu          sync.Mutex
+	pending            []string
+	draining           bool
+	stateOnly          bool // Older Herdr CLIs reject the trailing resume command.
+	hasResume          bool // Guarded by command; a timed-out report may still have applied.
 }
 
-// Extension returns the inert-until-TUI compatibility attachment.
-func Extension(binaryPath, paneID string) extensions.Factory {
+// Extension returns an inert-until-TUI native Orb attachment. resumeArgs are
+// non-secret CLI options explicitly selected by the assembly, never raw argv.
+func Extension(binaryPath, paneID string, resumeArgs ...string) extensions.Factory {
+	resumeArgs = slices.Clone(resumeArgs)
 	return func(api extensions.API) error {
 		if binaryPath == "" || paneID == "" {
-			return errors.New("herdr compatibility requires a binary path and pane id")
+			return errors.New("herdr integration requires a binary path and pane id")
 		}
-		reporter := &reporter{binaryPath: binaryPath, paneID: paneID}
+		// A previous process or registry may have left a resume command behind.
+		reporter := &reporter{binaryPath: binaryPath, paneID: paneID, resumeArgs: resumeArgs, hasResume: true}
 		reporter.seq.Store(uint64(time.Now().UnixNano()))
-		api.Events().On(piLifecycleEvent, func(context.Context, any) error {
-			reporter.piLifecycle.Store(true)
-			return nil
-		})
 		api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
 			if interactive(session) {
 				reporter.active.Store(true)
 				reporter.claimed.Store(true)
-				if reporter.piLifecycle.Load() {
-					reference := ""
-					if manager := session.SessionManager(); manager != nil {
-						reference = manager.GetSessionFile()
-						if reference == "" {
-							reference = manager.GetSessionID()
-						}
-					}
-					reporter.metadataAfterAcquisition(reference)
-				} else {
-					reporter.report(currentState(session))
-				}
+				reporter.report(session, currentState(session))
 			}
 			return nil, nil
 		})
 		api.On(extensions.EventAgentStart, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
 			if interactive(session) {
-				reporter.report("working")
+				reporter.report(session, "working")
 			}
 			return nil, nil
 		})
 		api.On(extensions.EventAgentSettled, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
 			if interactive(session) && session.IsIdle() {
-				reporter.report("idle")
+				reporter.report(session, "idle")
 			}
 			return nil, nil
 		})
@@ -78,13 +72,13 @@ func Extension(binaryPath, paneID string) extensions.Factory {
 				if title := event.(extensions.UIPromptStartEvent).Title; title != nil {
 					message = []string{"--message", *title}
 				}
-				reporter.report("blocked", message...)
+				reporter.report(session, "blocked", message...)
 			}
 			return nil, nil
 		})
 		api.On(extensions.EventUIPromptEnd, func(_ context.Context, _ extensions.Event, session extensions.Context) (any, error) {
 			if interactive(session) {
-				reporter.report(currentState(session))
+				reporter.report(session, currentState(session))
 			}
 			return nil, nil
 		})
@@ -103,7 +97,6 @@ func Extension(binaryPath, paneID string) extensions.Factory {
 func interactive(session extensions.Context) bool {
 	return session.Mode() == extensions.ModeTUI && session.HasUI()
 }
-
 func currentState(session extensions.Context) string {
 	if session.IsIdle() {
 		return "idle"
@@ -111,76 +104,71 @@ func currentState(session extensions.Context) string {
 	return "working"
 }
 
-func (reporter *reporter) report(state string, extra ...string) {
+func (reporter *reporter) report(session extensions.Context, state string, extra ...string) {
+	reporter.pendingMu.Lock()
+	defer reporter.pendingMu.Unlock()
+	args := reporter.args("report-agent", append([]string{"--state", state}, extra...)...)
+	if manager := session.SessionManager(); manager != nil && manager.IsPersisted() {
+		var resume []string
+		if path := manager.GetSessionFile(); filepath.IsAbs(path) {
+			args = append(args, "--agent-session-path", path)
+			resume = append([]string{"orb", "--pi-files"}, reporter.resumeArgs...)
+			resume = append(resume, "--session", path)
+		} else if id := manager.GetSessionID(); id != "" && manager.GetSessionFile() == "" {
+			args = append(args, "--agent-session-id", id)
+			resume = append([]string{"orb"}, reporter.resumeArgs...)
+			resume = append(resume, "--session", id)
+		}
+		// Herdr rejects the entire report if argv contains an apostrophe or control
+		// character. Such sessions still report lifecycle, without unsafe restore.
+		if len(resume) != 0 && validResume(resume) {
+			args = append(append(args, "--"), resume...)
+		}
+	}
+	reporter.enqueueLocked(args)
+}
+
+func validResume(args []string) bool {
+	size := 0
+	for _, arg := range args {
+		size += len(arg)
+		if strings.ContainsAny(arg, "'\r\n\t") || strings.ContainsFunc(arg, func(r rune) bool { return r < 32 || r >= 127 && r <= 159 }) {
+			return false
+		}
+	}
+	return len(args) <= 64 && size <= 8192
+}
+
+// At most one subprocess and one pending state exist; bursts replace stale
+// pending reports rather than growing a goroutine queue.
+func (reporter *reporter) enqueueLocked(args []string) {
 	if !reporter.active.Load() {
 		return
 	}
-	if reporter.piLifecycle.Load() {
-		reporter.metadata()
+	reporter.pending = args
+	if reporter.draining {
 		return
 	}
-	reporter.enqueue(reporter.args("report-agent", append([]string{"--state", state}, extra...)...))
+	reporter.draining = true
+	go reporter.drain()
 }
 
-func (reporter *reporter) metadataAfterAcquisition(reference string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for reporter.active.Load() {
-			// Herdr drops even guarded metadata while the previous pi process is marked exited.
-			if reference == "" || reporter.piReady(ctx, reference) {
-				reporter.metadata()
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-}
-
-func (reporter *reporter) piReady(ctx context.Context, reference string) bool {
-	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-	output, err := exec.CommandContext(ctx, reporter.binaryPath, "agent", "get", reporter.paneID).Output()
-	var response struct {
-		Result struct {
-			Agent struct {
-				Agent                  string
-				ScreenDetectionSkipped bool                           `json:"screen_detection_skipped"`
-				Session                struct{ Source, Value string } `json:"agent_session"`
-			}
-		}
-	}
-	if err != nil || json.Unmarshal(output, &response) != nil {
-		return false
-	}
-	info := response.Result.Agent
-	return info.Agent == "pi" && info.ScreenDetectionSkipped && info.Session.Source == "herdr:pi" && info.Session.Value == reference
-}
-
-func (reporter *reporter) metadata() {
-	reporter.enqueue(reporter.metadataArgs("--display-agent", "Orb"))
-}
-
-func (reporter *reporter) metadataArgs(extra ...string) []string {
-	args := []string{"pane", "report-metadata", reporter.paneID, "--source", reportSource, "--agent", "pi", "--applies-to-source", "herdr:pi"}
-	args = append(args, extra...)
-	return append(args, "--seq", strconv.FormatUint(reporter.seq.Add(1), 10))
-}
-
-func (reporter *reporter) enqueue(args []string) {
-	go func() {
+func (reporter *reporter) drain() {
+	for {
 		reporter.command.Lock()
-		defer reporter.command.Unlock()
-		if reporter.active.Load() {
-			reporter.run(args)
+		reporter.pendingMu.Lock()
+		args := reporter.pending
+		reporter.pending = nil
+		if !reporter.active.Load() || len(args) == 0 {
+			reporter.draining = false
+			reporter.pendingMu.Unlock()
+			reporter.command.Unlock()
+			return
 		}
-	}()
+		reporter.pendingMu.Unlock()
+		reporter.run(args)
+		reporter.command.Unlock()
+	}
 }
 
 func (reporter *reporter) release() {
@@ -190,21 +178,55 @@ func (reporter *reporter) release() {
 	}
 	reporter.command.Lock()
 	defer reporter.command.Unlock()
-	if reporter.piLifecycle.Load() {
-		reporter.run(reporter.metadataArgs("--clear-display-agent"))
-	} else {
-		reporter.run(reporter.args("release-agent"))
-	}
+	reporter.run(reporter.args("release-agent"))
 }
 
 func (reporter *reporter) args(command string, extra ...string) []string {
 	args := []string{"pane", command, reporter.paneID, "--source", reportSource, "--agent", agentLabel}
 	args = append(args, extra...)
-	return append(args, "--seq", strconv.FormatUint(reporter.seq.Add(1), 10))
+	return append(args, "--seq", "0")
 }
 
 func (reporter *reporter) run(args []string) {
+	separator := slices.Index(args, "--")
+	if reporter.stateOnly && separator >= 0 {
+		args = args[:separator]
+		separator = -1
+	}
+	if args[1] == "report-agent" && separator < 0 && reporter.hasResume {
+		// Omitting resume_argv does not clear it in Herdr. Release first when
+		// switching to an ephemeral or unrepresentable session, then reclaim.
+		if _, err := reporter.invokeNext(reporter.args("release-agent")); err != nil {
+			return
+		}
+		reporter.hasResume = false
+	}
+	if separator >= 0 {
+		reporter.hasResume = true
+	}
+	output, err := reporter.invokeNext(args)
+	if err == nil && args[1] == "release-agent" {
+		reporter.hasResume = false
+	}
+	if err != nil && !reporter.stateOnly && separator >= 0 && (strings.Contains(string(output), "unexpected argument") || strings.Contains(string(output), "unknown option")) {
+		reporter.stateOnly = true
+		reporter.hasResume = false
+		_, _ = reporter.invokeNext(args[:separator])
+	}
+}
+
+// Assign sequences at dispatch, not enqueue: a reset and coalesced states must
+// be strictly ordered even when newer events arrive during a subprocess.
+func (reporter *reporter) invokeNext(args []string) ([]byte, error) {
+	args = slices.Clone(args)
+	if index := slices.Index(args, "--seq"); index >= 0 {
+		args[index+1] = strconv.FormatUint(reporter.seq.Add(1), 10)
+	}
+	return reporter.invoke(args)
+}
+
+func (reporter *reporter) invoke(args []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	_ = exec.CommandContext(ctx, reporter.binaryPath, args...).Run()
+	return exec.CommandContext(ctx, reporter.binaryPath, args...).CombinedOutput()
 }

@@ -18,7 +18,7 @@ import (
 func TestGetShellEnvPrependsManagedBinOnce(t *testing.T) {
 	agentDir := t.TempDir()
 	binDir := filepath.Join(agentDir, "bin")
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
+	t.Setenv("ORB_AGENT_DIR", agentDir)
 	t.Setenv("PATH", "/first"+string(os.PathListSeparator)+"/second")
 
 	environment, err := GetShellEnv()
@@ -41,7 +41,7 @@ func TestGetShellEnvPrependsManagedBinOnce(t *testing.T) {
 
 func TestLocalBashOperationsUsesShellEnvWhenUnset(t *testing.T) {
 	agentDir := t.TempDir()
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
+	t.Setenv("ORB_AGENT_DIR", agentDir)
 	operations := localBashOperationsForTest("/bin/sh")
 	var output strings.Builder
 	result, err := operations.Exec(context.Background(), `printf '%s' "$PATH"`, t.TempDir(), BashExecOptions{

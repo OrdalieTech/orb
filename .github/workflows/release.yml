@@ -58,10 +58,10 @@ jobs:
               echo "${target_os}/${target_arch}: ${size} bytes"
             done
           done
-          export PI_CODING_AGENT_DIR="${smoke_root}/agent"
+          export ORB_AGENT_DIR="${smoke_root}/agent"
           export ORB_STATE_HOME="${smoke_root}/state"
           export ORB_BRIDGE_HOME="${smoke_root}/bridge"
-          export PI_OFFLINE=1
+          export ORB_OFFLINE=1
           test "$("${smoke_root}/linux-amd64/orb" --version | cut -d ' ' -f 2)" = "${version}"
           "${smoke_root}/linux-amd64/orb" --help > /dev/null
       - name: Verify source archive

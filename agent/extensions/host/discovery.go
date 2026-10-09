@@ -10,7 +10,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
-const configDirName = ".pi"
+const configDirName = ".orb"
 
 // DiscoveryOptions contains local paths after settings and package resolution.
 // Package resolution remains the caller's responsibility.

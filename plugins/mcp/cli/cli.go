@@ -29,7 +29,7 @@ const mcpCommandUsage = `Usage:
   orb mcp logout <server>
 
 Configure and check MCP servers and sign in to OAuth servers without starting
-a session. Reads ~/.pi/agent/mcp.json and, in trusted projects, .pi/mcp.json.
+a session. Reads ~/.orb/agent/mcp.json and, in trusted projects, .orb/mcp.json.
 
 Commands:
   add <server>            Add or replace a server in mcp.json
@@ -39,7 +39,7 @@ Commands:
   logout <server>         Delete the stored OAuth credentials
 
 Options for add and remove:
-  -l, --local             Use .pi/mcp.json in the current project instead of the global file
+  -l, --local             Use .orb/mcp.json in the current project instead of the global file
 
 Options for add:
   --url <url>             Streamable HTTP server URL (instead of a command)
@@ -121,7 +121,7 @@ type IO struct {
 
 // Run runs `orb mcp` with the arguments after "mcp" and returns its exit
 // code. dirs resolves the working and agent directories; trusted reports
-// whether the project at cwd is trusted, which admits its .pi/mcp.json.
+// whether the project at cwd is trusted, which admits its .orb/mcp.json.
 func Run(ctx context.Context, args []string, streams IO, dirs func() (cwd, agentDir string, err error), trusted func(cwd, agentDir string) bool) int {
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -377,7 +377,7 @@ func listMCPServers(ctx context.Context, cwd, agentDir string, isTrusted func() 
 		return code
 	}
 	if len(reports) == 0 && len(problems) == 0 {
-		_, _ = fmt.Fprintf(streams.Stdout, "No MCP servers configured. Add them with orb mcp add, or to %s or .pi/mcp.json.\n", mcp.GlobalPath(agentDir))
+		_, _ = fmt.Fprintf(streams.Stdout, "No MCP servers configured. Add them with orb mcp add, or to %s or .orb/mcp.json.\n", mcp.GlobalPath(agentDir))
 	}
 	for _, report := range reports {
 		state := report.State

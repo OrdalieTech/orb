@@ -691,9 +691,9 @@ func TestF12LoadedContextMatchesUpstream(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	cwd, agentDir := filepath.Join(root, "project"), filepath.Join(root, "agent")
 	for path, content := range map[string]string{
-		filepath.Join(cwd, ".pi", "SYSTEM.md"):        "system",
-		filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md"): "append",
-		filepath.Join(cwd, "AGENTS.md"):               "context",
+		filepath.Join(cwd, ".orb", "SYSTEM.md"):        "system",
+		filepath.Join(cwd, ".orb", "APPEND_SYSTEM.md"): "append",
+		filepath.Join(cwd, "AGENTS.md"):                "context",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

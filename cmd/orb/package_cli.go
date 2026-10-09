@@ -701,7 +701,7 @@ func packageUpdateOffline(explicit bool) bool {
 	if explicit {
 		return true
 	}
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("PI_OFFLINE")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("ORB_OFFLINE")))
 	return value == "1" || value == "true" || value == "yes"
 }
 

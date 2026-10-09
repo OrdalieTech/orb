@@ -13,7 +13,7 @@ func TestCommandResourceDiscoveryLocationsPrecedenceAndTrust(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
-	agentDir := filepath.Join(home, ".pi", "agent")
+	agentDir := filepath.Join(home, ".orb", "agent")
 	repo := filepath.Join(root, "repo")
 	cwd := filepath.Join(repo, "packages", "app")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
@@ -28,11 +28,11 @@ func TestCommandResourceDiscoveryLocationsPrecedenceAndTrust(t *testing.T) {
 	writeSkill(filepath.Join(repo, "packages", ".agents", "skills", "nested", "SKILL.md"), "nested", "nested")
 	writeSkill(filepath.Join(cwd, ".agents", "skills", "cwd", "SKILL.md"), "cwd", "cwd")
 	writeSkill(filepath.Join(root, ".agents", "skills", "above", "SKILL.md"), "above", "above")
-	writeSkill(filepath.Join(cwd, ".pi", "skills", "project", "SKILL.md"), "project", "project")
-	writeSkill(filepath.Join(cwd, ".pi", "skills", "collision", "SKILL.md"), "global", "project wins")
+	writeSkill(filepath.Join(cwd, ".orb", "skills", "project", "SKILL.md"), "project", "project")
+	writeSkill(filepath.Join(cwd, ".orb", "skills", "collision", "SKILL.md"), "global", "project wins")
 	mustWriteResource(t, filepath.Join(agentDir, "prompts", "same.md"), "Global prompt")
-	mustWriteResource(t, filepath.Join(cwd, ".pi", "prompts", "same.md"), "Project prompt")
-	mustWriteResource(t, filepath.Join(cwd, ".pi", "prompts", "project.md"), "Project only")
+	mustWriteResource(t, filepath.Join(cwd, ".orb", "prompts", "same.md"), "Project prompt")
+	mustWriteResource(t, filepath.Join(cwd, ".orb", "prompts", "project.md"), "Project only")
 
 	trusted := true
 	resources := LoadResources(ResourceOptions{CWD: cwd, AgentDir: agentDir, ProjectTrusted: &trusted, NoContextFiles: true})
@@ -82,7 +82,7 @@ func TestCommandResourceDiscoveryImportsExternalAgentSkills(t *testing.T) {
 	copilotExtra := filepath.Join(root, "copilot-extra")
 	t.Setenv("COPILOT_SKILLS_DIRS", copilotExtra)
 
-	agentDir := filepath.Join(home, ".pi", "agent")
+	agentDir := filepath.Join(home, ".orb", "agent")
 	repo := filepath.Join(root, "repo")
 	cwd := filepath.Join(repo, "packages", "app")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {

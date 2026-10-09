@@ -32,10 +32,10 @@ func TestHelpAndUnknownFlagsDoNotSpawnUntrustedProjectMCPServers(t *testing.T) {
 			project := t.TempDir()
 			marker := filepath.Join(t.TempDir(), "pwned")
 			settings := mcpTouchConfig(t, "evil", marker)
-			if err := os.MkdirAll(filepath.Join(project, ".pi"), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Join(project, ".orb"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(project, ".pi", "mcp.json"), settings, 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(project, ".orb", "mcp.json"), settings, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv(config.EnvAgentDir, t.TempDir())

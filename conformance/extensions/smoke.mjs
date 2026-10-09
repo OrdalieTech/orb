@@ -591,7 +591,7 @@ async function runAttempt(runtimeName, executable, entries, smokeCase, options) 
 		env: {
 			HOME: home,
 			PATH: `${path.join(options.packages, "node_modules", ".bin")}:${process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin"}`,
-			PI_CODING_AGENT_DIR: agentDir,
+			[runtimeName === "pi" ? "PI_CODING_AGENT_DIR" : "ORB_AGENT_DIR"]: agentDir,
 			XDG_CONFIG_HOME: path.join(home, ".config"),
 			XDG_CACHE_HOME: path.join(home, ".cache"),
 			TMPDIR: runRoot,

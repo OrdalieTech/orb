@@ -619,7 +619,7 @@ async function runProbe(runtime, extensionPaths, options) {
 		env: {
 			HOME: home,
 			PATH: probePath,
-			PI_CODING_AGENT_DIR: agentDir,
+			[runtime.id === "pi" ? "PI_CODING_AGENT_DIR" : "ORB_AGENT_DIR"]: agentDir,
 			NO_COLOR: "1",
 			TERM: "dumb",
 			TMPDIR: runRoot,

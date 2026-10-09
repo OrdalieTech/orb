@@ -82,7 +82,7 @@ if (agentDir && mockBaseURL) {
   writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { anthropic: { baseUrl: mockBaseURL } } }));
   writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ compaction: { keepRecentTokens: 1 } }));
 }
-const child = spawn(binary, ["--pi-files", ...process.argv.slice(2)], { env: process.env, stdio: "inherit" });
+const child = spawn(binary, ["--pi-files", ...process.argv.slice(2)], { env: { ...process.env, ORB_AGENT_DIR: agentDir, ORB_SESSION_DIR: process.env.PI_CODING_AGENT_SESSION_DIR, ORB_OFFLINE: process.env.PI_OFFLINE, ORB_SKIP_VERSION_CHECK: process.env.PI_SKIP_VERSION_CHECK, ORB_PACKAGE_DIR: process.env.PI_PACKAGE_DIR }, stdio: "inherit" });
 for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"]) {
   process.on(signal, () => child.kill(signal));
 }

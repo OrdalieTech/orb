@@ -174,14 +174,14 @@
     "collapsed": [
       "",
       "[Context]",
-      "  .pi/SYSTEM.md, .pi/APPEND_SYSTEM.md, AGENTS.md",
+      "  .orb/SYSTEM.md, .orb/APPEND_SYSTEM.md, AGENTS.md",
       ""
     ],
     "expanded": [
       "",
       "[Context]",
-      "  /fixture/project/.pi/SYSTEM.md",
-      "  /fixture/project/.pi/APPEND_SYSTEM.md",
+      "  /fixture/project/.orb/SYSTEM.md",
+      "  /fixture/project/.orb/APPEND_SYSTEM.md",
       "  /fixture/project/AGENTS.md",
       ""
     ],
@@ -189,8 +189,8 @@
     "verbose": [
       "",
       "[Context]",
-      "  /fixture/project/.pi/SYSTEM.md",
-      "  /fixture/project/.pi/APPEND_SYSTEM.md",
+      "  /fixture/project/.orb/SYSTEM.md",
+      "  /fixture/project/.orb/APPEND_SYSTEM.md",
       "  /fixture/project/AGENTS.md",
       ""
     ]

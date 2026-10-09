@@ -12,10 +12,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/toolenv"
 )
 
-const (
-	piSubagentBinaryEnv = "PI_SUBAGENT_PI_BINARY"
-	piAgentMarkerEnv    = "PI_CODING_AGENT"
-)
+const piSubagentBinaryEnv = "PI_SUBAGENT_PI_BINARY"
 
 func prepareHostEnvironment(options Options, base []string, runtimePath string) ([]string, error) {
 	agentDir := options.AgentDir
@@ -57,30 +54,24 @@ func prepareHostEnvironment(options Options, base []string, runtimePath string) 
 	environment = setEnvironmentValue(environment, "PATH", prependPath(shimDir, pathValue))
 	environment = setEnvironmentValue(environment, piSubagentBinaryEnv, shimPath)
 	environment = setEnvironmentValue(environment, nodepath.AgentDirEnv, agentDir)
-	environment = setEnvironmentValue(environment, piAgentMarkerEnv, "true")
+	// These aliases are confined to this child: unchanged Pi extensions and their
+	// private `pi` shim use Orb's directory, never the real Pi installation.
+	environment = setEnvironmentValue(environment, "PI_CODING_AGENT_DIR", agentDir)
+	environment = setEnvironmentValue(environment, "AI_AGENT", "orb")
+	environment = setEnvironmentValue(environment, "ORB_CODING_AGENT", "true")
+	environment = slices.DeleteFunc(environment, func(entry string) bool {
+		name, _, _ := strings.Cut(entry, "=")
+		switch strings.ToUpper(name) {
+		case "PI_CODING_AGENT", "HERDR_AGENT", "PI_CODING_AGENT_SESSION_DIR",
+			"PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL":
+			return true
+		}
+		return false
+	})
 	// The pi SDK surface is served exclusively by the embedded orb-extension-sdk
 	// (materialized in startLocked, named by ORB_EXTENSION_SDK_ROOT). orb never
-	// looks for an installed pi and never borrows its bundled SDK: reading pi's
-	// config files is the D4 compatibility promise; executing its code is not,
-	// and the line stays clean.
+	// looks for an installed pi or borrows its bundled SDK or configuration.
 	return environment, nil
-}
-
-func childEnvironment(environment []string, entries []extensionEntry, extra func([]string) []string) []string {
-	if extra == nil {
-		return environment
-	}
-	paths := make([]string, len(entries))
-	for index, entry := range entries {
-		paths[index] = entry.Path
-	}
-	environment = slices.Clone(environment)
-	for _, entry := range extra(paths) {
-		// Herdr inspects startup environments in the foreground job, not Go's later Setenv calls.
-		name, value, _ := strings.Cut(entry, "=")
-		environment = setEnvironmentValue(environment, name, value)
-	}
-	return environment
 }
 
 func replaceExecutableLink(path, target string) error {
@@ -101,7 +92,7 @@ func replaceExecutableLink(path, target string) error {
 			return nil
 		}
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".pi-link-*")
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".orb-link-*")
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -132,7 +133,7 @@ func TestRegisteredCommandExecAndEventBusUseBoundRuntime(t *testing.T) {
 	}
 }
 
-func TestHerdrHostOnlyReceivesInteractiveHint(t *testing.T) {
+func TestHerdrManagedPiIntegrationIsNeverLoaded(t *testing.T) {
 	if _, err := extensionhost.DiscoverRuntime(t.Context()); err != nil {
 		t.Skip("extension-host e2e requires Node.js >=22.6 or Bun on PATH")
 	}
@@ -146,6 +147,7 @@ func TestHerdrHostOnlyReceivesInteractiveHint(t *testing.T) {
 			// Stopped before the temp dirs go: Windows can't remove a directory the host still holds.
 			t.Cleanup(func() { replaceActiveExtensionHost(nil) })
 			path := filepath.Join(cwd, "herdr.mjs")
+			plain := filepath.Join(cwd, "herdr-agent-state.mjs")
 			source := `// installed by herdr
 // HERDR_INTEGRATION_ID=pi
 export default function(pi) {
@@ -159,12 +161,18 @@ export default function(pi) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true, Extensions: []string{path}, allowNoModel: interactive}, settings, nil)
+			if err := os.WriteFile(plain, []byte(strings.ReplaceAll(strings.ReplaceAll(source, "// installed by herdr\n// HERDR_INTEGRATION_ID=pi\n", ""), "herdr_hint", "plain_hint")), 0600); err != nil {
+				t.Fatal(err)
+			}
+			registry, diagnostics := loadCompiledExtensions(cwd, agentDir, CLIArgs{NoExtensions: true, Extensions: []string{path, plain}, allowNoModel: interactive}, settings, nil)
 			if len(diagnostics) != 0 {
 				t.Fatal(diagnostics)
 			}
 			runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
-			tool := runner.ToolDefinition("herdr_hint")
+			if runner.ToolDefinition("herdr_hint") != nil {
+				t.Fatal("managed Pi integration loaded")
+			}
+			tool := runner.ToolDefinition("plain_hint")
 			if tool == nil {
 				t.Fatal("hint tool not registered")
 			}
@@ -173,9 +181,6 @@ export default function(pi) {
 				t.Fatalf("probe: %#v, %v", result, err)
 			}
 			want := "none"
-			if interactive {
-				want = "pi"
-			}
 			text, ok := result.Content[0].(*ai.TextContent)
 			if !ok || text.Text != want {
 				t.Fatalf("child hint: %#v, want %q", result.Content, want)
@@ -184,5 +189,22 @@ export default function(pi) {
 				t.Fatal("changed parent environment")
 			}
 		})
+	}
+}
+
+func TestHerdrResumePreservesExplicitResourcesAndExclusions(t *testing.T) {
+	args := CLIArgs{NoExtensions: true, Extensions: []string{"builtin:herdr", "/own/extension.ts"}, Skills: []string{"/own/skill"}, PromptTemplates: []string{"/own/template.md"}, Themes: []string{"/own/theme.json"}, UseTheme: "custom"}
+	want := []string{"--no-extensions", "--extension", "builtin:herdr", "--extension", "/own/extension.ts", "--skill", "/own/skill", "--prompt-template", "/own/template.md", "--theme", "/own/theme.json", "--use-theme", "custom"}
+	if got := herdrResumeArguments(args); !slices.Equal(got, want) {
+		t.Fatalf("restore resources = %v", got)
+	}
+}
+
+func TestHerdrResumePreservesSafeOptionsWithoutSecretsOrPrompts(t *testing.T) {
+	secret, prompt := "secret", "private prompt"
+	args := CLIArgs{Auto: true, NoTools: true, NoBuiltinTools: true, NoContextFiles: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true, Offline: true, Tools: []string{"read", "ls"}, ExcludeTools: []string{"bash"}, BridgeProfile: "personal", InstanceAlias: "work", APIKey: &secret, SystemPrompt: &prompt, AppendSystemPrompt: []string{prompt}, Messages: []string{prompt}}
+	want := []string{"--auto", "--no-tools", "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--offline", "--tools", "read,ls", "--exclude-tools", "bash", "--bridge", "personal", "--instance", "work"}
+	if got := herdrResumeArguments(args); !slices.Equal(got, want) {
+		t.Fatalf("resume arguments = %v", got)
 	}
 }

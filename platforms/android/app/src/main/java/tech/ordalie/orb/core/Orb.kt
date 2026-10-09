@@ -73,6 +73,6 @@ class Orb(private val context: Context) {
         // It moves with every app update (the lib directory does), so it is written again then.
         if (linux.ready && prefs.getString("seeded:shell", "") != linux.launcher &&
             config("settings.json") { it.put("shellPath", linux.launcher) } == null) prefs.edit().putString("seeded:shell", linux.launcher).apply()
-        if (linux.ready) linux.brief(File(home, ".pi/agent"))
+        if (linux.ready) linux.brief(File(home, ".orb/agent"))
     }
 }

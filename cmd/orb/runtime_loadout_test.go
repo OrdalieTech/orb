@@ -29,7 +29,7 @@ func TestCLIFirstRequestDeclaresExecutableTools(t *testing.T) {
 			cwd := t.TempDir()
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv(config.EnvAgentDir, t.TempDir())
-			t.Setenv("PI_OFFLINE", "1")
+			t.Setenv("ORB_OFFLINE", "1")
 			registry := extensions.NewRegistry(cwd)
 			if test.overrideBash {
 				if err := registry.Register("<inline:bash>", func(api extensions.API) error {

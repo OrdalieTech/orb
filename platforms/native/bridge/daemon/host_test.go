@@ -24,7 +24,7 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
 	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "1")
 	jsonl := filepath.Join(root, "s.jsonl")
 	cwd, _ := json.Marshal(root) // a Windows path has backslashes to escape
 	if err := os.WriteFile(jsonl, []byte(`{"type":"session","version":3,"id":"11111111-2222-4333-8444-555555555555","timestamp":"2026-09-27T10:00:00.000Z","cwd":`+string(cwd)+`}

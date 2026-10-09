@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	ConfigDirName = ".pi"
+	ConfigDirName = ".orb"
 	EnvAgentDir   = nodepath.AgentDirEnv
-	EnvSessionDir = "PI_CODING_AGENT_SESSION_DIR"
+	EnvSessionDir = "ORB_SESSION_DIR"
 )
 
 type Settings map[string]any

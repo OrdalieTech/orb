@@ -25,7 +25,7 @@ import (
 )
 
 // The object's path namespace: tools work in Workspace; settings, model
-// catalogs and session journals live under AgentDir, as ~/.pi/agent does.
+// catalogs and session journals live under AgentDir, as ~/.orb/agent does.
 const (
 	AgentDir  = "/agent"
 	Workspace = "/workspace"

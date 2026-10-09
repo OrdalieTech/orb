@@ -17,10 +17,10 @@ func TestLoadStartupExtensionsConsultsProjectTrustExtension(t *testing.T) {
 	agentDir := t.TempDir()
 	t.Setenv(config.EnvAgentDir, agentDir)
 	cwd := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cwd, ".pi"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(cwd, ".orb"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cwd, ".pi", "settings.json"), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cwd, ".orb", "settings.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	store := config.NewProjectTrustStore(agentDir)

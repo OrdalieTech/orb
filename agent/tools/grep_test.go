@@ -37,8 +37,8 @@ func TestGrepAbortAfterSpawnStopsChild(t *testing.T) {
 	}
 	ready := filepath.Join(t.TempDir(), "ready")
 	writeSearchExecutable(t, filepath.Join(binDir, "rg"), "#!/bin/sh\n: > "+shellSingleQuote(ready)+"\nexec sleep 5\n")
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_AGENT_DIR", agentDir)
+	t.Setenv("ORB_OFFLINE", "1")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

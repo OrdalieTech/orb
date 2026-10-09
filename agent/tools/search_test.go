@@ -223,8 +223,8 @@ func installFakeManagedTool(t *testing.T, name, stdout, stderr string, exitCode 
 	}
 	fmt.Fprintf(&script, "exit %d\n", exitCode)
 	writeSearchExecutable(t, filepath.Join(binDir, name), script.String())
-	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_AGENT_DIR", agentDir)
+	t.Setenv("ORB_OFFLINE", "1")
 }
 
 func writeSearchExecutable(t *testing.T, path, content string) {

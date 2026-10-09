@@ -438,7 +438,7 @@ func piMessagesCacheRetention(options *PiMessagesOptions) *ai.CacheRetention {
 	if options.CacheRetention != nil {
 		return options.CacheRetention
 	}
-	if providerEnvValue("PI_CACHE_RETENTION", &options.StreamOptions) != "long" {
+	if providerEnvValue("ORB_CACHE_RETENTION", &options.StreamOptions) != "long" {
 		return nil
 	}
 	retention := ai.CacheRetentionLong

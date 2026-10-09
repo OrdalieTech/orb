@@ -71,7 +71,7 @@ directory because Node refuses native TypeScript stripping there. `agent` is del
 so later capabilities can extend the state snapshot without changing the envelope.
 
 ```json
-{"protocol":"orb-extension-host","version":1,"kind":"response","id":"host-1","result":{"extensionEntries":[{"id":"ext-1","path":"/work/ext.mjs"}],"agent":{"name":"orb","version":"dev","cwd":"/work","agentDir":"/home/me/.pi/agent"},"capabilities":["tool_updates"]}}
+{"protocol":"orb-extension-host","version":1,"kind":"response","id":"host-1","result":{"extensionEntries":[{"id":"ext-1","path":"/work/ext.mjs"}],"agent":{"name":"orb","version":"dev","cwd":"/work","agentDir":"/home/me/.orb/agent"},"capabilities":["tool_updates"]}}
 ```
 
 After the handshake, orb sends one `load_extension` request per entry, in entry-list order. The
@@ -431,8 +431,10 @@ form. A `user_bash` result containing JavaScript operations replaces the functio
 base64 data for that request id, and the terminal response carries `exitCode`.
 
 Before starting the child host, orb atomically materializes `<agentDir>/host/bin/pi`, prepends its
-directory to `PATH`, and exports `PI_SUBAGENT_PI_BINARY`, `PI_CODING_AGENT_DIR`, and
-`PI_CODING_AGENT=true`. The same environment is used by `pi.exec`. Orb then locates each entry's
+directory to the child’s `PATH`, and exports `PI_SUBAGENT_PI_BINARY`, `ORB_AGENT_DIR`,
+`AI_AGENT=orb` and `ORB_CODING_AGENT=true`. Only this compatibility child also receives
+`PI_CODING_AGENT_DIR` pointing to Orb’s own root; Pi process/session markers and inherited
+Herdr identity are removed. The SDK resolves Orb’s root, never installed Pi’s home. The same environment is used by `pi.exec`. Orb then locates each entry's
 nearest owning `package.json`; declared production dependencies are left alone when resolvable from
 local or hoisted `node_modules`, otherwise npm runs with `--omit=dev --no-audit --no-fund`, or Bun
 runs with `--production`. Package staging exposes those declared dependencies and prioritizes the

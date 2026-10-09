@@ -102,7 +102,7 @@ func EnsureSSH(ctx context.Context, target, remoteOrb string, updater selfupdate
 		return remoteOrb, nil
 	}
 	args, err := sshArgs(target, `for orb_path in "$(command -v orb || true)" "${ORB_INSTALL_DIR:-$HOME/.local/bin}/orb"; do
-  if [ -x "$orb_path" ] && PI_OFFLINE=1 "$orb_path" bridge --help 2>/dev/null | grep -q 'orb bridge trust'; then
+  if [ -x "$orb_path" ] && ORB_OFFLINE=1 "$orb_path" bridge --help 2>/dev/null | grep -q 'orb bridge trust'; then
     printf 'ready\n%s\n' "$orb_path"; exit 0
   fi
 done
@@ -149,7 +149,7 @@ cat > "$stage"
 if command -v sha256sum >/dev/null 2>&1; then digest=$(sha256sum "$stage"); else digest=$(shasum -a 256 "$stage"); fi
 [ "${digest%% *}" = "$expected" ] || exit 43
 chmod 755 "$stage"
-PI_OFFLINE=1 "$stage" bridge --help 2>/dev/null | grep -q 'orb bridge trust' || exit 42
+ORB_OFFLINE=1 "$stage" bridge --help 2>/dev/null | grep -q 'orb bridge trust' || exit 42
 mv -f "$stage" "$dir/orb"
 printf '%s\n' "$dir/orb"`)
 	if err != nil {

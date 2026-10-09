@@ -307,12 +307,12 @@ stream → `AssistantMessageEvent`s. Implementation per D10: official SDK where 
 **Providers & catalog.** A provider = metadata (id, api shape, baseURL, auth kind, compat flags,
 models). Generated from models.dev by `go:generate` into `ai/models/generated.go` + hand-maintained
 corrections (mirroring upstream `scripts/generate-models.ts` structure); runtime refresh writes
-per-provider catalogs under `~/.pi/agent/` as upstream's models-store does. `models.json` overlay:
+per-provider catalogs under `~/.orb/agent/` as upstream's models-store does. `models.json` overlay:
 same semantics as upstream `docs/models.md`, including `$ENV` / `!command` apiKey interpolation and
 compat flags (`supportsDeveloperRole`, `supportsCacheControlOnTools`, `supportsToolReferences`, …).
 
 **Caching & headers.** Anthropic `cache_control` breakpoints (system/tools/last-user), TTL via
-`PI_CACHE_RETENTION`; OpenAI `prompt_cache_key` + session-affinity header formats
+`ORB_CACHE_RETENTION`; OpenAI `prompt_cache_key` + session-affinity header formats
 (`packages/ai/src/api/openai-prompt-cache.ts`).
 
 **Auth.** `ai/auth`: credential store interface (file impl lives in `agent/config`), API-key
@@ -469,7 +469,7 @@ truncation with full spill to temp file, process-tree kill, detached-child PID t
 `shellCommandPrefix`, spawn-hook seam), edit (exact → fuzzy match: NFKC normalize + trailing-ws
 strip + smart-quote/dash folding, normalized-space match mapped back line-by-line; multi-edit
 arrays; udiff rendering), write, grep (ripgrep), find (fd), ls. `rg`/`fd`: prefer system binaries,
-else auto-download upstream-style into `~/.pi/agent/bin` (`src/utils/tools-manager.ts`). Every tool:
+else auto-download upstream-style into `~/.orb/agent/bin` (`src/utils/tools-manager.ts`). Every tool:
 Operations interface (delegation seam), TUI `RenderCall`/`RenderResult`, file-mutation queue
 serializing writes per realpath (parallel execution default).
 
@@ -483,13 +483,13 @@ remain in examples and conformance tests; the CLI no longer imports them.
 **Sessions** (`agent/session/`): JSONL v3 in-file tree (header line, 8-hex ids, parentId,
 leaf = position; entry types `message`, `model_change`, `thinking_level_change`, `compaction`,
 `branch_summary`, `custom`, `custom_message`, `label`, `session_info`), v1→v2→v3 auto-migration,
-location `~/.pi/agent/sessions/--<cwd-dashed>--/<ts>_<uuid>.jsonl`, overrides
-(`--session-dir` > `PI_CODING_AGENT_SESSION_DIR` > setting). Export to HTML (upstream
+location `~/.orb/agent/sessions/--<cwd-dashed>--/<ts>_<uuid>.jsonl`, overrides
+(`--session-dir` > `ORB_SESSION_DIR` > setting). Export to HTML (upstream
 `src/core/export-html/`) and markdown. Byte-compatible with TS pi — cross-read fixtures (F6) prove it.
 
 **Config** (`agent/config/`): settings manager (global deep-merged with project
-`.pi/settings.json`; unknown keys tolerated), auth storage (0600, legacy `oauth.json` migration),
-trust flow, keybindings, `PI_CODING_AGENT_DIR` override, models.json hot reload.
+`.orb/settings.json`; unknown keys tolerated), auth storage (0600, legacy `oauth.json` migration),
+trust flow, keybindings, `ORB_AGENT_DIR` override, models.json hot reload.
 
 **Extensions — Go-native core** (`agent/extensions/`): the full ExtensionAPI as Go interfaces,
 mirroring `docs/extensions.md` and `src/core/extensions/types.ts`:
@@ -608,7 +608,7 @@ expansion (`$1`, `$@`, `${1:-default}`, `${@:N:L}`); themes as data (registerabl
 
 **pi packages:** `orb install/remove/update/list/config` for `npm:`/`git:` extension/skill/theme
 packages — npm registry tarball fetch + extract (no node at runtime), git clone; storage
-`~/.pi/agent/npm/` + project `.pi/npm/` (upstream `docs/packages.md`). Package installation itself
+`~/.orb/agent/npm/` + project `.orb/npm/` (upstream `docs/packages.md`). Package installation itself
 is native Go; executing package-provided JavaScript requires the D31 Node/Bun runtime.
 
 ### ACP and team agents
@@ -648,6 +648,14 @@ eight sessions): the agent 36 MB PSS, the relay 17 MB and buzz-acp 4 MB, against
 Hermes agent.
 
 ## Native persistence
+
+Runtime identity and configuration are independent of Pi: the default agent directory is
+`~/.orb/agent` (`ORB_AGENT_DIR`), and project configuration lives in `.orb`. File-backed
+sessions accept `ORB_SESSION_DIR`; Orb’s runtime environment controls use `ORB_*` names.
+There is no automatic Pi directory/environment fallback or Pi resource import. Compatible
+formats remain readable at explicitly selected paths. Existing native state stays in
+`~/.orb/state/orb.db` with unchanged configuration/session namespaces, so the directory
+separation does not rename conversations or copy the native database.
 
 `cmd/orb/storage.go` selects one explicitly opened SQLite database for native CLI state.
 `platforms/native/sqlite` supplies transactional documents, Pi v3 journals, memory and chat-spool
@@ -887,7 +895,9 @@ Where upstream lacks a directly extractable test, the extractor drives upstream'
 (compaction summaries) is fixture-tested at the boundary (prompts + structure), not on model output.
 
 **Black-box:** upstream RPC/CLI tests run unmodified against `orb --mode rpc` via a thin adapter
-that swaps the spawned binary. Host behavior is covered by real Node/Bun end-to-end tests and the
+that swaps the spawned binary and maps upstream directory/environment inputs onto Orb’s
+independent names. Directory fixtures adapt only complete `.pi` path components to `.orb`;
+upstream goldens remain untouched. Host behavior is covered by real Node/Bun end-to-end tests and the
 locked 44-package harness under `conformance/extensions/`; F11 remains the extracted Go-native
 runner and wiring surface.
 

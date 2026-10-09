@@ -126,12 +126,12 @@ func wp360CaseRoot(t *testing.T) string {
 func wp360WriteTree(t *testing.T, root string, files []wp360FileSpec, dirs []string, symlinks []wp360SymlinkSpec) {
 	t.Helper()
 	for _, dir := range dirs {
-		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(orbConfigFixturePath(dir))), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, file := range files {
-		target := filepath.Join(root, filepath.FromSlash(file.Path))
+		target := filepath.Join(root, filepath.FromSlash(orbConfigFixturePath(file.Path)))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -140,11 +140,11 @@ func wp360WriteTree(t *testing.T, root string, files []wp360FileSpec, dirs []str
 		}
 	}
 	for _, link := range symlinks {
-		linkPath := filepath.Join(root, filepath.FromSlash(link.Link))
+		linkPath := filepath.Join(root, filepath.FromSlash(orbConfigFixturePath(link.Link)))
 		if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(filepath.Join(root, filepath.FromSlash(link.Target)), linkPath); err != nil {
+		if err := os.Symlink(filepath.Join(root, filepath.FromSlash(orbConfigFixturePath(link.Target))), linkPath); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -153,7 +153,7 @@ func wp360WriteTree(t *testing.T, root string, files []wp360FileSpec, dirs []str
 // wp360Relativize maps a native path under root to the fixture's POSIX form;
 // upstream joins with backslashes on win32.
 func wp360Relativize(value, root string) string {
-	return filepath.ToSlash(strings.ReplaceAll(value, root, "<fixture>"))
+	return upstreamConfigFixturePath(filepath.ToSlash(strings.ReplaceAll(value, root, "<fixture>")))
 }
 
 // wp360RelativizeJSON is wp360Relativize for JSON text, where win32
@@ -247,7 +247,7 @@ func wp360SettingsFile(t *testing.T, path string, raw json.RawMessage) {
 func TestWP360Resolve(t *testing.T) {
 	var fixture wp360Fixture
 	runner.LoadJSON(t, "WP360", "cases.json", &fixture)
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "1")
 	t.Setenv("CODEX_HOME", t.TempDir())
 	for _, testCase := range fixture.ResolveCases {
 		t.Run(testCase.Name, func(t *testing.T) {

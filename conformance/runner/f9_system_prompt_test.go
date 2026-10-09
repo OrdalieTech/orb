@@ -20,6 +20,7 @@ const (
 // D30 permits these product-identity substitutions over upstream-generated F9
 // goldens, plus the ledgered absence of codemode (DECISIONS divergence ledger).
 var f9OrbPromptReplacer = strings.NewReplacer(
+	"You can inspect PI_* environment variables for current model and session details.", "You can inspect ORB_* environment variables for current model and session details.",
 	", codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)", "",
 	f9UpstreamDefaultIdentity, f9OrbDefaultIdentity,
 	"Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):", f9OrbDocsHeading,
@@ -196,7 +197,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				SystemPromptSource:        f9FixturePromptSource(resources.SystemPromptSource, fixtureRoot),
 				AppendSystemPrompt:        resources.AppendSystemPrompt,
 				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
-				AssembledPrompt:           runner.NormalizeFixturePath(f9FixturePackagePaths(assembled, packageDir, fixture.PackageDir), fixtureRoot),
+				AssembledPrompt:           normalizeOrbConfigFixturePath(f9FixturePackagePaths(assembled, packageDir, fixture.PackageDir), fixtureRoot),
 			}
 			expected := fixtureCase.Expected
 			expected.AssembledPrompt = f9ExpectedOrbSystemPrompt(expected.AssembledPrompt)
@@ -282,7 +283,7 @@ func f9CodingSkills(skills []f9Skill) []agent.Skill {
 func writeF9Tree(t testing.TB, root string, files []f9ContextFile) {
 	t.Helper()
 	for _, file := range files {
-		path := filepath.Join(root, filepath.FromSlash(file.Path))
+		path := filepath.Join(root, filepath.FromSlash(orbConfigFixturePath(file.Path)))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("create parent for %s: %v", file.Path, err)
 		}
@@ -307,7 +308,7 @@ func f9FixtureContextFiles(files []agent.ContextFile, fixtureRoot string) []f9Co
 	converted := make([]f9ContextFile, len(files))
 	for index, file := range files {
 		converted[index] = f9ContextFile{
-			Path:    runner.NormalizeFixturePath(file.Path, fixtureRoot),
+			Path:    normalizeOrbConfigFixturePath(file.Path, fixtureRoot),
 			Content: file.Content,
 		}
 	}
@@ -318,17 +319,17 @@ func f9FixturePromptSource(source *agent.PromptSource, fixtureRoot string) *f9Pr
 	if source == nil {
 		return nil
 	}
-	return &f9PromptSource{Path: runner.NormalizeFixturePath(source.Path, fixtureRoot)}
+	return &f9PromptSource{Path: normalizeOrbConfigFixturePath(source.Path, fixtureRoot)}
 }
 
 func f9FixturePromptSources(sources []agent.PromptSource, fixtureRoot string) []f9PromptSource {
 	converted := make([]f9PromptSource, len(sources))
 	for index, source := range sources {
-		converted[index] = f9PromptSource{Path: runner.NormalizeFixturePath(source.Path, fixtureRoot)}
+		converted[index] = f9PromptSource{Path: normalizeOrbConfigFixturePath(source.Path, fixtureRoot)}
 	}
 	return converted
 }
 
 func f9MaterializePath(value, fixtureRoot string) string {
-	return strings.ReplaceAll(value, "<fixture>", fixtureRoot)
+	return strings.ReplaceAll(orbConfigFixturePath(value), "<fixture>", fixtureRoot)
 }

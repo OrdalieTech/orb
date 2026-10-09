@@ -53,7 +53,7 @@ func TestMigrationOffersToStopTheOldOrb(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+":/bin:/usr/bin")
-	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("ORB_AGENT_DIR", "")
 	previous := procfs
 	procfs = filepath.Join(bin, "no-procfs")
 	t.Cleanup(func() { procfs = previous })

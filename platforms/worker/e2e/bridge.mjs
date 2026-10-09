@@ -37,8 +37,8 @@ const PROFILE = args.profile;
 // --- laptop: a native Orb confined to --laptop -----------------------------
 const laptopEnv = {
   PATH: process.env.PATH, HOME: join(args.laptop, "home"), ORB_STATE_HOME: join(args.laptop, "state"),
-  ORB_BRIDGE_HOME: join(args.laptop, "bridge"), PI_CODING_AGENT_DIR: join(args.laptop, "agent"),
-  PI_OFFLINE: "1", FAKE_MODEL_KEY: "fake-key", NO_COLOR: "1", TMPDIR: process.env.TMPDIR,
+  ORB_BRIDGE_HOME: join(args.laptop, "bridge"), ORB_AGENT_DIR: join(args.laptop, "agent"),
+  ORB_OFFLINE: "1", FAKE_MODEL_KEY: "fake-key", NO_COLOR: "1", TMPDIR: process.env.TMPDIR,
 };
 
 async function orb(argv, input) {

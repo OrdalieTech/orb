@@ -161,7 +161,7 @@ func TestF12BuiltInThemesMatchUpstream(t *testing.T) {
 	root := t.TempDir()
 	agentDir, cwd := filepath.Join(root, "agent"), filepath.Join(root, "project")
 	userTheme := filepath.Join(agentDir, "themes", "user.json")
-	projectTheme := filepath.Join(cwd, ".pi", "themes", "project.json")
+	projectTheme := filepath.Join(cwd, ".orb", "themes", "project.json")
 	f12WriteTheme(t, userTheme, "project-over-user", dark.ResolvedColors(false))
 	f12WriteTheme(t, projectTheme, "project-over-user", dark.ResolvedColors(false))
 	projectRegistry := theme.Load(theme.LoadOptions{CWD: cwd, AgentDir: agentDir, ProjectTrusted: true, Mode: theme.TrueColor})

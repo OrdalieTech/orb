@@ -7,8 +7,8 @@ loop, provider layer, or built-in tool registry directly. `goExtensions.mcp: fal
 
 ## mcp.json
 
-Servers are configured in `mcp.json` in the agent directory (`~/.pi/agent/mcp.json`) and, once the
-project is trusted, `.pi/mcp.json` in the project, whose entries replace global ones of the same
+Servers are configured in `mcp.json` in the agent directory (`~/.orb/agent/mcp.json`) and, once the
+project is trusted, `.orb/mcp.json` in the project, whose entries replace global ones of the same
 name. The `mcpServers` shape is the one other MCP clients use, so their configurations copy over.
 `orb mcp add|remove|list` edits and checks the files without starting a session.
 

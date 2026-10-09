@@ -5,6 +5,9 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Orb now owns `~/.orb/agent`, project `.orb` and `ORB_*` configuration controls, without reading or modifying Pi’s directories by default. Existing native Orb sessions remain in `~/.orb/state/orb.db`; file formats and extension APIs remain compatible.
+- Herdr identifies Orb as Orb and restores it with `orb --session`, rather than passing Orb sessions to Pi. Custom restore requires released Herdr 0.9.2 or later; older versions retain lifecycle reporting.
+
 ## [0.19.3] - 2026-10-08
 
 Orb for macOS, and the Android app on the same view: machines by name and in a colour of their

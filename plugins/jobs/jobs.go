@@ -79,7 +79,7 @@ func Extension(bash Bash) extensions.Factory {
 			Name: "bash", Label: "bash", Description: base.Description + " A long command can run as a background job (run_in_background or monitor): the call returns at once, a message reports when the job ends, and stop_job stops it.",
 			PromptSnippet: "Execute bash commands (ls, grep, find, etc.), in the background too",
 			PromptGuidelines: []string{
-				"You can inspect PI_* environment variables for current model and session details.",
+				"You can inspect ORB_* environment variables for current model and session details.",
 				"Run commands that take long or never end (builds, test suites, dev servers, watchers) with run_in_background and keep working: a message reports when each job ends. Do not wait for a job with sleep or poll its log in a loop.",
 				"Use monitor only for output you must react to while the command runs, filtered to the lines that matter (grep --line-buffered, as pipes buffer): each report can start a turn.",
 				"Background jobs end with the session; stop the ones you no longer need with stop_job.",

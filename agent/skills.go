@@ -361,7 +361,7 @@ func LoadSkills(options LoadSkillsOptions) LoadSkillsResult {
 	cwd := resolveResourcePath(options.CWD)
 	agentDir := resolveResourcePath(options.AgentDir)
 	userDir := filepath.Join(agentDir, "skills")
-	projectDir := filepath.Join(cwd, ".pi", "skills")
+	projectDir := filepath.Join(cwd, ".orb", "skills")
 	paths := make([]struct {
 		path   string
 		source string

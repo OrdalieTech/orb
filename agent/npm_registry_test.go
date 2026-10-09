@@ -364,7 +364,7 @@ func TestUpdateReinstallsWhenVersionDiffers(t *testing.T) {
 
 func TestOfflineModeSkipsUpdates(t *testing.T) {
 	manager, _, _, settings := newTestPackageManager(t)
-	t.Setenv("PI_OFFLINE", "1")
+	t.Setenv("ORB_OFFLINE", "1")
 	if err := settings.SetPackages([]config.PackageSource{{Source: "npm:pkg"}}); err != nil {
 		t.Fatal(err)
 	}

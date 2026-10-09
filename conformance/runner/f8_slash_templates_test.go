@@ -284,7 +284,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 	}
 	for index, want := range fixture.Discovery.TemplateDiagnostics {
 		got := templateDiagnostics[index]
-		if got.Type != want.Type || runner.NormalizeFixturePath(got.Path, fixtureRoot) != want.Path || got.Message == "" {
+		if got.Type != want.Type || normalizeOrbConfigFixturePath(got.Path, fixtureRoot) != want.Path || got.Message == "" {
 			t.Fatalf("template diagnostic %d = %+v, want %+v", index, got, want)
 		}
 	}
@@ -530,7 +530,7 @@ func TestF8ResourceLoaderExtensionsMatchUpstreamImmediately(t *testing.T) {
 		if registered, found := registry.Get("extension-theme"); found {
 			gotRegistry.Found = true
 			gotRegistry.SameReference = registered == registeredInput
-			path := runner.NormalizeFixturePath(registered.SourcePath, fixtureRoot)
+			path := normalizeOrbConfigFixturePath(registered.SourcePath, fixtureRoot)
 			gotRegistry.Available = &f8AvailableTheme{Name: registered.Name, Path: path}
 			normalized := f8FixtureTheme(registered, fixtureRoot)
 			gotRegistry.Theme = &normalized
@@ -586,7 +586,7 @@ func TestF8SlashResolutionMatchesUpstream(t *testing.T) {
 			expanded, handled := resolver.ResolvePrompt(fixtureCase.Text)
 			var gotExpanded *string
 			if !handled {
-				normalized := runner.NormalizeFixturePath(expanded, fixtureRoot)
+				normalized := normalizeOrbConfigFixturePath(expanded, fixtureRoot)
 				gotExpanded = &normalized
 			}
 			if handled != fixtureCase.Handled || !reflect.DeepEqual(gotExpanded, fixtureCase.Expanded) || !reflect.DeepEqual(trace, fixtureCase.Trace) {
@@ -650,7 +650,7 @@ func f8OmitNTFSUnrepresentableFiles(t testing.TB, fixture *f8Fixture) {
 func writeF8Tree(t testing.TB, root string, files []f8FixtureFile) {
 	t.Helper()
 	for _, file := range files {
-		path := filepath.Join(root, filepath.FromSlash(file.Path))
+		path := filepath.Join(root, filepath.FromSlash(orbConfigFixturePath(file.Path)))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("create %s parent: %v", file.Path, err)
 		}
@@ -663,7 +663,7 @@ func writeF8Tree(t testing.TB, root string, files []f8FixtureFile) {
 func f8FixtureSkill(skill agent.Skill, fixtureRoot string) f8Skill {
 	return f8Skill{
 		Name: skill.Name, Description: skill.Description,
-		FilePath: runner.NormalizeFixturePath(skill.FilePath, fixtureRoot), BaseDir: runner.NormalizeFixturePath(skill.BaseDir, fixtureRoot),
+		FilePath: normalizeOrbConfigFixturePath(skill.FilePath, fixtureRoot), BaseDir: normalizeOrbConfigFixturePath(skill.BaseDir, fixtureRoot),
 		DisableModelInvocation: skill.DisableModelInvocation,
 		SourceInfo:             f8FixtureSourceInfo(skill.SourceInfo, fixtureRoot),
 	}
@@ -678,7 +678,7 @@ func f8FixtureTemplate(template agent.PromptTemplate, fixtureRoot string) f8Prom
 	source := f8FixtureSourceInfo(template.SourceInfo, fixtureRoot)
 	return f8PromptTemplate{
 		Name: template.Name, Description: template.Description, ArgumentHint: hint, Content: template.Content,
-		FilePath: runner.NormalizeFixturePath(template.FilePath, fixtureRoot), SourceInfo: &source,
+		FilePath: normalizeOrbConfigFixturePath(template.FilePath, fixtureRoot), SourceInfo: &source,
 	}
 }
 
@@ -697,15 +697,15 @@ func f8FixtureDiagnostics(diagnostics []agent.ResourceDiagnostic, fixtureRoot st
 	result := make([]f8ResourceDiagnostic, len(diagnostics))
 	for index, diagnostic := range diagnostics {
 		result[index] = f8ResourceDiagnostic{
-			Type: diagnostic.Type, Message: runner.NormalizeFixturePath(diagnostic.Message, fixtureRoot),
-			Path: runner.NormalizeFixturePath(diagnostic.Path, fixtureRoot),
+			Type: diagnostic.Type, Message: normalizeOrbConfigFixturePath(diagnostic.Message, fixtureRoot),
+			Path: normalizeOrbConfigFixturePath(diagnostic.Path, fixtureRoot),
 		}
 		if diagnostic.Collision != nil {
 			result[index].Collision = &f8ResourceCollision{
 				ResourceType: diagnostic.Collision.ResourceType,
 				Name:         diagnostic.Collision.Name,
-				WinnerPath:   runner.NormalizeFixturePath(diagnostic.Collision.WinnerPath, fixtureRoot),
-				LoserPath:    runner.NormalizeFixturePath(diagnostic.Collision.LoserPath, fixtureRoot),
+				WinnerPath:   normalizeOrbConfigFixturePath(diagnostic.Collision.WinnerPath, fixtureRoot),
+				LoserPath:    normalizeOrbConfigFixturePath(diagnostic.Collision.LoserPath, fixtureRoot),
 			}
 		}
 	}
@@ -714,8 +714,8 @@ func f8FixtureDiagnostics(diagnostics []agent.ResourceDiagnostic, fixtureRoot st
 
 func f8FixtureSourceInfo(source agent.SourceInfo, fixtureRoot string) f8SourceInfo {
 	return f8SourceInfo{
-		Path: runner.NormalizeFixturePath(source.Path, fixtureRoot), Source: source.Source, Scope: source.Scope,
-		Origin: source.Origin, BaseDir: runner.NormalizeFixturePath(source.BaseDir, fixtureRoot),
+		Path: normalizeOrbConfigFixturePath(source.Path, fixtureRoot), Source: source.Source, Scope: source.Scope,
+		Origin: source.Origin, BaseDir: normalizeOrbConfigFixturePath(source.BaseDir, fixtureRoot),
 	}
 }
 
@@ -749,7 +749,7 @@ func f8FixtureTheme(value any, fixtureRoot string) f8Theme {
 	if result.SourcePath == "" {
 		result.SourcePath = f8ReflectString(reflected.FieldByName("Path"))
 	}
-	result.SourcePath = runner.NormalizeFixturePath(result.SourcePath, fixtureRoot)
+	result.SourcePath = normalizeOrbConfigFixturePath(result.SourcePath, fixtureRoot)
 	result.SourceInfo = f8ReflectSourceInfo(reflected.FieldByName("SourceInfo"), fixtureRoot)
 	return result
 }
@@ -790,9 +790,9 @@ func f8ReflectSourceInfo(value reflect.Value, fixtureRoot string) *f8SourceInfo 
 		return nil
 	}
 	return &f8SourceInfo{
-		Path:   runner.NormalizeFixturePath(f8ReflectString(value.FieldByName("Path")), fixtureRoot),
+		Path:   normalizeOrbConfigFixturePath(f8ReflectString(value.FieldByName("Path")), fixtureRoot),
 		Source: f8ReflectString(value.FieldByName("Source")), Scope: f8ReflectString(value.FieldByName("Scope")),
-		Origin: f8ReflectString(value.FieldByName("Origin")), BaseDir: runner.NormalizeFixturePath(f8ReflectString(value.FieldByName("BaseDir")), fixtureRoot),
+		Origin: f8ReflectString(value.FieldByName("Origin")), BaseDir: normalizeOrbConfigFixturePath(f8ReflectString(value.FieldByName("BaseDir")), fixtureRoot),
 	}
 }
 
@@ -818,6 +818,7 @@ func f8ConcreteTheme(value any) *modetheme.Theme {
 // f8MaterializePath expands "<fixture>"; file URLs are rebuilt with
 // pathToFileURL, as the extraction script built them.
 func f8MaterializePath(value, fixtureRoot string) string {
+	value = orbConfigFixturePath(value)
 	if rest, ok := strings.CutPrefix(value, "file://<fixture>"); ok {
 		return nodepath.PathToFileURL(filepath.Join(fixtureRoot, filepath.FromSlash(rest)))
 	}

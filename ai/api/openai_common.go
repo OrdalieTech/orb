@@ -290,7 +290,7 @@ func resolveCacheRetention(options *ai.StreamOptions) ai.CacheRetention {
 	if options != nil && options.CacheRetention != nil {
 		return *options.CacheRetention
 	}
-	if providerEnvValue("PI_CACHE_RETENTION", options) == "long" {
+	if providerEnvValue("ORB_CACHE_RETENTION", options) == "long" {
 		return ai.CacheRetentionLong
 	}
 	return ai.CacheRetentionShort

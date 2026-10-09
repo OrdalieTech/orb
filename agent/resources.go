@@ -76,12 +76,12 @@ func (resources Resources) JoinedAppendSystemPrompt() *string {
 	return &joined
 }
 
-// DefaultAgentDir returns the upstream global resource directory.
+// DefaultAgentDir returns Orb's global resource directory.
 func DefaultAgentDir() string {
 	if dir, err := nodepath.AgentDir(os.Getenv(nodepath.AgentDirEnv)); err == nil {
 		return dir
 	}
-	return filepath.Join(".pi", "agent")
+	return filepath.Join(".orb", "agent")
 }
 
 // LoadResources discovers context and prompt files, then applies CLI overrides.
@@ -395,7 +395,7 @@ func loadCommandSkills(options commandResourceOptions) LoadSkillsResult {
 	if home, err := os.UserHomeDir(); err == nil {
 		homeDir = resolveResourcePath(home)
 	}
-	projectBase := filepath.Join(options.cwd, ".pi")
+	projectBase := filepath.Join(options.cwd, ".orb")
 	if !options.noSkills && options.trusted {
 		configured := resolveConfiguredPaths(options.projectSkillPaths, projectBase)
 		if len(configured) > 0 {
@@ -506,7 +506,7 @@ func loadCommandPrompts(options commandResourceOptions) ([]PromptTemplate, []Res
 		warnings = append(warnings, diagnostics...)
 		return templates
 	}
-	projectBase := filepath.Join(options.cwd, ".pi")
+	projectBase := filepath.Join(options.cwd, ".orb")
 	if !options.noPrompts && options.trusted {
 		paths := resolveConfiguredPaths(options.projectPromptPaths, projectBase)
 		inputs = append(inputs, retagPrompts(
@@ -674,7 +674,7 @@ func loadContextFileFromDir(dir string) (*ContextFile, []ResourceDiagnostic) {
 }
 
 func discoverPromptFile(cwd, agentDir string, projectTrusted bool, filename string) string {
-	projectPath := filepath.Join(cwd, ".pi", filename)
+	projectPath := filepath.Join(cwd, ".orb", filename)
 	if projectTrusted && pathExists(projectPath) {
 		return projectPath
 	}

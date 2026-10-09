@@ -153,18 +153,18 @@ func TestSessionRuntimeBindsBashSessionEnvironment(t *testing.T) {
 	if _, err := bashTool.Execute(context.Background(), "call", tools.BashToolInput{Command: "printf ok"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if operations.env["PI_SESSION_ID"] != manager.GetSessionID() {
-		t.Fatalf("PI_SESSION_ID = %q, want %q", operations.env["PI_SESSION_ID"], manager.GetSessionID())
+	if operations.env["ORB_SESSION_ID"] != manager.GetSessionID() {
+		t.Fatalf("ORB_SESSION_ID = %q, want %q", operations.env["ORB_SESSION_ID"], manager.GetSessionID())
 	}
-	if operations.env["PI_PROVIDER"] != "anthropic" || operations.env["PI_MODEL"] != "claude-sonnet-4-5" {
-		t.Fatalf("PI_PROVIDER/PI_MODEL = %q/%q", operations.env["PI_PROVIDER"], operations.env["PI_MODEL"])
+	if operations.env["ORB_PROVIDER"] != "anthropic" || operations.env["ORB_MODEL"] != "claude-sonnet-4-5" {
+		t.Fatalf("ORB_PROVIDER/ORB_MODEL = %q/%q", operations.env["ORB_PROVIDER"], operations.env["ORB_MODEL"])
 	}
-	if operations.env["PI_REASONING_LEVEL"] != "high" {
-		t.Fatalf("PI_REASONING_LEVEL = %q", operations.env["PI_REASONING_LEVEL"])
+	if operations.env["ORB_REASONING_LEVEL"] != "high" {
+		t.Fatalf("ORB_REASONING_LEVEL = %q", operations.env["ORB_REASONING_LEVEL"])
 	}
 	// In-memory sessions have no session file, so the variable stays unset.
-	if value, exists := operations.env["PI_SESSION_FILE"]; exists {
-		t.Fatalf("PI_SESSION_FILE = %q for in-memory session", value)
+	if value, exists := operations.env["ORB_SESSION_FILE"]; exists {
+		t.Fatalf("ORB_SESSION_FILE = %q for in-memory session", value)
 	}
 }
 
