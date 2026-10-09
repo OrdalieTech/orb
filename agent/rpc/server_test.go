@@ -87,74 +87,99 @@ func TestRPCExtensionUIAlreadyCancelledDoesNotEmit(t *testing.T) {
 	}
 }
 
-func TestRPCImmediateFollowUpAfterPromptResponseIsQueued(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("prompt-follow-up"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := faux.New(faux.Options{API: "faux", Provider: "faux", TokenSize: faux.FixedTokenSize(4)})
-	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage("first"),
-		faux.AssistantMessage("second"),
-	})
-	model := provider.GetModel()
-	created := engine.NewAgent(
-		provider.StreamSimple, engine.WithInitialState(engine.AgentState{Model: model, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{}}),
-		engine.WithConvertToLLM(agent.ConvertToLLM),
-	)
-	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings,
-		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
-			key := "fixture-key"
-			return &key, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, inputWriter := io.Pipe()
-	output := &immediateFollowUpWriter{input: inputWriter}
-	var stderr bytes.Buffer
-	done := make(chan int, 1)
-	go func() {
-		done <- Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{
-			Input: input, Output: output, Diagnostics: &stderr,
+// A client that sends its next message the moment it hears something gets it run: a follow-up
+// right after the first prompt's response is queued, and a plain prompt sent on agent_end waits
+// for the ending run instead of being refused as "already processing".
+func TestRPCImmediateNextPromptRuns(t *testing.T) {
+	for name, next := range map[string]immediateWriter{
+		"follow-up after the response": {after: `"id":"p1","type":"response","command":"prompt"`, send: `{"id":"p2","type":"prompt","message":"second","streamingBehavior":"followUp"}`},
+		"prompt on agent_end":          {after: `"type":"agent_end"`, send: `{"id":"p2","type":"prompt","message":"second"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("prompt-follow-up"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := faux.New(faux.Options{API: "faux", Provider: "faux", TokenSize: faux.FixedTokenSize(4)})
+			// The first reply waits until a listener is in place that keeps the run returning a while
+			// after agent_end, so the next line arrives in that window.
+			gate := make(chan struct{})
+			provider.SetResponses([]faux.ResponseStep{
+				faux.Factory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
+					<-gate
+					return faux.AssistantMessage("first"), nil
+				}),
+				faux.AssistantMessage("second"),
+			})
+			model := provider.GetModel()
+			created := engine.NewAgent(
+				provider.StreamSimple, engine.WithInitialState(engine.AgentState{Model: model, Messages: engine.AgentMessages{}, Tools: []engine.AgentTool{}}),
+				engine.WithConvertToLLM(agent.ConvertToLLM),
+			)
+			runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+				Agent: created, SessionManager: manager, Settings: settings,
+				GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
+					key := "fixture-key"
+					return &key, nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, inputWriter := io.Pipe()
+			output := &next
+			output.input = inputWriter
+			var stderr bytes.Buffer
+			done := make(chan int, 1)
+			go func() {
+				done <- Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{
+					Input: input, Output: output, Diagnostics: &stderr,
+				})
+			}()
+			if _, err := io.WriteString(inputWriter, `{"id":"p1","type":"prompt","message":"first"}`+"\n"); err != nil {
+				t.Fatal(err)
+			}
+			for provider.State().CallCount == 0 {
+				time.Sleep(time.Millisecond)
+			}
+			defer runtime.Subscribe(func(event any) {
+				if _, ok := event.(agent.SessionAgentEndEvent); ok {
+					time.Sleep(100 * time.Millisecond)
+				}
+			})()
+			close(gate)
+			deadline := time.Now().Add(10 * time.Second)
+			for provider.State().CallCount != 2 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if calls := provider.State().CallCount; calls != 2 {
+				t.Fatalf("provider calls = %d, want 2 turns\n%s", calls, output.Bytes())
+			}
+			if err := runtime.WaitForIdle(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err := inputWriter.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case exitCode := <-done:
+				if exitCode != 0 || stderr.Len() != 0 {
+					t.Fatalf("exit=%d stderr=%q", exitCode, stderr.String())
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("RPC mode did not stop")
+			}
+			for _, id := range []string{"p1", "p2"} {
+				if !bytes.Contains(output.Bytes(), []byte(`"id":"`+id+`","type":"response","command":"prompt","success":true`)) {
+					t.Fatalf("missing successful %s response in %s", id, output.Bytes())
+				}
+			}
 		})
-	}()
-	if _, err := io.WriteString(inputWriter, `{"id":"p1","type":"prompt","message":"first"}`+"\n"); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for provider.State().CallCount != 2 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if calls := provider.State().CallCount; calls != 2 {
-		t.Fatalf("provider calls = %d, want 2 queued turns", calls)
-	}
-	if err := runtime.WaitForIdle(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := inputWriter.Close(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case exitCode := <-done:
-		if exitCode != 0 || stderr.Len() != 0 {
-			t.Fatalf("exit=%d stderr=%q", exitCode, stderr.String())
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("RPC mode did not stop")
-	}
-	for _, id := range []string{"p1", "p2"} {
-		if !bytes.Contains(output.Bytes(), []byte(`"id":"`+id+`","type":"response","command":"prompt","success":true`)) {
-			t.Fatalf("missing successful %s response in %s", id, output.Bytes())
-		}
 	}
 }
 
@@ -276,23 +301,25 @@ func (writer *failRPCWriter) Write([]byte) (int, error) {
 	return 0, io.ErrClosedPipe
 }
 
-type immediateFollowUpWriter struct {
+// immediateWriter sends a line to the server's input the moment it writes one containing after.
+type immediateWriter struct {
 	bytes.Buffer
-	input    *io.PipeWriter
-	injected bool
+	after, send string
+	input       *io.PipeWriter
+	injected    bool
 }
 
-func (writer *immediateFollowUpWriter) Write(data []byte) (int, error) {
+func (writer *immediateWriter) Write(data []byte) (int, error) {
 	count, err := writer.Buffer.Write(data)
-	if err != nil || writer.injected || !bytes.Contains(data, []byte(`"id":"p1","type":"response","command":"prompt"`)) {
+	if err != nil || writer.injected || !bytes.Contains(data, []byte(writer.after)) {
 		return count, err
 	}
 	writer.injected = true
-	if _, writeErr := io.WriteString(writer.input, `{"id":"p2","type":"prompt","message":"second","streamingBehavior":"followUp"}`+"\n"); writeErr != nil {
+	if _, writeErr := io.WriteString(writer.input, writer.send+"\n"); writeErr != nil {
 		return count, writeErr
 	}
-	// Keep the first response write active long enough for the input loop to
-	// dispatch the follow-up before the agent marks itself streaming.
+	// Keep this write active long enough for the input loop to dispatch the line while the
+	// run that wrote it is still returning.
 	time.Sleep(20 * time.Millisecond)
 	return count, nil
 }

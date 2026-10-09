@@ -10,6 +10,7 @@ shown by `/changelog`.
   old version until someone restarts it. Its instances and peers reconnect on their own.
 - Orb now owns `~/.orb/agent`, project `.orb` and `ORB_*` configuration controls, without reading or modifying Pi’s directories by default. Existing native Orb sessions remain in `~/.orb/state/orb.db`; file formats and extension APIs remain compatible.
 - Herdr identifies Orb as Orb and restores it with `orb --session`, rather than passing Orb sessions to Pi. Custom restore requires released Herdr 0.9.2 or later; older versions retain lifecycle reporting.
+- In RPC, a prompt sent the moment `agent_end` arrives waits for the run to return instead of being refused as "already processing".
 - memtree no longer waits forever on a message its compactor cannot summarize (a refusal, an empty reply, no model): after three failed calls the line keeps the message's text cut to size, saved like a summary, and nothing retries in the background or at the next start.
 
 ## [0.19.3] - 2026-10-08

@@ -77,6 +77,8 @@ type server struct {
 	prompting         bool
 	promptSession     *agent.SessionRuntime
 	promptPreflight   chan struct{}
+	promptDone        chan struct{} // closed when the running prompt returns
+	promptEnded       bool          // its run sent agent_end and is only returning
 }
 
 // requestExtensionShutdown is the RPC shutdownHandler for extension
@@ -199,6 +201,12 @@ func (mode *server) bindReplacement(session *agent.SessionRuntime) error {
 		mode.unsub()
 	}
 	mode.unsub = session.Subscribe(func(event any) {
+		// Marked before the client can hear it: a prompt sent on agent_end waits for the run to return.
+		if end, ok := event.(agent.SessionAgentEndEvent); ok && !end.WillRetry {
+			mode.promptMu.Lock()
+			mode.promptEnded = mode.prompting
+			mode.promptMu.Unlock()
+		}
 		mode.output.WriteEvent(event)
 		// Extension shutdown requests are re-checked on agent_settled.
 		if _, settled := event.(agent.AgentSettledEvent); settled {
@@ -614,6 +622,18 @@ func (mode *server) prompt(session *agent.SessionRuntime, command Command) *Resp
 		return failure(errors.New("prompt requires a message"))
 	}
 	mode.promptMu.Lock()
+	// A run past agent_end is only returning: wait for it, as JS drains it before reading the next
+	// line, instead of refusing a prompt sent the moment the client saw the end.
+	for mode.prompting && mode.promptEnded {
+		done := mode.promptDone
+		mode.promptMu.Unlock()
+		select {
+		case <-done:
+		case <-mode.ctx.Done():
+			return failure(mode.ctx.Err())
+		}
+		mode.promptMu.Lock()
+	}
 	if session.IsStreaming() || mode.prompting {
 		switch command.StreamingBehavior {
 		case "steer":
@@ -633,10 +653,10 @@ func (mode *server) prompt(session *agent.SessionRuntime, command Command) *Resp
 		mode.promptMu.Unlock()
 		return success(dispositionData{agent.DispositionQueued})
 	}
-	mode.prompting = true
+	mode.prompting, mode.promptEnded = true, false
 	mode.promptSession = session
-	preflight := make(chan struct{})
-	mode.promptPreflight = preflight
+	preflight, done := make(chan struct{}), make(chan struct{})
+	mode.promptPreflight, mode.promptDone = preflight, done
 	mode.promptMu.Unlock()
 	finishPreflight := sync.OnceFunc(func() { close(preflight) })
 	defer func() {
@@ -644,8 +664,9 @@ func (mode *server) prompt(session *agent.SessionRuntime, command Command) *Resp
 		mode.promptMu.Lock()
 		mode.prompting = false
 		mode.promptSession = nil
-		mode.promptPreflight = nil
+		mode.promptPreflight, mode.promptDone = nil, nil
 		mode.promptMu.Unlock()
+		close(done)
 	}()
 	// Upstream dispatches extension commands before any model/API-key
 	// validation and emits the authoritative response from preflightResult
