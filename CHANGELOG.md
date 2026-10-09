@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-10-09
+
+Orb stands on its own directories, plugins behave the same everywhere, and Bridge follows updates.
+
 - Orb now owns `~/.orb/agent`, project `.orb` and `ORB_*` configuration controls, without reading or modifying Pi’s directories by default. Existing native Orb sessions remain in `~/.orb/state/orb.db`; file formats and extension APIs remain compatible.
 - Herdr identifies Orb as Orb and restores it with `orb --session`, rather than passing Orb sessions to Pi. Custom restore requires released Herdr 0.9.2 or later; older versions retain lifecycle reporting.
 - Plugins behave the same in every mode and on every machine. `/plugins` now loads and unloads what it toggles in RPC, print, JSON and ACP sessions too (the apps' and Bridge's Orbs), where it used to change nothing until a restart. The Mac and Android apps manage the plugins and sign-outs of any machine they may start Orb on, through its Bridge, opening on the machine of the conversation in front, with each plugin's choices (memtree's mode, permissions') beside it; the Orbs that Bridge started reopen with a change at their next message, without an "apply" step. Tab in `/plugins` cycles those choices too, and a change made during a response applies when it finishes instead of cutting it short.
