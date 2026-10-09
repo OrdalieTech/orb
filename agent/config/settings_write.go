@@ -127,13 +127,15 @@ func authFile(path string) host.Document {
 	return filelock.File{Path: path, Perm: 0o600, Stale: filelock.AsyncStale}
 }
 
-func writeGlobalSettings(path string, values jsonwire.RawObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
+func writeGlobalSettings(path string, values jsonwire.RawObject, nestedField, nestedKey string, nested func(json.RawMessage) json.RawMessage) error {
 	return fileDocument(path, 0o644).Update(context.Background(), func(current []byte) ([]byte, error) {
-		return updatedSettings(current, values, nestedField, nestedKey, nestedValue)
+		return updatedSettings(current, values, nestedField, nestedKey, nested)
 	})
 }
 
-func updatedSettings(current []byte, values jsonwire.RawObject, nestedField, nestedKey string, nestedValue json.RawMessage) ([]byte, error) {
+// updatedSettings sets values, and the nested key to what nested makes of the value the document
+// holds when it is written.
+func updatedSettings(current []byte, values jsonwire.RawObject, nestedField, nestedKey string, nested func(json.RawMessage) json.RawMessage) ([]byte, error) {
 	object, err := parseSettingsObject(current)
 	if err != nil {
 		return nil, err
@@ -147,23 +149,24 @@ func updatedSettings(current []byte, values jsonwire.RawObject, nestedField, nes
 	}
 	if nestedField != "" {
 		raw, exists := object.Get(nestedField)
-		nested := jsonwire.RawObject{}
+		field := jsonwire.RawObject{}
 		if exists {
 			if decoded, decodeErr := parseSettingsObject(raw); decodeErr == nil {
-				nested = decoded
+				field = decoded
 			}
 		}
-		// A nil nestedValue deletes the key; an emptied object drops the
+		// A nil value deletes the key; an emptied object drops the
 		// whole field rather than leaving "{}" behind.
-		if nestedValue == nil {
-			nested.Delete(nestedKey)
+		old, _ := field.Get(nestedKey)
+		if value := nested(old); value == nil {
+			field.Delete(nestedKey)
 		} else {
-			nested.Set(nestedKey, nestedValue)
+			field.Set(nestedKey, value)
 		}
-		if len(nested) == 0 {
+		if len(field) == 0 {
 			object.Delete(nestedField)
 		} else {
-			raw, err = indentSettings(nested)
+			raw, err = indentSettings(field)
 			if err != nil {
 				return nil, err
 			}
@@ -173,12 +176,12 @@ func updatedSettings(current []byte, values jsonwire.RawObject, nestedField, nes
 	return indentSettings(object)
 }
 
-func (manager *SettingsManager) writeGlobalSettings(values jsonwire.RawObject, nestedField, nestedKey string, nestedValue json.RawMessage) error {
+func (manager *SettingsManager) writeGlobalSettings(values jsonwire.RawObject, nestedField, nestedKey string, nested func(json.RawMessage) json.RawMessage) error {
 	if manager.globalDocument == nil {
-		return writeGlobalSettings(manager.globalPath, values, nestedField, nestedKey, nestedValue)
+		return writeGlobalSettings(manager.globalPath, values, nestedField, nestedKey, nested)
 	}
 	return manager.globalDocument.Update(context.Background(), func(current []byte) ([]byte, error) {
-		return updatedSettings(current, values, nestedField, nestedKey, nestedValue)
+		return updatedSettings(current, values, nestedField, nestedKey, nested)
 	})
 }
 
@@ -210,14 +213,29 @@ func (manager *SettingsManager) setGlobalValues(values ...jsonwire.RawMember) {
 }
 
 func (manager *SettingsManager) setGlobalNested(field, key string, value any) {
-	raw, err := encodeSetting(value)
-	if err != nil {
+	if _, err := encodeSetting(value); err != nil {
 		panic(fmt.Sprintf("config: invalid setting value: %v", err))
 	}
+	manager.updateGlobalNested(field, key, func(any) any { return value })
+}
+
+// updateGlobalNested sets field.key to what change makes of the value the document holds when it
+// is written, so a change another process made since this one read its settings is kept.
+func (manager *SettingsManager) updateGlobalNested(field, key string, change func(current any) any) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	value := change(nestedObject(manager.global, field)[key])
 	if !manager.globalLoadError {
-		if err := manager.writeGlobalSettings(nil, field, key, raw); err != nil {
+		err := manager.writeGlobalSettings(nil, field, key, func(current json.RawMessage) json.RawMessage {
+			var decoded any
+			decoder := json.NewDecoder(bytes.NewReader(current))
+			decoder.UseNumber()
+			_ = decoder.Decode(&decoded)
+			value = change(decoded)
+			raw, _ := encodeSetting(value)
+			return raw
+		})
+		if err != nil {
 			manager.errors = append(manager.errors, SettingsError{Scope: GlobalSettings, Err: err})
 			return
 		}
@@ -339,41 +357,33 @@ func (manager *SettingsManager) SetEnableSkillCommands(enabled bool) {
 // SetPluginEnabled persists a user-level gate while project settings continue
 // to overlay it through the existing one-level merge.
 func (manager *SettingsManager) SetPluginEnabled(name string, enabled bool) {
-	manager.mu.RLock()
-	configured := nestedObject(nestedObject(manager.global, "plugins"), name)
-	if configured != nil {
-		configured = cloneMap(configured)
-	}
-	manager.mu.RUnlock()
-	if configured != nil {
-		configured["enabled"] = enabled
-		manager.setGlobalNested("plugins", name, configured)
-		return
-	}
-	manager.setGlobalNested("plugins", name, enabled)
+	manager.updateGlobalNested("plugins", name, func(current any) any {
+		// An object keeps its settings beside the gate.
+		if configured := nestedObject(map[string]any{name: current}, name); configured != nil {
+			configured = cloneMap(configured)
+			configured["enabled"] = enabled
+			return configured
+		}
+		return enabled
+	})
 }
 
 // SetPluginSetting persists one value without discarding the plugin's rules.
 func (manager *SettingsManager) SetPluginSetting(name, key string, value any) {
-	manager.mu.RLock()
-	raw := nestedObject(manager.global, "plugins")[name]
-	configured := nestedObject(nestedObject(manager.global, "plugins"), name)
-	if configured != nil {
-		configured = cloneMap(configured)
-	}
-	manager.mu.RUnlock()
-	if configured == nil {
-		// Preserve an explicit boolean gate when promoting it to the object
-		// form: writing a setting must never flip the plugin on as a side
-		// effect.
-		enabled := true
-		if gate, isBool := raw.(bool); isBool {
-			enabled = gate
+	manager.updateGlobalNested("plugins", name, func(current any) any {
+		configured := nestedObject(map[string]any{name: current}, name)
+		if configured == nil {
+			// Preserve the gate, an explicit boolean or the default off, when
+			// promoting it to the object form: writing a setting must never flip
+			// the plugin on as a side effect.
+			enabled, _ := current.(bool)
+			configured = map[string]any{"enabled": enabled}
+		} else {
+			configured = cloneMap(configured)
 		}
-		configured = map[string]any{"enabled": enabled}
-	}
-	configured[key] = cloneValue(value)
-	manager.setGlobalNested("plugins", name, configured)
+		configured[key] = cloneValue(value)
+		return configured
+	})
 }
 
 // GlobalPluginSettings returns one plugin's structured configuration from the

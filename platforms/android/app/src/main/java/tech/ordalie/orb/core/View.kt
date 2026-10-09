@@ -40,7 +40,9 @@ data class Row(
 data class Method(val auth: String, val label: String, val about: String, val account: Boolean)
 data class Provider(val id: String, val name: String, val methods: List<Method>, val models: Int, val ready: Boolean, val holds: String, val status: String, val source: String)
 data class Account(val provider: String, val providerName: String, val id: String, val name: String, val active: Boolean, val plan: String, val windows: List<Window>)
-data class Plugin(val name: String, val on: Boolean, val about: String)
+data class Plugin(val name: String, val on: Boolean, val about: String, val choices: List<Choice>)
+/** A plugin setting that takes one of a few values. */
+data class Choice(val key: String, val values: List<String>, val value: String)
 data class Completion(val text: String, val label: String, val detail: String)
 
 private fun <T> JSONArray?.map(f: (JSONObject) -> T): List<T> = this?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(f) } }.orEmpty()
@@ -93,7 +95,7 @@ fun providers(a: JSONArray?) = a.map { p ->
         p.optInt("models"), p.optBoolean("ready"), p.optString("holds"), p.optString("status"), p.optString("source"))
 }
 fun accounts(a: JSONArray?) = a.map { Account(it.optString("provider"), it.optString("provider_name"), it.optString("id"), it.optString("name"), it.optBoolean("active"), it.optString("plan"), it.list("windows", ::window)) }
-fun plugins(a: JSONArray?) = a.map { Plugin(it.optString("name"), it.optBoolean("on"), it.optString("about")) }
+fun plugins(a: JSONArray?) = a.map { Plugin(it.optString("name"), it.optBoolean("on"), it.optString("about"), it.list("choices") { c -> Choice(c.optString("key"), c.strings("values"), c.optString("value")) }) }
 fun completions(a: JSONArray?) = a.map { Completion(it.optString("text"), it.optString("label"), it.optString("detail")) }
 
 /** A reply to an intent: its result, or the words of why it failed. */
@@ -162,6 +164,6 @@ class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int,
     /** The hue a machine's sessions are told apart by: 0 for this phone, 1 to 6 for a peer, as the view assigns them. */
     fun hue(peer: String?) = if (peer == null || peer == state.self) 0 else machine(peer)?.hue?.coerceAtLeast(1) ?: 1
 
-    /** Stops this machine's Bridge: it starts again with the current environment (the Linux, plugins). */
+    /** Stops this machine's Bridge: it starts again with the current environment (the Linux). */
     fun restart() = send("restart")
 }

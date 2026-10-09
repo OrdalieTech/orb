@@ -1,6 +1,7 @@
 package assembly
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -46,8 +47,8 @@ func pluginGridRows(settings *config.SettingsManager, th extensions.Theme) []tui
 	enabled := settings.GetPlugins()
 	rows := make([]tui.GridRow, 0, len(names))
 	for _, name := range names {
-		if name == "bridge" || name == "bridge-agent-calls" || name == "provider-usage" {
-			continue // These capabilities have dedicated settings pages.
+		if Paged(name) {
+			continue
 		}
 		// Disabled plugins recede: the whole row goes dim, not just the pill.
 		nameStyle, descriptionStyle, valueStyle := "text", "muted", "accent"
@@ -83,18 +84,6 @@ func shortDescription(name string) string {
 		return "zoomable session history"
 	}
 	return descriptions[name]
-}
-
-// settingsObjectValue coerces a nested settings value to a plain map: cloned
-// settings hold nested objects as the named config.Settings type.
-func settingsObjectValue(value any) map[string]any {
-	switch typed := value.(type) {
-	case map[string]any:
-		return typed
-	case config.Settings:
-		return typed
-	}
-	return nil
 }
 
 // pluginConfigSummary compresses a plugin's structured settings into one
@@ -169,7 +158,7 @@ func pluginsWindow(ctx context.Context, command extensions.CommandContext, cwd, 
 		list := tui.NewGridList(nil, 16, gridListTheme(th))
 		list.Searchable = true
 		panel := &pluginsPanel{state: state, theme: th, settings: settings, list: list, installable: cwd != ""}
-		panel.frame = configFrame(th, "Plugins", "␣ toggle · type to filter · esc", pluginsPanelChild{panel})
+		panel.frame = configFrame(th, "Plugins", "␣ toggle · ⇥ mode · type to filter · esc", pluginsPanelChild{panel})
 		bump := func(mutate func()) {
 			state.mu.Lock()
 			mutate()
@@ -195,6 +184,17 @@ func pluginsWindow(ctx context.Context, command extensions.CommandContext, cwd, 
 				bump(func() { state.dirty = true })
 			}
 		}
+		// Tab moves a plugin's choice (memtree's mode, permissions') to its next value.
+		list.OnKey = func(event tui.KeyEvent, value string) bool {
+			if event.Raw != "\t" || len(Choices(value)) == 0 {
+				return false
+			}
+			c := Choices(value)[0]
+			current, _ := settings.GetPluginSettings(value)[c.Key].(string)
+			settings.SetPluginSetting(value, c.Key, c.Values[(slices.Index(c.Values, cmp.Or(current, c.Values[0]))+1)%len(c.Values)])
+			bump(func() { state.dirty = true })
+			return true
+		}
 		list.OnCancel = func() { done(nil) }
 		return panel, nil
 	}, extensions.ModalOptions())
@@ -208,11 +208,16 @@ func pluginsWindow(ctx context.Context, command extensions.CommandContext, cwd, 
 	return drainAndReload(ctx, command, settings)
 }
 
+// drainAndReload applies the change once the running turn ends: a reload builds the session again,
+// and a turn running then would be cut short.
 func drainAndReload(ctx context.Context, command extensions.CommandContext, settings *config.SettingsManager) error {
 	for _, settingsError := range settings.DrainErrors() {
 		if strings.TrimSpace(settingsError.Error()) != "" {
 			return settingsError
 		}
+	}
+	if err := command.WaitForIdle(ctx); err != nil {
+		return err
 	}
 	return command.Reload(ctx)
 }
@@ -419,10 +424,100 @@ func legacyPluginsSelect(ctx context.Context, command extensions.CommandContext,
 	if !dirty {
 		return nil
 	}
-	for _, settingsError := range settings.DrainErrors() {
-		if strings.TrimSpace(settingsError.Error()) != "" {
-			return settingsError
-		}
+	return drainAndReload(ctx, command, settings)
+}
+
+// text is a run of text in the transcript, cut to one line when asked: how the terminal draws
+// the results of plugins that leave their drawing to the host (tasks, questions).
+func text(s string, oneLine bool) extensions.Component {
+	if oneLine {
+		return tui.NewTruncatedText(s, 0, 0)
 	}
-	return command.Reload(ctx)
+	return tui.NewText(s, 0, 0, nil)
+}
+
+// taskWidget is the task list above the editor: its summary, opened onto the list by a click.
+type taskWidget struct {
+	mu            sync.Mutex
+	summary, list string
+	expanded      bool
+	host          extensions.UIHost
+	theme         interface {
+		FG(color, text string) string
+	}
+	cachedWidth    int
+	cachedExpanded bool
+	cachedLines    []string
+	cacheRevision  uint64
+}
+
+func newTaskWidget(summary, list string, host extensions.UIHost, theme extensions.Theme) extensions.Component {
+	return &taskWidget{summary: summary, list: list, host: host, theme: theme}
+}
+
+func (widget *taskWidget) Invalidate() {
+	widget.mu.Lock()
+	widget.cachedLines = nil
+	widget.cacheRevision++
+	widget.mu.Unlock()
+}
+
+func (widget *taskWidget) Render(width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	widget.mu.Lock()
+	expanded, revision := widget.expanded, widget.cacheRevision
+	if widget.cachedLines != nil && widget.cachedWidth == width && widget.cachedExpanded == expanded {
+		lines := append([]string(nil), widget.cachedLines...)
+		widget.mu.Unlock()
+		return lines
+	}
+	widget.mu.Unlock()
+	marker := "▸ "
+	if expanded {
+		marker = "▾ "
+	}
+	headerText := marker + widget.summary
+	if expanded && widget.theme != nil {
+		headerText = widget.theme.FG("dim", headerText)
+	}
+	headerPadding := min(1, max(0, (width-1)/2))
+	lines := tui.NewTruncatedText(headerText, headerPadding, 0).Render(width)
+	if expanded {
+		taskLines := strings.Split(widget.list, "\n")
+		if widget.theme != nil {
+			for index := range taskLines {
+				taskLines[index] = widget.theme.FG("dim", taskLines[index])
+			}
+		}
+		listPadding := min(4, max(0, (width-1)/2))
+		lines = append(lines, tui.NewText(strings.Join(taskLines, "\n"), listPadding, 0, nil).Render(width)...)
+	}
+	widget.mu.Lock()
+	if widget.expanded == expanded && widget.cacheRevision == revision {
+		widget.cachedWidth, widget.cachedExpanded = width, expanded
+		widget.cachedLines = append(widget.cachedLines[:0], lines...)
+	}
+	widget.mu.Unlock()
+	return lines
+}
+
+func (widget *taskWidget) HandleMouse(event tui.MouseEvent) bool {
+	if event.Type != tui.MousePress && event.Type != tui.MouseRelease || event.Button != 0 {
+		return false
+	}
+	// A click toggles on release; a drag from the press selects text instead.
+	if event.Type == tui.MousePress || event.Clicks > 1 {
+		return true
+	}
+	widget.mu.Lock()
+	widget.expanded = !widget.expanded
+	widget.cachedLines = nil
+	widget.cacheRevision++
+	widget.mu.Unlock()
+	if widget.host != nil {
+		widget.host.Invalidate()
+	}
+	return true
 }

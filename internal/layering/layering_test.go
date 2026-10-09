@@ -70,7 +70,7 @@ func layerOf(pkg string) (int, bool) {
 }
 
 var tuiImporters = []string{
-	"tui/", "cmd/", "agent/modes/", "agent/assembly/", "plugins/tasks/", "plugins/questions/", "plugins/permissions/", "plugins/mcp/", "agent/extensions/", "agent/examples/",
+	"tui/", "cmd/", "agent/modes/", "agent/assembly/", "plugins/questions/panel/", "plugins/permissions/", "plugins/mcp/", "agent/extensions/", "agent/examples/",
 }
 
 var skipDirs = map[string]bool{
@@ -242,7 +242,8 @@ func TestCapabilityDependencies(t *testing.T) {
 		{"agent/bridge/tool", []string{"/agent/session", "/agent/extensions", "/agent/config", "/agent/modes", "/tui", "/platforms", "/plugins"}},
 		{"platforms/websocket", []string{"/agent", "/tui", "/platforms/native", "/plugins"}},
 		{"bridge", []string{"/agent", "/ai", "/engine", "/tui", "/platforms", "/plugins"}},
-		{"plugins/tasks", []string{"/agent/assembly", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
+		{"plugins/tasks", []string{"/agent/assembly", "/tui", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
+		{"plugins/questions", []string{"/agent/assembly", "/tui"}},
 		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native", "/platforms/websocket"}},
 		{"platforms/worker", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native/sqlite", "/plugins"}},
 		{"platforms/browser", []string{"/agent/config", "/agent/assembly", "/agent/modes", "/agent/extensions", "/tui", "/platforms/native", "/platforms/websocket"}},

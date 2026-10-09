@@ -24,6 +24,9 @@ import (
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/platforms/worker/peer"
 	"github.com/OrdalieTech/orb/plugins/memtree"
+	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/plugins/tasks"
+	"github.com/OrdalieTech/orb/plugins/titles"
 )
 
 func main() {
@@ -122,10 +125,19 @@ func open(object js.Value) js.Value {
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
 			Tools: peer.AgentCalls(bridge.open),
 			Extensions: func(settings *config.SettingsManager) map[string]extensions.Factory {
-				if !settings.GetPlugins()["memtree"] {
-					return nil
+				// The bundled plugins an object runs, as its settings enable them: those that need no
+				// processes, files of their own or terminal (docs/plugins.md, where plugins run).
+				portable := map[string]extensions.Factory{
+					"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
+					"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
 				}
-				return map[string]extensions.Factory{"builtin:memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree")))}
+				chosen := map[string]extensions.Factory{}
+				for name, on := range settings.GetPlugins() {
+					if on && portable[name] != nil {
+						chosen["builtin:"+name] = portable[name]
+					}
+				}
+				return chosen
 			},
 		})
 		if err != nil {

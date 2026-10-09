@@ -5,11 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- A running Bridge restarts into its binary when that binary is replaced, by `orb update`, an
-  installer or a package manager, once the new one runs: a long-lived Bridge no longer serves an
-  old version until someone restarts it. Its instances and peers reconnect on their own.
 - Orb now owns `~/.orb/agent`, project `.orb` and `ORB_*` configuration controls, without reading or modifying Pi’s directories by default. Existing native Orb sessions remain in `~/.orb/state/orb.db`; file formats and extension APIs remain compatible.
 - Herdr identifies Orb as Orb and restores it with `orb --session`, rather than passing Orb sessions to Pi. Custom restore requires released Herdr 0.9.2 or later; older versions retain lifecycle reporting.
+- Plugins behave the same in every mode and on every machine. `/plugins` now loads and unloads what it toggles in RPC, print, JSON and ACP sessions too (the apps' and Bridge's Orbs), where it used to change nothing until a restart. The Mac and Android apps manage the plugins and sign-outs of any machine they may start Orb on, through its Bridge, opening on the machine of the conversation in front, with each plugin's choices (memtree's mode, permissions') beside it; the Orbs that Bridge started reopen with a change at their next message, without an "apply" step. Tab in `/plugins` cycles those choices too, and a change made during a response applies when it finishes instead of cutting it short.
+- `orb plugins set` checks the whole plugin object as the plugin reads it and refuses what it could not load, and never turns a plugin on; only the sandbox keys of a permissions policy can stop an Orb from starting, so a bad mode in a disabled plugin no longer does; `plugins` writes fail when the settings cannot be read instead of reporting success; a plugin changed by two processes keeps both changes; only `enabled: true` (or none) turns an object-form plugin on; plugin commands read project trust from Orb's store and say when a project's own settings win. `orb plugins list --json` lists plugins with their choices.
+- Bridge restarts into an updated `orb` by itself (`orb update`, a new build at the same path) once no turn, terminal or sign-in runs for a peer and the new binary runs, so the host calls the apps use never wait on a Bridge started from an older binary. Workers and Celld run `titles`, `tasks` and `questions` beside `memtree` from their settings: the two last no longer carry their terminal drawing, so they add 21 KB to a Worker rather than 1.7 MB.
 - In RPC, a prompt sent the moment `agent_end` arrives waits for the run to return instead of being refused as "already processing".
 - memtree no longer waits forever on a message its compactor cannot summarize (a refusal, an empty reply, no model): after three failed calls the line keeps the message's text cut to size, saved like a summary, and nothing retries in the background or at the next start.
 

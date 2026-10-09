@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -13,6 +15,7 @@ import (
 	memorysdk "github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/plugins/questions/panel"
 	"github.com/OrdalieTech/orb/plugins/subagents"
 	"github.com/OrdalieTech/orb/plugins/tasks"
 	"github.com/OrdalieTech/orb/plugins/titles"
@@ -62,21 +65,60 @@ var descriptions = map[string]string{
 	"provider-usage":     "The provider in use and its remaining quota in the footer, quotas in Providers",
 }
 
+// Choice is a plugin setting that takes one of a few values, its default first: the CLI checks
+// and every app offers the same ones.
+type Choice struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
+}
+
+var choices = map[string][]Choice{
+	"permissions": {{"mode", []string{"auto", "enforce", "log"}}},
+	"memtree":     {{"mode", []string{"fresh", "compaction"}}},
+}
+
 // Names returns the stable first-party plugin order.
 func Names() []string { return append([]string(nil), names...) }
 
 // Description returns the one-line description used by the CLI and TUI.
 func Description(name string) string { return descriptions[name] }
 
+// Paged reports a plugin managed from a page of its own (Bridge's, the providers' quotas) rather
+// than from the plugin list.
+func Paged(name string) bool {
+	return name == "bridge" || name == "bridge-agent-calls" || name == "provider-usage"
+}
+
+// Choices returns the plugin's settings that take one of a few values.
+func Choices(name string) []Choice { return choices[name] }
+
+// Check says what is wrong with a plugin's settings before they are saved: no Orb starts on
+// permissions it cannot read, and a plugin that cannot read its own does not load.
+func Check(name string, configured map[string]any) error {
+	if value, set := configured["enabled"]; set {
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("%s.enabled is true or false", name)
+		}
+	}
+	for _, c := range choices[name] {
+		if value, set := configured[c.Key]; set {
+			if text, _ := value.(string); !slices.Contains(c.Values, text) {
+				return fmt.Errorf("%s.%s is one of %s", name, c.Key, strings.Join(c.Values, ", "))
+			}
+		}
+	}
+	var err error
+	switch name {
+	case "permissions":
+		_, err = permissions.FromSettings(configured)
+	case "subagents":
+		_, err = subagents.ParseExternalEntries(configured)
+	}
+	return err
+}
+
 // Catalog returns fresh extension factories for embedders to select per instance.
-func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
-	if len(option) > 1 {
-		panic("plugins: Catalog accepts at most one Options value")
-	}
-	var options CatalogOptions
-	if len(option) == 1 {
-		options = option[0]
-	}
+func Catalog(options CatalogOptions) map[string]extensions.Factory {
 	policy, inheritPolicy := options.Policy, options.Policy
 	if policy == nil && options.Settings != nil && options.Settings.GetPlugins()["permissions"] {
 		var err error
@@ -103,8 +145,8 @@ func Catalog(option ...CatalogOptions) map[string]extensions.Factory {
 	}
 	return map[string]extensions.Factory{
 		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions, "codex-sessions": options.CodexSessions,
-		"questions":      questions.Extension(),
-		"tasks":          tasks.Extension(),
+		"questions":      questions.Extension(questions.Draw{Panel: panel.Draw, Text: text}),
+		"tasks":          tasks.Extension(tasks.Draw{Widget: newTaskWidget, Text: text}),
 		"titles":         titles.Extension(),
 		"websearch":      websearch.Extension(options.HTTPClient),
 		"subagents":      subagents.Extension(options.StreamFn, inheritPolicy, options.Settings),

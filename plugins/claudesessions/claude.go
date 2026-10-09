@@ -35,6 +35,7 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/plugins/questions/panel"
 )
 
 const Name = "claude-sessions"
@@ -508,7 +509,7 @@ func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *transl
 		request, err := nativeQuestions(frame.Questions)
 		result := questions.Result{Cancelled: true}
 		if err == nil {
-			result, err = questions.Ask(ctx, request, d.options.Ask)
+			result, err = questions.Ask(ctx, request, d.options.Ask, panel.Draw)
 		}
 		if err != nil {
 			result = questions.Result{Cancelled: true}
@@ -1376,7 +1377,7 @@ func (d *Driver) elicit(ctx context.Context, raw json.RawMessage) map[string]any
 		if err != nil || (link.Scheme != "https" && link.Scheme != "http") || link.Host == "" || link.User != nil {
 			return cancel
 		}
-		answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{{ID: "url", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.1500s\n\nOpen this link in your browser, complete the request, then continue:\n%s", request.Message, request.URL), Options: []questions.Option{{Label: "Continue"}, {Label: "Decline"}}}}}, d.options.Ask)
+		answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{{ID: "url", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.1500s\n\nOpen this link in your browser, complete the request, then continue:\n%s", request.Message, request.URL), Options: []questions.Option{{Label: "Continue"}, {Label: "Decline"}}}}}, d.options.Ask, panel.Draw)
 		if err != nil || answer.Cancelled {
 			return cancel
 		}
@@ -1397,7 +1398,7 @@ func (d *Driver) elicit(ctx context.Context, raw json.RawMessage) map[string]any
 		return cancel
 	}
 	if len(schema.Properties) == 0 {
-		answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{{ID: "confirm", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.4000s", request.Message), Options: []questions.Option{{Label: "Continue"}, {Label: "Decline"}}}}}, d.options.Ask)
+		answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{{ID: "confirm", Header: fmt.Sprintf("%.128s", request.ServerName), Question: fmt.Sprintf("%.4000s", request.Message), Options: []questions.Option{{Label: "Continue"}, {Label: "Decline"}}}}}, d.options.Ask, panel.Draw)
 		if err != nil || answer.Cancelled {
 			return cancel
 		}
@@ -1455,7 +1456,7 @@ func (d *Driver) elicit(ctx context.Context, raw json.RawMessage) map[string]any
 			if ctx.Err() != nil {
 				return cancel
 			}
-			answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{q}}, d.options.Ask)
+			answer, err := questions.Ask(ctx, questions.Request{Questions: []questions.Question{q}}, d.options.Ask, panel.Draw)
 			if err != nil || answer.Cancelled {
 				return cancel
 			}

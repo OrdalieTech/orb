@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/plugins/questions"
+	"github.com/OrdalieTech/orb/plugins/questions/panel"
 	"github.com/OrdalieTech/orb/tui"
 	"golang.org/x/term"
 )
@@ -80,7 +81,7 @@ type remoteRequest struct{ text, inputID string }
 
 type remoteConversation struct {
 	promptMu     sync.Mutex
-	prompt       *questions.Panel
+	prompt       *panel.Panel
 	promptID     string
 	body, status *remoteTranscript
 	input        *tui.Input
@@ -106,7 +107,7 @@ func (v *remoteConversation) Render(width int) []string {
 
 type remoteControls struct{ v *remoteConversation }
 
-func (v *remoteConversation) currentPrompt() *questions.Panel {
+func (v *remoteConversation) currentPrompt() *panel.Panel {
 	v.promptMu.Lock()
 	defer v.promptMu.Unlock()
 	return v.prompt
@@ -252,7 +253,7 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 			}
 			v.promptID = input.ID
 			id := input.ID
-			v.prompt = questions.NewPanel(request, theme, height, invalidate, func(result questions.Result) {
+			v.prompt = panel.New(request, theme, height, invalidate, func(result questions.Result) {
 				encoded, _ := json.Marshal(result)
 				go func() {
 					select {

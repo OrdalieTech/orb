@@ -81,13 +81,6 @@ type Option struct {
 	Label string `json:"label"`
 }
 
-// Plugin is one of Orb's bundled plugins on this machine.
-type Plugin struct {
-	Name  string `json:"name"`
-	On    bool   `json:"on,omitempty"`
-	About string `json:"about,omitempty"`
-}
-
 // Completion is what an `@` token completes to: the text that replaces it, and how to show it.
 type Completion struct {
 	Text   string `json:"text"`
@@ -177,8 +170,6 @@ func (a *App) slow(in intent) func() (any, error) {
 		})
 	case "login":
 		return func() (any, error) { cancel(); a.signIn(machine, in.Provider, in.Auth); return nil, nil }
-	case "logout":
-		return call(func() (any, error) { _, err := a.o.Run(ctx, "logout", in.Provider); return nil, err })
 	case "update":
 		return call(func() (any, error) {
 			var r struct{ Status, To string }
@@ -230,32 +221,35 @@ func (a *App) slow(in intent) func() (any, error) {
 			return nil, err
 		})
 	case "restart":
-		// Bridge starts again on the next call, with what changed (the Linux, plugins); the Orbs it
-		// started end, to reopen at their next message.
+		// Bridge starts again on the next call, with what changed in its environment (the phone's
+		// Linux); the Orbs it started end, to reopen at their next message.
 		return call(func() (any, error) { err := a.o.Call(ctx, "stop", struct{}{}, nil); a.wakeMachines(); return nil, err })
 	case "plugins":
+		// The machine's plugins as `orb plugins list --json` lists them: name, on, about, and
+		// choices with the value each has.
 		return call(func() (any, error) {
-			out, err := a.o.Run(ctx, "plugins", "list")
-			var list []Plugin
-			for line := range strings.SplitSeq(out, "\n") {
-				if f := strings.SplitN(line, "\t", 3); len(f) == 3 {
-					list = append(list, Plugin{f[0], f[1] == "on", f[2]})
-				}
-			}
-			return list, err
+			var r struct{ Plugins []json.RawMessage }
+			err := host("host.plugins", "list its plugins", struct{}{}, &r)
+			return r.Plugins, err
 		})
-	case "plugin":
-		return call(func() (any, error) {
-			_, err := a.o.Run(ctx, "plugins", map[bool]string{true: "enable", false: "disable"}[in.On], in.Name)
-			return nil, err
-		})
-	case "permissions":
-		if in.Name != "auto" && in.Name != "enforce" {
-			break
+	case "plugin", "logout":
+		// A plugin turned on or off, one of its choices, a provider signed out: the machine's Orbs
+		// read it when they start, and those its Bridge started for this app reopen with it.
+		method, what, params := "host.plugins.set", "change its plugins", map[string]any{"name": in.Name}
+		switch {
+		case in.Do == "logout":
+			method, what, params = "host.logout", "sign it out", map[string]any{"provider": in.Provider}
+		case in.Key != "" && in.Value != nil:
+			params["key"], params["value"] = in.Key, *in.Value
+		default:
+			params["on"] = in.On // none is no change: the machine refuses it
 		}
 		return call(func() (any, error) {
-			_, err := a.o.Run(ctx, "plugins", "set", "permissions", "mode", `"`+in.Name+`"`)
-			return nil, err
+			var r struct{ Error string }
+			if err := host(method, what, params, &r); err != nil || r.Error == "" {
+				return nil, err
+			}
+			return nil, errors.New(r.Error)
 		})
 	}
 	cancel()

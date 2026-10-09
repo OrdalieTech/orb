@@ -290,10 +290,9 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	defer service.stopLaunched()
 	reexec := ""
 	service.restart = func(path string) { reexec = path; time.AfterFunc(300*time.Millisecond, stop) }
-	// A binary replaced under the running Bridge (orb update, an installer, a package manager) is
-	// the version this machine runs now: the Bridge restarts into it instead of lagging behind.
+	// Windows cannot exec: there an update restarts Bridge through its service manager.
 	if exe, err := os.Executable(); err == nil && runtime.GOOS != "windows" {
-		go followBinary(serviceCtx, exe, time.Minute, service.restart)
+		go service.follow(exe, time.Minute)
 	}
 	admin := func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		if method == "stop" {
@@ -373,29 +372,6 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 		return RestartInto(reexec)
 	}
 	return nil
-}
-
-// followBinary calls restart with exe once the file there, checked every interval, is another
-// binary than the one running and runs: installers replace a binary by renaming a new file into
-// place, so a different file there is a complete one.
-func followBinary(ctx context.Context, exe string, every time.Duration, restart func(string)) {
-	running, err := os.Stat(exe)
-	if err != nil {
-		return
-	}
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		if now, err := os.Stat(exe); err == nil && !os.SameFile(running, now) && exec.CommandContext(ctx, exe, "--version").Run() == nil {
-			restart(exe)
-			return
-		}
-	}
 }
 
 // RestartInto asks the process that ran the service to become the binary at this path, once

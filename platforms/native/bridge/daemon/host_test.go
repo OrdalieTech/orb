@@ -175,6 +175,113 @@ func TestHostLoginRelaysSignInToThePeer(t *testing.T) {
 	}
 }
 
+// A peer changes the machine's plugins as `orb plugins` does there, hears what orb refused, and
+// the Orbs this Bridge started end to reopen with the change: at once between turns, after theirs.
+func TestAPluginChangeReachesTheOrbsThisBridgeStarted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stand-in")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "orb")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$@\" >> "+filepath.Join(dir, "calls")+"\n"+
+		"case \"$*\" in\n"+
+		"'plugins list --json') echo '{\"name\":\"memtree\",\"on\":false}' ;;\n"+
+		"*nope*) echo 'Error: memtree.mode is one of fresh, compaction' >&2; exit 1 ;;\n"+
+		"esac\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	events, write := io.Pipe()
+	defer func() { _ = write.Close() }()
+	quiet, working := &closeFlag{}, &closeFlag{}
+	busy := &launched{input: working}
+	go idle(events, busy, time.Hour)
+	_, _ = write.Write([]byte(`{"type":"agent_start"}` + "\n"))
+	for !busy.turn.Load() {
+		time.Sleep(10 * time.Millisecond)
+	}
+	s := &Service{loginExecutable: func() (string, error) { return script, nil }, launched: map[string]*launched{"quiet": {input: quiet}, "busy": busy}, ctx: t.Context()}
+	call := func(method string, params any) string {
+		t.Helper()
+		raw, err := s.cli(t.Context(), method, bridge.JSON(params))
+		if err != nil {
+			t.Fatalf("%s %v: %v", method, params, err)
+		}
+		return string(raw)
+	}
+	if got := call("host.plugins", struct{}{}); got != `{"plugins":[{"name":"memtree","on":false}]}` {
+		t.Fatalf("plugins = %s", got)
+	}
+	call("host.plugins.set", map[string]any{"name": "memtree", "on": true})
+	call("host.plugins.set", map[string]any{"name": "memtree", "key": "mode", "value": "compaction"})
+	if got := call("host.plugins.set", map[string]any{"name": "memtree", "key": "mode", "value": "nope"}); got != `{"error":"memtree.mode is one of fresh, compaction"}` {
+		t.Fatalf("refused choice = %s", got)
+	}
+	if _, err := s.cli(t.Context(), "host.plugins.set", bridge.JSON(map[string]any{"name": "--all", "on": true})); bridge.Code(err) != "invalid_params" {
+		t.Fatalf("a flag for a name: %v", err)
+	}
+	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	if string(calls) != "plugins list --json\nplugins enable memtree\nplugins set memtree mode \"compaction\"\nplugins set memtree mode \"nope\"\n" {
+		t.Fatalf("calls:\n%s", calls)
+	}
+	if !quiet.closed.Load() || working.closed.Load() {
+		t.Fatalf("after the change: quiet ended %v, working ended %v", quiet.closed.Load(), working.closed.Load())
+	}
+	_, _ = write.Write([]byte(`{"type":"agent_end"}` + "\n"))
+	for deadline := time.Now().Add(2 * time.Second); !working.closed.Load(); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("an Orb that was busy kept running after its turn")
+		}
+	}
+}
+
+// An Orb updated in place brings Bridge along: once its binary is another file that runs,
+// Bridge restarts into it, but only with no turn running for a peer.
+func TestBridgeFollowsItsBinaryBetweenTurns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Bridge cannot exec on Windows")
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "orb")
+	install := func(script string) {
+		staged := filepath.Join(dir, "staged")
+		if err := os.WriteFile(staged, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(staged, exe); err != nil {
+			t.Fatal(err)
+		}
+	}
+	install("echo old")
+	busy := &launched{}
+	busy.turn.Store(true)
+	restarted := make(chan string, 1)
+	s := &Service{launched: map[string]*launched{"busy": busy}, restart: func(path string) { restarted <- path }, ctx: t.Context()}
+	go s.follow(exe, 5*time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // follow has read the binary it started from
+	install("echo new")
+	select {
+	case <-restarted:
+		t.Fatal("restarted during a turn")
+	case <-time.After(100 * time.Millisecond):
+	}
+	install("exit 1")
+	busy.turn.Store(false)
+	select {
+	case <-restarted:
+		t.Fatal("restarted into a binary that does not run")
+	case <-time.After(100 * time.Millisecond):
+	}
+	install("echo new")
+	select {
+	case path := <-restarted:
+		if path != exe {
+			t.Fatalf("restarted into %q", path)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Bridge kept running the old binary")
+	}
+}
+
 // A peer allowed on the machine gets its shell in a folder: what it types runs there, the output
 // comes back by offset until the shell ends, and a closed terminal is gone.
 func TestHostTerminalRunsAShellInTheFolder(t *testing.T) {
@@ -213,43 +320,5 @@ func TestHostTerminalRunsAShellInTheFolder(t *testing.T) {
 	call("host.terminal.close", map[string]any{"terminal_id": opened.ID}, nil)
 	if _, err := s.terminal(t.Context(), "host.terminal.read", bridge.JSON(map[string]any{"terminal_id": opened.ID})); bridge.Code(err) != "not_found" {
 		t.Fatalf("a closed terminal still answers: %v", err)
-	}
-}
-
-// A Bridge whose binary is replaced restarts into the new one, once it runs: a
-// replacement that fails is not one to restart into.
-func TestBridgeFollowsAReplacedBinary(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the Bridge cannot exec on Windows")
-	}
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "orb")
-	install := func(name, script string) {
-		staged := filepath.Join(dir, name)
-		if err := os.WriteFile(staged, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Rename(staged, exe); err != nil {
-			t.Fatal(err)
-		}
-	}
-	install("v1", "echo 1")
-	restarted := make(chan string, 1)
-	go followBinary(t.Context(), exe, 10*time.Millisecond, func(path string) { restarted <- path })
-	time.Sleep(50 * time.Millisecond)
-	install("broken", "exit 1")
-	select {
-	case <-restarted:
-		t.Fatal("restarted into a binary that does not run")
-	case <-time.After(200 * time.Millisecond):
-	}
-	install("v2", "echo 2")
-	select {
-	case path := <-restarted:
-		if path != exe {
-			t.Fatalf("restarted into %s", path)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the Bridge did not restart into its new binary")
 	}
 }

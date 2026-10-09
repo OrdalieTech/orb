@@ -85,7 +85,15 @@ func SandboxMode(settings *config.SettingsManager) (sandbox.Mode, error) {
 	if settings == nil {
 		return sandbox.ModeDangerFullAccess, nil
 	}
-	policy, err := FromSettings(settings.GetPluginSettings("permissions"))
+	// The sandbox is the host's whether the plugin is on or not, so only its keys are read here:
+	// the rest is the policy's, which fails closed once the plugin runs.
+	configured, host := settings.GetPluginSettings("permissions"), map[string]any{}
+	for _, key := range []string{"preset", "sandbox"} {
+		if value, set := configured[key]; set {
+			host[key] = value
+		}
+	}
+	policy, err := FromSettings(host)
 	if err != nil {
 		return "", err
 	}

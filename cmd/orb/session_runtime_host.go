@@ -192,8 +192,14 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{
 		CWD: options.Manager.GetCWD(), SessionManager: options.Manager,
 	}, factory)
-	if err == nil && options.Args.native != nil {
+	if err != nil {
+		return nil, err
+	}
+	// A reload (/plugins, an extension's ctx.reload()) builds the session again, so the plugins
+	// and options settings now name are the ones it runs, in every mode.
+	host.SetReload(host.Rebuild)
+	if options.Args.native != nil {
 		host.SetSessionClaim(options.Args.native.ClaimSession)
 	}
-	return host, err
+	return host, nil
 }

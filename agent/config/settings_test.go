@@ -387,6 +387,18 @@ func TestStructuredPluginSettingsEnableAndPersistWithoutLosingRules(t *testing.T
 	if configured["mode"] != "enforce" || configured["enabled"] != false || configured["rules"] == nil {
 		t.Fatalf("persisted plugin settings = %#v", configured)
 	}
+
+	// Another process (orb plugins, an app) changes the plugin meanwhile: toggling it here keeps that.
+	other, err := NewSettingsManager(root, WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.SetPluginSetting("permissions", "mode", "log")
+	manager.SetPluginEnabled("permissions", true)
+	other.Reload()
+	if configured := other.GetPluginSettings("permissions"); configured["mode"] != "log" || configured["enabled"] != true || configured["rules"] == nil {
+		t.Fatalf("after two processes changed the plugin: %#v", configured)
+	}
 }
 
 // Concurrent managers sharing one agent dir contend on the settings lock. A

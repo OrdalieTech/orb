@@ -45,11 +45,6 @@ class Orb(private val context: Context) {
 
     private fun plugin(name: String) = run("plugins", "enable", name).first == 0
 
-    /** The permissions plugin's mode, as last set here: auto approves quietly, enforce asks through an interrupt. */
-    var permissions: String
-        get() = prefs.getString("permissions", "auto") ?: "auto"
-        set(value) = prefs.edit().putString("permissions", value).apply()
-
     /** Edits one of Orb's config documents (`orb storage config export|import`); an error's text, or null. */
     private fun config(name: String, edit: (org.json.JSONObject) -> Unit): String? {
         val file = File(context.cacheDir, name)

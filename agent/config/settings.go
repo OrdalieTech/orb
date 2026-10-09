@@ -598,22 +598,19 @@ func (manager *SettingsManager) GetGoExtensions() map[string]bool {
 }
 
 // GetPlugins returns the effective bundled-plugin gates. Missing entries are
-// intentionally false so first-party plugins stay dormant by default.
+// intentionally false so first-party plugins stay dormant by default; an
+// object is on unless it says otherwise, and only true says on.
 func (manager *SettingsManager) GetPlugins() map[string]bool {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
 	configured := nestedObject(manager.effective, "plugins")
 	result := make(map[string]bool, len(configured))
 	for name, value := range configured {
-		switch typed := value.(type) {
-		case bool:
-			result[name] = typed
-		case map[string]any:
-			enabled, configured := typed["enabled"].(bool)
-			result[name] = !configured || enabled
-		case Settings:
-			enabled, configured := typed["enabled"].(bool)
-			result[name] = !configured || enabled
+		if object := nestedObject(configured, name); object != nil {
+			enabled, set := object["enabled"]
+			result[name] = !set || enabled == true
+		} else if gate, ok := value.(bool); ok {
+			result[name] = gate
 		}
 	}
 	return result

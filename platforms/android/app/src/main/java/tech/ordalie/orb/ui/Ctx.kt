@@ -27,7 +27,7 @@ class Ctx(
             "home" -> nav.home()
             "pair" -> nav.go(Screen.Bridge)
             "providers" -> nav.go(Screen.Providers(t?.peer ?: v.state.self))
-            "plugins" -> nav.go(Screen.Plugins)
+            "plugins" -> nav.go(Screen.Plugins(t?.peer ?: v.state.self))
         }
     }
 
@@ -81,6 +81,6 @@ class Ctx(
 
     fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) {
         val open = nav.open
-        nav.go(when (it) { "terminal" -> Screen.Terminal(open); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins; else -> Screen.Providers(open?.peer ?: v.state.self) })
+        nav.go(when (it) { "terminal" -> Screen.Terminal(open); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins(open?.peer ?: v.state.self); else -> Screen.Providers(open?.peer ?: v.state.self) })
     })
 }

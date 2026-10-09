@@ -9,11 +9,7 @@ package assembly
 import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/plugins/jobs"
 	"github.com/OrdalieTech/orb/plugins/mcp"
-	"github.com/OrdalieTech/orb/plugins/memory"
-	"github.com/OrdalieTech/orb/plugins/permissions"
-	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // Source records which mechanism contributes a row.
@@ -42,20 +38,10 @@ type Row struct {
 // Options are the explicit inputs of one assembly; nothing is read from the
 // environment.
 type Options struct {
-	UsageCache *usage.Cache
-	Accounts   usage.Accounts
-	Memory     memory.Store
+	CatalogOptions
 	// BridgeManagement exposes the host-supplied settings page before service activation.
 	BridgeManagement bool
-	Bridge           extensions.Factory
-	BridgeAgentCalls extensions.Factory
-	ClaudeSessions   extensions.Factory
-	CodexSessions    extensions.Factory
-	Bash             jobs.Bash
 	CWD              string
-	AgentDir         string
-	Settings         *config.SettingsManager
-	Policy           *permissions.Policy
 	// Compiled rows supplied by the assembly owner (cmd/orb's compiled
 	// extensions, or an embedder's own), first in boot order.
 	Compiled []extensions.CompiledExtension
@@ -82,12 +68,12 @@ func Rows(options Options) []Row {
 		Source: SourcePlugin, Hidden: true, DefaultEnabled: true,
 		Factory: Control(options.CWD, options.AgentDir, options.Settings),
 	})
-	catalog := Catalog(CatalogOptions{UsageCache: options.UsageCache, Accounts: options.Accounts, Memory: options.Memory, Settings: options.Settings, Policy: options.Policy, AgentDir: options.AgentDir, Bridge: options.Bridge, BridgeAgentCalls: options.BridgeAgentCalls, ClaudeSessions: options.ClaudeSessions, CodexSessions: options.CodexSessions, Bash: options.Bash})
+	catalog := Catalog(options.CatalogOptions)
 	for _, name := range names {
 		rows = append(rows, Row{
 			ID: name, Description: Description(name),
 			Source: SourcePlugin, Factory: catalog[name],
-			Hidden:         name == "bridge" || name == "bridge-agent-calls" || name == "provider-usage",
+			Hidden:         Paged(name),
 			DefaultEnabled: name == "bridge" && options.BridgeManagement && options.Bridge != nil,
 		})
 	}

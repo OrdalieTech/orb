@@ -13,7 +13,7 @@ import UserNotifications
     var picking = false // the model picker shows
     var focus = 0 // asked to focus the prompt box, each time it grows
     var pane = "providers"
-    var machine = "" // the machine Settings shows the providers of: "" is this Mac
+    var machine = "" // the machine Settings shows the providers and plugins of: "" is this Mac
     var answered = "" // the pairing claim already answered, until the view drops it
     @ObservationIgnored let shells = Terminals()
 
@@ -27,9 +27,9 @@ import UserNotifications
         orb.send("close", ["tab": id])
     }
 
-    /// Opens Settings on the providers and accounts of where [t] runs (this Mac with none).
-    func providers(of t: Tab?, _ open: OpenSettingsAction) {
-        pane = "providers"
+    /// Opens Settings on a pane (the providers by default) of where [t] runs (this Mac with none).
+    func providers(of t: Tab?, _ open: OpenSettingsAction, pane: String = "providers") {
+        self.pane = pane
         machine = t?.remote == true ? t!.peer : ""
         open()
     }
@@ -150,8 +150,8 @@ struct Main: View {
             case "home": nav.tab = nil
             // A conversation's models are in its picker; with none shown, they come from the providers.
             case "model" where nav.tab != nil: nav.picking = true
-            case "model", "providers": nav.providers(of: orb.tab(nav.tab), openSettings)
-            case "plugins", "pair":
+            case "model", "providers", "plugins": nav.providers(of: orb.tab(nav.tab), openSettings, pane: outcome.nav == "plugins" ? "plugins" : "providers")
+            case "pair":
                 nav.pane = outcome.nav
                 openSettings()
             default: break

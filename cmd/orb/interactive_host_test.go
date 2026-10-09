@@ -685,4 +685,14 @@ func TestRPCSessionHostReplacementKeepsExtensionsAndSurvivesFailure(t *testing.T
 	if len(shutdowns) == 0 || shutdowns[len(shutdowns)-1].reason != "new" {
 		t.Fatalf("rpc shutdown events = %#v", shutdowns)
 	}
+
+	// /plugins reloads through its command context: the session is built again, as the TUI's is,
+	// so the plugins settings name now are the ones it runs.
+	calls := fixture.createCalls
+	if err := replacement.ExtensionRunner().CreateCommandContext().Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if rpcHost.Session() == replacement || fixture.createCalls != calls+1 || rpcHost.Session().Manager().GetSessionID() != replacement.Manager().GetSessionID() {
+		t.Fatalf("rpc reload: rebuilt %v, create calls %d → %d", rpcHost.Session() != replacement, calls, fixture.createCalls)
+	}
 }

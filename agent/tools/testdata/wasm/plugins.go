@@ -60,7 +60,7 @@ func checkPlugins() {
 		if err := registry.Register("memory", memoryextension.Extension(store)); err != nil {
 			panic(err)
 		}
-		if err := registry.Register("tasks", tasks.Extension()); err != nil {
+		if err := registry.Register("tasks", tasks.Extension(tasks.Draw{})); err != nil {
 			panic(err)
 		}
 		runner := extensions.NewRunner(registry, extensions.RunnerOptions{})

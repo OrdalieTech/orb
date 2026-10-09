@@ -13,7 +13,6 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
-	"github.com/OrdalieTech/orb/tui"
 )
 
 const Kind = "questions"
@@ -104,8 +103,20 @@ func (r Request) ValidateReply(raw string) error {
 	return nil
 }
 
-// Ask uses the runtime's execution-bound input seam; it owns no queue or history.
-func Ask(ctx context.Context, request Request, input extensions.InputHandler) (Result, error) {
+// Panel draws questions in a terminal and calls done with their answers.
+type Panel func(request Request, theme extensions.Theme, height func() int, invalidate func(), done func(Result)) extensions.Component
+
+// Draw is how a terminal draws questions: the panel it asks them in, and their lines in the
+// transcript. A host without a terminal leaves it zero: its controller (an app, a Bridge peer)
+// answers them from the presentation.
+type Draw struct {
+	Panel Panel
+	Text  func(text string, oneLine bool) extensions.Component
+}
+
+// Ask uses the runtime's execution-bound input seam; it owns no queue or history. A terminal asks
+// in panel, when one is given.
+func Ask(ctx context.Context, request Request, input extensions.InputHandler, panel Panel) (Result, error) {
 	if err := request.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -113,10 +124,11 @@ func Ask(ctx context.Context, request Request, input extensions.InputHandler) (R
 		return Result{}, errors.New("questions require an interactive session or an attached controller")
 	}
 	data, _ := json.Marshal(request)
-	options := extensions.InputOptions{Presentation: &extensions.InputPresentation{Kind: Kind, Data: data}, Validate: request.ValidateReply,
-		Render: func(ctx context.Context, ui extensions.UI) (string, error) {
+	options := extensions.InputOptions{Presentation: &extensions.InputPresentation{Kind: Kind, Data: data}, Validate: request.ValidateReply}
+	if panel != nil {
+		options.Render = func(ctx context.Context, ui extensions.UI) (string, error) {
 			value, ok, err := ui.Custom(ctx, func(host extensions.UIHost, theme extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
-				return NewPanel(request, theme, host.Height, host.Invalidate, func(result Result) { done(result) }), nil
+				return panel(request, theme, host.Height, host.Invalidate, func(result Result) { done(result) }), nil
 			}, nil)
 			if err != nil {
 				return "", err
@@ -127,7 +139,7 @@ func Ask(ctx context.Context, request Request, input extensions.InputHandler) (R
 			}
 			raw, err := json.Marshal(result)
 			return string(raw), err
-		},
+		}
 	}
 	title := request.Questions[0].Question
 	raw, err := input(extensions.WithInputOptions(ctx, options), title, nil)
@@ -157,33 +169,35 @@ func (request Request) Summary() string {
 	return strings.Join(lines, "\n")
 }
 
-func Extension() extensions.Factory {
+func Extension(draw Draw) extensions.Factory {
 	return func(api extensions.API) error {
-		api.RegisterTool(extensions.ToolDefinition{Name: ToolName, Label: "Question", Description: "Ask the user for missing information or a choice. Offer concise options with descriptions, or omit options for free text. The user can always write their own answer. Do not use this tool to bypass action permissions.", Parameters: schema, ExecutionMode: engine.ToolExecutionSequential,
+		tool := extensions.ToolDefinition{Name: ToolName, Label: "Question", Description: "Ask the user for missing information or a choice. Offer concise options with descriptions, or omit options for free text. The user can always write their own answer. Do not use this tool to bypass action permissions.", Parameters: schema, ExecutionMode: engine.ToolExecutionSequential,
 			Execute: func(ctx context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
 				var request Request
 				if err := toolutil.Decode(args, &request); err != nil {
 					return engine.AgentToolResult{}, err
 				}
-				result, err := Ask(ctx, request, extensions.InputHandlerFromContext(ctx))
+				result, err := Ask(ctx, request, extensions.InputHandlerFromContext(ctx), draw.Panel)
 				if err != nil {
 					return engine.AgentToolResult{}, err
 				}
 				raw, err := json.Marshal(result)
 				return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: string(raw)}}, Details: result}, err
 			},
-			RenderCall: func(args any, theme extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
+		}
+		if draw.Text != nil {
+			tool.RenderCall = func(args any, theme extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
 				var request Request
 				_ = toolutil.Decode(args, &request)
-				return tui.NewText(theme.FG("toolTitle", request.Summary()), 0, 0, nil)
-			},
-			RenderResult: func(result engine.AgentToolResult, _ extensions.ToolRenderResultOptions, _ extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
+				return draw.Text(theme.FG("toolTitle", request.Summary()), false)
+			}
+			tool.RenderResult = func(result engine.AgentToolResult, _ extensions.ToolRenderResultOptions, _ extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
 				var answers Result
 				if toolutil.Decode(result.Details, &answers) != nil {
-					return tui.NewText(ai.ContentText(result.Content), 0, 0, nil)
+					return draw.Text(ai.ContentText(result.Content), false)
 				}
 				if answers.Cancelled {
-					return tui.NewText("Question dismissed — no answer supplied", 0, 0, nil)
+					return draw.Text("Question dismissed — no answer supplied", false)
 				}
 				var lines []string
 				for _, a := range answers.Answers {
@@ -193,9 +207,10 @@ func Extension() extensions.Factory {
 					}
 					lines = append(lines, fmt.Sprintf("%s: %s", a.ID, strings.Join(parts, ", ")))
 				}
-				return tui.NewText(strings.Join(lines, "\n"), 0, 0, nil)
-			},
-		})
+				return draw.Text(strings.Join(lines, "\n"), false)
+			}
+		}
+		api.RegisterTool(tool)
 		return nil
 	}
 }

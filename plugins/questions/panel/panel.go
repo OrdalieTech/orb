@@ -1,4 +1,7 @@
-package questions
+// Package panel is how a terminal asks the questions plugin's questions: one tab per question,
+// choices and a line of your own, then a review, in the local dialog and the remote conversation
+// view alike.
+package panel
 
 import (
 	"encoding/json"
@@ -8,14 +11,15 @@ import (
 	"sync"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/tui"
 )
 
 // Panel is shared by the local dialog and the remote conversation view.
 type Panel struct {
 	mu                 sync.Mutex
-	request            Request
-	answers            []Answer
+	request            questions.Request
+	answers            []questions.Answer
 	index, cursor      int
 	writing, completed bool
 	selected           map[string]bool
@@ -24,16 +28,21 @@ type Panel struct {
 	theme              extensions.Theme
 	height             func() int
 	invalidate         func()
-	done               func(Result)
-	ready              *Result
+	done               func(questions.Result)
+	ready              *questions.Result
 	message            string
 	hits               map[int]int
 	tabs               []struct{ row, column, width, index int }
 	pressed, hover     int
 }
 
-func NewPanel(request Request, theme extensions.Theme, height func() int, invalidate func(), done func(Result)) *Panel {
-	p := &Panel{request: request, theme: theme, height: height, invalidate: invalidate, done: done, answers: make([]Answer, len(request.Questions)), input: tui.NewInput()}
+// Draw is New as the questions plugin's Panel.
+func Draw(request questions.Request, theme extensions.Theme, height func() int, invalidate func(), done func(questions.Result)) extensions.Component {
+	return New(request, theme, height, invalidate, done)
+}
+
+func New(request questions.Request, theme extensions.Theme, height func() int, invalidate func(), done func(questions.Result)) *Panel {
+	p := &Panel{request: request, theme: theme, height: height, invalidate: invalidate, done: done, answers: make([]questions.Answer, len(request.Questions)), input: tui.NewInput()}
 	p.input.Prompt = "Your answer › "
 	p.frame = tui.NewPanel("", "", nil, nil, func() string { return theme.BGANSI("toolPendingBg") }, questionBody{p})
 	p.load()
@@ -63,7 +72,7 @@ func (p *Panel) save() {
 		return
 	}
 	q := p.request.Questions[p.index]
-	a := Answer{ID: q.ID, Selected: []string{}, Custom: strings.TrimSpace(p.input.GetValue())}
+	a := questions.Answer{ID: q.ID, Selected: []string{}, Custom: strings.TrimSpace(p.input.GetValue())}
 	for _, o := range q.Options {
 		if p.selected[o.Label] {
 			a.Selected = append(a.Selected, o.Label)
@@ -113,7 +122,7 @@ func (p *Panel) submit() {
 			return
 		}
 	}
-	result := Result{Answers: p.answers}
+	result := questions.Result{Answers: p.answers}
 	raw, _ := json.Marshal(result)
 	if err := p.request.ValidateReply(string(raw)); err != nil {
 		p.message = err.Error()
@@ -157,7 +166,7 @@ func (p *Panel) HandleInput(key tui.KeyEvent) {
 				p.writing = false
 				p.input.SetFocused(false)
 			} else {
-				p.completed, p.ready, p.message = true, &Result{Cancelled: true}, "Question dismissed"
+				p.completed, p.ready, p.message = true, &questions.Result{Cancelled: true}, "Question dismissed"
 			}
 		case !p.single() && (tui.MatchesKey(key.Raw, "alt+left") || (!p.writing && (tui.MatchesKey(key.Raw, "left") || tui.MatchesKey(key.Raw, "shift+tab")))):
 			p.move(-1)

@@ -39,7 +39,7 @@ sealed interface Screen {
     /** The providers of a machine on Bridge, this phone included. */
     data class Providers(val peer: String) : Screen
     data class Vendor(val id: String, val peer: String) : Screen
-    data object Plugins : Screen
+    data class Plugins(val peer: String) : Screen
     data class Device(val peer: String) : Screen
     data class Folder(val peer: String, val cwd: String) : Screen
     /** The terminal where [on] runs: this phone's Linux, or its machine over Bridge. */
@@ -116,7 +116,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                         is Screen.Join -> JoinScreen(ctx, s.text)
                         is Screen.Providers -> ProvidersScreen(ctx, s.peer)
                         is Screen.Vendor -> VendorScreen(ctx, s.id, s.peer)
-                        Screen.Plugins -> PluginsScreen(ctx)
+                        is Screen.Plugins -> PluginsScreen(ctx, s.peer)
                         is Screen.Device -> DeviceScreen(ctx, s.peer)
                         is Screen.Folder -> FolderScreen(ctx, s.peer, s.cwd)
                         is Screen.Terminal -> TerminalScreen(ctx, s.on)

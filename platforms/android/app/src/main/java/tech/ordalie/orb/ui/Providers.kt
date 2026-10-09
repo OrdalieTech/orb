@@ -163,7 +163,7 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String) {
             if (state.isEmpty() || f == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (f?.state == "failed") T(f.detail.ifEmpty { "sign-in failed" }, color = Ink.Rupture)
                 pr.methods.forEach { m -> MethodCard(m, pr.ready) { start(m) } }
-                if (pr.ready && peer == c.v.state.self) SignOut(c, pr) { note = it; scope.launch { c.reload(peer) } }
+                if (pr.ready) SignOut(c, peer, pr) { note = it; scope.launch { c.reload(peer) } }
             } else Flow(f, state, tint, remote = peer != c.v.state.self, c) { c.v.send("login.cancel") }
         }
         if (note.isNotEmpty()) T(note, color = p.mute)
@@ -183,13 +183,13 @@ private fun MethodCard(m: Method, ready: Boolean, go: () -> Unit) = Column(
 
 /** Removes the credential from Orb's store, as `orb logout` does; one configured elsewhere is changed there. */
 @Composable
-private fun SignOut(c: Ctx, pr: Provider, done: (String) -> Unit) {
+private fun SignOut(c: Ctx, peer: String, pr: Provider, done: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     if (pr.status != "oauth" && pr.source != "stored") return T("Configured outside the app (${pr.source}); change it there.", size = 13.sp, color = p.meta)
     Row { Btn(if (pr.status == "oauth") "sign out" else "remove key") {
         scope.launch {
-            c.v.ask("logout", "provider" to pr.id)
-            done(if (pr.status == "oauth") "signed out of ${pr.name}" else "key removed")
+            val error = c.v.ask("logout", "machine" to peer, "provider" to pr.id).error
+            done(error ?: if (pr.status == "oauth") "signed out of ${pr.name}" else "key removed")
         }
     } }
 }

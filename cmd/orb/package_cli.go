@@ -1,8 +1,10 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -55,7 +57,7 @@ func getPackageCommandUsage(command string) string {
 
 const configCommandUsage = "orb config [-l] [--approve|--no-approve]"
 
-const pluginsCommandUsage = "orb plugins list [--all]|enable|disable [name]|set <name> <key> <json>"
+const pluginsCommandUsage = "orb plugins list [--all|--json]|enable|disable [name]|set <name> <key> <json>"
 
 func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams) (bool, int) {
 	if len(argv) == 0 || argv[0] != "plugins" {
@@ -71,7 +73,8 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 	}
 	action := argv[1]
 	listAll := action == "list" && len(argv) == 3 && argv[2] == "--all"
-	if action == "list" && len(argv) != 2 && !listAll || (action == "enable" || action == "disable") && len(argv) != 3 || action == "set" && len(argv) != 5 {
+	listJSON := action == "list" && len(argv) == 3 && argv[2] == "--json"
+	if action == "list" && len(argv) != 2 && !listAll && !listJSON || (action == "enable" || action == "disable") && len(argv) != 3 || action == "set" && len(argv) != 5 {
 		_, _ = fmt.Fprintln(streams.Stderr, "Usage: "+pluginsCommandUsage)
 		return true, 1
 	}
@@ -86,13 +89,44 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 	for _, warning := range trustWarnings {
 		_, _ = fmt.Fprintln(streams.Stderr, "Warning: "+warning)
 	}
-	reportPackageSettingsErrors(streams.Stderr, settings, "plugins command")
+	// Settings that cannot be read are kept as they are: a change would only live in this process.
+	unreadable := false
+	for _, settingsError := range settings.DrainErrors() {
+		_, _ = fmt.Fprintf(streams.Stderr, "Warning (plugins command, %s settings): %s\n", settingsError.Scope, settingsError.Err)
+		unreadable = unreadable || settingsError.Scope == config.GlobalSettings
+	}
+	if unreadable && action != "list" {
+		return true, reportCLIError(streams.Stderr, errors.New("nothing saved: Orb's settings could not be read (above)"))
+	}
 	if listAll {
 		return true, listFullComposition(cwd, agentDir, settings, streams)
 	}
 	if action == "list" {
 		enabled := settings.GetPlugins()
 		for _, name := range assembly.Names() {
+			if listJSON {
+				if assembly.Paged(name) {
+					continue
+				}
+				// What an app shows of a plugin: its gate, and each choice with its value.
+				type choice struct {
+					assembly.Choice
+					Value string `json:"value"`
+				}
+				plugin := struct {
+					Name    string   `json:"name"`
+					On      bool     `json:"on"`
+					About   string   `json:"about"`
+					Choices []choice `json:"choices,omitempty"`
+				}{name, enabled[name], assembly.Description(name), nil}
+				for _, c := range assembly.Choices(name) {
+					value, _ := settings.GetPluginSettings(name)[c.Key].(string)
+					plugin.Choices = append(plugin.Choices, choice{c, cmp.Or(value, c.Values[0])})
+				}
+				line, _ := json.Marshal(plugin)
+				_, _ = fmt.Fprintf(streams.Stdout, "%s\n", line)
+				continue
+			}
 			state := "off"
 			if enabled[name] {
 				state = "on"
@@ -106,11 +140,22 @@ func handlePluginsCommand(ctx context.Context, argv []string, streams cliStreams
 		_, _ = fmt.Fprintf(streams.Stderr, "Unknown plugin %q.\n", name)
 		return true, 1
 	}
+	if settings.ProjectDefinesPlugin(name) {
+		_, _ = fmt.Fprintf(streams.Stderr, "Warning: this project's %s/settings.json sets plugins.%s, which wins in it.\n", config.ConfigDirName, name)
+	}
 	if action == "set" {
 		// Headless hosts configure plugins the way /plugins screens do: one key, one JSON value.
 		var value any
 		if err := json.Unmarshal([]byte(argv[4]), &value); err != nil {
 			return true, reportCLIError(streams.Stderr, fmt.Errorf("value must be JSON: %w", err))
+		}
+		configured := settings.GlobalPluginSettings(name)
+		if configured == nil {
+			configured = map[string]any{}
+		}
+		configured[argv[3]] = value
+		if err := assembly.Check(name, configured); err != nil {
+			return true, reportCLIError(streams.Stderr, fmt.Errorf("not saved: %w", err))
 		}
 		settings.SetPluginSetting(name, argv[3], value)
 		if errors := settings.DrainErrors(); len(errors) > 0 {
@@ -430,7 +475,7 @@ func createCommandSettingsManager(ctx context.Context, cwd, agentDir string, pro
 	// The pre-trust extension set loads here too, so a project_trust handler
 	// decides package commands exactly as it decides a session, and its
 	// warnings are printed.
-	trust, err := resolveStartupProjectTrust(ctx, cwd, agentDir, CLIArgs{ProjectTrusted: projectTrustOverride}, settings)
+	trust, err := resolveStartupProjectTrust(ctx, cwd, agentDir, CLIArgs{ProjectTrusted: projectTrustOverride, native: stateFromContext(ctx)}, settings)
 	if err != nil {
 		return nil, nil, err
 	}

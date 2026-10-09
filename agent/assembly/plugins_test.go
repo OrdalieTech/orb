@@ -120,6 +120,8 @@ func TestPermissionsPresetsAndSandboxMode(t *testing.T) {
 	}
 	checkMode(sandbox.ModeDangerFullAccess)
 	settings.SetPluginSetting("permissions", "preset", "workspace-write")
+	require(t, !settings.GetPlugins()["permissions"], "configuring permissions turned the plugin on")
+	settings.SetPluginEnabled("permissions", true)
 	checkMode(sandbox.ModeWorkspaceWrite)
 	settings.SetPluginSetting("permissions", "sandbox", "read-only")
 	checkMode(sandbox.ModeReadOnly)
@@ -365,7 +367,7 @@ func TestToggleExternalCLIPreservesCommandsAndAddsKnownCLIs(t *testing.T) {
 	entries := must(subagents.ExternalEntries(settings))
 	require(t, !entries["claude"].Enabled && entries["claude"].Command == "/bin/cat", "after off: %#v", entries)
 	mustOK(subagents.ToggleExternalCLI(settings, "claude"))
-	raw := settingsObjectValue(settings.GetPluginSettings("subagents")["external"])
+	raw, _ := settings.GetPluginSettings("subagents")["external"].(config.Settings)
 	require(t, raw["claude"] == "/bin/cat", "re-enabled entry should collapse to the string form: %#v", raw)
 	mustOK(subagents.ToggleExternalCLI(settings, "codex"))
 	entries = must(subagents.ExternalEntries(settings))
@@ -381,4 +383,88 @@ func TestCapabilitiesWithDedicatedSettingsHaveNoPluginToggles(t *testing.T) {
 			t.Fatalf("duplicate settings toggle: %s", row.Value)
 		}
 	}
+}
+
+type taskWidgetHost struct{ invalidations int }
+
+func (*taskWidgetHost) Width() int       { return 80 }
+func (*taskWidgetHost) Height() int      { return 24 }
+func (host *taskWidgetHost) Invalidate() { host.invalidations++ }
+
+type dimTaskTheme struct{ extensions.Theme }
+
+func (dimTaskTheme) FG(color, text string) string {
+	if color == "dim" {
+		return "\x1b[2m" + text + "\x1b[22m"
+	}
+	return text
+}
+
+// countingTaskTheme counts styling calls; the first one, once started is set, waits for release.
+type countingTaskTheme struct {
+	extensions.Theme
+	calls            int
+	started, release chan struct{}
+	once             sync.Once
+}
+
+func (theme *countingTaskTheme) FG(_ string, text string) string {
+	theme.calls++
+	if theme.started != nil {
+		theme.once.Do(func() {
+			close(theme.started)
+			<-theme.release
+		})
+	}
+	return text
+}
+
+// click presses and releases, as the TUI delivers a click.
+func click(component extensions.Component) bool {
+	handler := component.(tui.MouseHandler)
+	return handler.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}) &&
+		handler.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Clicks: 1})
+}
+
+// The task widget opens its summary onto the list with a click, dimmed and indented, never wider
+// than the terminal, and keeps a render until its width, state or theme changes.
+func TestTheTaskWidgetOpensOnAClickAndCachesItsLines(t *testing.T) {
+	host := &taskWidgetHost{}
+	widget := newTaskWidget("✓ 1/2  → implement", "[x] inspect\n→ [ ] implement", host, dimTaskTheme{})
+	require(t, click(widget), "task widget did not accept a left click")
+	lines := widget.Render(80)
+	expanded := strings.Join(lines, "\n")
+	require(t, strings.Contains(expanded, "[x] inspect") && strings.Contains(expanded, "\x1b[2m") && strings.HasPrefix(lines[1], "    ") && host.invalidations == 1, "expanded task widget = %#v, invalidations = %d", lines, host.invalidations)
+	for width := 1; width <= 4; width++ {
+		for _, line := range widget.Render(width) {
+			require(t, tui.VisibleWidth(line) <= width, "task widget width %d rendered %q", width, line)
+		}
+	}
+
+	theme := &countingTaskTheme{}
+	widget = newTaskWidget("✓ 1/2", "[x] inspect\n→ [ ] implement", nil, theme)
+	click(widget)
+	first := widget.Render(80)
+	calls := theme.calls
+	require(t, strings.Join(widget.Render(80), "\n") == strings.Join(first, "\n") && theme.calls == calls, "a stable render was restyled")
+	widget.Render(40)
+	require(t, theme.calls != calls, "a width change reused a stale render")
+	calls = theme.calls
+	widget.(interface{ Invalidate() }).Invalidate()
+	widget.Render(40)
+	require(t, theme.calls != calls, "an invalidation reused stale themed lines")
+
+	// An invalidation during a render wins: the render it raced is not cached.
+	theme = &countingTaskTheme{started: make(chan struct{}), release: make(chan struct{})}
+	widget = newTaskWidget("✓ 1/1", "[x] inspect", nil, theme)
+	click(widget)
+	done := make(chan struct{})
+	go func() { widget.Render(80); close(done) }()
+	<-theme.started
+	widget.(interface{ Invalidate() }).Invalidate()
+	close(theme.release)
+	<-done
+	calls = theme.calls
+	widget.Render(80)
+	require(t, theme.calls != calls, "a concurrent invalidation let stale lines into the cache")
 }

@@ -11,7 +11,6 @@ import (
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/tui"
 )
 
 type widgetUI struct {
@@ -21,43 +20,6 @@ type widgetUI struct {
 	factory extensions.ComponentFactory
 	shown   int
 }
-
-type taskWidgetHost struct{ invalidations int }
-
-type dimTaskTheme struct{}
-
-type countingTaskTheme struct{ calls int }
-
-type blockingTaskTheme struct {
-	calls   int
-	started chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
-func (theme *countingTaskTheme) FG(_ string, text string) string { theme.calls++; return text }
-
-func (theme *blockingTaskTheme) FG(_ string, text string) string {
-	theme.calls++
-	theme.once.Do(func() {
-		close(theme.started)
-		<-theme.release
-	})
-	return text
-}
-
-func (dimTaskTheme) FG(color, text string) string {
-	if color == "dim" {
-		return "\x1b[2m" + text + "\x1b[22m"
-	}
-	return text
-}
-
-func (*taskWidgetHost) Width() int { return 80 }
-
-func (*taskWidgetHost) Height() int { return 24 }
-
-func (host *taskWidgetHost) Invalidate() { host.invalidations++ }
 
 func must[T any](value T, err error) T {
 	if err != nil {
@@ -104,7 +66,12 @@ func (ui *widgetUI) widgetFactory() extensions.ComponentFactory {
 
 func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	ui := &widgetUI{}
-	tool := pluginTool(t, "tasks", "todo", Extension(), extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
+	var drawn []string
+	draw := Draw{Widget: func(summary, list string, _ extensions.UIHost, _ extensions.Theme) extensions.Component {
+		drawn = []string{summary, list}
+		return nil
+	}}
+	tool := pluginTool(t, "tasks", "todo", Extension(draw), extensions.RunnerOptions{UI: ui, Mode: extensions.ModeTUI})
 	result := must(tool.Execute(context.Background(), "todo-1", map[string]any{"items": []any{
 		map[string]any{"text": "inspect", "status": "done"},
 		map[string]any{"text": "implement", "status": "in_progress"},
@@ -115,24 +82,9 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 		t.Fatalf("widget = %q, want %q", got, want)
 	}
 	factory := ui.widgetFactory()
-	require(t, factory != nil, "TUI task widget has no click renderer")
-	host := &taskWidgetHost{}
-	component := factory(host, nil)
-	mouse, ok := component.(tui.MouseHandler)
-	require(t, ok && click(mouse), "task widget did not accept a left click")
-	expanded := strings.Join(component.Render(80), "\n")
-	require(t, strings.Contains(expanded, "[x] inspect") && strings.Contains(expanded, "→ [ ] implement") && host.invalidations == 1, "expanded task widget = %q, invalidations = %d", expanded, host.invalidations)
-	for width := 1; width <= 4; width++ {
-		for _, line := range component.Render(width) {
-			if got := tui.VisibleWidth(line); got > width {
-				t.Fatalf("task widget width %d rendered %d cells: %q", width, got, line)
-			}
-		}
-	}
-	styled := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, host, dimTaskTheme{})
-	click(styled)
-	styledLines := styled.Render(80)
-	require(t, len(styledLines) >= 3 && strings.Contains(strings.Join(styledLines, "\n"), "\x1b[2m") && strings.HasPrefix(styledLines[1], "    "), "styled expanded task widget = %#v", styledLines)
+	require(t, factory != nil, "a terminal's task widget is not drawn")
+	factory(nil, nil)
+	require(t, len(drawn) == 2 && drawn[0] == "✓ 1/2  → implement" && drawn[1] == text, "the terminal drew %q", drawn)
 
 	result = must(tool.Execute(context.Background(), "todo-2", map[string]any{"items": []any{
 		map[string]any{"text": "ship", "status": "pending"},
@@ -141,47 +93,6 @@ func TestTasksToolReplacesTheLiveWidget(t *testing.T) {
 	require(t, got == "[ ] ship" && strings.Join(ui.snapshot(), "\n") == "✓ 0/1  ·  +1 queued", "replacement result = %q widget = %q", got, strings.Join(ui.snapshot(), "\n"))
 	details, ok := result.Details.(todoInput)
 	require(t, ok && len(details.Items) == 1 && details.Items[0].Text == "ship", "result details = %#v", result.Details)
-}
-
-// click presses and releases, as the TUI delivers a click.
-func click(handler tui.MouseHandler) bool {
-	return handler.HandleMouse(tui.MouseEvent{Type: tui.MousePress, Button: 0, Clicks: 1}) &&
-		handler.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Clicks: 1})
-}
-
-func TestTaskWidgetCachesStableRenders(t *testing.T) {
-	theme := &countingTaskTheme{}
-	widget := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}, {Text: "implement", Status: "in_progress"}}, nil, theme)
-	click(widget)
-	first := widget.Render(80)
-	calls := theme.calls
-	second := widget.Render(80)
-	require(t, strings.Join(first, "\n") == strings.Join(second, "\n"), "cached render changed: %#v != %#v", first, second)
-	require(t, theme.calls == calls, "stable render restyled tasks: calls %d -> %d", calls, theme.calls)
-	widget.Render(40)
-	require(t, theme.calls != calls, "width change reused a stale task render")
-	calls = theme.calls
-	widget.Invalidate()
-	widget.Render(40)
-	require(t, theme.calls != calls, "invalidation reused stale themed task lines")
-}
-
-func TestTaskWidgetInvalidationWinsConcurrentRender(t *testing.T) {
-	theme := &blockingTaskTheme{started: make(chan struct{}), release: make(chan struct{})}
-	widget := newTaskWidget([]todoItem{{Text: "inspect", Status: "done"}}, nil, theme)
-	click(widget)
-	done := make(chan struct{})
-	go func() {
-		widget.Render(80)
-		close(done)
-	}()
-	<-theme.started
-	widget.Invalidate()
-	close(theme.release)
-	<-done
-	calls := theme.calls
-	widget.Render(80)
-	require(t, theme.calls != calls, "concurrent invalidation allowed stale task lines back into the cache")
 }
 
 func TestTasksRebuildFromBranchDetails(t *testing.T) {

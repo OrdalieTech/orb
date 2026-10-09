@@ -276,7 +276,15 @@ struct Plugin: Decodable, Equatable, Identifiable {
     @D var name: String
     @D var on: Bool
     @D var about: String
+    @D var choices: [Choice]
     var id: String { name }
+}
+
+/// A plugin setting that takes one of a few values.
+struct Choice: Decodable, Equatable, Hashable {
+    @D var key: String
+    @D var values: [String]
+    @D var value: String
 }
 
 struct Completion: Decodable, Equatable, Hashable {

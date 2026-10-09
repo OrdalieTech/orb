@@ -112,8 +112,9 @@ filesystem/shell tools plus memory, tasks and quota fetching without a host file
 `js/wasm`; `wasip1/wasm` is compile-checked. This proves selected compositions, not a complete
 browser application. Native subagents, process-backed MCP, Herdr and native transports still
 require a suitable host. Web search retains native credential/DNS defaults; browser networking
-and storage must be explicitly adapted. Tasks and permissions currently include TUI adapters,
-and the product agent still has presentation dependencies. The Android app (`platforms/android`)
+and storage must be explicitly adapted. Permissions currently includes TUI adapters, and the
+product agent still has presentation dependencies; tasks and questions take how a terminal draws
+them (`Draw`) from the assembly, so hosts without one, the Worker included, link no TUI. The Android app (`platforms/android`)
 ships the unmodified CLI rather than a new host; no
 Cloudflare lifecycle, universal platform manifest or speculative host framework is introduced.
 
@@ -851,8 +852,9 @@ already-pinned PeerID. Native direct and forced-relay tests are separate from th
 Every Orb app renders one view and holds no logic of its own. `bridge/view`, in the portable
 core, follows the conversations open on Bridge (this machine's and its peers', with the owner
 calls above), folds their events into rows, keeps machines, threads and tabs, and runs what the
-app asks; the host injects the owner API, this machine's CLI (plugins, logout, storage), tab
-persistence and the latest release. `orb app [--name "this phone"]` serves it as JSON lines:
+app asks; the host injects the owner API, this machine's CLI (storage), tab persistence and
+the latest release. A machine's providers, accounts and plugins are its Bridge's `host.*` calls,
+this machine's included, so every app manages any machine it may start Orb on. `orb app [--name "this phone"]` serves it as JSON lines:
 
 - in, intents `{"do": …}`, with an `id` when a reply is expected;
 - out, `state` (tabs with their strip, model catalog and pending ask, pairing, sign-in, summary)

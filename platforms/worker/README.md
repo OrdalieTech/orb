@@ -78,8 +78,8 @@ once, under an alias derived from the object name, and is attached as its
   `plugins.bridge-agent-calls` is on in the object's settings. Each call also
   needs the object's own instance grant for the destination, and a grant on
   the destination for the object's instance subject.
-- **Memory (experimental).** `plugins.memtree` in the object's settings turns on memtree
-  (`docs/plugins.md`): every prompt starts from a fixed-size view of the whole
+- **Plugins.** The object's settings turn on `titles`, `tasks`, `questions` (answered by the app
+  or peer driving the object) and `memtree` (experimental, `docs/plugins.md`): with memtree, every prompt starts from a fixed-size view of the whole
   conversation, and its summaries live in the session journal in object storage.
 - **Admin.** `POST /agents/<name>/bridge/admin` with `{"method", "params"}`,
   behind `ORB_TOKEN`, runs the owner methods of `orb bridge`: `status`,

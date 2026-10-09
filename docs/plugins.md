@@ -31,10 +31,29 @@ A plugin's value is either a boolean or an object holding its settings:
 ```
 
 `orb plugins enable <name>` / `disable <name>` toggle the gate and preserve any
-object settings. `orb plugins list --all` prints the full resolved composition
+object settings; `orb plugins set <name> <key> <json>` writes one setting and leaves the gate as it
+was. Settings that take one of a few values (`permissions.mode`, `memtree.mode`) are checked
+against them, and the whole object is checked as the plugin reads it before anything is saved.
+`orb plugins list --json` prints what `/plugins` lists (Bridge and provider usage have pages of
+their own), one object per plugin with its gate and those choices, which the apps draw. `orb plugins list --all` prints the full resolved composition
 (compiled extensions, plugins, MCP row, discovered JS extensions) with the
 settings layer that decided each state — through the same code path the real
 boot uses.
+
+### Where plugins run
+
+An Orb reads its plugins when it starts; `/plugins` reloads the session it runs in.
+
+- **Terminal, Mac and Android:** every Orb is the `orb` CLI, so every bundled plugin is there.
+  The phone's own Orb leaves out those that read a computer's Claude Code or Codex.
+- **Apps:** Settings › Plugins shows the plugins of any paired machine the app may start Orb on,
+  through that machine's Bridge (`host.plugins`, `host.plugins.set`), and opens on the machine of
+  the conversation in front. The Orbs that Bridge started for the app reopen with a change at
+  their next message: at once between turns, after the running one otherwise.
+- **Worker and Celld:** an object runs `titles`, `tasks`, `questions` and `memtree` from its own
+  settings, its questions answered by whatever app or peer drives it; the others need processes
+  or files of their own.
+- **SDK:** an embedder picks factories from `assembly.Catalog`, or registers its own.
 
 Bundled plugins are named `builtin:<name>` in errors and diagnostics, and
 `-e builtin:<name>` loads one for a single run, even with `--no-extensions`.
@@ -172,8 +191,7 @@ A turn, or a compaction, waits until every earlier message is summarized, showin
 `memtree: summarizing N messages`; Escape ends the wait. A line the compactor fails three times
 on (a refusal, an empty reply, no model or credentials) keeps its text cut to 512 bytes, saved
 like a summary, so the session goes on and nothing asks about it again. Summaries are kept in the session as
-hidden `memtree` entries, so they follow it across forks, exports and hosts (the Worker and Celld
-host turns the plugin on from `plugins.memtree` in its settings). Claude and Codex sessions run
+hidden `memtree` entries, so they follow it across forks, exports and hosts. Claude and Codex sessions run
 their own loop and bypass the plugin.
 
 ### memory, tasks, websearch

@@ -141,7 +141,7 @@ type intent struct {
 	Name     string   `json:"name"`
 	Ref      string   `json:"ref"`
 	Px       int      `json:"px"`
-	On       bool     `json:"on"`
+	On       *bool    `json:"on"`
 	Tabs     []string `json:"tabs"`
 	Budget   int      `json:"budget"`
 	To       int      `json:"to"`
@@ -209,7 +209,7 @@ func (a *App) now(in intent) (any, error) {
 		}
 		return nil, nil
 	case "visible":
-		a.visible = in.On
+		a.visible = in.On != nil && *in.On
 		for _, t := range a.tabs {
 			if a.visible && t.watched {
 				t.Unread = 0

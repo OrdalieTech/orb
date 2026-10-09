@@ -44,6 +44,7 @@ type launched struct {
 	alias   string
 	id      string      // its instance, once on Bridge
 	turn    atomic.Bool // a turn is running
+	stale   atomic.Bool // it reads what changed only when it starts again: it ends after its turn
 }
 
 // host serves a peer's machine-level calls. host.sessions pages the threads stored on this
@@ -121,49 +122,83 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 		return s.update(ctx), nil
 	case "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel":
 		return s.login(ctx, method, params)
-	case "host.accounts", "host.accounts.use":
-		return s.accounts(ctx, method, params)
+	case "host.accounts", "host.accounts.use", "host.plugins", "host.plugins.set", "host.logout":
+		return s.cli(ctx, method, params)
 	case "host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
 		return s.terminal(ctx, method, params)
 	}
 	return nil, bridge.Fail("method_not_found")
 }
 
-// accounts is the Providers view for a peer: `orb accounts` on this machine, its connected
-// accounts with their plan limits, and the switch between them.
-func (s *Service) accounts(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	exe, err := s.loginExecutable()
-	if err != nil {
-		return nil, err
-	}
-	args := []string{"accounts", "--json"}
-	if method == "host.accounts.use" {
-		var q struct {
-			Provider string `json:"provider"`
-			ID       string `json:"id"`
-		}
-		if err := protocol.Decode(params, &q); err != nil {
-			return nil, err
-		}
-		if !providerName.MatchString(q.Provider) || !providerName.MatchString(q.ID) {
-			return nil, bridge.Fail("invalid_params")
-		}
-		args = []string{"accounts", "use", q.Provider, q.ID}
-	} else if err := protocol.Decode(params, &struct{}{}); err != nil {
-		return nil, err
-	}
-	// A refused switch still reports why, as an error line.
-	output, err := exec.CommandContext(ctx, exe, args...).Output()
-	if err != nil && len(output) == 0 {
-		return nil, bridge.Fail("unavailable")
-	}
+// lines is what `orb <name> … --json` printed, one JSON value per line, as name in an answer.
+func lines(name string, output []byte) json.RawMessage {
 	rows := []json.RawMessage{}
 	for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte("\n")) {
 		if json.Valid(line) {
 			rows = append(rows, append(json.RawMessage(nil), line...))
 		}
 	}
-	return bridge.JSON(map[string]any{"accounts": rows}), nil
+	return bridge.JSON(map[string]any{name: rows})
+}
+
+var settingName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]{0,63}$`)
+
+// cli is what a peer reads and changes of this machine's Orb through its CLI here: its accounts
+// with their plan limits and the switch between them, its plugins and their choices, a provider's
+// sign-out. An Orb reads its plugins and credentials when it starts, so after a change the Orbs
+// this Bridge started end, to reopen with it at their next message.
+func (s *Service) cli(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	exe, err := s.loginExecutable()
+	if err != nil {
+		return nil, err
+	}
+	var q struct {
+		Name     string `json:"name,omitempty"`
+		On       *bool  `json:"on,omitempty"`
+		Key      string `json:"key,omitempty"`
+		Value    string `json:"value,omitempty"`
+		Provider string `json:"provider,omitempty"`
+		ID       string `json:"id,omitempty"`
+	}
+	if err := protocol.Decode(params, &q); err != nil {
+		return nil, err
+	}
+	var args []string
+	switch {
+	case method == "host.accounts":
+		args = []string{"accounts", "--json"}
+	case method == "host.plugins":
+		args = []string{"plugins", "list", "--json"}
+	case method == "host.accounts.use" && providerName.MatchString(q.Provider) && providerName.MatchString(q.ID):
+		args = []string{"accounts", "use", q.Provider, q.ID}
+	case method == "host.logout" && providerName.MatchString(q.Provider):
+		args = []string{"logout", q.Provider}
+	case method != "host.plugins.set" || !providerName.MatchString(q.Name):
+	case q.On != nil:
+		args = []string{"plugins", map[bool]string{true: "enable", false: "disable"}[*q.On], q.Name}
+	case settingName.MatchString(q.Key):
+		value, _ := json.Marshal(q.Value)
+		args = []string{"plugins", "set", q.Name, q.Key, string(value)}
+	}
+	if args == nil {
+		return nil, bridge.Fail("invalid_params")
+	}
+	output, err := exec.CommandContext(ctx, exe, args...).Output()
+	if method == "host.plugins" || strings.HasPrefix(method, "host.accounts") {
+		// A refused account switch still says why, as an error line.
+		if err != nil && (method == "host.plugins" || len(output) == 0) {
+			return nil, bridge.Fail("unavailable")
+		}
+		return lines(args[0], output), nil
+	}
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
+		// What orb said is wrong (a choice it does not offer, say) is the peer's to show.
+		return bridge.JSON(map[string]string{"error": strings.TrimPrefix(strings.TrimSpace(string(exit.Stderr)), "Error: ")}), nil
+	} else if err != nil {
+		return nil, bridge.Fail("unavailable")
+	}
+	s.endLaunched(false)
+	return bridge.JSON(struct{}{}), nil
 }
 
 // maxLogins bounds the sign-ins one Bridge runs at once; loginPoll is how long a poll waits for
@@ -213,13 +248,7 @@ func (s *Service) login(ctx context.Context, method string, params json.RawMessa
 		if err != nil {
 			return nil, bridge.Fail("unavailable")
 		}
-		rows := []json.RawMessage{}
-		for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte("\n")) {
-			if json.Valid(line) {
-				rows = append(rows, append(json.RawMessage(nil), line...))
-			}
-		}
-		return bridge.JSON(map[string]any{"providers": rows}), nil
+		return lines("providers", output), nil
 	}
 	if method == "host.login.start" {
 		var q struct {
@@ -490,6 +519,40 @@ func (s *Service) update(ctx context.Context) json.RawMessage {
 	return bridge.JSON(result)
 }
 
+// follow restarts Bridge into the binary at exe once another file is there (orb update, a new
+// build), at the first check with no turn, terminal or sign-in running for a peer: an update of
+// Orb brings this machine's Bridge, and the host calls peers see, along without a restart by hand.
+func (s *Service) follow(exe string, every time.Duration) {
+	started, err := os.Stat(exe)
+	if err != nil {
+		return
+	}
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-tick.C:
+		}
+		now, err := os.Stat(exe)
+		if err != nil || os.SameFile(started, now) && now.ModTime().Equal(started.ModTime()) {
+			continue
+		}
+		s.mu.Lock()
+		busy := len(s.terminals) > 0 || len(s.logins) > 0
+		for _, l := range s.launched {
+			busy = busy || l.turn.Load()
+		}
+		s.mu.Unlock()
+		// A file that does not run yet (a copy in progress, a broken build) is waited out.
+		if !busy && exec.CommandContext(s.ctx, exe, "--version").Run() == nil {
+			s.restart(exe)
+			return
+		}
+	}
+}
+
 // launchFolder accepts an absolute path or one under ~, and only an existing directory.
 func launchFolder(path string) (string, error) {
 	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == '/') {
@@ -627,6 +690,9 @@ func idle(events io.Reader, l *launched, limit time.Duration) {
 				l.turn.Store(true)
 			} else if bytes.Contains(line, []byte(`"type":"agent_end"`)) {
 				l.turn.Store(false)
+				if l.stale.Load() {
+					_ = l.input.Close()
+				}
 			}
 		}
 	}()
@@ -679,12 +745,13 @@ func (s *Service) launchedInstance(ctx context.Context, p bridge.Principal, alia
 // registrations here: with the Bridge going away, they cannot retire themselves.
 func (s *Service) stopLaunched() { s.endLaunched(true) }
 
-// endLaunched ends the Orbs this Bridge started, or only those between turns, and retires them.
+// endLaunched ends the Orbs this Bridge started and retires them, or those between turns and
+// the others once their turn ends.
 func (s *Service) endLaunched(busy bool) {
 	s.mu.Lock()
 	ids := []string{}
 	for _, l := range s.launched {
-		if !busy && l.turn.Load() {
+		if l.stale.Store(true); !busy && l.turn.Load() {
 			continue
 		}
 		if l.input != nil {

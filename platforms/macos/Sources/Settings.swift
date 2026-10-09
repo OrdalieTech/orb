@@ -94,10 +94,10 @@ private struct Providers: View {
                     Text(m.about)
                 }
             }
-            // Only this Mac's own store; a credential configured elsewhere is changed there.
-            if p.ready && machine.isEmpty {
+            // Only Orb's own store; a credential configured elsewhere is changed there.
+            if p.ready {
                 if p.status == "oauth" || p.source == "stored" {
-                    Button(p.status == "oauth" ? "Sign Out" : "Remove Key", role: .destructive) { Task { note = await run("logout", ["provider": p.id]); await load() } }
+                    Button(p.status == "oauth" ? "Sign Out" : "Remove Key", role: .destructive) { Task { note = await run("logout", ["machine": here, "provider": p.id]); await load() } }
                 } else {
                     Text("Configured outside Orb (\(p.source)): change it there.").foregroundStyle(Ink.meta)
                 }
@@ -357,38 +357,58 @@ private func qr(_ text: String) -> NSImage? {
     return out
 }
 
-/// Orb's bundled plugins on this Mac. Each one only ever renders into a slot or raises an interrupt.
+/// Orb's bundled plugins on a machine, and their choices. Each one only ever renders into a slot
+/// or raises an interrupt.
 private struct Plugins: View {
     @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
     @State private var list: [Plugin] = []
-    @State private var dirty = false
+    @State private var note = ""
+    private var here: String { nav.machine.isEmpty ? orb.state.here : nav.machine }
 
     var body: some View {
         Form {
             Section {
+                Picker("Machine", selection: Bindable(nav).machine) {
+                    ForEach(orb.home.machines.filter { $0.here || $0.launch }) { Text($0.name).tag($0.here ? "" : $0.id) }
+                }
+                if !note.isEmpty { Text(note).foregroundStyle(Ink.rupture) }
+            }
+            Section {
                 ForEach(list) { p in
-                    Toggle(isOn: Binding { p.on } set: { on in
-                        Task {
-                            guard (try? await orb.ask("plugin", ["name": p.name, "on": on])) != nil else { return }
-                            dirty = true
-                            await load()
-                        }
-                    }) {
+                    Toggle(isOn: Binding { p.on } set: { change(["name": p.name, "on": $0]) }) {
                         Text(p.name)
                         Text(p.about).font(.mono(Size.small)).foregroundStyle(Ink.meta)
                     }
+                    if p.on {
+                        ForEach(p.choices, id: \.key) { c in
+                            Picker(c.key, selection: Binding { c.value } set: { change(["name": p.name, "key": c.key, "value": $0]) }) {
+                                ForEach(c.values, id: \.self) { Text($0).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .padding(.leading, 16)
+                        }
+                    }
                 }
             } footer: {
-                HStack {
-                    Text("Toggles write Orb's own settings, the same as orb plugins enable.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
-                    Spacer()
-                    if dirty { Button("Apply · restart Orbs") { orb.send("restart"); dirty = false } }
-                }
+                Text("An Orb reads its plugins when it starts: those open in this app reopen with a change at their next message.")
+                    .font(.mono(Size.small)).foregroundStyle(Ink.meta)
             }
         }
         .formStyle(.grouped)
-        .task { await load() }
+        .overlay { if list.isEmpty && note.isEmpty { ProgressView() } }
+        .task(id: here) { list = []; await load() }
     }
 
-    private func load() async { list = (try? await orb.ask("plugins", as: [Plugin].self)) ?? list }
+    private func change(_ args: [String: Any]) {
+        let here = here
+        Task {
+            do { _ = try await orb.ask("plugin", args.merging(["machine": here]) { a, _ in a }); note = "" } catch { note = error.localizedDescription }
+            await load()
+        }
+    }
+
+    private func load() async {
+        do { list = try await orb.ask("plugins", ["machine": here], as: [Plugin].self) } catch { note = error.localizedDescription }
+    }
 }

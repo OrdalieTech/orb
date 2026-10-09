@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
-	"github.com/OrdalieTech/orb/tui"
 )
 
 var todoSchema = ai.JSONSchema(`{"type":"object","required":["items"],"properties":{"items":{"type":"array","description":"The complete task list. Every call replaces the previous list, so resend unchanged tasks.","items":{"type":"object","required":["text","status"],"properties":{"text":{"type":"string","description":"Short imperative description of one task."},"status":{"type":"string","enum":["pending","in_progress","done"],"description":"Task state; keep at most one task in_progress."}}}}}}`)
@@ -26,94 +24,15 @@ type todoItem struct {
 	Status string `json:"status"`
 }
 
-type taskWidgetTheme interface {
-	FG(color, text string) string
+// Draw is how a terminal draws the list: the widget above the editor, its summary opened by a
+// click, and the todo tool's result, cut to one line until expanded. A host without a terminal
+// leaves it zero and shows the summary line.
+type Draw struct {
+	Widget func(summary, list string, host extensions.UIHost, theme extensions.Theme) extensions.Component
+	Text   func(text string, oneLine bool) extensions.Component
 }
 
-type taskWidget struct {
-	mu             sync.Mutex
-	items          []todoItem
-	expanded       bool
-	host           extensions.UIHost
-	theme          taskWidgetTheme
-	cachedWidth    int
-	cachedExpanded bool
-	cachedLines    []string
-	cacheRevision  uint64
-}
-
-func newTaskWidget(items []todoItem, host extensions.UIHost, theme taskWidgetTheme) *taskWidget {
-	return &taskWidget{items: append([]todoItem(nil), items...), host: host, theme: theme}
-}
-
-func (widget *taskWidget) Invalidate() {
-	widget.mu.Lock()
-	widget.cachedLines = nil
-	widget.cacheRevision++
-	widget.mu.Unlock()
-}
-
-func (widget *taskWidget) Render(width int) []string {
-	if width <= 0 {
-		return nil
-	}
-	widget.mu.Lock()
-	expanded, revision := widget.expanded, widget.cacheRevision
-	if widget.cachedLines != nil && widget.cachedWidth == width && widget.cachedExpanded == expanded {
-		lines := append([]string(nil), widget.cachedLines...)
-		widget.mu.Unlock()
-		return lines
-	}
-	widget.mu.Unlock()
-	marker := "▸ "
-	if expanded {
-		marker = "▾ "
-	}
-	headerText := marker + renderTaskSummary(widget.items)
-	if expanded && widget.theme != nil {
-		headerText = widget.theme.FG("dim", headerText)
-	}
-	headerPadding := min(1, max(0, (width-1)/2))
-	lines := tui.NewTruncatedText(headerText, headerPadding, 0).Render(width)
-	if expanded {
-		taskLines := strings.Split(renderTasks(widget.items), "\n")
-		if widget.theme != nil {
-			for index := range taskLines {
-				taskLines[index] = widget.theme.FG("dim", taskLines[index])
-			}
-		}
-		listPadding := min(4, max(0, (width-1)/2))
-		lines = append(lines, tui.NewText(strings.Join(taskLines, "\n"), listPadding, 0, nil).Render(width)...)
-	}
-	widget.mu.Lock()
-	if widget.expanded == expanded && widget.cacheRevision == revision {
-		widget.cachedWidth, widget.cachedExpanded = width, expanded
-		widget.cachedLines = append(widget.cachedLines[:0], lines...)
-	}
-	widget.mu.Unlock()
-	return lines
-}
-
-func (widget *taskWidget) HandleMouse(event tui.MouseEvent) bool {
-	if event.Type != tui.MousePress && event.Type != tui.MouseRelease || event.Button != 0 {
-		return false
-	}
-	// A click toggles on release; a drag from the press selects text instead.
-	if event.Type == tui.MousePress || event.Clicks > 1 {
-		return true
-	}
-	widget.mu.Lock()
-	widget.expanded = !widget.expanded
-	widget.cachedLines = nil
-	widget.cacheRevision++
-	widget.mu.Unlock()
-	if widget.host != nil {
-		widget.host.Invalidate()
-	}
-	return true
-}
-
-func Extension() extensions.Factory {
+func Extension(draw Draw) extensions.Factory {
 	return func(api extensions.API) error {
 		show := func(ctx extensions.Context, items []todoItem) {
 			if len(items) == 0 {
@@ -122,9 +41,9 @@ func Extension() extensions.Factory {
 			}
 			summary := renderTaskSummary(items)
 			widget := &extensions.Widget{Lines: []string{summary}}
-			if ctx.Mode() == extensions.ModeTUI {
+			if ctx.Mode() == extensions.ModeTUI && draw.Widget != nil {
 				widget.Factory = func(host extensions.UIHost, theme extensions.Theme) extensions.Component {
-					return newTaskWidget(items, host, theme)
+					return draw.Widget(summary, renderTasks(items), host, theme)
 				}
 			}
 			ctx.UI().SetWidget("tasks", widget, nil)
@@ -149,18 +68,8 @@ func Extension() extensions.Factory {
 				return err
 			},
 		})
-		api.RegisterTool(extensions.ToolDefinition{
+		tool := extensions.ToolDefinition{
 			Name: "todo", Label: "Todo", Description: "Replace the current session task list", Parameters: todoSchema,
-			RenderResult: func(result engine.AgentToolResult, options extensions.ToolRenderResultOptions, _ extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
-				items, ok := todoItemsFromDetails(result.Details)
-				if !ok {
-					return tui.NewText(ai.ContentText(result.Content), 0, 0, nil)
-				}
-				if options.Expanded {
-					return tui.NewText(renderTasks(items), 0, 0, nil)
-				}
-				return tui.NewTruncatedText(renderTaskSummary(items), 0, 0)
-			},
 			Execute: func(_ context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, ctx extensions.Context) (engine.AgentToolResult, error) {
 				var input todoInput
 				if err := toolutil.Decode(raw, &input); err != nil {
@@ -182,7 +91,20 @@ func Extension() extensions.Factory {
 				result.Details = todoInput{Items: input.Items}
 				return result, nil
 			},
-		})
+		}
+		if draw.Text != nil {
+			tool.RenderResult = func(result engine.AgentToolResult, options extensions.ToolRenderResultOptions, _ extensions.Theme, _ extensions.ToolRenderContext) extensions.Component {
+				items, ok := todoItemsFromDetails(result.Details)
+				switch {
+				case !ok:
+					return draw.Text(ai.ContentText(result.Content), false)
+				case options.Expanded:
+					return draw.Text(renderTasks(items), false)
+				}
+				return draw.Text(renderTaskSummary(items), true)
+			}
+		}
+		api.RegisterTool(tool)
 		return nil
 	}
 }
