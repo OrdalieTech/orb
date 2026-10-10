@@ -415,3 +415,40 @@ func TestSubagentInheritsFileContainment(t *testing.T) {
 		})
 	}
 }
+
+// A parent hands a child one of the models the settings offer, and only those;
+// without an offer the tool has no model field at all.
+func TestSubagentRunsOnAnOfferedModel(t *testing.T) {
+	root := t.TempDir()
+	mustOK(os.MkdirAll(root+"/agent", 0o700))
+	mustOK(os.WriteFile(root+"/agent/models.json", []byte(`{"providers":{"lab":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"unused","models":[{"id":"small","name":"Small"},{"id":"big","name":"Big"}]}}}`), 0o600))
+	settings := must(config.NewSettingsManager(root, config.WithAgentDir(root+"/agent")))
+	require(t, !strings.Contains(string(schemaWithExternal(nil, offeredModels(settings))), `"model"`), "tool offers a model with none configured")
+	settings.SetPluginSetting("subagents", "models", []any{"lab/small"})
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var childModel, refused string
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "answer", "model": "lab/small"}, faux.ToolCallOptions{ID: "sub-1"})),
+		faux.Factory(func(_ context.Context, _ ai.Context, _ *ai.StreamOptions, _ faux.State, model *ai.Model) (*ai.AssistantMessage, error) {
+			childModel = string(model.Provider) + "/" + model.ID
+			return faux.AssistantMessage("child answer"), nil
+		}),
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "answer", "model": "lab/big"}, faux.ToolCallOptions{ID: "sub-2"})),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			refused = toolResultText(request, "subagent")
+			return faux.AssistantMessage("parent done"), nil
+		}),
+	})
+	registry := extensions.NewRegistry(root)
+	mustOK(registry.Register("builtin:subagents", Extension(provider.StreamSimple, nil, settings)))
+	prompt := "parent"
+	result := must(agent.NewAgentSession(agent.AgentSessionOptions{
+		CWD: root, AgentDir: root + "/agent", Settings: settings, SessionManager: must(sessionstore.InMemory(root)),
+		Model: provider.GetModel(), StreamFn: provider.StreamSimple, Resources: &agent.Resources{SystemPrompt: &prompt},
+		ExtensionRegistry: registry, ModelRegistry: must(config.NewModelRegistry(root + "/agent")),
+	}))
+	t.Cleanup(result.Session.Dispose)
+	mustOK(result.Session.PromptSync(context.Background(), "delegate"))
+	require(t, childModel == "lab/small", "child ran on %q", childModel)
+	require(t, strings.Contains(refused, "model: must be equal to one of the allowed values"), "a model outside the offer was not refused: %q", refused)
+}

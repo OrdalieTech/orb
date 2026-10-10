@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Subagents can run on another model: `plugins.subagents.models` lists the models (`provider/id`) a parent may give a child, and the subagent tool gains an optional `model` limited to them. Without the list nothing changes, the tool included.
 - Quitting Orb no longer leaves `997;2n11;rgb:…` on the shell's prompt line: Orb asked the terminal for its colours every few seconds until the process ended, after it had handed the terminal back, so an Orb taking a moment to wind down (a Claude host closing) left one reply per poll for the shell to read as typed text.
 
 ## [0.19.5] - 2026-10-10

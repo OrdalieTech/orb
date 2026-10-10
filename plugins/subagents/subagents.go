@@ -65,6 +65,7 @@ type subagentInput struct {
 	Tasks   []subagentTask `json:"tasks"`
 	Context string         `json:"context"`
 	Tools   []string       `json:"tools"`
+	Model   string         `json:"model"`
 }
 
 type subagentTask struct {
@@ -72,6 +73,7 @@ type subagentTask struct {
 	Agent   string   `json:"agent"`
 	Context string   `json:"context"`
 	Tools   []string `json:"tools"`
+	Model   string   `json:"model"`
 }
 
 // cappedOutput grows on demand up to externalOutputLimit; each stream has a
@@ -132,12 +134,14 @@ func ExternalEntries(settings *config.SettingsManager) (map[string]ExternalEntry
 	return ParseExternalEntries(settings.GetPluginSettings("subagents"))
 }
 
-// ParseExternalEntries parses one scope's raw subagents configuration.
+// ParseExternalEntries parses one scope's raw subagents configuration, and
+// checks its models: each "provider/id".
 func ParseExternalEntries(configured map[string]any) (map[string]ExternalEntry, error) {
 	encoded, err := json.Marshal(configured)
 	parsed := struct {
 		Enabled  *bool                      `json:"enabled"`
 		External map[string]json.RawMessage `json:"external"`
+		Models   []string                   `json:"models"`
 	}{}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
@@ -149,6 +153,11 @@ func ParseExternalEntries(configured map[string]any) (map[string]ExternalEntry, 
 	}
 	if value, exists := configured["enabled"]; exists && value == nil {
 		return nil, fmt.Errorf("plugins: subagents.enabled must be true or false")
+	}
+	for _, model := range parsed.Models {
+		if provider, id, _ := strings.Cut(model, "/"); strings.TrimSpace(provider) == "" || strings.TrimSpace(id) == "" {
+			return nil, fmt.Errorf("plugins: subagents.models entries must be provider/id, got %q", model)
+		}
 	}
 	if value, exists := configured["external"]; !exists {
 		return nil, nil
@@ -187,14 +196,38 @@ func ParseExternalEntries(configured map[string]any) (map[string]ExternalEntry, 
 	return entries, nil
 }
 
-func schemaWithExternal(external map[string]string) ai.JSONSchema {
+func schemaWithExternal(external map[string]string, models []string) ai.JSONSchema {
 	names := []string{"scout", "worker", "reviewer"}
 	for name := range external {
 		names = append(names, name)
 	}
 	slices.Sort(names[3:])
 	encoded, _ := json.Marshal(names)
-	return ai.JSONSchema(strings.ReplaceAll(string(subagentSchema), `["scout","worker","reviewer"]`, string(encoded)))
+	schema := strings.ReplaceAll(string(subagentSchema), `["scout","worker","reviewer"]`, string(encoded))
+	if len(models) == 0 {
+		return ai.JSONSchema(schema)
+	}
+	// Offered models add one optional field to a call and to each parallel task.
+	model, _ := json.Marshal(map[string]any{"type": "string", "enum": models, "description": "Model for the child; defaults to yours."})
+	schema = strings.Replace(schema, `"tasks":{"type":"array"`, `"model":`+string(model)+`,"tasks":{"type":"array"`, 1)
+	schema = strings.Replace(schema, `"properties":{"task":{"type":"string","description":"Self-contained instruction for this child."}`, `"properties":{"model":`+string(model)+`,"task":{"type":"string","description":"Self-contained instruction for this child."}`, 1)
+	return ai.JSONSchema(schema)
+}
+
+// offeredModels are the models a parent may give a child
+// (plugins.subagents.models), checked by ParseExternalEntries.
+func offeredModels(settings *config.SettingsManager) []string {
+	if settings == nil {
+		return nil
+	}
+	listed, _ := settings.GetPluginSettings("subagents")["models"].([]any)
+	models := make([]string, 0, len(listed))
+	for _, model := range listed {
+		if name, ok := model.(string); ok {
+			models = append(models, name)
+		}
+	}
+	return models
 }
 
 func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *config.SettingsManager) extensions.Factory {
@@ -207,11 +240,12 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 		if err != nil {
 			return err
 		}
+		models := offeredModels(settings)
 		if policy != nil && policy.Sandbox != "" {
 			sandboxMode = policy.Sandbox
 		}
 		api.RegisterTool(extensions.ToolDefinition{
-			Name: "subagent", Label: "Subagent", Description: "Run a child agent", Parameters: schemaWithExternal(external),
+			Name: "subagent", Label: "Subagent", Description: "Run a child agent", Parameters: schemaWithExternal(external, models),
 			Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, extensionContext extensions.Context) (engine.AgentToolResult, error) {
 				var input subagentInput
 				if err := toolutil.Decode(raw, &input); err != nil {
@@ -224,7 +258,7 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 				var tasks []subagentTask
 				switch mode {
 				case "single":
-					tasks = []subagentTask{{Task: input.Task, Agent: input.Agent, Context: input.Context, Tools: input.Tools}}
+					tasks = []subagentTask{{Task: input.Task, Agent: input.Agent, Context: input.Context, Tools: input.Tools, Model: input.Model}}
 				case "parallel":
 					tasks = append([]subagentTask(nil), input.Tasks...)
 					if len(tasks) == 0 {
@@ -254,6 +288,9 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 					}
 					if tasks[index].Context != "fresh" && tasks[index].Context != "fork" {
 						return engine.AgentToolResult{}, fmt.Errorf("subagent: context must be fresh or fork")
+					}
+					if model := tasks[index].Model; model != "" && !slices.Contains(models, model) {
+						return engine.AgentToolResult{}, fmt.Errorf("subagent: model %q is not offered", model)
 					}
 				}
 
@@ -450,6 +487,18 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 		return "", err
 	}
 	model := parent.Model()
+	if task.Model != "" {
+		provider, id, _ := strings.Cut(task.Model, "/")
+		registry := parent.ModelRegistry()
+		if registry == nil {
+			return "", fmt.Errorf("subagent: parent has no model registry")
+		}
+		chosen, found := registry.Find(provider, id)
+		if !found {
+			return "", fmt.Errorf("subagent: model %q is not available", task.Model)
+		}
+		model = &chosen
+	}
 	if model == nil {
 		return "", fmt.Errorf("subagent: parent has no model")
 	}

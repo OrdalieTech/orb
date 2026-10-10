@@ -68,9 +68,14 @@ registers one of its tool, command, or flag names (its own `/mcp`, say).
   "external": {
     "claude": "claude -p --output-format text",
     "codex": "codex exec --skip-git-repo-check -"
-  }
+  },
+  "models": ["openai-codex/gpt-6-luna", "openai-codex/gpt-6-sol"]
 }
 ```
+
+A child runs on the parent's model. `models` lists others, as `provider/id`, that the parent
+may give a child: the tool then has an optional `model` field limited to that list, for one
+call or each parallel task. Without `models` the field does not exist.
 
 Each `external` value is either the command string or
 `{"command": "…", "enabled": false}` — the object form switches a CLI off
