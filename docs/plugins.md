@@ -181,33 +181,40 @@ supply their own operations. Reads and network access are not restricted.
 ### memtree
 
 Experimental, and off unless `plugins.memtree` is set: its behavior and settings may change.
-A tree of one-line summaries over each session's whole history, after
-[OptChat](https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449): every message
-gets a line (a short message is its own line), adjacent lines merge in pairs up the tree, and a
-view of it, recent messages one line each and older ones many per line, stays under a fixed budget
-(128 KB, or half the model's context window in bytes). The agent opens any line back down to its
-message with `zoom(id, n)`, and `date(id)` dates a message.
+[OptChat](https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449), as its recipe
+gives it: every message gets a line of at most 512 bytes (a short message is its own line),
+adjacent lines merge in pairs up a tree, and a view of it covers the whole session, recent
+messages one line each and older ones many per line. The view grows one line per message from
+64 KB to 128 KB, then one batch merges its most due lines back to 64 KB, so between batches it
+only grows at its end and stays in the prompt cache. The agent opens any line back down to its
+message with `zoom(id, n)` (`zoom(id, 1)` gives the message whole, with its images), and
+`date(id)` dates a message. A tool's output is logged as its first and last 15,000 characters;
+any other text longer than 30,000 characters spans several messages.
 
 ```json
 { "plugins": { "memtree": { "mode": "fresh", "model": "provider/model-id" } } }
 ```
 
 - `mode: "fresh"` (default, OptChat's loop): each prompt starts a new context, the view and then
-  the prompt, and earlier messages are a zoom away; the system prompt tells the agent so. A run that
-  outgrows the context window is compacted onto a newer view.
+  the prompt, and earlier messages are a zoom away; OptChat's system prompt, ahead of Orb's, tells
+  the agent so. A run Orb starts on its own, such as a retry after a provider error, continues
+  the prompt's turn from the same view. A run that outgrows the context window is compacted onto
+  a newer view.
 - `mode: "compaction"`: sessions run as usual, and when Orb compacts, the summary is the view of
   everything before the kept messages: no model call, and nothing summarized twice.
-- `model`: the compactor, as `provider/id`; the session's model when unset. It runs at medium
-  effort about once or twice per message, each call reading the view as context, so pick a cheap,
-  fast model: messages are summarized one at a time, and turns wait for them. Anthropic models
-  reuse no cache across these calls.
+- `model`: the compactor, as `provider/id`; the session's model when unset, which lets its calls
+  read the turns' system prompt and tools from the cache. It runs at xhigh effort, or the nearest
+  the model has, about twice per message, up to 8 calls at once, each reading a coarser view of
+  16 to 32 KB, so pick a cheap model. On Anthropic, turns and compactions mark their view's last
+  whole block of 4 lines for the cache, and a turn also marks the block the previous one did.
 
 A turn, or a compaction, waits until every earlier message is summarized, showing
 `memtree: summarizing N messages`; Escape ends the wait. A line the compactor fails three times
 on (a refusal, an empty reply, no model or credentials) keeps its text cut to 512 bytes, saved
-like a summary, so the session goes on and nothing asks about it again. Summaries are kept in the session as
-hidden `memtree` entries, so they follow it across forks, exports and hosts. Claude and Codex sessions run
-their own loop and bypass the plugin.
+like a summary, so the session goes on and nothing asks about it again. Summaries and the view
+are kept in the session as hidden `memtree` and `memtree-view` entries, so they follow it across
+forks, exports, hosts and restarts. Claude and Codex sessions run their own loop and bypass the
+plugin.
 
 ### memory, tasks, websearch
 
