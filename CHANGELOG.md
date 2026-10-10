@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A message an agent sends with the `agents` tool opens with a line naming the sender, its conversation id, title and machine, so the recipient knows another Orb wrote and can answer it with `send`; it used to arrive as if you had typed it. `list` names this machine as its peers see it instead of "this machine", which a recipient read as its own (once the machine's Bridge runs this version: a Bridge now tells its owner its name).
+
 ## [0.19.6] - 2026-10-10
 
 Agents can see and message your other conversations through Bridge, subagents can run on a model you offer, and Orb takes pi's fixes for busy providers, Herdr panes and sign-in refreshes.

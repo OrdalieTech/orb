@@ -302,10 +302,10 @@ func (b *Bridge) Handle(ctx context.Context, peer, method string, params json.Ra
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
-		// A peer granted anything here learns what this machine is called; a stranger, nothing.
+		// The owner and a peer granted anything here learn what this machine is called; a stranger, nothing.
 		b.mu.Lock()
 		name := ""
-		if !b.state.Blocked[peer] && slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer }) {
+		if !b.state.Blocked[peer] && (b.owner(principal) || slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })) {
 			name = b.name
 		}
 		b.mu.Unlock()

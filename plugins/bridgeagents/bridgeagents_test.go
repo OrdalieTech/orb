@@ -18,8 +18,8 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 )
 
-// fakeBridge is this machine (p0), where this Orb runs as i0, and a connected
-// device named lab (p1).
+// fakeBridge is this machine, mac (p0), where this Orb runs as i0, and a
+// connected device, lab (p1).
 type fakeBridge struct {
 	mu        sync.Mutex
 	instances map[string][]string // peer → available instances
@@ -54,7 +54,7 @@ func (b *fakeBridge) Call(_ context.Context, peer, method string, params, result
 	case "instances.describe":
 		reply = descriptors[p["instance_id"].(string)]
 	case "bridge.ping":
-		reply = `{"name":"lab"}`
+		reply = map[string]string{"p0": `{"name":"mac"}`, "p1": `{"name":"lab"}`}[peer]
 	case "events.subscribe":
 		b.open++
 		reply = `{"snapshot_id":"x","messages":[` +
@@ -75,8 +75,8 @@ func (b *fakeBridge) Call(_ context.Context, peer, method string, params, result
 
 // An agent sees the agents tool only while another conversation is reachable,
 // lists them without itself, reads one's latest messages without tool output,
-// and messages them: a prompt to an idle one, a follow-up to a working one,
-// each fenced by the revision it described.
+// and messages them, saying who writes: a prompt to an idle one, a follow-up
+// to a working one, each fenced by the revision it described.
 func TestAgentsListReadAndMessageOtherConversations(t *testing.T) {
 	alone := &fakeBridge{instances: map[string][]string{"p0": {"i0"}}}
 	offered := func(request ai.Context) bool {
@@ -121,7 +121,7 @@ func TestAgentsListReadAndMessageOtherConversations(t *testing.T) {
 	if len(results) != len(script) {
 		t.Fatalf("results = %q", results)
 	}
-	if want := "i1 · this machine · /work/docs · Docs · idle\ni2 · lab · /srv/app · Build · working"; results[0] != want {
+	if want := "i1 · mac · /work/docs · Docs · idle\ni2 · lab · /srv/app · Build · working"; results[0] != want {
 		t.Fatalf("list = %q, want %q", results[0], want)
 	}
 	if read := results[1]; !strings.Contains(read, "State: idle") || !strings.Contains(read, "user: Fix the docs build") ||
@@ -135,6 +135,9 @@ func TestAgentsListReadAndMessageOtherConversations(t *testing.T) {
 		t.Fatalf("calls = %v", others.calls)
 	}
 	idle, busy := others.calls[0], others.calls[1]
+	if text := idle["args"].(map[string]any)["text"]; text != "Message from an Orb conversation i0 (me, mac):\n\nDocs build is green?" {
+		t.Fatalf("sent text = %q", text)
+	}
 	if idle["method"] != "prompt" || idle["session_id"] != "s1" || idle["expected"].(map[string]any)["session_revision"] != "r1" ||
 		busy["method"] != "follow_up" || busy["args"].(map[string]any)["execution_id"] != "e2" || busy["expected"].(map[string]any)["registration_generation"] != "g2" {
 		t.Fatalf("calls = %v", others.calls)

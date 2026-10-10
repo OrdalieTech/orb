@@ -85,11 +85,13 @@ func Extension(b Bridge) extensions.Factory {
 }
 
 type tool struct {
-	bridge Bridge
-	mu     sync.Mutex
-	peers  map[string]string // instance ID → peer, from the last list
-	seen   time.Time         // when reachable last looked
-	others bool
+	bridge  Bridge
+	mu      sync.Mutex
+	peers   map[string]string // instance ID → peer, from the last list
+	home    string            // this machine's peer and name, from the last list
+	machine string
+	seen    time.Time // when reachable last looked
+	others  bool
 }
 
 // conversation is one other Orb conversation as list shows it.
@@ -193,11 +195,14 @@ func (t *tool) list(ctx context.Context) ([]conversation, error) {
 		if err != nil {
 			continue // a device out of reach lists nothing
 		}
-		machine := "this machine"
-		if i > 0 {
-			var named struct{ Name string }
-			_ = t.bridge.Call(ctx, peer, "bridge.ping", struct{}{}, &named)
-			machine = cmp.Or(named.Name, "a connected device")
+		var named struct{ Name string }
+		_ = t.bridge.Call(ctx, peer, "bridge.ping", struct{}{}, &named)
+		machine := cmp.Or(named.Name, "a connected device")
+		if i == 0 {
+			machine = cmp.Or(named.Name, "this machine") // an older Bridge does not tell its owner
+			t.mu.Lock()
+			t.home, t.machine = peer, machine
+			t.mu.Unlock()
 		}
 		for _, id := range ids {
 			var d descriptor
@@ -305,7 +310,7 @@ func (t *tool) send(ctx context.Context, peer, id, text string) (string, error) 
 	if d.Target.Session == "" {
 		return "", errors.New("agents: that conversation is not ready for messages")
 	}
-	method, args, done := "prompt", map[string]any{"text": text}, "Sent."
+	method, args, done := "prompt", map[string]any{"text": t.sender(ctx) + "\n\n" + text}, "Sent."
 	if d.Target.Execution != "" {
 		method, args["execution_id"], done = "follow_up", d.Target.Execution, "Queued: it reads it after its current turn."
 	}
@@ -318,6 +323,24 @@ func (t *tool) send(ctx context.Context, peer, id, text string) (string, error) 
 		return "", err
 	}
 	return done, nil
+}
+
+// sender is the line a message opens with, so its recipient knows who wrote
+// and can answer with send.
+func (t *tool) sender(ctx context.Context) string {
+	t.mu.Lock()
+	home, machine := t.home, t.machine
+	t.mu.Unlock()
+	from, self := "Message from an Orb conversation", t.bridge.Self()
+	var d descriptor
+	if self != "" {
+		from += " " + self
+		_ = t.bridge.Call(ctx, home, "instances.describe", map[string]string{"instance_id": self}, &d)
+	}
+	if about := slices.DeleteFunc([]string{d.Name, machine}, func(field string) bool { return field == "" }); len(about) > 0 {
+		from += " (" + strings.Join(about, ", ") + ")"
+	}
+	return from + ":"
 }
 
 // reachable reports whether another conversation is reachable, looking at most

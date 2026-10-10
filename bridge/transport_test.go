@@ -185,27 +185,30 @@ func TestHostCallsNeedAMachineWideLaunchGrant(t *testing.T) {
 	}
 }
 
-// A machine's name reaches the peers it granted something, as their screens show it; a stranger
-// learns nothing.
+// A machine's name reaches its owner and the peers it granted something, as their screens show
+// it; a stranger learns nothing.
 func TestAPeerLearnsTheNameOnlyOnceGranted(t *testing.T) {
 	b := newBridge(t)
 	defer func() { _ = b.Close() }()
 	peer := newBridge(t)
 	defer func() { _ = peer.Close() }()
 	b.SetName("Studio Mac")
-	name := func() string {
-		raw, _ := b.Handle(t.Context(), peer.PeerID(), "bridge.ping", JSON(struct{}{}))
+	name := func(caller *Bridge) string {
+		raw, _ := b.Handle(t.Context(), caller.PeerID(), "bridge.ping", JSON(struct{}{}))
 		var r struct{ Name string }
 		_ = json.Unmarshal(raw, &r)
 		return r.Name
 	}
-	if got := name(); got != "" {
+	if got := name(peer); got != "" {
 		t.Fatalf("a stranger learned %q", got)
+	}
+	if got := name(b); got != "Studio Mac" {
+		t.Fatalf("the owner learned %q", got)
 	}
 	if err := b.AddGrant(Grant{Principal: Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := name(); got != "Studio Mac" {
+	if got := name(peer); got != "Studio Mac" {
 		t.Fatalf("a granted peer learned %q", got)
 	}
 }

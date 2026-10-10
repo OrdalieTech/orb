@@ -94,7 +94,8 @@ Agent access, switched on in `/bridge` → Advanced. An agent gets an `agents` t
 other conversations, on this machine and on connected devices: `list` gives each one's id,
 machine, folder, title and state (idle, working, waiting for an answer), `read` its latest
 messages (tool output left out), and `send` gives it a message, queued after its current turn
-while it works. The agent acts with your reach, as the apps do. The tool exists for the model only
+while it works, opening with a line that names the sender (its id, title and machine) so the
+recipient can answer. The agent acts with your reach, as the apps do. The tool exists for the model only
 while Bridge is on and another conversation is reachable, so it costs nothing otherwise.
 
 ### jobs

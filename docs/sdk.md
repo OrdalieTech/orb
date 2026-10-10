@@ -526,7 +526,7 @@ negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `b
 `bridge/protocol` packages compile for Wasm; the browser transport is `platforms/websocket`.
 `plugins/bridgeagents.Extension` gives an agent its owner's other conversations: an `agents` tool
 that lists them (id, machine, folder, title, state), reads one's latest messages and sends one a
-message. The host supplies its `Bridge`: the machines, a call made with the owner's reach, and the
+message headed with the sender's id, title and machine. The host supplies its `Bridge`: the machines, a call made with the owner's reach, and the
 instance it runs as. The tool shows only while another conversation is reachable. A Worker's
 `agent/bridge/tool.NewTool` (`bridge_call`) instead calls under its instance's own grants,
 through the source attachment's outbound route. Discovery never authorizes execution.
