@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.6] - 2026-10-10
+
+Agents can see and message your other conversations through Bridge, subagents can run on a model you offer, and Orb takes pi's fixes for busy providers, Herdr panes and sign-in refreshes.
+
 - Agent access (`/bridge` → Advanced) gives an agent an `agents` tool for your other conversations, on this machine and on connected devices: it lists them (machine, folder, title, idle or working), reads one's latest messages and sends one a message, queued while it works. The tool exists only while Bridge is on and another conversation is reachable, so it costs the model nothing otherwise. It replaces the native `bridge_call`, which needed hand-written grants per agent; the switch is now the grant.
 - Subagents can run on another model: `plugins.subagents.models` lists the models (`provider/id`) a parent may give a child, and the subagent tool gains an optional `model` limited to them. Without the list nothing changes, the tool included.
 - Quitting Orb no longer leaves `997;2n11;rgb:…` on the shell's prompt line: Orb asked the terminal for its colours every few seconds until the process ended, after it had handed the terminal back, so an Orb taking a moment to wind down (a Claude host closing) left one reply per poll for the shell to read as typed text.
