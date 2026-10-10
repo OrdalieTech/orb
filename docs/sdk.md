@@ -524,14 +524,17 @@ successful `Update` must mean durable replacement. The native implementation is
 `bridge.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
 negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `bridge` and
 `bridge/protocol` packages compile for Wasm; the browser transport is `platforms/websocket`.
-`agent/bridge.Extension` is an independently opt-in `bridge_call` tool; its caller must use the
-source attachment's authenticated outbound route, which checks source grants before the
-destination checks its own grants. Discovery never authorizes execution.
+`plugins/bridgeagents.Extension` gives an agent its owner's other conversations: an `agents` tool
+that lists them (id, machine, folder, title, state), reads one's latest messages and sends one a
+message. The host supplies its `Bridge`: the machines, a call made with the owner's reach, and the
+instance it runs as. The tool shows only while another conversation is reachable. A Worker's
+`agent/bridge/tool.NewTool` (`bridge_call`) instead calls under its instance's own grants,
+through the source attachment's outbound route. Discovery never authorizes execution.
 
 In Orb, open Bridge directly from Settings, Ctrl+P, or `/bridge`, then use its service switch.
 The home page shows the service switch, **Add device**, and your devices. Select a device to
-open its conversations; both lists update automatically. **Advanced** contains the optional
-agent-call tool and your fingerprint. Groups, grants, scopes, and receipts stay in the CLI.
+open its conversations; both lists update automatically. **Advanced** contains agent access and
+your fingerprint. Groups, grants, scopes, and receipts stay in the CLI.
 Opening Bridge before activation creates no profile or network service. `orb --bridge personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
 re-enable. `orb bridge view <peer-id> <instance-id>` opens the same focused conversation view
 without constructing a local model or requiring provider credentials. Invitations contain a

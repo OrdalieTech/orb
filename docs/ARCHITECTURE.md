@@ -40,8 +40,8 @@ orb/
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
 │   ├── acp/                  Agent Client Protocol server: one client, many sessions (`orb --mode acp`)
-│   ├── bridge/               runtime attachment, operation ledger adapter, bridge_call extension
-│   │   └── tool/             headless bridge_call tool
+│   ├── bridge/               runtime attachment, operation ledger adapter
+│   │   └── tool/             headless bridge_call tool (Workers)
 │   └── assembly/             product catalog, enablement and plugin management UI
 ├── chat/                     chat processing + platform adapters, configured by options (chat → agent only)
 │   ├── gateway/              runs an agent's platforms as one process: ingress (polling or webhooks) → processor
@@ -57,6 +57,7 @@ orb/
 │   ├── titles/               names a session after its first exchange, once
 │   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
 │   ├── subagents/            child agents and native CLI execution
+│   ├── bridgeagents/         agents tool: list, read and message the owner's other conversations
 │   ├── activity/             headless session-local work observations; TUI view in agent/assembly
 │   ├── permissions/          policy, hooks and configuration UI
 │   │   └── native/           native bash/file containment through tool-operation options
@@ -184,11 +185,10 @@ the remote owner approves the displayed browser identity, then Refresh lists aut
 The UI switches between the local agent and remote conversations, pages snapshots and sessions,
 uses cursor replay, checks session/generation fences, and never automatically replays mutations.
 Disconnect releases observation without cancelling remote execution. Reload retains pairing but
-requires explicit reconnection. Local `bridge_call` is separately opt-in and uses an instance
+requires explicit reconnection. A Worker's `bridge_call` is separately opt-in and uses an instance
 subject with its own remote grants, never the human controller's authority.
 
-`agent/bridge/tool.NewTool` is headless; the product extension adapter moved to
-`agent/bridge.Extension`. Transport stays in `platforms/websocket`,
+`agent/bridge/tool.NewTool` is headless. Transport stays in `platforms/websocket`,
 worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/bridge.js`. Tests execute the built Wasm
 without a host filesystem and cover event forwarding, tool execution, concurrent-prompt rejection,
 cancellation and session replacement, alongside native workspace and dependency checks.
@@ -695,7 +695,7 @@ explicit profile, while `orb --bridge <profile> --instance <alias>` attaches a r
 Bridge management is built into Settings, Ctrl+P, and `/bridge`; opening it starts no service.
 Its home page contains the service switch, Add device, pending approvals, and a live device list.
 Add device offers SSH setup or invitation exchange; selecting a device opens its live conversations
-directly. Advanced contains only agent-call opt-in and the local fingerprint. Groups, grants,
+directly. Advanced contains only agent access and the local fingerprint. Groups, grants,
 scopes, and receipts remain CLI administration. Bridge has no duplicate toggles in Plugins.
 Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings

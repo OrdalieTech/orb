@@ -223,9 +223,10 @@ explicitly and in two separate kinds:
   events or the instance's pulse moves (a turn, a question, a rename), and opens a long
   conversation at its end (a snapshot with `tail`, which says where it starts); instances also take
   `session.compact` and `shell` (a `!command` in the conversation).
-- **Agents** are Orbs acting on their own. With the opt-in `bridge_call` tool, one Orb's agent can
-  call another Orb, but only under an instance subject with its own grants. A person's controller
-  access never passes to their agent.
+- **Agents** are Orbs acting on their own. With agent access on (`/bridge` → Advanced), an Orb's
+  agent lists, reads and messages its owner's other conversations, on this machine and connected
+  devices, with its owner's reach. A Worker's agent, which is not its owner, calls another Orb
+  through `bridge_call` under its own grant.
 
 Transports adapt to the target. Native Orbs use Tailcat (WireGuard with NAT traversal) and local
 IPC. Browsers and Workers use the WebSocket transport, which keeps Bridge's pinned TLS inside the

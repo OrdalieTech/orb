@@ -9,17 +9,14 @@ import (
 	"strings"
 	"sync"
 
-	"encoding/json"
-
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/assembly"
-	agentbridge "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
-	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/bridgeagents"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/codexsessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
@@ -85,13 +82,9 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		Policy:     policy,
 		CWD:        cwd, AgentDir: agentDir, Settings: settings,
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
-		BridgeAgentCalls: agentbridge.Extension(func(ctx context.Context, peer string, call bridge.Call) (json.RawMessage, error) {
-			var result json.RawMessage
-			err := args.bridgeLink.invoke(ctx, "outbound", map[string]any{"peer_id": peer, "call": call}, &result)
-			return result, err
-		}),
-		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
-		CodexSessions:  codexsessions.Extension(os.Environ()),
+		BridgeAgentCalls: bridgeagents.Extension(ownerBridge{args: args, settings: settings}),
+		ClaudeSessions:   claudesessions.Management(settings, agentDir, os.Environ()),
+		CodexSessions:    codexsessions.Extension(os.Environ()),
 		// Background jobs run through the same bash as the built-in: sandbox, shell and prefix.
 		Bash: func(cwd string) (engine.AgentTool, error) {
 			mode, err := permissions.SandboxMode(settings)

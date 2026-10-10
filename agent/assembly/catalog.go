@@ -51,7 +51,7 @@ var descriptions = map[string]string{
 	"activity":           "Compact, expandable statuses for agents and background processes",
 	"questions":          "Ask the user questions with choices and custom answers",
 	"bridge":             "Pair devices and control explicitly shared Orb instances",
-	"bridge-agent-calls": "Allow granted agent-initiated calls through a Bridge attachment",
+	"bridge-agent-calls": "Let agents list, read and message your other Orb conversations through Bridge",
 	"tasks":              "Live session task list and todo tool",
 	"titles":             "Name each session after its first exchange",
 	"websearch":          "Web search and readable page fetching",

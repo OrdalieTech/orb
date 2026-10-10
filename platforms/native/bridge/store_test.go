@@ -78,17 +78,17 @@ func TestIPCSeparatesOwnerAndAttachmentCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	adminPath, attachPath := filepath.Join(dir, "admin.sock"), filepath.Join(dir, "attach.sock")
-	closeAdmin, err := Listen(ctx, adminPath, b, "owner", b.Admin, nil)
+	closeAdmin, err := Listen(ctx, adminPath, b, "owner", b.Admin)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeAdmin()
-	closeAttach, err := Listen(ctx, attachPath, b, "", nil, nil)
+	closeAttach, err := Listen(ctx, attachPath, b, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeAttach()
-	if closeOther, err := Listen(ctx, adminPath, b, "owner", b.Admin, nil); err == nil {
+	if closeOther, err := Listen(ctx, adminPath, b, "owner", b.Admin); err == nil {
 		closeOther()
 		t.Fatal("replaced live endpoint")
 	}

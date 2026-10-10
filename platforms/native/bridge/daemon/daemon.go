@@ -204,24 +204,6 @@ func New(ctx context.Context, state *native.State, profile, version string, b *b
 	return &Service{Peers: peers, state: state, profile: profile, version: version, loginExecutable: os.Executable, launched: map[string]*launched{}, logins: map[string]*hostLogin{}, terminals: map[string]*hostTerminal{}, ctx: ctx}
 }
 
-func (s *Service) outbound(ctx context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
-	var p struct {
-		PeerID string      `json:"peer_id"`
-		Call   bridge.Call `json:"call"`
-	}
-	if err := protocol.Decode(params, &p); err != nil {
-		return nil, err
-	}
-	subject, err := s.Bridge.Outbound(nativebridge.InstanceFromContext(ctx), p.PeerID, p.Call)
-	if err != nil {
-		return nil, err
-	}
-	return s.Remote(ctx, p.PeerID, "instances.call", struct {
-		bridge.Call
-		Subject bridge.Subject `json:"subject"`
-	}{p.Call, subject})
-}
-
 type Web struct {
 	Listen  string
 	URL     string
@@ -308,12 +290,12 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 		}
 		return service.Admin(ctx, method, params)
 	}
-	closeAdmin, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "admin.sock"), b, string(token), admin, nil)
+	closeAdmin, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "admin.sock"), b, string(token), admin)
 	if err != nil {
 		return err
 	}
 	defer closeAdmin()
-	closeAttach, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "attach.sock"), b, "", nil, service.outbound)
+	closeAttach, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "attach.sock"), b, "", nil)
 	if err != nil {
 		return err
 	}

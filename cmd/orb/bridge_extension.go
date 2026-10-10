@@ -64,6 +64,51 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 	}
 }
 
+// ownerBridge is how the agents plugin reaches Bridge: as its owner does from
+// /bridge, while Bridge is on, without ever starting it.
+type ownerBridge struct {
+	args     CLIArgs
+	settings *config.SettingsManager
+}
+
+func (b ownerBridge) admin(ctx context.Context) (*protocol.Conn, error) {
+	if b.args.native == nil || b.args.BridgeProfile == "" && !b.settings.GetPlugins()["bridge"] {
+		return nil, bridge.Fail("unavailable")
+	}
+	return daemon.Admin(ctx, b.args.native, cmp.Or(b.args.BridgeProfile, "personal"))
+}
+
+func (b ownerBridge) Machines(ctx context.Context) ([]string, error) {
+	admin, err := b.admin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = admin.Close() }()
+	var status bridgeSettingsStatus
+	if err := admin.Call(ctx, "status", struct{}{}, &status); err != nil {
+		return nil, err
+	}
+	machines := []string{status.PeerID}
+	for peer, state := range status.PeerStates {
+		if state == "connected" {
+			machines = append(machines, peer)
+		}
+	}
+	slices.Sort(machines[1:])
+	return machines, nil
+}
+
+func (b ownerBridge) Call(ctx context.Context, peer, method string, params, result any) error {
+	admin, err := b.admin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = admin.Close() }()
+	return admin.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": method, "params": params}, result)
+}
+
+func (b ownerBridge) Self() string { return b.args.bridgeLink.self() }
+
 // setBridgeStatus shows Bridge as one footer dot. The status key names the
 // command, so clicking the dot opens /bridge.
 func setBridgeStatus(ui extensions.UI, on bool) {
@@ -267,7 +312,7 @@ func bridgeSettingsRows(page string, running, enabled, agentCalls bool, status b
 		if agentCalls {
 			calls = "On"
 		}
-		rows := []tui.GridRow{row("agent-calls", "Agent calls", calls, "Allow agents to use Bridge tools. Requires separate grants on both devices.")}
+		rows := []tui.GridRow{row("agent-calls", "Agent calls", calls, "Let agents list, read and message your other conversations, here and on connected devices.")}
 		if running {
 			rows = append(rows, row("Status", "This device's fingerprint", "", status.PeerID))
 		}

@@ -49,9 +49,10 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   opt-in per user (settings, `/plugins`) or per assembly (embedder wiring). Configuration pages may
   be available before activation, as Bridge management is in Settings and Ctrl+P, with service
   activation inside that page. Bridge defaults are inert rather than off: every Orb has an identity
-  but no listener, no advertised address, no grants and no visible `bridge_call` until its owner
-  grants one; agent grants replace the agent-call toggle once the built-in, grant-governed tool
-  lands.
+  but no listener, no advertised address and no grants. An agent reaches its owner's other
+  conversations only once the owner turns on agent access (`bridge-agent-calls`), and then with the
+  owner's reach: the switch is the grant (2026-10-10, the owner's call, for simplicity over
+  per-agent grants). A Worker's agent, not its owner, still calls under its own grant.
 - **P5 — Pi compatibility is interop, not identity.** Orb reads what released pi writes on the
   kernel surfaces listed below and runs pi extensions, skills, prompt templates and packages
   unchanged, verified by conformance fixtures; provider wire shapes follow the providers. Orb may

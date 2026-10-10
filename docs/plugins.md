@@ -88,6 +88,15 @@ environment, and is bounded: 10-minute timeout, 1 MiB output caps, whole
 process group killed on cancellation. The model can only ever pick a
 configured name — never supply a command.
 
+### bridge-agent-calls
+
+Agent access, switched on in `/bridge` → Advanced. An agent gets an `agents` tool for its owner's
+other conversations, on this machine and on connected devices: `list` gives each one's id,
+machine, folder, title and state (idle, working, waiting for an answer), `read` its latest
+messages (tool output left out), and `send` gives it a message, queued after its current turn
+while it works. The agent acts with your reach, as the apps do. The tool exists for the model only
+while Bridge is on and another conversation is reachable, so it costs nothing otherwise.
+
 ### jobs
 
 Background commands for Orb's own models, as Claude Code runs them. `bash` gains

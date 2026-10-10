@@ -26,7 +26,7 @@ type Welcome struct {
 	Generation string `json:"generation,omitempty"`
 }
 
-func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret string, admin protocol.Handler, outbound protocol.Handler) (func(), error) {
+func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret string, admin protocol.Handler) (func(), error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("absolute IPC path required")
 	}
@@ -150,11 +150,6 @@ func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret stri
 								return nil, bridge.Fail("unauthorized")
 							}
 							return bridge.JSON(b.Authorize(r)), nil
-						case "outbound":
-							if outbound == nil {
-								return nil, bridge.Fail("unauthorized")
-							}
-							return outbound(context.WithValue(ctx, instanceKey{}, auth.InstanceID), method, params)
 						default:
 							return nil, bridge.Fail("unauthorized")
 						}
@@ -178,13 +173,6 @@ func Listen(ctx context.Context, path string, b *bridge.Bridge, adminSecret stri
 		}
 	}()
 	return closeAll, nil
-}
-
-type instanceKey struct{}
-
-func InstanceFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(instanceKey{}).(string)
-	return id
 }
 
 type pendingEndpoint struct {

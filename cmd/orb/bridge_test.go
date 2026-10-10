@@ -344,7 +344,7 @@ func TestBridgeManagementNavigatesAndStopsNativeService(t *testing.T) {
 			return bridge.JSON(struct{}{}), nil
 		}
 		return b.Admin(ctx, method, params)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +616,7 @@ func TestBridgeCLIStopWaitsForDisconnection(t *testing.T) {
 	closeServer, err := nativebridge.Listen(service, filepath.Join(dir, "admin.sock"), nil, "owner", func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
 		time.AfterFunc(100*time.Millisecond, stop)
 		return bridge.JSON(struct{}{}), nil
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,7 +653,7 @@ func fakeBridgeOwner(t *testing.T, handle func(method string, params json.RawMes
 	}
 	closeServer, err := nativebridge.Listen(t.Context(), filepath.Join(dir, "admin.sock"), nil, "owner", func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		return handle(method, params)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

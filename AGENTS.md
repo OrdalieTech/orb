@@ -84,9 +84,8 @@ Full tree: ARCHITECTURE §1.
 
 ## Open work
 
-- Bridge fully in the core (P4, P11): a host-supplied transport port, every session registered as
-  an instance by default, and a built-in `bridge_call` visible only under an agent grant, which
-  retires the `bridge-agent-calls` toggle. Per-target gaps are in `docs/deployments.md`.
+- Bridge fully in the core (P4, P11): a host-supplied transport port and every session registered
+  as an instance by default. Per-target gaps are in `docs/deployments.md`.
 - Release the pi 1.0 adoption now under `[Unreleased]` in `CHANGELOG.md`.
 - Upgrade Ordalie-back from Orb v0.7.0: filter system messages out of client SSE, and move
   `agentengine` from `shouldStopAfterTurn` to `finishTurn` and from `SetSystemPrompt` to a system

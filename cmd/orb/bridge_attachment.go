@@ -30,6 +30,17 @@ type cliBridgeLink struct {
 	mu         sync.Mutex
 	connection *protocol.Conn
 	configure  func(bool) error
+	instance   string // the instance this Orb attached as
+}
+
+// self is the instance this Orb attached as, empty before it attaches.
+func (l *cliBridgeLink) self() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.instance
 }
 
 func (l *cliBridgeLink) invoke(ctx context.Context, method string, p any, result any) error {
@@ -131,6 +142,9 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 	if link == nil {
 		link = &cliBridgeLink{}
 	}
+	link.mu.Lock()
+	link.instance = identity.InstanceID
+	link.mu.Unlock()
 	quota := &providerUsage{cache: args.usageCache}
 	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Status: func(s *agent.AgentSession) string {
 		if model := s.State().Model; model != nil && model.Provider == claudesessions.Name {
