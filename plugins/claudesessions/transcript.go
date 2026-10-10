@@ -65,14 +65,31 @@ type record struct {
 	Parent string `json:"parentUuid"`
 	raw    json.RawMessage
 	orb    map[string]any
+	// images resolves the images a kept record refers to (imageRef).
+	images func(hash string) (string, bool)
 }
 
 // line encodes r as the session file holds it, under id after parent.
 func (r *record) line(id, parent, sessionID string) ([]byte, error) {
 	fields := r.orb
 	if fields == nil {
-		if err := json.Unmarshal(r.raw, &fields); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(r.raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&fields); err != nil {
 			return nil, err
+		}
+		if r.images != nil {
+			eachImage(fields["message"], func(block map[string]any, source map[string]any) {
+				data, _ := source["data"].(string)
+				if hash, ok := strings.CutPrefix(data, imageRef); ok {
+					if image, found := r.images(hash); found {
+						source["data"] = image
+					} else {
+						clear(block)
+						block["type"], block["text"] = "text", "[image]"
+					}
+				}
+			})
 		}
 	}
 	fields["uuid"], fields["parentUuid"], fields["sessionId"] = id, nil, sessionID
@@ -95,6 +112,14 @@ func rebuild(manager extensions.ReadonlySessionManager, skip int) []*record {
 		branch, skip = branch[:i], skip-1
 	}
 	t := transcript{cwd: manager.GetCWD(), seen: map[string]bool{}}
+	var images map[string]string
+	t.images = func(hash string) (string, bool) {
+		if images == nil {
+			images = sessionImages(manager.GetEntries())
+		}
+		image, ok := images[hash]
+		return image, ok
+	}
 	// Orb's own compaction replaces what came before with its summary.
 	for i := len(branch) - 1; i >= 0; i-- {
 		if branch[i].Type == "compaction" {
@@ -166,11 +191,13 @@ type transcript struct {
 	records []*record
 	seen    map[string]bool
 	merged  bool // the last record was written by Orb and may take more content
+	images  func(hash string) (string, bool)
 }
 
 func (t *transcript) native(line json.RawMessage) {
-	r := &record{raw: line}
-	if r.UUID, r.Parent = recordLink(line); r.UUID == "" || t.seen[r.UUID] {
+	l := readLinks(line)
+	r := &record{UUID: l.UUID, Parent: l.Parent, raw: line, images: t.images}
+	if r.UUID == "" || t.seen[r.UUID] {
 		return
 	}
 	t.seen[r.UUID] = true
@@ -302,19 +329,33 @@ func projectDir(configDir, cwd string) string {
 // A record whose parent in the branch differs from its parent in the file (the
 // branch was compacted or repaired) is appended as a copy under a derived UUID.
 // It returns the UUID Claude resumes at and the file's size once synced.
-func syncTranscript(records []*record, sessionID, projects string) (at string, size int64, err error) {
+// known, when given, is what the last sync read or wrote of the file: a file
+// still of that size gained nothing since, so it is not read again.
+func syncTranscript(records []*record, sessionID, projects string, known *fileLinks) (at string, size int64, err error) {
 	path := filepath.Join(projects, sessionID+".jsonl")
-	parents := map[string]string{}
-	size, err = eachLine(path, func(line []byte) {
-		if uuid, parent := recordLink(line); uuid != "" {
-			parents[uuid] = parent
-		}
-	})
-	if err != nil {
-		return "", 0, err
+	if known == nil {
+		known = &fileLinks{}
 	}
-	missing, at, err := planTranscript(records, parents, sessionID)
+	if info, err := os.Stat(path); err != nil || known.path != path || info.Size() != known.size {
+		parents := map[string]string{}
+		size, err := eachLine(path, func(line []byte, _ int64) {
+			if l := readLinks(line); l.UUID != "" {
+				parents[l.UUID] = l.Parent
+			}
+		})
+		if err != nil {
+			return "", 0, err
+		}
+		*known = fileLinks{path: path, size: size, parents: parents}
+	}
+	size = known.size
+	// planTranscript records what it plans in known; a failure leaves it to read again.
+	known.size = -1
+	missing, at, err := planTranscript(records, known.parents, sessionID)
 	if err != nil || len(missing) == 0 {
+		if err == nil {
+			known.size = size
+		}
 		return at, size, err
 	}
 	if err := os.MkdirAll(projects, 0o700); err != nil {
@@ -328,13 +369,24 @@ func syncTranscript(records []*record, sessionID, projects string) (at string, s
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
+	if err == nil {
+		known.size = size + int64(len(missing))
+	}
 	return at, size + int64(len(missing)), err
 }
 
-// eachLine visits each line of the file at path a line at a time, as a Claude
-// Code session file can be hundreds of megabytes, and returns the bytes read; a
-// missing file has none. A line is only valid during its visit.
-func eachLine(path string, visit func(line []byte)) (size int64, err error) {
+// fileLinks is what Orb last read or wrote of a Claude Code session file: its
+// size then, and the parent of each record it holds.
+type fileLinks struct {
+	path    string
+	size    int64
+	parents map[string]string
+}
+
+// eachLine visits each line of the file at path, with its offset, a line at a
+// time, as a Claude Code session file can be hundreds of megabytes, and returns
+// the bytes read; a missing file has none. A line is only valid during its visit.
+func eachLine(path string, visit func(line []byte, offset int64)) (size int64, err error) {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
@@ -345,6 +397,7 @@ func eachLine(path string, visit func(line []byte)) (size int64, err error) {
 	defer func() { _ = file.Close() }()
 	reader := bufio.NewReaderSize(file, 1<<20)
 	var long []byte
+	var offset int64
 	for {
 		chunk, err := reader.ReadSlice('\n')
 		size += int64(len(chunk))
@@ -356,7 +409,8 @@ func eachLine(path string, visit func(line []byte)) (size int64, err error) {
 		if len(long) > 0 {
 			line, long = append(long, chunk...), long[:0]
 		}
-		visit(bytes.TrimSuffix(line, []byte("\n")))
+		visit(bytes.TrimSuffix(line, []byte("\n")), offset)
+		offset = size
 		if errors.Is(err, io.EOF) {
 			return size, nil
 		}
@@ -366,30 +420,44 @@ func eachLine(path string, visit func(line []byte)) (size int64, err error) {
 	}
 }
 
-// recordLink is a Claude Code record's UUID and its parent's, read without
-// decoding the rest of it; none for a line that is not JSON.
-func recordLink(line []byte) (uuid, parent string) {
+// links is what Orb reads of a Claude Code record to place it: its UUID, its
+// parent's, the record a compaction summarizes, its type and whether it is a
+// subagent's.
+type links struct {
+	UUID, Parent, Logical, Type string
+	Sidechain                   bool
+}
+
+// readLinks reads a record's links without decoding the rest of it; none for a
+// line that is not JSON.
+func readLinks(line []byte) (l links) {
 	if !jsonwire.Valid(line) {
-		return "", ""
+		return l
 	}
 	jsonwire.EachMember(line, func(name, value []byte) bool {
 		switch string(name) {
 		case "uuid":
-			uuid, _ = jsonwire.UnmarshalString(value)
+			l.UUID, _ = jsonwire.UnmarshalString(value)
 		case "parentUuid":
-			parent, _ = jsonwire.UnmarshalString(value)
+			l.Parent, _ = jsonwire.UnmarshalString(value)
+		case "logicalParentUuid":
+			l.Logical, _ = jsonwire.UnmarshalString(value)
+		case "type":
+			l.Type, _ = jsonwire.UnmarshalString(value)
+		case "isSidechain":
+			l.Sidechain = string(value) == "true"
 		}
 		return true
 	})
-	return uuid, parent
+	return l
 }
 
 // parentsIn maps each record of a session file's data to its parent.
 func parentsIn(data []byte) map[string]string {
 	parents := map[string]string{}
 	for line := range bytes.SplitSeq(data, []byte("\n")) {
-		if uuid, parent := recordLink(line); uuid != "" {
-			parents[uuid] = parent
+		if l := readLinks(line); l.UUID != "" {
+			parents[l.UUID] = l.Parent
 		}
 	}
 	return parents
@@ -496,57 +564,164 @@ func keptRecord(kind string) bool {
 	return kind == "user" || kind == "assistant" || kind == "system" || kind == "attachment" || kind == "summary"
 }
 
-// appendRecords keeps records in the Orb journal without their toolUseResult:
+// imageRef stands in a kept record for an image the conversation's messages
+// hold, by the hash of its base64 data: screenshots are most of a session, and
+// Claude's records and Orb's messages carry the same ones.
+const imageRef = "orb:sha256:"
+
+// appendRecords keeps records in the Orb journal without their toolUseResult,
 // Claude Code's own copy of a tool's output for its display, which the model
-// never reads and which can be most of a session (whole files, images).
+// never reads and which can be most of a session (whole files, images), and
+// with the images the turn's messages hold as references to them.
 func appendRecords(manager *session.SessionManager, records []json.RawMessage) error {
+	var images map[string]string
 	kept := make([]json.RawMessage, len(records))
 	for i, line := range records {
 		kept[i] = line
+		display, image := bytes.Contains(line, []byte(`"toolUseResult"`)), bytes.Contains(line, []byte(`"base64"`))
+		if !display && !image {
+			continue
+		}
 		var fields map[string]json.RawMessage
-		if bytes.Contains(line, []byte(`"toolUseResult"`)) && json.Unmarshal(line, &fields) == nil {
-			delete(fields, "toolUseResult")
-			if line, err := json.Marshal(fields); err == nil {
-				kept[i] = line
+		if json.Unmarshal(line, &fields) != nil {
+			continue
+		}
+		delete(fields, "toolUseResult")
+		if image {
+			if images == nil {
+				images = sessionImages(turnEntries(manager))
 			}
+			decoder := json.NewDecoder(bytes.NewReader(fields["message"]))
+			decoder.UseNumber()
+			var message any
+			if decoder.Decode(&message) == nil {
+				eachImage(message, func(_ map[string]any, source map[string]any) {
+					data, _ := source["data"].(string)
+					if hash := imageHash(data); images[hash] != "" {
+						source["data"] = imageRef + hash
+					}
+				})
+				if encoded, err := json.Marshal(message); err == nil {
+					fields["message"] = encoded
+				}
+			}
+		}
+		if line, err := json.Marshal(fields); err == nil {
+			kept[i] = line
 		}
 	}
 	_, err := manager.AppendCustomEntry(transcriptEntry, kept)
 	return err
 }
 
-// branchOf is the conversation a Claude Code session file holds: the chain
-// back from its latest record, through compactions to what they summarize.
-// Branches left by a rewind stay in the file but are not the conversation.
-// Each parent is the one written before its child (the CLI writes some UUIDs
-// again after a compaction). It returns the chain's lines, undecoded.
-func branchOf(data []byte) []json.RawMessage {
-	type link struct {
-		UUID      string `json:"uuid"`
-		Parent    string `json:"parentUuid"`
-		Logical   string `json:"logicalParentUuid"`
-		Type      string `json:"type"`
-		Sidechain bool   `json:"isSidechain"`
+// turnEntries are the entries since the records last kept: the turn whose
+// records are being kept, or the whole conversation before its first.
+func turnEntries(manager *session.SessionManager) []session.SessionEntry {
+	var entries []session.SessionEntry
+	for entry := manager.GetLeafEntry(); entry != nil && entry.CustomType != transcriptEntry; {
+		entries = append(entries, *entry)
+		if entry.ParentID == nil {
+			break
+		}
+		entry = manager.GetEntry(*entry.ParentID)
 	}
-	lines := bytes.Split(data, []byte("\n"))
-	links := make([]link, len(lines))
-	written := map[string][]int{}
-	leaf := -1
-	for i, line := range lines {
-		if json.Unmarshal(line, &links[i]) != nil || links[i].UUID == "" || links[i].Sidechain {
+	return entries
+}
+
+// sessionImages maps the hash of each image the messages among entries hold
+// to its base64 data.
+func sessionImages(entries []session.SessionEntry) map[string]string {
+	images := map[string]string{}
+	for i := range entries {
+		if entries[i].Type != "message" {
 			continue
 		}
-		written[links[i].UUID] = append(written[links[i].UUID], i)
-		if keptRecord(links[i].Type) {
+		message, err := entries[i].DecodedMessage()
+		if err != nil {
+			continue
+		}
+		var blocks []any
+		switch message := message.(type) {
+		case *ai.UserMessage:
+			for _, block := range message.Content.Blocks {
+				blocks = append(blocks, block)
+			}
+		case *ai.ToolResultMessage:
+			for _, block := range message.Content {
+				blocks = append(blocks, block)
+			}
+		}
+		for _, block := range blocks {
+			if image, ok := block.(*ai.ImageContent); ok && len(image.Data) >= 1024 {
+				images[imageHash(image.Data)] = image.Data
+			}
+		}
+	}
+	return images
+}
+
+func imageHash(data string) string {
+	sum := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(sum[:])
+}
+
+// eachImage visits each base64 image block of a decoded Claude message, with
+// its source, nested in tool results too.
+func eachImage(value any, visit func(block, source map[string]any)) {
+	switch value := value.(type) {
+	case map[string]any:
+		if source, ok := value["source"].(map[string]any); ok && value["type"] == "image" && source["type"] == "base64" {
+			visit(value, source)
+			return
+		}
+		for _, item := range value {
+			eachImage(item, visit)
+		}
+	case []any:
+		for _, item := range value {
+			eachImage(item, visit)
+		}
+	}
+}
+
+// branchOf is the conversation a Claude Code session file holds, as chainOf
+// reads it from the file's data: the chain's lines, undecoded.
+func branchOf(data []byte) []json.RawMessage {
+	lines := bytes.Split(data, []byte("\n"))
+	read := make([]links, len(lines))
+	for i, line := range lines {
+		read[i] = readLinks(line)
+	}
+	var chain []json.RawMessage
+	for _, i := range chainOf(read) {
+		chain = append(chain, lines[i])
+	}
+	return chain
+}
+
+// chainOf is the conversation among a session file's records, by their index:
+// the chain back from its latest record, through compactions to what they
+// summarize. Branches left by a rewind stay in the file but are not the
+// conversation. Each parent is the one written before its child (the CLI
+// writes some UUIDs again after a compaction).
+func chainOf(records []links) []int {
+	written := map[string][]int{}
+	leaf := -1
+	for i, l := range records {
+		if l.UUID == "" || l.Sidechain {
+			continue
+		}
+		written[l.UUID] = append(written[l.UUID], i)
+		if keptRecord(l.Type) {
 			leaf = i
 		}
 	}
-	var chain []json.RawMessage
+	var chain []int
 	for i := leaf; i >= 0; {
-		if keptRecord(links[i].Type) {
-			chain = append(chain, lines[i])
+		if keptRecord(records[i].Type) {
+			chain = append(chain, i)
 		}
-		parent, next := cmp.Or(links[i].Parent, links[i].Logical), -1
+		parent, next := cmp.Or(records[i].Parent, records[i].Logical), -1
 		for _, j := range written[parent] {
 			if j < i {
 				next = j
@@ -554,8 +729,8 @@ func branchOf(data []byte) []json.RawMessage {
 		}
 		// A compaction whose summarized record the file lacks goes on from the
 		// conversation's last record before it: compaction ends the branch it summarizes.
-		for j := i - 1; next < 0 && links[i].Parent == "" && links[i].Logical != "" && j >= 0; j-- {
-			if links[j].UUID != "" && keptRecord(links[j].Type) {
+		for j := i - 1; next < 0 && records[i].Parent == "" && records[i].Logical != "" && j >= 0; j-- {
+			if records[j].UUID != "" && keptRecord(records[j].Type) {
 				next = j
 			}
 		}
@@ -746,25 +921,39 @@ func catchUp(manager *session.SessionManager, env []string) (added bool, err err
 	if info, err := os.Stat(paths[0]); err != nil || info.Size() == syncedSize(manager) {
 		return false, err
 	}
-	data, err := os.ReadFile(paths[0])
+	// The file is read a line at a time for its links; only the records it gained
+	// are read whole.
+	var read []links
+	var spans [][2]int64
+	parents := map[string]string{}
+	size, err := eachLine(paths[0], func(line []byte, offset int64) {
+		l := readLinks(line)
+		read, spans = append(read, l), append(spans, [2]int64{offset, int64(len(line))})
+		if l.UUID != "" {
+			parents[l.UUID] = l.Parent
+		}
+	})
 	if err != nil {
 		return false, err
 	}
 	defer func() {
 		if err == nil {
-			err = markSynced(manager, int64(len(data)))
+			err = markSynced(manager, size)
 		}
 	}()
-	missing, at, err := planTranscript(rebuild(manager, 0), parentsIn(data), id)
+	missing, at, err := planTranscript(rebuild(manager, 0), parents, id)
 	if err != nil || len(missing) > 0 || at == "" {
 		return false, err
 	}
-	chain := branchOf(data)
-	for i, line := range chain {
-		if i == len(chain)-1 || !bytes.Contains(line, []byte(`"uuid":"`+at+`"`)) {
+	chain := chainOf(read)
+	for i, index := range chain {
+		if i == len(chain)-1 || read[index].UUID != at {
 			continue
 		}
-		records := chain[i+1:]
+		records, err := readSpans(paths[0], spans, chain[i+1:])
+		if err != nil {
+			return false, err
+		}
 		model := "default"
 		if current := manager.BuildSessionContext().Model; current != nil && current.Provider == Name {
 			model = current.ModelID
@@ -777,6 +966,24 @@ func catchUp(manager *session.SessionManager, env []string) (added bool, err err
 		return err == nil, err
 	}
 	return false, nil
+}
+
+// readSpans reads the lines at indexes of the file at path, by their spans.
+func readSpans(path string, spans [][2]int64, indexes []int) ([]json.RawMessage, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	lines := make([]json.RawMessage, 0, len(indexes))
+	for _, index := range indexes {
+		line := make([]byte, spans[index][1])
+		if _, err := file.ReadAt(line, spans[index][0]); err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
 }
 
 // ImportClaudeCode opens a Claude Code session in a new Orb conversation: its

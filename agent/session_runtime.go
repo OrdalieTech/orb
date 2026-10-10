@@ -908,6 +908,8 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 		runtime.emittingSettled = false
 		runtime.mu.Unlock()
 		runtime.endRun()
+		// A turn's request holds the whole context once more; it is garbage now.
+		ReleaseMemory()
 		if err == nil && flushErr != nil {
 			err = flushErr
 		}

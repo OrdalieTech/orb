@@ -86,6 +86,8 @@ type Driver struct {
 	// ponytail: approvals "for this session" live as long as this Orb runtime,
 	// like Orb's own session approvals.
 	approved []json.RawMessage
+	// known is what Orb last read or wrote of the session file, under mu.
+	known fileLinks
 }
 
 func New(options Options) (*Driver, error) {
@@ -283,7 +285,7 @@ func (d *Driver) share() error {
 	if _, err := os.Stat(filepath.Join(projects, id+".jsonl")); err != nil {
 		return nil //nolint:nilerr // A conversation Claude never answered has no session to share with.
 	}
-	_, size, err := syncTranscript(rebuild(d.options.Manager, 0), id, projects)
+	_, size, err := syncTranscript(rebuild(d.options.Manager, 0), id, projects, &d.known)
 	if err != nil {
 		return err
 	}
@@ -351,7 +353,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 		projects := projectDir(configDir, d.options.Manager.GetCWD())
 		id := nativeSessionID(d.options.Manager.GetSessionID())
 		records := rebuild(d.options.Manager, len(prompts))
-		at, size, err := syncTranscript(records, id, projects)
+		at, size, err := syncTranscript(records, id, projects, &d.known)
 		if err != nil {
 			return nil, false, err
 		}

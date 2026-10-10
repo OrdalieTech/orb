@@ -131,8 +131,9 @@ func TestImportShowsClaudeTurnsAsOrbDoes(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	png := strings.Repeat("iVBO", 512)
 	lines := []string{
-		`{"type":"user","uuid":"u1","parentUuid":null,"cwd":"/work","timestamp":"2026-10-01T10:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"text","text":"look [Image #1]"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBO"}}]}}`,
+		`{"type":"user","uuid":"u1","parentUuid":null,"cwd":"/work","timestamp":"2026-10-01T10:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":[{"type":"text","text":"look [Image #1]"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + png + `"}}]}}`,
 		`{"type":"user","uuid":"m0","parentUuid":"u1","isMeta":true,"message":{"role":"user","content":"<system-reminder>hidden</system-reminder>"}}`,
 		`{"type":"assistant","uuid":"a1","parentUuid":"m0","timestamp":"2026-10-01T10:00:01.000Z","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"thinking","thinking":"","signature":"sig-empty"}],"usage":{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}}`,
 		`{"type":"assistant","uuid":"a2","parentUuid":"a1","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"thinking","thinking":"Read it first.","signature":"sig-text"}],"usage":{"input_tokens":10,"output_tokens":20}}}`,
@@ -175,7 +176,7 @@ func TestImportShowsClaudeTurnsAsOrbDoes(t *testing.T) {
 		got = append(got, string(raw))
 	}
 	want := []string{
-		`{"role":"user","content":[{"type":"text","text":"look [Image #1]"},{"type":"image","data":"iVBO","mimeType":"image/png"}],"timestamp":1790848800000}`,
+		`{"role":"user","content":[{"type":"text","text":"look [Image #1]"},{"type":"image","data":"` + png + `","mimeType":"image/png"}],"timestamp":1790848800000}`,
 		`{"role":"assistant","content":[{"type":"thinking","thinking":"","thinkingSignature":"sig-empty"},{"type":"thinking","thinking":"Read it first.","thinkingSignature":"sig-text"},{"type":"thinking","thinking":"[Reasoning redacted]","thinkingSignature":"opaque","redacted":true},{"type":"toolCall","id":"t1","name":"Read","arguments":{"file_path":"a.go"}}],"api":"claude-sessions","provider":"claude-sessions","model":"default","usage":{"input":10,"output":40,"cacheRead":100,"cacheWrite":5,"totalTokens":155,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1790848801000,"responseId":"m1","responseModel":"claude-opus-5-5"}`,
 		`{"role":"toolResult","toolCallId":"t1","toolName":"Read","content":[{"type":"text","text":"package a"}],"isError":false,"timestamp":1790848802000}`,
 		`notice Claude compacted context from 9000 tokens to 1200`,
@@ -191,6 +192,21 @@ func TestImportShowsClaudeTurnsAsOrbDoes(t *testing.T) {
 	// Claude resumes from its own records, signatures and all.
 	if records := rebuild(manager, 0); len(records) != len(lines) || !strings.Contains(string(records[2].raw), `"sig-empty"`) {
 		t.Fatalf("resume records = %d", len(records))
+	}
+	// Orb keeps the screenshot once, in its message: Claude's record refers to it,
+	// and a session file written for another account gets it back whole.
+	for _, entry := range manager.GetEntries() {
+		if entry.CustomType == transcriptEntry && strings.Contains(string(entry.Data), png) {
+			t.Fatal("kept the image twice")
+		}
+	}
+	elsewhere := t.TempDir()
+	if _, _, err := syncTranscript(rebuild(manager, 0), "0b7a4a1e-1111-4222-8333-444455556666", elsewhere, nil); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(filepath.Join(elsewhere, "0b7a4a1e-1111-4222-8333-444455556666.jsonl"))
+	if err != nil || !strings.Contains(string(written), `"data":"`+png+`"`) || strings.Contains(string(written), imageRef) {
+		t.Fatalf("rewritten session lost the image: %v", err)
 	}
 }
 
@@ -306,17 +322,29 @@ func TestSyncTranscriptAppendsWhatTheSessionLacks(t *testing.T) {
 		data, _ := os.ReadFile(filepath.Join(dir, "s.jsonl"))
 		return strings.Split(strings.TrimSpace(string(data)), "\n")
 	}
-	at, size, err := syncTranscript([]*record{line("r1", ""), line("r2", "r1")}, "s", dir)
+	// Each sync reuses what the last one read and wrote of the file.
+	var known fileLinks
+	at, size, err := syncTranscript([]*record{line("r1", ""), line("r2", "r1")}, "s", dir, &known)
 	if err != nil || at != "r2" || len(lines()) != 3 || lines()[2] != `{"leafUuid":"r2","sessionId":"s","type":"last-prompt"}` {
 		t.Fatalf("first sync: %q %v %v", at, err, lines())
 	}
-	if again, same, err := syncTranscript([]*record{line("r1", ""), line("r2", "r1")}, "s", dir); err != nil || again != "r2" || same != size || len(lines()) != 3 {
+	if again, same, err := syncTranscript([]*record{line("r1", ""), line("r2", "r1")}, "s", dir, &known); err != nil || again != "r2" || same != size || len(lines()) != 3 {
 		t.Fatalf("second sync appended: %q %d %v", again, same, lines())
 	}
-	at, _, err = syncTranscript([]*record{line("sum", ""), line("r2", "sum"), line("r3", "r2")}, "s", dir)
+	at, _, err = syncTranscript([]*record{line("sum", ""), line("r2", "sum"), line("r3", "r2")}, "s", dir, &known)
 	copied := uuidFor("r2 sum")
 	if err != nil || len(lines()) != 7 || !strings.Contains(lines()[4], `"uuid":"`+copied+`"`) || !strings.Contains(lines()[5], `"parentUuid":"`+copied+`"`) || at != "r3" {
 		t.Fatalf("compacted sync: %q %v %v", at, err, lines())
+	}
+	// A record Claude Code wrote meanwhile is read before the next sync.
+	file, err := os.OpenFile(filepath.Join(dir, "s.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.WriteString(`{"type":"user","uuid":"x","parentUuid":"r3"}` + "\n")
+	_ = file.Close()
+	if at, _, err = syncTranscript([]*record{line("sum", ""), line("r2", "sum"), line("r3", "r2"), line("x", "r3")}, "s", dir, &known); err != nil || len(lines()) != 8 || at != "x" {
+		t.Fatalf("sync after Claude Code wrote: %q %v %v", at, err, lines())
 	}
 }
 

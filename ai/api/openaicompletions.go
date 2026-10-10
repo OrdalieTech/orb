@@ -293,19 +293,32 @@ func openAICompletionsWireValue(value any, compat resolvedOpenAICompletionsCompa
 func (payload openAICompletionsWirePayload) MarshalJSON() ([]byte, error) {
 	// Sized for the encoded messages and tools, so the buffer is not regrown
 	// and copied as the conversation lengthens.
-	tools, _ := payload.value["tools"].(completionsWireJSON)
-	size := 1024 + len(tools)
-	messages, _ := payload.value["messages"].([]any)
-	for _, message := range messages {
-		switch message := message.(type) {
-		case completionsWireJSON:
-			size += len(message) + 1
-		case map[string]any:
-			content, _ := message["content"].(string)
-			size += len(content) + 64
+	size := openAICompletionsWireSize(payload.value)
+	return appendOpenAICompletionsObject(make([]byte, 0, size+size/16+1024), payload.value, openAICompletionsObjectKeys(payload.value, true))
+}
+
+// openAICompletionsWireSize is about value's encoded size, from its strings and
+// raw JSON; escapes make it longer by a little.
+func openAICompletionsWireSize(value any) int {
+	switch value := value.(type) {
+	case string:
+		return len(value) + 2
+	case completionsWireJSON:
+		return len(value)
+	case map[string]any:
+		size := 2
+		for key, item := range value {
+			size += len(key) + 4 + openAICompletionsWireSize(item)
 		}
+		return size
+	case []any:
+		size := 2
+		for _, item := range value {
+			size += openAICompletionsWireSize(item) + 1
+		}
+		return size
 	}
-	return appendOpenAICompletionsObject(make([]byte, 0, size), payload.value, openAICompletionsObjectKeys(payload.value, true))
+	return 16
 }
 
 func (object openAICompletionsWireObject) MarshalJSON() ([]byte, error) {

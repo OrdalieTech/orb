@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -94,6 +95,12 @@ func scrubDisabledMallocStackLogging() {
 }
 
 func main() {
+	// Collect at half the live heap's growth rather than all of it: a session's
+	// heap is mostly its own bytes, which a collection does not scan, and several
+	// Orbs run side by side.
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "__sandbox" {
 		os.Exit(runSandboxChild())
 	}
