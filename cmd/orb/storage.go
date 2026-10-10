@@ -197,6 +197,9 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 		return reportCLIError(streams.Stderr, err)
 	}
 	defer func() { _ = state.Close() }()
+	// A deployed agent's image keeps its rendered settings.json and models.json
+	// the configuration of record for every orb, as its orb chat does.
+	state.Files = os.Getenv("ORB_CONFIG_FILES") != ""
 	state.PruneEmpty(ctx)
 	if len(argv) == 0 || argv[0] != "storage" {
 		return runCLI(context.WithValue(ctx, nativeStateKey{}, state), argv, streams)

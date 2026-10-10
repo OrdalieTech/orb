@@ -83,7 +83,8 @@ buzz-acp for Buzz as a separate user (see `platforms/agent/README.md`). The imag
 the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13) and a shell, git and curl for
 the agent's tools; `browser` variants add agent-browser with Lightpanda or Chromium. The shell's
 `buzz` is Orb, which has the agent run the real CLI with the Buzz key, so the agent's tools reach
-none of its credentials. The volume `/agent` holds the agent file, config, state and workspace;
+none of its credentials. `orb chat` never trusts the project it works in, where those tools write,
+so the agent's settings come from the agent file alone. The volume `/agent` holds the agent file, config, state and workspace;
 secrets arrive as environment only. Scheduled turns come from a host timer through the agent's
 ACP socket. Evidence so far: the Go suite drives `orb --mode acp`, a Telegram conversation sharing
 memory with an ACP session, and the harness's rendering; the images ran against a local Buzz relay

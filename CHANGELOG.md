@@ -6,7 +6,7 @@ shown by `/changelog`.
 ## [Unreleased]
 
 - A message an agent sends with the `agents` tool opens with a line naming the sender, its conversation id, title and machine, so the recipient knows another Orb wrote and can answer it with `send`; it used to arrive as if you had typed it. `list` names this machine as its peers see it instead of "this machine", which a recipient read as its own (once the machine's Bridge runs this version: a Bridge now tells its owner its name).
-- Team agents (`orb-agent`): a plugin in the agent file may be its settings instead of `true`, as in `settings.json` (`subagents: {models: [openai-codex/gpt-6-luna]}`), checked as `orb plugins set` checks them; and an edited agent file reaches the agent at its next start. Orb reads its settings and models from its store once it has started on a volume, so the `settings.json` and `models.json` that `orb-agent` rewrote at each start were ignored after the first, and `orb plugins list` showed the store's copy; `orb-agent` now imports them there at each start.
+- Team agents: a plugin in the agent file may be its settings instead of `true`, as in `settings.json` (`subagents: {models: [openai-codex/gpt-6-luna]}`), checked as `orb plugins set` checks them. `orb chat` never trusts the project it works in, even one trusted with `/trust`: the agent's tools write there, and a trusted project's extensions would run in the process that holds what is hidden from them; settings put in an agent's `workspace/.orb/settings.json` belong in its agent file now. In the `orb-agent` image, `orb plugins list` and every other `orb` read the settings the agent runs rather than the copy Orb's store imported on the volume's first start.
 
 ## [0.19.6] - 2026-10-10
 

@@ -372,6 +372,53 @@ func TestTeamAgentShellSeesNoSecret(t *testing.T) {
 	}
 }
 
+// A team agent never trusts the project it works in, even one its operator
+// trusted: its tools write there, so the project's settings stay out.
+func TestTeamAgentIgnoresTheProjectItWorksIn(t *testing.T) {
+	root := t.TempDir()
+	project, agentDir := filepath.Join(root, "workspace"), filepath.Join(root, "agent")
+	if err := os.MkdirAll(filepath.Join(project, ".orb"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".orb", "settings.json"), []byte(`{"plugins":{"websearch":true}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	trusted := true
+	if err := config.NewProjectTrustStore(agentDir).Set(project, &trusted); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(project)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv(toolenv.Allow, "")
+	var tools []string
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		for _, tool := range *request.Tools {
+			tools = append(tools, tool.Name)
+		}
+		return faux.AssistantMessage("Done."), nil
+	})})
+	agents := teamAgent(context.Background(), scriptedRuntime(provider), cliStreams{Stderr: io.Discard})
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
+	go func() {
+		_ = agents.serve(context.Background(), stdinReader, stdoutWriter)
+		_ = stdoutWriter.Close()
+		client.done <- 0
+	}()
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	created, _ := client.call("session/new", map[string]any{"cwd": project, "mcpServers": []any{}})
+	client.call("session/prompt", map[string]any{
+		"sessionId": created["result"].(map[string]any)["sessionId"], "prompt": []any{map[string]any{"type": "text", "text": "Hello."}},
+	})
+	client.close()
+	if len(tools) == 0 || slices.Contains(tools, "web_search") {
+		t.Fatalf("tools = %v; the project's websearch must stay off", tools)
+	}
+}
+
 // One agent, two live conversations: what one saves, the other knows from
 // its next turn, without its prompt changing (so a provider's cache holds) and
 // without telling the saver what it already did.

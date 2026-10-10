@@ -97,20 +97,18 @@ func load(path string, image layout) (plan, error) {
 	if err != nil {
 		return plan{}, err
 	}
-	// Dropped providers render none, so the store forgets them too (run).
-	providers := file.Providers
-	if providers == nil {
-		providers = map[string]any{}
-	}
 	files := map[string][]byte{
 		image.settings(): settingsFile(file, image, browser != nil),
 		image.persona():  nil,
 		image.mcp():      mcpServers,
-		image.models():   jsonFile(map[string]any{"providers": providers}),
+		image.models():   nil,
 		image.browser():  browser,
 	}
 	if file.Persona != "" {
 		files[image.persona()] = []byte(file.Persona)
+	}
+	if file.Providers != nil {
+		files[image.models()] = jsonFile(map[string]any{"providers": file.Providers})
 	}
 	return plan{files: files, platforms: names, env: env}, nil
 }

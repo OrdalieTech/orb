@@ -61,10 +61,13 @@ COPY --from=harness /orb-agent /usr/local/bin/
 # unreadable to the agent's other processes.
 COPY --from=fetch --chmod=0111 /deb/usr/bin/buzz /usr/local/libexec/buzz
 RUN ln -s orb /usr/local/bin/buzz
+# ORB_CONFIG_FILES: every orb here, `docker exec … orb plugins list` included,
+# reads the settings.json and models.json orb-agent renders, as the agent does.
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     HOME=/agent \
     ORB_AGENT_DIR=/agent/config \
     ORB_STATE_HOME=/agent/state \
+    ORB_CONFIG_FILES=1 \
     ORB_BUZZ_CLI=/usr/local/libexec/buzz
 WORKDIR /agent/workspace
 VOLUME /agent

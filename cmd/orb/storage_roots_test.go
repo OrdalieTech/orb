@@ -167,3 +167,40 @@ func TestNativeRootValidation(t *testing.T) {
 		t.Fatalf("consumed runtime args: %v %v", rest, err)
 	}
 }
+
+// A deployed agent's image (ORB_CONFIG_FILES) has its CLI read the settings its
+// agent runs, not the copy the store imported on the volume's first start.
+func TestDeployedAgentCLIReadsTheAgentsSettings(t *testing.T) {
+	root := t.TempDir()
+	agentDir, stateDir := filepath.Join(root, "config"), filepath.Join(root, "state")
+	if err := os.MkdirAll(agentDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", root)
+	t.Setenv("ORB_AGENT_DIR", agentDir)
+	t.Setenv("ORB_STATE_HOME", stateDir)
+	t.Setenv("ORB_CONFIG_FILES", "")
+	websearch := func(settings string) string {
+		if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(settings), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out, errs bytes.Buffer
+		if code := runNativeCLI(t.Context(), []string{"plugins", "list"}, cliStreams{Stdout: &out, Stderr: &errs}); code != 0 {
+			t.Fatalf("code=%d: %s", code, errs.String())
+		}
+		for _, line := range bytes.Split(out.Bytes(), []byte("\n")) {
+			if fields := bytes.Split(line, []byte("\t")); string(fields[0]) == "websearch" {
+				return string(fields[1])
+			}
+		}
+		return ""
+	}
+	websearch(`{"plugins":{"websearch":false}}`) // the first start imports this
+	if got := websearch(`{"plugins":{"websearch":true}}`); got != "off" {
+		t.Fatalf("outside an agent's image the store decides: websearch %q", got)
+	}
+	t.Setenv("ORB_CONFIG_FILES", "1")
+	if got := websearch(`{"plugins":{"websearch":true}}`); got != "on" {
+		t.Fatalf("websearch %q, want on as the agent runs it", got)
+	}
+}

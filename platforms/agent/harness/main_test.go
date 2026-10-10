@@ -122,20 +122,17 @@ func TestAgentFileMistakesAreRefused(t *testing.T) {
 }
 
 // The agent file is the configuration of record: a section it drops removes
-// the file that section made, and dropped providers leave none in Orb's store.
+// the file that section made.
 func TestDroppedSectionsRemoveTheirFiles(t *testing.T) {
 	image := testLayout(t)
 	plan, err := load(agentFileAt(t, "model: a/b\nplatforms: {telegram: {}}\n"), image)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{image.persona(), image.mcp(), image.browser()} {
+	for _, path := range []string{image.persona(), image.mcp(), image.models(), image.browser()} {
 		if data, managed := plan.files[path]; !managed || data != nil {
 			t.Errorf("%s: managed %t, data %q; want removed", path, managed, data)
 		}
-	}
-	if models := string(plan.files[image.models()]); models != "{\n  \"providers\": {}\n}\n" {
-		t.Errorf("models.json = %q", models)
 	}
 }
 

@@ -64,8 +64,9 @@ platforms:
 
 On every start `orb-agent` validates the file, refusing unknown keys and settings, and writes
 `config/settings.json`, `config/AGENTS.md`, `config/mcp.json`, `config/models.json` and the
-browser's settings from it, then imports the settings and models into Orb's store under `state/`,
-where Orb reads them once it has started on the volume; so edit the file, not those, and restart. Each platform's section is
+browser's settings from it, so edit the file, not those, and restart. The agent never trusts its
+workspace's `.orb/`, which its tools can write, and every `orb` in the container reads those files,
+so `docker exec … orb plugins list` shows what the agent runs. Each platform's section is
 what its package declares (`orb chat --help` lists the platforms); buzz-acp settings it does not
 take stay available as `BUZZ_ACP_*` environment. Check a file before deploying it:
 

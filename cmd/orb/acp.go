@@ -147,14 +147,16 @@ const teamTools = "PATH,HOME,USER,SHELL,LANG,LC_ALL,TERM,TZ,TMPDIR"
 
 // teamAgent prepares this process to run an agent on chat platforms: its
 // tools get the teamTools environment, its own environment is hidden from them,
-// and its settings.json and models.json stay the configuration of record.
+// its settings.json and models.json stay the configuration of record, and the
+// project it works in is never trusted: its tools write there, and a trusted
+// project's code would run in this process, with what it hides.
 func teamAgent(ctx context.Context, dependencies cliDependencies, streams cliStreams) acpHost {
 	if os.Getenv(toolenv.Allow) == "" {
 		_ = os.Setenv(toolenv.Allow, teamTools)
 	}
 	teamenv.Hide()
 	args := ParseArgs(nil)
-	args.native, args.useUnknownModel = stateFromContext(ctx), true
+	args.native, args.useUnknownModel, args.ProjectTrusted = stateFromContext(ctx), true, boolPointer(false)
 	if args.native != nil {
 		args.native.Files = true
 	}
