@@ -838,11 +838,14 @@ func (runner *Runner) Emit(ctx context.Context, event Event) any {
 		return nil
 	}
 	// A disposed or replaced runtime's late events (a turn still finishing as the
-	// process exits) reach no extension: every call on their ctx would fail as stale.
-	runner.mu.RLock()
-	stale := runner.staleMessage != ""
-	runner.mu.RUnlock()
-	if stale {
+	// process exits, a session_start the user quit during) reach no further
+	// extension: every call on their ctx would fail as stale.
+	stale := func() bool {
+		runner.mu.RLock()
+		defer runner.mu.RUnlock()
+		return runner.staleMessage != ""
+	}
+	if stale() {
 		return nil
 	}
 	if event.Type() != EventProjectTrust {
@@ -852,8 +855,14 @@ func (runner *Runner) Emit(ctx context.Context, event Event) any {
 	var current any
 	for _, extension := range runner.extensions {
 		for _, handler := range handlersFor(extension, event.Type()) {
+			if stale() {
+				return current
+			}
 			result, err := callHandler(ctx, handler, event, extensionContext)
 			if err != nil {
+				if stale() {
+					return current
+				}
 				runner.emitError(makeExtensionError(extension.Path, event.Type(), err))
 				continue
 			}

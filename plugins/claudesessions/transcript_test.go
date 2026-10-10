@@ -63,7 +63,7 @@ func TestImportClaudeCodeSession(t *testing.T) {
 		`{"type":"user","uuid":"u1","parentUuid":null,"cwd":"/work","message":{"role":"user","content":"read a.go"}}`,
 		`{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"m1","model":"claude","content":[{"type":"text","text":"Reading."}]}}`,
 		`{"type":"assistant","uuid":"a2","parentUuid":"a1","message":{"id":"m1","model":"claude","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.go"}}]}}`,
-		`{"type":"user","uuid":"u2","parentUuid":"a2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"package a"}]}}`,
+		`{"type":"user","uuid":"u2","parentUuid":"a2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"package a"}]},"toolUseResult":{"file":{"content":"display copy"}}}`,
 		`{"type":"assistant","uuid":"a3","parentUuid":"u2","message":{"id":"m2","model":"claude","content":[{"type":"text","text":"It is package a."}]}}`,
 		// A rewind left this branch behind; the conversation goes on from a3 below.
 		`{"type":"user","uuid":"u9","parentUuid":"a3","message":{"role":"user","content":"abandoned question"}}`,
@@ -72,7 +72,8 @@ func TestImportClaudeCodeSession(t *testing.T) {
 		`{"type":"assistant","uuid":"a4","parentUuid":"u4","message":{"id":"m4","model":"claude","content":[{"type":"text","text":"No b.go."}]}}`,
 		`{"type":"file-history-snapshot","messageId":"x"}`,
 	}
-	if err := os.WriteFile(filepath.Join(project, "0b7a4a1e-1111-4222-8333-444455556666.jsonl"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+	file := []byte(strings.Join(lines, "\n"))
+	if err := os.WriteFile(filepath.Join(project, "0b7a4a1e-1111-4222-8333-444455556666.jsonl"), file, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var cwd string
@@ -98,8 +99,18 @@ func TestImportClaudeCodeSession(t *testing.T) {
 	if first == nil || len(first.Content) != 2 || first.StopReason != ai.StopReasonToolUse {
 		t.Fatalf("one API message split across records was not joined: %#v", messages[1])
 	}
-	if result, _ := messages[2].(*ai.ToolResultMessage); result == nil || result.ToolName != "Read" {
+	if result, _ := messages[2].(*ai.ToolResultMessage); result == nil || result.ToolName != "Read" || result.Content[0].(*ai.TextContent).Text != "package a" {
 		t.Fatalf("tool result = %#v", messages[2])
+	}
+	// Orb keeps Claude's records without Claude Code's display copy of tool
+	// output, and they still stand for the records the session file holds.
+	for _, entry := range manager.GetEntries() {
+		if strings.Contains(string(entry.Data), "display copy") {
+			t.Fatalf("kept Claude Code's display copy: %s", entry.Data)
+		}
+	}
+	if missing, at, err := planTranscript(rebuild(manager, 0), file, "0b7a4a1e-1111-4222-8333-444455556666"); err != nil || len(missing) > 0 || at != "a4" {
+		t.Fatalf("resuming the imported session rewrites it: %q at %q, %v", missing, at, err)
 	}
 	if raw, _ := json.Marshal(messages); strings.Contains(string(raw), "abandoned") {
 		t.Fatalf("imported a branch the conversation left: %s", raw)

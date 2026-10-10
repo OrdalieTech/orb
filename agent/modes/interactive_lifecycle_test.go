@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,6 +121,94 @@ func TestRunInteractiveModeAttachesUIBeforeSessionStartAndRendersUnderMutation(t
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("interactive mode did not stop")
+	}
+}
+
+// Quitting while a session opens (a plugin's session_start still running, as
+// on a very large conversation) ends Orb there: the plugins left to start do
+// not run against the closed session, nothing reports their stale ctx, and the
+// terminal is asked nothing more, so no reply lands in the shell.
+func TestQuittingWhileASessionOpensEndsThere(t *testing.T) {
+	cwd := t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := func(ctx extensions.Context) (stale bool) {
+		defer func() { stale = recover() != nil }()
+		ctx.CWD()
+		return false
+	}
+	registry := extensions.NewRegistry(cwd)
+	starting := make(chan struct{})
+	var laterStarted atomic.Bool
+	for _, handler := range []extensions.Handler{
+		func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+			close(starting)
+			for !stale(ctx) {
+				time.Sleep(time.Millisecond)
+			}
+			return ctx.CWD(), nil
+		},
+		func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+			laterStarted.Store(true)
+			return ctx.CWD(), nil
+		},
+	} {
+		if err := registry.Register(fmt.Sprintf("<start-%p>", handler), func(api extensions.API) error {
+			api.On(extensions.EventSessionStart, handler)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var reported []string
+	var reportedMu sync.Mutex
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+		Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferExtensionStart: true,
+		ExtensionErrorHandler: func(failure extensions.ExtensionError) {
+			reportedMu.Lock()
+			reported = append(reported, failure.ExtensionPath+": "+failure.Error)
+			reportedMu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal := newLifecycleTerminal(72, 18)
+	done := make(chan int, 1)
+	go func() {
+		done <- RunInteractiveMode(context.Background(), runtime, InteractiveModeOptions{Terminal: terminal})
+	}()
+	select {
+	case <-starting:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session_start did not run")
+	}
+	terminal.mu.Lock()
+	send := terminal.onInput
+	terminal.mu.Unlock()
+	send("\x03")
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit code = %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Orb kept opening the session after the quit")
+	}
+	reportedMu.Lock()
+	defer reportedMu.Unlock()
+	if laterStarted.Load() || len(reported) > 0 {
+		t.Fatalf("the closed session went on starting: later plugin ran %t, reported %q", laterStarted.Load(), reported)
+	}
+	if output := terminal.output(); strings.Contains(output, "\x1b[?996n") || strings.Contains(output, "\x1b]11;?") {
+		t.Fatalf("the terminal was asked for its colours after the quit: %q", output)
 	}
 }
 

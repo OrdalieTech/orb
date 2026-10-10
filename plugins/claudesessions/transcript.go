@@ -405,7 +405,7 @@ func mirror(manager *session.SessionManager, projects, sessionID string, mirrore
 		records = append(records, line)
 	}
 	if len(records) > 0 {
-		if _, err = manager.AppendCustomEntry(transcriptEntry, records); err != nil {
+		if err = appendRecords(manager, records); err != nil {
 			return err
 		}
 	}
@@ -436,6 +436,25 @@ func markSynced(manager *session.SessionManager, size int64) error {
 // from. Attachments (files, hook output) are links of the same parentUuid chain.
 func keptRecord(kind string) bool {
 	return kind == "user" || kind == "assistant" || kind == "system" || kind == "attachment" || kind == "summary"
+}
+
+// appendRecords keeps records in the Orb journal without their toolUseResult:
+// Claude Code's own copy of a tool's output for its display, which the model
+// never reads and which can be most of a session (whole files, images).
+func appendRecords(manager *session.SessionManager, records []json.RawMessage) error {
+	kept := make([]json.RawMessage, len(records))
+	for i, line := range records {
+		kept[i] = line
+		var fields map[string]json.RawMessage
+		if bytes.Contains(line, []byte(`"toolUseResult"`)) && json.Unmarshal(line, &fields) == nil {
+			delete(fields, "toolUseResult")
+			if line, err := json.Marshal(fields); err == nil {
+				kept[i] = line
+			}
+		}
+	}
+	_, err := manager.AppendCustomEntry(transcriptEntry, kept)
+	return err
 }
 
 // branchOf is the conversation a Claude Code session file holds: the chain
@@ -696,7 +715,7 @@ func catchUp(manager *session.SessionManager, env []string) (added bool, err err
 		if err := appendMessages(manager, messages); err != nil {
 			return false, err
 		}
-		_, err = manager.AppendCustomEntry(transcriptEntry, records)
+		err = appendRecords(manager, records)
 		return err == nil, err
 	}
 	return false, nil
@@ -731,6 +750,5 @@ func ImportClaudeCode(id string, env []string, create func(cwd string) (*session
 	if err := appendMessages(manager, messages); err != nil {
 		return nil, err
 	}
-	_, err = manager.AppendCustomEntry(transcriptEntry, records)
-	return manager, err
+	return manager, appendRecords(manager, records)
 }

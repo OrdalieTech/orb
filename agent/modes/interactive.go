@@ -441,6 +441,10 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	defer mode.detachSession()
 	mode.session.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	mode.session.StartExtensions()
+	// Quitting while a large session opens ends here, not after it is drawn.
+	if mode.shuttingDown() {
+		return 0
+	}
 	if err := mode.extendExtensionThemes(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error loading themes:", err)
 		return 1
@@ -471,6 +475,9 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	}()
 
 	mode.renderInitialMessages()
+	if mode.shuttingDown() {
+		return 0
+	}
 
 	// Show startup diagnostics as one compact band: one truncated line per
 	// warning instead of a full-width wrapped wall.
@@ -496,10 +503,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	for {
 		select {
 		case input := <-mode.inputCh:
-			mode.mu.Lock()
-			shutdown := mode.shutdownRequested
-			mode.mu.Unlock()
-			if shutdown {
+			if mode.shuttingDown() {
 				return 0
 			}
 			if strings.TrimSpace(input.text) == "" && len(input.images) == 0 {
@@ -4739,6 +4743,9 @@ func (mode *InteractiveMode) renderInitialMessages() {
 		turnStart, turnModel = time.Time{}, ""
 	}
 	for _, entry := range entries {
+		if mode.shuttingDown() {
+			return
+		}
 		switch entry.Type {
 		case "message":
 			message, err := ai.UnmarshalMessage(entry.Message)
@@ -5040,6 +5047,12 @@ func (mode *InteractiveMode) checkExtensionShutdownRequested() {
 	if requested {
 		mode.shutdown()
 	}
+}
+
+func (mode *InteractiveMode) shuttingDown() bool {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.shutdownRequested
 }
 
 func (mode *InteractiveMode) shutdown(fromSignal ...bool) {

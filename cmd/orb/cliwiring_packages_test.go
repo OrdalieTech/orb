@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
+	"github.com/OrdalieTech/orb/agent/session"
 )
 
 const packageToolExtension = `export default function (pi) {
@@ -132,6 +134,60 @@ func TestExtensionFlagResolvesNpmSourceInsteadOfLiteralPath(t *testing.T) {
 	}
 	if reg == nil || !slices.Contains(loadedToolNames(t, reg), "parse_duration") {
 		t.Fatalf("`-e npm:` package tool not loaded: diagnostics=%v", diagnostics)
+	}
+}
+
+// A package removed while a session is open is gone after /reload: the session
+// is rebuilt with the packages settings name now, not with the removed files.
+func TestReloadAfterRemovingAPackageRunsWithoutIt(t *testing.T) {
+	requireExtensionHostRuntime(t)
+	env := setupPackageCLI(t)
+	closeExtensionHostOnCleanup(t)
+	t.Setenv("ORB_OFFLINE", "1")
+	writeJSExtension(t, env.packageDir, packageToolExtension)
+	if err := os.WriteFile(filepath.Join(env.packageDir, "package.json"), []byte(`{"name":"fixture","version":"1.0.0","pi":{"extensions":["index.ts"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, stdout, stderr := runPackageCLI(t, []string{"install", env.packageDir}); code != 0 {
+		t.Fatalf("install: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	manager, err := session.InMemory(env.projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, model, key := "openai", "gpt-test", "fixture-key"
+	host, err := newCLISessionRuntimeHost(context.Background(), cliSessionRuntimeHostOptions{
+		Args:    &CLIArgs{Provider: &provider, Model: &model, APIKey: &key, NoSkills: true, NoContextFiles: true},
+		Manager: manager, ExtensionMode: extensions.ModePrint,
+		Dependencies: cliDependencies{createRuntime: createRuntimeInputs},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Dispose(context.Background())
+	loaded := func() bool {
+		for _, tool := range host.Session().ExtensionRunner().AllRegisteredTools() {
+			if tool.Definition.Name == "parse_duration" {
+				return true
+			}
+		}
+		return false
+	}
+	if !loaded() {
+		t.Fatal("the installed package's tool is missing")
+	}
+
+	if code, stdout, stderr := runPackageCLI(t, []string{"remove", env.packageDir}); code != 0 {
+		t.Fatalf("remove: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if err := os.RemoveAll(env.packageDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Session().ExtensionRunner().CreateCommandContext().Reload(context.Background()); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if loaded() {
+		t.Fatal("the removed package's tool survived the reload")
 	}
 }
 

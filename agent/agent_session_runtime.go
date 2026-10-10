@@ -18,7 +18,9 @@ import (
 )
 
 // CreateAgentSessionRuntimeFactory recreates a session after new, resume,
-// fork, and import operations. A nil factory uses [NewAgentSession].
+// fork, and import operations. A nil factory uses [NewAgentSession]. Its
+// options carry fresh instances of the extension registry the runtime was
+// created with, if any; a factory loading its own extensions loads them again.
 type CreateAgentSessionRuntimeFactory func(context.Context, AgentSessionOptions) (*AgentSessionResult, error)
 
 // AgentSessionRuntime owns the active [AgentSession] and replaces it for
@@ -121,7 +123,6 @@ func NewAgentSessionRuntime(
 		result.Session.Dispose()
 		return nil, err
 	}
-	options.ExtensionRegistry = result.ExtensionRegistry
 	runtime := &AgentSessionRuntime{session: result.Session, result: result, options: options, create: create}
 	runtime.bindSessionCommands(result.Session)
 	return runtime, nil
@@ -721,11 +722,13 @@ func (runtime *AgentSessionRuntime) replace(
 	if configure != nil {
 		configure(&nextOptions)
 	}
-	freshRegistry, err := nextOptions.ExtensionRegistry.Fresh(nextOptions.CWD)
-	if err != nil {
-		return nil, err
+	if nextOptions.ExtensionRegistry != nil {
+		freshRegistry, err := nextOptions.ExtensionRegistry.Fresh(nextOptions.CWD)
+		if err != nil {
+			return nil, err
+		}
+		nextOptions.ExtensionRegistry = freshRegistry
 	}
-	nextOptions.ExtensionRegistry = freshRegistry
 	nextOptions.SessionStartEvent = &extensions.SessionStartEvent{
 		Reason: startReason, PreviousSessionFile: optionalRuntimeString(previousFile),
 	}

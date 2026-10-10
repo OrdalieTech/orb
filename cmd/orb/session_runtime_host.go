@@ -124,7 +124,8 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 		}
 		if args.extensionsLoaded && runtimeOptions.ExtensionRegistry != nil {
 			// A replacement gets fresh instances of the extensions preloaded at
-			// startup (upstream re-runs factories per session).
+			// startup (upstream re-runs factories per session); otherwise it
+			// loads the extensions settings name now.
 			args.extensionRegistry, args.extensionWarnings = runtimeOptions.ExtensionRegistry, nil
 		}
 		inputs, err := options.Dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(contextState.Messages))
@@ -190,7 +191,7 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 	}
 
 	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{
-		CWD: options.Manager.GetCWD(), SessionManager: options.Manager,
+		CWD: options.Manager.GetCWD(), SessionManager: options.Manager, ExtensionRegistry: options.Args.extensionRegistry,
 	}, factory)
 	if err != nil {
 		return nil, err
