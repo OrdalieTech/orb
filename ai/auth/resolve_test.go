@@ -22,6 +22,8 @@ type testOAuth struct {
 	refreshes atomic.Int32
 	err       error
 	expiresIn time.Duration
+	started   chan struct{} // closed when a refresh starts, if set
+	hold      chan struct{} // a refresh waits for it, if set
 }
 
 func (*testOAuth) Name() string { return "OAuth" }
@@ -30,6 +32,10 @@ func (*testOAuth) Login(context.Context, AuthInteraction) (*Credential, error) {
 }
 func (oauth *testOAuth) Refresh(_ context.Context, current *Credential) (*Credential, error) {
 	oauth.refreshes.Add(1)
+	if oauth.hold != nil {
+		close(oauth.started)
+		<-oauth.hold
+	}
 	if oauth.err != nil {
 		return nil, oauth.err
 	}
@@ -86,6 +92,31 @@ func TestResolveProviderAuthRefreshesExpiredOAuthOnce(t *testing.T) {
 	if got := flow.refreshes.Load(); got != 1 {
 		t.Fatalf("refresh count = %d, want 1", got)
 	}
+}
+
+// A caller that gives up during a refresh returns at once, but the rotated
+// token is still saved: the provider may already have spent the old one.
+func TestCancelledOAuthRefreshStillSavesTheRotatedToken(t *testing.T) {
+	flow := &testOAuth{started: make(chan struct{}), hold: make(chan struct{})}
+	store := NewMemoryStore(map[string]*Credential{"provider": OAuthCredential("refresh", "expired", 0)})
+	ctx, cancel := context.WithCancel(context.Background())
+	resolved := make(chan error, 1)
+	go func() {
+		_, err := ResolveProviderAuth(ctx, "provider", ProviderAuth{OAuth: flow}, store, testContext{}, nil)
+		resolved <- err
+	}()
+	<-flow.started
+	cancel()
+	if err := <-resolved; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled resolve = %v", err)
+	}
+	close(flow.hold)
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if saved, err := store.Read(context.Background(), "provider"); err == nil && saved.Refresh == "rotated" {
+			return
+		}
+	}
+	t.Fatal("rotated token not saved after the caller gave up")
 }
 
 func TestResolveProviderAuthRefreshesOAuthWithinDefaultValidityWindow(t *testing.T) {

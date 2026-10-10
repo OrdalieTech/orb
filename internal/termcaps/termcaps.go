@@ -68,6 +68,12 @@ func Detect(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
 	if strings.HasPrefix(term, "screen") {
 		return TerminalCapabilities{TrueColor: trueColorHint}
 	}
+	// Herdr forwards OSC 8 hyperlinks but draws no images. It runs inside another
+	// terminal whose variables (GHOSTTY_RESOURCES_DIR, KITTY_WINDOW_ID) leak into
+	// its panes, so it is checked first (upstream b2363841).
+	if termProgram == "herdr" {
+		return TerminalCapabilities{TrueColor: trueColorHint, Hyperlinks: true}
+	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}

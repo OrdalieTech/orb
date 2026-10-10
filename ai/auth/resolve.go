@@ -157,6 +157,10 @@ func ResolveProviderAuth(
 	return resolveAPIKey(ctx, providerID, methods.APIKey, requestContext, nil)
 }
 
+// oauthRefreshTimeout bounds a token refresh and its save, which the caller's
+// cancellation does not stop.
+const oauthRefreshTimeout = 15 * time.Second
+
 func resolveStoredOAuth(
 	ctx context.Context,
 	providerID string,
@@ -174,19 +178,41 @@ func resolveStoredOAuth(
 	}
 	credential := stored
 	if expiresSoon(credential) {
-		post, err := credentials.Modify(ctx, providerID, func(current *Credential) (*Credential, error) {
-			if current == nil || current.Type != CredentialOAuth {
-				return nil, nil
-			}
-			if !expiresSoon(current) {
-				return nil, nil
-			}
-			refreshed, refreshErr := method.Refresh(ctx, current)
-			if refreshErr != nil {
-				return nil, &Error{Code: ErrorOAuth, Message: fmt.Sprintf("OAuth refresh failed for %s", providerID), Cause: refreshErr}
-			}
-			return refreshed, nil
-		})
+		// A provider that rotates refresh tokens (Sign in with ChatGPT) may have
+		// spent the old one once a refresh starts, so the refresh and its save
+		// finish even if the caller gives up, bounded by their own timeout; the
+		// caller returns at once (upstream bde882c7).
+		type outcome struct {
+			post *Credential
+			err  error
+		}
+		done := make(chan outcome, 1)
+		go func() {
+			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), oauthRefreshTimeout)
+			defer cancel()
+			post, err := credentials.Modify(refreshCtx, providerID, func(current *Credential) (*Credential, error) {
+				if current == nil || current.Type != CredentialOAuth {
+					return nil, nil
+				}
+				if !expiresSoon(current) {
+					return nil, nil
+				}
+				refreshed, refreshErr := method.Refresh(refreshCtx, current)
+				if refreshErr != nil {
+					return nil, &Error{Code: ErrorOAuth, Message: fmt.Sprintf("OAuth refresh failed for %s", providerID), Cause: refreshErr}
+				}
+				return refreshed, nil
+			})
+			done <- outcome{post, err}
+		}()
+		var post *Credential
+		var err error
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case result := <-done:
+			post, err = result.post, result.err
+		}
 		if err != nil {
 			var authError *Error
 			if errors.As(err, &authError) {

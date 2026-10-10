@@ -58,6 +58,8 @@ var retryableProviderPatterns = anyOf([]string{
 	`you can retry your request`, `try your request again`, `please retry your request`, `ResourceExhausted`,
 	// Sign in with ChatGPT: usage or user data temporarily unavailable, possibly mid-stream.
 	`subscription_sharing_usage_unavailable`, `subscription_sharing_user_unavailable`,
+	// Busy or full providers (upstream 8b5708db, 3874b3e9).
+	`server_busy`, `servers are currently busy`, `model is at capacity`,
 })
 
 var overflowPatterns = anyOf([]string{

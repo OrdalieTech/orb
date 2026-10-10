@@ -8,6 +8,7 @@ shown by `/changelog`.
 - Agent access (`/bridge` → Advanced) gives an agent an `agents` tool for your other conversations, on this machine and on connected devices: it lists them (machine, folder, title, idle or working), reads one's latest messages and sends one a message, queued while it works. The tool exists only while Bridge is on and another conversation is reachable, so it costs the model nothing otherwise. It replaces the native `bridge_call`, which needed hand-written grants per agent; the switch is now the grant.
 - Subagents can run on another model: `plugins.subagents.models` lists the models (`provider/id`) a parent may give a child, and the subagent tool gains an optional `model` limited to them. Without the list nothing changes, the tool included.
 - Quitting Orb no longer leaves `997;2n11;rgb:…` on the shell's prompt line: Orb asked the terminal for its colours every few seconds until the process ended, after it had handed the terminal back, so an Orb taking a moment to wind down (a Claude host closing) left one reply per poll for the shell to read as typed text.
+- From pi 1.0.1–1.1.0: a provider answering that its servers are busy or the model is at capacity is retried like an overload; Orb in a Herdr pane makes links clickable and stops sending images Herdr cannot draw; and a sign-in token refresh (Sign in with ChatGPT) cut short by an interrupted request still saves the token the provider rotated, where it lost it and the next request failed with `refresh_token_invalidated` until you signed in again.
 
 ## [0.19.5] - 2026-10-10
 
