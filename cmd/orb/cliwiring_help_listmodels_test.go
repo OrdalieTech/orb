@@ -83,14 +83,6 @@ func TestOrbSkillIsTheOneOrbLoadsAndNamesOnlySafeHelp(t *testing.T) {
 		}
 	}
 
-	// Installed for Claude Code as `orb --help` says: a link to the file Orb refreshes.
-	linked := filepath.Join(home, ".claude", "skills", "orb")
-	if err := os.MkdirAll(filepath.Dir(linked), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(root, "agent", "host", "skills", "orb"), linked); err != nil {
-		t.Fatal(err)
-	}
 	frames, _ := run(`{"type":"get_commands"}`+"\n", "--mode", "rpc", "--no-session")
 	path := ""
 	for _, line := range strings.Split(frames, "\n") {
@@ -113,6 +105,15 @@ func TestOrbSkillIsTheOneOrbLoadsAndNamesOnlySafeHelp(t *testing.T) {
 	}
 	if data, err := os.ReadFile(path); err != nil || string(data) != skill {
 		t.Fatalf("Orb's sessions do not list the skill orb skill prints (path %q, %v):\n%s", path, err, frames)
+	}
+	// Installed for Claude Code as `orb --help` says: a link to the directory Orb refreshes,
+	// made once it exists, since Windows makes a link to a missing target a file link.
+	linked := filepath.Join(home, ".claude", "skills", "orb")
+	if err := os.MkdirAll(filepath.Dir(linked), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "agent", "host", "skills", "orb"), linked); err != nil {
+		t.Fatal(err)
 	}
 	loaded := agent.LoadSkills(agent.LoadSkillsOptions{CWD: project, AgentDir: filepath.Join(root, "agent"), SkillPaths: []string{path, linked}})
 	if len(loaded.Diagnostics) != 0 || len(loaded.Skills) != 1 || loaded.Skills[0].Name != "orb" {
