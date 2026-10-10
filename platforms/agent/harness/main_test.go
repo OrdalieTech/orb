@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,7 +45,7 @@ persona: |
   You are the sales team's agent.
 skills: [skills/revops]
 browser: lightpanda
-plugins: {websearch: true}
+plugins: {websearch: true, subagents: {models: [openai-codex/gpt-6-luna]}}
 mcp:
   notion: {command: notion-mcp, args: [--stdio]}
 platforms:
@@ -65,8 +66,9 @@ platforms:
 	if err := json.Unmarshal(plan.files[filepath.Join(image.config, "settings.json")], &settings); err != nil {
 		t.Fatal(err)
 	}
+	plugins := settings["plugins"].(map[string]any)
 	if settings["defaultProvider"] != "openai-codex" || settings["defaultModel"] != "gpt-5.4" || settings["defaultThinkingLevel"] != "medium" ||
-		settings["plugins"].(map[string]any)["memory"] != true || settings["plugins"].(map[string]any)["websearch"] != true {
+		plugins["memory"] != true || plugins["websearch"] != true || fmt.Sprint(plugins["subagents"]) != "map[models:[openai-codex/gpt-6-luna]]" {
 		t.Fatalf("settings = %v", settings)
 	}
 	skills := settings["skills"].([]any)
@@ -110,6 +112,8 @@ func TestAgentFileMistakesAreRefused(t *testing.T) {
 		"this image has no":                "model: a/b\nbrowser: chromium\nplatforms: {telegram: {}}\n",
 		"mcp.broken":                       "model: a/b\nmcp: {broken: {}}\nplatforms: {telegram: {}}\n",
 		`unknown plugin "websearh"`:        "model: a/b\nplugins: {websearh: true}\nplatforms: {telegram: {}}\n",
+		"plugins.websearch: true, false":   "model: a/b\nplugins: {websearch: yes}\nplatforms: {telegram: {}}\n",
+		"entries must be provider/id":      "model: a/b\nplugins: {subagents: {models: [luna]}}\nplatforms: {telegram: {}}\n",
 	} {
 		if _, err := load(agentFileAt(t, content), image); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: error = %v, want %q", content, err, want)
@@ -118,17 +122,20 @@ func TestAgentFileMistakesAreRefused(t *testing.T) {
 }
 
 // The agent file is the configuration of record: a section it drops removes
-// the file that section made.
+// the file that section made, and dropped providers leave none in Orb's store.
 func TestDroppedSectionsRemoveTheirFiles(t *testing.T) {
 	image := testLayout(t)
 	plan, err := load(agentFileAt(t, "model: a/b\nplatforms: {telegram: {}}\n"), image)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{image.persona(), image.mcp(), image.models(), image.browser()} {
+	for _, path := range []string{image.persona(), image.mcp(), image.browser()} {
 		if data, managed := plan.files[path]; !managed || data != nil {
 			t.Errorf("%s: managed %t, data %q; want removed", path, managed, data)
 		}
+	}
+	if models := string(plan.files[image.models()]); models != "{\n  \"providers\": {}\n}\n" {
+		t.Errorf("models.json = %q", models)
 	}
 }
 

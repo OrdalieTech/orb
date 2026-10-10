@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +33,11 @@ func run(args []string, image layout) (int, error) {
 	if err := os.Chown(image.workspace, int(agent.uid), int(agent.gid)); err != nil {
 		return 0, err
 	}
+	// Logins leave config/ before Orb's store may import it.
+	auth, err := authFile(image)
+	if err != nil {
+		return 0, err
+	}
 	rendered := map[string]string{}
 	if file := filepath.Join(image.home, "agent.yaml"); exists(file) {
 		plan, err := load(file, image)
@@ -43,6 +49,15 @@ func run(args []string, image layout) (int, error) {
 				return 0, err
 			}
 		}
+		// Orb reads its settings and models from its store once it has started
+		// on this volume, so each start imports the rendered ones there.
+		env := slices.DeleteFunc(os.Environ(), func(entry string) bool { return !plain.MatchString(entry) })
+		for _, name := range []string{"settings.json", "models.json"} {
+			importer := process{argv: []string{"orb", "storage", "config", "import", name, filepath.Join(image.config, name)}, dir: image.workspace, env: env}
+			if err := importer.command(agent).Run(); err != nil {
+				return 0, fmt.Errorf("importing %s into Orb's store: %w", name, err)
+			}
+		}
 		args, rendered = append(plan.platforms, "--tools"), plan.env
 	}
 	var sidecars []platforms.Platform
@@ -50,10 +65,6 @@ func run(args []string, image layout) (int, error) {
 		if platform, ok := platforms.Lookup(name); ok && platform.Sidecar != nil {
 			sidecars = append(sidecars, platform)
 		}
-	}
-	auth, err := authFile(image)
-	if err != nil {
-		return 0, err
 	}
 	// A socket left by a process that died is not one the agent listens on:
 	// sidecars wait for the agent's own, and a restart is not blocked.

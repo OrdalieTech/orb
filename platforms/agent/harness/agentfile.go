@@ -29,8 +29,8 @@ type agentFile struct {
 	Model     string                    `yaml:"model"`
 	Thinking  string                    `yaml:"thinking"`
 	Persona   string                    `yaml:"persona"`
-	Plugins   map[string]bool           `yaml:"plugins"`
-	Memory    *bool                     `yaml:"memory"` // plugins.memory, as files spelled it before plugins
+	Plugins   map[string]any            `yaml:"plugins"` // true, false or the plugin's settings
+	Memory    *bool                     `yaml:"memory"`  // plugins.memory, as files spelled it before plugins
 	Skills    []string                  `yaml:"skills"`
 	MCP       map[string]map[string]any `yaml:"mcp"`
 	Providers map[string]any            `yaml:"providers"`
@@ -97,18 +97,20 @@ func load(path string, image layout) (plan, error) {
 	if err != nil {
 		return plan{}, err
 	}
+	// Dropped providers render none, so the store forgets them too (run).
+	providers := file.Providers
+	if providers == nil {
+		providers = map[string]any{}
+	}
 	files := map[string][]byte{
 		image.settings(): settingsFile(file, image, browser != nil),
 		image.persona():  nil,
 		image.mcp():      mcpServers,
-		image.models():   nil,
+		image.models():   jsonFile(map[string]any{"providers": providers}),
 		image.browser():  browser,
 	}
 	if file.Persona != "" {
 		files[image.persona()] = []byte(file.Persona)
-	}
-	if file.Providers != nil {
-		files[image.models()] = jsonFile(map[string]any{"providers": file.Providers})
 	}
 	return plan{files: files, platforms: names, env: env}, nil
 }
@@ -133,9 +135,19 @@ func parse(path string) (agentFile, error) {
 	case len(file.Platforms) == 0:
 		return agentFile{}, errors.New("platforms: name at least one")
 	}
-	for name := range file.Plugins {
+	for name, value := range file.Plugins {
 		if !slices.Contains(assembly.Names(), name) {
 			return agentFile{}, fmt.Errorf("plugins: unknown plugin %q (known: %s)", name, strings.Join(assembly.Names(), ", "))
+		}
+		// An object is the plugin's settings, on unless enabled is false, as in settings.json.
+		switch value := value.(type) {
+		case bool:
+		case map[string]any:
+			if err := assembly.Check(name, value); err != nil {
+				return agentFile{}, fmt.Errorf("plugins.%s: %w", name, err)
+			}
+		default:
+			return agentFile{}, fmt.Errorf("plugins.%s: true, false or the plugin's settings", name)
 		}
 	}
 	return file, nil

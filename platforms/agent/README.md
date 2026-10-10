@@ -48,8 +48,10 @@ mcp:                             # MCP servers, as in mcp.json
   notion: {command: notion-mcp, args: [--stdio]}
 providers: {}                    # custom model providers, as in models.json
 browser: lightpanda              # or chromium; needs the browser image
-plugins: {websearch: true}       # bundled plugins to turn on or off (orb plugins list --all);
-                                 # memory is on unless set false
+plugins:                         # bundled plugins (orb plugins list --all): true, false or
+  websearch: true                # the plugin's settings, on unless enabled: false; memory
+  subagents:                     # is on unless set false
+    models: [openai-codex/gpt-6-luna]
 platforms:
   buzz:
     respond_to: allowlist        # who it answers: owner-only, allowlist or anyone
@@ -62,7 +64,8 @@ platforms:
 
 On every start `orb-agent` validates the file, refusing unknown keys and settings, and writes
 `config/settings.json`, `config/AGENTS.md`, `config/mcp.json`, `config/models.json` and the
-browser's settings from it, so edit the file, not those, and restart. Each platform's section is
+browser's settings from it, then imports the settings and models into Orb's store under `state/`,
+where Orb reads them once it has started on the volume; so edit the file, not those, and restart. Each platform's section is
 what its package declares (`orb chat --help` lists the platforms); buzz-acp settings it does not
 take stay available as `BUZZ_ACP_*` environment. Check a file before deploying it:
 
