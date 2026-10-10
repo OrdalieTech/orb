@@ -595,6 +595,9 @@ type ToolExecutionComponent struct {
 	resultComponent extensions.Component
 
 	callFailed, resultFailed bool
+	// drawn is set once the display is first built, at the first render: a
+	// long conversation opens with thousands of tools, most never on screen.
+	drawn bool
 	// faded caches the resting look of the last rendered lines.
 	fadedFrom, faded []string
 	// headed sits right under the reasoning that led to it.
@@ -644,7 +647,6 @@ func NewToolExecutionComponent(
 		cwd:           cwd,
 		rendererState: make(map[string]any),
 	}
-	c.updateDisplay()
 	return c
 }
 
@@ -652,21 +654,21 @@ func (c *ToolExecutionComponent) UpdateArgs(args any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.args = args
-	c.updateDisplay()
+	c.refresh()
 }
 
 func (c *ToolExecutionComponent) MarkExecutionStarted() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.execStarted = true
-	c.updateDisplay()
+	c.refresh()
 }
 
 func (c *ToolExecutionComponent) SetArgsComplete() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.argsComplete = true
-	c.updateDisplay()
+	c.refresh()
 }
 
 func (c *ToolExecutionComponent) UpdateResult(content ai.ToolResultContent, isError bool, details any, partial bool) {
@@ -674,14 +676,14 @@ func (c *ToolExecutionComponent) UpdateResult(content ai.ToolResultContent, isEr
 	defer c.mu.Unlock()
 	c.result = &toolResult{Content: content, IsError: isError, Details: details}
 	c.isPartial = partial
-	c.updateDisplay()
+	c.refresh()
 }
 
 func (c *ToolExecutionComponent) SetExpanded(expanded bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.expanded = expanded
-	c.updateDisplay()
+	c.refresh()
 }
 
 func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
@@ -697,7 +699,7 @@ func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
 	case tui.MouseRelease:
 		if (event.Button == 0 || event.Button == 3) && (c.result != nil || c.callComponent != nil) {
 			c.expanded = !c.expanded
-			c.updateDisplay()
+			c.refresh()
 			changed = true
 		}
 	}
@@ -706,6 +708,14 @@ func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
 		c.ui.RequestRender()
 	}
 	return changed
+}
+
+// refresh redraws a change once the tool is on screen; before, the first
+// render draws the latest state.
+func (c *ToolExecutionComponent) refresh() {
+	if c.drawn {
+		c.updateDisplay()
+	}
 }
 
 func (c *ToolExecutionComponent) updateDisplay() {
@@ -1024,8 +1034,11 @@ func (c *ToolExecutionComponent) Invalidate() {
 func (c *ToolExecutionComponent) Render(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.renderTheme != theme.Current().Palette() {
-		c.callComponent, c.resultComponent = nil, nil
+	if !c.drawn || c.renderTheme != theme.Current().Palette() {
+		if c.drawn {
+			c.callComponent, c.resultComponent = nil, nil
+		}
+		c.drawn = true
 		c.updateDisplay()
 	}
 	marker, color := "✓", "success"

@@ -61,8 +61,9 @@ type SessionEntry struct {
 	decoded ai.Message
 }
 
-// decodedMessage is Message decoded, reusing the entry's decode when it has one.
-func (entry *SessionEntry) decodedMessage() (ai.Message, error) {
+// DecodedMessage is Message decoded, reusing the entry's decode when it has
+// one; the message is shared with the session and must not be modified.
+func (entry *SessionEntry) DecodedMessage() (ai.Message, error) {
 	if entry.decoded != nil {
 		return entry.decoded, nil
 	}

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/ptr"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 )
@@ -381,11 +382,13 @@ type JSONLSessionStorage struct {
 // RehydrateJSONLSession opens an upstream v3 JSONL session directly from
 // bytes without first materializing a temporary file.
 func RehydrateJSONLSession(content []byte, filePath string) (*JSONLSessionStorage, error) {
-	return rehydrateJSONLSession(content, filePath, nil)
+	return rehydrateJSONLSession(bytes.Clone(content), filePath, nil)
 }
 
 // OpenSessionJournal binds a pathless v3 journal to an explicit durable writer.
 // The writer must commit each line before returning; errors leave memory unchanged.
+// The journal keeps content, whose bytes its entries share: the caller must not
+// modify it afterwards.
 func OpenSessionJournal(content []byte, appendLine func([]byte) error) (*JSONLSessionStorage, error) {
 	if appendLine == nil {
 		return nil, fmt.Errorf("harness: session journal requires a writer")
@@ -437,16 +440,18 @@ func rehydrateJSONLSessionWithHeader(
 	}
 	return &JSONLSessionStorage{
 		state: state, version: header.Version, header: append([]byte(nil), lines[0]...),
-		content: append([]byte(nil), content...), loaded: len(state.entries), append: appendLine,
+		content: content, loaded: len(state.entries), append: appendLine,
 	}, nil
 }
 
+// nonBlankHarnessLines are content's lines with JSON in them, sharing its bytes.
 func nonBlankHarnessLines(content []byte) [][]byte {
-	rawLines := bytes.Split(content, []byte{'\n'})
-	lines := make([][]byte, 0, len(rawLines))
-	for _, line := range rawLines {
-		if trimHarnessJSSpace(string(line)) != "" {
-			lines = append(lines, append([]byte(nil), line...))
+	lines := make([][]byte, 0, bytes.Count(content, []byte{'\n'})+1)
+	for len(content) > 0 {
+		var line []byte
+		line, content, _ = bytes.Cut(content, []byte{'\n'})
+		if len(bytes.TrimFunc(line, jstrim.IsSpace)) != 0 {
+			lines = append(lines, line[:len(line):len(line)])
 		}
 	}
 	return lines
@@ -469,12 +474,13 @@ func isHarnessJSONObject(raw []byte) bool {
 	return json.Unmarshal(trimmed, &object) == nil && object != nil
 }
 
+// parseHarnessEntry decodes line, whose bytes the entry shares.
 func parseHarnessEntry(line []byte, filePath string, lineNumber int) (SessionTreeEntry, error) {
-	if !json.Valid(line) {
-		return SessionTreeEntry{}, invalidHarnessEntry(filePath, lineNumber, "is not valid JSON")
-	}
 	object, err := parseHarnessObject(line)
 	if err != nil {
+		if !json.Valid(line) {
+			return SessionTreeEntry{}, invalidHarnessEntry(filePath, lineNumber, "is not valid JSON")
+		}
 		return SessionTreeEntry{}, invalidHarnessEntry(filePath, lineNumber, "is not a valid session entry")
 	}
 	entry, err := decodeHarnessEntryObject(object)
@@ -498,7 +504,7 @@ func parseHarnessEntry(line []byte, filePath string, lineNumber int) (SessionTre
 			return SessionTreeEntry{}, invalidHarnessEntry(filePath, lineNumber, "has invalid targetId")
 		}
 	}
-	entry.raw = append(json.RawMessage(nil), line...)
+	entry.raw = sharedRaw(line)
 	return entry, nil
 }
 

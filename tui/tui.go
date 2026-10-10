@@ -162,6 +162,7 @@ type TUI struct {
 	renderTimer      *time.Timer
 	renderGeneration uint64
 	lastRender       time.Time
+	afterRender      []func()
 }
 
 func NewTUI(terminal Terminal) *TUI {
@@ -1458,7 +1459,24 @@ func expandChangedRangeForKittyImages(first, last int, previous, next []string) 
 	return expandedFirst, expandedLast
 }
 
+// AfterRender runs callback once the next frame is drawn.
+func (ui *TUI) AfterRender(callback func()) {
+	ui.scheduleMu.Lock()
+	ui.afterRender = append(ui.afterRender, callback)
+	ui.scheduleMu.Unlock()
+	ui.RequestRender()
+}
+
 func (ui *TUI) RenderNow() {
+	defer func() {
+		ui.scheduleMu.Lock()
+		callbacks := ui.afterRender
+		ui.afterRender = nil
+		ui.scheduleMu.Unlock()
+		for _, callback := range callbacks {
+			callback()
+		}
+	}()
 	ui.renderMu.Lock()
 	defer ui.renderMu.Unlock()
 	if ui.isStopped() {

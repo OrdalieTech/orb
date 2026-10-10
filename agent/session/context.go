@@ -205,7 +205,7 @@ func (projection *contextProjection) addMessages(entry *SessionEntry, messages [
 		if len(raw) > 0 {
 			decode := ai.UnmarshalMessage
 			if len(raw) == len(entry.Message) && &raw[0] == &entry.Message[0] {
-				decode = func([]byte) (ai.Message, error) { return entry.decodedMessage() }
+				decode = func([]byte) (ai.Message, error) { return entry.DecodedMessage() }
 			}
 			if message, err := decode(raw); err == nil {
 				decoded = message
@@ -419,11 +419,8 @@ func (manager *SessionManager) BuildSessionContext() SessionContext {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	context := manager.projectionLocked().context
-	messages := make([]json.RawMessage, len(context.Messages))
-	for index, raw := range context.Messages {
-		messages[index] = cloneRaw(raw)
-	}
-	context.Messages = messages
+	// The messages share the session's bytes, which nobody modifies.
+	context.Messages = slices.Clone(context.Messages)
 	context.ActiveToolNames = slices.Clone(context.ActiveToolNames)
 	if context.Model != nil {
 		model := *context.Model
@@ -487,7 +484,15 @@ func sameID(left, right *string) bool {
 // refreshHarnessLocked keeps in step with the store: a missing ancestor
 // empties the branch.
 func (manager *SessionManager) harnessBranchLocked(leaf *string) []SessionEntry {
-	path := []SessionEntry{}
+	depth := 0
+	for id := leaf; id != nil && *id != "" && depth <= len(manager.byID); depth++ {
+		entry := manager.byID[*id]
+		if entry == nil {
+			break
+		}
+		id = entry.ParentID
+	}
+	path := make([]SessionEntry, 0, depth)
 	for id := leaf; id != nil && *id != ""; {
 		entry := manager.byID[*id]
 		if entry == nil || len(path) > len(manager.byID) {

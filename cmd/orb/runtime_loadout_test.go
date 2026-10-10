@@ -97,7 +97,7 @@ func TestCLIFirstRequestDeclaresExecutableTools(t *testing.T) {
 			if !slices.Equal(names, []string{"bash", "edit", "read", "write"}) {
 				t.Fatalf("first-request tools = %v", names)
 			}
-			replay, err := agent.ConvertToLLM(context.Background(), decodeSessionMessages(manager.BuildSessionContext().Messages))
+			replay, err := agent.ConvertToLLM(context.Background(), manager.ContextMessages())
 			if err != nil {
 				t.Fatal(err)
 			}

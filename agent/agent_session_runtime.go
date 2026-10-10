@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
@@ -125,7 +126,16 @@ func NewAgentSessionRuntime(
 	}
 	runtime := &AgentSessionRuntime{session: result.Session, result: result, options: options, create: create}
 	runtime.bindSessionCommands(result.Session)
+	ReleaseMemory()
 	return runtime, nil
+}
+
+// ReleaseMemory collects in the background and hands what is free back to the
+// system. Reading a session leaves a few times its size behind as garbage,
+// which an idle process would otherwise hold until the runtime's next forced
+// cycle, minutes later.
+func ReleaseMemory() {
+	go debug.FreeOSMemory()
 }
 
 // Session returns the active session.
@@ -745,6 +755,7 @@ func (runtime *AgentSessionRuntime) replace(
 	runtime.options = nextOptions
 	runtime.mu.Unlock()
 	runtime.bindSessionCommands(result.Session)
+	ReleaseMemory()
 	return result.Session, nil
 }
 

@@ -4748,7 +4748,7 @@ func (mode *InteractiveMode) renderInitialMessages() {
 		}
 		switch entry.Type {
 		case "message":
-			message, err := ai.UnmarshalMessage(entry.Message)
+			message, err := entry.DecodedMessage()
 			at, _ := time.Parse(time.RFC3339Nano, entry.Timestamp)
 			switch value := message.(type) {
 			case *ai.UserMessage:
@@ -4784,7 +4784,8 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	if !running {
 		closeTurn()
 	}
-	mode.ui.RequestRender()
+	// The first frame lays out every message once; what that leaves is free then.
+	mode.ui.AfterRender(agent.ReleaseMemory)
 }
 
 // addTurnFooter closes a turn with one dim line: the model that answered and

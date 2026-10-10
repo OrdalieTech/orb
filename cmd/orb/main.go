@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -739,19 +738,6 @@ func applySessionDefaults(args *CLIArgs, context session.SessionContext, branch 
 	if args.Thinking == nil && len(context.Messages) > 0 && hasThinkingLevelChange(branch) {
 		args.Thinking = stringValue(context.ThinkingLevel)
 	}
-}
-
-func decodeSessionMessages(rawMessages []json.RawMessage) engine.AgentMessages {
-	messages := make(engine.AgentMessages, 0, len(rawMessages))
-	for _, raw := range rawMessages {
-		message, err := ai.UnmarshalMessage(raw)
-		if err == nil {
-			messages = append(messages, message)
-		} else {
-			messages = append(messages, append(json.RawMessage(nil), raw...))
-		}
-	}
-	return messages
 }
 
 func appendInitialRuntimeState(manager *session.SessionManager, state engine.AgentState, prior session.SessionContext) error {

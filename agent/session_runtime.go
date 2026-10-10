@@ -1554,8 +1554,8 @@ func (runtime *SessionRuntime) GetContextUsage() *harness.ContextUsage {
 // EstimateContextUsage is Orb's own reading of the context, from the session's
 // usage records; an executor that reports its own context falls back to it.
 func (runtime *SessionRuntime) EstimateContextUsage() *harness.ContextUsage {
-	state := runtime.agent.State()
-	if state.Model == nil || state.Model.ContextWindow <= 0 {
+	model := runtime.agent.Model()
+	if model == nil || model.ContextWindow <= 0 {
 		return nil
 	}
 	branch := runtime.manager.GetBranch()
@@ -1571,20 +1571,20 @@ func (runtime *SessionRuntime) EstimateContextUsage() *harness.ContextUsage {
 			if branch[index].Type != "message" {
 				continue
 			}
-			message := decodeSessionMessage(branch[index].Message)
+			message, _ := branch[index].DecodedMessage()
 			if assistant := asAssistant(message); assistant != nil && assistant.StopReason != ai.StopReasonAborted && assistant.StopReason != ai.StopReasonError && harness.CalculateContextTokens(assistant.Usage) > 0 {
 				hasUsage = true
 				break
 			}
 		}
 		if !hasUsage {
-			return &harness.ContextUsage{ContextWindow: state.Model.ContextWindow}
+			return &harness.ContextUsage{ContextWindow: model.ContextWindow}
 		}
 	}
 	estimate := harness.EstimateProjectedContextTokens(projectSessionEntries(branch))
 	tokens := estimate.Tokens
-	percent := float64(tokens) / state.Model.ContextWindow * 100
-	return &harness.ContextUsage{Tokens: &tokens, ContextWindow: state.Model.ContextWindow, Percent: &percent}
+	percent := float64(tokens) / model.ContextWindow * 100
+	return &harness.ContextUsage{Tokens: &tokens, ContextWindow: model.ContextWindow, Percent: &percent}
 }
 
 //nolint:staticcheck // SessionError text matches upstream capitalization.
@@ -1915,9 +1915,17 @@ func projectSessionEntries(entries []sessionstore.SessionEntry) []harness.Sessio
 		if len(entry.Details) > 0 {
 			_ = json.Unmarshal(entry.Details, &details)
 		}
+		var message engine.AgentMessage
+		if len(entry.Message) > 0 {
+			if decoded, err := entry.DecodedMessage(); err == nil {
+				message = decoded
+			} else {
+				message = entry.Message
+			}
+		}
 		projected = append(projected, harness.SessionEntry{
 			Type: entry.Type, ID: entry.ID, ParentID: entry.ParentID, Timestamp: entry.Timestamp,
-			Message: decodeSessionMessage(entry.Message), Summary: entry.Summary,
+			Message: message, Summary: entry.Summary,
 			FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
 			Details: details, Usage: entry.Usage, FromHook: fromHook, FromID: entry.FromID,
 			CustomType: entry.CustomType, Content: content, Display: entry.Display,

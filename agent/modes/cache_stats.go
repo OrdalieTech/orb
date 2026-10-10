@@ -94,7 +94,7 @@ func scanCacheEntries(entries []sessionstore.SessionEntry, visit func(previous *
 		if entry.Type != "message" {
 			continue
 		}
-		decoded, err := ai.UnmarshalMessage(entry.Message)
+		decoded, err := entry.DecodedMessage()
 		if err != nil {
 			continue
 		}

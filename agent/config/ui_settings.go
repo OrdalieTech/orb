@@ -57,14 +57,14 @@ func (manager *SettingsManager) GetShowHardwareCursor() bool {
 }
 
 func (manager *SettingsManager) GetEditorPaddingX() int {
-	if padding := optionalInt(manager.GetSettings(), "editorPaddingX"); padding != nil {
+	if padding := manager.intValue("editorPaddingX"); padding != nil {
 		return *padding
 	}
 	return 0
 }
 
 func (manager *SettingsManager) GetAutocompleteMaxVisible() int {
-	if visible := optionalInt(manager.GetSettings(), "autocompleteMaxVisible"); visible != nil {
+	if visible := manager.intValue("autocompleteMaxVisible"); visible != nil {
 		return *visible
 	}
 	return 5

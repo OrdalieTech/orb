@@ -8,6 +8,7 @@ shown by `/changelog`.
 - `/reload` (and a `ctx.reload()` from a plugin) loads the packages settings name now: an extension uninstalled during the session is gone after it, where reload failed with "extension host: extension ext-1 is unavailable" until Orb restarted.
 - Quitting while a large conversation opens ends Orb there. It used to hand the terminal back and go on loading: plugins then started against the closed session ("ctx is stale" errors), and the terminal's replies to Orb's colour queries landed in the shell as `^[[?997;2n^[]11;rgb:…`.
 - Claude Sessions keeps Claude's records in the conversation without Claude Code's display copy of tool output (`toolUseResult`), which the model never reads and which can be close to half a session's size; conversations it imports or catches up from now on open faster.
+- Long conversations take a quarter of the memory they did. A conversation holds its stored bytes once, shared by every reader instead of copied per read, its screenshots point into them instead of holding a decoded copy, and what opening it leaves behind goes back to the system as soon as the first frame is drawn: a 199 MB conversation now opens at a 500 MB peak and settles at 390 MB, where it peaked at 2.3 GB and stayed at 1.6 GB. Opening takes half the CPU, the footer no longer decodes the whole conversation when it recounts the context, a turn allocates a third of what it did, and Claude Sessions reads a Claude Code session file a line at a time instead of loading all of it after every turn another model answers.
 
 ## [0.19.4] - 2026-10-09
 

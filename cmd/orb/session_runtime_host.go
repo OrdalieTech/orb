@@ -128,7 +128,7 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 			// loads the extensions settings name now.
 			args.extensionRegistry, args.extensionWarnings = runtimeOptions.ExtensionRegistry, nil
 		}
-		inputs, err := options.Dependencies.createRuntime(manager.GetCWD(), args, decodeSessionMessages(contextState.Messages))
+		inputs, err := options.Dependencies.createRuntime(manager.GetCWD(), args, manager.ContextMessages())
 		if err != nil {
 			return nil, err
 		}

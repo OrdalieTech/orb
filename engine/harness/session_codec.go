@@ -99,7 +99,7 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 			entry.ParentID = &parent
 		}
 	}
-	entry.Message = cloneHarnessRaw(object["message"])
+	entry.Message = sharedRaw(object["message"])
 	decodeHarnessStringInto(object["thinkingLevel"], &entry.ThinkingLevel)
 	decodeHarnessStringInto(object["provider"], &entry.Provider)
 	decodeHarnessStringInto(object["modelId"], &entry.ModelID)
@@ -117,7 +117,7 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 			entry.TokensBefore = number
 		}
 	}
-	entry.Details = cloneHarnessRaw(object["details"])
+	entry.Details = sharedRaw(object["details"])
 	if raw, ok := object["usage"]; ok {
 		var usage ai.Usage
 		if json.Unmarshal(raw, &usage) == nil {
@@ -132,8 +132,8 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 	}
 	decodeHarnessStringInto(object["fromId"], &entry.FromID)
 	decodeHarnessStringInto(object["customType"], &entry.CustomType)
-	entry.Data = cloneHarnessRaw(object["data"])
-	entry.Content = cloneHarnessRaw(object["content"])
+	entry.Data = sharedRaw(object["data"])
+	entry.Content = sharedRaw(object["content"])
 	if raw, ok := object["display"]; ok {
 		_ = json.Unmarshal(raw, &entry.Display)
 	}
@@ -153,7 +153,7 @@ func decodeHarnessEntryObject(object map[string]json.RawMessage) (SessionTreeEnt
 		}
 	}
 	decodeHarnessStringInto(object["name"], &entry.Name)
-	entry.Replacement = cloneHarnessRaw(object["replacement"])
+	entry.Replacement = sharedRaw(object["replacement"])
 	return entry, nil
 }
 

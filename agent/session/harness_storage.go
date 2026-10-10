@@ -188,9 +188,10 @@ func (manager *SessionManager) harnessHeaderLocked() *FileEntry {
 	})
 }
 
+// sessionEntryFromHarness shares entry's bytes, which nobody modifies.
 func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 	if raw := entry.RawJSON(); len(raw) != 0 {
-		// A record the harness wrote parses from its own copy; anything that
+		// A record the harness wrote parses from its bytes; anything that
 		// does not yield an entry takes the general path.
 		if utf8.Valid(raw) && bytes.IndexByte(raw, '\n') < 0 {
 			if parsed := parseSessionEntryRaw(raw); parsed != nil && parsed.Entry != nil {
@@ -208,13 +209,13 @@ func sessionEntryFromHarness(entry harness.SessionTreeEntry) SessionEntry {
 	}
 	return SessionEntry{
 		Type: entry.Type, ID: entry.ID, ParentID: ptr.Clone(entry.ParentID), Timestamp: entry.Timestamp,
-		Message: cloneRaw(entry.Message), ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
+		Message: entry.Message, ThinkingLevel: entry.ThinkingLevel, Provider: entry.Provider,
 		ModelID: entry.ModelID, ActiveToolNames: slices.Clone(entry.ActiveToolNames),
 		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID, TokensBefore: entry.TokensBefore,
-		Details: cloneRaw(entry.Details), Usage: entry.Usage.Clone(), FromHook: ptr.Clone(entry.FromHook), FromID: entry.FromID,
-		CustomType: entry.CustomType, Data: cloneRaw(entry.Data), Content: cloneRaw(entry.Content),
+		Details: entry.Details, Usage: entry.Usage.Clone(), FromHook: ptr.Clone(entry.FromHook), FromID: entry.FromID,
+		CustomType: entry.CustomType, Data: entry.Data, Content: entry.Content,
 		Display: entry.Display, TargetID: targetID, LeafTargetID: ptr.Clone(entry.TargetID),
-		Label: ptr.Clone(entry.Label), Name: entry.Name, Replacement: cloneRaw(entry.Replacement),
+		Label: ptr.Clone(entry.Label), Name: entry.Name, Replacement: entry.Replacement,
 	}
 }
 

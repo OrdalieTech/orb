@@ -1,6 +1,7 @@
 package claudesessions
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"crypto/sha256"
@@ -134,9 +135,7 @@ func rebuild(manager extensions.ReadonlySessionManager, skip int) []*record {
 		switch {
 		case entry.CustomType == transcriptEntry:
 			pending = nil
-			var lines []json.RawMessage
-			_ = json.Unmarshal(entry.Data, &lines)
-			for _, line := range lines {
+			for _, line := range jsonwire.Elements(entry.Data) {
 				t.native(line)
 			}
 		case entry.Type == "message" && native[i]:
@@ -171,7 +170,7 @@ type transcript struct {
 
 func (t *transcript) native(line json.RawMessage) {
 	r := &record{raw: line}
-	if json.Unmarshal(line, r) != nil || r.UUID == "" || t.seen[r.UUID] {
+	if r.UUID, r.Parent = recordLink(line); r.UUID == "" || t.seen[r.UUID] {
 		return
 	}
 	t.seen[r.UUID] = true
@@ -305,12 +304,16 @@ func projectDir(configDir, cwd string) string {
 // It returns the UUID Claude resumes at and the file's size once synced.
 func syncTranscript(records []*record, sessionID, projects string) (at string, size int64, err error) {
 	path := filepath.Join(projects, sessionID+".jsonl")
-	data, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	parents := map[string]string{}
+	size, err = eachLine(path, func(line []byte) {
+		if uuid, parent := recordLink(line); uuid != "" {
+			parents[uuid] = parent
+		}
+	})
+	if err != nil {
 		return "", 0, err
 	}
-	missing, at, err := planTranscript(records, data, sessionID)
-	size = int64(len(data))
+	missing, at, err := planTranscript(records, parents, sessionID)
 	if err != nil || len(missing) == 0 {
 		return at, size, err
 	}
@@ -328,19 +331,74 @@ func syncTranscript(records []*record, sessionID, projects string) (at string, s
 	return at, size + int64(len(missing)), err
 }
 
-// planTranscript is what a session file (data) lacks of records, as lines to
-// append, and the UUID the branch ends at once they are.
-func planTranscript(records []*record, data []byte, sessionID string) (missing []byte, at string, err error) {
-	parents := map[string]string{}
-	for line := range bytes.SplitSeq(data, []byte("\n")) {
-		var record struct {
-			UUID   string `json:"uuid"`
-			Parent string `json:"parentUuid"`
+// eachLine visits each line of the file at path a line at a time, as a Claude
+// Code session file can be hundreds of megabytes, and returns the bytes read; a
+// missing file has none. A line is only valid during its visit.
+func eachLine(path string, visit func(line []byte)) (size int64, err error) {
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = file.Close() }()
+	reader := bufio.NewReaderSize(file, 1<<20)
+	var long []byte
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		size += int64(len(chunk))
+		if errors.Is(err, bufio.ErrBufferFull) {
+			long = append(long, chunk...)
+			continue
 		}
-		if json.Unmarshal(line, &record) == nil && record.UUID != "" {
-			parents[record.UUID] = record.Parent
+		line := chunk
+		if len(long) > 0 {
+			line, long = append(long, chunk...), long[:0]
+		}
+		visit(bytes.TrimSuffix(line, []byte("\n")))
+		if errors.Is(err, io.EOF) {
+			return size, nil
+		}
+		if err != nil {
+			return size, err
 		}
 	}
+}
+
+// recordLink is a Claude Code record's UUID and its parent's, read without
+// decoding the rest of it; none for a line that is not JSON.
+func recordLink(line []byte) (uuid, parent string) {
+	if !jsonwire.Valid(line) {
+		return "", ""
+	}
+	jsonwire.EachMember(line, func(name, value []byte) bool {
+		switch string(name) {
+		case "uuid":
+			uuid, _ = jsonwire.UnmarshalString(value)
+		case "parentUuid":
+			parent, _ = jsonwire.UnmarshalString(value)
+		}
+		return true
+	})
+	return uuid, parent
+}
+
+// parentsIn maps each record of a session file's data to its parent.
+func parentsIn(data []byte) map[string]string {
+	parents := map[string]string{}
+	for line := range bytes.SplitSeq(data, []byte("\n")) {
+		if uuid, parent := recordLink(line); uuid != "" {
+			parents[uuid] = parent
+		}
+	}
+	return parents
+}
+
+// planTranscript is what a session file lacks of records, as lines to append,
+// and the UUID the branch ends at once they are. parents maps each record
+// the file holds to its parent.
+func planTranscript(records []*record, parents map[string]string, sessionID string) (missing []byte, at string, err error) {
 	renamed := map[string]string{}
 	var buffer bytes.Buffer
 	for _, r := range records {
@@ -697,7 +755,7 @@ func catchUp(manager *session.SessionManager, env []string) (added bool, err err
 			err = markSynced(manager, int64(len(data)))
 		}
 	}()
-	missing, at, err := planTranscript(rebuild(manager, 0), data, id)
+	missing, at, err := planTranscript(rebuild(manager, 0), parentsIn(data), id)
 	if err != nil || len(missing) > 0 || at == "" {
 		return false, err
 	}

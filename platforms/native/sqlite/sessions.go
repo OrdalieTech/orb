@@ -67,25 +67,25 @@ func (r *Sessions) Open(ctx context.Context, metadata harness.SessionMetadata) (
 	}
 	defer func() { _ = tx.Rollback() }()
 	var header []byte
-	var revision int64
-	if err = tx.QueryRowContext(ctx, "SELECT header,revision FROM sessions WHERE namespace=? AND id=?", r.namespace, metadata.ID).Scan(&header, &revision); err != nil {
+	var revision, size int64
+	if err = tx.QueryRowContext(ctx, "SELECT header,revision,(SELECT coalesce(sum(length(payload)+1),0) FROM entries WHERE namespace=sessions.namespace AND session_id=sessions.id) FROM sessions WHERE namespace=? AND id=?", r.namespace, metadata.ID).Scan(&header, &revision, &size); err != nil {
 		return nil, err
 	}
 	rows, err := tx.QueryContext(ctx, "SELECT payload FROM entries WHERE namespace=? AND session_id=? ORDER BY seq", r.namespace, metadata.ID)
 	if err != nil {
 		return nil, err
 	}
-	var content bytes.Buffer
-	content.Write(header)
-	content.WriteByte('\n')
+	// The journal keeps this buffer for the session's life: sized once, filled
+	// from the driver's own bytes.
+	content := make([]byte, 0, int64(len(header)+1)+size)
+	content = append(append(content, header...), '\n')
 	for rows.Next() {
-		var data []byte
+		var data sql.RawBytes
 		if err = rows.Scan(&data); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		content.Write(data)
-		content.WriteByte('\n')
+		content = append(append(content, data...), '\n')
 	}
 	if err = errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func (r *Sessions) Open(ctx context.Context, metadata harness.SessionMetadata) (
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	storage, err := harness.OpenSessionJournal(content.Bytes(), func(line []byte) error {
+	storage, err := harness.OpenSessionJournal(content, func(line []byte) error {
 		entry, err := harness.ParseSessionTreeEntry(line)
 		if err != nil {
 			return err

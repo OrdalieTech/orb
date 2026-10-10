@@ -140,7 +140,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	claude := func(model *ai.Model) bool { return model != nil && model.Provider == Name }
 	options, err := configuredOptions(context.Background(), cfg.Settings, agentDir, env)
 	if err != nil {
-		if claude(cfg.Agent.State().Model) {
+		if claude(cfg.Agent.Model()) {
 			return nil, err
 		}
 		// ponytail: Orb models keep working; picking Claude reports the setup error.
@@ -166,7 +166,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 	}
 	cfg.Agent.SetSessionLoop(claude, driver.Loop)
 	cfg.ContextUsage = func() *harness.ContextUsage {
-		if claude(cfg.Agent.State().Model) {
+		if claude(cfg.Agent.Model()) {
 			return nativeContextUsage(options.Manager)
 		}
 		if runtime == nil {
@@ -186,7 +186,7 @@ func Configure(cfg *agent.SessionRuntimeConfig, agentDir string, env []string) (
 			s.RefreshContext()
 		}
 		s.Subscribe(func(event any) {
-			if _, settled := event.(agent.AgentSettledEvent); settled && !claude(cfg.Agent.State().Model) {
+			if _, settled := event.(agent.AgentSettledEvent); settled && !claude(cfg.Agent.Model()) {
 				_ = driver.share()
 			}
 		})

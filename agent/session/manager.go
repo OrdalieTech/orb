@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine/harness"
@@ -540,7 +541,7 @@ func (manager *SessionManager) addAggregateEntryLocked(entry *SessionEntry) {
 	if entry.Type != "message" {
 		return
 	}
-	message, err := entry.decodedMessage()
+	message, err := entry.DecodedMessage()
 	if err != nil {
 		return
 	}
@@ -1046,6 +1047,8 @@ func (manager *SessionManager) GetEntry(id string) *SessionEntry {
 	return cloneEntry(manager.byID[id])
 }
 
+// cloneEntry copies what a reader could change in place; the JSON bytes are
+// shared, as nobody modifies them.
 func cloneEntry(entry *SessionEntry) *SessionEntry {
 	if entry == nil {
 		return nil
@@ -1055,12 +1058,7 @@ func cloneEntry(entry *SessionEntry) *SessionEntry {
 	copy.LeafTargetID = ptr.Clone(entry.LeafTargetID)
 	copy.Label = ptr.Clone(entry.Label)
 	copy.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
-	copy.Message = cloneRaw(entry.Message)
-	copy.Details = cloneRaw(entry.Details)
 	copy.Usage = entry.Usage.Clone()
-	copy.Data = cloneRaw(entry.Data)
-	copy.Content = cloneRaw(entry.Content)
-	copy.Replacement = cloneRaw(entry.Replacement)
 	return &copy
 }
 
@@ -1209,6 +1207,7 @@ func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *Sess
 			converted.decoded = manager.appended.message
 		} else {
 			converted.decoded, _ = ai.UnmarshalMessage(converted.Message)
+			shareImages(converted.decoded, converted.Message)
 		}
 	}
 	if manager.parsed == nil {
@@ -1216,6 +1215,41 @@ func (manager *SessionManager) parsedEntry(entry harness.SessionTreeEntry) *Sess
 	}
 	manager.parsed[entry.ID] = &converted
 	return &converted
+}
+
+// shareImages points each decoded image of message at its base64 text in raw,
+// the stored JSON it was decoded from, which nobody modifies: a session full of
+// screenshots would otherwise hold each of them twice. Base64 needs no JSON
+// escape, so the text stands in raw as decoded, in content order.
+func shareImages(message ai.Message, raw []byte) {
+	if len(raw) == 0 {
+		return
+	}
+	text, at := unsafe.String(&raw[0], len(raw)), 0
+	share := func(image *ai.ImageContent) {
+		if image == nil || len(image.Data) < 1024 {
+			return
+		}
+		if found := strings.Index(text[at:], image.Data); found >= 0 {
+			at += found
+			image.Data = text[at : at+len(image.Data)]
+			at += len(image.Data)
+		}
+	}
+	switch message := message.(type) {
+	case *ai.UserMessage:
+		for _, block := range message.Content.Blocks {
+			if image, ok := block.(*ai.ImageContent); ok {
+				share(image)
+			}
+		}
+	case *ai.ToolResultMessage:
+		for _, block := range message.Content {
+			if image, ok := block.(*ai.ImageContent); ok {
+				share(image)
+			}
+		}
+	}
 }
 
 func (manager *SessionManager) GetLatestCompactionTimestamp() (string, bool) {

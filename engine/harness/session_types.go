@@ -91,7 +91,8 @@ type SessionMetadata struct {
 }
 
 // SessionTreeEntry is the v3 harness session union. Raw JSON members stay
-// opaque so unknown application data can round-trip without coercion.
+// opaque so unknown application data can round-trip without coercion. An entry
+// is a value: storages share its bytes with every reader and nobody modifies them.
 type SessionTreeEntry struct {
 	Type      string
 	ID        string
@@ -125,26 +126,22 @@ type SessionTreeEntry struct {
 	raw json.RawMessage
 }
 
-// RawJSON returns the original object for entries rehydrated from JSONL.
+// RawJSON returns the original object for entries rehydrated from JSONL,
+// shared with the storage: it must not be modified.
 func (entry SessionTreeEntry) RawJSON() json.RawMessage {
-	return cloneHarnessRaw(entry.raw)
+	return entry.raw
 }
 
+// clone copies what a reader could change in place; the JSON bytes are shared.
 func (entry SessionTreeEntry) clone() SessionTreeEntry {
 	copy := entry
 	copy.ParentID = ptr.Clone(entry.ParentID)
 	copy.ActiveToolNames = slices.Clone(entry.ActiveToolNames)
-	copy.Message = cloneHarnessRaw(entry.Message)
-	copy.RetainedTail = cloneHarnessRawMessages(entry.RetainedTail)
-	copy.Details = cloneHarnessRaw(entry.Details)
+	copy.RetainedTail = slices.Clone(entry.RetainedTail)
 	copy.Usage = entry.Usage.Clone()
 	copy.FromHook = ptr.Clone(entry.FromHook)
-	copy.Data = cloneHarnessRaw(entry.Data)
-	copy.Content = cloneHarnessRaw(entry.Content)
 	copy.TargetID = ptr.Clone(entry.TargetID)
 	copy.Label = ptr.Clone(entry.Label)
-	copy.Replacement = cloneHarnessRaw(entry.Replacement)
-	copy.raw = cloneHarnessRaw(entry.raw)
 	return copy
 }
 
@@ -160,15 +157,13 @@ func cloneHarnessRaw(value json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), value...)
 }
 
-func cloneHarnessRawMessages(values []json.RawMessage) []json.RawMessage {
-	if values == nil {
+// sharedRaw is value with no room to grow, so an append never writes into the
+// bytes it shares.
+func sharedRaw(value json.RawMessage) json.RawMessage {
+	if value == nil {
 		return nil
 	}
-	copy := make([]json.RawMessage, len(values))
-	for index := range values {
-		copy[index] = cloneHarnessRaw(values[index])
-	}
-	return copy
+	return value[:len(value):len(value)]
 }
 
 // SessionStorage is the backend-neutral session tree contract.

@@ -109,7 +109,7 @@ func TestImportClaudeCodeSession(t *testing.T) {
 			t.Fatalf("kept Claude Code's display copy: %s", entry.Data)
 		}
 	}
-	if missing, at, err := planTranscript(rebuild(manager, 0), file, "0b7a4a1e-1111-4222-8333-444455556666"); err != nil || len(missing) > 0 || at != "a4" {
+	if missing, at, err := planTranscript(rebuild(manager, 0), parentsIn(file), "0b7a4a1e-1111-4222-8333-444455556666"); err != nil || len(missing) > 0 || at != "a4" {
 		t.Fatalf("resuming the imported session rewrites it: %q at %q, %v", missing, at, err)
 	}
 	if raw, _ := json.Marshal(messages); strings.Contains(string(raw), "abandoned") {

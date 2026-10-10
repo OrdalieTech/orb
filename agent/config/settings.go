@@ -406,6 +406,13 @@ func (manager *SettingsManager) GetSettings() Settings {
 	return cloneMap(manager.effective)
 }
 
+// intValue reads a top-level integer without copying the settings.
+func (manager *SettingsManager) intValue(key string) *int {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	return optionalInt(manager.effective, key)
+}
+
 func (manager *SettingsManager) value(key string) (any, bool) {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
@@ -720,7 +727,7 @@ func (manager *SettingsManager) GetTreeFilterMode() string {
 }
 
 func (manager *SettingsManager) GetOutputPad() int {
-	if int64Default(manager.GetSettings(), "outputPad", 1) == 0 {
+	if pad := manager.intValue("outputPad"); pad != nil && *pad == 0 {
 		return 0
 	}
 	return 1

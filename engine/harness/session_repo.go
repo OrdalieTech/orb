@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -246,7 +247,7 @@ func (repo *JSONLSessionRepo) OpenRuntimeBytes(ctx context.Context, path string,
 func (repo *JSONLSessionRepo) openDelayedRuntimeBytes(_ context.Context, path string, content []byte) (*Session, error) {
 	pending := append([]byte(nil), content...)
 	flushed := false
-	storage, err := rehydrateRuntimeJSONLSession(content, path, func(line []byte) error {
+	storage, err := rehydrateRuntimeJSONLSession(bytes.Clone(content), path, func(line []byte) error {
 		if flushed {
 			return repo.FS.AppendFile(context.Background(), path, line)
 		}
@@ -453,7 +454,7 @@ func (repo *JSONLSessionRepo) importJSONLAt(ctx context.Context, content []byte,
 	if err := repo.FS.WriteFile(ctx, resolved, content); err != nil {
 		return nil, fileSystemSessionError(err, "Failed to import session %s", path)
 	}
-	storage, err := rehydrateJSONLSession(content, resolved, func(line []byte) error {
+	storage, err := rehydrateJSONLSession(bytes.Clone(content), resolved, func(line []byte) error {
 		return repo.FS.AppendFile(context.Background(), resolved, line)
 	})
 	if err != nil {
