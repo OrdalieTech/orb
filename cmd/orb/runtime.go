@@ -453,7 +453,7 @@ func startupResourceDiagnostic(diagnostic agent.ResourceDiagnostic) modes.Startu
 }
 
 // orbSkillFile writes the skill `orb skill` prints where Orb's own skill loader
-// and read tool find it, as other agents find their installed copy, and
+// and read tool find it and other agents' skill directories link to it, and
 // returns its path, or "" when the agent directory is not writable.
 func orbSkillFile(agentDir string) string {
 	path := filepath.Join(agentDir, "host", "skills", "orb", "SKILL.md")

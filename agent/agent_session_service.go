@@ -475,13 +475,10 @@ func applyPiCompatibilityPrompt(session *AgentSession) {
 	}
 	options := cloneSystemPromptOptions(*state.promptOptions)
 	for _, section := range BuildSystemPromptSections(options) {
-		if section.Text == nil || (section.Name != "preamble" && section.Name != "docs") {
+		if section.Text == nil || section.Name != "preamble" {
 			continue
 		}
 		text := piCompatibilityText(*section.Text)
-		if section.Name == "docs" {
-			text = strings.TrimSuffix(strings.TrimPrefix(text, "<docs>\n"), "\n</docs>")
-		}
 		options.Sections = append(options.Sections, ai.SystemPromptSection{Name: section.Name, Text: &text})
 	}
 	state.promptOptions = &options
@@ -490,15 +487,10 @@ func applyPiCompatibilityPrompt(session *AgentSession) {
 }
 
 func piCompatibilityText(text string) string {
-	return strings.NewReplacer(
+	return strings.ReplaceAll(text,
 		"You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.",
 		"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-		"Orb documentation files", "pi .md files",
-		"Orb documentation", "Pi documentation",
-		"Orb itself", "pi itself",
-		"Orb docs", "pi docs",
-		"Orb topics", "pi topics",
-	).Replace(text)
+	)
 }
 
 // callbackToolDefinition wires one host-JS tool into the child session. The

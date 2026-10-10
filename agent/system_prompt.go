@@ -1,15 +1,9 @@
 package agent
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
-	"sync"
 
-	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
@@ -66,7 +60,6 @@ type SystemPromptOptions struct {
 	CWD                string
 	ContextFiles       []ContextFile
 	Skills             []Skill
-	PackageDir         string
 	ForceSystemPrompt  *string
 	Sections           ai.SystemPromptSections
 }
@@ -180,22 +173,6 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		addSection("preamble", "You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.")
 		addSection("tools", wrapPromptSection("tools", toolsList+"\n\nIn addition to the tools above, you may have access to other custom tools depending on the project."))
 		addSection("rules", wrapPromptSection("rules", strings.Join(formattedGuidelines, "\n")))
-		packageDir := promptPackageDir(options.PackageDir)
-		readmePath := filepath.Join(packageDir, "README.md")
-		docsPath := filepath.Join(packageDir, "docs")
-		examplesPath := filepath.Join(packageDir, "examples")
-		// These instructions require the complete bundle, which standalone installs don't ship.
-		if packageDir != "" && hasPromptDocs(packageDir, readmePath, docsPath, examplesPath) {
-			docs := fmt.Sprintf(`Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):
-- Main documentation: %s
-- Additional docs: %s
-- Examples: %s (extensions, custom tools, SDK)
-- When reading Orb docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md)
-- When working on Orb topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read Orb documentation files completely and follow links to related docs (e.g., tui.md for TUI API details)`, readmePath, docsPath, examplesPath)
-			addSection("docs", wrapPromptSection("docs", docs))
-		}
 	}
 	if options.AppendSystemPrompt != nil && *options.AppendSystemPrompt != "" {
 		addSection("addendum", wrapPromptSection("addendum", *options.AppendSystemPrompt))
@@ -266,48 +243,4 @@ func DiffSystemPromptSections(previous, current ai.SystemPromptSections) ai.Syst
 		return nil
 	}
 	return patch
-}
-
-// promptDocs remembers, by package directory, whether it ships the
-// documentation bundle: checking it on every prompt cost three stats, each a
-// call into JavaScript on js/wasm.
-var promptDocs sync.Map
-
-// promptPackageDir is the package directory whose docs the prompt points to,
-// empty on a js/wasm host, which ships none and would only call into
-// JavaScript to find that out.
-func promptPackageDir(packageDir string) string {
-	if runtime.GOOS == "js" {
-		return ""
-	}
-	return resolvePromptPackageDir(packageDir)
-}
-
-func hasPromptDocs(packageDir string, paths ...string) bool {
-	if known, ok := promptDocs.Load(packageDir); ok {
-		return known.(bool)
-	}
-	found := !slices.ContainsFunc(paths, func(path string) bool { return !pathExists(path) })
-	promptDocs.Store(packageDir, found)
-	return found
-}
-
-func resolvePromptPackageDir(packageDir string) string {
-	if packageDir == "" {
-		packageDir = os.Getenv("ORB_PACKAGE_DIR")
-	}
-	if packageDir == "" {
-		if executable, err := os.Executable(); err == nil {
-			packageDir = filepath.Dir(executable)
-		} else {
-			packageDir = "."
-		}
-	}
-	if normalized, err := config.NormalizePath(packageDir); err == nil {
-		packageDir = normalized
-	}
-	if absolute, err := filepath.Abs(packageDir); err == nil {
-		return filepath.Clean(absolute)
-	}
-	return filepath.Clean(packageDir)
 }

@@ -974,7 +974,8 @@ Commands:
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
   orb bridge <command>        Connect this Orb to your other devices and servers as Bridge peers
-  orb skill                   Print the skill that teaches an agent Orb: orb skill > ~/.claude/skills/orb/SKILL.md
+  orb skill                   Print the skill that teaches an agent Orb; each Orb start refreshes it in
+                              <agent-dir>/host/skills/orb, so link it: ln -s ~/.orb/agent/host/skills/orb ~/.claude/skills/orb
   orb <command> --help        Show help for bridge/chat/plugins/mcp/auth/storage/login/logout/install/remove/update/list/config
 
 Global prefixes (before runtime options/subcommands):

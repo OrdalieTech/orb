@@ -64,15 +64,15 @@ func TestLoadSkillsFollowsSymlinksAndKeepsFirstCollision(t *testing.T) {
 
 func TestBuildSystemPromptIncludesSkillsWithAFileReadTool(t *testing.T) {
 	skill := Skill{Name: "inspect", Description: "Inspect", FilePath: "/skills/inspect/SKILL.md"}
-	withRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"read"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
+	withRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"read"}, Skills: []Skill{skill}, CWD: "/cwd"})
 	if !strings.Contains(withRead, "<available_skills>") || !strings.HasSuffix(withRead, "<cwd>\n/cwd\n</cwd>") {
 		t.Fatalf("skill block placement mismatch: %q", withRead)
 	}
-	withBoth := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"bash", "read"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
+	withBoth := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"bash", "read"}, Skills: []Skill{skill}, CWD: "/cwd"})
 	if !strings.Contains(withBoth, "Use the read tool to load") || strings.Contains(withBoth, "Use bash to load") {
 		t.Fatalf("read must be preferred over bash: %q", withBoth)
 	}
-	withoutRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"write"}, Skills: []Skill{skill}, CWD: "/cwd", PackageDir: t.TempDir()})
+	withoutRead := BuildSystemPrompt(SystemPromptOptions{SelectedTools: []string{"write"}, Skills: []Skill{skill}, CWD: "/cwd"})
 	if strings.Contains(withoutRead, "<available_skills>") {
 		t.Fatalf("skills visible without read: %q", withoutRead)
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,24 +15,20 @@ import (
 const (
 	f9UpstreamDefaultIdentity = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files."
 	f9OrbDefaultIdentity      = "You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents."
-	f9OrbDocsHeading          = "Orb documentation (read only when the user asks about Orb itself, its SDK, extensions, themes, skills, or TUI):"
 )
 
 // D30 permits these product-identity substitutions over upstream-generated F9
-// goldens, plus the ledgered absence of codemode (DECISIONS divergence ledger).
-var f9OrbPromptReplacer = strings.NewReplacer(
-	"You can inspect PI_* environment variables for current model and session details.", "You can inspect ORB_* environment variables for current model and session details.",
-	", codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)", "",
-	f9UpstreamDefaultIdentity, f9OrbDefaultIdentity,
-	"Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):", f9OrbDocsHeading,
-	"When reading pi docs or examples", "When reading Orb docs or examples",
-	"When working on pi topics", "When working on Orb topics",
-	"Always read pi .md files completely", "Always read Orb documentation files completely",
+// goldens, and the divergence ledger the absence of pi's docs section.
+var (
+	f9OrbPromptReplacer = strings.NewReplacer(
+		"You can inspect PI_* environment variables for current model and session details.", "You can inspect ORB_* environment variables for current model and session details.",
+		f9UpstreamDefaultIdentity, f9OrbDefaultIdentity,
+	)
+	f9UpstreamDocsSection = regexp.MustCompile(`(?s)\n\n<docs>\n.*?\n</docs>`)
 )
 
 type f9Fixture struct {
 	SchemaVersion  int               `json:"schemaVersion"`
-	PackageDir     string            `json:"packageDir"`
 	PromptCases    []f9PromptCase    `json:"promptCases"`
 	DiscoveryCases []f9DiscoveryCase `json:"discoveryCases"`
 }
@@ -100,7 +97,6 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	}
 
 	fixture := loadF9Fixture(t)
-	packageDir := f9DocsPackageDir(t)
 	for _, fixtureCase := range fixture.PromptCases {
 		fixtureCase := fixtureCase
 		t.Run(fixtureCase.Name, func(t *testing.T) {
@@ -113,9 +109,7 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				CWD:                fixtureCase.Input.CWD,
 				ContextFiles:       f9CodingContextFiles(fixtureCase.Input.ContextFiles),
 				Skills:             f9CodingSkills(fixtureCase.Input.Skills),
-				PackageDir:         packageDir,
 			})
-			got = f9FixturePackagePaths(got, packageDir, fixture.PackageDir)
 			expected := f9ExpectedOrbSystemPrompt(fixtureCase.Expected)
 			f9AssertOrbSystemPromptIdentity(t, fixtureCase.Expected, got)
 			if got != expected {
@@ -127,7 +121,6 @@ func TestF9SystemPromptMatchesUpstreamWithOrbIdentity(t *testing.T) {
 
 func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	fixture := loadF9Fixture(t)
-	packageDir := f9DocsPackageDir(t)
 	for _, fixtureCase := range fixture.DiscoveryCases {
 		fixtureCase := fixtureCase
 		t.Run(fixtureCase.Name, func(t *testing.T) {
@@ -188,7 +181,6 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				AppendSystemPrompt: appendPromptPointer,
 				CWD:                cwd,
 				ContextFiles:       resources.ContextFiles,
-				PackageDir:         packageDir,
 			})
 
 			got := f9DiscoveryExpected{
@@ -197,7 +189,7 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 				SystemPromptSource:        f9FixturePromptSource(resources.SystemPromptSource, fixtureRoot),
 				AppendSystemPrompt:        resources.AppendSystemPrompt,
 				AppendSystemPromptSources: f9FixturePromptSources(resources.AppendSystemPromptSources, fixtureRoot),
-				AssembledPrompt:           normalizeOrbConfigFixturePath(f9FixturePackagePaths(assembled, packageDir, fixture.PackageDir), fixtureRoot),
+				AssembledPrompt:           normalizeOrbConfigFixturePath(assembled, fixtureRoot),
 			}
 			expected := fixtureCase.Expected
 			expected.AssembledPrompt = f9ExpectedOrbSystemPrompt(expected.AssembledPrompt)
@@ -212,27 +204,8 @@ func TestF9ResourceDiscoveryMatchesUpstreamWithOrbIdentity(t *testing.T) {
 	}
 }
 
-// Pi distributions ship these assets; F9 replays that complete-package environment.
-func f9DocsPackageDir(t testing.TB) string {
-	t.Helper()
-	root := t.TempDir()
-	writeF9Tree(t, root, []f9ContextFile{
-		{Path: "README.md"},
-		{Path: "docs/.keep"},
-		{Path: "examples/.keep"},
-	})
-	return root
-}
-
-func f9FixturePackagePaths(prompt, packageDir, fixturePackageDir string) string {
-	for _, name := range []string{"README.md", "docs", "examples"} {
-		prompt = strings.ReplaceAll(prompt, filepath.Join(packageDir, name), fixturePackageDir+"/"+name)
-	}
-	return prompt
-}
-
 func f9ExpectedOrbSystemPrompt(upstream string) string {
-	return f9OrbPromptReplacer.Replace(upstream)
+	return f9OrbPromptReplacer.Replace(f9UpstreamDocsSection.ReplaceAllString(upstream, ""))
 }
 
 func f9AssertOrbSystemPromptIdentity(t testing.TB, upstream, got string) {
@@ -242,9 +215,6 @@ func f9AssertOrbSystemPromptIdentity(t testing.TB, upstream, got string) {
 	}
 	if !strings.HasPrefix(got, f9OrbDefaultIdentity) {
 		t.Fatalf("default system prompt does not use Orb's general-purpose identity: %q", got)
-	}
-	if !strings.Contains(got, f9OrbDocsHeading) {
-		t.Fatalf("default system prompt does not use Orb documentation identity: %q", got)
 	}
 }
 

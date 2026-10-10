@@ -7,7 +7,7 @@ description: "Understand, drive and configure Orb, the pure-Go agent runtime beh
 
 Orb is an agent runtime: the `orb` binary and the Go module it is built from. The TUI, print mode, RPC, ACP, chat platforms and the Orb apps are peer drivers of one core. Orb keeps pi's file and wire formats and runs pi's extensions, skills, prompt templates and packages unchanged.
 
-Inside an Orb session, your shell's `ORB_SESSION_ID`, `ORB_PROVIDER` and `ORB_MODEL` name the session and model you run in. `orb skill` prints this file for the installed version; reprint copies after an update.
+Inside an Orb session, your shell's `ORB_SESSION_ID`, `ORB_PROVIDER` and `ORB_MODEL` name the session and model you run in. `orb skill` prints this file for the installed version.
 
 ## Learn the current CLI
 

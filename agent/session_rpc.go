@@ -772,13 +772,32 @@ func formatNoAPIKeyFoundMessage(provider ai.ProviderID) string {
 // falls back to the hosted docs for standalone binaries where
 // <dir-of-binary>/docs does not exist.
 func authGuidanceDocPaths() (providersDoc, modelsDoc string) {
-	docsDir := filepath.Join(resolvePromptPackageDir(""), "docs")
+	docsDir := filepath.Join(packageDir(), "docs")
 	providersDoc = filepath.Join(docsDir, "providers.md")
 	if _, err := os.Stat(providersDoc); err != nil && os.Getenv("ORB_PACKAGE_DIR") == "" {
 		return "https://github.com/OrdalieTech/orb/blob/main/docs/providers.md",
 			"https://github.com/OrdalieTech/orb/blob/main/docs/models.md"
 	}
 	return providersDoc, filepath.Join(docsDir, "models.md")
+}
+
+// packageDir is upstream's getPackageDir: ORB_PACKAGE_DIR, else the binary's directory.
+func packageDir() string {
+	dir := os.Getenv("ORB_PACKAGE_DIR")
+	if dir == "" {
+		if executable, err := os.Executable(); err == nil {
+			dir = filepath.Dir(executable)
+		} else {
+			dir = "."
+		}
+	}
+	if normalized, err := config.NormalizePath(dir); err == nil {
+		dir = normalized
+	}
+	if absolute, err := filepath.Abs(dir); err == nil {
+		return filepath.Clean(absolute)
+	}
+	return filepath.Clean(dir)
 }
 
 // AuthGuidanceDocPaths exposes the auth-guidance doc pointers to the CLI and
