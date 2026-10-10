@@ -133,10 +133,26 @@ func NewAgentSessionRuntime(
 // ReleaseMemory collects in the background and hands what is free back to the
 // system. Reading a session leaves a few times its size behind as garbage,
 // which an idle process would otherwise hold until the runtime's next forced
-// cycle, minutes later.
+// cycle, minutes later. Requests made while one runs (subagents settling
+// together) make one more, not one each.
 func ReleaseMemory() {
-	go debug.FreeOSMemory()
+	release.wanted.Store(true)
+	if release.running.CompareAndSwap(false, true) {
+		go func() {
+			for {
+				for release.wanted.Swap(false) {
+					debug.FreeOSMemory()
+				}
+				release.running.Store(false)
+				if !release.wanted.Load() || !release.running.CompareAndSwap(false, true) {
+					return
+				}
+			}
+		}()
+	}
 }
+
+var release struct{ wanted, running atomic.Bool }
 
 // Session returns the active session.
 func (runtime *AgentSessionRuntime) Session() *AgentSession {
