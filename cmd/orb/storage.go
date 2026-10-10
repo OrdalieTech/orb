@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/OrdalieTech/orb"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/session"
@@ -157,6 +159,10 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 	if len(argv) > 0 && (argv[0] == "--version" || argv[0] == "-v") {
 		return runCLI(ctx, argv, streams)
 	}
+	if len(argv) == 1 && argv[0] == "skill" {
+		_, _ = io.WriteString(streams.Stdout, orb.Skill)
+		return 0
+	}
 	agentDir, err := config.GetAgentDir()
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -217,6 +223,9 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 // runStorageCommand runs `orb storage` on the open native state.
 func runStorageCommand(ctx context.Context, state *native.State, argv []string, streams cliStreams) error {
 	switch {
+	case len(argv) == 1 && (argv[0] == "--help" || argv[0] == "-h"):
+		_, _ = fmt.Fprintln(streams.Stdout, errStorageUsage)
+		return nil
 	case len(argv) == 4 && argv[0] == "config":
 		switch argv[2] {
 		case "settings.json", "auth.json", "accounts.json", "trust.json", "models.json", "models-store.json", "keybindings.json":

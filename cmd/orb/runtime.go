@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/OrdalieTech/orb"
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -17,6 +19,7 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -225,9 +228,15 @@ func createRuntimeInputs(cwd string, args CLIArgs, priorMessages engine.AgentMes
 		if toolSandboxMode, err = permissions.SandboxMode(settings); err != nil {
 			return runtimeInputs{}, err
 		}
+		skillPaths := args.Skills
+		if !args.NoSkills {
+			if path := orbSkillFile(agentDir); path != "" {
+				skillPaths = append(slices.Clone(args.Skills), path)
+			}
+		}
 		defaultLoader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 			CWD: cwd, AgentDir: agentDir, SettingsManager: settings,
-			AdditionalSkillPaths: args.Skills, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
+			AdditionalSkillPaths: skillPaths, AdditionalPromptTemplatePaths: args.PromptTemplates, AdditionalThemePaths: args.Themes,
 			ExtensionRegistry: extensionRegistry, NoExtensions: args.NoExtensions,
 			NoContextFiles: args.NoContextFiles, NoSkills: args.NoSkills, NoPromptTemplates: args.NoPromptTemplates, NoThemes: args.NoThemes,
 			SystemPrompt: args.SystemPrompt, AppendSystemPrompt: args.AppendSystemPrompt,
@@ -441,6 +450,20 @@ func startupResourceDiagnostic(diagnostic agent.ResourceDiagnostic) modes.Startu
 		return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticCollision, Path: diagnostic.Path, Message: fmt.Sprintf("%q", name)}
 	}
 	return modes.StartupDiagnostic{Kind: modes.StartupDiagnosticOther, Path: diagnostic.Path, Message: diagnostic.Message}
+}
+
+// orbSkillFile writes the skill `orb skill` prints where Orb's own skill loader
+// and read tool find it, as other agents find their installed copy, and
+// returns its path, or "" when the agent directory is not writable.
+func orbSkillFile(agentDir string) string {
+	path := filepath.Join(agentDir, "host", "skills", "orb", "SKILL.md")
+	if current, err := os.ReadFile(path); err == nil && string(current) == orb.Skill {
+		return path
+	}
+	if os.MkdirAll(filepath.Dir(path), 0o700) != nil || filelock.WriteFile(path, []byte(orb.Skill), 0o600) != nil {
+		return ""
+	}
+	return path
 }
 
 func hasNonControlExtensions(registry *extensions.Registry) bool {

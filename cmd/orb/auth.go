@@ -316,6 +316,10 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	if args.Command == "login" && len(args.CommandArgs) > 0 && args.CommandArgs[0] == "--json" {
 		return runLoginJSON(ctx, args.CommandArgs[1:], streams)
 	}
+	if len(args.CommandArgs) == 1 && (args.CommandArgs[0] == "--help" || args.CommandArgs[0] == "-h") {
+		_, _ = fmt.Fprintf(streams.Stdout, "Usage: orb %s <provider>\n", args.Command)
+		return 0
+	}
 	if len(args.CommandArgs) > 1 || (args.Command != "logout" && len(args.CommandArgs) == 0) {
 		return reportCLIError(streams.Stderr, fmt.Errorf("usage: orb %s <provider>", args.Command))
 	}

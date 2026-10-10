@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb skill` prints a skill that teaches an agent what Orb is and how to drive and configure it, deferring to `orb --help` for syntax; give it to Claude Code with `orb skill > ~/.claude/skills/orb/SKILL.md`. Orb's own sessions list the same skill. `orb storage --help`, `orb login --help` and `orb logout --help` print their usage, where they failed or, for logout, reported signing out of a provider named `--help`.
 - A message an agent sends with the `agents` tool opens with a line naming the sender, its conversation id, title and machine, so the recipient knows another Orb wrote and can answer it with `send`; it used to arrive as if you had typed it. `list` names this machine as its peers see it instead of "this machine", which a recipient read as its own (once the machine's Bridge runs this version: a Bridge now tells its owner its name).
 - Team agents: a plugin in the agent file may be its settings instead of `true`, as in `settings.json` (`subagents: {models: [openai-codex/gpt-6-luna]}`), checked as `orb plugins set` checks them. `orb chat` never trusts the project it works in, even one trusted with `/trust`: the agent's tools write there, and a trusted project's extensions would run in the process that holds what is hidden from them; settings put in an agent's `workspace/.orb/settings.json` belong in its agent file now. In the `orb-agent` image, `orb plugins list` and every other `orb` read the settings the agent runs rather than the copy Orb's store imported on the volume's first start.
 

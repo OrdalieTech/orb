@@ -3,13 +3,113 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 )
+
+// The skill is Orb's one self-description: Orb's own sessions list the very file
+// `orb skill` prints, it loads without a warning, and every command in its code
+// blocks is a real command's help that exits 0 and changes nothing.
+func TestOrbSkillIsTheOneOrbLoadsAndNamesOnlySafeHelp(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_OFFLINE", "1")
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(project)
+	run := func(stdin string, args ...string) (string, int) {
+		var stdout bytes.Buffer
+		code := runNativeCLI(context.Background(), args, cliStreams{Stdin: strings.NewReader(stdin), Stdout: &stdout, Stderr: io.Discard})
+		return stdout.String(), code
+	}
+	tree := func() map[string]string {
+		files := map[string]string{}
+		_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err == nil && !entry.IsDir() {
+				data, _ := os.ReadFile(path)
+				files[path] = string(data)
+			}
+			return nil
+		})
+		return files
+	}
+
+	skill, code := run("", "skill")
+	if code != 0 || skill == "" {
+		t.Fatalf("orb skill: exit %d, %d bytes", code, len(skill))
+	}
+	// The first command creates Orb's database; from then on help changes nothing.
+	help, _ := run("", "--help")
+	before := tree()
+	var commands []string
+	fenced := false
+	for _, line := range strings.Split(skill, "\n") {
+		if strings.HasPrefix(line, "```") {
+			fenced = !fenced
+		} else if fenced && strings.HasPrefix(line, "orb ") {
+			commands = append(commands, line)
+		}
+	}
+	if len(commands) == 0 {
+		t.Fatal("the skill names no discovery command")
+	}
+	for _, command := range commands {
+		out, code := run("", strings.Fields(command)[1:]...)
+		if code != 0 || !strings.Contains(out, strings.TrimSuffix(command, " --help")) || command != "orb --help" && out == help {
+			t.Errorf("%s: exit %d, not that command's help:\n%s", command, code, out)
+		}
+		if !maps.Equal(before, tree()) {
+			t.Errorf("%s changed Orb's files or state", command)
+			before = tree()
+		}
+	}
+
+	frames, _ := run(`{"type":"get_commands"}`+"\n", "--mode", "rpc", "--no-session")
+	path := ""
+	for _, line := range strings.Split(frames, "\n") {
+		var frame struct {
+			Command string
+			Data    struct {
+				Commands []struct {
+					Name       string
+					SourceInfo struct{ Path string }
+				}
+			}
+		}
+		if json.Unmarshal([]byte(line), &frame) == nil && frame.Command == "get_commands" {
+			for _, command := range frame.Data.Commands {
+				if command.Name == "skill:orb" {
+					path = command.SourceInfo.Path
+				}
+			}
+		}
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != skill {
+		t.Fatalf("Orb's sessions do not list the skill orb skill prints (path %q, %v):\n%s", path, err, frames)
+	}
+	loaded := agent.LoadSkills(agent.LoadSkillsOptions{CWD: project, AgentDir: filepath.Join(root, "agent"), SkillPaths: []string{path}})
+	if len(loaded.Diagnostics) != 0 || len(loaded.Skills) != 1 || loaded.Skills[0].Name != "orb" {
+		t.Fatalf("skill frontmatter: %+v", loaded)
+	}
+}
 
 func TestRunCLIClosesExtensionHostBeforeReturning(t *testing.T) {
 	requireExtensionHostRuntime(t)

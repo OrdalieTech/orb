@@ -7,3 +7,9 @@ import _ "embed"
 //
 //go:embed CHANGELOG.md
 var Changelog string
+
+// Skill is the agent skill describing Orb: `orb skill` prints it for other
+// agents, and the CLI lists it to its own.
+//
+//go:embed SKILL.md
+var Skill string

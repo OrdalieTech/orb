@@ -973,7 +973,9 @@ Commands:
   orb mcp <command>           Check MCP servers, sign in to or out of OAuth servers
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
-  orb <command> --help        Show help for chat/install/remove/uninstall/update/upgrade/list/config/auth/mcp
+  orb bridge <command>        Connect this Orb to your other devices and servers as Bridge peers
+  orb skill                   Print the skill that teaches an agent Orb: orb skill > ~/.claude/skills/orb/SKILL.md
+  orb <command> --help        Show help for bridge/chat/plugins/mcp/auth/storage/login/logout/install/remove/update/list/config
 
 Global prefixes (before runtime options/subcommands):
   --agent-dir <dir>              Agent resources/config directory (ORB_AGENT_DIR; default ~/.orb/agent)
