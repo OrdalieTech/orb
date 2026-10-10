@@ -1459,7 +1459,7 @@ func expandChangedRangeForKittyImages(first, last int, previous, next []string) 
 	return expandedFirst, expandedLast
 }
 
-// AfterRender runs callback once the next frame is drawn.
+// AfterRender runs callback once a frame started after it is drawn.
 func (ui *TUI) AfterRender(callback func()) {
 	ui.scheduleMu.Lock()
 	ui.afterRender = append(ui.afterRender, callback)
@@ -1468,11 +1468,11 @@ func (ui *TUI) AfterRender(callback func()) {
 }
 
 func (ui *TUI) RenderNow() {
+	ui.scheduleMu.Lock()
+	callbacks := ui.afterRender
+	ui.afterRender = nil
+	ui.scheduleMu.Unlock()
 	defer func() {
-		ui.scheduleMu.Lock()
-		callbacks := ui.afterRender
-		ui.afterRender = nil
-		ui.scheduleMu.Unlock()
 		for _, callback := range callbacks {
 			callback()
 		}

@@ -222,6 +222,16 @@ func TestProjectDirMatchesClaudeCode(t *testing.T) {
 			t.Errorf("%q: got %q, want %q", cwd, got, want)
 		}
 	}
+	// A directory reached through a link is named as the CLI resolves it.
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := filepath.EvalSymlinks(real)
+	if got, want := projectDir("/c", link), projectDir("/c", resolved); got != want || strings.Contains(got, "link") {
+		t.Errorf("linked directory: got %q, want %q", got, want)
+	}
 }
 
 // A native failure with no reply (a context too long for the model) ends the

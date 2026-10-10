@@ -308,6 +308,11 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 // cwd: every character but ASCII letters and digits becomes a dash, and a name
 // over 200 characters is cut and suffixed with its path's hash, as the CLI does.
 func projectDir(configDir, cwd string) string {
+	// The CLI runs in the directory as the system resolves it (on macOS /tmp is
+	// /private/tmp), and names the transcript's directory after that.
+	if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = resolved
+	}
 	units := utf16.Encode([]rune(cwd))
 	name := make([]byte, len(units))
 	var hash int32
