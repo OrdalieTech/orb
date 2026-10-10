@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -222,7 +223,10 @@ func TestProjectDirMatchesClaudeCode(t *testing.T) {
 			t.Errorf("%q: got %q, want %q", cwd, got, want)
 		}
 	}
-	// A directory reached through a link is named as the CLI resolves it.
+	// Off Windows, a directory reached through a link is named as the CLI resolves it.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	real := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(real, link); err != nil {

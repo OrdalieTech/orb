@@ -34,8 +34,8 @@ import (
 const fakeSDK = `
 import {readFileSync,appendFileSync,mkdirSync,realpathSync} from 'node:fs';
 // Like the CLI: transcripts live under the config directory, one per session,
-// named after the working directory as the system resolves it.
-const transcript=(cwd,id)=>{const dir=process.env.CLAUDE_CONFIG_DIR+'/projects/'+realpathSync(cwd).replace(/[^a-zA-Z0-9]/g,'-');mkdirSync(dir,{recursive:true});return dir+'/'+id+'.jsonl'};
+// named after the working directory as getcwd resolves it off Windows.
+const transcript=(cwd,id)=>{const dir=process.env.CLAUDE_CONFIG_DIR+'/projects/'+(process.platform==='win32'?cwd:realpathSync(cwd)).replace(/[^a-zA-Z0-9]/g,'-');mkdirSync(dir,{recursive:true});return dir+'/'+id+'.jsonl'};
 export function query({prompt,options:o}) {
  if(typeof prompt==='string') return (async function*(){
   yield {type:'result',subtype:'success',result:'SUMMARY '+(o.tools.length===0&&o.systemPrompt.includes('summarization'))+' '+prompt.includes('[user]: keep this')};
