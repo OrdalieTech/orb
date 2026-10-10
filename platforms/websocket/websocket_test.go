@@ -99,8 +99,12 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	}{call, bridge.Subject{Kind: "instance", InstanceID: protocol.NewID()}}, nil); err == nil {
 		t.Fatal("controller grant leaked to agent")
 	}
-	// No runtime or listener exists on the client side.
+	// No runtime or listener exists on the client side. The server registers
+	// the connection as it settles, which can trail the first answered calls.
 	incoming := b.Connection(peer)
+	for deadline := time.Now().Add(2 * time.Second); incoming == nil && time.Now().Before(deadline); incoming = b.Connection(peer) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if incoming == nil {
 		t.Fatal("connection not registered")
 	}
