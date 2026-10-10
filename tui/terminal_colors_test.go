@@ -160,6 +160,12 @@ func TestTerminalColorSchemeNotificationSequencesAndTimeout(t *testing.T) {
 	if count := strings.Count(terminal.output(), terminalColorSchemeNotificationsOff); count != 1 {
 		t.Fatalf("disable count = %d in %q", count, terminal.output())
 	}
+	// Once the shell has the terminal back, a late poll asks nothing: its
+	// replies would land on the shell's prompt line.
+	written := terminal.output()
+	if <-ui.QueryTerminalColorScheme(time.Second) != "" || <-ui.QueryTerminalBackgroundColor(time.Second) != nil || terminal.output() != written {
+		t.Fatalf("queried a handed-back terminal: %q", strings.TrimPrefix(terminal.output(), written))
+	}
 }
 
 func TestTerminalColorSchemeNotificationWritesStayOrdered(t *testing.T) {

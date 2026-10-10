@@ -155,6 +155,10 @@ func ParseTerminalColorSchemeReport(data string) (TerminalColorScheme, bool) {
 // A nil result means timeout or a strict reply with an unparseable payload.
 func (ui *TUI) QueryTerminalBackgroundColor(timeout time.Duration) <-chan *RgbColor {
 	query := &pendingOsc11BackgroundQuery{result: make(chan *RgbColor, 1)}
+	if ui.handedBack() {
+		query.result <- nil
+		return query.result
+	}
 	ui.colorMu.Lock()
 	ui.nextOsc11BackgroundQuery++
 	query.id = ui.nextOsc11BackgroundQuery
@@ -272,6 +276,10 @@ func (ui *TUI) consumeTerminalColorSchemeReport(data string) bool {
 // notification path used by persistent listeners. An empty result is timeout.
 func (ui *TUI) QueryTerminalColorScheme(timeout time.Duration) <-chan TerminalColorScheme {
 	result := make(chan TerminalColorScheme, 1)
+	if ui.handedBack() {
+		result <- ""
+		return result
+	}
 	var stateMu sync.Mutex
 	settled := false
 	var timer *time.Timer
@@ -314,6 +322,14 @@ func (ui *TUI) QueryTerminalColorScheme(timeout time.Duration) <-chan TerminalCo
 	return result
 }
 
+// handedBack reports a TUI that stopped after starting: the terminal belongs to
+// the shell again, which would show the replies to a query as typed text.
+func (ui *TUI) handedBack() bool {
+	ui.lifecycleMu.RLock()
+	defer ui.lifecycleMu.RUnlock()
+	return ui.stopped && ui.hasStarted
+}
+
 // SetTerminalColorSchemeNotifications enables or disables CSI ? 2031 reports.
 func (ui *TUI) SetTerminalColorSchemeNotifications(enabled bool) {
 	ui.notificationMu.Lock()
@@ -325,10 +341,7 @@ func (ui *TUI) SetTerminalColorSchemeNotifications(enabled bool) {
 	}
 	ui.terminalColorSchemeNotificationsEnabled = enabled
 	ui.colorMu.Unlock()
-	ui.lifecycleMu.RLock()
-	shouldWrite := !ui.stopped || !ui.hasStarted
-	ui.lifecycleMu.RUnlock()
-	if shouldWrite {
+	if !ui.handedBack() {
 		if enabled {
 			ui.terminal.Write(terminalColorSchemeNotificationsOn)
 		} else {
