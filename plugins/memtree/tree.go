@@ -17,18 +17,20 @@ import (
 )
 
 const (
-	nodeBytes   = 512     // target size of one summary line
-	viewBytes   = 128_000 // view budget on windows of 256k tokens and more
-	jobs        = 8       // compactor calls running at once
-	tries       = 5       // attempts per node to get under nodeBytes
-	retryAfter  = 10 * time.Second
-	giveUp      = 3 // failed calls before a node keeps its messages cut to size
-	callTimeout = 5 * time.Minute
-	unbuilt     = "(not summarized yet: zoom it)"
+	nodeBytes               = 512             // size of one summary line
+	viewHigh, viewLow       = 128_000, 64_000 // the view grows to viewHigh bytes, then one batch merges it to viewLow
+	compactHigh, compactLow = 32_000, 16_000  // the same for the compactions' view
+	pageChars               = 30_000          // tool output keeps its head and tail, other long text is paged
+	jobs                    = 8               // compactor calls running at once
+	tries                   = 5               // attempts per node to get under nodeBytes
+	retryAfter              = 10 * time.Second
+	giveUp                  = 3 // failed calls before a node keeps its messages cut to size
+	callTimeout             = 5 * time.Minute
+	unbuilt                 = "(not summarized yet: zoom it)"
 )
 
 // message is one item of the log: a session entry yields one per user prompt, reply text,
-// tool call, tool result or harness note, in branch order.
+// tool call, tool result or harness note, in branch order, and long text in several.
 type message struct {
 	key  string // entryID/part, the same on every branch through the entry
 	at   int    // index of its entry on the branch
@@ -45,41 +47,50 @@ type nodeKey struct {
 // part is a view line: node (l, i), covering messages [i·2^l, (i+1)·2^l).
 type part struct{ l, i int }
 
-func (p part) start() int { return p.i << p.l }
+func (p part) start() int   { return p.i << p.l }
+func (p part) end() int     { return p.start() + 1<<p.l }
+func (p part) name() string { return fmt.Sprintf("%d+%d", p.start(), 1<<p.l) }
 
-type ask func(context.Context, ai.MessageList) (*ai.AssistantMessage, error)
+// ask calls the compactor; mark is the request's last whole block of view, -1 for none.
+type ask func(ctx context.Context, messages ai.MessageList, mark int) (*ai.AssistantMessage, error)
 
-// tree is one session's summary tree and view, built from its current branch.
+// tree is one session's summary tree and views, built from its current branch.
 type tree struct {
 	sessions extensions.ReadonlySessionManager
 	id       string
-	save     func(nodeKey, string) // persists a built node
+	save     func(customType string, data any) // appends a memtree entry
 	ctx      context.Context
 	stop     context.CancelFunc
+	saving   sync.Mutex // saves keep their order: a view after the nodes it shows
 
-	mu       sync.Mutex
-	ask      ask
-	budget   int
-	status   func(string)
-	nodes    map[nodeKey]string
-	pending  []nodeKey // built, not yet saved
-	busy     map[nodeKey]bool
-	failing  map[nodeKey]int // failed calls per node
-	retry    time.Duration
-	path     []string // entry IDs of the folded branch
-	log      []message
-	view     []part
-	size     int
-	next     []int // per level, the first node not known to be built; next[0] is the frontier
-	progress chan struct{}
+	mu          sync.Mutex
+	ask         ask
+	status      func(string)
+	nodes       map[nodeKey]string
+	pending     []nodeKey // built, not yet saved
+	busy        map[nodeKey]bool
+	failing     map[nodeKey]int // failed calls per node
+	retry       time.Duration
+	path        []string // entry IDs of the folded branch
+	log         []message
+	view, cview []part // the chat's view, and the coarser one compactions read
+	size, csize int
+	batch       bool   // the view passed viewHigh and is not yet down to viewLow
+	merged      bool   // the view merged since it was last saved
+	parents     int    // merge nodes built: a view that stopped short of its size waits for one more
+	stopped     [2]int // parents when the view and the compactions' view last stopped short
+	next        int    // the frontier: the first message not known to be summarized
+	ready       []part // merges whose halves are built
+	progress    chan struct{}
 }
 
 // newTree opens a session's tree with the nodes its memtree entries hold, on every branch.
-func newTree(sessions extensions.ReadonlySessionManager, save func(nodeKey, string)) *tree {
+func newTree(sessions extensions.ReadonlySessionManager, save func(string, any)) *tree {
 	ctx, stop := context.WithCancel(context.Background())
 	t := &tree{
-		sessions: sessions, id: sessions.GetSessionID(), save: save, ctx: ctx, stop: stop, budget: viewBytes, status: func(string) {},
+		sessions: sessions, id: sessions.GetSessionID(), save: save, ctx: ctx, stop: stop, status: func(string) {},
 		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]int{}, retry: retryAfter, progress: make(chan struct{}),
+		stopped: [2]int{-1, -1},
 	}
 	for _, entry := range sessions.GetEntries() {
 		var node savedNode
@@ -90,23 +101,46 @@ func newTree(sessions extensions.ReadonlySessionManager, save func(nodeKey, stri
 	return t
 }
 
-// savedNode is a memtree session entry: the tree is a cache of model calls, kept with the session
-// so it follows it to every host, fork and export.
+// savedNode and savedView are memtree session entries: the tree is a cache of model calls, and
+// the view is saved after each merge, so both follow the session to every host, fork and export.
 type savedNode struct {
 	nodeKey
 	Text string `json:"t"`
 }
 
-const nodeType = "memtree"
+type savedView struct {
+	Parts [][2]int `json:"v"`
+	Batch bool     `json:"b"`
+}
 
-func (t *tree) saveLocked(key nodeKey, text string) {
+const (
+	nodeType = "memtree"
+	viewType = "memtree-view"
+)
+
+// saveLocked keeps node p, built under key: a branch move may have changed what p names.
+func (t *tree) saveLocked(p part, key nodeKey, text string) {
+	if key.Level > 0 {
+		t.parents++
+	}
 	t.nodes[key] = text
 	t.pending = append(t.pending, key)
+	if p.end() <= len(t.log) && t.keyLocked(p.l, p.i) == key {
+		t.queueLocked(p)
+	}
+}
+
+// queueLocked queues the merge above node p, built, once its sibling is built too.
+func (t *tree) queueLocked(p part) {
+	if sibling := (part{p.l, p.i ^ 1}); sibling.end() <= len(t.log) && t.builtLocked(sibling.l, sibling.i) && !t.builtLocked(p.l+1, p.i/2) {
+		t.ready = append(t.ready, part{p.l + 1, p.i / 2})
+	}
 }
 
 // syncLocked folds the entries added to the branch since the last call, walking back from the
 // leaf to the folded branch's last entry. A branch that does not extend the folded one (a /tree
-// move, a rewound prompt) is folded again from message 0.
+// move, a rewound prompt) is folded again from message 0, and its view is the last one saved on
+// it: a view rebuilt from the log differs from the live one, and every cache entry dies.
 func (t *tree) syncLocked() {
 	if t.sessions.GetSessionID() != t.id {
 		return
@@ -122,52 +156,131 @@ func (t *tree) syncLocked() {
 		added, id = append(added, *entry), entry.ParentID
 	}
 	if id == nil && len(t.path) > 0 {
-		t.path, t.log, t.view, t.size, t.next = nil, nil, nil, 0, nil
+		t.path, t.log, t.view, t.cview, t.size, t.csize, t.batch, t.next, t.ready, t.stopped = nil, nil, nil, nil, 0, 0, false, 0, nil, [2]int{-1, -1}
 	}
-	if len(t.next) == 0 {
-		t.next = []int{0}
+	var saved []part
+	batch := false
+	if len(t.path) == 0 {
+		saved, batch = lastView(added)
 	}
 	for k := len(added) - 1; k >= 0; k-- {
 		t.path = append(t.path, added[k].ID)
 		for _, message := range entryMessages(added[k]) {
 			message.at = len(t.path) - 1
 			t.log = append(t.log, message)
-			t.view = append(t.view, part{0, len(t.log) - 1})
-			t.size += t.partSizeLocked(part{0, len(t.log) - 1})
-			for t.next[0] < len(t.log) && t.builtLocked(0, t.next[0]) {
-				t.next[0]++
+			for l, i := 0, len(t.log)-1; (i+1)%(1<<l) == 0 && t.builtLocked(l, i>>l); l++ {
+				t.queueLocked(part{l, i >> l})
 			}
-			t.fitLocked()
+			switch {
+			case saved == nil:
+				t.appendLocked()
+			case saved[len(saved)-1].end() == len(t.log):
+				t.restoreLocked(saved, batch)
+				saved = nil
+			}
 		}
+	}
+	if saved != nil {
+		t.restoreLocked(nil, false)
 	}
 }
 
-// fitLocked merges the most due pair of adjacent sibling lines until the view fits its budget.
-// A pair is due by its age over its weight, so detail fades with age while every level keeps
-// about as many lines; lines are never split again, which keeps the view's start stable.
+// lastView is the newest view saved among entries, newest first, when it tiles messages from 0.
+func lastView(entries []session.SessionEntry) ([]part, bool) {
+	for _, entry := range entries {
+		var saved savedView
+		if entry.Type != "custom" || entry.CustomType != viewType || json.Unmarshal(entry.Data, &saved) != nil {
+			continue
+		}
+		var view []part
+		for next := 0; len(view) < len(saved.Parts); next = view[len(view)-1].end() {
+			p := part{saved.Parts[len(view)][0], saved.Parts[len(view)][1]}
+			if p.l < 0 || p.l > 40 || p.start() != next {
+				return nil, false
+			}
+			view = append(view, p)
+		}
+		return view, saved.Batch
+	}
+	return nil, false
+}
+
+// restoreLocked makes saved the view of the log, or rebuilds the view from the log when saved
+// does not cover it with built lines.
+func (t *tree) restoreLocked(saved []part, batch bool) {
+	usable := len(saved) > 0 && saved[len(saved)-1].end() == len(t.log)
+	for index := 0; usable && index < len(saved); index++ {
+		usable = saved[index].l == 0 || t.builtLocked(saved[index].l, saved[index].i)
+	}
+	if !usable {
+		log := t.log
+		t.log = nil
+		for _, message := range log {
+			t.log = append(t.log, message)
+			t.appendLocked()
+		}
+		return
+	}
+	t.view, t.size, t.batch, t.merged = saved, t.sizeLocked(saved), batch, false
+	t.stopped[1] = -1
+	t.cview, t.csize = t.mergeLocked(slices.Clone(saved), t.size, compactLow, &t.stopped[1])
+}
+
+// appendLocked adds the last message's line to both views.
+func (t *tree) appendLocked() {
+	p := part{0, len(t.log) - 1}
+	t.view, t.cview = append(t.view, p), append(t.cview, p)
+	t.size += t.partSizeLocked(p)
+	t.csize += t.partSizeLocked(p)
+	t.fitLocked()
+}
+
+// fitLocked batches merges: once the view passes viewHigh, the most due pairs merge until it is
+// at most viewLow, again at each change while their parents are not built yet. The compactions'
+// view merges to compactLow whenever it passes compactHigh or the view has merged. Between
+// batches both only grow at their end, so the prompt cache keeps them.
 func (t *tree) fitLocked() {
-	total := len(t.log)
-	for t.size > t.budget {
+	merge := t.csize > compactHigh
+	if t.batch = t.batch || t.size > viewHigh; t.batch {
+		lines := len(t.view)
+		t.view, t.size = t.mergeLocked(t.view, t.size, viewLow, &t.stopped[0])
+		t.batch = t.size > viewLow
+		if len(t.view) < lines {
+			t.merged, merge = true, true
+		}
+	}
+	if merge {
+		t.cview, t.csize = t.mergeLocked(t.cview, t.csize, compactLow, &t.stopped[1])
+	}
+}
+
+// mergeLocked merges the most due pair of sibling lines whose parent is built, the oldest of
+// equal ones, until view is at most low bytes. A pair is due by how long ago it ended in its own
+// line size, (T - last) / 2^l, which makes Taelin's rollback push at any size: detail fades with
+// age, old lines stay put and new ones churn. A view that stopped short of low is not scanned
+// again before a merge node is built.
+func (t *tree) mergeLocked(view []part, size, low int, stopped *int) ([]part, int) {
+	for size > low && *stopped != t.parents {
 		best, due := -1, 0.0
-		// Parents are built only up to the frontier, so the scan stops there.
-		for index := 0; index+1 < len(t.view) && t.view[index+1].start() < t.frontierLocked(); index++ {
-			a, b := t.view[index], t.view[index+1]
+		for index := 0; index+1 < len(view); index++ {
+			a, b := view[index], view[index+1]
 			if a.l != b.l || a.i%2 != 0 || b.i != a.i+1 || !t.builtLocked(a.l+1, a.i/2) {
 				continue
 			}
-			if value := float64(total-a.start()) / float64(int(1)<<(a.l+2)); best < 0 || value > due {
+			if value := float64(len(t.log)-b.end()+1) / float64(b.end()-b.start()); best < 0 || value > due {
 				best, due = index, value
 			}
 		}
 		if best < 0 {
-			return // over budget until a parent is built
+			*stopped = t.parents
+			break
 		}
-		a, b := t.view[best], t.view[best+1]
+		a, b := view[best], view[best+1]
 		merged := part{a.l + 1, a.i / 2}
-		t.size += t.partSizeLocked(merged) - t.partSizeLocked(a) - t.partSizeLocked(b)
-		t.view = append(t.view[:best+1], t.view[best+2:]...)
-		t.view[best] = merged
+		size += t.partSizeLocked(merged) - t.partSizeLocked(a) - t.partSizeLocked(b)
+		view = slices.Replace(view, best, best+2, merged)
 	}
+	return view, size
 }
 
 func (t *tree) keyLocked(l, i int) nodeKey {
@@ -184,105 +297,106 @@ func (t *tree) textLocked(l, i int) string {
 
 func (t *tree) builtLocked(l, i int) bool { return t.textLocked(l, i) != "" }
 
-func (t *tree) partSizeLocked(p part) int {
-	if text := t.textLocked(p.l, p.i); text != "" {
-		return len(text)
+// partSizeLocked is the bytes of p's line in a rendered view.
+func (t *tree) partSizeLocked(p part) int { return len(t.lineLocked(p)) + 1 }
+
+func (t *tree) sizeLocked(view []part) int {
+	size := 0
+	for _, p := range view {
+		size += t.partSizeLocked(p)
 	}
-	return len(unbuilt)
+	return size
 }
 
-// endLocked is where node (l, i)'s context ends: before a message, or after a merged stretch.
-func (t *tree) endLocked(l, i int) int {
-	if l == 0 {
-		return i
-	}
-	return (i + 1) << l
-}
-
-func (t *tree) frontierLocked() int {
-	if len(t.next) == 0 {
-		return 0
-	}
-	return t.next[0]
-}
-
-// pump starts every node whose sources are built and whose context is summarized: messages are
-// compressed one at a time, in order, while merges of finished stretches run alongside, so the
-// compactor never sees a line that is not a summary.
+// pump starts every node that is ready, saves what was built and wakes settle.
 func (t *tree) pump() {
+	t.saving.Lock()
+	defer t.saving.Unlock()
 	t.mu.Lock()
 	if t.ctx.Err() != nil {
 		t.mu.Unlock()
 		return
 	}
 	t.pumpLocked()
-	// Wake settle: the frontier may have moved over messages short enough to be their own lines.
 	close(t.progress)
 	t.progress = make(chan struct{})
-	saved := make([]savedNode, len(t.pending))
+	nodes := make([]savedNode, len(t.pending))
 	for index, key := range t.pending {
-		saved[index] = savedNode{key, t.nodes[key]}
+		nodes[index] = savedNode{key, t.nodes[key]}
 	}
 	t.pending = nil
+	var view *savedView
+	if t.merged {
+		view = &savedView{Batch: t.batch}
+		for _, p := range t.view {
+			view.Parts = append(view.Parts, [2]int{p.l, p.i})
+		}
+		t.merged = false
+	}
 	t.mu.Unlock()
-	for _, node := range saved {
-		t.save(node.nodeKey, node.Text)
+	for _, node := range nodes {
+		t.save(nodeType, node)
+	}
+	if view != nil {
+		t.save(viewType, view)
 	}
 }
 
+// pumpLocked starts the queued merges, then each message's node once fewer than 8 lines before it
+// are unbuilt, jobs at a time: merges first, so the views keep fitting through a backlog.
 func (t *tree) pumpLocked() {
 	t.syncLocked()
-	total := len(t.log)
-	for l := 0; 1<<l <= total; l++ {
-		if l == len(t.next) {
-			t.next = append(t.next, 0)
+	t.ready = slices.DeleteFunc(t.ready, func(p part) bool { return t.builtLocked(p.l, p.i) })
+	for index := 0; index < len(t.ready) && len(t.busy) < jobs; index++ {
+		if p := t.ready[index]; !t.busy[t.keyLocked(p.l, p.i)] {
+			t.startLocked(p.l, p.i, t.keyLocked(p.l, p.i))
 		}
-		for t.next[l] < total>>l && t.builtLocked(l, t.next[l]) {
-			t.next[l]++
-		}
-		for i := t.next[l]; i < total>>l && len(t.busy) < jobs; i++ {
-			if t.endLocked(l, i) > t.frontierLocked() {
-				break
+	}
+	for t.next < len(t.log) && t.builtLocked(0, t.next) {
+		t.next++
+	}
+	for i, waiting := t.next, 0; i < len(t.log) && waiting < 8 && len(t.busy) < jobs; i++ {
+		if !t.builtLocked(0, i) {
+			if waiting++; !t.busy[t.keyLocked(0, i)] {
+				t.startLocked(0, i, t.keyLocked(0, i))
 			}
-			key := t.keyLocked(l, i)
-			if t.busy[key] || t.builtLocked(l, i) || (l > 0 && (!t.builtLocked(l-1, 2*i) || !t.builtLocked(l-1, 2*i+1))) {
-				continue
-			}
-			t.startLocked(l, i, key)
 		}
 	}
 	t.fitLocked() // free merges may have built parents
 }
 
+// startLocked builds node (l, i): a merge of two lines that fit together is free, any other step
+// is a compaction. Its context is the compactions' view up to the node's message, or the merge's
+// last one, and up to its first unbuilt line, so no call sees a placeholder or half a message.
 func (t *tree) startLocked(l, i int, key nodeKey) {
-	var step, fallback string
+	var task, fallback string
+	end := i
 	if l == 0 {
-		step, fallback = "Compress this message into one line, in at most 512 bytes:\n"+t.log[i].line, cut(flat(t.log[i].line), nodeBytes)
+		task, fallback = fmt.Sprintf(compressTask, i, ruler, t.log[i].line), cut(flat(t.log[i].line), nodeBytes)
 	} else {
-		a, b := flat(t.textLocked(l-1, 2*i)), flat(t.textLocked(l-1, 2*i+1))
+		left, right := part{l - 1, 2 * i}, part{l - 1, 2*i + 1}
+		a, b := flat(t.textLocked(left.l, left.i)), flat(t.textLocked(right.l, right.i))
 		if len(a)+1+len(b) <= nodeBytes {
-			t.saveLocked(key, a+"\n"+b)
+			t.saveLocked(part{l, i}, key, a+"\n"+b)
 			return
 		}
-		step, fallback = "Merge these two lines into one, in at most 512 bytes:\n"+a+"\n"+b, cut(a, nodeBytes/2-1)+" "+cut(b, nodeBytes/2)
+		end = right.end()
+		task = fmt.Sprintf(mergeTask, left.name(), right.name(), ruler, left.start(), end-1, t.lineLocked(left), t.lineLocked(right))
+		fallback = cut(a, nodeBytes/2-1) + " " + cut(b, nodeBytes/2)
 	}
-	var chat strings.Builder
-	for _, p := range t.view {
-		if p.start() >= t.endLocked(l, i) {
+	var lines []string
+	for _, p := range t.cview {
+		if p.start() >= end || !t.builtLocked(p.l, p.i) {
 			break
 		}
-		chat.WriteString(flat(t.textLocked(p.l, p.i)) + "\n")
+		lines = append(lines, t.lineLocked(p))
 	}
-	request := ai.MessageList{&ai.UserMessage{Content: ai.UserContent{Blocks: ai.UserContentBlocks{
-		&ai.TextContent{Text: "<chat>\n" + chat.String() + "</chat>"},
-		&ai.TextContent{Text: step},
-	}}}}
 	t.busy[key] = true
-	go t.build(key, t.ask, request, fallback)
+	go t.build(part{l, i}, key, t.ask, ai.MessageList{chat(lines, task)}, len(lines)/4-1, fallback)
 }
 
-func (t *tree) build(key nodeKey, ask ask, request ai.MessageList, fallback string) {
-	text, err := compress(t.ctx, ask, request)
+func (t *tree) build(p part, key nodeKey, ask ask, request ai.MessageList, mark int, fallback string) {
+	text, err := compress(t.ctx, ask, request, mark)
 	t.mu.Lock()
 	switch {
 	case err != nil:
@@ -307,13 +421,10 @@ func (t *tree) build(key nodeKey, ask ask, request ai.MessageList, fallback stri
 		delete(t.failing, key)
 		t.status("")
 	}
-	t.saveLocked(key, text)
+	t.saveLocked(p, key, text)
 	delete(t.busy, key)
-	// The line replaces a placeholder when it is in the view.
-	t.size = 0
-	for _, p := range t.view {
-		t.size += t.partSizeLocked(p)
-	}
+	// The line replaces a placeholder when it is in a view.
+	t.size, t.csize = t.sizeLocked(t.view), t.sizeLocked(t.cview)
 	t.fitLocked()
 	t.mu.Unlock()
 	t.pump()
@@ -321,14 +432,14 @@ func (t *tree) build(key nodeKey, ask ask, request ai.MessageList, fallback stri
 
 // compress asks for one line and, while it is over nodeBytes, shows the model where the limit
 // cuts it, in the same conversation; models can't count bytes. The shortest try is kept.
-func compress(ctx context.Context, ask ask, request ai.MessageList) (string, error) {
+func compress(ctx context.Context, ask ask, request ai.MessageList, mark int) (string, error) {
 	if ask == nil {
 		return "", errors.New("no compactor model")
 	}
 	var best string
 	for range tries {
 		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
-		reply, err := ask(callCtx, request)
+		reply, err := ask(callCtx, request, mark)
 		cancel()
 		if err != nil {
 			return "", err
@@ -343,10 +454,26 @@ func compress(ctx context.Context, ask ask, request ai.MessageList) (string, err
 		if len(line) <= nodeBytes {
 			break
 		}
-		request = append(request, reply, &ai.UserMessage{Content: ai.NewUserText(fmt.Sprintf(
-			"That line is %d bytes; the limit is %d. It must end where it is cut here:\n%s| ← LIMIT", len(line), nodeBytes, cut(line, nodeBytes)))})
+		request = append(request, reply, &ai.UserMessage{Content: ai.NewUserText(fmt.Sprintf(tooLong, len(line), cut(line, nodeBytes)))})
 	}
 	return best, nil
+}
+
+// chat is a view's lines as one message, in blocks of 4 lines so a cache mark can sit on the last
+// whole one, then the blocks of after.
+func chat(lines []string, after ...string) *ai.UserMessage {
+	blocks := ai.UserContentBlocks{&ai.TextContent{Text: "<chat>\n"}}
+	for index, line := range lines {
+		if index > 0 && index%4 == 0 {
+			blocks = append(blocks, &ai.TextContent{})
+		}
+		blocks[len(blocks)-1].(*ai.TextContent).Text += line + "\n"
+	}
+	blocks = append(blocks, &ai.TextContent{Text: "</chat>"})
+	for _, text := range after {
+		blocks = append(blocks, &ai.TextContent{Text: text})
+	}
+	return &ai.UserMessage{Content: ai.UserContent{Blocks: blocks}, Timestamp: time.Now().UnixMilli()}
 }
 
 // settle waits until every message before n is summarized, so no call sees a placeholder; it
@@ -354,7 +481,7 @@ func compress(ctx context.Context, ask ask, request ai.MessageList) (string, err
 func (t *tree) settle(ctx context.Context, n int) bool {
 	for waited := false; ; waited = true {
 		t.mu.Lock()
-		frontier, progress, status := t.frontierLocked(), t.progress, t.status
+		frontier, progress, status := t.next, t.progress, t.status
 		t.mu.Unlock()
 		if frontier >= n {
 			return true
@@ -373,18 +500,27 @@ func (t *tree) settle(ctx context.Context, n int) bool {
 	}
 }
 
-// render is the view of the messages before n, one "id+n|text" line per part.
-func (t *tree) render(n int) string {
+// render is view's lines for the messages before n, one "id+n|text" per node; a line running
+// past n opens into the lines it was made from.
+func (t *tree) render(n int, view []part) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var lines []string
-	for _, p := range t.view {
-		if p.start() >= n {
-			break
+	var add func(part)
+	add = func(p part) {
+		switch {
+		case p.start() >= n:
+		case p.end() <= n:
+			lines = append(lines, t.lineLocked(p))
+		default:
+			add(part{p.l - 1, 2 * p.i})
+			add(part{p.l - 1, 2*p.i + 1})
 		}
-		lines = append(lines, t.lineLocked(p))
 	}
-	return strings.Join(lines, "\n")
+	for _, p := range view {
+		add(p)
+	}
+	return lines
 }
 
 func (t *tree) lineLocked(p part) string {
@@ -392,14 +528,15 @@ func (t *tree) lineLocked(p part) string {
 	if text == "" {
 		text = unbuilt
 	}
-	return fmt.Sprintf("%d+%d|%s", p.start(), 1<<p.l, flat(text))
+	return p.name() + "|" + flat(text)
 }
 
-func (t *tree) length() int {
+// current is the log's length and a copy of the view, as a turn's message would find them.
+func (t *tree) current() (int, []part) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.syncLocked()
-	return len(t.log)
+	return len(t.log), slices.Clone(t.view)
 }
 
 // before is the first message at or after entry id on the branch, or the log's length.
@@ -419,21 +556,29 @@ func (t *tree) before(id string) int {
 	return len(t.log)
 }
 
-func (t *tree) zoom(id, n int) string {
+func (t *tree) zoom(id, n int) ai.ToolResultContent {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.syncLocked()
-	if n < 1 || n&(n-1) != 0 || id < 0 || id%n != 0 || id+n > len(t.log) {
-		return fmt.Sprintf("No line %d+%d.", id, n)
+	if n < 1 || n&(n-1) != 0 || id < 0 || id%n != 0 || n > len(t.log)-id {
+		return ai.ToolResultContent{&ai.TextContent{Text: fmt.Sprintf("No line %d+%d.", id, n)}}
 	}
 	if n == 1 {
-		return fmt.Sprintf("%d+0|%s", id, t.log[id].line)
+		content := ai.ToolResultContent{&ai.TextContent{Text: fmt.Sprintf("%d+0|%s", id, t.log[id].line)}}
+		if entryID, page, _ := strings.Cut(t.log[id].key, "/"); page == "0" {
+			if entry := t.sessions.GetEntry(entryID); entry != nil {
+				for _, image := range entryImages(*entry) {
+					content = append(content, image)
+				}
+			}
+		}
+		return content
 	}
 	l := 0
 	for 2<<l < n {
 		l++
 	}
-	return t.lineLocked(part{l, id >> l}) + "\n" + t.lineLocked(part{l, id>>l + 1})
+	return ai.ToolResultContent{&ai.TextContent{Text: t.lineLocked(part{l, id >> l}) + "\n" + t.lineLocked(part{l, id>>l + 1})}}
 }
 
 func (t *tree) date(id int) string {
@@ -450,11 +595,24 @@ func (t *tree) date(id int) string {
 }
 
 // entryMessages turns one session entry into log messages. Thinking is left out: it adds little
-// the replies and tool calls don't show, and summarizing it trips reasoning safeguards.
+// the replies and tool calls don't show, and summarizing it trips reasoning safeguards. A tool's
+// output keeps its head and tail, pageChars in all; any other long text goes in several messages.
 func entryMessages(entry session.SessionEntry) []message {
 	var out []message
 	add := func(kind, text string) {
-		if text = strings.TrimSpace(text); text != "" {
+		text = strings.TrimSpace(text)
+		if utf8.RuneCountInString(text) > pageChars {
+			runes := []rune(text)
+			if kind == "echo" {
+				text = string(runes[:pageChars/2]) + "\n...\n" + string(runes[len(runes)-pageChars/2:])
+			} else {
+				for ; len(runes) > pageChars; runes = runes[pageChars:] {
+					out = append(out, message{key: fmt.Sprintf("%s/%d", entry.ID, len(out)), line: kind + ": " + string(runes[:pageChars]), time: entry.Timestamp})
+				}
+				text = string(runes)
+			}
+		}
+		if text != "" {
 			out = append(out, message{key: fmt.Sprintf("%s/%d", entry.ID, len(out)), line: kind + ": " + text, time: entry.Timestamp})
 		}
 	}
@@ -492,7 +650,7 @@ func entryMessages(entry session.SessionEntry) []message {
 			if len(text) == 0 && m.ErrorMessage != "" {
 				text = append(text, "(failed: "+m.ErrorMessage+")")
 			}
-			add("talk", strings.Join(text, "\n"))
+			add("orb", strings.Join(text, "\n"))
 			for _, block := range blocks {
 				if block.Type == "toolCall" {
 					add("tool", block.Name+" "+string(block.Arguments))
@@ -517,6 +675,31 @@ func entryMessages(entry session.SessionEntry) []message {
 		add("note", entry.Summary)
 	}
 	return out
+}
+
+// entryImages are the images of a user message, tool result or note entry.
+func entryImages(entry session.SessionEntry) []*ai.ImageContent {
+	raw := entry.Content
+	if entry.Type == "message" {
+		var m struct {
+			Content json.RawMessage `json:"content"`
+		}
+		_ = json.Unmarshal(entry.Message, &m)
+		raw = m.Content
+	}
+	var blocks []struct {
+		Type     string `json:"type"`
+		Data     string `json:"data"`
+		MimeType string `json:"mimeType"`
+	}
+	_ = json.Unmarshal(raw, &blocks)
+	var images []*ai.ImageContent
+	for _, block := range blocks {
+		if block.Type == "image" {
+			images = append(images, &ai.ImageContent{Data: block.Data, MimeType: block.MimeType})
+		}
+	}
+	return images
 }
 
 // contentText reads a string or a list of text and image blocks.
