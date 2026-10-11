@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `memtree` in a second Orb process on the same session stops calling its compactor once the session refuses its first entry, instead of paying for summaries it could never save.
 - `memtree`'s compactor is told not to call tools (`tool_choice: none`): it gets the turns' tools only so it reads them from their prompt cache, and a model that answered with a tool call used to lose that summary to its text cut at 512 bytes.
 - `memtree` fits small models again: the view takes at most half the model's context window in bytes, as before 0.19.7, and a turn waits until its merges bring the view within that budget instead of sending it over.
 

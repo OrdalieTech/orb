@@ -57,10 +57,11 @@ type ask func(ctx context.Context, messages ai.MessageList, mark int) (*ai.Assis
 type tree struct {
 	sessions extensions.ReadonlySessionManager
 	id       string
-	save     func(customType string, data any) // appends a memtree entry
+	save     func(customType string, data any) error // appends a memtree entry
 	ctx      context.Context
 	stop     context.CancelFunc
 	saving   sync.Mutex // saves keep their order: a view after the nodes it shows
+	refused  bool       // the session refused an entry: another process writes it
 
 	mu          sync.Mutex
 	ask         ask
@@ -85,7 +86,7 @@ type tree struct {
 }
 
 // newTree opens a session's tree with the nodes its memtree entries hold, on every branch.
-func newTree(sessions extensions.ReadonlySessionManager, save func(string, any)) *tree {
+func newTree(sessions extensions.ReadonlySessionManager, save func(string, any) error) *tree {
 	ctx, stop := context.WithCancel(context.Background())
 	t := &tree{
 		sessions: sessions, id: sessions.GetSessionID(), save: save, ctx: ctx, stop: stop, status: func(string) {},
@@ -334,11 +335,24 @@ func (t *tree) pump() {
 		t.merged = false
 	}
 	t.mu.Unlock()
+	saves := []func() error{}
 	for _, node := range nodes {
-		t.save(nodeType, node)
+		saves = append(saves, func() error { return t.save(nodeType, node) })
 	}
 	if view != nil {
-		t.save(viewType, view)
+		saves = append(saves, func() error { return t.save(viewType, view) })
+	}
+	for _, save := range saves {
+		// Orb's session store refuses entries from a process that no longer owns the session,
+		// which another one wrote to since; this one then stops paying for summaries it cannot
+		// keep, and goes on with lines cut to size.
+		if err := save(); err != nil {
+			t.mu.Lock()
+			t.refused = true
+			t.status("another Orb writes this session; summaries stopped: " + err.Error())
+			t.mu.Unlock()
+			return
+		}
 	}
 }
 
@@ -392,7 +406,11 @@ func (t *tree) startLocked(l, i int, key nodeKey) {
 		lines = append(lines, t.lineLocked(p))
 	}
 	t.busy[key] = true
-	go t.build(part{l, i}, key, t.ask, ai.MessageList{chat(lines, task)}, len(lines)/4-1, fallback)
+	ask := t.ask
+	if t.refused {
+		ask = nil
+	}
+	go t.build(part{l, i}, key, ask, ai.MessageList{chat(lines, task)}, len(lines)/4-1, fallback)
 }
 
 func (t *tree) build(p part, key nodeKey, ask ask, request ai.MessageList, mark int, fallback string) {

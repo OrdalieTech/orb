@@ -74,9 +74,10 @@ func (s *fakeSessions) append(entry session.SessionEntry) {
 }
 
 // save appends a memtree entry, as the extension API does.
-func (s *fakeSessions) save(customType string, data any) {
+func (s *fakeSessions) save(customType string, data any) error {
 	raw, _ := json.Marshal(data)
 	s.append(session.SessionEntry{Type: "custom", CustomType: customType, Data: raw})
+	return nil
 }
 
 func (s *fakeSessions) add(role string, content any) {
@@ -231,6 +232,39 @@ func TestFailingCompactionsStillLeaveAViewWithinBudget(t *testing.T) {
 	n, view := tr.current()
 	if size := rendered(tr.render(n, view)); size > 8_000 {
 		t.Fatalf("the view is %d bytes over a budget of 8,000", size)
+	}
+}
+
+// A process whose session refuses memtree's entries, as Orb's store does once another process wrote
+// to it, stops calling the compactor: its turns go on with lines cut to size, and nothing it built
+// lands in the session.
+func TestARefusedSessionStopsTheCompactor(t *testing.T) {
+	sessions := &fakeSessions{}
+	for index := range 60 {
+		sessions.add("user", fmt.Sprintf("message %d %s", index, strings.Repeat("x", 900)))
+	}
+	tr := newTree(sessions, func(string, any) error { return errors.New("session ownership changed") })
+	defer tr.stop()
+	model := &compactor{size: 300}
+	var calls atomic.Int32
+	tr.ask = func(ctx context.Context, messages ai.MessageList, mark int) (*ai.AssistantMessage, error) {
+		calls.Add(1)
+		return model.ask(ctx, messages, mark)
+	}
+	tr.pump()
+	if !settled(tr, 60) {
+		t.Fatal("the turn never got its view")
+	}
+	idle(t, tr, false)
+	if n := calls.Load(); n > 2*jobs {
+		t.Fatalf("%d compactor calls after the session refused the first entry", n)
+	}
+	if got := ai.ContentText(tr.zoom(59, 1)); !strings.HasPrefix(got, "59+0|user: message 59") || memtreeEntries(sessions.GetEntries()) != 0 {
+		t.Fatalf("message 59 reads %.40q", got)
+	}
+	n, view := tr.current()
+	if lines := tr.render(n, view); !strings.Contains(strings.Join(lines, "\n"), "|user: message 59 xxx") {
+		t.Fatal("the view does not hold the cut line")
 	}
 }
 

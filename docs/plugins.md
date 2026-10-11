@@ -214,7 +214,9 @@ A turn, or a compaction, waits until every earlier message is summarized, showin
 on (a refusal, an empty reply, no model or credentials) keeps its text cut to 512 bytes, saved
 like a summary, so the session goes on and nothing asks about it again. Summaries and the view
 are kept in the session as hidden `memtree` and `memtree-view` entries, so they follow it across
-forks, exports, hosts and restarts. Claude and Codex sessions run their own loop and bypass the
+forks, exports, hosts and restarts. Two Orb processes on one session: Orb's store refuses entries from the
+one that no longer owns it, and memtree in that process stops calling the compactor and goes on
+with lines cut to size. Claude and Codex sessions run their own loop and bypass the
 plugin.
 
 ### memory, tasks, websearch

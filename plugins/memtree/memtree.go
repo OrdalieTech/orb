@@ -257,13 +257,14 @@ func (p *plugin) current(ec extensions.Context) *tree {
 			p.tree.stop()
 		}
 		var t *tree
-		t = newTree(sessions, func(customType string, data any) {
+		t = newTree(sessions, func(customType string, data any) error {
 			// The API panics once its runtime is gone, which a bare Dispose does not announce;
 			// the entry then has no session to go to.
 			defer func() { _ = recover() }()
-			if t.ctx.Err() == nil {
-				_ = p.api.AppendEntry(context.Background(), customType, data)
+			if t.ctx.Err() != nil {
+				return nil
 			}
+			return p.api.AppendEntry(context.Background(), customType, data)
 		})
 		p.tree, p.run = t, nil
 	}
