@@ -6,6 +6,7 @@ shown by `/changelog`.
 ## [Unreleased]
 
 - Compaction summarizes a conversation too long for the model's window a part at a time, each part updating the summary of those before, instead of failing with the model's "input exceeds the context window". A Claude Sessions conversation that Claude kept compacting on its own left Orb its whole history, so switching it to another model (GPT-6.1 Sol) failed every turn: overflow recovery sent that history to be summarized in one request.
+- Claude Sessions: when Claude compacts its context, Orb records Claude's summary as the conversation's compaction, so another model continues from that summary and what followed it, with no summary of its own to write. It applies to turns Orb runs and to turns it reads from Claude Code, and Claude still resumes from its own records.
 
 ## [0.19.8] - 2026-10-11
 

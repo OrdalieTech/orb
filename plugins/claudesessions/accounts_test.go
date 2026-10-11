@@ -495,6 +495,62 @@ func TestLiveClaudeCallsSessionToolsThroughOrb(t *testing.T) {
 	}
 }
 
+// When Claude compacts, Orb records Claude's summary as its own compaction, kept
+// from the boundary: another model starts from the summary and what followed
+// it, with no summary of its own to write, and Claude still resumes its records.
+func TestClaudeCompactionIsTheOneOtherModelsStartFrom(t *testing.T) {
+	runtime, orb, _ := shared(t, false, nil)
+	claude := ai.Model{ID: "default", Provider: Name, API: Name}
+	orb.SetResponses([]faux.ResponseStep{faux.AssistantMessage("noted mandarine")})
+	if err := runtime.Prompt(t.Context(), "remember mandarine"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SetModel(t.Context(), claude); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(t.Context(), "compact-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SetModel(t.Context(), *orb.GetModel()); err != nil {
+		t.Fatal(err)
+	}
+	var seen string
+	orb.SetResponses([]faux.ResponseStep{faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		raw, _ := json.Marshal(request.Messages)
+		seen = string(raw)
+		return faux.AssistantMessage("continued"), nil
+	})})
+	if err := runtime.Prompt(t.Context(), "and now?"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(seen, "CLAUDE-SUMMARY") || !strings.Contains(seen, "AFTER-COMPACTION") || strings.Contains(seen, "BEFORE-COMPACTION") || strings.Contains(seen, "mandarine") {
+		t.Fatalf("the Orb model did not start from Claude's summary: %s", seen)
+	}
+	compactions := 0
+	for _, entry := range runtime.Manager().GetBranch() {
+		if entry.Type == "compaction" {
+			compactions++
+			if entry.TokensBefore != 574691 {
+				t.Errorf("tokens before = %v", entry.TokensBefore)
+			}
+		}
+	}
+	if compactions != 1 {
+		t.Fatalf("%d compactions, want Claude's one", compactions)
+	}
+	if err := runtime.SetModel(t.Context(), claude); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(t.Context(), "plain-fixture still there?"); err != nil {
+		t.Fatal(err)
+	}
+	messages := runtime.State().Messages
+	raw, _ := json.Marshal(messages[len(messages)-1])
+	if !strings.Contains(string(raw), "AFTER-COMPACTION") || !strings.Contains(string(raw), "continued") || strings.Contains(string(raw), "Summary of the conversation so far") {
+		t.Fatalf("Claude did not resume its own records and the Orb turn after them: %s", raw)
+	}
+}
+
 // An account's plan limits read as the other providers' usage windows.
 func TestClaudeAccountUsage(t *testing.T) {
 	node, err := exec.LookPath("node")

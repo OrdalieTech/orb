@@ -50,7 +50,7 @@ export function query({prompt,options:o}) {
   const byID=new Map(all.filter(r=>r.uuid).map(r=>[r.uuid,r]));
   let leaf=o.resumeSessionAt??all.filter(r=>r.uuid).at(-1)?.uuid??null;
   const loaded=[];for(let r=byID.get(leaf);r;r=byID.get(r.parentUuid))loaded.unshift(r);
-  const read=loaded.map(r=>r.type+':'+(typeof r.message.content==='string'?r.message.content:r.message.content.map(b=>b.text??'').join('')));
+  const read=loaded.map(r=>r.type+':'+(!r.message?'':typeof r.message.content==='string'?r.message.content:r.message.content.map(b=>b.text??'').join('')));
   const host=crypto.randomUUID().slice(0,8);
   const record=(...rs)=>appendFileSync(transcript(o.cwd,id),rs.map(r=>{
    if(r.uuid){r={...r,uuid:r.uuid+'-'+host,parentUuid:leaf,sessionId:id};leaf=r.uuid;}
@@ -120,6 +120,19 @@ export function query({prompt,options:o}) {
    }
    yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify({out,notes:c.notes.splice(0),allowed:o.allowedTools})}],usage:{input_tokens:1,output_tokens:1}}};
    record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},{type:'assistant',uuid:id+'-a'+turn,message:{role:'assistant',content:[{type:'text',text:'mcp'}]}});
+   yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
+  }
+  // Like the CLI compacting mid-turn: the boundary, then the summary it writes.
+  if(JSON.stringify(p.message.content).includes('compact-fixture')) {
+   const say=(u,text)=>({type:'assistant',uuid:id+u+turn,session_id:id,message:{model:o.model,content:[{type:'text',text}],usage:{input_tokens:1,output_tokens:1}}});
+   yield say('-b','BEFORE-COMPACTION');
+   yield {type:'system',subtype:'compact_boundary',session_id:id,compact_metadata:{trigger:'auto',pre_tokens:574691,post_tokens:10101}};
+   yield say('-a','AFTER-COMPACTION');
+   record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},
+    {type:'assistant',uuid:id+'-b'+turn,message:{role:'assistant',content:[{type:'text',text:'BEFORE-COMPACTION'}]}},
+    {type:'system',subtype:'compact_boundary',uuid:id+'-cb'+turn,compactMetadata:{trigger:'auto',preTokens:574691,postTokens:10101}},
+    {type:'user',uuid:id+'-cs'+turn,isCompactSummary:true,message:{role:'user',content:'CLAUDE-SUMMARY of the conversation so far'}},
+    {type:'assistant',uuid:id+'-a'+turn,message:{role:'assistant',content:[{type:'text',text:'AFTER-COMPACTION'}]}});
    yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
   }
   if(JSON.stringify(p.message.content).includes('plain-fixture')) {

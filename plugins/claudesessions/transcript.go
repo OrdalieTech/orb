@@ -121,9 +121,10 @@ func rebuild(manager extensions.ReadonlySessionManager, skip int) []*record {
 		image, ok := images[hash]
 		return image, ok
 	}
-	// Orb's own compaction replaces what came before with its summary.
+	// Orb's own compaction replaces what came before with its summary; Claude's
+	// own records hold the compactions Claude made.
 	for i := len(branch) - 1; i >= 0; i-- {
-		if branch[i].Type == "compaction" {
+		if branch[i].Type == "compaction" && !nativeCompaction(branch[i]) {
 			kept := i
 			for k := range branch[:i] {
 				if branch[k].ID == branch[i].FirstKeptEntryID {
@@ -506,7 +507,7 @@ func planTranscript(records []*record, parents map[string]string, sessionID stri
 // mirror copies the conversation records Claude wrote to session since the
 // last copy into the Orb journal, so Orb can rebuild them later. read holds how
 // far each native transcript was read: it only grows, so a turn reads its own tail.
-func mirror(manager *session.SessionManager, projects, sessionID string, mirrored map[string]bool, read map[string]int64) error {
+func mirror(manager *session.SessionManager, projects, sessionID string, mirrored map[string]bool, read map[string]int64, boundaries *[]string) error {
 	file, err := os.Open(filepath.Join(projects, sessionID+".jsonl"))
 	if err != nil || sessionID == "" {
 		return nil //nolint:nilerr // ponytail: a turn Claude did not record has nothing to mirror.
@@ -538,7 +539,9 @@ func mirror(manager *session.SessionManager, projects, sessionID string, mirrore
 		records = append(records, line)
 	}
 	if len(records) > 0 {
-		if err = appendRecords(manager, records); err != nil {
+		used, err := appendRecords(manager, records, *boundaries)
+		*boundaries = (*boundaries)[used:]
+		if err != nil {
 			return err
 		}
 	}
@@ -580,7 +583,8 @@ const imageRef = "orb:sha256:"
 // Claude Code's own copy of a tool's output for its display, which the model
 // never reads and which can be most of a session (whole files, images), and
 // with the images the turn's messages hold as references to them.
-func appendRecords(manager *session.SessionManager, records []json.RawMessage) error {
+// appendRecords returns how many boundaries the records' compactions used.
+func appendRecords(manager *session.SessionManager, records []json.RawMessage, boundaries []string) (int, error) {
 	var images map[string]string
 	kept := make([]json.RawMessage, len(records))
 	for i, line := range records {
@@ -617,8 +621,10 @@ func appendRecords(manager *session.SessionManager, records []json.RawMessage) e
 			kept[i] = line
 		}
 	}
-	_, err := manager.AppendCustomEntry(transcriptEntry, kept)
-	return err
+	if _, err := manager.AppendCustomEntry(transcriptEntry, kept); err != nil {
+		return 0, err
+	}
+	return compactions(manager, records, boundaries)
 }
 
 // turnEntries are the entries since the records last kept: the turn whose
@@ -780,7 +786,7 @@ func claudeMessages(lines []json.RawMessage, model string) (messages []any, cwd 
 		case "system":
 			if record.Subtype == "compact_boundary" {
 				reply = nil
-				messages = append(messages, activity(compactNotice(record.Compact.Pre, record.Compact.Post), at))
+				messages = append(messages, boundary{activity(compactNotice(record.Compact.Pre, record.Compact.Post), at)})
 			}
 		case "assistant":
 			var m nativeMessage
@@ -899,19 +905,79 @@ func prompt(text string, at int64) []any {
 	return []any{&ai.UserMessage{Content: ai.NewUserText(text), Timestamp: at}}
 }
 
-func appendMessages(manager *session.SessionManager, messages []any) error {
+// boundary is the notice of a compaction Claude made.
+type boundary struct{ *harness.CustomMessage }
+
+// appendMessages returns the entries of the compaction notices among messages.
+func appendMessages(manager *session.SessionManager, messages []any) (boundaries []string, err error) {
 	for _, message := range messages {
-		var err error
-		if notice, ok := message.(*harness.CustomMessage); ok {
-			_, err = manager.AppendCustomMessageEntry(notice.CustomType, notice.Content, notice.Display)
-		} else {
+		switch message := message.(type) {
+		case boundary:
+			var id string
+			id, err = manager.AppendCustomMessageEntry(message.CustomType, message.Content, message.Display)
+			boundaries = append(boundaries, id)
+		case *harness.CustomMessage:
+			_, err = manager.AppendCustomMessageEntry(message.CustomType, message.Content, message.Display)
+		default:
 			_, err = manager.AppendMessage(message)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return boundaries, nil
+}
+
+// compacted marks the compactions Claude made.
+var compacted = map[string]string{"source": Name}
+
+func nativeCompaction(entry session.SessionEntry) bool {
+	raw, _ := json.Marshal(entry.Details)
+	var details struct{ Source string }
+	return json.Unmarshal(raw, &details) == nil && details.Source == Name
+}
+
+// compactions records each summary Claude wrote after compacting as an Orb
+// compaction, so another model starts from it: it keeps the entries from the
+// compaction's boundary (boundaries holds them oldest first) and none before.
+// It returns how many boundaries found their summary.
+func compactions(manager *session.SessionManager, records []json.RawMessage, boundaries []string) (int, error) {
+	used, before := 0, int64(0)
+	for _, line := range records {
+		var record struct {
+			Type, Subtype string
+			Summary       bool `json:"isCompactSummary"`
+			Compact       struct {
+				Pre int64 `json:"preTokens"`
+			} `json:"compactMetadata"`
+			Message struct{ Content json.RawMessage }
+		}
+		if json.Unmarshal(line, &record) != nil {
+			continue
+		}
+		if record.Type == "system" && record.Subtype == "compact_boundary" {
+			before = record.Compact.Pre
+		}
+		if !record.Summary || used == len(boundaries) {
+			continue
+		}
+		var summary string
+		if json.Unmarshal(record.Message.Content, &summary) != nil {
+			var blocks []struct{ Text string }
+			_ = json.Unmarshal(record.Message.Content, &blocks)
+			for _, block := range blocks {
+				summary += block.Text
+			}
+		}
+		if summary == "" {
+			continue
+		}
+		if _, err := manager.AppendCompaction(summary, boundaries[used], before, session.OptionalEntryFields{Details: compacted, HasDetails: true}); err != nil {
+			return used, err
+		}
+		used++
+	}
+	return used, nil
 }
 
 // catchUp takes into an Orb conversation the turns its Claude Code session
@@ -966,10 +1032,11 @@ func catchUp(manager *session.SessionManager, env []string) (added bool, err err
 			model = current.ModelID
 		}
 		messages, _ := claudeMessages(records, model)
-		if err := appendMessages(manager, messages); err != nil {
+		boundaries, err := appendMessages(manager, messages)
+		if err != nil {
 			return false, err
 		}
-		err = appendRecords(manager, records)
+		_, err = appendRecords(manager, records, boundaries)
 		return err == nil, err
 	}
 	return false, nil
@@ -1019,8 +1086,10 @@ func ImportClaudeCode(id string, env []string, create func(cwd string) (*session
 	if _, err := manager.AppendModelChange(Name, "default"); err != nil {
 		return nil, err
 	}
-	if err := appendMessages(manager, messages); err != nil {
+	boundaries, err := appendMessages(manager, messages)
+	if err != nil {
 		return nil, err
 	}
-	return manager, appendRecords(manager, records)
+	_, err = appendRecords(manager, records, boundaries)
+	return manager, err
 }

@@ -309,7 +309,7 @@ func TestMirrorReadsOnlyTheNewTail(t *testing.T) {
 	}
 	step := func(want string) {
 		t.Helper()
-		if err := mirror(manager, dir, "s", mirrored, read); err != nil {
+		if err := mirror(manager, dir, "s", mirrored, read, new([]string)); err != nil {
 			t.Fatal(err)
 		}
 		if got := strings.Join(uuids(), " "); got != want {

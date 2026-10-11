@@ -92,6 +92,8 @@ type Driver struct {
 	approved []json.RawMessage
 	// known is what Orb last read or wrote of the session file, under mu.
 	known fileLinks
+	// boundaries are the entries where Claude compacted, until its summary is read.
+	boundaries []string
 }
 
 func New(options Options) (*Driver, error) {
@@ -452,7 +454,7 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 				return errors.New("claude SDK exited without a result; execution outcome is unknown")
 			}
 			if frame.Type == "settled" {
-				if err := mirror(d.options.Manager, h.projects, frame.Session, h.mirrored, h.read); err != nil {
+				if err := mirror(d.options.Manager, h.projects, frame.Session, h.mirrored, h.read, &d.boundaries); err != nil {
 					return err
 				}
 				h.last = lastMessage(d.options.Manager, 0)
@@ -811,9 +813,12 @@ func (t *translation) event(raw json.RawMessage) error {
 		}
 		switch e.Subtype {
 		case "compact_boundary":
-			if _, err := t.driver.options.Manager.AppendCustomEntry(Name+".context", nil); err != nil {
+			// The compaction Orb records once Claude's summary is in its records keeps from here.
+			id, err := t.driver.options.Manager.AppendCustomEntry(Name+".context", nil)
+			if err != nil {
 				return err
 			}
+			t.driver.boundaries = append(t.driver.boundaries, id)
 			return t.notice(compactNotice(activity.Compact.Pre, activity.Compact.Post))
 		case "informational", "local_command_output":
 			return t.notice(activity.Content)
