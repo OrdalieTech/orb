@@ -128,7 +128,7 @@ func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, agentCo
 	if len(prompts) == 0 {
 		return errors.New("claude sessions require a new prompt; interrupted work is never replayed automatically")
 	}
-	d.offer(agentContext, config)
+	d.offer(ctx, agentContext, config)
 	var generated engine.AgentMessages
 	sink := emit
 	emit = func(ctx context.Context, event engine.AgentEvent) error {
@@ -175,13 +175,13 @@ func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, agentCo
 }
 
 // offer serves Claude the session's tools it has no native counterpart for,
-// each run as Orb's own loop runs it.
-func (d *Driver) offer(agentContext engine.AgentContext, config engine.AgentLoopConfig) {
+// each run as Orb's own loop runs it, within the Orb run.
+func (d *Driver) offer(ctx context.Context, agentContext engine.AgentContext, config engine.AgentLoopConfig) {
 	covered := slices.AppendSeq(slices.Clone(nativeToolNames), maps.Values(orbNames))
 	tools := slices.DeleteFunc(slices.Clone(agentContext.Tools), func(tool engine.AgentTool) bool {
 		return slices.Contains(covered, tool.Spec().Name)
 	})
-	d.tools.Offer(engine.RunToolCallOptions{Tools: tools, Context: agentContext, Model: config.Model, BeforeToolCall: config.BeforeToolCall, AfterToolCall: config.AfterToolCall})
+	d.tools.Offer(ctx, engine.RunToolCallOptions{Tools: tools, Context: agentContext, Model: config.Model, BeforeToolCall: config.BeforeToolCall, AfterToolCall: config.AfterToolCall})
 }
 
 // host is one live native session. It serves every turn while the start

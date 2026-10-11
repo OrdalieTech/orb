@@ -29,6 +29,7 @@ var Implementation = mcp.Implementation{Name: "orb", Version: "0.1.0"}
 type Server struct {
 	server *mcp.Server
 	mu     sync.Mutex
+	turn   context.Context
 	run    engine.RunToolCallOptions
 	// offered keys each tool on offer by what the harness saw of it.
 	offered map[string]string
@@ -38,15 +39,16 @@ func New() *Server {
 	implementation := Implementation
 	// Tools come and go with the session, so the capability is declared up front.
 	options := &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}}}
-	return &Server{server: mcp.NewServer(&implementation, options), offered: map[string]string{}}
+	return &Server{server: mcp.NewServer(&implementation, options), turn: context.Background(), offered: map[string]string{}}
 }
 
-// Offer puts options.Tools on offer, run with options from now on; connected
-// harnesses hear of every change to the list.
-func (s *Server) Offer(options engine.RunToolCallOptions) {
+// Offer puts options.Tools on offer, run with options from now on and stopped
+// when ctx ends, as the harness's own request may be; connected harnesses hear
+// of every change to the list.
+func (s *Server) Offer(ctx context.Context, options engine.RunToolCallOptions) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.run = options
+	s.turn, s.run = ctx, options
 	stale := maps.Clone(s.offered)
 	for _, tool := range options.Tools {
 		spec := tool.Spec()
@@ -78,8 +80,11 @@ func (s *Server) Connect(ctx context.Context, transport mcp.Transport) error {
 
 func (s *Server) call(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	s.mu.Lock()
-	options := s.run
+	turn, options := s.turn, s.run
 	s.mu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer context.AfterFunc(turn, cancel)()
 	arguments := map[string]any{}
 	if len(request.Params.Arguments) > 0 {
 		if err := json.Unmarshal(request.Params.Arguments, &arguments); err != nil {

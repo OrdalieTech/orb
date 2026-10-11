@@ -5,6 +5,7 @@ package claudesessions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
+	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 )
 
 // fakeClaudeCLI signs a config directory in by writing its email to "login";
@@ -190,8 +192,9 @@ func credentialLabel(credential *aiauth.Credential) string {
 // One conversation moves between an Orb model and Claude: Claude reads the
 // turns another model answered, and the other model continues after Claude.
 // shared is a runtime as the CLI builds it: an Orb model, Claude's turns through
-// Configure, and the extensions register adds.
-func shared(t *testing.T, register func(*extensions.Registry) error) (*agent.SessionRuntime, *faux.Provider, string) {
+// Configure, and the extensions register adds. live runs the official SDK
+// (ORB_CLAUDE_LIVE_SDK) and Claude Code on this machine's account instead of fakes.
+func shared(t *testing.T, live bool, register func(*extensions.Registry) error) (*agent.SessionRuntime, *faux.Provider, string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -199,10 +202,16 @@ func shared(t *testing.T, register func(*extensions.Registry) error) (*agent.Ses
 	}
 	dir := t.TempDir()
 	sdk, cli := filepath.Join(dir, "sdk.mjs"), filepath.Join(dir, "claude")
-	if err := os.WriteFile(sdk, []byte(fakeSDK), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cli, []byte("#!/bin/sh\n"), 0o700); err != nil {
+	env := []string{"PATH=" + filepath.Dir(node) + ":/usr/bin:/bin", "SDK_TEST_KEY=unchanged", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude-config")}
+	if live {
+		if sdk = os.Getenv("ORB_CLAUDE_LIVE_SDK"); sdk == "" {
+			t.Skip("set ORB_CLAUDE_LIVE_SDK to the official sdk.mjs for a native account test")
+		}
+		if cli, err = exec.LookPath("claude"); err != nil {
+			t.Fatal(err)
+		}
+		env = os.Environ()
+	} else if err := errors.Join(os.WriteFile(sdk, []byte(fakeSDK), 0o600), os.WriteFile(cli, []byte("#!/bin/sh\n"), 0o700)); err != nil {
 		t.Fatal(err)
 	}
 	settings, err := config.NewSettingsManager(dir, config.WithAgentDir(dir))
@@ -227,7 +236,7 @@ func shared(t *testing.T, register func(*extensions.Registry) error) (*agent.Ses
 			t.Fatal(err)
 		}
 	}
-	bind, err := Configure(&cfg, dir, []string{"PATH=" + filepath.Dir(node) + ":/usr/bin:/bin", "SDK_TEST_KEY=unchanged", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude-config")})
+	bind, err := Configure(&cfg, dir, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +250,7 @@ func shared(t *testing.T, register func(*extensions.Registry) error) (*agent.Ses
 }
 
 func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
-	runtime, orb, dir := shared(t, nil)
+	runtime, orb, dir := shared(t, false, nil)
 	manager := runtime.Manager()
 	reply := func() string {
 		messages := runtime.State().Messages
@@ -291,7 +300,7 @@ func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
 // it, and Orb records the call under the tool's own name.
 func TestClaudeCallsSessionToolsThroughOrb(t *testing.T) {
 	var hooks atomic.Int32
-	runtime, _, _ := shared(t, func(registry *extensions.Registry) error {
+	runtime, _, _ := shared(t, false, func(registry *extensions.Registry) error {
 		return registry.Register("echo", func(api extensions.API) error {
 			// bash stands for the Orb tools Claude has its own of.
 			for _, name := range []string{"echo", "bash"} {
@@ -319,7 +328,7 @@ func TestClaudeCallsSessionToolsThroughOrb(t *testing.T) {
 	if err := runtime.SetModel(t.Context(), ai.Model{ID: "default", Provider: Name, API: Name}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.Prompt(t.Context(), "orb-tools-fixture"); err != nil {
+	if err := runtime.Prompt(t.Context(), `orb-mcp:[{"hook":"mcp__orb__echo"},{"list":true},{"call":"echo","args":{"text":"hi"},"render":true}]`); err != nil {
 		t.Fatal(err)
 	}
 	if msg := runtime.State().ErrorMessage; msg != nil {
@@ -331,28 +340,158 @@ func TestClaudeCallsSessionToolsThroughOrb(t *testing.T) {
 		t.Fatalf("no reply: %+v", messages[len(messages)-1])
 	}
 	var seen struct {
-		Listed  []string
-		Hook    map[string]any
+		Out     []json.RawMessage
 		Allowed []string
-		Called  struct {
-			Content []struct{ Text string }
-			IsError bool
-		}
 	}
 	if err := json.Unmarshal([]byte(reply.Content[0].(*ai.TextContent).Text), &seen); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(seen.Listed, []string{"echo"}) {
-		t.Errorf("offered %v, want echo alone", seen.Listed)
+	var hook map[string]any
+	var listed []string
+	var called struct {
+		Content []struct{ Text string }
+		IsError bool
 	}
-	if len(seen.Hook) != 0 || !slices.Contains(seen.Allowed, "mcp__orb") {
-		t.Errorf("Claude's own permission check took part: hook %v, allowed %v", seen.Hook, seen.Allowed)
+	if len(seen.Out) != 3 || json.Unmarshal(seen.Out[0], &hook) != nil || json.Unmarshal(seen.Out[1], &listed) != nil || json.Unmarshal(seen.Out[2], &called) != nil {
+		t.Fatalf("script answered %s", reply.Content[0].(*ai.TextContent).Text)
 	}
-	if seen.Called.IsError || len(seen.Called.Content) != 1 || seen.Called.Content[0].Text != "echo hi" || hooks.Load() != 1 {
-		t.Errorf("call %+v after %d tool-call hooks, want echo hi after one", seen.Called, hooks.Load())
+	if !slices.Equal(listed, []string{"echo"}) {
+		t.Errorf("offered %v, want echo alone", listed)
+	}
+	if len(hook) != 0 || !slices.Contains(seen.Allowed, "mcp__orb") {
+		t.Errorf("Claude's own permission check took part: hook %v, allowed %v", hook, seen.Allowed)
+	}
+	if called.IsError || len(called.Content) != 1 || called.Content[0].Text != "echo hi" || hooks.Load() != 1 {
+		t.Errorf("call %+v after %d tool-call hooks, want echo hi after one", called, hooks.Load())
 	}
 	if !slices.Equal(rendered, []string{"echo"}) {
 		t.Errorf("Orb rendered %v, want the call as echo", rendered)
+	}
+}
+
+// Stopping the Orb run stops the Orb tools Claude called in it, whether or not
+// Claude cancels its own request.
+func TestStoppingTheRunStopsOrbToolsClaudeCalled(t *testing.T) {
+	started, stopped := make(chan time.Time, 1), make(chan time.Time, 1)
+	runtime, _, _ := shared(t, false, func(registry *extensions.Registry) error {
+		return registry.Register("slow", func(api extensions.API) error {
+			api.RegisterTool(extensions.ToolDefinition{
+				Name: "slow", Label: "slow", Description: "Waits.", Parameters: ai.JSONSchema(`{"type":"object"}`),
+				Execute: func(ctx context.Context, _ string, _ any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+					started <- time.Now()
+					<-ctx.Done()
+					stopped <- time.Now()
+					return engine.AgentToolResult{}, ctx.Err()
+				},
+			})
+			return nil
+		})
+	})
+	if err := runtime.SetModel(t.Context(), ai.Model{ID: "default", Provider: Name, API: Name}); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		<-started
+		runtime.Abort()
+	}()
+	aborted := time.Now()
+	_ = runtime.Prompt(t.Context(), `orb-mcp:[{"call":"slow","args":{}}]`)
+	select {
+	case at := <-stopped:
+		if at.Sub(aborted) > 2*time.Second {
+			t.Fatalf("the tool stopped %v after the run started, only when its host went", at.Sub(aborted))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the Orb tool outlived the run it was called in")
+	}
+}
+
+// Against the official SDK and Claude Code (ORB_CLAUDE_LIVE_SDK, this machine's
+// account): Claude calls an Orb tool and sees the offer follow the session on
+// the same host, Orb's policy refuses an unanswered ask, stopping the run stops
+// the tool, and plain Claude Code resumes the conversation without Orb's server.
+func TestLiveClaudeCallsSessionToolsThroughOrb(t *testing.T) {
+	var echoed, shouted, guarded, waiting, stopped atomic.Int32
+	runtime, _, dir := shared(t, true, func(registry *extensions.Registry) error {
+		if err := registry.Register("permissions", plugins.Extension(&plugins.Policy{Mode: "enforce", Rules: []plugins.Rule{{Tool: "guarded", Action: plugins.Ask}}}, nil, nil)); err != nil {
+			return err
+		}
+		return registry.Register("live", func(api extensions.API) error {
+			schema := ai.JSONSchema(`{"type":"object","required":["text"],"properties":{"text":{"type":"string"}}}`)
+			for name, run := range map[string]func(context.Context, string) (string, error){
+				"echo": func(_ context.Context, text string) (string, error) { echoed.Add(1); return "ECHO:" + text, nil },
+				"shout": func(_ context.Context, text string) (string, error) {
+					shouted.Add(1)
+					return "SHOUT:" + strings.ToUpper(text), nil
+				},
+				"guarded": func(_ context.Context, text string) (string, error) { guarded.Add(1); return text, nil },
+				"slow": func(ctx context.Context, _ string) (string, error) {
+					waiting.Add(1)
+					<-ctx.Done()
+					stopped.Add(1)
+					return "", ctx.Err()
+				},
+			} {
+				api.RegisterTool(extensions.ToolDefinition{
+					Name: name, Label: name, Description: "Runs " + name + " on the text.", Parameters: schema,
+					Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+						text, err := run(ctx, raw.(map[string]any)["text"].(string))
+						return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: text}}}, err
+					},
+				})
+			}
+			return nil
+		})
+	})
+	var rendered []string
+	runtime.Subscribe(func(event any) {
+		if start, ok := event.(engine.ToolExecutionStartEvent); ok {
+			rendered = append(rendered, start.ToolName)
+		}
+	})
+	if err := runtime.SetModel(t.Context(), ai.Model{ID: "haiku", Provider: Name, API: Name}); err != nil {
+		t.Fatal(err)
+	}
+	prompt := func(text string) string {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+		defer cancel()
+		if err := runtime.Prompt(ctx, text); err != nil {
+			t.Fatal(err)
+		}
+		messages := runtime.State().Messages
+		raw, _ := json.Marshal(messages[len(messages)-1])
+		return string(raw)
+	}
+	if err := runtime.SetActiveToolsByName([]string{"echo", "guarded", "slow"}); err != nil {
+		t.Fatal(err)
+	}
+	if reply := prompt("Call the mcp__orb__echo tool with text 'live' and reply with exactly its output. No other tools."); !strings.Contains(reply, "ECHO:live") || echoed.Load() != 1 || !slices.Contains(rendered, "echo") {
+		t.Fatalf("echo: %d runs, rendered %v, reply %s", echoed.Load(), rendered, reply)
+	}
+	if err := runtime.SetActiveToolsByName([]string{"shout", "guarded", "slow"}); err != nil {
+		t.Fatal(err)
+	}
+	if reply := prompt("Call the mcp__orb__shout tool with text 'hey' and reply with exactly its output. No other tools."); !strings.Contains(reply, "SHOUT:HEY") || shouted.Load() != 1 {
+		t.Fatalf("shout after the offer changed: %d runs, reply %s", shouted.Load(), reply)
+	}
+	prompt("Call the mcp__orb__guarded tool once with text 'x', then reply with the result or error you got. No other tools.")
+	if guarded.Load() != 0 {
+		t.Fatal("an unanswered ask ran the tool")
+	}
+	go func() {
+		for waiting.Load() == 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		runtime.Abort()
+	}()
+	prompt("Call the mcp__orb__slow tool with text 'x' and wait for it.")
+	if stopped.Load() != 1 {
+		t.Fatalf("stopping the run left the tool running (%d stopped)", stopped.Load())
+	}
+	resume := exec.Command("claude", "--resume", nativeSessionID(runtime.Manager().GetSessionID()), "-p", "Reply exactly RESUMED_OK.", "--model", "haiku")
+	resume.Dir = dir
+	if out, err := resume.CombinedOutput(); err != nil || !strings.Contains(string(out), "RESUMED_OK") {
+		t.Fatalf("claude --resume: %v %s", err, out)
 	}
 }
 

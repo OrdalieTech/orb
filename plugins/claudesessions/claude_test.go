@@ -59,6 +59,17 @@ export function query({prompt,options:o}) {
   const prompts=prompt[Symbol.asyncIterator]();
   let pending;
   const next=()=>{const value=pending??prompts.next();pending=undefined;return value};
+  let orb;
+  const connectOrb=async()=>{
+   const waiting=new Map(),notes=[];let seq=0;
+   const transport={async start(){},async send(m){if(m.id!==undefined&&waiting.has(m.id)){const r=waiting.get(m.id);waiting.delete(m.id);r(m)}else if(m.method)notes.push(m.method)},async close(){}};
+   await o.mcpServers.orb.instance.connect(transport);
+   const rpc=(method,params)=>new Promise(r=>{const n=++seq;waiting.set(n,r);transport.onmessage({jsonrpc:'2.0',id:n,method,params})});
+   const c={rpc,notes,last:()=>seq,notify:(method,params)=>transport.onmessage({jsonrpc:'2.0',method,params}),call:(name,args)=>rpc('tools/call',{name,arguments:args})};
+   await rpc('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'claude-code',version:'2.1.280'}});
+   c.notify('notifications/initialized');
+   return c;
+  };
   let idle=false;
   for(let turn=0;;turn++){
   // Like a host past its idle timeout: exit between turns.
@@ -85,20 +96,30 @@ export function query({prompt,options:o}) {
    yield say('-n','task done');
    yield {type:'result',subtype:'success',session_id:id};continue;
   }
-  // Like the CLI with an SDK MCP server: connect it, then list and call Orb's tools.
-  if(JSON.stringify(p.message.content).includes('orb-tools-fixture')) {
-   const waiting=new Map();let seq=0;
-   const transport={async start(){},async send(m){waiting.get(m.id)?.(m)},async close(){}};
-   await o.mcpServers.orb.instance.connect(transport);
-   const rpc=(method,params)=>new Promise(r=>{const n=++seq;waiting.set(n,r);transport.onmessage({jsonrpc:'2.0',id:n,method,params})});
-   await rpc('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'claude-code',version:'2.1.280'}});
-   transport.onmessage({jsonrpc:'2.0',method:'notifications/initialized'});
-   const listed=(await rpc('tools/list',{})).result.tools.map(tool=>tool.name);
-   const hook=await o.hooks.PreToolUse[0].hooks[0]({hook_event_name:'PreToolUse',tool_name:'mcp__orb__echo',tool_input:{text:'hi'},tool_use_id:'orb-call',cwd:o.cwd},'orb-call',{signal:abort.signal});
-   const answer=await rpc('tools/call',{name:'echo',arguments:{text:'hi'}});if(!answer.result)throw new Error(JSON.stringify([listed,answer]));const called=answer.result;
-   yield {type:'assistant',uuid:id+'-c'+turn,session_id:id,message:{model:o.model,content:[{type:'tool_use',id:'orb-call',name:'mcp__orb__echo',input:{text:'hi'}}],usage:{input_tokens:1,output_tokens:1}}};
-   yield {type:'user',uuid:id+'-r'+turn,session_id:id,parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'orb-call',content:called.content}]}};
-   yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify({listed,hook,allowed:o.allowedTools,called})}],usage:{input_tokens:1,output_tokens:1}}};
+  // Like the CLI with an SDK MCP server: one connection per query, then the
+  // requests the prompt scripts after "orb-mcp:".
+  if(JSON.stringify(p.message.content).includes('orb-mcp:')) {
+   const script=JSON.parse(p.message.content.map(b=>b.text??'').join('').split('orb-mcp:')[1]);
+   const c=await (orb??=connectOrb());
+   const out=[];
+   for(const step of script){
+    if(step.list) out.push((await c.rpc('tools/list',{})).result.tools.map(tool=>tool.name));
+    else if(step.hook) out.push(await o.hooks.PreToolUse[0].hooks[0]({hook_event_name:'PreToolUse',tool_name:step.hook,tool_input:{},tool_use_id:'orb-call',cwd:o.cwd},'orb-call',{signal:abort.signal}));
+    else if(step.parallel) out.push((await Promise.all(step.parallel.map(s=>c.call(s.call,s.args)))).map(r=>r.result));
+    else if(step.cancel){
+     const answer=c.call(step.cancel,step.args),id=c.last();
+     await new Promise(r=>setTimeout(r,step.after));
+     c.notify('notifications/cancelled',{requestId:id,reason:'test'});
+     out.push(await Promise.race([answer,new Promise(r=>setTimeout(()=>r('no answer'),1000))]));
+    }
+    else out.push(step.raw?await c.rpc('tools/call',{name:step.call,arguments:step.raw}):(await c.call(step.call,step.args)).result??'error');
+    if(step.render){
+     yield {type:'assistant',uuid:id+'-c'+turn,session_id:id,message:{model:o.model,content:[{type:'tool_use',id:'orb-call',name:'mcp__orb__'+step.call,input:step.args}],usage:{input_tokens:1,output_tokens:1}}};
+     yield {type:'user',uuid:id+'-r'+turn,session_id:id,parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'orb-call',content:out.at(-1).content}]}};
+    }
+   }
+   yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify({out,notes:c.notes.splice(0),allowed:o.allowedTools})}],usage:{input_tokens:1,output_tokens:1}}};
+   record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},{type:'assistant',uuid:id+'-a'+turn,message:{role:'assistant',content:[{type:'text',text:'mcp'}]}});
    yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
   }
   if(JSON.stringify(p.message.content).includes('plain-fixture')) {
