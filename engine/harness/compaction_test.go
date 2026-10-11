@@ -229,9 +229,9 @@ func userMessageTextForTest(message ai.Message) string {
 }
 
 // A conversation too long for the model's window, as one another harness kept compacting on its
-// own leaves Orb, is summarized a part at a time: no request exceeds the window, and each part
-// updates the summary of those before it. One that fits still takes one request.
-func TestCompactionSummarizesAnOversizedConversationInParts(t *testing.T) {
+// own leaves Orb, is summarized from its most recent messages that fit, in one request within
+// the window. One that fits is summarized whole.
+func TestCompactionSummarizesTheRecentPartOfAnOversizedConversation(t *testing.T) {
 	model := &ai.Model{MaxTokens: 1_000, ContextWindow: 20_000}
 	var prompts []string
 	complete := func(_ context.Context, model *ai.Model, request ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
@@ -241,30 +241,20 @@ func TestCompactionSummarizesAnOversizedConversationInParts(t *testing.T) {
 			return &ai.AssistantMessage{StopReason: ai.StopReasonError, ErrorMessage: &message}, nil
 		}
 		prompts = append(prompts, prompt)
-		return assistant(fmt.Sprintf("summary %d", len(prompts)), 10), nil
+		return assistant("summary", 10), nil
 	}
 	var long engine.AgentMessages
 	for index := range 60 {
 		long = append(long, user(fmt.Sprintf("step %d %s", index, strings.Repeat("edit ", 1_000))))
 	}
-	result, err := GenerateSummaryWithUsage(context.Background(), long, model, complete, 1_000, "", nil, ai.ModelThinkingOff)
-	if err != nil {
+	if _, err := GenerateSummaryWithUsage(context.Background(), long, model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil {
 		t.Fatal(err)
 	}
-	if len(prompts) < 3 || result.Text != fmt.Sprintf("summary %d", len(prompts)) || result.Usage.Input != int64(10*len(prompts)) {
-		t.Fatalf("%d requests, summary %q, input %d", len(prompts), result.Text, result.Usage.Input)
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "step 59 ") || strings.Contains(prompts[0], "step 0 ") {
+		t.Fatalf("%d requests; want one holding the latest messages, not the first", len(prompts))
 	}
-	for index, prompt := range prompts {
-		if index > 0 && !strings.Contains(prompt, fmt.Sprintf("<previous-summary>\nsummary %d\n", index)) {
-			t.Fatalf("request %d does not update the summary before it", index+1)
-		}
-	}
-	if !strings.Contains(prompts[0], "step 0 ") || !strings.Contains(prompts[len(prompts)-1], "step 59 ") {
-		t.Fatal("the parts do not cover the whole conversation")
-	}
-
 	prompts = nil
-	if _, err := GenerateSummaryWithUsage(context.Background(), long[:2], model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil || len(prompts) != 1 {
-		t.Fatalf("a conversation that fits took %d requests: %v", len(prompts), err)
+	if _, err := GenerateSummaryWithUsage(context.Background(), long[:2], model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil || len(prompts) != 1 || !strings.Contains(prompts[0], "step 0 ") {
+		t.Fatalf("a conversation that fits was not summarized whole: %d requests, %v", len(prompts), err)
 	}
 }
