@@ -31,6 +31,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/toolenv"
+	"github.com/OrdalieTech/orb/plugins/mcp/serve"
 	"github.com/OrdalieTech/orb/tui"
 	mcpjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -472,7 +473,8 @@ func defaultConnect(
 	options *mcpsdk.ClientOptions,
 	tracker progressTracker,
 ) (*mcpsdk.ClientSession, error) {
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "orb", Version: "0.1.0"}, options)
+	implementation := serve.Implementation
+	client := mcpsdk.NewClient(&implementation, options)
 	if config.IsHTTP() {
 		headers, err := configpkg.ResolveHeadersOrThrow(config.Headers, "MCP server header", nil)
 		if err != nil {

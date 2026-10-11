@@ -8,12 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
@@ -186,7 +189,10 @@ func credentialLabel(credential *aiauth.Credential) string {
 
 // One conversation moves between an Orb model and Claude: Claude reads the
 // turns another model answered, and the other model continues after Claude.
-func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
+// shared is a runtime as the CLI builds it: an Orb model, Claude's turns through
+// Configure, and the extensions register adds.
+func shared(t *testing.T, register func(*extensions.Registry) error) (*agent.SessionRuntime, *faux.Provider, string) {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Fatal("Node required for SDK host test", err)
@@ -215,6 +221,12 @@ func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
 	agentState := engine.NewAgent(orb.StreamSimple, engine.WithInitialState(engine.AgentState{Model: orb.GetModel(), Messages: engine.AgentMessages{}}), engine.WithConvertToLLM(agent.ConvertToLLM))
 	cfg := agent.SessionRuntimeConfig{Agent: agentState, SessionManager: manager, Settings: settings, StreamFn: orb.StreamSimple,
 		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) { key := "test"; return &key, nil }}
+	if register != nil {
+		cfg.ExtensionRegistry = extensions.NewRegistry(dir)
+		if err := register(cfg.ExtensionRegistry); err != nil {
+			t.Fatal(err)
+		}
+	}
 	bind, err := Configure(&cfg, dir, []string{"PATH=" + filepath.Dir(node) + ":/usr/bin:/bin", "SDK_TEST_KEY=unchanged", "CLAUDE_CONFIG_DIR=" + filepath.Join(dir, "claude-config")})
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +237,12 @@ func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
 	}
 	bind(runtime)
 	t.Cleanup(runtime.Dispose)
+	return runtime, orb, dir
+}
+
+func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
+	runtime, orb, dir := shared(t, nil)
+	manager := runtime.Manager()
 	reply := func() string {
 		messages := runtime.State().Messages
 		raw, _ := json.Marshal(messages[len(messages)-1])
@@ -265,6 +283,76 @@ func TestOneConversationMovesBetweenOrbAndClaude(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join(dir, "claude-config", "projects", "*", "*.jsonl"))
 	if len(files) != 1 || filepath.Base(files[0]) != nativeSessionID(manager.GetSessionID())+".jsonl" {
 		t.Fatalf("Claude Code sessions = %v", files)
+	}
+}
+
+// Claude reaches the session's own tools through Orb's MCP server: it is offered
+// only those it lacks, each call meets Orb's tool-call hooks once, where Orb runs
+// it, and Orb records the call under the tool's own name.
+func TestClaudeCallsSessionToolsThroughOrb(t *testing.T) {
+	var hooks atomic.Int32
+	runtime, _, _ := shared(t, func(registry *extensions.Registry) error {
+		return registry.Register("echo", func(api extensions.API) error {
+			// bash stands for the Orb tools Claude has its own of.
+			for _, name := range []string{"echo", "bash"} {
+				api.RegisterTool(extensions.ToolDefinition{
+					Name: name, Label: name, Description: "Echo text.",
+					Parameters: ai.JSONSchema(`{"type":"object","required":["text"],"properties":{"text":{"type":"string"}}}`),
+					Execute: func(_ context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+						return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "echo " + raw.(map[string]any)["text"].(string)}}}, nil
+					},
+				})
+			}
+			api.On(extensions.EventToolCall, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+				hooks.Add(1)
+				return nil, nil
+			})
+			return nil
+		})
+	})
+	var rendered []string
+	runtime.Subscribe(func(event any) {
+		if start, ok := event.(engine.ToolExecutionStartEvent); ok {
+			rendered = append(rendered, start.ToolName)
+		}
+	})
+	if err := runtime.SetModel(t.Context(), ai.Model{ID: "default", Provider: Name, API: Name}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(t.Context(), "orb-tools-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if msg := runtime.State().ErrorMessage; msg != nil {
+		t.Fatal(*msg)
+	}
+	messages := runtime.State().Messages
+	reply, _ := messages[len(messages)-1].(*ai.AssistantMessage)
+	if reply == nil || len(reply.Content) == 0 {
+		t.Fatalf("no reply: %+v", messages[len(messages)-1])
+	}
+	var seen struct {
+		Listed  []string
+		Hook    map[string]any
+		Allowed []string
+		Called  struct {
+			Content []struct{ Text string }
+			IsError bool
+		}
+	}
+	if err := json.Unmarshal([]byte(reply.Content[0].(*ai.TextContent).Text), &seen); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(seen.Listed, []string{"echo"}) {
+		t.Errorf("offered %v, want echo alone", seen.Listed)
+	}
+	if len(seen.Hook) != 0 || !slices.Contains(seen.Allowed, "mcp__orb") {
+		t.Errorf("Claude's own permission check took part: hook %v, allowed %v", seen.Hook, seen.Allowed)
+	}
+	if seen.Called.IsError || len(seen.Called.Content) != 1 || seen.Called.Content[0].Text != "echo hi" || hooks.Load() != 1 {
+		t.Errorf("call %+v after %d tool-call hooks, want echo hi after one", seen.Called, hooks.Load())
+	}
+	if !slices.Equal(rendered, []string{"echo"}) {
+		t.Errorf("Orb rendered %v, want the call as echo", rendered)
 	}
 }
 

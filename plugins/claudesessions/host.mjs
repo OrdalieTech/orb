@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const pending = new Map();
-let active, nextID = 0, idle, open = false;
+let active, nextID = 0, idle, open = false, orb;
 async function send(value) {
   const line = JSON.stringify(value) + '\n';
   if (Buffer.byteLength(line) > 8 * 1024 * 1024) throw new Error('Claude SDK event exceeds 8 MiB');
@@ -36,7 +36,8 @@ async function run(config) {
     systemPrompt: { type: 'preset', preset: 'claude_code', append: config.append || undefined },
     permissionMode,
     hooks: { PreToolUse: [{ timeout: 86400, hooks: [async (input, toolID, { signal }) => {
-      if (input.tool_name === 'AskUserQuestion' || input.tool_name === 'ExitPlanMode') return {};
+      // Orb's own tools meet its policy where Orb runs them.
+      if (input.tool_name === 'AskUserQuestion' || input.tool_name === 'ExitPlanMode' || input.tool_name.startsWith('mcp__orb__')) return {};
       try {
         const result = await request({ type: 'tool', tool: input.tool_name, args: input.tool_input,
           tool_id: toolID, cwd: input.cwd }, signal);
@@ -133,6 +134,14 @@ async function run(config) {
   if (config.resume) options.resume = config.resume;
   if (config.at) options.resumeSessionAt = config.at;
   if (config.session) options.sessionId = config.session;
+  // Orb serves Claude the session's other tools as an in-process MCP server; its
+  // messages only pass through here, and Orb runs each call.
+  options.mcpServers = { orb: { type: 'sdk', name: 'orb', instance: { connect(transport) {
+    orb = transport;
+    transport.onmessage = mcp => send({ type: 'mcp', mcp }).catch(() => {});
+    return transport.start?.();
+  } } } };
+  options.allowedTools = [...(options.allowedTools ?? []), 'mcp__orb'];
   // One live query per Orb session: prompts arrive on stdin. An Orb turn settles once
   // Claude answered its prompts, no native turn is due and no background task runs.
   active = query({ prompt: input(), options });
@@ -219,6 +228,8 @@ lines.on('line', line => {
       const resolve = pending.get(message.id);
       pending.delete(message.id);
       resolve?.(message.value, message.cancelled);
+    } else if (message.type === 'mcp') {
+      Promise.resolve(orb?.send(message.mcp)).catch(() => {});
     } else if (message.type === 'cancel') {
       active?.interrupt().catch(() => {});
     }

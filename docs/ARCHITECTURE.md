@@ -63,7 +63,8 @@ orb/
 │   │   └── native/           native bash/file containment through tool-operation options
 │   ├── questions/            shared human-question tool and choice panel over RequestInput
 │   ├── claudesessions/       official Claude SDK host behind the engine.SessionLoop seam
-│   ├── mcp/                  configured MCP integration; cli/ is `orb mcp`
+│   ├── mcp/                  MCP client for configured servers; cli/ is `orb mcp`
+│   │   └── serve/            MCP server offering a session's tools to another agent harness
 │   ├── herdr/                Herdr pane reporting, attached only inside Herdr
 │   └── internal/toolutil/    argument decoding and text results shared by plugin tools
 ├── internal/
@@ -543,7 +544,10 @@ continues without JavaScript extensions.
 
 **MCP** (`plugins/mcp/`): bundled extension registering MCP servers from settings as tool
 sources via `modelcontextprotocol/go-sdk` (stdio + streamable HTTP), tools surfaced through the
-normal registration API with dynamic tool loading. Off unless configured.
+normal registration API with dynamic tool loading. Off unless configured. `plugins/mcp/serve` is
+the other direction: a session's tools offered to another agent harness, which supplies the
+transport and keeps the tools it has its own of; each call runs through `engine.RunToolCall`, so
+argument validation and the session's tool-call hooks apply as in Orb's own loop.
 
 **Modes** (`agent/modes/`): TUI (default), print `-p` (stdin merge), json (AgentSessionEvent
 JSONL out — adds `queue_update`, `compaction_start/end`, `auto_retry_start/end` per `docs/json.md`),
@@ -920,7 +924,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 |---|---|---|
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2/config | ai/api/bedrock (native hosts) | AWS shared config and credential chain for Bedrock (D10) |
-| modelcontextprotocol/go-sdk | mcp | official MCP SDK v1.6+ |
+| modelcontextprotocol/go-sdk | mcp, mcp/serve | official MCP SDK v1.6+ |
 | yuin/goldmark | tui, chat, bridge/view | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |
 | rivo/uniseg | tui | grapheme/East-Asian width |

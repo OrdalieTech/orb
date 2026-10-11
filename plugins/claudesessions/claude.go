@@ -5,6 +5,7 @@ package claudesessions
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/rand"
 	_ "embed"
@@ -34,6 +35,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	work "github.com/OrdalieTech/orb/plugins/activity"
+	"github.com/OrdalieTech/orb/plugins/mcp/serve"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/plugins/questions/panel"
 )
@@ -83,6 +85,8 @@ type Driver struct {
 	options Options
 	mu      sync.Mutex
 	host    *host
+	// tools serves Claude the session's tools it lacks; each host connects to it.
+	tools *serve.Server
 	// ponytail: approvals "for this session" live as long as this Orb runtime,
 	// like Orb's own session approvals.
 	approved []json.RawMessage
@@ -101,7 +105,7 @@ func New(options Options) (*Driver, error) {
 		return nil, errors.New("claude executable and SDK paths must be absolute")
 	}
 	options.Env = append([]string{}, options.Env...)
-	return &Driver{options: options}, nil
+	return &Driver{options: options, tools: serve.New()}, nil
 }
 
 // onBranch returns the entry nearest the leaf that match accepts.
@@ -120,10 +124,11 @@ func onBranch(manager extensions.ReadonlySessionManager, match func(*session.Ses
 
 // Loop owns the complete native turn. Orb queues are drained only between native
 // turns, so no tool is executed twice by an outer Orb agent loop.
-func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, _ engine.AgentContext, config engine.AgentLoopConfig, emit engine.EventSink) error {
+func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, agentContext engine.AgentContext, config engine.AgentLoopConfig, emit engine.EventSink) error {
 	if len(prompts) == 0 {
 		return errors.New("claude sessions require a new prompt; interrupted work is never replayed automatically")
 	}
+	d.offer(agentContext, config)
 	var generated engine.AgentMessages
 	sink := emit
 	emit = func(ctx context.Context, event engine.AgentEvent) error {
@@ -169,6 +174,16 @@ func (d *Driver) Loop(ctx context.Context, prompts engine.AgentMessages, _ engin
 	return emit(context.WithoutCancel(ctx), engine.AgentEndEvent{Messages: generated})
 }
 
+// offer serves Claude the session's tools it has no native counterpart for,
+// each run as Orb's own loop runs it.
+func (d *Driver) offer(agentContext engine.AgentContext, config engine.AgentLoopConfig) {
+	covered := slices.AppendSeq(slices.Clone(nativeToolNames), maps.Values(orbNames))
+	tools := slices.DeleteFunc(slices.Clone(agentContext.Tools), func(tool engine.AgentTool) bool {
+		return slices.Contains(covered, tool.Spec().Name)
+	})
+	d.tools.Offer(engine.RunToolCallOptions{Tools: tools, Context: agentContext, Model: config.Model, BeforeToolCall: config.BeforeToolCall, AfterToolCall: config.AfterToolCall})
+}
+
 // host is one live native session. It serves every turn while the start
 // configuration stays the same and the conversation still ends where its last
 // turn did; anything else (another model's turn, a /tree move) starts a host
@@ -186,6 +201,7 @@ type host struct {
 	frames   chan hostFrame
 	exited   chan struct{}
 	kill     func() error
+	mcp      *serve.Pipe
 	// tasks outlives a turn: a background task may finish while a later one runs.
 	tasks map[string]*nativeTask
 }
@@ -211,6 +227,7 @@ type hostFrame struct {
 	Ruled       bool            `json:"ruled"`
 	Questions   json.RawMessage `json:"questions"`
 	Elicitation json.RawMessage `json:"elicitation"`
+	MCP         json.RawMessage `json:"mcp"`
 	// Session is the native session a settled turn wrote to.
 	Session string `json:"session"`
 }
@@ -233,6 +250,7 @@ func (h *host) alive() bool {
 
 // close lets the host end its native session, and kills it if it lingers.
 func (h *host) close() {
+	_ = h.mcp.Close()
 	_ = h.input.Close()
 	time.AfterFunc(5*time.Second, func() { _ = h.kill() })
 }
@@ -249,12 +267,17 @@ func (d *Driver) spawn(start map[string]any, env []string) (*host, error) {
 		return nil, err
 	}
 	h := &host{input: input, frames: make(chan hostFrame, 64), exited: make(chan struct{}), kill: isolate(process), tasks: map[string]*nativeTask{}}
+	h.mcp = serve.NewPipe(func(message json.RawMessage) error { return h.write(map[string]any{"type": "mcp", "mcp": message}) })
+	if err = d.tools.Connect(context.Background(), h.mcp); err != nil {
+		return nil, err
+	}
 	if err = process.Start(); err != nil {
+		_ = h.mcp.Close()
 		return nil, fmt.Errorf("start Claude SDK: %w", err)
 	}
 	go func() {
 		defer close(h.frames)
-		defer func() { _ = h.kill(); _ = process.Wait(); close(h.exited) }()
+		defer func() { _ = h.kill(); _ = process.Wait(); _ = h.mcp.Close(); close(h.exited) }()
 		scanner := bufio.NewScanner(output)
 		scanner.Buffer(make([]byte, 64<<10), 8<<20)
 		for scanner.Scan() {
@@ -489,6 +512,8 @@ func (d *Driver) handle(ctx context.Context, frame hostFrame, translator *transl
 	switch frame.Type {
 	case "sdk":
 		return translator.event(frame.Event)
+	case "mcp":
+		return h.mcp.Deliver(frame.MCP)
 	case "context":
 		_, err := d.options.Manager.AppendCustomEntry(Name+".context", frame.Event)
 		return err
@@ -602,15 +627,7 @@ func (d *Driver) approve(ctx context.Context, tool, toolID, cwd string, args map
 	if before == nil {
 		return "", ""
 	}
-	name := tool
-	switch name {
-	case "Bash", "Read", "Write", "Edit", "Grep":
-		name = strings.ToLower(name)
-	case "Glob":
-		name = "find"
-	case "MultiEdit", "NotebookEdit":
-		name = "edit"
-	}
+	name := cmp.Or(orbNames[tool], tool)
 	if !filepath.IsAbs(cwd) {
 		cwd = d.options.Manager.GetCWD()
 	}
@@ -697,7 +714,7 @@ func replyBlock(b nativeBlock) ai.AssistantContentBlock {
 		redacted := true
 		return &ai.ThinkingContent{Thinking: "[Reasoning redacted]", ThinkingSignature: &b.Data, Redacted: &redacted}
 	case "tool_use":
-		return &ai.ToolCall{ID: b.ID, Name: b.Name, Arguments: b.Input}
+		return &ai.ToolCall{ID: b.ID, Name: strings.TrimPrefix(b.Name, orbTools), Arguments: b.Input}
 	}
 	return nil
 }

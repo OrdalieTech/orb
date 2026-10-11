@@ -86,3 +86,12 @@ descriptions, schema text and namespace, and activates the matches, so the trans
 and resume restores them; tools of a restored loadout that register late (servers still
 connecting) turn on when they register. Providers with native tool search receive later
 additions as deferred declarations.
+
+## Serving a session's tools
+
+`serve/` is the other direction: an MCP server offering a session's tools to another agent harness
+(claude-sessions today). The harness integration offers the tools its harness lacks and carries the
+messages, over its own channel with a `Pipe` or over any go-sdk transport; the list follows the
+session's tools with `tools/list_changed`. Each call runs through `engine.RunToolCall`, so argument
+validation and the session's tool-call hooks, the permission policy among them, apply as in Orb's
+own loop. It depends on `engine` and the go-sdk only.

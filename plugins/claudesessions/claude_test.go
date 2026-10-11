@@ -85,6 +85,22 @@ export function query({prompt,options:o}) {
    yield say('-n','task done');
    yield {type:'result',subtype:'success',session_id:id};continue;
   }
+  // Like the CLI with an SDK MCP server: connect it, then list and call Orb's tools.
+  if(JSON.stringify(p.message.content).includes('orb-tools-fixture')) {
+   const waiting=new Map();let seq=0;
+   const transport={async start(){},async send(m){waiting.get(m.id)?.(m)},async close(){}};
+   await o.mcpServers.orb.instance.connect(transport);
+   const rpc=(method,params)=>new Promise(r=>{const n=++seq;waiting.set(n,r);transport.onmessage({jsonrpc:'2.0',id:n,method,params})});
+   await rpc('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'claude-code',version:'2.1.280'}});
+   transport.onmessage({jsonrpc:'2.0',method:'notifications/initialized'});
+   const listed=(await rpc('tools/list',{})).result.tools.map(tool=>tool.name);
+   const hook=await o.hooks.PreToolUse[0].hooks[0]({hook_event_name:'PreToolUse',tool_name:'mcp__orb__echo',tool_input:{text:'hi'},tool_use_id:'orb-call',cwd:o.cwd},'orb-call',{signal:abort.signal});
+   const answer=await rpc('tools/call',{name:'echo',arguments:{text:'hi'}});if(!answer.result)throw new Error(JSON.stringify([listed,answer]));const called=answer.result;
+   yield {type:'assistant',uuid:id+'-c'+turn,session_id:id,message:{model:o.model,content:[{type:'tool_use',id:'orb-call',name:'mcp__orb__echo',input:{text:'hi'}}],usage:{input_tokens:1,output_tokens:1}}};
+   yield {type:'user',uuid:id+'-r'+turn,session_id:id,parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'orb-call',content:called.content}]}};
+   yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify({listed,hook,allowed:o.allowedTools,called})}],usage:{input_tokens:1,output_tokens:1}}};
+   yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
+  }
   if(JSON.stringify(p.message.content).includes('plain-fixture')) {
    const text=JSON.stringify({read});
    yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text}],usage:{input_tokens:10,output_tokens:4}}};

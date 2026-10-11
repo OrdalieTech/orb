@@ -319,7 +319,10 @@ chosen for it (kept as its
 
 `/tree`, withdrawn prompts and branch summaries work as in any Orb session; Claude writes the
 summary. Native approvals use Orb's choices, and **approve for this
-session** lasts as long as the running Orb session. Messages sent while Claude works join the running
+session** lasts as long as the running Orb session. Claude also gets the session's Orb tools it has
+no counterpart of (the `agents` tool, plugin and extension tools) from an in-process MCP server
+named `orb`; Orb runs each call under its own policy, and shows and records it under the tool's
+own name. Messages sent while Claude works join the running
 turn after its next tool result. Orb's system-prompt additions reach Claude; context files such as CLAUDE.md
 are Claude's own and load natively, and Orb does not inject its AGENTS.md. In `-p`/JSON runs, approvals Claude would ask for run as Orb's own tools would,
 unless one of your Claude ask rules forces the prompt. `--no-extensions`

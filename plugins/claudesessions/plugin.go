@@ -25,6 +25,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	work "github.com/OrdalieTech/orb/plugins/activity"
 	"github.com/OrdalieTech/orb/plugins/permissions"
+	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -480,6 +481,16 @@ func executable(name string, env []string) (string, error) {
 
 // These tools provide presentation only; the SDK alone executes native calls.
 var nativeToolNames = []string{"AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Task", "TaskOutput", "TaskStop", "Monitor", "Skill"}
+
+// orbNames maps Claude's native tools onto the Orb tools they stand for: Orb's
+// policy judges them alike, and Claude is offered only the Orb tools it lacks.
+var orbNames = map[string]string{
+	"Bash": "bash", "Read": "read", "Write": "write", "Edit": "edit", "MultiEdit": "edit", "NotebookEdit": "edit", "Grep": "grep", "Glob": "find", "LS": "ls",
+	"AskUserQuestion": questions.ToolName, "WebSearch": "web_search", "WebFetch": "fetch_content", "TodoWrite": "todo", "TaskStop": "stop_job",
+}
+
+// orbTools prefixes the names Claude gives the Orb tools it is offered.
+const orbTools = "mcp__orb__"
 
 type nativeTool struct{ name, cwd string }
 
