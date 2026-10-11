@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -349,9 +350,16 @@ const sse = "event: message_start\ndata: {\"type\":\"message_start\",\"message\"
 	"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n" +
 	"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 
+const toolUse = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+	"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"date\",\"input\":{}}}\n\n" +
+	"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"id\\\":0}\"}}\n\n" +
+	"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+	"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":1}}\n\n" +
+	"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+
 // On Anthropic, a turn marks its view's last whole block for the cache, and the block the last
 // turn marked, within four marks; a compaction sends the turns' system prompt and tools, then
-// marks its own view the same way.
+// marks its own view the same way, and never answers with a tool call.
 func TestAnthropicRequestsMarkTheViewAndCompactionsShareTheTurnsPrefix(t *testing.T) {
 	var mu sync.Mutex
 	var turns, compactions []map[string]any
@@ -361,16 +369,21 @@ func TestAnthropicRequestsMarkTheViewAndCompactionsShareTheTurnsPrefix(t *testin
 		_ = json.NewDecoder(request.Body).Decode(&body)
 		messages, _ := json.Marshal(body["messages"])
 		mu.Lock()
-		text := "a summary"
-		if strings.Contains(string(messages), "Compaction:") {
+		text, compaction := "a summary", strings.Contains(string(messages), "Compaction:")
+		if compaction {
 			compactions = append(compactions, body)
 		} else {
 			text = replies[len(turns)]
 			turns = append(turns, body)
 		}
 		mu.Unlock()
-		quoted, _ := json.Marshal(text)
 		writer.Header().Set("Content-Type", "text/event-stream")
+		// A model offered tools may call one, unless told not to.
+		if choice, _ := body["tool_choice"].(map[string]any); compaction && choice["type"] != "none" {
+			_, _ = io.WriteString(writer, toolUse)
+			return
+		}
+		quoted, _ := json.Marshal(text)
 		_, _ = fmt.Fprintf(writer, sse, quoted)
 	}))
 	defer server.Close()
@@ -417,6 +430,9 @@ func TestAnthropicRequestsMarkTheViewAndCompactionsShareTheTurnsPrefix(t *testin
 	compaction, turn := compactions[0], turns[3]
 	if !reflect.DeepEqual(compaction["system"], turn["system"]) || !reflect.DeepEqual(compaction["tools"], turn["tools"]) || turn["tools"] == nil {
 		t.Fatal("the compaction does not send the turns' system prompt and tools")
+	}
+	if view := fmt.Sprint(turns[3]["messages"]); !strings.Contains(view, "5+1|a summary") {
+		t.Fatalf("the long reply's line is not the compactor's summary: %.300s", view)
 	}
 	if !viewMarked(compaction, 0) || marks(compaction) > 4 {
 		t.Fatalf("compaction view marked: %v, %d marks", viewMarked(compaction, 0), marks(compaction))

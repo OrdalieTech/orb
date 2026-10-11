@@ -334,6 +334,8 @@ func (p *plugin) ask(ec extensions.Context) ask {
 		llm := ai.Context{SystemPrompt: &system, Messages: messages}
 		if tools != nil {
 			llm.Tools = &tools
+			// The tools are sent for their cached prefix only: a summary is never a tool call.
+			options.ToolChoice = ai.ToolChoiceNone
 		}
 		release := func() {}
 		if mark >= 0 {
