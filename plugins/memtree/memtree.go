@@ -270,6 +270,15 @@ func (p *plugin) current(ec extensions.Context) *tree {
 	t := p.tree
 	t.mu.Lock()
 	t.ask = p.ask(ec)
+	// The view takes at most half the model's context window, counted in bytes: a token is more.
+	high := viewBytes
+	if model := ec.Model(); model != nil && model.ContextWindow > 0 {
+		high = min(viewBytes, int(model.ContextWindow/2))
+	}
+	if high != t.high {
+		t.high = high
+		t.fitLocked()
+	}
 	if ec.HasUI() {
 		ui := ec.UI()
 		t.status = func(text string) {
@@ -556,6 +565,11 @@ func (p *plugin) context(ctx context.Context, raw extensions.Event, ec extension
 			return nil, nil
 		}
 		lines := t.render(r.n, r.parts)
+		// The view the prompt found was over its budget when its merges were not built yet.
+		if rendered(lines) > t.budget() {
+			_, view := t.current()
+			lines = t.render(r.n, view)
+		}
 		r.view = chat(lines)
 		// A mark on the last whole block, and one where the last turn's was, which Anthropic's
 		// lookback of 20 blocks misses when a turn adds more than 80 lines.

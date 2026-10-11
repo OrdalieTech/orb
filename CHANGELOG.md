@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `memtree` fits small models again: the view takes at most half the model's context window in bytes, as before 0.19.7, and a turn waits until its merges bring the view within that budget instead of sending it over.
+
 ## [0.19.7] - 2026-10-10
 
 memtree follows OptChat's revised recipe and keeps its view through retries, agents know which Orb messaged them, team agents take plugin settings from their agent file and never trust their workspace, and `orb skill` teaches any agent Orb.

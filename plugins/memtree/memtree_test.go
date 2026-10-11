@@ -142,8 +142,8 @@ func idle(t *testing.T, tr *tree, held bool) {
 	t.Fatal("compactor never went idle")
 }
 
-// The view follows OptChat: each message appends its line, and once the view passes viewHigh one
-// batch merges the most due pairs down to viewLow, so between batches it only grows at its end.
+// The view follows OptChat: each message appends its line, and once the view passes its budget one
+// batch merges the most due pairs down to half of it, so between batches it only grows at its end.
 // Compactions read a view merged further. A restart keeps the live view, not one rebuilt from
 // the log, even where a live merge had to wait for its summary.
 func TestTheViewGrowsAtItsEndBetweenBatchesAndSurvivesARestart(t *testing.T) {
@@ -165,12 +165,12 @@ func TestTheViewGrowsAtItsEndBetweenBatchesAndSurvivesARestart(t *testing.T) {
 		view, size := slices.Clone(tr.view), tr.size
 		tr.mu.Unlock()
 		if len(view) != len(previous)+1 || !slices.Equal(view[:len(previous)], previous) {
-			if size > viewLow {
+			if size > viewBytes/2 {
 				t.Fatalf("message %d changed the view without a batch: %d bytes", index, size)
 			}
 			batches++
 		}
-		if size > viewHigh {
+		if size > viewBytes {
 			t.Fatalf("message %d left the view at %d bytes", index, size)
 		}
 		previous = view
@@ -181,7 +181,7 @@ func TestTheViewGrowsAtItsEndBetweenBatchesAndSurvivesARestart(t *testing.T) {
 		t.Fatalf("%d batches, view starts %v", batches, previous[:2])
 	}
 	for _, chat := range model.chats {
-		if strings.Contains(chat, unbuilt) || len(chat) > compactHigh+5_000 {
+		if strings.Contains(chat, unbuilt) || len(chat) > viewBytes/4+5_000 {
 			t.Fatalf("a compaction read %d bytes or a placeholder", len(chat))
 		}
 	}
@@ -446,6 +446,31 @@ func TestARetryContinuesTheTurnFromItsView(t *testing.T) {
 	}
 	if retry := userTexts((*requests)[2]); len(retry) != 2 || retry[0] != "<chat>\n0+1|user: first\n1+1|orb: hello\n</chat>" || retry[1] != "second" {
 		t.Fatalf("retry request user messages: %q", retry)
+	}
+}
+
+// On a model with a small context window, the view a run sends stays within half of it in bytes.
+func TestTheViewFitsASmallModelsWindow(t *testing.T) {
+	provider := faux.New()
+	var requests []ai.Context
+	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		requests = append(requests, request)
+		return faux.AssistantMessage("ok"), nil
+	})})
+	model := *provider.GetModel()
+	model.ContextWindow = 32_000
+	runtime, manager := newRuntime(t, Options{}, provider.StreamSimple, &model, nil)
+	for index := range 60 {
+		if _, err := manager.AppendMessage(&ai.UserMessage{Content: ai.NewUserText(fmt.Sprintf("note %d %s", index, strings.Repeat("words ", 100)))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtime.RefreshContext()
+	if err := runtime.Prompt(context.Background(), "next"); err != nil {
+		t.Fatal(err)
+	}
+	if view := userTexts(requests[0])[0]; !strings.HasPrefix(view, "<chat>\n0+") || len(view) > 16_000 {
+		t.Fatalf("the view is %d bytes for a 32,000-token window", len(view))
 	}
 }
 

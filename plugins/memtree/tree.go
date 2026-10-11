@@ -17,16 +17,15 @@ import (
 )
 
 const (
-	nodeBytes               = 512             // size of one summary line
-	viewHigh, viewLow       = 128_000, 64_000 // the view grows to viewHigh bytes, then one batch merges it to viewLow
-	compactHigh, compactLow = 32_000, 16_000  // the same for the compactions' view
-	pageChars               = 30_000          // tool output keeps its head and tail, other long text is paged
-	jobs                    = 8               // compactor calls running at once
-	tries                   = 5               // attempts per node to get under nodeBytes
-	retryAfter              = 10 * time.Second
-	giveUp                  = 3 // failed calls before a node keeps its messages cut to size
-	callTimeout             = 5 * time.Minute
-	unbuilt                 = "(not summarized yet: zoom it)"
+	nodeBytes   = 512     // size of one summary line
+	viewBytes   = 128_000 // the view's budget on a large model; the compactions' is a quarter
+	pageChars   = 30_000  // tool output keeps its head and tail, other long text is paged
+	jobs        = 8       // compactor calls running at once
+	tries       = 5       // attempts per node to get under nodeBytes
+	retryAfter  = 10 * time.Second
+	giveUp      = 3 // failed calls before a node keeps its messages cut to size
+	callTimeout = 5 * time.Minute
+	unbuilt     = "(not summarized yet: zoom it)"
 )
 
 // message is one item of the log: a session entry yields one per user prompt, reply text,
@@ -75,7 +74,8 @@ type tree struct {
 	log         []message
 	view, cview []part // the chat's view, and the coarser one compactions read
 	size, csize int
-	batch       bool   // the view passed viewHigh and is not yet down to viewLow
+	high        int    // the view grows to high bytes, then one batch merges it to high/2
+	batch       bool   // the view passed high and is not yet down to high/2
 	merged      bool   // the view merged since it was last saved
 	parents     int    // merge nodes built: a view that stopped short of its size waits for one more
 	stopped     [2]int // parents when the view and the compactions' view last stopped short
@@ -89,7 +89,7 @@ func newTree(sessions extensions.ReadonlySessionManager, save func(string, any))
 	ctx, stop := context.WithCancel(context.Background())
 	t := &tree{
 		sessions: sessions, id: sessions.GetSessionID(), save: save, ctx: ctx, stop: stop, status: func(string) {},
-		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]int{}, retry: retryAfter, progress: make(chan struct{}),
+		nodes: map[nodeKey]string{}, busy: map[nodeKey]bool{}, failing: map[nodeKey]int{}, retry: retryAfter, progress: make(chan struct{}), high: viewBytes,
 		stopped: [2]int{-1, -1},
 	}
 	for _, entry := range sessions.GetEntries() {
@@ -223,7 +223,7 @@ func (t *tree) restoreLocked(saved []part, batch bool) {
 	}
 	t.view, t.size, t.batch, t.merged = saved, t.sizeLocked(saved), batch, false
 	t.stopped[1] = -1
-	t.cview, t.csize = t.mergeLocked(slices.Clone(saved), t.size, compactLow, &t.stopped[1])
+	t.cview, t.csize = t.mergeLocked(slices.Clone(saved), t.size, t.high/8, &t.stopped[1])
 }
 
 // appendLocked adds the last message's line to both views.
@@ -235,22 +235,22 @@ func (t *tree) appendLocked() {
 	t.fitLocked()
 }
 
-// fitLocked batches merges: once the view passes viewHigh, the most due pairs merge until it is
-// at most viewLow, again at each change while their parents are not built yet. The compactions'
-// view merges to compactLow whenever it passes compactHigh or the view has merged. Between
+// fitLocked batches merges: once the view passes high, the most due pairs merge until it is at
+// most high/2, again at each change while their parents are not built yet. The compactions' view
+// merges to high/8 whenever it passes high/4 or the view has merged. Between
 // batches both only grow at their end, so the prompt cache keeps them.
 func (t *tree) fitLocked() {
-	merge := t.csize > compactHigh
-	if t.batch = t.batch || t.size > viewHigh; t.batch {
+	merge := t.csize > t.high/4
+	if t.batch = t.batch || t.size > t.high; t.batch {
 		lines := len(t.view)
-		t.view, t.size = t.mergeLocked(t.view, t.size, viewLow, &t.stopped[0])
-		t.batch = t.size > viewLow
+		t.view, t.size = t.mergeLocked(t.view, t.size, t.high/2, &t.stopped[0])
+		t.batch = t.size > t.high/2
 		if len(t.view) < lines {
 			t.merged, merge = true, true
 		}
 	}
 	if merge {
-		t.cview, t.csize = t.mergeLocked(t.cview, t.csize, compactLow, &t.stopped[1])
+		t.cview, t.csize = t.mergeLocked(t.cview, t.csize, t.high/8, &t.stopped[1])
 	}
 }
 
@@ -476,20 +476,24 @@ func chat(lines []string, after ...string) *ai.UserMessage {
 	return &ai.UserMessage{Content: ai.UserContent{Blocks: blocks}, Timestamp: time.Now().UnixMilli()}
 }
 
-// settle waits until every message before n is summarized, so no call sees a placeholder; it
-// reports false when ctx ends first.
+// settle waits until every message before n is summarized, so no call sees a placeholder, and
+// the view fits its budget; it reports false when ctx ends first.
 func (t *tree) settle(ctx context.Context, n int) bool {
 	for waited := false; ; waited = true {
 		t.mu.Lock()
-		frontier, progress, status := t.next, t.progress, t.status
+		frontier, fits, progress, status := t.next, t.size <= t.high, t.progress, t.status
 		t.mu.Unlock()
-		if frontier >= n {
+		if frontier >= n && fits {
 			return true
 		}
 		if !waited {
 			defer status("")
 		}
-		status(fmt.Sprintf("summarizing %d messages", n-frontier))
+		if frontier < n {
+			status(fmt.Sprintf("summarizing %d messages", n-frontier))
+		} else {
+			status("merging the view")
+		}
 		select {
 		case <-progress:
 		case <-ctx.Done():
@@ -521,6 +525,21 @@ func (t *tree) render(n int, view []part) []string {
 		add(p)
 	}
 	return lines
+}
+
+// rendered is the bytes of lines in a rendered view, and budget the most it may take.
+func rendered(lines []string) int {
+	size := 0
+	for _, line := range lines {
+		size += len(line) + 1
+	}
+	return size
+}
+
+func (t *tree) budget() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.high
 }
 
 func (t *tree) lineLocked(p part) string {

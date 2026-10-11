@@ -186,7 +186,8 @@ gives it: every message gets a line of at most 512 bytes (a short message is its
 adjacent lines merge in pairs up a tree, and a view of it covers the whole session, recent
 messages one line each and older ones many per line. The view grows one line per message from
 64 KB to 128 KB, then one batch merges its most due lines back to 64 KB, so between batches it
-only grows at its end and stays in the prompt cache. The agent opens any line back down to its
+only grows at its end and stays in the prompt cache; on a model whose context window is under
+256K tokens, the budget is half the window, counted in bytes. A turn waits until the view fits. The agent opens any line back down to its
 message with `zoom(id, n)` (`zoom(id, 1)` gives the message whole, with its images), and
 `date(id)` dates a message. A tool's output is logged as its first and last 15,000 characters;
 any other text longer than 30,000 characters spans several messages.
