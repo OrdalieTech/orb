@@ -637,19 +637,35 @@ func encoded(value any) string {
 	return text.String()
 }
 
-// held answers turns at once and holds compactions until release closes or their request ends,
-// counting the requests that end first.
-func held(release chan struct{}, cancelled *atomic.Int32) func(context.Context, bool) string {
-	return func(ctx context.Context, compaction bool) string {
-		if compaction {
-			select {
-			case <-release:
-			case <-ctx.Done():
-				cancelled.Add(1)
-			}
-			return "a summary"
+// holder answers turns at once and holds compactions until release closes or their request ends,
+// counting those the server got and those that ended first.
+type holder struct {
+	release            chan struct{}
+	started, cancelled atomic.Int32
+}
+
+func hold() *holder { return &holder{release: make(chan struct{})} }
+
+func (h *holder) answer(ctx context.Context, compaction bool) string {
+	if compaction {
+		h.started.Add(1)
+		select {
+		case <-h.release:
+		case <-ctx.Done():
+			h.cancelled.Add(1)
 		}
-		return "ok"
+		return "a summary"
+	}
+	return "ok"
+}
+
+// until waits until done holds, or fails the test.
+func until(t *testing.T, what string, done func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !done(); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal(what)
+		}
 	}
 }
 
@@ -668,15 +684,18 @@ var long = strings.Repeat("a long message ", 50)
 // Escape while a turn waits for summaries ends the turn without sending anything; the next turn
 // gets its view once the summary comes.
 func TestEscapeDuringTheWaitSendsNothing(t *testing.T) {
-	release := make(chan struct{})
-	runtime, requests := host(t, held(release, new(atomic.Int32)))
+	held := hold()
+	runtime, requests := host(t, held.answer)
 	session := runtime.Session()
 	if err := session.Prompt(t.Context(), long); err != nil {
 		t.Fatal(err)
 	}
+	until(t, "the compaction never reached the server", func() bool { return held.started.Load() == 1 })
 	done := make(chan error, 1)
 	go func() { done <- session.Prompt(t.Context(), "second") }()
-	time.Sleep(200 * time.Millisecond)
+	until(t, "the second prompt was never logged", func() bool {
+		return strings.Contains(encoded(session.Manager().GetEntries()), `"text":"second"`)
+	})
 	session.Abort()
 	select {
 	case <-done:
@@ -686,7 +705,7 @@ func TestEscapeDuringTheWaitSendsNothing(t *testing.T) {
 	if got := len(requests(false)); got != 1 {
 		t.Fatalf("%d turn requests after Escape, want 1", got)
 	}
-	close(release)
+	close(held.release)
 	if err := session.Prompt(t.Context(), "third"); err != nil {
 		t.Fatal(err)
 	}
@@ -698,22 +717,18 @@ func TestEscapeDuringTheWaitSendsNothing(t *testing.T) {
 // A switch to another session while a compaction runs cancels it, and nothing of the old tree
 // lands in either session.
 func TestASessionSwitchCancelsCompactions(t *testing.T) {
-	release := make(chan struct{})
-	defer close(release)
-	var cancelled atomic.Int32
-	runtime, _ := host(t, held(release, &cancelled))
+	held := hold()
+	defer close(held.release)
+	runtime, _ := host(t, held.answer)
 	old := runtime.Session().Manager()
 	if err := runtime.Session().Prompt(t.Context(), long); err != nil {
 		t.Fatal(err)
 	}
+	until(t, "the compaction never reached the server", func() bool { return held.started.Load() == 1 })
 	if _, err := runtime.NewSession(t.Context(), nil); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); cancelled.Load() == 0 && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-	}
-	if cancelled.Load() == 0 {
-		t.Fatal("the old session's compaction still runs")
-	}
+	until(t, "the old session's compaction still runs", func() bool { return held.cancelled.Load() == 1 })
 	if memtreeEntries(old.GetEntries()) != 0 || memtreeEntries(runtime.Session().Manager().GetEntries()) != 0 {
 		t.Fatal("a compaction of the old session saved an entry")
 	}
@@ -724,13 +739,13 @@ func TestASessionSwitchCancelsCompactions(t *testing.T) {
 
 // A fork while a compaction runs starts from the summaries saved before its point.
 func TestAForkKeepsTheSummariesBeforeIt(t *testing.T) {
-	release := make(chan struct{})
-	runtime, requests := host(t, held(release, new(atomic.Int32)))
+	held := hold()
+	runtime, requests := host(t, held.answer)
 	session := runtime.Session()
 	if err := session.Prompt(t.Context(), long); err != nil {
 		t.Fatal(err)
 	}
-	close(release)
+	close(held.release)
 	if err := session.Prompt(t.Context(), "second"); err != nil {
 		t.Fatal(err)
 	}
@@ -743,6 +758,7 @@ func TestAForkKeepsTheSummariesBeforeIt(t *testing.T) {
 	if err := session.Prompt(t.Context(), long+"zebra"); err != nil {
 		t.Fatal(err)
 	}
+	until(t, "the second compaction never reached the server", func() bool { return held.started.Load() == 2 })
 	if _, err := runtime.Fork(t.Context(), second, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -758,8 +774,8 @@ func TestAForkKeepsTheSummariesBeforeIt(t *testing.T) {
 // A /tree move while a compaction of the left branch runs: the summary lands, but the next turn's
 // view covers only the branch it is on.
 func TestATreeMoveDuringACompaction(t *testing.T) {
-	release := make(chan struct{})
-	runtime, requests := host(t, held(release, new(atomic.Int32)))
+	held := hold()
+	runtime, requests := host(t, held.answer)
 	session := runtime.Session()
 	if err := session.Prompt(t.Context(), "alpha"); err != nil {
 		t.Fatal(err)
@@ -768,10 +784,11 @@ func TestATreeMoveDuringACompaction(t *testing.T) {
 	if err := session.Prompt(t.Context(), long); err != nil {
 		t.Fatal(err)
 	}
+	until(t, "the compaction never reached the server", func() bool { return held.started.Load() == 1 })
 	if _, err := session.NavigateTree(t.Context(), answered, agent.NavigateTreeOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	close(release)
+	close(held.release)
 	if err := session.Prompt(t.Context(), "gamma"); err != nil {
 		t.Fatal(err)
 	}
