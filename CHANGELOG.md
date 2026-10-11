@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Compaction summarizes a conversation too long for the model's window a part at a time, each part updating the summary of those before, instead of failing with the model's "input exceeds the context window". A Claude Sessions conversation that Claude kept compacting on its own left Orb its whole history, so switching it to another model (GPT-6.1 Sol) failed every turn: overflow recovery sent that history to be summarized in one request.
+
 ## [0.19.8] - 2026-10-11
 
 Claude sessions reach Orb's own tools, Bridge's `agents` among them, and memtree fits small models again, keeps its compactor from calling tools and leaves a session to the process that owns it.

@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -225,4 +226,45 @@ func userMessageTextForTest(message ai.Message) string {
 		}
 	}
 	return ""
+}
+
+// A conversation too long for the model's window, as one another harness kept compacting on its
+// own leaves Orb, is summarized a part at a time: no request exceeds the window, and each part
+// updates the summary of those before it. One that fits still takes one request.
+func TestCompactionSummarizesAnOversizedConversationInParts(t *testing.T) {
+	model := &ai.Model{MaxTokens: 1_000, ContextWindow: 20_000}
+	var prompts []string
+	complete := func(_ context.Context, model *ai.Model, request ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		prompt := request.Messages[0].(*ai.UserMessage).Content.Blocks[0].(*ai.TextContent).Text
+		if len(prompt)/4 > int(model.ContextWindow) {
+			message := "Your input exceeds the context window of this model."
+			return &ai.AssistantMessage{StopReason: ai.StopReasonError, ErrorMessage: &message}, nil
+		}
+		prompts = append(prompts, prompt)
+		return assistant(fmt.Sprintf("summary %d", len(prompts)), 10), nil
+	}
+	var long engine.AgentMessages
+	for index := range 60 {
+		long = append(long, user(fmt.Sprintf("step %d %s", index, strings.Repeat("edit ", 1_000))))
+	}
+	result, err := GenerateSummaryWithUsage(context.Background(), long, model, complete, 1_000, "", nil, ai.ModelThinkingOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prompts) < 3 || result.Text != fmt.Sprintf("summary %d", len(prompts)) || result.Usage.Input != int64(10*len(prompts)) {
+		t.Fatalf("%d requests, summary %q, input %d", len(prompts), result.Text, result.Usage.Input)
+	}
+	for index, prompt := range prompts {
+		if index > 0 && !strings.Contains(prompt, fmt.Sprintf("<previous-summary>\nsummary %d\n", index)) {
+			t.Fatalf("request %d does not update the summary before it", index+1)
+		}
+	}
+	if !strings.Contains(prompts[0], "step 0 ") || !strings.Contains(prompts[len(prompts)-1], "step 59 ") {
+		t.Fatal("the parts do not cover the whole conversation")
+	}
+
+	prompts = nil
+	if _, err := GenerateSummaryWithUsage(context.Background(), long[:2], model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil || len(prompts) != 1 {
+		t.Fatalf("a conversation that fits took %d requests: %v", len(prompts), err)
+	}
 }

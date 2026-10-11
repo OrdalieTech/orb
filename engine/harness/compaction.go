@@ -639,7 +639,54 @@ func GenerateSummaryWithUsage(
 	return generateSummaryWithUsage(ctx, messages, model, complete, reserveTokens, customInstructions, previousSummary, thinkingLevel, nil)
 }
 
+// generateSummaryWithUsage summarizes messages in one request when they fit the model's
+// window, as upstream does. A conversation too long for any one request, such as one another
+// harness kept compacting on its own, is summarized a part at a time, each part updating the
+// summary of the parts before it.
 func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, customInstructions string, previousSummary *string, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
+	var total *SummaryResult
+	for _, part := range summaryParts(messages, model, reserveTokens) {
+		result, err := summarizePart(ctx, part, model, complete, reserveTokens, customInstructions, previousSummary, thinkingLevel, product)
+		if err != nil {
+			return nil, err
+		}
+		if total != nil {
+			result.Usage = combineUsage(total.Usage, result.Usage)
+		}
+		total, previousSummary = result, &result.Text
+	}
+	return total, nil
+}
+
+// summaryParts splits messages into consecutive parts whose serialized text fits the model's
+// window beside the reply, a previous summary and the instructions, at a conservative 3
+// characters a token (code and JSON run dense); messages that fit, or a model whose window is
+// unknown, make one part.
+func summaryParts(messages engine.AgentMessages, model *ai.Model, reserveTokens int64) []engine.AgentMessages {
+	parts := []engine.AgentMessages{messages}
+	if model == nil || model.ContextWindow <= 0 {
+		return parts
+	}
+	budget := (int64(model.ContextWindow) - int64(minTokenLimit(reserveTokens*8/10, model)) - reserveTokens - summaryInstructionTokens) * 3
+	if budget <= 0 || len(SerializeConversation(messages)) <= int(budget) {
+		return parts
+	}
+	parts, size := []engine.AgentMessages{nil}, 0
+	for _, message := range messages {
+		length := len(SerializeConversation(engine.AgentMessages{message})) + 2
+		if last := len(parts) - 1; len(parts[last]) > 0 && size+length > int(budget) {
+			parts, size = append(parts, nil), 0
+		}
+		parts[len(parts)-1] = append(parts[len(parts)-1], message)
+		size += length
+	}
+	return parts
+}
+
+// summaryInstructionTokens bounds the system prompt and instructions around a summarized part.
+const summaryInstructionTokens = 4_000
+
+func summarizePart(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, customInstructions string, previousSummary *string, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
 	base := SummarizationPrompt
 	if previousSummary != nil && *previousSummary != "" {
 		base = UpdateSummarizationPrompt
