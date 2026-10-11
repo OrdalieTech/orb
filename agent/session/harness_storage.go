@@ -19,6 +19,10 @@ import (
 // detaching a runtime from its harness repository.
 var ErrHarnessStorageReplacement = errors.New("session: harness-backed session replacement requires a SessionRepo")
 
+// ErrNotOwner is what a session store returns for an append from a handle that no longer owns the
+// session: another process wrote to it since this one opened it.
+var ErrNotOwner = errors.New("session ownership changed")
+
 func WithHarnessRepo(repo harness.SessionRepo) Option {
 	return func(options *managerOptions) { options.harnessRepo = repo }
 }

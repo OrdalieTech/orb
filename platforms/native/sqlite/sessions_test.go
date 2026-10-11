@@ -3,6 +3,7 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -55,8 +56,8 @@ func TestSessionJournalPersistsAndFencesStaleWriter(t *testing.T) {
 	if err = m.Branch(id); err != nil {
 		t.Fatal(err)
 	}
-	if err = stale.Storage().AppendEntry(harness.SessionTreeEntry{ID: "stale", Type: "custom", Timestamp: "2026-09-21T00:00:00.000Z"}); err == nil {
-		t.Fatal("stale writer accepted")
+	if err = stale.Storage().AppendEntry(harness.SessionTreeEntry{ID: "stale", Type: "custom", Timestamp: "2026-09-21T00:00:00.000Z"}); !errors.Is(err, session.ErrNotOwner) {
+		t.Fatalf("stale writer: %v", err)
 	}
 	if len(stale.Storage().Entries()) != 0 {
 		t.Fatal("failed durable write changed memory")

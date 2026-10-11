@@ -114,7 +114,7 @@ func (r *Sessions) Open(ctx context.Context, metadata harness.SessionMetadata) (
 			return err
 		}
 		if changed != 1 {
-			return fmt.Errorf("session ownership changed: %s", metadata.ID)
+			return fmt.Errorf("%w: %s", session.ErrNotOwner, metadata.ID)
 		}
 		if _, err = tx.Exec("INSERT INTO entries VALUES(?,?,?,?,?)", r.namespace, metadata.ID, revision+1, entry.ID, bytes.TrimSuffix(line, []byte{'\n'})); err != nil {
 			return err

@@ -243,7 +243,7 @@ func TestARefusedSessionStopsTheCompactor(t *testing.T) {
 	for index := range 60 {
 		sessions.add("user", fmt.Sprintf("message %d %s", index, strings.Repeat("x", 900)))
 	}
-	tr := newTree(sessions, func(string, any) error { return errors.New("session ownership changed") })
+	tr := newTree(sessions, func(string, any) error { return fmt.Errorf("%w: s1", session.ErrNotOwner) })
 	defer tr.stop()
 	model := &compactor{size: 300}
 	var calls atomic.Int32
@@ -265,6 +265,18 @@ func TestARefusedSessionStopsTheCompactor(t *testing.T) {
 	n, view := tr.current()
 	if lines := tr.render(n, view); !strings.Contains(strings.Join(lines, "\n"), "|user: message 59 xxx") {
 		t.Fatal("the view does not hold the cut line")
+	}
+
+	// Any other error, such as a busy database, loses that one entry and summaries go on.
+	busy := newTree(sessions, func(string, any) error { return errors.New("database is locked") })
+	defer busy.stop()
+	busy.ask = model.ask
+	busy.pump()
+	if !settled(busy, 60) {
+		t.Fatal("the turn never got its view")
+	}
+	if lines := strings.Join(busy.render(busy.current()), "\n"); !strings.Contains(lines, "|summary of 59 ") {
+		t.Fatalf("a busy database stopped the summaries: %.200q", lines[max(0, len(lines)-200):])
 	}
 }
 

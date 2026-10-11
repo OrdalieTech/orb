@@ -343,14 +343,15 @@ func (t *tree) pump() {
 		saves = append(saves, func() error { return t.save(viewType, view) })
 	}
 	for _, save := range saves {
-		// Orb's session store refuses entries from a process that no longer owns the session,
-		// which another one wrote to since; this one then stops paying for summaries it cannot
-		// keep, and goes on with lines cut to size.
-		if err := save(); err != nil {
+		// A session another process wrote to refuses this one's entries for good: it stops paying
+		// for summaries it cannot keep and goes on with lines cut to size. Any other error loses
+		// that one entry, which the next start builds again.
+		if err := save(); errors.Is(err, session.ErrNotOwner) {
 			t.mu.Lock()
 			t.refused = true
-			t.status("another Orb writes this session; summaries stopped: " + err.Error())
+			status := t.status
 			t.mu.Unlock()
+			status("another Orb writes this session; summaries stopped")
 			return
 		}
 	}
@@ -416,16 +417,19 @@ func (t *tree) startLocked(l, i int, key nodeKey) {
 func (t *tree) build(p part, key nodeKey, ask ask, request ai.MessageList, mark int, fallback string) {
 	text, err := compress(t.ctx, ask, request, mark)
 	t.mu.Lock()
+	// The status line is the host's UI, called outside the lock.
+	status, report := t.status, func() {}
 	switch {
 	case err != nil:
 		if t.failing[key] == 0 && t.ctx.Err() == nil {
-			t.status("compactor failed: " + err.Error())
+			report = func() { status("compactor failed: " + err.Error()) }
 		}
 		// A node the compactor keeps failing on (a refusal, no model) keeps its messages cut to
 		// size, saved like a summary: the session goes on, and nothing calls again, now or at the
 		// next start.
 		if t.failing[key]++; t.failing[key] < giveUp && ask != nil {
 			t.mu.Unlock()
+			report()
 			time.AfterFunc(t.retry, func() {
 				t.mu.Lock()
 				delete(t.busy, key)
@@ -437,7 +441,7 @@ func (t *tree) build(p part, key nodeKey, ask ask, request ai.MessageList, mark 
 		text = fallback
 	case t.failing[key] > 0:
 		delete(t.failing, key)
-		t.status("")
+		report = func() { status("") }
 	}
 	t.saveLocked(p, key, text)
 	delete(t.busy, key)
@@ -445,6 +449,7 @@ func (t *tree) build(p part, key nodeKey, ask ask, request ai.MessageList, mark 
 	t.size, t.csize = t.sizeLocked(t.view), t.sizeLocked(t.cview)
 	t.fitLocked()
 	t.mu.Unlock()
+	report()
 	t.pump()
 }
 

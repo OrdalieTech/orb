@@ -6,7 +6,7 @@ shown by `/changelog`.
 ## [Unreleased]
 
 - Claude sessions reach the conversation's Orb tools Claude has no counterpart of, such as `agents` (your other conversations over Bridge) and plugin and extension tools: Orb offers them to Claude as an in-process MCP server named `orb`, runs each call under its own permission policy, stops it when the run stops, and shows it under the tool's own name. Go embedders: `plugins/mcp/serve` offers a session's tools to any agent harness over MCP.
-- `memtree` in a second Orb process on the same session stops calling its compactor once the session refuses its first entry, instead of paying for summaries it could never save.
+- `memtree` in a second Orb process on the same session stops calling its compactor once the session refuses an entry because another process owns it, instead of paying for summaries it could never save; any other failed save loses only that entry.
 - `memtree`'s compactor is told not to call tools (`tool_choice: none`): it gets the turns' tools only so it reads them from their prompt cache, and a model that answered with a tool call used to lose that summary to its text cut at 512 bytes.
 - `memtree` fits small models again: the view takes at most half the model's context window in bytes, as before 0.19.7, and a turn waits until its merges bring the view within that budget instead of sending it over.
 

@@ -573,7 +573,7 @@ func (storage *JSONLSessionStorage) appendLockedWithLabel(entry SessionTreeEntry
 	line := append(encoded, '\n')
 	if storage.append != nil {
 		if err := storage.append(line); err != nil {
-			return newSessionError(SessionErrorStorage, "Failed to append %s %s: %v", label, entry.ID, err)
+			return newSessionError(SessionErrorStorage, "Failed to append %s %s: %w", label, entry.ID, err)
 		}
 	}
 	entry = entry.clone()
