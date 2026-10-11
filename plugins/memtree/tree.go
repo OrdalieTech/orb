@@ -321,35 +321,31 @@ func (t *tree) pump() {
 	t.pumpLocked()
 	close(t.progress)
 	t.progress = make(chan struct{})
-	nodes := make([]savedNode, len(t.pending))
-	for index, key := range t.pending {
-		nodes[index] = savedNode{key, t.nodes[key]}
+	type entry struct {
+		customType string
+		data       any
+	}
+	entries := make([]entry, 0, len(t.pending)+1)
+	for _, key := range t.pending {
+		entries = append(entries, entry{nodeType, savedNode{key, t.nodes[key]}})
 	}
 	t.pending = nil
-	var view *savedView
 	if t.merged {
-		view = &savedView{Batch: t.batch}
+		view := savedView{Batch: t.batch}
 		for _, p := range t.view {
 			view.Parts = append(view.Parts, [2]int{p.l, p.i})
 		}
-		t.merged = false
+		entries, t.merged = append(entries, entry{viewType, view}), false
 	}
+	status := t.status
 	t.mu.Unlock()
-	saves := []func() error{}
-	for _, node := range nodes {
-		saves = append(saves, func() error { return t.save(nodeType, node) })
-	}
-	if view != nil {
-		saves = append(saves, func() error { return t.save(viewType, view) })
-	}
-	for _, save := range saves {
+	for _, entry := range entries {
 		// A session another process wrote to refuses this one's entries for good: it stops paying
 		// for summaries it cannot keep and goes on with lines cut to size. Any other error loses
 		// that one entry, which the next start builds again.
-		if err := save(); errors.Is(err, session.ErrNotOwner) {
+		if err := t.save(entry.customType, entry.data); errors.Is(err, session.ErrNotOwner) {
 			t.mu.Lock()
 			t.refused = true
-			status := t.status
 			t.mu.Unlock()
 			status("another Orb writes this session; summaries stopped")
 			return
@@ -729,42 +725,40 @@ func entryImages(entry session.SessionEntry) []*ai.ImageContent {
 		_ = json.Unmarshal(entry.Message, &m)
 		raw = m.Content
 	}
+	_, images := content(raw)
+	return images
+}
+
+// content reads a string or a list of text and image blocks: their text, an image as "[image]",
+// and the images.
+func content(raw json.RawMessage) (string, []*ai.ImageContent) {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text, nil
+	}
 	var blocks []struct {
 		Type     string `json:"type"`
+		Text     string `json:"text"`
 		Data     string `json:"data"`
 		MimeType string `json:"mimeType"`
 	}
 	_ = json.Unmarshal(raw, &blocks)
+	var parts []string
 	var images []*ai.ImageContent
-	for _, block := range blocks {
-		if block.Type == "image" {
-			images = append(images, &ai.ImageContent{Data: block.Data, MimeType: block.MimeType})
-		}
-	}
-	return images
-}
-
-// contentText reads a string or a list of text and image blocks.
-func contentText(raw json.RawMessage) string {
-	var text string
-	if json.Unmarshal(raw, &text) == nil {
-		return text
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	_ = json.Unmarshal(raw, &blocks)
-	parts := make([]string, 0, len(blocks))
 	for _, block := range blocks {
 		switch block.Type {
 		case "text":
 			parts = append(parts, block.Text)
 		case "image":
-			parts = append(parts, "[image]")
+			parts, images = append(parts, "[image]"), append(images, &ai.ImageContent{Data: block.Data, MimeType: block.MimeType})
 		}
 	}
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, "\n"), images
+}
+
+func contentText(raw json.RawMessage) string {
+	text, _ := content(raw)
+	return text
 }
 
 func flat(text string) string { return strings.Join(strings.Fields(text), " ") }

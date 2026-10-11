@@ -201,9 +201,10 @@ func TestTheViewGrowsAtItsEndBetweenBatchesAndSurvivesARestart(t *testing.T) {
 	}
 }
 
-// Compactor errors with calls in flight, every merge and one compression in three, never leave a
-// turn a view over its budget: it waits until the lines the compactor keeps failing on are cut to
-// size and the merges they hold up are built.
+// Compactor errors with calls in flight never leave a turn a view over its budget, nor waiting
+// for good: every merge fails slowly, and a message the compactor always fails on (a refusal, an
+// empty reply) gets giveUp calls, then keeps its text cut to size, saved so that nothing asks about
+// it again at the next start.
 func TestFailingCompactionsStillLeaveAViewWithinBudget(t *testing.T) {
 	sessions := &fakeSessions{}
 	for index := range 120 {
@@ -212,15 +213,17 @@ func TestFailingCompactionsStillLeaveAViewWithinBudget(t *testing.T) {
 	tr := newTree(sessions, sessions.save)
 	defer tr.stop()
 	model := &compactor{size: 500}
-	var calls atomic.Int32
+	var refusals atomic.Int32
 	tr.ask = func(ctx context.Context, messages ai.MessageList, mark int) (*ai.AssistantMessage, error) {
 		blocks := messages[0].(*ai.UserMessage).Content.Blocks
-		if strings.Contains(blocks[len(blocks)-1].(*ai.TextContent).Text, "merge lines") {
+		task := blocks[len(blocks)-1].(*ai.TextContent).Text
+		if strings.Contains(task, "merge lines") {
 			time.Sleep(20 * time.Millisecond)
 			return nil, errors.New("overloaded")
 		}
-		if calls.Add(1)%3 == 0 {
-			return nil, errors.New("overloaded")
+		if match := compressed.FindStringSubmatch(task); match != nil && strings.HasSuffix(match[1], "0") {
+			refusals.Add(1)
+			return &ai.AssistantMessage{}, nil
 		}
 		return model.ask(ctx, messages, mark)
 	}
@@ -232,6 +235,15 @@ func TestFailingCompactionsStillLeaveAViewWithinBudget(t *testing.T) {
 	n, view := tr.current()
 	if size := rendered(tr.render(n, view)); size > 8_000 {
 		t.Fatalf("the view is %d bytes over a budget of 8,000", size)
+	}
+	idle(t, tr, false)
+	again := newTree(sessions, sessions.save)
+	again.mu.Lock()
+	again.syncLocked()
+	saved := again.builtLocked(0, 10)
+	again.mu.Unlock()
+	if got := refusals.Load(); got != 12*giveUp || !saved {
+		t.Fatalf("%d calls for 12 refused messages; message 10 saved cut: %v", got, saved)
 	}
 }
 
@@ -280,26 +292,6 @@ func TestARefusedSessionStopsTheCompactor(t *testing.T) {
 	}
 }
 
-func TestCompressShowsTheCutAndKeepsTheShortestTry(t *testing.T) {
-	var seen []ai.MessageList
-	replies := []int{700, 560, 530, 600, 540}
-	ask := func(_ context.Context, messages ai.MessageList, _ int) (*ai.AssistantMessage, error) {
-		seen = append(seen, messages)
-		return &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: strings.Repeat("é", replies[len(seen)-1]/2)}}}, nil
-	}
-	line, err := compress(context.Background(), ask, ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("step")}}, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(seen) != tries || len(line) != 530 {
-		t.Fatalf("%d tries, kept %d bytes", len(seen), len(line))
-	}
-	feedback := *seen[1][2].(*ai.UserMessage).Content.Text
-	if !strings.HasPrefix(feedback, "Too long: your line is 700 bytes, over the 512-byte limit.") || !strings.HasSuffix(feedback, strings.Repeat("é", 256)+"| ← LIMIT") {
-		t.Fatalf("feedback: %q", feedback)
-	}
-}
-
 // Long text is logged as several messages, a tool's output keeps its head and tail, and zoom
 // gives a message whole with its images.
 func TestLongTextIsPagedAndZoomGivesImages(t *testing.T) {
@@ -323,7 +315,7 @@ func TestLongTextIsPagedAndZoomGivesImages(t *testing.T) {
 	}
 }
 
-func newRuntime(t *testing.T, options Options, stream engine.StreamFn, model *ai.Model, registry extensions.ModelRegistry) (*agent.SessionRuntime, *session.SessionManager) {
+func newRuntime(t *testing.T, options Options, stream engine.StreamFn, model *ai.Model) (*agent.SessionRuntime, *session.SessionManager) {
 	t.Helper()
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"reserveTokens":120000,"keepRecentTokens":1},"retry":{"baseDelayMs":1}}`), 0o600); err != nil {
@@ -342,18 +334,7 @@ func newRuntime(t *testing.T, options Options, stream engine.StreamFn, model *ai
 		t.Fatal(err)
 	}
 	created := engine.NewAgent(stream, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: model}), engine.WithConvertToLLM(agent.ConvertToLLM))
-	runtimeConfig := agent.SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: configured, ExtensionRegistry: extensionRegistry, ExtensionMode: extensions.ModePrint}
-	if registry != nil {
-		runtimeConfig.ModelRegistry = registry
-		runtimeConfig.GetAPIKey = func(ctx context.Context, provider ai.ProviderID) (*string, error) {
-			resolved, err := registry.ResolveProviderAuth(ctx, string(provider), nil)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return resolved.Auth.APIKey, nil
-		}
-	}
-	runtime, err := agent.NewSessionRuntime(runtimeConfig)
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: configured, ExtensionRegistry: extensionRegistry, ExtensionMode: extensions.ModePrint})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +357,7 @@ func sessionRuntime(t *testing.T, options Options, replies ...faux.ResponseStep)
 		})
 	}
 	provider.SetResponses(steps)
-	runtime, manager := newRuntime(t, options, provider.StreamSimple, provider.GetModel(), nil)
+	runtime, manager := newRuntime(t, options, provider.StreamSimple, provider.GetModel())
 	return runtime, manager, &requests
 }
 
@@ -439,64 +420,33 @@ const toolUse = "event: message_start\ndata: {\"type\":\"message_start\",\"messa
 	"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 
 // On Anthropic, a turn marks its view's last whole block for the cache, and the block the last
-// turn marked, within four marks; a compaction sends the turns' system prompt and tools, then
-// marks its own view the same way, and never answers with a tool call.
+// turn marked, within four marks. A compaction sends the turns' system prompt and tools, never
+// answers with a tool call, marks its own view the same way, and is shown where 512 bytes cut a
+// line too long.
 func TestAnthropicRequestsMarkTheViewAndCompactionsShareTheTurnsPrefix(t *testing.T) {
-	var mu sync.Mutex
-	var turns, compactions []map[string]any
 	replies := []string{"ok", "ok", strings.Repeat("a long reply ", 60), "ok", "ok"}
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(request.Body).Decode(&body)
-		messages, _ := json.Marshal(body["messages"])
-		mu.Lock()
-		text, compaction := "a summary", strings.Contains(string(messages), "Compaction:")
-		if compaction {
-			compactions = append(compactions, body)
-		} else {
-			text = replies[len(turns)]
-			turns = append(turns, body)
+	var turn, compaction atomic.Int32
+	runtime, requests := host(t, func(_ context.Context, compacting bool) string {
+		if !compacting {
+			return replies[turn.Add(1)-1]
 		}
-		mu.Unlock()
-		writer.Header().Set("Content-Type", "text/event-stream")
-		// A model offered tools may call one, unless told not to.
-		if choice, _ := body["tool_choice"].(map[string]any); compaction && choice["type"] != "none" {
-			_, _ = io.WriteString(writer, toolUse)
-			return
+		if compaction.Add(1) == 1 {
+			return strings.Repeat("too long ", 70)
 		}
-		quoted, _ := json.Marshal(text)
-		_, _ = fmt.Fprintf(writer, sse, quoted)
-	}))
-	defer server.Close()
-	agentDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(agentDir, "models.json"), fmt.Appendf(nil, `{"providers":{"lab":{"baseUrl":%q,"api":"anthropic-messages","apiKey":"k","models":[{"id":"m"}]}}}`, server.URL), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	registry, err := config.NewModelRegistry(agentDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	model, ok := registry.Find("lab", "m")
-	if !ok {
-		t.Fatal("no lab/m model")
-	}
-	runtime, _ := newRuntime(t, Options{}, registry.StreamSimple, &model, registry)
+		return "a summary"
+	})
 	for _, prompt := range []string{"one", "two", "three", "four", "five"} {
-		if err := runtime.Prompt(context.Background(), prompt); err != nil {
+		if err := runtime.Session().Prompt(t.Context(), prompt); err != nil {
 			t.Fatal(err)
 		}
 	}
-	marks := func(body map[string]any) int {
-		encoded, _ := json.Marshal(body)
-		return strings.Count(string(encoded), `"cache_control"`)
-	}
+	marks := func(body map[string]any) int { return strings.Count(encoded(body), `"cache_control"`) }
 	viewMarked := func(body map[string]any, block int) bool {
 		first := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
 		return strings.HasPrefix(first[0].(map[string]any)["text"].(string), "<chat>\n") && first[block].(map[string]any)["cache_control"] != nil
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(turns) != 5 || len(compactions) != 1 {
+	turns, compactions := requests(false), requests(true)
+	if len(turns) != 5 || len(compactions) != 2 {
 		t.Fatalf("%d turns, %d compactions", len(turns), len(compactions))
 	}
 	for _, turn := range turns[2:] {
@@ -505,18 +455,21 @@ func TestAnthropicRequestsMarkTheViewAndCompactionsShareTheTurnsPrefix(t *testin
 		}
 	}
 	// The fifth turn's view has a second whole block; the fourth marked the first.
-	if fifth := turns[4]; !viewMarked(fifth, 1) || marks(fifth) != 4 || strings.Contains(fmt.Sprint(fifth["tools"]), "cache_control") {
-		t.Fatalf("fifth turn: second block marked %v, %d marks, tools %v", viewMarked(fifth, 1), marks(fifth), fifth["tools"])
+	if fifth := turns[4]; !viewMarked(fifth, 1) || marks(fifth) != 4 || strings.Contains(encoded(fifth["tools"]), "cache_control") {
+		t.Fatalf("fifth turn: second block marked %v, %d marks", viewMarked(fifth, 1), marks(fifth))
 	}
-	compaction, turn := compactions[0], turns[3]
-	if !reflect.DeepEqual(compaction["system"], turn["system"]) || !reflect.DeepEqual(compaction["tools"], turn["tools"]) || turn["tools"] == nil {
+	first, retry := compactions[0], encoded(compactions[1])
+	if !reflect.DeepEqual(first["system"], turns[3]["system"]) || !reflect.DeepEqual(first["tools"], turns[3]["tools"]) || turns[3]["tools"] == nil {
 		t.Fatal("the compaction does not send the turns' system prompt and tools")
 	}
-	if view := fmt.Sprint(turns[3]["messages"]); !strings.Contains(view, "5+1|a summary") {
-		t.Fatalf("the long reply's line is not the compactor's summary: %.300s", view)
+	if !viewMarked(first, 0) || marks(first) > 4 {
+		t.Fatalf("compaction view marked: %v, %d marks", viewMarked(first, 0), marks(first))
 	}
-	if !viewMarked(compaction, 0) || marks(compaction) > 4 {
-		t.Fatalf("compaction view marked: %v, %d marks", viewMarked(compaction, 0), marks(compaction))
+	if !strings.Contains(retry, "Too long: your line is 629 bytes, over the 512-byte limit.") || !strings.Contains(retry, "| ← LIMIT") {
+		t.Fatalf("the retry does not show the cut: %.300s", retry[len(retry)-300:])
+	}
+	if !strings.Contains(encoded(turns[3]), "5+1|a summary") {
+		t.Fatal("the long reply's line is not the compactor's second answer")
 	}
 }
 
@@ -546,7 +499,8 @@ func TestARetryContinuesTheTurnFromItsView(t *testing.T) {
 	}
 }
 
-// On a model with a small context window, the view a run sends stays within half of it in bytes.
+// On a model with a small context window, the view a run sends stays within half of it in bytes;
+// without a compactor (none configured, no credentials) it holds the messages cut to size.
 func TestTheViewFitsASmallModelsWindow(t *testing.T) {
 	provider := faux.New()
 	var requests []ai.Context
@@ -556,7 +510,7 @@ func TestTheViewFitsASmallModelsWindow(t *testing.T) {
 	})})
 	model := *provider.GetModel()
 	model.ContextWindow = 32_000
-	runtime, manager := newRuntime(t, Options{}, provider.StreamSimple, &model, nil)
+	runtime, manager := newRuntime(t, Options{}, provider.StreamSimple, &model)
 	for index := range 60 {
 		if _, err := manager.AppendMessage(&ai.UserMessage{Content: ai.NewUserText(fmt.Sprintf("note %d %s", index, strings.Repeat("words ", 100)))}); err != nil {
 			t.Fatal(err)
@@ -566,8 +520,8 @@ func TestTheViewFitsASmallModelsWindow(t *testing.T) {
 	if err := runtime.Prompt(context.Background(), "next"); err != nil {
 		t.Fatal(err)
 	}
-	if view := userTexts(requests[0])[0]; !strings.HasPrefix(view, "<chat>\n0+") || len(view) > 16_000 {
-		t.Fatalf("the view is %d bytes for a 32,000-token window", len(view))
+	if view := userTexts(requests[0])[0]; len(view) > 16_000 || strings.Contains(view, unbuilt) || !strings.Contains(view, "|user: note 59 words words") {
+		t.Fatalf("the view is %d bytes for a 32,000-token window: %.200q", len(view), view[max(0, len(view)-200):])
 	}
 }
 
@@ -585,85 +539,6 @@ func TestCompactionStoresTheViewOfWhatItCuts(t *testing.T) {
 	compaction := session.GetLatestCompactionEntry(manager.GetBranch())
 	if compaction == nil || !strings.Contains(compaction.Summary, "<chat>\n0+1|user: alpha\n1+1|orb: one\n") {
 		t.Fatalf("compaction %+v", compaction)
-	}
-}
-
-// Without a compactor (none configured, no credentials), a run starts at once from the messages
-// cut to size instead of waiting for summaries that cannot come.
-func TestAFreshRunGoesOnWithoutACompactor(t *testing.T) {
-	runtime, _, requests := sessionRuntime(t, Options{}, faux.AssistantMessage("ok"), faux.AssistantMessage("later"))
-	first := strings.Repeat("a long first message ", 40)
-	if err := runtime.Prompt(context.Background(), first); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := runtime.Prompt(ctx, "second"); err != nil {
-		t.Fatal(err)
-	}
-	if view := userTexts((*requests)[len(*requests)-1])[0]; len(*requests) != 2 || !strings.HasPrefix(view, "<chat>\n0+1|user: a long first message a long") || strings.Contains(view, unbuilt) {
-		t.Fatalf("the second run did not start from the cut message: %q", userTexts((*requests)[len(*requests)-1]))
-	}
-}
-
-// A message the compactor keeps failing on (a refusal, an empty reply) gets giveUp calls, then
-// keeps its text cut to size, saved with the session: later messages summarize past it, and
-// nothing calls again, in this process or the next.
-func TestAMessageTheCompactorCannotSummarizeIsCutToSize(t *testing.T) {
-	sessions := &fakeSessions{}
-	for index := range 4 {
-		sessions.add("user", fmt.Sprintf("message %d %s", index, strings.Repeat("x", 2000)))
-	}
-	tr := newTree(sessions, sessions.save)
-	defer tr.stop()
-	model := &compactor{size: 300}
-	var poisoned atomic.Int32
-	tr.ask = func(ctx context.Context, messages ai.MessageList, mark int) (*ai.AssistantMessage, error) {
-		if blocks := messages[0].(*ai.UserMessage).Content.Blocks; strings.Contains(blocks[len(blocks)-1].(*ai.TextContent).Text, "compress message 1 into") {
-			poisoned.Add(1)
-			return &ai.AssistantMessage{}, nil
-		}
-		return model.ask(ctx, messages, mark)
-	}
-	tr.retry = time.Millisecond
-	tr.pump()
-	if !settled(tr, 4) {
-		t.Fatal("messages after the failing one were never summarized")
-	}
-	idle(t, tr, false)
-	time.Sleep(20 * time.Millisecond)
-	if got := ai.ContentText(tr.zoom(1, 1)); !strings.HasPrefix(got, "1+0|user: message 1 x") || poisoned.Load() != giveUp {
-		t.Fatalf("after %d calls, message 1 reads %.40q", poisoned.Load(), got)
-	}
-	again := newTree(sessions, sessions.save)
-	again.mu.Lock()
-	again.syncLocked()
-	saved := again.builtLocked(0, 1)
-	again.mu.Unlock()
-	if !saved {
-		t.Fatal("the next start would ask about message 1 again")
-	}
-}
-
-func TestAFreshRunAfterATreeMoveSeesOnlyItsBranch(t *testing.T) {
-	runtime, manager, requests := sessionRuntime(t, Options{}, faux.AssistantMessage("one"), faux.AssistantMessage("two"), faux.AssistantMessage("three"))
-	ctx := context.Background()
-	if err := runtime.Prompt(ctx, "alpha"); err != nil {
-		t.Fatal(err)
-	}
-	answered := *manager.GetLeafID()
-	if err := runtime.Prompt(ctx, "beta"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := runtime.NavigateTree(ctx, answered, agent.NavigateTreeOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := runtime.Prompt(ctx, "gamma"); err != nil {
-		t.Fatal(err)
-	}
-	third := strings.Join(userTexts((*requests)[2]), "|")
-	if !strings.Contains(third, "0+1|user: alpha\n1+1|orb: one\n</chat>|gamma") || strings.Contains(third, "beta") {
-		t.Fatalf("third request: %q", third)
 	}
 }
 
@@ -696,30 +571,30 @@ func TestFreshModeNeverCompactsBeforeARun(t *testing.T) {
 }
 
 // host runs memtree in an agent host whose model, for turns and compactions alike, is a fake
-// Anthropic server; answer gives a request's reply and may hold it until ctx ends. The turns'
-// requests are recorded.
-func host(t *testing.T, answer func(ctx context.Context, compaction bool) string) (*agent.AgentSessionRuntime, func() []string) {
+// Anthropic server. answer gives a request's reply and may hold it until ctx ends; a compaction
+// offered tools but not told to leave them gets a tool call, as a model may answer. Every request
+// is recorded, turns and compactions apart.
+func host(t *testing.T, answer func(ctx context.Context, compaction bool) string) (*agent.AgentSessionRuntime, func(compaction bool) []map[string]any) {
 	t.Helper()
 	var mu sync.Mutex
-	var turns []string
+	requests := map[bool][]map[string]any{}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body, _ := io.ReadAll(request.Body)
-		var payload struct {
-			Messages json.RawMessage `json:"messages"`
-		}
-		_ = json.Unmarshal(body, &payload)
-		compaction := strings.Contains(string(payload.Messages), "Compaction:")
-		if !compaction {
-			mu.Lock()
-			turns = append(turns, string(body))
-			mu.Unlock()
+		var body map[string]any
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		compaction := strings.Contains(encoded(body["messages"]), "Compaction:")
+		mu.Lock()
+		requests[compaction] = append(requests[compaction], body)
+		mu.Unlock()
+		writer.Header().Set("Content-Type", "text/event-stream")
+		if choice, _ := body["tool_choice"].(map[string]any); compaction && body["tools"] != nil && choice["type"] != "none" {
+			_, _ = io.WriteString(writer, toolUse)
+			return
 		}
 		text := answer(request.Context(), compaction)
 		if request.Context().Err() != nil {
 			return
 		}
 		quoted, _ := json.Marshal(text)
-		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = fmt.Fprintf(writer, sse, quoted)
 	}))
 	t.Cleanup(server.Close)
@@ -736,16 +611,30 @@ func host(t *testing.T, answer func(ctx context.Context, compaction bool) string
 	if err := extensionRegistry.Register("<inline:memtree>", Extension(Options{})); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := agent.NewAgentSessionRuntime(t.Context(), agent.AgentSessionOptions{CWD: dir, AgentDir: dir, Model: &model, ModelRegistry: registry, ExtensionRegistry: extensionRegistry, Resources: &agent.Resources{}, NoTools: "all"})
+	runtime, err := agent.NewAgentSessionRuntime(t.Context(), agent.AgentSessionOptions{CWD: dir, AgentDir: dir, Model: &model, ModelRegistry: registry, ExtensionRegistry: extensionRegistry, Resources: &agent.Resources{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { runtime.Dispose(context.Background()) })
-	return runtime, func() []string {
+	return runtime, func(compaction bool) []map[string]any {
 		mu.Lock()
 		defer mu.Unlock()
-		return slices.Clone(turns)
+		return slices.Clone(requests[compaction])
 	}
+}
+
+func lastTurn(requests func(bool) []map[string]any) string {
+	turns := requests(false)
+	return encoded(turns[len(turns)-1])
+}
+
+// encoded is value as JSON, without escaping the view's angle brackets.
+func encoded(value any) string {
+	var text strings.Builder
+	encoder := json.NewEncoder(&text)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(value)
+	return text.String()
 }
 
 // held answers turns at once and holds compactions until release closes or their request ends,
@@ -780,7 +669,7 @@ var long = strings.Repeat("a long message ", 50)
 // gets its view once the summary comes.
 func TestEscapeDuringTheWaitSendsNothing(t *testing.T) {
 	release := make(chan struct{})
-	runtime, turns := host(t, held(release, new(atomic.Int32)))
+	runtime, requests := host(t, held(release, new(atomic.Int32)))
 	session := runtime.Session()
 	if err := session.Prompt(t.Context(), long); err != nil {
 		t.Fatal(err)
@@ -794,14 +683,14 @@ func TestEscapeDuringTheWaitSendsNothing(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Escape did not end the wait")
 	}
-	if got := len(turns()); got != 1 {
+	if got := len(requests(false)); got != 1 {
 		t.Fatalf("%d turn requests after Escape, want 1", got)
 	}
 	close(release)
 	if err := session.Prompt(t.Context(), "third"); err != nil {
 		t.Fatal(err)
 	}
-	if last := turns()[len(turns())-1]; !strings.Contains(last, "0+1|a summary") {
+	if last := lastTurn(requests); !strings.Contains(last, "0+1|a summary") {
 		t.Fatalf("the next turn has no view: %.300s", last)
 	}
 }
@@ -836,7 +725,7 @@ func TestASessionSwitchCancelsCompactions(t *testing.T) {
 // A fork while a compaction runs starts from the summaries saved before its point.
 func TestAForkKeepsTheSummariesBeforeIt(t *testing.T) {
 	release := make(chan struct{})
-	runtime, turns := host(t, held(release, new(atomic.Int32)))
+	runtime, requests := host(t, held(release, new(atomic.Int32)))
 	session := runtime.Session()
 	if err := session.Prompt(t.Context(), long); err != nil {
 		t.Fatal(err)
@@ -860,7 +749,7 @@ func TestAForkKeepsTheSummariesBeforeIt(t *testing.T) {
 	if err := runtime.Session().Prompt(t.Context(), "forked"); err != nil {
 		t.Fatal(err)
 	}
-	last := turns()[len(turns())-1]
+	last := lastTurn(requests)
 	if !strings.Contains(last, "0+1|a summary") || strings.Contains(last, "zebra") {
 		t.Fatalf("the fork's view: %.400s", last)
 	}
@@ -870,7 +759,7 @@ func TestAForkKeepsTheSummariesBeforeIt(t *testing.T) {
 // view covers only the branch it is on.
 func TestATreeMoveDuringACompaction(t *testing.T) {
 	release := make(chan struct{})
-	runtime, turns := host(t, held(release, new(atomic.Int32)))
+	runtime, requests := host(t, held(release, new(atomic.Int32)))
 	session := runtime.Session()
 	if err := session.Prompt(t.Context(), "alpha"); err != nil {
 		t.Fatal(err)
@@ -886,7 +775,7 @@ func TestATreeMoveDuringACompaction(t *testing.T) {
 	if err := session.Prompt(t.Context(), "gamma"); err != nil {
 		t.Fatal(err)
 	}
-	last := turns()[len(turns())-1]
+	last := lastTurn(requests)
 	if !strings.Contains(last, "0+1|user: alpha") || strings.Contains(last, "a long message") || strings.Contains(last, "2+1|") {
 		t.Fatalf("the view after the move: %.400s", last)
 	}

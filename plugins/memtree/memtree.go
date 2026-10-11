@@ -183,9 +183,10 @@ func Extension(options Options) extensions.Factory {
 		}
 		p := &plugin{api: api, compactor: options.Model, fresh: options.Mode != "compaction", writing: map[string]chan struct{}{}}
 		pump := func(_ context.Context, raw extensions.Event, ec extensions.Context) (any, error) {
-			if _, end := raw.(extensions.AgentEndEvent); end {
+			_, start := raw.(extensions.AgentStartEvent)
+			if _, end := raw.(extensions.AgentEndEvent); start || end {
 				p.mu.Lock()
-				p.running = false
+				p.running = start
 				p.mu.Unlock()
 			}
 			if t := p.current(ec); t != nil {
@@ -193,7 +194,7 @@ func Extension(options Options) extensions.Factory {
 			}
 			return nil, nil
 		}
-		for _, event := range []extensions.EventType{extensions.EventSessionStart, extensions.EventMessageEnd, extensions.EventAgentEnd, extensions.EventSessionTree} {
+		for _, event := range []extensions.EventType{extensions.EventSessionStart, extensions.EventMessageEnd, extensions.EventAgentStart, extensions.EventAgentEnd, extensions.EventSessionTree} {
 			api.On(event, pump)
 		}
 		api.On(extensions.EventSessionShutdown, func(context.Context, extensions.Event, extensions.Context) (any, error) {
@@ -202,12 +203,6 @@ func Extension(options Options) extensions.Factory {
 				p.tree.stop()
 				p.tree = nil
 			}
-			p.mu.Unlock()
-			return nil, nil
-		})
-		api.On(extensions.EventAgentStart, func(context.Context, extensions.Event, extensions.Context) (any, error) {
-			p.mu.Lock()
-			p.running = true
 			p.mu.Unlock()
 			return nil, nil
 		})
