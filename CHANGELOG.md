@@ -5,12 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- Codex models use the context window announced by the signed-in account, including models Orb already knows: GPT-6.1 Sol gets its new 500K window instead of compacting at the old 272K budget. Explicit model overrides still win; running sessions keep their selected model until reloaded.
-
 ## [0.19.10] - 2026-10-12
 
-Orb's screen stays clean under memory pressure: macOS's "MallocStackLogging: can't turn off malloc stack logging" no longer lands in the prompt.
+GPT-6.1 Sol gets the 500K context window your Codex account announces, and Orb's screen stays clean under memory pressure: macOS's "MallocStackLogging: can't turn off malloc stack logging" no longer lands in the prompt.
 
+- Codex models use the context window announced by the signed-in account, including models Orb already knows: GPT-6.1 Sol gets its new 500K window instead of compacting at the old 272K budget. Explicit model overrides still win; running sessions keep their selected model until reloaded.
 - Orb's screen no longer picks up stray text such as "orb(98241) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.", which macOS's allocator writes to stderr under memory pressure: while Orb draws on the terminal its stderr points elsewhere, so the prompt no longer shows a truncated, garbled line that stayed until Orb restarted. A crash still prints to the terminal.
 
 ## [0.19.9] - 2026-10-11
