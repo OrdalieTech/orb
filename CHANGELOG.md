@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Orb's screen no longer picks up stray text such as "orb(98241) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.", which macOS's allocator writes to stderr under memory pressure: while Orb draws on the terminal its stderr points elsewhere, so the prompt no longer shows a truncated, garbled line that stayed until Orb restarted. A crash still prints to the terminal.
+
 ## [0.19.9] - 2026-10-11
 
 A Claude Sessions conversation hands over to another model again: Orb keeps Claude's own compactions, and a history too long for the new model's window is summarized from its recent part instead of failing every turn.

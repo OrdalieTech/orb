@@ -254,3 +254,65 @@ func TestPanicWhileHoldingMutexRestoresTerminal(t *testing.T) {
 		})
 	}
 }
+
+// TestStderrChildHelper is the subprocess half of TestStrayStderrStaysOffTheScreen: with a pty
+// as stdio it starts the terminal, and on the first input byte writes what macOS's allocator
+// writes under memory pressure to stderr, then panics outside any guard.
+func TestStderrChildHelper(t *testing.T) {
+	if os.Getenv("ORB_TUI_STDERR_CHILD") == "" {
+		t.Skip("subprocess helper for TestStrayStderrStaysOffTheScreen")
+	}
+	terminal := NewProcessTerminal()
+	if err := terminal.Start(func(string) {
+		_, _ = unix.Write(2, []byte("orb(1) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\n"))
+		go func() { panic("boom outside the guard") }()
+		time.Sleep(10 * time.Second)
+	}, func() {}); err != nil {
+		os.Exit(3)
+	}
+	time.Sleep(10 * time.Second)
+	os.Exit(4)
+}
+
+// What other writers put on stderr while the TUI draws on the same terminal stays off the
+// screen, so it cannot leave stray text in the prompt; a crash still reaches the terminal.
+func TestStrayStderrStaysOffTheScreen(t *testing.T) {
+	master, slave := openPTY(t)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "-test.run=TestStderrChildHelper$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "ORB_TUI_STDERR_CHILD=1")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	drained := make(chan string, 1)
+	go func() {
+		var builder strings.Builder
+		buffer := make([]byte, 4096)
+		for {
+			count, readErr := master.Read(buffer)
+			builder.Write(buffer[:max(count, 0)])
+			if readErr != nil {
+				drained <- builder.String()
+				return
+			}
+		}
+	}()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if state, err := unix.IoctlGetTermios(int(slave.Fd()), ptyIoctlGetTermios); err == nil && state.Lflag&unix.ICANON == 0 {
+			break
+		}
+	}
+	if _, err := master.WriteString("x"); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	_ = slave.Close()
+	output := <-drained
+	if strings.Contains(output, "MallocStackLogging") || !strings.Contains(output, "boom outside the guard") {
+		t.Fatalf("screen = %q; want the crash and not the allocator's report", output)
+	}
+}

@@ -140,3 +140,6 @@ func watchTerminalResize(terminal *ProcessTerminal, notify func()) func() {
 	})()
 	return func() { close(stop) }
 }
+
+// quietStderr has nothing to quiet: no allocator or child writes into the console screen buffer.
+func quietStderr(*os.File) func() { return func() {} }

@@ -45,6 +45,7 @@ type ProcessTerminal struct {
 	negotiationGeneration uint64
 	lastInput             time.Time
 	crashRestoreCancel    func()
+	restoreStderr         func()
 }
 
 func NewProcessTerminal() *ProcessTerminal { return NewProcessTerminalFiles(os.Stdin, os.Stdout) }
@@ -85,6 +86,8 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 		return err
 	}
 	terminal.rawState, terminal.readInput = state, reader
+	restoreStderr := quietStderr(terminal.output)
+	terminal.restoreStderr = restoreStderr
 	terminal.started, terminal.inputHandler, terminal.resizeHandler = true, onInput, onResize
 	terminal.lastInput = time.Now()
 	terminal.readerDone = make(chan struct{})
@@ -103,7 +106,10 @@ func (terminal *ProcessTerminal) Start(onInput func(string), onResize func()) er
 	done := terminal.readerDone
 	buffer := terminal.buffer
 	terminal.protocolPushed = true
-	terminal.crashRestoreCancel = registerCrashRestore(func() { terminal.emergencyRestore(state) })
+	terminal.crashRestoreCancel = registerCrashRestore(func() {
+		terminal.emergencyRestore(state)
+		restoreStderr()
+	})
 	terminal.mu.Unlock()
 
 	terminal.Write("\x1b[?2004h" + kittyKeyboardQuery)
@@ -316,6 +322,10 @@ func (terminal *ProcessTerminal) Stop() error {
 	if terminal.stopResize != nil {
 		terminal.stopResize()
 		terminal.stopResize = nil
+	}
+	if terminal.restoreStderr != nil {
+		terminal.restoreStderr()
+		terminal.restoreStderr = nil
 	}
 	state, input, reader, done := terminal.rawState, terminal.input, terminal.readInput, terminal.readerDone
 	terminal.rawState, terminal.readInput, terminal.readerDone, terminal.inputHandler, terminal.resizeHandler = nil, nil, nil, nil, nil
