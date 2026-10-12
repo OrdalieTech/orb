@@ -520,8 +520,10 @@ func TestTheViewFitsASmallModelsWindow(t *testing.T) {
 	if err := runtime.Prompt(context.Background(), "next"); err != nil {
 		t.Fatal(err)
 	}
-	if view := userTexts(requests[0])[0]; len(view) > 16_000 || strings.Contains(view, unbuilt) || !strings.Contains(view, "|user: note 59 words words") {
-		t.Fatalf("the view is %d bytes for a 32,000-token window: %.200q", len(view), view[max(0, len(view)-200):])
+	// Lines cut to size merge into the head of each half, so the oldest note leads the first line
+	// whichever pairs the batch merged; which those are depends on when their parents were built.
+	if view := userTexts(requests[0])[0]; len(view) > 16_000 || strings.Contains(view, unbuilt) || !strings.HasPrefix(view, "<chat>\n0+") || !strings.Contains(view, "|user: note 0 words words") {
+		t.Fatalf("the view is %d bytes for a 32,000-token window: %q", len(view), view)
 	}
 }
 
