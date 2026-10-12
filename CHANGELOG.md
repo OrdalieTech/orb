@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.10] - 2026-10-12
+
+Orb's screen stays clean under memory pressure: macOS's "MallocStackLogging: can't turn off malloc stack logging" no longer lands in the prompt.
+
 - Orb's screen no longer picks up stray text such as "orb(98241) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.", which macOS's allocator writes to stderr under memory pressure: while Orb draws on the terminal its stderr points elsewhere, so the prompt no longer shows a truncated, garbled line that stayed until Orb restarted. A crash still prints to the terminal.
 
 ## [0.19.9] - 2026-10-11
