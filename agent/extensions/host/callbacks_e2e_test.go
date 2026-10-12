@@ -17,13 +17,14 @@ import (
 
 // Regression: extension callbacks used to inherit the manager RequestTimeout
 // (default 30s) whenever the caller ctx had no deadline; upstream awaits them
-// with no timeout at all.
+// with no timeout at all. RequestTimeout also bounds the host's handshake, so it
+// leaves room for a slow runner to start the host.
 func TestRealHostToolOutlivesRequestTimeout(t *testing.T) {
 	runtime := requireRuntime(t)
 	cwd := t.TempDir()
 	manager := NewManager(Options{
 		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime,
-		RequestTimeout: 2 * time.Second, ShutdownTimeout: time.Second,
+		RequestTimeout: 5 * time.Second, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	})
 	t.Cleanup(func() {
@@ -43,7 +44,7 @@ func TestRealHostToolOutlivesRequestTimeout(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	final, err := slow.Execute(ctx, "call-slow", map[string]any{"ms": 3500}, nil, runner.CreateContext())
+	final, err := slow.Execute(ctx, "call-slow", map[string]any{"ms": 5500}, nil, runner.CreateContext())
 	if err != nil {
 		t.Fatalf("tool exceeding RequestTimeout failed: %v", err)
 	}
