@@ -29,8 +29,8 @@ type codexLiveModel struct {
 }
 
 // RefreshCodex replaces the stored openai-codex models with the list the
-// ChatGPT account offers. Known models keep their catalog metadata; new ones
-// inherit it from the highest-priority known model, taking name, cost and
+// ChatGPT account offers. The live context window wins over catalog metadata;
+// new models inherit the rest from the highest-priority known model, taking name, cost and
 // output limit from the same-id OpenAI API model when models.dev has one.
 // The entry's freshness fields stay untouched, so the models.dev gate is
 // unaffected; without an entry (no models.dev refresh yet) nothing is written.
@@ -111,7 +111,6 @@ func codexModels(known *Catalog, live []codexLiveModel) []ai.Model {
 			if api, ok := known.Find("openai", item.Slug); ok {
 				model.Name, model.Cost, model.MaxTokens = api.Name, api.Cost, api.MaxTokens
 			}
-			model.ContextWindow = cmp.Or(item.ContextWindow, model.ContextWindow)
 			if len(item.InputModalities) > 0 {
 				model.Input = ai.InputModalities{}
 				for _, modality := range item.InputModalities {
@@ -119,6 +118,9 @@ func codexModels(known *Catalog, live []codexLiveModel) []ai.Model {
 				}
 			}
 			model.Reasoning = len(item.ReasoningLevels) > 0
+		}
+		if item.ContextWindow > 0 {
+			model.ContextWindow = item.ContextWindow
 		}
 		models = append(models, model)
 	}
