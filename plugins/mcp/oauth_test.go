@@ -29,6 +29,7 @@ type fakeOAuthServer struct {
 	registered   []map[string]any
 	issued       int
 	requireScope string
+	noMetadata   bool // the authorization server publishes no RFC 8414 metadata
 }
 
 func newFakeOAuthServer(t *testing.T) *fakeOAuthServer {
@@ -46,6 +47,10 @@ func newFakeOAuthServer(t *testing.T) *fakeOAuthServer {
 		writeJSON(writer, map[string]any{"resource": fake.URL + "/mcp", "authorization_servers": []string{fake.URL}, "scopes_supported": []string{"read"}})
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(writer http.ResponseWriter, _ *http.Request) {
+		if fake.noMetadata {
+			http.NotFound(writer, nil)
+			return
+		}
 		writeJSON(writer, map[string]any{
 			"issuer": fake.URL, "authorization_endpoint": fake.URL + "/authorize", "token_endpoint": fake.URL + "/token",
 			"registration_endpoint": fake.URL + "/register", "response_types_supported": []string{"code"},
@@ -118,6 +123,27 @@ func newFakeOAuthServer(t *testing.T) *fakeOAuthServer {
 	fake.Server = httptest.NewServer(mux)
 	t.Cleanup(fake.Close)
 	return fake
+}
+
+// An authorization response naming an issuer that no discovered metadata can vouch for is
+// refused before its code is exchanged (RFC 9207; upstream 1.2.0).
+func TestOAuthSignInRefusesAnIssuerItCannotCheck(t *testing.T) {
+	fake := newFakeOAuthServer(t)
+	fake.noMetadata = true
+	entry := Entry{Name: "protected", Scope: "global", Config: ServerConfig{URL: fake.URL + "/mcp", Exposure: ExposureDirect, OAuth: &OAuthConfig{ClientName: "orb-test"}}}
+	follow := func(target string) {
+		if response, err := http.Get(target); err == nil {
+			_ = response.Body.Close()
+		}
+	}
+	never := func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", nil
+	}
+	_, _, err := Login(context.Background(), t.TempDir(), t.TempDir(), entry, follow, never)
+	if err == nil || !strings.Contains(err.Error(), "does not match") || fake.issued != 0 {
+		t.Fatalf("login err %v, tokens issued %d", err, fake.issued)
+	}
 }
 
 func TestOAuthSignInConnectsAndRefreshes(t *testing.T) {

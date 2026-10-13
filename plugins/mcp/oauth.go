@@ -375,9 +375,14 @@ func (flow oauthFlow) run(ctx context.Context, options flowOptions) (bool, error
 	}
 	tokenEndpoint := endpoint(metadata, discovered.AuthorizationServerURL, "/token", func(metadata *authServerMetadata) string { return metadata.TokenEndpoint })
 	if options.code != "" {
-		// RFC 9207: never send a code from another authorization server to this one.
-		if metadata != nil && (options.iss != "" || metadata.ISSParameterSupported) && options.iss != metadata.Issuer {
-			return false, fmt.Errorf("authorization response issuer %q does not match %q", options.iss, metadata.Issuer)
+		// RFC 9207: never send a code from another authorization server to this one, nor one
+		// whose issuer no discovered authorization server metadata can vouch for (upstream 1.2.0).
+		expected := ""
+		if metadata != nil {
+			expected = metadata.Issuer
+		}
+		if (options.iss != "" || metadata != nil && metadata.ISSParameterSupported) && options.iss != expected {
+			return false, fmt.Errorf("authorization response issuer %q does not match %q", options.iss, expected)
 		}
 		if state.CodeVerifier == "" {
 			return false, errors.New("no OAuth PKCE code verifier is stored")

@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- MCP sign-in refuses an authorization response that names an issuer when no authorization server metadata was discovered to check it against, instead of exchanging its code (RFC 9207, pi 1.2.0).
+
 - An Anthropic request whose strict tools exceed Anthropic's limits ("Too many strict tools", "The compiled grammar is too large", too many union parameters), as Orb's own strict tools plus many MCP or extension tools can, is sent once more with the tools that only prefer strict sampling sent non-strict, instead of failing the turn (pi 1.2.0).
 
 - A `~` at the start of an `!pattern`, `+path` or `-path` entry in the `extensions`, `skills`, `prompts` and `themes` settings means the home directory, as it does in a plain path entry: `!~/skills/pdf` matched nothing (pi 1.2.0).
