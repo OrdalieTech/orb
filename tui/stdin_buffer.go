@@ -20,6 +20,16 @@ const (
 	defaultEscapeTimeout   = 10 * time.Millisecond
 )
 
+// terminalReplyHeader starts a color or program-status OSC reply, an XTVersion reply or a Kitty
+// graphics reply: one that arrives split waits for its terminator rather than becoming typed
+// text, its BEL a Ctrl+G (upstream 1.2.0). Until the header is whole, the input may be batched
+// legacy Alt keys.
+var terminalReplyHeader = regexp.MustCompile(`^\x1b(?:\](?:1[01];|4;\d{1,3};|7501;\?)|P>\||_G(?:[a-z]=\d+,)*[a-z]=\d+;)`)
+
+func isControlString(data string) bool {
+	return strings.HasPrefix(data, "\x1b]") || strings.HasPrefix(data, "\x1bP") || strings.HasPrefix(data, "\x1b_")
+}
+
 type sequenceStatus uint8
 
 const (
@@ -118,7 +128,19 @@ func extractCompleteSequences(buffer string) ([]string, string) {
 			continue
 		}
 		completed := false
+		terminalReply := isControlString(remaining) && terminalReplyHeader.MatchString(remaining)
 		for end := 1; end <= len(remaining); end++ {
+			if terminalReply && end > 2 {
+				// CAN and SUB cancel the reply, not the input after it; a new escape sequence
+				// aborts an unterminated reply, while a trailing ESC may still be its ST.
+				if char := remaining[end-1]; char == 0x18 || char == 0x1a {
+					pos, completed = pos+end, true
+					break
+				} else if char == 0x1b && end < len(remaining) && remaining[end] != '\\' {
+					pos, completed = pos+end-1, true
+					break
+				}
+			}
 			candidate := remaining[:end]
 			switch completeSequence(candidate) {
 			case sequenceComplete:
@@ -209,7 +231,7 @@ func (buffer *StdinBuffer) Process(data string) {
 	}
 	buffer.buffer += data
 	events := buffer.processLocked()
-	if buffer.buffer != "" {
+	if buffer.buffer != "" && !terminalReplyHeader.MatchString(buffer.buffer) {
 		delay := buffer.timeout
 		if buffer.buffer == "\x1b" {
 			delay = buffer.escapeTimeout
@@ -217,6 +239,13 @@ func (buffer *StdinBuffer) Process(data string) {
 		generation := buffer.timerGeneration
 		buffer.timer = time.AfterFunc(delay, guarded(func() {
 			for _, sequence := range buffer.flushExpired(generation) {
+				if len(sequence) > 2 && isControlString(sequence) {
+					// An Alt key, then its tail reparsed: batched text, Enter and control keys
+					// are not swallowed as one event.
+					buffer.emitData(sequence[:2])
+					buffer.Process(sequence[2:])
+					continue
+				}
 				buffer.emitData(sequence)
 			}
 		}))

@@ -111,3 +111,35 @@ func TestStdinBufferSplitSequenceKeepsCompletionWindow(t *testing.T) {
 		buffer.Close()
 	}
 }
+
+// A terminal reply that arrives split waits for its terminator instead of turning into typed
+// hex and a Ctrl+G from its BEL (upstream 1.2.0); an Alt+] typed before text still comes through.
+func TestStdinBufferWaitsForASplitTerminalReply(t *testing.T) {
+	var mu sync.Mutex
+	var data []string
+	buffer := NewStdinBuffer(5*time.Millisecond, 5*time.Millisecond, func(value string) {
+		mu.Lock()
+		data = append(data, value)
+		mu.Unlock()
+	}, nil)
+	received := func(want []string) {
+		t.Helper()
+		for deadline := time.Now().Add(time.Second); ; time.Sleep(5 * time.Millisecond) {
+			mu.Lock()
+			got := slices.Clone(data)
+			mu.Unlock()
+			if slices.Equal(got, want) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("data = %q, want %q", got, want)
+			}
+		}
+	}
+	buffer.Process("\x1b]11;rgb:1e1e/")
+	time.Sleep(50 * time.Millisecond)
+	buffer.Process("1e1e/2e2e\x07a")
+	received([]string{"\x1b]11;rgb:1e1e/1e1e/2e2e\x07", "a"})
+	buffer.Process("\x1b]x")
+	received([]string{"\x1b]11;rgb:1e1e/1e1e/2e2e\x07", "a", "\x1b]", "x"})
+}
