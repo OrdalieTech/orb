@@ -225,6 +225,18 @@ func TestRunPrintModeAssistantFailuresReturnOne(t *testing.T) {
 	}
 }
 
+// An answer cut off at the model's output limit prints what came, says so on stderr and exits 1,
+// so a script does not take it for a whole answer.
+func TestRunPrintModeTruncatedAnswerReturnsOne(t *testing.T) {
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("partial", faux.AssistantMessageOptions{StopReason: ai.StopReasonLength})})
+	var stdout, stderr bytes.Buffer
+	exitCode := RunPrintMode(context.Background(), newPrintAgent(provider), PrintModeOptions{InitialMessage: "hello", Stdout: &stdout, Stderr: &stderr})
+	if exitCode != 1 || stdout.String() != "partial\n" || stderr.String() != "Response was truncated: the model reached its output token limit.\n" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunPrintModePromptErrorReturnsOne(t *testing.T) {
 	provider := faux.New()
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("unused")})

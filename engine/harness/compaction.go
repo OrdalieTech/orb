@@ -793,20 +793,17 @@ func SerializeConversation(messages engine.AgentMessages) string {
 				parts = append(parts, "[User]: "+text)
 			}
 		case *ai.AssistantMessage:
-			var textParts, thinkingParts, toolCalls []string
+			// Thinking is left out (upstream 1.2.0): replayed thinking is often not in the live
+			// context, so it could make a summary request larger than what it summarizes.
+			var textParts, toolCalls []string
 			for _, block := range typed.Content {
 				switch content := block.(type) {
 				case *ai.TextContent:
 					textParts = append(textParts, content.Text)
-				case *ai.ThinkingContent:
-					thinkingParts = append(thinkingParts, content.Thinking)
 				case *ai.ToolCall:
 					arguments := orderedToolCallArguments(content)
 					toolCalls = append(toolCalls, content.Name+"("+strings.Join(arguments, ", ")+")")
 				}
-			}
-			if len(thinkingParts) > 0 {
-				parts = append(parts, "[Assistant thinking]: "+strings.Join(thinkingParts, "\n"))
 			}
 			if len(textParts) > 0 {
 				parts = append(parts, "[Assistant]: "+strings.Join(textParts, "\n"))

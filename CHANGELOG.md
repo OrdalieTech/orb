@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- From pi 1.2.0: "The upstream provider returned an error" is retried like other transient provider errors; summaries for compaction and branch summaries leave thinking out, as replayed thinking is often not in the live context and could make the request larger than what it summarizes; `orb -p` whose answer stops at the model's output token limit prints it, writes "Response was truncated: the model reached its output token limit." to stderr and exits 1 instead of 0.
+
 ## [0.19.10] - 2026-10-12
 
 GPT-6.1 Sol gets the 500K context window your Codex account announces, and Orb's screen stays clean under memory pressure: macOS's "MallocStackLogging: can't turn off malloc stack logging" no longer lands in the prompt.

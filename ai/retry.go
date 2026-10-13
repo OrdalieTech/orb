@@ -41,7 +41,7 @@ var nonRetryableProviderLimitPatterns = anyOf([]string{
 
 var retryableProviderPatterns = anyOf([]string{
 	`overloaded`, `currently experiencing high demand`, `rate.?limit`, `too many requests`, `429`, `500`, `502`, `503`, `504`, `520`, `524`,
-	`service.?unavailable`, `server.?error`, `internal.?error`, `provider.?returned.?error`,
+	`service.?unavailable`, `server.?error`, `internal.?error`, `provider.?returned.?(?:an.?)?error`,
 	`exceeded request buffer limit while retrying upstream`,
 	`network.?error`, `connection.?error`, `connection.?refused`, `connection.?lost`, `other side closed`,
 	`fetch failed`, `upstream.?connect`, `reset before headers`, `socket hang up`,

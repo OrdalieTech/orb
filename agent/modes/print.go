@@ -63,6 +63,8 @@ type printModeControl struct {
 type printModeResult struct {
 	texts []string
 	err   error
+	// truncated: the model stopped at its output token limit, so texts are partial.
+	truncated bool
 }
 
 func runPrintMode(ctx context.Context, session printSession, options PrintModeOptions, control printModeControl) int {
@@ -181,6 +183,9 @@ func runPrintMode(ctx context.Context, session printSession, options PrintModeOp
 			if err != nil {
 				writeError(stderr, err)
 				exitCode = 1
+			} else if result.truncated {
+				_, _ = fmt.Fprintln(stderr, "Response was truncated: the model reached its output token limit.")
+				exitCode = 1
 			}
 		}
 	}
@@ -221,7 +226,7 @@ func executePrintMode(ctx context.Context, session printSession, options PrintMo
 	if err := assistantFailure(assistant); err != nil {
 		return printModeResult{err: err}
 	}
-	result := printModeResult{texts: make([]string, 0, len(assistant.Content))}
+	result := printModeResult{texts: make([]string, 0, len(assistant.Content)), truncated: assistant.StopReason == ai.StopReasonLength}
 	for _, block := range assistant.Content {
 		if text, ok := block.(*ai.TextContent); ok {
 			result.texts = append(result.texts, text.Text)

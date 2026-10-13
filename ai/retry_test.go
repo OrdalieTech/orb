@@ -21,7 +21,7 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		"Exceeded request buffer limit while retrying upstream",
 		"subscription_sharing_usage_unavailable",
 		// Busy or full providers (upstream 8b5708db, 3874b3e9).
-		`{"error":{"code":"server_busy"}}`, "Our servers are currently busy, please try again", "Selected model is at capacity",
+		`{"error":{"code":"server_busy"}}`, "Our servers are currently busy, please try again", "Selected model is at capacity", "The upstream provider returned an error",
 	} {
 		if !IsRetryableAssistantError(failed(text)) {
 			t.Fatalf("not retryable: %q", text)
