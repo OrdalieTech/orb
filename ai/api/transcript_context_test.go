@@ -34,7 +34,7 @@ func TestOpenAIResponsesProjectsTranscriptSystemAndToolAdditions(t *testing.T) {
 func TestAnthropicProjectsNativeTranscriptToolChanges(t *testing.T) {
 	model := anthropicTestModel()
 	model.Compat = json.RawMessage(`{"supportsMidConvoSystemMessages":true,"supportsMidConvoToolChanges":true}`)
-	payload, _, err := buildAnthropicMessagesPayload(model, transcriptProjectionContext(), nil)
+	payload, _, err := buildAnthropicMessagesPayload(model, transcriptProjectionContext(), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

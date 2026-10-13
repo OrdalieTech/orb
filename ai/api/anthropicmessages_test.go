@@ -153,3 +153,55 @@ func TestAnthropicWorkloadIdentityFederationExchangesAndCachesToken(t *testing.T
 		t.Fatalf("authorization = %q, beta = %q", authorizations, betas)
 	}
 }
+
+// Anthropic refusing the strict tool set as too large gets one more request, with tools that only
+// prefer strict sampling sent non-strict and tools that require it still strict (upstream 1.2.0).
+func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T) {
+	var requests []map[string]bool
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body struct {
+			Tools []struct {
+				Name   string `json:"name"`
+				Strict bool   `json:"strict"`
+			} `json:"tools"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		strict := map[string]bool{}
+		for _, tool := range body.Tools {
+			strict[tool.Name] = tool.Strict
+		}
+		requests = append(requests, strict)
+		if len(requests) == 1 {
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(writer, `{"type":"error","error":{"type":"invalid_request_error","message":"Too many strict tools (24). The maximum number of strict tools is 20."}}`)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n"+
+			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n"+
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	defer server.Close()
+	previousClient := anthropicHTTPClient
+	anthropicHTTPClient = server.Client()
+	t.Cleanup(func() { anthropicHTTPClient = previousClient })
+	model := anthropicTestModel()
+	model.BaseURL, model.Compat = server.URL, json.RawMessage(`{"supportsStrictTools":true}`)
+	tool := func(name string, strict ai.ConstrainedSamplingStrict) ai.Tool {
+		return ai.Tool{Name: name, Description: name, Parameters: ai.JSONSchema(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`),
+			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: strict}}
+	}
+	tools, key := []ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}, "key"
+	stream, err := StreamAnthropicMessagesWithOptions(context.Background(), model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}, Tools: &tools},
+		&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil || message.StopReason != ai.StopReasonStop {
+		t.Fatalf("message = %#v, err = %v", message, err)
+	}
+	if len(requests) != 2 || !requests[0]["prefers"] || !requests[0]["requires"] || requests[1]["prefers"] || !requests[1]["requires"] {
+		t.Fatalf("strict tools per request = %v", requests)
+	}
+}

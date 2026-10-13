@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- An Anthropic request whose strict tools exceed Anthropic's limits ("Too many strict tools", "The compiled grammar is too large", too many union parameters), as Orb's own strict tools plus many MCP or extension tools can, is sent once more with the tools that only prefer strict sampling sent non-strict, instead of failing the turn (pi 1.2.0).
+
 - A `~` at the start of an `!pattern`, `+path` or `-path` entry in the `extensions`, `skills`, `prompts` and `themes` settings means the home directory, as it does in a plain path entry: `!~/skills/pdf` matched nothing (pi 1.2.0).
 
 - A terminal reply that reaches Orb in pieces, such as the colours Orb asks the terminal for, waits for its end instead of landing in the prompt as hex and opening the external editor with its closing BEL (pi 1.2.0); an Alt key that looks like the start of one still comes through.

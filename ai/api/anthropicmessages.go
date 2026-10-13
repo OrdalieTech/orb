@@ -295,27 +295,32 @@ func StreamAnthropicMessagesWithOptions(
 			fail(err)
 			return
 		}
-		payload, isOAuth, err := buildAnthropicMessagesPayload(model, requestContext, options)
-		if err != nil {
-			fail(err)
-			return
-		}
-		var hookedPayload any = payload
-		if streamOptions != nil && streamOptions.OnPayload != nil {
-			replacement, replace, hookErr := streamOptions.OnPayload(ctx, payload, model)
-			if hookErr != nil {
-				fail(hookErr)
-				return
+		send := func(relaxPreferredStrict bool) (*http.Response, bool, error) {
+			payload, isOAuth, err := buildAnthropicMessagesPayload(model, requestContext, options, relaxPreferredStrict)
+			if err != nil {
+				return nil, false, err
 			}
-			if replace {
-				hookedPayload, err = forceAnthropicStreaming(replacement)
-				if err != nil {
-					fail(err)
-					return
+			var hookedPayload any = payload
+			if streamOptions != nil && streamOptions.OnPayload != nil {
+				replacement, replace, hookErr := streamOptions.OnPayload(ctx, payload, model)
+				if hookErr != nil {
+					return nil, false, hookErr
+				}
+				if replace {
+					if hookedPayload, err = forceAnthropicStreaming(replacement); err != nil {
+						return nil, false, err
+					}
 				}
 			}
+			response, err := postAnthropicStream(ctx, model, requestContext, streamOptions, hookedPayload, isOAuth, options)
+			return response, isOAuth, err
 		}
-		response, err := postAnthropicStream(ctx, model, requestContext, streamOptions, hookedPayload, isOAuth, options)
+		response, isOAuth, err := send(false)
+		if err != nil && ctx.Err() == nil && anthropicStrictToolLimit(err) {
+			// Anthropic refused the strict tool set as too large; once more with tools that only
+			// prefer strict sampling sent non-strict (upstream 1.2.0 #10409).
+			response, isOAuth, err = send(true)
+		}
 		if err != nil {
 			fail(err)
 			return
@@ -528,6 +533,7 @@ func buildAnthropicMessagesPayload(
 	model *ai.Model,
 	requestContext ai.Context,
 	options *AnthropicMessagesOptions,
+	relaxPreferredStrict bool,
 ) (*AnthropicMessagesPayload, bool, error) {
 	compat, err := getAnthropicCompat(model)
 	if err != nil {
@@ -634,13 +640,13 @@ func buildAnthropicMessagesPayload(
 			immediateCache = nil
 		}
 		immediate, err := convertAnthropicTools(
-			placement.immediate, isOAuth, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools, immediateCache, false,
+			placement.immediate, isOAuth, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools, relaxPreferredStrict, immediateCache, false,
 		)
 		if err != nil {
 			return nil, false, err
 		}
 		deferred, err := convertAnthropicTools(
-			placement.deferred, isOAuth, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools, nil, true,
+			placement.deferred, isOAuth, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools, relaxPreferredStrict, nil, true,
 		)
 		if err != nil {
 			return nil, false, err
@@ -743,6 +749,7 @@ func convertAnthropicTools(
 	oauth bool,
 	eager bool,
 	supportsStrictTools bool,
+	relaxPreferredStrict bool,
 	cacheControl *anthropicCacheControl,
 	deferLoading bool,
 ) ([]anthropicToolParam, error) {
@@ -752,7 +759,9 @@ func convertAnthropicTools(
 		if oauth {
 			name = toClaudeCodeToolName(name)
 		}
-		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictTools, anthropicStrictRejects)
+		// relaxPreferredStrict: only tools that require strict sampling keep it.
+		strictMode := supportsStrictTools && (!relaxPreferredStrict || tool.ConstrainedSampling != nil && tool.ConstrainedSampling.Strict == ai.ConstrainedSamplingRequire)
+		strict, err := resolveJSONSchemaStrictSampling(tool, strictMode, anthropicStrictRejects)
 		if err != nil {
 			return nil, err
 		}
@@ -1766,6 +1775,18 @@ func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAl
 		return nil
 	}
 	return *compat.AllowedFallbackModels
+}
+
+// anthropicStrictToolLimit reports Anthropic refusing a request whose strict tools exceed its
+// grammar size, tool count or union limits.
+func anthropicStrictToolLimit(err error) bool {
+	message := err.Error()
+	for _, limit := range []string{"The compiled grammar is too large", "Too many strict tools (", "Schemas contains too many parameters with union types ("} {
+		if strings.Contains(message, limit) {
+			return true
+		}
+	}
+	return false
 }
 
 // anthropicStrictRejects lists keywords Anthropic strict tool use rejects with
