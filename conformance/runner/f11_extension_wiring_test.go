@@ -59,7 +59,7 @@ func runF11WiringCases(t *testing.T) map[string]any {
 	if !pirateRunner.ExecuteCommand(ctx, "pirate", "") {
 		t.Fatal("pirate command was not registered")
 	}
-	pirateResult := pirateRunner.EmitBeforeAgentStart(ctx, "go", nil, "base", extensions.SystemPromptOptions{CWD: "/fixture"})
+	pirateResult := pirateRunner.EmitBeforeAgentStart(ctx, "go", nil, nil, "base", extensions.SystemPromptOptions{CWD: "/fixture"})
 
 	statusRegistry := extensions.NewRegistry("/fixture")
 	if err := statusRegistry.Register("<inline:status-line>", statusline.Extension); err != nil {

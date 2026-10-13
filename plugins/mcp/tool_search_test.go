@@ -66,7 +66,7 @@ func TestToolSearchLoadsDeferredMatches(t *testing.T) {
 	}
 
 	options := extensions.SystemPromptOptions{Sections: map[string]string{}}
-	runner.EmitBeforeAgentStart(context.Background(), "hi", nil, "", options)
+	runner.EmitBeforeAgentStart(context.Background(), "hi", nil, nil, "", options)
 	want := "MCP servers whose tools are not declared to you. Load the tools of `tool_search` servers with `tool_search`.\n- mcp__tracker (tool_search)"
 	if got := options.Sections[MCPServersSection]; got != want {
 		t.Fatalf("section = %q", got)

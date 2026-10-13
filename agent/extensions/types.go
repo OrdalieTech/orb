@@ -371,8 +371,12 @@ type SystemPromptOptions struct {
 }
 
 type BeforeAgentStartEvent struct {
+	// MessageType is "user" for a prompt (Prompt, Images) and "custom" for a run an
+	// extension's message started (Message, no Prompt), as upstream 1.2.0.
+	MessageType         string
 	Prompt              string
 	Images              []*ai.ImageContent
+	Message             *CustomMessage
 	SystemPrompt        string
 	SystemPromptOptions SystemPromptOptions
 }

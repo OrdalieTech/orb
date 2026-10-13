@@ -1198,9 +1198,14 @@ func (runner *Runner) EmitBeforeAgentStart(
 	ctx context.Context,
 	prompt string,
 	images []*ai.ImageContent,
+	message *CustomMessage,
 	systemPrompt string,
 	options SystemPromptOptions,
 ) *BeforeAgentStartCombinedResult {
+	messageType := "user"
+	if message != nil {
+		messageType = "custom"
+	}
 	if options.CustomPrompt == nil && systemPrompt != "" {
 		value := systemPrompt
 		options.CustomPrompt = &value
@@ -1237,7 +1242,7 @@ func (runner *Runner) EmitBeforeAgentStart(
 	for _, extension := range runner.extensions {
 		for _, handler := range handlersFor(extension, EventBeforeAgentStart) {
 			event := BeforeAgentStartEvent{
-				Prompt: prompt, Images: images, SystemPrompt: currentPrompt, SystemPromptOptions: options,
+				MessageType: messageType, Prompt: prompt, Images: images, Message: message, SystemPrompt: currentPrompt, SystemPromptOptions: options,
 			}
 			result, err := callHandler(ctx, handler, event, extensionContext)
 			if err != nil {

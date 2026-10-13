@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A run an extension starts with `sendMessage(…, {triggerTurn: true})` while idle, such as a background job reporting it ended, goes through `before_agent_start` as a prompt does (pi 1.2.0): plugins set it up (memory's changes from other sessions, MCP's servers section, memtree's view), messages queued for the next turn are delivered, and the run keeps the system prompt sections set at its start instead of losing them after its first tool call, which broke the prompt cache. `BeforeAgentStartEvent.MessageType` is `"user"` for a prompt and `"custom"` for such a run, which carries `Message` and no `Prompt`.
+
 - From pi 1.2.0: "The upstream provider returned an error" is retried like other transient provider errors; summaries for compaction and branch summaries leave thinking out, as replayed thinking is often not in the live context and could make the request larger than what it summarizes; `orb -p` whose answer stops at the model's output token limit prints it, writes "Response was truncated: the model reached its output token limit." to stderr and exits 1 instead of 0.
 
 ## [0.19.10] - 2026-10-12

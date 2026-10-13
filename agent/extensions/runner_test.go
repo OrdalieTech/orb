@@ -376,7 +376,7 @@ func TestRunnerBeforeAgentStartChainsPromptAndMessages(t *testing.T) {
 		}
 	}
 	result := newRunner(t, registry, RunnerOptions{}).EmitBeforeAgentStart(
-		context.Background(), "hello", nil, "base", SystemPromptOptions{CWD: "/fixture"},
+		context.Background(), "hello", nil, nil, "base", SystemPromptOptions{CWD: "/fixture"},
 	)
 	if result == nil || result.SystemPrompt == nil || *result.SystemPrompt != "base\nfirst\nsecond" || len(result.Messages) != 2 {
 		t.Fatalf("result = %#v", result)

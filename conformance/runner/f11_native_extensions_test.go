@@ -181,7 +181,7 @@ func runF11NativeCases(t *testing.T) map[string]any {
 	}
 	basePrompt := "base"
 	beforeAgent := extensions.NewRunner(beforeAgentRegistry, extensions.RunnerOptions{CWD: "/fixture"}).EmitBeforeAgentStart(
-		ctx, "hello", nil, "base\n\n<cwd>\n/fixture\n</cwd>", extensions.SystemPromptOptions{CustomPrompt: &basePrompt, CWD: "/fixture"},
+		ctx, "hello", nil, nil, "base\n\n<cwd>\n/fixture\n</cwd>", extensions.SystemPromptOptions{CustomPrompt: &basePrompt, CWD: "/fixture"},
 	)
 
 	inputRegistry := extensions.NewRegistry("/fixture")

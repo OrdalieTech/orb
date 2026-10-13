@@ -1224,7 +1224,8 @@ func (runtime *SessionRuntime) sendExtensionMessage(ctx context.Context, message
 		return nil
 	}
 	if triggerTurn != nil && *triggerTurn {
-		return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, appMessage) })
+		// The run goes through the same setup as a prompt (upstream 1.2.0 #10267).
+		return runtime.runOpening(ctx, state, "", nil, appMessage)
 	}
 	return runtime.appendCustomMessage(appMessage)
 }
@@ -1806,7 +1807,12 @@ func (runtime *SessionRuntime) promptExtensionInput(
 		}
 	}
 
-	messages, forcedPrompt := runtime.openingMessages(ctx, state, text, images)
+	return runtime.runOpening(ctx, state, text, images, nil)
+}
+
+// runOpening starts a run with the prompt, or with custom when an extension's message triggers it.
+func (runtime *SessionRuntime) runOpening(ctx context.Context, state *extensionRuntimeState, text string, images []*ai.ImageContent, custom *harness.CustomMessage) error {
+	messages, forcedPrompt := runtime.openingMessages(ctx, state, text, images, custom)
 	runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
 	defer runtime.agent.SetRequestSystemPromptOverride(nil)
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, messages) })
@@ -1814,9 +1820,10 @@ func (runtime *SessionRuntime) promptExtensionInput(
 
 // openingMessages prepares a run: it takes what extensions queued for the
 // next turn, emits before_agent_start, and returns the messages the run opens
-// with (the system prompt's change since the transcript's, the user's message,
-// then the queued and injected ones) and any system prompt forced for it.
-func (runtime *SessionRuntime) openingMessages(ctx context.Context, state *extensionRuntimeState, text string, images []*ai.ImageContent) (engine.AgentMessages, *string) {
+// with (the system prompt's change since the transcript's, the user's message
+// or the extension's custom one, then the queued and injected ones) and any
+// system prompt forced for it.
+func (runtime *SessionRuntime) openingMessages(ctx context.Context, state *extensionRuntimeState, text string, images []*ai.ImageContent, custom *harness.CustomMessage) (engine.AgentMessages, *string) {
 	// Lazy prompt guidelines re-read per turn (upstream `get promptGuidelines()`
 	// parity): must run before the base system prompt is captured below.
 	runtime.refreshLazyToolGuidelines(ctx)
@@ -1840,7 +1847,11 @@ func (runtime *SessionRuntime) openingMessages(ctx context.Context, state *exten
 	var injected engine.AgentMessages
 	var forcedPrompt *string
 	if state.runner.HasHandlers(extensions.EventBeforeAgentStart) {
-		result := state.runner.EmitBeforeAgentStart(ctx, text, images, basePrompt, options)
+		var message *extensions.CustomMessage
+		if custom != nil {
+			message = &extensions.CustomMessage{CustomType: custom.CustomType, Content: custom.Content, Display: custom.Display, Details: custom.Details}
+		}
+		result := state.runner.EmitBeforeAgentStart(ctx, text, images, message, basePrompt, options)
 		if result != nil && promptBuildOptions != nil {
 			// Sections handlers set apply to this run; the transcript records changes.
 			for _, name := range slices.Sorted(maps.Keys(result.SystemPromptOptions.Sections)) {
@@ -1885,7 +1896,11 @@ func (runtime *SessionRuntime) openingMessages(ctx context.Context, state *exten
 	} else if current == nil && basePrompt != "" {
 		messages = append(messages, &ai.SystemMessage{Content: basePrompt, Timestamp: runtime.clock()})
 	}
-	messages = append(messages, runtime.userMessage(text, images))
+	if custom != nil {
+		messages = append(messages, custom)
+	} else {
+		messages = append(messages, runtime.userMessage(text, images))
+	}
 	messages = append(messages, pending...)
 	messages = append(messages, injected...)
 	return messages, forcedPrompt

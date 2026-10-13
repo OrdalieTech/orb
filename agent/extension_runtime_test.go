@@ -1614,3 +1614,49 @@ func TestToolExecuteToolRunsNestedCallsAndRecordsThem(t *testing.T) {
 		t.Fatalf("events = %v, hook parents = %q", nestedEvents, hookParents)
 	}
 }
+
+// A run an extension's message starts goes through before_agent_start as a prompt does
+// (upstream 1.2.0 #10267): handlers see the custom message, and what they add reaches the run.
+func TestTriggeredRunGoesThroughBeforeAgentStart(t *testing.T) {
+	cwd := t.TempDir()
+	provider := testFaux(100000)
+	var requests []string
+	provider.SetResponses([]faux.ResponseStep{faux.ResponseFactory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		encoded, _ := json.Marshal(request.Messages)
+		requests = append(requests, string(encoded))
+		return runtimeAssistant(provider, "ok", 10), nil
+	})})
+	var api extensions.API
+	var seen []extensions.BeforeAgentStartEvent
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("builtin:setup", func(registered extensions.API) error {
+		api = registered
+		registered.On(extensions.EventBeforeAgentStart, func(_ context.Context, event extensions.Event, _ extensions.Context) (any, error) {
+			seen = append(seen, event.(extensions.BeforeAgentStartEvent))
+			return extensions.BeforeAgentStartResult{Message: &extensions.CustomMessage{CustomType: "setup", Content: "per-run setup"}}, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(), ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	if err := host.Session().BindExtensions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	trigger := true
+	if err := api.SendMessage(context.Background(), extensions.CustomMessage{CustomType: "job", Content: "job finished", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &trigger}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || seen[0].MessageType != "custom" || seen[0].Message == nil || seen[0].Message.CustomType != "job" || seen[0].Prompt != "" {
+		t.Fatalf("before_agent_start events = %+v", seen)
+	}
+	if len(requests) != 1 || !strings.Contains(requests[0], "job finished") || !strings.Contains(requests[0], "per-run setup") {
+		t.Fatalf("requests = %q", requests)
+	}
+}

@@ -112,7 +112,7 @@ func TestRealHostRegistersAndExecutesToolCommandAndEvent(t *testing.T) {
 		t.Fatalf("command output = %q", content)
 	}
 
-	eventResult := runner.EmitBeforeAgentStart(context.Background(), "prompt", nil, "system", extensions.SystemPromptOptions{})
+	eventResult := runner.EmitBeforeAgentStart(context.Background(), "prompt", nil, nil, "system", extensions.SystemPromptOptions{})
 	if eventResult == nil || eventResult.SystemPrompt == nil || *eventResult.SystemPrompt != "system host-event" {
 		t.Fatalf("event result = %#v", eventResult)
 	}
