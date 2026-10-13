@@ -179,6 +179,26 @@ func TestResolveAutoDiscoversExternalAgentSkills(t *testing.T) {
 	assertResource(t, resolved.Skills, userSkill, true)
 }
 
+// A pattern that starts with ~ means the home directory, as a path entry does (upstream 1.2.0):
+// "!~/codex/skills/user" in the skills setting turns that skill off.
+func TestResourcePatternsExpandHome(t *testing.T) {
+	_, cwd, agentDir, _ := newTestPackageManager(t)
+	home := os.Getenv("HOME")
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	skill := filepath.Join(home, "codex", "skills", "user", "SKILL.md")
+	writeTestFile(t, skill, "---\nname: user\ndescription: user skill\n---\nbody")
+	writeTestFile(t, filepath.Join(agentDir, "settings.json"), `{"skills":["!~/codex/skills/user"]}`)
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := NewPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: agentDir, Settings: settings}).Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertResource(t, resolved.Skills, skill, false)
+}
+
 func TestResolveSkipsClaudeSyncedMirror(t *testing.T) {
 	manager, _, _, _ := newTestPackageManager(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")

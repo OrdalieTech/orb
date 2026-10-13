@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A `~` at the start of an `!pattern`, `+path` or `-path` entry in the `extensions`, `skills`, `prompts` and `themes` settings means the home directory, as it does in a plain path entry: `!~/skills/pdf` matched nothing (pi 1.2.0).
+
 - A terminal reply that reaches Orb in pieces, such as the colours Orb asks the terminal for, waits for its end instead of landing in the prompt as hex and opening the external editor with its closing BEL (pi 1.2.0); an Alt key that looks like the start of one still comes through.
 
 - A run an extension starts with `sendMessage(…, {triggerTurn: true})` while idle, such as a background job reporting it ended, goes through `before_agent_start` as a prompt does (pi 1.2.0): plugins set it up (memory's changes from other sessions, MCP's servers section, memtree's view), messages queued for the next turn are delivered, and the run keeps the system prompt sections set at its start instead of losing them after its first tool call, which broke the prompt cache. `BeforeAgentStartEvent.MessageType` is `"user"` for a prompt and `"custom"` for such a run, which carries `Message` and no `Prompt`.

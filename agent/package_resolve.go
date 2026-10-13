@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/internal/nodepath"
 	"github.com/OrdalieTech/orb/internal/skilllocations"
 	"github.com/bmatcuk/doublestar/v4"
 )
@@ -355,7 +356,7 @@ func matchesAnyPattern(filePath string, patterns []string, baseDir string) bool 
 		parentPosix = filepath.ToSlash(parentDir)
 	}
 	for _, pattern := range patterns {
-		normalizedPattern := filepath.ToSlash(pattern)
+		normalizedPattern := filepath.ToSlash(nodepath.Normalize(pattern))
 		if globMatch(normalizedPattern, rel) || globMatch(normalizedPattern, name) || globMatch(normalizedPattern, filePathPosix) {
 			return true
 		}
@@ -373,7 +374,7 @@ func normalizeExactPattern(pattern string) string {
 	if strings.HasPrefix(pattern, "./") || strings.HasPrefix(pattern, ".\\") {
 		pattern = pattern[2:]
 	}
-	return filepath.ToSlash(pattern)
+	return filepath.ToSlash(nodepath.Normalize(pattern))
 }
 
 func matchesAnyExactPattern(filePath string, patterns []string, baseDir string) bool {
