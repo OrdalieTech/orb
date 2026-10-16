@@ -1776,20 +1776,6 @@ func (state *completionsStreamState) consumeDelta(
 	readMembers(trimmed, rawMember{"content", &delta.Content}, rawMember{"reasoning_content", &delta.ReasoningContent},
 		rawMember{"reasoning", &delta.Reasoning}, rawMember{"reasoning_text", &delta.ReasoningText},
 		rawMember{"tool_calls", &delta.ToolCalls}, rawMember{"reasoning_details", &delta.ReasoningDetails})
-	if content, ok := rawJSONString(delta.Content); ok && content != "" {
-		if state.text == nil {
-			state.text = &ai.TextContent{}
-			state.output.Content = append(state.output.Content, state.text)
-			state.textIndex = len(state.output.Content) - 1
-			if err := emit(ai.TextStartEvent{ContentIndex: state.textIndex, Partial: state.output}); err != nil {
-				return err
-			}
-		}
-		state.text.Text = state.textBuffer.append(state.text.Text, content)
-		if err := emit(ai.TextDeltaEvent{ContentIndex: state.textIndex, Delta: content, Partial: state.output}); err != nil {
-			return err
-		}
-	}
 	reasoningField, reasoning := firstOpenAICompletionsReasoning(delta)
 	if reasoning != "" {
 		if state.thinking == nil {
@@ -1809,13 +1795,29 @@ func (state *completionsStreamState) consumeDelta(
 			return err
 		}
 	}
-	for _, rawCall := range rawJSONArray(delta.ToolCalls) {
-		if err := state.consumeToolCall(rawCall, emit); err != nil {
+	for _, rawDetail := range rawJSONArray(delta.ReasoningDetails) {
+		if err := state.consumeReasoningDetail(rawDetail, emit); err != nil {
 			return err
 		}
 	}
-	for _, rawDetail := range rawJSONArray(delta.ReasoningDetails) {
-		if err := state.consumeReasoningDetail(rawDetail, emit); err != nil {
+	// After the reasoning: a proxy such as LiteLLM can send reasoning and answer in one delta, and the
+	// thinking block comes first.
+	if content, ok := rawJSONString(delta.Content); ok && content != "" {
+		if state.text == nil {
+			state.text = &ai.TextContent{}
+			state.output.Content = append(state.output.Content, state.text)
+			state.textIndex = len(state.output.Content) - 1
+			if err := emit(ai.TextStartEvent{ContentIndex: state.textIndex, Partial: state.output}); err != nil {
+				return err
+			}
+		}
+		state.text.Text = state.textBuffer.append(state.text.Text, content)
+		if err := emit(ai.TextDeltaEvent{ContentIndex: state.textIndex, Delta: content, Partial: state.output}); err != nil {
+			return err
+		}
+	}
+	for _, rawCall := range rawJSONArray(delta.ToolCalls) {
+		if err := state.consumeToolCall(rawCall, emit); err != nil {
 			return err
 		}
 	}

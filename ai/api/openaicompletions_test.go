@@ -28,6 +28,22 @@ func TestOpenAICompletionsRejectsStreamWithoutFinishReason(t *testing.T) {
 	}
 }
 
+// A proxy such as LiteLLM sends reasoning and answer in one delta: the thinking comes first.
+func TestOpenAICompletionsPutsReasoningBeforeTheAnswerOfOneDelta(t *testing.T) {
+	message, _ := collectOpenAICompletionsFixture(t, openAICompletionsFixtureStream(t,
+		`{"id":"chatcmpl-mixed","choices":[{"delta":{"content":"The answer.","reasoning_content":"Thinking it over."},"finish_reason":"stop"}]}`,
+	))
+	if len(message.Content) != 2 {
+		t.Fatalf("content = %#v", message.Content)
+	}
+	if thinking, ok := message.Content[0].(*ai.ThinkingContent); !ok || thinking.Thinking != "Thinking it over." {
+		t.Fatalf("first block = %#v", message.Content[0])
+	}
+	if text, ok := message.Content[1].(*ai.TextContent); !ok || text.Text != "The answer." {
+		t.Fatalf("second block = %#v", message.Content[1])
+	}
+}
+
 func TestOpenAICompletionsInfersFinishReasonWhenUnsupported(t *testing.T) {
 	for _, test := range []struct {
 		name  string
