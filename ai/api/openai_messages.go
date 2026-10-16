@@ -88,8 +88,8 @@ func transformMessages(messages ai.MessageList, model *ai.Model, normalizeToolCa
 	return result
 }
 
-// transformAssistantMessage rewrites another model's thinking as text and
-// drops its signatures, recording the tool call ids it renames.
+// transformAssistantMessage drops another model's thinking and signatures, recording the tool call ids it
+// renames. Its thinking replayed as text would read to the new model as part of its replies.
 func transformAssistantMessage(
 	message *ai.AssistantMessage, model *ai.Model, normalizeToolCallID toolCallIDNormalizer, toolCallIDs map[string]string,
 ) *ai.AssistantMessage {
@@ -100,17 +100,13 @@ func transformAssistantMessage(
 		switch block := rawBlock.(type) {
 		case *ai.ThinkingContent:
 			switch {
-			case block.Redacted != nil && *block.Redacted:
-				if !isSameModel {
-					next = nil
-				}
-			// Upstream keeps same-model thinking blocks on a truthy
-			// signature, so an empty string does not count (OA-m3).
-			case isSameModel && block.ThinkingSignature != nil && *block.ThinkingSignature != "":
+			case !isSameModel:
+				next = nil
+			// Upstream keeps redacted blocks and blocks with a truthy signature, so an empty string does not
+			// count (OA-m3).
+			case block.Redacted != nil && *block.Redacted, block.ThinkingSignature != nil && *block.ThinkingSignature != "":
 			case strings.TrimSpace(block.Thinking) == "":
 				next = nil
-			case !isSameModel:
-				next = &ai.TextContent{Text: block.Thinking}
 			}
 		case *ai.TextContent:
 			if !isSameModel && block.TextSignature != nil {

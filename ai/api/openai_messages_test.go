@@ -86,14 +86,14 @@ func TestTransformMessagesDropsIncompleteAssistantAndCrossModelSecrets(t *testin
 		t.Fatalf("message count = %d, want assistant plus synthetic result", len(got))
 	}
 	assistant := got[0].(*ai.AssistantMessage)
-	if _, ok := assistant.Content[0].(*ai.TextContent); !ok {
-		t.Fatalf("cross-model thinking was not converted to text: %T", assistant.Content[0])
+	if len(assistant.Content) != 2 {
+		t.Fatalf("cross-model thinking was not dropped: %#v", assistant.Content)
 	}
-	text := assistant.Content[1].(*ai.TextContent)
-	if text.TextSignature != nil {
+	text := assistant.Content[0].(*ai.TextContent)
+	if text.Text != "answer" || text.TextSignature != nil {
 		t.Fatal("cross-model text signature was retained")
 	}
-	tool := assistant.Content[2].(*ai.ToolCall)
+	tool := assistant.Content[1].(*ai.ToolCall)
 	if tool.ID != "normalized" || tool.ThoughtSignature != nil {
 		t.Fatalf("cross-model tool = %#v", tool)
 	}

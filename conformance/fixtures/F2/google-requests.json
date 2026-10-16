@@ -371,7 +371,7 @@
           "content-type": "application/json",
           "x-goog-api-key": "fixture-google-key"
         },
-        "body": "{\"contents\":[{\"parts\":[{\"text\":\"(image omitted: model does not support images)\"},{\"text\":\"describe\"}],\"role\":\"user\"},{\"parts\":[{\"text\":\"old thought\"},{\"text\":\"old answer\"},{\"functionCall\":{\"args\":{\"operation\":\"add\",\"operands\":[1,1]},\"name\":\"calculate\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"2\"}}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingBudget\":0}}}"
+        "body": "{\"contents\":[{\"parts\":[{\"text\":\"(image omitted: model does not support images)\"},{\"text\":\"describe\"}],\"role\":\"user\"},{\"parts\":[{\"text\":\"old answer\"},{\"functionCall\":{\"args\":{\"operation\":\"add\",\"operands\":[1,1]},\"name\":\"calculate\"}}],\"role\":\"model\"},{\"parts\":[{\"functionResponse\":{\"name\":\"calculate\",\"response\":{\"output\":\"2\"}}}],\"role\":\"user\"}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingBudget\":0}}}"
       }
     },
     {
