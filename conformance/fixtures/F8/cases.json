@@ -23,6 +23,7 @@
       "name": "empty-quotes",
       "input": "\"\" \" \"",
       "expected": [
+        "",
         " "
       ]
     },

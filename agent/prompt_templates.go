@@ -156,6 +156,7 @@ func ParseCommandArgs(argsString string) []string {
 	args := make([]string, 0)
 	var current strings.Builder
 	var quote rune
+	token := false // a quoted "" or '' starts an argument, kept empty
 	for _, character := range argsString {
 		if quote != 0 {
 			if character == quote {
@@ -166,19 +167,21 @@ func ParseCommandArgs(argsString string) []string {
 			continue
 		}
 		if character == '\'' || character == '"' {
-			quote = character
+			quote, token = character, true
 			continue
 		}
 		if jstrim.IsSpace(character) {
-			if current.Len() > 0 {
+			if token {
 				args = append(args, current.String())
 				current.Reset()
+				token = false
 			}
 			continue
 		}
 		current.WriteRune(character)
+		token = true
 	}
-	if current.Len() > 0 {
+	if token {
 		args = append(args, current.String())
 	}
 	return args

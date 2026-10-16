@@ -29,6 +29,9 @@ func TestPromptTemplateLoadingAndExpansion(t *testing.T) {
 	if got := ExpandPromptTemplate("/review\nfile.go", templates); got != "Review file.go with " {
 		t.Fatalf("newline expansion = %q", got)
 	}
+	if got := ExpandPromptTemplate(`/review "" a b`, templates); got != "Review  with a b" {
+		t.Fatalf("an empty quoted argument shifted the others: %q", got)
+	}
 	if got := ExpandPromptTemplate("/missing x", templates); got != "/missing x" {
 		t.Fatalf("unknown template = %q", got)
 	}
