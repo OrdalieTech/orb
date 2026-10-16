@@ -642,7 +642,7 @@ func googleAssistantParts(model *ai.Model, message *ai.AssistantMessage) ([]Goog
 				call.ID = block.ID
 			}
 			signature := resolveGoogleThoughtSignature(sameProviderAndModel, block.ThoughtSignature)
-			if !sameProviderAndModel && (isGemini3Pro(model) || isGemini3Flash(model)) {
+			if !sameProviderAndModel && isGeminiThinkingLevel(model) {
 				// ponytail: Google's documented cross-model replay sentinel belongs on the wire, never in stored history.
 				value := "skip_thought_signature_validator"
 				signature = &value

@@ -55,9 +55,9 @@ var googleGenAIVersionHeader = "google-genai-sdk/1.52.0 gl-go/" + runtime.Versio
 var (
 	googleHTTPClient      = http.DefaultClient
 	googleToolCallCounter atomic.Int64
-	gemma4Pattern         = lazyregexp.New(`gemma-?4`)
-	gemini3ProPattern     = lazyregexp.New(`gemini-3(?:\.\d+)?-pro`)
-	gemini3FlashPattern   = lazyregexp.New(`gemini-3(?:\.\d+)?-flash`)
+	// Gemini 3 Pro and Flash, and Gemini 4 and later, such as gemini-4-argon.
+	geminiThinkingLevelPattern = lazyregexp.New(`gemini-3(?:\.\d+)?-(?:pro|flash)|gemini-(?:[4-9]|[1-9]\d)|^gemini-flash(?:-lite)?-latest$`)
+	gemma4Pattern              = lazyregexp.New(`gemma-?4`)
 )
 
 type googleGenerateContentResponse struct {
@@ -113,7 +113,7 @@ func StreamSimpleGoogleGenerativeAI(
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
 	if usesGoogleThinkingLevel(model) {
-		thinking.Level = googleThinkingLevel(effort, model)
+		thinking.Level = googleThinkingLevel(effort)
 	} else {
 		thinking.BudgetTokens = googleThinkingBudget(model, effort, options.ThinkingBudgets)
 	}
@@ -690,21 +690,13 @@ func clampGoogleReasoning(model *ai.Model, requested ai.ThinkingLevel) ai.Thinki
 	return ai.ThinkingLevel(ai.ModelThinkingOff)
 }
 
-func isGemma4(model *ai.Model) bool {
-	return gemma4Pattern().MatchString(strings.ToLower(model.ID))
-}
-
-func isGemini3Pro(model *ai.Model) bool {
-	return gemini3ProPattern().MatchString(strings.ToLower(model.ID))
-}
-
-func isGemini3Flash(model *ai.Model) bool {
-	id := strings.ToLower(model.ID)
-	return gemini3FlashPattern().MatchString(id) || id == "gemini-flash-latest" || id == "gemini-flash-lite-latest"
-}
-
+// usesGoogleThinkingLevel picks thinkingLevel over thinkingBudget; the model's thinkingLevelMap says which levels it takes.
 func usesGoogleThinkingLevel(model *ai.Model) bool {
-	return isGemini3Pro(model) || isGemini3Flash(model) || isGemma4(model)
+	return isGeminiThinkingLevel(model) || gemma4Pattern().MatchString(strings.ToLower(model.ID))
+}
+
+func isGeminiThinkingLevel(model *ai.Model) bool {
+	return geminiThinkingLevelPattern().MatchString(strings.ToLower(model.ID))
 }
 
 func disabledGoogleThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
@@ -721,29 +713,13 @@ func disabledGoogleThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
 	if err != nil {
 		return nil
 	}
-	return &GoogleThinkingConfig{ThinkingLevel: googleThinkingLevel(resolved, model)}
+	return &GoogleThinkingConfig{ThinkingLevel: googleThinkingLevel(resolved)}
 }
 
 // googleThinkingLevel mirrors upstream getThinkingLevel: efforts outside the
 // explicit switch (xhigh/max on custom models) fall off the end and the level
 // stays unset, so thinkingConfig only carries includeThoughts. (OT-m9)
-func googleThinkingLevel(effort ai.ThinkingLevel, model *ai.Model) *GoogleThinkingLevel {
-	if isGemini3Pro(model) {
-		switch effort {
-		case ai.ThinkingMinimal, ai.ThinkingLow:
-			return googleThinkingLevelPointer(GoogleThinkingLow)
-		case ai.ThinkingMedium, ai.ThinkingHigh:
-			return googleThinkingLevelPointer(GoogleThinkingHigh)
-		}
-	}
-	if isGemma4(model) {
-		switch effort {
-		case ai.ThinkingMinimal, ai.ThinkingLow:
-			return googleThinkingLevelPointer(GoogleThinkingMinimal)
-		case ai.ThinkingMedium, ai.ThinkingHigh:
-			return googleThinkingLevelPointer(GoogleThinkingHigh)
-		}
-	}
+func googleThinkingLevel(effort ai.ThinkingLevel) *GoogleThinkingLevel {
 	switch effort {
 	case ai.ThinkingMinimal:
 		return googleThinkingLevelPointer(GoogleThinkingMinimal)

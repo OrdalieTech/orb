@@ -63,7 +63,7 @@ func StreamSimpleGoogleVertex(
 	}
 	thinking := &GoogleThinkingOptions{Enabled: true}
 	if usesGoogleThinkingLevel(model) {
-		thinking.Level = googleThinkingLevel(effort, model)
+		thinking.Level = googleThinkingLevel(effort)
 	} else {
 		thinking.BudgetTokens = googleVertexThinkingBudget(model, effort, options.ThinkingBudgets)
 	}

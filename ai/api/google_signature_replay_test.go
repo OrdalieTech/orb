@@ -19,6 +19,7 @@ func TestGoogleCrossModelToolReplay(t *testing.T) {
 			{"foreign", "gemini-3.8-flash", "glm-5.3", "", "skip_thought_signature_validator"},
 			{"foreign signature", "gemini-3.8-flash", "glm-5.3", signed, "skip_thought_signature_validator"},
 			{"pro foreign", "gemini-3.1-pro", "glm-5.3", "", "skip_thought_signature_validator"},
+			{"gemini 4 foreign", "gemini-4-argon", "glm-5.3", "", "skip_thought_signature_validator"},
 			{"same signed", "gemini-3.8-flash", "gemini-3.8-flash", signed, signed},
 			{"same unsigned", "gemini-3.8-flash", "gemini-3.8-flash", "", ""},
 			{"older model", "gemini-2.5-flash", "glm-5.3", "", ""},
