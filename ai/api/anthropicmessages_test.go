@@ -245,3 +245,19 @@ func TestAnthropicMovesErrorResultImagesAfterTheToolResults(t *testing.T) {
 		t.Fatalf("Bedrock user content =\n%s\nwant\n%s", got, want)
 	}
 }
+
+// A model whose effort is set per message, with its thinking off, gets thinking disabled and no effort.
+func TestAnthropicManagedEffortModelWithThinkingOff(t *testing.T) {
+	model := anthropicTestModel()
+	model.Compat = json.RawMessage(`{"supportsMidConvoEffort":true,"forceAdaptiveThinking":true}`)
+	off := false
+	payload, _, err := buildAnthropicMessagesPayload(model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}},
+		&AnthropicMessagesOptions{ThinkingEnabled: &off}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := json.Marshal(map[string]any{"thinking": payload.Thinking, "output_config": payload.OutputConfig, "messages": len(payload.Messages)})
+	if string(got) != `{"messages":1,"output_config":null,"thinking":{"type":"disabled"}}` {
+		t.Fatalf("payload = %s", got)
+	}
+}

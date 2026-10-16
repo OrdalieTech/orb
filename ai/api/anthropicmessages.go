@@ -274,8 +274,7 @@ func StreamAnthropicMessagesWithOptions(
 		return nil, errors.New("ai/api: Anthropic Messages model is nil")
 	}
 	output := newAssistantMessage(model)
-	compat, _ := decodeCompat[ai.AnthropicMessagesCompat](model)
-	if compat.SupportsMidConvoEffort != nil && *compat.SupportsMidConvoEffort {
+	if anthropicManagedEffort(model, options) {
 		effort := string(AnthropicEffortHigh)
 		if options != nil && options.Effort != nil {
 			effort = string(*options.Effort)
@@ -588,7 +587,7 @@ func buildAnthropicMessagesPayload(
 		maxTokens = *streamOptions.MaxTokens
 	}
 	rawCompat, _ := decodeCompat[ai.AnthropicMessagesCompat](model)
-	managed := rawCompat.SupportsMidConvoEffort != nil && *rawCompat.SupportsMidConvoEffort
+	managed := anthropicManagedEffort(model, options)
 	managedProvider := ""
 	if managed {
 		managedProvider = string(model.Provider)
@@ -699,6 +698,14 @@ func buildAnthropicMessagesPayload(
 		payload.ToolChoice = options.ToolChoice
 	}
 	return payload, isOAuth, nil
+}
+
+// anthropicManagedEffort reports a model whose effort is set per message, unless its thinking is off: then
+// it gets no effort and thinking disabled.
+func anthropicManagedEffort(model *ai.Model, options *AnthropicMessagesOptions) bool {
+	compat, _ := decodeCompat[ai.AnthropicMessagesCompat](model)
+	off := model.Reasoning && options != nil && options.ThinkingEnabled != nil && !*options.ThinkingEnabled && anthropicThinkingCanDisable(model)
+	return compat.SupportsMidConvoEffort != nil && *compat.SupportsMidConvoEffort && !off
 }
 
 func anthropicThinkingCanDisable(model *ai.Model) bool {

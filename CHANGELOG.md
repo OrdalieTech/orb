@@ -19,6 +19,8 @@ shown by `/changelog`.
 
 - A tool call whose final arguments are malformed JSON fails with `Invalid arguments for tool "…"` and the text the model sent, so it can correct itself, instead of running with only the fields parsed before the error; arguments holding an invalid `\u` escape such as `\usepackage` keep all their fields; an error tool result holding images no longer gets a 400 from Anthropic or Claude on Bedrock: its images follow the turn's tool results (pi 1.3.0).
 
+- Claude Haiku 5.5 and Claude Opus 5 accept the `off` thinking level, sent as thinking disabled with no effort; OpenCode Zen and Go use the `opencode.ai/inference` endpoints, where OpenCode Go's Gemini models no longer get a 404, and OpenCode Go's MiniMax M2.7 uses Anthropic Messages; Xiaomi MiMo models offer only `off` and `high`, as `minimal` was a 400 (pi 1.3.0).
+
 - MCP sign-in refuses an authorization response that names an issuer when no authorization server metadata was discovered to check it against, instead of exchanging its code (RFC 9207, pi 1.2.0).
 
 - An Anthropic request whose strict tools exceed Anthropic's limits ("Too many strict tools", "The compiled grammar is too large", too many union parameters), as Orb's own strict tools plus many MCP or extension tools can, is sent once more with the tools that only prefer strict sampling sent non-strict, instead of failing the turn (pi 1.2.0).

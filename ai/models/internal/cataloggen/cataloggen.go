@@ -203,8 +203,8 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 			}
 		}
 	}
-	addOpenCode(result, source["opencode"], "opencode", "https://opencode.ai/zen")
-	addOpenCode(result, source["opencode-go"], "opencode-go", "https://opencode.ai/zen/go")
+	addOpenCode(result, source["opencode"], "opencode", "https://opencode.ai/inference")
+	addOpenCode(result, source["opencode-go"], "opencode-go", "https://opencode.ai/inference/go")
 	addCopilot(result, source["github-copilot"])
 	addXAI(result, source["xai"])
 	if err := addNvidia(result, source["nvidia"], sources.NvidiaNIM); err != nil {
@@ -602,7 +602,7 @@ func addOpenCode(result map[string]map[string]ai.Model, source sourceProvider, p
 		case "@ai-sdk/alibaba":
 			api = ai.APIOpenAICompletions
 		}
-		if provider == "opencode-go" && (key == "minimax-m2.7" || key == "qwen3.5-plus" || key == "qwen3.6-plus") {
+		if provider == "opencode-go" && (key == "qwen3.5-plus" || key == "qwen3.6-plus") {
 			api, baseURL = ai.APIOpenAICompletions, basePath+"/v1"
 		}
 		if (provider == "opencode" || provider == "opencode-go") && key == "grok-4.5" {

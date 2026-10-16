@@ -471,6 +471,13 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 	case "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp":
 		compat.RequiresReasoningContentOnAssistantMessages = ptr(true)
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatDeepSeek)
+		// MiMo thinks on or off: "minimal" was a 400.
+		compat.SupportsReasoningEffort = ptr(false)
+		if model.Reasoning {
+			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "off", ai.ModelThinkingHigh: "high"})
+			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = nil, nil, nil, nil, nil
+			mergeThinking(model, values)
+		}
 	case "zai", "zai-coding-cn":
 		compat.SupportsDeveloperRole = ptr(false)
 		compat.ThinkingFormat = ptr(ai.ThinkingFormatZAI)
@@ -545,7 +552,10 @@ func applyAnthropicCompat(model *ai.Model) {
 	if (provider == "anthropic" || provider == "openrouter") && supportsAnthropicMidConvoEffort(id) &&
 		(provider != "openrouter" || strings.TrimPrefix(id, "~") != "anthropic/claude-opus-5") {
 		compat.SupportsMidConvoEffort = ptr(true)
-		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
+		// Haiku 5.5 and Opus 5 also think "off".
+		if bare := strings.TrimPrefix(strings.TrimPrefix(id, "~"), "anthropic/"); !slices.Contains([]string{"claude-haiku-5-5", "claude-haiku-5.5", "claude-opus-5"}, bare) {
+			mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
+		}
 	}
 	if provider == "anthropic" && supportsAnthropicMidConvoSystemMessages(id) {
 		compat.SupportsMidConvoSystemMessages = ptr(true)
