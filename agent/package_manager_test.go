@@ -184,6 +184,7 @@ func TestResolveAutoDiscoversExternalAgentSkills(t *testing.T) {
 func TestResourcePatternsExpandHome(t *testing.T) {
 	_, cwd, agentDir, _ := newTestPackageManager(t)
 	home := os.Getenv("HOME")
+	t.Setenv("USERPROFILE", home) // ~ is USERPROFILE on Windows
 	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
 	skill := filepath.Join(home, "codex", "skills", "user", "SKILL.md")
 	writeTestFile(t, skill, "---\nname: user\ndescription: user skill\n---\nbody")
