@@ -8,3 +8,12 @@ import path from "node:path";
 export async function committedFixture(family: string, file = "cases.json"): Promise<any> {
   return JSON.parse(await readFile(path.join(import.meta.dirname, "../fixtures", family, file), "utf8"));
 }
+
+// Cases that follow a newer pi release than UPSTREAM.lock pins are carried from the committed tree, never
+// re-extracted, until the pin reaches that release (divergence ledger).
+export async function aheadOfPin(family: string, file: string, key: string, generated: any[], names: string[]): Promise<void> {
+  const committed: any[] = (await committedFixture(family, file))[key];
+  for (const [index, item] of generated.entries()) {
+    if (names.includes(item.name)) generated[index] = committed.find((entry) => entry.name === item.name);
+  }
+}

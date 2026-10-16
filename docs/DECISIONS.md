@@ -523,3 +523,4 @@ Each holds until changed by owner-signed decision.
 | Disposed sessions refuse work (`ErrSessionDisposed`) | SDK safety adaptation | upstream's `dispose()` refuses nothing, so a post-dispose prompt still calls the model with events silenced |
 | Subagent parallel width capped at 32 | resource guard | each entry costs a goroutine, temp dir, child session and provider call; enforced in the tool and declared as `maxItems` |
 | Unified-patch hunk headers derived locally | dependency workaround | `go-udiff` misreports the new-file start of later `@@` headers; orb recomputes them and matches `Diff.createTwoFilesPatch` across a 2,998-case differential fuzz |
+| pi 1.3.0 behaviours ahead of the pin | early adoption | `UPSTREAM.lock` pins pi 1.0.0; F2's Bedrock error-result images, Google cross-model thinking and Claude Opus 5 thinking map, and F8's empty quoted template argument follow pi 1.3.0, carried from the committed tree (`aheadOfPin`) until the pin reaches it |
