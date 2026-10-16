@@ -534,7 +534,8 @@ func resolveRuntimeModel(
 				cliThinking = &level
 			}
 			resolved := agent.ResolveCLIModel(provider, pattern, cliThinking, all, func(provider string) bool {
-				return registry.HasConfiguredAuth(provider, nil)
+				// --api-key goes to whichever provider is picked, so stored credentials do not pick it.
+				return args.APIKey == nil && registry.HasConfiguredAuth(provider, nil)
 			})
 			if resolved.Error != "" {
 				return nil, nil, scoped, diagnostics, fmt.Errorf("%s", resolved.Error)

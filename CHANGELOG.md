@@ -9,6 +9,8 @@ shown by `/changelog`.
 
 - A prompt template argument written `""` or `''` counts as an empty argument instead of vanishing and shifting the next ones (pi 1.3.0): `/review "" a` sets `$2` to `a`, and `${1:-default}` applies to `$1`.
 
+- `--model` naming a model that several providers offer picks one with credentials instead of the first in catalog order, which could be a provider without a key (pi 1.3.0); with `--api-key`, which goes to the provider picked, stored credentials do not pick it.
+
 - MCP sign-in refuses an authorization response that names an issuer when no authorization server metadata was discovered to check it against, instead of exchanging its code (RFC 9207, pi 1.2.0).
 
 - An Anthropic request whose strict tools exceed Anthropic's limits ("Too many strict tools", "The compiled grammar is too large", too many union parameters), as Orb's own strict tools plus many MCP or extension tools can, is sent once more with the tools that only prefer strict sampling sent non-strict, instead of failing the turn (pi 1.2.0).

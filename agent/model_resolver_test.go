@@ -159,6 +159,16 @@ func TestResolveCLIModelProviderPrefixAndCustomThinking(t *testing.T) {
 	}
 }
 
+func TestResolveCLIModelPrefersAProviderWithCredentials(t *testing.T) {
+	models := []ai.Model{{Provider: "openai", ID: "gpt-6-sol"}, {Provider: "openai-codex", ID: "gpt-6-sol"}}
+	signedIn := func(provider string) bool { return provider == "openai-codex" }
+	for _, pattern := range []string{"gpt-6-sol", "gpt-6-sol:high", "6-sol"} {
+		if resolved := ResolveCLIModel("", pattern, nil, models, signedIn); resolved.Model == nil || resolved.Model.Provider != "openai-codex" {
+			t.Fatalf("%s resolved to %#v", pattern, resolved.Model)
+		}
+	}
+}
+
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)

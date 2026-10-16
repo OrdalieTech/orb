@@ -659,6 +659,24 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 	if len(available) == 0 {
 		return CLIModelResult{Error: "No models available. Check your installation or add models to models.json."}
 	}
+	if len(authChecks) > 0 && authChecks[0] != nil {
+		// An id several providers offer goes to one with credentials, not to catalog order.
+		auth := map[ai.ProviderID]bool{}
+		var usable, rest []ai.Model
+		for _, model := range available {
+			ok, seen := auth[model.Provider]
+			if !seen {
+				ok = authChecks[0](string(model.Provider))
+				auth[model.Provider] = ok
+			}
+			if ok {
+				usable = append(usable, model)
+			} else {
+				rest = append(rest, model)
+			}
+		}
+		available = append(usable, rest...)
+	}
 	providers := make(map[string]string)
 	for _, model := range available {
 		providers[strings.ToLower(string(model.Provider))] = string(model.Provider)
