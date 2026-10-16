@@ -16,7 +16,6 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
-	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 const (
@@ -605,14 +604,28 @@ func convertBedrockMessages(
 			}
 		case *ai.ToolResultMessage:
 			blocks := make([]BedrockContentBlock, 0, 1)
+			var images []BedrockContentBlock
 			for index < len(transformed) {
 				toolResult, ok := transformed[index].(*ai.ToolResultMessage)
 				if !ok {
 					break
 				}
-				content, err := convertBedrockToolResultContent(toolResult.Content)
+				resultContent, after := toolResult.Content, ai.ToolResultContent(nil)
+				if isBedrockClaudeModel(model) {
+					resultContent, after = splitErrorImages(toolResult)
+				}
+				content, err := convertBedrockToolResultContent(resultContent)
 				if err != nil {
 					return nil, err
+				}
+				if after != nil {
+					converted, err := convertBedrockToolResultContent(after)
+					if err != nil {
+						return nil, err
+					}
+					for _, block := range converted {
+						images = append(images, BedrockContentBlock{Text: block.Text, Image: block.Image})
+					}
 				}
 				status := "success"
 				if toolResult.IsError {
@@ -624,7 +637,7 @@ func convertBedrockMessages(
 				index++
 			}
 			index--
-			result = append(result, BedrockMessage{Role: "user", Content: blocks})
+			result = append(result, BedrockMessage{Role: "user", Content: append(blocks, images...)})
 		}
 	}
 	if retention != ai.CacheRetentionNone && supportsBedrockPromptCaching(model, options) && len(result) > 0 {
@@ -1155,7 +1168,7 @@ func (processor *bedrockStreamProcessor) handleDelta(item BedrockStreamItem) {
 			partial := buffer.append(previous, *item.ToolInput)
 			block.PartialJSON = &partial
 			if buffer.shouldParse() {
-				block.Arguments = bedrockToolArguments(partial)
+				block.Arguments = parseToolArguments(partial)
 			}
 			processor.stopped = !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: position, Delta: *item.ToolInput, Partial: processor.output})
 		}
@@ -1230,21 +1243,11 @@ func (processor *bedrockStreamProcessor) handleStop(streamIndex int) {
 		if block.PartialJSON != nil {
 			partial = *block.PartialJSON
 		}
-		if err := ai.SetToolCallArgumentsJSON(block, []byte(partial)); err != nil {
-			block.Arguments = bedrockToolArguments(partial)
-		}
+		finishToolArguments(block, partial)
 		block.Index = nil
 		block.PartialJSON = nil
 		processor.stopped = !processor.sink(ai.ToolCallEndEvent{ContentIndex: position, ToolCall: block, Partial: processor.output})
 	}
-}
-
-func bedrockToolArguments(value string) map[string]any {
-	parsed := partialjson.ParseStreamingJSON(value)
-	if object, ok := parsed.(map[string]any); ok {
-		return object
-	}
-	return map[string]any{}
 }
 
 func mapBedrockStopReason(reason string) (ai.StopReason, *string) {

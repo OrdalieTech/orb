@@ -94,8 +94,11 @@ type ToolCall struct {
 	ThoughtSignature *string        `json:"thoughtSignature,omitempty"`
 	// Namespace is the OpenAI Responses namespace for calls to dynamically
 	// loaded or namespaced tools.
-	Namespace    *string `json:"namespace,omitempty"`
-	rawArguments []byte
+	Namespace *string `json:"namespace,omitempty"`
+	// ArgumentsError says why the finished call's arguments text is no JSON object, with the text: the call
+	// then fails validation and the model sees what it sent. Never persisted.
+	ArgumentsError string `json:"-"`
+	rawArguments   []byte
 	// rawValue is rawArguments decoded, kept apart from Arguments so a replay
 	// can tell whether Arguments changed without parsing rawArguments again.
 	rawValue any

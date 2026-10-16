@@ -839,3 +839,24 @@ func joinStrings(values []string) string {
 	}
 	return result
 }
+
+// A call whose arguments the provider could not read fails with what the model sent, without running.
+func TestRunLoopFailsACallWithMalformedArguments(t *testing.T) {
+	call := &ai.ToolCall{ID: "call-1", Name: "read", Arguments: map[string]any{}, ArgumentsError: "unexpected end\n\nReceived arguments:\n{\"path\":"}
+	responses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonToolUse, call), loopAssistant(ai.StopReasonStop)}}
+	tool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{Name: "read", Parameters: jsonschema.Schema(`{"type":"object"}`)},
+		Run: func(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
+			t.Fatal("ran a call with malformed arguments")
+			return AgentToolResult{}, nil
+		},
+	}
+	messages, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{tool}}, AgentLoopConfig{Model: loopModel()}, nil, responses.stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, _ := messages[3].(*ai.ToolResultMessage)
+	if result == nil || !result.IsError || result.Content[0].(*ai.TextContent).Text != "Invalid arguments for tool \"read\": unexpected end\n\nReceived arguments:\n{\"path\":" {
+		t.Fatalf("messages = %#v", messages)
+	}
+}

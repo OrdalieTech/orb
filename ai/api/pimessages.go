@@ -382,9 +382,7 @@ func (converter *piMessagesEventConverter) convert(wire piMessagesWireEvent) (ai
 		arguments := buffer.append(converter.toolJSON[wire.ContentIndex], wire.Delta)
 		converter.toolJSON[wire.ContentIndex] = arguments
 		if buffer.shouldParse() {
-			if ai.SetToolCallPartialJSON(call, arguments) != nil {
-				_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
-			}
+			setStreamingToolArguments(call, arguments)
 		}
 		return ai.ToolCallDeltaEvent{ContentIndex: wire.ContentIndex, Delta: wire.Delta, Partial: partial}, false, nil
 	case "toolcall_end":

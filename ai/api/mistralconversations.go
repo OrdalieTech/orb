@@ -842,7 +842,7 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 	buffer := processor.toolBuffers.at(contentIndex)
 	*block.PartialArgs = buffer.append(*block.PartialArgs, argsDelta)
 	if buffer.shouldParse() {
-		setMistralStreamArguments(block, *block.PartialArgs)
+		setStreamingToolArguments(block, *block.PartialArgs)
 	}
 	if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: contentIndex, Delta: argsDelta, Partial: processor.output}) {
 		return errStopSSE
@@ -879,12 +879,6 @@ func mistralArgumentsText(raw json.RawMessage) string {
 	return string(normalized)
 }
 
-func setMistralStreamArguments(block *ai.ToolCall, value string) {
-	if ai.SetToolCallPartialJSON(block, value) != nil {
-		_ = ai.SetToolCallArgumentsJSON(block, []byte(`{}`))
-	}
-}
-
 func (processor *mistralStreamProcessor) finish() error {
 	if err := processor.finishCurrent(); err != nil {
 		return err
@@ -897,7 +891,7 @@ func (processor *mistralStreamProcessor) finish() error {
 		if block.PartialArgs != nil {
 			// parseStreamingJson retains valid non-object JSON at runtime even
 			// though Mistral's TypeScript cast says Record. (OT-m8)
-			setMistralStreamArguments(block, *block.PartialArgs)
+			finishToolArguments(block, *block.PartialArgs)
 		}
 		block.PartialArgs = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: index, ToolCall: block, Partial: processor.output}) {

@@ -1029,9 +1029,14 @@ func convertAnthropicToolResult(
 			references = append(references, anthropicToolReferenceBlock{Type: "tool_reference", ToolName: name})
 		}
 	}
-	content := convertAnthropicResultContent(message.Content)
+	resultContent, after := splitErrorImages(message)
+	content := convertAnthropicResultContent(resultContent)
+	var images []any
+	if after != nil {
+		images = convertAnthropicResultContent(after).([]any)
+	}
 	if len(references) == 0 {
-		return anthropicToolResultBlock{Type: "tool_result", ToolUseID: message.ToolCallID, Content: content, IsError: message.IsError}, nil
+		return anthropicToolResultBlock{Type: "tool_result", ToolUseID: message.ToolCallID, Content: content, IsError: message.IsError}, images
 	}
 	siblings := make([]any, 0)
 	if text, ok := content.(string); ok {
@@ -1039,7 +1044,7 @@ func convertAnthropicToolResult(
 	} else if blocks, ok := content.([]any); ok {
 		siblings = append(siblings, blocks...)
 	}
-	return anthropicToolResultBlock{Type: "tool_result", ToolUseID: message.ToolCallID, Content: references, IsError: message.IsError}, siblings
+	return anthropicToolResultBlock{Type: "tool_result", ToolUseID: message.ToolCallID, Content: references, IsError: message.IsError}, append(siblings, images...)
 }
 
 func convertAnthropicResultContent(content ai.ToolResultContent) any {
@@ -1603,7 +1608,7 @@ func (processor *anthropicStreamProcessor) updateBlock(event anthropicRawEvent) 
 			slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta.PartialJSON)
 			*slot.toolCall.PartialJSON = slot.partialJSON
 			if slot.accumulated.shouldParse() {
-				setAnthropicStreamingArguments(slot.toolCall, slot.partialJSON)
+				setStreamingToolArguments(slot.toolCall, slot.partialJSON)
 			}
 			if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta.PartialJSON, Partial: processor.output}) {
 				return errStopSSE
@@ -1631,7 +1636,7 @@ func (processor *anthropicStreamProcessor) stopBlock(index int) error {
 			return errStopSSE
 		}
 	case slot.toolCall != nil:
-		setAnthropicStreamingArguments(slot.toolCall, slot.partialJSON)
+		finishToolArguments(slot.toolCall, slot.partialJSON)
 		slot.toolCall.PartialJSON = nil
 		slot.toolCall.Index = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: slot.contentIndex, ToolCall: slot.toolCall, Partial: processor.output}) {
@@ -1639,12 +1644,6 @@ func (processor *anthropicStreamProcessor) stopBlock(index int) error {
 		}
 	}
 	return nil
-}
-
-func setAnthropicStreamingArguments(call *ai.ToolCall, partial string) {
-	if ai.SetToolCallPartialJSON(call, partial) != nil {
-		_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
-	}
 }
 
 func mapAnthropicStopReason(reason string, details *anthropicRawStopDetails) (ai.StopReason, string, error) {

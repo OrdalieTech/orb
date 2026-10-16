@@ -44,6 +44,22 @@ func TestOpenAICompletionsPutsReasoningBeforeTheAnswerOfOneDelta(t *testing.T) {
 	}
 }
 
+// Malformed final arguments fail the call with the text the model sent, instead of running it on the
+// fields parsed before the error; arguments JSON repair can read stay valid.
+func TestOpenAICompletionsReportsMalformedFinalToolArguments(t *testing.T) {
+	for arguments, wantError := range map[string]bool{`{"path":"a.go","limit":}`: true, `{"text":"\usepackage"}`: false, ``: false} {
+		encoded, _ := json.Marshal(arguments)
+		message, _ := collectOpenAICompletionsFixture(t, openAICompletionsFixtureStream(t,
+			`{"id":"c","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":`+string(encoded)+`}}]},"finish_reason":"tool_calls"}]}`,
+		))
+		call := message.Content[0].(*ai.ToolCall)
+		if got := call.ArgumentsError != ""; got != wantError || (len(call.Arguments) == 1) != (arguments != "" && !wantError) ||
+			wantError && !strings.HasSuffix(call.ArgumentsError, "\n\nReceived arguments:\n"+arguments) {
+			t.Fatalf("%s: arguments %#v, error %q", arguments, call.Arguments, call.ArgumentsError)
+		}
+	}
+}
+
 func TestOpenAICompletionsInfersFinishReasonWhenUnsupported(t *testing.T) {
 	for _, test := range []struct {
 		name  string

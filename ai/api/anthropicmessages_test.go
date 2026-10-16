@@ -205,3 +205,43 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		t.Fatalf("strict tools per request = %v", requests)
 	}
 }
+
+// Anthropic, and Claude on Bedrock, reject an error tool result holding an image: the image follows
+// the turn's tool results.
+func TestAnthropicMovesErrorResultImagesAfterTheToolResults(t *testing.T) {
+	model := anthropicTestModel()
+	calls := ai.AssistantContent{&ai.ToolCall{ID: "a", Name: "shot", Arguments: map[string]any{}}, &ai.ToolCall{ID: "b", Name: "read", Arguments: map[string]any{}}}
+	payload, _, err := buildAnthropicMessagesPayload(model, ai.Context{Messages: ai.MessageList{
+		&ai.UserMessage{Content: ai.NewUserText("go")},
+		&ai.AssistantMessage{Content: calls, API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonToolUse},
+		&ai.ToolResultMessage{ToolCallID: "a", ToolName: "shot", IsError: true, Content: ai.ToolResultContent{&ai.TextContent{Text: "failed"}, &ai.ImageContent{Data: "png", MimeType: "image/png"}}},
+		&ai.ToolResultMessage{ToolCallID: "b", ToolName: "read", Content: ai.ToolResultContent{&ai.TextContent{Text: "ok"}}},
+	}}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := json.Marshal(payload.Messages[len(payload.Messages)-1].Content)
+	want := `[{"type":"tool_result","tool_use_id":"a","content":"failed\n(image attached after the tool results)","is_error":true},` +
+		`{"type":"tool_result","tool_use_id":"b","content":"ok","is_error":false},` +
+		`{"type":"text","text":"Images from the error result of tool call a (shot):"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"png"},"cache_control":{"type":"ephemeral"}}]`
+	if string(got) != want {
+		t.Fatalf("user content =\n%s\nwant\n%s", got, want)
+	}
+
+	model = &ai.Model{ID: "anthropic.claude-test", API: ai.APIBedrockConverse, Provider: "amazon-bedrock", Input: ai.InputModalities{ai.InputText, ai.InputImage}}
+	context := ai.Context{Messages: ai.MessageList{
+		&ai.UserMessage{Content: ai.NewUserText("go")},
+		&ai.AssistantMessage{Content: calls[:1], API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonToolUse},
+		&ai.ToolResultMessage{ToolCallID: "a", ToolName: "shot", IsError: true, Content: ai.ToolResultContent{&ai.ImageContent{Data: "iVBO", MimeType: "image/png"}}},
+	}}
+	messages, err := convertBedrockMessages(context, model, ai.CacheRetentionNone, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = json.Marshal(messages[len(messages)-1].Content)
+	want = `[{"toolResult":{"toolUseId":"a","content":[{"text":"(image attached after the tool results)"}],"status":"error"}},` +
+		`{"text":"Images from the error result of tool call a (shot):"},{"image":{"format":"png","source":{"bytes":"iVBO"}}}]`
+	if string(got) != want {
+		t.Fatalf("Bedrock user content =\n%s\nwant\n%s", got, want)
+	}
+}

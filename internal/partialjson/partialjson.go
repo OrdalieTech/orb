@@ -89,7 +89,7 @@ func RepairJSON(input string) string {
 				i += 5
 				continue
 			}
-			if strings.ContainsRune(`"\\/bfnrtu`, rune(next)) {
+			if strings.ContainsRune(`"\\/bfnrt`, rune(next)) {
 				repaired.WriteByte(char)
 				repaired.WriteByte(next)
 				i++

@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 const (
@@ -181,4 +183,59 @@ func adaptImages[S ~[]E, E any](blocks S, images bool, placeholder string) (S, b
 		}
 	}
 	return result, true
+}
+
+// splitErrorImages takes the images out of an error tool result, which Claude rejects: the result keeps a
+// placeholder per run, and after holds a caption and the images, to follow the turn's tool results.
+func splitErrorImages(message *ai.ToolResultMessage) (content, after ai.ToolResultContent) {
+	for _, item := range message.Content {
+		if _, image := item.(*ai.ImageContent); image && message.IsError {
+			if after == nil {
+				after = ai.ToolResultContent{&ai.TextContent{Text: "Images from the error result of tool call " + message.ToolCallID + " (" + message.ToolName + "):"}}
+			}
+			after = append(after, item)
+		}
+	}
+	if after == nil {
+		return message.Content, nil
+	}
+	content, _ = adaptImages(message.Content, false, "(image attached after the tool results)")
+	return content, after
+}
+
+// setStreamingToolArguments sets a call's arguments from their streamed prefix, keeping the wire member order.
+func setStreamingToolArguments(call *ai.ToolCall, partial string) {
+	if ai.SetToolCallPartialJSON(call, partial) != nil {
+		_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
+	}
+}
+
+// parseToolArguments reads streaming tool arguments, repairing what it can.
+func parseToolArguments(text string) map[string]any {
+	if object, ok := partialjson.ParseStreamingJSON(text).(map[string]any); ok {
+		return object
+	}
+	return map[string]any{}
+}
+
+// finishToolArguments sets a finished call's arguments. Text that is no JSON object even repaired leaves them
+// empty and sets ArgumentsError, so the model sees what it sent instead of a run on the fields parsed before
+// the error.
+func finishToolArguments(call *ai.ToolCall, text string) {
+	if strings.TrimSpace(text) == "" {
+		text = "{}"
+	}
+	if ai.SetToolCallArgumentsJSON(call, []byte(text)) == nil {
+		return
+	}
+	value, err := partialjson.ParseJSONWithRepair(text)
+	if object, ok := value.(map[string]any); ok && err == nil {
+		call.Arguments = object
+		return
+	}
+	if err == nil {
+		err = errors.New("tool arguments must be a JSON object")
+	}
+	_ = ai.SetToolCallArgumentsJSON(call, []byte(`{}`))
+	call.ArgumentsError = err.Error() + "\n\nReceived arguments:\n" + text
 }

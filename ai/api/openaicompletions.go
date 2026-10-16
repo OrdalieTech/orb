@@ -19,7 +19,6 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
-	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 // OpenAICompletionsOptions contains the Chat Completions-only request options.
@@ -1954,7 +1953,7 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 		partialArgs := stateForCall.partialArgs
 		stateForCall.block.PartialArgs = &partialArgs
 		if stateForCall.argsBuffer.shouldParse() {
-			stateForCall.block.Arguments = parseOpenAICompletionsToolArguments(stateForCall.partialArgs)
+			stateForCall.block.Arguments = parseToolArguments(stateForCall.partialArgs)
 		}
 	} else if customInput != "" && stateForCall.customInput != nil {
 		current, _ := stateForCall.block.Arguments[stateForCall.customInput.property].(string)
@@ -2126,8 +2125,8 @@ func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageE
 					finalCustomDeltas[block] = *delta
 				}
 				tool.customInput = nil
-			} else if err := ai.SetToolCallArgumentsJSON(block, []byte(tool.partialArgs)); err != nil {
-				block.Arguments = parseOpenAICompletionsToolArguments(tool.partialArgs)
+			} else {
+				finishToolArguments(block, tool.partialArgs)
 			}
 		}
 		block.PartialArgs = nil
@@ -2164,14 +2163,6 @@ func (state *completionsStreamState) clearScratch() {
 		block.StreamIndex = nil
 		tool.customInput = nil
 	}
-}
-
-func parseOpenAICompletionsToolArguments(value string) map[string]any {
-	parsed := partialjson.ParseStreamingJSON(value)
-	if object, ok := parsed.(map[string]any); ok {
-		return object
-	}
-	return map[string]any{}
 }
 
 func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage {

@@ -15,7 +15,6 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
-	"github.com/OrdalieTech/orb/internal/partialjson"
 )
 
 const openAIResponsesMinOutputTokens float64 = 16
@@ -1182,7 +1181,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		}
 		slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta)
 		if slot.accumulated.shouldParse() {
-			slot.toolCall.Arguments = parseResponsesArguments(slot.partialJSON)
+			slot.toolCall.Arguments = parseToolArguments(slot.partialJSON)
 		}
 		if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta, Partial: processor.output}) {
 			return errStopSSE
@@ -1194,7 +1193,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		}
 		previous := slot.partialJSON
 		slot.partialJSON = event.Arguments
-		slot.toolCall.Arguments = parseResponsesArguments(slot.partialJSON)
+		slot.toolCall.Arguments = parseToolArguments(slot.partialJSON)
 		if strings.HasPrefix(event.Arguments, previous) {
 			delta := strings.TrimPrefix(event.Arguments, previous)
 			if delta != "" && !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: delta, Partial: processor.output}) {
@@ -1435,12 +1434,7 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		if arguments == "" {
 			arguments = slot.partialJSON
 		}
-		if arguments == "" {
-			arguments = "{}"
-		}
-		if err := ai.SetToolCallArgumentsJSON(slot.toolCall, []byte(arguments)); err != nil {
-			slot.toolCall.Arguments = parseResponsesArguments(arguments)
-		}
+		finishToolArguments(slot.toolCall, arguments)
 		if item.Namespace != nil {
 			slot.toolCall.Namespace = item.Namespace
 		}
@@ -1504,14 +1498,6 @@ func joinResponsesContentText(items []responsesContent) string {
 		values[index] = item.Text
 	}
 	return strings.Join(values, "\n\n")
-}
-
-func parseResponsesArguments(input string) map[string]any {
-	parsed := partialjson.ParseStreamingJSON(input)
-	if result, ok := parsed.(map[string]any); ok {
-		return result
-	}
-	return map[string]any{}
 }
 
 func compactResponsesJSON(raw json.RawMessage) (string, error) {
