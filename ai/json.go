@@ -926,7 +926,11 @@ func (content ToolCall) appendWire(dst []byte) ([]byte, error) {
 	dst = appendOptionalString(dst, `,"partialArgs":`, content.PartialArgs)
 	dst = appendOptionalInt(dst, `,"streamIndex":`, content.StreamIndex)
 	dst = appendOptionalInt(dst, `,"index":`, content.Index)
-	return append(appendOptionalString(dst, `,"thoughtSignature":`, content.ThoughtSignature), '}'), nil
+	dst = appendOptionalString(dst, `,"thoughtSignature":`, content.ThoughtSignature)
+	if content.ArgumentsError != "" {
+		dst = jsonwire.AppendString(append(dst, `,"argumentsError":`...), content.ArgumentsError)
+	}
+	return append(dst, '}'), nil
 }
 func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
@@ -935,6 +939,7 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		Arguments        json.RawMessage `json:"arguments"`
 		Namespace        json.RawMessage `json:"namespace"`
 		ThoughtSignature json.RawMessage `json:"thoughtSignature"`
+		ArgumentsError   json.RawMessage `json:"argumentsError"`
 		PartialJSON      json.RawMessage `json:"partialJson"`
 		PartialArgs      json.RawMessage `json:"partialArgs"`
 		StreamIndex      *int            `json:"streamIndex,omitempty"`
@@ -967,6 +972,10 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	argumentsError, err := unmarshalOptionalWireString(raw.ArgumentsError)
+	if err != nil {
+		return err
+	}
 	*content = ToolCall{
 		ID:               id,
 		Name:             name,
@@ -976,6 +985,9 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		PartialArgs:      partialArgs,
 		StreamIndex:      raw.StreamIndex,
 		Index:            raw.Index,
+	}
+	if argumentsError != nil {
+		content.ArgumentsError = *argumentsError
 	}
 	if err := SetToolCallArgumentsJSON(content, raw.Arguments); err != nil {
 		return fmt.Errorf("tool call arguments: %w", err)

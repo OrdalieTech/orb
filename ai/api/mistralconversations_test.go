@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -52,11 +51,9 @@ func TestMistralNoDefaultRequestDeadline_OTM5(t *testing.T) {
 	}
 }
 
-// TestMistralNonObjectStreamedToolArgsPreserved_OTm8 pins upstream finalize
-// behavior (mistral-conversations.ts:472): parseStreamingJson returns valid
-// non-object JSON values unchanged at runtime, despite the Record type cast.
-// The stream must therefore retain the provider's array. (OT-m8)
-func TestMistralNonObjectStreamedToolArgsPreserved_OTm8(t *testing.T) {
+// Valid JSON that is no object fails a finished Mistral tool call, as malformed arguments do (pi 1.3.0
+// parseToolCallArguments; pi 1.0.0 kept the array, OT-m8).
+func TestMistralNonObjectStreamedToolArgsFailTheCall(t *testing.T) {
 	previousClient := mistralHTTPClient
 	mistralHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -103,22 +100,8 @@ func TestMistralNonObjectStreamedToolArgsPreserved_OTm8(t *testing.T) {
 	if !ok || call.Name != "echo" {
 		t.Fatalf("tool call = %#v", message.Content[0])
 	}
-	encoded, err := ai.Marshal(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wire struct {
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(encoded, &wire); err != nil {
-		t.Fatal(err)
-	}
-	if string(wire.Arguments) != `[1,2]` {
-		t.Fatalf("wire arguments = %s, want [1,2]", wire.Arguments)
-	}
-	value, ok := ai.ToolCallArgumentsValue(call).([]any)
-	if !ok || len(value) != 2 || value[0] != float64(1) || value[1] != float64(2) {
-		t.Fatalf("runtime arguments = %#v, want [1,2]", ai.ToolCallArgumentsValue(call))
+	if len(call.Arguments) != 0 || !strings.HasSuffix(call.ArgumentsError, "\n\nReceived arguments:\n[1, 2]") {
+		t.Fatalf("arguments %#v, error %q", call.Arguments, call.ArgumentsError)
 	}
 }
 

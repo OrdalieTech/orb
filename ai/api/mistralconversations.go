@@ -889,8 +889,6 @@ func (processor *mistralStreamProcessor) finish() error {
 			continue
 		}
 		if block.PartialArgs != nil {
-			// parseStreamingJson retains valid non-object JSON at runtime even
-			// though Mistral's TypeScript cast says Record. (OT-m8)
 			finishToolArguments(block, *block.PartialArgs)
 		}
 		block.PartialArgs = nil

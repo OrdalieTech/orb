@@ -350,3 +350,37 @@ func piMessagesEventServer(t *testing.T, events string) *httptest.Server {
 		_, _ = io.WriteString(writer, events)
 	}))
 }
+
+// A pi gateway marks a call whose arguments it could not read (pi 1.3.0): the mark survives, so the loop
+// fails the call instead of running it with empty arguments.
+func TestPiMessagesKeepsTheGatewayArgumentsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, strings.Join([]string{
+			`data: {"type":"start"}`,
+			`data: {"type":"toolcall_start","contentIndex":0,"id":"call_1","toolName":"read"}`,
+			`data: {"type":"toolcall_end","contentIndex":0,"toolCall":{"type":"toolCall","id":"call_1","name":"read","arguments":{},"argumentsError":"Unexpected end\n\nReceived arguments:\n{\"path\":"}}`,
+			`data: {"type":"done","reason":"toolUse","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}`,
+			`data: [DONE]`,
+		}, "\n\n"))
+	}))
+	defer server.Close()
+	apiKey := "test-key"
+	stream, err := StreamPiMessagesWithOptions(context.Background(), piMessagesTestModel(server.URL+"/v1", nil), piMessagesTestContext(),
+		&PiMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &apiKey}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := ai.Collect(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, _ := message.Content[0].(*ai.ToolCall)
+	if call == nil || call.ArgumentsError != "Unexpected end\n\nReceived arguments:\n{\"path\":" {
+		t.Fatalf("content = %#v", message.Content)
+	}
+	encoded, _ := ai.Marshal(call)
+	if !strings.HasSuffix(string(encoded), `,"argumentsError":"Unexpected end\n\nReceived arguments:\n{\"path\":"}`) {
+		t.Fatalf("persisted call = %s", encoded)
+	}
+}

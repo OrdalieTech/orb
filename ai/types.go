@@ -96,8 +96,8 @@ type ToolCall struct {
 	// loaded or namespaced tools.
 	Namespace *string `json:"namespace,omitempty"`
 	// ArgumentsError says why the finished call's arguments text is no JSON object, with the text: the call
-	// then fails validation and the model sees what it sent. Never persisted.
-	ArgumentsError string `json:"-"`
+	// then fails validation and the model sees what it sent. A pi gateway or JavaScript provider sends it too.
+	ArgumentsError string `json:"argumentsError,omitempty"`
 	rawArguments   []byte
 	// rawValue is rawArguments decoded, kept apart from Arguments so a replay
 	// can tell whether Arguments changed without parsing rawArguments again.

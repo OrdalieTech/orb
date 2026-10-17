@@ -17,7 +17,7 @@ shown by `/changelog`.
 
 - After a model switch, the earlier model's thinking is left out of the request instead of being sent as text, which the new model took for part of its own replies, writing its reasoning into its answers (pi 1.3.0).
 
-- A tool call whose final arguments are malformed JSON fails with `Invalid arguments for tool "…"` and the text the model sent, so it can correct itself, instead of running with only the fields parsed before the error; arguments holding an invalid `\u` escape such as `\usepackage` keep all their fields; an error tool result holding images no longer gets a 400 from Anthropic or Claude on Bedrock: its images follow the turn's tool results (pi 1.3.0).
+- A tool call whose final arguments are malformed JSON fails with `Invalid arguments for tool "…"` and the text the model sent, so it can correct itself, instead of running with only the fields parsed before the error, and so does valid JSON that is no object, such as `null` or `[1, 2]`; a pi gateway's or JavaScript provider's mark of such a call is kept; arguments holding an invalid `\u` escape such as `\usepackage` keep all their fields; an error tool result holding images no longer gets a 400 from Anthropic or Claude on Bedrock: its images follow the turn's tool results (pi 1.3.0).
 
 - Claude Haiku 5.5 and Claude Opus 5 accept the `off` thinking level, sent as thinking disabled with no effort; OpenCode Zen and Go use the `opencode.ai/inference` endpoints, where OpenCode Go's Gemini models no longer get a 404, and OpenCode Go's MiniMax M2.7 uses Anthropic Messages; Xiaomi MiMo models offer only `off` and `high`, as `minimal` was a 400 (pi 1.3.0).
 

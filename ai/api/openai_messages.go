@@ -225,10 +225,11 @@ func finishToolArguments(call *ai.ToolCall, text string) {
 	if strings.TrimSpace(text) == "" {
 		text = "{}"
 	}
-	if ai.SetToolCallArgumentsJSON(call, []byte(text)) == nil {
-		return
+	err := ai.SetToolCallArgumentsJSON(call, []byte(text))
+	value := ai.ToolCallArgumentsValue(call)
+	if err != nil {
+		value, err = partialjson.ParseJSONWithRepair(text)
 	}
-	value, err := partialjson.ParseJSONWithRepair(text)
 	if object, ok := value.(map[string]any); ok && err == nil {
 		call.Arguments = object
 		return
