@@ -36,7 +36,12 @@ type ModelDiagnostic struct {
 
 // ParseModelPattern matches the complete id first so colons inside model ids remain literal.
 func ParseModelPattern(pattern string, available []ai.Model, allowInvalidFallback ...bool) ParsedModel {
-	if model := tryMatchModel(pattern, available); model != nil {
+	return parseModelPattern(pattern, available, len(allowInvalidFallback) == 0 || allowInvalidFallback[0], nil)
+}
+
+// parseModelPattern is ParseModelPattern whose partial matches go to a usable provider when one matches.
+func parseModelPattern(pattern string, available []ai.Model, allow bool, usable map[ai.ProviderID]bool) ParsedModel {
+	if model := tryMatchModel(pattern, available, usable); model != nil {
 		return ParsedModel{Model: model}
 	}
 	colon := strings.LastIndexByte(pattern, ':')
@@ -45,20 +50,16 @@ func ParseModelPattern(pattern string, available []ai.Model, allowInvalidFallbac
 	}
 	prefix, suffix := pattern[:colon], pattern[colon+1:]
 	if level, valid := modelThinkingLevel(suffix); valid {
-		result := ParseModelPattern(prefix, available, allowInvalidFallback...)
+		result := parseModelPattern(prefix, available, allow, usable)
 		if result.Model != nil && result.Warning == "" {
 			result.ThinkingLevel = &level
 		}
 		return result
 	}
-	allow := true
-	if len(allowInvalidFallback) > 0 {
-		allow = allowInvalidFallback[0]
-	}
 	if !allow {
 		return ParsedModel{}
 	}
-	result := ParseModelPattern(prefix, available, allowInvalidFallback...)
+	result := parseModelPattern(prefix, available, allow, usable)
 	if result.Model != nil {
 		result.ThinkingLevel = nil
 		result.Warning = `Invalid thinking level "` + suffix + `" in pattern "` + pattern + `". Using default instead.`
@@ -66,7 +67,7 @@ func ParseModelPattern(pattern string, available []ai.Model, allowInvalidFallbac
 	return result
 }
 
-func tryMatchModel(pattern string, available []ai.Model) *ai.Model {
+func tryMatchModel(pattern string, available []ai.Model, usable map[ai.ProviderID]bool) *ai.Model {
 	if model := exactModelReference(pattern, available); model != nil {
 		return model
 	}
@@ -79,6 +80,10 @@ func tryMatchModel(pattern string, available []ai.Model) *ai.Model {
 	}
 	if len(matches) == 0 {
 		return nil
+	}
+	// A partial match goes to a provider with credentials when one matches (pi 1.3.0).
+	if preferred := slices.DeleteFunc(slices.Clone(matches), func(model ai.Model) bool { return !usable[model.Provider] }); len(preferred) > 0 {
+		matches = preferred
 	}
 	aliases := make([]ai.Model, 0, len(matches))
 	dated := make([]ai.Model, 0, len(matches))
@@ -139,14 +144,9 @@ func exactModelReference(reference string, available []ai.Model) *ai.Model {
 			}
 		}
 	}
-	matches = matches[:0]
-	for _, model := range available {
-		if strings.ToLower(model.ID) == lower {
-			matches = append(matches, model)
-		}
-	}
-	if len(matches) == 1 {
-		copy := matches[0]
+	// A bare id several providers offer takes the first: callers put the ones with credentials first.
+	if index := slices.IndexFunc(available, func(model ai.Model) bool { return strings.ToLower(model.ID) == lower }); index >= 0 {
+		copy := available[index]
 		return &copy
 	}
 	return nil
@@ -659,9 +659,10 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 	if len(available) == 0 {
 		return CLIModelResult{Error: "No models available. Check your installation or add models to models.json."}
 	}
+	var auth map[ai.ProviderID]bool
 	if len(authChecks) > 0 && authChecks[0] != nil {
 		// An id several providers offer goes to one with credentials, not to catalog order.
-		auth := map[ai.ProviderID]bool{}
+		auth = map[ai.ProviderID]bool{}
 		var usable, rest []ai.Model
 		for _, model := range available {
 			ok, seen := auth[model.Provider]
@@ -713,7 +714,7 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 	if canonicalProvider != "" {
 		candidates = slices.DeleteFunc(append([]ai.Model(nil), available...), func(model ai.Model) bool { return string(model.Provider) != canonicalProvider })
 	}
-	parsed := ParseModelPattern(modelPattern, candidates, false)
+	parsed := parseModelPattern(modelPattern, candidates, false, auth)
 	if parsed.Model != nil {
 		if inferred && len(authChecks) > 0 && authChecks[0] != nil && !authChecks[0](string(parsed.Model.Provider)) {
 			rawMatches := make([]ai.Model, 0, 1)
@@ -736,7 +737,7 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 			copy := available[index]
 			return CLIModelResult{Model: &copy}
 		}
-		full := ParseModelPattern(pattern, available, false)
+		full := parseModelPattern(pattern, available, false, auth)
 		if full.Model != nil {
 			return CLIModelResult{Model: full.Model, ThinkingLevel: full.ThinkingLevel, Warning: full.Warning}
 		}
