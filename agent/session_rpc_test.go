@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai"
@@ -277,69 +278,82 @@ func TestCycleModelBackwardWrapsScopeAndFiltersAuth(t *testing.T) {
 	}
 }
 
-func TestPromptPreflightCompactsAbortedHighUsageResponse(t *testing.T) {
-	root := t.TempDir()
-	agentDir := filepath.Join(root, "agent")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"enabled":true,"reserveTokens":10,"keepRecentTokens":1},"retry":{"enabled":false}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("pre-prompt-compaction"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	model := rpcTestModel("faux", "small")
-	model.ContextWindow = 100
-	messages := engine.AgentMessages{
-		userMessage("old request"),
-		&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "old answer"}}, API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonStop, Usage: ai.Usage{TotalTokens: 40}, Timestamp: 1},
-		userMessage("recent request"),
-		&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "partial"}}, API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonAborted, Usage: ai.Usage{TotalTokens: 95}, Timestamp: 2},
-	}
-	for _, message := range messages {
-		if _, err := manager.AppendMessage(message); err != nil {
-			t.Fatal(err)
-		}
-	}
-	created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: &model, Messages: messages}))
-	runtime, err := NewSessionRuntime(SessionRuntimeConfig{
-		Agent: created, SessionManager: manager, Settings: settings,
-		GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
-			key := "key"
-			return &key, nil
-		},
-		Complete: func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
-			return &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "summary"}}, StopReason: ai.StopReasonStop}, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runtime.Dispose()
-	var events []any
-	runtime.Subscribe(func(event any) { events = append(events, event) })
+// A prompt, and a run an extension's message triggers, compact first when the last answer left the context
+// full: here an aborted response recorded 95 tokens of a 100-token window.
+func TestRunsCompactAnAbortedHighUsageResponseFirst(t *testing.T) {
+	for _, trigger := range []string{"prompt", "extension message"} {
+		t.Run(trigger, func(t *testing.T) {
+			root := t.TempDir()
+			agentDir := filepath.Join(root, "agent")
+			if err := os.MkdirAll(agentDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"compaction":{"enabled":true,"reserveTokens":10,"keepRecentTokens":1},"retry":{"enabled":false}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			settings, err := config.NewSettingsManager(root, config.WithAgentDir(agentDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, err := sessionstore.InMemory(root, sessionstore.WithSessionID("pre-prompt-compaction"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := rpcTestModel("faux", "small")
+			model.ContextWindow = 100
+			messages := engine.AgentMessages{
+				userMessage("old request"),
+				&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "old answer"}}, API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonStop, Usage: ai.Usage{TotalTokens: 40}, Timestamp: 1},
+				userMessage("recent request"),
+				&ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "partial"}}, API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonAborted, Usage: ai.Usage{TotalTokens: 95}, Timestamp: 2},
+			}
+			for _, message := range messages {
+				if _, err := manager.AppendMessage(message); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var api extensions.API
+			registry := extensions.NewRegistry(root)
+			if err := registry.Register("builtin:job", func(registered extensions.API) error { api = registered; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: &model, Messages: messages}))
+			runtime, err := NewSessionRuntime(SessionRuntimeConfig{
+				Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
+				GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
+					key := "key"
+					return &key, nil
+				},
+				Complete: func(context.Context, *ai.Model, ai.Context, *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+					return &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "summary"}}, StopReason: ai.StopReasonStop}, nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Dispose()
+			var events []any
+			runtime.Subscribe(func(event any) { events = append(events, event) })
 
-	if err := runtime.PromptPreflight(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	branch := manager.GetBranch()
-	if len(branch) == 0 || branch[len(branch)-1].Type != "compaction" {
-		t.Fatalf("branch = %#v", branch)
-	}
-	if len(events) != 2 {
-		t.Fatalf("compaction events = %#v", events)
-	}
-	if _, ok := events[0].(CompactionStartEvent); !ok {
-		t.Fatalf("first event = %T", events[0])
-	}
-	if _, ok := events[1].(CompactionEndEvent); !ok {
-		t.Fatalf("second event = %T", events[1])
+			if trigger == "prompt" {
+				if err := runtime.PromptPreflight(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				on := true
+				_ = api.SendMessage(context.Background(), extensions.CustomMessage{CustomType: "job", Content: "job finished"}, &extensions.SendMessageOptions{TriggerTurn: &on})
+			}
+			compacted := false
+			for _, entry := range manager.GetBranch() {
+				compacted = compacted || entry.Type == "compaction"
+			}
+			if !compacted || len(events) == 0 {
+				t.Fatalf("branch = %#v", manager.GetBranch())
+			}
+			if _, ok := events[0].(CompactionStartEvent); !ok {
+				t.Fatalf("first event = %T", events[0])
+			}
+		})
 	}
 }
 

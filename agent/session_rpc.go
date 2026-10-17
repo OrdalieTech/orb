@@ -161,6 +161,9 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 // compactBeforeRun compacts first when the last answer left the context full; the run's opening message
 // follows, so the agent is not continued here.
 func (runtime *SessionRuntime) compactBeforeRun(ctx context.Context) {
+	if runtime.agent.UsesSessionLoop() {
+		return // the executor owns the history
+	}
 	messages := runtime.agent.Messages()
 	for index := len(messages) - 1; index >= 0; index-- {
 		if assistant := asAssistant(messages[index]); assistant != nil {

@@ -92,7 +92,7 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 			return nil
 		}
 	}
-	if !runtime.agent.IsIdle() {
+	if !runtime.runIdle() {
 		if streamingBehavior == nil {
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}

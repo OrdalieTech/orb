@@ -675,6 +675,8 @@ func (mode *server) prompt(session *agent.SessionRuntime, command Command) *Resp
 	err := session.PromptWithOptions(mode.ctx, command.Message, &agent.PromptOptions{
 		Images: command.Images,
 		Source: extensions.InputRPC,
+		// A run an extension is starting is not streaming yet; the runtime queues into it.
+		StreamingBehavior: extensions.DeliveryMode(command.StreamingBehavior),
 		PreflightResult: func(disposition agent.InputDisposition) {
 			responded = true
 			_ = mode.writeObject(*success(dispositionData{disposition}))
