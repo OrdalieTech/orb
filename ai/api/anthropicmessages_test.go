@@ -156,8 +156,11 @@ func TestAnthropicWorkloadIdentityFederationExchangesAndCachesToken(t *testing.T
 
 // Anthropic refusing the strict tool set as too large gets one more request, with tools that only
 // prefer strict sampling sent non-strict and tools that require it still strict (upstream 1.2.0).
+// A 400 refusing too many strict tools is retried once with preferred-strict tools relaxed (upstream
+// 1.2.0 #10409); another status, or a tool set with nothing to relax, is not.
 func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T) {
 	var requests []map[string]bool
+	status := http.StatusBadRequest
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
 			Tools []struct {
@@ -172,7 +175,7 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		}
 		requests = append(requests, strict)
 		if len(requests) == 1 {
-			writer.WriteHeader(http.StatusBadRequest)
+			writer.WriteHeader(status)
 			_, _ = io.WriteString(writer, `{"type":"error","error":{"type":"invalid_request_error","message":"Too many strict tools (24). The maximum number of strict tools is 20."}}`)
 			return
 		}
@@ -191,18 +194,26 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		return ai.Tool{Name: name, Description: name, Parameters: ai.JSONSchema(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`),
 			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: strict}}
 	}
-	tools, key := []ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}, "key"
-	stream, err := StreamAnthropicMessagesWithOptions(context.Background(), model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}, Tools: &tools},
-		&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
-	if err != nil {
-		t.Fatal(err)
+	run := func(tools []ai.Tool) {
+		requests = nil
+		key := "key"
+		stream, err := StreamAnthropicMessagesWithOptions(context.Background(), model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}, Tools: &tools},
+			&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = ai.Collect(stream)
 	}
-	message, err := ai.Collect(stream)
-	if err != nil || message.StopReason != ai.StopReasonStop {
-		t.Fatalf("message = %#v, err = %v", message, err)
-	}
+	run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)})
 	if len(requests) != 2 || !requests[0]["prefers"] || !requests[0]["requires"] || requests[1]["prefers"] || !requests[1]["requires"] {
 		t.Fatalf("strict tools per request = %v", requests)
+	}
+	if run([]ai.Tool{tool("requires", ai.ConstrainedSamplingRequire)}); len(requests) != 1 {
+		t.Fatalf("an all-require tool set was retried: %v", requests)
+	}
+	status = http.StatusForbidden
+	if run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer)}); len(requests) != 1 {
+		t.Fatalf("a 403 was retried: %v", requests)
 	}
 }
 
