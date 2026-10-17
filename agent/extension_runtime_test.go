@@ -1660,3 +1660,46 @@ func TestTriggeredRunGoesThroughBeforeAgentStart(t *testing.T) {
 		t.Fatalf("requests = %q", requests)
 	}
 }
+
+// A message a before_agent_start handler sends joins the run starting (upstream _startRun): the run is
+// active from before the handlers run, so a triggerTurn message neither starts a second run nor recurses.
+func TestBeforeAgentStartMessageJoinsTheStartingRun(t *testing.T) {
+	cwd := t.TempDir()
+	provider := testFaux(100000)
+	var requests []string
+	provider.SetResponses([]faux.ResponseStep{faux.ResponseFactory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		encoded, _ := json.Marshal(request.Messages)
+		requests = append(requests, string(encoded))
+		return runtimeAssistant(provider, "ok", 10), nil
+	})})
+	starts := 0
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("builtin:joiner", func(api extensions.API) error {
+		api.On(extensions.EventBeforeAgentStart, func(ctx context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
+			if starts++; starts > 3 {
+				return nil, nil
+			}
+			trigger := true
+			return nil, api.SendMessage(ctx, extensions.CustomMessage{CustomType: "note", Content: "joined", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &trigger})
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(), ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	if err := host.Session().BindExtensions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Session().Prompt(context.Background(), "go", nil); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 || len(requests) == 0 || !strings.Contains(requests[0], "joined") {
+		t.Fatalf("before_agent_start ran %d times, requests = %q", starts, requests)
+	}
+}

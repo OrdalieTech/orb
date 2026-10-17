@@ -1487,6 +1487,7 @@ func (runtime *SessionRuntime) recordBashResult(command string, result extension
 }
 
 func (runtime *SessionRuntime) clearExtensionTurnState() {
+	runtime.agent.SetRequestSystemPromptOverride(nil)
 	state := runtime.extensionState
 	if state != nil {
 		state.mu.Lock()
@@ -1810,12 +1811,15 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	return runtime.runOpening(ctx, state, text, images, nil)
 }
 
-// runOpening starts a run with the prompt, or with custom when an extension's message triggers it.
+// runOpening starts a run with the prompt, or with custom when an extension's message triggers it. The run
+// is active while before_agent_start runs, so a message a handler sends joins it instead of starting
+// another (upstream _startRun).
 func (runtime *SessionRuntime) runOpening(ctx context.Context, state *extensionRuntimeState, text string, images []*ai.ImageContent, custom *harness.CustomMessage) error {
-	messages, forcedPrompt := runtime.openingMessages(ctx, state, text, images, custom)
-	runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
-	defer runtime.agent.SetRequestSystemPromptOverride(nil)
-	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, messages) })
+	return runtime.runPolicies(ctx, func() error {
+		messages, forcedPrompt := runtime.openingMessages(ctx, state, text, images, custom)
+		runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
+		return runtime.agent.Prompt(ctx, messages)
+	})
 }
 
 // openingMessages prepares a run: it takes what extensions queued for the
