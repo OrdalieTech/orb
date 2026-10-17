@@ -315,8 +315,10 @@ func StreamAnthropicMessagesWithOptions(
 			return response, isOAuth, err
 		}
 		response, isOAuth, err := send(false)
-		if err != nil && ctx.Err() == nil && anthropicStrictToolLimit(err) && requestContext.Tools != nil && slices.ContainsFunc(*requestContext.Tools, func(tool ai.Tool) bool {
-			return tool.ConstrainedSampling != nil && tool.ConstrainedSampling.Type == ai.ConstrainedSamplingJSONSchema && tool.ConstrainedSampling.Strict != ai.ConstrainedSamplingRequire
+		var limit anthropicStrictToolLimitError
+		if errors.As(err, &limit) && ctx.Err() == nil && requestContext.Tools != nil && slices.ContainsFunc(*requestContext.Tools, func(tool ai.Tool) bool {
+			strict, strictErr := resolveJSONSchemaStrictSampling(tool, true, anthropicStrictRejects)
+			return strictErr == nil && strict != nil && *strict && tool.ConstrainedSampling.Strict != ai.ConstrainedSamplingRequire
 		}) {
 			// Anthropic refused the strict tool set as too large; once more with tools that only
 			// prefer strict sampling sent non-strict (upstream 1.2.0 #10409).
@@ -1265,8 +1267,16 @@ func anthropicResponseError(status int, contents []byte) error {
 	if len(contents) == 0 {
 		return fmt.Errorf("%d status code (no body)", status)
 	}
-	return fmt.Errorf("%d %s", status, strings.TrimSpace(string(contents)))
+	err := fmt.Errorf("%d %s", status, strings.TrimSpace(string(contents)))
+	if status == http.StatusBadRequest && bytes.Contains(contents, []byte("invalid_request_error")) && anthropicStrictToolLimit(string(contents)) {
+		return anthropicStrictToolLimitError{err}
+	}
+	return err
 }
+
+// anthropicStrictToolLimitError is Anthropic's 400 refusing a request whose strict tools exceed its grammar
+// size, tool count or union limits.
+type anthropicStrictToolLimitError struct{ error }
 
 func anthropicHeaders(
 	model *ai.Model,
@@ -1785,13 +1795,7 @@ func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAl
 	return *compat.AllowedFallbackModels
 }
 
-// anthropicStrictToolLimit reports Anthropic's 400 refusing a request whose strict tools exceed its grammar
-// size, tool count or union limits; a hook's error with the same words is not one.
-func anthropicStrictToolLimit(err error) bool {
-	message := err.Error()
-	if !strings.HasPrefix(message, "400 ") || !strings.Contains(message, "invalid_request_error") {
-		return false
-	}
+func anthropicStrictToolLimit(message string) bool {
 	for _, limit := range []string{"The compiled grammar is too large", "Too many strict tools (", "Schemas contains too many parameters with union types ("} {
 		if strings.Contains(message, limit) {
 			return true

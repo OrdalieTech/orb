@@ -194,7 +194,7 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		return ai.Tool{Name: name, Description: name, Parameters: ai.JSONSchema(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`),
 			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: strict}}
 	}
-	run := func(tools []ai.Tool) {
+	run := func(tools []ai.Tool) *ai.AssistantMessage {
 		requests = nil
 		key := "key"
 		stream, err := StreamAnthropicMessagesWithOptions(context.Background(), model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}, Tools: &tools},
@@ -202,14 +202,23 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _ = ai.Collect(stream)
+		message, _ := ai.Collect(stream)
+		return message
 	}
-	run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)})
+	if message := run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}); message == nil || message.StopReason != ai.StopReasonStop {
+		t.Fatalf("the relaxed request failed: %#v", message)
+	}
 	if len(requests) != 2 || !requests[0]["prefers"] || !requests[0]["requires"] || requests[1]["prefers"] || !requests[1]["requires"] {
 		t.Fatalf("strict tools per request = %v", requests)
 	}
 	if run([]ai.Tool{tool("requires", ai.ConstrainedSamplingRequire)}); len(requests) != 1 {
 		t.Fatalf("an all-require tool set was retried: %v", requests)
+	}
+	// A preferred tool whose schema strict sampling rejects was sent non-strict already: nothing to relax.
+	unbounded := tool("unbounded", ai.ConstrainedSamplingPrefer)
+	unbounded.Parameters = ai.JSONSchema(`{"type":"object","properties":{"x":{"type":"integer","minimum":1}},"required":["x"],"additionalProperties":false}`)
+	if run([]ai.Tool{unbounded, tool("requires", ai.ConstrainedSamplingRequire)}); len(requests) != 1 {
+		t.Fatalf("a request with nothing to relax was retried: %v", requests)
 	}
 	status = http.StatusForbidden
 	if run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer)}); len(requests) != 1 {
