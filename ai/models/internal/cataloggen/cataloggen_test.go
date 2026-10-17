@@ -123,3 +123,22 @@ func TestCompatModelsMatchPinnedF2Models(t *testing.T) {
 		}
 	}
 }
+
+// pi 1.3.0's catalog fixes: OpenCode serves from /inference, where OpenCode Go's MiniMax M2.7 speaks the
+// Anthropic Messages protocol its listing names, and Xiaomi MiMo thinks on or off only.
+func TestCatalogTakesPi130ProviderFixes(t *testing.T) {
+	catalog, err := Generate(pinnedSources(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model := catalog["opencode"]["claude-sonnet-4-6"]; model.BaseURL != "https://opencode.ai/inference" {
+		t.Fatalf("opencode base URL = %q", model.BaseURL)
+	}
+	if model := catalog["opencode-go"]["minimax-m2.7"]; model.API != ai.APIAnthropicMessages || model.BaseURL != "https://opencode.ai/inference/go" {
+		t.Fatalf("OpenCode Go MiniMax M2.7 = %s %s", model.API, model.BaseURL)
+	}
+	levels := *catalog["xiaomi"]["mimo-v2.5"].ThinkingLevelMap
+	if off, high, medium := levels[ai.ModelThinkingOff], levels[ai.ModelThinkingHigh], levels[ai.ModelThinkingMedium]; off == nil || *off != "off" || high == nil || *high != "high" || medium != nil {
+		t.Fatalf("MiMo thinking levels = %v", levels)
+	}
+}

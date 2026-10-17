@@ -197,3 +197,37 @@ func vertexTestModel(id string) *ai.Model {
 }
 
 func vertexStringPointer(value string) *string { return &value }
+
+// Gemini 4 takes a thinking level as Gemini 3 does, which Vertex requires over a budget, and Gemini 3.1
+// Pro sends the level its thinking map gives: medium stays medium.
+func TestGoogleVertexSendsThinkingLevels(t *testing.T) {
+	var body string
+	previousClient := googleHTTPClient
+	googleHTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		captured, err := io.ReadAll(request.Body)
+		body = string(captured)
+		return googleTestResponse("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n"), err
+	})}
+	t.Cleanup(func() { googleHTTPClient = previousClient })
+	medium := "medium"
+	pro := vertexTestModel("gemini-3.1-pro-preview")
+	pro.ThinkingLevelMap = &map[ai.ModelThinkingLevel]*string{ai.ModelThinkingMedium: &medium}
+	for _, test := range []struct {
+		model *ai.Model
+		level ai.ThinkingLevel
+		want  string
+	}{{vertexTestModel("gemini-4-argon"), ai.ThinkingHigh, `"thinkingLevel":"HIGH"`}, {pro, ai.ThinkingMedium, `"thinkingLevel":"MEDIUM"`}} {
+		apiKey, level := "vertex-key", test.level
+		stream, err := StreamSimpleGoogleVertex(context.Background(), test.model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}},
+			&ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{APIKey: &apiKey}, Reasoning: &level})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ai.Collect(stream); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(body, test.want) || strings.Contains(body, "thinkingBudget") {
+			t.Fatalf("%s request = %s", test.model.ID, body)
+		}
+	}
+}

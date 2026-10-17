@@ -279,9 +279,10 @@ func TestCycleModelBackwardWrapsScopeAndFiltersAuth(t *testing.T) {
 }
 
 // A prompt, and a run an extension's message triggers, compact first when the last answer left the context
-// full: here an aborted response recorded 95 tokens of a 100-token window.
+// full: here an aborted response recorded 95 tokens of a 100-token window. A history an executor owns is
+// never compacted here.
 func TestRunsCompactAnAbortedHighUsageResponseFirst(t *testing.T) {
-	for _, trigger := range []string{"prompt", "extension message"} {
+	for _, trigger := range []string{"prompt", "extension message", "executor"} {
 		t.Run(trigger, func(t *testing.T) {
 			root := t.TempDir()
 			agentDir := filepath.Join(root, "agent")
@@ -317,7 +318,13 @@ func TestRunsCompactAnAbortedHighUsageResponseFirst(t *testing.T) {
 			if err := registry.Register("builtin:job", func(registered extensions.API) error { api = registered; return nil }); err != nil {
 				t.Fatal(err)
 			}
-			created := engine.NewAgent(nil, engine.WithInitialState(engine.AgentState{Model: &model, Messages: messages}))
+			options := []engine.AgentOption{engine.WithInitialState(engine.AgentState{Model: &model, Messages: messages})}
+			if trigger == "executor" {
+				options = append(options, engine.WithSessionLoop(func(context.Context, engine.AgentMessages, engine.AgentContext, engine.AgentLoopConfig, engine.EventSink) error {
+					return nil
+				}))
+			}
+			created := engine.NewAgent(nil, options...)
 			runtime, err := NewSessionRuntime(SessionRuntimeConfig{
 				Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry,
 				GetAPIKey: func(context.Context, ai.ProviderID) (*string, error) {
@@ -346,6 +353,12 @@ func TestRunsCompactAnAbortedHighUsageResponseFirst(t *testing.T) {
 			compacted := false
 			for _, entry := range manager.GetBranch() {
 				compacted = compacted || entry.Type == "compaction"
+			}
+			if trigger == "executor" {
+				if compacted {
+					t.Fatal("compacted a history the executor owns")
+				}
+				return
 			}
 			if !compacted || len(events) == 0 {
 				t.Fatalf("branch = %#v", manager.GetBranch())
