@@ -155,15 +155,36 @@ func exactModelReference(reference string, available []ai.Model) *ai.Model {
 func ResolveModelScope(patterns []string, available []ai.Model) ([]ScopedModel, []ModelDiagnostic) {
 	models := make([]ScopedModel, 0)
 	diagnostics := make([]ModelDiagnostic, 0)
+	// add scopes model, and every other provider's model of its id with a warning unless the pattern names
+	// the provider (pi 1.3.0).
+	add := func(patternValue string, model ai.Model, level *ai.ModelThinkingLevel) {
+		matches := []ai.Model{model}
+		if prefix, _, named := strings.Cut(patternValue, "/"); !named || !strings.EqualFold(strings.TrimSpace(prefix), string(model.Provider)) {
+			providers := []string{string(model.Provider)}
+			for _, other := range available {
+				if strings.EqualFold(other.ID, model.ID) && !slices.Contains(providers, string(other.Provider)) {
+					providers = append(providers, string(other.Provider))
+					matches = append(matches, other)
+				}
+			}
+			if len(providers) > 1 {
+				slices.Sort(providers)
+				diagnostics = append(diagnostics, ModelDiagnostic{Type: "warning", Code: "ambiguous", Message: `Pattern "` + patternValue + `" matches several providers: ` + strings.Join(providers, ", ") + ". Use provider/id to choose one.", Pattern: patternValue})
+			}
+		}
+		for _, match := range matches {
+			if !containsScopedModel(models, match) {
+				models = append(models, ScopedModel{Model: match, ThinkingLevel: level})
+			}
+		}
+	}
 	for _, patternValue := range patterns {
 		if strings.ContainsAny(patternValue, "*?[") {
 			glob, level := splitGlobThinking(patternValue)
 			// Ids containing glob metacharacters (e.g. "[1m]") resolve as
 			// exact references before glob matching.
 			if exact := exactModelReference(glob, available); exact != nil {
-				if !containsScopedModel(models, *exact) {
-					models = append(models, ScopedModel{Model: *exact, ThinkingLevel: level})
-				}
+				add(patternValue, *exact, level)
 				continue
 			}
 			matched := false
@@ -192,26 +213,7 @@ func ResolveModelScope(patterns []string, available []ai.Model) ([]ScopedModel, 
 			diagnostics = append(diagnostics, noModelDiagnostic(patternValue))
 			continue
 		}
-		matches := []ai.Model{*parsed.Model}
-		// An id several providers offer adds each, with a warning, unless the pattern names one (pi 1.3.0).
-		if !strings.HasPrefix(strings.ToLower(patternValue), strings.ToLower(string(parsed.Model.Provider))+"/") {
-			providers := []string{string(parsed.Model.Provider)}
-			for _, model := range available {
-				if model.ID == parsed.Model.ID && !slices.Contains(providers, string(model.Provider)) {
-					providers = append(providers, string(model.Provider))
-					matches = append(matches, model)
-				}
-			}
-			if len(providers) > 1 {
-				slices.Sort(providers)
-				diagnostics = append(diagnostics, ModelDiagnostic{Type: "warning", Code: "ambiguous", Message: `Pattern "` + patternValue + `" matches several providers: ` + strings.Join(providers, ", ") + ". Use provider/id to choose one.", Pattern: patternValue})
-			}
-		}
-		for _, model := range matches {
-			if !containsScopedModel(models, model) {
-				models = append(models, ScopedModel{Model: model, ThinkingLevel: parsed.ThinkingLevel})
-			}
-		}
+		add(patternValue, *parsed.Model, parsed.ThinkingLevel)
 	}
 	return models, diagnostics
 }
@@ -714,13 +716,13 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 	}
 	// With no provider named, an id several providers offer does not pick a billing route by catalog order:
 	// the one with credentials takes it, and none or several are ambiguous (pi 1.3.0).
-	ambiguous := func(model *ai.Model) string {
-		if auth == nil || canonicalProvider != "" {
+	ambiguous := func(id string) string {
+		if auth == nil {
 			return ""
 		}
 		offers, usable := []string{}, 0
 		for _, candidate := range available {
-			if offer := string(candidate.Provider) + "/" + candidate.ID; candidate.ID == model.ID && !slices.Contains(offers, offer) {
+			if offer := string(candidate.Provider) + "/" + candidate.ID; strings.EqualFold(candidate.ID, id) && !slices.Contains(offers, offer) {
 				offers = append(offers, offer)
 				if auth[candidate.Provider] {
 					usable++
@@ -743,7 +745,7 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 			return strings.ToLower(candidate.ID) == lower || strings.ToLower(string(candidate.Provider)+"/"+candidate.ID) == lower
 		}); model >= 0 {
 			copy := available[model]
-			if message := ambiguous(&copy); message != "" {
+			if message := ambiguous(copy.ID); message != "" {
 				return CLIModelResult{Error: message}
 			}
 			return CLIModelResult{Model: &copy}
@@ -776,8 +778,11 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 			if len(rawMatches) == 1 {
 				return CLIModelResult{Model: &rawMatches[0], ThinkingLevel: parsed.ThinkingLevel}
 			}
+			if len(rawMatches) > 1 {
+				return CLIModelResult{Error: ambiguous(reference)}
+			}
 		}
-		if message := ambiguous(parsed.Model); message != "" {
+		if message := ambiguous(parsed.Model.ID); message != "" && canonicalProvider == "" {
 			return CLIModelResult{Error: message}
 		}
 		return CLIModelResult{Model: parsed.Model, ThinkingLevel: parsed.ThinkingLevel, Warning: parsed.Warning}

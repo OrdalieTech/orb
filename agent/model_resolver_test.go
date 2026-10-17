@@ -161,7 +161,7 @@ func TestResolveCLIModelProviderPrefixAndCustomThinking(t *testing.T) {
 }
 
 func TestResolveCLIModelPrefersAProviderWithCredentials(t *testing.T) {
-	models := []ai.Model{{Provider: "openai", ID: "gpt-6-sol"}, {Provider: "openrouter", ID: "openai/gpt-6-sol"}, {Provider: "openai-codex", ID: "gpt-6-sol"}}
+	models := []ai.Model{{Provider: "openai", ID: "gpt-6-sol"}, {Provider: "openrouter", ID: "openai/gpt-6-sol"}, {Provider: "openai-codex", ID: "gpt-6-sol"}, {Provider: "vercel", ID: "openai/gpt-6-sol"}}
 	signedIn := func(provider string) bool { return provider == "openai-codex" }
 	for _, pattern := range []string{"gpt-6-sol", "gpt-6-sol:high", "6-sol"} {
 		if resolved := ResolveCLIModel("", pattern, nil, models, signedIn); resolved.Model == nil || resolved.Model.Provider != "openai-codex" {
@@ -180,10 +180,23 @@ func TestResolveCLIModelPrefersAProviderWithCredentials(t *testing.T) {
 		resolved.ThinkingLevel == nil || *resolved.ThinkingLevel != ai.ModelThinkingHigh {
 		t.Fatalf("gateway id resolved to %#v", resolved)
 	}
+	if resolved := ResolveCLIModel("", "openai/gpt-6-sol", nil, models, func(p string) bool { return p == "openrouter" || p == "vercel" }); resolved.Model != nil || resolved.Error == "" {
+		t.Fatalf("two gateways resolved to %#v", resolved.Model)
+	}
+	both := func(string) bool { return true }
+	if resolved := ResolveCLIModel("", "model", nil, []ai.Model{{Provider: "a", ID: "Model"}, {Provider: "b", ID: "model"}}, both); resolved.Error == "" {
+		t.Fatalf("ids differing in case resolved to %#v", resolved.Model)
+	}
 	// A scope adds each provider's model and warns, unless the pattern names the provider.
 	scoped, diagnostics := ResolveModelScope([]string{"gpt-6-sol", "openai-codex/gpt-6-sol"}, models)
 	if len(scoped) != 2 || len(diagnostics) != 1 || diagnostics[0].Code != "ambiguous" {
 		t.Fatalf("scope = %#v, diagnostics = %#v", scoped, diagnostics)
+	}
+	if scoped, diagnostics = ResolveModelScope([]string{" openai-codex / gpt-6-sol "}, models); len(scoped) != 1 || len(diagnostics) != 0 {
+		t.Fatalf("named scope = %#v, diagnostics = %#v", scoped, diagnostics)
+	}
+	if scoped, diagnostics = ResolveModelScope([]string{"m[1m]:high"}, []ai.Model{{Provider: "a", ID: "m[1m]"}, {Provider: "b", ID: "m[1m]"}}); len(scoped) != 2 || len(diagnostics) != 1 {
+		t.Fatalf("bracketed scope = %#v, diagnostics = %#v", scoped, diagnostics)
 	}
 }
 
