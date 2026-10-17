@@ -192,8 +192,25 @@ func ResolveModelScope(patterns []string, available []ai.Model) ([]ScopedModel, 
 			diagnostics = append(diagnostics, noModelDiagnostic(patternValue))
 			continue
 		}
-		if !containsScopedModel(models, *parsed.Model) {
-			models = append(models, ScopedModel{Model: *parsed.Model, ThinkingLevel: parsed.ThinkingLevel})
+		matches := []ai.Model{*parsed.Model}
+		// An id several providers offer adds each, with a warning, unless the pattern names one (pi 1.3.0).
+		if !strings.HasPrefix(strings.ToLower(patternValue), strings.ToLower(string(parsed.Model.Provider))+"/") {
+			providers := []string{string(parsed.Model.Provider)}
+			for _, model := range available {
+				if model.ID == parsed.Model.ID && !slices.Contains(providers, string(model.Provider)) {
+					providers = append(providers, string(model.Provider))
+					matches = append(matches, model)
+				}
+			}
+			if len(providers) > 1 {
+				slices.Sort(providers)
+				diagnostics = append(diagnostics, ModelDiagnostic{Type: "warning", Code: "ambiguous", Message: `Pattern "` + patternValue + `" matches several providers: ` + strings.Join(providers, ", ") + ". Use provider/id to choose one.", Pattern: patternValue})
+			}
+		}
+		for _, model := range matches {
+			if !containsScopedModel(models, model) {
+				models = append(models, ScopedModel{Model: model, ThinkingLevel: parsed.ThinkingLevel})
+			}
 		}
 	}
 	return models, diagnostics
@@ -695,12 +712,40 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 			}
 		}
 	}
+	// With no provider named, an id several providers offer does not pick a billing route by catalog order:
+	// the one with credentials takes it, and none or several are ambiguous (pi 1.3.0).
+	ambiguous := func(model *ai.Model) string {
+		if auth == nil || canonicalProvider != "" {
+			return ""
+		}
+		offers, usable := []string{}, 0
+		for _, candidate := range available {
+			if offer := string(candidate.Provider) + "/" + candidate.ID; candidate.ID == model.ID && !slices.Contains(offers, offer) {
+				offers = append(offers, offer)
+				if auth[candidate.Provider] {
+					usable++
+				}
+			}
+		}
+		if len(offers) < 2 || usable == 1 {
+			return ""
+		}
+		hint := "More than one of them has credentials."
+		if usable == 0 {
+			hint = "None of them has credentials, and --api-key does not pick one."
+		}
+		slices.Sort(offers)
+		return `Model "` + pattern + `" is offered by several providers: ` + strings.Join(offers, ", ") + ". " + hint + " Use --provider or provider/model."
+	}
 	if canonicalProvider == "" {
 		lower := strings.ToLower(pattern)
 		if model := slices.IndexFunc(available, func(candidate ai.Model) bool {
 			return strings.ToLower(candidate.ID) == lower || strings.ToLower(string(candidate.Provider)+"/"+candidate.ID) == lower
 		}); model >= 0 {
 			copy := available[model]
+			if message := ambiguous(&copy); message != "" {
+				return CLIModelResult{Error: message}
+			}
 			return CLIModelResult{Model: &copy}
 		}
 	}
@@ -716,16 +761,24 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 	}
 	parsed := parseModelPattern(modelPattern, candidates, false, auth)
 	if parsed.Model != nil {
-		if inferred && len(authChecks) > 0 && authChecks[0] != nil && !authChecks[0](string(parsed.Model.Provider)) {
+		if inferred && auth != nil && !auth[parsed.Model.Provider] {
+			// The whole text may be another provider's id, such as a gateway's openai/gpt-5.5.
+			reference := pattern
+			if parsed.ThinkingLevel != nil {
+				reference = pattern[:strings.LastIndexByte(pattern, ':')]
+			}
 			rawMatches := make([]ai.Model, 0, 1)
 			for _, model := range available {
-				if strings.EqualFold(model.ID, pattern) && (model.Provider != parsed.Model.Provider || model.ID != parsed.Model.ID) && authChecks[0](string(model.Provider)) {
+				if strings.EqualFold(model.ID, reference) && (model.Provider != parsed.Model.Provider || model.ID != parsed.Model.ID) && auth[model.Provider] {
 					rawMatches = append(rawMatches, model)
 				}
 			}
 			if len(rawMatches) == 1 {
-				return CLIModelResult{Model: &rawMatches[0]}
+				return CLIModelResult{Model: &rawMatches[0], ThinkingLevel: parsed.ThinkingLevel}
 			}
+		}
+		if message := ambiguous(parsed.Model); message != "" {
+			return CLIModelResult{Error: message}
 		}
 		return CLIModelResult{Model: parsed.Model, ThinkingLevel: parsed.ThinkingLevel, Warning: parsed.Warning}
 	}

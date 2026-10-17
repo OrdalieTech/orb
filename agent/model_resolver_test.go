@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -166,6 +167,23 @@ func TestResolveCLIModelPrefersAProviderWithCredentials(t *testing.T) {
 		if resolved := ResolveCLIModel("", pattern, nil, models, signedIn); resolved.Model == nil || resolved.Model.Provider != "openai-codex" {
 			t.Fatalf("%s resolved to %#v", pattern, resolved.Model)
 		}
+	}
+	// None or several with credentials is ambiguous: catalog order would pick a billing route.
+	for _, usable := range []func(string) bool{func(string) bool { return false }, func(p string) bool { return p != "openrouter" }} {
+		if resolved := ResolveCLIModel("", "gpt-6-sol", nil, models, usable); resolved.Model != nil || !strings.Contains(resolved.Error, "openai-codex/gpt-6-sol, openai/gpt-6-sol") {
+			t.Fatalf("ambiguous id resolved to %#v, error %q", resolved.Model, resolved.Error)
+		}
+	}
+	// A provider-like prefix the provider cannot serve is a gateway's id, thinking suffix or not.
+	gateway := func(p string) bool { return p == "openrouter" }
+	if resolved := ResolveCLIModel("", "openai/gpt-6-sol:high", nil, models, gateway); resolved.Model == nil || resolved.Model.Provider != "openrouter" ||
+		resolved.ThinkingLevel == nil || *resolved.ThinkingLevel != ai.ModelThinkingHigh {
+		t.Fatalf("gateway id resolved to %#v", resolved)
+	}
+	// A scope adds each provider's model and warns, unless the pattern names the provider.
+	scoped, diagnostics := ResolveModelScope([]string{"gpt-6-sol", "openai-codex/gpt-6-sol"}, models)
+	if len(scoped) != 2 || len(diagnostics) != 1 || diagnostics[0].Code != "ambiguous" {
+		t.Fatalf("scope = %#v, diagnostics = %#v", scoped, diagnostics)
 	}
 }
 
