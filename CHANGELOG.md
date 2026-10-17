@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.11] - 2026-10-17
+
+Fixes from pi 1.2.0 and 1.3.0: a tool call whose arguments the model garbled fails with what it sent so the model can correct it, a run an extension triggers starts like a prompt, `--model` stops picking a billing route silently when several providers offer a model, and Gemini 4, OpenCode's new endpoints and the `off` thinking level of Claude Haiku 5.5 and Opus 5 work.
+
 - "The service is temporarily unavailable" and a gateway's "Unable to forward upstream stream" are retried like other transient provider errors; the first also failed a compaction on its first attempt (pi 1.3.0).
 
 - A prompt template argument written `""` or `''` counts as an empty argument instead of vanishing and shifting the next ones (pi 1.3.0): `/review "" a` sets `$2` to `a`, and `${1:-default}` applies to `$1`.
