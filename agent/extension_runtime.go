@@ -1726,7 +1726,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	// Slash commands keep their existing replacement behavior. Model work reserves
 	// its session before preflight or input hooks can mutate it.
 	var finish func()
-	if runtime.control.Load() != nil && (!commands || !strings.HasPrefix(text, "/")) && runtime.agent.IsIdle() {
+	if runtime.control.Load() != nil && (!commands || !strings.HasPrefix(text, "/")) && runtime.runIdle() {
 		var err error
 		ctx, finish, err = runtime.reserveControl(ctx)
 		if err != nil {
@@ -1758,7 +1758,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	}
 	if state.runner.HasHandlers(extensions.EventInput) {
 		eventStreamingBehavior := streamingBehavior
-		if runtime.agent.IsIdle() {
+		if runtime.runIdle() {
 			eventStreamingBehavior = nil
 		}
 		result := state.runner.EmitInput(ctx, text, images, source, eventStreamingBehavior)
@@ -1778,7 +1778,7 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	if commands && runtime.slashResolver != nil {
 		text = runtime.slashResolver.Expand(text)
 	}
-	if !runtime.agent.IsIdle() {
+	if !runtime.runIdle() {
 		if streamingBehavior == nil {
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 		}
@@ -1816,7 +1816,14 @@ func (runtime *SessionRuntime) promptExtensionInput(
 // another (upstream _startRun).
 func (runtime *SessionRuntime) runOpening(ctx context.Context, state *extensionRuntimeState, text string, images []*ai.ImageContent, custom *harness.CustomMessage) error {
 	return runtime.runPolicies(ctx, func() error {
+		if custom != nil {
+			runtime.compactBeforeRun(ctx) // a prompt did in PromptPreflight
+		}
 		messages, forcedPrompt := runtime.openingMessages(ctx, state, text, images, custom)
+		// Messages held while the run was starting go before its opening ones, as they would while idle.
+		if err := errors.Join(runtime.flushPendingBash(), runtime.flushPendingCustom()); err != nil {
+			return err
+		}
 		runtime.agent.SetRequestSystemPromptOverride(forcedPrompt)
 		return runtime.agent.Prompt(ctx, messages)
 	})

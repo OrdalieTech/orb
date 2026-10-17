@@ -154,14 +154,20 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 	if !hasAuth {
 		return errors.New(formatNoAPIKeyFoundMessage(model.Provider))
 	}
+	runtime.compactBeforeRun(ctx)
+	return nil
+}
+
+// compactBeforeRun compacts first when the last answer left the context full; the run's opening message
+// follows, so the agent is not continued here.
+func (runtime *SessionRuntime) compactBeforeRun(ctx context.Context) {
 	messages := runtime.agent.Messages()
 	for index := len(messages) - 1; index >= 0; index-- {
 		if assistant := asAssistant(messages[index]); assistant != nil {
 			_, _ = runtime.checkCompaction(ctx, assistant, false)
-			break
+			return
 		}
 	}
-	return nil
 }
 
 func (runtime *SessionRuntime) hasProviderAuth(ctx context.Context, provider ai.ProviderID) (bool, error) {

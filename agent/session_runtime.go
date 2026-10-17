@@ -691,6 +691,15 @@ func (runtime *SessionRuntime) enqueue(text string, images []*ai.ImageContent, f
 	return nil
 }
 
+// runIdle reports that no run is active or starting: a run counts from before its before_agent_start
+// handlers, so input they send is queued into it.
+func (runtime *SessionRuntime) runIdle() bool {
+	runtime.mu.Lock()
+	starting := runtime.activeRuns != 0
+	runtime.mu.Unlock()
+	return !starting && runtime.agent.IsIdle()
+}
+
 func (runtime *SessionRuntime) IsIdle() bool {
 	if runtime == nil {
 		return true
@@ -982,6 +991,12 @@ func (runtime *SessionRuntime) runDeferredSettled() {
 
 func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engine.AgentEvent) error {
 	switch typed := event.(type) {
+	case engine.AgentStartEvent:
+		// An abort requested while the run was starting, such as in before_agent_start, stops it before
+		// its first request (upstream).
+		if runtime.aborted() {
+			runtime.agent.Abort()
+		}
 	case engine.MessageStartEvent:
 		if result, ok := typed.Message.(*ai.ToolResultMessage); ok {
 			runtime.recordNestedCalls(result)

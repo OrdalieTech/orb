@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1667,11 +1668,13 @@ func TestBeforeAgentStartMessageJoinsTheStartingRun(t *testing.T) {
 	cwd := t.TempDir()
 	provider := testFaux(100000)
 	var requests []string
-	provider.SetResponses([]faux.ResponseStep{faux.ResponseFactory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+	respond := faux.ResponseFactory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
 		encoded, _ := json.Marshal(request.Messages)
 		requests = append(requests, string(encoded))
 		return runtimeAssistant(provider, "ok", 10), nil
-	})})
+	})
+	// Steering delivers one message per turn, so the queued ones take a turn each.
+	provider.SetResponses([]faux.ResponseStep{respond, respond, respond})
 	starts := 0
 	registry := extensions.NewRegistry(cwd)
 	if err := registry.Register("builtin:joiner", func(api extensions.API) error {
@@ -1679,8 +1682,12 @@ func TestBeforeAgentStartMessageJoinsTheStartingRun(t *testing.T) {
 			if starts++; starts > 3 {
 				return nil, nil
 			}
-			trigger := true
-			return nil, api.SendMessage(ctx, extensions.CustomMessage{CustomType: "note", Content: "joined", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &trigger})
+			trigger, quiet := true, false
+			return nil, errors.Join(
+				api.SendMessage(ctx, extensions.CustomMessage{CustomType: "note", Content: "joined", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &trigger}),
+				api.SendMessage(ctx, extensions.CustomMessage{CustomType: "note", Content: "context kept", Display: true}, &extensions.SendMessageOptions{TriggerTurn: &quiet}),
+				api.SendUserMessage(ctx, ai.NewUserText("steered"), &extensions.SendUserMessageOptions{DeliverAs: extensions.DeliverSteer}),
+			)
 		})
 		return nil
 	}); err != nil {
@@ -1699,7 +1706,41 @@ func TestBeforeAgentStartMessageJoinsTheStartingRun(t *testing.T) {
 	if err := host.Session().Prompt(context.Background(), "go", nil); err != nil {
 		t.Fatal(err)
 	}
-	if starts != 1 || len(requests) == 0 || !strings.Contains(requests[0], "joined") {
+	if starts != 1 || len(requests) == 0 || !strings.Contains(requests[0], "context kept") || !strings.Contains(requests[len(requests)-1], "joined") || !strings.Contains(requests[len(requests)-1], "steered") {
 		t.Fatalf("before_agent_start ran %d times, requests = %q", starts, requests)
+	}
+}
+
+// An abort requested in before_agent_start stops the run at agent_start, before its first request goes out (upstream).
+func TestAbortInBeforeAgentStartStopsTheRun(t *testing.T) {
+	cwd := t.TempDir()
+	provider := testFaux(100000)
+	provider.SetResponses([]faux.ResponseStep{faux.ResponseFactory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
+		return runtimeAssistant(provider, "ok", 10), nil
+	})})
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("builtin:stopper", func(api extensions.API) error {
+		api.On(extensions.EventBeforeAgentStart, func(_ context.Context, _ extensions.Event, extensionContext extensions.Context) (any, error) {
+			extensionContext.Abort()
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(), ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	if err := host.Session().BindExtensions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_ = host.Session().Prompt(context.Background(), "go", nil)
+	messages := host.Session().State().Messages
+	if last, _ := messages[len(messages)-1].(*ai.AssistantMessage); last == nil || last.StopReason != ai.StopReasonAborted {
+		t.Fatalf("the run went on after its abort: %#v", messages[len(messages)-1])
 	}
 }
