@@ -684,7 +684,6 @@ func convertResponsesMessagesWithOptions(
 ) ([]any, error) {
 	messages := transformMessages(requestContext.Messages, model, normalizeResponsesToolCallID)
 	result := make([]any, 0, len(messages)+1)
-	loadedToolNames := make(map[string]struct{})
 	if requestContext.SystemPrompt != nil && *requestContext.SystemPrompt != "" {
 		role := "system"
 		if model.Reasoning && options.supportsDeveloperRole {
@@ -948,57 +947,6 @@ func convertResponsesMessagesWithOptions(
 			}
 			result = append(result, responsesFunctionCallOutput{Type: outputType, CallID: callID, Output: output})
 
-			newTools := make([]ai.Tool, 0)
-			if value.AddedToolNames != nil {
-				for _, name := range *value.AddedToolNames {
-					tool, ok := deferredTools[name]
-					if !ok {
-						continue
-					}
-					if _, loaded := loadedToolNames[name]; loaded {
-						continue
-					}
-					loadedToolNames[name] = struct{}{}
-					newTools = append(newTools, tool)
-				}
-			}
-			if len(newTools) > 0 && options.deferredToolsMode == "additional-tools" {
-				convertedTools, err := convertResponsesToolsWithOptions(newTools, options.toolOptions)
-				if err != nil {
-					return nil, err
-				}
-				result = append(result, responsesAdditionalTools{
-					Type: "additional_tools", Role: "developer", Tools: convertedTools,
-				})
-			} else if len(newTools) > 0 && options.deferredToolsMode == "tool-search" {
-				names := make([]string, len(newTools))
-				for index, tool := range newTools {
-					names[index] = tool.Name
-				}
-				searchCallID := "pi_tool_load_" + shortHash(value.ToolCallID+":"+strings.Join(names, ","))
-				toolOptions := options.toolOptions
-				toolOptions.deferLoading = true
-				convertedTools, err := convertResponsesToolsWithOptions(newTools, toolOptions)
-				if err != nil {
-					return nil, err
-				}
-				result = append(result,
-					responsesToolSearchCall{
-						Type:      "tool_search_call",
-						CallID:    searchCallID,
-						Execution: "client",
-						Status:    "completed",
-						Arguments: responsesToolSearchArguments{Query: strings.Join(names, " "), Limit: len(names)},
-					},
-					responsesToolSearchOutput{
-						Type:      "tool_search_output",
-						CallID:    searchCallID,
-						Execution: "client",
-						Status:    "completed",
-						Tools:     convertedTools,
-					},
-				)
-			}
 		}
 		messageIndex++
 	}
