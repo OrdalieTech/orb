@@ -1497,14 +1497,27 @@ func (runtime *SessionRuntime) recordBashResult(command string, result extension
 // restoreBranchTools sets the loadout the current branch records, after /tree moved to it (pi 1.4.0).
 func (runtime *SessionRuntime) restoreBranchTools() {
 	state := runtime.extensionState
-	active, known, recorded := branchLoadout(runtime.manager.GetBranch())
-	if state == nil || state.runner == nil || !recorded {
+	if state == nil || state.runner == nil {
 		return
 	}
+	active, known, recorded := branchLoadout(runtime.manager.GetBranch())
 	state.mu.Lock()
-	state.knownTools, state.pendingTools = stringSet(known), slices.Clone(active)
-	state.mu.Unlock()
-	runtime.refreshExtensionTools(active, true)
+	defer state.mu.Unlock()
+	state.pendingTools = nil
+	if !recorded {
+		return // a branch that records no loadout keeps the current tools
+	}
+	state.knownTools = stringSet(known)
+	names := slices.Clone(active)
+	for _, registered := range state.runner.AllRegisteredTools() {
+		name := registered.Definition.Name
+		if _, known := state.knownTools[name]; !known && state.activatedOnRegistration(name) {
+			names = append(names, name)
+		}
+	}
+	// Recorded tools not registered yet turn on when they register; the registry holds only allowed tools.
+	state.pendingTools = slices.DeleteFunc(slices.Clone(active), func(name string) bool { return state.toolRegistry[name] != nil })
+	runtime.setActiveToolsLocked(uniqueStrings(names), state)
 }
 
 func (runtime *SessionRuntime) clearExtensionTurnState() {
