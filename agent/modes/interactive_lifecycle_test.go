@@ -3,6 +3,7 @@ package modes
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -383,11 +384,13 @@ func TestCancelledExtensionDialogCannotClearReboundEditor(t *testing.T) {
 		_, _, _ = extensionUI.Select(context.Background(), "Pick", []string{"one"}, nil)
 		close(result)
 	}()
-	var dialog *ExtensionSelectorComponent
+	var dialog *openDialog
 	deadline := time.Now().Add(time.Second)
 	for dialog == nil && time.Now().Before(deadline) {
 		extensionUI.mu.Lock()
-		dialog = extensionUI.activeSelector
+		if len(extensionUI.dialogs) > 0 {
+			dialog = extensionUI.dialogs[0]
+		}
 		extensionUI.mu.Unlock()
 		time.Sleep(time.Millisecond)
 	}
@@ -395,9 +398,6 @@ func TestCancelledExtensionDialogCannotClearReboundEditor(t *testing.T) {
 		t.Fatal("extension selector did not open")
 	}
 
-	extensionUI.mu.Lock()
-	extensionUI.activeSelector = nil
-	extensionUI.mu.Unlock()
 	rebound := lifecycleText("rebound editor")
 	mode.editorContainer.Clear()
 	mode.editorContainer.AddChild(rebound)
@@ -411,6 +411,54 @@ func TestCancelledExtensionDialogCannotClearReboundEditor(t *testing.T) {
 	if len(children) != 1 || children[0] != rebound {
 		t.Fatalf("late dialog cleanup replaced rebound editor: %#v", children)
 	}
+}
+
+// A second dialog shows above the first instead of cancelling it; closing it shows the first again (pi 1.4.0).
+func TestExtensionDialogsStack(t *testing.T) {
+	initTestTheme(t)
+	modeUI := tui.NewTUI(newFakeTerminal(72, 18))
+	bindings := NewAppKeybindings(nil)
+	tui.SetKeybindings(bindings)
+	mode := &InteractiveMode{
+		ui: modeUI, keybindings: bindings,
+		header: &tui.Container{}, chat: &tui.Container{}, status: &tui.Container{},
+		widgetAbove: &tui.Container{}, editorContainer: &tui.Container{}, widgetBelow: &tui.Container{},
+		footer: &tui.Container{}, footerStatuses: make(map[string]string),
+	}
+	extensionUI := NewInteractiveUI(mode)
+	first, second := make(chan bool, 1), make(chan bool, 1)
+	open := func(result chan bool) {
+		go func() {
+			_, ok, _ := extensionUI.Select(context.Background(), "Pick", []string{"one"}, nil)
+			result <- ok
+		}()
+	}
+	waitFor := func(count int) []*openDialog {
+		for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+			extensionUI.mu.Lock()
+			dialogs := slices.Clone(extensionUI.dialogs)
+			extensionUI.mu.Unlock()
+			if len(dialogs) == count {
+				return dialogs
+			}
+		}
+		t.Fatalf("%d dialogs did not open", count)
+		return nil
+	}
+	open(first)
+	waitFor(1)
+	open(second)
+	dialogs := waitFor(2)
+	dialogs[1].cancel()
+	<-second
+	waitFor(1)
+	select {
+	case <-first:
+		t.Fatal("the first dialog closed when the second opened or closed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	dialogs[0].cancel()
+	<-first
 }
 
 type lifecycleText string

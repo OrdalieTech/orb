@@ -33,13 +33,10 @@ type InteractiveUI struct {
 	widgetOrder               []string
 	builtInFooter             []tui.Component
 	builtInHeader             []tui.Component
-	activeSelector            *ExtensionSelectorComponent
-	activeInput               *ExtensionInputComponent
-	activeEditorDialog        *ExtensionEditorComponent
-	activeSelectorHandle      tui.OverlayHandle
-	activeInputHandle         tui.OverlayHandle
-	activeEditorDialogHandle  tui.OverlayHandle
-	customOverlays            map[tui.OverlayHandle]struct{}
+	// dialogs are the extension dialogs on screen, newest last: a newer one shows above the older ones,
+	// which show again when it closes (pi 1.4.0).
+	dialogs        []*openDialog
+	customOverlays map[tui.OverlayHandle]struct{}
 }
 
 type widgetEntry struct {
@@ -84,29 +81,33 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 			ui.SetToolsExpanded(!ui.GetToolsExpanded())
 		}},
 	)
-	// Show the new window before cancelling the superseded one: the overlay
-	// stack retargets preFocus when the older entry hides.
-	handle := ui.floatDialog(dialog)
-	ui.mu.Lock()
-	previous := ui.activeSelector
-	ui.activeSelector, ui.activeSelectorHandle = dialog, handle
-	ui.mu.Unlock()
-	if previous != nil {
-		previous.cancel()
-	}
-	ui.mode.ui.RequestRender()
-
+	closeDialog := ui.showDialog(dialog, dialog.cancel)
 	defer func() {
-		ui.mu.Lock()
-		if ui.activeSelector == dialog {
-			ui.activeSelector, ui.activeSelectorHandle = nil, nil
-		}
-		ui.mu.Unlock()
 		dialog.Dispose()
-		handle.Hide()
-		ui.mode.ui.RequestRender()
+		closeDialog()
 	}()
 	return awaitDialog(ctx, signal, result)
+}
+
+type openDialog struct {
+	cancel func()
+	handle tui.OverlayHandle
+}
+
+// showDialog floats an extension dialog above the open ones and returns what closes it.
+func (ui *InteractiveUI) showDialog(component tui.Component, cancel func()) func() {
+	entry := &openDialog{cancel: cancel, handle: ui.floatDialog(component)}
+	ui.mu.Lock()
+	ui.dialogs = append(ui.dialogs, entry)
+	ui.mu.Unlock()
+	ui.mode.ui.RequestRender()
+	return func() {
+		ui.mu.Lock()
+		ui.dialogs = slices.DeleteFunc(ui.dialogs, func(open *openDialog) bool { return open == entry })
+		ui.mu.Unlock()
+		entry.handle.Hide()
+		ui.mode.ui.RequestRender()
+	}
 }
 
 type dialogResult struct {
@@ -167,25 +168,10 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 	dialog := NewExtensionInputComponent(title, placeholderValue, submit, cancel,
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
 	)
-	handle := ui.floatDialog(dialog)
-	ui.mu.Lock()
-	previous := ui.activeInput
-	ui.activeInput, ui.activeInputHandle = dialog, handle
-	ui.mu.Unlock()
-	if previous != nil {
-		previous.cancel()
-	}
-	ui.mode.ui.RequestRender()
-
+	closeDialog := ui.showDialog(dialog, dialog.cancel)
 	defer func() {
-		ui.mu.Lock()
-		if ui.activeInput == dialog {
-			ui.activeInput, ui.activeInputHandle = nil, nil
-		}
-		ui.mu.Unlock()
 		dialog.Dispose()
-		handle.Hide()
-		ui.mode.ui.RequestRender()
+		closeDialog()
 	}()
 	return awaitDialog(ctx, signal, result)
 }
@@ -494,25 +480,11 @@ func (ui *InteractiveUI) clearWidgets() {
 
 func (ui *InteractiveUI) resetExtensionUI() {
 	ui.mu.Lock()
-	selector := ui.activeSelector
-	input := ui.activeInput
-	editorDialog := ui.activeEditorDialog
-	handles := []tui.OverlayHandle{ui.activeSelectorHandle, ui.activeInputHandle, ui.activeEditorDialogHandle}
-	ui.activeSelector = nil
-	ui.activeInput = nil
-	ui.activeEditorDialog = nil
-	ui.activeSelectorHandle = nil
-	ui.activeInputHandle = nil
-	ui.activeEditorDialogHandle = nil
+	dialogs := ui.dialogs
+	ui.dialogs = nil
 	ui.mu.Unlock()
-	if selector != nil {
-		selector.cancel()
-	}
-	if input != nil {
-		input.cancel()
-	}
-	if editorDialog != nil {
-		editorDialog.cancel()
+	for _, dialog := range dialogs {
+		dialog.cancel()
 	}
 	// Hide the dialog windows deterministically (their goroutines' deferred
 	// hides are async and idempotent), then the tracked Custom overlays —
@@ -525,10 +497,8 @@ func (ui *InteractiveUI) resetExtensionUI() {
 	}
 	clear(ui.customOverlays)
 	ui.mu.Unlock()
-	for _, handle := range handles {
-		if handle != nil {
-			handle.Hide()
-		}
+	for _, dialog := range dialogs {
+		dialog.handle.Hide()
 	}
 	for _, handle := range customs {
 		handle.Hide()
@@ -934,24 +904,7 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 		externalEditorCommand = ui.mode.session.InteractiveModeSettings().ExternalEditor
 	}
 	editor := NewExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue, submit, cancel, externalEditorCommand)
-	handle := ui.floatDialog(editor)
-	ui.mu.Lock()
-	previous := ui.activeEditorDialog
-	ui.activeEditorDialog, ui.activeEditorDialogHandle = editor, handle
-	ui.mu.Unlock()
-	if previous != nil {
-		previous.cancel()
-	}
-	ui.mode.ui.RequestRender()
-	defer func() {
-		ui.mu.Lock()
-		if ui.activeEditorDialog == editor {
-			ui.activeEditorDialog, ui.activeEditorDialogHandle = nil, nil
-		}
-		ui.mu.Unlock()
-		handle.Hide()
-		ui.mode.ui.RequestRender()
-	}()
+	defer ui.showDialog(editor, editor.cancel)()
 	return awaitDialog(ctx, context.Background(), result)
 }
 
