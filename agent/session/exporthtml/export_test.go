@@ -81,11 +81,12 @@ func TestEmbeddedAssetsMatchPinnedUpstream(t *testing.T) {
 		contents string
 		hash     string
 	}{
-		"template.html":    {templateHTML, "916782b1184a9597527605ad751e2b3af30fcea23ba2194002969cd217a06881"},
-		"template.css":     {templateCSS, "8ee19851f8e583277ed396cbb76496687aa556707fdfc1f78d1118bff87c740a"},
-		"template.js":      {templateJS, "b5bbffdf5d9ec8bb519df45c7ff953ac1969af80e8aba33331b9f87983f91fa5"},
-		"marked.min.js":    {markedJS, "d5487edc7258b404bfa74c393d74a6393155f02517bd5e7e77cd64f8187f39a0"},
-		"highlight.min.js": {highlightJS, "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846"},
+		"template.html":              {templateHTML, "47d208235b066c856dae69c60281a3b99d164b99be9b81153d880375c9327105"},
+		"template.css":               {templateCSS, "8ee19851f8e583277ed396cbb76496687aa556707fdfc1f78d1118bff87c740a"},
+		"template.js":                {templateJS, "946bd9e3e8255c1ebb40f806def18007aa9397816291a7bf2ac0e4e99cec07a4"},
+		"marked.min.js":              {markedJS, "438eedfcf932a414d0d0bfeea32dc365c063563b8ca713b4687fc8f8b501e5e4"},
+		"marked-cjk-friendly.min.js": {markedCJKFriendlyJS, "93d2c938754cb24eef5b9ffecc268a98ef6beeb75dad614b0e874176aeeba565"},
+		"highlight.min.js":           {highlightJS, "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846"},
 	}
 	for name, asset := range assets {
 		if got := sha256Hex([]byte(asset.contents)); got != asset.hash {
@@ -159,7 +160,7 @@ func TestExportUsesPinnedUpstreamCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sha256Hex(contents); got != "96a2c836857eec8566856b5b6f88e432993bef11133dc014af5832dab69ee67f" {
+	if got := sha256Hex(contents); got != "e70bb4d26333b12ad0ce6454921faa7485241336e658922b9c27b38655e876b9" {
 		t.Fatalf("custom-theme HTML sha256 = %s, want pinned-upstream fixture", got)
 	}
 	for _, want := range []string{

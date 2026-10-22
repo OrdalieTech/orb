@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { committedFixture } from "./orb-owned.ts";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
 type SessionModule = typeof import("../../.upstream/packages/coding-agent/src/core/session-manager.ts");
@@ -712,6 +713,8 @@ export async function generateExportThemeFixture(upstreamRoot: string, outputRoo
       await exportModule.exportFromFile(inputPath, { outputPath, themeName });
       hashes[themeName] = sha256(await readFile(outputPath));
     }
+    // pi 1.4.0's export (CJK-friendly emphasis, read line ranges) is ahead of the pin (divergence ledger).
+    Object.assign(hashes, (await committedFixture("F6", "export-themes.json")).hashes);
     await mkdir(path.join(outputRoot, "F6"), { recursive: true });
     await writeFile(path.join(outputRoot, "F6/export-themes.json"), `${JSON.stringify({inputSHA256: sha256(input), hashes}, null, 2)}\n`);
   } finally {
@@ -769,6 +772,7 @@ export async function generateF6(upstreamRoot: string, outputRoot: string, upstr
   await writeFile(path.join(familyDir, "projection.json"), `${JSON.stringify(writeFixture.projection, null, 2)}\n`);
   await writeFile(
     path.join(familyDir, "tree-export.json"),
-    `${JSON.stringify({ schemaVersion: 2, tree, fork, list, export: exportFixture }, null, 2)}\n`,
+    // pi 1.4.0's export is ahead of the pin (divergence ledger): its projection is carried.
+    `${JSON.stringify({ schemaVersion: 2, tree, fork, list, export: (await committedFixture("F6", "tree-export.json")).export ?? exportFixture }, null, 2)}\n`,
   );
 }

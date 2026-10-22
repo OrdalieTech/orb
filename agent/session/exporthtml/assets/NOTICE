@@ -1,5 +1,5 @@
 The HTML export templates are copied from earendil-works/pi at
-3da591ab74ab9ab407e72ed882600b2c851fae21 under the repository's MIT license.
+4a080252f06caf63a525d7873c5d94d3c23887e0 (v1.4.0) under the repository's MIT license.
 
 marked.min.js contains Marked and Markdown code under these terms:
 
@@ -51,6 +51,9 @@ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
+
+marked-cjk-friendly.min.js (v0.1.2) is Copyright (c) 2024 Tatsunori Uchino, and authors and contributors of
+original packages, distributed under the MIT License (https://github.com/tats-u/markdown-cjk-friendly).
 
 highlight.min.js is distributed under the BSD 3-Clause License:
 

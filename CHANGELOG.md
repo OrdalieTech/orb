@@ -19,6 +19,8 @@ shown by `/changelog`.
 
 - An extension's second dialog shows above the first instead of cancelling it, and closing it shows the first again (pi 1.4.0).
 
+- HTML exports render bold and italic next to CJK punctuation and label `read` line ranges given as strings (pi 1.4.0).
+
 ## [0.19.11] - 2026-10-17
 
 Fixes from pi 1.2.0 and 1.3.0: a tool call whose arguments the model garbled fails with what it sent so the model can correct it, a run an extension triggers starts like a prompt, `--model` stops picking a billing route silently when several providers offer a model, and Gemini 4, OpenCode's new endpoints and the `off` thinking level of Claude Haiku 5.5 and Opus 5 work.
