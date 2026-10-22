@@ -93,8 +93,8 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 }
 
 type inlineComponent struct {
-	view      tui.Component
-	savedText string
+	view, focus tui.Component
+	savedText   string
 }
 
 type openDialog struct {
@@ -489,7 +489,7 @@ func (ui *InteractiveUI) clearWidgets() {
 func (ui *InteractiveUI) resetExtensionUI() {
 	ui.mu.Lock()
 	dialogs := ui.dialogs
-	ui.dialogs = nil
+	ui.dialogs, ui.inline = nil, nil // a stale inline component's close then changes nothing
 	ui.mu.Unlock()
 	for _, dialog := range dialogs {
 		dialog.cancel()
@@ -630,20 +630,31 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 	entry := &inlineComponent{}
 	restoreEditor := func() {
 		ui.mu.Lock()
+		open := slices.Contains(ui.inline, entry)
 		ui.inline = slices.DeleteFunc(ui.inline, func(open *inlineComponent) bool { return open == entry })
 		var below *inlineComponent
 		if count := len(ui.inline); count > 0 {
 			below = ui.inline[count-1]
 		}
 		ui.mu.Unlock()
+		if !open {
+			return // never shown, or dropped by a reset
+		}
 		ui.mode.editorContainer.Clear()
+		var focus tui.Component
 		if below != nil {
 			ui.mode.editorContainer.AddChild(below.view)
-			focusExtensionComponent(ui.mode, below.view)
+			focus = below.focus
 		} else {
 			ui.mode.restoreEditorComponent()
 			ui.mode.setActiveEditorText(savedText)
-			ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
+			focus = ui.mode.activeEditorFocus()
+		}
+		// An open overlay keeps the keyboard; it hands it back to what replaced this one.
+		if ui.mode.ui.HasOverlay() {
+			ui.mode.ui.RetargetFocus(entry.focus, focus)
+		} else {
+			ui.mode.ui.SetFocus(focus)
 		}
 		ui.mode.ui.RequestRender()
 	}
@@ -702,7 +713,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		ui.trackCustomOverlay(tuiOverlay)
 		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay}
 	} else {
-		entry.view = view
+		entry.view, entry.focus = view, extensionFocus(view)
 		ui.mu.Lock()
 		if len(ui.inline) > 0 {
 			savedText = ui.inline[0].savedText // the editor's text, from before the first one
@@ -712,7 +723,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		ui.mu.Unlock()
 		ui.mode.editorContainer.Clear()
 		ui.mode.editorContainer.AddChild(view)
-		focusExtensionComponent(ui.mode, view)
+		ui.mode.ui.SetFocus(entry.focus)
 	}
 	transactionMu.Unlock()
 	if overlay && opts.OnHandle != nil {
@@ -782,12 +793,12 @@ type rawFocusableComponent struct {
 
 func (component *rawFocusableComponent) SetFocused(focused bool) { component.focus.SetFocused(focused) }
 
-func focusExtensionComponent(mode *InteractiveMode, component extensions.Component) {
+// extensionFocus is what takes focus for an extension component: an editor through its adapter.
+func extensionFocus(component extensions.Component) tui.Component {
 	if editor, ok := component.(extensions.EditorComponent); ok {
-		mode.ui.SetFocus(extensionEditorAdapter{EditorComponent: editor})
-	} else {
-		mode.ui.SetFocus(component)
+		return extensionEditorAdapter{EditorComponent: editor}
 	}
+	return component
 }
 
 func resolveCustomOverlayOptions(opts *extensions.CustomOptions, component extensions.Component) *extensions.OverlayOptions {

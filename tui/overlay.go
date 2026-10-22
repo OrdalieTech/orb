@@ -460,6 +460,18 @@ func (handle *overlayHandle) IsFocused() bool {
 	return handle.ui.focused == handle.entry.component
 }
 
+// RetargetFocus makes the open overlays hand focus back to to wherever they would have handed it to from,
+// such as an inline component replaced under them.
+func (ui *TUI) RetargetFocus(from, to Component) {
+	ui.focusMu.Lock()
+	defer ui.focusMu.Unlock()
+	for _, overlay := range ui.overlayStack {
+		if overlay.preFocus == from {
+			overlay.preFocus = to
+		}
+	}
+}
+
 // HideOverlay removes the most recently created overlay, independent of focus order.
 func (ui *TUI) HideOverlay() { ui.removeOverlay(nil) }
 
