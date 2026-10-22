@@ -17,7 +17,7 @@ shown by `/changelog`.
 
 - After a tool is removed, a later tool addition no longer invalidates the whole prompt cache: the request's tool list holds the tools as of the last removal and later additions stay in place. GPT-5.6 and GPT-6 on OpenAI and Codex declare every tool in `additional_tools` items, announcing removals as text (pi 1.4.0).
 
-- An extension's second dialog shows above the first instead of cancelling it, and closing it shows the first again (pi 1.4.0).
+- An extension's second dialog or inline custom component shows above the first instead of cancelling or replacing it, and closing it shows the first again (pi 1.4.0).
 
 - HTML exports render bold and italic next to CJK punctuation and label `read` line ranges given as strings (pi 1.4.0).
 

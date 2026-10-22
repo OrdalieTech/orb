@@ -459,6 +459,37 @@ func TestExtensionDialogsStack(t *testing.T) {
 	}
 	dialogs[0].cancel()
 	<-first
+
+	// Inline custom components stack the same way in the editor's place.
+	mode.editor = NewCustomEditor(modeUI, theme.EditorTheme(), bindings)
+	mode.editorContainer.AddChild(mode.editor)
+	closers := make(chan extensions.CustomDone, 2)
+	custom := func(text string) {
+		go func() {
+			_, _, _ = extensionUI.Custom(context.Background(), func(_ extensions.UIHost, _ extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
+				closers <- done
+				return lifecycleText(text), nil
+			}, nil)
+		}()
+	}
+	shown := func(want any) {
+		for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+			if children := mode.editorContainer.Children(); len(children) == 1 && children[0] == want {
+				return
+			}
+		}
+		t.Fatalf("editor container = %#v, want %#v", mode.editorContainer.Children(), want)
+	}
+	custom("a")
+	closeA := <-closers
+	shown(lifecycleText("a"))
+	custom("b")
+	closeB := <-closers
+	shown(lifecycleText("b"))
+	closeB(nil)
+	shown(lifecycleText("a"))
+	closeA(nil)
+	shown(any(mode.editor))
 }
 
 type lifecycleText string

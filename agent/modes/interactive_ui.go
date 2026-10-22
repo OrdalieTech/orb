@@ -35,7 +35,10 @@ type InteractiveUI struct {
 	builtInHeader             []tui.Component
 	// dialogs are the extension dialogs on screen, newest last: a newer one shows above the older ones,
 	// which show again when it closes (pi 1.4.0).
-	dialogs        []*openDialog
+	dialogs []*openDialog
+	// inline are the inline custom components, newest last: the newest stands in the editor's place,
+	// and the one below shows again when it closes (pi 1.4.0).
+	inline         []*inlineComponent
 	customOverlays map[tui.OverlayHandle]struct{}
 }
 
@@ -87,6 +90,11 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 		closeDialog()
 	}()
 	return awaitDialog(ctx, signal, result)
+}
+
+type inlineComponent struct {
+	view      tui.Component
+	savedText string
 }
 
 type openDialog struct {
@@ -619,11 +627,24 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 	closed := false
 	var component extensions.Component
 	var tuiOverlay tui.OverlayHandle
+	entry := &inlineComponent{}
 	restoreEditor := func() {
+		ui.mu.Lock()
+		ui.inline = slices.DeleteFunc(ui.inline, func(open *inlineComponent) bool { return open == entry })
+		var below *inlineComponent
+		if count := len(ui.inline); count > 0 {
+			below = ui.inline[count-1]
+		}
+		ui.mu.Unlock()
 		ui.mode.editorContainer.Clear()
-		ui.mode.restoreEditorComponent()
-		ui.mode.setActiveEditorText(savedText)
-		ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
+		if below != nil {
+			ui.mode.editorContainer.AddChild(below.view)
+			focusExtensionComponent(ui.mode, below.view)
+		} else {
+			ui.mode.restoreEditorComponent()
+			ui.mode.setActiveEditorText(savedText)
+			ui.mode.ui.SetFocus(ui.mode.activeEditorFocus())
+		}
 		ui.mode.ui.RequestRender()
 	}
 	done := func(value any) {
@@ -681,6 +702,14 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		ui.trackCustomOverlay(tuiOverlay)
 		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay}
 	} else {
+		entry.view = view
+		ui.mu.Lock()
+		if len(ui.inline) > 0 {
+			savedText = ui.inline[0].savedText // the editor's text, from before the first one
+		}
+		entry.savedText = savedText
+		ui.inline = append(ui.inline, entry)
+		ui.mu.Unlock()
 		ui.mode.editorContainer.Clear()
 		ui.mode.editorContainer.AddChild(view)
 		focusExtensionComponent(ui.mode, view)
