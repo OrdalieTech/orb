@@ -854,7 +854,7 @@ func convertResponsesMessagesWithOptions(
 				}
 			}
 			textResult := strings.Join(texts, "\n")
-			hasText := textResult != ""
+			hasText := strings.TrimSpace(textResult) != "" // a bare "\r\n" is a 400
 			callID, _ := splitResponsesToolCallID(value.ToolCallID)
 			var output any
 			if hasImages && modelSupportsImage(model) {
@@ -874,7 +874,7 @@ func convertResponsesMessagesWithOptions(
 				output = parts
 			} else {
 				text := textResult
-				if text == "" {
+				if !hasText {
 					if hasImages {
 						text = "(see attached image)"
 					} else {

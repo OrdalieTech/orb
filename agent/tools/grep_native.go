@@ -63,7 +63,8 @@ func (tool *grepTool) Execute(
 	if input.Limit != nil {
 		effectiveLimit = math.Max(1, *input.Limit)
 	}
-	args := []string{"--json", "--line-number", "--color=never", "--hidden"}
+	// --no-config: a RIPGREP_CONFIG_PATH with --fixed-strings would turn every regex literal.
+	args := []string{"--no-config", "--json", "--line-number", "--color=never", "--hidden"}
 	if input.IgnoreCase != nil && *input.IgnoreCase {
 		args = append(args, "--ignore-case")
 	}

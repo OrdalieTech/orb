@@ -100,7 +100,7 @@ func escapeFdRegex(value string) string {
 func buildFdPathQuery(query string) string {
 	normalized := toDisplayPath(query)
 	if !strings.Contains(normalized, "/") {
-		return normalized
+		return escapeFdRegex(normalized)
 	}
 	hasTrailingSeparator := strings.HasSuffix(normalized, "/")
 	trimmed := strings.Trim(normalized, "/")

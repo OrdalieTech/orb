@@ -19,7 +19,7 @@ func writeConfig(t *testing.T, path, content string) {
 
 func TestLoadMergesProjectOverGlobalOnlyWhenTrusted(t *testing.T) {
 	agentDir, cwd := t.TempDir(), t.TempDir()
-	writeConfig(t, GlobalPath(agentDir), `{"mcpServers":{
+	writeConfig(t, GlobalPath(agentDir), "\ufeff"+`{"mcpServers":{
 		"docs":{"url":"https://example.com/mcp","description":"Docs"},
 		"files":{"command":"files","enabled":false},
 		"bad name":{"command":"x"},

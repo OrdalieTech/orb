@@ -1327,7 +1327,7 @@ func convertOpenAICompletionsToolResult(settings completionsMessageSettings, mes
 		}
 	}
 	text := strings.Join(texts, "\n")
-	if text == "" {
+	if strings.TrimSpace(text) == "" { // a bare "\r\n" is a 400
 		if hasImages {
 			text = "(see attached image)"
 		} else {

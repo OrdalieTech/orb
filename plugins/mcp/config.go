@@ -311,7 +311,7 @@ func Load(agentDir, cwd string, projectTrusted bool) ([]Entry, []string) {
 			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
 			return
 		}
-		servers, err := serverMembers(data)
+		servers, err := serverMembers(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))) // Windows editors write a BOM
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
 			return

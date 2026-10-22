@@ -667,8 +667,11 @@ func appendGoogleToolResult(contents []GoogleContent, model *ai.Model, message *
 		}
 	}
 	text := strings.Join(textParts, "\n")
-	if text == "" && len(images) > 0 {
-		text = "(see attached image)"
+	if strings.TrimSpace(text) == "" { // a bare "\r\n" is a 400
+		text = ""
+		if len(images) > 0 {
+			text = "(see attached image)"
+		}
 	}
 	text = sanitizeText(text)
 	responseValue := GoogleFunctionResponseValue{Output: &text}

@@ -7,6 +7,8 @@ shown by `/changelog`.
 
 - More transient failures are retried: Codex CLI proxies' "stream disconnected before completion", gateways' upstream request and stream failures, and a failed Google Vertex token refresh; a 429 or 5xx inside a request id or byte count no longer counts, and a ChatGPT Business workspace usage limit is final. HTTP 413 from any provider is a context overflow, so a GitHub Copilot request with many images compacts and retries (pi 1.4.0).
 
+- Tool output of whitespace only, such as bash's bare `\r\n`, no longer gets a 400 from OpenAI or Google; `grep` runs `rg --no-config`, so a `RIPGREP_CONFIG_PATH` cannot turn regex searches literal; `@` file completion finds paths with `[` or `(`; an `mcp.json` starting with a UTF-8 BOM loads (pi 1.4.0).
+
 ## [0.19.11] - 2026-10-17
 
 Fixes from pi 1.2.0 and 1.3.0: a tool call whose arguments the model garbled fails with what it sent so the model can correct it, a run an extension triggers starts like a prompt, `--model` stops picking a billing route silently when several providers offer a model, and Gemini 4, OpenCode's new endpoints and the `off` thinking level of Claude Haiku 5.5 and Opus 5 work.

@@ -60,6 +60,15 @@ func TestOpenAICompletionsReportsMalformedFinalToolArguments(t *testing.T) {
 	}
 }
 
+// Tool output of whitespace only, such as bash's bare "\r\n", is sent as "(no tool output)": providers
+// reject it with a 400.
+func TestOpenAICompletionsSendsWhitespaceToolOutputAsNoOutput(t *testing.T) {
+	converted := convertOpenAICompletionsToolResult(completionsMessageSettings{}, &ai.ToolResultMessage{ToolCallID: "c", Content: ai.ToolResultContent{&ai.TextContent{Text: "\r\n"}}})
+	if converted["content"] != "(no tool output)" {
+		t.Fatalf("content = %q", converted["content"])
+	}
+}
+
 func TestOpenAICompletionsInfersFinishReasonWhenUnsupported(t *testing.T) {
 	for _, test := range []struct {
 		name  string
