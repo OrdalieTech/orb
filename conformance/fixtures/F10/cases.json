@@ -4521,17 +4521,13 @@
       "mode": "branch-limit",
       "stop": "stop",
       "modelMaxTokens": 0,
-      "expected": {
-        "maxTokens": 0
-      }
+      "expected": {}
     },
     {
       "mode": "branch-limit",
       "stop": "stop",
       "modelMaxTokens": 9000,
-      "expected": {
-        "maxTokens": 0
-      }
+      "expected": {}
     }
   ]
 }

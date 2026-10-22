@@ -51,43 +51,12 @@ function messageEntry(id: string, parentId: string | null, message: unknown, ind
   return { type: "message", id, parentId, timestamp: iso(index), message };
 }
 
-function completionResponse(text: string) {
-  return {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    api: "openai-responses",
-    provider: "fixture",
-    model: "fixture-model",
-    usage: usage(10, 5, 0, 0, 15),
-    stopReason: "stop",
-    timestamp: millis(59),
-  };
-}
-
-function capturedRequest(context: any, options: any, hasSignal = false) {
-  const capturedContext = JSON.parse(JSON.stringify(context));
-  for (const message of capturedContext.messages ?? []) delete message.timestamp;
-  const capturedOptions = { ...options };
-  // Telemetry is excluded by DECISIONS.md; this is an in-process context, not provider wire.
-  delete capturedOptions.telemetryContext;
-  if (capturedOptions.sessionId !== undefined) {
-    if (typeof capturedOptions.sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(capturedOptions.sessionId)) {
-      throw new Error(`captured sessionId is not UUIDv7: ${String(capturedOptions.sessionId)}`);
-    }
-    capturedOptions.sessionId = "00000000-0000-7000-8000-000000000000";
-  }
-  if (hasSignal) capturedOptions.signal = "<signal>";
-  else delete capturedOptions.signal;
-  return { context: capturedContext, options: capturedOptions };
-}
-
 export async function generateF10(upstreamRoot: string, outputRoot: string, upstreamCommit: string): Promise<void> {
   const compactionSource = "packages/coding-agent/src/core/compaction/compaction.ts";
   const branchSource = "packages/coding-agent/src/core/compaction/branch-summarization.ts";
-  const { codingCompaction, codingBranch, sessionManager } = await withUpstreamModelData(upstreamRoot, async () => ({
+  const { codingCompaction, sessionManager } = await withUpstreamModelData(upstreamRoot, async () => ({
     sessionManager: await import(pathToFileURL(path.join(upstreamRoot, "packages/coding-agent/src/core/session-manager.ts")).href) as any,
     codingCompaction: await import(pathToFileURL(path.join(upstreamRoot, compactionSource)).href) as any,
-    codingBranch: await import(pathToFileURL(path.join(upstreamRoot, branchSource)).href) as any,
   }));
   const owned = await committedFixture("F10");
 
@@ -140,105 +109,6 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     expected: codingCompaction.findCutPoint(fixtureCase.entries, fixtureCase.startIndex, fixtureCase.endIndex, fixtureCase.keepRecentTokens),
   }));
 
-  const model = {
-    id: "fixture-model",
-    name: "Fixture",
-    api: "openai-responses",
-    provider: "fixture",
-    baseUrl: "https://fixture.invalid",
-    reasoning: true,
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 4096,
-    maxTokens: 300,
-  };
-  const compactPromptInput = {
-    firstKeptEntryId: "keep",
-    messagesToSummarize: [user("history", 45)],
-    turnPrefixMessages: [user("large request", 46), assistant([{ type: "text", text: "early work" }], 47)],
-    isSplitTurn: true,
-    tokensBefore: 1234,
-    previousSummary: null,
-    settings: { enabled: true, reserveTokens: 400, keepRecentTokens: 100 },
-  };
-
-  // Split-turn compaction through the product compactor: both stage prompts
-  // and the merged result.
-  const compactCaptures: any[] = [];
-  const compactOutput = await codingCompaction.compact(
-    { ...compactPromptInput, previousSummary: undefined, fileOps: { read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() } },
-    model, undefined, undefined, undefined, undefined, "high",
-    (_model: any, context: any, options: any) => {
-      compactCaptures.push(capturedRequest(context, options));
-      const text = compactCaptures.length === 1 ? "history summary" : "prefix summary";
-      return { result: async () => completionResponse(text) };
-    },
-  );
-  const compactPromptCases: any[] = [{ name: "split-turn-two-stage-prompts", input: compactPromptInput, expected: { captured: compactCaptures, output: compactOutput } }];
-
-  const systemEntries = [
-    messageEntry("system", null, { role: "system", content: "system instructions", timestamp: millis(40) }, 40),
-    messageEntry("user", "system", user("repair the evaluator", 41), 41),
-    messageEntry("prefix-system", "user", { role: "system", content: "updated instructions", timestamp: millis(42) }, 42),
-    messageEntry("early", "prefix-system", assistant([{ type: "text", text: "probe findings ".repeat(100) }], 43, usage(1000, 0, 0, 0, 1000)), 43),
-    messageEntry("latest", "early", assistant([{ type: "text", text: "latest step" }], 44, usage(10, 0, 0, 0, 10)), 44),
-  ];
-  const systemSettings = { enabled: true, reserveTokens: 100, keepRecentTokens: 2 };
-  const systemPreparation = codingCompaction.prepareCompaction(systemEntries, systemSettings);
-  if (!systemPreparation?.isSplitTurn) throw new Error("system-only history did not produce a split preparation");
-  const systemCaptures: any[] = [];
-  const systemOutput = await codingCompaction.compact(
-    systemPreparation, model, undefined, undefined, undefined, undefined, "high",
-    (_model: any, context: any, options: any) => {
-      systemCaptures.push(capturedRequest(context, options));
-      return { result: async () => completionResponse("prefix summary") };
-    },
-  );
-  compactPromptCases.push({
-    name: "system-only-history-first-split-turn",
-    input: {
-      entries: systemEntries,
-      firstKeptEntryId: systemPreparation.firstKeptEntryId,
-      messagesToSummarize: systemPreparation.messagesToSummarize,
-      turnPrefixMessages: systemPreparation.turnPrefixMessages,
-      isSplitTurn: systemPreparation.isSplitTurn,
-      tokensBefore: systemPreparation.tokensBefore,
-      previousSummary: null,
-      settings: systemSettings,
-    },
-    expected: { captured: systemCaptures, output: systemOutput },
-  });
-
-  const productSummaryCases = [];
-  for (const mode of ["summary", "prefix", "branch"]) {
-    for (const stop of ["stop", "length", "error", "tool"]) {
-      const captures: any[] = [];
-      const response = { ...completionResponse("summary output"), stopReason: stop === "tool" ? "toolUse" : stop, ...(stop === "error" ? {errorMessage:"provider failed"} : {}), ...(stop === "tool" ? {content:[{type:"toolCall",id:"call",name:"read",arguments:{}}]} : {}) };
-      const sessionId = "11111111-1111-7111-8111-111111111111";
-      const streamFn = (_model:any, context:any, options:any) => {
-        captures.push({...capturedRequest(context, options), routingPreserved: options.sessionId === sessionId});
-        return {result:async()=>response};
-      };
-      let error: string | undefined;
-      let output: any;
-      try {
-        if (mode === "branch") {
-          const result = await codingBranch.generateBranchSummary([messageEntry("user",null,user("work",1),1)], {model,streamFn});
-          error=result.error;output=result.summary;
-        } else {
-          const prep = {...compactPromptInput, firstKeptEntryId:"keep", messagesToSummarize:mode === "prefix" ? [] : [user("work",1)],turnPrefixMessages:mode === "prefix" ? [user("work",1)] : [],isSplitTurn:mode === "prefix",previousSummary:"previous summary",fileOps:{read:new Set(),written:new Set(),edited:new Set()}};
-          output=(await codingCompaction.compact(prep,model,undefined,undefined,undefined,undefined,"off",streamFn,undefined,undefined,undefined,sessionId)).summary;
-        }
-      } catch(thrown) {error=(thrown as Error).message}
-      productSummaryCases.push({mode,stop,modelMaxTokens:model.maxTokens,expected:{captures,...(error===undefined?{output}:{error})}});
-    }
-  }
-  for(const modelMaxTokens of [0,9000]) {
-    let captured:any;
-    await codingBranch.generateBranchSummary([messageEntry("user",null,user("work",1),1)],{model:{...model,maxTokens:modelMaxTokens},streamFn:(_model:any,context:any,options:any)=>{captured=capturedRequest(context,options);return {result:async()=>completionResponse("summary output")}}});
-    productSummaryCases.push({mode:"branch-limit",stop:"stop",modelMaxTokens,expected:{maxTokens:captured.options.maxTokens}});
-  }
-
   const systemMessage = {
     role: "system", content: "initial 😀", sections: { preamble: "long prompt ".repeat(40), removed: null },
     toolsAdded: [{ name: "read", description: "Read 😀", parameters: { type: "object", properties: { path: { type: "string" } } } }],
@@ -276,7 +146,7 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     generator: "conformance/extract/f10-compaction.ts",
     source: compactionSource,
     additionalSources: [branchSource],
-    orbOwned: ["tokenCases", "conversationCases", "contextCases", "prepareCases", "branchCases", "summaryPromptCases", "branchPromptCases"],
+    orbOwned: ["tokenCases", "conversationCases", "contextCases", "prepareCases", "branchCases", "summaryPromptCases", "branchPromptCases", "compactPromptCases", "productSummaryCases"],
     files: ["cases.json"],
   };
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -292,7 +162,7 @@ export async function generateF10(upstreamRoot: string, outputRoot: string, upst
     branchCases: owned.branchCases,
     summaryPromptCases: owned.summaryPromptCases,
     branchPromptCases: owned.branchPromptCases,
-    compactPromptCases,
-    productSummaryCases,
+    compactPromptCases: owned.compactPromptCases,
+    productSummaryCases: owned.productSummaryCases,
   }, null, 2)}\n`);
 }
