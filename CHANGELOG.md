@@ -19,9 +19,9 @@ shown by `/changelog`.
 
 - An extension's second dialog or inline custom component shows above the first instead of cancelling or replacing it, and closing it shows the first again (pi 1.4.0).
 
-- HTML exports render bold and italic next to CJK punctuation and label `read` line ranges given as strings (pi 1.4.0).
+- Bold and italic next to CJK punctuation render, in the terminal and in HTML exports, and exports label `read` line ranges given as strings (pi 1.4.0).
 
-- Linux clipboard helpers (`wl-copy`, `xclip`, `xsel`) run in their own process group, so suspending Orb with Ctrl+Z no longer stops them; Windows finds the legacy WSL `bash.exe` under `%SystemRoot%` and accepts Microsoft Store shell aliases; Herdr panes draw images and the Rex terminal gets hyperlinks, truecolor and images (pi 1.4.0).
+- Linux clipboard helpers (`wl-copy`, `xclip`, `xsel`) run in their own process group, so suspending Orb with Ctrl+Z no longer stops them; Windows finds the legacy WSL `bash.exe` under `%SystemRoot%` and accepts Microsoft Store shell aliases; Herdr panes draw images and the Rex terminal gets hyperlinks, truecolor and images; a panic while a prompt runs restores the terminal before Orb exits (pi 1.4.0).
 
 ## [0.19.11] - 2026-10-17
 

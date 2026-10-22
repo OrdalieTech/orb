@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -163,8 +164,49 @@ func (markdown *Markdown) background() StyleFunc {
 
 // ponytail: goldmark keeps parse state per call, so one parser is safe to share.
 var markdownParser = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Linkify, extension.TaskList), goldmark.WithParserOptions(
-	parser.WithInlineParsers(util.Prioritized(strictStrikethroughParser{}, 500)),
+	parser.WithInlineParsers(util.Prioritized(strictStrikethroughParser{}, 500), util.Prioritized(cjkEmphasisParser{}, 499)),
 ))
+
+// cjkEmphasisParser is goldmark's emphasis parser with markdown-cjk-friendly's flanking rule: a CJK
+// letter beside a delimiter run counts as punctuation does, so 这是**「重要」**内容 is bold (pi 1.4.0).
+type cjkEmphasisParser struct{}
+
+func (cjkEmphasisParser) Trigger() []byte { return []byte{'*', '_'} }
+func (cjkEmphasisParser) Parse(_ ast.Node, reader text.Reader, context parser.Context) ast.Node {
+	before := reader.PrecendingCharacter()
+	line, segment := reader.PeekLine()
+	length := 1
+	for length < len(line) && line[length] == line[0] {
+		length++
+	}
+	after := ' '
+	if length < len(line) {
+		after = util.ToRune(line, length)
+	}
+	cjk := func(r rune) bool {
+		return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul, unicode.Bopomofo)
+	}
+	beforeSpace, afterSpace, beforePunct, afterPunct := util.IsSpaceRune(before), util.IsSpaceRune(after), util.IsPunctRune(before), util.IsPunctRune(after)
+	left := !afterSpace && (!afterPunct || beforeSpace || beforePunct || cjk(before))
+	right := !beforeSpace && (!beforePunct || afterSpace || afterPunct || cjk(after))
+	canOpen, canClose := left, right
+	if line[0] == '_' {
+		canOpen, canClose = left && (!right || beforePunct), right && (!left || afterPunct)
+	}
+	delimiter := parser.NewDelimiter(canOpen, canClose, length, line[0], cjkEmphasisProcessor{})
+	delimiter.Segment = segment.WithStop(segment.Start + length)
+	reader.Advance(length)
+	context.PushDelimiter(delimiter)
+	return delimiter
+}
+
+type cjkEmphasisProcessor struct{}
+
+func (cjkEmphasisProcessor) IsDelimiter(value byte) bool { return value == '*' || value == '_' }
+func (cjkEmphasisProcessor) CanOpenCloser(opener, closer *parser.Delimiter) bool {
+	return opener.Char == closer.Char
+}
+func (cjkEmphasisProcessor) OnMatch(consumes int) ast.Node { return ast.NewEmphasis(consumes) }
 
 type strictStrikethroughProcessor struct{}
 

@@ -38,6 +38,9 @@ func registerCrashRestore(restore func()) func() {
 	}
 }
 
+// Guarded wraps a host goroutine the same way, so its panic restores the terminal too (pi 1.4.0).
+func Guarded(run func()) func() { return guarded(run) }
+
 func guarded(run func()) func() {
 	return func() {
 		defer func() {

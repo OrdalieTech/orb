@@ -527,9 +527,10 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			if !strings.HasPrefix(strings.TrimSpace(input.text), "/") {
 				mode.interactiveUI.showWorkingIndicator()
 			}
-			go func(entry inputEntry) {
+			entry := input
+			go tui.Guarded(func() {
 				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, extensions.DeliverSteer)
-			}(input)
+			})()
 		case err := <-promptDone:
 			prompting = false
 			mode.mu.Lock()
