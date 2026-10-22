@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The `anthropic` catalog lists Claude Haiku 5.5, Sonnet 5.5, Opus 5.5 and Fable 5.1 without a models.dev refresh.
+
 - More transient failures are retried: Codex CLI proxies' "stream disconnected before completion", gateways' upstream request and stream failures, and a failed Google Vertex token refresh; a 429 or 5xx inside a request id or byte count no longer counts, and a ChatGPT Business workspace usage limit is final. HTTP 413 from any provider is a context overflow, so a GitHub Copilot request with many images compacts and retries (pi 1.4.0).
 
 - Tool output of whitespace only, such as bash's bare `\r\n`, no longer gets a 400 from OpenAI or Google; `grep` runs `rg --no-config`, so a `RIPGREP_CONFIG_PATH` cannot turn regex searches literal; `@` file completion finds paths with `[` or `(`; an `mcp.json` starting with a UTF-8 BOM loads (pi 1.4.0).

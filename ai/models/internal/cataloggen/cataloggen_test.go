@@ -13,7 +13,7 @@ import (
 
 // pinnedGeneratedAt matches the -generated-at value in the ai/models doc.go
 // generation directive.
-var pinnedGeneratedAt = time.Date(2026, 10, 3, 18, 21, 6, 0, time.UTC)
+var pinnedGeneratedAt = time.Date(2026, 10, 22, 16, 18, 44, 0, time.UTC)
 
 func readCatalogTestFile(t *testing.T, path string) []byte {
 	t.Helper()

@@ -1,6 +1,6 @@
 # catalog source snapshots
 
-`api.json` starts from `https://models.dev/api.json`, fetched on 2026-07-26 UTC. To preserve the 0.82.1 extraction state after models.dev moved ahead, `amazon-bedrock/anthropic.claude-opus-5` was removed and `fireworks-ai/accounts/fireworks/models/minimax-m3` input was reduced to `["text"]`. Its SHA-256 is `f062d5cd193bd3fcc0f37ef223db5e3fcf685c50f944452eccb69de18caca4d8`.
+`api.json` starts from `https://models.dev/api.json`, fetched on 2026-07-26 UTC. To preserve the 0.82.1 extraction state after models.dev moved ahead, `amazon-bedrock/anthropic.claude-opus-5` was removed and `fireworks-ai/accounts/fireworks/models/minimax-m3` input was reduced to `["text"]`. On 2026-10-22 the `anthropic` entries `claude-fable-5-1`, `claude-haiku-5-5`, `claude-opus-5-5` and `claude-sonnet-5-5` were copied in verbatim from that day's models.dev; nothing else moved. Its SHA-256 is `522eaeaa255c90d5fd0dc41effc7a998d88295979ce501b49b4b22e1ab4c2564`.
 
 The provider listings back the NVIDIA intersection and the OpenRouter/Vercel catalogs (upstream generate-models.ts), all captured by 2026-10-03T18:21:06Z:
 
