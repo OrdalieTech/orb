@@ -23,12 +23,15 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		// Busy or full providers (upstream 8b5708db, 3874b3e9).
 		`{"error":{"code":"server_busy"}}`, "Our servers are currently busy, please try again", "Selected model is at capacity", "The upstream provider returned an error",
 		"The service is temporarily unavailable", "Unable to forward upstream stream",
+		"stream disconnected before completion: stream closed before response.completed", "upstream_stream_read_error",
+		"request to https://oauth2.googleapis.com/token failed, reason: ", "HTTP 503 Service", "error 429",
 	} {
 		if !IsRetryableAssistantError(failed(text)) {
 			t.Fatalf("not retryable: %q", text)
 		}
 	}
-	for _, text := range []string{"429 quota exceeded", "429 subscription_sharing_usage_limit_exceeded"} {
+	for _, text := range []string{"429 quota exceeded", "429 subscription_sharing_usage_limit_exceeded", "429 subscription_sharing_workplace_individual_usage_limit_exceeded",
+		"bad request req_15003abc", "body of 45020 bytes rejected"} {
 		if IsRetryableAssistantError(failed(text)) {
 			t.Fatalf("limit retried: %q", text)
 		}
@@ -50,13 +53,22 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 	if !IsContextOverflow(failed(" Throttling error: too many tokens"), 200000) {
 		t.Fatal("error text was trimmed before anchored upstream patterns")
 	}
-	bodyless := failed("413 status code (no body)")
+	// HTTP 413 is a request too large from any provider; a bodyless 400 only from Cerebras.
+	for _, text := range []string{"413 status code (no body)", `413 {"message":"failed to parse request","code":""}`, `github-copilot API error (413): {"message":"failed to parse request"}`} {
+		if !IsContextOverflow(failed(text), 200000) {
+			t.Fatalf("413 not classified as overflow: %s", text)
+		}
+	}
+	bodyless := failed("400 status code (no body)")
 	if IsContextOverflow(bodyless, 200000) {
-		t.Fatal("non-Cerebras bodyless 413 classified as overflow")
+		t.Fatal("non-Cerebras bodyless 400 classified as overflow")
 	}
 	bodyless.Provider = "cerebras"
 	if !IsContextOverflow(bodyless, 200000) {
-		t.Fatal("Cerebras bodyless 413 was not classified as overflow")
+		t.Fatal("Cerebras bodyless 400 was not classified as overflow")
+	}
+	if IsContextOverflow(failed("400 the upstream returned 413 once"), 200000) {
+		t.Fatal("a 413 inside the body classified as overflow")
 	}
 	silent := &AssistantMessage{StopReason: StopReasonStop, Usage: Usage{Input: 101}}
 	if !IsContextOverflow(silent, 100) {

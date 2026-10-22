@@ -37,14 +37,20 @@ var nonRetryableProviderLimitPatterns = anyOf([]string{
 	`insufficient_quota`, `out of budget`, `quota exceeded`, `billing`,
 	// Sign in with ChatGPT's shared usage limit resets after hours, not seconds.
 	`subscription_sharing_usage_limit_exceeded`,
+	// A ChatGPT Business usage limit only the workspace admin can raise.
+	`subscription_sharing_workplace_individual_usage_limit_exceeded`,
 })
 
 var retryableProviderPatterns = anyOf([]string{
-	`overloaded`, `currently experiencing high demand`, `rate.?limit`, `too many requests`, `429`, `500`, `502`, `503`, `504`, `520`, `524`,
+	`overloaded`, `currently experiencing high demand`, `rate.?limit`, `too many requests`,
+	// A status code, not digits inside a request id or byte count.
+	`(?:^|[^a-z0-9])(?:429|500|502|503|504|520|524)(?:[^a-z0-9]|$)`,
 	`service.?(?:is.?)?(?:temporarily.?)?unavailable`, `server.?error`, `internal.?error`, `provider.?returned.?(?:an.?)?error`,
 	`exceeded request buffer limit while retrying upstream`,
 	// A gateway failing to relay the upstream stream, sent as a Responses response.failed without a code.
-	`unable to forward upstream`,
+	`unable to forward upstream`, `upstream.?request.?failed`, `upstream_stream_read_error`, `stream was interrupted`, `http/?2 stream failed`,
+	// Codex CLI proxies relaying a mid-stream disconnect; a failed Google ADC token refresh.
+	`stream disconnected before completion`, `request to \S+ failed, reason:`,
 	`network.?error`, `connection.?error`, `connection.?refused`, `connection.?lost`, `other side closed`,
 	`fetch failed`, `upstream.?connect`, `reset before headers`, `socket hang up`,
 	// DNS transport failures (upstream 33e40c3e). The first three are Node's
@@ -77,9 +83,11 @@ var overflowPatterns = anyOf([]string{
 	`prompt has [0-9,]+ tokens?, but the configured context size is [0-9,]+ tokens?`,
 	`model_context_window_exceeded`, `prompt too long; exceeded (max )?context length`,
 	`context[_ ]length[_ ]exceeded`, `too many tokens`, `token limit exceeded`,
+	// HTTP 413 is a request too large, whatever the provider or body says.
+	`^(?:[\w -]+ API error \(413\):|413(?:\s|:|$))`,
 })
 
-var cerebrasBodylessOverflowPattern = lazyregexp.New(`(?i)^4(00|13)[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
+var cerebrasBodylessOverflowPattern = lazyregexp.New(`(?i)^400[[:space:]]*(status code)?[[:space:]]*\(no body\)`)
 
 var nonOverflowPatterns = anyOf([]string{
 	`^(Throttling error|Service unavailable):`, `rate limit`, `too many requests`,
