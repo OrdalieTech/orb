@@ -191,7 +191,7 @@ func (cjkEmphasisParser) Parse(_ ast.Node, reader text.Reader, context parser.Co
 	right := !beforeSpace && (!beforePunct || afterSpace || afterPunct || cjk(after))
 	canOpen, canClose := left, right
 	if line[0] == '_' {
-		canOpen, canClose = left && (!right || beforePunct), right && (!left || afterPunct)
+		canOpen, canClose = left && (!right || beforePunct || cjk(before)), right && (!left || afterPunct || cjk(after))
 	}
 	delimiter := parser.NewDelimiter(canOpen, canClose, length, line[0], cjkEmphasisProcessor{})
 	delimiter.Segment = segment.WithStop(segment.Start + length)

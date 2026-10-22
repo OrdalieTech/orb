@@ -13,7 +13,9 @@
     "prepareCases",
     "branchCases",
     "summaryPromptCases",
-    "branchPromptCases"
+    "branchPromptCases",
+    "compactPromptCases",
+    "productSummaryCases"
   ],
   "files": [
     "cases.json"
