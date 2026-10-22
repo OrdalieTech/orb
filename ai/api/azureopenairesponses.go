@@ -277,9 +277,10 @@ func buildAzureOpenAIResponsesPayload(
 	if !compat.supportsMidConvoSystemMessages {
 		transcript = ai.CollapseSystemMessages(transcript)
 	}
-	requestTools, deferredTools, anchorsAdditions := transcriptToolPlacement(
+	requestTools, deferredTools, anchoredFrom := transcriptToolPlacement(
 		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
 	)
+	toolChanges, initialTools := responsesToolChanges(compat.supportsMidConvoSystemMessages && compat.supportsAdditionalTools, transcript.Messages, &requestTools)
 	requestContext = projectTranscriptContext(transcript, true)
 	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
 	if err != nil {
@@ -301,7 +302,9 @@ func buildAzureOpenAIResponsesPayload(
 		supportsDeveloperRole:      compat.supportsDeveloperRole,
 		grammarToolInputProperties: grammarToolInputProperties,
 		deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
-		anchorsToolAdditions:       anchorsAdditions,
+		toolsAnchoredFrom:          anchoredFrom,
+		toolChanges:                toolChanges,
+		initialTools:               initialTools,
 		toolOptions:                toolOptions,
 	})
 	if err != nil {

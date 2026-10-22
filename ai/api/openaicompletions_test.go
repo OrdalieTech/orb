@@ -282,3 +282,42 @@ func collectOpenAICompletionsFixture(
 	}
 	return terminal, events
 }
+
+// After a removal the request's tool list is the state at that removal, and a later addition stays in
+// place: the cached prefix breaks once, not at every later addition (pi 1.4.0).
+func TestOpenAICompletionsAnchorsAdditionsAfterARemoval(t *testing.T) {
+	model := &ai.Model{ID: "kimi-k3", API: ai.APIOpenAICompletions, Provider: "openai", Compat: json.RawMessage(`{"supportsMidConvoSystemMessages":true,"supportsMidConvoToolAdditions":true}`)}
+	compat, err := resolveOpenAICompletionsCompat(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := func(name string) ai.Tool {
+		return ai.Tool{Name: name, Description: name, Parameters: ai.JSONSchema(`{"type":"object"}`)}
+	}
+	user := &ai.UserMessage{Content: ai.NewUserText("go")}
+	payload, err := buildOpenAICompletionsPayload(model, ai.Context{Messages: ai.MessageList{
+		&ai.SystemMessage{Content: "system", ToolsAdded: []ai.Tool{tool("a"), tool("b")}}, user,
+		&ai.SystemMessage{ToolsRemoved: []ai.ToolReference{{Name: "b"}}}, user,
+		&ai.SystemMessage{ToolsAdded: []ai.Tool{tool("c")}}, user,
+	}}, &OpenAICompletionsOptions{}, compat, ai.CacheRetentionNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := ai.Marshal(openAICompletionsWireValue(payload, compat))
+	var body struct {
+		Tools []struct {
+			Function struct{ Name string } `json:"function"`
+		} `json:"tools"`
+		Messages []struct {
+			Tools []any `json:"tools"`
+		} `json:"messages"`
+	}
+	_ = json.Unmarshal(encoded, &body)
+	anchored := 0
+	for _, message := range body.Messages {
+		anchored += len(message.Tools)
+	}
+	if len(body.Tools) != 1 || body.Tools[0].Function.Name != "a" || anchored != 1 {
+		t.Fatalf("payload = %s", encoded)
+	}
+}

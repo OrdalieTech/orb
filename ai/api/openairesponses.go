@@ -351,9 +351,10 @@ func buildOpenAIResponsesPayload(
 	if !compat.supportsMidConvoSystemMessages {
 		transcript = ai.CollapseSystemMessages(transcript)
 	}
-	requestTools, deferredTools, anchorsAdditions := transcriptToolPlacement(
+	requestTools, deferredTools, anchoredFrom := transcriptToolPlacement(
 		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
 	)
+	toolChanges, initialTools := responsesToolChanges(compat.supportsMidConvoSystemMessages && compat.supportsAdditionalTools, transcript.Messages, &requestTools)
 	requestContext = projectTranscriptContext(transcript, true)
 	placement := responsesToolPlacement{immediate: requestTools, deferred: deferredTools}
 	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
@@ -368,7 +369,9 @@ func buildOpenAIResponsesPayload(
 		supportsDeveloperRole:      compat.supportsDeveloperRole,
 		grammarToolInputProperties: grammarToolInputProperties,
 		deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
-		anchorsToolAdditions:       anchorsAdditions,
+		toolsAnchoredFrom:          anchoredFrom,
+		toolChanges:                toolChanges,
+		initialTools:               initialTools,
 		toolOptions:                toolOptions,
 	})
 	if err != nil {
@@ -593,9 +596,13 @@ type responsesMessageOptions struct {
 	grammarToolInputProperties map[string]string
 	// deferredToolsMode is "additional-tools", "tool-search", or "" when the
 	// model cannot receive tools mid-conversation.
-	deferredToolsMode    string
-	anchorsToolAdditions bool
-	toolOptions          responsesToolOptions
+	deferredToolsMode string
+	toolsAnchoredFrom int // system messages before it are folded into the tool list
+	toolOptions       responsesToolOptions
+	// toolChanges declares every tool, the initial ones first, in additional_tools items and announces
+	// removals as text: an item can add or replace tools but not remove one (pi 1.4.0).
+	toolChanges  bool
+	initialTools []ai.Tool
 }
 
 // responsesDeferredToolsMode picks the input item deferred tools ride on.
@@ -685,12 +692,64 @@ func convertResponsesMessagesWithOptions(
 		}
 		result = append(result, responsesInputMessage{Role: role, Content: sanitizeText(*requestContext.SystemPrompt)})
 	}
+	instructionRole := "system"
+	if model.Reasoning && options.supportsDeveloperRole {
+		instructionRole = "developer"
+	}
+	declared, unavailable := false, []string{}
+	declare := func(tools []ai.Tool) error {
+		unavailable = slices.DeleteFunc(unavailable, func(name string) bool {
+			return slices.ContainsFunc(tools, func(tool ai.Tool) bool { return tool.Name == name })
+		})
+		if len(tools) == 0 {
+			return nil
+		}
+		if declared {
+			// Without it, models read the latest item as the whole tool set once a removal was announced.
+			notice := "This is an incremental tools update. Previously declared tools remain available unless explicitly marked unavailable. A tool declared again here is available again, and its latest definition replaces the earlier one."
+			if len(unavailable) > 0 {
+				notice += "\nStill unavailable: " + strings.Join(unavailable, ", ") + "."
+			}
+			result = append(result, responsesInputMessage{Role: instructionRole, Content: notice})
+		}
+		declared = true
+		converted, err := convertResponsesToolsWithOptions(tools, options.toolOptions)
+		result = append(result, responsesAdditionalTools{Type: "additional_tools", Role: "developer", Tools: converted})
+		return err
+	}
+	if options.toolChanges {
+		if err := declare(options.initialTools); err != nil {
+			return nil, err
+		}
+	}
 
-	messageIndex := 0
+	messageIndex, systemIndex := 0, 0
 	for _, message := range messages {
 		switch value := message.(type) {
 		case *ai.SystemMessage:
-			if options.anchorsToolAdditions && len(value.ToolsAdded) > 0 {
+			systemIndex++
+			if options.toolChanges {
+				if err := declare(value.ToolsAdded); err != nil {
+					return nil, err
+				}
+				text := ai.SystemMessageText(value)
+				// A redefinition is a removal plus an addition of the same name; only true removals are announced.
+				var removed []string
+				for _, tool := range value.ToolsRemoved {
+					if !slices.ContainsFunc(value.ToolsAdded, func(added ai.Tool) bool { return added.Name == tool.Name }) {
+						removed = append(removed, tool.Name)
+					}
+				}
+				if len(removed) > 0 {
+					text = strings.TrimPrefix(text+"\n\nThe following tools are no longer available. Do not call them:\n- "+strings.Join(removed, "\n- "), "\n\n")
+					unavailable = append(unavailable, removed...)
+				}
+				if text != "" {
+					result = append(result, responsesInputMessage{Role: instructionRole, Content: sanitizeText(text)})
+				}
+				continue
+			}
+			if systemIndex > options.toolsAnchoredFrom && len(value.ToolsAdded) > 0 {
 				newTools := make([]ai.Tool, 0, len(value.ToolsAdded))
 				for _, tool := range value.ToolsAdded {
 					if deferred, exists := deferredTools[tool.Name]; exists {

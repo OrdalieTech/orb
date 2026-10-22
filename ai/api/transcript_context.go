@@ -30,21 +30,39 @@ func projectTranscriptContext(transcript ai.TranscriptContext, supportsMidConvoS
 	return result
 }
 
-func transcriptToolPlacement(messages ai.MessageList, supportsAdditions bool) ([]ai.Tool, map[string]ai.Tool, bool) {
+// transcriptToolPlacement splits the tools between the request's list and the system messages that add
+// them in place: later holds the tools those add, and anchoredFrom counts the system messages after the
+// initial one that the list already holds, so a transport anchors the additions of those past it.
+func transcriptToolPlacement(messages ai.MessageList, supportsAdditions bool) (requestTools []ai.Tool, later map[string]ai.Tool, anchoredFrom int) {
 	resolved := ai.ResolveTranscriptTools(messages, supportsAdditions)
-	if !resolved.AnchorsAdditions {
-		return resolved.RequestTools, nil, false
-	}
-	requestTools := resolved.RequestTools
-	initialNames := make(map[string]struct{}, len(requestTools))
-	for _, tool := range requestTools {
-		initialNames[tool.Name] = struct{}{}
-	}
-	later := make(map[string]ai.Tool)
-	for _, tool := range ai.DeclaredTools(messages) {
-		if _, exists := initialNames[tool.Name]; !exists {
-			later[tool.Name] = tool
+	later = make(map[string]ai.Tool)
+	systemIndex := 0
+	for _, message := range messages {
+		if system, ok := message.(*ai.SystemMessage); ok {
+			if systemIndex >= resolved.FoldedSystemMessages {
+				for _, tool := range system.ToolsAdded {
+					later[tool.Name] = tool
+				}
+			}
+			systemIndex++
 		}
 	}
-	return requestTools, later, true
+	anchoredFrom = resolved.FoldedSystemMessages
+	if ai.InitialSystemMessage(messages) != nil {
+		anchoredFrom--
+	}
+	return resolved.RequestTools, later, max(anchoredFrom, 0)
+}
+
+// responsesToolChanges reports a transport that declares every tool in additional_tools items, emptying
+// the request's list, and returns the tools the initial system message declares.
+func responsesToolChanges(supported bool, messages ai.MessageList, requestTools *[]ai.Tool) (bool, []ai.Tool) {
+	if !supported {
+		return false, nil
+	}
+	*requestTools = nil
+	if initial := ai.InitialSystemMessage(messages); initial != nil {
+		return true, initial.ToolsAdded
+	}
+	return true, nil
 }

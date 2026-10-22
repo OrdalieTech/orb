@@ -53,6 +53,7 @@ type resolvedOpenAICompletionsCompat struct {
 	supportsOpenAIGrammarTools                  bool
 	supportsMidConvoSystemMessages              bool
 	supportsMidConvoToolAdditions               bool
+	toolsAnchoredFrom                           int // system messages before it are folded into the tool list
 	supportsStrictMode                          bool
 	cacheControlFormat                          *ai.CacheControlFormat
 	sendSessionAffinityHeaders                  bool
@@ -817,16 +818,15 @@ func buildOpenAICompletionsPayload(
 		if !compat.supportsMidConvoSystemMessages {
 			transcript = ai.CollapseSystemMessages(transcript)
 		}
-		requestTools, _, anchorsAdditions := transcriptToolPlacement(
-			transcript.Messages, compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions,
-		)
+		compat.supportsMidConvoToolAdditions = compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions
+		requestTools, _, anchoredFrom := transcriptToolPlacement(transcript.Messages, compat.supportsMidConvoToolAdditions)
 		requestContext = projectTranscriptContext(transcript, true)
 		if len(requestTools) > 0 {
 			requestContext.Tools = &requestTools
 		} else {
 			requestContext.Tools = nil
 		}
-		compat.supportsMidConvoToolAdditions = anchorsAdditions
+		compat.toolsAnchoredFrom = anchoredFrom
 	}
 	grammarToolInputProperties, err := createGrammarToolInputProperties(
 		requestContext.Tools, compat.supportsOpenAIGrammarTools,
@@ -1035,10 +1035,12 @@ func convertOpenAICompletionsMessages(
 	}
 
 	lastRole := ""
+	systemIndex := 0
 	for index := 0; index < len(transformed); index++ {
 		switch message := transformed[index].(type) {
 		case *ai.SystemMessage:
-			if compat.supportsMidConvoToolAdditions && len(message.ToolsAdded) > 0 {
+			systemIndex++
+			if compat.supportsMidConvoToolAdditions && systemIndex > compat.toolsAnchoredFrom && len(message.ToolsAdded) > 0 {
 				convertedTools, err := convertOpenAICompletionsTools(message.ToolsAdded, compat)
 				if err != nil {
 					return nil, err

@@ -146,7 +146,18 @@ func HasToolRedefinitions(messages MessageList) bool {
 	return false
 }
 
-func HasNonAdditiveToolChanges(messages MessageList) bool {
+type TranscriptTools struct {
+	RequestTools []Tool
+	// FoldedSystemMessages is how many leading system messages RequestTools holds; later ones declare
+	// their additions in place. A removal or redeclaration cannot be declared in place, so the list is the
+	// tool state after the last one, and the cached prefix breaks once per removal instead of at every later
+	// addition (pi 1.4.0).
+	FoldedSystemMessages int
+}
+
+func ResolveTranscriptTools(messages MessageList, supportsToolAdditions bool) TranscriptTools {
+	var systems MessageList
+	lastChange := -1
 	declared := map[string]struct{}{}
 	for _, raw := range messages {
 		message, ok := raw.(*SystemMessage)
@@ -154,33 +165,25 @@ func HasNonAdditiveToolChanges(messages MessageList) bool {
 			continue
 		}
 		if len(message.ToolsRemoved) > 0 {
-			return true
+			lastChange = len(systems)
 		}
+		// A name declared before is a redeclaration even after its removal.
 		for _, tool := range message.ToolsAdded {
 			if _, exists := declared[tool.Name]; exists {
-				return true
+				lastChange = len(systems)
 			}
 			declared[tool.Name] = struct{}{}
 		}
+		systems = append(systems, message)
 	}
-	return false
-}
-
-type TranscriptTools struct {
-	RequestTools     []Tool
-	AnchorsAdditions bool
-}
-
-func ResolveTranscriptTools(messages MessageList, supportsToolAdditions bool) TranscriptTools {
-	anchors := supportsToolAdditions && !HasNonAdditiveToolChanges(messages)
-	if anchors {
-		initial := InitialSystemMessage(messages)
-		if initial == nil {
-			return TranscriptTools{RequestTools: []Tool{}, AnchorsAdditions: true}
+	folded := len(systems)
+	if supportsToolAdditions {
+		folded = lastChange + 1
+		if folded == 0 && InitialSystemMessage(messages) != nil {
+			folded = 1
 		}
-		return TranscriptTools{RequestTools: cloneTools(initial.ToolsAdded), AnchorsAdditions: true}
 	}
-	return TranscriptTools{RequestTools: CurrentTools(messages)}
+	return TranscriptTools{RequestTools: CurrentTools(systems[:folded]), FoldedSystemMessages: folded}
 }
 
 func CurrentSystemMessage(messages MessageList) *SystemMessage {

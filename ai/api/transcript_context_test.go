@@ -22,12 +22,23 @@ func TestOpenAIResponsesProjectsTranscriptSystemAndToolAdditions(t *testing.T) {
 		t.Fatal(err)
 	}
 	wire := string(encoded)
-	if len(payload.Tools) != 1 || payload.Tools[0].Name != "echo" {
-		t.Fatalf("request tools = %#v, want only initial echo", payload.Tools)
+	// Every tool rides an additional_tools item, the initial ones first, so a later removal or addition
+	// leaves the cached prefix alone (pi 1.4.0).
+	if len(payload.Tools) != 0 || strings.Count(wire, `"type":"additional_tools","role":"developer"`) != 2 ||
+		strings.Index(wire, `"name":"echo"`) > strings.Index(wire, "incremental tools update") ||
+		strings.Index(wire, "incremental tools update") > strings.Index(wire, `"name":"late"`) || !strings.Contains(wire, `"content":"Use late tools."`) {
+		t.Fatalf("request tools = %#v, payload: %s", payload.Tools, wire)
 	}
-	if !strings.Contains(wire, `"type":"additional_tools","role":"developer"`) ||
-		!strings.Contains(wire, `"name":"late"`) || !strings.Contains(wire, `"content":"Use late tools."`) {
-		t.Fatalf("transcript additions missing from payload: %s", wire)
+	// A removal is announced; the tool stays declared, as an item cannot remove one.
+	removal := transcriptProjectionContext()
+	removal.Messages = append(removal.Messages, &ai.SystemMessage{ToolsRemoved: []ai.ToolReference{{Name: "late"}}})
+	payload, _, err = buildOpenAIResponsesPayload(model, removal, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ = ai.Marshal(payload)
+	if !strings.Contains(string(encoded), `no longer available. Do not call them:\n- late`) {
+		t.Fatalf("removal not announced: %s", encoded)
 	}
 }
 
