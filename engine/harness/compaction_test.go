@@ -258,3 +258,19 @@ func TestCompactionSummarizesTheRecentPartOfAnOversizedConversation(t *testing.T
 		t.Fatalf("a conversation that fits was not summarized whole: %d requests, %v", len(prompts), err)
 	}
 }
+
+// /compact's instructions reach the summary of a split turn's start, even when that turn is all that is new.
+func TestSplitTurnSummaryKeepsTheCustomInstructions(t *testing.T) {
+	var prompts []string
+	complete := func(_ context.Context, _ *ai.Model, request ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		prompts = append(prompts, ai.ContentText(request.Messages[0].(*ai.UserMessage).Content.Blocks, ""))
+		return &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: "summary"}}, StopReason: ai.StopReasonStop}, nil
+	}
+	_, err := Compact(context.Background(), &CompactionPreparation{
+		FirstKeptEntryID: "kept", TurnPrefixMessages: engine.AgentMessages{user("prefix")}, IsSplitTurn: true,
+		FileOps: newFileOperations(), Settings: CompactionSettings{ReserveTokens: 100},
+	}, &ai.Model{MaxTokens: 100}, complete, "Keep exact paths.", ai.ModelThinkingOff)
+	if err != nil || len(prompts) != 1 || !strings.Contains(prompts[0], "Additional focus: Keep exact paths.") {
+		t.Fatalf("prompts = %q, err = %v", prompts, err)
+	}
+}

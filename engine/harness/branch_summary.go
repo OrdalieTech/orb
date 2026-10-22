@@ -160,12 +160,8 @@ func generateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 		instructions += "\n\nAdditional focus: " + options.CustomInstructions
 	}
 	prompt := "<conversation>\n" + SerializeConversation(prepared.Messages) + "\n</conversation>\n\n" + instructions
-	maxTokens := float64(2048)
 	if options.Model == nil || options.Complete == nil {
 		return nil, errors.New("Branch summary failed: no model or completion function")
-	}
-	if product != nil {
-		maxTokens = minTokenLimit(4096, options.Model)
 	}
 	system := SummarizationSystemPrompt
 	request := ai.Context{
@@ -177,7 +173,7 @@ func generateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 		options.Complete,
 		options.Model,
 		request,
-		&ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{MaxTokens: &maxTokens}},
+		&ai.SimpleStreamOptions{},
 		options.Retry,
 		options.Callbacks,
 		product,

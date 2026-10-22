@@ -575,8 +575,7 @@ func compact(ctx context.Context, preparation *CompactionPreparation, model *ai.
 			}
 			history, historyUsage = generated.Text, &generated.Usage
 		}
-		prefix, err := generateTurnPrefixSummary(ctx, preparation.TurnPrefixMessages, model, complete,
-			preparation.Settings.ReserveTokens, thinkingLevel, product)
+		prefix, err := generateTurnPrefixSummary(ctx, preparation.TurnPrefixMessages, model, complete, customInstructions, thinkingLevel, product)
 		if err != nil {
 			return nil, err
 		}
@@ -656,7 +655,7 @@ func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages
 		prompt += "<previous-summary>\n" + *previousSummary + "\n</previous-summary>\n\n"
 	}
 	prompt += base
-	return runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens*8/10, model), thinkingLevel, product)
+	return runSummary(ctx, prompt, model, complete, thinkingLevel, product)
 }
 
 // fitting is the most recent messages whose serialized text fits the model's window beside the
@@ -666,7 +665,7 @@ func fitting(messages engine.AgentMessages, model *ai.Model, reserveTokens int64
 	if model == nil || model.ContextWindow <= 0 {
 		return messages
 	}
-	budget := int((int64(model.ContextWindow) - int64(minTokenLimit(reserveTokens*8/10, model)) - reserveTokens - 4_000) * 3)
+	budget := int((int64(model.ContextWindow) - reserveTokens - 4_000) * 3)
 	if budget <= 0 || len(SerializeConversation(messages)) <= budget {
 		return messages
 	}
@@ -679,11 +678,14 @@ func fitting(messages engine.AgentMessages, model *ai.Model, reserveTokens int64
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
-func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
+func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, customInstructions string, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
 	// Headed sections rather than a tagged conversation: Fable 5.1 refused the
 	// tagged prefix framing as an instruction to fabricate the rest.
 	prompt := "# Conversation\n" + SerializeConversation(messages) + "\n\n# Instructions\n" + TurnPrefixSummarizationPrompt
-	result, err := runSummary(ctx, prompt, model, complete, minTokenLimit(reserveTokens/2, model), thinkingLevel, product)
+	if customInstructions != "" {
+		prompt += "\n\nAdditional focus: " + customInstructions
+	}
+	result, err := runSummary(ctx, prompt, model, complete, thinkingLevel, product)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, err
@@ -702,8 +704,11 @@ func generateTurnPrefixSummary(ctx context.Context, messages engine.AgentMessage
 	return result, nil
 }
 
+// runSummary leaves the output limit to the model's, so long reasoning does not cut a summary off
+// (pi 1.4.0); the request options clamp it to the context left.
+//
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
-func runSummary(ctx context.Context, prompt string, model *ai.Model, complete CompleteFunc, maxTokens float64, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
+func runSummary(ctx context.Context, prompt string, model *ai.Model, complete CompleteFunc, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
 	if model == nil || complete == nil {
 		return nil, errors.New("Summarization failed: no model or completion function")
 	}
@@ -712,7 +717,7 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 		SystemPrompt: &system,
 		Messages:     ai.MessageList{&ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: prompt})}},
 	}
-	options := &ai.SimpleStreamOptions{StreamOptions: ai.StreamOptions{MaxTokens: &maxTokens}}
+	options := &ai.SimpleStreamOptions{}
 	if model.Reasoning && thinkingLevel != "" && thinkingLevel != ai.ModelThinkingOff {
 		level := ai.ThinkingLevel(thinkingLevel)
 		options.Reasoning = &level
@@ -1231,13 +1236,6 @@ func computeFileLists(operations FileOperations) ([]string, []string) {
 	sort.Strings(read)
 	sort.Strings(modified)
 	return read, modified
-}
-
-func minTokenLimit(limit int64, model *ai.Model) float64 {
-	if model != nil && model.MaxTokens > 0 && model.MaxTokens < float64(limit) {
-		return model.MaxTokens
-	}
-	return float64(limit)
 }
 
 func ceilQuarter(chars int64) int64 { return (chars + 3) / 4 }
