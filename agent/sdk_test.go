@@ -990,6 +990,20 @@ func TestResumeRestoresLoadoutAndActivatesToolsThatRegisterLate(t *testing.T) {
 	if err := first.Session.Prompt(context.Background(), "second"); err != nil {
 		t.Fatal(err)
 	}
+	// /tree back to the first answer, where "removed" was on, brings it back (pi 1.4.0).
+	var firstAnswer string
+	for _, entry := range sm.GetBranch() {
+		if entry.Type == "message" && strings.Contains(string(entry.Message), `"role":"assistant"`) && firstAnswer == "" {
+			firstAnswer = entry.ID
+		}
+	}
+	leaf := sm.GetLeafID()
+	if _, err := first.Session.NavigateTree(context.Background(), firstAnswer, NavigateTreeOptions{}); err != nil || !slices.Contains(active(first), "removed") {
+		t.Fatalf("tools after /tree = %v, err %v", active(first), err)
+	}
+	if _, err := first.Session.NavigateTree(context.Background(), *leaf, NavigateTreeOptions{}); err != nil || slices.Contains(active(first), "removed") {
+		t.Fatalf("tools after /tree back = %v, err %v", active(first), err)
+	}
 	transcript, _ := ConvertToLLM(context.Background(), first.Session.State().Messages)
 	current := ai.CurrentSystemMessage(transcript)
 	if current == nil || !strings.Contains(ai.SystemMessageText(current), "<servers>\nlate servers\n</servers>") {

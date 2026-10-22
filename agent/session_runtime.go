@@ -1771,6 +1771,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 		}
 	}
 	runtime.RefreshContext()
+	runtime.restoreBranchTools()
 	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventSessionTree) {
 		var fromExtensionValue *bool
 		if summary != "" {

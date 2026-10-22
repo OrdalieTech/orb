@@ -1494,6 +1494,19 @@ func (runtime *SessionRuntime) recordBashResult(command string, result extension
 	return runtime.recordBashMessage(message)
 }
 
+// restoreBranchTools sets the loadout the current branch records, after /tree moved to it (pi 1.4.0).
+func (runtime *SessionRuntime) restoreBranchTools() {
+	state := runtime.extensionState
+	active, known, recorded := branchLoadout(runtime.manager.GetBranch())
+	if state == nil || state.runner == nil || !recorded {
+		return
+	}
+	state.mu.Lock()
+	state.knownTools, state.pendingTools = stringSet(known), slices.Clone(active)
+	state.mu.Unlock()
+	runtime.refreshExtensionTools(active, true)
+}
+
 func (runtime *SessionRuntime) clearExtensionTurnState() {
 	runtime.agent.SetRequestSystemPromptOverride(nil)
 	state := runtime.extensionState

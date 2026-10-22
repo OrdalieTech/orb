@@ -14,6 +14,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -333,7 +334,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	model, thinking, fallback := initialModel(opts, modelRegistry, settings, existing, hasThinkingEntry)
 
-	initialActiveToolNames, knownToolNames, allowedToolNames := initialToolNames(opts, settings, sm, existing, decoded)
+	initialActiveToolNames, knownToolNames, allowedToolNames := initialToolNames(opts, settings, sm, existing)
 
 	systemPrompt := buildSystemPromptFromResources(resources)
 	systemPrompt = strings.TrimSuffix(systemPrompt, "\nCurrent working directory: "+strings.ReplaceAll(cwd, `\`, "/"))
@@ -569,33 +570,17 @@ func initialModel(opts AgentSessionOptions, modelRegistry *config.ModelRegistry,
 
 // initialToolNames resolves the tools a session starts with, and the ones it
 // may ever enable when the options restrict them.
-func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, existing sessionstore.SessionContext, decoded []any) (initialActiveToolNames, knownToolNames []string, allowedToolNames *[]string) {
-	hasExisting := len(existing.Messages) > 0
+func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, existing sessionstore.SessionContext) (initialActiveToolNames, knownToolNames []string, allowedToolNames *[]string) {
 	initialActiveToolNames = ResolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
-	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
-		initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
-	} else if hasExisting && opts.Tools == nil && opts.NoTools == "" {
-		// A resumed session restores the loadout its transcript declares; tools
-		// that register later, such as MCP tools, turn on when they do.
-		var transcript ai.MessageList
-		for _, message := range decoded {
-			if system, ok := message.(*ai.SystemMessage); ok {
-				transcript = append(transcript, system)
-				// Tools the branch added or removed follow it; the others were installed since.
-				for _, tool := range system.ToolsAdded {
-					knownToolNames = append(knownToolNames, tool.Name)
-				}
-				for _, tool := range system.ToolsRemoved {
-					knownToolNames = append(knownToolNames, tool.Name)
-				}
-			}
-		}
-		if current := ai.CurrentSystemMessage(transcript); current != nil {
-			names := make([]string, 0, len(current.ToolsAdded))
-			for _, tool := range current.ToolsAdded {
-				names = append(names, tool.Name)
-			}
-			initialActiveToolNames = filterExcluded(names, opts.ExcludeTools)
+	if opts.Tools == nil && opts.NoTools == "" {
+		// A resumed session restores the loadout its branch records; tools that
+		// register later, such as MCP tools, turn on when they do.
+		active, known, recorded := branchLoadout(sm.GetBranch())
+		knownToolNames = known
+		if sm.IsHarnessBacked() && existing.ActiveToolNames != nil {
+			initialActiveToolNames = filterExcluded(existing.ActiveToolNames, opts.ExcludeTools)
+		} else if len(existing.Messages) > 0 && recorded {
+			initialActiveToolNames = filterExcluded(active, opts.ExcludeTools)
 		}
 	}
 
@@ -607,6 +592,33 @@ func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager
 		allowedToolNames = &empty
 	}
 	return initialActiveToolNames, knownToolNames, allowedToolNames
+}
+
+// branchLoadout replays the tools a branch's system messages add and remove, those before a compaction
+// included: active is the result, known every tool they mention, so other extension tools are new (pi 1.4.0).
+func branchLoadout(branch []sessionstore.SessionEntry) (active, known []string, recorded bool) {
+	for _, entry := range branch {
+		var message struct {
+			Role         string             `json:"role"`
+			ToolsAdded   []ai.ToolReference `json:"toolsAdded"`
+			ToolsRemoved []ai.ToolReference `json:"toolsRemoved"`
+		}
+		if entry.Type != "message" || json.Unmarshal(entry.Message, &message) != nil || message.Role != "system" {
+			continue
+		}
+		recorded = true
+		for _, tool := range message.ToolsRemoved {
+			active = slices.DeleteFunc(active, func(name string) bool { return name == tool.Name })
+			known = append(known, tool.Name)
+		}
+		for _, tool := range message.ToolsAdded {
+			if !slices.Contains(active, tool.Name) {
+				active = append(active, tool.Name)
+			}
+			known = append(known, tool.Name)
+		}
+	}
+	return active, known, recorded
 }
 
 // withRequestAuth completes the options' request-time auth callbacks. When

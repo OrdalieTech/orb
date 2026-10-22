@@ -13,7 +13,7 @@ shown by `/changelog`.
 
 - Compaction and branch summaries use the model's output limit instead of a fixed share of `compaction.reserveTokens`, so long reasoning no longer cuts them off; `/compact <instructions>` reaches the summary of a split turn's start too (pi 1.4.0).
 
-- A resumed session keeps the tools its branch turned off, and turns on extension tools installed since, which the branch never mentioned; `/reload` keeps tools turned off during the session off (pi 1.4.0).
+- A resumed session keeps the tools its branch turned off, before a compaction too, and turns on extension tools installed since, which the branch never mentioned; `/tree` switches to the loadout of the branch it moves to; `/reload` keeps tools turned off during the session off (pi 1.4.0).
 
 - After a tool is removed, a later tool addition no longer invalidates the whole prompt cache: the request's tool list holds the tools as of the last removal and later additions stay in place. GPT-5.6 and GPT-6 on OpenAI and Codex declare every tool in `additional_tools` items, announcing removals as text (pi 1.4.0).
 
