@@ -15,6 +15,8 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/termcaps"
+	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
@@ -410,6 +412,88 @@ func TestCancelledExtensionDialogCannotClearReboundEditor(t *testing.T) {
 	children := mode.editorContainer.Children()
 	if len(children) != 1 || children[0] != rebound {
 		t.Fatalf("late dialog cleanup replaced rebound editor: %#v", children)
+	}
+}
+
+type recordingTerminal struct {
+	*modesextShortcutTerminal
+	mu      sync.Mutex
+	written strings.Builder
+}
+
+func (terminal *recordingTerminal) Write(data string) {
+	terminal.mu.Lock()
+	terminal.written.WriteString(data)
+	terminal.mu.Unlock()
+}
+
+func (terminal *recordingTerminal) take() string {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	written := terminal.written.String()
+	terminal.written.Reset()
+	return written
+}
+
+// An approval opens as a stretched-caps card that calls a user who left the
+// terminal, and its answer stays in the transcript; a turn that ends while
+// they are away calls them too, and nothing does while the terminal has focus.
+func TestInterruptCardCallsAnAwayUserAndLeavesItsVerdict(t *testing.T) {
+	initTestTheme(t)
+	tui.SetCapabilities(tui.TerminalCapabilities{TrueColor: true, Notify: termcaps.NotifyOSC777})
+	t.Cleanup(tui.ResetCapabilitiesCache)
+	terminal := &recordingTerminal{modesextShortcutTerminal: &modesextShortcutTerminal{fakeTerminalImpl: newFakeTerminal(110, 48)}}
+	bindings := NewAppKeybindings(nil)
+	tui.SetKeybindings(bindings)
+	mode := &InteractiveMode{
+		ui: tui.NewTUI(terminal), keybindings: bindings,
+		header: &tui.Container{}, chat: &tui.Container{}, status: &tui.Container{},
+		widgetAbove: &tui.Container{}, editorContainer: &tui.Container{}, widgetBelow: &tui.Container{},
+		footer: &tui.Container{}, footerStatuses: make(map[string]string),
+	}
+	if err := mode.ui.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mode.ui.Stop() })
+	extensionUI := NewInteractiveUI(mode)
+	terminal.send("\x1b[O")
+
+	approval := extensions.WithInputOptions(context.Background(), extensions.InputOptions{Presentation: &extensions.InputPresentation{Kind: permissions.Kind, Data: []byte(`{"tool":"bash"}`)}})
+	answer := make(chan string, 1)
+	go func() {
+		value, _, _ := extensionUI.Select(approval, "Permission requested for bash", []string{"y approve once", "n deny"}, nil)
+		answer <- value
+	}()
+	var screen string
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline) && !strings.Contains(tui.StripANSI(screen), "█▁█ █▄▀ █▄▀ █▄▀ █ █ █ █ █▁█ █"); time.Sleep(10 * time.Millisecond) {
+		screen += terminal.take()
+	}
+	if !strings.Contains(tui.StripANSI(screen), "█▁█ █▄▀ █▄▀ █▄▀ █ █ █ █ █▁█ █") {
+		t.Fatalf("approval did not raise its card:\n%s", tui.StripANSI(screen))
+	}
+	if !strings.Contains(screen, "\x1b]777;notify;Orb;Permission requested for bash\x1b\\") {
+		t.Fatalf("approval did not call the away user: %q", screen)
+	}
+	terminal.send("y")
+	if value := <-answer; value != "y approve once" {
+		t.Fatalf("answer = %q", value)
+	}
+	if chat := tui.StripANSI(strings.Join(mode.chat.Render(80), "\n")); !strings.Contains(chat, " APPROVAL   approve once") {
+		t.Fatalf("transcript lacks the verdict:\n%s", chat)
+	}
+
+	settle := func() string {
+		terminal.take()
+		mode.turnStart = time.Now()
+		mode.handleEvent(agent.AgentSettledEvent{})
+		return terminal.take()
+	}
+	if written := settle(); !strings.Contains(written, "\x1b]777;notify;Orb;done\x1b\\") {
+		t.Fatalf("finished turn did not call the away user: %q", written)
+	}
+	terminal.send("\x1b[I")
+	if written := settle(); strings.Contains(written, "777;notify") {
+		t.Fatalf("finished turn notified a user at the terminal: %q", written)
 	}
 }
 

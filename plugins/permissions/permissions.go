@@ -21,6 +21,9 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 )
 
+// Kind presents an approval request to the UIs answering it.
+const Kind = "approval"
+
 // Action is the ecosystem-standard three-state permission result.
 type Action string
 
@@ -663,7 +666,9 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 					return value, err
 				}
 			}
-			selected, err := request(ctx, permissionPrompt(info, decision), []string{
+			presented, _ := json.Marshal(map[string]string{"tool": decision.Tool})
+			approval := extensions.WithInputOptions(ctx, extensions.InputOptions{Presentation: &extensions.InputPresentation{Kind: Kind, Data: presented}})
+			selected, err := request(approval, permissionPrompt(info, decision), []string{
 				"y approve once", "s approve for this session", "n deny", "r deny with a reason",
 			})
 			if err != nil || ctx.Err() != nil {

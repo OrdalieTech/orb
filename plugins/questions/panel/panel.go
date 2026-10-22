@@ -25,6 +25,7 @@ type Panel struct {
 	selected           map[string]bool
 	input              *tui.Input
 	frame              *tui.Frame
+	card               *tui.CapsTitle
 	theme              extensions.Theme
 	height             func() int
 	invalidate         func()
@@ -44,6 +45,7 @@ func Draw(request questions.Request, theme extensions.Theme, height func() int, 
 func New(request questions.Request, theme extensions.Theme, height func() int, invalidate func(), done func(questions.Result)) *Panel {
 	p := &Panel{request: request, theme: theme, height: height, invalidate: invalidate, done: done, answers: make([]questions.Answer, len(request.Questions)), input: tui.NewInput()}
 	p.input.Prompt = "Your answer › "
+	p.card = tui.NewCapsTitle("question", func(s string) string { return theme.FG("text", s) }, func(s string) string { return theme.FG("error", s) }, height, nil)
 	p.frame = tui.NewPanel("", "", nil, nil, func() string { return theme.BGANSI("toolPendingBg") }, questionBody{p})
 	p.load()
 	return p
@@ -228,7 +230,10 @@ func (body questionBody) Render(width int) []string {
 	if p.completed {
 		return text(p.message)
 	}
-	var lines []string
+	lines := p.card.Render(width)
+	if lines != nil {
+		lines = append(lines, "")
+	}
 	if !p.single() {
 		tabLine, column := "", 0
 		for i := 0; i <= len(p.request.Questions); i++ {

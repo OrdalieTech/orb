@@ -1,8 +1,10 @@
 package theme
 
 import (
+	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/OrdalieTech/orb/internal/themefile"
 )
@@ -25,6 +27,47 @@ func (theme *Theme) Fade(lines []string, opacity float64) []string {
 		}
 	}
 	return faded
+}
+
+// A shimmer's band sweeps shimmerSpeed cells a second, shimmerBand cells to
+// either side of its center at full strength fading to none, and starts and
+// ends shimmerPad cells off the text, so its first frame shows no band.
+const (
+	shimmerSpeed = 12.0
+	shimmerBand  = 4.0
+	shimmerPad   = 10
+)
+
+// Shimmer draws plain text in the muted color with a band of the text color
+// sweeping across it, elapsed after the sweep began. A palette without
+// truecolor for both, or text that brings its own styling, stays muted.
+func Shimmer(text string, elapsed time.Duration) string {
+	palette := Current().Palette()
+	if palette == nil || palette.mode != TrueColor || strings.Contains(text, "\x1b") {
+		return FG("muted", text)
+	}
+	base, baseOK := hexRGB(palette.resolved["muted"].Text)
+	glow, glowOK := hexRGB(palette.resolved["text"].Text)
+	if !baseOK || !glowOK {
+		return FG("muted", text)
+	}
+	cells := []rune(text)
+	center := math.Mod(elapsed.Seconds()*shimmerSpeed, float64(len(cells)+2*shimmerPad)) - shimmerPad
+	var out strings.Builder
+	last := ""
+	for index, cell := range cells {
+		strength := 0.0
+		if distance := math.Abs(float64(index) - center); distance < shimmerBand {
+			strength = (1 + math.Cos(math.Pi*distance/shimmerBand)) / 2
+		}
+		if color := glow.toward(base, strength, "38"); color != last {
+			out.WriteString("\x1b[" + color + "m")
+			last = color
+		}
+		out.WriteRune(cell)
+	}
+	out.WriteString("\x1b[39m")
+	return out.String()
 }
 
 type rgb [3]float64

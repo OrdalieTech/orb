@@ -1621,17 +1621,26 @@ func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options .
 	if len(options) > 0 {
 		indicator = loaderIndicatorOptions(options[0])
 	}
-	return newStatusIndicator(ui, StatusWorking, "accent", message, indicator)
+	// The message shimmers, on the spinner's ticks, while the terminal has focus.
+	start := time.Now()
+	focus, _ := ui.(interface{ TerminalFocused() bool })
+	return newStatusIndicator(ui, StatusWorking, "accent", message, indicator, func(s string) string {
+		if focus != nil && !focus.TerminalFocused() {
+			return theme.FG("muted", s)
+		}
+		return theme.Shimmer(s, time.Since(start))
+	})
 }
 
-func newStatusIndicator(ui tui.RenderRequester, kind StatusIndicatorKind, color, message string, indicator *tui.LoaderIndicatorOptions) *StatusIndicator {
+// newStatusIndicator draws the message muted unless messageColor says otherwise.
+func newStatusIndicator(ui tui.RenderRequester, kind StatusIndicatorKind, color, message string, indicator *tui.LoaderIndicatorOptions, messageColor ...tui.StyleFunc) *StatusIndicator {
+	style := tui.StyleFunc(func(s string) string { return theme.FG("muted", s) })
+	if len(messageColor) > 0 {
+		style = messageColor[0]
+	}
 	return &StatusIndicator{
-		Loader: tui.NewLoader(ui,
-			func(s string) string { return theme.FG(color, s) },
-			func(s string) string { return theme.FG("muted", s) },
-			message, indicator,
-		),
-		Kind: kind,
+		Loader: tui.NewLoader(ui, func(s string) string { return theme.FG(color, s) }, style, message, indicator),
+		Kind:   kind,
 	}
 }
 

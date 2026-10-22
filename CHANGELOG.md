@@ -25,6 +25,10 @@ shown by `/changelog`.
 
 - Linux clipboard helpers (`wl-copy`, `xclip`, `xsel`) run in their own process group, so suspending Orb with Ctrl+Z no longer stops them; Windows finds the legacy WSL `bash.exe` under `%SystemRoot%` and accepts Microsoft Store shell aliases; Herdr panes draw images and the Rex terminal gets hyperlinks, truecolor and images; a panic while a prompt runs restores the terminal before Orb exits (pi 1.4.0).
 
+- Approvals and questions open under a title in giant stretched capitals, APPROVAL or QUESTION, next to a red hook mark; an approval's settles out of scrambled blocks, and a terminal under 40 rows keeps those rows for the choices. An answered approval leaves its verdict in the transcript.
+
+- While Orb works, a band of light sweeps across its working status in a focused terminal. A turn that ends, or an approval or question that opens, while you are in another window calls you back: a desktop notification in Ghostty, WezTerm, kitty and iTerm2, the bell elsewhere; Herdr panes keep Herdr's own notifications.
+
 ## [0.19.11] - 2026-10-17
 
 Fixes from pi 1.2.0 and 1.3.0: a tool call whose arguments the model garbled fails with what it sent so the model can correct it, a run an extension triggers starts like a prompt, `--model` stops picking a billing route silently when several providers offer a model, and Gemini 4, OpenCode's new endpoints and the `off` thinking level of Claude Haiku 5.5 and Opus 5 work.

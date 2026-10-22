@@ -79,17 +79,26 @@ func (ui *InteractiveUI) selectItems(ctx context.Context, title string, items []
 		return "", false, nil
 	}
 	result, submit, cancel := dialogResolvers()
+	// A runtime input request that says what it presents raises it as an interrupt card.
+	card := ""
+	if presentation := extensions.InputOptionsFromContext(ctx).Presentation; presentation != nil {
+		card = strings.ToUpper(presentation.Kind)
+	}
 	dialog := NewExtensionSelectorItemsComponent(title, items, submit, cancel,
-		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts), onToggleToolsExpanded: func() {
+		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts), card: card, onToggleToolsExpanded: func() {
 			ui.SetToolsExpanded(!ui.GetToolsExpanded())
 		}},
 	)
-	closeDialog := ui.showDialog(dialog, dialog.cancel)
+	closeDialog := ui.showDialog(dialog, dialog.cancel, title)
 	defer func() {
 		dialog.Dispose()
 		closeDialog()
 	}()
-	return awaitDialog(ctx, signal, result)
+	value, ok, err := awaitDialog(ctx, signal, result)
+	if card != "" && err == nil {
+		ui.mode.addInterruptStamp(card, value, ok)
+	}
+	return value, ok, err
 }
 
 type inlineComponent struct {
@@ -102,13 +111,16 @@ type openDialog struct {
 	handle tui.OverlayHandle
 }
 
-// showDialog floats an extension dialog above the open ones and returns what closes it.
-func (ui *InteractiveUI) showDialog(component tui.Component, cancel func()) func() {
+// showDialog floats an extension dialog above the open ones, calling a user who
+// is away to it, and returns what closes it.
+func (ui *InteractiveUI) showDialog(component tui.Component, cancel func(), title string) func() {
 	entry := &openDialog{cancel: cancel, handle: ui.floatDialog(component)}
 	ui.mu.Lock()
 	ui.dialogs = append(ui.dialogs, entry)
 	ui.mu.Unlock()
 	ui.mode.ui.RequestRender()
+	first, _, _ := strings.Cut(title, "\n")
+	ui.mode.ui.Attention("Orb", first)
 	return func() {
 		ui.mu.Lock()
 		ui.dialogs = slices.DeleteFunc(ui.dialogs, func(open *openDialog) bool { return open == entry })
@@ -176,7 +188,7 @@ func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *s
 	dialog := NewExtensionInputComponent(title, placeholderValue, submit, cancel,
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
 	)
-	closeDialog := ui.showDialog(dialog, dialog.cancel)
+	closeDialog := ui.showDialog(dialog, dialog.cancel, title)
 	defer func() {
 		dialog.Dispose()
 		closeDialog()
@@ -729,6 +741,10 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		opts.OnHandle(overlayHandle)
 	}
 	ui.mode.ui.RequestRender()
+	// A custom component answering a runtime input request asks a question.
+	if extensions.InputOptionsFromContext(ctx).Presentation != nil {
+		ui.mode.ui.Attention("Orb", "Waiting for your answer")
+	}
 	select {
 	case value := <-result:
 		return value, true, nil
@@ -943,7 +959,7 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 		externalEditorCommand = ui.mode.session.InteractiveModeSettings().ExternalEditor
 	}
 	editor := NewExtensionEditorComponent(ui.mode.ui, ui.mode.keybindings, title, prefillValue, submit, cancel, externalEditorCommand)
-	defer ui.showDialog(editor, editor.cancel)()
+	defer ui.showDialog(editor, editor.cancel, title)()
 	return awaitDialog(ctx, context.Background(), result)
 }
 

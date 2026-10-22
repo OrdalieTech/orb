@@ -4399,6 +4399,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		if !start.IsZero() && model != "" {
 			mode.addTurnFooter(model, time.Since(start))
 		}
+		if !start.IsZero() {
+			mode.ui.Attention("Orb", strings.TrimPrefix(mode.SessionName()+" · done", " · "))
+		}
 		mode.clearStatusIndicatorKind(StatusWorking)
 		mode.ui.Terminal().SetProgress(false)
 		mode.checkExtensionShutdownRequested()
@@ -4787,6 +4790,19 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	}
 	// The first frame lays out every message once; what that leaves is free then.
 	mode.ui.AfterRender(agent.ReleaseMemory)
+}
+
+// addInterruptStamp leaves an answered interrupt card in the transcript: its
+// word as an inverted chip, then the answer without its key prefix.
+func (mode *InteractiveMode) addInterruptStamp(word, answer string, answered bool) {
+	if !answered {
+		answer = "dismissed"
+	} else if len(answer) > 2 && answer[1] == ' ' {
+		answer = answer[2:]
+	}
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(theme.Inverse(theme.FG("text", " "+word+" "))+"  "+theme.FG("muted", answer), mode.currentOutputPad()+2, 0, nil))
+	mode.ui.RequestRender()
 }
 
 // addTurnFooter closes a turn with one dim line: the model that answered and

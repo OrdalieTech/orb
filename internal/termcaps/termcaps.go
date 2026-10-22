@@ -21,10 +21,22 @@ const (
 	ImageProtocolITerm2 ImageProtocol = "iterm2"
 )
 
+// NotifyProtocol is how a terminal reaches a user who is looking elsewhere.
+type NotifyProtocol string
+
+const (
+	NotifyBell   NotifyProtocol = ""
+	NotifyNone   NotifyProtocol = "none"
+	NotifyOSC9   NotifyProtocol = "osc9"
+	NotifyOSC99  NotifyProtocol = "osc99"
+	NotifyOSC777 NotifyProtocol = "osc777"
+)
+
 type TerminalCapabilities struct {
 	Images     ImageProtocol
 	TrueColor  bool
 	Hyperlinks bool
+	Notify     NotifyProtocol
 }
 
 // ponytail: the detection cache is process-global on purpose — a process has
@@ -71,27 +83,28 @@ func Detect(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
 	// Herdr forwards OSC 8 hyperlinks and draws Kitty graphics (0.9.2 and later). It
 	// runs inside another terminal whose variables (GHOSTTY_RESOURCES_DIR,
 	// KITTY_WINDOW_ID) leak into its panes, so it is checked first (upstream 1.2.0).
+	// Herdr turns the state Orb reports to it into its own notifications.
 	if termProgram == "herdr" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: trueColorHint, Hyperlinks: true}
+		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: trueColorHint, Hyperlinks: true, Notify: NotifyNone}
 	}
 	// Rex implements enough of the Kitty graphics protocol for Orb (pi 1.4.0).
 	if termProgram == "rex" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
+		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC99}
 	}
 	if termProgram == "ghostty" || strings.Contains(term, "ghostty") || os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
+		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC777}
 	}
 	if os.Getenv("WEZTERM_PANE") != "" || termProgram == "wezterm" {
-		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
+		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC777}
 	}
 	if termProgram == "warpterminal" || os.Getenv("WARP_SESSION_ID") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}
 	if os.Getenv("ITERM_SESSION_ID") != "" || termProgram == "iterm.app" {
-		return TerminalCapabilities{Images: ImageProtocolITerm2, TrueColor: true, Hyperlinks: true}
+		return TerminalCapabilities{Images: ImageProtocolITerm2, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC9}
 	}
 	if os.Getenv("WT_SESSION") != "" || termProgram == "vscode" || termProgram == "alacritty" {
 		return TerminalCapabilities{TrueColor: true, Hyperlinks: true}

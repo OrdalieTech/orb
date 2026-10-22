@@ -7,8 +7,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/OrdalieTech/orb/internal/termcaps"
 )
 
 const (
@@ -29,10 +32,10 @@ const (
 	BandGutterBar     = '┃'
 	scrollOnOutputOff = "\x1b[?1010l"
 	scrollOnOutputOn  = "\x1b[?1010h"
-	alternateScreenOn = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+	alternateScreenOn = "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1004h"
 	// 1003 is focus-scoped (syncMouseMotionLocked); the off sequence always
 	// clears it so a crash cannot leave the terminal streaming motion.
-	alternateScreenOff = "\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
+	alternateScreenOff = "\x1b[?1004l\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1049l"
 	mouseMotionOn      = "\x1b[?1003h"
 	// Turning any-motion off must re-assert button-event tracking in the
 	// same write: xterm-family terminals implement 1000/1002/1003 as ONE
@@ -40,6 +43,9 @@ const (
 	// reporting off entirely — killing wheel, clicks, and the scrollbar for
 	// the rest of the session — instead of falling back to 1002.
 	mouseMotionOff = "\x1b[?1003l\x1b[?1002h"
+	// Mode 1004 reports the terminal window gaining and losing focus.
+	focusInReport  = "\x1b[I"
+	focusOutReport = "\x1b[O"
 )
 
 type InputListenerResult struct {
@@ -132,6 +138,7 @@ type TUI struct {
 	hasStarted         bool
 	mouseViewport      bool
 	crashRestoreCancel func()
+	terminalBlurred    atomic.Bool
 
 	focusMu             sync.RWMutex
 	focused             Component
@@ -271,8 +278,42 @@ func (ui *TUI) AddInputListener(listener InputListener) func() {
 	}
 }
 
+// TerminalFocused reports whether the terminal window has focus, as the
+// viewport's focus reports tell; a terminal that sends none stays focused.
+func (ui *TUI) TerminalFocused() bool { return !ui.terminalBlurred.Load() }
+
+// Attention reaches a user who left the terminal: a desktop notification
+// where the terminal posts one, the bell elsewhere, nothing while focused.
+func (ui *TUI) Attention(title, body string) {
+	if ui.TerminalFocused() || ui.handedBack() {
+		return
+	}
+	clean := func(text string) string {
+		return strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f || r >= 0x80 && r < 0xa0 {
+				return -1
+			}
+			return r
+		}, text)
+	}
+	title, body = clean(title), clean(body)
+	sequence := "\a"
+	switch GetCapabilities().Notify {
+	case termcaps.NotifyNone:
+		return
+	case termcaps.NotifyOSC9:
+		sequence = "\x1b]9;" + title + ": " + body + "\x07"
+	case termcaps.NotifyOSC99:
+		sequence = "\x1b]99;i=orb:d=0;" + title + "\x1b\\\x1b]99;i=orb:p=body;" + body + "\x1b\\"
+	case termcaps.NotifyOSC777:
+		sequence = "\x1b]777;notify;" + strings.ReplaceAll(title, ";", ",") + ";" + body + "\x1b\\"
+	}
+	ui.terminal.Write(sequence)
+}
+
 func (ui *TUI) Start() error {
 	ui.setStopped(false)
+	ui.terminalBlurred.Store(false)
 	ui.renderMu.Lock()
 	viewport := ui.viewportBody != nil
 	ui.renderMu.Unlock()
@@ -459,6 +500,10 @@ func (ui *TUI) handleInput(data string) {
 		return
 	}
 	if ui.consumeTerminalColorSchemeReport(data) {
+		return
+	}
+	if data == focusInReport || data == focusOutReport {
+		ui.terminalBlurred.Store(data == focusOutReport)
 		return
 	}
 	ui.focusMu.RLock()

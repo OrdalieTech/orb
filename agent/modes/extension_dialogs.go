@@ -18,6 +18,8 @@ type extensionDialogOptions struct {
 	ui                    tui.RenderRequester
 	timeout               *int64
 	onToggleToolsExpanded func()
+	// card is the interrupt word the dialog raises, drawn in stretched capitals.
+	card string
 }
 
 // ExtensionSelectorComponent is the bordered option-list dialog behind
@@ -65,6 +67,9 @@ func NewExtensionSelectorItemsComponent(
 		component.onToggleToolsExpanded = config.onToggleToolsExpanded
 		component.ui, _ = config.ui.(*tui.TUI)
 		component.pinnedOptions = config.pinnedOptions
+	}
+	if config != nil && config.card != "" && component.ui != nil {
+		component.container.AddChild(newInterruptCard(config.card, component.ui))
 	}
 	component.title = tui.NewText(theme.FG("accent", theme.Bold(title)), 1, 0, nil)
 	component.container.AddChild(component.title)
@@ -462,6 +467,28 @@ func (component *ExtensionEditorComponent) SetFocused(focused bool) {
 func (component *ExtensionEditorComponent) Invalidate() { component.container.Invalidate() }
 func (component *ExtensionEditorComponent) Render(width int) []string {
 	return component.container.Render(width)
+}
+
+// interruptCard heads a dialog with its interrupt's word in the text color and
+// its hook in red, inset like the dialog title, over a blank line.
+type interruptCard struct{ caps *tui.CapsTitle }
+
+func newInterruptCard(word string, ui *tui.TUI) interruptCard {
+	text := func(s string) string { return theme.FG("text", s) }
+	hook := func(s string) string { return theme.FG("error", s) }
+	return interruptCard{tui.NewCapsTitle(word, text, hook, ui.Terminal().Rows, ui.RequestRender)}
+}
+
+func (card interruptCard) Invalidate() {}
+func (card interruptCard) Render(width int) []string {
+	lines := card.caps.Render(width - 1)
+	for index := range lines {
+		lines[index] = " " + lines[index]
+	}
+	if lines != nil {
+		lines = append(lines, "")
+	}
+	return lines
 }
 
 func extensionDialogBorder() *DynamicBorder {
