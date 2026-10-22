@@ -1481,7 +1481,7 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     const compatModels = await extractCompatModelsF2(upstreamRoot);
     await aheadOfPin("F2", "bedrock-requests.json", "cases", bedrock.requests, ["bedrock-rich-replay-long-cache-thinking"]);
     await aheadOfPin("F2", "google-requests.json", "cases", google.requests, ["google-cross-model-signatures-and-nonvision-image"]);
-    await aheadOfPin("F2", "compat-models.json", "cases", compatModels.cases, ["anthropic-claude-opus-5"]);
+    await aheadOfPin("F2", "compat-models.json", "cases", compatModels.cases, ["anthropic-claude-opus-5", "xai-grok-4.3", "xai-grok-4.5"]);
     if (!isDeepStrictEqual([togetherCompatModel, zaiCompatModel], compatModels.cases.slice(0, 2).map((entry) => entry.model))) {
       throw new Error(`OpenAI-compatible F2 models drifted from the pinned upstream generator: expected ${JSON.stringify(compatModels.cases.slice(0, 2).map((entry) => entry.model))}, got ${JSON.stringify([togetherCompatModel, zaiCompatModel])}`);
     }

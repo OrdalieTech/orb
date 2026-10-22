@@ -955,8 +955,6 @@ func addCodex(result map[string]map[string]ai.Model) {
 		{"gpt-6-astra", "GPT-6 Astra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-astra"]},
 		{"gpt-6-sol", "GPT-6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-sol"]},
 		{"gpt-6-luna", "GPT-6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-luna"]},
-		{"gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", 128000, ai.InputModalities{ai.InputText}, ai.ModelCostRates{Input: 1.75, Output: 14, CacheRead: .175}},
-		{"gpt-5.5", "GPT-5.5", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, ai.ModelCostRates{Input: 5, Output: 30, CacheRead: .5}},
 		{"gpt-5.6-luna", "GPT-5.6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-luna"]},
 		{"gpt-5.6-sol", "GPT-5.6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-sol"]},
 		{"gpt-5.6-terra", "GPT-5.6 Terra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-terra"]},

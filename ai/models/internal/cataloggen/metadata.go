@@ -255,6 +255,9 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 	if provider == "xai" && model.API == ai.APIOpenAIResponses && model.ThinkingLevelMap == nil {
 		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil})
 	}
+	if provider == "xai" && (id == "grok-4.3" || id == "grok-4.5") {
+		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh"}))
+	}
 	if supportsOpenAIXHigh(id) {
 		mergeThinking(model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingXHigh: "xhigh"}))
 	}

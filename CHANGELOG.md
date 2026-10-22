@@ -9,6 +9,8 @@ shown by `/changelog`.
 
 - Tool output of whitespace only, such as bash's bare `\r\n`, no longer gets a 400 from OpenAI or Google; `grep` runs `rg --no-config`, so a `RIPGREP_CONFIG_PATH` cannot turn regex searches literal; `@` file completion finds paths with `[` or `(`; an `mcp.json` starting with a UTF-8 BOM loads (pi 1.4.0).
 
+- `openai-codex` drops GPT-5.5 and GPT-5.3 Codex Spark, which always fail for ChatGPT accounts; providers' default models follow pi 1.4.0 (Codex and Copilot on GPT-6.1 Sol, xAI on Grok 4.7, Z.ai on GLM-5.3, Xiaomi on MiMo-V2.6 Pro, among others); Grok 4.3 and 4.5 offer `xhigh` (pi 1.4.0).
+
 ## [0.19.11] - 2026-10-17
 
 Fixes from pi 1.2.0 and 1.3.0: a tool call whose arguments the model garbled fails with what it sent so the model can correct it, a run an extension triggers starts like a prompt, `--model` stops picking a billing route silently when several providers offer a model, and Gemini 4, OpenCode's new endpoints and the `off` thinking level of Claude Haiku 5.5 and Opus 5 work.
