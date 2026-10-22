@@ -48,6 +48,8 @@ type SessionRuntimeConfig struct {
 	UnregisterProvider     func(string) error
 	BaseTools              []engine.AgentTool
 	InitialActiveToolNames []string
+	// KnownToolNames follow InitialActiveToolNames; other extension tools turn on as new.
+	KnownToolNames []string
 	// UsesDefaultTools is set when the initial tools came from defaultTools
 	// (no --tools or --no-tools), so /reload enables tools newly added to it.
 	UsesDefaultTools    bool

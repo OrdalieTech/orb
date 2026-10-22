@@ -927,7 +927,7 @@ func TestReloadEnablesToolsNewlyAddedToDefaultTools(t *testing.T) {
 func TestResumeRestoresLoadoutAndActivatesToolsThatRegisterLate(t *testing.T) {
 	isolateSDKAgentDir(t)
 	provider := testFaux(100000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "first", 10)})
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "first", 10), runtimeAssistant(provider, "second", 10)})
 	model := provider.GetModel()
 	cwd := t.TempDir()
 	sm, err := sessionstore.InMemory(cwd)
@@ -946,6 +946,12 @@ func TestResumeRestoresLoadoutAndActivatesToolsThatRegisterLate(t *testing.T) {
 			})
 			if registerNow {
 				api.RegisterTool(late)
+				// Active, then removed from the loadout: it stays off on resume.
+				api.RegisterTool(extensions.ToolDefinition{Name: "removed", Parameters: ai.JSONSchema(`{"type":"object"}`)})
+			} else {
+				// Installed after the session recorded its loadout: never mentioned there, so on.
+				api.RegisterTool(extensions.ToolDefinition{Name: "fresh", Parameters: ai.JSONSchema(`{"type":"object"}`)})
+				api.RegisterTool(extensions.ToolDefinition{Name: "removed", Parameters: ai.JSONSchema(`{"type":"object"}`)})
 			}
 			return nil
 		}); err != nil {
@@ -972,10 +978,16 @@ func TestResumeRestoresLoadoutAndActivatesToolsThatRegisterLate(t *testing.T) {
 	if slices.Contains(active(first), "late") {
 		t.Fatal("deferred tool active on registration")
 	}
-	if err := first.Session.SetActiveToolsByName([]string{"read", "late"}); err != nil {
+	if err := first.Session.SetActiveToolsByName([]string{"read", "late", "removed"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := first.Session.Prompt(context.Background(), "first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Session.SetActiveToolsByName([]string{"read", "late"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Session.Prompt(context.Background(), "second"); err != nil {
 		t.Fatal(err)
 	}
 	transcript, _ := ConvertToLLM(context.Background(), first.Session.State().Messages)
@@ -987,11 +999,11 @@ func TestResumeRestoresLoadoutAndActivatesToolsThatRegisterLate(t *testing.T) {
 
 	second, api := start(false)
 	defer second.Session.Dispose()
-	if got := active(second); !reflect.DeepEqual(got, []string{"read"}) {
+	if got := active(second); !reflect.DeepEqual(got, []string{"read", "fresh"}) {
 		t.Fatalf("restored loadout = %v", got)
 	}
 	(*api).RegisterTool(late)
-	if got := active(second); !reflect.DeepEqual(got, []string{"read", "late"}) {
+	if got := active(second); !reflect.DeepEqual(got, []string{"read", "fresh", "late"}) {
 		t.Fatalf("late tool did not turn on when it registered: %v", got)
 	}
 }

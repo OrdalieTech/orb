@@ -333,7 +333,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 
 	model, thinking, fallback := initialModel(opts, modelRegistry, settings, existing, hasThinkingEntry)
 
-	initialActiveToolNames, allowedToolNames := initialToolNames(opts, settings, sm, existing, decoded)
+	initialActiveToolNames, knownToolNames, allowedToolNames := initialToolNames(opts, settings, sm, existing, decoded)
 
 	systemPrompt := buildSystemPromptFromResources(resources)
 	systemPrompt = strings.TrimSuffix(systemPrompt, "\nCurrent working directory: "+strings.ReplaceAll(cwd, `\`, "/"))
@@ -421,6 +421,7 @@ func NewAgentSession(opts AgentSessionOptions) (*AgentSessionResult, error) {
 		ModelRegistry:          modelRegistry,
 		BaseTools:              baseTools,
 		InitialActiveToolNames: initialActiveToolNames,
+		KnownToolNames:         knownToolNames,
 		UsesDefaultTools:       opts.Tools == nil && opts.NoTools == "",
 		AllowedToolNames:       allowedToolNames,
 		ExcludedToolNames:      opts.ExcludeTools,
@@ -568,7 +569,7 @@ func initialModel(opts AgentSessionOptions, modelRegistry *config.ModelRegistry,
 
 // initialToolNames resolves the tools a session starts with, and the ones it
 // may ever enable when the options restrict them.
-func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, existing sessionstore.SessionContext, decoded []any) (initialActiveToolNames []string, allowedToolNames *[]string) {
+func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager, sm *sessionstore.SessionManager, existing sessionstore.SessionContext, decoded []any) (initialActiveToolNames, knownToolNames []string, allowedToolNames *[]string) {
 	hasExisting := len(existing.Messages) > 0
 	initialActiveToolNames = ResolveInitialTools(opts.Tools, opts.NoTools, opts.ExcludeTools, settings.GetDefaultTools())
 	if sm.IsHarnessBacked() && opts.Tools == nil && opts.NoTools == "" && existing.ActiveToolNames != nil {
@@ -580,6 +581,13 @@ func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager
 		for _, message := range decoded {
 			if system, ok := message.(*ai.SystemMessage); ok {
 				transcript = append(transcript, system)
+				// Tools the branch added or removed follow it; the others were installed since.
+				for _, tool := range system.ToolsAdded {
+					knownToolNames = append(knownToolNames, tool.Name)
+				}
+				for _, tool := range system.ToolsRemoved {
+					knownToolNames = append(knownToolNames, tool.Name)
+				}
 			}
 		}
 		if current := ai.CurrentSystemMessage(transcript); current != nil {
@@ -598,7 +606,7 @@ func initialToolNames(opts AgentSessionOptions, settings *config.SettingsManager
 		empty := []string{}
 		allowedToolNames = &empty
 	}
-	return initialActiveToolNames, allowedToolNames
+	return initialActiveToolNames, knownToolNames, allowedToolNames
 }
 
 // withRequestAuth completes the options' request-time auth callbacks. When

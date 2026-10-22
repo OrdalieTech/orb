@@ -46,7 +46,10 @@ type extensionRuntimeState struct {
 	// registered yet, such as MCP tools of servers still connecting: they turn
 	// on when registered, and are dropped when SetActiveTools deactivates a
 	// tool or the next agent run starts.
-	pendingTools    []string
+	pendingTools []string
+	// knownTools follow the restored or reloaded loadout; other extension tools are new and turn on
+	// when they register unless they opt out (pi 1.4.0).
+	knownTools      map[string]struct{}
 	turnIndex       int
 	startEvent      extensions.SessionStartEvent
 	started         bool
@@ -235,6 +238,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		}
 	}
 	state.pendingTools = slices.Clone(initial)
+	state.knownTools = stringSet(runtimeConfig.KnownToolNames)
 	runtime.refreshExtensionTools(initial, true)
 	startEvent := extensions.SessionStartEvent{Reason: extensions.SessionStartStartup}
 	if runtimeConfig.SessionStartEvent != nil {
@@ -394,6 +398,9 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 		flagValues = runner.FlagValues()
 	}
 	activeTools := runtime.agent.State().Tools
+	state.mu.Lock()
+	configuration.KnownToolNames = slices.Collect(maps.Keys(state.toolRegistry)) // tools turned off stay off
+	state.mu.Unlock()
 	configuration.InitialActiveToolNames = make([]string, 0, len(activeTools))
 	for _, tool := range activeTools {
 		configuration.InitialActiveToolNames = append(configuration.InitialActiveToolNames, tool.Spec().Name)
@@ -747,13 +754,14 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 		}
 	} else if includeAll {
 		for _, name := range extensionNames {
-			if state.activatedOnRegistration(name) {
+			if _, known := state.knownTools[name]; !known && state.activatedOnRegistration(name) {
 				active = append(active, name)
 			}
 		}
 	} else {
 		for _, name := range order {
-			if _, existed := previousRegistry[name]; !existed && state.activatedOnRegistration(name) {
+			_, known := state.knownTools[name]
+			if _, existed := previousRegistry[name]; !existed && !known && state.activatedOnRegistration(name) {
 				active = append(active, name)
 			}
 		}
