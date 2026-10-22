@@ -5,7 +5,11 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- The `anthropic` catalog lists Claude Haiku 5.5, Sonnet 5.5, Opus 5.5 and Fable 5.1 without a models.dev refresh.
+## [0.19.12] - 2026-10-22
+
+Fixes from pi 1.4.0 and a first TUI polish: more transient failures are retried and an HTTP 413 compacts, the prompt cache survives tool changes, a resumed or `/tree`-switched branch keeps exactly its tools, summaries use the model's output limit, extension dialogs stack, approvals and questions open as giant title cards, and Orb calls you back when a turn ends while you are away.
+
+- The bundled `anthropic` catalog lists Claude Haiku 5.5, Sonnet 5.5, Opus 5.5 and Fable 5.1, so an embedder that never refreshes from models.dev finds them.
 
 - More transient failures are retried: Codex CLI proxies' "stream disconnected before completion", gateways' upstream request and stream failures, and a failed Google Vertex token refresh; a 429 or 5xx inside a request id or byte count no longer counts, and a ChatGPT Business workspace usage limit is final. HTTP 413 from any provider is a context overflow, so a GitHub Copilot request with many images compacts and retries (pi 1.4.0).
 
