@@ -650,10 +650,9 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 			ui.mode.setActiveEditorText(savedText)
 			focus = ui.mode.activeEditorFocus()
 		}
-		// An open overlay keeps the keyboard; it hands it back to what replaced this one.
-		if ui.mode.ui.HasOverlay() {
-			ui.mode.ui.RetargetFocus(entry.focus, focus)
-		} else {
+		// Overlays, shown or hidden, hand focus back to what replaced this one; one that owns the keyboard keeps it.
+		ui.mode.ui.RetargetFocus(entry.focus, focus)
+		if !ui.mode.ui.HasOverlay() {
 			ui.mode.ui.SetFocus(focus)
 		}
 		ui.mode.ui.RequestRender()

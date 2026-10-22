@@ -460,8 +460,8 @@ func (handle *overlayHandle) IsFocused() bool {
 	return handle.ui.focused == handle.entry.component
 }
 
-// RetargetFocus makes the open overlays hand focus back to to wherever they would have handed it to from,
-// such as an inline component replaced under them.
+// RetargetFocus moves focus, and the focus overlays hand back when they close, from a component to the one
+// replacing it, such as an inline component closing under an overlay.
 func (ui *TUI) RetargetFocus(from, to Component) {
 	ui.focusMu.Lock()
 	defer ui.focusMu.Unlock()
@@ -469,6 +469,9 @@ func (ui *TUI) RetargetFocus(from, to Component) {
 		if overlay.preFocus == from {
 			overlay.preFocus = to
 		}
+	}
+	if ui.focused == from {
+		ui.setFocusLocked(to, overlayFocusRestorePreserve)
 	}
 }
 
