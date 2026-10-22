@@ -42,13 +42,23 @@ func FindShell(custom string, getenv func(string) string) (Shell, error) {
 	if _, err := os.Stat(custom); err != nil {
 		return Shell{}, fmt.Errorf("Custom shell path not found: %s", custom) //nolint:staticcheck // Upstream error text is observable.
 	}
-	return bashShell(custom), nil
+	return bashShell(custom, getenv), nil
 }
 
-func bashShell(path string) Shell {
-	normalized := strings.ToLower(strings.ReplaceAll(path, "/", `\`))
-	if len(normalized) > 2 && normalized[0] >= 'a' && normalized[0] <= 'z' && normalized[1] == ':' &&
-		(normalized[2:] == `\windows\system32\bash.exe` || normalized[2:] == `\windows\sysnative\bash.exe`) {
+func bashShell(path string, getenv func(string) string) Shell {
+	windowsPath := func(value string) string {
+		return strings.TrimRight(strings.ToLower(strings.ReplaceAll(value, "/", `\`)), `\`)
+	}
+	normalized := windowsPath(path)
+	// The legacy WSL launcher, in %SystemRoot% wherever Windows is installed; C:\Windows only when unknown.
+	root := ""
+	if getenv != nil {
+		root = windowsPath(getenv("SystemRoot"))
+	}
+	if root == "" && len(normalized) > 2 && normalized[0] >= 'a' && normalized[0] <= 'z' {
+		root = normalized[:2] + `\windows`
+	}
+	if len(root) > 2 && root[1] == ':' && (normalized == root+`\system32\bash.exe` || normalized == root+`\sysnative\bash.exe`) {
 		return Shell{Path: path, Args: []string{"-s"}, Stdin: true}
 	}
 	return Shell{Path: path, Args: []string{"-c"}}

@@ -56,3 +56,14 @@ func TestRunMakesTheCommandTheFirstOOMVictim(t *testing.T) {
 		t.Fatalf("code %d, err %v, oom_score_adj %q", code, err, output)
 	}
 }
+
+// The legacy WSL launcher is %SystemRoot%'s, wherever Windows is installed (pi 1.4.0).
+func TestBashShellFindsTheWSLLauncherUnderSystemRoot(t *testing.T) {
+	root := func(value string) func(string) string { return func(string) string { return value } }
+	if !bashShell(`e:\win\System32\bash.exe`, root(`E:\Win`)).Stdin || bashShell(`C:\Windows\System32\bash.exe`, root(`E:\Win`)).Stdin {
+		t.Fatal("WSL launcher not recognized under SystemRoot")
+	}
+	if !bashShell(`D:\Windows\Sysnative\bash.exe`, root("")).Stdin || bashShell(`D:\Git\bin\bash.exe`, root("")).Stdin {
+		t.Fatal("conventional WSL launcher path not recognized")
+	}
+}

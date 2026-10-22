@@ -13,9 +13,9 @@ func expendable(int)    {}
 
 // defaultShell still resolves through the host filesystem a Wasm runtime may
 // expose, so run failures read as they do natively.
-func defaultShell(func(string) string) (Shell, error) {
+func defaultShell(getenv func(string) string) (Shell, error) {
 	if _, err := os.Stat("/bin/bash"); err == nil {
-		return bashShell("/bin/bash"), nil
+		return bashShell("/bin/bash", getenv), nil
 	}
 	return Shell{}, errors.New("No bash shell found") //nolint:staticcheck // Upstream error text is observable.
 }

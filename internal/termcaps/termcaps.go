@@ -68,11 +68,15 @@ func Detect(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
 	if strings.HasPrefix(term, "screen") {
 		return TerminalCapabilities{TrueColor: trueColorHint}
 	}
-	// Herdr forwards OSC 8 hyperlinks but draws no images. It runs inside another
-	// terminal whose variables (GHOSTTY_RESOURCES_DIR, KITTY_WINDOW_ID) leak into
-	// its panes, so it is checked first (upstream b2363841).
+	// Herdr forwards OSC 8 hyperlinks and draws Kitty graphics (0.9.2 and later). It
+	// runs inside another terminal whose variables (GHOSTTY_RESOURCES_DIR,
+	// KITTY_WINDOW_ID) leak into its panes, so it is checked first (upstream 1.2.0).
 	if termProgram == "herdr" {
-		return TerminalCapabilities{TrueColor: trueColorHint, Hyperlinks: true}
+		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: trueColorHint, Hyperlinks: true}
+	}
+	// Rex implements enough of the Kitty graphics protocol for Orb (pi 1.4.0).
+	if termProgram == "rex" {
+		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}

@@ -48,13 +48,13 @@ func defaultShell(getenv func(string) string) (Shell, error) {
 		if root := getenv(variable); root != "" {
 			path := root + `\Git\bin\bash.exe`
 			if _, err := os.Stat(path); err == nil {
-				return bashShell(path), nil
+				return bashShell(path, getenv), nil
 			}
 			searched = append(searched, "  "+path)
 		}
 	}
 	if shell := where("bash.exe"); shell != "" {
-		return bashShell(shell), nil
+		return bashShell(shell, getenv), nil
 	}
 	return Shell{}, errors.New("No bash shell found. Options:\n" + //nolint:staticcheck // Upstream error text is observable.
 		"  1. Install Git for Windows: https://git-scm.com/download/win\n" +
@@ -75,7 +75,8 @@ func where(executable string) string {
 	if err != nil || first == "" {
 		return ""
 	}
-	if _, err := os.Stat(first); err != nil {
+	// Lstat: Stat rejects a runnable Microsoft Store alias.
+	if _, err := os.Lstat(first); err != nil {
 		return ""
 	}
 	return first

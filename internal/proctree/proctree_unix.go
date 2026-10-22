@@ -41,12 +41,12 @@ func Kill(pid int) error {
 	return err
 }
 
-func defaultShell(func(string) string) (Shell, error) {
+func defaultShell(getenv func(string) string) (Shell, error) {
 	if _, err := os.Stat("/bin/bash"); err == nil {
-		return bashShell("/bin/bash"), nil
+		return bashShell("/bin/bash", getenv), nil
 	}
 	if shell := which("bash"); shell != "" {
-		return bashShell(shell), nil
+		return bashShell(shell, getenv), nil
 	}
 	return Shell{Path: "sh", Args: []string{"-c"}}, nil
 }

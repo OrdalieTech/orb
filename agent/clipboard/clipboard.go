@@ -38,6 +38,7 @@ func runClipboardCommand(name string, arguments []string, input string) error {
 	command := exec.CommandContext(ctx, name, arguments...)
 	command.Stdin = strings.NewReader(input)
 	command.Stdout, command.Stderr = io.Discard, io.Discard
+	detach(command)
 	return command.Run()
 }
 
