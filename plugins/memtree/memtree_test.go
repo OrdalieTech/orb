@@ -85,14 +85,13 @@ func (s *fakeSessions) add(role string, content any) {
 	s.append(session.SessionEntry{Type: "message", Timestamp: "2026-10-04T10:00:00.000Z", Message: raw})
 }
 
-// compactor stands in for the model: a line of size bytes per step, recording the messages it
-// compressed and the view each call read. While hold is open, the merge of 0+1 and 1+1 waits.
+// compactor stands in for the model: a line of size bytes per step, recording the view each call
+// read. While hold is open, the merge of 0+1 and 1+1 waits.
 type compactor struct {
-	mu         sync.Mutex
-	size       int
-	hold       chan struct{}
-	compressed []int
-	chats      []string
+	mu    sync.Mutex
+	size  int
+	hold  chan struct{}
+	chats []string
 }
 
 var compressed = regexp.MustCompile(`compress message (\d+) into`)
@@ -108,9 +107,6 @@ func (c *compactor) ask(_ context.Context, messages ai.MessageList, _ int) (*ai.
 	c.chats = append(c.chats, ai.ContentText(blocks[:len(blocks)-1], ""))
 	line := "merged"
 	if match := compressed.FindStringSubmatch(task); match != nil {
-		var number int
-		_, _ = fmt.Sscan(match[1], &number)
-		c.compressed = append(c.compressed, number)
 		line = "summary of " + match[1]
 	}
 	return &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: line + " " + strings.Repeat("s", c.size-len(line)-1)}}}, nil
@@ -183,7 +179,10 @@ func TestTheViewGrowsAtItsEndBetweenBatchesAndSurvivesARestart(t *testing.T) {
 	if batches != 2 || previous[0] != (part{0, 0}) {
 		t.Fatalf("%d batches, view starts %v", batches, previous[:2])
 	}
-	for _, chat := range model.chats {
+	model.mu.Lock()
+	chats := slices.Clone(model.chats)
+	model.mu.Unlock()
+	for _, chat := range chats {
 		if strings.Contains(chat, unbuilt) || len(chat) > viewBytes/4+5_000 {
 			t.Fatalf("a compaction read %d bytes or a placeholder", len(chat))
 		}
