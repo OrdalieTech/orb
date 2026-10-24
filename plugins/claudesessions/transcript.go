@@ -345,21 +345,30 @@ func syncTranscript(records []*record, sessionID, projects string, known *fileLi
 		known = &fileLinks{}
 	}
 	if info, err := os.Stat(path); err != nil || known.path != path || info.Size() != known.size {
-		parents := map[string]string{}
+		parents, leaf := map[string]string{}, ""
 		size, err := eachLine(path, func(line []byte, _ int64) {
 			if l := readLinks(line); l.UUID != "" {
 				parents[l.UUID] = l.Parent
+			} else if l.Type == "last-prompt" {
+				leaf = l.Leaf
 			}
 		})
 		if err != nil {
 			return "", 0, err
 		}
-		*known = fileLinks{path: path, size: size, parents: parents}
+		*known = fileLinks{path: path, size: size, parents: parents, leaf: leaf}
 	}
 	size = known.size
 	// planTranscript records what it plans in known; a failure leaves it to read again.
 	known.size = -1
 	missing, at, err := planTranscript(records, known.parents, sessionID)
+	if err == nil && len(missing) == 0 && at != "" && known.leaf != at {
+		// Claude resumes only within the branch the file's last pointer names, and a
+		// native session that ended on its own (an interrupted turn, a host that
+		// exited after Orb's rewrite) leaves it on a branch Orb has left.
+		missing, err = json.Marshal(map[string]any{"type": "last-prompt", "leafUuid": at, "sessionId": sessionID})
+		missing = append(missing, '\n')
+	}
 	if err != nil || len(missing) == 0 {
 		if err == nil {
 			known.size = size
@@ -378,7 +387,7 @@ func syncTranscript(records []*record, sessionID, projects string, known *fileLi
 		err = closeErr
 	}
 	if err == nil {
-		known.size = size + int64(len(missing))
+		known.size, known.leaf = size+int64(len(missing)), at
 	}
 	return at, size + int64(len(missing)), err
 }
@@ -389,6 +398,8 @@ type fileLinks struct {
 	path    string
 	size    int64
 	parents map[string]string
+	// leaf is the record the file's last pointer names, the branch Claude resumes.
+	leaf string
 }
 
 // eachLine visits each line of the file at path, with its offset, a line at a
@@ -429,11 +440,11 @@ func eachLine(path string, visit func(line []byte, offset int64)) (size int64, e
 }
 
 // links is what Orb reads of a Claude Code record to place it: its UUID, its
-// parent's, the record a compaction summarizes, its type and whether it is a
-// subagent's.
+// parent's, the record a compaction summarizes, its type, the record a pointer
+// names and whether it is a subagent's.
 type links struct {
-	UUID, Parent, Logical, Type string
-	Sidechain                   bool
+	UUID, Parent, Logical, Type, Leaf string
+	Sidechain                         bool
 }
 
 // readLinks reads a record's links without decoding the rest of it; none for a
@@ -452,6 +463,8 @@ func readLinks(line []byte) (l links) {
 			l.Logical, _ = jsonwire.UnmarshalString(value)
 		case "type":
 			l.Type, _ = jsonwire.UnmarshalString(value)
+		case "leafUuid":
+			l.Leaf, _ = jsonwire.UnmarshalString(value)
 		case "isSidechain":
 			l.Sidechain = string(value) == "true"
 		}

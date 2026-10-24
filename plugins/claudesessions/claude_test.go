@@ -32,7 +32,7 @@ import (
 )
 
 const fakeSDK = `
-import {readFileSync,appendFileSync,mkdirSync,realpathSync} from 'node:fs';
+import {readFileSync,appendFileSync,mkdirSync,realpathSync,existsSync,writeFileSync} from 'node:fs';
 // Like the CLI: transcripts live under the config directory, one per session,
 // named after the working directory as getcwd resolves it off Windows.
 const transcript=(cwd,id)=>{const dir=process.env.CLAUDE_CONFIG_DIR+'/projects/'+(process.platform==='win32'?cwd:realpathSync(cwd)).replace(/[^a-zA-Z0-9]/g,'-');mkdirSync(dir,{recursive:true});return dir+'/'+id+'.jsonl'};
@@ -44,11 +44,16 @@ export function query({prompt,options:o}) {
  const gen = (async function*(){
   if(!['default','plan'].includes(o.permissionMode)||process.env.SDK_TEST_KEY!=='unchanged'||process.env.HERDR_PANE_ID) throw new Error('options or environment lost');
   const id=o.resume??o.sessionId??crypto.randomUUID();
+  // Like the CLI, slow to start: a host still ending a session has time to write to it.
+  if(o.resume&&existsSync(o.cwd+'/lingering')) await new Promise(r=>setTimeout(r,400));
   // Like the CLI: a resumed session is the chain back from its resume point,
   // and what Claude writes chains on from there. This reports what Claude reads.
   const all=o.resume?readFileSync(transcript(o.cwd,o.resume),'utf8').split('\n').filter(Boolean).map(l=>JSON.parse(l)):[];
   const byID=new Map(all.filter(r=>r.uuid).map(r=>[r.uuid,r]));
   let leaf=o.resumeSessionAt??all.filter(r=>r.uuid).at(-1)?.uuid??null;
+  // Like the CLI: it resumes only within the branch the file's last pointer names.
+  const pointer=all.filter(r=>r.type==='last-prompt').at(-1)?.leafUuid;
+  if(o.resumeSessionAt&&pointer){const chain=new Set();for(let r=byID.get(pointer);r;r=byID.get(r.parentUuid))chain.add(r.uuid);if(!chain.has(o.resumeSessionAt))throw new Error('No message found with message.uuid of: '+o.resumeSessionAt);}
   const loaded=[];for(let r=byID.get(leaf);r;r=byID.get(r.parentUuid))loaded.unshift(r);
   const read=loaded.map(r=>r.type+':'+(!r.message?'':typeof r.message.content==='string'?r.message.content:r.message.content.map(b=>b.text??'').join('')));
   const host=crypto.randomUUID().slice(0,8);
@@ -75,6 +80,8 @@ export function query({prompt,options:o}) {
   // Like a host past its idle timeout: exit between turns.
   if(idle){await new Promise(r=>setTimeout(r,100));(await import('node:fs')).writeFileSync(o.cwd+'/idle-exit','');process.exit(0);}
   const {value:p,done}=await next();
+  // Like the CLI ending a session as its input closes: it points the file at its own branch.
+  if(done&&existsSync(o.cwd+'/lingering')){await new Promise(r=>setTimeout(r,200));appendFileSync(transcript(o.cwd,id),JSON.stringify({type:'last-prompt',leafUuid:leaf,sessionId:id})+'\n');}
   if(done) return;
   idle=JSON.stringify(p.message.content).includes('idle-fixture');
   yield {type:'system',subtype:'init',session_id:id,claude_code_version:'2.1.280'};
@@ -121,6 +128,15 @@ export function query({prompt,options:o}) {
    yield {type:'assistant',uuid:id+'-a'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text:JSON.stringify({out,notes:c.notes.splice(0),allowed:o.allowedTools})}],usage:{input_tokens:1,output_tokens:1}}};
    record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},{type:'assistant',uuid:id+'-a'+turn,message:{role:'assistant',content:[{type:'text',text:'mcp'}]}});
    yield {type:'result',subtype:'success',session_id:id,user_message_uuids:[p.uuid]};continue;
+  }
+  // Like the CLI interrupted while a background task runs: the turn ends, the task does not.
+  if(JSON.stringify(p.message.content).includes('linger-fixture')) {
+   writeFileSync(o.cwd+'/lingering','');
+   yield {type:'system',subtype:'task_started',task_id:'linger',is_backgrounded:true,session_id:id};
+   yield {type:'assistant',uuid:id+'-l'+turn,session_id:id,message:{model:o.model,content:[{type:'text',text:'lingering'}],usage:{input_tokens:1,output_tokens:1}}};
+   record({type:'user',uuid:id+'-u'+turn,message:{role:'user',content:p.message.content}},{type:'assistant',uuid:id+'-l'+turn,message:{role:'assistant',content:[{type:'text',text:'lingering'}]}});
+   await new Promise(r=>abort.signal.aborted?r():abort.signal.addEventListener('abort',r));
+   yield {type:'result',subtype:'error_during_execution',is_error:true,session_id:id};continue;
   }
   // Like the CLI compacting mid-turn: the boundary, then the summary it writes.
   if(JSON.stringify(p.message.content).includes('compact-fixture')) {
@@ -1722,6 +1738,43 @@ func TestReplyFinishingAfterEscEndsAborted(t *testing.T) {
 	_ = tr.abort()
 	if len(ends) != 1 || ends[0].StopReason != ai.StopReasonAborted {
 		t.Fatalf("reply after Esc: %+v", ends)
+	}
+}
+
+// A turn cancelled while Claude waits on a background task outlives its grace,
+// and its host ends the native session as it exits; the next prompt resumes
+// Orb's branch all the same.
+func TestPromptAfterCancelledLingeringTurnResumes(t *testing.T) {
+	host, _ := fixture(t)
+	s := host.Session()
+	if err := s.Prompt(t.Context(), "plain-fixture remember ZEBRA"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Prompt(context.Background(), "linger-fixture") }()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if raw, _ := json.Marshal(s.State().Messages); strings.Contains(string(raw), "lingering") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Claude never answered")
+		}
+	}
+	s.Abort()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("cancelled turn never ended")
+	}
+	if err := s.Prompt(t.Context(), "plain-fixture again"); err != nil {
+		t.Fatal(err)
+	}
+	if msg := s.State().ErrorMessage; msg != nil {
+		t.Fatal(*msg)
+	}
+	messages := s.State().Messages
+	if raw, _ := json.Marshal(messages[len(messages)-1]); !strings.Contains(string(raw), "ZEBRA") || !strings.Contains(string(raw), "lingering") {
+		t.Fatalf("resumed without the conversation: %s", raw)
 	}
 }
 

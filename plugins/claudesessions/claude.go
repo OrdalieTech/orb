@@ -85,6 +85,9 @@ type Driver struct {
 	options Options
 	mu      sync.Mutex
 	host    *host
+	// retired is a closed host that may still be ending its native session, which
+	// writes to the transcript as it exits; no other host starts until it is gone.
+	retired *host
 	// tools serves Claude the session's tools it lacks; each host connects to it.
 	tools *serve.Server
 	// ponytail: approvals "for this session" live as long as this Orb runtime,
@@ -250,6 +253,20 @@ func (h *host) alive() bool {
 	}
 }
 
+// retire closes the live host, under mu.
+func (d *Driver) retire() {
+	d.host.close()
+	d.retired, d.host = d.host, nil
+}
+
+// settle waits, under mu, for a retired host to exit; close kills it within seconds.
+func (d *Driver) settle() {
+	if d.retired != nil {
+		<-d.retired.exited
+		d.retired = nil
+	}
+}
+
 // close lets the host end its native session, and kills it if it lingers.
 func (h *host) close() {
 	_ = h.mcp.Close()
@@ -305,6 +322,7 @@ func (d *Driver) spawn(start map[string]any, env []string) (*host, error) {
 func (d *Driver) share() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.settle()
 	base, _ := baseConfig(d.options.Env)
 	projects, id := projectDir(base, d.options.Manager.GetCWD()), nativeSessionID(d.options.Manager.GetSessionID())
 	if _, err := os.Stat(filepath.Join(projects, id+".jsonl")); err != nil {
@@ -322,8 +340,7 @@ func (d *Driver) Close() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.host != nil {
-		d.host.close()
-		d.host = nil
+		d.retire()
 	}
 }
 
@@ -366,14 +383,14 @@ func (d *Driver) turn(ctx context.Context, prompts engine.AgentMessages, config 
 	acquire := func() (h *host, reused bool, err error) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		h = d.host
-		if h != nil && (h.key != string(key) || h.last != last || !h.alive()) {
-			h.close()
+		if h = d.host; h != nil && (h.key != string(key) || h.last != last || !h.alive()) {
+			d.retire()
 			h = nil
 		}
 		if h != nil {
 			return h, true, nil
 		}
+		d.settle()
 		configDir, _ := baseConfig(env)
 		projects := projectDir(configDir, d.options.Manager.GetCWD())
 		id := nativeSessionID(d.options.Manager.GetSessionID())

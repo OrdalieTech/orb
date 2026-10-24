@@ -350,14 +350,15 @@ func TestSyncTranscriptAppendsWhatTheSessionLacks(t *testing.T) {
 	if err != nil || len(lines()) != 7 || !strings.Contains(lines()[4], `"uuid":"`+copied+`"`) || !strings.Contains(lines()[5], `"parentUuid":"`+copied+`"`) || at != "r3" {
 		t.Fatalf("compacted sync: %q %v %v", at, err, lines())
 	}
-	// A record Claude Code wrote meanwhile is read before the next sync.
+	// A record Claude Code wrote meanwhile is read before the next sync, not
+	// copied; only the pointer Claude resumes by follows it.
 	file, err := os.OpenFile(filepath.Join(dir, "s.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = file.WriteString(`{"type":"user","uuid":"x","parentUuid":"r3"}` + "\n")
 	_ = file.Close()
-	if at, _, err = syncTranscript([]*record{line("sum", ""), line("r2", "sum"), line("r3", "r2"), line("x", "r3")}, "s", dir, &known); err != nil || len(lines()) != 8 || at != "x" {
+	if at, _, err = syncTranscript([]*record{line("sum", ""), line("r2", "sum"), line("r3", "r2"), line("x", "r3")}, "s", dir, &known); err != nil || len(lines()) != 9 || lines()[8] != `{"leafUuid":"x","sessionId":"s","type":"last-prompt"}` || at != "x" {
 		t.Fatalf("sync after Claude Code wrote: %q %v %v", at, err, lines())
 	}
 }
@@ -422,5 +423,33 @@ func TestCatchUpTakesTurnsAddedInClaudeCode(t *testing.T) {
 	}
 	if records := rebuild(manager, 0); records[len(records)-1].UUID != "a2" {
 		t.Fatalf("Claude would resume at %v", records[len(records)-1].UUID)
+	}
+}
+
+// A session file whose last pointer names a branch Orb left is pointed back at
+// Orb's, once: Claude resumes only within the branch the pointer names.
+func TestSyncRepointsADriftedTranscript(t *testing.T) {
+	dir, id := t.TempDir(), "0b7a4a1e-1111-4222-8333-444455556666"
+	lines := []string{
+		`{"type":"user","uuid":"a1","parentUuid":null,"message":{"role":"user","content":"hi"}}`,
+		`{"type":"assistant","uuid":"a2","parentUuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"kept"}]}}`,
+		`{"type":"assistant","uuid":"b2","parentUuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"left"}]}}`,
+		`{"type":"last-prompt","leafUuid":"b2","sessionId":"` + id + `"}`,
+	}
+	path := filepath.Join(dir, id+".jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	records := []*record{{UUID: "a1", raw: json.RawMessage(lines[0])}, {UUID: "a2", Parent: "a1", raw: json.RawMessage(lines[1])}}
+	var known fileLinks
+	for range 2 {
+		if at, _, err := syncTranscript(records, id, dir, &known); err != nil || at != "a2" {
+			t.Fatalf("at %q, %v", at, err)
+		}
+	}
+	data, _ := os.ReadFile(path)
+	got := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(got) != 5 || !strings.Contains(got[4], `"leafUuid":"a2"`) {
+		t.Fatalf("file = %s", data)
 	}
 }
