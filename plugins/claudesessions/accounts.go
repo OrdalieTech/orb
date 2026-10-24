@@ -278,12 +278,7 @@ var ambient struct {
 }
 
 func newProvider(settings *config.SettingsManager, agentDir string, env []string) *provider {
-	p := &provider{settings: settings, agentDir: agentDir, env: env}
-	if raw, ok := settings.GetPluginSettings(Name)["catalog"]; ok {
-		data, _ := json.Marshal(raw)
-		_ = json.Unmarshal(data, &p.models)
-	}
-	return p
+	return &provider{settings: settings, agentDir: agentDir, env: env, models: cachedCatalog(settings)}
 }
 
 func (p *provider) claude() (string, error) {

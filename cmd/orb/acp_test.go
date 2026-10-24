@@ -660,3 +660,45 @@ func TestACPSteeringJoinsTheRunningTurn(t *testing.T) {
 	}
 	client.close()
 }
+
+// A model named on the command line that no catalog lists is still offered as
+// the current one, so a client that selects it by value finds it.
+func TestACPOffersTheCurrentModelEvenUnlisted(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	dependencies := scriptedRuntime(provider)
+	create := dependencies.createRuntime
+	dependencies.createRuntime = func(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+		inputs, err := create(cwd, args, prior)
+		other := *provider.GetModel()
+		other.ID = "listed"
+		inputs.AvailableModels = func() []ai.Model { return []ai.Model{other} }
+		return inputs, err
+	}
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
+	go func() {
+		client.done <- runCLIWithDependencies(context.Background(), []string{"--mode", "acp"}, cliStreams{Stdin: stdinReader, Stdout: stdoutWriter, Stderr: io.Discard}, dependencies)
+		_ = stdoutWriter.Close()
+	}()
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	created, _ := client.call("session/new", map[string]any{"cwd": root, "mcpServers": []any{}})
+	current := "faux/" + provider.GetModel().ID
+	options := created["result"].(map[string]any)["configOptions"].([]any)[0].(map[string]any)
+	var values []string
+	for _, option := range options["options"].([]any) {
+		values = append(values, option.(map[string]any)["value"].(string))
+	}
+	if options["currentValue"] != current || !slices.Equal(values, []string{current, "faux/listed"}) {
+		t.Fatalf("model options = %v", options)
+	}
+	sessionID := created["result"].(map[string]any)["sessionId"]
+	if selected, _ := client.call("session/set_config_option", map[string]any{"sessionId": sessionID, "configId": "model", "value": current}); selected["error"] != nil {
+		t.Fatalf("selecting the current model = %v", selected)
+	}
+	client.close()
+}

@@ -607,6 +607,16 @@ func TestModelSelectionKeepsExistingProvider(t *testing.T) {
 	if Model(nil, nil, settings) != nil {
 		t.Fatal("ordinary launch implicitly selected Claude")
 	}
+	// A model named by its alias or by the model it resolves to is the catalog's.
+	settings.SetPluginSetting(Name, "catalog", []ai.Model{{ID: "opus", Provider: Name, API: Name, Reasoning: true, Compat: json.RawMessage(`{"value":"opus","resolvedModel":"claude-opus-5-5","supportsEffort":true,"supportedEffortLevels":["low","high","max"]}`)}})
+	for _, id := range []string{"opus", "claude-opus-5-5"} {
+		if model := Model(ptr(Name), ptr(id), settings); model.ID != id || !model.Reasoning || model.Compat == nil {
+			t.Fatalf("%s = %+v", id, model)
+		}
+	}
+	if model := Model(ptr(Name), ptr("claude-unlisted"), settings); model.ID != "claude-unlisted" || model.Reasoning {
+		t.Fatalf("unlisted model = %+v", model)
+	}
 }
 
 // Opt-in: uses the executing user's official Claude login and subscription limits.

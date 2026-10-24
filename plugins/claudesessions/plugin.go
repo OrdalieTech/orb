@@ -41,7 +41,22 @@ func Model(provider, model *string, settings *config.SettingsManager) *ai.Model 
 	if id == "" {
 		id = "default"
 	}
+	// The catalog's entry, under an alias or the model it resolves to, carries the
+	// reasoning levels a session offers from its first turn.
+	if model := selectedModel(cachedCatalog(settings), id); model.Compat != nil {
+		return model
+	}
 	return &ai.Model{ID: id, Name: "Claude · " + id, API: Name, Provider: Name, Input: ai.InputModalities{"text", "image"}}
+}
+
+// cachedCatalog is the model catalog Claude last returned, as the provider keeps it.
+func cachedCatalog(settings *config.SettingsManager) []ai.Model {
+	var models []ai.Model
+	if raw, ok := settings.GetPluginSettings(Name)["catalog"]; ok {
+		data, _ := json.Marshal(raw)
+		_ = json.Unmarshal(data, &models)
+	}
+	return models
 }
 
 // Factory rebuilds the plugin attachment for every SDK session replacement.

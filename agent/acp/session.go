@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -164,7 +165,12 @@ func configOptions(runtime *agent.AgentSession) []map[string]any {
 		if state.Model != nil {
 			current = modelValue(*state.Model)
 		}
-		values := make([]map[string]string, 0, len(models))
+		values := make([]map[string]string, 0, len(models)+1)
+		// A model the catalog does not list (one named on the command line) is
+		// still the current one, so a client can select it again.
+		if state.Model != nil && !slices.ContainsFunc(models, func(model ai.Model) bool { return modelValue(model) == current }) {
+			values = append(values, map[string]string{"value": current, "name": state.Model.Name})
+		}
 		for _, model := range models {
 			values = append(values, map[string]string{"value": modelValue(model), "name": model.Name})
 		}
@@ -185,6 +191,9 @@ func modelValue(model ai.Model) string { return string(model.Provider) + "/" + m
 func configure(ctx context.Context, runtime *agent.AgentSession, id, value string) error {
 	switch id {
 	case "model":
+		if current := runtime.State().Model; current != nil && modelValue(*current) == value {
+			return nil
+		}
 		for _, model := range runtime.AvailableModels() {
 			if modelValue(model) == value || model.ID == value {
 				return runtime.SetModel(ctx, model)
