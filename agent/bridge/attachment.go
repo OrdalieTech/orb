@@ -999,6 +999,13 @@ const waitLimit = 15 * time.Second
 func (a *Attachment) await(ctx context.Context, cursor, state string, limit int) (json.RawMessage, error) {
 	deadline := time.Now().Add(waitLimit)
 	for {
+		// A follower waiting on an attachment that closes hears it at once, not at the deadline.
+		a.mu.Lock()
+		closed := a.closed
+		a.mu.Unlock()
+		if closed {
+			return nil, bridge.Fail("unavailable")
+		}
 		out, err := a.replay(cursor, limit)
 		if err != nil || len(out.Events) > 0 || out.State != state || time.Now().After(deadline) {
 			return bridge.JSON(out), err

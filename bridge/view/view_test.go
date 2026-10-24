@@ -29,6 +29,7 @@ type client struct {
 	alerts  []string
 	patches map[string][][2]int // each patch of a tab's rows: where it started, how many rows after it
 	saved   atomic.Pointer[[]byte]
+	end     func() // ends the Orb as its process exiting would
 }
 
 func newClient() *client {
@@ -113,6 +114,10 @@ func orb(t *testing.T, speed float64, steps ...faux.ResponseStep) (*App, *client
 	}
 	_ = a.SetGeneration(generation)
 	c := newClient()
+	c.end = func() {
+		_ = a.Close()
+		_, _ = b.Admin(ctx, "retire", bridge.JSON(map[string][]string{"instance_ids": {enrolled.ID}}))
+	}
 	app := New(ctx, Options{
 		Call: func(ctx context.Context, method string, params, result any) error {
 			raw, err := peers.Admin(ctx, method, bridge.JSON(params))
@@ -314,5 +319,47 @@ func TestOnlyWebAndMailLinksStayLinks(t *testing.T) {
 		if links[text] != href {
 			t.Errorf("%q links to %q, want %q (spans %+v)", text, links[text], href, spans)
 		}
+	}
+}
+
+// An Orb that ended over there (its machine retires the ones it started when their plugins
+// change) shows as ended, to reopen at the next message, instead of staying a live tab that
+// drops what is sent to it.
+func TestAnOrbThatEndsOverThereShowsEnded(t *testing.T) {
+	app, c, instance := orb(t, 0, faux.AssistantMessage("hi"))
+	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	c.until(t, "ready", func() bool { return c.tab(opened.Tab).Loaded })
+	c.end()
+	c.until(t, "told it ended", func() bool { return c.tab(opened.Tab).Status == ended })
+}
+
+// A turn of plugin tools draws as the TUI shows it: its calls in the order made, the task list as
+// the task in progress and how far it got, and a background job's end once.
+func TestPluginToolsDrawInOrder(t *testing.T) {
+	var tr transcript
+	for _, e := range []string{
+		`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[
+			{"type":"toolCall","id":"a","name":"todo","arguments":{"items":[{"text":"read","status":"done"},{"text":"fix","status":"in_progress"},{"text":"ship","status":"pending"}]}},
+			{"type":"toolCall","id":"b","name":"subagent","arguments":{"mode":"parallel","tasks":[{"task":"x"},{"task":"y"}]}}]}}`,
+		`{"type":"tool_execution_end","toolCallId":"a","result":{"content":[{"type":"text","text":"[x] read\n→ [ ] fix\n[ ] ship"}]}}`,
+		`{"type":"tool_execution_end","toolCallId":"b","result":{"content":[{"type":"text","text":"[1] scout\nx"}]}}`,
+		`{"type":"message_start","message":{"role":"custom","customType":"job","content":"Job 1 exited with code 0","display":true}}`,
+		`{"type":"message_end","message":{"role":"custom","customType":"job","content":"Job 1 exited with code 0","display":true}}`,
+	} {
+		tr.apply(json.RawMessage(e))
+	}
+	rows, _ := tr.rows()
+	if len(rows) != 2 || rows[0].Kind != "run" || rows[1].Kind != "note" {
+		t.Fatalf("rows: %+v", rows)
+	}
+	a := rows[0].Actions
+	if len(a) != 2 || a[0].Verb != "tasks" || a[0].Target != "fix" || a[0].Result != "1 / 3 done" || a[1].Verb != "subagent" || a[1].Target != "2 tasks" {
+		t.Fatalf("actions: %+v", a)
 	}
 }

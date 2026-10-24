@@ -148,6 +148,8 @@ type tab struct {
 // tail is how many messages a conversation opens with; earlier ones load on demand.
 const tail = 80
 
+const ended = "ended on that device · send a message to reopen it"
+
 func (a *App) newTab(peer, instance, where, session string) *tab {
 	t := &tab{a: a, Tab: Tab{ID: protocol.NewID(), Peer: peer, Where: where, Online: true}, instance: instance, session: session, from: -1, stale: true, wake: make(chan struct{}, 1), done: make(chan struct{})}
 	a.tabs = append(a.tabs, t)
@@ -256,7 +258,7 @@ func (t *tab) describe() bool {
 		t.Online = false
 		// Unreachable is a network matter; not found means the Orb itself ended over there.
 		t.gone = bridge.Code(err) == "not_found" && t.info.Target.Session != ""
-		t.Status = map[bool]string{true: "ended on that device · send a message to reopen it", false: "offline · read-only · reconnecting"}[t.gone]
+		t.Status = map[bool]string{true: ended, false: "offline · read-only · reconnecting"}[t.gone]
 		return false
 	}
 	if d.Target.Session != t.info.Target.Session {
@@ -354,7 +356,7 @@ func (t *tab) question() *Ask {
 	q := t.questions[len(t.answers)]
 	ask := &Ask{ID: t.asked, Owner: "questions", Title: q.Question, Message: q.Header, Free: true}
 	if len(t.questions) > 1 {
-		ask.Message += fmt.Sprintf("  %d / %d", len(t.answers)+1, len(t.questions))
+		ask.Message = strings.TrimSpace(fmt.Sprintf("%s  %d / %d", ask.Message, len(t.answers)+1, len(t.questions)))
 	}
 	for _, o := range q.Options {
 		ask.Choices = append(ask.Choices, o.Label)
@@ -397,7 +399,7 @@ func (t *tab) snapshot() {
 		}
 		if err := t.remote("events.subscribe", params, &r); err != nil {
 			a.mu.Lock()
-			t.from = -1 // a compacted conversation may be shorter now
+			t.from, t.stale = -1, true // a compacted conversation may be shorter now; an ended Orb is told by describe
 			a.mu.Unlock()
 			return
 		}
@@ -445,7 +447,7 @@ func (t *tab) events(waits bool) {
 	defer a.mu.Unlock()
 	defer a.flush()
 	if err != nil {
-		t.cursor = ""
+		t.cursor, t.stale = "", true
 		return
 	}
 	for _, e := range r.Events {
@@ -462,7 +464,9 @@ func (t *tab) events(waits bool) {
 	}
 }
 
-// call runs a method on the Orb's session; its error, if any, becomes the tab's status.
+// call runs a method on the Orb's session; its error, if any, becomes the tab's status. Not
+// found is an Orb that ended over there (its machine retires those it started when their
+// plugins change) before this side noticed.
 func (t *tab) call(method string, args any) {
 	a := t.a
 	a.mu.Lock()
@@ -476,6 +480,9 @@ func (t *tab) call(method string, args any) {
 	if err := t.remote("instances.call", call, nil); err != nil {
 		a.mu.Lock()
 		t.Status = err.Error()
+		if bridge.Code(err) == "not_found" {
+			t.gone, t.Status = true, ended
+		}
 		a.flush()
 		a.mu.Unlock()
 	}
@@ -514,7 +521,16 @@ func (t *tab) prompt(text string) {
 		args := t.execution(map[string]any{"text": t.invoking(text)})
 		go t.call("follow_up", args)
 	default:
-		go t.call("prompt", map[string]string{"text": t.invoking(text)})
+		args := map[string]string{"text": t.invoking(text)}
+		go func() {
+			t.call("prompt", args)
+			t.a.mu.Lock()
+			gone := t.gone
+			t.a.mu.Unlock()
+			if gone {
+				t.reopen(text)
+			}
+		}()
 	}
 }
 
@@ -542,7 +558,8 @@ func (t *tab) reopen(text string) {
 	a.mu.Lock()
 	running := ""
 	for _, i := range m.instances {
-		if i.session == session && session != "" {
+		// The machine's list may still hold the Orb that just ended.
+		if i.session == session && session != "" && i.id != t.instance {
 			running = i.id
 		}
 	}

@@ -4,9 +4,9 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
@@ -82,7 +82,7 @@ type transcript struct {
 const outputKept = 8000
 
 var (
-	verbs   = map[string]string{"ask_user_question": "ask", "todo_write": "tasks", "web_search": "search", "web_fetch": "fetch"}
+	verbs   = map[string]string{"ask_user_question": "ask", "todo": "tasks", "web_search": "search", "fetch_content": "fetch"}
 	kinds   = map[string]string{"bash": "command", "read": "read", "grep": "search", "find": "search", "glob": "search", "ls": "listing", "edit": "edit", "write": "edit"}
 	tagged  = regexp.MustCompile(`^<([a-z][\w-]*)[ >]`)
 	markup  = regexp.MustCompile(`<[^>]+>`)
@@ -297,6 +297,10 @@ func (t *transcript) load(messages []json.RawMessage, from int) {
 }
 
 func (t *transcript) message(m wireMessage, final bool) {
+	// Live messages come as start and end: those drawn whole (a note, a command) wait for the end.
+	if !final && m.Role != "user" && m.Role != "assistant" {
+		return
+	}
 	switch m.Role {
 	// Live user messages come as start and end; snapshots and history carry only the end.
 	case "user":
@@ -382,18 +386,33 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 		q, _ := qs[0].(map[string]any)
 		target, _ = q["question"].(string)
 	}
-	for _, k := range []string{"path", "file_path", "command", "pattern", "url", "query"} {
+	if items, _ := args["items"].([]any); name == "todo" {
+		for _, i := range items {
+			if task, _ := i.(map[string]any); task["status"] == "in_progress" {
+				target, _ = task["text"].(string)
+			}
+		}
+	}
+	for _, k := range []string{"path", "file_path", "command", "pattern", "url", "query", "task", "content", "text"} {
 		if s, _ := args[k].(string); target == "" && strings.TrimSpace(s) != "" {
 			target = s
 		}
 	}
-	if target == "" && len(args) > 0 {
-		keys := make([]string, 0, len(args))
-		for k := range args {
-			keys = append(keys, k)
+	// Else how many a list holds ("3 tasks"), the first text, or the first value as JSON.
+	keys := slices.Sorted(maps.Keys(args))
+	for _, k := range keys {
+		if list, ok := args[k].([]any); ok && target == "" {
+			target = fmt.Sprintf("%d %s", len(list), k)
 		}
-		sort.Strings(keys)
-		target = fmt.Sprint(args[keys[0]])
+	}
+	for _, k := range keys {
+		if s, _ := args[k].(string); target == "" && strings.TrimSpace(s) != "" {
+			target = s
+		}
+	}
+	if target == "" && len(keys) > 0 {
+		pretty, _ := json.Marshal(args[keys[0]])
+		target = string(pretty)
 	}
 	pretty, _ := json.MarshalIndent(args, "", "  ")
 	if len(args) == 0 {
@@ -405,8 +424,12 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 	}
 	it := &item{kind: "t", verb: verb, target: firstLine(target, 120), args: clip(string(pretty), 2000), live: !t.replaying}
 	t.tools[id] = t.keyed(it)
-	// A call lands right after the message that made it, ahead of what a live stream added since.
+	// A call lands right after the message that made it and its earlier calls, ahead of what a
+	// live stream added since.
 	if at := slices.Index(t.items, t.said); t.said != nil && at >= 0 {
+		for at+1 < len(t.items) && t.items[at+1].kind == "t" {
+			at++
+		}
 		t.items = slices.Insert(t.items, at+1, it)
 	} else {
 		t.items = append(t.items, it)
@@ -590,6 +613,8 @@ func summary(verb, out string) string {
 	switch {
 	case len(lines) == 0:
 		return "done"
+	case verb == "tasks":
+		return fmt.Sprintf("%d / %d done", strings.Count(out, "[x]"), len(lines))
 	case verb == "bash" || len(lines) == 1:
 		return clip(lines[len(lines)-1], 120)
 	}
