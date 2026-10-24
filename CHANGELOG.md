@@ -5,13 +5,24 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.19.13] - 2026-10-24
+
+Orb as a first-class Buzz agent behind buzz-acp, and conversations that follow you across Orbs: ACP clients steer a running turn instead of cancelling it, a Claude conversation survives a cancelled command, a launched Claude model offers its reasoning levels, a conversation another Orb holds opens live, and messages sent as a turn ends are answered.
+
 - A Claude model given to `--model` by its alias or by the model it resolves to (`opus`, `claude-opus-5-5`) is the catalog's, so its reasoning levels apply and ACP clients see them from `session/new`; an ACP client also finds the current model among the model options, and selecting it again succeeds.
+
 - ACP clients can steer a running turn: Orb advertises `_meta.steering.supported` and answers `_session/steering`, as claude-agent-acp and codex-acp do, so buzz-acp hands a message sent mid-turn to the turn instead of cancelling it and sending both again.
+
 - A Claude conversation cancelled while Claude ran a command or waited on a background task answers its next message instead of failing it with "No message found with message.uuid": the cancelled host finishes exiting before the next one resumes, and Orb points Claude's transcript back at its own branch whenever it drifted.
+
 - A message sent while a turn ends is answered instead of waiting in the queue: a run ends only once its queue is empty, Claude and Codex sessions included, and what arrives as it settles is the next turn. Alt+Enter on an idle session starts the turn, and a message queued behind one that cannot run (no API key) comes back to the editor.
+
 - A conversation already open in another Orb on the machine opens anyway: `orb --session`, `/resume` and the session picker show it live from the Orb holding it, tool calls included, and what you send there runs in that Orb (queued during a turn); once that Orb closes, the conversation opens in yours. The apps open it too, without the bridge plugin on in the Orb holding it, which comes on Bridge for them as an Orb the Bridge starts would.
+
 - The apps reopen a conversation whose Orb ended over there (its machine restarts the Orbs it started when you change their plugins) instead of leaving it stuck on `not_found` and dropping what you send; they draw a task list as the task in progress and how far it got, several tool calls of one message in the order made, and a background job's end once.
+
 - The Mac app draws what Orb sends as soon as it arrives: a short update (a state change, a brief answer) could sit unread until more output came.
+
 - The apps show what plugins show beside a conversation, as the terminal does: the task list, statuses such as memtree's summarizing, and the last notice (an MCP server that failed to start) until the next turn.
 
 ## [0.19.12] - 2026-10-22
