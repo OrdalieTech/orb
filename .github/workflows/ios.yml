@@ -1,0 +1,76 @@
+name: iOS
+
+# The iOS app, built from this tree for the simulator, launched, and paired with an Orb on the
+# runner through the code it shows, opened as a link as the camera would; the screenshots of each
+# step and the app's log are the run's artifact.
+on:
+  push:
+    branches: [main]
+    paths: ['platforms/**', 'bridge/view/**', 'cmd/orb/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Simulator (build, launch, pair)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build Orb.app for the simulator
+        run: platforms/ios/build.sh 0.0.0-ci simulator
+      - name: Launch, then pair with an Orb on the runner
+        timeout-minutes: 15
+        run: |
+          set -eu
+          out=$RUNNER_TEMP/ios && mkdir -p $out
+          go build -o $RUNNER_TEMP/orb ./cmd/orb
+          orb=$RUNNER_TEMP/orb
+          udid=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          xcrun simctl boot $udid
+          xcrun simctl bootstatus $udid -b
+          xcrun simctl install $udid platforms/ios/build/iphonesimulator/Orb.app
+          xcrun simctl launch --stdout=$out/app.log --stderr=$out/app.log $udid tech.ordalie.orb
+          # The phone's own Bridge runs in the app; the simulator's container is too deep for its
+          # sockets, which are under /tmp.
+          for i in $(seq 60); do
+            phone=$(ls -d /tmp/orb-*/ 2>/dev/null | head -1) && [ -n "$phone" ] &&
+              ORB_BRIDGE_HOME=$phone $orb bridge status --profile p >$out/phone.json 2>/dev/null && break
+            sleep 2
+          done
+          jq -e .peer_id $out/phone.json
+          sleep 5
+          xcrun simctl io $udid screenshot $out/1-home.png
+          export HOME=$RUNNER_TEMP/home ORB_BRIDGE_HOME=$RUNNER_TEMP/b
+          mkdir -p $HOME
+          printf 'y\n' | $orb bridge pair >$out/pair.txt 2>&1 &
+          for i in $(seq 60); do
+            code=$(grep -o 'orb-bridge:v1:[A-Za-z0-9_-]*' $out/pair.txt | head -1) && [ -n "$code" ] && break
+            sleep 1
+          done
+          xcrun simctl openurl $udid "$code"
+          sleep 3
+          xcrun simctl io $udid screenshot $out/2-pairing.png
+          wait $!
+          for i in $(seq 30); do
+            ORB_BRIDGE_HOME=$phone $orb bridge status --profile p >$out/phone.json && jq -e '[.peer_states[]] | index("connected")' $out/phone.json && break
+            sleep 2
+          done
+          jq -e '[.peer_states[]] | index("connected")' $out/phone.json
+          sleep 3
+          xcrun simctl io $udid screenshot $out/3-paired.png
+          xcrun simctl terminate $udid tech.ordalie.orb
+          xcrun simctl launch --stdout=$out/app.log --stderr=$out/app.log $udid tech.ordalie.orb
+          sleep 10
+          xcrun simctl io $udid screenshot $out/4-home-paired.png
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ios-simulator
+          path: ${{ runner.temp }}/ios
