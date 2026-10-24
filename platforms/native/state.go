@@ -473,9 +473,10 @@ func (state *State) Held(id string) bool {
 
 // ServeHeld answers handler, for this user only, on the socket of conversation id, which this
 // process holds; another Orb opening it reaches this one there (Holder) instead of a second engine.
-// Its socket name is short, since a socket path is limited to about a hundred bytes.
+// Its name is 16 hex digits, unique enough among one state's conversations: a socket path has
+// about a hundred bytes on every system (107 on Windows), and the state directory takes most.
 func (state *State) ServeHeld(ctx context.Context, id string, handler protocol.Handler) (func(), error) {
-	path, err := state.owner(id, 16, ".sock")
+	path, err := state.owner(id, 8, ".sock")
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +485,7 @@ func (state *State) ServeHeld(ctx context.Context, id string, handler protocol.H
 
 // Holder calls the Orb process that holds conversation id open.
 func (state *State) Holder(ctx context.Context, id string) (*protocol.Conn, error) {
-	path, err := state.owner(id, 16, ".sock")
+	path, err := state.owner(id, 8, ".sock")
 	if err != nil {
 		return nil, err
 	}
