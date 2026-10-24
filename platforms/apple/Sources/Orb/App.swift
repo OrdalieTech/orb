@@ -187,6 +187,7 @@ extension Main {
             Rule()
             page
         }
+        .background(Ink.bg)
         #endif
     }
 

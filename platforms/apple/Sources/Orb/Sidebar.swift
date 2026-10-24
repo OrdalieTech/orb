@@ -151,20 +151,24 @@ struct Start: View {
     /// lives a detail of the row; a way to pair while no machine is.
     private var threads: some View {
         List {
-            ForEach(orb.home.entries) { e in
-                Button { nav.tab = "e:" + e.key } label: {
-                    Line(title: e.title, sub: dotted(orb.machine(e.machine)?.name ?? "", base(e.cwd), e.modified.ago), live: e.live, asks: e.asks, hue: orb.hue(e.machine))
+            Group {
+                ForEach(orb.home.entries) { e in
+                    Button { nav.tab = "e:" + e.key } label: {
+                        Line(title: e.title, sub: dotted(orb.machine(e.machine)?.name ?? "", base(e.cwd), e.modified.ago), live: e.live, asks: e.asks, hue: orb.hue(e.machine))
+                    }
                 }
-            }
-            if orb.home.machines.count < 2 {
-                Button { nav.pane = "pair"; nav.settings = true } label: {
-                    HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
+                if orb.home.machines.count < 2 {
+                    Button { nav.pane = "pair"; nav.settings = true } label: {
+                        HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
+                    }
                 }
+                Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
+                    .font(.mono(Size.small)).foregroundStyle(Ink.meta)
             }
-            Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
-                .font(.mono(Size.small)).foregroundStyle(Ink.meta)
+            // No rules between rows, on the page's own ground.
+            .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
-        .listStyle(.plain).scrollContentBackground(.hidden).listRowBackground(Color.clear).buttonStyle(.plain)
+        .listStyle(.plain).scrollContentBackground(.hidden).buttonStyle(.plain)
     }
     #endif
 
