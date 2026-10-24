@@ -77,6 +77,8 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
     AnimatedVisibility(t.status.isNotBlank(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         T(t.status, Modifier.padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = 13.sp, color = p.meta, lines = 1)
     }
+    // What its plugins show beside it: the task list, a status, the last notice.
+    t.slots.forEach { s -> Box(Modifier.padding(horizontal = Margin + 6.dp, vertical = 2.dp)) { Folded(s.lines.joinToString("\n"), if (s.alarm) Ink.Rupture else p.meta) } }
     PromptBox(t, c, c.palette(t)) { follow = true; c.send(t, it) }
 }
 

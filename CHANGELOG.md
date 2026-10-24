@@ -9,6 +9,7 @@ shown by `/changelog`.
 - A conversation already open in another Orb on the machine opens anyway: `orb --session`, `/resume` and the session picker show it live from the Orb holding it, tool calls included, and what you send there runs in that Orb (queued during a turn); once that Orb closes, the conversation opens in yours. The apps open it too, without the bridge plugin on in the Orb holding it, which comes on Bridge for them as an Orb the Bridge starts would.
 - The apps reopen a conversation whose Orb ended over there (its machine restarts the Orbs it started when you change their plugins) instead of leaving it stuck on `not_found` and dropping what you send; they draw a task list as the task in progress and how far it got, several tool calls of one message in the order made, and a background job's end once.
 - The Mac app draws what Orb sends as soon as it arrives: a short update (a state change, a brief answer) could sit unread until more output came.
+- The apps show what plugins show beside a conversation, as the terminal does: the task list, statuses such as memtree's summarizing, and the last notice (an MCP server that failed to start) until the next turn.
 
 ## [0.19.12] - 2026-10-22
 

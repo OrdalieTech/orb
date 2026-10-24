@@ -48,6 +48,21 @@ func (s *SessionRuntime) PendingInput() *InputRequest {
 	return &r
 }
 
+// Slots are what the session's extensions show beside it (statuses, widgets, the last notice).
+func (s *SessionRuntime) Slots() []extensions.Slot {
+	state := s.extensionState
+	if state == nil {
+		return nil
+	}
+	state.mu.Lock()
+	runner := state.runner
+	state.mu.Unlock()
+	if runner == nil {
+		return nil
+	}
+	return runner.Slots()
+}
+
 func (s *SessionRuntime) ReplyInput(id, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

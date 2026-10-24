@@ -12,6 +12,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	attach "github.com/OrdalieTech/orb/agent/bridge"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/bridge"
@@ -83,6 +84,12 @@ func (c *client) until(t *testing.T, what string, ok func() bool) {
 // orb is a machine's Bridge with one Orb on a faux model attached, which an app reaches as its owner.
 func orb(t *testing.T, speed float64, steps ...faux.ResponseStep) (*App, *client, string) {
 	t.Helper()
+	return orbWith(t, nil, speed, steps...)
+}
+
+// orbWith is orb whose Orb also runs plugin, with an app's UI as Orbs a Bridge starts have.
+func orbWith(t *testing.T, plugin extensions.Factory, speed float64, steps ...faux.ResponseStep) (*App, *client, string) {
+	t.Helper()
 	ctx := t.Context()
 	b, err := bridge.Open(&document.Memory{}, true)
 	if err != nil {
@@ -94,9 +101,23 @@ func orb(t *testing.T, speed float64, steps ...faux.ResponseStep) (*App, *client
 	manager, _ := session.InMemory(cwd)
 	provider := faux.New(faux.Options{TokensPerSecond: speed})
 	provider.SetResponses(steps)
-	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+	options := agent.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple}
+	if plugin != nil {
+		loader, err := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{CWD: cwd, AgentDir: options.AgentDir, NoContextFiles: true, NoThemes: true, ExtensionFactories: []extensions.Factory{plugin}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := loader.Reload(ctx, nil); err != nil {
+			t.Fatal(err)
+		}
+		options.ResourceLoader = loader
+	}
+	host, err := agent.NewAgentSessionRuntime(ctx, options)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if plugin != nil {
+		host.Session().BindExtensionUI(extensions.NoopUI{}, extensions.ModeRPC)
 	}
 	t.Cleanup(func() { host.Dispose(context.Background()) })
 	enrolled, token, err := b.Enroll("test", b.PersonalGroup())
@@ -362,4 +383,39 @@ func TestPluginToolsDrawInOrder(t *testing.T) {
 	if len(a) != 2 || a[0].Verb != "tasks" || a[0].Target != "fix" || a[0].Result != "1 / 3 done" || a[1].Verb != "subagent" || a[1].Target != "2 tasks" {
 		t.Fatalf("actions: %+v", a)
 	}
+}
+
+// What a plugin shows beside a conversation reaches the app as slots: its widget's lines, and its
+// last notice until the next run starts.
+func TestAPluginsWidgetAndNoticeShowBesideTheConversation(t *testing.T) {
+	runs := 0
+	plugin := func(api extensions.API) error {
+		api.On(extensions.EventAgentStart, func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+			runs++
+			ctx.UI().SetWidget("tasks", &extensions.Widget{Lines: []string{fmt.Sprintf("✓ %d/2  → fix it", runs)}}, nil)
+			return nil, nil
+		})
+		api.On(extensions.EventAgentEnd, func(_ context.Context, _ extensions.Event, ctx extensions.Context) (any, error) {
+			if runs == 1 {
+				ctx.UI().Notify("a server needs attention", extensions.NotifyError)
+			}
+			return nil, nil
+		})
+		return nil
+	}
+	app, c, instance := orbWith(t, plugin, 0, faux.AssistantMessage("one"), faux.AssistantMessage("two"))
+	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	c.until(t, "ready", func() bool { return c.tab(opened.Tab).Loaded })
+	slots := func() string { return fmt.Sprint(c.tab(opened.Tab).Slots) }
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"go"}`))
+	c.until(t, "the widget and the notice", func() bool {
+		return slots() == "[{notice [a server needs attention] true} {widget:tasks [✓ 1/2  → fix it] false}]"
+	})
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"again"}`))
+	c.until(t, "the notice gone, the widget current", func() bool { return slots() == "[{widget:tasks [✓ 2/2  → fix it] false}]" })
 }

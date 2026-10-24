@@ -79,6 +79,7 @@ type Runner struct {
 	uiPromptDepth     int
 	activeUIPrompt    UIPromptStartEvent
 	uiPromptTail      chan struct{}
+	slots             map[string]Slot
 	mode              Mode
 	contextActions    ContextActions
 	commandActions    CommandActions
@@ -847,6 +848,9 @@ func (runner *Runner) Emit(ctx context.Context, event Event) any {
 	}
 	if stale() {
 		return nil
+	}
+	if event.Type() == EventAgentStart {
+		runner.slot(Slot{Key: "notice"}) // a notice holds until the next run
 	}
 	if event.Type() != EventProjectTrust {
 		runner.bindDeferredProviders()

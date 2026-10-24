@@ -414,6 +414,7 @@ type Descriptor struct {
 	Target     runtime.ControlTarget `json:"target"`
 	Methods    []string              `json:"methods"`
 	Input      *runtime.InputRequest `json:"input,omitempty"`
+	Slots      []extensions.Slot     `json:"slots,omitempty"`
 }
 
 // Command is a slash command the instance runs: an extension's, a prompt template or a skill.
@@ -466,7 +467,7 @@ func (a *Attachment) inspect(known string) json.RawMessage {
 				d.Status = ""
 			}
 		}
-		d.Input = session.PendingInput()
+		d.Input, d.Slots = session.PendingInput(), session.Slots()
 		if title := session.Manager().GetSessionName(); title != nil {
 			d.Name = *title
 		}
@@ -1043,7 +1044,7 @@ func (a *Attachment) pulse() string {
 			limits = u.CheckedAt.String()
 		}
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel), limits}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel), limits, string(bridge.JSON(s.Slots()))}, "\x00")))
 	return base64.RawURLEncoding.EncodeToString(sum[:12])
 }
 

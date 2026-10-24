@@ -37,6 +37,7 @@ type Tab struct {
 	Cost      float64   `json:"cost,omitempty"`
 	Usage     *Usage    `json:"usage,omitempty"`
 	Ask       *Ask      `json:"ask,omitempty"`
+	Slots     []Slot    `json:"slots,omitempty"`  // what its plugins show beside it: the task list, a status, the last notice
 	Unread    int       `json:"unread,omitempty"` // answers that finished out of sight since it was last shown
 	Commands  []Command `json:"commands,omitempty"`
 	Models    []string  `json:"models,omitempty"`
@@ -65,6 +66,13 @@ type Ask struct {
 	Message string   `json:"message,omitempty"`
 	Choices []string `json:"choices,omitempty"`
 	Free    bool     `json:"free,omitempty"`
+}
+
+// Slot is a plugin's line or lines beside the conversation; Alarm is an error notice.
+type Slot struct {
+	Key   string   `json:"key"`
+	Lines []string `json:"lines"`
+	Alarm bool     `json:"alarm,omitempty"`
 }
 
 // Command is one entry of the slash palette; Now runs on tap, the rest take an argument.
@@ -103,6 +111,7 @@ type descriptor struct {
 		}
 		CheckedAt time.Time `json:"checked_at"`
 	}
+	Slots []Slot
 	Input *struct {
 		ID, Title    string
 		Choices      []string
@@ -313,6 +322,8 @@ func (t *tab) describe() bool {
 			}
 		}
 	}
+	// The strip already shows the provider's quota.
+	t.Slots = slices.DeleteFunc(d.Slots, func(s Slot) bool { return s.Key == "status:provider-usage" })
 	t.Commands = nil
 	for _, c := range d.Commands {
 		t.Commands = append(t.Commands, Command{Name: c.Name, Hint: c.Description})

@@ -49,7 +49,9 @@ An Orb reads its plugins when it starts; `/plugins` reloads the session it runs 
 - **Apps:** Settings › Plugins shows the plugins of any paired machine the app may start Orb on,
   through that machine's Bridge (`host.plugins`, `host.plugins.set`), and opens on the machine of
   the conversation in front. The Orbs that Bridge started for the app reopen with a change at
-  their next message: at once between turns, after the running one otherwise.
+  their next message: at once between turns, after the running one otherwise. A conversation there shows
+  what its plugins show beside it in a terminal: widget lines (the task list), statuses, and the
+  last notice until the next turn; widgets drawn only for a terminal (activity) stay there.
 - **Worker and Celld:** an object runs `titles`, `tasks`, `questions` and `memtree` from its own
   settings, its questions answered by whatever app or peer drives it; the others need processes
   or files of their own.

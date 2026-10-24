@@ -9,12 +9,15 @@ import org.json.*
 
 data class Command(val name: String, val hint: String, val now: Boolean = false)
 data class Ask(val id: String, val owner: String, val title: String, val message: String, val choices: List<String>, val free: Boolean)
+/** A plugin's lines beside a conversation (the task list, a status, the last notice); alarm is an error. */
+data class PluginSlot(val key: String, val lines: List<String>, val alarm: Boolean)
 data class Window(val name: String, val left: Double, val resets: Long)
 data class Usage(val plan: String, val at: Long, val windows: List<Window>)
 data class Tab(
     val id: String, val title: String, val peer: String, val where: String, val remote: Boolean, val cwd: String, val busy: Boolean, val online: Boolean,
     val loaded: Boolean, val earlier: Boolean, val streaming: Boolean, val status: String, val model: String, val thinking: String, val levels: List<String>,
     val context: Double, val cost: Double, val usage: Usage?, val ask: Ask?, val unread: Int, val commands: List<Command>, val models: List<String>,
+    val slots: List<PluginSlot>,
 )
 data class Claim(val invitation: String, val claimant: String)
 data class Invitation(val code: String, val expires: Long)
@@ -58,6 +61,7 @@ private fun tab(o: JSONObject) = Tab(
     o.optDouble("context", 0.0), o.optDouble("cost", 0.0), o.obj("usage")?.let { Usage(it.optString("plan"), it.optLong("at"), it.list("windows", ::window)) },
     o.obj("ask")?.let { Ask(it.optString("id"), it.optString("owner"), it.optString("title"), it.optString("message"), it.strings("choices"), it.optBoolean("free")) },
     o.optInt("unread"), o.list("commands", ::command), o.strings("models"),
+    o.list("slots") { PluginSlot(it.optString("key"), it.strings("lines"), it.optBoolean("alarm")) },
 )
 private fun state(o: JSONObject) = State(
     o.optString("self"), o.optBoolean("up"), o.list("tabs", ::tab), o.obj("claim")?.let { Claim(it.optString("invitation"), it.optString("claimant")) },
