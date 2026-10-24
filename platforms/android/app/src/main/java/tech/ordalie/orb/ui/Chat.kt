@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.*
 import kotlin.math.roundToInt
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import tech.ordalie.orb.core.*
@@ -41,11 +42,12 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
     AnimatedVisibility(!t.remote && v.state.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
     val turns = turns(v.rows[t.id].orEmpty())
     // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
-    // the bottom. Scrolling away leaves them where they read until they come back down, or send.
-    val list = rememberLazyListState()
+    // the bottom. Scrolling away leaves them where they read until they come back down, or send. It
+    // opens at its end, and only a scroll the reader ends there or away decides whether it follows.
+    val list = rememberLazyListState(turns.size + if (t.earlier) 1 else 0, Int.MAX_VALUE)
     var follow by remember(t.id) { mutableStateOf(true) }
     LaunchedEffect(list) { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) follow = false } }
-    LaunchedEffect(list) { snapshotFlow { list.isScrollInProgress }.collect { if (!it) follow = !list.canScrollForward } }
+    LaunchedEffect(list) { snapshotFlow { list.isScrollInProgress }.drop(1).collect { if (!it) follow = !list.canScrollForward } }
     LaunchedEffect(list) {
         snapshotFlow { list.canScrollForward to list.layoutInfo.totalItemsCount }.collect { (more, n) -> if (follow && more && n > 0) list.requestScrollToItem(n - 1, Int.MAX_VALUE) }
     }

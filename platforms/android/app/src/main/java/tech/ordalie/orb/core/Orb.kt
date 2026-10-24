@@ -24,7 +24,8 @@ class Orb(private val context: Context) {
     fun env(): Map<String, String> = buildMap {
         put("HOME", home.path)
         put("TMPDIR", context.cacheDir.path)
-        put("PATH", "/system/bin:/system/xbin:/vendor/bin")
+        // The lib dir first: what Orb starts itself (an MCP server) reaches the Linux as liblinux.so.
+        put("PATH", context.applicationInfo.nativeLibraryDir + ":/system/bin:/system/xbin:/vendor/bin")
         put("TERM", "dumb")
         put("ORB_CLIENT", "android")
         put("ORB_BRIDGE_NAME", name)

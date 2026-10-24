@@ -29,6 +29,7 @@ android {
     }
     buildTypes.getByName("debug") { signingConfigs.findByName("orb")?.let { signingConfig = it } }
     buildFeatures { compose = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     // No fragments here: an old one only arrives transitively, so its activity-result check misfires.
     lint { disable += "InvalidFragmentVersionForActivityResult" }
     // The Orb core ships as an executable; Android only executes files extracted to nativeLibraryDir.
@@ -73,4 +74,9 @@ dependencies {
     implementation("com.github.termux.termux-app:terminal-view:v0.118.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517") // android.jar's org.json is a stub on the JVM
+    // Screens tested on the JVM: Robolectric runs Compose and the app's own classes.
+    testImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test.ext:junit:1.3.0")
+    testImplementation("org.robolectric:robolectric:4.17")
 }

@@ -42,6 +42,7 @@ class Linux(private val context: Context) {
             - The phone's shared storage (Downloads, Documents, DCIM…) is `~/storage/shared` once the owner allowed it.
             - `/data/data/com.termux/files/usr` (also `/usr`) exists only inside bash; your file tools see it at ${root.path}/files/usr.
             - The network can drop for minutes at a time; retry downloads instead of giving up.
+            - Orb itself, and the MCP servers it starts (`~/.orb/agent/mcp.json`, written with your file tools), run outside this Linux: start a server in it with `"command": "liblinux.so", "args": ["-c", "<the command, as in bash>"]`.
         """.trimIndent() + "\n")
     }
 
