@@ -134,7 +134,8 @@ struct Start: View {
             #if os(iOS)
             // The phone runs no Orb of its own yet: its conversations start on a paired machine.
             if target == nil {
-                Button("Pair with a computer") { nav.pane = "pair"; nav.settings = true }.buttonStyle(.borderedProminent).tint(Ink.rupture).padding(.bottom, 32)
+                Button("Pair with a computer") { nav.pane = "pair"; nav.settings = true }.buttonStyle(.borderedProminent).tint(Ink.rupture)
+                    .foregroundStyle(Ink.paper).padding(.bottom, 32)
             }
             #endif
             if local || target != nil { prompt }
@@ -146,13 +147,6 @@ struct Start: View {
         }
         #endif
     }
-
-    /// Whether a conversation can start on this device itself.
-    #if os(macOS)
-    private let local = true
-    #else
-    private let local = false
-    #endif
 
     /// The machines a conversation can start on.
     private var starts: [Machine] { orb.home.machines.filter { $0.launch && (local || !$0.here) } }

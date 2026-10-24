@@ -305,7 +305,7 @@ private struct Devices: View {
             Section("Devices") {
                 let peers = orb.home.machines.filter { !$0.here }
                 if peers.isEmpty {
-                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text("Invite one below, or join one that ran orb bridge pair."))
+                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text(local ? "Invite one below, or join one that ran orb bridge pair." : "Join a computer: scan the code its Orb app or orb bridge pair shows."))
                 }
                 ForEach(peers) { m in
                     HStack {
@@ -331,28 +331,28 @@ private struct Devices: View {
                     }
                 }
             }
-            #if os(macOS)
-            Section("Invite a device") {
-                if let inv = orb.state.invitation {
-                    let expires = Date(timeIntervalSince1970: TimeInterval(inv.expires))
-                    LabeledContent("Single use, for") { Text(timerInterval: .now...max(.now, expires), countsDown: true).monospacedDigit() }
-                    // A phone scans the code; a computer runs the command.
-                    HStack(alignment: .top, spacing: 16) {
-                        if let qr = qr(inv.code) { Image(decorative: qr, scale: 1).interpolation(.none).resizable().frame(width: 168, height: 168) }
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
-                            HStack {
-                                Button("Copy Command") { copy("orb bridge join " + inv.code) }
-                                ShareLink(item: "orb bridge join " + inv.code)
+            if local {
+                Section("Invite a device") {
+                    if let inv = orb.state.invitation {
+                        let expires = Date(timeIntervalSince1970: TimeInterval(inv.expires))
+                        LabeledContent("Single use, for") { Text(timerInterval: .now...max(.now, expires), countsDown: true).monospacedDigit() }
+                        // A phone scans the code; a computer runs the command.
+                        HStack(alignment: .top, spacing: 16) {
+                            if let qr = qr(inv.code) { Image(decorative: qr, scale: 1).interpolation(.none).resizable().frame(width: 168, height: 168) }
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
+                                HStack {
+                                    Button("Copy Command") { copy("orb bridge join " + inv.code) }
+                                    ShareLink(item: "orb bridge join " + inv.code)
+                                }
+                                Text("You approve it here by fingerprint once it runs the command.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
                             }
-                            Text("You approve it here by fingerprint once it runs the command.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
                         }
+                    } else {
+                        Button("Create an Invitation") { orb.send("invite") }
                     }
-                } else {
-                    Button("Create an Invitation") { orb.send("invite") }
                 }
             }
-            #endif
             Section("Join a device") {
                 switch orb.state.joining {
                 case "":

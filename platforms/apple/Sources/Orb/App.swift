@@ -149,7 +149,9 @@ struct Main: View {
             Group {
                 if let t = orb.tab(nav.tab) { Conversation(t: t).id(t.id) } else { Start() }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Ink.bg)
+            .toolbarTitleDisplayMode(.inline)
         }
         #if os(macOS)
         .frame(minWidth: 720, minHeight: 480)
@@ -212,6 +214,10 @@ private struct Lifecycle: ViewModifier {
         content
             .onChange(of: waiting, initial: true) { _, n in UNUserNotificationCenter.current().setBadgeCount(n) }
             .onChange(of: phase, initial: true) { orb.visible(phase == .active) }
+            // Asked once paired, when there is something to tell.
+            .onChange(of: orb.home.machines.count > 1, initial: true) { _, paired in
+                if paired { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in } }
+            }
             .sheet(isPresented: $nav.settings) { Preferences() }
             // A pairing code opened as a link (the camera's, a message's) joins from Settings.
             .onOpenURL { url in
@@ -271,8 +277,6 @@ extension EnvironmentValues {
         center?.delegate = self
         #if os(macOS)
         center?.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        #else
-        center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         #endif
     }
 

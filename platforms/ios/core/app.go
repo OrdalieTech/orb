@@ -21,7 +21,8 @@ import (
 )
 
 // The Bridge profile's sockets must fit in sun_path (103 bytes): a short profile name under the
-// app's Library fits on a device; the simulator's container is too deep, and unsandboxed, so /tmp.
+// app's Library fits on a device, through /var rather than /private/var; the simulator's
+// container is too deep, and unsandboxed, so /tmp.
 const profile = "p"
 
 var bridged bool
@@ -31,8 +32,12 @@ func OrbApp(home *C.char, in, out C.int) C.int {
 	stdin, stdout := os.NewFile(uintptr(in), "app-in"), os.NewFile(uintptr(out), "app-out")
 	defer func() { _ = stdin.Close(); _ = stdout.Close() }()
 	root := C.GoString(home)
+	fits := func(dir string) bool { return len(dir+"/"+profile+"/attach.sock") <= 103 }
 	bridge := filepath.Join(root, "Library", "b")
-	if len(bridge)+len("/"+profile+"/attach.sock") > 103 {
+	if !fits(bridge) {
+		bridge = strings.TrimPrefix(bridge, "/private")
+	}
+	if !fits(bridge) {
 		bridge = fmt.Sprintf("/tmp/orb-%08x", crc32.ChecksumIEEE([]byte(root)))
 	}
 	if !bridged {

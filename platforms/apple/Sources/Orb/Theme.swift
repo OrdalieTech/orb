@@ -11,11 +11,12 @@ typealias NativeFont = UIFont
 typealias NativeImage = UIImage
 #endif
 
-/// What the app calls the device it runs on.
+/// What the app calls the device it runs on, and whether its conversations can run on it: an
+/// iPhone runs no Orb of its own yet, and starts them on the machines it is paired with.
 #if os(macOS)
-let device = "this Mac"
+let device = "this Mac", local = true
 #else
-let device = "this iPhone"
+let device = "this iPhone", local = false
 #endif
 
 /// Ordalie tokens, as on Android (ui/Theme.kt): paper and charcoal, one rupture red, a blue kept

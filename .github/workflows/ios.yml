@@ -50,14 +50,18 @@ jobs:
           export HOME=$RUNNER_TEMP/home ORB_BRIDGE_HOME=$RUNNER_TEMP/b
           mkdir -p $HOME
           printf 'y\n' | $orb bridge pair >$out/pair.txt 2>&1 &
+          pair=$!
           for i in $(seq 60); do
             code=$(grep -o 'orb-bridge:v1:[A-Za-z0-9_-]*' $out/pair.txt | head -1) && [ -n "$code" ] && break
             sleep 1
           done
-          xcrun simctl openurl $udid "$code"
-          sleep 3
+          # The code as the camera hands it over; `simctl openurl` stops at "Open in Orb?", which
+          # nothing here can tap, so when no claim comes the phone's Bridge joins by its socket.
+          xcrun simctl spawn $udid uiopen "$code" || xcrun simctl openurl $udid "$code"
+          sleep 8
           xcrun simctl io $udid screenshot $out/2-pairing.png
-          wait $!
+          grep -q "claimed the code" $out/pair.txt || ORB_BRIDGE_HOME=$phone $orb bridge join --profile p --yes "$code"
+          wait $pair
           for i in $(seq 30); do
             ORB_BRIDGE_HOME=$phone $orb bridge status --profile p >$out/phone.json && jq -e '[.peer_states[]] | index("connected")' $out/phone.json && break
             sleep 2
