@@ -596,20 +596,25 @@ func (s *Service) launch(ctx context.Context, p bridge.Principal, cwd, session s
 		s.mu.Unlock()
 	}
 	// A thread open in another Orb on this machine, one in a terminal say, cannot open twice: the
-	// peer hears so at once instead of an Orb that exits before it is on Bridge.
-	if session != "" && s.state != nil {
-		if lock, err := s.state.OwnerLock(session); err == nil {
-			free, _ := lock.TryLock()
-			_ = lock.Close()
-			if !free {
-				release()
-				// Open in an Orb on Bridge (a terminal one, say): the peer joins it there.
+	// peer joins that Orb, which comes on Bridge for it as an Orb launched here would.
+	if session != "" && s.state != nil && s.state.Held(session) {
+		release()
+		if open := s.holding(ctx, p, session); open != nil {
+			return open, nil
+		}
+		if holder, err := s.state.Holder(ctx, session); err == nil {
+			asked, cancel := context.WithTimeout(ctx, launchWait)
+			err = holder.Call(asked, "bridge", map[string]string{"profile": s.profile}, nil)
+			cancel()
+			_ = holder.Close()
+			for wait := 0; err == nil && wait < 50; wait++ {
 				if open := s.holding(ctx, p, session); open != nil {
 					return open, nil
 				}
-				return nil, bridge.Fail("busy")
+				time.Sleep(100 * time.Millisecond)
 			}
 		}
+		return nil, bridge.Fail("busy")
 	}
 	exe, err := os.Executable()
 	if err != nil {

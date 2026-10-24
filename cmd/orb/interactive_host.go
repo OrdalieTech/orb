@@ -113,7 +113,17 @@ func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPa
 		// is not stored there (--no-session).
 		switchOptions.Repo = host.args.native.Sessions()
 	}
-	return host.AgentSessionRuntime.SwitchSession(ctx, sessionPath, switchOptions)
+	result, err := host.AgentSessionRuntime.SwitchSession(ctx, sessionPath, switchOptions)
+	// One another Orb here holds opens as a live view of that Orb, and here once it lets go.
+	var held native.HeldError
+	runner := host.Session().ExtensionRunner()
+	if !errors.As(err, &held) || runner == nil {
+		return result, err
+	}
+	if err = openBridgeView(ctx, runner.UI(), remoteLink{instance: held.ID, held: host.args.native}); err != nil || host.args.native.Held(held.ID) {
+		return extensions.SessionReplacementResult{Cancelled: true}, err
+	}
+	return host.SwitchSession(ctx, sessionPath, cwdOverride, options)
 }
 
 func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, options *extensions.ForkOptions) (modes.InteractiveForkResult, error) {

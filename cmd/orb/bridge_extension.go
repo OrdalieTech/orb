@@ -705,7 +705,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 			if err != nil {
 				ui.Notify(err.Error(), extensions.NotifyError)
 			} else if instance != "" {
-				if err := openBridgeView(ctx, ui, profile, peer, instance); err != nil {
+				if err := openBridgeView(ctx, ui, remoteLink{profile: profile, peer: peer, instance: instance}); err != nil {
 					return err
 				}
 			}
@@ -719,7 +719,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 				}
 				for _, entry := range entries {
 					if string(bridge.JSON([2]string{entry.Namespace, entry.ID})) == id {
-						if err := openBridgeView(ctx, ui, profile, peer, entry.Instance, entry); err != nil {
+						if err := openBridgeView(ctx, ui, remoteLink{profile: profile, peer: peer, instance: entry.Instance}, entry); err != nil {
 							return err
 						}
 						break
@@ -729,7 +729,7 @@ func openSharedBridgeConversation(ctx context.Context, ui extensions.UI, profile
 			continue
 		}
 		if selected != "" {
-			if err := openBridgeView(ctx, ui, profile, peer, selected); err != nil {
+			if err := openBridgeView(ctx, ui, remoteLink{profile: profile, peer: peer, instance: selected}); err != nil {
 				return err
 			}
 		}

@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
+	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/host"
 	nativeaccounts "github.com/OrdalieTech/orb/platforms/native/accounts"
@@ -433,16 +434,61 @@ func (state *State) ChildSession(cwd string) (*session.SessionManager, error) {
 
 // OwnerLock is the lock an Orb process holds while it writes conversation id.
 func (state *State) OwnerLock(id string) (*flock.Flock, error) {
-	path, err := Path(state.AgentDir)
+	path, err := state.owner(id, 32, ".lock")
 	if err != nil {
 		return nil, err
 	}
+	return flock.New(path), nil
+}
+
+// owner is a file of conversation id's holder, named by n bytes of its key.
+func (state *State) owner(id string, n int, ext string) (string, error) {
+	path, err := Path(state.AgentDir)
+	if err != nil {
+		return "", err
+	}
 	dir := filepath.Join(filepath.Dir(path), "owners")
 	if err = os.MkdirAll(dir, 0700); err != nil {
-		return nil, err
+		return "", err
 	}
 	key := sha256.Sum256([]byte("personal\x00" + id))
-	return flock.New(filepath.Join(dir, fmt.Sprintf("%x.lock", key))), nil
+	return filepath.Join(dir, fmt.Sprintf("%x", key[:n])+ext), nil
+}
+
+// HeldError is a conversation another Orb process holds open: Holder reaches that Orb.
+type HeldError struct{ ID string }
+
+func (HeldError) Error() string { return "conversation is already open in another Orb process" }
+
+// Held reports whether another Orb process holds conversation id open.
+func (state *State) Held(id string) bool {
+	lock, err := state.OwnerLock(id)
+	if err != nil {
+		return false
+	}
+	free, _ := lock.TryLock()
+	_ = lock.Close()
+	return !free
+}
+
+// ServeHeld answers handler, for this user only, on the socket of conversation id, which this
+// process holds; another Orb opening it reaches this one there (Holder) instead of a second engine.
+// Its socket name is short, since a socket path is limited to about a hundred bytes.
+func (state *State) ServeHeld(ctx context.Context, id string, handler protocol.Handler) (func(), error) {
+	path, err := state.owner(id, 16, ".sock")
+	if err != nil {
+		return nil, err
+	}
+	return nativebridge.Listen(ctx, path, nil, id, handler)
+}
+
+// Holder calls the Orb process that holds conversation id open.
+func (state *State) Holder(ctx context.Context, id string) (*protocol.Conn, error) {
+	path, err := state.owner(id, 16, ".sock")
+	if err != nil {
+		return nil, err
+	}
+	return nativebridge.Dial(ctx, path, nativebridge.Auth{Credential: id}, nil, nil)
 }
 
 // BindSession claims manager's conversation and keeps the claim.
@@ -482,7 +528,7 @@ func (state *State) ClaimSession(manager *session.SessionManager) (func(), error
 			if err != nil {
 				return nil, err
 			}
-			return nil, errors.New("conversation is already open in another Orb process")
+			return nil, HeldError{id}
 		}
 	}
 	previous, previousID := state.sessionLock, state.sessionID

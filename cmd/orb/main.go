@@ -453,6 +453,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	baseArgs := args
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
+	// A conversation another Orb here holds opens as a live view of that Orb, and here once it lets go.
+	for held := (native.HeldError{}); isInteractive && errors.As(err, &held); {
+		if code := runBridgeView(ctx, remoteLink{instance: held.ID, held: args.native}, streams); code != 0 || args.native.Held(held.ID) {
+			return code
+		}
+		args.Session = &held.ID
+		manager, sessionContext, err = createCLISession(cwd, args, streams, dependencies.selectSession)
+	}
 	if err != nil {
 		if errors.Is(err, errNoSessionSelected) {
 			return 0

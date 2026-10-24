@@ -189,13 +189,27 @@ func (h *AgentSessionRuntime) EnableControl() (*SessionControl, error) {
 	if s == nil {
 		return nil, ErrSessionDisposed
 	}
-	if !s.agent.IsIdle() {
-		return nil, ErrControlBusy
-	}
 	c := &SessionControl{session: h.Session, revision: 1}
-	s.control.Store(c)
+	s.controlled(c)
 	h.control.Store(c)
 	return c, nil
+}
+
+// controlled publishes c as s's control. Enabled during a run (a follower attaching), c takes the run
+// as its execution, which ends as the run settles (endControlRun), so the follower can stop or join it.
+func (s *SessionRuntime) controlled(c *SessionControl) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeRuns != 0 {
+		c.execution = newExecution()
+	}
+	s.control.Store(c)
+}
+
+func newExecution() string {
+	var id [16]byte
+	_, _ = rand.Read(id[:])
+	return base64.RawURLEncoding.EncodeToString(id[:])
 }
 func (c *SessionControl) targetLocked() ControlTarget {
 	t := ControlTarget{Revision: strconv.FormatUint(c.revision, 10), ExecutionID: c.execution}
@@ -276,9 +290,7 @@ func (s *SessionRuntime) beginControlRun(ctx context.Context) (func(), error) {
 	if c.execution != "" {
 		return nil, ErrControlBusy
 	}
-	var id [16]byte
-	_, _ = rand.Read(id[:])
-	execution := base64.RawURLEncoding.EncodeToString(id[:])
+	execution := newExecution()
 	c.execution = execution
 	return func() {
 		c.mu.Lock()
@@ -287,6 +299,18 @@ func (s *SessionRuntime) beginControlRun(ctx context.Context) (func(), error) {
 		}
 		c.mu.Unlock()
 	}, nil
+}
+
+// endControlRun ends a settling run's execution, whoever reserved it, so what is sent as the run
+// settles is its next run (runPolicies defers it) instead of busy.
+func (s *SessionRuntime) endControlRun() {
+	if c := s.control.Load(); c != nil {
+		c.mu.Lock()
+		if c.session() == s {
+			c.execution = ""
+		}
+		c.mu.Unlock()
+	}
 }
 
 // PromptControlled preserves input/tool policy but excludes slash-command dispatch.
@@ -365,12 +389,8 @@ func NewSessionControl(current func() *SessionRuntime) (*SessionControl, error) 
 	if current == nil || current() == nil {
 		return nil, ErrSessionDisposed
 	}
-	s := current()
-	if !s.agent.IsIdle() {
-		return nil, ErrControlBusy
-	}
 	c := &SessionControl{session: current, revision: 1}
-	s.control.Store(c)
+	current().controlled(c)
 	return c, nil
 }
 func (c *SessionControl) BeginTransition(ctx context.Context) (func(), error) {

@@ -730,6 +730,10 @@ func (a *Attachment) dispatch(r bridge.Request) {
 		_ = json.Unmarshal(r.Call.Args, &p)
 		target.ExecutionID = p.ExecutionID
 		err = a.control.Execution(target, r.Call.Method, p.Text)
+		// A message sent as its turn ended starts the next one, as one sent to an idle session does.
+		if s := a.host.Session(); errors.Is(err, runtime.ErrControlStale) && r.Call.Method != "cancel" && a.control.Target().ExecutionID == "" && s != nil {
+			err = s.PromptControlled(ctx, p.Text)
+		}
 	case "session.new":
 		result, err = a.host.NewSession(ctx, nil)
 	case "session.switch":

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -12,8 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent"
+	attach "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/platforms/native"
 )
@@ -88,6 +95,92 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	}
 	if got, err := launchFolder("~"); err != nil || !filepath.IsAbs(got) {
 		t.Fatalf("~ = %q %v", got, err)
+	}
+}
+
+// An app opening a thread a terminal Orb holds off Bridge joins that Orb: asked, it comes on
+// Bridge, and host.launch answers its instance instead of busy.
+func TestAThreadHeldOffBridgeJoinsItsHolder(t *testing.T) {
+	root, err := os.MkdirTemp(map[bool]string{true: "", false: "/tmp"}[runtime.GOOS == "windows"], "orb-join-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	ctx := t.Context()
+	daemonState, err := native.Open(ctx, agentDir, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = daemonState.Close() }()
+	holderState, err := native.Open(ctx, agentDir, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holderState.Close() }()
+	stored, err := holderState.Sessions().Create(ctx, harness.SessionCreateOptions{CWD: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.FromHarnessStorage(stored.Storage(), session.WithHarnessRepo(holderState.Sessions()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = holderState.BindSession(manager); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New(faux.Options{})
+	holder, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{CWD: root, AgentDir: agentDir, SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Dispose(ctx)
+	b, err := bridge.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	s := New(ctx, daemonState, "personal", "dev", b, nil, "")
+	launch := func() (json.RawMessage, error) {
+		return s.host(ctx, b.Principal(), "host.launch", bridge.JSON(map[string]string{"session_id": stored.Metadata().ID}))
+	}
+	if _, err = launch(); bridge.Code(err) != "busy" {
+		t.Fatalf("a holder that does not answer: %v", err)
+	}
+	var instance string
+	stop, err := holderState.ServeHeld(ctx, stored.Metadata().ID, func(ctx context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
+		if method != "bridge" {
+			return nil, bridge.Fail("not_found")
+		}
+		enrolled, token, err := b.Enroll("terminal", b.PersonalGroup())
+		if err != nil {
+			return nil, err
+		}
+		a, err := attach.Attach(ctx, holder, attach.Options{InstanceID: enrolled.ID, Store: &document.Memory{}, Authorize: b.Authorize})
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { _ = a.Close() })
+		generation, err := b.Attach(enrolled.ID, token, protocol.NewID(), bridge.NewLocal(a.Invoke))
+		if err == nil {
+			instance, err = enrolled.ID, a.SetGeneration(generation)
+		}
+		return bridge.JSON(struct{}{}), err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	raw, err := launch()
+	var joined struct {
+		InstanceID string `json:"instance_id"`
+	}
+	if err != nil || json.Unmarshal(raw, &joined) != nil || joined.InstanceID == "" || joined.InstanceID != instance {
+		t.Fatalf("launch = %s %v, want the holder's instance %q", raw, err, instance)
+	}
+	if len(s.launched) != 0 {
+		t.Fatal("a second Orb was started on the held thread")
 	}
 }
 

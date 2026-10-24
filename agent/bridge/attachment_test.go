@@ -156,6 +156,68 @@ func TestAPeerRenamesTheSession(t *testing.T) {
 	}
 }
 
+// A follower sends during a turn as a follow-up; one that leaves as the turn ends, naming the
+// execution that just finished, starts the next turn instead of failing stale.
+func TestAFollowUpSentAsItsTurnEndsStartsTheNext(t *testing.T) {
+	a, host := attached(t, faux.AssistantMessage("first"), faux.AssistantMessage("second"))
+	if receipt, _ := call(t, a, "prompt", map[string]string{"text": "one"}); receipt.Status != "succeeded" {
+		t.Fatal(receipt)
+	}
+	if receipt, _ := call(t, a, "follow_up", map[string]string{"text": "two", "execution_id": protocol.NewID()}); receipt.Status != "succeeded" {
+		t.Fatal(receipt)
+	}
+	if messages, _ := json.Marshal(host.Session().State().Messages); !strings.Contains(string(messages), `"two"`) || !strings.Contains(string(messages), `"second"`) {
+		t.Fatalf("messages = %s", messages)
+	}
+}
+
+// A follower attaching during a turn (another Orb opening the conversation) finds it running and
+// queues into it; once the turn settles, the conversation is idle with the message answered.
+func TestAFollowerAttachingDuringATurnJoinsIt(t *testing.T) {
+	ctx := t.Context()
+	manager, _ := session.InMemory(t.TempDir())
+	started, release := make(chan struct{}), make(chan struct{})
+	provider := faux.New(faux.Options{})
+	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
+		close(started)
+		<-release
+		return faux.AssistantMessage("first"), nil
+	}), faux.AssistantMessage("joined")})
+	host, err := runtime.NewAgentSessionRuntime(ctx, runtime.AgentSessionOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SessionManager: manager, Model: provider.GetModel(), StreamFn: provider.StreamSimple})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	go func() { _ = host.Session().Prompt(ctx, "one") }()
+	<-started
+	a, err := Attach(ctx, host, Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
+	if err != nil {
+		t.Fatal("attaching during a turn:", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	_ = a.SetGeneration("1")
+	execution := a.control.Target().ExecutionID
+	if execution == "" {
+		t.Fatal("the running turn is not one a follower can join")
+	}
+	r := request(a, "follow_up", map[string]string{"text": "two", "execution_id": execution})
+	if _, err := a.Invoke(ctx, "call", bridge.JSON(r)); err != nil {
+		t.Fatal(err)
+	}
+	if receipt := settle(t, a, r); receipt.Status != "succeeded" {
+		t.Fatal(receipt)
+	}
+	close(release)
+	for deadline := time.Now().Add(5 * time.Second); !host.Session().IsIdle() || a.control.Target().ExecutionID != ""; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the turn never settled for its follower")
+		}
+	}
+	if messages, _ := json.Marshal(host.Session().State().Messages); !strings.Contains(string(messages), `"joined"`) {
+		t.Fatalf("messages = %s", messages)
+	}
+}
+
 // A follower long-polls: the call waits while nothing happens, and answers at once when the
 // conversation changes, with the stream's events and the instance's new pulse.
 func TestAFollowerWaitsForTheConversationToChange(t *testing.T) {

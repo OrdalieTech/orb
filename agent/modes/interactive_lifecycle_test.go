@@ -608,6 +608,9 @@ func TestAMessageSentAtAnyPointIsAnswered(t *testing.T) {
 		{name: "extension's turn settling", extension: true, hold: "agent_settled", deferred: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) { scenario.run(t) })
+		// The same with a follower attached (another Orb, an app), which turns on session control.
+		scenario.controlled = true
+		t.Run(scenario.name+", followed", func(t *testing.T) { scenario.run(t) })
 	}
 }
 
@@ -615,14 +618,15 @@ type queueScenario struct {
 	name string
 	// hold is where the first turn waits while the second message is sent: an extension event, the
 	// model's stream ("stream"), a tool, a slash command, the API key lookup, or a failing turn.
-	hold      string
-	loop      bool // turns run in a session loop shaped like Claude's
-	extension bool // an extension's message starts the first turn, not the user
-	followUp  bool // the second message is sent with Alt+Enter
-	third     bool // a third message follows the second while the turn waits
-	abort     bool // Esc is pressed once the second message is queued
-	restored  bool // the second message comes back to the editor instead
-	deferred  bool // the second message waits for the settling turn, not in the queue
+	hold       string
+	loop       bool // turns run in a session loop shaped like Claude's
+	extension  bool // an extension's message starts the first turn, not the user
+	followUp   bool // the second message is sent with Alt+Enter
+	third      bool // a third message follows the second while the turn waits
+	abort      bool // Esc is pressed once the second message is queued
+	restored   bool // the second message comes back to the editor instead
+	deferred   bool // the second message waits for the settling turn, not in the queue
+	controlled bool // session control is on, as with a follower attached
 }
 
 func (scenario queueScenario) run(t *testing.T) {
@@ -751,6 +755,11 @@ func (scenario queueScenario) run(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if scenario.controlled {
+		if _, err := agent.NewSessionControl(func() *agent.SessionRuntime { return runtime }); err != nil {
+			t.Fatal(err)
+		}
 	}
 	terminal := newLifecycleTerminal(100, 30)
 	ctx, cancel := context.WithCancel(context.Background())

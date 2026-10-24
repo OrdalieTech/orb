@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/platforms/native"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/usage"
@@ -289,7 +293,9 @@ func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, s
 	if err := configure(enabled); err != nil {
 		_, _ = fmt.Fprintln(writer, "Bridge disconnected:", err)
 	}
+	stopHolding := holdOpen(lifetime, host, args.native, configured.BridgeProfile, func() error { return configure(true) })
 	return func() {
+		stopHolding()
 		cancelRetry()
 		mu.Lock()
 		closed = true
@@ -299,6 +305,92 @@ func attachCLIBridge(lifetime context.Context, host attach.Host, args CLIArgs, s
 		mu.Unlock()
 	}
 }
+
+// holdOpen answers the other Orbs on this machine that open the conversation this one holds, on
+// its socket, since one engine writes a conversation: a terminal follows it here through an
+// attachment of its own (heldRemote), and the machine's Bridge asks it on Bridge (join) for a
+// peer opening it, as an Orb the Bridge launched would be.
+func holdOpen(lifetime context.Context, host attach.Host, state *native.State, profile string, join func() error) func() {
+	if state == nil {
+		return func() {}
+	}
+	var mu sync.Mutex
+	stop := func() {}
+	unobserve := host.ObserveSessions(func(s *agent.AgentSession) {
+		mu.Lock()
+		defer mu.Unlock()
+		stop()
+		stop = func() {}
+		if m := s.Manager(); !m.IsHarnessBacked() || !m.IsPersisted() {
+			return
+		}
+		id := s.Manager().GetSessionID()
+		ctx, cancel := context.WithCancel(lifetime)
+		var followMu sync.Mutex
+		var follow *attach.Attachment
+		closeSocket, err := state.ServeHeld(ctx, id, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+			if method == "bridge" {
+				var p struct {
+					Profile string `json:"profile"`
+				}
+				if err := protocol.Decode(params, &p); err != nil || p.Profile != profile {
+					return nil, bridge.Fail("not_found")
+				}
+				return bridge.JSON(struct{}{}), join()
+			}
+			followMu.Lock()
+			a := follow
+			followMu.Unlock()
+			if a == nil {
+				// Attached outside followMu: attaching waits for a session switch, which stops this socket.
+				created, err := attach.Attach(ctx, host, attach.Options{InstanceID: heldInstance(id), Store: &document.Memory{}, Complete: completeAt, Authorize: func(bridge.Request) bool { return true }})
+				if err != nil {
+					return nil, err
+				}
+				_ = created.SetGeneration("1")
+				followMu.Lock()
+				if follow == nil && ctx.Err() == nil {
+					follow = created
+				}
+				a = follow
+				followMu.Unlock()
+				if a != created {
+					_ = created.Close()
+				}
+				if a == nil {
+					return nil, bridge.Fail("unavailable")
+				}
+			}
+			return a.Invoke(ctx, method, params)
+		})
+		if err != nil {
+			cancel()
+			return
+		}
+		stop = func() {
+			cancel()
+			closeSocket()
+			followMu.Lock()
+			if follow != nil {
+				_ = follow.Close()
+			}
+			followMu.Unlock()
+		}
+	})
+	return func() {
+		unobserve()
+		mu.Lock()
+		stop()
+		mu.Unlock()
+	}
+}
+
+// heldInstance is the instance a conversation's holder answers its followers as.
+func heldInstance(id string) string {
+	sum := sha256.Sum256([]byte("held\x00" + id))
+	return base64.RawURLEncoding.EncodeToString(sum[:16])
+}
+
 func (l *cliBridgeLink) configureBridge(enabled bool) error {
 	if l == nil {
 		return nil

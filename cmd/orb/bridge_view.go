@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 
@@ -50,31 +51,44 @@ func peerText(s string, lines bool) string {
 }
 func remoteMessage(raw json.RawMessage) string {
 	var m struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
+		Role     string          `json:"role"`
+		ToolName string          `json:"toolName"`
+		Content  json.RawMessage `json:"content"`
 	}
 	if json.Unmarshal(raw, &m) != nil || m.Role == "system" {
 		return ""
 	}
 	var content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text"`
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
 	}
 	if json.Unmarshal(m.Content, &content) != nil {
 		var text string
 		_ = json.Unmarshal(m.Content, &text)
 		return m.Role + ": " + text + "\n"
 	}
+	// Tools show as one line each: what was called, and the start of what it returned.
+	line := func(s string, n int) string {
+		return tui.TruncateToWidth(strings.Join(strings.Fields(s), " "), n, "…", false)
+	}
 	var out strings.Builder
 	for _, block := range content {
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			out.WriteString(block.Text)
+		case "toolCall":
+			fmt.Fprintf(&out, "\n→ %s %s", block.Name, line(string(block.Arguments), 160))
 		}
 	}
 	if out.Len() == 0 {
 		return ""
 	}
-	return m.Role + ": " + out.String() + "\n\n"
+	if m.Role == "toolResult" {
+		return "← " + m.ToolName + ": " + line(out.String(), 160) + "\n\n"
+	}
+	return m.Role + ": " + strings.TrimPrefix(out.String(), "\n") + "\n\n"
 }
 
 type remoteRequest struct{ text, inputID string }
@@ -169,7 +183,53 @@ func (v *remoteConversation) SetFocused(f bool) {
 }
 func (v *remoteConversation) Dispose() { v.cancel() }
 
-func newRemoteConversation(parent context.Context, profile, peer, instance string, invalidate func(), height func() int, done func(), theme extensions.Theme, initial ...sqlite.ForeignSession) *remoteConversation {
+// remoteLink is what a remote view follows: a peer's instance, through this machine's Bridge, or
+// with held the conversation (instance is its id) another Orb on this machine holds open.
+type remoteLink struct {
+	profile, peer, instance string
+	held                    *native.State
+}
+
+// heldRemote calls the Orb that holds conversation id open (holdOpen) as a remote view calls a
+// peer; once that Orb has let the conversation go, it calls released. close ends its connection.
+func heldRemote(ctx context.Context, state *native.State, id string, released func()) (remote func(string, any, any) error, close func()) {
+	var c *protocol.Conn
+	owner := bridge.Principal{PeerID: "local", Subject: bridge.Subject{Kind: "controller"}}
+	released = sync.OnceFunc(released)
+	remote = func(method string, p any, result any) error {
+		if c != nil {
+			select {
+			case <-c.Done():
+				c = nil
+			default:
+			}
+		}
+		if c == nil {
+			if !state.Held(id) {
+				released()
+				return bridge.Fail("unavailable")
+			}
+			var err error
+			if c, err = state.Holder(ctx, id); err != nil {
+				return err
+			}
+		}
+		callCtx, stop := context.WithTimeout(ctx, 20*time.Second)
+		defer stop()
+		if call, ok := p.(bridge.Call); ok {
+			return c.Call(callCtx, "call", bridge.Request{Principal: owner, Generation: call.Expected.Generation, Call: call}, result)
+		}
+		return c.Call(callCtx, method, map[string]any{"principal": owner, "params": p}, result)
+	}
+	return remote, func() {
+		if c != nil {
+			_ = c.Close()
+		}
+	}
+}
+
+func newRemoteConversation(parent context.Context, link remoteLink, invalidate func(), height func() int, done func(), theme extensions.Theme, initial ...sqlite.ForeignSession) *remoteConversation {
+	profile, peer, instance := link.profile, link.peer, link.instance
 	ctx, cancel := context.WithCancel(parent)
 	v := &remoteConversation{body: &remoteTranscript{}, status: &remoteTranscript{}, input: tui.NewInput(), cancel: cancel, height: height, invalidate: invalidate}
 	requests := make(chan remoteRequest, 1)
@@ -184,6 +244,41 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 		invalidate()
 	}
 	v.input.OnEscape = func() { cancel(); done() }
+	showInput := func(input *agent.InputRequest) {
+		v.promptMu.Lock()
+		defer v.promptMu.Unlock()
+		if input == nil || input.Presentation == nil || input.Presentation.Kind != questions.Kind {
+			v.prompt, v.promptID = nil, ""
+			return
+		}
+		if input.ID == v.promptID {
+			return
+		}
+		var request questions.Request
+		if json.Unmarshal(input.Presentation.Data, &request) != nil || request.Validate() != nil {
+			return
+		}
+		v.promptID = input.ID
+		id := input.ID
+		v.prompt = panel.New(request, theme, height, invalidate, func(result questions.Result) {
+			encoded, _ := json.Marshal(result)
+			go func() {
+				select {
+				case requests <- remoteRequest{text: "/reply " + string(encoded), inputID: id}:
+				case <-ctx.Done():
+				}
+			}()
+		})
+	}
+	if link.held != nil {
+		// Once its holder lets the conversation go, the view closes and the caller opens it here.
+		remote, closeRemote := heldRemote(ctx, link.held, instance, func() { cancel(); done() })
+		go func() {
+			defer closeRemote()
+			runRemoteConversation(ctx, heldInstance(instance), remote, requests, v.body, v.status, invalidate, nil, "", instance, showInput)
+		}()
+		return v
+	}
 	go func() {
 		var admin *protocol.Conn
 		defer func() {
@@ -237,51 +332,26 @@ func newRemoteConversation(parent context.Context, profile, peer, instance strin
 		if len(initial) > 0 {
 			expected = initial[0].ID
 		}
-		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate, cache, peer, expected, func(input *agent.InputRequest) {
-			v.promptMu.Lock()
-			defer v.promptMu.Unlock()
-			if input == nil || input.Presentation == nil || input.Presentation.Kind != questions.Kind {
-				v.prompt, v.promptID = nil, ""
-				return
-			}
-			if input.ID == v.promptID {
-				return
-			}
-			var request questions.Request
-			if json.Unmarshal(input.Presentation.Data, &request) != nil || request.Validate() != nil {
-				return
-			}
-			v.promptID = input.ID
-			id := input.ID
-			v.prompt = panel.New(request, theme, height, invalidate, func(result questions.Result) {
-				encoded, _ := json.Marshal(result)
-				go func() {
-					select {
-					case requests <- remoteRequest{text: "/reply " + string(encoded), inputID: id}:
-					case <-ctx.Done():
-					}
-				}()
-			})
-		})
+		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate, cache, peer, expected, showInput)
 	}()
 	return v
 }
 
-func openBridgeView(ctx context.Context, ui extensions.UI, profile, peer, instance string, initial ...sqlite.ForeignSession) error {
+func openBridgeView(ctx context.Context, ui extensions.UI, link remoteLink, initial ...sqlite.ForeignSession) error {
 	_, _, err := ui.Custom(ctx, func(host extensions.UIHost, theme extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
-		return newRemoteConversation(ctx, profile, peer, instance, host.Invalidate, host.Height, func() { done(nil) }, theme, initial...), nil
+		return newRemoteConversation(ctx, link, host.Invalidate, host.Height, func() { done(nil) }, theme, initial...), nil
 	}, nil)
 	return err
 }
 
-func runBridgeView(parent context.Context, profile, peer, instance string, streams cliStreams) int {
+func runBridgeView(parent context.Context, link remoteLink, streams cliStreams) int {
 	if !streams.StdinTTY || !streams.StdoutTTY {
 		return reportCLIError(streams.Stderr, fmt.Errorf("remote view requires a terminal; use orb bridge remote for scripted calls"))
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	ui := tui.NewTUI(tui.NewProcessTerminal())
-	v := newRemoteConversation(ctx, profile, peer, instance, ui.RequestRender, func() int { return ui.Terminal().Rows() }, cancel, extensions.NewNoopUI().Theme())
+	v := newRemoteConversation(ctx, link, ui.RequestRender, func() int { return ui.Terminal().Rows() }, cancel, extensions.NewNoopUI().Theme())
 	defer v.Dispose()
 	chrome := &tui.Container{}
 	chrome.AddChild(remoteControls{v})
@@ -471,6 +541,9 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			}
 			method := "prompt"
 			arguments := map[string]string{"text": text}
+			if info.Target.ExecutionID != "" { // sent during a turn, it waits for the turn as the TUI's queue does
+				method, arguments["execution_id"] = "follow_up", info.Target.ExecutionID
+			}
 			switch {
 			case strings.HasPrefix(text, "/model "):
 				parts := strings.Fields(strings.TrimPrefix(text, "/model "))

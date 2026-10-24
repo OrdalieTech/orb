@@ -6,6 +6,7 @@ shown by `/changelog`.
 ## [Unreleased]
 
 - A message sent while a turn ends is answered instead of waiting in the queue: a run ends only once its queue is empty, Claude and Codex sessions included, and what arrives as it settles is the next turn. Alt+Enter on an idle session starts the turn, and a message queued behind one that cannot run (no API key) comes back to the editor.
+- A conversation already open in another Orb on the machine opens anyway: `orb --session`, `/resume` and the session picker show it live from the Orb holding it, tool calls included, and what you send there runs in that Orb (queued during a turn); once that Orb closes, the conversation opens in yours. The apps open it too, without the bridge plugin on in the Orb holding it, which comes on Bridge for them as an Orb the Bridge starts would.
 - The apps reopen a conversation whose Orb ended over there (its machine restarts the Orbs it started when you change their plugins) instead of leaving it stuck on `not_found` and dropping what you send; they draw a task list as the task in progress and how far it got, several tool calls of one message in the order made, and a background job's end once.
 
 ## [0.19.12] - 2026-10-22

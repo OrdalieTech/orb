@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -26,6 +28,7 @@ import (
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/platforms/native"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
@@ -1058,6 +1061,133 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	}
 	if len(body.Render(80)) != 0 {
 		t.Fatal("revoked transcript remained visible")
+	}
+}
+
+// Two Orbs on one machine open one conversation: the second follows the one holding it, live both
+// ways, and once that Orb ends the second opens the conversation itself.
+func TestASecondOrbFollowsTheOrbHoldingItsConversation(t *testing.T) {
+	root, err := os.MkdirTemp(socketTempRoot(), "orb-held-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("HOME", root)
+	t.Chdir(root)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	open := func() *native.State {
+		state, err := openNativeState(ctx, agentDir, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = state.Close() })
+		return state
+	}
+	first, second := open(), open()
+	stored, err := first.Sessions().Create(ctx, harness.SessionCreateOptions{CWD: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := stored.Metadata().ID
+
+	// The first Orb holds the conversation, driven over RPC.
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("first answer"), faux.AssistantMessage("second answer")})
+	stdin, input := io.Pipe()
+	output, stdout := io.Pipe()
+	exited := make(chan int, 1)
+	go func() {
+		exited <- runCLIWithDependencies(context.WithValue(ctx, nativeStateKey{}, first), []string{"--mode", "rpc", "--session", id}, cliStreams{Stdin: stdin, Stdout: stdout, Stderr: io.Discard}, scriptedRuntime(provider))
+		_ = stdout.Close()
+	}()
+	var mu sync.Mutex
+	var events strings.Builder
+	go func() {
+		lines := bufio.NewScanner(output)
+		lines.Buffer(nil, protocol.MaxFrame)
+		for lines.Scan() {
+			mu.Lock()
+			events.WriteString(lines.Text() + "\n")
+			mu.Unlock()
+		}
+	}()
+	held := func() string { mu.Lock(); defer mu.Unlock(); return events.String() }
+	for !second.Held(id) {
+		if ctx.Err() != nil {
+			t.Fatal("the first Orb never held the conversation")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// The second follows it, as a terminal opening the conversation does.
+	requests := make(chan remoteRequest, 1)
+	body, status := &remoteTranscript{}, &remoteTranscript{}
+	released := make(chan struct{})
+	remote, closeRemote := heldRemote(ctx, second, id, func() { close(released) })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer closeRemote()
+		runRemoteConversation(ctx, heldInstance(id), remote, requests, body, status, func() {}, nil, "", id)
+	}()
+	wait := func(what string, text func() string, want ...string) {
+		t.Helper()
+		for {
+			got := text()
+			found := true
+			for _, w := range want {
+				found = found && strings.Contains(got, w)
+			}
+			if found {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("%s never showed %q:\n%s", what, want, got)
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	}
+	followed := func() string { return strings.Join(append(body.Render(200), status.Render(200)...), "\n") }
+	wait("the follower", followed, "idle")
+
+	if _, err := input.Write([]byte(`{"type":"prompt","message":"from the first"}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	wait("the follower", followed, "user: from the first", "assistant: first answer", "idle")
+	requests <- remoteRequest{text: "from the second"}
+	wait("the holder", held, `"text":"from the second"`, `"text":"second answer"`)
+	wait("the follower", followed, "assistant: second answer")
+
+	// Closing the holder leaves the follower free to open the conversation here.
+	_ = input.Close()
+	if code := <-exited; code != 0 {
+		t.Fatalf("the first Orb exited %d", code)
+	}
+	_ = first.Close() // as its process does on exit
+	select {
+	case <-released:
+	case <-ctx.Done():
+		t.Fatal("the follower never saw the conversation released")
+	}
+	cancel()
+	<-done
+	reopened, err := second.Sessions().OpenPath(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.FromHarnessStorage(reopened.Storage(), session.WithHarnessRepo(second.Sessions()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.BindSession(manager); err != nil {
+		t.Fatal("the conversation stayed held:", err)
+	}
+	if saved, _ := json.Marshal(manager.BuildSessionContext().Messages); !strings.Contains(string(saved), "from the first") || !strings.Contains(string(saved), "second answer") {
+		t.Fatalf("the conversation lost a turn: %s", saved)
 	}
 }
 

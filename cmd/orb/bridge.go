@@ -149,7 +149,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		return 0
 	}
 	if args[0] == "view" && len(args) == 3 {
-		return runBridgeView(ctx, profile, args[1], args[2], streams)
+		return runBridgeView(ctx, remoteLink{profile: profile, peer: args[1], instance: args[2]}, streams)
 	}
 	if args[0] == "shell" && (len(args) == 2 || len(args) == 3) {
 		return runBridgeShell(ctx, profile, args[1], strings.Join(args[2:], ""), streams)
