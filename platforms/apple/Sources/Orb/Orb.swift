@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if os(iOS)
+import OrbCore
+#endif
 
 /// A message from `orb app`, decoded off the main thread.
 enum Message: Sendable {
@@ -58,16 +61,10 @@ struct Failure: LocalizedError { let errorDescription: String? }
     /// Runs `orb app` for as long as the app lives; one that ends starts again, hears what this side
     /// shows, and sends everything again.
     private func run() async {
-        let environment = await Task.detached { Orb.environment }.value
         while true {
-            let p = Process(), out = Pipe(), into = Pipe()
-            p.executableURL = Orb.binary
-            p.arguments = ["app", "--name", "this Mac"]
-            p.environment = environment
-            p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-            p.standardInput = into
-            p.standardOutput = out
-            do { try p.run() } catch {
+            let into = Pipe(), out = Pipe()
+            let stop: () -> Void
+            do { stop = try await Orb.start(into, out) } catch {
                 state.summary = "orb did not start: \(error.localizedDescription)"
                 try? await Task.sleep(for: .seconds(5))
                 continue
@@ -80,18 +77,43 @@ struct Failure: LocalizedError { let errorDescription: String? }
             input = nil
             for (_, r) in replies { r.resume(returning: Data(#"{"error":"Orb restarted"}"#.utf8)) }
             replies = [:]
-            p.terminate()
+            stop()
             try? await Task.sleep(for: .seconds(1))
         }
+    }
+
+    /// Starts `orb app` on the pipes, and returns what stops it.
+    private static func start(_ into: Pipe, _ out: Pipe) async throws -> () -> Void {
+        #if os(macOS)
+        let p = Process()
+        p.executableURL = Orb.binary
+        p.arguments = ["app", "--name", device]
+        p.environment = await Task.detached { Orb.environment }.value
+        p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        p.standardInput = into
+        p.standardOutput = out
+        try p.run()
+        return { p.terminate() }
+        #else
+        // iOS runs no binary: the same orb, linked in, runs `orb app` on a thread of its own, on
+        // copies of its ends of the pipes, which it closes when its input does.
+        let input = dup(into.fileHandleForReading.fileDescriptor), output = dup(out.fileHandleForWriting.fileDescriptor)
+        try into.fileHandleForReading.close()
+        try out.fileHandleForWriting.close()
+        let home = NSHomeDirectory()
+        Thread.detachNewThread { _ = OrbCore.OrbApp(home, input, output) }
+        return { try? into.fileHandleForWriting.close() }
+        #endif
     }
 
     /// The view's messages, one per line (JSON keeps newlines escaped), read and decoded on a thread of their own.
     private nonisolated static func messages(_ from: FileHandle) -> AsyncStream<Message> {
         AsyncStream { sink in
             Thread.detachNewThread {
-                var buffer = Data()
-                while let chunk = try? from.read(upToCount: 1 << 16), !chunk.isEmpty {
-                    buffer.append(chunk)
+                var buffer = Data(), chunk = [UInt8](repeating: 0, count: 1 << 16)
+                // read(2) hands over what the view wrote so far; FileHandle's read waits for a full chunk.
+                while case let n = read(from.fileDescriptor, &chunk, chunk.count), n > 0 {
+                    buffer.append(contentsOf: chunk[..<n])
                     var start = buffer.startIndex
                     while let end = buffer[start...].firstIndex(of: 10) {
                         if let m = Message(Data(buffer[start..<end])) { sink.yield(m) }
@@ -163,6 +185,7 @@ private struct Reply<T: Decodable>: Decodable {
 /// A reply whose result does not matter, only whether it failed.
 struct Ignored: Decodable, Empty {}
 
+#if os(macOS)
 extension Orb {
     /// The orb this app carries; run from a checkout (swift run), $ORB or the one on PATH.
     nonisolated static let binary: URL = {
@@ -198,3 +221,4 @@ extension Orb {
         return env
     }()
 }
+#endif

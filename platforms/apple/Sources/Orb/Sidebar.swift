@@ -37,13 +37,13 @@ struct Sidebar: View {
             }
         }
         .searchable(text: $search, placement: .sidebar, prompt: "Threads")
-        .toolbar { Button { nav.tab = nil } label: { Label("New Conversation", systemImage: "square.and.pencil") }.help("New conversation  ⌘N") }
+        .toolbar { Button { nav.tab = Nav.start } label: { Label("New Conversation", systemImage: "square.and.pencil") }.help("New conversation  ⌘N") }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(orb.state.up ? orb.state.summary : "starting Bridge…").font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(1)
                 if let mine = orb.machine(orb.state.here), orb.state.behind(mine.version) {
                     Text("Orb \(orb.state.latest) is out").font(.mono(Size.small)).foregroundStyle(Ink.mute)
-                        .help("This Mac's Bridge runs \(mine.version): orb update, then orb bridge stop && orb bridge start")
+                        .help("The Bridge here runs \(mine.version): orb update, then orb bridge stop && orb bridge start")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(12).background(.bar)
@@ -59,7 +59,7 @@ struct Sidebar: View {
         .confirmationDialog("Delete this thread?", isPresented: .constant(deleting != nil), presenting: deleting) { e in
             Button("Delete “\(e.title)”", role: .destructive) { orb.send("delete", ["key": e.key]); deleting = nil }
             Button("Cancel", role: .cancel) { deleting = nil }
-        } message: { _ in Text("It is removed from this Mac for good.") }
+        } message: { _ in Text("It is removed from \(device) for good.") }
     }
 
     private var entries: [Entry] {
@@ -110,6 +110,7 @@ private struct Line: View {
 /// No conversation shown: the wordmark, and a box that starts one, here or wherever is chosen.
 struct Start: View {
     @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
     @Environment(\.go) private var go
     @State private var target: (machine: String, cwd: String, label: String)? = nil
 
@@ -119,36 +120,61 @@ struct Start: View {
             Stretch(text: "ORB", height: 44)
             Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
                 .font(.mono(Size.small)).foregroundStyle(Ink.meta).padding(.top, 14)
-            // Where this Mac worked last: one click picks the folder the next message starts in.
+            // Where this device worked last: one click picks the folder the next message starts in.
             if let mine = orb.machine(orb.state.here), !mine.folders.isEmpty {
                 HStack {
                     ForEach(mine.folders.prefix(4), id: \.cwd) { f in
-                        Button(base(f.cwd)) { target = target?.cwd == f.cwd ? nil : (mine.id, f.cwd, "this Mac · " + base(f.cwd)) }
+                        Button(base(f.cwd)) { target = target?.cwd == f.cwd ? nil : (mine.id, f.cwd, device + " · " + base(f.cwd)) }
                             .buttonStyle(.bordered).tint(target?.cwd == f.cwd ? Ink.rupture : nil).help(f.cwd)
                     }
                 }
                 .controlSize(.small).padding(.top, 18)
             }
             Spacer()
-            PromptBox(tab: nil, place: whereMenu) { text in
-                Task {
-                    let outcome = if let t = target {
-                        try? await orb.ask("start", ["machine": t.machine, "cwd": t.cwd, "text": text], as: Outcome.self)
-                    } else {
-                        try? await orb.ask("send", ["tab": "", "text": text], as: Outcome.self)
-                    }
-                    outcome.map(go)
-                }
+            #if os(iOS)
+            // The phone runs no Orb of its own yet: its conversations start on a paired machine.
+            if target == nil {
+                Button("Pair with a computer") { nav.pane = "pair"; nav.settings = true }.buttonStyle(.borderedProminent).tint(Ink.rupture).padding(.bottom, 32)
             }
+            #endif
+            if local || target != nil { prompt }
         }
         .navigationTitle("Orb")
+        #if os(iOS)
+        .onChange(of: starts.first?.id, initial: true) {
+            if target == nil, let m = starts.first { target = (m.id, "", m.name) }
+        }
+        #endif
     }
 
-    /// Where the next message goes: a new conversation on this Mac, an Orb running somewhere, or a
-    /// folder of a machine.
+    /// Whether a conversation can start on this device itself.
+    #if os(macOS)
+    private let local = true
+    #else
+    private let local = false
+    #endif
+
+    /// The machines a conversation can start on.
+    private var starts: [Machine] { orb.home.machines.filter { $0.launch && (local || !$0.here) } }
+
+    private var prompt: some View {
+        PromptBox(tab: nil, place: whereMenu) { text in
+            Task {
+                let outcome = if let t = target {
+                    try? await orb.ask("start", ["machine": t.machine, "cwd": t.cwd, "text": text], as: Outcome.self)
+                } else {
+                    try? await orb.ask("send", ["tab": "", "text": text], as: Outcome.self)
+                }
+                outcome.map(go)
+            }
+        }
+    }
+
+    /// Where the next message goes: a new conversation on this device, an Orb running somewhere, or
+    /// a folder of a machine.
     private var whereMenu: some View {
-        Menu(target?.label ?? "this Mac") {
-            Button("this Mac") { target = nil }
+        Menu(target?.label ?? device) {
+            if local { Button(device) { target = nil } }
             let running = orb.home.machines.flatMap { $0.running }
             if !running.isEmpty {
                 Section("Running") {
@@ -157,7 +183,7 @@ struct Start: View {
                     }
                 }
             }
-            ForEach(orb.home.machines.filter { $0.launch }) { m in
+            ForEach(starts) { m in
                 Menu("on \(m.name)") {
                     Button("where Orb starts") { target = (m.id, "", m.name) }
                     ForEach(m.folders.prefix(12), id: \.cwd) { f in

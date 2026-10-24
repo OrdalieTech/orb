@@ -1,5 +1,8 @@
 import CoreImage.CIFilterBuiltins
 import SwiftUI
+#if os(iOS) && !targetEnvironment(macCatalyst)
+import VisionKit
+#endif
 
 /// Settings: the providers and accounts of each machine, Bridge and its devices, and Orb's plugins.
 struct Preferences: View {
@@ -7,14 +10,39 @@ struct Preferences: View {
     var body: some View {
         @Bindable var nav = nav
         TabView(selection: $nav.pane) {
-            Providers().tabItem { Label("Providers", systemImage: "key") }.tag("providers")
-            Devices().tabItem { Label("Bridge", systemImage: "point.3.connected.trianglepath.dotted") }.tag("pair")
-            Plugins().tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }.tag("plugins")
+            Providers().page("Providers").tabItem { Label("Providers", systemImage: "key") }.tag("providers")
+            Devices().page("Bridge").tabItem { Label("Bridge", systemImage: "point.3.connected.trianglepath.dotted") }.tag("pair")
+            Plugins().page("Plugins").tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }.tag("plugins")
         }
+        #if os(macOS)
         .frame(width: 780, height: 600)
+        #endif
         .font(.mono())
     }
 }
+
+extension View {
+    /// A pane of Settings: on the phone, a page of the sheet, titled, that Done closes.
+    @ViewBuilder func page(_ title: String) -> some View {
+        #if os(macOS)
+        self
+        #else
+        modifier(Page(title: title))
+        #endif
+    }
+}
+
+#if os(iOS)
+private struct Page: ViewModifier {
+    let title: String
+    @Environment(\.dismiss) private var dismiss
+    func body(content: Content) -> some View {
+        NavigationStack {
+            content.navigationTitle(title).navigationBarTitleDisplayMode(.inline).toolbar { Button("Done") { dismiss() } }
+        }
+    }
+}
+#endif
 
 /// Every provider a machine offers and its accounts, as Internet Accounts shows them: the list at
 /// left, ready ones first, and what the selected one holds and offers at right; with none
@@ -28,50 +56,68 @@ private struct Providers: View {
     @State private var search = ""
     @State private var note = ""
 
-    /// The machine shown: "" is this Mac.
+    /// The machine shown: "" is this device.
     private var machine: String { nav.machine }
     private var here: String { machine.isEmpty ? orb.state.here : machine }
 
     var body: some View {
-        let shown = providers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
-        HSplitView {
-            VStack(spacing: 8) {
-                Picker("Machine", selection: Bindable(nav).machine) {
-                    ForEach(orb.home.machines.filter { $0.here || $0.launch }) { Text($0.name).tag($0.here ? "" : $0.id) }
-                }
-                .labelsHidden()
-                TextField("Search providers", text: $search).textFieldStyle(.roundedBorder)
-                List(selection: $selected) {
-                    group("Ready", shown.filter(\.ready))
-                    group("Your subscription", shown.filter { !$0.ready && $0.methods.contains(where: \.account) })
-                    group("API key", shown.filter { !$0.ready && !$0.methods.contains(where: \.account) })
-                }
-                .listStyle(.sidebar)
-                .overlay { if providers.isEmpty { ProgressView() } }
-            }
-            .padding(.top, 8).padding(.horizontal, 8)
-            .frame(minWidth: 230, idealWidth: 250, maxWidth: 300)
-            Form {
-                if !note.isEmpty { Text(note).foregroundStyle(Ink.rupture) }
-                if let p = providers.first(where: { $0.id == selected }) { detail(p) } else { quotas }
-            }
-            .formStyle(.grouped)
-            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .task(id: machine) { await load() }
+        split
+            .task(id: machine) { await load() }
         .onChange(of: orb.state.login?.state) { if orb.state.login?.state == "done" { Task { await load() } } }
         .sheet(isPresented: .constant(orb.state.login != nil)) {
             if let l = orb.state.login { SignIn(l: l, remote: l.machine != orb.state.here) }
         }
     }
 
+    /// The list beside what the selected provider holds, on the Mac; on the phone, a page it opens.
+    @ViewBuilder private var split: some View {
+        #if os(macOS)
+        HSplitView {
+            list.padding(.top, 8).padding(.horizontal, 8).frame(minWidth: 230, idealWidth: 250, maxWidth: 300)
+            form(selected).frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+        }
+        #else
+        list.navigationDestination(for: String.self) { form($0) }
+        #endif
+    }
+
+    private var list: some View {
+        let shown = providers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
+        return VStack(spacing: 8) {
+            Picker("Machine", selection: Bindable(nav).machine) {
+                ForEach(orb.home.machines.filter { $0.here || $0.launch }) { Text($0.name).tag($0.here ? "" : $0.id) }
+            }
+            .labelsHidden()
+            TextField("Search providers", text: $search).textFieldStyle(.roundedBorder)
+            List(selection: $selected) {
+                group("Ready", shown.filter(\.ready))
+                group("Your subscription", shown.filter { !$0.ready && $0.methods.contains(where: \.account) })
+                group("API key", shown.filter { !$0.ready && !$0.methods.contains(where: \.account) })
+            }
+            .listStyle(.sidebar)
+            .overlay { if providers.isEmpty { ProgressView() } }
+        }
+    }
+
+    private func form(_ id: String?) -> some View {
+        Form {
+            if !note.isEmpty { Text(note).foregroundStyle(Ink.rupture) }
+            if let p = providers.first(where: { $0.id == id }) { detail(p) } else { quotas }
+        }
+        .formStyle(.grouped)
+    }
+
     @ViewBuilder private func group(_ name: String, _ rows: [Provider]) -> some View {
         if !rows.isEmpty {
             Section(name) {
                 ForEach(rows) { p in
-                    Label(p.name, systemImage: p.ready ? "checkmark.circle.fill" : p.methods.contains(where: \.account) ? "person.crop.circle" : "key")
+                    let label = Label(p.name, systemImage: p.ready ? "checkmark.circle.fill" : p.methods.contains(where: \.account) ? "person.crop.circle" : "key")
                         .badge(p.ready ? p.models : 0)
-                        .tag(p.id)
+                    #if os(macOS)
+                    label.tag(p.id)
+                    #else
+                    NavigationLink(value: p.id) { label }
+                    #endif
                 }
             }
         }
@@ -207,7 +253,10 @@ private struct SignIn: View {
                 Button(["done", "failed"].contains(l.state) ? "Close" : "Cancel") { orb.send("login.cancel") }.keyboardShortcut(.cancelAction)
             }
         }
-        .padding(24).frame(width: 460)
+        .padding(24)
+        #if os(macOS)
+        .frame(width: 460)
+        #endif
         .font(.mono())
         .onChange(of: l.url, initial: true) { if ["browser", "code"].contains(l.state) { open(l.url) } }
         .onChange(of: l.code, initial: true) {
@@ -239,10 +288,12 @@ private struct SignIn: View {
     private func open(_ url: String) { if let u = URL(string: url), !url.isEmpty { openURL(u) } }
 }
 
-/// Bridge: this Mac's devices, pairing one by code either way, and approving by fingerprint.
+/// Bridge: this device's devices, pairing one by code either way, and approving by fingerprint.
 private struct Devices: View {
     @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
     @State private var code = ""
+    @State private var scanning = false
     @State private var error = ""
     @State private var updating: [String: String] = [:]
     @State private var forgetting: Machine? = nil
@@ -280,13 +331,14 @@ private struct Devices: View {
                     }
                 }
             }
+            #if os(macOS)
             Section("Invite a device") {
                 if let inv = orb.state.invitation {
                     let expires = Date(timeIntervalSince1970: TimeInterval(inv.expires))
                     LabeledContent("Single use, for") { Text(timerInterval: .now...max(.now, expires), countsDown: true).monospacedDigit() }
                     // A phone scans the code; a computer runs the command.
                     HStack(alignment: .top, spacing: 16) {
-                        if let qr = qr(inv.code) { Image(nsImage: qr).interpolation(.none).resizable().frame(width: 168, height: 168) }
+                        if let qr = qr(inv.code) { Image(decorative: qr, scale: 1).interpolation(.none).resizable().frame(width: 168, height: 168) }
                         VStack(alignment: .leading, spacing: 10) {
                             Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
                             HStack {
@@ -300,19 +352,20 @@ private struct Devices: View {
                     Button("Create an Invitation") { orb.send("invite") }
                 }
             }
+            #endif
             Section("Join a device") {
                 switch orb.state.joining {
                 case "":
+                    #if os(iOS) && !targetEnvironment(macCatalyst)
+                    if DataScannerViewController.isSupported {
+                        Button("Scan the Code") { scanning = true }
+                            .sheet(isPresented: $scanning) { Scanner { code = $0; scanning = false; pair() }.ignoresSafeArea() }
+                    }
+                    #endif
                     TextField("orb-bridge:v1:…", text: $code, axis: .vertical).lineLimit(2...4).font(.mono(Size.small))
                     HStack {
                         PasteButton(payloadType: String.self) { code = $0.first ?? code }
-                        Button("Pair") {
-                            error = ""
-                            Task {
-                                do { _ = try await orb.ask("join", ["text": code]) } catch where error.localizedDescription != "cancelled" { self.error = error.localizedDescription } catch {}
-                            }
-                        }
-                        .disabled(code.isEmpty)
+                        Button("Pair", action: pair).disabled(code.isEmpty)
                     }
                     if !error.isEmpty { Text(error).foregroundStyle(Ink.rupture) }
                 case "paired":
@@ -320,42 +373,84 @@ private struct Devices: View {
                     Button("Done") { code = ""; orb.send("join.cancel") }
                 default:
                     // The fingerprint exactly as the terminal prints it, its start large enough to compare at a glance.
-                    Text(orb.state.joining == "claiming" ? "Reaching the device…" : "On the device, answer y. It shows this Mac as").foregroundStyle(Ink.mute)
+                    Text(orb.state.joining == "claiming" ? "Reaching the device…" : "On the device, answer y. It shows \(device) as").foregroundStyle(Ink.mute)
                     Text(String(orb.state.here.split(separator: ":").last?.prefix(8) ?? "")).font(.mono(26, .bold))
                     Text(orb.state.here).font(.mono(Size.small)).foregroundStyle(Ink.meta).textSelection(.enabled)
                     Button("Cancel") { orb.send("join.cancel") }
                 }
             }
-            Section("This Mac") {
+            Section(device.prefix(1).uppercased() + device.dropFirst()) {
                 Text(orb.state.here).font(.mono(Size.small)).foregroundStyle(Ink.mute).textSelection(.enabled)
                 Text("Each device is approved by fingerprint on its own screen. Pairs stay paired and reconnect by themselves; Forget revokes one.")
                     .font(.mono(Size.small)).foregroundStyle(Ink.meta)
             }
         }
         .formStyle(.grouped)
+        // A code opened as a link pairs at once.
+        .onChange(of: nav.code, initial: true) {
+            guard !nav.code.isEmpty else { return }
+            code = nav.code
+            nav.code = ""
+            pair()
+        }
         .alert("Rename this device", isPresented: .constant(naming != nil), presenting: naming) { m in
             TextField("name", text: $name)
             Button("Rename") { orb.send("rename", ["machine": m.id, "name": name]); naming = nil }
             Button("Use Its Own Name") { orb.send("rename", ["machine": m.id, "name": ""]); naming = nil }
             Button("Cancel", role: .cancel) { naming = nil }
-        } message: { _ in Text("The name it shows under on this Mac, until you give it back its own.") }
+        } message: { _ in Text("The name it shows under on \(device), until you give it back its own.") }
         .confirmationDialog("Forget this device?", isPresented: .constant(forgetting != nil), presenting: forgetting) { m in
             Button("Forget \(m.name)", role: .destructive) { orb.send("forget", ["machine": m.id]); forgetting = nil }
             Button("Cancel", role: .cancel) { forgetting = nil }
-        } message: { _ in Text("It loses its access to this Mac; pairing again takes a new code.") }
+        } message: { _ in Text("It loses its access to \(device); pairing again takes a new code.") }
+    }
+
+    private func pair() {
+        error = ""
+        Task {
+            do { _ = try await orb.ask("join", ["text": code]) } catch where error.localizedDescription != "cancelled" { self.error = error.localizedDescription } catch {}
+        }
     }
 }
 
-/// A QR code of [text], drawn sharp at any size.
-private func qr(_ text: String) -> NSImage? {
+/// A QR code of [text], one pixel a module, drawn sharp at any size.
+private func qr(_ text: String) -> CGImage? {
     let filter = CIFilter.qrCodeGenerator()
     filter.message = Data(text.utf8)
     guard let code = filter.outputImage else { return nil }
-    let image = NSCIImageRep(ciImage: code)
-    let out = NSImage(size: image.size)
-    out.addRepresentation(image)
-    return out
+    return CIContext().createCGImage(code, from: code.extent)
 }
+
+#if os(iOS) && !targetEnvironment(macCatalyst)
+/// The camera, reading the first pairing code it sees.
+private struct Scanner: UIViewControllerRepresentable {
+    let found: (String) -> Void
+
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let scanner = DataScannerViewController(recognizedDataTypes: [.barcode(symbologies: [.qr])], isHighlightingEnabled: true)
+        scanner.delegate = context.coordinator
+        DispatchQueue.main.async { try? scanner.startScanning() }
+        return scanner
+    }
+
+    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(found: found) }
+
+    @MainActor final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        let found: (String) -> Void
+        init(found: @escaping (String) -> Void) { self.found = found }
+
+        func dataScanner(_ scanner: DataScannerViewController, didAdd items: [RecognizedItem], allItems: [RecognizedItem]) {
+            for case .barcode(let code) in items {
+                guard let text = code.payloadStringValue, text.hasPrefix("orb-bridge:") else { continue }
+                scanner.stopScanning()
+                return found(text)
+            }
+        }
+    }
+}
+#endif
 
 /// Orb's bundled plugins on a machine, and their choices. Each one only ever renders into a slot
 /// or raises an interrupt.

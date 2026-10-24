@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftTerm
 import SwiftUI
 
@@ -59,3 +60,4 @@ struct TerminalPane: NSViewRepresentable {
 
     func updateNSView(_ view: LocalProcessTerminalView, context: Context) {}
 }
+#endif

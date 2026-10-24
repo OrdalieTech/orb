@@ -2,7 +2,8 @@
 
 A native SwiftUI app that draws `orb app` (`bridge/view`): the conversations open on this Mac's
 Bridge, the CLI's own, and on its paired machines. It holds no logic of its own; the view, shared
-with the Android app, does. Its terminal (⌘J) is SwiftTerm's native view. macOS 15 or later.
+with the Android app, does. Its Swift is `platforms/apple`, one renderer compiled for macOS and
+iOS. Its terminal (⌘J) is SwiftTerm's native view. macOS 15 or later.
 
 ## Build
 
@@ -14,8 +15,8 @@ open build/Orb.app
 ```
 
 The bundle carries the orb it runs (`Contents/Helpers/orb`), built from this checkout, and the
-face and mark of the Android app's resources. While working on the Swift side, `swift run` uses
-`$ORB` or the `orb` on `PATH`.
+face and mark of the Android app's resources. While working on the Swift side,
+`swift run --package-path ../apple` uses `$ORB` or the `orb` on `PATH`.
 
 ## Sign and notarize
 

@@ -2,9 +2,9 @@ import SwiftUI
 import UserNotifications
 
 /// Where the app is: the conversation shown (nil is the start screen, kept across launches), each
-/// one's draft and terminal, and the Settings pane to open.
+/// one's draft and terminal, and Settings, its pane, and a pairing code to join there.
 @MainActor @Observable final class Nav {
-    var tab = UserDefaults.standard.string(forKey: "tab") {
+    var tab = UserDefaults.standard.string(forKey: "tab") ?? Nav.start {
         didSet { UserDefaults.standard.set(tab, forKey: "tab") }
     }
     var drafts: [String: String] = [:]
@@ -12,26 +12,40 @@ import UserNotifications
     var inspector = false
     var picking = false // the model picker shows
     var focus = 0 // asked to focus the prompt box, each time it grows
+    var settings = false // Settings shows
     var pane = "providers"
-    var machine = "" // the machine Settings shows the providers and plugins of: "" is this Mac
+    var machine = "" // the machine Settings shows the providers and plugins of: "" is this device
+    var code = "" // a pairing code to join, from a link
     var answered = "" // the pairing claim already answered, until the view drops it
+    #if os(macOS)
     @ObservationIgnored let shells = Terminals()
+    #endif
+
+    /// The tab that shows the start screen: none, where the split view shows one beside its list;
+    /// on a phone, whose collapsed split view shows its list for none, one of its own.
+    #if os(macOS)
+    static let start: String? = nil
+    #else
+    static let start: String? = "new"
+    #endif
 
     /// Stops following a conversation; the one after it shows in its place.
     func close(_ id: String, _ orb: Orb) {
         let tabs = orb.state.tabs, rest = tabs.filter { $0.id != id }
         if tab == id, let at = tabs.firstIndex(where: { $0.id == id }) { tab = rest.isEmpty ? nil : rest[min(at, rest.count - 1)].id }
         terminals.remove(id)
+        #if os(macOS)
         shells.close(id)
+        #endif
         drafts[id] = nil
         orb.send("close", ["tab": id])
     }
 
-    /// Opens Settings on a pane (the providers by default) of where [t] runs (this Mac with none).
-    func providers(of t: Tab?, _ open: OpenSettingsAction, pane: String = "providers") {
+    /// Opens Settings on a pane (the providers by default) of where [t] runs (this device with none).
+    func providers(of t: Tab?, pane: String = "providers") {
         self.pane = pane
         machine = t?.remote == true ? t!.peer : ""
-        open()
+        settings = true
     }
 
     func toggleTerminal(_ id: String? = nil) {
@@ -50,8 +64,23 @@ struct Outcome: Decodable, Empty {
 @main struct OrbApp: App {
     @State private var orb = Orb()
     @State private var nav = Nav()
+    #if os(macOS)
     @NSApplicationDelegateAdaptor private var delegate: Delegate
+    #else
+    @UIApplicationDelegateAdaptor private var delegate: Delegate
+    #endif
 
+    #if os(iOS)
+    var body: some Scene {
+        WindowGroup {
+            Main().environment(orb).environment(nav)
+                .onAppear {
+                    orb.alert = delegate.notify
+                    delegate.open = { nav.tab = $0 }
+                }
+        }
+    }
+    #else
     var body: some Scene {
         SwiftUI.Window("Orb", id: "main") {
             Main().environment(orb).environment(nav)
@@ -105,12 +134,12 @@ struct Outcome: Decodable, Empty {
         let at = tabs.firstIndex { $0.id == nav.tab } ?? (by > 0 ? -1 : 0)
         nav.tab = tabs[(at + by + tabs.count) % tabs.count].id
     }
+    #endif
 }
 
 struct Main: View {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         @Bindable var nav = nav
@@ -122,7 +151,9 @@ struct Main: View {
             }
             .background(Ink.bg)
         }
+        #if os(macOS)
         .frame(minWidth: 720, minHeight: 480)
+        #endif
         .font(.mono())
         .foregroundStyle(Ink.fg)
         .tint(Ink.fg)
@@ -133,15 +164,12 @@ struct Main: View {
             }
             orb.show(nav.tab.map { [$0] } ?? [])
         }
-        // The Dock counts what waits for you: questions, and answers not read yet.
-        .onChange(of: orb.state.tabs.reduce(0) { $0 + $1.unread + ($1.ask == nil ? 0 : 1) }, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in orb.visible(true) }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in orb.visible(false) }
+        .modifier(Lifecycle())
         .alert("Pair a device?", isPresented: .constant(orb.state.claim.map { $0.id != nav.answered } ?? false), presenting: orb.state.claim) { claim in
             Button("Allow") { nav.answered = claim.id; orb.send("approve") }
             Button("Deny", role: .cancel) { nav.answered = claim.id; orb.send("deny") }
         } message: { claim in
-            Text("Check the other device shows this fingerprint:\n\(claim.claimant)\n\nAllowing lets it read and drive this Mac's conversations, run what they run, and start Orb here.")
+            Text("Check the other device shows this fingerprint:\n\(claim.claimant)\n\nAllowing lets it read and drive \(device)'s conversations, run what they run, and start Orb here.")
         }
         .environment(\.go) { outcome in
             if !outcome.tab.isEmpty { nav.tab = outcome.tab }
@@ -150,16 +178,53 @@ struct Main: View {
             case "home": nav.tab = nil
             // A conversation's models are in its picker; with none shown, they come from the providers.
             case "model" where nav.tab != nil: nav.picking = true
-            case "model", "providers", "plugins": nav.providers(of: orb.tab(nav.tab), openSettings, pane: outcome.nav == "plugins" ? "plugins" : "providers")
+            case "model", "providers", "plugins": nav.providers(of: orb.tab(nav.tab), pane: outcome.nav == "plugins" ? "plugins" : "providers")
             case "pair":
                 nav.pane = outcome.nav
-                openSettings()
+                nav.settings = true
             default: break
             }
         }
     }
 }
 
+/// What the system tells the view and shows of it: whether the app is in front, a count on its
+/// icon of what waits for you (questions, answers not read yet), Settings, and links to pair.
+private struct Lifecycle: ViewModifier {
+    @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #else
+    @Environment(\.scenePhase) private var phase
+    #endif
+
+    func body(content: Content) -> some View {
+        let waiting = orb.state.tabs.reduce(0) { $0 + $1.unread + ($1.ask == nil ? 0 : 1) }
+        #if os(macOS)
+        content
+            .onChange(of: waiting, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in orb.visible(true) }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in orb.visible(false) }
+            .onChange(of: nav.settings) { if nav.settings { nav.settings = false; openSettings() } }
+        #else
+        @Bindable var nav = nav
+        content
+            .onChange(of: waiting, initial: true) { _, n in UNUserNotificationCenter.current().setBadgeCount(n) }
+            .onChange(of: phase, initial: true) { orb.visible(phase == .active) }
+            .sheet(isPresented: $nav.settings) { Preferences() }
+            // A pairing code opened as a link (the camera's, a message's) joins from Settings.
+            .onOpenURL { url in
+                guard url.scheme == "orb-bridge" else { return }
+                nav.code = url.absoluteString
+                nav.pane = "pair"
+                nav.settings = true
+            }
+        #endif
+    }
+}
+
+#if os(macOS)
 /// The menu bar's Orb: each open conversation, working or asking, a click from the window.
 private struct Status: View {
     @Environment(Orb.self) private var orb
@@ -183,6 +248,7 @@ private struct Status: View {
         NSApp.activate()
     }
 }
+#endif
 
 /// Does what an intent came back with: show a tab, open a screen, copy.
 private struct Go: EnvironmentKey {
@@ -197,16 +263,17 @@ extension EnvironmentValues {
 }
 
 /// Notifications for what the view says happened out of sight; clicking one shows its conversation.
-@MainActor final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+@MainActor final class Delegate: NSObject, UNUserNotificationCenterDelegate {
     var open: (String) -> Void = { _ in }
     private var center: UNUserNotificationCenter? { Bundle.main.bundleIdentifier == nil ? nil : .current() }
 
-    /// Closing the window leaves Orb running: what finishes out of sight still says so.
-    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func started() {
         center?.delegate = self
+        #if os(macOS)
         center?.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        #else
+        center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        #endif
     }
 
     func notify(tab: String, title: String, text: String) {
@@ -225,7 +292,25 @@ extension EnvironmentValues {
         let tab = response.notification.request.content.userInfo["tab"] as? String ?? ""
         await MainActor.run {
             open(tab)
+            #if os(macOS)
             NSApp.activate()
+            #endif
         }
     }
 }
+
+#if os(macOS)
+extension Delegate: NSApplicationDelegate {
+    /// Closing the window leaves Orb running: what finishes out of sight still says so.
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
+
+    func applicationDidFinishLaunching(_ notification: Notification) { started() }
+}
+#else
+extension Delegate: UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        started()
+        return true
+    }
+}
+#endif

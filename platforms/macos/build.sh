@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Orb.app: the SwiftUI app, the orb it runs (`orb app`), and the face and mark it shares
+# Builds Orb.app: the SwiftUI app (platforms/apple, shared with iOS), the orb it runs (`orb app`), and the face and mark it shares
 # with the Android app; signed with a Developer ID when one is named, ad hoc otherwise.
 #   build.sh <version> [identity]              build/Orb.app
 #   build.sh notarize <key.p8> <key-id> <issuer>   notarizes build/Orb.app and staples the ticket
@@ -22,31 +22,15 @@ fi
 version=$1 identity=${2:--}
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-swift build -c release --package-path "$here"
-cp "$(swift build -c release --package-path "$here" --show-bin-path)/Orb" "$app/Contents/MacOS/Orb"
+swift build -c release --package-path "$repo/platforms/apple"
+cp "$(swift build -c release --package-path "$repo/platforms/apple" --show-bin-path)/Orb" "$app/Contents/MacOS/Orb"
 (cd "$repo" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$app/Contents/Helpers/orb" ./cmd/orb)
 cp "$res/font/ubuntu_sans_mono.ttf" "$app/Contents/Resources/"
 
-# The icon: the Android mark (Ubuntu Mono Bold "ORB", stretched) on a Mac app tile.
+# The icon: the Android mark on a Mac app tile.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mark=$(sed -n 's/.*android:pathData="\([^"]*\)".*/\1/p' "$res/drawable/ic_orb_mark.xml")
-cat >"$tmp/icon.svg" <<EOF
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
-<rect x="100" y="100" width="824" height="824" rx="185" fill="#12151A"/>
-<path transform="translate(285 268) scale(3.3)" fill="#FAF9F6" d="$mark"/>
-</svg>
-EOF
-cat >"$tmp/render.swift" <<'EOF'
-import AppKit
-let svg = NSImage(contentsOf: URL(filePath: CommandLine.arguments[1]))!
-let tile = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1024, pixelsHigh: 1024, bitsPerSample: 8, samplesPerPixel: 4,
-                            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: tile)
-svg.draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024))
-try! tile.representation(using: .png, properties: [:])!.write(to: URL(filePath: CommandLine.arguments[2]))
-EOF
-swift "$tmp/render.swift" "$tmp/icon.svg" "$tmp/icon.png"
+"$repo/platforms/apple/icon.sh" "$tmp/icon.png" 100
 mkdir "$tmp/AppIcon.iconset"
 for size in 16 32 128 256 512; do
 	sips -z $size $size "$tmp/icon.png" --out "$tmp/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null

@@ -1,4 +1,22 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+typealias NativeColor = NSColor
+typealias NativeFont = NSFont
+typealias NativeImage = NSImage
+#else
+import UIKit
+typealias NativeColor = UIColor
+typealias NativeFont = UIFont
+typealias NativeImage = UIImage
+#endif
+
+/// What the app calls the device it runs on.
+#if os(macOS)
+let device = "this Mac"
+#else
+let device = "this iPhone"
+#endif
 
 /// Ordalie tokens, as on Android (ui/Theme.kt): paper and charcoal, one rupture red, a blue kept
 /// for remote Orbs acting here. Each tone follows the system's light or dark appearance.
@@ -21,7 +39,11 @@ enum Ink {
     }
 
     private static func tone(_ light: UInt32, _ dark: UInt32) -> Color {
+        #if os(macOS)
         Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(rgb: dark) : NSColor(rgb: light) })
+        #else
+        Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
+        #endif
     }
 }
 
@@ -30,19 +52,33 @@ extension Orb {
     func hue(_ machine: String) -> Color { Ink.hue(self.machine(machine)?.hue ?? 0) }
 }
 
-extension NSColor {
+extension NativeColor {
     convenience init(rgb: UInt32) {
-        self.init(srgbRed: CGFloat(rgb >> 16 & 0xFF) / 255, green: CGFloat(rgb >> 8 & 0xFF) / 255, blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+        self.init(red: CGFloat(rgb >> 16 & 0xFF) / 255, green: CGFloat(rgb >> 8 & 0xFF) / 255, blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
     }
 }
 
 extension Color {
-    init(rgb: UInt32) { self.init(nsColor: NSColor(rgb: rgb)) }
+    init(rgb: UInt32) { self.init(.sRGB, red: Double(rgb >> 16 & 0xFF) / 255, green: Double(rgb >> 8 & 0xFF) / 255, blue: Double(rgb & 0xFF) / 255) }
 }
 
-/// One scale, denser than the phone's: body 14 · small 12 · label 10.
+extension Image {
+    init(native: NativeImage) {
+        #if os(macOS)
+        self.init(nsImage: native)
+        #else
+        self.init(uiImage: native)
+        #endif
+    }
+}
+
+/// One scale, the Mac's denser than the phone's: body 14 · small 12 · label 10 there.
 enum Size {
+    #if os(macOS)
     static let body: CGFloat = 14, small: CGFloat = 12, label: CGFloat = 10
+    #else
+    static let body: CGFloat = 16, small: CGFloat = 13, label: CGFloat = 11
+    #endif
 }
 
 extension Font {
@@ -53,9 +89,9 @@ extension Font {
     }
 }
 
-extension NSFont {
-    static func mono(_ size: CGFloat) -> NSFont {
-        NSFont(name: "Ubuntu Sans Mono", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+extension NativeFont {
+    static func mono(_ size: CGFloat) -> NativeFont {
+        NativeFont(name: "Ubuntu Sans Mono", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
     }
 }
 
@@ -96,7 +132,7 @@ extension View {
     @ViewBuilder func surface(_ radius: CGFloat, accent: Color? = nil) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)
         #if compiler(>=6.2)
-        if #available(macOS 26, *) {
+        if #available(macOS 26, iOS 26, *) {
             // Tinted with the page, so what scrolls under it never competes with what is typed.
             glassEffect(.regular.tint(Ink.bg.opacity(0.65)), in: shape).overlay(shape.stroke(accent ?? .clear))
         } else {
@@ -115,8 +151,12 @@ struct Rule: View {
 
 /// Puts [text] on the clipboard.
 @MainActor func copy(_ text: String) {
+    #if os(macOS)
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
+    #else
+    UIPasteboard.general.string = text
+    #endif
 }
 
 /// Parts of a line that are there, between dots: "mac · orb · 3h".

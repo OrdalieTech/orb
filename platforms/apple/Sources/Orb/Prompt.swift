@@ -110,7 +110,9 @@ struct PromptBox<Place: View>: View {
                 }
                 return true
             }
+            #if os(macOS)
             .frame(height: min(max(height, 22), 260))
+            #endif
             .overlay(alignment: .topLeading) {
                 if draft.wrappedValue.isEmpty {
                     Text(busy ? "steer or queue a message" : "What should we work on?").font(.mono(Size.body + 1)).foregroundStyle(Ink.meta).allowsHitTesting(false)
@@ -123,8 +125,10 @@ struct PromptBox<Place: View>: View {
                 Spacer(minLength: 0)
                 if let tab {
                     Gauges(t: tab)
+                    #if os(macOS)
                     Button(">_") { nav.toggleTerminal(tab.id) }.buttonStyle(.plain).font(.mono(Size.body, .semibold))
                         .foregroundStyle(nav.terminals.contains(tab.id) ? Ink.fg : Ink.mute).help("Terminal where it runs  ⌘J")
+                    #endif
                 }
                 if busy && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Pill("stop", color: Ink.rupture) { orb.send("abort", ["tab": tab!.id]) }
@@ -193,7 +197,6 @@ private struct Model: View {
 private struct ModelPicker: View {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
-    @Environment(\.openSettings) private var openSettings
     let t: Tab
     let done: () -> Void
     @State private var query = ""
@@ -220,7 +223,7 @@ private struct ModelPicker: View {
                     ContentUnavailableView {
                         Label("No model yet", systemImage: "key")
                     } description: { Text("Sign in to a provider, or add an API key.") } actions: {
-                        Button("Providers…") { done(); nav.providers(of: t, openSettings) }
+                        Button("Providers…") { done(); nav.providers(of: t) }
                     }
                 } else if flat.isEmpty {
                     ContentUnavailableView.search(text: query)
@@ -262,7 +265,11 @@ private struct ModelPicker: View {
             .font(.mono(Size.small + 1)).padding(.horizontal, 14).padding(.vertical, 8)
             if !note.isEmpty { Text(note).font(.mono(Size.small)).foregroundStyle(Ink.rupture).padding(.horizontal, 14).padding(.bottom, 8) }
         }
+        #if os(macOS)
         .frame(width: 380, height: 440)
+        #else
+        .presentationDetents([.medium, .large])
+        #endif
         .onAppear {
             searching = true
             selected = t.model
@@ -275,7 +282,7 @@ private struct ModelPicker: View {
     private var account: some View {
         let provider = String(t.model.prefix { $0 != "/" })
         let mine = accounts.filter { $0.provider == provider }
-        let place = t.remote ? t.where : "this Mac"
+        let place = t.remote ? t.where : device
         return Menu {
             ForEach(mine.indices, id: \.self) { i in
                 let a = mine[i]
@@ -287,7 +294,7 @@ private struct ModelPicker: View {
                 })
             }
             if !mine.isEmpty { Divider() }
-            Button("Providers and Accounts on \(place)…") { done(); nav.providers(of: t, openSettings) }
+            Button("Providers and Accounts on \(place)…") { done(); nav.providers(of: t) }
         } label: {
             Label(mine.first(where: \.active)?.name ?? place, systemImage: "person.crop.circle")
         }
@@ -357,7 +364,7 @@ struct Interrupt: View {
     private func choice(_ i: Int) -> some View {
         Button { answer(ask.choices[i]) } label: {
             HStack(spacing: 10) {
-                Text("⌘\(i + 1)").font(.mono(Size.small, .semibold)).foregroundStyle(Ink.meta)
+                Text(shortcut + "\(i + 1)").font(.mono(Size.small, .semibold)).foregroundStyle(Ink.meta)
                 Text(ask.choices[i]).frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12).padding(.vertical, 7).background(Ink.fg.opacity(0.06), in: .rect(cornerRadius: 8)).contentShape(.rect)
@@ -388,8 +395,32 @@ struct Interrupt: View {
     }
 }
 
+#if os(macOS)
+private let shortcut = "⌘"
+#else
+private let shortcut = ""
+#endif
+
 enum Key { case enter, up, down, tab, escape }
 
+#if os(iOS)
+/// The text the prompt box edits: the system's own field, growing with what is typed, its cursor
+/// taken at the end; the box's buttons send.
+private struct Editor: View {
+    @Binding var text: String
+    @Binding var cursor: Int
+    @Binding var height: CGFloat
+    let focus: Int // grows each time the box is asked for
+    let key: (Key) -> Bool
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text, axis: .vertical).font(.mono(Size.body + 1)).lineLimit(1...8).focused($focused)
+            .onChange(of: text, initial: true) { cursor = (text as NSString).length }
+            .onChange(of: focus) { focused = true }
+    }
+}
+#else
 /// The text the prompt box edits: AppKit's own, so typing, undo, dictation and the cursor behave as
 /// everywhere on the Mac; it reports its height and the keys the box acts on.
 private struct Editor: NSViewRepresentable {
@@ -480,3 +511,4 @@ private struct Editor: NSViewRepresentable {
         }
     }
 }
+#endif

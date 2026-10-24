@@ -13,49 +13,66 @@ struct Conversation: View {
     @State private var kept: String? = nil // the turn read at the top while earlier messages load above it
 
     var body: some View {
+        split
+            .navigationTitle(t.title.isEmpty ? "new session" : t.title)
+            #if os(macOS)
+            .navigationSubtitle(dotted(t.remote ? t.where : "", t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"), t.busy ? "working" : t.online ? "" : "offline"))
+            #endif
+            .toolbar {
+                #if os(macOS)
+                Button { nav.toggleTerminal(t.id) } label: { Label("Terminal", systemImage: "terminal") }.help("Terminal where it runs  ⌘J")
+                #endif
+                Button { nav.inspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }.help("Model, usage and where it runs  ⌥⌘I")
+            }
+            .inspector(isPresented: Bindable(nav).inspector) { Details(t: t).inspectorColumnWidth(min: 260, ideal: 300, max: 400) }
+    }
+
+    /// The conversation, and on the Mac the terminal where it runs under it.
+    @ViewBuilder private var split: some View {
+        #if os(macOS)
         VSplitView {
-            VStack(spacing: 0) {
-                if !t.remote && orb.state.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
-                // The conversation scrolls on under the box, as in Messages.
-                transcript.safeAreaInset(edge: .bottom, spacing: 0) {
-                    VStack(spacing: 6) {
-                        // Read further up, the latest is a click away.
-                        if !follow {
-                            Button { follow = true; withAnimation { position.scrollTo(edge: .bottom) } } label: {
-                                Image(systemName: "arrow.down").font(.system(size: 13, weight: .semibold)).frame(width: 30, height: 30).contentShape(.circle)
-                            }
-                            .buttonStyle(.plain).surface(15).help("Latest").transition(.opacity.combined(with: .scale(scale: 0.8)))
+            page
+            if nav.terminals.contains(t.id) { TerminalPane(t: t).frame(minHeight: 120, idealHeight: 280) }
+        }
+        #else
+        page
+        #endif
+    }
+
+    private var page: some View {
+        VStack(spacing: 0) {
+            if !t.remote && orb.state.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
+            // The conversation scrolls on under the box, as in Messages.
+            transcript.safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 6) {
+                    // Read further up, the latest is a click away.
+                    if !follow {
+                        Button { follow = true; withAnimation { position.scrollTo(edge: .bottom) } } label: {
+                            Image(systemName: "arrow.down").font(.system(size: 13, weight: .semibold)).frame(width: 30, height: 30).contentShape(.circle)
                         }
-                        if !t.status.isEmpty || !t.online {
-                            HStack(spacing: 8) {
-                                if !t.online { Dot(color: Ink.meta, size: 6, pulse: !t.status.hasPrefix("ended")) }
-                                Text(t.status.isEmpty ? "reconnecting" : t.status).font(.mono(Size.small)).foregroundStyle(Ink.mute).lineLimit(2)
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 6).surface(10)
+                        .buttonStyle(.plain).surface(15).help("Latest").transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
+                    if !t.status.isEmpty || !t.online {
+                        HStack(spacing: 8) {
+                            if !t.online { Dot(color: Ink.meta, size: 6, pulse: !t.status.hasPrefix("ended")) }
+                            Text(t.status.isEmpty ? "reconnecting" : t.status).font(.mono(Size.small)).foregroundStyle(Ink.mute).lineLimit(2)
                         }
-                        if let ask = t.ask {
-                            Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
-                        } else {
-                            PromptBox(tab: t, place: Text(t.remote ? t.where : "this Mac").foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
-                                follow = true
-                                position.scrollTo(edge: .bottom)
-                                Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
-                            }
+                        .padding(.horizontal, 12).padding(.vertical, 6).surface(10)
+                    }
+                    if let ask = t.ask {
+                        Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
+                    } else {
+                        PromptBox(tab: t, place: Text(t.remote ? t.where : device).foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
+                            follow = true
+                            position.scrollTo(edge: .bottom)
+                            Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
                         }
                     }
                 }
             }
-            .frame(minHeight: 240)
-            .animation(.easeOut(duration: 0.15), value: follow)
-            if nav.terminals.contains(t.id) { TerminalPane(t: t).frame(minHeight: 120, idealHeight: 280) }
         }
-        .navigationTitle(t.title.isEmpty ? "new session" : t.title)
-        .navigationSubtitle(dotted(t.remote ? t.where : "", t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"), t.busy ? "working" : t.online ? "" : "offline"))
-        .toolbar {
-            Button { nav.toggleTerminal(t.id) } label: { Label("Terminal", systemImage: "terminal") }.help("Terminal where it runs  ⌘J")
-            Button { nav.inspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }.help("Model, usage and where it runs  ⌥⌘I")
-        }
-        .inspector(isPresented: Bindable(nav).inspector) { Details(t: t).inspectorColumnWidth(min: 260, ideal: 300, max: 400) }
+        .frame(minHeight: 240)
+        .animation(.easeOut(duration: 0.15), value: follow)
     }
 
     private var transcript: some View {
@@ -373,35 +390,35 @@ private struct Pictures: View {
     private struct Shown: Identifiable { let ref: String; var id: String { ref } }
 }
 
-@MainActor private let pictures = NSCache<NSString, NSImage>()
+@MainActor private let pictures = NSCache<NSString, NativeImage>()
 
 struct Picture: View {
     @Environment(Orb.self) private var orb
     let ref: String, tab: String, px: Int
-    @State private var image: NSImage? = nil
+    @State private var image: NativeImage? = nil
     var body: some View {
         Group {
-            if let image { Image(nsImage: image).resizable().scaledToFit().clipShape(.rect(cornerRadius: 6)) } else { RoundedRectangle(cornerRadius: 6).fill(Ink.raised).frame(width: 96) }
+            if let image { Image(native: image).resizable().scaledToFit().clipShape(.rect(cornerRadius: 6)) } else { RoundedRectangle(cornerRadius: 6).fill(Ink.raised).frame(width: 96) }
         }
         .task(id: ref + "\(px)") {
             let key = "\(ref):\(px)" as NSString
             if let cached = pictures.object(forKey: key) { image = cached; return }
             struct Data64: Decodable { @D var data = "" }
-            guard let r = try? await orb.ask("image", ["tab": tab, "ref": ref, "px": px], as: Data64.self), let bytes = Data(base64Encoded: r.data), let decoded = NSImage(data: bytes) else { return }
+            guard let r = try? await orb.ask("image", ["tab": tab, "ref": ref, "px": px], as: Data64.self), let bytes = Data(base64Encoded: r.data), let decoded = NativeImage(data: bytes) else { return }
             pictures.setObject(decoded, forKey: key)
             image = decoded
         }
     }
 }
 
-/// Another Orb is driving this Mac. Blue fills space here and nowhere else.
+/// Another Orb is driving this device. Blue fills space here and nowhere else.
 private struct PatternBlue: View {
     let stop: () -> Void
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
                 Stretch(text: "PATTERN BLUE", height: 26, color: Ink.paper)
-                Text("A peer is prompting this Mac").font(.mono(Size.body, .medium)).foregroundStyle(Ink.paper)
+                Text("A peer is prompting \(device)").font(.mono(Size.body, .medium)).foregroundStyle(Ink.paper)
             }
             Spacer()
             Button("stop", action: stop).buttonStyle(.plain).font(.mono(Size.body, .semibold)).foregroundStyle(Ink.blue)
@@ -424,12 +441,14 @@ private struct Details: View {
         Form {
             Section("Conversation") {
                 TextField("Name", text: $name).onSubmit { orb.send("rename", ["tab": t.id, "name": name]) }
-                LabeledContent("Machine", value: t.remote ? t.where : "this Mac")
+                LabeledContent("Machine", value: t.remote ? t.where : device)
                 LabeledContent("Folder") { Text(t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~")).textSelection(.enabled) }
+                #if os(macOS)
                 HStack {
                     Button("Terminal") { nav.toggleTerminal(t.id) }
                     if !t.remote && !t.cwd.isEmpty { Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: t.cwd) } }
                 }
+                #endif
             }
             Section("Model") {
                 Picker("Model", selection: Binding { t.model } set: { orb.send("model", ["tab": t.id, "name": $0]) }) {
