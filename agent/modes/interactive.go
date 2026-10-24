@@ -1001,7 +1001,7 @@ func (mode *InteractiveMode) installEditorFactory(factory extensions.EditorFacto
 			appearance.SetPaddingX(mode.editor.GetPaddingX())
 		}
 		mode.setExtensionEditor(replacement)
-		mode.setExtensionEditorAutocompleteProvider(mode.autocompleteProvider)
+		mode.setExtensionEditorAutocompleteProvider(mode.autocomplete())
 	} else {
 		mode.editor.SetText(currentText)
 		mode.setExtensionEditor(nil)
@@ -1070,6 +1070,12 @@ func (mode *InteractiveMode) activeEditorFocus() tui.Component {
 		return extensionEditorAdapter{EditorComponent: extensionEditor}
 	}
 	return mode.editor
+}
+
+func (mode *InteractiveMode) autocomplete() tui.AutocompleteProvider {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.autocompleteProvider
 }
 
 func (mode *InteractiveMode) setupAutocomplete() {
@@ -1183,7 +1189,10 @@ func (mode *InteractiveMode) setupAutocomplete() {
 		provider = extensionAutocompleteAdapter{provider: wrapped}
 	}
 	provider = newSkillAutocompleteProvider(provider, skillItems)
+	// Input can arrive before this first runs: the terminal starts before the extensions do.
+	mode.mu.Lock()
 	mode.autocompleteProvider = provider
+	mode.mu.Unlock()
 	if mode.editor != nil {
 		if skills, ok := provider.(*skillAutocompleteProvider); ok {
 			mode.editor.SetDisplayTokens(skillDisplayTokens(skills.known))
@@ -1743,7 +1752,7 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 
 		// Normal message submission
 		prompt := text
-		if skills, ok := mode.autocompleteProvider.(*skillAutocompleteProvider); ok {
+		if skills, ok := mode.autocomplete().(*skillAutocompleteProvider); ok {
 			prompt = exporthtml.SkillSubmission(text, skills.known)
 		}
 		mode.mu.Lock()
