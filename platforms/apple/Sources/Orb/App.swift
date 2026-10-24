@@ -4,7 +4,7 @@ import UserNotifications
 /// Where the app is: the conversation shown (nil is the start screen, kept across launches), each
 /// one's draft and terminal, and Settings, its pane, and a pairing code to join there.
 @MainActor @Observable final class Nav {
-    var tab = UserDefaults.standard.string(forKey: "tab") ?? Nav.start {
+    var tab = UserDefaults.standard.string(forKey: "tab") {
         didSet { UserDefaults.standard.set(tab, forKey: "tab") }
     }
     var drafts: [String: String] = [:]
@@ -19,14 +19,6 @@ import UserNotifications
     var answered = "" // the pairing claim already answered, until the view drops it
     #if os(macOS)
     @ObservationIgnored let shells = Terminals()
-    #endif
-
-    /// The tab that shows the start screen: none, where the split view shows one beside its list;
-    /// on a phone, whose collapsed split view shows its list for none, one of its own.
-    #if os(macOS)
-    static let start: String? = nil
-    #else
-    static let start: String? = "new"
     #endif
 
     /// Stops following a conversation; the one after it shows in its place.
@@ -143,16 +135,7 @@ struct Main: View {
 
     var body: some View {
         @Bindable var nav = nav
-        NavigationSplitView {
-            Sidebar().navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 360)
-        } detail: {
-            Group {
-                if let t = orb.tab(nav.tab) { Conversation(t: t).id(t.id) } else { Start() }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Ink.bg)
-            .toolbarTitleDisplayMode(.inline)
-        }
+        layout
         #if os(macOS)
         .frame(minWidth: 720, minHeight: 480)
         #endif
@@ -189,6 +172,74 @@ struct Main: View {
         }
     }
 }
+
+extension Main {
+    /// The Mac lists conversations beside the one shown; the phone draws its own bar over it, as
+    /// the Android app does, with no system navigation.
+    @ViewBuilder private var layout: some View {
+        #if os(macOS)
+        NavigationSplitView {
+            Sidebar().navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 360)
+        } detail: { page }
+        #else
+        VStack(spacing: 0) {
+            Bar()
+            Rule()
+            page
+        }
+        #endif
+    }
+
+    private var page: some View {
+        Group {
+            if let t = orb.tab(nav.tab) { Conversation(t: t).id(t.id) } else { Start() }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Ink.bg)
+    }
+}
+
+#if os(iOS)
+/// The phone's one bar, as on Android: the wordmark, which is Home; a tab per open conversation,
+/// its square in the colour of the machine it runs on, red while it asks; the menu.
+private struct Bar: View {
+    @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { nav.tab = nil } label: { Stretch(text: "ORB", height: 18, color: orb.tab(nav.tab) == nil ? Ink.fg : Ink.meta) }
+                .padding(.horizontal, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) { ForEach(orb.state.tabs) { tab($0) } }
+            }
+            Menu {
+                if let t = orb.tab(nav.tab) { Button("Details") { nav.inspector = true }; Button("Providers") { nav.providers(of: t) } }
+                Button("Bridge") { nav.pane = "pair"; nav.settings = true }
+                Button("Plugins") { nav.providers(of: orb.tab(nav.tab), pane: "plugins") }
+            } label: { Image(systemName: "line.3.horizontal").frame(width: 44, height: 44) }.accessibilityLabel("Menu")
+        }
+        .frame(height: 46).buttonStyle(.plain).foregroundStyle(Ink.fg)
+    }
+
+    private func tab(_ t: Tab) -> some View {
+        let on = t.id == nav.tab
+        return HStack(spacing: 7) {
+            Button { nav.tab = t.id } label: {
+                HStack(spacing: 7) {
+                    Rectangle().fill(t.ask != nil ? Ink.rupture : orb.hue(t.peer)).frame(width: 7, height: 7).opacity(t.busy ? 0.5 : 1)
+                    Text(t.title.isEmpty ? "new session" : t.title).font(.mono(Size.small + 1, on || t.unread > 0 ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 150)
+                    if t.unread > 0 { Text("\(t.unread)").font(.mono(Size.label, .semibold)) }
+                }
+                .frame(maxHeight: .infinity)
+            }
+            if on { Button("×") { nav.close(t.id, orb) }.foregroundStyle(Ink.meta) }
+        }
+        .foregroundStyle(on ? Ink.fg : Ink.mute).padding(.horizontal, 8)
+        .overlay(alignment: .bottom) { Rectangle().fill(on ? Ink.fg : .clear).frame(height: 2) }
+    }
+}
+#endif
 
 /// What the system tells the view and shows of it: whether the app is in front, a count on its
 /// icon of what waits for you (questions, answers not read yet), Settings, and links to pair.

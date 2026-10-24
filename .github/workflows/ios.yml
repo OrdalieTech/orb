@@ -47,6 +47,10 @@ jobs:
           jq -e .peer_id $out/phone.json
           sleep 5
           xcrun simctl io $udid screenshot $out/1-home.png
+          xcrun simctl ui $udid appearance dark
+          sleep 2
+          xcrun simctl io $udid screenshot $out/1-home-dark.png
+          xcrun simctl ui $udid appearance light
           export HOME=$RUNNER_TEMP/home ORB_BRIDGE_HOME=$RUNNER_TEMP/b
           mkdir -p $HOME
           printf 'y\n' | $orb bridge pair >$out/pair.txt 2>&1 &

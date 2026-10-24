@@ -37,7 +37,7 @@ struct Sidebar: View {
             }
         }
         .searchable(text: $search, placement: .sidebar, prompt: "Threads")
-        .toolbar { Button { nav.tab = Nav.start } label: { Label("New Conversation", systemImage: "square.and.pencil") }.help("New conversation  ⌘N") }
+        .toolbar { Button { nav.tab = nil } label: { Label("New Conversation", systemImage: "square.and.pencil") }.help("New conversation  ⌘N") }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(orb.state.up ? orb.state.summary : "starting Bridge…").font(.mono(Size.small)).foregroundStyle(Ink.meta).lineLimit(1)
@@ -116,6 +116,9 @@ struct Start: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(iOS)
+            threads
+            #else
             Spacer()
             Stretch(text: "ORB", height: 44)
             Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
@@ -131,13 +134,8 @@ struct Start: View {
                 .controlSize(.small).padding(.top, 18)
             }
             Spacer()
-            #if os(iOS)
-            // The phone runs no Orb of its own yet: its conversations start on a paired machine.
-            if target == nil {
-                Button("Pair with a computer") { nav.pane = "pair"; nav.settings = true }.buttonStyle(.borderedProminent).tint(Ink.rupture)
-                    .foregroundStyle(Ink.paper).padding(.bottom, 32)
-            }
             #endif
+            // The phone runs no Orb of its own yet: its conversations start on a paired machine.
             if local || target != nil { prompt }
         }
         .navigationTitle("Orb")
@@ -147,6 +145,28 @@ struct Start: View {
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Home on the phone, as on Android: every thread on every machine, newest first, where it
+    /// lives a detail of the row; a way to pair while no machine is.
+    private var threads: some View {
+        List {
+            ForEach(orb.home.entries) { e in
+                Button { nav.tab = "e:" + e.key } label: {
+                    Line(title: e.title, sub: dotted(orb.machine(e.machine)?.name ?? "", base(e.cwd), e.modified.ago), live: e.live, asks: e.asks, hue: orb.hue(e.machine))
+                }
+            }
+            if orb.home.machines.count < 2 {
+                Button { nav.pane = "pair"; nav.settings = true } label: {
+                    HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
+                }
+            }
+            Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
+                .font(.mono(Size.small)).foregroundStyle(Ink.meta)
+        }
+        .listStyle(.plain).scrollContentBackground(.hidden).listRowBackground(Color.clear).buttonStyle(.plain)
+    }
+    #endif
 
     /// The machines a conversation can start on.
     private var starts: [Machine] { orb.home.machines.filter { $0.launch && (local || !$0.here) } }
