@@ -671,6 +671,21 @@ func (runtime *SessionRuntime) enqueue(text string, images []*ai.ImageContent, f
 	return nil
 }
 
+// SteerRunning steers the running turn with text and images and reports true, or queues nothing
+// and reports false when no run is going, so the caller starts a turn of its own.
+func (runtime *SessionRuntime) SteerRunning(text string, images []*ai.ImageContent) (bool, error) {
+	if err := runtime.checkLive(); err != nil {
+		return false, err
+	}
+	if runtime.slashResolver != nil {
+		var err error
+		if text, err = runtime.slashResolver.ExpandQueued(text); err != nil {
+			return false, err
+		}
+	}
+	return runtime.queueWhileRunning(runtime.userMessage(text, images), &text, false), nil
+}
+
 // queueWhileRunning queues message for the running turn, which takes it before it ends; with no run
 // going it queues nothing and reports false, so the caller starts one.
 func (runtime *SessionRuntime) queueWhileRunning(message engine.AgentMessage, text *string, followUp bool) bool {

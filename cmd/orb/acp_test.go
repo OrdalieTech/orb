@@ -575,3 +575,88 @@ func TestACPIgnoresTheCLIsSessionFlags(t *testing.T) {
 	}
 	client.close()
 }
+
+// A message a client steers into a running turn is answered in that turn, which
+// the client's prompt request still awaits; with no turn running, steering
+// fails so the client sends the message as a prompt instead.
+func TestACPSteeringJoinsTheRunningTurn(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	started, release := make(chan struct{}), make(chan struct{})
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.Factory(func(context.Context, ai.Context, *ai.StreamOptions, faux.State, *ai.Model) (*ai.AssistantMessage, error) {
+			close(started)
+			<-release
+			return faux.AssistantMessage("Looking."), nil
+		}),
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			raw, _ := json.Marshal(request.Messages[len(request.Messages)-1])
+			return faux.AssistantMessage("Saw: " + string(raw)), nil
+		}),
+	})
+	client := startACP(t, provider)
+	initialized, _ := client.call("initialize", map[string]any{"protocolVersion": 2})
+	if supported, _ := initialized["result"].(map[string]any)["_meta"].(map[string]any)["steering"].(map[string]any)["supported"].(bool); !supported {
+		t.Fatalf("initialize = %v", initialized)
+	}
+	created, _ := client.call("session/new", map[string]any{"cwd": root, "mcpServers": []any{}})
+	sessionID := created["result"].(map[string]any)["sessionId"].(string)
+	steer := map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "also check the venue"}}}
+	if idle, _ := client.call("_session/steering", steer); idle["error"] == nil {
+		t.Fatalf("steering with no turn running = %v", idle)
+	}
+
+	// The prompt's response arrives after the steering request's, so both go out
+	// before either is read.
+	frames := []map[string]any{
+		{"jsonrpc": "2.0", "id": 100, "method": "session/prompt", "params": map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "When is the launch?"}}}},
+		{"jsonrpc": "2.0", "id": 101, "method": "_session/steering", "params": steer},
+	}
+	frame, _ := json.Marshal(frames[0])
+	if _, err := client.in.Write(append(frame, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	frame, _ = json.Marshal(frames[1])
+	if _, err := client.in.Write(append(frame, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	responses := map[float64]map[string]any{}
+	var notifications []map[string]any
+	for len(responses) < 2 {
+		line, err := client.out.ReadBytes('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		var message map[string]any
+		if err := json.Unmarshal(line, &message); err != nil {
+			t.Fatal(err)
+		}
+		id, ok := message["id"].(float64)
+		if !ok {
+			notifications = append(notifications, message)
+			continue
+		}
+		responses[id] = message
+		if id == 101 {
+			close(release)
+		}
+	}
+	if outcome, _ := responses[101]["result"].(map[string]any)["outcome"].(string); outcome != "injected" {
+		t.Fatalf("steering = %v", responses[101])
+	}
+	if stop, _ := responses[100]["result"].(map[string]any)["stopReason"].(string); stop != "end_turn" {
+		t.Fatalf("prompt = %v", responses[100])
+	}
+	var reply strings.Builder
+	for _, chunk := range updates(notifications, "agent_message_chunk") {
+		reply.WriteString(chunk["content"].(map[string]any)["text"].(string))
+	}
+	if !strings.HasPrefix(reply.String(), "Looking.Saw: ") || !strings.Contains(reply.String(), "also check the venue") {
+		t.Fatalf("the turn did not answer the steered message: %s", reply.String())
+	}
+	client.close()
+}

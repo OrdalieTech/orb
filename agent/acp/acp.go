@@ -177,6 +177,8 @@ func (s *server) request(method string, params json.RawMessage) (any, error) {
 			},
 			"agentInfo":   map[string]string{"name": "orb", "title": "Orb", "version": s.version},
 			"authMethods": []any{},
+			// _session/steering, as claude-agent-acp and codex-acp offer it.
+			"_meta": map[string]any{"steering": map[string]bool{"supported": true}},
 		}, nil
 	case "authenticate":
 		return map[string]any{}, nil
@@ -238,6 +240,35 @@ func (s *server) request(method string, params json.RawMessage) (any, error) {
 		}
 		text, images := promptInput(p.Prompt)
 		return s.prompt(session, text, images)
+	case "_session/steering":
+		// A message for the running turn, which takes it before it ends. With no
+		// turn running the request fails, and the client sends it as a prompt.
+		var p struct {
+			SessionID string            `json:"sessionId"`
+			Prompt    []json.RawMessage `json:"prompt"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, invalid("_session/steering: %v", err)
+		}
+		s.mu.Lock()
+		index := slices.IndexFunc(s.live, func(session *live) bool { return session.id == p.SessionID })
+		var session *live
+		if index >= 0 {
+			session = s.live[index]
+		}
+		s.mu.Unlock()
+		if session == nil || !session.running() {
+			return nil, errors.New("no turn is running to steer")
+		}
+		text, images := promptInput(p.Prompt)
+		steered, err := session.runtime.Session().SteerRunning(text, images)
+		if err != nil {
+			return nil, err
+		}
+		if !steered {
+			return nil, errors.New("no turn is running to steer")
+		}
+		return map[string]string{"outcome": "injected"}, nil
 	case "session/set_config_option", "session/set_model":
 		var p struct {
 			SessionID string `json:"sessionId"`

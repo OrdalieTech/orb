@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- ACP clients can steer a running turn: Orb advertises `_meta.steering.supported` and answers `_session/steering`, as claude-agent-acp and codex-acp do, so buzz-acp hands a message sent mid-turn to the turn instead of cancelling it and sending both again.
 - A Claude conversation cancelled while Claude ran a command or waited on a background task answers its next message instead of failing it with "No message found with message.uuid": the cancelled host finishes exiting before the next one resumes, and Orb points Claude's transcript back at its own branch whenever it drifted.
 - A message sent while a turn ends is answered instead of waiting in the queue: a run ends only once its queue is empty, Claude and Codex sessions included, and what arrives as it settles is the next turn. Alt+Enter on an idle session starts the turn, and a message queued behind one that cannot run (no API key) comes back to the editor.
 - A conversation already open in another Orb on the machine opens anyway: `orb --session`, `/resume` and the session picker show it live from the Orb holding it, tool calls included, and what you send there runs in that Orb (queued during a turn); once that Orb closes, the conversation opens in yours. The apps open it too, without the bridge plugin on in the Orb holding it, which comes on Bridge for them as an Orb the Bridge starts would.
