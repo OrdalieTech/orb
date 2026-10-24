@@ -2,7 +2,9 @@ package modes
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -14,7 +16,10 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/termcaps"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/tui"
@@ -574,6 +579,271 @@ func TestExtensionDialogsStack(t *testing.T) {
 	shown(lifecycleText("a"))
 	closeA(nil)
 	shown(any(mode.editor))
+}
+
+// A message sent at any point of a turn is answered, after the turn or within it, or comes back to
+// the editor when the turn cannot run; it never waits in the queue for a run that is not coming.
+// Each case holds the first turn at one point, sends the second message there, then lets it go.
+func TestAMessageSentAtAnyPointIsAnswered(t *testing.T) {
+	for _, scenario := range []queueScenario{
+		{name: "idle"},
+		{name: "idle follow-up", followUp: true},
+		{name: "input handler", hold: "input"},
+		{name: "before_agent_start", hold: "before_agent_start"},
+		{name: "streaming", hold: "stream"},
+		{name: "streaming follow-up", hold: "stream", followUp: true},
+		{name: "tool call", hold: "tool"},
+		{name: "agent_end", hold: "agent_end"},
+		{name: "agent_before_settle", hold: "agent_before_settle"},
+		{name: "agent_settled", hold: "agent_settled"},
+		{name: "agent_settled, two messages", hold: "agent_settled", third: true},
+		{name: "command without a turn", hold: "command"},
+		{name: "first message lacks auth", hold: "auth", restored: true},
+		{name: "abort", hold: "stream", abort: true, restored: true},
+		{name: "session loop streaming", loop: true, hold: "stream"},
+		{name: "session loop agent_end", loop: true, hold: "agent_end"},
+		{name: "session loop agent_settled", loop: true, hold: "agent_settled"},
+		{name: "session loop failed turn", loop: true, hold: "fail"},
+		{name: "extension's turn streaming", extension: true, hold: "stream"},
+		{name: "extension's turn settling", extension: true, hold: "agent_settled", deferred: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) { scenario.run(t) })
+	}
+}
+
+type queueScenario struct {
+	name string
+	// hold is where the first turn waits while the second message is sent: an extension event, the
+	// model's stream ("stream"), a tool, a slash command, the API key lookup, or a failing turn.
+	hold      string
+	loop      bool // turns run in a session loop shaped like Claude's
+	extension bool // an extension's message starts the first turn, not the user
+	followUp  bool // the second message is sent with Alt+Enter
+	third     bool // a third message follows the second while the turn waits
+	abort     bool // Esc is pressed once the second message is queued
+	restored  bool // the second message comes back to the editor instead
+	deferred  bool // the second message waits for the settling turn, not in the queue
+}
+
+func (scenario queueScenario) run(t *testing.T) {
+	cwd := t.TempDir()
+	settings, err := config.NewSettingsManager(cwd, config.WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := session.InMemory(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var holding atomic.Bool
+	held, release := make(chan struct{}), make(chan struct{})
+	hold := func(ctx context.Context, at string) bool {
+		if at != scenario.hold || !holding.CompareAndSwap(false, true) {
+			return false
+		}
+		close(held)
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return true
+	}
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("<queue-test>", func(api extensions.API) error {
+		for _, event := range []extensions.EventType{extensions.EventInput, extensions.EventBeforeAgentStart, extensions.EventAgentEnd, extensions.EventAgentBeforeSettle, extensions.EventAgentSettled} {
+			api.On(event, func(ctx context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
+				hold(ctx, string(event))
+				return nil, nil
+			})
+		}
+		api.RegisterCommand("wait", extensions.Command{Handler: func(ctx context.Context, _ string, _ extensions.CommandContext) error {
+			hold(ctx, "command")
+			return nil
+		}})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Each turn answers the user messages since the last answer, so the transcript shows which it took.
+	answer := func(messages []ai.Message) string {
+		var texts []string
+		for _, message := range messages {
+			switch typed := message.(type) {
+			case *ai.AssistantMessage:
+				texts = nil
+			case *ai.UserMessage:
+				if typed.Content.Text != nil {
+					texts = append(texts, *typed.Content.Text)
+				} else {
+					texts = append(texts, ai.ContentText(typed.Content.Blocks, ""))
+				}
+			}
+		}
+		return "ANSWERED[" + strings.Join(texts, "+") + "]"
+	}
+	provider := faux.New()
+	var toolCalled atomic.Bool
+	respond := faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		if scenario.hold == "tool" && !toolCalled.Swap(true) {
+			return faux.AssistantMessage(faux.ToolCall("wait", map[string]any{}, faux.ToolCallOptions{ID: "wait"}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}), nil
+		}
+		return faux.AssistantMessage(answer(request.Messages)), nil
+	})
+	provider.SetResponses(slices.Repeat([]faux.ResponseStep{respond}, 10))
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		hold(ctx, "stream")
+		return provider.StreamSimple(ctx, model, request, options)
+	}
+	model := provider.GetModel()
+	options := []engine.AgentOption{engine.WithInitialState(engine.AgentState{Model: model}), engine.WithConvertToLLM(agent.ConvertToLLM)}
+	if scenario.loop {
+		var failed atomic.Bool
+		options = append(options, engine.WithSessionLoop(func(ctx context.Context, prompts engine.AgentMessages, _ engine.AgentContext, config engine.AgentLoopConfig, emit engine.EventSink) error {
+			if err := emit(ctx, engine.AgentStartEvent{}); err != nil {
+				return err
+			}
+			var transcript []ai.Message
+			for len(prompts) > 0 && ctx.Err() == nil {
+				_ = emit(ctx, engine.TurnStartEvent{})
+				for _, prompt := range prompts {
+					_ = emit(ctx, engine.MessageStartEvent{Message: prompt})
+					_ = emit(ctx, engine.MessageEndEvent{Message: prompt})
+					if message, ok := prompt.(ai.Message); ok {
+						transcript = append(transcript, message)
+					}
+				}
+				hold(ctx, "stream")
+				if scenario.hold == "fail" && !failed.Swap(true) {
+					hold(ctx, "fail")
+					return errors.New("claude SDK exited without a result")
+				}
+				reply := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.TextContent{Text: answer(transcript)}}, StopReason: ai.StopReasonStop, API: model.API, Provider: model.Provider, Model: model.ID}
+				transcript = append(transcript, reply)
+				_ = emit(ctx, engine.MessageStartEvent{Message: reply})
+				_ = emit(ctx, engine.MessageEndEvent{Message: reply})
+				_ = emit(ctx, engine.TurnEndEvent{Message: reply})
+				prompts, _ = config.GetSteeringMessages(ctx)
+				if len(prompts) == 0 {
+					prompts, _ = config.GetFollowUpMessages(ctx)
+				}
+			}
+			return emit(ctx, engine.AgentEndEvent{})
+		}))
+	}
+	wait := engine.AgentToolFunc{
+		AgentToolSpec: engine.AgentToolSpec{Name: "wait", Label: "wait", Description: "wait", Parameters: jsonschema.Schema(`{"type":"object","properties":{}}`)},
+		Run: func(ctx context.Context, _ string, _ any, _ engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
+			hold(ctx, "tool")
+			return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "waited"}}}, nil
+		},
+	}
+	var getAPIKey engine.GetAPIKeyFunc
+	if scenario.hold == "auth" {
+		getAPIKey = func(ctx context.Context, _ ai.ProviderID) (*string, error) {
+			hold(ctx, "auth")
+			return nil, nil
+		}
+	}
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+		Agent: engine.NewAgent(stream, options...), SessionManager: manager, Settings: settings, GetAPIKey: getAPIKey,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModeTUI, DeferExtensionStart: true,
+		BaseTools: []engine.AgentTool{wait}, InitialActiveToolNames: []string{"wait"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal := newLifecycleTerminal(100, 30)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() { done <- RunInteractiveMode(ctx, runtime, InteractiveModeOptions{Terminal: terminal}) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	var send func(string)
+	for deadline := time.Now().Add(2 * time.Second); send == nil && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		terminal.mu.Lock()
+		send = terminal.onInput
+		terminal.mu.Unlock()
+	}
+	if send == nil {
+		t.Fatal("the terminal never started")
+	}
+	submit := func(text string) {
+		send(text)
+		if scenario.followUp && text != "first" && text != "/wait" {
+			send("\x1b[13;3u") // Alt+Enter; a bare ESC CR is a newline in the composer
+		} else {
+			send("\r")
+		}
+	}
+	switch {
+	case scenario.extension:
+		trigger := true
+		go func() {
+			_ = runtime.SendCustomMessage(ctx, agent.CustomMessage{CustomType: "job", Content: "job done", Display: true}, &agent.SendCustomMessageOptions{TriggerTurn: &trigger})
+		}()
+	case scenario.hold == "command":
+		submit("/wait")
+	default:
+		submit("first")
+	}
+	if scenario.hold == "" {
+		if !terminal.waitFor("ANSWERED[first]", 2*time.Second) {
+			t.Fatalf("the first message was not answered: screen ends %q", screenTail(terminal))
+		}
+	} else {
+		select {
+		case <-held:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("the first turn never reached %s", scenario.hold)
+		}
+	}
+	submit("second")
+	if scenario.third {
+		submit("third")
+	}
+	if scenario.hold != "" {
+		queued := scenario.third && runtime.PendingMessageCount() == 2 || !scenario.third && runtime.PendingMessageCount() == 1
+		for deadline := time.Now().Add(2 * time.Second); !scenario.deferred && !queued; time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the second message was not queued: %d queued", runtime.PendingMessageCount())
+			}
+			queued = scenario.third && runtime.PendingMessageCount() == 2 || !scenario.third && runtime.PendingMessageCount() == 1
+		}
+		if scenario.deferred {
+			time.Sleep(50 * time.Millisecond) // the submission reaches the settling turn, which runs it next
+		}
+		if scenario.abort {
+			send("\x1b")
+		}
+		close(release)
+	}
+	if scenario.restored {
+		if !terminal.waitFor("to editor", 2*time.Second) || runtime.PendingMessageCount() != 0 {
+			t.Fatalf("the second message did not come back to the editor: %d queued, screen ends %q", runtime.PendingMessageCount(), screenTail(terminal))
+		}
+		return
+	}
+	// A message is answered alone or with others in one turn (first+second, second+third).
+	answered := func(text string) bool {
+		return regexp.MustCompile(`ANSWERED\[[^\]]*\b` + text + `\b`).MatchString(tui.StripANSI(terminal.output()))
+	}
+	for deadline := time.Now().Add(2 * time.Second); !answered("second") || scenario.third && !answered("third"); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the messages sent were never answered: %d queued, screen ends %q", runtime.PendingMessageCount(), screenTail(terminal))
+		}
+	}
+	for deadline := time.Now().Add(2 * time.Second); runtime.PendingMessageCount() != 0 || !runtime.IsIdle(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the session did not settle with an empty queue: %d queued", runtime.PendingMessageCount())
+		}
+	}
+}
+
+func screenTail(terminal *lifecycleTerminal) string {
+	screen := tui.StripANSI(terminal.output())
+	return screen[max(0, len(screen)-1500):]
 }
 
 type lifecycleText string

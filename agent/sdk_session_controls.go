@@ -92,20 +92,14 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 			return nil
 		}
 	}
-	if !runtime.runIdle() {
-		if streamingBehavior == nil {
-			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
-		}
+	if streamingBehavior != nil && runtime.queueWhileRunning(runtime.userMessage(text, images), &text, *streamingBehavior == extensions.DeliverFollowUp) {
 		if preflightResult != nil {
 			preflightResult(DispositionQueued)
 		}
-		message := runtime.userMessage(text, images)
-		if *streamingBehavior == extensions.DeliverFollowUp {
-			runtime.agent.FollowUp(message)
-		} else {
-			runtime.agent.Steer(message)
-		}
 		return nil
+	}
+	if !runtime.runIdle() {
+		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 	}
 	if err := runtime.PromptPreflight(ctx); err != nil {
 		return err

@@ -623,19 +623,7 @@ func (runtime *SessionRuntime) Prompt(ctx context.Context, input any, images ...
 // submission starts a turn, while a submission during streaming is queued as
 // steer or follow-up without waiting for the active turn.
 func (runtime *SessionRuntime) SubmitInteractive(ctx context.Context, text string, images []*ai.ImageContent, delivery extensions.DeliveryMode) error {
-	if runtime == nil {
-		return errors.New("agent: nil session runtime")
-	}
-	if runtime.extensionState != nil {
-		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, &delivery, true, nil)
-	}
-	if !runtime.agent.IsIdle() {
-		if delivery == extensions.DeliverFollowUp {
-			return runtime.FollowUpImages(text, images)
-		}
-		return runtime.SteerImages(text, images)
-	}
-	return runtime.Prompt(ctx, text, images...)
+	return runtime.PromptWithOptions(ctx, text, &PromptOptions{Images: images, StreamingBehavior: delivery})
 }
 
 // QueueInteractive performs extension command/input handling and then queues
@@ -676,20 +664,70 @@ func (runtime *SessionRuntime) enqueue(text string, images []*ai.ImageContent, f
 			return err
 		}
 	}
-	message := runtime.userMessage(text, images)
 	runtime.mu.Lock()
-	if followUp {
-		runtime.followUps = append(runtime.followUps, text)
-	} else {
-		runtime.steering = append(runtime.steering, text)
+	runtime.queueLocked(runtime.userMessage(text, images), &text, followUp)
+	runtime.mu.Unlock()
+	runtime.emitQueueUpdate()
+	return nil
+}
+
+// queueWhileRunning queues message for the running turn, which takes it before it ends; with no run
+// going it queues nothing and reports false, so the caller starts one.
+func (runtime *SessionRuntime) queueWhileRunning(message engine.AgentMessage, text *string, followUp bool) bool {
+	runtime.mu.Lock()
+	running := runtime.activeRuns != 0
+	if running {
+		runtime.queueLocked(message, text, followUp)
 	}
 	runtime.mu.Unlock()
+	if running && text != nil {
+		runtime.emitQueueUpdate()
+	}
+	return running
+}
+
+// queueLocked is the one way into the queue: under the lock a run's end takes (endRunUnlessQueued),
+// so whatever is queued while a run goes is taken by it. text, for user input, is what the queue lists.
+func (runtime *SessionRuntime) queueLocked(message engine.AgentMessage, text *string, followUp bool) {
+	switch {
+	case followUp && text != nil:
+		runtime.followUps = append(runtime.followUps, *text)
+	case text != nil:
+		runtime.steering = append(runtime.steering, *text)
+	}
 	if followUp {
 		runtime.agent.FollowUp(message)
 	} else {
 		runtime.agent.Steer(message)
 	}
-	runtime.emitQueueUpdate()
+}
+
+// RunQueued starts a run with input queued for a turn that had already ended, as if its first
+// message had just been sent; the run takes the rest.
+func (runtime *SessionRuntime) RunQueued(ctx context.Context) error {
+	if !runtime.agent.HasQueuedMessages() {
+		runtime.DequeueMessages() // drops listed texts no queued message backs
+		return nil
+	}
+	if err := runtime.PromptPreflight(ctx); err != nil {
+		return err
+	}
+	message := runtime.agent.TakeQueued()
+	if message == nil {
+		return nil
+	}
+	if user, ok := message.(*ai.UserMessage); ok && runtime.extensionState != nil {
+		text, images := userTextAndImages(user.Content)
+		return runtime.runOpening(ctx, runtime.extensionState, text, images, nil)
+	}
+	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, engine.AgentMessages{message}) })
+}
+
+// promptQueued runs the next queued message as a turn, whatever the transcript ends with.
+func (runtime *SessionRuntime) promptQueued(ctx context.Context) error {
+	if message := runtime.agent.TakeQueued(); message != nil {
+		return runtime.agent.Prompt(ctx, engine.AgentMessages{message})
+	}
 	return nil
 }
 
@@ -883,6 +921,12 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 		return nil
 	}
 	runtime.mu.Unlock()
+	// Input queued as the run settled, by a sender that still saw it going, is the next run.
+	defer func() {
+		if err == nil && ctx.Err() == nil && !runtime.aborted() && runtime.runIdle() && runtime.agent.HasQueuedMessages() {
+			err = runtime.RunQueued(ctx)
+		}
+	}()
 	defer runtime.runDeferredSettled()
 	finishControl, controlErr := runtime.beginControlRun(ctx)
 	if controlErr != nil {
@@ -898,21 +942,11 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 	if !runtime.beginRun() {
 		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // Upstream session error is observable.
 	}
+	var flushErr error
 	defer func() {
 		runtime.clearExtensionTurnState()
-		flushErr := runtime.flushPendingBash()
-		runtime.mu.Lock()
-		pending := runtime.pendingCustom
-		runtime.pendingCustom = nil
-		runtime.customContextDirty = false
-		runtime.activeRuns = 0
-		runtime.mu.Unlock()
-		for _, message := range pending {
-			flushErr = errors.Join(flushErr, runtime.appendCustomMessage(message))
-		}
-		runtime.mu.Lock()
-		runtime.emittingSettled = true
-		runtime.mu.Unlock()
+		flushErr = errors.Join(flushErr, runtime.flushHeld())
+		runtime.endRunUnlessQueued(false) // a failed or aborted run ends here; a finished one has already
 		runtime.emitExtensionSettled(ctx)
 		runtime.emit(AgentSettledEvent{})
 		runtime.mu.Lock()
@@ -925,28 +959,62 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 			err = flushErr
 		}
 	}()
-	if err := start(); err != nil {
-		return err
-	}
-	if runtime.agent.UsesSessionLoop() {
-		return nil
-	}
-	for !runtime.aborted() {
-		shouldContinue, err := runtime.handlePostAgentRun(ctx)
-		if err != nil {
+	for {
+		if err := start(); err != nil {
 			return err
 		}
-		if !shouldContinue && (runtime.aborted() || !runtime.runBeforeSettleBoundary(ctx)) {
-			break
+		// A session loop (Claude's, Codex's) owns retries, compaction and its own queue reads.
+		for !runtime.agent.UsesSessionLoop() && !runtime.aborted() {
+			shouldContinue, err := runtime.handlePostAgentRun(ctx)
+			if err != nil {
+				return err
+			}
+			if !shouldContinue && (runtime.aborted() || !runtime.runBeforeSettleBoundary(ctx)) {
+				break
+			}
+			if runtime.aborted() {
+				break
+			}
+			if err := runtime.agent.Continue(ctx); err != nil {
+				return err
+			}
 		}
-		if runtime.aborted() {
-			break
+		flushErr = errors.Join(flushErr, runtime.flushHeld())
+		// Input sent after the run's last look at the queue (as a hook ran, or Claude's loop
+		// returned) is its next turn: the run ends only with nothing queued.
+		if runtime.endRunUnlessQueued(true) {
+			return nil
 		}
-		if err := runtime.agent.Continue(ctx); err != nil {
-			return err
-		}
+		start = func() error { return runtime.promptQueued(ctx) }
 	}
-	return nil
+}
+
+// endRunUnlessQueued ends the run, entering agent_settled, unless input is queued and the run may
+// take it (continueQueued, not aborted). Queueing takes the same lock (queueLocked), so whatever is
+// queued is taken by this run or finds no run going, and starts its own.
+func (runtime *SessionRuntime) endRunUnlessQueued(continueQueued bool) bool {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if continueQueued && !runtime.runAborted && runtime.agent.HasQueuedMessages() {
+		return false
+	}
+	runtime.activeRuns = 0
+	runtime.emittingSettled = true
+	return true
+}
+
+// flushHeld appends what the run held back: bash results and messages sent with triggerTurn false.
+func (runtime *SessionRuntime) flushHeld() error {
+	err := runtime.flushPendingBash()
+	runtime.mu.Lock()
+	pending := runtime.pendingCustom
+	runtime.pendingCustom = nil
+	runtime.customContextDirty = false
+	runtime.mu.Unlock()
+	for _, message := range pending {
+		err = errors.Join(err, runtime.appendCustomMessage(message))
+	}
+	return err
 }
 
 // handlePostAgentRun reports whether retry, compaction or queued work

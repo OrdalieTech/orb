@@ -344,8 +344,9 @@ func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFr
 }
 
 type inputEntry struct {
-	text   string
-	images []*ai.ImageContent
+	text     string
+	images   []*ai.ImageContent
+	followUp bool // queued after the running turn rather than steering it
 }
 
 type expandableComponent interface{ SetExpanded(bool) }
@@ -509,8 +510,12 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			if strings.TrimSpace(input.text) == "" && len(input.images) == 0 {
 				continue
 			}
+			delivery := extensions.DeliverSteer
+			if input.followUp {
+				delivery = extensions.DeliverFollowUp
+			}
 			if prompting {
-				if err := mode.session.QueueInteractive(ctx, input.text, input.images, extensions.DeliverSteer); err != nil {
+				if err := mode.session.QueueInteractive(ctx, input.text, input.images, delivery); err != nil {
 					mode.showError(err)
 				}
 				continue
@@ -529,9 +534,18 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			}
 			entry := input
 			go tui.Guarded(func() {
-				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, extensions.DeliverSteer)
+				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, delivery)
 			})()
 		case err := <-promptDone:
+			// Input queued while this submission was out but after its run had ended (a run takes
+			// whatever is queued before it ends) is the next prompt, or back in the editor after a failure.
+			if mode.session.PendingMessageCount() > 0 && mode.session.IsIdle() && ctx.Err() == nil {
+				if err == nil {
+					go tui.Guarded(func() { promptDone <- mode.session.RunQueued(ctx) })()
+					continue
+				}
+				mode.restoreToEditor(nil, mode.session.DequeueMessages())
+			}
 			prompting = false
 			mode.mu.Lock()
 			mode.streaming = false
@@ -1631,7 +1645,8 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 			return
 		}
 		mode.editor.SetText("")
-		_ = mode.session.FollowUp(text)
+		// Like Enter, through the prompt loop: on an idle session it starts the turn.
+		mode.inputCh <- inputEntry{text: text, followUp: true}
 	})
 
 	mode.editor.OnAction("app.message.dequeue", func() {

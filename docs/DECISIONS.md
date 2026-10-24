@@ -460,7 +460,7 @@ Each holds until changed by owner-signed decision.
 | Bundled MCP extension | addition | owner requirement; kept out of core |
 | No codemode | not yet adopted | no `codemode` tool, script `models` API, classifier models or Jev, and tool `exposure: "codemode"` is treated as `deferred` |
 | Experimental harness is Orb-owned | ownership | upstream deleted `packages/agent/src/harness` (session v4, pico3, `AgentHarness`) in v1.0.0; `engine/harness` keeps only what Orb uses (JSONL v3 session storage, compaction, branch summaries, host ports), and the harness parts of F10 are carried from the committed tree instead of extracted. Session v4 is not supported |
-| Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb starts the run and reports `started` |
+| Steer and follow-up on an idle session start a run | behavior | upstream queues them and reports `queued`; Orb starts the run and reports `started`. Input queued as a run ends is never left waiting: a run ends only with an empty queue (session loops included), and what arrives as it settles, or while the TUI's submission is still returning, is the next run |
 | `packages/server`, `packages/{client,protocol}`, `packages/session-backends` | removed | experimental remote-session server, client, CBOR protocol and sqlite backend; outside Orb's product boundary |
 | `packages/telemetry`, telemetry/analytics settings | removed | unknown settings keys tolerated on parse, nothing sent, no plumbing |
 | `packages/ai` Cloudflare `env.AI` gateway binding | excluded | needs a Workers environment object; not exported, and the provider registry (F2) is unchanged |

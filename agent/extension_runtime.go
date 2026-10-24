@@ -1215,22 +1215,17 @@ func (runtime *SessionRuntime) sendExtensionMessage(ctx context.Context, message
 		return nil
 	}
 	runtime.mu.Lock()
-	streaming := runtime.activeRuns != 0
-	if streaming && triggerTurn != nil && !*triggerTurn {
-		runtime.pendingCustom = append(runtime.pendingCustom, appMessage)
+	if runtime.activeRuns != 0 {
+		// An unset triggerTurn still steers a live turn; only an explicit false opts out.
+		if triggerTurn != nil && !*triggerTurn {
+			runtime.pendingCustom = append(runtime.pendingCustom, appMessage)
+		} else {
+			runtime.queueLocked(appMessage, nil, deliverAs == extensions.DeliverFollowUp)
+		}
 		runtime.mu.Unlock()
 		return nil
 	}
 	runtime.mu.Unlock()
-	// An unset triggerTurn still steers a live turn; only an explicit false opts out.
-	if streaming && (triggerTurn == nil || *triggerTurn) {
-		if deliverAs == extensions.DeliverFollowUp {
-			runtime.agent.FollowUp(appMessage)
-		} else {
-			runtime.agent.Steer(appMessage)
-		}
-		return nil
-	}
 	if triggerTurn != nil && *triggerTurn {
 		// The run goes through the same setup as a prompt (upstream 1.2.0 #10267).
 		return runtime.runOpening(ctx, state, "", nil, appMessage)
@@ -1270,23 +1265,26 @@ func (runtime *SessionRuntime) flushPendingCustom() error {
 	return nil
 }
 
-func (runtime *SessionRuntime) sendExtensionUserMessage(ctx context.Context, content ai.UserContent, options *extensions.SendUserMessageOptions) error {
-	text := ""
-	var images []*ai.ImageContent
+// userTextAndImages splits a user message's content into its text and its images.
+func userTextAndImages(content ai.UserContent) (string, []*ai.ImageContent) {
 	if content.Text != nil {
-		text = *content.Text
-	} else {
-		var textParts []string
-		for _, block := range content.Blocks {
-			switch value := block.(type) {
-			case *ai.TextContent:
-				textParts = append(textParts, value.Text)
-			case *ai.ImageContent:
-				images = append(images, value)
-			}
-		}
-		text = strings.Join(textParts, "\n")
+		return *content.Text, nil
 	}
+	var text []string
+	var images []*ai.ImageContent
+	for _, block := range content.Blocks {
+		switch value := block.(type) {
+		case *ai.TextContent:
+			text = append(text, value.Text)
+		case *ai.ImageContent:
+			images = append(images, value)
+		}
+	}
+	return strings.Join(text, "\n"), images
+}
+
+func (runtime *SessionRuntime) sendExtensionUserMessage(ctx context.Context, content ai.UserContent, options *extensions.SendUserMessageOptions) error {
+	text, images := userTextAndImages(content)
 	var streamingBehavior *extensions.DeliveryMode
 	expand := false
 	if options != nil {
@@ -1812,26 +1810,14 @@ func (runtime *SessionRuntime) promptExtensionInput(
 	if commands && runtime.slashResolver != nil {
 		text = runtime.slashResolver.Expand(text)
 	}
-	if !runtime.runIdle() {
-		if streamingBehavior == nil {
-			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
-		}
-		message := runtime.userMessage(text, images)
-		runtime.mu.Lock()
-		if *streamingBehavior == extensions.DeliverFollowUp {
-			runtime.followUps = append(runtime.followUps, text)
-			runtime.mu.Unlock()
-			runtime.agent.FollowUp(message)
-		} else {
-			runtime.steering = append(runtime.steering, text)
-			runtime.mu.Unlock()
-			runtime.agent.Steer(message)
-		}
-		runtime.emitQueueUpdate()
+	if streamingBehavior != nil && runtime.queueWhileRunning(runtime.userMessage(text, images), &text, *streamingBehavior == extensions.DeliverFollowUp) {
 		if preflightResult != nil {
 			preflightResult(DispositionQueued)
 		}
 		return nil
+	}
+	if !runtime.runIdle() {
+		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.") //nolint:staticcheck // User-visible error matches upstream.
 	}
 	if runPreflight {
 		if err := runtime.PromptPreflight(ctx); err != nil {

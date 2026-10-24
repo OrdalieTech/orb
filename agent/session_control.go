@@ -382,19 +382,9 @@ func (s *SessionRuntime) queueControlled(text string, follow bool) error {
 	if err := s.checkLive(); err != nil {
 		return err
 	}
-	message := userMessageWithImagesAt(text, nil, s.clock())
 	s.mu.Lock()
-	if follow {
-		s.followUps = append(s.followUps, text)
-	} else {
-		s.steering = append(s.steering, text)
-	}
+	s.queueLocked(userMessageWithImagesAt(text, nil, s.clock()), &text, follow)
 	s.mu.Unlock()
-	if follow {
-		s.agent.FollowUp(message)
-	} else {
-		s.agent.Steer(message)
-	}
 	return nil
 }
 

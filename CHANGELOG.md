@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A message sent while a turn ends is answered instead of waiting in the queue: a run ends only once its queue is empty, Claude and Codex sessions included, and what arrives as it settles is the next turn. Alt+Enter on an idle session starts the turn, and a message queued behind one that cannot run (no API key) comes back to the editor.
+
 ## [0.19.12] - 2026-10-22
 
 Fixes from pi 1.4.0 and a first TUI polish: more transient failures are retried and an HTTP 413 compacts, the prompt cache survives tool changes, a resumed or `/tree`-switched branch keeps exactly its tools, summaries use the model's output limit, extension dialogs stack, approvals and questions open as giant title cards, and Orb calls you back when a turn ends while you are away.

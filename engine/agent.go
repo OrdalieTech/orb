@@ -1046,6 +1046,20 @@ func (agent *Agent) PeekQueuedMessages() AgentMessages {
 	return peekQueue(agent.followUps, agent.followUpMode)
 }
 
+// TakeQueued removes and returns the next queued message, steering first, or nil.
+func (agent *Agent) TakeQueued() AgentMessage {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	for _, queue := range []*AgentMessages{&agent.steering, &agent.followUps} {
+		if len(*queue) > 0 {
+			message := (*queue)[0]
+			*queue = append(AgentMessages(nil), (*queue)[1:]...)
+			return message
+		}
+	}
+	return nil
+}
+
 func peekQueue(queue AgentMessages, mode QueueMode) AgentMessages {
 	if len(queue) == 0 {
 		return AgentMessages{}

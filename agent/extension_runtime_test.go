@@ -1435,6 +1435,50 @@ func TestTurnEndAndBeforeSettleBoundariesPersistEntriesAndContinue(t *testing.T)
 	}
 }
 
+// A steer sent while a run settles, by a sender that still saw it going (an RPC client, the Bridge
+// app, an SDK caller), starts the next run instead of waiting in the queue for one.
+func TestSteeringQueuedAsARunSettlesRunsNext(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	var runtime *SessionRuntime
+	settles := 0
+	if err := registry.Register("<inline:late-steer>", func(api extensions.API) error {
+		api.On(extensions.EventAgentSettled, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			if settles++; settles == 1 {
+				return nil, runtime.Steer("late")
+			}
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("one"), faux.AssistantMessage("two")})
+	requests := 0
+	stream := func(ctx context.Context, model *ai.Model, request ai.Context, options *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		requests++
+		return provider.StreamSimple(ctx, model, request, options)
+	}
+	created := engine.NewAgent(stream, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: provider.GetModel()}), engine.WithConvertToLLM(ConvertToLLM))
+	var err error
+	runtime, err = NewSessionRuntime(SessionRuntimeConfig{
+		Agent: created, SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModePrint,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	if err := runtime.Prompt(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || settles != 2 || runtime.PendingMessageCount() != 0 {
+		t.Fatalf("requests = %d, settles = %d, still queued = %d", requests, settles, runtime.PendingMessageCount())
+	}
+}
+
 func TestAgentSettledHandlerRunsStartAfterEveryHandler(t *testing.T) {
 	cwd := t.TempDir()
 	manager, settings := extensionRuntimeDependencies(t, cwd)
