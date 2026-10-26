@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `platforms/agent/buzz-owner.py` publishes the owner's record to a relay behind Cloudflare, which refused it with error 1010 because of urllib's default User-Agent.
+
 ## [0.19.13] - 2026-10-24
 
 Orb as a first-class Buzz agent behind buzz-acp, and conversations that follow you across Orbs: ACP clients steer a running turn instead of cancelling it, a Claude conversation survives a cancelled command, a launched Claude model offers its reasoning levels, a conversation another Orb holds opens live, and messages sent as a turn ends are answered.

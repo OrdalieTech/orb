@@ -95,7 +95,9 @@ def publish(d, public_x, relay, signed):
     auth = event(d, public_x, 27235, [["u", url], ["method", "POST"], ["nonce", secrets.token_hex(16)],
                                       ["payload", hashlib.sha256(body).hexdigest()]], "")
     header = "Nostr " + base64.b64encode(json.dumps(auth, separators=(",", ":")).encode()).decode()
-    request = urllib.request.Request(url, body, {"Authorization": header, "Content-Type": "application/json"})
+    # Cloudflare in front of a relay refuses urllib's default User-Agent (error 1010).
+    request = urllib.request.Request(url, body, {"Authorization": header, "Content-Type": "application/json",
+                                                 "User-Agent": "buzz-owner"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return response.read().decode()
