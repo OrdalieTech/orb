@@ -20,6 +20,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	"github.com/OrdalieTech/orb/plugins/permissions"
@@ -608,7 +609,7 @@ func newSessionRuntime(cfg agent.SessionRuntimeConfig) (*agent.SessionRuntime, e
 	if err != nil {
 		return nil, err
 	}
-	bind, err := claudesessions.Configure(&cfg, agentDir, os.Environ())
+	bind, err := claudesessions.Configure(&cfg, agentDir, claudeEnv())
 	if err != nil {
 		return nil, err
 	}
@@ -617,4 +618,16 @@ func newSessionRuntime(cfg agent.SessionRuntimeConfig) (*agent.SessionRuntime, e
 		bind(created)
 	}
 	return created, err
+}
+
+// claudeEnv is the environment Claude Code runs a session with. Its native tools
+// stand in for Orb's, so it is theirs, the ORB_TOOL_ENV allowlist and what Orb
+// exports to its tools included (the buzz shim's socket), plus the Claude login
+// Orb was started with.
+func claudeEnv() []string {
+	env := toolenv.Environ()
+	if dir, ok := os.LookupEnv("CLAUDE_CONFIG_DIR"); ok {
+		env = toolenv.Set(env, "CLAUDE_CONFIG_DIR", dir)
+	}
+	return env
 }

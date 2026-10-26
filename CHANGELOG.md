@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A Claude session's native tools get the environment Orb's own tools get: an agent's credentials stay out of them when `ORB_TOOL_ENV` is set, and `buzz` from Claude's shell posts through the agent instead of failing with "this shell is not inside an orb chat buzz agent".
+
 - `platforms/agent/buzz-owner.py` publishes the owner's record to a relay behind Cloudflare, which refused it with error 1010 because of urllib's default User-Agent.
 
 ## [0.19.13] - 2026-10-24
