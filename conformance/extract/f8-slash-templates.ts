@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { orbCommands } from "./orb-owned.ts";
 import { generateCommandMetadata } from "./f8-command-metadata.ts";
 
 import { withOfflineGeneratedCatalog } from "./f3-agent.ts";
-import { aheadOfPin } from "./orb-owned.ts";
 
 type ArgumentCase = { name: string; input: string; expected?: string[] };
 type SubstitutionCase = {
@@ -1028,7 +1028,6 @@ export async function generateF8(
 
 	for (const fixtureCase of argumentCases)
 		fixtureCase.expected = promptModule.parseCommandArgs(fixtureCase.input);
-	await aheadOfPin("F8", "cases.json", "argumentCases", argumentCases, ["empty-quotes"]);
 	for (const fixtureCase of substitutionCases) {
 		fixtureCase.expected = promptModule.substituteArgs(
 			fixtureCase.content,
@@ -1125,7 +1124,7 @@ export async function generateF8(
 				templateDiagnostics: normalizeDeep(templateDiagnostics, fixtureRoot),
 				commands,
 				rpcCommandsWhenSkillCommandsDisabled: commands,
-				builtinCommands: slashModule.BUILTIN_SLASH_COMMANDS.map((command) => ({
+				builtinCommands: orbCommands(slashModule.BUILTIN_SLASH_COMMANDS).map((command) => ({
 					name: command.name,
 					description: command.description,
 					argumentHint: command.argumentHint ?? null,

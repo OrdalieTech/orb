@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/OrdalieTech/orb/ai"
 )
@@ -48,7 +49,9 @@ func (registry *Registry) StreamSimple(
 	if !ok {
 		return nil, fmt.Errorf("ai: unsupported API %q", model.API)
 	}
-	return stream(ctx, model, requestContext, options)
+	startedAt, began := openAINowUnixMilli(), time.Now()
+	events, err := stream(ctx, model, requestContext, options)
+	return ai.TimeResponse(events, startedAt, began), err
 }
 
 // CompleteSimple collects StreamSimple into its terminal assistant message.

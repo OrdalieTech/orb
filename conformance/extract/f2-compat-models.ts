@@ -32,6 +32,8 @@ if (expected) {
     if (!models[id]) models[id] = { ...template, id, name: id };
   }
 }
+// Upstream reads kimi-code-plan-global; the pinned snapshot predates the rename and lists kimi-for-coding.
+if (!snapshot["kimi-code-plan-global"]) snapshot["kimi-code-plan-global"] = snapshot["kimi-for-coding"];
 globalThis.fetch = async (input) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url === "https://models.dev/api.json") return Response.json(snapshot);
@@ -94,7 +96,7 @@ globalThis.fetch = async (input) => {
     };
     return {
       cases: [
-        { name: "together-reasoning", model: await readModel("together", "deepseek-ai/DeepSeek-V4-Pro") },
+        { name: "together-reasoning", model: await readModel("together", "deepseek-ai/DeepSeek-V4-Pro-0813") },
         { name: "zai-tool-stream", model: await readModel("zai", "glm-5.2") },
         {
           name: "fireworks-session-cache",
@@ -109,6 +111,7 @@ globalThis.fetch = async (input) => {
           ["qwen-token-plan-individual", "qwen3.8-flash"],
           ["deepseek", "deepseek-flash"],
           ["github-copilot", "claude-fable-5"],
+          ["kimi-coding", "k3"], ["kimi-coding", "kimi-for-coding-highspeed"],
         ].map(async ([provider, id]) => ({ name: `${provider}-${id}`, model: await readModel(provider, id) }))),
       ],
     };

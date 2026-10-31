@@ -19,6 +19,7 @@ import type {
  SimpleStreamOptions,
 } from "../../.upstream/packages/ai/src/types.ts";
 import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 
@@ -616,10 +617,6 @@ const streamDefinitions: GoogleStreamDefinition[] = [
   },
 ];
 
-function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
-  return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
-}
-
 async function captureRequest(input: RequestInfo | URL, init?: RequestInit): Promise<CapturedRequest> {
   const request = new Request(input, init);
   const headers: Record<string, string> = {};
@@ -673,7 +670,7 @@ async function runGoogle(
       });
     }
     for await (const event of (definition.simple ? streamSimpleGoogle : streamGoogle)(definition.model, normalizeContext(definition.context), options)) {
-      events.push(cloneEvent(event));
+      events.push(cloneStreamEvent(event));
     }
   } finally {
     globalThis.fetch = originalFetch;

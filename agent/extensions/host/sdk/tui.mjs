@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-tui surface.
-// Implemented symbols are ported from pi-tui (pi 1.0.0, commit a13d35a7,
+// Implemented symbols are ported from pi-tui (pi 1.4.0, commit 4a080252,
 // MIT © Mario Zechner), trimmed to the D15 Component contract published
 // extensions exercise: render(width) → string[] flowing through the host's
 // ui_component_render push bridge — no per-frame RPC, no terminal ownership.
@@ -436,6 +436,7 @@ export const deleteKittyImage = stub("deleteKittyImage");
 export const detectCapabilities = stub("detectCapabilities");
 export const encodeITerm2 = stub("encodeITerm2");
 export const encodeKitty = stub("encodeKitty");
+export const formatProgramStatus = stub("formatProgramStatus");
 export const fuzzyFilter = stub("fuzzyFilter");
 export const fuzzyMatch = stub("fuzzyMatch");
 export const getCapabilities = stub("getCapabilities");
@@ -458,12 +459,14 @@ export const isKittyProtocolActive = stub("isKittyProtocolActive");
 export const isViewportTUI = stub("isViewportTUI");
 export const matchesKey = stub("matchesKey");
 export const parseTerminalColorSchemeReport = stub("parseTerminalColorSchemeReport");
+export const renderFakeCursor = stub("renderFakeCursor");
 export const renderImage = stub("renderImage");
 export const renderLatex = stub("renderLatex");
 export const resetCapabilitiesCache = stub("resetCapabilitiesCache");
 export const setCapabilities = stub("setCapabilities");
 export const setCapabilityOverrides = stub("setCapabilityOverrides");
 export const setCellDimensions = stub("setCellDimensions");
+export const setImageTranscoder = stub("setImageTranscoder");
 export const setKeybindings = stub("setKeybindings");
 export const setKittyProtocolActive = stub("setKittyProtocolActive");
 export const sliceByColumn = stub("sliceByColumn");

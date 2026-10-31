@@ -117,7 +117,7 @@ func TestJSONPrintModeMatchesUpstreamRunPrintModeFixtures(t *testing.T) {
 			if exitCode != scenario.ExpectedExitCode || stderr.Len() != 0 {
 				t.Fatalf("exit=%d want=%d stderr=%q", exitCode, scenario.ExpectedExitCode, stderr.String())
 			}
-			if got := runner.CanonicalizeEntryAppended(fixtureProjectCWD(t, stdout.Bytes()), time.UnixMilli(fixtures.FixedNow)); !bytes.Equal(got, want) {
+			if got := runner.CanonicalizeEntryAppended(fixtureProjectCWD(t, stdout.Bytes()), time.UnixMilli(fixtures.FixedNow)); runner.ByteDiff(want, got) != "" {
 				t.Fatalf("JSON trace mismatch:\n%s", runner.ByteDiff(want, got))
 			}
 		})
@@ -292,8 +292,8 @@ func TestCLIJSONModeMatchesMultiplePromptFixture(t *testing.T) {
 		t.Fatalf("exit=%d want=%d stderr=%q", exitCode, scenario.ExpectedExitCode, stderr.String())
 	}
 	canonical := canonicalizeCLIHeader(t, stdout.Bytes(), project, expectedHeader)
-	if !bytes.Equal(canonical, want) {
-		t.Fatalf("CLI JSON trace mismatch:\n%s", runner.ByteDiff(want, canonical))
+	if diff := runner.ByteDiff(want, canonical); diff != "" {
+		t.Fatalf("CLI JSON trace mismatch:\n%s", diff)
 	}
 	if provider.PendingResponseCount() != 0 {
 		t.Fatalf("pending faux responses = %d", provider.PendingResponseCount())

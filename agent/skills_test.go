@@ -77,3 +77,14 @@ func TestBuildSystemPromptIncludesSkillsWithAFileReadTool(t *testing.T) {
 		t.Fatalf("skills visible without read: %q", withoutRead)
 	}
 }
+
+func TestBuildSystemPromptLeavesHiddenToolsOut(t *testing.T) {
+	skill := Skill{Name: "inspect", Description: "Inspect", FilePath: "/skills/inspect/SKILL.md"}
+	prompt := BuildSystemPrompt(SystemPromptOptions{
+		SelectedTools: []string{"read", "grep"}, HiddenTools: []string{"read"}, Skills: []Skill{skill}, CWD: "/cwd",
+		ToolSnippets: map[string]string{"read": "Read files", "grep": "Search"},
+	})
+	if strings.Contains(prompt, "- read:") || !strings.Contains(prompt, "- grep:") || strings.Contains(prompt, "Use the read tool") || !strings.Contains(prompt, "Load a skill's file when") {
+		t.Fatalf("hidden reader must stay out of the tool list, and the skills hint must name no tool: %q", prompt)
+	}
+}

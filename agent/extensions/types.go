@@ -360,6 +360,7 @@ type SystemPromptOptions struct {
 	CustomPrompt       *string             `json:"customPrompt,omitempty"`
 	ForceSystemPrompt  *string             `json:"forceSystemPrompt,omitempty"`
 	SelectedTools      []string            `json:"selectedTools"`
+	HiddenTools        []string            `json:"hiddenTools"`
 	ToolSnippets       map[string]string   `json:"toolSnippets"`
 	ToolGuidelines     map[string][]string `json:"toolGuidelines"`
 	PromptGuidelines   []string            `json:"promptGuidelines"`
@@ -409,7 +410,7 @@ type AgentEndEvent struct{ Messages engine.AgentMessages }
 
 func (AgentEndEvent) Type() EventType { return EventAgentEnd }
 
-type AgentSettledEvent struct{}
+type AgentSettledEvent struct{ Aborted bool }
 
 func (AgentSettledEvent) Type() EventType { return EventAgentSettled }
 
@@ -526,6 +527,7 @@ type ToolExecutionEndEvent struct {
 	ToolName         string
 	Result           any
 	IsError          bool
+	DurationMS       *int64 `json:"durationMs,omitempty"`
 	ParentToolCallID string `json:",omitempty"`
 }
 

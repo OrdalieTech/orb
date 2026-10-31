@@ -22,6 +22,7 @@ import type {
 import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
 import { providerApis } from "./f2-providers.ts";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 interface Definition {
   name: string;
@@ -357,7 +358,7 @@ async function extractCodexWebSocketTrace() {
       normalizeContext(definition.context),
       definition.options as OpenAICodexResponsesOptions,
     )) {
-      events.push(JSON.parse(JSON.stringify(event)) as AssistantMessageEvent);
+      events.push(cloneStreamEvent(event));
     }
     return {
       cases: [{ ...definition, serverEvents, expectedConnections: connections, expectedRequests: requests, expectedEvents: events }],
@@ -404,7 +405,7 @@ async function runUpstream(
     ? streamSimpleOpenAICodex(definition.model, normalizeContext(definition.context), definition.options as SimpleStreamOptions)
     : streamOpenAICodex(definition.model, normalizeContext(definition.context), definition.options as OpenAICodexResponsesOptions);
   for await (const event of stream) {
-    events.push(JSON.parse(JSON.stringify(event)) as AssistantMessageEvent);
+    events.push(cloneStreamEvent(event));
   }
   return { request: captured, events };
 }

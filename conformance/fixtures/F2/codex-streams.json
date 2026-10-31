@@ -94,7 +94,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_request",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
@@ -425,7 +426,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "resp_codex_rich",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
@@ -526,7 +528,8 @@
             "timestamp": 1700000000123,
             "responseId": "resp_codex_length",
             "rawStopReason": "incomplete",
-            "errorMessage": "Response incomplete without a provider reason"
+            "errorMessage": "Response incomplete without a provider reason",
+            "durationMs": 0
           }
         }
       ]
@@ -618,7 +621,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Codex error: fixture denied"
+            "errorMessage": "Codex error: fixture denied",
+            "durationMs": 0
           }
         }
       ]
@@ -710,7 +714,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "fixture response failed"
+            "errorMessage": "fixture response failed",
+            "durationMs": 0
           }
         }
       ]
@@ -778,7 +783,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "You have hit your ChatGPT usage limit (plus plan). Try again in ~5 min."
+            "errorMessage": "You have hit your ChatGPT usage limit (plus plan). Try again in ~5 min.",
+            "durationMs": 0
           }
         }
       ]
@@ -844,7 +850,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Invalid timeoutMs: -1"
+            "errorMessage": "Invalid timeoutMs: -1",
+            "durationMs": 0
           }
         }
       ]
@@ -910,7 +917,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Invalid timeoutMs: -1"
+            "errorMessage": "Invalid timeoutMs: -1",
+            "durationMs": 0
           }
         }
       ]

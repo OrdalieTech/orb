@@ -20,7 +20,13 @@
             "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
             "mimeType": "image/png"
           }
-        ]
+        ],
+        "structuredContent": {
+          "type": "image",
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
+          "mimeType": "image/png",
+          "note": "Read image file [image/png]"
+        }
       }
     },
     {
@@ -39,7 +45,13 @@
             "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
             "mimeType": "image/png"
           }
-        ]
+        ],
+        "structuredContent": {
+          "type": "image",
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
+          "mimeType": "image/png",
+          "note": "Read image file [image/png]\n[Current model does not support images. The image will be omitted from this request.]"
+        }
       }
     }
   ]

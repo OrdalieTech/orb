@@ -223,28 +223,32 @@ type UserMessage struct {
 }
 
 type AssistantMessage struct {
-	rawStopBeforeDiagnostics         bool
-	modelOmitted                     bool
-	providerThinkingLevelBeforeUsage bool
-	ProviderThinkingLevel            *string                       `json:"providerThinkingLevel,omitempty"`
-	Content                          AssistantContent              `json:"content"`
-	API                              API                           `json:"api"`
-	Provider                         ProviderID                    `json:"provider"`
-	Model                            string                        `json:"model"`
-	Usage                            Usage                         `json:"usage"`
-	StopReason                       StopReason                    `json:"stopReason"`
-	Timestamp                        int64                         `json:"timestamp"`
-	ResponseID                       *string                       `json:"responseId,omitempty"`
-	ResponseModel                    *string                       `json:"responseModel,omitempty"`
-	Diagnostics                      *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-	ErrorMessage                     *string                       `json:"errorMessage,omitempty"`
-	RawStopReason                    *string                       `json:"rawStopReason,omitempty"`
+	rawStopBeforeDiagnostics              bool
+	modelOmitted                          bool
+	providerThinkingLevelBeforeUsage      bool
+	providerThinkingLevelBeforeResponseID bool
+	ProviderThinkingLevel                 *string                       `json:"providerThinkingLevel,omitempty"`
+	Content                               AssistantContent              `json:"content"`
+	API                                   API                           `json:"api"`
+	Provider                              ProviderID                    `json:"provider"`
+	Model                                 string                        `json:"model"`
+	Usage                                 Usage                         `json:"usage"`
+	StopReason                            StopReason                    `json:"stopReason"`
+	Timestamp                             int64                         `json:"timestamp"`
+	ResponseID                            *string                       `json:"responseId,omitempty"`
+	ResponseModel                         *string                       `json:"responseModel,omitempty"`
+	Diagnostics                           *[]AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	ErrorMessage                          *string                       `json:"errorMessage,omitempty"`
+	RawStopReason                         *string                       `json:"rawStopReason,omitempty"`
 	// EndTurn records the provider's indication that the model explicitly ended
 	// its turn. Preserved for debugging; it does not affect agent control flow.
 	EndTurn *bool `json:"endTurn,omitempty"`
 	// ThinkingLevel records the level the agent loop requested for this
 	// response, whichever stream function answered it.
-	ThinkingLevel         *ModelThinkingLevel `json:"thinkingLevel,omitempty"`
+	ThinkingLevel *ModelThinkingLevel `json:"thinkingLevel,omitempty"`
+	// DurationMS is the response time in milliseconds, set by TimeResponse on a
+	// response it saw start; absent on legacy messages and deferred results.
+	DurationMS            *int64 `json:"durationMs,omitempty"`
 	errorBeforeTimestamp  bool
 	errorBeforeResponseID bool
 }
@@ -257,7 +261,9 @@ type ToolResultMessage struct {
 	Usage          *Usage            `json:"usage,omitempty"`
 	AddedToolNames *[]string         `json:"addedToolNames,omitempty"`
 	IsError        bool              `json:"isError"`
-	Timestamp      int64             `json:"timestamp"`
+	// DurationMS is how long the tool ran; absent on legacy results.
+	DurationMS *int64 `json:"durationMs,omitempty"`
+	Timestamp  int64  `json:"timestamp"`
 	// NestedCalls records the calls the tool made through ctx.ExecuteTool.
 	NestedCalls *NestedToolCalls `json:"nestedCalls,omitempty"`
 }

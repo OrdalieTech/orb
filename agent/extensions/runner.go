@@ -1217,6 +1217,9 @@ func (runner *Runner) EmitBeforeAgentStart(
 	if options.SelectedTools == nil {
 		options.SelectedTools = []string{"read", "bash", "edit", "write"}
 	}
+	if options.HiddenTools == nil {
+		options.HiddenTools = []string{}
+	}
 	if options.ToolSnippets == nil {
 		options.ToolSnippets = map[string]string{}
 	}

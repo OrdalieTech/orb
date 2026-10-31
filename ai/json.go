@@ -389,15 +389,16 @@ const (
 	assistantEndTurn
 	assistantRawStopReason
 	assistantErrorMessage
+	assistantDurationMS
 	assistantThinkingLevel
 )
 
 // assistantMemberOrders are pi's order, then the ones its error paths write,
 // with errorMessage before timestamp or before responseId.
-var assistantMemberOrders = [...][11]uint8{
-	{assistantUsage, assistantStopReason, assistantTimestamp, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantEndTurn, assistantRawStopReason, assistantErrorMessage, assistantThinkingLevel},
-	{assistantUsage, assistantStopReason, assistantErrorMessage, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantTimestamp, assistantEndTurn, assistantRawStopReason, assistantThinkingLevel},
-	{assistantUsage, assistantStopReason, assistantTimestamp, assistantEndTurn, assistantRawStopReason, assistantErrorMessage, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantThinkingLevel},
+var assistantMemberOrders = [...][12]uint8{
+	{assistantUsage, assistantStopReason, assistantTimestamp, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantEndTurn, assistantRawStopReason, assistantErrorMessage, assistantDurationMS, assistantThinkingLevel},
+	{assistantUsage, assistantStopReason, assistantErrorMessage, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantTimestamp, assistantEndTurn, assistantRawStopReason, assistantDurationMS, assistantThinkingLevel},
+	{assistantUsage, assistantStopReason, assistantTimestamp, assistantEndTurn, assistantRawStopReason, assistantErrorMessage, assistantResponseID, assistantProviderThinkingLevel, assistantResponseModel, assistantDiagnostics, assistantDurationMS, assistantThinkingLevel},
 }
 
 func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
@@ -426,6 +427,9 @@ func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
 	}
 	if message.providerThinkingLevelBeforeUsage {
 		moveBefore(assistantProviderThinkingLevel, assistantUsage)
+	}
+	if message.providerThinkingLevelBeforeResponseID {
+		moveBefore(assistantProviderThinkingLevel, assistantResponseID)
 	}
 	if message.rawStopBeforeDiagnostics {
 		moveBefore(assistantRawStopReason, assistantDiagnostics)
@@ -460,6 +464,10 @@ func (message AssistantMessage) appendWire(dst []byte) ([]byte, error) {
 			dst = appendOptionalString(dst, `,"rawStopReason":`, message.RawStopReason)
 		case assistantErrorMessage:
 			dst = appendOptionalString(dst, `,"errorMessage":`, message.ErrorMessage)
+		case assistantDurationMS:
+			if message.DurationMS != nil {
+				dst = strconv.AppendInt(append(dst, `,"durationMs":`...), *message.DurationMS, 10)
+			}
 		case assistantThinkingLevel:
 			dst = appendOptionalString(dst, `,"thinkingLevel":`, (*string)(message.ThinkingLevel))
 		}
@@ -484,6 +492,8 @@ func (message *AssistantMessage) hasMember(member uint8) bool {
 		return message.RawStopReason != nil
 	case assistantErrorMessage:
 		return message.ErrorMessage != nil
+	case assistantDurationMS:
+		return message.DurationMS != nil
 	case assistantThinkingLevel:
 		return message.ThinkingLevel != nil
 	}
@@ -506,6 +516,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		EndTurn               *bool                         `json:"endTurn"`
 		RawStopReason         json.RawMessage               `json:"rawStopReason"`
 		ErrorMessage          json.RawMessage               `json:"errorMessage"`
+		DurationMS            *int64                        `json:"durationMs"`
 		ThinkingLevel         *ModelThinkingLevel           `json:"thinkingLevel"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -561,6 +572,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 		ErrorMessage:  errorMessage,
 		RawStopReason: rawStopReason,
 		EndTurn:       raw.EndTurn,
+		DurationMS:    raw.DurationMS,
 		ThinkingLevel: raw.ThinkingLevel,
 	}
 	// Each order flag needs its first member present; rescanning messages
@@ -568,6 +580,7 @@ func (message *AssistantMessage) UnmarshalJSON(data []byte) error {
 	message.rawStopBeforeDiagnostics = len(raw.RawStopReason) > 0 && topLevelMemberBefore(data, "rawStopReason", "diagnostics")
 	message.modelOmitted = len(raw.Model) == 0
 	message.providerThinkingLevelBeforeUsage = len(raw.ProviderThinkingLevel) > 0 && topLevelMemberBefore(data, "providerThinkingLevel", "usage")
+	message.providerThinkingLevelBeforeResponseID = len(raw.ProviderThinkingLevel) > 0 && !message.providerThinkingLevelBeforeUsage && topLevelMemberBefore(data, "providerThinkingLevel", "responseId")
 	if len(raw.ErrorMessage) > 0 {
 		message.errorBeforeTimestamp = topLevelMemberBefore(data, "errorMessage", "timestamp")
 		message.errorBeforeResponseID = !message.errorBeforeTimestamp && topLevelMemberBefore(data, "errorMessage", "responseId")
@@ -655,6 +668,9 @@ func (message ToolResultMessage) appendWire(dst []byte) ([]byte, error) {
 		dst = append(dst, ']')
 	}
 	dst = strconv.AppendBool(append(dst, `,"isError":`...), message.IsError)
+	if message.DurationMS != nil {
+		dst = strconv.AppendInt(append(dst, `,"durationMs":`...), *message.DurationMS, 10)
+	}
 	dst = strconv.AppendInt(append(dst, `,"timestamp":`...), message.Timestamp, 10)
 	if message.NestedCalls != nil {
 		nested, err := marshalJSON(message.NestedCalls)
@@ -674,6 +690,7 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		Usage          *Usage            `json:"usage"`
 		AddedToolNames json.RawMessage   `json:"addedToolNames"`
 		IsError        bool              `json:"isError"`
+		DurationMS     *int64            `json:"durationMs"`
 		Timestamp      int64             `json:"timestamp"`
 		NestedCalls    *NestedToolCalls  `json:"nestedCalls"`
 	}
@@ -700,6 +717,7 @@ func (message *ToolResultMessage) UnmarshalJSON(data []byte) error {
 		Usage:          raw.Usage.Clone(),
 		AddedToolNames: addedToolNames,
 		IsError:        raw.IsError,
+		DurationMS:     raw.DurationMS,
 		Timestamp:      raw.Timestamp,
 		NestedCalls:    raw.NestedCalls,
 	}
@@ -1772,9 +1790,9 @@ func stringifyJSONValue(value any) any {
 	}
 }
 
-// SetAssistantMessageProviderThinkingLevelBeforeUsage preserves constructor field order for managed Anthropic responses.
-func SetAssistantMessageProviderThinkingLevelBeforeUsage(message *AssistantMessage, before bool) {
-	message.providerThinkingLevelBeforeUsage = before
+// SetAssistantMessageProviderThinkingLevelBeforeResponseID preserves the member order of managed Anthropic responses.
+func SetAssistantMessageProviderThinkingLevelBeforeResponseID(message *AssistantMessage, before bool) {
+	message.providerThinkingLevelBeforeResponseID = before
 }
 
 // SetAssistantMessageRawStopBeforeDiagnostics preserves diagnostics appended after stream termination.

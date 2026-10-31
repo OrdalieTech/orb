@@ -66,10 +66,12 @@ func TestF2OpenAICodexWebSocketTrace(t *testing.T) {
 			previousNow := openAINowUnixMilli
 			openAINowUnixMilli = func() int64 { return f2FixedTimestamp }
 			t.Cleanup(func() { openAINowUnixMilli = previousNow })
+			startedAt, began := openAINowUnixMilli(), time.Now()
 			stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &fixtureCase.Options)
 			if err != nil {
 				t.Fatal(err)
 			}
+			stream = ai.TimeResponse(stream, startedAt, began)
 			actualEvents := make([]json.RawMessage, 0)
 			for event, streamErr := range stream {
 				if streamErr != nil {

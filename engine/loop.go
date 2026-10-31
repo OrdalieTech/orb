@@ -654,9 +654,10 @@ type preparedToolCall struct {
 }
 
 type finalizedToolCall struct {
-	toolCall *ai.ToolCall
-	result   AgentToolResult
-	isError  bool
+	toolCall   *ai.ToolCall
+	result     AgentToolResult
+	isError    bool
+	durationMS *int64 // nil when the call never ran
 }
 
 type toolEntry struct {
@@ -935,8 +936,9 @@ func sameReference(left, right any) bool {
 }
 
 type executedToolCall struct {
-	result  AgentToolResult
-	isError bool
+	result     AgentToolResult
+	isError    bool
+	durationMS *int64
 }
 
 func executePreparedToolCall(
@@ -969,9 +971,11 @@ func executePreparedToolCall(
 
 	var result AgentToolResult
 	executeErr := prepared.executionError
+	began := time.Now()
 	if executeErr == nil {
 		result, executeErr = prepared.tool.Execute(executionContext, prepared.toolCall.ID, prepared.args, onUpdate)
 	}
+	durationMS := elapsedMS(began)
 	updateMu.Lock()
 	acceptingUpdates = false
 	updateMu.Unlock()
@@ -980,9 +984,14 @@ func executePreparedToolCall(
 		return executedToolCall{}, emitErr
 	}
 	if executeErr != nil {
-		return executedToolCall{result: createErrorToolResult(executeErr.Error()), isError: true}, nil
+		return executedToolCall{result: createErrorToolResult(executeErr.Error()), isError: true, durationMS: durationMS}, nil
 	}
-	return executedToolCall{result: result, isError: result.IsError}, nil
+	return executedToolCall{result: result, isError: result.IsError, durationMS: durationMS}, nil
+}
+
+func elapsedMS(began time.Time) *int64 {
+	duration := time.Since(began).Round(time.Millisecond).Milliseconds()
+	return &duration
 }
 
 func finalizeExecutedToolCall(
@@ -1030,7 +1039,7 @@ func finalizeExecutedToolCall(
 			}
 		}
 	}
-	return finalizedToolCall{toolCall: prepared.toolCall, result: result, isError: isError}
+	return finalizedToolCall{toolCall: prepared.toolCall, result: result, isError: isError, durationMS: executed.durationMS}
 }
 
 // AgentToolCallOutcome is how one tool call ended.
@@ -1089,6 +1098,7 @@ func emitToolExecutionEnd(ctx context.Context, finalized finalizedToolCall, emit
 		ToolName:   finalized.toolCall.Name,
 		Result:     finalized.result,
 		IsError:    finalized.isError,
+		DurationMS: finalized.durationMS,
 	})
 }
 
@@ -1118,6 +1128,7 @@ func createToolResultMessage(finalized finalizedToolCall, config AgentLoopConfig
 		Usage:          finalized.result.Usage,
 		AddedToolNames: addedToolNames,
 		IsError:        finalized.isError,
+		DurationMS:     finalized.durationMS,
 		Timestamp:      loopNow(config),
 	}, nil
 }

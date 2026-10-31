@@ -963,8 +963,9 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 		flushErr = errors.Join(flushErr, runtime.flushHeld())
 		runtime.endRunUnlessQueued(false) // a failed or aborted run ends here; a finished one has already
 		runtime.endControlRun()
-		runtime.emitExtensionSettled(ctx)
-		runtime.emit(AgentSettledEvent{})
+		aborted := runtime.aborted()
+		runtime.emitExtensionSettled(ctx, aborted)
+		runtime.emit(AgentSettledEvent{Aborted: aborted})
 		runtime.mu.Lock()
 		runtime.emittingSettled = false
 		runtime.mu.Unlock()

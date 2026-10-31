@@ -52,6 +52,10 @@ for (const name of [
 }
 process.env.TERM = "xterm-256color";
 
+// durationMs is measured with performance.now(); a frozen clock makes the goldens deterministic, and the
+// Go comparators zero measured durations on their side (runner.ZeroDurations).
+Object.defineProperty(performance, "now", { value: () => 0 });
+
 const upstreamRoot = process.cwd();
 const outputRoot = path.resolve(
 	upstreamRoot,

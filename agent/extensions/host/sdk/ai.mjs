@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-ai ROOT surface (upstream
-// packages/ai/src/index.ts, pi 1.0.0, commit a13d35a7). The "/compat"
+// packages/ai/src/index.ts, pi 1.4.0, commit 4a080252). The "/compat"
 // subpath serves its superset from ai-compat.mjs, matching upstream's
 // exports map. modelsAreEqual is ported from pi-ai (packages/ai/src/models.ts,
 // MIT (c) Mario Zechner); every other upstream export throws
@@ -20,13 +20,15 @@ export function modelsAreEqual(a, b) {
 }
 
 // -- Unsupported upstream exports (generated from pinned pi-ai 0.84.1 root) --
+export const AI_TELEMETRY_SCHEMA = stub("AI_TELEMETRY_SCHEMA");
 export const AssistantMessageEventStream = stub("AssistantMessageEventStream");
-export const AssistantMessageFrameEncoder = stub("AssistantMessageFrameEncoder");
 export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = stub("DEFAULT_MAX_AGENT_RETRY_DELAY_MS");
 export const EventStream = stub("EventStream");
 export const InMemoryCredentialStore = stub("InMemoryCredentialStore");
 export const InMemoryModelsStore = stub("InMemoryModelsStore");
 export const ModelsError = stub("ModelsError");
+export const PI_AI_VERSION = stub("PI_AI_VERSION");
+export const PI_ATTRIBUTION = stub("PI_ATTRIBUTION");
 export const StringEnum = stub("StringEnum");
 export const Type = stub("Type");
 export const appendAssistantMessageDiagnostic = stub("appendAssistantMessageDiagnostic");
@@ -51,12 +53,17 @@ export const fauxText = stub("fauxText");
 export const fauxThinking = stub("fauxThinking");
 export const fauxToolCall = stub("fauxToolCall");
 export const formatThrownValue = stub("formatThrownValue");
+export const formatUserAgent = stub("formatUserAgent");
+export const getAttributionHeaders = stub("getAttributionHeaders");
+export const getClientVersion = stub("getClientVersion");
 export const getCurrentSystemMessage = stub("getCurrentSystemMessage");
 export const getCurrentSystemPrompt = stub("getCurrentSystemPrompt");
 export const getCurrentTools = stub("getCurrentTools");
 export const getDeclaredTools = stub("getDeclaredTools");
+export const getIdentityHeaders = stub("getIdentityHeaders");
 export const getInitialSystemMessage = stub("getInitialSystemMessage");
 export const getModelType = stub("getModelType");
+export const getOpenCodeSessionHeaders = stub("getOpenCodeSessionHeaders");
 export const getOverflowPatterns = stub("getOverflowPatterns");
 export const getSupportedThinkingLevels = stub("getSupportedThinkingLevels");
 export const getSystemMessageText = stub("getSystemMessageText");
@@ -71,10 +78,11 @@ export const isRetryableAssistantError = stub("isRetryableAssistantError");
 export const lazyApi = stub("lazyApi");
 export const lazyOAuth = stub("lazyOAuth");
 export const lazyStream = stub("lazyStream");
+export const mergeClientIdentity = stub("mergeClientIdentity");
 export const normalizeContext = stub("normalizeContext");
 export const parseJsonWithRepair = stub("parseJsonWithRepair");
 export const parseStreamingJson = stub("parseStreamingJson");
-export const reduceAssistantMessageFrames = stub("reduceAssistantMessageFrames");
+export const parseToolCallArguments = stub("parseToolCallArguments");
 export const registerSessionResourceCleanup = stub("registerSessionResourceCleanup");
 export const renderSystemMessageUpdate = stub("renderSystemMessageUpdate");
 export const repairJson = stub("repairJson");
@@ -86,5 +94,6 @@ export const toToolDeclaration = stub("toToolDeclaration");
 export const uuidv7 = stub("uuidv7");
 export const validateToolArguments = stub("validateToolArguments");
 export const validateToolCall = stub("validateToolCall");
+export const withClientIdentity = stub("withClientIdentity");
 export const withoutInitialSystemMessage = stub("withoutInitialSystemMessage");
 

@@ -2,6 +2,8 @@ import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { orbCommands } from "./orb-owned.ts";
+
 // Only these upstream-owned command values change; Orb render snapshots stay intact.
 export async function generateCommandMetadata(upstreamRoot: string, outputRoot: string): Promise<void> {
  const baseline = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/F12-commands/commands.json");
@@ -13,8 +15,8 @@ export async function generateCommandMetadata(upstreamRoot: string, outputRoot: 
  if (!method.startsWith("private handleThinkingCommand(")) throw new Error("upstream thinking handler missing");
  const emitted = ts.transpileModule(`class Probe {${method}}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
  const Probe = new Function(`${emitted}; return Probe;`)();
- fixture.visible = slash.BUILTIN_SLASH_COMMANDS.map((command: any) => ({name:command.name, description:command.description, argumentHint:command.argumentHint ?? null, visible:true}));
- fixture.dispatch = [...source.matchAll(/if \(text === "\/([a-z-]+)"/g)].map((match)=>match[1]);
+ fixture.visible = orbCommands(slash.BUILTIN_SLASH_COMMANDS).map((command: any) => ({name:command.name, description:command.description, argumentHint:command.argumentHint ?? null, visible:true}));
+ fixture.dispatch = [...source.matchAll(/if \(text === "\/([a-z-]+)"/g)].map((match)=>match[1]).filter((name)=>name !== "bug");
  if (new Set(fixture.dispatch).size !== fixture.dispatch.length || !fixture.dispatch.includes("thinking")) throw new Error("unexpected upstream slash dispatch shape");
  fixture.thinkingCommands = ["", "HiGh", "invalid"].map((input) => {
   const trace: unknown[] = [];

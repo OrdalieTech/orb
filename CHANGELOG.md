@@ -13,6 +13,12 @@ shown by `/changelog`.
 
 - `platforms/agent/buzz-owner.py` publishes the owner's record to a relay behind Cloudflare, which refused it with error 1010 because of urllib's default User-Agent.
 
+- Orb follows pi 1.4.0 (`UPSTREAM.lock`). Assistant messages and tool results record how long they took as `durationMs`, as do `tool_execution_end` events, and `agent_settled` says whether the run was `aborted`; a session written by pi 1.4 and one written by Orb read the same either way.
+
+- The provider `azure-openai-responses` is now `azure`, as in pi 1.0.3: rename its key in `auth.json`, `models.json` and `settings.json` (`defaultProvider`, `enabledModels`, `modelThinkingLevels`). `kimi-coding` speaks Chat Completions at `https://api.kimi.com/coding/v1` (pi 1.3.0): a `models.json` base URL override for it must now end in `/v1`.
+
+- A model or caller header can override Codex's `originator` and `User-Agent`; prompt-length pricing tiers reach every models.dev provider and OpenRouter's overrides, and OpenRouter's negative placeholder prices count as zero; Together's DeepSeek V4 Pro keeps its thinking levels under its new id; an empty `--model` pattern matches nothing; a tool hidden by `prepareLoadout` no longer appears in the prompt's tool list, rules or skills hint, and extensions see `hiddenTools` in `systemPromptOptions` (pi 1.0.2 to 1.4.0).
+
 ## [0.19.13] - 2026-10-24
 
 Orb as a first-class Buzz agent behind buzz-acp, and conversations that follow you across Orbs: ACP clients steer a running turn instead of cancelling it, a Claude conversation survives a cancelled command, a launched Claude model offers its reasoning levels, a conversation another Orb holds opens live, and messages sent as a turn ends are answered.

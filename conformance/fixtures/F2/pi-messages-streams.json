@@ -587,7 +587,8 @@
                   "systemPromptChanged": true
                 }
               }
-            ]
+            ],
+            "durationMs": 0
           }
         }
       ]
@@ -700,7 +701,8 @@
             "timestamp": 1700000000123,
             "errorMessage": "upstream failed",
             "responseId": "response-error",
-            "providerThinkingLevel": ""
+            "providerThinkingLevel": "",
+            "durationMs": 0
           }
         }
       ]
@@ -876,7 +878,8 @@
             },
             "stopReason": "error",
             "errorMessage": "fixture-gateway stream ended without a terminal event",
-            "timestamp": 1700000000123
+            "timestamp": 1700000000123,
+            "durationMs": 0
           }
         }
       ]

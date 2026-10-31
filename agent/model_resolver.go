@@ -68,6 +68,9 @@ func parseModelPattern(pattern string, available []ai.Model, allow bool, usable 
 }
 
 func tryMatchModel(pattern string, available []ai.Model, usable map[ai.ProviderID]bool) *ai.Model {
+	if strings.TrimSpace(pattern) == "" {
+		return nil
+	}
 	if model := exactModelReference(pattern, available); model != nil {
 		return model
 	}
@@ -835,7 +838,7 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 
 var defaultModelPerProvider = map[string]string{
 	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1", "ant-ling": "Ring-2.6-1T", "anthropic": "claude-opus-4-8",
-	"openai": "gpt-5.5", "azure-openai-responses": "gpt-5.4", "openai-codex": "gpt-6.1-sol", "nvidia": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+	"openai": "gpt-5.5", "azure": "gpt-5.4", "openai-codex": "gpt-6.1-sol", "nvidia": "nvidia/nemotron-3.5-super-vl-120b-a12b",
 	"deepseek": "deepseek-v4-pro", "google": "gemini-3.1-pro-preview", "google-vertex": "gemini-3.1-pro-preview", "github-copilot": "gpt-6.1-sol",
 	"openrouter": "moonshotai/kimi-k2.6", "vercel-ai-gateway": "zai/glm-5.1", "xai": "grok-4.7", "groq": "openai/gpt-oss-120b",
 	"cerebras": "gpt-oss-120b", "zai": "glm-5.3", "zai-coding-cn": "glm-5.3", "mistral": "devstral-medium-latest",
@@ -850,7 +853,7 @@ var defaultModelPerProvider = map[string]string{
 }
 
 var defaultModelProviderOrder = []string{
-	"amazon-bedrock", "ant-ling", "anthropic", "openai", "azure-openai-responses", "openai-codex", "nvidia", "deepseek",
+	"amazon-bedrock", "ant-ling", "anthropic", "openai", "azure", "openai-codex", "nvidia", "deepseek",
 	"google", "google-vertex", "github-copilot", "openrouter", "vercel-ai-gateway", "xai", "groq", "cerebras", "zai",
 	"zai-coding-cn", "mistral", "minimax", "minimax-cn", "moonshotai", "moonshotai-cn", "huggingface", "fireworks",
 	"together", "baseten", "opencode", "opencode-go", "kimi-coding", "cloudflare-workers-ai", "cloudflare-ai-gateway", "qwen-token-plan", "qwen-token-plan-cn",

@@ -52,7 +52,6 @@
     },
     "envAPIKeys": {
       "apiKey": "fixture-env-key",
-      "adc": "<authenticated>",
       "missingLocation": null,
       "found": [
         "GOOGLE_CLOUD_API_KEY"

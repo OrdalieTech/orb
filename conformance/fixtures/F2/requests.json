@@ -467,7 +467,7 @@
       "name": "completions-together-reasoning-compat",
       "api": "openai-completions",
       "model": {
-        "id": "deepseek-ai/DeepSeek-V4-Pro",
+        "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
         "name": "DeepSeek V4 Pro",
         "api": "openai-completions",
         "provider": "together",
@@ -562,7 +562,7 @@
           "authorization": "Bearer fixture-together-key",
           "content-type": "application/json"
         },
-        "body": "{\"model\":\"deepseek-ai/DeepSeek-V4-Pro\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the provider reasoning controls.\"},{\"role\":\"user\",\"content\":\"solve it\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":321,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"reasoning\":{\"enabled\":true},\"reasoning_effort\":\"high\"}"
+        "body": "{\"model\":\"deepseek-ai/DeepSeek-V4-Pro-0813\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the provider reasoning controls.\"},{\"role\":\"user\",\"content\":\"solve it\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":321,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"reasoning\":{\"enabled\":true},\"reasoning_effort\":\"high\"}"
       }
     },
     {

@@ -15,6 +15,7 @@ Object.setPrototypeOf(FixedDate, RealDate);
 FixedDate.now = () => FIXED_NOW;
 globalThis.Date = FixedDate;
 Math.random = () => 0;
+Object.defineProperty(performance, "now", { value: () => 0 });
 let uuidCounter = 0;
 const nodeCrypto = createRequire(import.meta.url)("node:crypto") as typeof import("node:crypto");
 nodeCrypto.randomUUID = () => {

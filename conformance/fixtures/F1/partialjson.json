@@ -123,7 +123,7 @@
       "name": "repair-incomplete-unicode",
       "operation": "repairJson",
       "input": "\"\\u12",
-      "expected": "\"\\u12"
+      "expected": "\"\\\\u12"
     },
     {
       "name": "parse-repair-valid",

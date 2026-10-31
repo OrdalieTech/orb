@@ -61,7 +61,7 @@
           "chatgpt-account-id": "account-f2-codex",
           "content-type": "application/json",
           "openai-beta": "responses=experimental",
-          "originator": "pi",
+          "originator": "wrong",
           "session-id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
           "x-client-request-id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
           "x-fixture": "codex-default",

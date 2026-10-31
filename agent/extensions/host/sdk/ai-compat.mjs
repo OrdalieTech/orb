@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-ai "/compat" surface (upstream
-// packages/ai/src/compat.ts, pi 1.0.0, commit a13d35a7): the root surface
+// packages/ai/src/compat.ts, pi 1.4.0, commit 4a080252): the root surface
 // plus the legacy global API (api-dispatch stream()/complete(), api registry,
 // generated catalog reads, per-API lazy stream wrappers, image generation).
 // modelsAreEqual stays real via the root re-export; everything else throws

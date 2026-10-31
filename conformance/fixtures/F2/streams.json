@@ -297,7 +297,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "reasoning_details",
-            "rawStopReason": "stop"
+            "rawStopReason": "stop",
+            "durationMs": 0
           }
         }
       ]
@@ -535,7 +536,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_text_stop",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
@@ -1124,7 +1126,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_rich",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
@@ -1221,7 +1224,8 @@
             "timestamp": 1700000000123,
             "responseId": "resp_f2_incomplete",
             "rawStopReason": "incomplete",
-            "errorMessage": "Response incomplete without a provider reason"
+            "errorMessage": "Response incomplete without a provider reason",
+            "durationMs": 0
           }
         }
       ]
@@ -1291,7 +1295,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "OpenAI API error (403): 403 denied"
+            "errorMessage": "OpenAI API error (403): 403 denied",
+            "durationMs": 0
           }
         }
       ]
@@ -1361,7 +1366,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "OpenAI API error (403): 403 status code (no body)"
+            "errorMessage": "OpenAI API error (403): 403 status code (no body)",
+            "durationMs": 0
           }
         }
       ]
@@ -1601,7 +1607,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_text_stop",
-            "rawStopReason": "stop"
+            "rawStopReason": "stop",
+            "durationMs": 0
           }
         }
       ]
@@ -2252,7 +2259,8 @@
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_rich",
             "responseModel": "routed-fixture-model",
-            "rawStopReason": "tool_calls"
+            "rawStopReason": "tool_calls",
+            "durationMs": 0
           }
         }
       ]
@@ -2460,7 +2468,8 @@
             "stopReason": "length",
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_length",
-            "rawStopReason": "length"
+            "rawStopReason": "length",
+            "durationMs": 0
           }
         }
       ]
@@ -2530,7 +2539,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "403 denied"
+            "errorMessage": "403 denied",
+            "durationMs": 0
           }
         }
       ]
@@ -2600,7 +2610,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "403 status code (no body)"
+            "errorMessage": "403 status code (no body)",
+            "durationMs": 0
           }
         }
       ]
@@ -2697,7 +2708,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "resp_f2_priority",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
@@ -2906,7 +2918,8 @@
             "timestamp": 1700000000123,
             "responseId": "chatcmpl_f2_content_filter",
             "rawStopReason": "content_filter",
-            "errorMessage": "Provider finish_reason: content_filter"
+            "errorMessage": "Provider finish_reason: content_filter",
+            "durationMs": 0
           }
         }
       ]

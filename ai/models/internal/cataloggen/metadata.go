@@ -78,7 +78,7 @@ func applyCorrections(model *ai.Model) {
 		}}
 		model.Cost.Tiers = &tiers
 	}
-	if (provider == "openai" || provider == "azure-openai-responses") && id == "gpt-5-pro" {
+	if (provider == "openai" || provider == "azure") && id == "gpt-5-pro" {
 		model.MaxTokens = 128000
 	}
 	if provider == "openrouter" && (id == "moonshotai/kimi-k3" || id == "~moonshotai/kimi-latest") ||
@@ -92,6 +92,7 @@ func applyCorrections(model *ai.Model) {
 		model.Cost.Input, model.Cost.Output, model.Cost.CacheRead = 0.6, 1.9, 0.119
 	}
 	if provider == "kimi-coding" {
+		mergeThinking(model, map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil})
 		if id == "k3" {
 			model.Reasoning, model.MaxTokens = true, 131072
 			applyImpliedCost(model, ai.ModelCostRates{Input: 3, Output: 15, CacheRead: .3})
@@ -186,9 +187,6 @@ func applyModelsDevReasoningOptionMetadata(model *ai.Model, options []sourceReas
 func supportsDirectReasoningEffort(model *ai.Model) bool {
 	switch model.API {
 	case ai.APIAnthropicMessages:
-		if model.Provider == "kimi-coding" {
-			return true
-		}
 		var compat ai.AnthropicMessagesCompat
 		_ = json.Unmarshal(model.Compat, &compat)
 		return compat.ForceAdaptiveThinking != nil && *compat.ForceAdaptiveThinking
@@ -217,7 +215,7 @@ func applyThinkingLevelMetadata(model *ai.Model) {
 		switch {
 		case slices.Contains([]string{"openai/gpt-oss-20b", "openai/gpt-oss-120b"}, id):
 			values[ai.ModelThinkingOff], values[ai.ModelThinkingMinimal] = nil, nil
-		case id == "deepseek-ai/DeepSeek-V4-Pro":
+		case id == "deepseek-ai/DeepSeek-V4-Pro-0813":
 			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium] = nil, nil, nil
 			values[ai.ModelThinkingHigh], values[ai.ModelThinkingXHigh] = ptr("high"), nil
 		case slices.Contains([]string{"deepseek-ai/DeepSeek-R1", "MiniMaxAI/MiniMax-M2.7"}, id):
@@ -434,6 +432,9 @@ func applyOpenAICompletionsCompat(model *ai.Model) {
 	if isQwenTokenPlanProvider(string(model.Provider)) {
 		model.Compat = orderCompat(model.Compat, []string{"supportsStrictMode", "thinkingFormat", "supportsDeveloperRole", "supportsStore", "supportsReasoningEffort"})
 	}
+	if model.Provider == "kimi-coding" {
+		model.Compat = orderCompat(model.Compat, []string{"supportsStrictMode", "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "maxTokensField", "thinkingFormat", "requiresReasoningContentOnAssistantMessages"})
+	}
 }
 
 func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletionsCompat) {
@@ -466,6 +467,15 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		}
 		if id == "kimi-k2.6" || id == "kimi-k2.7-code" || id == "kimi-k2.7-code-highspeed" {
 			compat.SupportsMidConvoSystemMessages = ptr(true)
+		}
+	case "kimi-coding":
+		// Kimi Code reports every model as always-thinking; K3-style models take reasoning_effort and dynamic tool loading.
+		compat.SupportsStore, compat.SupportsDeveloperRole, compat.SupportsStrictMode = ptr(false), ptr(false), ptr(false)
+		compat.SupportsReasoningEffort, compat.MaxTokensField = ptr(false), ptr(ai.MaxTokensFieldLegacy)
+		compat.ThinkingFormat, compat.SupportsMidConvoSystemMessages = ptr(ai.ThinkingFormatDeepSeek), ptr(true)
+		if slices.Contains([]string{"k3", "k3-256k", "kimi-for-coding"}, id) {
+			compat.RequiresReasoningContentOnAssistantMessages, compat.SupportsReasoningEffort = ptr(true), ptr(true)
+			compat.ThinkingFormat, compat.SupportsMidConvoToolAdditions = ptr(ai.ThinkingFormatOpenAI), ptr(true)
 		}
 	case "qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual":
 		compat.SupportsStore, compat.SupportsDeveloperRole = ptr(false), ptr(false)
@@ -514,7 +524,7 @@ func applyExplicitCompletionsCompat(model *ai.Model, compat *ai.OpenAICompletion
 		if slices.Contains([]string{"openai/gpt-oss-20b", "openai/gpt-oss-120b"}, id) {
 			compat.SupportsReasoningEffort, compat.ThinkingFormat = ptr(true), ptr(ai.ThinkingFormatOpenAI)
 		}
-		if id == "deepseek-ai/DeepSeek-V4-Pro" {
+		if id == "deepseek-ai/DeepSeek-V4-Pro-0813" {
 			compat.SupportsReasoningEffort, compat.ThinkingFormat = ptr(true), ptr(ai.ThinkingFormatTogether)
 		}
 	case "fireworks":
@@ -663,7 +673,7 @@ func applyOpenAIResponsesCompat(model *ai.Model) {
 	if (provider == "openai" || provider == "cloudflare-ai-gateway") && model.API == ai.APIOpenAIResponses {
 		compat.SupportsStrictMode = ptr(true)
 	}
-	if slices.Contains([]string{"openai", "openai-codex", "azure-openai-responses", "github-copilot", "opencode", "cloudflare-ai-gateway"}, provider) &&
+	if slices.Contains([]string{"openai", "openai-codex", "azure", "github-copilot", "opencode", "cloudflare-ai-gateway"}, provider) &&
 		slices.Contains([]ai.API{ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses}, model.API) {
 		match := gptMajorPattern().FindStringSubmatch(id)
 		if len(match) == 2 {

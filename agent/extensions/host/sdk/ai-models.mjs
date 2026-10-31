@@ -1,11 +1,12 @@
-// orb-extension-sdk: @earendil-works/pi-ai/models surface (upstream pi 1.0.0,
-// commit a13d35a7, MIT © Mario Zechner). modelsAreEqual is the root's
+// orb-extension-sdk: @earendil-works/pi-ai/models surface (upstream pi 1.4.0,
+// commit 4a080252, MIT © Mario Zechner). modelsAreEqual is the root's
 // implementation; every other upstream export links and throws
 // OrbUnsupportedCapability on call, construction, or property access.
 import { unsupported } from "./internal/unsupported.mjs";
 
 const stub = (name) => unsupported("ai/models", name, ["none"]);
 
+export const AI_TELEMETRY_SCHEMA = stub("AI_TELEMETRY_SCHEMA");
 export const ModelsError = stub("ModelsError");
 export const calculateCost = stub("calculateCost");
 export const clampThinkingLevel = stub("clampThinkingLevel");

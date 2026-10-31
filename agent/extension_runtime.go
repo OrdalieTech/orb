@@ -970,6 +970,7 @@ func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *exten
 	}
 	options := cloneSystemPromptOptions(*state.promptOptions)
 	options.SelectedTools = slices.Clone(valid)
+	options.HiddenTools = slices.DeleteFunc(slices.Clone(valid), func(name string) bool { _, hidden := state.hiddenDeclarations[name]; return !hidden })
 	snippets := make(map[string]string)
 	var guidelines []string
 	for _, name := range valid {
@@ -1352,7 +1353,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptions() extensions.SystemP
 	}
 	options := state.promptOptions
 	return extensions.SystemPromptOptions{
-		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools),
+		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools), HiddenTools: append([]string{}, options.HiddenTools...),
 		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}
@@ -1551,6 +1552,7 @@ func uniqueStrings(values []string) []string {
 
 func cloneSystemPromptOptions(options SystemPromptOptions) SystemPromptOptions {
 	options.SelectedTools = slices.Clone(options.SelectedTools)
+	options.HiddenTools = slices.Clone(options.HiddenTools)
 	options.ToolSnippets = maps.Clone(options.ToolSnippets)
 	options.PromptGuidelines = append([]string(nil), options.PromptGuidelines...)
 	options.ContextFiles = append([]ContextFile(nil), options.ContextFiles...)
@@ -1641,7 +1643,7 @@ func (runtime *SessionRuntime) extensionLifecycleEvent(ctx context.Context, even
 	case engine.ToolExecutionUpdateEvent:
 		runner.Emit(ctx, extensions.ToolExecutionUpdateEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Args: typed.Args, PartialResult: typed.PartialResult, ParentToolCallID: typed.ParentToolCallID})
 	case engine.ToolExecutionEndEvent:
-		runner.Emit(ctx, extensions.ToolExecutionEndEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Result: typed.Result, IsError: typed.IsError, ParentToolCallID: typed.ParentToolCallID})
+		runner.Emit(ctx, extensions.ToolExecutionEndEvent{ToolCallID: typed.ToolCallID, ToolName: typed.ToolName, Result: typed.Result, IsError: typed.IsError, DurationMS: typed.DurationMS, ParentToolCallID: typed.ParentToolCallID})
 	}
 	return event
 }
@@ -1738,10 +1740,10 @@ func replaceAgentMessageInPlace(target, replacement engine.AgentMessage) bool {
 	return false
 }
 
-func (runtime *SessionRuntime) emitExtensionSettled(ctx context.Context) {
+func (runtime *SessionRuntime) emitExtensionSettled(ctx context.Context, aborted bool) {
 	state := runtime.extensionState
 	if state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventAgentSettled) {
-		state.runner.Emit(ctx, extensions.AgentSettledEvent{})
+		state.runner.Emit(ctx, extensions.AgentSettledEvent{Aborted: aborted})
 	}
 }
 
@@ -1943,7 +1945,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptionsLocked(state *extensi
 	}
 	options := state.promptOptions
 	return extensions.SystemPromptOptions{
-		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools),
+		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools), HiddenTools: append([]string{}, options.HiddenTools...),
 		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
 		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
 	}

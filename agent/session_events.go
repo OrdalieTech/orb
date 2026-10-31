@@ -32,7 +32,7 @@ type SessionAgentEndEvent struct {
 	WillRetry bool                 `json:"willRetry"`
 }
 
-type AgentSettledEvent struct{}
+type AgentSettledEvent struct{ Aborted bool }
 
 type QueueUpdateEvent struct {
 	Steering []string `json:"steering"`
@@ -109,7 +109,7 @@ func MarshalSessionEvent(event any) ([]byte, error) {
 		}
 		return append(strconv.AppendBool(append(encoded[:len(encoded)-1], `,"willRetry":`...), typed.WillRetry), '}'), nil
 	case AgentSettledEvent:
-		return []byte(`{"type":"agent_settled"}`), nil
+		return append(strconv.AppendBool([]byte(`{"type":"agent_settled","aborted":`), typed.Aborted), '}'), nil
 	case QueueUpdateEvent:
 		return ai.Marshal(struct {
 			Type     SessionEventType `json:"type"`

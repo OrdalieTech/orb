@@ -14,6 +14,7 @@ import type {
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
 import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 type FixtureAPI = "mistral-conversations" | "azure-openai-responses";
 type FixtureModel = Model<"mistral-conversations"> | Model<"azure-openai-responses">;
@@ -636,10 +637,6 @@ async function captureRequest(input: RequestInfo | URL, init?: RequestInit): Pro
   };
 }
 
-function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
-  return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
-}
-
 async function runUpstream(
   definition: Definition,
   response: FixtureResponse,
@@ -667,7 +664,7 @@ async function runUpstream(
         definition.options as AzureOpenAIResponsesOptions,
       );
   const events: AssistantMessageEvent[] = [];
-  for await (const event of stream) events.push(cloneEvent(event));
+  for await (const event of stream) events.push(cloneStreamEvent(event));
   if (!captured) throw new Error(`${definition.name}: provider request was not captured`);
   return { request: captured, events };
 }

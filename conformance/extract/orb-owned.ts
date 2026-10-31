@@ -9,11 +9,27 @@ export async function committedFixture(family: string, file = "cases.json"): Pro
   return JSON.parse(await readFile(path.join(import.meta.dirname, "../fixtures", family, file), "utf8"));
 }
 
-// Cases that follow a newer pi release than UPSTREAM.lock pins are carried from the committed tree, never
-// re-extracted, until the pin reaches that release (divergence ledger).
-export async function aheadOfPin(family: string, file: string, key: string, generated: any[], names: string[]): Promise<void> {
-  const committed: any[] = (await committedFixture(family, file))[key];
+// Cases where Orb deliberately differs from upstream are carried from the committed tree, never re-extracted
+// (divergence ledger).
+export async function orbOwned(family: string, file: string, generated: any[], names: string[], key?: string): Promise<void> {
+  const committed = await committedFixture(family, file);
+  const cases: any[] = key ? committed[key] : committed;
   for (const [index, item] of generated.entries()) {
-    if (names.includes(item.name)) generated[index] = committed.find((entry) => entry.name === item.name);
+    if (names.includes(item.name)) generated[index] = cases.find((entry) => entry.name === item.name);
   }
+}
+
+// Orb does not report bugs to pi's developers and shares sessions as GitHub gists only, without pi's Radius.
+export function orbCommands<T extends { name: string; description: string }>(commands: T[]): T[] {
+  return commands
+    .filter((command) => command.name !== "bug")
+    .map((command) => (command.name === "share" ? { ...command, description: "Share session as a secret GitHub gist" } : command));
+}
+
+// A stream's shared partial message gains durationMs when the stream ends, which a consumer lagging behind
+// its producer sees on the events before the terminal one; the contract is the terminal message alone.
+export function cloneStreamEvent<T extends { type: string }>(event: T): T {
+  const clone = JSON.parse(JSON.stringify(event));
+  if (clone.type !== "done" && clone.type !== "error") delete clone.partial?.durationMs;
+  return clone;
 }

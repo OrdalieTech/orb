@@ -646,7 +646,8 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
-            "rawStopReason": "tool_use"
+            "rawStopReason": "tool_use",
+            "durationMs": 0
           }
         }
       ]
@@ -880,7 +881,8 @@
             },
             "stopReason": "length",
             "timestamp": 1700000000123,
-            "rawStopReason": "model_context_window_exceeded"
+            "rawStopReason": "model_context_window_exceeded",
+            "durationMs": 0
           }
         }
       ]
@@ -989,7 +991,8 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "rawStopReason": "guardrail_intervened",
-            "errorMessage": "Provider stopped with: guardrail_intervened"
+            "errorMessage": "Provider stopped with: guardrail_intervened",
+            "durationMs": 0
           }
         }
       ]
@@ -1066,7 +1069,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Unexpected assistant message start but got user message start instead"
+            "errorMessage": "Unexpected assistant message start but got user message start instead",
+            "durationMs": 0
           }
         }
       ]
@@ -1263,7 +1267,8 @@
                   "errorCode": "ThrottlingException"
                 }
               }
-            ]
+            ],
+            "durationMs": 0
           }
         }
       ]
@@ -1527,7 +1532,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "rawStopReason": "end_turn"
+            "rawStopReason": "end_turn",
+            "durationMs": 0
           }
         }
       ]
@@ -1751,7 +1757,8 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
-            "rawStopReason": "end_turn"
+            "rawStopReason": "end_turn",
+            "durationMs": 0
           }
         }
       ]

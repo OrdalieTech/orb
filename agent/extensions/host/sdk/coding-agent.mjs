@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-coding-agent surface.
-// Pure symbols are ported from pi-coding-agent (pi 1.0.0, commit a13d35a7,
+// Pure symbols are ported from pi-coding-agent (pi 1.4.0, commit 4a080252,
 // MIT © Mario Zechner), trimmed to the contracts published extensions
 // exercise. The three protocol services (createAgentSession, ModelRuntime,
 // ModelRegistry) call the host transport through internal/services.mjs;
@@ -721,6 +721,7 @@ export const estimateTokens = stub("estimateTokens");
 export const findCutPoint = stub("findCutPoint");
 export const findTurnStartIndex = stub("findTurnStartIndex");
 export const formatDimensionNote = stub("formatDimensionNote");
+export const formatReadLineRange = stub("formatReadLineRange");
 export const formatSize = stub("formatSize");
 export const formatSkillsForPrompt = stub("formatSkillsForPrompt");
 export const generateBranchSummary = stub("generateBranchSummary");

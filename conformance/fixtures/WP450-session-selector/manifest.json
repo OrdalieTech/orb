@@ -1,6 +1,6 @@
 {
   "family": "WP450-session-selector",
-  "upstreamCommit": "ecac0a9c4edad3dac5d9f8b40e0c7db7a56471fc",
+  "upstreamCommit": "4a080252f06caf63a525d7873c5d94d3c23887e0",
   "generator": "conformance/extract/wp450-session-selector.ts",
   "sources": [
     "packages/coding-agent/src/cli/session-picker.ts",

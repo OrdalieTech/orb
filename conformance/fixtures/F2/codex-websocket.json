@@ -133,7 +133,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "ws-fixture",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
