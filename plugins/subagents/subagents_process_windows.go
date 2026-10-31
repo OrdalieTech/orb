@@ -63,6 +63,9 @@ func runExternalCommand(ctx context.Context, cwd, command string, env map[string
 	if err != nil {
 		_ = process.Process.Kill()
 		_ = process.Wait()
+		if ctx.Err() != nil {
+			return externalRun{statusErr: ctx.Err()}, nil
+		}
 		return externalRun{}, unavailableError{err}
 	}
 	var run externalRun
