@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
 )
@@ -33,6 +35,13 @@ func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = process.Process.Kill(); _ = process.Wait() })
+		// Start returns once the child has passed exec's point of no return, before
+		// the kernel fills in its environment; wait for it so the process is a writer.
+		for environ := filepath.Join("/proc", strconv.Itoa(process.Process.Pid), "environ"); ; time.Sleep(time.Millisecond) {
+			if data, err := os.ReadFile(environ); err != nil || len(data) > 0 {
+				break
+			}
+		}
 		return process
 	}
 	t.Setenv("PATH", t.TempDir())
