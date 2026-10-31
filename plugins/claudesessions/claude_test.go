@@ -33,6 +33,9 @@ import (
 
 const fakeSDK = `
 import {readFileSync,appendFileSync,mkdirSync,realpathSync,existsSync,writeFileSync} from 'node:fs';
+// Tells the test when this host has exited: it may write under its directory until then.
+const hosts=process.env.CLAUDE_CONFIG_DIR&&process.env.CLAUDE_CONFIG_DIR+'/hosts';
+if(hosts){mkdirSync(process.env.CLAUDE_CONFIG_DIR,{recursive:true});appendFileSync(hosts,'+');process.once('exit',()=>appendFileSync(hosts,'-'));}
 // Like the CLI: transcripts live under the config directory, one per session,
 // named after the working directory as getcwd resolves it off Windows.
 const transcript=(cwd,id)=>{const dir=process.env.CLAUDE_CONFIG_DIR+'/projects/'+(process.platform==='win32'?cwd:realpathSync(cwd)).replace(/[^a-zA-Z0-9]/g,'-');mkdirSync(dir,{recursive:true});return dir+'/'+id+'.jsonl'};
@@ -245,7 +248,17 @@ func fixture(t *testing.T, policy ...*plugins.Policy) (*agent.AgentSessionRuntim
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { host.Dispose(context.Background()) })
+	t.Cleanup(func() {
+		host.Dispose(context.Background())
+		// Dispose ends the hosts asynchronously, and one may still write its transcript
+		// into dir (Windows cannot remove a directory under it); each is killed within 5 s.
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			hosts, _ := os.ReadFile(filepath.Join(dir, "claude", "hosts"))
+			if strings.Count(string(hosts), "+") == strings.Count(string(hosts), "-") {
+				return
+			}
+		}
+	})
 	return host, driver
 }
 func awaitInput(t *testing.T, s *agent.SessionRuntime) *agent.InputRequest {
