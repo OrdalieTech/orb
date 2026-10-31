@@ -287,8 +287,17 @@ func canonicalizeLexemes(data []byte) ([]byte, error) {
 	}
 }
 
+var measuredDuration = regexp.MustCompile(`"durationMs": ?\d+`)
+
+// ZeroDurations replaces measured durations: the goldens are extracted with a frozen clock.
+func ZeroDurations(data []byte) []byte {
+	return measuredDuration.ReplaceAll(data, []byte(`"durationMs":0`))
+}
+
 // ByteDiff reports the first differing byte with compact quoted context.
+// Measured durations compare as zero.
 func ByteDiff(want, got []byte) string {
+	want, got = ZeroDurations(want), ZeroDurations(got)
 	if bytes.Equal(want, got) {
 		return ""
 	}

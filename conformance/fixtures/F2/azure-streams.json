@@ -329,7 +329,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "azure-stream-fixture",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]
@@ -407,7 +408,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Azure OpenAI API error (403): 403 denied"
+            "errorMessage": "Azure OpenAI API error (403): 403 denied",
+            "durationMs": 0
           }
         }
       ]
@@ -511,7 +513,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "azure-priority-fixture",
-            "rawStopReason": "completed"
+            "rawStopReason": "completed",
+            "durationMs": 0
           }
         }
       ]

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/conformance/runner"
@@ -128,6 +129,7 @@ func runF2CodexCase(t *testing.T, fixtureCase f2CodexCase, fixtureResponse f2HTT
 		stream ai.AssistantMessageEventStream
 		err    error
 	)
+	startedAt, began := openAINowUnixMilli(), time.Now()
 	if fixtureCase.Simple {
 		var options ai.SimpleStreamOptions
 		if err = json.Unmarshal(fixtureCase.Options, &options); err == nil {
@@ -142,6 +144,7 @@ func runF2CodexCase(t *testing.T, fixtureCase f2CodexCase, fixtureResponse f2HTT
 	if err != nil {
 		t.Fatal(err)
 	}
+	stream = ai.TimeResponse(stream, startedAt, began)
 	events := make([]json.RawMessage, 0, len(fixtureCase.ExpectedEvents))
 	for event, streamErr := range stream {
 		if streamErr != nil {

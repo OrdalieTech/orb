@@ -84,10 +84,10 @@ func (model *sourceModel) UnmarshalJSON(data []byte) error {
 			CacheRead  float64 `json:"cache_read"`
 			CacheWrite float64 `json:"cache_write"`
 			Tiers      []struct {
-				Input      float64 `json:"input"`
-				Output     float64 `json:"output"`
-				CacheRead  float64 `json:"cache_read"`
-				CacheWrite float64 `json:"cache_write"`
+				Input      *float64 `json:"input"`
+				Output     *float64 `json:"output"`
+				CacheRead  *float64 `json:"cache_read"`
+				CacheWrite *float64 `json:"cache_write"`
 				Tier       struct {
 					Type string  `json:"type"`
 					Size float64 `json:"size"`
@@ -111,12 +111,20 @@ func (model *sourceModel) UnmarshalJSON(data []byte) error {
 				Size float64 `json:"size"`
 			} `json:"tier"`
 		}
-		normalized.Input, normalized.Output = tier.Input, tier.Output
-		normalized.CacheRead, normalized.CacheWrite = tier.CacheRead, tier.CacheWrite
+		// Rates a tier does not list keep the base price.
+		normalized.Input, normalized.Output = orBase(tier.Input, model.Cost.Input), orBase(tier.Output, model.Cost.Output)
+		normalized.CacheRead, normalized.CacheWrite = orBase(tier.CacheRead, model.Cost.CacheRead), orBase(tier.CacheWrite, model.Cost.CacheWrite)
 		normalized.Tier.Type, normalized.Tier.Size = tier.Tier.Type, tier.Tier.Size
 		model.Cost.Tiers = append(model.Cost.Tiers, normalized)
 	}
 	return nil
+}
+
+func orBase(rate *float64, base float64) float64 {
+	if rate == nil {
+		return base
+	}
+	return *rate
 }
 
 type rule struct {
@@ -138,7 +146,7 @@ var directRules = []rule{
 	{"google-vertex", "google-vertex", ai.APIGoogleVertex, "https://{location}-aiplatform.googleapis.com"},
 	{"groq", "groq", ai.APIOpenAICompletions, "https://api.groq.com/openai/v1"},
 	{"huggingface", "huggingface", ai.APIOpenAICompletions, "https://router.huggingface.co/v1"},
-	{"kimi-code-plan-global", "kimi-coding", ai.APIAnthropicMessages, "https://api.kimi.com/coding"},
+	{"kimi-code-plan-global", "kimi-coding", ai.APIOpenAICompletions, "https://api.kimi.com/coding/v1"},
 	{"minimax", "minimax", ai.APIAnthropicMessages, "https://api.minimax.io/anthropic"},
 	{"minimax-cn", "minimax-cn", ai.APIAnthropicMessages, "https://api.minimaxi.com/anthropic"},
 	{"meta", "meta", ai.APIOpenAIResponses, "https://api.meta.ai/v1"},
@@ -198,7 +206,6 @@ func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
 		for id, model := range result[provider] {
 			if ref, ok := source["zai"].Models[id]; ok {
 				model.Cost = modelCostWithTiers(ref)
-				model.Cost.Tiers = nil
 				result[provider][id] = model
 			}
 		}
@@ -462,8 +469,7 @@ func normalizedModel(id, name string, raw sourceModel, api ai.API, provider, bas
 	if slices.Contains(raw.Modalities.Input, "image") {
 		input = append(input, ai.InputImage)
 	}
-	cost := ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: raw.Cost.Input, Output: raw.Cost.Output, CacheRead: raw.Cost.CacheRead, CacheWrite: raw.Cost.CacheWrite}}
-	model := ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: cost, ContextWindow: contextWindow, MaxTokens: maxTokens}
+	model := ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: modelCostWithTiers(raw), ContextWindow: contextWindow, MaxTokens: maxTokens}
 	if provider == "zai" || provider == "zai-coding-cn" || isQwenTokenPlanProvider(provider) {
 		model.ThinkingLevelMap = effortThinkingLevelMap(raw.ReasoningOptions)
 		if (provider == "zai" || provider == "zai-coding-cn") && model.ThinkingLevelMap != nil && (id == "glm-5.2" || id == "glm-5.2-highspeed") {
@@ -770,12 +776,7 @@ func addOpenRouter(result map[string]map[string]ai.Model, listing []byte) error 
 			Architecture  struct {
 				Modality string `json:"modality"`
 			} `json:"architecture"`
-			Pricing struct {
-				Prompt          string `json:"prompt"`
-				Completion      string `json:"completion"`
-				InputCacheRead  string `json:"input_cache_read"`
-				InputCacheWrite string `json:"input_cache_write"`
-			} `json:"pricing"`
+			Pricing     openRouterPricing `json:"pricing"`
 			TopProvider struct {
 				ContextLength       float64 `json:"context_length"`
 				MaxCompletionTokens float64 `json:"max_completion_tokens"`
@@ -825,13 +826,10 @@ func addOpenRouter(result map[string]map[string]ai.Model, listing []byte) error 
 		}
 		upsert(result, ai.Model{
 			ID: model.ID, Name: model.Name, API: api, Provider: "openrouter", ThinkingLevelMap: thinking,
-			BaseURL:   baseURL,
-			Reasoning: slices.Contains(model.SupportedParameters, "reasoning"),
-			Input:     input,
-			Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{
-				Input: perMillionTokens(model.Pricing.Prompt), Output: perMillionTokens(model.Pricing.Completion),
-				CacheRead: perMillionTokens(model.Pricing.InputCacheRead), CacheWrite: perMillionTokens(model.Pricing.InputCacheWrite),
-			}},
+			BaseURL:       baseURL,
+			Reasoning:     slices.Contains(model.SupportedParameters, "reasoning"),
+			Input:         input,
+			Cost:          model.Pricing.cost(),
 			ContextWindow: contextWindow, MaxTokens: maxTokens,
 		})
 	}
@@ -900,14 +898,54 @@ func addVercelGateway(result map[string]map[string]ai.Model, listing []byte) err
 	return nil
 }
 
-// perMillionTokens converts an OpenRouter $/token price string to $/1M tokens.
-func perMillionTokens(value string) float64 {
-	if value == "" {
-		return 0
+// openRouterPricing is OpenRouter's $/token prices as decimal strings, and its conditional overrides.
+type openRouterPricing struct {
+	openRouterRates
+	Overrides []struct {
+		openRouterRates
+		MinPromptTokens *float64 `json:"min_prompt_tokens"`
+		UTCStart        *float64 `json:"utc_start"`
+		UTCEnd          *float64 `json:"utc_end"`
+		UTCDays         []string `json:"utc_days"`
+	} `json:"overrides"`
+}
+
+type openRouterRates struct {
+	Prompt          string `json:"prompt"`
+	Completion      string `json:"completion"`
+	InputCacheRead  string `json:"input_cache_read"`
+	InputCacheWrite string `json:"input_cache_write"`
+}
+
+// cost is upstream openRouterCost: negative placeholder prices (router models) fall back to 0, prompt-length
+// overrides become tiers that keep the base price for rates they omit, and time-of-day overrides are skipped.
+func (pricing openRouterPricing) cost() ai.ModelCost {
+	base := pricing.rates(ai.ModelCostRates{})
+	cost := ai.ModelCost{ModelCostRates: base}
+	var tiers []ai.ModelCostTier
+	for _, override := range pricing.Overrides {
+		if override.MinPromptTokens != nil && override.UTCStart == nil && override.UTCEnd == nil && override.UTCDays == nil {
+			tiers = append(tiers, ai.ModelCostTier{InputTokensAbove: *override.MinPromptTokens, ModelCostRates: override.rates(base)})
+		}
 	}
+	if len(tiers) != 0 {
+		cost.Tiers = &tiers
+	}
+	return cost
+}
+
+func (rates openRouterRates) rates(fallback ai.ModelCostRates) ai.ModelCostRates {
+	return ai.ModelCostRates{
+		Input: perMillionTokens(rates.Prompt, fallback.Input), Output: perMillionTokens(rates.Completion, fallback.Output),
+		CacheRead: perMillionTokens(rates.InputCacheRead, fallback.CacheRead), CacheWrite: perMillionTokens(rates.InputCacheWrite, fallback.CacheWrite),
+	}
+}
+
+// perMillionTokens converts an OpenRouter $/token price string to $/1M tokens; a missing, invalid or negative price is fallback.
+func perMillionTokens(value string, fallback float64) float64 {
 	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return 0
+	if err != nil || parsed < 0 {
+		return fallback
 	}
 	return roundCost(parsed * 1000000)
 }
@@ -951,7 +989,7 @@ func addCodex(result map[string]map[string]ai.Model) {
 		input    ai.InputModalities
 		cost     ai.ModelCostRates
 	}{
-		{"gpt-6.1-sol", "GPT-6.1 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6.1-sol"]},
+		{"gpt-6.1-sol", "GPT-6.1 Sol", 500000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6.1-sol"]},
 		{"gpt-6-astra", "GPT-6 Astra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-astra"]},
 		{"gpt-6-sol", "GPT-6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-sol"]},
 		{"gpt-6-luna", "GPT-6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-luna"]},
@@ -980,7 +1018,7 @@ func addAntLing(result map[string]map[string]ai.Model) {
 func addAzure(result map[string]map[string]ai.Model) {
 	for _, model := range result["openai"] {
 		clone := model
-		clone.API, clone.Provider, clone.BaseURL = ai.APIAzureOpenAIResponses, "azure-openai-responses", ""
+		clone.API, clone.Provider, clone.BaseURL = ai.APIAzureOpenAIResponses, "azure", ""
 		clone.Compat = nil
 		clone.ThinkingLevelMap = nil
 		clone.Cost.Tiers = nil

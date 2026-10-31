@@ -43,6 +43,10 @@ func TestRegistryMatchesPinnedUpstream(t *testing.T) {
 		got := actual[index]
 		// Workload identity federation is ledgered as not yet adopted.
 		env := expected.Auth.Env
+		// Foundry Chat Completions on Azure is ledgered as not adopted.
+		if expected.ID == "azure" {
+			expected.APIs = []ai.API{ai.APIAzureOpenAIResponses}
+		}
 		if got.ID != expected.ID || got.Name != expected.Name || got.BaseURL != expected.BaseURL || got.Auth != expected.Auth.Kind || got.OAuth != expected.Auth.OAuth || !slices.Equal(got.APIs, expected.APIs) || !slices.Equal(got.Env, env) {
 			t.Fatalf("provider %d mismatch\n got: %#v\nwant: %#v", index, got, expected)
 		}

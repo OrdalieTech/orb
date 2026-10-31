@@ -279,10 +279,7 @@
     {
       "pattern": "",
       "expected": {
-        "model": {
-          "provider": "openrouter",
-          "id": "qwen/qwen3-coder:exacto"
-        },
+        "model": null,
         "thinkingLevel": null,
         "warning": null
       }

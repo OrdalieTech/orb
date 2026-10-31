@@ -53,7 +53,7 @@ func TestRunPrintModeJSONWritesHeaderAndKeepsAssistantFailuresInStream(t *testin
 			if len(lines) != 4 || string(lines[0]) != `{"type":"session","version":3,"id":"fixture-session","timestamp":"2026-01-02T03:04:05.000Z","cwd":"/fixture/project"}` {
 				t.Fatalf("JSON lines = %q", lines)
 			}
-			if !bytes.Contains(lines[2], []byte(`"stopReason":"`+string(stopReason)+`"`)) || string(lines[3]) != `{"type":"agent_settled"}` {
+			if !bytes.Contains(lines[2], []byte(`"stopReason":"`+string(stopReason)+`"`)) || string(lines[3]) != `{"type":"agent_settled","aborted":false}` {
 				t.Fatalf("terminal JSON lines = %q", lines[2:])
 			}
 		})
@@ -122,7 +122,7 @@ func TestRunPrintModeJSONWaitsForQueuedOutputBeforeReturning(t *testing.T) {
 	if code := <-done; code != 0 || !session.unsubscribed {
 		t.Fatalf("code=%d unsubscribed=%t", code, session.unsubscribed)
 	}
-	if got := writer.String(); got != "{\"type\":\"agent_start\"}\n{\"type\":\"agent_settled\"}\n" {
+	if got := writer.String(); got != "{\"type\":\"agent_start\"}\n{\"type\":\"agent_settled\",\"aborted\":false}\n" {
 		t.Fatalf("writer = %q", got)
 	}
 }

@@ -19,6 +19,7 @@ import type {
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
 import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 
@@ -410,10 +411,6 @@ const streamDefinitions: VertexStreamDefinition[] = [
   },
 ];
 
-function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
-  return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
-}
-
 async function captureRequest(input: RequestInfo | URL, init?: RequestInit): Promise<CapturedRequest> {
   const request = new Request(input, init);
   const headers: Record<string, string> = {};
@@ -464,7 +461,7 @@ async function runVertex(
     const vertexStream = definition.simple
       ? streamSimpleGoogleVertex(definition.model, normalizeContext(definition.context), options)
       : streamGoogleVertex(definition.model, normalizeContext(definition.context), options);
-    for await (const event of vertexStream) events.push(cloneEvent(event));
+    for await (const event of vertexStream) events.push(cloneStreamEvent(event));
   } finally {
     globalThis.fetch = originalFetch;
   }

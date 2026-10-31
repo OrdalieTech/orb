@@ -1,6 +1,6 @@
 {
   "family": "WP250",
-  "upstreamCommit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
+  "upstreamCommit": "4a080252f06caf63a525d7873c5d94d3c23887e0",
   "generator": "conformance/extract/wp250-models.ts",
   "source": "packages/coding-agent/src/core/model-resolver.ts",
   "additionalSources": [

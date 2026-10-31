@@ -451,8 +451,11 @@ func FormatSkillsForPrompt(skills []Skill, fileReadTool string) string {
 		return ""
 	}
 	loadInstruction := "Use the read tool to load a skill's file when the task matches its description."
-	if fileReadTool == "bash" {
+	switch fileReadTool {
+	case "bash":
 		loadInstruction = "Use bash to load a skill's file when the task matches its description."
+	case "indirect":
+		loadInstruction = "Load a skill's file when the task matches its description."
 	}
 	lines := []string{
 		"", "", "The following skills provide specialized instructions for specific tasks.",

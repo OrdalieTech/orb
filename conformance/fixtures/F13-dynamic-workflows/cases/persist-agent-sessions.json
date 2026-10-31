@@ -419,6 +419,7 @@
             },
             "stopReason": "toolUse",
             "timestamp": 1700000200321,
+            "durationMs": 0,
             "thinkingLevel": "off"
           }
         },
@@ -438,6 +439,7 @@
               }
             ],
             "isError": false,
+            "durationMs": 0,
             "timestamp": 1700000200321
           }
         },
@@ -473,6 +475,7 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000200321,
+            "durationMs": 0,
             "thinkingLevel": "off"
           }
         }

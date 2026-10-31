@@ -724,7 +724,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "mistral-stream-fixture",
-            "rawStopReason": "tool_calls"
+            "rawStopReason": "tool_calls",
+            "durationMs": 0
           }
         }
       ]
@@ -994,7 +995,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "mistral-missing-id-fixture",
-            "rawStopReason": "tool_calls"
+            "rawStopReason": "tool_calls",
+            "durationMs": 0
           }
         }
       ]
@@ -1205,7 +1207,8 @@
             "stopReason": "length",
             "timestamp": 1700000000123,
             "responseId": "mistral-length-fixture",
-            "rawStopReason": "length"
+            "rawStopReason": "length",
+            "durationMs": 0
           }
         }
       ]
@@ -1416,7 +1419,8 @@
             "stopReason": "length",
             "timestamp": 1700000000123,
             "responseId": "mistral-model_length-fixture",
-            "rawStopReason": "model_length"
+            "rawStopReason": "model_length",
+            "durationMs": 0
           }
         }
       ]
@@ -1493,7 +1497,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Mistral API error (403): denied"
+            "errorMessage": "Mistral API error (403): denied",
+            "durationMs": 0
           }
         }
       ]
@@ -1570,7 +1575,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Mistral API error (403): Request failed with status 403"
+            "errorMessage": "Mistral API error (403): Request failed with status 403",
+            "durationMs": 0
           }
         }
       ]
@@ -2299,7 +2305,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "mistral-stream-fixture",
-            "rawStopReason": "tool_calls"
+            "rawStopReason": "tool_calls",
+            "durationMs": 0
           }
         }
       ]

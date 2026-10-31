@@ -7,6 +7,7 @@ import type {
   Context,
   Model,
 } from "../../.upstream/packages/ai/src/types.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 
@@ -185,10 +186,6 @@ const streamDefinitions: PiMessagesStreamDefinition[] = [
   },
 ];
 
-function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
-  return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
-}
-
 async function captureRequest(input: RequestInfo | URL, init?: RequestInit): Promise<CapturedRequest> {
   const request = new Request(input, init);
   const headers: Record<string, string> = {};
@@ -218,7 +215,7 @@ async function runUpstream(
 
     const events: AssistantMessageEvent[] = [];
     for await (const event of streamPiMessages(definition.model, definition.context, definition.options)) {
-      events.push(cloneEvent(event));
+      events.push(cloneStreamEvent(event));
     }
     if (!captured) throw new Error(`${definition.name}: pi-messages request was not captured`);
     return { request: captured, events };

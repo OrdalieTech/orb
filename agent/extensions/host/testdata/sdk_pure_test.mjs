@@ -34,10 +34,10 @@ function clearTheme() {
 // ── Export surface ───────────────────────────────────────────────────────────
 
 test("modules expose every upstream runtime export name", () => {
-	assert.equal(Object.keys(codingAgent).length, 160);
-	assert.equal(Object.keys(ai).length, 68);
-	assert.equal(Object.keys(aiCompat).length, 127);
-	assert.equal(Object.keys(tui).length, 88);
+	assert.equal(Object.keys(codingAgent).length, 161);
+	assert.equal(Object.keys(ai).length, 77);
+	assert.equal(Object.keys(aiCompat).length, 136);
+	assert.equal(Object.keys(tui).length, 91);
 	for (const name of manifest.modules["coding-agent"].implemented) {
 		assert.ok(name in codingAgent, `coding-agent missing ${name}`);
 	}

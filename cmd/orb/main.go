@@ -50,8 +50,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion     = "1.0.0"
-	upstreamCommit      = "a13d35a742c6ef8462812a28fbe1d8c8b7431c32"
+	upstreamVersion     = "1.4.0"
+	upstreamCommit      = "4a080252f06caf63a525d7873c5d94d3c23887e0"
 	latestReleaseURL    = selfupdate.LatestReleaseURL
 	versionCheckTimeout = 10 * time.Second
 )

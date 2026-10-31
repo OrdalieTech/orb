@@ -280,7 +280,7 @@ func StreamAnthropicMessagesWithOptions(
 			effort = string(*options.Effort)
 		}
 		output.ProviderThinkingLevel = &effort
-		ai.SetAssistantMessageProviderThinkingLevelBeforeUsage(output, true)
+		ai.SetAssistantMessageProviderThinkingLevelBeforeResponseID(output, true)
 	}
 	streamOptions := anthropicStreamOptions(options)
 

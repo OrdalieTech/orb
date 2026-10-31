@@ -19,7 +19,7 @@ var registry = []Provider{
 	// ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but the
 	// api-key lookup skips it because requests must pass it as Authorization: Bearer.
 	withProviderMetadata(anthropicProvider, "https://api.anthropic.com", []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_FEDERATION_RULE_ID"}, []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}, ai.APIAnthropicMessages),
-	withProviderMetadata(azureOpenAIResponsesProvider, "", []string{"AZURE_OPENAI_API_KEY"}, []string{"AZURE_OPENAI_API_KEY"}, ai.APIAzureOpenAIResponses),
+	withProviderMetadata(azureProvider, "", []string{"AZURE_OPENAI_API_KEY"}, []string{"AZURE_OPENAI_API_KEY"}, ai.APIAzureOpenAIResponses),
 	envProvider("baseten", "Baseten", "https://inference.baseten.co/v1", "Baseten API key", []string{"BASETEN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("cerebras", "Cerebras", "https://api.cerebras.ai/v1", "Cerebras API key", []string{"CEREBRAS_API_KEY"}, ai.APIOpenAICompletions),
 	withProviderMetadata(cloudflareAIGatewayProvider, "", []string{"CLOUDFLARE_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_GATEWAY_ID"}, []string{"CLOUDFLARE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
@@ -31,7 +31,7 @@ var registry = []Provider{
 	withProviderMetadata(googleVertexProvider, "", []string{"GOOGLE_CLOUD_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"}, []string{"GOOGLE_CLOUD_API_KEY"}, ai.APIGoogleVertex),
 	envProvider("groq", "Groq", "https://api.groq.com/openai/v1", "Groq API key", []string{"GROQ_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("huggingface", "Hugging Face", "https://router.huggingface.co/v1", "Hugging Face token", []string{"HF_TOKEN"}, ai.APIOpenAICompletions),
-	withProviderMetadata(kimiCodingProvider, "https://api.kimi.com/coding", []string{"KIMI_API_KEY"}, []string{"KIMI_API_KEY"}, ai.APIAnthropicMessages),
+	withProviderMetadata(kimiCodingProvider, "https://api.kimi.com/coding/v1", []string{"KIMI_API_KEY"}, []string{"KIMI_API_KEY"}, ai.APIOpenAICompletions),
 	withProviderMetadata(metaProvider, "https://api.meta.ai/v1", []string{"META_API_KEY"}, []string{"META_API_KEY"}, ai.APIOpenAIResponses),
 	envProvider("minimax", "MiniMax", "https://api.minimax.io/anthropic", "MiniMax API key", []string{"MINIMAX_API_KEY"}, ai.APIAnthropicMessages),
 	envProvider("minimax-cn", "MiniMax CN", "https://api.minimaxi.com/anthropic", "MiniMax CN API key", []string{"MINIMAX_CN_API_KEY"}, ai.APIAnthropicMessages),
@@ -42,7 +42,7 @@ var registry = []Provider{
 	withProviderMetadata(openAI, "https://api.openai.com/v1", []string{"OPENAI_API_KEY"}, []string{"OPENAI_API_KEY"}, ai.APIOpenAIResponses),
 	withProviderMetadata(openAICodexProvider, "https://chatgpt.com/backend-api", nil, nil, ai.APIOpenAICodexResponses),
 	envProvider("opencode", "OpenCode Zen", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIGoogleGenerativeAI, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
-	envProvider("opencode-go", "OpenCode Go", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
+	envProvider("opencode-go", "OpenCode Go", "", "OpenCode API key", []string{"OPENCODE_API_KEY"}, ai.APIAnthropicMessages, ai.APIGoogleGenerativeAI, ai.APIOpenAICompletions, ai.APIOpenAIResponses),
 	withProviderMetadata(openRouterProvider, "https://openrouter.ai/api/v1", []string{"OPENROUTER_API_KEY"}, []string{"OPENROUTER_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan", "Qwen Token Plan", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan API key", []string{"QWEN_TOKEN_PLAN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan-cn", "Qwen Token Plan CN", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan CN API key", []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}, ai.APIOpenAICompletions),

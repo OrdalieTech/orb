@@ -19,6 +19,7 @@ import type {
   Tool,
 } from "../../.upstream/packages/ai/src/types.ts";
 import { normalizeContext } from "../../.upstream/packages/ai/src/utils/transcript.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 const FIXED_NOW = 1_700_000_000_123;
 const zeroCost = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
@@ -372,10 +373,6 @@ const streamDefinitions: BedrockStreamDefinition[] = [
   },
 ];
 
-function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
-  return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
-}
-
 function selectedHeaders(headers: IncomingHttpHeaders): Record<string, string> {
   const result: Record<string, string> = {};
   for (const name of ["content-type", "x-fixture"] as const) {
@@ -466,7 +463,7 @@ async function runBedrockStream(
   try {
     const events: AssistantMessageEvent[] = [];
     for await (const event of streamBedrock(definition.model, normalizeContext(definition.context), definition.options)) {
-      events.push(cloneEvent(event));
+      events.push(cloneStreamEvent(event));
     }
     return events;
   } finally {

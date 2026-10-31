@@ -54,6 +54,7 @@ var builtInToolPromptMetadata = map[string]toolPromptMetadata{
 type SystemPromptOptions struct {
 	CustomPrompt       *string
 	SelectedTools      []string
+	HiddenTools        []string // selected tools whose declarations requests leave out; the prompt leaves them out too
 	ToolSnippets       map[string]string
 	PromptGuidelines   []string
 	AppendSystemPrompt *string
@@ -125,8 +126,9 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 	if tools == nil {
 		tools = defaultSystemPromptTools
 	}
-	visibleTools := make([]string, 0, len(tools))
-	for _, name := range tools {
+	declared := slices.DeleteFunc(slices.Clone(tools), func(name string) bool { return slices.Contains(options.HiddenTools, name) })
+	visibleTools := make([]string, 0, len(declared))
+	for _, name := range declared {
 		if options.ToolSnippets[name] != "" {
 			visibleTools = append(visibleTools, "- "+name+": "+options.ToolSnippets[name])
 		}
@@ -145,7 +147,7 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		seenGuidelines[guideline] = struct{}{}
 		guidelines = append(guidelines, guideline)
 	}
-	if slices.Contains(tools, "bash") && !slices.Contains(tools, "grep") && !slices.Contains(tools, "find") && !slices.Contains(tools, "ls") {
+	if slices.Contains(declared, "bash") && !slices.Contains(declared, "grep") && !slices.Contains(declared, "find") && !slices.Contains(declared, "ls") {
 		addGuideline("Use bash for file operations like ls, rg, find")
 	}
 	for _, guideline := range options.PromptGuidelines {
@@ -185,8 +187,11 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		addSection("project_context", wrapPromptSection("project_context", strings.Join(parts, "\n\n")))
 	}
 	if (slices.Contains(tools, "read") || slices.Contains(tools, "bash")) && len(options.Skills) > 0 {
-		fileReadTool := "read"
-		if !slices.Contains(tools, "read") {
+		// A hidden reader is still reachable through another tool, so skills stay but the hint names no tool.
+		fileReadTool := "indirect"
+		if slices.Contains(declared, "read") {
+			fileReadTool = "read"
+		} else if slices.Contains(declared, "bash") {
 			fileReadTool = "bash"
 		}
 		if skills := strings.TrimSpace(FormatSkillsForPrompt(options.Skills, fileReadTool)); skills != "" {

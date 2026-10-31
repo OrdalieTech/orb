@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/conformance/runner"
@@ -323,10 +324,12 @@ func TestF2BedrockStreamTraces(t *testing.T) {
 					items: items, status: fixtureCase.Status, requestID: fixtureCase.RequestID, err: streamErr,
 				}}, nil
 			}}
+			startedAt, began := openAINowUnixMilli(), time.Now()
 			stream, err := StreamBedrockConverseWithOptions(context.Background(), &fixtureCase.Model, fixtureCase.Context, &options)
 			if err != nil {
 				t.Fatal(err)
 			}
+			stream = ai.TimeResponse(stream, startedAt, began)
 			var events []json.RawMessage
 			for event, streamErr := range stream {
 				if streamErr != nil {
@@ -529,7 +532,14 @@ func runF2Case(t *testing.T, fixtureCase f2Case, fixtureResponse f2HTTPResponse)
 	return captured, serialized
 }
 
+// streamF2Case times the response as Registry.StreamSimple does in production.
 func streamF2Case(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
+	startedAt, began := openAINowUnixMilli(), time.Now()
+	events, err := streamF2CaseUntimed(fixtureCase)
+	return ai.TimeResponse(events, startedAt, began), err
+}
+
+func streamF2CaseUntimed(fixtureCase f2Case) (ai.AssistantMessageEventStream, error) {
 	switch fixtureCase.API {
 	case ai.APIOpenAIResponses:
 		var options OpenAIResponsesOptions

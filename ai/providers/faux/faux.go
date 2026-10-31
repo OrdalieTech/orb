@@ -275,7 +275,8 @@ func (provider *Provider) Stream(ctx context.Context, request ai.Request) (ai.As
 		return nil, errors.New("faux: model is nil")
 	}
 	step, hasStep := provider.reserveResponse()
-	return provider.streamReserved(ctx, request.Model, request.Context, request.Options, step, hasStep), nil
+	startedAt, began := provider.now(), time.Now()
+	return ai.TimeResponse(provider.streamReserved(ctx, request.Model, request.Context, request.Options, step, hasStep), startedAt, began), nil
 }
 
 // StreamSimple has the provider-neutral direct stream signature used by agents.
@@ -294,7 +295,8 @@ func (provider *Provider) StreamSimple(
 		streamOptions = &copy
 	}
 	step, hasStep := provider.reserveResponse()
-	return provider.streamReserved(ctx, model, requestContext, streamOptions, step, hasStep), nil
+	startedAt, began := provider.now(), time.Now()
+	return ai.TimeResponse(provider.streamReserved(ctx, model, requestContext, streamOptions, step, hasStep), startedAt, began), nil
 }
 
 func (provider *Provider) reserveResponse() (ResponseStep, bool) {

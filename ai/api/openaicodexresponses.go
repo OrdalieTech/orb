@@ -544,14 +544,16 @@ func convertOpenAICodexResponsesTools(
 }
 
 func buildOpenAICodexHeaders(model *ai.Model, options *ai.StreamOptions, token, accountID string) http.Header {
-	headers := copyModelHeaders(model)
+	// Defaults first, so model and caller headers can override originator and User-Agent.
+	headers := http.Header{"Originator": {"pi"}, "User-Agent": {piUserAgent()}}
+	for name, values := range copyModelHeaders(model) {
+		headers[name] = values
+	}
 	if options != nil {
 		mergeProviderHeaders(headers, options.Headers)
 	}
 	headers.Set("Authorization", "Bearer "+token)
 	headers.Set("chatgpt-account-id", accountID)
-	headers.Set("originator", "pi")
-	headers.Set("User-Agent", piUserAgent())
 	headers.Set("OpenAI-Beta", "responses=experimental")
 	headers.Set("Accept", "text/event-stream")
 	headers.Set("Content-Type", "application/json")

@@ -93,7 +93,7 @@ func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {
 	if capturedURL != "https://codex.fixture.invalid/backend-api/codex/responses" {
 		t.Fatalf("URL = %q", capturedURL)
 	}
-	if capturedHeaders.Get("Authorization") != "Bearer "+token || capturedHeaders.Get("chatgpt-account-id") != "account-fixture" || capturedHeaders.Get("originator") != "pi" || capturedHeaders.Get("session-id") != strings.Repeat("s", 64) || capturedHeaders.Get("x-client-request-id") != strings.Repeat("s", 64) || capturedHeaders.Get("OpenAI-Beta") != "responses=experimental" || !strings.HasPrefix(capturedHeaders.Get("User-Agent"), "pi (") {
+	if capturedHeaders.Get("Authorization") != "Bearer "+token || capturedHeaders.Get("chatgpt-account-id") != "account-fixture" || capturedHeaders.Get("originator") != override || capturedHeaders.Get("session-id") != strings.Repeat("s", 64) || capturedHeaders.Get("x-client-request-id") != strings.Repeat("s", 64) || capturedHeaders.Get("OpenAI-Beta") != "responses=experimental" || !strings.HasPrefix(capturedHeaders.Get("User-Agent"), "pi (") {
 		t.Fatalf("headers = %#v", capturedHeaders)
 	}
 }

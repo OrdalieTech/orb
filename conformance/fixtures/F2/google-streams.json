@@ -613,7 +613,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "google-response-id",
-            "rawStopReason": "STOP"
+            "rawStopReason": "STOP",
+            "durationMs": 0
           }
         }
       ]
@@ -820,7 +821,8 @@
             "stopReason": "length",
             "timestamp": 1700000000123,
             "responseId": "google-length-id",
-            "rawStopReason": "MAX_TOKENS"
+            "rawStopReason": "MAX_TOKENS",
+            "durationMs": 0
           }
         }
       ]
@@ -915,7 +917,8 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "rawStopReason": "SAFETY",
-            "errorMessage": "Provider stopped with: SAFETY"
+            "errorMessage": "Provider stopped with: SAFETY",
+            "durationMs": 0
           }
         }
       ]
@@ -984,7 +987,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "{\"error\":{\"code\":403,\"message\":\"denied\",\"status\":\"PERMISSION_DENIED\"}}"
+            "errorMessage": "{\"error\":{\"code\":403,\"message\":\"denied\",\"status\":\"PERMISSION_DENIED\"}}",
+            "durationMs": 0
           }
         }
       ]
@@ -1054,7 +1058,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "{\"error\":{\"message\":\"bad shape\",\"code\":400,\"status\":\"INVALID_ARGUMENT\"}}"
+            "errorMessage": "{\"error\":{\"message\":\"bad shape\",\"code\":400,\"status\":\"INVALID_ARGUMENT\"}}",
+            "durationMs": 0
           }
         }
       ]
@@ -1124,7 +1129,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "{\"error\":{\"message\":\"slow down\",\"code\":429,\"status\":\"Too Many Requests\"}}"
+            "errorMessage": "{\"error\":{\"message\":\"slow down\",\"code\":429,\"status\":\"Too Many Requests\"}}",
+            "durationMs": 0
           }
         }
       ]
@@ -1194,7 +1200,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "{\"error\":{\"message\":\"\",\"code\":503,\"status\":\"Service Unavailable\"}}"
+            "errorMessage": "{\"error\":{\"message\":\"\",\"code\":503,\"status\":\"Service Unavailable\"}}",
+            "durationMs": 0
           }
         }
       ]
@@ -1414,7 +1421,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "google-multiline-id",
-            "rawStopReason": "STOP"
+            "rawStopReason": "STOP",
+            "durationMs": 0
           }
         }
       ]
@@ -1507,7 +1515,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "got status: PERMISSION_DENIED. {\"error\":{\"code\":403,\"status\":\"PERMISSION_DENIED\",\"message\":\"denied\"}}"
+            "errorMessage": "got status: PERMISSION_DENIED. {\"error\":{\"code\":403,\"status\":\"PERMISSION_DENIED\",\"message\":\"denied\"}}",
+            "durationMs": 0
           }
         }
       ]
@@ -1600,7 +1609,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "got status: undefined. {\"2\":\"two\",\"10\":\"ten\",\"error\":{\"code\":\"4.03e2\",\"message\":\"a\"}}"
+            "errorMessage": "got status: undefined. {\"2\":\"two\",\"10\":\"ten\",\"error\":{\"code\":\"4.03e2\",\"message\":\"a\"}}",
+            "durationMs": 0
           }
         }
       ]

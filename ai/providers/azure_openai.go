@@ -4,9 +4,9 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth"
 )
 
-var azureOpenAIResponsesProvider = Provider{
-	ID:   "azure-openai-responses",
-	Name: "Azure OpenAI",
+var azureProvider = Provider{
+	ID:   "azure",
+	Name: "Azure",
 	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{
 		DisplayName: "Azure OpenAI API key",

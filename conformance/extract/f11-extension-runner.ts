@@ -153,7 +153,7 @@ export async function generateF11ExtensionRunner(
     }),
   ]);
   const beforeAgent = await beforeAgentRunner.emitBeforeAgentStart(
-    "hello", undefined, { customPrompt: "base", cwd: "/fixture" },
+    { messageType: "user", prompt: "hello", images: undefined }, { customPrompt: "base", cwd: "/fixture" },
   );
 
   const inputRunner = createRunner([

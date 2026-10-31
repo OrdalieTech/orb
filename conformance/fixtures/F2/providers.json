@@ -56,10 +56,11 @@
       }
     },
     {
-      "id": "azure-openai-responses",
-      "name": "Azure OpenAI",
+      "id": "azure",
+      "name": "Azure",
       "apis": [
-        "azure-openai-responses"
+        "azure-openai-responses",
+        "openai-completions"
       ],
       "auth": {
         "kind": "api_key",
@@ -258,9 +259,9 @@
     {
       "id": "kimi-coding",
       "name": "Kimi For Coding",
-      "baseUrl": "https://api.kimi.com/coding",
+      "baseUrl": "https://api.kimi.com/coding/v1",
       "apis": [
-        "anthropic-messages"
+        "openai-completions"
       ],
       "auth": {
         "kind": "api_key",
@@ -434,6 +435,7 @@
       "name": "OpenCode Go",
       "apis": [
         "anthropic-messages",
+        "google-generative-ai",
         "openai-completions",
         "openai-responses"
       ],

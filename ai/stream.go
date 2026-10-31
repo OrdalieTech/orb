@@ -9,6 +9,7 @@ import (
 	"iter"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
@@ -199,6 +200,38 @@ func UnmarshalAssistantMessageEvent(data []byte) (AssistantMessageEvent, error) 
 		return *value, nil
 	default:
 		panic("unreachable event type")
+	}
+}
+
+// TimeResponse sets DurationMS on the terminal message of events as pi's
+// AssistantMessageEventStream does: the monotonic milliseconds since began,
+// unless the message carries one or predates startedAt (Unix ms), as a result
+// fetched later does.
+func TimeResponse(events AssistantMessageEventStream, startedAt int64, began time.Time) AssistantMessageEventStream {
+	if events == nil {
+		return nil
+	}
+	return func(yield func(AssistantMessageEvent, error) bool) {
+		for event, err := range events {
+			var message *AssistantMessage
+			switch terminal := event.(type) {
+			case DoneEvent:
+				message = terminal.Message
+			case *DoneEvent:
+				message = terminal.Message
+			case ErrorEvent:
+				message = terminal.Error
+			case *ErrorEvent:
+				message = terminal.Error
+			}
+			if message != nil && message.DurationMS == nil && message.Timestamp >= startedAt {
+				duration := max(time.Since(began).Round(time.Millisecond).Milliseconds(), 0)
+				message.DurationMS = &duration
+			}
+			if !yield(event, err) {
+				return
+			}
+		}
 	}
 }
 

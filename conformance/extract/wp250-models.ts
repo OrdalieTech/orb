@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { committedFixture } from "./orb-owned.ts";
+import { committedFixture, orbOwned } from "./orb-owned.ts";
 import { withUpstreamModelData } from "./upstream-model-data.ts";
 
 type FixtureModel = {
@@ -193,13 +193,19 @@ export async function generateWP250(
     const simpleOptionsPath = pathToFileURL(
       path.join(upstreamRoot, "packages/ai/src/api/simple-options.ts"),
     ).href;
-    const [{ parseModelPattern, resolveModelScopeWithDiagnostics }, { listModels }, { ModelRuntime }, { FileModelsStore }, { buildBaseOptions }] = await Promise.all([
+    const [{ resolveModelReference, resolveModelScopeWithDiagnostics }, { listModels }, { ModelRuntime }, { FileModelsStore }, { buildBaseOptions }] = await Promise.all([
       import(resolverPath),
       import(listPath),
       import(runtimePath),
       import(storePath),
       import(simpleOptionsPath),
     ]);
+
+    const parseModelPattern = (pattern: string, available: FixtureModel[]) => {
+      const result = resolveModelReference({ text: pattern, thinkingSuffix: "lenient", fuzzy: true }, available, () => true);
+      if (result.status === "ambiguous") throw new Error(`ambiguous pattern case ${pattern}`);
+      return result.status === "resolved" ? result : {};
+    };
 
     const patternCases: object[] = patterns.map((pattern) => ({
       pattern,
@@ -373,6 +379,8 @@ export async function generateWP250(
         anthropicProviderPreserved: compositionRuntime.getProvider("anthropic") !== undefined,
         error: compositionRuntime.getError() ?? null,
       });
+      // Orb keeps a provider's valid siblings when another provider is invalid; pi 1.4 rejects the whole file.
+      await orbOwned("WP250", "composition-cases.json", compositionCases, ["invalid-provider-keeps-valid-sibling"]);
       const fractionalConfig = {
         providers: {
           fractional: {

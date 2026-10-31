@@ -575,7 +575,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "msg_anthropic_fixture",
-            "rawStopReason": "tool_use"
+            "rawStopReason": "tool_use",
+            "durationMs": 0
           }
         }
       ]
@@ -838,7 +839,8 @@
             "stopReason": "toolUse",
             "timestamp": 1700000000123,
             "responseId": "msg_malformed",
-            "rawStopReason": "tool_use"
+            "rawStopReason": "tool_use",
+            "durationMs": 0
           }
         }
       ]
@@ -938,7 +940,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "Could not parse Anthropic SSE event message_delta: Unexpected end of JSON input; data=; raw=: heartbeat\\nevent: message_delta\\ndata: "
+            "errorMessage": "Could not parse Anthropic SSE event message_delta: Unexpected end of JSON input; data=; raw=: heartbeat\\nevent: message_delta\\ndata: ",
+            "durationMs": 0
           }
         }
       ]
@@ -1151,7 +1154,8 @@
             "stopReason": "length",
             "timestamp": 1700000000123,
             "responseId": "msg_max_tokens",
-            "rawStopReason": "max_tokens"
+            "rawStopReason": "max_tokens",
+            "durationMs": 0
           }
         }
       ]
@@ -1338,7 +1342,8 @@
             "timestamp": 1700000000123,
             "responseId": "msg_refusal",
             "rawStopReason": "refusal",
-            "errorMessage": "fixture refusal explanation"
+            "errorMessage": "fixture refusal explanation",
+            "durationMs": 0
           }
         }
       ]
@@ -1551,7 +1556,8 @@
             "stopReason": "stop",
             "timestamp": 1700000000123,
             "responseId": "msg_text",
-            "rawStopReason": "end_turn"
+            "rawStopReason": "end_turn",
+            "durationMs": 0
           }
         }
       ]
@@ -1653,7 +1659,8 @@
             "stopReason": "error",
             "timestamp": 1700000000123,
             "responseId": "msg_truncated",
-            "errorMessage": "Anthropic stream ended before message_stop"
+            "errorMessage": "Anthropic stream ended before message_stop",
+            "durationMs": 0
           }
         }
       ]
@@ -1729,7 +1736,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "403 {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"denied\"}}"
+            "errorMessage": "403 {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"denied\"}}",
+            "durationMs": 0
           }
         }
       ]
@@ -1805,7 +1813,8 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "403 status code (no body)"
+            "errorMessage": "403 status code (no body)",
+            "durationMs": 0
           }
         }
       ]
@@ -1872,7 +1881,6 @@
             "api": "anthropic-messages",
             "provider": "anthropic",
             "model": "claude-opus-4-6",
-            "providerThinkingLevel": "max",
             "usage": {
               "input": 0,
               "output": 0,
@@ -1888,7 +1896,8 @@
               }
             },
             "stopReason": "pending",
-            "timestamp": 1700000000123
+            "timestamp": 1700000000123,
+            "providerThinkingLevel": "max"
           }
         },
         {
@@ -1900,7 +1909,6 @@
             "api": "anthropic-messages",
             "provider": "anthropic",
             "model": "claude-opus-4-6",
-            "providerThinkingLevel": "max",
             "usage": {
               "input": 20,
               "output": 3,
@@ -1918,6 +1926,7 @@
             },
             "stopReason": "stop",
             "timestamp": 1700000000123,
+            "providerThinkingLevel": "max",
             "responseId": "msg_fallback",
             "responseModel": "claude-fallback",
             "rawStopReason": "end_turn",
@@ -1935,7 +1944,8 @@
                   ]
                 }
               }
-            ]
+            ],
+            "durationMs": 0
           }
         }
       ]
@@ -2002,7 +2012,6 @@
             "api": "anthropic-messages",
             "provider": "anthropic",
             "model": "claude-opus-4-6",
-            "providerThinkingLevel": "max",
             "usage": {
               "input": 0,
               "output": 0,
@@ -2018,7 +2027,8 @@
               }
             },
             "stopReason": "pending",
-            "timestamp": 1700000000123
+            "timestamp": 1700000000123,
+            "providerThinkingLevel": "max"
           }
         },
         {
@@ -2036,7 +2046,6 @@
             "api": "anthropic-messages",
             "provider": "anthropic",
             "model": "claude-opus-4-6",
-            "providerThinkingLevel": "max",
             "usage": {
               "input": 20,
               "output": 0,
@@ -2054,6 +2063,7 @@
             },
             "stopReason": "pending",
             "timestamp": 1700000000123,
+            "providerThinkingLevel": "max",
             "responseId": "msg_fallback",
             "responseModel": "claude-fallback"
           }
@@ -2072,7 +2082,6 @@
             "api": "anthropic-messages",
             "provider": "anthropic",
             "model": "claude-opus-4-6",
-            "providerThinkingLevel": "max",
             "usage": {
               "input": 20,
               "output": 0,
@@ -2090,9 +2099,11 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
+            "providerThinkingLevel": "max",
             "responseId": "msg_fallback",
             "responseModel": "claude-fallback",
-            "errorMessage": "Anthropic performed an unsupported mid-output model fallback"
+            "errorMessage": "Anthropic performed an unsupported mid-output model fallback",
+            "durationMs": 0
           }
         }
       ]

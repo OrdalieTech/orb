@@ -30,7 +30,7 @@ import { extractGoogleVertexF2 } from "./f2-google-vertex.ts";
 import { extractMistralAzureF2 } from "./f2-mistral-azure.ts";
 import { extractPiMessagesF2 } from "./f2-pi-messages.ts";
 import { extractProvidersF2 } from "./f2-providers.ts";
-import { aheadOfPin } from "./orb-owned.ts";
+import { cloneStreamEvent } from "./orb-owned.ts";
 
 type OpenAIAPI = "openai-responses" | "openai-completions";
 type OpenAIModel = Model<"openai-responses"> | Model<"openai-completions">;
@@ -292,7 +292,7 @@ const completionsChatTemplateModel = model("openai-completions", {
 
 const togetherCompatModel = model("openai-completions", {
   type: "chat",
-  id: "deepseek-ai/DeepSeek-V4-Pro",
+  id: "deepseek-ai/DeepSeek-V4-Pro-0813",
   name: "DeepSeek V4 Pro",
   provider: "together",
   baseUrl: "https://api.together.ai/v1",
@@ -1293,10 +1293,6 @@ const streamDefinitions: StreamDefinition[] = [
   },
 ];
 
-function cloneEvent(event: AssistantMessageEvent): AssistantMessageEvent {
-  return JSON.parse(JSON.stringify(event)) as AssistantMessageEvent;
-}
-
 async function capturedRequest(input: RequestInfo | URL, init?: RequestInit): Promise<CapturedRequest> {
   const request = new Request(input, init);
   const headers: Record<string, string> = {};
@@ -1352,7 +1348,7 @@ async function runUpstream(
           definition.options as OpenAICompletionsOptions,
         );
   const events: AssistantMessageEvent[] = [];
-  for await (const event of eventStream) events.push(cloneEvent(event));
+  for await (const event of eventStream) events.push(cloneStreamEvent(event));
 
   const terminal = events.at(-1);
   if (!request) {
@@ -1479,9 +1475,6 @@ export async function generateF2(upstreamRoot: string, outputRoot: string, upstr
     const authStorage = await extractAuthStorageFixture();
     const providerParity = await extractProvidersF2(upstreamRoot);
     const compatModels = await extractCompatModelsF2(upstreamRoot);
-    await aheadOfPin("F2", "bedrock-requests.json", "cases", bedrock.requests, ["bedrock-rich-replay-long-cache-thinking"]);
-    await aheadOfPin("F2", "google-requests.json", "cases", google.requests, ["google-cross-model-signatures-and-nonvision-image"]);
-    await aheadOfPin("F2", "compat-models.json", "cases", compatModels.cases, ["anthropic-claude-opus-5", "xai-grok-4.3", "xai-grok-4.5"]);
     if (!isDeepStrictEqual([togetherCompatModel, zaiCompatModel], compatModels.cases.slice(0, 2).map((entry) => entry.model))) {
       throw new Error(`OpenAI-compatible F2 models drifted from the pinned upstream generator: expected ${JSON.stringify(compatModels.cases.slice(0, 2).map((entry) => entry.model))}, got ${JSON.stringify([togetherCompatModel, zaiCompatModel])}`);
     }

@@ -110,6 +110,7 @@ type ToolExecutionEndEvent struct {
 	ToolName         string
 	Result           AgentToolResult
 	IsError          bool
+	DurationMS       *int64
 	ParentToolCallID string
 }
 
@@ -300,6 +301,9 @@ func (event ToolExecutionEndEvent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	output = strconv.AppendBool(append(output, `,"isError":`...), event.IsError)
+	if event.DurationMS != nil {
+		output = strconv.AppendInt(append(output, `,"durationMs":`...), *event.DurationMS, 10)
+	}
 	return appendParentToolCallID(output, event.ParentToolCallID), nil
 }
 
