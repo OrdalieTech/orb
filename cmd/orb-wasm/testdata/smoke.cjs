@@ -5,7 +5,9 @@ const pending = [], received = [];
 // Exercise the real provider's Fetch path in a browser-like context without Node's filesystem/process.
 const sandbox = vm.createContext({
   crypto: require("node:crypto").webcrypto, performance, TextEncoder, TextDecoder,
-  WebAssembly, Uint8Array, Uint8ClampedArray, ArrayBuffer, setTimeout, clearTimeout, console, Headers, AbortController, WebSocket,
+  WebAssembly, Uint8Array, Uint8ClampedArray, ArrayBuffer, setTimeout, clearTimeout, console, Headers, AbortController,
+  // A browser may report a transport error while the page is still closing the socket.
+  WebSocket: class extends WebSocket { close(...args) { setTimeout(() => this.dispatchEvent(new Event("error")), 0); return super.close(...args); } },
   postMessage(raw) {
     const message = JSON.parse(raw);
     received.push(message);

@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-package worker
+package websocket
 
 import (
 	"bytes"

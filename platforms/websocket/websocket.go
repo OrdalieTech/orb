@@ -33,14 +33,7 @@ func Dial(ctx context.Context, address string) (net.Conn, error) {
 	if err := ValidateURL(address); err != nil {
 		return nil, err
 	}
-	c, _, err := websocket.Dial(ctx, address, nil)
-	if err != nil {
-		return nil, err
-	}
-	// Dial's context bounds establishment; the returned stream lives until Close.
-	stream := websocket.NetConn(context.Background(), c, websocket.MessageBinary)
-	c.SetReadLimit(64 << 10) // TLS records, not whole RPC frames.
-	return stream, nil
+	return dial(ctx, address)
 }
 
 // Handler exposes no admin API. Origins are exact scheme://host values, never

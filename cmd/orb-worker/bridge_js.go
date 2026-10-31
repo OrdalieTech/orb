@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall/js"
 
+	"github.com/OrdalieTech/orb/platforms/websocket"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/platforms/worker/peer"
 )
@@ -45,7 +46,7 @@ func (b *bridgePeer) open(context.Context) (*peer.Peer, error) {
 func (b *bridgePeer) register(set func(string, func(js.Value, []js.Value) any)) {
 	set("bridgeAccept", func(_ js.Value, args []js.Value) any {
 		// The listeners must exist before this JavaScript turn ends.
-		conn := worker.NewSocketConn(args[0])
+		conn := websocket.NewSocketConn(args[0])
 		go func() {
 			self, err := b.open(context.Background())
 			if err != nil {

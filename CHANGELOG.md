@@ -7,6 +7,8 @@ shown by `/changelog`.
 
 - A Claude session's native tools get the environment Orb's own tools get: an agent's credentials stay out of them when `ORB_TOOL_ENV` is set, and `buzz` from Claude's shell posts through the agent instead of failing with "this shell is not inside an orb chat buzz agent".
 
+- The browser build no longer freezes when the browser reports a WebSocket error while a Bridge connection is closing: it carries the stream on the Worker's `SocketConn` instead of coder/websocket, whose browser client deadlocked every callback in that case.
+
 - `platforms/agent/buzz-owner.py` publishes the owner's record to a relay behind Cloudflare, which refused it with error 1010 because of urllib's default User-Agent.
 
 ## [0.19.13] - 2026-10-24

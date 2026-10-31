@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-package worker
+package websocket
 
 import (
 	"errors"
@@ -13,8 +13,10 @@ import (
 	"time"
 )
 
-// SocketConn is a net.Conn over an accepted Worker WebSocket (the server
-// half of a WebSocketPair after accept()). Each Write is one binary message;
+var uint8Array = js.Global().Get("Uint8Array")
+
+// SocketConn is a net.Conn over a JavaScript WebSocket: a browser's, or an accepted Worker
+// WebSocket (the server half of a WebSocketPair after accept()). Each Write is one binary message;
 // Read sees incoming messages as one byte stream.
 //
 // The socket must not be hibernatable: the stream's state (a TLS session, for
@@ -44,7 +46,7 @@ func NewSocketConn(socket js.Value) *SocketConn {
 	socket.Set("binaryType", "arraybuffer")
 	listen := func(event string, handle func(js.Value)) {
 		listener := js.FuncOf(func(_ js.Value, args []js.Value) any {
-			handle(argument(args))
+			handle(args[0])
 			return nil
 		})
 		conn.events, conn.listeners = append(conn.events, event), append(conn.listeners, listener)
@@ -52,12 +54,12 @@ func NewSocketConn(socket js.Value) *SocketConn {
 	}
 	listen("message", func(event js.Value) {
 		data := event.Get("data")
-		if !data.InstanceOf(jsUint8Array) {
+		if !data.InstanceOf(uint8Array) {
 			if data.Type() != js.TypeObject || data.Get("byteLength").Type() != js.TypeNumber {
 				conn.fail(errors.New("worker: text WebSocket message on a binary stream"))
 				return
 			}
-			data = jsUint8Array.New(data)
+			data = uint8Array.New(data)
 		}
 		chunk := make([]byte, data.Length())
 		js.CopyBytesToGo(chunk, data)
@@ -126,7 +128,9 @@ func (conn *SocketConn) Write(data []byte) (written int, err error) {
 			written, err = 0, fmt.Errorf("worker: WebSocket send: %v", recovered)
 		}
 	}()
-	conn.socket.Call("send", bytesToJS(data))
+	array := uint8Array.New(len(data))
+	js.CopyBytesToJS(array, data)
+	conn.socket.Call("send", array)
 	return len(data), nil
 }
 

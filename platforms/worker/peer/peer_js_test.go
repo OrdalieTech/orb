@@ -10,6 +10,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/platforms/websocket"
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
 
@@ -83,8 +84,8 @@ func TestPeerOverDurableObjectPorts(t *testing.T) {
 	defer func() { _ = laptop.Close() }()
 	admin(t, self, "trust", map[string]string{"peer_id": laptop.PeerID()})
 
-	go func() { _ = self.Serve(ctx, worker.NewSocketConn(left)) }()
-	channel, _, err := laptop.Connect(ctx, worker.NewSocketConn(right), peerID, false)
+	go func() { _ = self.Serve(ctx, websocket.NewSocketConn(left)) }()
+	channel, _, err := laptop.Connect(ctx, websocket.NewSocketConn(right), peerID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
