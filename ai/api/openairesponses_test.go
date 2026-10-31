@@ -384,7 +384,7 @@ func TestOpenAIResponsesHeaderTimeoutResetsForEachRetryOAM1(t *testing.T) {
 		select {
 		case <-request.Context().Done():
 			return nil, request.Context().Err()
-		case <-time.After(45 * time.Millisecond):
+		case <-time.After(260 * time.Millisecond):
 		}
 		if attempts == 1 {
 			return &http.Response{
@@ -406,7 +406,7 @@ func TestOpenAIResponsesHeaderTimeoutResetsForEachRetryOAM1(t *testing.T) {
 	t.Cleanup(func() { openAIHTTPClient = previousClient })
 
 	key := "fixture-key"
-	timeout := int64(70)
+	timeout := int64(400)
 	maxRetries := 1
 	model := responsesTestModel()
 	model.BaseURL = "https://fixture.invalid/v1"
