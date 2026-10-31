@@ -18,13 +18,13 @@ func TestEstimateContextTokensIgnoresStaleUsage(t *testing.T) {
 		},
 	}
 	estimate := estimateContextTokens(requestContext)
-	if estimate.tokens != 1_005 || estimate.usageTokens != 0 || estimate.trailingTokens != 1_005 || estimate.lastUsageIndex != -1 {
+	if estimate.tokens != 1_149 || estimate.usageTokens != 0 || estimate.trailingTokens != 1_149 || estimate.lastUsageIndex != -1 {
 		t.Fatalf("estimate = %#v", estimate)
 	}
 	model := &ai.Model{ContextWindow: 10_000, MaxTokens: 8_000}
 	options := buildBaseStreamOptions(model, requestContext, nil)
-	if options.MaxTokens == nil || *options.MaxTokens != 4_899 {
-		t.Fatalf("max tokens = %v, want 4899", options.MaxTokens)
+	if options.MaxTokens == nil || *options.MaxTokens != 4_755 {
+		t.Fatalf("max tokens = %v, want 4755", options.MaxTokens)
 	}
 }
 
@@ -37,7 +37,7 @@ func TestEstimateContextTokensUsesNewApplicableUsage(t *testing.T) {
 		&ai.UserMessage{Content: ai.NewUserText("tail"), Timestamp: 500},
 	}}
 	estimate := estimateContextTokens(requestContext)
-	if estimate.tokens != 2_001 || estimate.usageTokens != 2_000 || estimate.trailingTokens != 1 || estimate.lastUsageIndex != 3 {
+	if estimate.tokens != 2_002 || estimate.usageTokens != 2_000 || estimate.trailingTokens != 2 || estimate.lastUsageIndex != 3 {
 		t.Fatalf("estimate = %#v", estimate)
 	}
 }

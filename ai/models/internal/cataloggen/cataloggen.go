@@ -578,7 +578,8 @@ func addCloudflareGateway(result map[string]map[string]ai.Model, source sourcePr
 		case "openai":
 			api, baseURL = ai.APIOpenAIResponses, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai"
 		case "anthropic":
-			api, baseURL = ai.APIAnthropicMessages, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic"
+			// The /anthropic passthrough forwards the id unchanged and Anthropic only accepts dashed ones.
+			api, baseURL, id = ai.APIAnthropicMessages, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic", strings.ReplaceAll(id, ".", "-")
 		case "workers-ai":
 			api, baseURL, id = ai.APIOpenAICompletions, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat", key
 		default:
