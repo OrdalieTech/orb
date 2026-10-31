@@ -223,6 +223,8 @@ try {
 } finally {
   laptop?.kill("SIGTERM");
   await orb(["bridge", "--profile", PROFILE, "stop"]).catch(() => {});
+  // The next run starts an Orb on the same agent directory, which refuses while this one still runs.
+  if (laptop && laptop.exitCode === null) await once(laptop, "exit");
   if (server) await stop(server);
   if (args.dir) rmSync(join(args.dir, ".dev.vars"), { force: true });
   modelServer.close();
