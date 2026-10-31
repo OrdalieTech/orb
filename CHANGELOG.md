@@ -9,6 +9,8 @@ shown by `/changelog`.
 
 - The browser build no longer freezes when the browser reports a WebSocket error while a Bridge connection is closing: it carries the stream on the Worker's `SocketConn` instead of coder/websocket, whose browser client deadlocked every callback in that case.
 
+- A command's last output is no longer dropped when the machine is busy: the 100 ms exit grace closed the pipes while the shell's final bytes were still unread (a background job then reported "did not start").
+
 - `platforms/agent/buzz-owner.py` publishes the owner's record to a relay behind Cloudflare, which refused it with error 1010 because of urllib's default User-Agent.
 
 ## [0.19.13] - 2026-10-24

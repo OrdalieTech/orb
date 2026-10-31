@@ -11,11 +11,25 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Isolate starts cmd in a new session, so it leads a process group Kill can reach.
 func Isolate(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+}
+
+// unread reports whether pipe holds bytes its reader has not taken yet.
+func unread(pipe *os.File) (ready bool) {
+	if raw, err := pipe.SyscallConn(); err == nil {
+		_ = raw.Control(func(fd uintptr) {
+			fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+			n, _ := unix.Poll(fds, 0)
+			ready = n > 0 && fds[0].Revents&unix.POLLIN != 0
+		})
+	}
+	return ready
 }
 
 // expendable makes the process the kernel's first victim when memory runs out,

@@ -291,6 +291,8 @@ func (pipes *pipeReaders) signal() {
 
 // wait returns once both readers finish: at end of stream, or after the exit
 // grace passes quietly, when it closes the pipes a detached descendant holds.
+// Bytes still unread then mean a starved reader, not a quiet pipe: closing
+// would drop the shell's last output.
 func (pipes *pipeReaders) wait(stdout, stderr *os.File) {
 	timer := time.NewTimer(exitStdioGrace)
 	defer timer.Stop()
@@ -304,6 +306,10 @@ func (pipes *pipeReaders) wait(stdout, stderr *os.File) {
 		case <-timer.C:
 			if remaining := pipes.remainingGrace(); remaining > 0 {
 				timer.Reset(remaining)
+				continue
+			}
+			if unread(stdout) || unread(stderr) {
+				timer.Reset(exitStdioGrace)
 				continue
 			}
 			_, _ = stdout.Close(), stderr.Close()
