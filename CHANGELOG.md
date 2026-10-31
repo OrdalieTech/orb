@@ -17,7 +17,7 @@ shown by `/changelog`.
 
 - The provider `azure-openai-responses` is now `azure`, as in pi 1.0.3: rename its key in `auth.json`, `models.json` and `settings.json` (`defaultProvider`, `enabledModels`, `modelThinkingLevels`). `kimi-coding` speaks Chat Completions at `https://api.kimi.com/coding/v1` (pi 1.3.0): a `models.json` base URL override for it must now end in `/v1`.
 
-- A model or caller header can override Codex's `originator` and `User-Agent`; prompt-length pricing tiers reach every models.dev provider and OpenRouter's overrides, and OpenRouter's negative placeholder prices count as zero; Together's DeepSeek V4 Pro keeps its thinking levels under its new id; an empty `--model` pattern matches nothing; a tool hidden by `prepareLoadout` no longer appears in the prompt's tool list, rules or skills hint, and extensions see `hiddenTools` in `systemPromptOptions` (pi 1.0.2 to 1.4.0).
+- A model or caller header can override Codex's `originator` and `User-Agent`; prompt-length pricing tiers reach every models.dev provider and OpenRouter's overrides, and OpenRouter's negative placeholder prices count as zero; Together's DeepSeek V4 Pro keeps its thinking levels under its new id; an empty `--model` pattern matches nothing; a tool hidden by `prepareLoadout` no longer appears in the prompt's tool list, rules or skills hint, and extensions see `hiddenTools` in `systemPromptOptions` (pi 1.0.2 to 1.4.0). Output limits assume 3.5 characters per token instead of 4, and Cloudflare AI Gateway's Claude models use dashed ids (`claude-opus-5-5`).
 
 ## [0.19.13] - 2026-10-24
 

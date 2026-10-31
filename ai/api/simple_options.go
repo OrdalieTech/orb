@@ -9,7 +9,6 @@ import (
 
 const (
 	contextSafetyTokens float64 = 4096
-	charsPerToken       int64   = 4
 	estimatedImageChars int64   = 4800
 	minimumMaxTokens    float64 = 1
 )
@@ -185,7 +184,7 @@ func estimateMessageTokens(message ai.Message) int64 {
 			}
 		}
 	}
-	return (chars + charsPerToken - 1) / charsPerToken
+	return ceilTokens(chars)
 }
 
 func estimateToolsTokens(tools []ai.Tool) int64 {
@@ -199,10 +198,10 @@ func estimateToolsTokens(tools []ai.Tool) int64 {
 	return estimateTextTokens(string(encoded))
 }
 
-func estimateTextTokens(text string) int64 {
-	length := jsStringLength(text)
-	return (length + charsPerToken - 1) / charsPerToken
-}
+func estimateTextTokens(text string) int64 { return ceilTokens(jsStringLength(text)) }
+
+// ceilTokens is pi's ceil(chars / 3.5) (4 before pi 1.1.0).
+func ceilTokens(chars int64) int64 { return (2*chars + 6) / 7 }
 
 // jsStringLength counts value's UTF-16 code units, an invalid byte as one.
 func jsStringLength(value string) int64 {
