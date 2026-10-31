@@ -243,7 +243,7 @@ func TestF12EditorSessions(t *testing.T) {
 					t.Fatalf("unknown editor op %q", op.Do)
 				}
 				if fixtureCase.Provider != nil && (op.Do == "input" || op.Do == "setText") {
-					time.Sleep(30 * time.Millisecond)
+					editor.FlushAutocomplete()
 				}
 			}
 			recorder.done()

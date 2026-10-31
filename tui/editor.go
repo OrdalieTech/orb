@@ -2506,6 +2506,16 @@ func (editor *Editor) applyAutocompleteSuggestions(suggestions *AutocompleteSugg
 	}
 }
 
+// FlushAutocomplete blocks until no debounce timer or request is pending
+// (the Go analog of upstream tests awaiting the request task).
+func (editor *Editor) FlushAutocomplete() {
+	editor.mu.Lock()
+	for editor.autocompleteBusy > 0 {
+		editor.autocompleteIdle.Wait()
+	}
+	editor.mu.Unlock()
+}
+
 // autocompleteDone decrements the busy counter; caller holds editor.mu.
 func (editor *Editor) autocompleteDone() {
 	editor.autocompleteBusy--

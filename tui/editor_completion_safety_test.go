@@ -45,10 +45,10 @@ func TestEditorCompletionResultSafety(t *testing.T) {
 				editor.SetAutocompleteProvider(&safetyCompletionProvider{result: tc.result})
 				if pathway == "forced-single" {
 					press(editor, "\t")
-					editor.flushAutocomplete()
+					editor.FlushAutocomplete()
 				} else {
 					editor.tryTriggerAutocomplete()
-					editor.flushAutocomplete()
+					editor.FlushAutocomplete()
 					if !editor.IsShowingAutocomplete() {
 						t.Fatal("expected completion popup")
 					}
@@ -120,7 +120,7 @@ func TestEditorCompletionFreshness(t *testing.T) {
 					editor.SetAutocompleteProvider(provider)
 					if path == "popup" {
 						editor.tryTriggerAutocomplete()
-						editor.flushAutocomplete()
+						editor.FlushAutocomplete()
 					}
 					done := make(chan struct{})
 					go func() {
@@ -129,7 +129,7 @@ func TestEditorCompletionFreshness(t *testing.T) {
 						} else {
 							press(editor, "\t")
 						}
-						editor.flushAutocomplete()
+						editor.FlushAutocomplete()
 						close(done)
 					}()
 					if mode == "blocking" {
@@ -162,11 +162,11 @@ func TestEditorCompletionOwnsReturnedLines(t *testing.T) {
 			editor.SetAutocompleteProvider(&safetyCompletionProvider{result: CompletionResult{Lines: lines, CursorCol: 4}})
 			if path == "popup" {
 				editor.tryTriggerAutocomplete()
-				editor.flushAutocomplete()
+				editor.FlushAutocomplete()
 				press(editor, "\r")
 			} else {
 				press(editor, "\t")
-				editor.flushAutocomplete()
+				editor.FlushAutocomplete()
 			}
 			lines[0] = "corrupted"
 			wantText(t, editor, "done")

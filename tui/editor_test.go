@@ -530,7 +530,7 @@ func TestEditorSkillBadgeCompletionRequiresSubmit(t *testing.T) {
 	editor.OnSubmit = func(text string) { submitted = text }
 	editor.SetText("@i")
 	editor.tryTriggerAutocomplete()
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	press(editor, "\r")
 	if submitted != "" || editor.GetText() != "/skill:inspect" {
 		t.Fatalf("completion submitted %q with editor text %q", submitted, editor.GetText())
@@ -549,7 +549,7 @@ func TestEditorAutocompleteHooksMayReenter(t *testing.T) {
 	}}
 	editor.SetAutocompleteProvider(provider)
 	press(editor, "x", "\t")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	wantText(t, editor, "done")
 	if !provider.triggerCalled.Load() || !provider.gateCalled.Load() || !provider.applyCalled.Load() {
 		t.Fatalf("hooks called: trigger=%v gate=%v apply=%v", provider.triggerCalled.Load(), provider.gateCalled.Load(), provider.applyCalled.Load())
@@ -574,7 +574,7 @@ func TestEditorAutocompleteMenu(t *testing.T) {
 
 	press(editor, "s", "r", "c")
 	press(editor, "\t")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	wantText(t, editor, "src")
 	if !editor.IsShowingAutocomplete() {
 		t.Fatal("menu should be showing")
@@ -603,7 +603,7 @@ func TestEditorAutocompleteDebounce(t *testing.T) {
 		t.Fatal("menu should not show before debounce")
 	}
 	time.Sleep(50 * time.Millisecond)
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	if calls := provider.calls.Load(); calls != 1 {
 		t.Fatalf("calls after debounce = %d", calls)
 	}
@@ -620,7 +620,7 @@ func TestEditorSlashCommandConfirmSubmits(t *testing.T) {
 	editor.OnSubmit = func(text string) { submitted = append(submitted, text) }
 
 	press(editor, "/", "h", "e")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	if !editor.IsShowingAutocomplete() {
 		t.Fatal("slash menu should show")
 	}
@@ -639,7 +639,7 @@ func TestEditorInlineSlashCompletionKeepsDraft(t *testing.T) {
 	submitted := false
 	editor.OnSubmit = func(string) { submitted = true }
 	press(editor, "a", " ", "/")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	if !editor.IsShowingAutocomplete() {
 		t.Fatal("inline slash menu did not open")
 	}
@@ -673,7 +673,7 @@ func TestEditorStaleSlashAutocompleteDoesNotRewriteSubmit(t *testing.T) {
 	editor.OnSubmit = func(text string) { submitted = text }
 
 	press(editor, "/")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	press(editor, "p", "l", "u", "g", "i", "n", "s", " ", "\r")
 	if submitted != "/plugins" {
 		t.Fatalf("submitted = %q, want /plugins", submitted)
@@ -681,17 +681,7 @@ func TestEditorStaleSlashAutocompleteDoesNotRewriteSubmit(t *testing.T) {
 
 	close(block)
 	released = true
-	editor.flushAutocomplete()
-}
-
-// flushAutocomplete blocks until no debounce timer or request is pending
-// (the Go analog of upstream tests awaiting the request task).
-func (editor *Editor) flushAutocomplete() {
-	editor.mu.Lock()
-	for editor.autocompleteBusy > 0 {
-		editor.autocompleteIdle.Wait()
-	}
-	editor.mu.Unlock()
+	editor.FlushAutocomplete()
 }
 
 func TestEditorNativeSelectionEditing(t *testing.T) {

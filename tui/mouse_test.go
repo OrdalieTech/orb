@@ -483,7 +483,7 @@ func TestEditorAutocompletePopupScopesMouseMotion(t *testing.T) {
 	// Opening the popup resyncs and turns 1003 on. The open path is
 	// asynchronous, so poll for the escape bytes.
 	press(editor, "#", "x")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	deadline := time.Now().Add(2 * time.Second)
 	for !strings.Contains(terminal.output(), mouseMotionOn) {
 		if time.Now().After(deadline) {
@@ -545,7 +545,7 @@ func TestEditorClickAcceptsAutocompleteSuggestion(t *testing.T) {
 		}
 	}})
 	press(editor, "#", "x")
-	editor.flushAutocomplete()
+	editor.FlushAutocomplete()
 	if !editor.IsShowingAutocomplete() {
 		t.Fatal("autocomplete did not open")
 	}
