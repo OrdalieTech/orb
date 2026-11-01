@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -21,7 +22,7 @@ func unsupportedStrict(format string, arguments ...any) error {
 
 // Declaration order matters: the first key present names the error.
 var unsupportedStrictSchemaKeys = []string{
-	"$ref", "$defs", "definitions", "allOf", "oneOf", "patternProperties",
+	"allOf", "oneOf", "patternProperties",
 	"dependentSchemas", "dependencies", "unevaluatedProperties", "propertyNames",
 	"contains", "prefixItems", "not", "if", "then", "else",
 }
@@ -111,6 +112,28 @@ func makeStrictJSONSchemaNode(schema any, rejects strictKeywordCheck) (any, erro
 				encoded, _ := jsonwire.Marshal(member.Value)
 				return nil, unsupportedStrict("%s: %s is unsupported", member.Name, encoded)
 			}
+		}
+	}
+	if ref, present := object.Value("$ref"); present {
+		if target, _ := ref.(string); !strings.HasPrefix(target, "#") {
+			return nil, unsupportedStrict("external $ref is unsupported")
+		}
+	}
+	for _, key := range []string{"$defs", "definitions"} {
+		value, present := object.Value(key)
+		if !present {
+			continue
+		}
+		definitions, ok := value.(jsonwire.OrderedObject)
+		if !ok {
+			return nil, unsupportedStrict("%s must be a schema map", key)
+		}
+		for index, member := range definitions {
+			converted, err := makeStrictJSONSchemaNode(member.Value, rejects)
+			if err != nil {
+				return nil, err
+			}
+			definitions[index].Value = converted
 		}
 	}
 

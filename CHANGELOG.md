@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Strict tool sampling keeps schemas that use `$ref` with `$defs` or `definitions` (Pydantic and Zod output): their definitions are made strict too, where pi sent such tools non-strict. Only a `$ref` outside the schema still falls back.
+
 - A Claude session's native tools get the environment Orb's own tools get: an agent's credentials stay out of them when `ORB_TOOL_ENV` is set, and `buzz` from Claude's shell posts through the agent instead of failing with "this shell is not inside an orb chat buzz agent".
 
 - The browser build no longer freezes when the browser reports a WebSocket error while a Bridge connection is closing: it carries the stream on the Worker's `SocketConn` instead of coder/websocket, whose browser client deadlocked every callback in that case.
