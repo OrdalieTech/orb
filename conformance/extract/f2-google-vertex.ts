@@ -558,6 +558,9 @@ async function extractVertexProvider(upstreamRoot: string): Promise<VertexProvid
       findEnvKeys(provider: string, env?: Record<string, string>): string[] | undefined;
       getEnvApiKey(provider: string, env?: Record<string, string>): string | undefined;
     };
+    // env-api-keys loads node:fs, node:os and node:path by dynamic import; under the tsx loader that
+    // takes more than one tick, so wait for the same imports before reading ADC.
+    await Promise.all(["node:fs", "node:os", "node:path"].map((specifier) => import(specifier)));
     await new Promise<void>((resolve) => setImmediate(resolve));
     const envAPIKeys = {
       apiKey: envAPIKeyModule.getEnvApiKey("google-vertex", {
