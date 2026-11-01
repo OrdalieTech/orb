@@ -53,7 +53,7 @@ func validate(schema Schema, value any, clone bool) (any, error) {
 			return nil, fmt.Errorf("jsonschema: clone value: %w", err)
 		}
 	}
-	normalizeOptionalNulls(value, decodedSchema)
+	normalizeOptionalNulls(value, decodedSchema, decodedSchema)
 	coerced := coerceValue(value, decodedSchema)
 	issues := validateValue(coerced, decodedSchema, "")
 	if len(issues) > 0 {
@@ -102,9 +102,9 @@ func formatToolValidationError(toolName string, err error, received string) erro
 
 // normalizeOptionalNulls drops nulls sent for optional properties whose schema
 // rejects null, so a provider's explicit null reads as an omission. Properties
-// behind a $ref keep their null because the reference cannot be checked here.
-func normalizeOptionalNulls(value, schema any) {
-	object, _ := schema.(*schemaObject)
+// behind a $ref that does not resolve within root keep their null.
+func normalizeOptionalNulls(value, schema, root any) {
+	object, _ := resolveLocalRef(schema, root).(*schemaObject)
 	if object == nil {
 		return
 	}
@@ -113,12 +113,12 @@ func normalizeOptionalNulls(value, schema any) {
 		case []any:
 			for index := range items {
 				if index < len(itemSchema) {
-					normalizeOptionalNulls(items[index], itemSchema[index])
+					normalizeOptionalNulls(items[index], itemSchema[index], root)
 				}
 			}
 		case *schemaObject:
 			for _, item := range items {
-				normalizeOptionalNulls(item, itemSchema)
+				normalizeOptionalNulls(item, itemSchema, root)
 			}
 		}
 		return
@@ -130,27 +130,46 @@ func normalizeOptionalNulls(value, schema any) {
 	}
 	required := stringList(object.values["required"])
 	for _, name := range properties.order {
-		propertySchema := properties.values[name]
+		propertySchema := resolveLocalRef(properties.values[name], root)
 		current, present := values[name]
 		if !present {
 			continue
 		}
-		if current == nil && !slices.Contains(required, name) && !hasSchemaRef(propertySchema) &&
+		if current == nil && !slices.Contains(required, name) && propertySchema != nil &&
 			len(validateValue(nil, propertySchema, "")) > 0 {
 			delete(values, name)
 			continue
 		}
-		normalizeOptionalNulls(current, propertySchema)
+		normalizeOptionalNulls(current, propertySchema, root)
 	}
 }
 
-func hasSchemaRef(schema any) bool {
-	object, _ := schema.(*schemaObject)
-	if object == nil {
-		return false
+// resolveLocalRef follows a schema's "#" JSON-pointer $ref within root, up to
+// a bounded chain; an external, dangling or cyclic reference resolves to nil.
+func resolveLocalRef(schema, root any) any {
+	for range 32 {
+		object, _ := schema.(*schemaObject)
+		if object == nil {
+			return schema
+		}
+		ref, isString := object.values["$ref"].(string)
+		if !isString {
+			return schema
+		}
+		pointer, local := strings.CutPrefix(ref, "#")
+		if !local || pointer != "" && !strings.HasPrefix(pointer, "/") {
+			return nil
+		}
+		schema = root
+		for _, token := range strings.Split(pointer, "/")[1:] {
+			parent, _ := schema.(*schemaObject)
+			if parent == nil {
+				return nil
+			}
+			schema = parent.values[strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")]
+		}
 	}
-	_, isString := object.values["$ref"].(string)
-	return isString
+	return nil
 }
 
 // decodedSchemas keeps decoded schemas, which nothing modifies, by their

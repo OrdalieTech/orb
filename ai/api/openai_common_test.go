@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 )
 
 func TestPostOpenAIStreamPreservesWireJSONAndHooksResponse(t *testing.T) {
@@ -174,6 +176,10 @@ func TestStrictSamplingKeepsInternalReferences(t *testing.T) {
 	want := `{"type":"object","properties":{"a":{"anyOf":[{"$ref":"#/$defs/A"},{"type":"null"}]}},"$defs":{"A":{"type":"object","properties":{"x":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["x"],"additionalProperties":false}},"required":["a"],"additionalProperties":false}`
 	if string(parameters) != want {
 		t.Fatalf("parameters = %s", parameters)
+	}
+	arguments, err := jsonschema.Validate(tool.Parameters, map[string]any{"a": map[string]any{"x": nil}})
+	if err != nil || fmt.Sprint(arguments) != "map[a:map[]]" {
+		t.Fatalf("strict nulls inside a definition = %v, %v", arguments, err)
 	}
 	tool.Parameters = ai.JSONSchema(`{"type":"object","properties":{"a":{"$ref":"https://example.com/a.json"}}}`)
 	if _, err := resolveJSONSchemaStrictSampling(tool, true); err == nil || !strings.Contains(err.Error(), "external $ref is unsupported") {
