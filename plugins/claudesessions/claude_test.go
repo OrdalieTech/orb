@@ -250,16 +250,21 @@ func fixture(t *testing.T, policy ...*plugins.Policy) (*agent.AgentSessionRuntim
 	}
 	t.Cleanup(func() {
 		host.Dispose(context.Background())
-		// Dispose ends the hosts asynchronously, and one may still write its transcript
-		// into dir (Windows cannot remove a directory under it); each is killed within 5 s.
-		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			hosts, _ := os.ReadFile(filepath.Join(dir, "claude", "hosts"))
-			if strings.Count(string(hosts), "+") == strings.Count(string(hosts), "-") {
-				return
-			}
-		}
+		awaitFakeHosts(filepath.Join(dir, "claude"))
 	})
 	return host, driver
+}
+
+// awaitFakeHosts waits for the fake hosts under configDir to exit: Dispose ends
+// them asynchronously, and one may still write its transcript there (Windows and
+// macOS cannot remove a directory being filled); each is killed within 5 s.
+func awaitFakeHosts(configDir string) {
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		hosts, _ := os.ReadFile(filepath.Join(configDir, "hosts"))
+		if strings.Count(string(hosts), "+") == strings.Count(string(hosts), "-") {
+			return
+		}
+	}
 }
 func awaitInput(t *testing.T, s *agent.SessionRuntime) *agent.InputRequest {
 	t.Helper()

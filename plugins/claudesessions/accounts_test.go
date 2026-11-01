@@ -245,7 +245,10 @@ func shared(t *testing.T, live bool, register func(*extensions.Registry) error) 
 		t.Fatal(err)
 	}
 	bind(runtime)
-	t.Cleanup(runtime.Dispose)
+	t.Cleanup(func() {
+		runtime.Dispose()
+		awaitFakeHosts(filepath.Join(dir, "claude-config"))
+	})
 	return runtime, orb, dir
 }
 
