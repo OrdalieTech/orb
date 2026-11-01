@@ -240,7 +240,7 @@ func TestSessionSelectorProgressiveUpdatesPreserveTouchedSelectionAndCancelLoads
 }
 
 func TestSessionSelectorMutationRefreshCancelsReplacedAndActiveLoads(t *testing.T) {
-	info := session.SessionInfo{Path: "/delete.jsonl", ID: "delete", Modified: time.Now(), FirstMessage: "delete"}
+	info := session.SessionInfo{Path: "/delete.jsonl", ID: "delete", Modified: time.Now(), FirstMessage: "doomed"}
 	started := make(chan int, 2)
 	cancelled := make(chan int, 2)
 	var calls atomic.Int32
@@ -261,7 +261,7 @@ func TestSessionSelectorMutationRefreshCancelsReplacedAndActiveLoads(t *testing.
 	if got := <-started; got != 1 {
 		t.Fatalf("initial loader call = %d, want 1", got)
 	}
-	waitForSelector(t, selector, "delete")
+	waitForSelector(t, selector, "doomed")
 
 	selector.mu.Lock()
 	selector.startDeleteLocked()
