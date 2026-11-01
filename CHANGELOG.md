@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-01
+
+Orb follows pi 1.4.0, and strict tool sampling keeps schemas built from `$ref` and `$defs`: messages, tool results and settled runs record their duration and outcome as pi 1.4 writes them, the Azure OpenAI provider is now `azure`, and a Claude session's native tools get the environment Orb's own tools get.
+
 - Strict tool sampling keeps schemas that use `$ref` with `$defs` or `definitions` (Pydantic and Zod output): their definitions are made strict too, where pi sent such tools non-strict. Only a `$ref` outside the schema still falls back.
 
 - A Claude session's native tools get the environment Orb's own tools get: an agent's credentials stay out of them when `ORB_TOOL_ENV` is set, and `buzz` from Claude's shell posts through the agent instead of failing with "this shell is not inside an orb chat buzz agent".
