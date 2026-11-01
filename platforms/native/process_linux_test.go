@@ -14,23 +14,25 @@ import (
 )
 
 func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
-	sleep, err := exec.LookPath("sleep")
-	if err != nil {
-		t.Skip("sleep is unavailable")
+	if os.Getenv("ORB_TEST_WRITER") != "" {
+		time.Sleep(time.Minute)
+		return
 	}
-	data, err := os.ReadFile(sleep)
+	// The writer is this test binary run under the name orb: a copy of sleep would
+	// exit at once on Ubuntu, whose uutils sleep dispatches on its binary's name.
+	test, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	orb := filepath.Join(t.TempDir(), "orb")
-	if err := os.WriteFile(orb, data, 0o700); err != nil {
+	if err := os.Symlink(test, orb); err != nil {
 		t.Fatal(err)
 	}
 	agentDir, otherDir := t.TempDir(), t.TempDir()
 	t.Setenv(config.EnvAgentDir, agentDir)
 	start := func(dir string) *exec.Cmd {
-		process := exec.Command(orb, "30")
-		process.Env = append(os.Environ(), config.EnvAgentDir+"="+dir)
+		process := exec.Command(orb, "-test.run=^TestMigrationGuardReadsProcfsWithoutPS$")
+		process.Env = append(os.Environ(), "ORB_TEST_WRITER=1", config.EnvAgentDir+"="+dir)
 		if err := process.Start(); err != nil {
 			t.Fatal(err)
 		}
