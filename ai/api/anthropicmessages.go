@@ -319,7 +319,7 @@ func StreamAnthropicMessagesWithOptions(
 		}) {
 			// Anthropic refused the strict tool set as too large; once more with tools that only
 			// prefer strict sampling sent non-strict (upstream 1.2.0 #10409).
-			appendStrictToolsFallback(output, "anthropic", err)
+			appendStrictToolsFallback(output, "anthropic", err.Error())
 			response, isOAuth, err = send(true)
 		}
 		if err != nil {
@@ -1791,14 +1791,14 @@ func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAl
 
 // appendStrictToolsFallback records that a provider refused the strict tool set as too large and the request
 // went again with preferred-strict tools relaxed.
-func appendStrictToolsFallback(output *ai.AssistantMessage, provider string, err error) {
+func appendStrictToolsFallback(output *ai.AssistantMessage, provider, message string) {
 	diagnostics := []ai.AssistantMessageDiagnostic{}
 	if output.Diagnostics != nil {
 		diagnostics = append(diagnostics, *output.Diagnostics...)
 	}
 	diagnostics = append(diagnostics, ai.AssistantMessageDiagnostic{
 		Type: provider + "_strict_tools_fallback", Timestamp: openAINowUnixMilli(),
-		Error: &ai.DiagnosticErrorInfo{Message: err.Error()}, Details: json.RawMessage(`{"reason":"strict_tool_limits_exceeded"}`),
+		Error: &ai.DiagnosticErrorInfo{Message: message}, Details: json.RawMessage(`{"reason":"strict_tool_limits_exceeded"}`),
 	})
 	output.Diagnostics = &diagnostics
 }

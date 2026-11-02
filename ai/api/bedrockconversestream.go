@@ -359,7 +359,13 @@ func StreamBedrockConverseWithOptions(
 		// Bedrock checks tool schemas before it streams, so once more with tools that only prefer strict sampling
 		// sent non-strict never repeats output (upstream #11416).
 		if err != nil && ctx.Err() == nil && preferredStrict && extractBedrockErrorCode(err) == "ValidationException" && anthropicStrictToolLimit(err.Error()) {
-			appendStrictToolsFallback(output, "bedrock", err)
+			// The SDK's message, as upstream records it, not the wrapped operation error.
+			message := err.Error()
+			var apiError interface{ ErrorMessage() string }
+			if errors.As(err, &apiError) && apiError.ErrorMessage() != "" {
+				message = apiError.ErrorMessage()
+			}
+			appendStrictToolsFallback(output, "bedrock", message)
 			if payload, _, err = build(true); err == nil {
 				response, err = transport.Send(ctx, payload)
 			}

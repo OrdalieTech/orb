@@ -1356,6 +1356,42 @@ func TestNavigateTreeCreatesBranchSummary(t *testing.T) {
 	}
 }
 
+// A context edit on a sibling branch does not hide a message from the branch being summarized (upstream #11680).
+func TestNavigateTreeSummaryIgnoresSiblingBranchEdits(t *testing.T) {
+	provider := testFaux(1000)
+	var prompt string
+	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		if user, ok := request.Messages[0].(*ai.UserMessage); ok && user.Content.Text != nil {
+			prompt = *user.Content.Text
+		} else if ok {
+			for _, block := range user.Content.Blocks {
+				if text, isText := block.(*ai.TextContent); isText {
+					prompt += text.Text
+				}
+			}
+		}
+		return runtimeAssistant(provider, "## Goal\nsummary", 10), nil
+	})})
+	runtime, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	first, _ := manager.AppendMessage(userMessage("first"))
+	answer, _ := manager.AppendMessage(runtimeAssistant(provider, "sibling-hidden answer", 10))
+	if _, err := manager.AppendContextEdit(answer, json.RawMessage(`null`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Branch(answer); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = manager.AppendMessage(userMessage("third"))
+	_, _ = manager.AppendMessage(runtimeAssistant(provider, "third answer", 10))
+	runtime.RefreshContext()
+	if _, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, "sibling-hidden answer") || !strings.Contains(prompt, "third answer") {
+		t.Fatalf("summary prompt = %q", prompt)
+	}
+}
+
 func TestNavigateTreeRejectsActiveResponse(t *testing.T) {
 	provider := testFaux(1000)
 	started := make(chan struct{})

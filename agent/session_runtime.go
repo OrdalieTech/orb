@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1722,6 +1723,14 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	if err != nil {
 		return NavigateTreeResult{}, err
 	}
+	// Only the context edits on the branch being left apply to it, not a sibling branch's (upstream #11680).
+	onBranch := make([]sessionstore.SessionEntry, 0, len(collected.Entries))
+	for _, entry := range entries {
+		if slices.ContainsFunc(collected.Entries, func(kept harness.SessionEntry) bool { return kept.ID == entry.ID }) {
+			onBranch = append(onBranch, entry)
+		}
+	}
+	collected.Entries = projectSessionEntries(onBranch)
 	branchContext, cancel := context.WithCancel(ctx)
 	runtime.mu.Lock()
 	runtime.branchCancel = cancel
