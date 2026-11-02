@@ -681,15 +681,20 @@ func (manager *SessionManager) appendEntryLocked(entry SessionEntry) (string, er
 	if entry.Type == "message" && record.Entry.decoded == nil {
 		record.Entry.decoded, _ = ai.UnmarshalMessage(record.Entry.Message)
 	}
+	previousLeaf := manager.leafID
 	manager.fileEntries = append(manager.fileEntries, record)
 	manager.byID[entry.ID] = record.Entry
 	id := entry.ID
 	manager.leafID = &id
-	manager.addAggregateEntryLocked(record.Entry)
-	manager.revision++
+	// An entry the file did not get leaves memory too, so no later entry names a missing parent (upstream #11460).
 	if err := manager.persistEntryLocked(record); err != nil {
+		manager.fileEntries = manager.fileEntries[:len(manager.fileEntries)-1]
+		delete(manager.byID, entry.ID)
+		manager.leafID = previousLeaf
 		return "", err
 	}
+	manager.addAggregateEntryLocked(record.Entry)
+	manager.revision++
 	return entry.ID, nil
 }
 

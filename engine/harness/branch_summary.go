@@ -173,7 +173,7 @@ func generateBranchSummary(ctx context.Context, entries []SessionEntry, options 
 		options.Complete,
 		options.Model,
 		request,
-		&ai.SimpleStreamOptions{},
+		summaryStreamOptions(options.Model, options.ThinkingLevel),
 		options.Retry,
 		options.Callbacks,
 		product,

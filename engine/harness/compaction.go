@@ -717,12 +717,7 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 		SystemPrompt: &system,
 		Messages:     ai.MessageList{&ai.UserMessage{Content: ai.NewUserContent(&ai.TextContent{Text: prompt})}},
 	}
-	options := &ai.SimpleStreamOptions{}
-	if model.Reasoning && thinkingLevel != "" && thinkingLevel != ai.ModelThinkingOff {
-		level := ai.ThinkingLevel(thinkingLevel)
-		options.Reasoning = &level
-	}
-	response, err := completeSummary(ctx, complete, model, request, options, nil, nil, product)
+	response, err := completeSummary(ctx, complete, model, request, summaryStreamOptions(model, thinkingLevel), nil, nil, product)
 	if err != nil {
 		return nil, fmt.Errorf("Summarization failed: %w", err)
 	}
@@ -756,6 +751,16 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 		}
 	}
 	return &SummaryResult{Text: strings.Join(texts, "\n"), Usage: response.Usage}, nil
+}
+
+// summaryStreamOptions reasons at the session's level for a reasoning model, and not at all otherwise.
+func summaryStreamOptions(model *ai.Model, thinkingLevel ai.ModelThinkingLevel) *ai.SimpleStreamOptions {
+	options := &ai.SimpleStreamOptions{}
+	if model.Reasoning && thinkingLevel != "" && thinkingLevel != ai.ModelThinkingOff {
+		level := ai.ThinkingLevel(thinkingLevel)
+		options.Reasoning = &level
+	}
+	return options
 }
 
 func SerializeConversation(messages engine.AgentMessages) string {

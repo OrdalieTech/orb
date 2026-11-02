@@ -1800,7 +1800,7 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 		result, summaryErr := harness.GenerateProductBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
 			Model: runtime.agent.State().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
 			CustomInstructions: customInstructions, ReplaceInstructions: replaceInstructions,
-			ReserveTokens: &settings.ReserveTokens,
+			ReserveTokens: &settings.ReserveTokens, ThinkingLevel: runtime.agent.State().ThinkingLevel,
 		})
 		if summaryErr != nil {
 			if errors.Is(summaryErr, context.Canceled) || branchContext.Err() != nil {

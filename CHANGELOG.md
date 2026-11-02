@@ -5,7 +5,30 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Orb follows pi 1.5.0 (`UPSTREAM.lock`). Streamed tool calls and Anthropic and Bedrock blocks no longer carry `partialJson`, `partialArgs`, `streamIndex`, `index` or `redactedChunks` in events or failed-stream transcripts, and usage costs record `totalFromProvider` (false for a catalog estimate; a sum is provider-reported only when every part is), as pi 1.5 writes them.
+
+- OpenRouter's billed cost is the turn total only with its full accounting: a BYOK key adds the upstream inference cost, and a response without `is_byok` keeps the catalog estimate. Claude through OpenRouter's Anthropic Messages endpoint gets it too.
+
+- GPT-6.1 Terra and other models with `supportsMidConvoEffort` on OpenAI Responses change thinking level mid-conversation through `configuration_update` items, so the prompt cache survives the change; Sign in with ChatGPT keeps sending `reasoning.effort`.
+
+- Claude sessions with a system update followed by an empty or reasoning-only reply no longer fail with `role 'system' must precede an 'assistant' message`, and managed effort sends a fixed `low` top-level effort, which organizations capping effort below `high` accept.
+
+- Bedrock retries once with preferred-strict tools sent non-strict when Claude's strict tool limits are exceeded, Gemini receives string and number `const` as single-value enums, Z.ai usage-limit errors (code 1308) are no longer retried, and LiteLLM's `ContextWindowExceededError` counts as a context overflow.
+
+- `tool_search` ranks a tool whose name answers the query above tools that only mention its words, matches words outside ASCII, and stops long server instructions from lowering a server's tools.
+
+- `/resume` search matches session names and working directories fuzzily but ids and message text only exactly, and `/model` search prefers a contiguous match.
+
+- Setting the same active tools in a new order no longer rewrites the system prompt; newly activated tools are appended. `/tree` branch summaries reason at the session's thinking level.
+
+- A saved "Do not trust" decision holds for projects without trust-requiring resources, a failed session write no longer leaves an entry in memory that later entries point to, `grep` context lines stay aligned with ripgrep in files with a lone carriage return, resized images use JPEG when it is smaller than PNG, and `--model` accepts provider ids containing `/`.
+
+- The default OpenAI model is `gpt-6.1-sol`, and Meta's is `muse-spark-1.3`. The default system prompt and the skills instructions use pi 1.5's tighter wording.
+
+- Extensions importing `Type`, `Static` or `StringEnum` from `@earendil-works/pi-ai` load as they do in pi 1.5, where pi-ai itself no longer re-exports TypeBox.
+
 - The built-in model catalog follows pi 1.5.0's catalog rules and is built from the models.dev v2 catalog of 2026-11-02, which runtime refreshes now fetch too (`https://models.dev/experimental/v2.0/api.json`). It lists GPT-6.1 Terra for `openai`, `azure` and `openai-codex`, Kimi K3.1 Pro for `kimi-coding` and Moonshot, and DeepSeek V4 Pro for `azure`; OpenCode models use the endpoint models.dev lists for their protocol (`https://opencode.ai/inference/anthropic` for Claude); GPT-5.4 and GPT-5.5 no longer offer tool search or `additional_tools`. Models models.dev dropped or deprecated since July are gone, among them `anthropic` Claude Opus 4.1, `openai` `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest`, Moonshot Kimi K2.5 and the K2 previews, Xiaomi MiMo V2.5, and GitHub Copilot's GPT-5.4, GPT-5.5 and Claude Opus 4.5 to 4.7.
+
 - Tool arguments are validated as pi 1.5 does with pi-schema, for Orb's tools and MCP tools alike: TypeBox's conversions run before Ajv-style coercion (a single value becomes a one-item array, `"3.5"` the integer 3, `"TRUE"` true, `null` for a required string `"null"`), standard formats such as `uri`, `date-time` and `email` are checked, a `$ref` that names nothing rejects only the values at its place, and errors read `- edits.0.oldText: missing` or `- limit: expected number, got string`.
 
 ## [0.20.0] - 2026-11-01

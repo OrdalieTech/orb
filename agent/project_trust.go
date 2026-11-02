@@ -32,8 +32,10 @@ func ResolveProjectTrusted(ctx context.Context, options ResolveProjectTrustedOpt
 	if options.TrustOverride != nil {
 		return *options.TrustOverride, nil
 	}
+	// A saved decision holds even without trust-requiring resources (upstream #10947).
 	if !config.HasTrustRequiringProjectResources(options.CWD) {
-		return true, nil
+		decision, err := options.TrustStore.Get(options.CWD)
+		return decision == nil || *decision, err
 	}
 
 	if options.Runner != nil {
