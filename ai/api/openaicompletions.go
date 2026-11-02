@@ -1943,14 +1943,17 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 		stateForCall.customInput = &responsesCustomInput{property: inputProperty}
 		stateForCall.partialArgs = ""
 	}
-	if arguments != "" {
+	// Argument text only extends a JSON call and custom input only a grammar call (upstream 1.5.0).
+	delta := ""
+	if arguments != "" && stateForCall.customInput == nil {
+		delta = arguments
 		stateForCall.partialArgs = stateForCall.argsBuffer.append(stateForCall.partialArgs, arguments)
 		if stateForCall.argsBuffer.shouldParse() {
 			setStreamingToolArguments(stateForCall.block, stateForCall.partialArgs)
 		}
 	} else if customInput != "" && stateForCall.customInput != nil {
 		current, _ := stateForCall.block.Arguments[stateForCall.customInput.property].(string)
-		delta, err := appendGrammarToolInputJSONDelta(
+		grammarDelta, err := appendGrammarToolInputJSONDelta(
 			&stateForCall.customInput.buffer,
 			stateForCall.customInput.property,
 			current+customInput,
@@ -1960,11 +1963,11 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 			return err
 		}
 		stateForCall.block.Arguments = map[string]any{stateForCall.customInput.property: current + customInput}
-		if delta != nil {
-			arguments = *delta
+		if grammarDelta != nil {
+			delta = *grammarDelta
 		}
 	}
-	return emit(ai.ToolCallDeltaEvent{ContentIndex: stateForCall.contentIndex, Delta: arguments, Partial: state.output})
+	return emit(ai.ToolCallDeltaEvent{ContentIndex: stateForCall.contentIndex, Delta: delta, Partial: state.output})
 }
 
 func parseOpenAIReasoningDetails(signature string) []json.RawMessage {

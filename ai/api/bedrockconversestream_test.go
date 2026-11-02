@@ -70,8 +70,11 @@ func (function bedrockTransportFunc) Send(ctx context.Context, payload *BedrockC
 
 type bedrockCodedError struct{ code, message string }
 
-func (err bedrockCodedError) Error() string     { return err.message }
-func (err bedrockCodedError) ErrorCode() string { return err.code }
+func (err bedrockCodedError) Error() string {
+	return "operation error Bedrock Runtime: ConverseStream, " + err.message
+}
+func (err bedrockCodedError) ErrorCode() string    { return err.code }
+func (err bedrockCodedError) ErrorMessage() string { return err.message }
 
 // Bedrock refusing the strict tool set as too large is asked once more with preferred-strict tools relaxed (#11416).
 func TestBedrockRetriesStrictToolLimitWithPreferredOnesRelaxed(t *testing.T) {
@@ -103,7 +106,8 @@ func TestBedrockRetriesStrictToolLimitWithPreferredOnesRelaxed(t *testing.T) {
 	if message.StopReason != ai.StopReasonStop || len(strict) != 2 || strict[0] != [2]bool{true, true} || strict[1] != [2]bool{false, true} {
 		t.Fatalf("stop = %s, strict per request = %v", message.StopReason, strict)
 	}
-	if message.Diagnostics == nil || (*message.Diagnostics)[0].Type != "bedrock_strict_tools_fallback" {
+	if message.Diagnostics == nil || (*message.Diagnostics)[0].Type != "bedrock_strict_tools_fallback" ||
+		(*message.Diagnostics)[0].Error.Message != "Too many strict tools (24). The maximum number of strict tools is 20." {
 		t.Fatalf("diagnostics = %#v", message.Diagnostics)
 	}
 }

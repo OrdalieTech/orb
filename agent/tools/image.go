@@ -390,7 +390,7 @@ func encodeImageCandidates(value image.Image, qualities []int) []encodedImage {
 		}
 	}
 	// The smaller of PNG and the configured-quality JPEG goes first; lower qualities only if neither fits (upstream #11551).
-	if len(result) > 1 && result[0].mimeType == "image/png" && len(result[1].data) < len(result[0].data) {
+	if len(result) > 1 && result[0].mimeType == "image/png" && base64.StdEncoding.EncodedLen(len(result[1].data)) < base64.StdEncoding.EncodedLen(len(result[0].data)) {
 		result[0], result[1] = result[1], result[0]
 	}
 	return result
