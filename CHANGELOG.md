@@ -6,6 +6,7 @@ shown by `/changelog`.
 ## [Unreleased]
 
 - The built-in model catalog follows pi 1.5.0's catalog rules and is built from the models.dev v2 catalog of 2026-11-02, which runtime refreshes now fetch too (`https://models.dev/experimental/v2.0/api.json`). It lists GPT-6.1 Terra for `openai`, `azure` and `openai-codex`, Kimi K3.1 Pro for `kimi-coding` and Moonshot, and DeepSeek V4 Pro for `azure`; OpenCode models use the endpoint models.dev lists for their protocol (`https://opencode.ai/inference/anthropic` for Claude); GPT-5.4 and GPT-5.5 no longer offer tool search or `additional_tools`. Models models.dev dropped or deprecated since July are gone, among them `anthropic` Claude Opus 4.1, `openai` `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest`, Moonshot Kimi K2.5 and the K2 previews, Xiaomi MiMo V2.5, and GitHub Copilot's GPT-5.4, GPT-5.5 and Claude Opus 4.5 to 4.7.
+- Tool arguments are validated as pi 1.5 does with pi-schema, for Orb's tools and MCP tools alike: TypeBox's conversions run before Ajv-style coercion (a single value becomes a one-item array, `"3.5"` the integer 3, `"TRUE"` true, `null` for a required string `"null"`), standard formats such as `uri`, `date-time` and `email` are checked, a `$ref` that names nothing rejects only the values at its place, and errors read `- edits.0.oldText: missing` or `- limit: expected number, got string`.
 
 ## [0.20.0] - 2026-11-01
 

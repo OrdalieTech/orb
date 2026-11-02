@@ -450,5 +450,5 @@ func TestSubagentRunsOnAnOfferedModel(t *testing.T) {
 	t.Cleanup(result.Session.Dispose)
 	mustOK(result.Session.PromptSync(context.Background(), "delegate"))
 	require(t, childModel == "lab/small", "child ran on %q", childModel)
-	require(t, strings.Contains(refused, "model: must be equal to one of the allowed values"), "a model outside the offer was not refused: %q", refused)
+	require(t, strings.Contains(refused, `model: expected one of ["lab/small"]`), "a model outside the offer was not refused: %q", refused)
 }
