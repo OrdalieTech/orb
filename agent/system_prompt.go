@@ -173,7 +173,7 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 		addSection("preamble", *options.CustomPrompt)
 	} else {
 		addSection("preamble", "You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.")
-		addSection("tools", wrapPromptSection("tools", toolsList+"\n\nIn addition to the tools above, you may have access to other custom tools depending on the project."))
+		addSection("tools", wrapPromptSection("tools", toolsList+"\n\nAdditional tools may be available."))
 		addSection("rules", wrapPromptSection("rules", strings.Join(formattedGuidelines, "\n")))
 	}
 	if options.AppendSystemPrompt != nil && *options.AppendSystemPrompt != "" {

@@ -70,12 +70,12 @@ upstream:
 
 ensure-upstream-fixture-tools: upstream
 	@if [ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/tsx/package.json").version' 2>/dev/null)" != "4.22.1" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/vitest/package.json").version' 2>/dev/null)" != "4.1.11" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/vitest/package.json").version' 2>/dev/null)" != "4.1.12" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@xterm/headless/package.json").version' 2>/dev/null)" != "5.5.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/partial-json/package.json").version' 2>/dev/null)" != "0.1.7" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/typebox/package.json").version' 2>/dev/null)" != "1.3.27" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/openai/package.json").version' 2>/dev/null)" != "7.19.0" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.124.0" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@anthropic-ai/sdk/package.json").version' 2>/dev/null)" != "0.129.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@aws-sdk/client-bedrock-runtime/package.json").version' 2>/dev/null)" != "3.1127.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@smithy/node-http-handler/package.json").version' 2>/dev/null)" != "4.12.1" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/http-proxy-agent/package.json").version' 2>/dev/null)" != "9.1.0" ] || \
@@ -91,22 +91,22 @@ ensure-upstream-fixture-tools: upstream
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/jiti/package.json").version' 2>/dev/null)" != "2.7.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/marked/package.json").version' 2>/dev/null)" != "18.0.11" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/marked-cjk-friendly/package.json").version' 2>/dev/null)" != "0.1.2" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/minimatch/package.json").version' 2>/dev/null)" != "10.2.6" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/minimatch/package.json").version' 2>/dev/null)" != "11.0.3" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/proper-lockfile/package.json").version' 2>/dev/null)" != "4.1.2" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/semver/package.json").version' 2>/dev/null)" != "7.8.5" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/yaml/package.json").version' 2>/dev/null)" != "2.9.0" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/@silvia-odwyer/photon-node/package.json").version' 2>/dev/null)" != "0.3.4" ] || \
-		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.10.2" ] || \
+		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/undici/package.json").version' 2>/dev/null)" != "8.12.3" ] || \
 		[ "$$(node -p 'require("$(UPSTREAM_DIR)/node_modules/typescript/package.json").version' 2>/dev/null)" != "5.9.3" ]; then \
 		if [ "$(UPSTREAM_READONLY)" = "1" ]; then \
 			echo "upstream fixture tools are missing from read-only $(UPSTREAM_DIR)" >&2; exit 1; \
 		fi; \
 		cd "$(UPSTREAM_DIR)" && npm install --ignore-scripts --no-save --workspaces=false \
-			tsx@4.22.1 vitest@4.1.11 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.3.27 openai@7.19.0 @anthropic-ai/sdk@0.129.0 \
+			tsx@4.22.1 vitest@4.1.12 @xterm/headless@5.5.0 partial-json@0.1.7 typebox@1.3.27 openai@7.19.0 @anthropic-ai/sdk@0.129.0 \
 			@aws-sdk/client-bedrock-runtime@3.1127.0 @smithy/node-http-handler@4.12.1 http-proxy-agent@9.1.0 https-proxy-agent@9.1.0 \
 			@google/genai@2.21.0 diff@8.0.4 cross-spawn@7.0.6 chalk@6.0.0 get-east-asian-width@1.6.0 \
-			highlight.js@10.7.3 hosted-git-info@9.0.3 ignore@7.0.8 jiti@2.7.0 marked@18.0.11 marked-cjk-friendly@0.1.2 minimatch@10.2.6 \
-			proper-lockfile@4.1.2 semver@7.8.5 @silvia-odwyer/photon-node@0.3.4 undici@8.10.2 yaml@2.9.0 typescript@5.9.3; \
+			highlight.js@10.7.3 hosted-git-info@9.0.3 ignore@7.0.8 jiti@2.7.0 marked@18.0.11 marked-cjk-friendly@0.1.2 minimatch@11.0.3 \
+			proper-lockfile@4.1.2 semver@7.8.5 @silvia-odwyer/photon-node@0.3.4 undici@8.12.3 yaml@2.9.0 typescript@5.9.3; \
 	fi
 
 fixtures: ensure-upstream-fixture-tools

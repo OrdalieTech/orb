@@ -19,24 +19,9 @@ export async function extractCompatModelsF2(upstreamRoot: string) {
       preload,
       `import { readFileSync } from "node:fs";
 const snapshot = JSON.parse(readFileSync(process.env.ORB_MODEL_SNAPSHOT, "utf8"));
-// Upstream >=0.84 asserts an exact qwen-token-plan-individual catalog; the
-// pinned snapshot predates some of those IDs, so synthesize the missing ones
-// from a tool-capable sibling. At revisions without the constant this no-ops.
-const generator = readFileSync(process.env.ORB_GENERATE_MODELS_SOURCE, "utf8");
-const expected = generator.match(/QWEN_TOKEN_PLAN_INDIVIDUAL_MODEL_IDS\\s*=\\s*new Set[^([]*\\(\\[([^\\]]*)\\]/);
-if (expected) {
-  const models = snapshot["alibaba-token-plan"]?.models ?? {};
-  const template = Object.values(models).find((model) => model.tool_call === true);
-  for (const match of expected[1].matchAll(/"([^"]+)"/g)) {
-    const id = match[1];
-    if (!models[id]) models[id] = { ...template, id, name: id };
-  }
-}
-// Upstream reads kimi-code-plan-global; the pinned snapshot predates the rename and lists kimi-for-coding.
-if (!snapshot["kimi-code-plan-global"]) snapshot["kimi-code-plan-global"] = snapshot["kimi-for-coding"];
 globalThis.fetch = async (input) => {
   const url = String(input instanceof Request ? input.url : input);
-  if (url === "https://models.dev/api.json") return Response.json(snapshot);
+  if (url === "https://models.dev/experimental/v2.0/api.json") return Response.json(snapshot);
   if (url === "https://integrate.api.nvidia.com/v1/models") {
     return Response.json({ data: Object.keys(snapshot.nvidia?.models ?? {}).map((id) => ({ id })) });
   }
@@ -68,7 +53,7 @@ globalThis.fetch = async (input) => {
       [
         "--import",
         pathToFileURL(preload).href,
-        path.join(packageRoot, "scripts/generate-models.ts"),
+        path.join(packageRoot, "catalog/generate.ts"),
         "--strict",
         "--json-only",
         "--json-output",
@@ -81,7 +66,6 @@ globalThis.fetch = async (input) => {
           ...process.env,
           ORB_MODEL_SNAPSHOT: snapshot,
           ORB_OPENROUTER_SNAPSHOT: path.resolve(import.meta.dirname, "../../ai/models/testdata/openrouter.json"),
-          ORB_GENERATE_MODELS_SOURCE: path.join(packageRoot, "scripts/generate-models.ts"),
         },
         maxBuffer: 16 * 1024 * 1024,
       },
@@ -106,12 +90,13 @@ globalThis.fetch = async (input) => {
           ["openrouter", "anthropic/claude-opus-5"], ["openrouter", "anthropic/claude-sonnet-4.5"],
           ["xai", "grok-4.3"], ["xai", "grok-4.5"],
           ["anthropic", "claude-opus-5"], ["anthropic", "claude-fable-5"],
-          ["zai-coding-cn", "glm-4.6v"], ["zai-coding-cn", "glm-5.2"],
+          ["zai-coding-cn", "glm-4.6v"], ["zai-coding-cn", "glm-5.3"],
           ["qwen-token-plan", "glm-5.2"], ["qwen-token-plan", "glm-5"],
           ["qwen-token-plan-individual", "qwen3.8-flash"],
           ["deepseek", "deepseek-flash"],
           ["github-copilot", "claude-fable-5"],
-          ["kimi-coding", "k3"], ["kimi-coding", "kimi-for-coding-highspeed"],
+          ["kimi-coding", "k3"], ["kimi-coding", "kimi-for-coding-highspeed"], ["kimi-coding", "k3.1-pro"],
+          ["openai", "gpt-6.1-terra"], ["azure", "gpt-6.1-terra"], ["openai-codex", "gpt-6.1-terra"],
         ].map(async ([provider, id]) => ({ name: `${provider}-${id}`, model: await readModel(provider, id) }))),
       ],
     };

@@ -29,8 +29,8 @@ const stripOptions = (() => {
 // is the loader's entire knowledge of that surface: a specifier under the
 // legacy scopes that is absent here resolves nowhere — in particular never
 // from node_modules, whatever is installed there — and fails with a precise
-// error instead. The pi-ai root serves upstream's index surface and "/compat"
-// its superset with the legacy global API, matching the upstream exports map.
+// error instead. The pi-ai root and "/compat" both serve pi's extension view
+// (compat plus TypeBox's Type), as upstream's extension loader does.
 // ponytail: Bun has no resolve hook, so these aliases have a weaker Bun
 // counterpart: NODE_PATH wrapper packages (runtime_entry.go), which a real
 // install in the extension's own tree would still outrank; upgrade path is a

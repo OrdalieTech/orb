@@ -20,7 +20,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
-const ModelsDevURL = "https://models.dev/api.json"
+const ModelsDevURL = "https://models.dev/experimental/v2.0/api.json"
 
 // remoteCatalogRefreshInterval mirrors upstream
 // REMOTE_CATALOG_REFRESH_INTERVAL_MS (remote-catalog-provider.ts).

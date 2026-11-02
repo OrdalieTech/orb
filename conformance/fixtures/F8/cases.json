@@ -643,7 +643,7 @@
       },
       {
         "name": "import",
-        "description": "Import and resume a session from a JSONL file",
+        "description": "Import a JSONL session, preserving its ID and working directory",
         "argumentHint": null
       },
       {
@@ -713,7 +713,7 @@
       },
       {
         "name": "resume",
-        "description": "Resume a different session",
+        "description": "Resume another session",
         "argumentHint": null
       },
       {

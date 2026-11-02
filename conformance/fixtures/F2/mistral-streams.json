@@ -272,8 +272,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialArgs": "{\"text\":\"hello\","
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -318,8 +317,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialArgs": "{\"text\":\"hello\","
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -365,8 +363,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialArgs": "{\"text\":\"hello\","
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -414,8 +411,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -436,7 +432,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -469,8 +466,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -491,7 +487,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -524,8 +521,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -546,7 +542,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -579,8 +576,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -601,7 +597,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -665,7 +662,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -718,7 +716,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -811,8 +810,7 @@
                 "type": "toolCall",
                 "id": "toolcall0",
                 "name": "echo",
-                "arguments": {},
-                "partialArgs": "{\"text\":"
+                "arguments": {}
               }
             ],
             "api": "mistral-conversations",
@@ -848,8 +846,7 @@
                 "type": "toolCall",
                 "id": "toolcall0",
                 "name": "echo",
-                "arguments": {},
-                "partialArgs": "{\"text\":"
+                "arguments": {}
               }
             ],
             "api": "mistral-conversations",
@@ -887,8 +884,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "anon"
-                },
-                "partialArgs": "{\"text\":\"anon\"}"
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -905,7 +901,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 10
+                "total": 10,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -951,7 +948,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 10
+                "total": 10,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -989,7 +987,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 10
+                "total": 10,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1097,7 +1096,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1132,7 +1132,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1167,7 +1168,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1201,7 +1203,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1309,7 +1312,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1344,7 +1348,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1379,7 +1384,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1413,7 +1419,8 @@
                 "output": 2,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 7
+                "total": 7,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1853,8 +1860,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialArgs": "{\"text\":\"hello\","
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -1899,8 +1905,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialArgs": "{\"text\":\"hello\","
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -1946,8 +1951,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialArgs": "{\"text\":\"hello\","
+                }
               }
             ],
             "api": "mistral-conversations",
@@ -1995,8 +1999,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -2017,7 +2020,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2050,8 +2054,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -2072,7 +2075,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2105,8 +2109,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -2127,7 +2130,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2160,8 +2164,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"metadata\":{\"count\":2}}"
+                }
               },
               {
                 "type": "text",
@@ -2182,7 +2185,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2246,7 +2250,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2299,7 +2304,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 0,
-                "total": 38
+                "total": 38,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",

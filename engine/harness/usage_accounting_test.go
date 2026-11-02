@@ -38,9 +38,11 @@ func TestSummaryUsageFlowsThroughCompactionAndBranching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Usage == nil || result.Usage.Input != 11 || result.Usage.Output != 22 || result.Usage.CacheRead != 33 || result.Usage.CacheWrite != 44 ||
+	cost := result.Usage.Cost
+	cost.TotalFromProvider = nil
+	if result.Usage.Cost.TotalFromProvider == nil || *result.Usage.Cost.TotalFromProvider || result.Usage.Input != 11 || result.Usage.Output != 22 || result.Usage.CacheRead != 33 || result.Usage.CacheWrite != 44 ||
 		result.Usage.CacheWrite1h == nil || *result.Usage.CacheWrite1h != 12 || result.Usage.Reasoning == nil || *result.Usage.Reasoning != 14 ||
-		result.Usage.TotalTokens != 136 || result.Usage.Cost != (ai.Cost{Input: 6, Output: 8, CacheRead: 10, CacheWrite: 12, Total: 36}) {
+		result.Usage.TotalTokens != 136 || cost != (ai.Cost{Input: 6, Output: 8, CacheRead: 10, CacheWrite: 12, Total: 36}) {
 		t.Fatalf("combined usage = %#v", result.Usage)
 	}
 	fromHook := true
@@ -51,7 +53,7 @@ func TestSummaryUsageFlowsThroughCompactionAndBranching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []byte(`{"type":"compaction","id":"compact","parentId":null,"timestamp":"2026-07-20T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":100,"details":{"source":"test"},"usage":{"input":11,"output":22,"cacheRead":33,"cacheWrite":44,"cacheWrite1h":12,"reasoning":14,"totalTokens":136,"cost":{"input":6,"output":8,"cacheRead":10,"cacheWrite":12,"total":36}},"fromHook":true}`)
+	want := []byte(`{"type":"compaction","id":"compact","parentId":null,"timestamp":"2026-07-20T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":100,"details":{"source":"test"},"usage":{"input":11,"output":22,"cacheRead":33,"cacheWrite":44,"cacheWrite1h":12,"reasoning":14,"totalTokens":136,"cost":{"input":6,"output":8,"cacheRead":10,"cacheWrite":12,"total":36,"totalFromProvider":false}},"fromHook":true}`)
 	if !bytes.Equal(encoded, want) {
 		t.Fatalf("entry = %s\nwant  = %s", encoded, want)
 	}

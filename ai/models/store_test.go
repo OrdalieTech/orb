@@ -28,7 +28,7 @@ func (roundTrip catalogRoundTripFunc) RoundTrip(request *http.Request) (*http.Re
 func storeTimestamp(value int64) *int64 { return &value }
 
 func TestRefreshPersistsAndReloadsCatalog(t *testing.T) {
-	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2,"cache_read":0.1,"cache_write":1}}}}}`)
+	source := []byte(`{"anthropic":{"models":{"fixture":{"id":"fixture","type":"chat","name":"Fixture","modalities":{"input":["text"],"output":["text"]},"capabilities":{"tools":{"supported":true},"reasoning":{"supported":false}},"limit":{"context":4096,"output":512},"cost":{"text":{"input":{"price":1,"cache":{"read":0.1,"write":1}},"output":{"price":2}}}}}}}`)
 	wantTime := time.UnixMilli(generatedCatalogLastModified + 123456789).Truncate(time.Second)
 	client := &http.Client{Transport: catalogRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.Header.Get("Accept") != "application/json" {
@@ -76,7 +76,7 @@ func TestRefreshPersistsAndReloadsCatalog(t *testing.T) {
 }
 
 func TestRefreshRevalidatesStoredCatalogWithETag(t *testing.T) {
-	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	source := []byte(`{"anthropic":{"models":{"fixture":{"id":"fixture","type":"chat","name":"Fixture","modalities":{"input":["text"],"output":["text"]},"capabilities":{"tools":{"supported":true},"reasoning":{"supported":false}},"limit":{"context":4096,"output":512},"cost":{"text":{"input":{"price":1},"output":{"price":2}}}}}}}`)
 	base := time.UnixMilli(generatedCatalogLastModified + time.Hour.Milliseconds()).Truncate(time.Second)
 	now := base
 	requests := 0
@@ -157,7 +157,7 @@ func TestRefreshPreservesUnrelatedProviderCatalogs(t *testing.T) {
 	}
 
 	refreshedAt := generatedCatalogLastModified + 2000
-	source := []byte(`{"anthropic":{"models":{"fresh":{"name":"Fresh","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	source := []byte(`{"anthropic":{"models":{"fresh":{"id":"fresh","type":"chat","name":"Fresh","modalities":{"input":["text"],"output":["text"]},"capabilities":{"tools":{"supported":true},"reasoning":{"supported":false}},"limit":{"context":4096,"output":512},"cost":{"text":{"input":{"price":1},"output":{"price":2}}}}}}}`)
 	client := &http.Client{Transport: catalogRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -287,7 +287,7 @@ func TestSYNC4NewerBuiltinBeatsStaleStoreOverlay(t *testing.T) {
 }
 
 func TestCATm1ConcurrentForcedRefreshesShareInflightResult(t *testing.T) {
-	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	source := []byte(`{"anthropic":{"models":{"fixture":{"id":"fixture","type":"chat","name":"Fixture","modalities":{"input":["text"],"output":["text"]},"capabilities":{"tools":{"supported":true},"reasoning":{"supported":false}},"limit":{"context":4096,"output":512},"cost":{"text":{"input":{"price":1},"output":{"price":2}}}}}}}`)
 	for _, test := range []struct {
 		name      string
 		storePath func(*testing.T) string
@@ -346,7 +346,7 @@ func TestCATm1ConcurrentForcedRefreshesShareInflightResult(t *testing.T) {
 }
 
 func TestSharedRefreshJoinerHonorsItsOwnCancellation(t *testing.T) {
-	source := []byte(`{"anthropic":{"models":{"fixture":{"name":"Fixture","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	source := []byte(`{"anthropic":{"models":{"fixture":{"id":"fixture","type":"chat","name":"Fixture","modalities":{"input":["text"],"output":["text"]},"capabilities":{"tools":{"supported":true},"reasoning":{"supported":false}},"limit":{"context":4096,"output":512},"cost":{"text":{"input":{"price":1},"output":{"price":2}}}}}}}`)
 	var requests atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -388,7 +388,7 @@ func TestSharedRefreshJoinerHonorsItsOwnCancellation(t *testing.T) {
 }
 
 func TestCATm1CancellationAfterResponseDoesNotMutateStore(t *testing.T) {
-	source := []byte(`{"anthropic":{"models":{"replacement":{"name":"Replacement","tool_call":true,"modalities":{"input":["text"]},"limit":{"context":4096,"output":512},"cost":{"input":1,"output":2}}}}}`)
+	source := []byte(`{"anthropic":{"models":{"replacement":{"id":"replacement","type":"chat","name":"Replacement","modalities":{"input":["text"],"output":["text"]},"capabilities":{"tools":{"supported":true},"reasoning":{"supported":false}},"limit":{"context":4096,"output":512},"cost":{"text":{"input":{"price":1},"output":{"price":2}}}}}}}`)
 	for _, test := range []struct {
 		name     string
 		response func(context.CancelFunc) *http.Response

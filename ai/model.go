@@ -239,6 +239,7 @@ type OpenAIResponsesCompat struct {
 	SupportsToolSearch              *bool                  `json:"supportsToolSearch,omitempty"`
 	SupportsExplicitPromptCacheMode *bool                  `json:"supportsExplicitPromptCacheMode,omitempty"`
 	SupportsMaxOutputTokens         *bool                  `json:"supportsMaxOutputTokens,omitempty"`
+	SupportsMidConvoEffort          *bool                  `json:"supportsMidConvoEffort,omitempty"`
 }
 
 type AnthropicMessagesCompat struct {

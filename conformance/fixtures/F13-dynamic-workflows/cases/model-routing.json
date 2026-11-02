@@ -30,12 +30,12 @@
     "durationMs": 0,
     "runId": "run-fixed-model-routing",
     "tokenUsage": {
-      "input": 4302,
+      "input": 0,
       "output": 17,
-      "total": 8633,
+      "total": 4182,
       "cost": 0,
       "cacheRead": 0,
-      "cacheWrite": 4302
+      "cacheWrite": 4153
     }
   },
   "error": null,
@@ -52,13 +52,13 @@
       "id": "run-fixed-model-routing:0",
       "label": "small",
       "result": "Small tier answer.",
-      "tokens": 2871,
+      "tokens": 1388,
       "tokenUsage": {
-        "input": 1433,
+        "input": 0,
         "output": 5,
         "cacheRead": 0,
-        "cacheWrite": 1433,
-        "total": 2871,
+        "cacheWrite": 1383,
+        "total": 1388,
         "cost": 0
       },
       "model": "faux/faux-mini"
@@ -79,13 +79,13 @@
       "id": "run-fixed-model-routing:1",
       "label": "untagged",
       "result": "Untagged answer.",
-      "tokens": 2870,
+      "tokens": 1388,
       "tokenUsage": {
-        "input": 1433,
+        "input": 0,
         "output": 4,
         "cacheRead": 0,
-        "cacheWrite": 1433,
-        "total": 2870,
+        "cacheWrite": 1384,
+        "total": 1388,
         "cost": 0
       },
       "model": "faux/faux-model"
@@ -102,13 +102,13 @@
       "id": "run-fixed-model-routing:2",
       "label": "synthesized",
       "result": "Synthesized custom-id answer.",
-      "tokens": 2880,
+      "tokens": 1394,
       "tokenUsage": {
-        "input": 1436,
+        "input": 0,
         "output": 8,
         "cacheRead": 0,
-        "cacheWrite": 1436,
-        "total": 2880,
+        "cacheWrite": 1386,
+        "total": 1394,
         "cost": 0
       },
       "model": "faux/synth-id"
@@ -160,12 +160,12 @@
     {
       "event": "tokenUsage",
       "usage": {
-        "input": 4302,
+        "input": 0,
         "output": 17,
-        "total": 8633,
+        "total": 4182,
         "cost": 0,
         "cacheRead": 0,
-        "cacheWrite": 4302
+        "cacheWrite": 4153
       }
     }
   ],

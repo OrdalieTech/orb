@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-tui surface.
-// Implemented symbols are ported from pi-tui (pi 1.4.0, commit 4a080252,
+// Implemented symbols are ported from pi-tui (pi 1.5.0, commit f9a26365,
 // MIT © Mario Zechner), trimmed to the D15 Component contract published
 // extensions exercise: render(width) → string[] flowing through the host's
 // ui_component_render push bridge — no per-frame RPC, no terminal ownership.
@@ -448,6 +448,7 @@ export const getKeybindings = stub("getKeybindings");
 export const getNativeClipboard = stub("getNativeClipboard");
 export const getOsc8LinkAtColumn = stub("getOsc8LinkAtColumn");
 export const getPngDimensions = stub("getPngDimensions");
+export const getSelectPageIndex = stub("getSelectPageIndex");
 export const getWebpDimensions = stub("getWebpDimensions");
 export const hyperlink = stub("hyperlink");
 export const imageFallback = stub("imageFallback");
@@ -462,6 +463,7 @@ export const parseTerminalColorSchemeReport = stub("parseTerminalColorSchemeRepo
 export const renderFakeCursor = stub("renderFakeCursor");
 export const renderImage = stub("renderImage");
 export const renderLatex = stub("renderLatex");
+export const replaceControlCharacters = stub("replaceControlCharacters");
 export const resetCapabilitiesCache = stub("resetCapabilitiesCache");
 export const setCapabilities = stub("setCapabilities");
 export const setCapabilityOverrides = stub("setCapabilityOverrides");

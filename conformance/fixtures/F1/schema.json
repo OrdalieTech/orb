@@ -1,5 +1,5 @@
 {
-  "source": "typebox@1.3.7 + packages/ai/src/utils/typebox-helpers.ts",
+  "source": "typebox@1.3.7 + packages/ai/src/utils/string-enum.ts",
   "cases": [
     {
       "name": "nested-object",

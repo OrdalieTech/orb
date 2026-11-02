@@ -99,7 +99,7 @@ export async function withOfflineGeneratedCatalog<T>(upstreamRoot: string, run: 
     );
     await execFileAsync(
       process.execPath,
-      ["--import", pathToFileURL(disableNetwork).href, path.join(temporaryPackage, "scripts/generate-models.ts")],
+      ["--import", pathToFileURL(disableNetwork).href, path.join(temporaryPackage, "catalog/generate.ts")],
       { cwd: temporaryPackage, maxBuffer: 16 * 1024 * 1024 },
     );
 
@@ -155,7 +155,7 @@ async function loadUpstream(upstreamRoot: string): Promise<UpstreamModules> {
     "createFauxCore" | "fauxAssistantMessage" | "fauxText" | "fauxToolCall"
   >;
   const ai = (await import(
-    pathToFileURL(path.join(upstreamRoot, "packages/ai/src/index.ts")).href
+    pathToFileURL(path.join(upstreamRoot, "node_modules/typebox/build/index.mjs")).href
   )) as Pick<UpstreamModules, "Type">;
   return { ...agentLoop, ...faux, ...ai };
 }

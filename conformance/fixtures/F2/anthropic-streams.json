@@ -102,8 +102,7 @@
               {
                 "type": "thinking",
                 "thinking": "",
-                "thinkingSignature": "",
-                "index": 0
+                "thinkingSignature": ""
               }
             ],
             "api": "anthropic-messages",
@@ -120,7 +119,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -139,8 +139,7 @@
               {
                 "type": "thinking",
                 "thinking": "reason",
-                "thinkingSignature": "",
-                "index": 0
+                "thinkingSignature": ""
               }
             ],
             "api": "anthropic-messages",
@@ -157,7 +156,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -193,7 +193,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -215,8 +216,7 @@
               },
               {
                 "type": "text",
-                "text": "",
-                "index": 1
+                "text": ""
               }
             ],
             "api": "anthropic-messages",
@@ -233,7 +233,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -256,8 +257,7 @@
               },
               {
                 "type": "text",
-                "text": "working",
-                "index": 1
+                "text": "working"
               }
             ],
             "api": "anthropic-messages",
@@ -274,7 +274,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -314,7 +315,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -342,9 +344,7 @@
                 "type": "toolCall",
                 "id": "toolu_stream",
                 "name": "echo",
-                "arguments": {},
-                "partialJson": "",
-                "index": 2
+                "arguments": {}
               }
             ],
             "api": "anthropic-messages",
@@ -361,7 +361,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -392,9 +393,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialJson": "{\"text\":\"hello\",",
-                "index": 2
+                }
               }
             ],
             "api": "anthropic-messages",
@@ -411,7 +410,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -443,9 +443,7 @@
                 "arguments": {
                   "text": "hello",
                   "mode": "plain"
-                },
-                "partialJson": "{\"text\":\"hello\",\"mode\":\"plain\"}",
-                "index": 2
+                }
               }
             ],
             "api": "anthropic-messages",
@@ -462,7 +460,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -519,7 +518,8 @@
                 "output": 0,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00005415
+                "total": 0.00005415,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2
             },
@@ -567,7 +567,8 @@
                 "output": 0.000105,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00002325,
-                "total": 0.00015915
+                "total": 0.00015915,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 2,
               "reasoning": 2
@@ -684,9 +685,7 @@
                 "type": "toolCall",
                 "id": "toolu_malformed",
                 "name": "echo",
-                "arguments": {},
-                "partialJson": "",
-                "index": 0
+                "arguments": {}
               }
             ],
             "api": "anthropic-messages",
@@ -703,7 +702,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -726,9 +726,7 @@
                 "arguments": {
                   "path": "A\\H",
                   "text": "col1\tcol2"
-                },
-                "partialJson": "{\"path\":\"A\\H\",\"text\":\"col1\tcol2\"}",
-                "index": 0
+                }
               }
             ],
             "api": "anthropic-messages",
@@ -745,7 +743,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -793,7 +792,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -832,7 +832,8 @@
                 "output": 0.00007500000000000001,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.00011100000000000001
+                "total": 0.00011100000000000001,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1024,8 +1025,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "",
-                "index": 0
+                "text": ""
               }
             ],
             "api": "anthropic-messages",
@@ -1042,7 +1042,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000009
+                "total": 0.000009,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1060,8 +1061,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "limited",
-                "index": 0
+                "text": "limited"
               }
             ],
             "api": "anthropic-messages",
@@ -1078,7 +1078,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000009
+                "total": 0.000009,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1113,7 +1114,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000009
+                "total": 0.000009,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1147,7 +1149,8 @@
                 "output": 0.000015,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000024
+                "total": 0.000024,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1243,8 +1246,7 @@
                 "type": "thinking",
                 "thinking": "[Reasoning redacted]",
                 "thinkingSignature": "redacted_fixture",
-                "redacted": true,
-                "index": 0
+                "redacted": true
               }
             ],
             "api": "anthropic-messages",
@@ -1261,7 +1263,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000012
+                "total": 0.000012,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1298,7 +1301,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000012
+                "total": 0.000012,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1334,7 +1338,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000012
+                "total": 0.000012,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1426,8 +1431,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "",
-                "index": 0
+                "text": ""
               }
             ],
             "api": "anthropic-messages",
@@ -1444,7 +1448,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1462,8 +1467,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Hello",
-                "index": 0
+                "text": "Hello"
               }
             ],
             "api": "anthropic-messages",
@@ -1480,7 +1484,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1515,7 +1520,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1549,7 +1555,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000036
+                "total": 0.000036,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1652,7 +1659,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000003
+                "total": 0.000003,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -1920,7 +1928,8 @@
                 "output": 0.000006,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000026
+                "total": 0.000026,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -2039,8 +2048,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "",
-                "index": 0
+                "text": ""
               }
             ],
             "api": "anthropic-messages",
@@ -2057,7 +2065,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000019999999999999998
+                "total": 0.000019999999999999998,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },
@@ -2093,7 +2102,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000019999999999999998
+                "total": 0.000019999999999999998,
+                "totalFromProvider": false
               },
               "cacheWrite1h": 0
             },

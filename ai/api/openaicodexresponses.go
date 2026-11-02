@@ -175,7 +175,6 @@ func StreamOpenAICodexResponsesWithOptions(
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
-			clearResponsesStreamingFields(output)
 			reason := ai.StopReasonError
 			if ctx.Err() != nil {
 				reason = ai.StopReasonAborted
@@ -269,7 +268,6 @@ func StreamOpenAICodexResponsesWithOptions(
 						fail(errors.New(message))
 						return
 					}
-					clearResponsesStreamingFields(output)
 					sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 					return
 				}
@@ -354,7 +352,6 @@ func StreamOpenAICodexResponsesWithOptions(
 			fail(err)
 			return
 		}
-		clearResponsesStreamingFields(output)
 		sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 	}, nil
 }

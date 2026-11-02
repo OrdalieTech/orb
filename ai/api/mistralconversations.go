@@ -160,7 +160,6 @@ func StreamMistralConversationsWithOptions(
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
-			clearMistralStreamingFields(output)
 			reason := ai.StopReasonError
 			if ctx.Err() != nil {
 				reason = ai.StopReasonAborted
@@ -223,7 +222,6 @@ func StreamMistralConversationsWithOptions(
 			fail(err)
 			return
 		}
-		clearMistralStreamingFields(output)
 		sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 	}, nil
 }
@@ -607,14 +605,16 @@ type mistralStreamProcessor struct {
 	currentIndex int
 	accumulated  streamBuffer
 	toolBuffers  streamBuffers
-	toolIndices  map[string]int
-	toolOrder    []int
+	// toolArguments holds each tool call's argument text by content index, kept off the block.
+	toolArguments map[int]string
+	toolIndices   map[string]int
+	toolOrder     []int
 }
 
 func newMistralStreamProcessor(model *ai.Model, output *ai.AssistantMessage, sink eventSink) *mistralStreamProcessor {
 	return &mistralStreamProcessor{
 		model: model, output: output, sink: sink, currentIndex: -1,
-		toolBuffers: make(streamBuffers), toolIndices: make(map[string]int),
+		toolBuffers: make(streamBuffers), toolArguments: make(map[int]string), toolIndices: make(map[string]int),
 	}
 }
 
@@ -820,8 +820,7 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 	}
 	contentIndex, ok := processor.toolIndices[key]
 	if !ok {
-		partial := ""
-		block := &ai.ToolCall{ID: callID, Name: raw.Function.Name, Arguments: map[string]any{}, PartialArgs: &partial}
+		block := &ai.ToolCall{ID: callID, Name: raw.Function.Name, Arguments: map[string]any{}}
 		processor.output.Content = append(processor.output.Content, block)
 		contentIndex = len(processor.output.Content) - 1
 		processor.toolIndices[key] = contentIndex
@@ -835,14 +834,10 @@ func (processor *mistralStreamProcessor) consumeToolCall(raw mistralStreamToolCa
 		return nil
 	}
 	argsDelta := mistralArgumentsText(raw.Function.Arguments)
-	if block.PartialArgs == nil {
-		value := ""
-		block.PartialArgs = &value
-	}
 	buffer := processor.toolBuffers.at(contentIndex)
-	*block.PartialArgs = buffer.append(*block.PartialArgs, argsDelta)
+	processor.toolArguments[contentIndex] = buffer.append(processor.toolArguments[contentIndex], argsDelta)
 	if buffer.shouldParse() {
-		setStreamingToolArguments(block, *block.PartialArgs)
+		setStreamingToolArguments(block, processor.toolArguments[contentIndex])
 	}
 	if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: contentIndex, Delta: argsDelta, Partial: processor.output}) {
 		return errStopSSE
@@ -888,10 +883,9 @@ func (processor *mistralStreamProcessor) finish() error {
 		if !ok {
 			continue
 		}
-		if block.PartialArgs != nil {
-			finishToolArguments(block, *block.PartialArgs)
+		if arguments, ok := processor.toolArguments[index]; ok {
+			finishToolArguments(block, arguments)
 		}
-		block.PartialArgs = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: index, ToolCall: block, Partial: processor.output}) {
 			return errStopSSE
 		}
@@ -996,15 +990,5 @@ func mapMistralStopReason(reason *string) (ai.StopReason, *string) {
 	default:
 		message := "Provider stopped with: " + *reason
 		return ai.StopReasonError, &message
-	}
-}
-
-func clearMistralStreamingFields(output *ai.AssistantMessage) {
-	for _, item := range output.Content {
-		if block, ok := item.(*ai.ToolCall); ok {
-			block.PartialArgs = nil
-			block.PartialJSON = nil
-			block.StreamIndex = nil
-		}
 	}
 }

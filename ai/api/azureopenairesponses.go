@@ -70,7 +70,6 @@ func StreamAzureOpenAIResponsesWithOptions(
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
-			clearResponsesStreamingFields(output)
 			sink(streamFailure(ctx, output, err, "Azure OpenAI API error"))
 		}
 
@@ -140,7 +139,6 @@ func StreamAzureOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
-		clearResponsesStreamingFields(output)
 		sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 	}, nil
 }

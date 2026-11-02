@@ -88,7 +88,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0
+                "total": 0,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -420,7 +421,8 @@
                 "output": 28,
                 "cacheRead": 12,
                 "cacheWrite": 24,
-                "total": 94
+                "total": 94,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -521,7 +523,8 @@
                 "output": 6,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 14
+                "total": 14,
+                "totalFromProvider": false
               }
             },
             "stopReason": "error",

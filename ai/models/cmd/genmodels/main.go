@@ -14,8 +14,8 @@ import (
 )
 
 func main() {
-	input := flag.String("input", "", "models.dev api.json snapshot (fetches -url when empty)")
-	endpoint := flag.String("url", "https://models.dev/api.json", "models.dev endpoint")
+	input := flag.String("input", "", "models.dev v2 api.json snapshot (fetches -url when empty)")
+	endpoint := flag.String("url", "https://models.dev/experimental/v2.0/api.json", "models.dev v2 endpoint")
 	nimInput := flag.String("nim", "", "NVIDIA NIM /v1/models snapshot (fetches -nim-url when empty)")
 	nimEndpoint := flag.String("nim-url", "https://integrate.api.nvidia.com/v1/models", "NVIDIA NIM models endpoint")
 	openRouterInput := flag.String("openrouter", "", "OpenRouter /api/v1/models snapshot (fetches -openrouter-url when empty)")

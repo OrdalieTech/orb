@@ -90,7 +90,8 @@
                 "output": 0.000016,
                 "cacheRead": 5e-7,
                 "cacheWrite": 0,
-                "total": 0.0000245
+                "total": 0.0000245,
+                "totalFromProvider": false
               }
             },
             "stopReason": "pending",
@@ -126,7 +127,8 @@
                 "output": 0.000016,
                 "cacheRead": 5e-7,
                 "cacheWrite": 0,
-                "total": 0.0000245
+                "total": 0.0000245,
+                "totalFromProvider": false
               }
             },
             "stopReason": "pending",
@@ -180,7 +182,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -234,7 +237,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -289,7 +293,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -344,7 +349,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -398,7 +404,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -453,7 +460,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -520,7 +528,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -574,7 +583,8 @@
                 "output": 0.000019999999999999998,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997
+                "total": 0.000028999999999999997,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -693,7 +703,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -747,7 +758,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -806,7 +818,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -859,7 +872,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -913,7 +927,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -974,7 +989,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1027,7 +1043,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1081,7 +1098,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1142,7 +1160,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1195,7 +1214,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1296,7 +1316,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000006
+                "total": 0.000006,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1332,7 +1353,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000006
+                "total": 0.000006,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1368,7 +1390,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000006
+                "total": 0.000006,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1403,7 +1426,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000006
+                "total": 0.000006,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1499,7 +1523,8 @@
                 "output": 0,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000002
+                "total": 0.000002,
+                "totalFromProvider": false
               }
             },
             "stopReason": "error",
@@ -1673,7 +1698,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1711,7 +1737,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1754,7 +1781,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1791,7 +1819,8 @@
                 "output": 0.000004,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.0000049999999999999996
+                "total": 0.0000049999999999999996,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",

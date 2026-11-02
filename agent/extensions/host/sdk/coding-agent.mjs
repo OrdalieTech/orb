@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-coding-agent surface.
-// Pure symbols are ported from pi-coding-agent (pi 1.4.0, commit 4a080252,
+// Pure symbols are ported from pi-coding-agent (pi 1.5.0, commit f9a26365,
 // MIT © Mario Zechner), trimmed to the contracts published extensions
 // exercise. The three protocol services (createAgentSession, ModelRuntime,
 // ModelRegistry) call the host transport through internal/services.mjs;
@@ -635,8 +635,6 @@ attachUnsupportedMethods(
 // ── Unsupported upstream exports (generated from pinned pi-coding-agent 0.84.1) ─
 export const AgentSession = stub("AgentSession");
 export const AgentSessionRuntime = stub("AgentSessionRuntime");
-export const AgentToolResult = stub("AgentToolResult");
-export const AgentToolUpdateCallback = stub("AgentToolUpdateCallback");
 export const ArminComponent = stub("ArminComponent");
 export const AssistantMessageComponent = stub("AssistantMessageComponent");
 export const BashExecutionComponent = stub("BashExecutionComponent");
@@ -673,7 +671,6 @@ export const Theme = stub("Theme");
 export const ThemeSelectorComponent = stub("ThemeSelectorComponent");
 export const ThinkingSelectorComponent = stub("ThinkingSelectorComponent");
 export const ToolExecutionComponent = stub("ToolExecutionComponent");
-export const ToolExecutionMode = stub("ToolExecutionMode");
 export const TreeSelectorComponent = stub("TreeSelectorComponent");
 export const UserMessageComponent = stub("UserMessageComponent");
 export const UserMessageSelectorComponent = stub("UserMessageSelectorComponent");

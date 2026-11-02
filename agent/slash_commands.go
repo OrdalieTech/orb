@@ -37,7 +37,7 @@ var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "thinking", Description: "Set thinking level", ArgumentHint: "<level>"},
 	{Name: "scoped-models", Description: "Enable/disable models for Ctrl+P cycling"},
 	{Name: "export", Description: "Export session (HTML default, or specify path: .html/.jsonl)"},
-	{Name: "import", Description: "Import and resume a session from a JSONL file"},
+	{Name: "import", Description: "Import a JSONL session, preserving its ID and working directory"},
 	{Name: "share", Description: "Share session as a secret GitHub gist"},
 	{Name: "copy", Description: "Copy last agent message to clipboard"},
 	{Name: "name", Description: "Set session display name"},
@@ -51,7 +51,7 @@ var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "logout", Description: "Remove provider authentication"},
 	{Name: "new", Description: "Start a new session"},
 	{Name: "compact", Description: "Manually compact the session context"},
-	{Name: "resume", Description: "Resume a different session"},
+	{Name: "resume", Description: "Resume another session"},
 	{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, themes, and context files"},
 	{Name: "quit", Description: "Quit orb"},
 }

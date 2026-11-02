@@ -2,16 +2,15 @@ package api
 
 import (
 	"encoding/json"
-	"os"
 	"reflect"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 func TestOpenRouterReportedUsageCost(t *testing.T) {
 	var fixture struct {
-		Owner     string       `json:"owner"`
 		ModelCost ai.ModelCost `json:"modelCost"`
 		Cases     []struct {
 			Name         string        `json:"name"`
@@ -21,15 +20,9 @@ func TestOpenRouterReportedUsageCost(t *testing.T) {
 			ExpectedCost ai.Cost       `json:"expectedCost"`
 		} `json:"cases"`
 	}
-	data, err := os.ReadFile("testdata/openrouter-usage.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	if fixture.Owner != "Orb" || len(fixture.Cases) != 8 {
-		t.Fatalf("unexpected fixture owner/case count: %s/%d", fixture.Owner, len(fixture.Cases))
+	runner.LoadJSON(t, "F2", "openrouter-usage.json", &fixture)
+	if len(fixture.Cases) == 0 {
+		t.Fatal("no OpenRouter usage cases")
 	}
 	for _, test := range fixture.Cases {
 		t.Run(test.Name, func(t *testing.T) {

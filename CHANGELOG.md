@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The built-in model catalog follows pi 1.5.0's catalog rules and is built from the models.dev v2 catalog of 2026-11-02, which runtime refreshes now fetch too (`https://models.dev/experimental/v2.0/api.json`). It lists GPT-6.1 Terra for `openai`, `azure` and `openai-codex`, Kimi K3.1 Pro for `kimi-coding` and Moonshot, and DeepSeek V4 Pro for `azure`; OpenCode models use the endpoint models.dev lists for their protocol (`https://opencode.ai/inference/anthropic` for Claude); GPT-5.4 and GPT-5.5 no longer offer tool search or `additional_tools`. Models models.dev dropped or deprecated since July are gone, among them `anthropic` Claude Opus 4.1, `openai` `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest`, Moonshot Kimi K2.5 and the K2 previews, Xiaomi MiMo V2.5, and GitHub Copilot's GPT-5.4, GPT-5.5 and Claude Opus 4.5 to 4.7.
+
 ## [0.20.0] - 2026-11-01
 
 Orb follows pi 1.4.0, and strict tool sampling keeps schemas built from `$ref` and `$defs`: messages, tool results and settled runs record their duration and outcome as pi 1.4 writes them, the Azure OpenAI provider is now `azure`, and a Claude session's native tools get the environment Orb's own tools get.

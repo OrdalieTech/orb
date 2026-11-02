@@ -1896,22 +1896,17 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 			}
 		}
 		argumentsValue := map[string]any{}
-		var partialArgs *string
 		var customState *responsesCustomInput
 		if inputProperty != "" {
 			argumentsValue[inputProperty] = ""
 			customState = &responsesCustomInput{property: inputProperty}
-		} else {
-			value := ""
-			partialArgs = &value
 		}
-		call := &ai.ToolCall{ID: id, Name: name, Arguments: argumentsValue, PartialArgs: partialArgs}
+		call := &ai.ToolCall{ID: id, Name: name, Arguments: argumentsValue}
 		stateForCall = &completionsToolState{block: call, contentIndex: len(state.output.Content)}
 		stateForCall.customInput = customState
 		if hasIndex {
 			value := streamIndex
 			stateForCall.streamIndex = &value
-			stateForCall.block.StreamIndex = &value
 			state.toolsByIndex[streamIndex] = stateForCall
 		}
 		if id != "" {
@@ -1926,7 +1921,6 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 	if hasIndex && stateForCall.streamIndex == nil {
 		value := streamIndex
 		stateForCall.streamIndex = &value
-		stateForCall.block.StreamIndex = &value
 		state.toolsByIndex[streamIndex] = stateForCall
 	}
 	if id != "" {
@@ -1946,16 +1940,13 @@ func (state *completionsStreamState) consumeToolCall(raw json.RawMessage, emit f
 			inputProperty = "input"
 		}
 		stateForCall.block.Arguments = map[string]any{inputProperty: ""}
-		stateForCall.block.PartialArgs = nil
 		stateForCall.customInput = &responsesCustomInput{property: inputProperty}
 		stateForCall.partialArgs = ""
 	}
 	if arguments != "" {
 		stateForCall.partialArgs = stateForCall.argsBuffer.append(stateForCall.partialArgs, arguments)
-		partialArgs := stateForCall.partialArgs
-		stateForCall.block.PartialArgs = &partialArgs
 		if stateForCall.argsBuffer.shouldParse() {
-			stateForCall.block.Arguments = parseToolArguments(stateForCall.partialArgs)
+			setStreamingToolArguments(stateForCall.block, stateForCall.partialArgs)
 		}
 	} else if customInput != "" && stateForCall.customInput != nil {
 		current, _ := stateForCall.block.Arguments[stateForCall.customInput.property].(string)
@@ -2131,8 +2122,6 @@ func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageE
 				finishToolArguments(block, tool.partialArgs)
 			}
 		}
-		block.PartialArgs = nil
-		block.StreamIndex = nil
 	}
 	for index, rawBlock := range state.output.Content {
 		switch block := rawBlock.(type) {
@@ -2160,18 +2149,16 @@ func (state *completionsStreamState) finishBlocks(emit func(ai.AssistantMessageE
 
 func (state *completionsStreamState) clearScratch() {
 	state.applyReasoningDetails()
-	for block, tool := range state.toolStates {
-		block.PartialArgs = nil
-		block.StreamIndex = nil
+	for _, tool := range state.toolStates {
 		tool.customInput = nil
 	}
 }
 
 func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage {
-	var rawPrompt, rawCompletion, rawCacheHit, rawCached, rawPromptDetails, rawCompletionDetails, rawCost json.RawMessage
+	var rawPrompt, rawCompletion, rawCacheHit, rawCached, rawPromptDetails, rawCompletionDetails json.RawMessage
 	readMembers(raw, rawMember{"prompt_tokens", &rawPrompt}, rawMember{"completion_tokens", &rawCompletion},
 		rawMember{"prompt_cache_hit_tokens", &rawCacheHit}, rawMember{"cached_tokens", &rawCached},
-		rawMember{"prompt_tokens_details", &rawPromptDetails}, rawMember{"completion_tokens_details", &rawCompletionDetails}, rawMember{"cost", &rawCost})
+		rawMember{"prompt_tokens_details", &rawPromptDetails}, rawMember{"completion_tokens_details", &rawCompletionDetails})
 	var rawDetailsCached, rawCacheWrite, rawReasoning json.RawMessage
 	readMembers(rawPromptDetails, rawMember{"cached_tokens", &rawDetailsCached}, rawMember{"cache_write_tokens", &rawCacheWrite})
 	readMembers(rawCompletionDetails, rawMember{"reasoning_tokens", &rawReasoning})
@@ -2201,14 +2188,61 @@ func parseOpenAICompletionsUsage(raw json.RawMessage, model *ai.Model) ai.Usage 
 		Cost:        ai.Cost{},
 	}
 	calculateCost(model, &result)
-	if model.Provider == "openrouter" || openRouterHost(model.BaseURL) {
-		var reportedCost *float64
-		if json.Unmarshal(rawCost, &reportedCost) == nil && reportedCost != nil {
-			// Component costs remain estimates; the reported total includes routing and discounts.
-			result.Cost.Total = *reportedCost
-		}
-	}
+	applyOpenRouterReportedCost(model, &result, raw)
 	return result
+}
+
+// applyOpenRouterReportedCost replaces the catalog total with OpenRouter's billed cost when its usage
+// accounting is complete and valid: the charge, plus the upstream inference cost for a BYOK key. Component
+// costs stay estimates.
+func applyOpenRouterReportedCost(model *ai.Model, usage *ai.Usage, raw json.RawMessage) {
+	if model.Provider != "openrouter" && !openRouterHost(model.BaseURL) {
+		return
+	}
+	var reported struct {
+		Cost        any `json:"cost"`
+		BYOK        any `json:"is_byok"`
+		CostDetails *struct {
+			Upstream           any `json:"upstream_inference_cost"`
+			UpstreamPrompt     any `json:"upstream_inference_prompt_cost"`
+			UpstreamCompletion any `json:"upstream_inference_completions_cost"`
+		} `json:"cost_details"`
+	}
+	if json.Unmarshal(raw, &reported) != nil {
+		return
+	}
+	cost, ok := validCost(reported.Cost)
+	if !ok {
+		return
+	}
+	switch reported.BYOK {
+	case false:
+	case true:
+		details := reported.CostDetails
+		if details == nil {
+			return
+		}
+		upstream, ok := validCost(details.Upstream)
+		if details.Upstream == nil {
+			prompt, promptOK := validCost(details.UpstreamPrompt)
+			completion, completionOK := validCost(details.UpstreamCompletion)
+			upstream, ok = prompt+completion, promptOK && completionOK
+		}
+		if !ok {
+			return
+		}
+		cost += upstream
+	default:
+		return
+	}
+	usage.Cost.Total = cost
+	usage.Cost.TotalFromProvider = new(true)
+}
+
+// validCost accepts a finite non-negative JSON number; decoding already refuses one out of range.
+func validCost(value any) (float64, bool) {
+	number, ok := value.(float64)
+	return number, ok && number >= 0
 }
 
 // openRouterHost matches the endpoint's host, so a proxy path that merely

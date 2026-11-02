@@ -911,7 +911,7 @@
           "content-type": "application/json",
           "x-api-key": "fixture-anthropic-key"
         },
-        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"continue\"},{\"role\":\"system\",\"content\":[],\"output_config\":{\"effort\":\"low\"}},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"previous\"}]},{\"role\":\"system\",\"content\":[],\"output_config\":{\"effort\":\"max\"}}],\"max_tokens\":32000,\"stream\":true,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\",\"block_binding\":{\"prefix_mismatch_behavior\":\"drop_block\"}},\"output_config\":{\"effort\":\"high\"},\"fallbacks\":[{\"model\":\"claude-fallback\"}]}"
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"continue\"},{\"role\":\"system\",\"content\":[],\"output_config\":{\"effort\":\"low\"}},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"previous\"}]},{\"role\":\"system\",\"content\":[],\"output_config\":{\"effort\":\"max\"}}],\"max_tokens\":32000,\"stream\":true,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\",\"block_binding\":{\"prefix_mismatch_behavior\":\"drop_block\"}},\"output_config\":{\"effort\":\"low\"},\"fallbacks\":[{\"model\":\"claude-fallback\"}]}"
       }
     },
     {

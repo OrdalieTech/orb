@@ -39,6 +39,8 @@ var nonRetryableProviderLimitPatterns = anyOf([]string{
 	`subscription_sharing_usage_limit_exceeded`,
 	// A ChatGPT Business usage limit only the workspace admin can raise.
 	`subscription_sharing_workplace_individual_usage_limit_exceeded`,
+	// Zhipu/Z.ai code 1308: the plan's usage limit, sent as HTTP 429, resets after hours (upstream #11537).
+	`"code"\s*:\s*"?1308(?:[^0-9]|$)`,
 })
 
 var retryableProviderPatterns = anyOf([]string{
@@ -73,6 +75,7 @@ var retryableProviderPatterns = anyOf([]string{
 var overflowPatterns = anyOf([]string{
 	`prompt (is )?too long`, `prompt exceeds max length`, `request_too_large`, `input is too long for requested model`,
 	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length( of [0-9,]+ tokens?|[[:space:]]*\([0-9,]+\))`,
+	`context window exceeded`, // LiteLLM's pre-call ContextWindowExceededError
 	`input token count.*exceeds the maximum`, `maximum prompt length is [0-9]+`,
 	`reduce the length of the messages`, `range of input length should be`, `maximum context length is [0-9]+ tokens`,
 	`exceeds (the )?maximum allowed input length of [0-9,]+ tokens?`,

@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 	"unicode"
-	"unicode/utf16"
 	"weak"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -491,62 +490,78 @@ func isSelectorWhitespace(char rune) bool {
 	return unicode.IsSpace(char) || char == '\ufeff'
 }
 
-func selectorSearchText(info session.SessionInfo) string {
-	name := ""
-	if info.Name != nil {
-		name = *info.Name
-	}
-	return fmt.Sprintf("%s %s %s %s", info.ID, name, info.AllMessagesText, info.CWD)
-}
+// Match tiers, best first: a token scores by the best field it matches, and tiers dominate fuzzy scores, so an
+// exact hit anywhere beats a scattered subsequence in a short field. Ids and message text match only exactly.
+const (
+	selectorTierName  = 0 // the token appears in the session name
+	selectorTierText  = 1 // the token appears in the session id, messages, or cwd
+	selectorTierFuzzy = 2 // the token's characters appear scattered in the session name or cwd
+)
+
+func selectorTierScore(tier int, score float64) float64 { return float64(tier)*1_000_000 + score }
 
 func normalizeSelectorPhrase(value string) string {
 	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+}
+
+func selectorLiteralMatch(info session.SessionInfo, value string, normalize func(string) string) (float64, bool) {
+	name := ""
+	if info.Name != nil {
+		name = normalize(*info.Name)
+	}
+	if strings.Contains(name, value) {
+		return selectorTierScore(selectorTierName, tui.FuzzyMatchScore(value, name).Score), true
+	}
+	for _, field := range []string{info.ID, info.AllMessagesText, info.CWD} {
+		if strings.Contains(normalize(field), value) {
+			return selectorTierScore(selectorTierText, 0), true
+		}
+	}
+	return 0, false
 }
 
 func matchSelectorSession(info session.SessionInfo, parsed selectorSearchQuery) (bool, float64) {
 	if parsed.invalid {
 		return false, 0
 	}
-	text := selectorSearchText(info)
 	if parsed.regex != nil {
-		location := parsed.regex.FindStringIndex(text)
-		if location == nil {
-			return false, 0
+		if info.Name != nil && parsed.regex.MatchString(*info.Name) {
+			return true, selectorTierScore(selectorTierName, 0)
 		}
-		return true, float64(selectorUTF16Length(text[:location[0]])) * 0.1
-	}
-	if len(parsed.tokens) == 0 {
-		return true, 0
+		for _, field := range []string{info.ID, info.AllMessagesText, info.CWD} {
+			if parsed.regex.MatchString(field) {
+				return true, selectorTierScore(selectorTierText, 0)
+			}
+		}
+		return false, 0
 	}
 	total := 0.0
-	normalized := ""
 	for _, token := range parsed.tokens {
+		score, ok := 0.0, false
 		if token.kind == "phrase" {
-			if normalized == "" {
-				normalized = normalizeSelectorPhrase(text)
-			}
 			phrase := normalizeSelectorPhrase(token.value)
-			index := strings.Index(normalized, phrase)
 			if phrase == "" {
 				continue
 			}
-			if index < 0 {
-				return false, 0
+			score, ok = selectorLiteralMatch(info, phrase, normalizeSelectorPhrase)
+		} else if score, ok = selectorLiteralMatch(info, strings.ToLower(token.value), strings.ToLower); !ok {
+			name := ""
+			if info.Name != nil {
+				name = *info.Name
 			}
-			total += float64(selectorUTF16Length(normalized[:index])) * 0.1
-			continue
+			for _, field := range []string{name, info.CWD} {
+				if match := tui.FuzzyMatchScore(token.value, field); match.Matches && (!ok || match.Score < score) {
+					score, ok = match.Score, true
+				}
+			}
+			score = selectorTierScore(selectorTierFuzzy, score)
 		}
-		match := tui.FuzzyMatchScore(token.value, text)
-		if !match.Matches {
+		if !ok {
 			return false, 0
 		}
-		total += match.Score
+		total += score
 	}
 	return true, total
-}
-
-func selectorUTF16Length(value string) int {
-	return len(utf16.Encode([]rune(value)))
 }
 
 func filterAndSortSelectorSessions(sessions []session.SessionInfo, query string, mode sessionSelectorSort) []session.SessionInfo {

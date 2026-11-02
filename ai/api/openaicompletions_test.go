@@ -173,9 +173,6 @@ func TestOpenAICompletionsKeepsToolCallsWithoutIndexesSeparate(t *testing.T) {
 		if call.ID != expected.id || call.Arguments["path"] != expected.path {
 			t.Fatalf("call[%d] = %#v", index, call)
 		}
-		if call.StreamIndex != nil || call.PartialArgs != nil {
-			t.Fatalf("call[%d] retained streaming scratch: %#v", index, call)
-		}
 	}
 }
 
