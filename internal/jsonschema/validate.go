@@ -55,7 +55,10 @@ func Validate(schema Schema, value any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jsonschema: decode value: %w", err)
 	}
-	parsed, issues := compiled.parse(decoded)
+	parsed, issues, err := compiled.parse(decoded)
+	if err != nil {
+		return nil, err
+	}
 	if issues != nil {
 		return nil, ValidationErrors(issues)
 	}
@@ -82,7 +85,10 @@ func ValidateToolArgumentsJSON(toolName string, schema Schema, argumentsJSON []b
 	if err != nil {
 		return nil, fmt.Errorf("jsonschema: decode tool arguments: %w", err)
 	}
-	parsed, issues := compiled.parse(arguments)
+	parsed, issues, err := compiled.parse(arguments)
+	if err != nil {
+		return nil, err
+	}
 	if issues == nil {
 		return goValue(parsed), nil
 	}
@@ -109,17 +115,42 @@ func dottedPath(pointer string) string {
 	return strings.Join(segments, ".")
 }
 
-func (c *compiledSchema) parse(value any) (any, []ValidationIssue) {
+func (c *compiledSchema) parse(value any) (parsed any, issues []ValidationIssue, err error) {
+	run := *c
+	run.refs = map[[2]any]bool{}
+	c = &run
+	defer func() {
+		if r := recover(); r != nil {
+			if r != any(errStackOverflow) {
+				panic(r)
+			}
+			parsed, issues, err = nil, nil, errStackOverflow
+		}
+	}()
 	coerced := (&coercer{c: c}).coerce(value)
 	if c.valid(c.root, c.rootBase, coerced) {
-		return coerced, nil
+		return coerced, nil, nil
 	}
-	var issues []ValidationIssue
 	c.walk(c.root, c.rootBase, coerced, "", &issues)
 	if len(issues) == 0 {
 		issues = []ValidationIssue{{Path: "", Message: "invalid"}}
 	}
-	return nil, issues
+	return nil, issues, nil
+}
+
+// errStackOverflow is what pi-schema throws, through V8, when a $ref cycle
+// re-enters a schema with the same value: the model reads it as the tool result.
+var errStackOverflow = errors.New("Maximum call stack size exceeded") //nolint:staticcheck // V8's message, which the model reads.
+
+// enterRef marks target as entered with v on the current $ref path, and
+// panics with errStackOverflow when it already is: that recursion never ends.
+func (c *compiledSchema) enterRef(target, v any) (leave func()) {
+	key := [2]any{target, v}
+	if c.refs[key] {
+		panic(errStackOverflow)
+	}
+	c.refs[key] = true
+	return func() { delete(c.refs, key) }
 }
 
 // object is a JSON object whose keys keep JavaScript's order: array indexes
@@ -347,6 +378,8 @@ type compiledSchema struct {
 	baseOf    map[*object]string
 	resources map[string]any
 	anchors   map[string]*object
+	// refs is per parse call: the (schema, value) pairs on the $ref path.
+	refs map[[2]any]bool
 }
 
 func compileSchema(schema Schema) (*compiledSchema, error) {
@@ -677,7 +710,13 @@ func (c *compiledSchema) valid(node any, base string, v any) bool {
 	}
 	if ref, ok := n.values["$ref"].(string); ok {
 		target, targetBase, found := c.resolve(ref, b)
-		if !found || !c.valid(target, targetBase, v) {
+		if !found {
+			return false
+		}
+		leave := c.enterRef(target, v)
+		ok := c.valid(target, targetBase, v)
+		leave()
+		if !ok {
 			return false
 		}
 	}
@@ -1161,7 +1200,9 @@ func (c *compiledSchema) walk(node any, base string, v any, path string, out *[]
 		if !found {
 			push(path, "unresolved reference "+ref)
 		} else {
+			leave := c.enterRef(target, v)
 			c.walk(target, targetBase, v, path, out)
+			leave()
 		}
 	}
 }

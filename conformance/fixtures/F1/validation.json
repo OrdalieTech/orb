@@ -3818,6 +3818,47 @@
       "error": "Validation failed for tool \"t\":\n  - a: unresolved reference #nowhere\n\nReceived arguments:\n{\n  \"a\": 1\n}"
     },
     {
+      "name": "ref-self-cycle",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "$ref": "#/$defs/cycle"
+          }
+        },
+        "$defs": {
+          "cycle": {
+            "$ref": "#/$defs/cycle"
+          }
+        }
+      },
+      "arguments": "{\"x\":1}",
+      "tool": "t",
+      "error": "Maximum call stack size exceeded"
+    },
+    {
+      "name": "ref-self-cycle-explained",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "$ref": "#/$defs/cycle"
+          }
+        },
+        "$defs": {
+          "cycle": {
+            "enum": [
+              "a"
+            ],
+            "$ref": "#/$defs/cycle"
+          }
+        }
+      },
+      "arguments": "{\"x\":1}",
+      "tool": "t",
+      "error": "Maximum call stack size exceeded"
+    },
+    {
       "name": "ref-percent-encoded",
       "schema": {
         "type": "object",
