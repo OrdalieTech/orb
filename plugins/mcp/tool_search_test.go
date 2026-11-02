@@ -72,3 +72,22 @@ func TestToolSearchLoadsDeferredMatches(t *testing.T) {
 		t.Fatalf("section = %q", got)
 	}
 }
+
+// A tool whose name answers the query outranks tools that only mention its words (upstream #11331), and words
+// outside ASCII match (#10816).
+func TestToolSearchRanksNamesAboveMentions(t *testing.T) {
+	documents := []toolDocument{
+		{name: "mcp__peekaboo__see", text: "Capture the app window and see what the app shows on screen in any app", namespace: "peekaboo macOS automation"},
+		{name: "mcp__peekaboo__app", text: "Launch, quit or focus applications", namespace: "peekaboo macOS automation"},
+		{name: "mcp__notes__recherche", text: "Recherche dans les notes café"},
+	}
+	if got := rankBM25("peekaboo app", documents, 2); len(got) == 0 || got[0] != 1 {
+		t.Fatalf("peekaboo app = %v", got)
+	}
+	if got := rankBM25("app", documents, 1); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("exact name query = %v", got)
+	}
+	if got := rankBM25("café", documents, 1); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("decomposed café = %v", got)
+	}
+}

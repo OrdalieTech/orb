@@ -710,10 +710,11 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 		return CLIModelResult{Error: `Unknown provider "` + provider + `". Use --list-models to see available providers/models.`}
 	}
 	modelPattern, inferred := pattern, false
-	if canonicalProvider == "" {
-		if prefix, rest, found := strings.Cut(pattern, "/"); found {
-			if match := providers[strings.ToLower(prefix)]; match != "" {
-				canonicalProvider, modelPattern, inferred = match, rest, true
+	// Provider ids may contain "/" themselves, so the longest known id followed by "/" names it (upstream #11394).
+	for lower, match := range providers {
+		if canonicalProvider == "" || len(lower) > len(canonicalProvider) && inferred {
+			if rest, found := strings.CutPrefix(strings.ToLower(pattern), lower+"/"); found && strings.TrimSpace(rest) != "" {
+				canonicalProvider, modelPattern, inferred = match, pattern[len(lower)+1:], true
 			}
 		}
 	}

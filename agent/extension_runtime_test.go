@@ -1582,7 +1582,7 @@ func TestToolExposureActivationAndLoadoutHooks(t *testing.T) {
 	for _, tool := range runtime.State().Tools {
 		names = append(names, tool.Spec().Name)
 	}
-	if strings.Join(names, ",") != "plain,deferred_one,orchestrate" {
+	if strings.Join(names, ",") != "plain,orchestrate,deferred_one" {
 		t.Fatalf("explicitly activated = %v", names)
 	}
 	request := runtime.hideDeclarations(engine.AgentMessages{&ai.SystemMessage{ToolsAdded: []ai.Tool{{Name: "plain"}, {Name: "orchestrate"}}}})

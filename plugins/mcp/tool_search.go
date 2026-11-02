@@ -15,6 +15,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ToolSearchName is the tool that loads deferred tools, such as MCP servers'.
@@ -87,7 +88,7 @@ func searchAndLoad(api extensions.API, query string, limit int) ([]extensions.To
 		return nil, err
 	}
 	var candidates []extensions.ToolInfo
-	var documents []string
+	var documents []toolDocument
 	for _, tool := range all {
 		if tool.Exposure == extensions.ToolDeferred && !slices.Contains(active, tool.Name) {
 			candidates = append(candidates, tool)
@@ -108,24 +109,26 @@ func searchAndLoad(api extensions.API, query string, limit int) ([]extensions.To
 	return loaded, nil
 }
 
-// searchDocument is a tool's search text: its name, the name with _ as
-// spaces, its description, its schema's descriptions and property names, and
-// its namespace.
-func searchDocument(tool extensions.ToolInfo) string {
-	parts := []string{tool.Name, strings.ReplaceAll(tool.Name, "_", " "), tool.Description}
+// toolDocument is a tool as the ranker sees it: its name, its description with its schema's descriptions and
+// property names, and apart from them its namespace's name, description and instructions.
+type toolDocument struct{ name, text, namespace string }
+
+func searchDocument(tool extensions.ToolInfo) toolDocument {
+	parts := []string{tool.Description}
 	var schema any
 	_ = json.Unmarshal(tool.Parameters, &schema)
 	parts = schemaText(schema, parts)
-	if tool.Namespace != nil {
-		parts = append(parts, tool.Namespace.Name, tool.Namespace.Description, tool.Namespace.Instructions)
-	}
 	kept := parts[:0]
 	for _, part := range parts {
 		if strings.TrimSpace(part) != "" {
 			kept = append(kept, part)
 		}
 	}
-	return strings.Join(kept, " ")
+	document := toolDocument{name: tool.Name, text: strings.Join(kept, " ")}
+	if tool.Namespace != nil {
+		document.namespace = tool.Namespace.Name + " " + tool.Namespace.Description + " " + tool.Namespace.Instructions
+	}
+	return document
 }
 
 func schemaText(schema any, parts []string) []string {
@@ -160,36 +163,57 @@ var stopWords = map[string]bool{
 var (
 	camelBoundary   = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 	acronymBoundary = regexp.MustCompile(`([A-Z]+)([A-Z][a-z])`)
-	nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]+`)
+	nonWord         = regexp.MustCompile(`[^\p{L}\p{M}\p{N}]+`)
+	asciiWord       = regexp.MustCompile(`^[a-z0-9]+$`)
 	pluralSuffix    = regexp.MustCompile(`(ches|shes|sses|xes|zes)$`)
+	identifierChar  = regexp.MustCompile(`[^a-z0-9_$]`)
 )
 
-// tokenize lowercases text, splits it at camelCase boundaries and
-// non-alphanumerics, drops stop words and singularizes naively.
+// tokenize splits NFC text at camelCase boundaries and between Unicode words, drops stop words and
+// singularizes ASCII words naively.
+//
+// ponytail: words are runs of letters, marks and digits; upstream's Intl.Segmenter also splits text written
+// without spaces (Chinese, Japanese, Thai) by dictionary, which the stdlib cannot.
 func tokenize(text string) []string {
-	text = acronymBoundary.ReplaceAllString(camelBoundary.ReplaceAllString(text, "$1 $2"), "$1 $2")
+	text = acronymBoundary.ReplaceAllString(camelBoundary.ReplaceAllString(norm.NFC.String(text), "$1 $2"), "$1 $2")
 	var terms []string
-	for _, term := range nonAlphanumeric.Split(strings.ToLower(text), -1) {
-		if term == "" || stopWords[term] {
+	for _, term := range strings.Fields(nonWord.ReplaceAllString(strings.ToLower(text), " ")) {
+		if stopWords[term] {
 			continue
 		}
-		switch {
-		case len(term) > 4 && strings.HasSuffix(term, "ies"):
-			term = term[:len(term)-3] + "y"
-		case len(term) > 4 && pluralSuffix.MatchString(term):
-			term = term[:len(term)-2]
-		case len(term) > 3 && strings.HasSuffix(term, "s") && !strings.HasSuffix(term, "ss"):
-			term = term[:len(term)-1]
+		if asciiWord.MatchString(term) {
+			switch {
+			case len(term) > 4 && strings.HasSuffix(term, "ies"):
+				term = term[:len(term)-3] + "y"
+			case len(term) > 4 && pluralSuffix.MatchString(term):
+				term = term[:len(term)-2]
+			case len(term) > 3 && strings.HasSuffix(term, "s") && !strings.HasSuffix(term, "ss"):
+				term = term[:len(term)-1]
+			}
 		}
 		terms = append(terms, term)
 	}
 	return terms
 }
 
-// rankBM25 returns the indexes of the best documents for query, best first,
-// with Okapi BM25 (k1 1.2, b 0.75); ties keep document order.
-func rankBM25(query string, documents []string, limit int) []int {
-	var queryTerms []string
+func termSet(text string) map[string]bool {
+	set := map[string]bool{}
+	for _, term := range tokenize(text) {
+		set[term] = true
+	}
+	return set
+}
+
+// A query term in the name counts this many times its IDF, more than any number of mentions in the description
+// (at most k1+1); one in the namespace, shared by every tool of a server, counts half.
+const nameWeight, namespaceWeight = 3, 0.5
+
+// rankBM25 returns the indexes of the best documents for query, best first: Okapi BM25 (k1 1.2, b 0.75) over
+// the description, length-normalized, with the name and namespace as weighted fields. A query that is exactly a
+// tool's name (or its part after a "__") ranks first, then tools matching more query terms; a tool whose whole
+// local name is in the query gains one more match of every term. Ties keep document order (upstream #11331).
+func rankBM25(query string, documents []toolDocument, limit int) []int {
+	queryTerms := []string{}
 	for _, term := range tokenize(query) {
 		if !slices.Contains(queryTerms, term) {
 			queryTerms = append(queryTerms, term)
@@ -199,48 +223,87 @@ func rankBM25(query string, documents []string, limit int) []int {
 		return nil
 	}
 	const k1, b = 1.2, 0.75
-	counts := make([]map[string]int, len(documents))
-	lengths := make([]float64, len(documents))
+	type indexed struct {
+		names, namespace map[string]bool
+		local            map[string]bool
+		counts           map[string]int
+		length           float64
+	}
+	index := make([]indexed, len(documents))
 	total := 0.0
-	for index, document := range documents {
-		counts[index] = map[string]int{}
-		for _, term := range tokenize(document) {
-			counts[index][term]++
-			lengths[index]++
+	for position, document := range documents {
+		segments := strings.Split(document.name, "__")
+		entry := indexed{names: termSet(document.name), namespace: termSet(document.namespace),
+			local: termSet(segments[len(segments)-1]), counts: map[string]int{}}
+		for _, term := range tokenize(document.text) {
+			entry.counts[term]++
+			entry.length++
 		}
-		total += lengths[index]
+		total += entry.length
+		index[position] = entry
 	}
 	average := total / float64(len(documents))
 	if average == 0 {
 		average = 1
 	}
+	idf := map[string]float64{}
+	fullNameBonus := 0.0
+	for _, term := range queryTerms {
+		frequency := 0
+		for _, entry := range index {
+			if entry.names[term] || entry.counts[term] > 0 || entry.namespace[term] {
+				frequency++
+			}
+		}
+		idf[term] = math.Log(1 + (float64(len(documents)-frequency)+0.5)/(float64(frequency)+0.5))
+		fullNameBonus += idf[term]
+	}
+	exactQuery := identifierChar.ReplaceAllString(strings.ToLower(strings.TrimSpace(query)), "_")
 	type match struct {
-		index int
-		score float64
+		index, covered int
+		score          float64
+		exact          bool
 	}
 	var matches []match
-	for index := range documents {
-		score := 0.0
+	for position, entry := range index {
+		norm := k1 * (1 - b + b*entry.length/average)
+		score, covered := 0.0, 0
 		for _, term := range queryTerms {
-			count := counts[index][term]
-			if count == 0 {
-				continue
+			count := float64(entry.counts[term])
+			weight := count * (k1 + 1) / (count + norm)
+			if entry.names[term] {
+				weight += nameWeight
 			}
-			frequency := 0
-			for _, other := range counts {
-				if other[term] > 0 {
-					frequency++
-				}
+			if entry.namespace[term] {
+				weight += namespaceWeight
 			}
-			idf := math.Log(1 + (float64(len(documents)-frequency)+0.5)/(float64(frequency)+0.5))
-			norm := k1 * (1 - b + b*lengths[index]/average)
-			score += idf * (float64(count) * (k1 + 1)) / (float64(count) + norm)
+			if weight > 0 {
+				covered++
+			}
+			score += idf[term] * weight
 		}
-		if score > 0 {
-			matches = append(matches, match{index, score})
+		if score == 0 {
+			continue
 		}
+		local := len(entry.local) > 0
+		for term := range entry.local {
+			local = local && slices.Contains(queryTerms, term)
+		}
+		if local {
+			score += fullNameBonus
+		}
+		name := identifierChar.ReplaceAllString(strings.ToLower(strings.TrimSpace(documents[position].name)), "_")
+		matches = append(matches, match{position, covered, score, name == exactQuery || strings.HasSuffix(name, "__"+exactQuery)})
 	}
-	sort.SliceStable(matches, func(i, j int) bool { return matches[i].score > matches[j].score })
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].exact != matches[j].exact {
+			return matches[i].exact
+		}
+		if matches[i].covered != matches[j].covered {
+			return matches[i].covered > matches[j].covered
+		}
+		return matches[i].score > matches[j].score
+	})
 	result := make([]int, 0, min(limit, len(matches)))
 	for _, item := range matches[:min(limit, len(matches))] {
 		result = append(result, item.index)

@@ -953,10 +953,23 @@ func (runtime *SessionRuntime) setActiveToolsByName(names []string) error {
 	return nil
 }
 
+// setActiveToolsLocked treats names as a set: tools that stay active keep their order and new ones are
+// appended, so reordering the same tools leaves the prompt and its cache alone (upstream #11495).
 func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *extensionRuntimeState) {
-	active := make([]engine.AgentTool, 0, len(names))
-	valid := make([]string, 0, len(names))
+	ordered := make([]string, 0, len(names))
+	for _, tool := range runtime.agent.State().Tools {
+		if name := tool.Spec().Name; slices.Contains(names, name) && !slices.Contains(ordered, name) {
+			ordered = append(ordered, name)
+		}
+	}
 	for _, name := range names {
+		if !slices.Contains(ordered, name) {
+			ordered = append(ordered, name)
+		}
+	}
+	active := make([]engine.AgentTool, 0, len(ordered))
+	valid := make([]string, 0, len(ordered))
+	for _, name := range ordered {
 		// Hidden tools are registered but never active.
 		if tool := state.toolRegistry[name]; tool != nil && state.exposure(name) != extensions.ToolHidden {
 			active = append(active, tool)

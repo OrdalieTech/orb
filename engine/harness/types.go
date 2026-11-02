@@ -322,6 +322,8 @@ type GenerateBranchSummaryOptions struct {
 	CustomInstructions  string
 	ReplaceInstructions bool
 	ReserveTokens       *int64
-	Retry               *ai.RetryPolicy
-	Callbacks           *ai.RetryCallbacks
+	// ThinkingLevel reasons for a reasoning model, as compaction does (upstream #11444).
+	ThinkingLevel ai.ModelThinkingLevel
+	Retry         *ai.RetryPolicy
+	Callbacks     *ai.RetryCallbacks
 }

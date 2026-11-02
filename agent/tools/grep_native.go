@@ -204,9 +204,8 @@ func (tool *grepTool) Execute(
 			fileCache[path] = nil
 			return nil
 		}
-		content = strings.ReplaceAll(content, "\r\n", "\n")
-		content = strings.ReplaceAll(content, "\r", "\n")
-		lines := strings.Split(content, "\n")
+		// Only CRLF ends a line: ripgrep counts a lone CR as part of one, and context lines follow its numbers.
+		lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 		fileCache[path] = lines
 		return lines
 	}
