@@ -578,6 +578,17 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 			arguments: j({ a: 1 }),
 		},
 		{
+			name: "ref-self-cycle",
+			schema: { type: "object", properties: { x: { $ref: "#/$defs/cycle" } }, $defs: { cycle: { $ref: "#/$defs/cycle" } } },
+			arguments: j({ x: 1 }),
+		},
+		{
+			// The check fails on enum before the $ref; explaining the failure still loops.
+			name: "ref-self-cycle-explained",
+			schema: { type: "object", properties: { x: { $ref: "#/$defs/cycle" } }, $defs: { cycle: { enum: ["a"], $ref: "#/$defs/cycle" } } },
+			arguments: j({ x: 1 }),
+		},
+		{
 			name: "ref-percent-encoded",
 			schema: { type: "object", properties: { a: { $ref: "#/$defs/a%20b" } }, $defs: { "a b": number } },
 			arguments: j({ a: "x" }),
