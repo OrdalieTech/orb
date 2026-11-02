@@ -101,7 +101,9 @@ await writeFile(adapterPath, adapter, { mode: 0o755 });
 await writeFile(adapterConfigPath, `import {mergeConfig} from "vitest/config";
 import upstream from "./vitest.config.ts";
 export default mergeConfig(upstream, {resolve: {alias: [
- {find: "@earendil-works/pi-ai/utils/uuid", replacement: ${JSON.stringify(path.join(upstreamRoot, "packages/ai/src/utils/uuid.ts"))}}
+ {find: "@earendil-works/pi-ai/utils/uuid", replacement: ${JSON.stringify(path.join(upstreamRoot, "packages/ai/src/utils/uuid.ts"))}},
+ {find: /^@earendil-works\\/pi-schema$/, replacement: ${JSON.stringify(path.join(upstreamRoot, "packages/schema/src/index.ts"))}},
+ {find: /^@earendil-works\\/pi-schema\\/formats$/, replacement: ${JSON.stringify(path.join(upstreamRoot, "packages/schema/src/formats/index.ts"))}}
 ]}});
 `);
 try {
