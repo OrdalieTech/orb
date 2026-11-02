@@ -78,7 +78,7 @@ func TestRealHostToolWireGapClosures(t *testing.T) {
 
 	// The JSON-Schema parameters crossed intact: the agent loop's
 	// validate-before-execute gate refuses schema-invalid arguments.
-	if _, err := jsonschema.ValidateToolArgumentsJSON("gap_tool", jsonschema.Schema(definition.Parameters), []byte(`{}`)); err == nil {
+	if _, err := jsonschema.ValidateToolArgumentsJSON("gap_tool", jsonschema.Schema(definition.Parameters), []byte(`{}`), ""); err == nil {
 		t.Fatal("wire-crossed schema accepted arguments missing a required property")
 	}
 

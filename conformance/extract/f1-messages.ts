@@ -421,8 +421,8 @@ export async function generateF1(_upstreamRoot: string, outputRoot: string, upst
     generator:
       "conformance/extract/f1-messages.ts + conformance/extract/f1-partialjson.ts + conformance/extract/f1-schema.ts",
     source:
-      "packages/ai/src/types.ts + packages/ai/src/utils/json-parse.ts + packages/ai/src/utils/typebox-helpers.ts",
-    files: ["cases.json", "partialjson.json", "schema.json"],
+      "packages/ai/src/types.ts + packages/ai/src/utils/json-parse.ts + packages/ai/src/utils/typebox-helpers.ts + packages/ai/src/utils/validation.ts",
+    files: ["cases.json", "partialjson.json", "schema.json", "validation.json"],
   };
   await writeFile(path.join(familyDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(path.join(familyDir, "cases.json"), `${JSON.stringify({ cases }, null, 2)}\n`);

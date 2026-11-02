@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"math/big"
+	"net/url"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +20,8 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
+// ValidationIssue is one failure of a value, as pi-schema reports it: Path is
+// a JSON Pointer, "" for the value itself.
 type ValidationIssue struct {
 	Path    string
 	Message string
@@ -31,833 +35,1475 @@ func (errors ValidationErrors) Error() string {
 	}
 	parts := make([]string, len(errors))
 	for index, issue := range errors {
-		parts[index] = issue.Path + ": " + issue.Message
+		parts[index] = dottedPath(issue.Path) + ": " + issue.Message
 	}
 	return "jsonschema: validation failed: " + strings.Join(parts, "; ")
 }
 
-// Validate clones value, applies the same primitive coercions used by
-// upstream tool validation, and validates the converted value against schema.
+// Validate coerces a copy of value towards schema as pi-schema's parse does
+// for tool arguments, and returns it when it then validates.
 func Validate(schema Schema, value any) (any, error) {
-	return validate(schema, value, true)
-}
-
-// validate coerces value in place unless asked to clone it first.
-func validate(schema Schema, value any, clone bool) (any, error) {
-	decodedSchema, err := decodeSchema(schema)
+	compiled, err := compileSchema(schema)
 	if err != nil {
 		return nil, err
 	}
-	if clone {
-		if value, err = cloneJSONValue(value); err != nil {
-			return nil, fmt.Errorf("jsonschema: clone value: %w", err)
-		}
+	data, err := jsonwire.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("jsonschema: encode value: %w", err)
 	}
-	normalizeOptionalNulls(value, decodedSchema, decodedSchema)
-	coerced := coerceValue(value, decodedSchema)
-	issues := validateValue(coerced, decodedSchema, "")
-	if len(issues) > 0 {
+	decoded, err := decodeJSON(data)
+	if err != nil {
+		return nil, fmt.Errorf("jsonschema: decode value: %w", err)
+	}
+	parsed, issues := compiled.parse(decoded)
+	if issues != nil {
 		return nil, ValidationErrors(issues)
 	}
-	return coerced, nil
+	return goValue(parsed), nil
 }
 
-// ValidateToolArgumentsJSON preserves the provider's argument member order in
-// the diagnostic's pretty-printed input. Callers with a retained raw tool call
-// should prefer this form over re-encoding its arguments map.
-func ValidateToolArgumentsJSON(toolName string, schema Schema, argumentsJSON []byte) (any, error) {
-	arguments, ok := jsonwire.Decode(argumentsJSON)
-	if !ok {
-		if err := json.Unmarshal(argumentsJSON, &arguments); err != nil {
-			return nil, fmt.Errorf("jsonschema: decode tool arguments: %w", err)
+// ValidateToolArgumentsJSON is pi's validateToolArguments for a tool call
+// whose provider-decoded arguments are argumentsJSON and whose decoding
+// failure, if any, is argumentsError. Its errors are the text the model reads.
+func ValidateToolArgumentsJSON(toolName string, schema Schema, argumentsJSON []byte, argumentsError string) (any, error) {
+	if argumentsError != "" {
+		return nil, errors.New(`Invalid arguments for tool "` + toolName + `": ` + argumentsError)
+	}
+	compiled, err := compileSchema(schema)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := compiled.root.(bool); ok {
+		// pi caches validators in a WeakMap keyed by the schema, which refuses a
+		// boolean schema with V8's TypeError.
+		return nil, errors.New("Invalid value used as weak map key") //nolint:staticcheck // V8's message, which the model reads.
+	}
+	arguments, err := decodeJSON(argumentsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("jsonschema: decode tool arguments: %w", err)
+	}
+	parsed, issues := compiled.parse(arguments)
+	if issues == nil {
+		return goValue(parsed), nil
+	}
+	message := []byte(`Validation failed for tool "` + toolName + "\":\n")
+	for index, issue := range issues {
+		if index > 0 {
+			message = append(message, '\n')
 		}
+		message = append(message, "  - "+dottedPath(issue.Path)+": "+issue.Message...)
 	}
-	// The arguments were just decoded for this call, so they need no clone.
-	validated, err := validate(schema, arguments, false)
-	if err == nil {
-		return validated, nil
-	}
-	return nil, formatToolValidationError(toolName, err, indentRawJSON(argumentsJSON))
+	message = append(message, "\n\nReceived arguments:\n"...)
+	return nil, errors.New(string(appendJSON(message, arguments, "  ", "")))
 }
 
-func formatToolValidationError(toolName string, err error, received string) error {
-	var validationErrors ValidationErrors
-	if !errors.As(err, &validationErrors) {
-		return err
+// dottedPath is a JSON Pointer as the dotted path the model sees.
+func dottedPath(pointer string) string {
+	if pointer == "" {
+		return "root"
 	}
-
-	var message strings.Builder
-	fmt.Fprintf(&message, "Validation failed for tool %q:\n", toolName)
-	for _, issue := range validationErrors {
-		path := issue.Path
-		if path == "" {
-			path = "root"
-		}
-		fmt.Fprintf(&message, "  - %s: %s\n", path, issue.Message)
+	segments := strings.Split(pointer[1:], "/")
+	for index, segment := range segments {
+		segments[index] = strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
 	}
-	message.WriteString("\nReceived arguments:\n")
-	message.WriteString(received)
-	return errors.New(message.String())
+	return strings.Join(segments, ".")
 }
 
-// normalizeOptionalNulls drops nulls sent for optional properties whose schema
-// rejects null, so a provider's explicit null reads as an omission. Properties
-// behind a $ref that does not resolve within root keep their null.
-func normalizeOptionalNulls(value, schema, root any) {
-	object, _ := resolveLocalRef(schema, root).(*schemaObject)
-	if object == nil {
+func (c *compiledSchema) parse(value any) (any, []ValidationIssue) {
+	coerced := (&coercer{c: c}).coerce(value)
+	if c.valid(c.root, c.rootBase, coerced) {
+		return coerced, nil
+	}
+	var issues []ValidationIssue
+	c.walk(c.root, c.rootBase, coerced, "", &issues)
+	if len(issues) == 0 {
+		issues = []ValidationIssue{{Path: "", Message: "invalid"}}
+	}
+	return nil, issues
+}
+
+// object is a JSON object whose keys keep JavaScript's order: array indexes
+// ascending, then the other keys in insertion order. Objects and arrays are
+// pointers because coercion copies only what it changes and, as pi-schema,
+// tells an unchanged value by identity.
+type object struct {
+	keys   []string
+	values map[string]any
+}
+
+type array struct{ items []any }
+
+func (o *object) get(key string) (any, bool) {
+	value, ok := o.values[key]
+	return value, ok
+}
+
+func (o *object) clone() *object {
+	values := make(map[string]any, len(o.values))
+	for key, value := range o.values {
+		values[key] = value
+	}
+	return &object{keys: append([]string(nil), o.keys...), values: values}
+}
+
+func (o *object) remove(key string) {
+	if _, ok := o.values[key]; !ok {
 		return
 	}
-	if items, ok := value.([]any); ok {
-		switch itemSchema := object.values["items"].(type) {
-		case []any:
-			for index := range items {
-				if index < len(itemSchema) {
-					normalizeOptionalNulls(items[index], itemSchema[index], root)
+	delete(o.values, key)
+	for index, name := range o.keys {
+		if name == key {
+			o.keys = append(o.keys[:index:index], o.keys[index+1:]...)
+			return
+		}
+	}
+}
+
+// decodeJSON decodes one JSON value as JSON.parse does: a repeated key keeps
+// its first position and its last value, and numbers are float64.
+func decodeJSON(data []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	value, err := decodeValue(decoder)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, errors.New("trailing data after JSON value")
+	}
+	return value, nil
+}
+
+func decodeValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch token := token.(type) {
+	case json.Number:
+		// Out of range is Infinity, as in JavaScript.
+		number, _ := strconv.ParseFloat(string(token), 64)
+		return number, nil
+	case json.Delim:
+		if token == '[' {
+			list := &array{items: []any{}}
+			for decoder.More() {
+				item, err := decodeValue(decoder)
+				if err != nil {
+					return nil, err
 				}
+				list.items = append(list.items, item)
 			}
-		case *schemaObject:
-			for _, item := range items {
-				normalizeOptionalNulls(item, itemSchema, root)
+			_, err := decoder.Token()
+			return list, err
+		}
+		result := &object{values: map[string]any{}}
+		for decoder.More() {
+			name, err := decoder.Token()
+			if err != nil {
+				return nil, err
 			}
+			key, _ := name.(string)
+			value, err := decodeValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			if _, exists := result.values[key]; !exists {
+				result.keys = append(result.keys, key)
+			}
+			result.values[key] = value
 		}
-		return
-	}
-	values, ok := value.(map[string]any)
-	properties, _ := object.values["properties"].(*schemaObject)
-	if !ok || properties == nil {
-		return
-	}
-	required := stringList(object.values["required"])
-	for _, name := range properties.order {
-		propertySchema := resolveLocalRef(properties.values[name], root)
-		current, present := values[name]
-		if !present {
-			continue
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
 		}
-		if current == nil && !slices.Contains(required, name) && propertySchema != nil &&
-			len(validateValue(nil, propertySchema, "")) > 0 {
-			delete(values, name)
-			continue
-		}
-		normalizeOptionalNulls(current, propertySchema, root)
+		result.keys = jsKeyOrder(result.keys)
+		return result, nil
+	default:
+		return token, nil
 	}
 }
 
-// resolveLocalRef follows a schema's "#" JSON-pointer $ref within root, up to
-// a bounded chain; an external, dangling or cyclic reference resolves to nil.
-func resolveLocalRef(schema, root any) any {
-	for range 32 {
-		object, _ := schema.(*schemaObject)
-		if object == nil {
-			return schema
-		}
-		ref, isString := object.values["$ref"].(string)
-		if !isString {
-			return schema
-		}
-		pointer, local := strings.CutPrefix(ref, "#")
-		if !local || pointer != "" && !strings.HasPrefix(pointer, "/") {
-			return nil
-		}
-		schema = root
-		for _, token := range strings.Split(pointer, "/")[1:] {
-			parent, _ := schema.(*schemaObject)
-			if parent == nil {
-				return nil
-			}
-			schema = parent.values[strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")]
+// jsKeyOrder orders keys as a JavaScript object enumerates them.
+func jsKeyOrder(keys []string) []string {
+	var indexes []uint64
+	var others []string
+	for _, key := range keys {
+		if index, ok := arrayIndex(key); ok {
+			indexes = append(indexes, index)
+		} else {
+			others = append(others, key)
 		}
 	}
-	return nil
+	if len(indexes) == 0 {
+		return keys
+	}
+	slices.Sort(indexes)
+	ordered := make([]string, 0, len(keys))
+	for _, index := range indexes {
+		ordered = append(ordered, strconv.FormatUint(index, 10))
+	}
+	return append(ordered, others...)
 }
 
-// decodedSchemas keeps decoded schemas, which nothing modifies, by their
-// bytes: tool calls validate against the same few schemas, and decoding one
-// again cost more than validating. At most maxDecodedSchemas are kept.
+func arrayIndex(key string) (uint64, bool) {
+	if key == "" || len(key) > 1 && key[0] == '0' {
+		return 0, false
+	}
+	index, err := strconv.ParseUint(key, 10, 32)
+	return index, err == nil && index != math.MaxUint32
+}
+
+func goValue(value any) any {
+	switch value := value.(type) {
+	case *object:
+		result := make(map[string]any, len(value.keys))
+		for _, key := range value.keys {
+			result[key] = goValue(value.values[key])
+		}
+		return result
+	case *array:
+		result := make([]any, len(value.items))
+		for index, item := range value.items {
+			result[index] = goValue(item)
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+// appendJSON appends value as JSON.stringify(value, null, indent) writes it.
+func appendJSON(dst []byte, value any, indent, prefix string) []byte {
+	switch value := value.(type) {
+	case nil:
+		return append(dst, "null"...)
+	case bool:
+		return strconv.AppendBool(dst, value)
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return append(dst, "null"...)
+		}
+		return jsonwire.AppendFloat(dst, value)
+	case string:
+		return jsonwire.AppendString(dst, value)
+	case *array:
+		if len(value.items) == 0 {
+			return append(dst, "[]"...)
+		}
+		dst = append(dst, '[')
+		for index, item := range value.items {
+			if index > 0 {
+				dst = append(dst, ',')
+			}
+			dst = appendIndent(dst, indent, prefix+indent)
+			dst = appendJSON(dst, item, indent, prefix+indent)
+		}
+		return append(appendIndent(dst, indent, prefix), ']')
+	case *object:
+		if len(value.keys) == 0 {
+			return append(dst, "{}"...)
+		}
+		dst = append(dst, '{')
+		for index, key := range value.keys {
+			if index > 0 {
+				dst = append(dst, ',')
+			}
+			dst = appendIndent(dst, indent, prefix+indent)
+			dst = append(jsonwire.AppendString(dst, key), ':')
+			if indent != "" {
+				dst = append(dst, ' ')
+			}
+			dst = appendJSON(dst, value.values[key], indent, prefix+indent)
+		}
+		return append(appendIndent(dst, indent, prefix), '}')
+	default:
+		return append(dst, "null"...)
+	}
+}
+
+func appendIndent(dst []byte, indent, prefix string) []byte {
+	if indent == "" {
+		return dst
+	}
+	return append(append(dst, '\n'), prefix...)
+}
+
+func stringify(value any) string { return string(appendJSON(nil, value, "", "")) }
+
+// compiledSchemas keeps compiled schemas, which nothing modifies, by their
+// bytes: tool calls validate against the same few schemas, and compiling one
+// again cost more than validating. At most maxCompiledSchemas are kept.
 var (
-	decodedSchemas    sync.Map
-	decodedSchemaKept atomic.Int32
+	compiledSchemas    sync.Map
+	compiledSchemaKept atomic.Int32
 )
 
-const maxDecodedSchemas = 512
+const maxCompiledSchemas = 512
 
-func decodeSchema(schema Schema) (any, error) {
-	if decoded, ok := decodedSchemas.Load(string(schema)); ok {
-		return decoded, nil
+// compiledSchema is a decoded schema with pi-schema's reference index.
+type compiledSchema struct {
+	root      any
+	rootBase  string
+	baseOf    map[*object]string
+	resources map[string]any
+	anchors   map[string]*object
+}
+
+func compileSchema(schema Schema) (*compiledSchema, error) {
+	if cached, ok := compiledSchemas.Load(string(schema)); ok {
+		return cached.(*compiledSchema), nil
 	}
 	data, err := schema.MarshalJSON()
 	if err != nil {
 		return nil, err
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	decoded, err := decodeSchemaValue(decoder)
+	root, err := decodeJSON(data)
 	if err != nil {
 		return nil, fmt.Errorf("jsonschema: decode schema: %w", err)
 	}
-	if decodedSchemaKept.Add(1) <= maxDecodedSchemas {
-		decodedSchemas.Store(string(schema), decoded)
+	c := &compiledSchema{root: root, rootBase: defaultBase, baseOf: map[*object]string{}, resources: map[string]any{defaultBase: root}, anchors: map[string]*object{}}
+	if node, ok := root.(*object); ok {
+		c.rootBase = c.baseFor(node, defaultBase)
 	}
-	return decoded, nil
-}
-
-type schemaObject struct {
-	values map[string]any
-	order  []string
-}
-
-func (object *schemaObject) get(name string) (any, bool) {
-	if object == nil {
-		return nil, false
-	}
-	value, ok := object.values[name]
-	return value, ok
-}
-
-func decodeSchemaValue(decoder *json.Decoder) (any, error) {
-	token, err := decoder.Token()
-	if err != nil {
+	c.index(root, defaultBase)
+	if err := c.compiles(root, c.rootBase, map[*object]bool{}); err != nil {
 		return nil, err
 	}
-	delimiter, ok := token.(json.Delim)
-	if !ok {
-		return token, nil
+	if compiledSchemaKept.Add(1) <= maxCompiledSchemas {
+		compiledSchemas.Store(string(schema), c)
 	}
-	switch delimiter {
-	case '{':
-		object := &schemaObject{values: make(map[string]any)}
-		for decoder.More() {
-			nameToken, err := decoder.Token()
-			if err != nil {
-				return nil, err
-			}
-			name, ok := nameToken.(string)
-			if !ok {
-				return nil, fmt.Errorf("object member name is %T", nameToken)
-			}
-			value, err := decodeSchemaValue(decoder)
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := object.values[name]; !exists {
-				object.order = append(object.order, name)
-			}
-			object.values[name] = value
-		}
-		closing, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		if closing != json.Delim('}') {
-			return nil, fmt.Errorf("object is not closed")
-		}
-		return object, nil
-	case '[':
-		var values []any
-		for decoder.More() {
-			value, err := decodeSchemaValue(decoder)
-			if err != nil {
-				return nil, err
-			}
-			values = append(values, value)
-		}
-		closing, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		if closing != json.Delim(']') {
-			return nil, fmt.Errorf("array is not closed")
-		}
-		return values, nil
-	default:
-		return nil, fmt.Errorf("unexpected delimiter %q", delimiter)
-	}
+	return c, nil
 }
 
-func cloneJSONValue(value any) (any, error) {
-	data, err := jsonwire.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var cloned any
-	if err := json.Unmarshal(data, &cloned); err != nil {
-		return nil, err
-	}
-	return cloned, nil
-}
-
-func coerceValue(value, schema any) any {
-	object, ok := schema.(*schemaObject)
-	if !ok {
-		return value
-	}
-	next := value
-	allOf, _ := object.get("allOf")
-	for _, nested := range schemaList(allOf) {
-		next = coerceValue(next, nested)
-	}
-	for _, keyword := range []string{"anyOf", "oneOf"} {
-		union, _ := object.get(keyword)
-		if variants := schemaList(union); len(variants) > 0 {
-			next = coerceUnion(next, variants)
-		}
-	}
-
-	typeValue, _ := object.get("type")
-	types := schemaTypes(typeValue)
-	unionAlreadyMatches := len(types) > 1 && anyTypeMatches(next, types)
-	if len(types) > 0 && !unionAlreadyMatches {
-		for _, schemaType := range types {
-			if candidate, coerced := coercePrimitive(next, schemaType); coerced {
-				next = candidate
-				break
-			}
-		}
-	}
-
-	if slices.Contains(types, "object") {
-		if values, ok := next.(map[string]any); ok {
-			propertyValue, _ := object.get("properties")
-			properties, _ := propertyValue.(*schemaObject)
-			if properties == nil {
-				properties = &schemaObject{values: map[string]any{}}
-			}
-			for _, name := range properties.order {
-				propertySchema := properties.values[name]
-				if property, exists := values[name]; exists {
-					values[name] = coerceValue(property, propertySchema)
-				}
-			}
-			additionalValue, _ := object.get("additionalProperties")
-			if additional, ok := additionalValue.(*schemaObject); ok {
-				for name, property := range values {
-					if _, defined := properties.values[name]; !defined {
-						values[name] = coerceValue(property, additional)
-					}
-				}
-			}
-		}
-	}
-	if slices.Contains(types, "array") {
-		if values, ok := next.([]any); ok {
-			itemValue, _ := object.get("items")
-			switch items := itemValue.(type) {
-			case *schemaObject:
-				for index := range values {
-					values[index] = coerceValue(values[index], items)
-				}
-			case []any:
-				for index := range values {
-					if index < len(items) {
-						values[index] = coerceValue(values[index], items[index])
-					}
-				}
-			}
-		}
-	}
-	return next
-}
-
-func coerceUnion(value any, schemas []any) any {
-	// A value that already satisfies one arm is returned untouched, so an
-	// explicit null keeps its shape against a nullable union.
-	for _, schema := range schemas {
-		if len(validateValue(value, schema, "")) == 0 {
-			return value
-		}
-	}
-	for _, schema := range schemas {
-		candidate, err := cloneJSONValue(value)
-		if err != nil {
-			continue
-		}
-		candidate = coerceValue(candidate, schema)
-		if len(validateValue(candidate, schema, "")) == 0 {
-			return candidate
-		}
-	}
-	return value
-}
-
-// coercePrimitive converts value to schemaType when JavaScript would, and
-// reports whether it did.
-func coercePrimitive(value any, schemaType string) (any, bool) {
-	switch schemaType {
-	case "number":
-		switch typed := value.(type) {
-		case nil:
-			return float64(0), true
-		case string:
-			if strings.TrimSpace(typed) != "" {
-				if number, ok := parseJSNumber(typed); ok && !math.IsInf(number, 0) && !math.IsNaN(number) {
-					return number, true
-				}
-			}
-		case bool:
-			if typed {
-				return float64(1), true
-			}
-			return float64(0), true
-		}
-	case "integer":
-		switch typed := value.(type) {
-		case nil:
-			return float64(0), true
-		case string:
-			if strings.TrimSpace(typed) != "" {
-				if number, ok := parseJSNumber(typed); ok && !math.IsInf(number, 0) && !math.IsNaN(number) && math.Trunc(number) == number {
-					return number, true
-				}
-			}
-		case bool:
-			if typed {
-				return float64(1), true
-			}
-			return float64(0), true
-		}
-	case "boolean":
-		switch typed := value.(type) {
-		case nil:
-			return false, true
-		case string:
-			if typed == "true" {
-				return true, true
-			}
-			if typed == "false" {
-				return false, true
-			}
-		case float64:
-			if typed == 1 {
-				return true, true
-			}
-			if typed == 0 {
-				return false, true
-			}
-		}
-	case "string":
-		switch typed := value.(type) {
-		case nil:
-			return "", true
-		case bool:
-			return strconv.FormatBool(typed), true
-		case float64:
-			if typed == 0 {
-				return "0", true
-			}
-			encoded, err := jsonwire.Marshal(typed)
-			if err == nil {
-				return string(encoded), true
-			}
-		}
-	case "null":
-		switch typed := value.(type) {
-		case string:
-			if typed == "" {
-				return nil, true
-			}
-		case float64:
-			if typed == 0 {
-				return nil, true
-			}
-		case bool:
-			if !typed {
-				return nil, true
-			}
-		}
-	}
-	return value, false
-}
-
-func parseJSNumber(value string) (float64, bool) {
-	trimmed := strings.TrimSpace(value)
-	if len(trimmed) > 2 {
-		base := 0
-		switch trimmed[:2] {
-		case "0x", "0X":
-			base = 16
-		case "0b", "0B":
-			base = 2
-		case "0o", "0O":
-			base = 8
-		}
-		if base != 0 {
-			integer, err := strconv.ParseUint(trimmed[2:], base, 64)
-			return float64(integer), err == nil
-		}
-	}
-	number, err := strconv.ParseFloat(trimmed, 64)
-	return number, err == nil
-}
-
-func validateValue(value, schema any, path string) []ValidationIssue {
-	if boolean, ok := schema.(bool); ok {
-		if boolean {
-			return nil
-		}
-		return []ValidationIssue{{Path: path, Message: "must not be valid"}}
-	}
-	object, ok := schema.(*schemaObject)
-	if !ok {
+// compiles reports the first subschema pi-schema's compile() refuses, walking
+// the keywords it compiles in its order.
+func (c *compiledSchema) compiles(node any, base string, seen map[*object]bool) error {
+	if _, ok := node.(bool); ok {
 		return nil
 	}
-	var issues []ValidationIssue
-
-	allOf, _ := object.get("allOf")
-	for _, nested := range schemaList(allOf) {
-		issues = append(issues, validateValue(value, nested, path)...)
+	n, ok := node.(*object)
+	if !ok {
+		return errors.New("A schema must be an object or a boolean, got " + stringify(node)) //nolint:staticcheck // pi-schema's message, which the model reads.
 	}
-	anyOf, _ := object.get("anyOf")
-	if variants := schemaList(anyOf); len(variants) > 0 {
-		if validVariantCount(value, variants) == 0 {
-			for _, variant := range variants {
-				issues = append(issues, validateValue(value, variant, path)...)
+	if seen[n] || onlyTypeAndAnnotations(n) {
+		return nil
+	}
+	seen[n] = true
+	b := c.baseFor(n, base)
+	var subschemas []any
+	if properties, ok := n.values["properties"].(*object); ok {
+		subschemas = appendMembers(subschemas, properties)
+	}
+	if patterns, ok := n.values["patternProperties"].(*object); ok {
+		subschemas = appendMembers(subschemas, patterns)
+	}
+	if additional, ok := n.get("additionalProperties"); ok && additional != true {
+		subschemas = append(subschemas, additional)
+	}
+	if names, ok := n.get("propertyNames"); ok {
+		subschemas = append(subschemas, names)
+	}
+	if dependent, ok := n.values["dependentSchemas"].(*object); ok {
+		subschemas = appendMembers(subschemas, dependent)
+	}
+	if dependencies, ok := n.values["dependencies"].(*object); ok {
+		for _, key := range dependencies.keys {
+			if _, list := dependencies.values[key].(*array); !list {
+				subschemas = append(subschemas, dependencies.values[key])
 			}
-			issues = append(issues, ValidationIssue{Path: path, Message: "must match a schema in anyOf"})
 		}
 	}
-	oneOf, _ := object.get("oneOf")
-	if variants := schemaList(oneOf); len(variants) > 0 {
-		valid := validVariantCount(value, variants)
-		if valid == 0 {
-			for _, variant := range variants {
-				issues = append(issues, validateValue(value, variant, path)...)
+	prefix, rest, hasRest := itemSchemas(n)
+	subschemas = append(subschemas, prefix...)
+	if hasRest && rest != true {
+		subschemas = append(subschemas, rest)
+	}
+	if contains, ok := n.get("contains"); ok {
+		subschemas = append(subschemas, contains)
+	}
+	for _, keyword := range []string{"allOf", "anyOf", "oneOf"} {
+		if list, ok := n.values[keyword].(*array); ok {
+			subschemas = append(subschemas, list.items...)
+		}
+	}
+	if not, ok := n.get("not"); ok {
+		subschemas = append(subschemas, not)
+	}
+	if condition, ok := n.get("if"); ok {
+		then, hasThen := n.get("then")
+		otherwise, hasElse := n.get("else")
+		if hasThen {
+			subschemas = append(subschemas, then)
+		}
+		if hasElse {
+			subschemas = append(subschemas, otherwise)
+		}
+		if hasThen || hasElse {
+			subschemas = append(subschemas, condition)
+		}
+	}
+	for _, subschema := range subschemas {
+		if err := c.compiles(subschema, b, seen); err != nil {
+			return err
+		}
+	}
+	if ref, ok := n.values["$ref"].(string); ok {
+		if target, targetBase, found := c.resolve(ref, b); found {
+			return c.compiles(target, targetBase, seen)
+		}
+	}
+	return nil
+}
+
+func appendMembers(list []any, members *object) []any {
+	for _, key := range members.keys {
+		list = append(list, members.values[key])
+	}
+	return list
+}
+
+// annotationKeywords never affect a check.
+var annotationKeywords = map[string]bool{
+	"$schema": true, "$comment": true, "title": true, "description": true, "default": true, "examples": true,
+	"deprecated": true, "readOnly": true, "writeOnly": true, "$defs": true, "definitions": true,
+	"contentEncoding": true, "contentMediaType": true, "minContains": true, "maxContains": true, "$vocabulary": true,
+}
+
+func onlyTypeAndAnnotations(node *object) bool {
+	for _, key := range node.keys {
+		if key != "type" && !annotationKeywords[key] {
+			return false
+		}
+	}
+	return true
+}
+
+// defaultBase is the base URI of a root schema without $id.
+const defaultBase = "https://json-schema.invalid/root.json"
+
+var (
+	indexedSchemaKeywords = []string{"additionalProperties", "propertyNames", "contains", "not", "if", "then", "else", "unevaluatedProperties", "unevaluatedItems", "additionalItems", "contentSchema", "items"}
+	indexedMapKeywords    = []string{"properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"}
+	indexedArrayKeywords  = []string{"allOf", "anyOf", "oneOf", "prefixItems", "items"}
+)
+
+// index records the base URI of every subschema and its $id resources and
+// anchors; an $id inside enum, const or an unknown keyword names nothing.
+func (c *compiledSchema) index(node any, base string) {
+	n, ok := node.(*object)
+	if !ok {
+		return
+	}
+	if _, seen := c.baseOf[n]; seen {
+		return
+	}
+	b := base
+	if id, ok := n.values["$id"].(string); ok {
+		uri := resolveURI(id, b)
+		b = documentOf(uri)
+		c.resources[b] = n
+		if len(uri) > len(b)+1 {
+			c.anchors[uri] = n
+		}
+	}
+	c.baseOf[n] = b
+	for _, keyword := range []string{"$anchor", "$dynamicAnchor"} {
+		if anchor, ok := n.values[keyword].(string); ok {
+			c.anchors[b+"#"+anchor] = n
+		}
+	}
+	for _, keyword := range indexedSchemaKeywords {
+		c.index(n.values[keyword], b)
+	}
+	for _, keyword := range indexedMapKeywords {
+		if members, ok := n.values[keyword].(*object); ok {
+			for _, key := range members.keys {
+				c.index(members.values[key], b)
 			}
 		}
-		if valid != 1 {
-			issues = append(issues, ValidationIssue{Path: path, Message: "must match exactly one schema in oneOf"})
+	}
+	for _, keyword := range indexedArrayKeywords {
+		if list, ok := n.values[keyword].(*array); ok {
+			for _, item := range list.items {
+				c.index(item, b)
+			}
 		}
 	}
-	if nested, exists := object.get("not"); exists && len(validateValue(value, nested, path)) == 0 {
-		issues = append(issues, ValidationIssue{Path: path, Message: "must not match schema in not"})
-	}
+}
 
-	typeValue, _ := object.get("type")
-	types := schemaTypes(typeValue)
-	if len(types) > 0 && !anyTypeMatches(value, types) {
-		return append(issues, ValidationIssue{Path: path, Message: "must be " + strings.Join(types, " or ")})
+func (c *compiledSchema) baseFor(node *object, base string) string {
+	if indexed, ok := c.baseOf[node]; ok {
+		return indexed
 	}
-	enumValue, _ := object.get("enum")
-	if enum, ok := enumValue.([]any); ok && !containsJSONValue(enum, value) {
-		issues = append(issues, ValidationIssue{Path: path, Message: "must be equal to one of the allowed values"})
+	if id, ok := node.values["$id"].(string); ok {
+		return documentOf(resolveURI(id, base))
 	}
-	if constant, exists := object.get("const"); exists && !jsonValuesEqual(constant, value) {
-		issues = append(issues, ValidationIssue{Path: path, Message: "must be equal to the constant"})
-	}
+	return base
+}
 
-	switch typed := value.(type) {
-	case map[string]any:
-		issues = append(issues, validateObject(typed, object, path)...)
-	case []any:
-		issues = append(issues, validateArray(typed, object, path)...)
+// resolve returns the schema ref names from base; a reference that names
+// nothing is not found, and rejects the values at its place.
+func (c *compiledSchema) resolve(ref, base string) (any, string, bool) {
+	uri := resolveURI(ref, base)
+	doc := documentOf(uri)
+	fragment := ""
+	if len(uri) > len(doc) {
+		decoded, err := url.PathUnescape(uri[len(doc)+1:])
+		if err != nil || !utf8.ValidString(decoded) {
+			return nil, "", false
+		}
+		fragment = decoded
+	}
+	root, ok := c.resources[doc]
+	if !ok {
+		return nil, "", false
+	}
+	if fragment == "" {
+		return root, doc, true
+	}
+	if !strings.HasPrefix(fragment, "/") {
+		target, ok := c.anchors[doc+"#"+fragment]
+		if !ok {
+			return nil, "", false
+		}
+		if targetBase, indexed := c.baseOf[target]; indexed {
+			return target, targetBase, true
+		}
+		return target, doc, true
+	}
+	node, b := root, doc
+	for _, raw := range strings.Split(fragment, "/")[1:] {
+		key := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
+		switch parent := node.(type) {
+		case *object:
+			if node, ok = parent.values[key]; !ok {
+				return nil, "", false
+			}
+		case *array:
+			index, isIndex := arrayIndex(key)
+			if !isIndex || index >= uint64(len(parent.items)) {
+				return nil, "", false
+			}
+			node = parent.items[index]
+		default:
+			return nil, "", false
+		}
+		if child, ok := node.(*object); ok {
+			if indexed, ok := c.baseOf[child]; ok {
+				b = indexed
+			}
+		}
+	}
+	return node, b, true
+}
+
+// resolveURI resolves ref against base as new URL(ref, base) does for the
+// references schemas use; the fragment is kept as written.
+func resolveURI(ref, base string) string {
+	doc, fragment, hasFragment := strings.Cut(ref, "#")
+	resolved := documentOf(base)
+	if doc != "" {
+		resolved = doc
+		baseURL, baseErr := url.Parse(documentOf(base))
+		refURL, refErr := url.Parse(doc)
+		if baseErr == nil && refErr == nil && (refURL.IsAbs() || baseURL.Opaque == "") {
+			resolved = baseURL.ResolveReference(refURL).String()
+		}
+	}
+	if hasFragment {
+		return resolved + "#" + fragment
+	}
+	return resolved
+}
+
+func documentOf(uri string) string {
+	doc, _, _ := strings.Cut(uri, "#")
+	return doc
+}
+
+// valid reports whether v passes node, as pi-schema's compiled check does.
+func (c *compiledSchema) valid(node any, base string, v any) bool {
+	n, ok := node.(*object)
+	if !ok {
+		allowed, isBool := node.(bool)
+		return !isBool || allowed
+	}
+	b := c.baseFor(n, base)
+	if types, ok := n.get("type"); ok && !typeMatches(types, v) {
+		return false
+	}
+	if enum, ok := n.values["enum"].(*array); ok && !containsValue(enum.items, v) {
+		return false
+	}
+	if constant, ok := n.get("const"); ok && !deepEqual(constant, v) {
+		return false
+	}
+	switch v := v.(type) {
 	case string:
-		issues = append(issues, validateString(typed, object, path)...)
+		if !c.validString(n, v) {
+			return false
+		}
 	case float64:
-		issues = append(issues, validateNumber(typed, object, path)...)
-	}
-	return issues
-}
-
-func validateObject(value map[string]any, schema *schemaObject, path string) []ValidationIssue {
-	var issues []ValidationIssue
-	propertyValue, _ := schema.get("properties")
-	properties, _ := propertyValue.(*schemaObject)
-	if properties == nil {
-		properties = &schemaObject{values: map[string]any{}}
-	}
-	requiredValue, _ := schema.get("required")
-	for _, required := range stringList(requiredValue) {
-		if _, exists := value[required]; !exists {
-			issues = append(issues, ValidationIssue{
-				Path:    requiredPath(path, required),
-				Message: "must have required properties " + required,
-			})
+		if !validNumber(n, v) {
+			return false
+		}
+	case *object:
+		if !c.validObject(n, b, v) {
+			return false
+		}
+	case *array:
+		if !c.validArray(n, b, v) {
+			return false
 		}
 	}
-	keys := make([]string, 0, len(value))
-	for key := range value {
-		if _, defined := properties.values[key]; !defined {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	additionalValue, _ := schema.get("additionalProperties")
-	if additional, ok := additionalValue.(bool); ok && !additional && len(keys) > 0 {
-		issues = append(issues, ValidationIssue{Path: path, Message: "must not have additional properties"})
-	}
-	if additional, ok := additionalValue.(*schemaObject); ok {
-		for _, key := range keys {
-			property := value[key]
-			issues = append(issues, validateValue(property, additional, childPath(path, key))...)
-		}
-	}
-	for _, key := range properties.order {
-		if property, exists := value[key]; exists {
-			propertySchema := properties.values[key]
-			issues = append(issues, validateValue(property, propertySchema, childPath(path, key))...)
-		}
-	}
-	minimumValue, _ := schema.get("minProperties")
-	if minimum, ok := schemaInteger(minimumValue); ok && len(value) < minimum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must not have fewer than %d properties", minimum)})
-	}
-	maximumValue, _ := schema.get("maxProperties")
-	if maximum, ok := schemaInteger(maximumValue); ok && len(value) > maximum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must not have more than %d properties", maximum)})
-	}
-	return issues
-}
-
-func validateArray(value []any, schema *schemaObject, path string) []ValidationIssue {
-	var issues []ValidationIssue
-	itemValue, _ := schema.get("items")
-	switch items := itemValue.(type) {
-	case *schemaObject:
-		for index, item := range value {
-			issues = append(issues, validateValue(item, items, childPath(path, strconv.Itoa(index)))...)
-		}
-	case []any:
-		for index, item := range value {
-			if index < len(items) {
-				issues = append(issues, validateValue(item, items[index], childPath(path, strconv.Itoa(index)))...)
-				continue
-			}
-			additionalValue, _ := schema.get("additionalItems")
-			if additional, ok := additionalValue.(bool); ok && !additional {
-				issues = append(issues, ValidationIssue{Path: childPath(path, strconv.Itoa(index)), Message: "must not have additional items"})
+	if list, ok := n.values["allOf"].(*array); ok {
+		for _, member := range list.items {
+			if !c.valid(member, b, v) {
+				return false
 			}
 		}
 	}
-	minimumValue, _ := schema.get("minItems")
-	if minimum, ok := schemaInteger(minimumValue); ok && len(value) < minimum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must not have fewer than %d items", minimum)})
+	if list, ok := n.values["anyOf"].(*array); ok && c.matches(list.items, b, v) == 0 {
+		return false
 	}
-	maximumValue, _ := schema.get("maxItems")
-	if maximum, ok := schemaInteger(maximumValue); ok && len(value) > maximum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must not have more than %d items", maximum)})
+	if list, ok := n.values["oneOf"].(*array); ok && c.matches(list.items, b, v) != 1 {
+		return false
 	}
-	uniqueValue, _ := schema.get("uniqueItems")
-	if unique, _ := uniqueValue.(bool); unique {
-		duplicate := false
-		for index := range value {
-			for other := 0; other < index; other++ {
-				if jsonValuesEqual(value[index], value[other]) {
-					duplicate = true
-					break
-				}
-			}
-			if duplicate {
-				break
-			}
-		}
-		if duplicate {
-			issues = append(issues, ValidationIssue{Path: path, Message: "must not have duplicate items"})
+	if not, ok := n.get("not"); ok && c.valid(not, b, v) {
+		return false
+	}
+	if branch, ok := c.conditional(n, b, v); ok && !c.valid(branch, b, v) {
+		return false
+	}
+	if ref, ok := n.values["$ref"].(string); ok {
+		target, targetBase, found := c.resolve(ref, b)
+		if !found || !c.valid(target, targetBase, v) {
+			return false
 		}
 	}
-	return issues
+	return true
 }
 
-func validateString(value string, schema *schemaObject, path string) []ValidationIssue {
-	var issues []ValidationIssue
-	length := utf8.RuneCountInString(value)
-	minimumValue, _ := schema.get("minLength")
-	if minimum, ok := schemaInteger(minimumValue); ok && length < minimum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must not have fewer than %d characters", minimum)})
-	}
-	maximumValue, _ := schema.get("maxLength")
-	if maximum, ok := schemaInteger(maximumValue); ok && length > maximum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must not have more than %d characters", maximum)})
-	}
-	patternValue, _ := schema.get("pattern")
-	if pattern, ok := patternValue.(string); ok {
-		expression, err := regexp.Compile(pattern)
-		if err == nil && !expression.MatchString(value) {
-			issues = append(issues, ValidationIssue{Path: path, Message: "must match pattern " + pattern})
-		}
-	}
-	return issues
-}
-
-func validateNumber(value float64, schema *schemaObject, path string) []ValidationIssue {
-	var issues []ValidationIssue
-	minimumValue, _ := schema.get("minimum")
-	if minimum, ok := schemaNumber(minimumValue); ok && value < minimum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must be >= %v", minimum)})
-	}
-	maximumValue, _ := schema.get("maximum")
-	if maximum, ok := schemaNumber(maximumValue); ok && value > maximum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must be <= %v", maximum)})
-	}
-	exclusiveMinimumValue, _ := schema.get("exclusiveMinimum")
-	if minimum, ok := schemaNumber(exclusiveMinimumValue); ok && value <= minimum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must be > %v", minimum)})
-	}
-	exclusiveMaximumValue, _ := schema.get("exclusiveMaximum")
-	if maximum, ok := schemaNumber(exclusiveMaximumValue); ok && value >= maximum {
-		issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must be < %v", maximum)})
-	}
-	multipleValue, _ := schema.get("multipleOf")
-	if multiple, ok := schemaNumber(multipleValue); ok && multiple != 0 {
-		quotient := value / multiple
-		if math.Abs(quotient-math.Round(quotient)) > 1e-12 {
-			issues = append(issues, ValidationIssue{Path: path, Message: fmt.Sprintf("must be a multiple of %v", multiple)})
-		}
-	}
-	return issues
-}
-
-func validVariantCount(value any, variants []any) int {
+func (c *compiledSchema) matches(branches []any, base string, v any) int {
 	count := 0
-	for _, variant := range variants {
-		if len(validateValue(value, variant, "")) == 0 {
+	for _, branch := range branches {
+		if c.valid(branch, base, v) {
 			count++
 		}
 	}
 	return count
 }
 
-func schemaTypes(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return []string{typed}
-	case []any:
-		result := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if name, ok := item.(string); ok {
-				result = append(result, name)
-			}
-		}
-		return result
-	default:
-		return nil
+// conditional is the then or else schema that applies to v, if any.
+func (c *compiledSchema) conditional(n *object, base string, v any) (any, bool) {
+	condition, ok := n.get("if")
+	if !ok {
+		return nil, false
 	}
-}
-
-func schemaList(value any) []any {
-	values, _ := value.([]any)
-	return values
-}
-
-func stringList(value any) []string {
-	values, _ := value.([]any)
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if text, ok := value.(string); ok {
-			result = append(result, text)
-		}
+	if c.valid(condition, base, v) {
+		return n.get("then")
 	}
-	return result
+	return n.get("else")
 }
 
-func anyTypeMatches(value any, types []string) bool {
-	for _, schemaType := range types {
-		if matchesType(value, schemaType) {
+func typeMatches(types, v any) bool {
+	list := []any{types}
+	if multiple, ok := types.(*array); ok {
+		list = multiple.items
+	}
+	for _, name := range list {
+		if name, ok := name.(string); ok && hasType(v, name) {
 			return true
 		}
 	}
 	return false
 }
 
-func matchesType(value any, schemaType string) bool {
-	switch schemaType {
+func hasType(v any, name string) bool {
+	switch name {
+	case "string":
+		_, ok := v.(string)
+		return ok
 	case "number":
-		_, ok := value.(float64)
+		_, ok := v.(float64)
 		return ok
 	case "integer":
-		number, ok := value.(float64)
-		return ok && math.Trunc(number) == number
+		number, ok := v.(float64)
+		return ok && isInteger(number)
 	case "boolean":
-		_, ok := value.(bool)
-		return ok
-	case "string":
-		_, ok := value.(string)
+		_, ok := v.(bool)
 		return ok
 	case "null":
-		return value == nil
+		return v == nil
 	case "array":
-		_, ok := value.([]any)
+		_, ok := v.(*array)
 		return ok
 	case "object":
-		_, ok := value.(map[string]any)
+		_, ok := v.(*object)
 		return ok
 	default:
 		return false
 	}
 }
 
-func containsJSONValue(values []any, wanted any) bool {
+func isInteger(number float64) bool {
+	return !math.IsInf(number, 0) && math.Trunc(number) == number
+}
+
+func containsValue(values []any, v any) bool {
 	for _, value := range values {
-		if jsonValuesEqual(value, wanted) {
+		if deepEqual(value, v) {
 			return true
 		}
 	}
 	return false
 }
 
-func jsonValuesEqual(left, right any) bool {
-	leftJSON, leftErr := jsonwire.Marshal(schemaLiteralValue(left))
-	rightJSON, rightErr := jsonwire.Marshal(schemaLiteralValue(right))
-	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
-}
-
-func schemaLiteralValue(value any) any {
-	switch typed := value.(type) {
-	case *schemaObject:
-		result := make(map[string]any, len(typed.values))
-		for name, member := range typed.values {
-			result[name] = schemaLiteralValue(member)
+func deepEqual(left, right any) bool {
+	switch left := left.(type) {
+	case *object:
+		right, ok := right.(*object)
+		if !ok || len(left.keys) != len(right.keys) {
+			return false
 		}
-		return result
-	case []any:
-		result := make([]any, len(typed))
-		for index, member := range typed {
-			result[index] = schemaLiteralValue(member)
+		for _, key := range left.keys {
+			value, ok := right.values[key]
+			if !ok || !deepEqual(left.values[key], value) {
+				return false
+			}
 		}
-		return result
+		return true
+	case *array:
+		right, ok := right.(*array)
+		if !ok || len(left.items) != len(right.items) {
+			return false
+		}
+		for index := range left.items {
+			if !deepEqual(left.items[index], right.items[index]) {
+				return false
+			}
+		}
+		return true
 	default:
-		return value
+		return left == right
 	}
 }
 
-func schemaInteger(value any) (int, bool) {
-	number, ok := schemaNumber(value)
-	if !ok || math.Trunc(number) != number || number < 0 || number > float64(math.MaxInt) {
-		return 0, false
-	}
-	return int(number), true
+func schemaNumber(n *object, keyword string) (float64, bool) {
+	number, ok := n.values[keyword].(float64)
+	return number, ok
 }
 
-func schemaNumber(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case json.Number:
-		number, err := typed.Float64()
-		return number, err == nil
+func (c *compiledSchema) validString(n *object, v string) bool {
+	length := float64(utf8.RuneCountInString(v))
+	if minimum, ok := schemaNumber(n, "minLength"); ok && length < minimum {
+		return false
+	}
+	if maximum, ok := schemaNumber(n, "maxLength"); ok && length > maximum {
+		return false
+	}
+	if source, ok := n.values["pattern"].(string); ok {
+		if expression := pattern(source); expression != nil && !expression.MatchString(v) {
+			return false
+		}
+	}
+	if name, ok := n.values["format"].(string); ok {
+		if check := formatChecks[name]; check != nil && !check(v) {
+			return false
+		}
+	}
+	return true
+}
+
+func validNumber(n *object, v float64) bool {
+	if minimum, ok := schemaNumber(n, "minimum"); ok && v < minimum {
+		return false
+	}
+	if maximum, ok := schemaNumber(n, "maximum"); ok && v > maximum {
+		return false
+	}
+	if minimum, ok := schemaNumber(n, "exclusiveMinimum"); ok && v <= minimum {
+		return false
+	}
+	if maximum, ok := schemaNumber(n, "exclusiveMaximum"); ok && v >= maximum {
+		return false
+	}
+	if divisor, ok := schemaNumber(n, "multipleOf"); ok && !isMultiple(v, divisor) {
+		return false
+	}
+	return true
+}
+
+// isMultiple is exact for decimals: 0.0075 / 0.0001 is 74.99999999999999 in
+// floating point.
+func isMultiple(v, divisor float64) bool {
+	quotient := v / divisor
+	if isInteger(quotient) {
+		return true
+	}
+	if math.IsInf(quotient, 0) || math.IsNaN(quotient) {
+		return math.Mod(v, divisor) == 0
+	}
+	vCoefficient, vExponent := decimal(v)
+	dCoefficient, dExponent := decimal(divisor)
+	scale := func(exponent int) *big.Int { return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exponent)), nil) }
+	remainder := new(big.Int)
+	if vExponent >= dExponent {
+		remainder.Rem(vCoefficient.Mul(vCoefficient, scale(vExponent-dExponent)), dCoefficient)
+	} else {
+		remainder.Rem(vCoefficient, dCoefficient.Mul(dCoefficient, scale(dExponent-vExponent)))
+	}
+	return remainder.Sign() == 0
+}
+
+// decimal is |x| as an integer coefficient and a power of ten, read from its
+// JavaScript text.
+func decimal(x float64) (*big.Int, int) {
+	mantissa, exponentText, _ := strings.Cut(jsNumberString(math.Abs(x)), "e")
+	exponent, _ := strconv.Atoi(exponentText)
+	if point := strings.IndexByte(mantissa, '.'); point >= 0 {
+		exponent -= len(mantissa) - point - 1
+	}
+	coefficient, _ := new(big.Int).SetString(strings.Replace(mantissa, ".", "", 1), 10)
+	return coefficient, exponent
+}
+
+func (c *compiledSchema) validObject(n *object, base string, v *object) bool {
+	properties, _ := n.values["properties"].(*object)
+	if properties != nil {
+		for _, key := range properties.keys {
+			if value, ok := v.values[key]; ok && !c.valid(properties.values[key], base, value) {
+				return false
+			}
+		}
+	}
+	if required, ok := n.values["required"].(*array); ok {
+		for _, key := range required.items {
+			if key, ok := key.(string); ok {
+				if _, present := v.values[key]; !present {
+					return false
+				}
+			}
+		}
+	}
+	patterns := patternSchemas(n)
+	additional, hasAdditional := n.get("additionalProperties")
+	names, hasNames := n.get("propertyNames")
+	for _, key := range v.keys {
+		_, matched := declared(properties, key)
+		for _, entry := range patterns {
+			if entry.expression.MatchString(key) {
+				matched = true
+				if !c.valid(entry.schema, base, v.values[key]) {
+					return false
+				}
+			}
+		}
+		if !matched && hasAdditional && !c.valid(additional, base, v.values[key]) {
+			return false
+		}
+		if hasNames && !c.valid(names, base, key) {
+			return false
+		}
+	}
+	count := float64(len(v.keys))
+	if minimum, ok := schemaNumber(n, "minProperties"); ok && count < minimum {
+		return false
+	}
+	if maximum, ok := schemaNumber(n, "maxProperties"); ok && count > maximum {
+		return false
+	}
+	for _, dependency := range dependencies(n) {
+		if _, present := v.values[dependency.key]; !present {
+			continue
+		}
+		if dependency.required != nil {
+			for _, key := range dependency.required.items {
+				if key, ok := key.(string); ok {
+					if _, present := v.values[key]; !present {
+						return false
+					}
+				}
+			}
+		} else if !c.valid(dependency.schema, base, v) {
+			return false
+		}
+	}
+	return true
+}
+
+func declared(properties *object, key string) (any, bool) {
+	if properties == nil {
+		return nil, false
+	}
+	return properties.get(key)
+}
+
+type patternSchema struct {
+	expression *regexp.Regexp
+	schema     any
+}
+
+// patternSchemas are n's patternProperties; a pattern Go cannot compile
+// matches no key.
+func patternSchemas(n *object) []patternSchema {
+	members, ok := n.values["patternProperties"].(*object)
+	if !ok {
+		return nil
+	}
+	var result []patternSchema
+	for _, source := range members.keys {
+		if expression := pattern(source); expression != nil {
+			result = append(result, patternSchema{expression: expression, schema: members.values[source]})
+		}
+	}
+	return result
+}
+
+type dependency struct {
+	key      string
+	required *array
+	schema   any
+}
+
+// dependencies are dependentRequired, then draft 7's dependencies (which
+// replace a dependentRequired entry for the same key in place), then
+// dependentSchemas.
+func dependencies(n *object) []dependency {
+	var result []dependency
+	position := map[string]int{}
+	add := func(key string, value any) {
+		entry := dependency{key: key, schema: value}
+		entry.required, _ = value.(*array)
+		if index, ok := position[key]; ok {
+			result[index] = entry
+			return
+		}
+		position[key] = len(result)
+		result = append(result, entry)
+	}
+	for _, keyword := range []string{"dependentRequired", "dependencies"} {
+		if members, ok := n.values[keyword].(*object); ok {
+			for _, key := range members.keys {
+				add(key, members.values[key])
+			}
+		}
+	}
+	if members, ok := n.values["dependentSchemas"].(*object); ok {
+		for _, key := range members.keys {
+			result = append(result, dependency{key: key, schema: members.values[key]})
+		}
+	}
+	return result
+}
+
+// itemSchemas are the schemas of a tuple's leading items and of the items
+// after them: a draft-7 items array and additionalItems, else prefixItems and
+// items.
+func itemSchemas(n *object) ([]any, any, bool) {
+	if items, ok := n.values["items"].(*array); ok {
+		rest, hasRest := n.get("additionalItems")
+		return items.items, rest, hasRest
+	}
+	var prefix []any
+	if items, ok := n.values["prefixItems"].(*array); ok {
+		prefix = items.items
+	}
+	rest, hasRest := n.get("items")
+	return prefix, rest, hasRest
+}
+
+func (c *compiledSchema) validArray(n *object, base string, v *array) bool {
+	prefix, rest, hasRest := itemSchemas(n)
+	for index, item := range v.items {
+		if index < len(prefix) {
+			if !c.valid(prefix[index], base, item) {
+				return false
+			}
+		} else if hasRest && !c.valid(rest, base, item) {
+			return false
+		}
+	}
+	count := float64(len(v.items))
+	if minimum, ok := schemaNumber(n, "minItems"); ok && count < minimum {
+		return false
+	}
+	if maximum, ok := schemaNumber(n, "maxItems"); ok && count > maximum {
+		return false
+	}
+	if unique, _ := n.values["uniqueItems"].(bool); unique && !uniqueItems(v.items) {
+		return false
+	}
+	if contains, ok := n.get("contains"); ok {
+		minimum, maximum := containsBounds(n)
+		if !containsCount(c, contains, base, v.items, minimum, maximum) {
+			return false
+		}
+	}
+	return true
+}
+
+func uniqueItems(items []any) bool {
+	for index := range items {
+		for other := 0; other < index; other++ {
+			if deepEqual(items[index], items[other]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func containsBounds(n *object) (float64, float64) {
+	minimum, ok := schemaNumber(n, "minContains")
+	if !ok {
+		minimum = 1
+	}
+	maximum, ok := schemaNumber(n, "maxContains")
+	if !ok {
+		maximum = math.Inf(1)
+	}
+	return minimum, maximum
+}
+
+func containsCount(c *compiledSchema, contains any, base string, items []any, minimum, maximum float64) bool {
+	count := 0.0
+	for _, item := range items {
+		if c.valid(contains, base, item) {
+			if count++; count > maximum {
+				return false
+			}
+		}
+	}
+	return count >= minimum
+}
+
+// patterns caches compiled pattern sources, nil for one Go cannot compile.
+// At most maxPatterns are kept.
+var (
+	patterns     sync.Map
+	patternsKept atomic.Int32
+)
+
+const maxPatterns = 4096
+
+func pattern(source string) *regexp.Regexp {
+	if cached, ok := patterns.Load(source); ok {
+		return cached.(*regexp.Regexp)
+	}
+	expression, err := regexp.Compile(source)
+	if err != nil {
+		expression = nil
+	}
+	if patternsKept.Add(1) <= maxPatterns {
+		patterns.Store(source, expression)
+	}
+	return expression
+}
+
+// walk appends why v fails node, one issue per failing keyword at the value
+// it failed on, in pi-schema's order.
+func (c *compiledSchema) walk(node any, base string, v any, path string, out *[]ValidationIssue) {
+	if allowed, ok := node.(bool); ok {
+		if !allowed {
+			*out = append(*out, ValidationIssue{Path: path, Message: "no value is allowed here"})
+		}
+		return
+	}
+	n, ok := node.(*object)
+	if !ok {
+		return
+	}
+	b := c.baseFor(n, base)
+	if c.valid(n, b, v) {
+		return
+	}
+	push := func(at, message string) { *out = append(*out, ValidationIssue{Path: at, Message: message}) }
+	if types, ok := n.get("type"); ok && !typeMatches(types, v) {
+		push(path, "expected "+joinTypes(types)+", got "+typeName(v))
+		return
+	}
+	if enum, ok := n.values["enum"].(*array); ok && !containsValue(enum.items, v) {
+		push(path, "expected one of "+listValues(enum.items))
+	}
+	if constant, ok := n.get("const"); ok && !deepEqual(constant, v) {
+		push(path, "expected "+stringify(constant))
+	}
+	switch v := v.(type) {
+	case string:
+		c.walkString(n, v, path, push)
 	case float64:
-		return typed, true
+		walkNumber(n, v, path, push)
+	case *object:
+		c.walkObject(n, b, v, path, out)
+	case *array:
+		c.walkArray(n, b, v, path, out)
+	}
+	if list, ok := n.values["allOf"].(*array); ok {
+		for _, member := range list.items {
+			c.walk(member, b, v, path, out)
+		}
+	}
+	if list, ok := n.values["anyOf"].(*array); ok {
+		c.walkUnion(list.items, b, v, path, out, false)
+	}
+	if list, ok := n.values["oneOf"].(*array); ok {
+		c.walkUnion(list.items, b, v, path, out, true)
+	}
+	if not, ok := n.get("not"); ok && c.valid(not, b, v) {
+		push(path, "must not match the schema in not")
+	}
+	if branch, ok := c.conditional(n, b, v); ok {
+		c.walk(branch, b, v, path, out)
+	}
+	if ref, ok := n.values["$ref"].(string); ok {
+		target, targetBase, found := c.resolve(ref, b)
+		if !found {
+			push(path, "unresolved reference "+ref)
+		} else {
+			c.walk(target, targetBase, v, path, out)
+		}
+	}
+}
+
+func (c *compiledSchema) walkString(n *object, v, path string, push func(string, string)) {
+	length := float64(utf8.RuneCountInString(v))
+	if minimum, ok := schemaNumber(n, "minLength"); ok && length < minimum {
+		push(path, "expected at least "+jsNumberString(minimum)+" characters")
+	}
+	if maximum, ok := schemaNumber(n, "maxLength"); ok && length > maximum {
+		push(path, "expected at most "+jsNumberString(maximum)+" characters")
+	}
+	if source, ok := n.values["pattern"].(string); ok {
+		if expression := pattern(source); expression != nil && !expression.MatchString(v) {
+			push(path, "expected to match "+source)
+		}
+	}
+	if name, ok := n.values["format"].(string); ok {
+		if check := formatChecks[name]; check != nil && !check(v) {
+			push(path, "expected format "+name)
+		}
+	}
+}
+
+func walkNumber(n *object, v float64, path string, push func(string, string)) {
+	if minimum, ok := schemaNumber(n, "minimum"); ok && v < minimum {
+		push(path, "expected >= "+jsNumberString(minimum))
+	}
+	if maximum, ok := schemaNumber(n, "maximum"); ok && v > maximum {
+		push(path, "expected <= "+jsNumberString(maximum))
+	}
+	if minimum, ok := schemaNumber(n, "exclusiveMinimum"); ok && v <= minimum {
+		push(path, "expected > "+jsNumberString(minimum))
+	}
+	if maximum, ok := schemaNumber(n, "exclusiveMaximum"); ok && v >= maximum {
+		push(path, "expected < "+jsNumberString(maximum))
+	}
+	if divisor, ok := schemaNumber(n, "multipleOf"); ok && !isMultiple(v, divisor) {
+		push(path, "expected a multiple of "+jsNumberString(divisor))
+	}
+}
+
+func (c *compiledSchema) walkObject(n *object, base string, v *object, path string, out *[]ValidationIssue) {
+	push := func(at, message string) { *out = append(*out, ValidationIssue{Path: at, Message: message}) }
+	properties, _ := n.values["properties"].(*object)
+	if required, ok := n.values["required"].(*array); ok {
+		for _, key := range required.items {
+			if key, ok := key.(string); ok {
+				if _, present := v.values[key]; !present {
+					push(pointer(path, key), "missing")
+				}
+			}
+		}
+	}
+	if properties != nil {
+		for _, key := range properties.keys {
+			if value, ok := v.values[key]; ok {
+				c.walk(properties.values[key], base, value, pointer(path, key), out)
+			}
+		}
+	}
+	patterns := patternSchemas(n)
+	additional, hasAdditional := n.get("additionalProperties")
+	names, hasNames := n.get("propertyNames")
+	for _, key := range v.keys {
+		_, matched := declared(properties, key)
+		for _, entry := range patterns {
+			if entry.expression.MatchString(key) {
+				matched = true
+				c.walk(entry.schema, base, v.values[key], pointer(path, key), out)
+			}
+		}
+		if !matched && hasAdditional {
+			if additional == false {
+				push(pointer(path, key), "unknown field")
+			} else {
+				c.walk(additional, base, v.values[key], pointer(path, key), out)
+			}
+		}
+		if hasNames && !c.valid(names, base, key) {
+			push(pointer(path, key), "invalid property name")
+		}
+	}
+	count := float64(len(v.keys))
+	if minimum, ok := schemaNumber(n, "minProperties"); ok && count < minimum {
+		push(path, "expected at least "+jsNumberString(minimum)+" properties")
+	}
+	if maximum, ok := schemaNumber(n, "maxProperties"); ok && count > maximum {
+		push(path, "expected at most "+jsNumberString(maximum)+" properties")
+	}
+	for _, dependency := range dependencies(n) {
+		if _, present := v.values[dependency.key]; !present {
+			continue
+		}
+		if dependency.required == nil {
+			c.walk(dependency.schema, base, v, path, out)
+			continue
+		}
+		for _, key := range dependency.required.items {
+			name := jsString(key)
+			if _, present := v.values[name]; !present {
+				push(pointer(path, name), "required when "+dependency.key+" is present")
+			}
+		}
+	}
+}
+
+func (c *compiledSchema) walkArray(n *object, base string, v *array, path string, out *[]ValidationIssue) {
+	push := func(message string) { *out = append(*out, ValidationIssue{Path: path, Message: message}) }
+	prefix, rest, hasRest := itemSchemas(n)
+	for index, item := range v.items {
+		at := path + "/" + strconv.Itoa(index)
+		if index < len(prefix) {
+			c.walk(prefix[index], base, item, at, out)
+		} else if hasRest {
+			c.walk(rest, base, item, at, out)
+		}
+	}
+	count := float64(len(v.items))
+	if minimum, ok := schemaNumber(n, "minItems"); ok && count < minimum {
+		push("expected at least " + jsNumberString(minimum) + " items")
+	}
+	if maximum, ok := schemaNumber(n, "maxItems"); ok && count > maximum {
+		push("expected at most " + jsNumberString(maximum) + " items")
+	}
+	if unique, _ := n.values["uniqueItems"].(bool); unique && !uniqueItems(v.items) {
+		push("expected unique items")
+	}
+	if contains, ok := n.get("contains"); ok {
+		minimum, maximum := containsBounds(n)
+		if !containsCount(c, contains, base, v.items, minimum, maximum) {
+			push(containsMessage(minimum, maximum))
+		}
+	}
+}
+
+func containsMessage(minimum, maximum float64) string {
+	switch {
+	case math.IsInf(maximum, 1):
+		if minimum == 1 {
+			return "expected at least 1 matching item"
+		}
+		return "expected at least " + jsNumberString(minimum) + " matching items"
+	case minimum == 0:
+		if maximum == 1 {
+			return "expected at most 1 matching item"
+		}
+		return "expected at most " + jsNumberString(maximum) + " matching items"
 	default:
-		return 0, false
+		return "expected between " + jsNumberString(minimum) + " and " + jsNumberString(maximum) + " matching items"
 	}
 }
 
-func childPath(parent, child string) string {
-	child = strings.ReplaceAll(strings.ReplaceAll(child, "~", "~0"), "/", "~1")
-	if parent == "" {
-		return child
+// walkUnion blames a failing union on one branch: the one a tag selects,
+// else the one declaring most of an object's keys, else the one whose first
+// error is deepest.
+func (c *compiledSchema) walkUnion(branches []any, base string, v any, path string, out *[]ValidationIssue, exactlyOne bool) {
+	matches := c.matches(branches, base, v)
+	if matches == 1 || !exactlyOne && matches > 0 {
+		return
 	}
-	return parent + "." + child
+	if matches > 1 {
+		*out = append(*out, ValidationIssue{Path: path, Message: "matches more than one alternative"})
+		return
+	}
+	value, isObject := v.(*object)
+	if key, tags, ok := c.unionTag(branches, base); ok && isObject {
+		tag, present := value.values[key]
+		for index, candidate := range tags {
+			if present && candidate == tag {
+				c.walk(branches[index], base, v, path, out)
+				return
+			}
+		}
+		*out = append(*out, ValidationIssue{Path: pointer(path, key), Message: "expected one of " + listValues(tags)})
+		return
+	}
+	var best []ValidationIssue
+	bestDeclared := 0
+	for _, branch := range branches {
+		var issues []ValidationIssue
+		c.walk(branch, base, v, path, &issues)
+		if len(issues) == 0 {
+			continue
+		}
+		declaredKeys := 0
+		if isObject {
+			declaredKeys = c.declaredKeys(branch, base, value)
+		}
+		if best == nil || declaredKeys > bestDeclared || declaredKeys == bestDeclared && len(issues[0].Path) > len(best[0].Path) {
+			best, bestDeclared = issues, declaredKeys
+		}
+	}
+	if best == nil {
+		best = []ValidationIssue{{Path: path, Message: "matches no alternative"}}
+	}
+	*out = append(*out, best...)
 }
 
-func requiredPath(parent, required string) string {
-	if parent == "" {
-		return required
+// branchSchema is a union branch, through its $ref.
+func (c *compiledSchema) branchSchema(branch any, base string) any {
+	if n, ok := branch.(*object); ok {
+		if ref, ok := n.values["$ref"].(string); ok {
+			target, _, found := c.resolve(ref, base)
+			if !found {
+				return false
+			}
+			return target
+		}
 	}
-	return parent + "." + required
+	return branch
 }
 
-func indentRawJSON(value []byte) string {
-	var buffer bytes.Buffer
-	if err := json.Indent(&buffer, value, "", "  "); err != nil {
+func (c *compiledSchema) declaredKeys(branch any, base string, v *object) int {
+	n, _ := c.branchSchema(branch, base).(*object)
+	if n == nil {
+		return 0
+	}
+	properties, _ := n.values["properties"].(*object)
+	count := 0
+	for _, key := range v.keys {
+		if _, ok := declared(properties, key); ok {
+			count++
+		}
+	}
+	return count
+}
+
+// unionTag finds the first property of the first branch on which every
+// branch declares a distinct primitive const.
+func (c *compiledSchema) unionTag(branches []any, base string) (string, []any, bool) {
+	resolved := make([]*object, len(branches))
+	for index, branch := range branches {
+		resolved[index], _ = c.branchSchema(branch, base).(*object)
+	}
+	if resolved[0] == nil {
+		return "", nil, false
+	}
+	first, _ := resolved[0].values["properties"].(*object)
+	if first == nil {
+		return "", nil, false
+	}
+keys:
+	for _, key := range first.keys {
+		tags := make([]any, len(branches))
+		for index, branch := range resolved {
+			var properties *object
+			if branch != nil {
+				properties, _ = branch.values["properties"].(*object)
+			}
+			var tag *object
+			if properties != nil {
+				tag, _ = properties.values[key].(*object)
+			}
+			if tag == nil {
+				continue keys
+			}
+			constant, ok := tag.get("const")
+			_, isArray := constant.(*array)
+			_, isObject := constant.(*object)
+			if !ok || isArray || isObject {
+				continue keys
+			}
+			for _, earlier := range tags[:index] {
+				if earlier == constant {
+					continue keys
+				}
+			}
+			tags[index] = constant
+		}
+		return key, tags, true
+	}
+	return "", nil, false
+}
+
+func pointer(path, key string) string {
+	return path + "/" + strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
+}
+
+// listValuesShown caps an enum error's list, so an enum of thousands stays
+// readable.
+const listValuesShown = 20
+
+func listValues(values []any) string {
+	if len(values) <= listValuesShown {
+		return stringify(&array{items: values})
+	}
+	listed := stringify(&array{items: values[:listValuesShown]})
+	return listed[:len(listed)-1] + ", ... and " + strconv.Itoa(len(values)-listValuesShown) + " more]"
+}
+
+func typeName(v any) string {
+	switch v := v.(type) {
+	case nil:
 		return "null"
+	case *array:
+		return "array"
+	case *object:
+		return "object"
+	case float64:
+		if isInteger(v) {
+			return "integer"
+		}
+		return "number"
+	case bool:
+		return "boolean"
+	default:
+		return "string"
 	}
-	return buffer.String()
+}
+
+// joinTypes is Array.prototype.join(" or ") of a type keyword.
+func joinTypes(types any) string {
+	list, ok := types.(*array)
+	if !ok {
+		return jsString(types)
+	}
+	parts := make([]string, len(list.items))
+	for index, item := range list.items {
+		parts[index] = jsString(item)
+	}
+	return strings.Join(parts, " or ")
+}
+
+// jsString is String(value) as Array.prototype.join writes an element.
+func jsString(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case bool:
+		return strconv.FormatBool(value)
+	case float64:
+		return jsNumberString(value)
+	case *array:
+		parts := make([]string, len(value.items))
+		for index, item := range value.items {
+			parts[index] = jsString(item)
+		}
+		return strings.Join(parts, ",")
+	default:
+		return "[object Object]"
+	}
 }

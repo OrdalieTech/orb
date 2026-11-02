@@ -881,9 +881,6 @@ func prepareToolCall(
 	spec := tool.Spec()
 	args := ai.ToolCallArgumentsValue(toolCall)
 	argumentJSON, err := ai.MarshalToolCallArguments(toolCall)
-	if err == nil && toolCall.ArgumentsError != "" {
-		err = fmt.Errorf("Invalid arguments for tool %q: %s", toolCall.Name, toolCall.ArgumentsError) //nolint:staticcheck // The model reads it as a tool result.
-	}
 	if err == nil && spec.PrepareArguments != nil {
 		originalArgs := args
 		originalSnapshot := ai.CloneJSONValue(originalArgs)
@@ -893,7 +890,7 @@ func prepareToolCall(
 		}
 	}
 	if err == nil {
-		args, err = jsonschema.ValidateToolArgumentsJSON(toolCall.Name, spec.Parameters, argumentJSON)
+		args, err = jsonschema.ValidateToolArgumentsJSON(toolCall.Name, spec.Parameters, argumentJSON, toolCall.ArgumentsError)
 	}
 	if err == nil && config.BeforeToolCall != nil {
 		var before *BeforeToolCallResult
