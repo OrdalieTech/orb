@@ -161,8 +161,8 @@ Each holds until changed by owner-signed decision.
   Vertex use hand-rolled JSON/SSE. Hand-roll where no sound SDK exists
   (mistral-conversations, pi-messages, OAuth device/PKCE flows). No kitchen sinks.
 - **D12 — Model catalog from direct authoritative sources.** Build-time generation uses
-  `models.dev/api.json` for the baseline, intersects NVIDIA's manifest with the live NIM listing,
-  and uses the live OpenRouter and Vercel AI Gateway APIs for those catalogs. Runtime refresh is a
+  models.dev's v2 catalog (`models.dev/experimental/v2.0/api.json`) for the baseline, intersects
+  NVIDIA's manifest with the live NIM listing, and uses the live OpenRouter and Vercel AI Gateway APIs for those catalogs. Runtime refresh is a
   direct models.dev fetch into the `~/.orb` cache, never a pi.dev endpoint, keeping upstream's
   `checkedAt`/`lastModified` freshness semantics. With a ChatGPT login, startup also stores the
   account's `openai-codex` models from the ChatGPT backend list Codex CLI reads. `models.json` user
@@ -503,7 +503,7 @@ Each holds until changed by owner-signed decision.
 | `Request was aborted` for ctx-aborted stream failures | Go API adaptation | every adapter persists upstream's mid-stream abort text; request-phase texts follow upstream per adapter, while the anthropic/openai stream entry points collapse pre-stream ctx errors into the mid-stream text so the TUI's exact-match rendering holds |
 | `extensions.Exec` bounded wait on inherited stdio | Go API adaptation | Go cannot see child exit while a detached grandchild holds the pipes, so orb waits up to 5 s and then reports the child's own exit code |
 | RPC exits on SIGHUP without flushing a stalled consumer | behavior | pi 1.0 flushes stdout on every RPC shutdown but SIGTERM, so SIGHUP with an unread stdout hangs until a forced kill; Orb treats SIGHUP like SIGTERM and exits 129 without waiting on the consumer. Normal completion still flushes every frame |
-| OpenRouter reported cost as the turn total | behavior | pi 1.0 always prices usage from its catalog; Orb takes a valid numeric OpenRouter `usage.cost` (including zero) as `Usage.Cost.Total`, since it includes routing and discounts the catalog can't see. A missing or invalid value keeps the catalog estimate, components stay estimates, and no wire or session shape changes |
+| OpenRouter endpoint match | behavior | pi 1.5.0 takes OpenRouter's billed cost as the total for a model whose base URL merely contains `openrouter.ai`; Orb requires the endpoint host to be `openrouter.ai` or a subdomain, so a proxy path that names it cannot make its reported cost authoritative |
 | No docs section | product adaptation | pi's system prompt points at README, docs and examples under its package directory because every pi distribution ships them; Orb ships only its binary and describes itself through the built-in `orb` skill (`orb skill`), which every CLI session lists, so its prompt has no docs section. F9 compares against pi's prompt with that section removed |
 | No Go RPC client | omission | pi ships `rpc-client.ts`; Orb removed its unused Go port (`agent/modes.NewRPCClient`) in favor of driving `orb --mode rpc` over stdio or hosted RPC. The RPC server and wire stay pi-compatible |
 | Higher-contrast muted borders | behavior | owner request: pi's `borderMuted`/`thinkingOff` (light `#b0b0b0`, dark `#505050`, about 2:1 against the background) made the input border and dialog rules hard to see; Orb uses light `#8a8a8a` and dark `#707070` (about 3.3:1). F12 keeps pi's values as the reference and skips those two roles |

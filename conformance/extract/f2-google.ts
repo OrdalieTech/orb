@@ -136,6 +136,24 @@ const stringEnumTool: Tool = {
   },
 };
 
+const constTool: Tool = {
+  name: "select",
+  description: "Literal values Gemini only honors as enums",
+  parameters: {
+    type: "object",
+    properties: {
+      kind: { const: "file", description: "kept as data", default: "file", examples: [{ const: "data" }] },
+      count: { type: "number", const: 3 },
+      flag: { const: true },
+      both: { const: "a", enum: ["a"] },
+      const: { anyOf: [{ const: "x" }, { const: 2 }] },
+      __proto__: { const: "proto" },
+    },
+    $defs: { mode: { const: "fast" } },
+    required: ["kind"],
+  } as Tool["parameters"],
+};
+
 const textModel = googleModel({
   headers: {
     "Content-Type": "application/model-json",
@@ -167,6 +185,16 @@ const requestDefinitions: GoogleDefinition[] = [
         "x-goog-api-key": "option-header-key",
       },
     },
+  },
+  {
+    name: "google-const-as-enum-tool",
+    api: "google-generative-ai",
+    model: replayModel,
+    context: {
+      messages: [{ role: "user", content: "pick", timestamp: FIXED_NOW }],
+      tools: [constTool],
+    },
+    options: { apiKey: "fixture-google-key" },
   },
   {
     name: "google-rich-replay-thinking-images-tools",

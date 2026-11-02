@@ -18,12 +18,14 @@ if (!sdkDir || !commit) throw new Error("usage: sdk-surface.mjs <sdk dir> <commi
 const version = JSON.parse(readFileSync("packages/coding-agent/package.json", "utf8")).version;
 const provenance = `pi ${version}, commit ${commit.slice(0, 8)}`;
 
-// Orb module file → upstream package specifier and entry source.
+// Orb module file → upstream package specifier and entry source. Extensions import the pi-ai root and
+// "/compat" as pi's extension view (core/extensions/virtual-modules.ts): compat plus TypeBox's Type.
+const extensionView = "packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts";
 const modules = {
 	"coding-agent": ["@earendil-works/pi-coding-agent", "packages/coding-agent/src/index.ts"],
 	"agent-core": ["@earendil-works/pi-agent-core", "packages/agent/src/index.ts"],
-	ai: ["@earendil-works/pi-ai", "packages/ai/src/index.ts"],
-	"ai-compat": ["@earendil-works/pi-ai/compat", "packages/ai/src/compat.ts"],
+	ai: ["@earendil-works/pi-ai", extensionView],
+	"ai-compat": ["@earendil-works/pi-ai/compat", extensionView],
 	"ai-models": ["@earendil-works/pi-ai/models", "packages/ai/src/models.ts"],
 	"ai-oauth": ["@earendil-works/pi-ai/oauth", "packages/ai/src/oauth.ts"],
 	"ai-providers-all": ["@earendil-works/pi-ai/providers/all", "packages/ai/src/providers/all.ts"],
@@ -39,6 +41,8 @@ const program = ts.createProgram(
 		moduleResolution: ts.ModuleResolutionKind.NodeNext,
 		target: ts.ScriptTarget.ES2022,
 		skipLibCheck: true,
+		paths: JSON.parse(readFileSync("tsconfig.json", "utf8")).compilerOptions.paths,
+		baseUrl: path.resolve("."),
 	},
 );
 const checker = program.getTypeChecker();

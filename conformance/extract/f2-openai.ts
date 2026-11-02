@@ -225,6 +225,12 @@ const responsesThinkingModel = model("openai-responses", {
   compat: { sessionAffinityFormat: "openrouter", supportsLongCacheRetention: false },
 });
 
+const responsesMidConvoEffortModel = model("openai-responses", {
+  reasoning: true,
+  thinkingLevelMap: { off: "none", high: "xhigh" },
+  compat: { supportsMidConvoEffort: true },
+});
+
 const completionsTextModel = model("openai-completions", {
   reasoning: true,
   thinkingLevelMap: { off: "none", high: "high" },
@@ -293,13 +299,13 @@ const completionsChatTemplateModel = model("openai-completions", {
 const togetherCompatModel = model("openai-completions", {
   type: "chat",
   id: "deepseek-ai/DeepSeek-V4-Pro-0813",
-  name: "DeepSeek V4 Pro",
+  name: "DeepSeek V4 Pro 0813",
   provider: "together",
   baseUrl: "https://api.together.ai/v1",
   reasoning: true,
   input: ["text"],
-  cost: { input: 1.74, output: 3.48, cacheRead: 0.2, cacheWrite: 0 },
-  contextWindow: 512_000,
+  cost: { input: 1.32, output: 3.96, cacheRead: 0.13, cacheWrite: 0 },
+  contextWindow: 1_048_576,
   maxTokens: 384_000,
   thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", xhigh: null },
   compat: {
@@ -708,6 +714,29 @@ const requestDefinitions: RequestDefinition[] = [
     },
     options: { apiKey: "fixture-copilot-token", cacheRetention: "none" },
   },
+  ...[
+    { name: "responses-mid-convo-effort", apiKey: "sk-fixture-key" },
+    { name: "responses-mid-convo-effort-chatgpt-sign-in", apiKey: "chatgpt-access-token" },
+  ].map(({ name, apiKey }) => ({
+    name,
+    api: "openai-responses" as const,
+    model: responsesMidConvoEffortModel,
+    context: {
+      systemPrompt: "Think as much as asked.",
+      messages: [
+        { role: "user" as const, content: "first", timestamp: FIXED_NOW - 4 },
+        assistant("openai-responses", responsesMidConvoEffortModel.id, [{ type: "text", text: "first answer" }], {
+          providerThinkingLevel: "low",
+        }),
+        { role: "user" as const, content: "second", timestamp: FIXED_NOW - 3 },
+        assistant("openai-responses", "another-model", [{ type: "text", text: "other model answer" }], {
+          providerThinkingLevel: "medium",
+        }),
+        { role: "user" as const, content: "third", timestamp: FIXED_NOW },
+      ],
+    },
+    options: { apiKey, cacheRetention: "none" as const, reasoningEffort: "high" as const },
+  })),
   {
     name: "responses-developer-role-disabled",
     api: "openai-responses",
@@ -1383,7 +1412,7 @@ async function extractOpenAIProvider(upstreamRoot: string): Promise<ProviderFixt
       [
         "--import",
         pathToFileURL(disableNetwork).href,
-        path.join(packageRoot, "scripts/generate-models.ts"),
+        path.join(packageRoot, "catalog/generate.ts"),
       ],
       { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 },
     );

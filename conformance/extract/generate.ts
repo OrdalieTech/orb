@@ -7,6 +7,7 @@ import { generateF1PartialJSON } from "./f1-partialjson.ts";
 import { generateF1Schema } from "./f1-schema.ts";
 import { generateF2 } from "./f2-openai.ts";
 import { generateF2Codex } from "./f2-codex.ts";
+import { generateF2OpenRouterUsage } from "./f2-openrouter-usage.ts";
 import { generateF3 } from "./f3-agent.ts";
 import { generateF3Session } from "./f3-session.ts";
 import { generateF4 } from "./f4-edit.ts";
@@ -23,6 +24,7 @@ import { generateF11ExtensionRunner } from "./f11-extension-runner.ts";
 import { generateF11ExtensionWiring } from "./f11-extension-wiring.ts";
 import { generateF11BuiltInTools } from "./f11-built-in-tools.ts";
 import { generateWP360 } from "./wp360-packages.ts";
+import { generateF12Fuzzy } from "./f12-fuzzy.ts";
 import { generateF13DynamicWorkflows } from "./f13-dynamic-workflows.ts";
 import { generateWP440 } from "./wp440-images.ts";
 import { generateWP440Read } from "./wp440-read.ts";
@@ -74,6 +76,7 @@ const generators = [
 	generateF1Schema,
 	generateF2,
 	generateF2Codex,
+	generateF2OpenRouterUsage,
 	generateF3,
 	generateF3Session,
 	generateF4,
@@ -90,6 +93,7 @@ const generators = [
 	generateF11ExtensionWiring,
 	generateF11BuiltInTools,
 	generateWP360,
+	generateF12Fuzzy,
 	generateF13DynamicWorkflows,
 	generateWP440,
 	generateWP440Read,

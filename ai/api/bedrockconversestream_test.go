@@ -67,3 +67,43 @@ type bedrockTransportFunc func(context.Context, *BedrockConverseStreamPayload) (
 func (function bedrockTransportFunc) Send(ctx context.Context, payload *BedrockConverseStreamPayload) (BedrockResponse, error) {
 	return function(ctx, payload)
 }
+
+type bedrockCodedError struct{ code, message string }
+
+func (err bedrockCodedError) Error() string     { return err.message }
+func (err bedrockCodedError) ErrorCode() string { return err.code }
+
+// Bedrock refusing the strict tool set as too large is asked once more with preferred-strict tools relaxed (#11416).
+func TestBedrockRetriesStrictToolLimitWithPreferredOnesRelaxed(t *testing.T) {
+	var strict [][2]bool
+	backend := &BedrockBackend{NewTransport: func(context.Context, BedrockTransportConfig) (BedrockTransport, error) {
+		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (BedrockResponse, error) {
+			tools := payload.ToolConfig.Tools
+			strict = append(strict, [2]bool{tools[0].ToolSpec.Strict != nil, tools[1].ToolSpec.Strict != nil})
+			if len(strict) == 1 {
+				return nil, bedrockCodedError{"ValidationException", "Too many strict tools (24). The maximum number of strict tools is 20."}
+			}
+			return &fixtureBedrockResponse{items: []BedrockStreamItem{{Kind: BedrockItemMessageStart, Role: "assistant"}, {Kind: BedrockItemMessageStop, StopReason: "end_turn"}}}, nil
+		}), nil
+	}}
+	model := bedrockTestModel("anthropic.claude-sonnet-4-5", "Claude")
+	model.Compat = []byte(`{"supportsStrictMode":true}`)
+	tool := func(name string, mode ai.ConstrainedSamplingStrict) ai.Tool {
+		return ai.Tool{Name: name, Description: name, Parameters: ai.JSONSchema(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`),
+			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: mode}}
+	}
+	tools := []ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}
+	stream, err := StreamBedrockConverseWithOptions(context.Background(), model, ai.Context{
+		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}}, Tools: &tools,
+	}, &BedrockConverseStreamOptions{Backend: backend})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, _ := ai.Collect(stream)
+	if message.StopReason != ai.StopReasonStop || len(strict) != 2 || strict[0] != [2]bool{true, true} || strict[1] != [2]bool{false, true} {
+		t.Fatalf("stop = %s, strict per request = %v", message.StopReason, strict)
+	}
+	if message.Diagnostics == nil || (*message.Diagnostics)[0].Type != "bedrock_strict_tools_fallback" {
+		t.Fatalf("diagnostics = %#v", message.Diagnostics)
+	}
+}

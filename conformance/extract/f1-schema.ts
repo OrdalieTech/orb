@@ -9,7 +9,7 @@ export async function generateF1Schema(
 ): Promise<void> {
 	const typeboxURL = pathToFileURL(path.join(upstreamRoot, "node_modules/typebox/build/index.mjs")).href;
 	const helpersURL = pathToFileURL(
-		path.join(upstreamRoot, "packages/ai/src/utils/typebox-helpers.ts"),
+		path.join(upstreamRoot, "packages/ai/src/utils/string-enum.ts"),
 	).href;
 	const [{ Type }, { StringEnum }] = await Promise.all([import(typeboxURL), import(helpersURL)]);
 
@@ -42,7 +42,7 @@ export async function generateF1Schema(
 		path.join(familyDir, "schema.json"),
 		`${JSON.stringify(
 			{
-				source: "typebox@1.3.7 + packages/ai/src/utils/typebox-helpers.ts",
+				source: "typebox@1.3.7 + packages/ai/src/utils/string-enum.ts",
 				cases: [
 					{ name: "nested-object", schema: nestedObject },
 					{ name: "required-optional", schema: requiredOptional },

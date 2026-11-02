@@ -107,7 +107,7 @@ func (usage Usage) appendWire(dst []byte) ([]byte, error) {
 		}
 		dst = jsonwire.AppendFloat(append(dst, costMembers[index]...), value)
 	}
-	dst = append(dst, '}')
+	dst = append(appendOptionalBool(dst, `,"totalFromProvider":`, cost.TotalFromProvider), '}')
 	if !beforeTotals {
 		dst = optionals(dst)
 	}
@@ -822,14 +822,12 @@ func (content TextContent) MarshalJSON() ([]byte, error) { return content.append
 
 func (content TextContent) appendWire(dst []byte) ([]byte, error) {
 	dst = jsonwire.AppendString(append(dst, `{"type":"text","text":`...), content.Text)
-	dst = appendOptionalString(dst, `,"textSignature":`, content.TextSignature)
-	return append(appendOptionalInt(dst, `,"index":`, content.Index), '}'), nil
+	return append(appendOptionalString(dst, `,"textSignature":`, content.TextSignature), '}'), nil
 }
 func (content *TextContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Text          json.RawMessage `json:"text"`
 		TextSignature json.RawMessage `json:"textSignature"`
-		Index         *int            `json:"index"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -842,7 +840,7 @@ func (content *TextContent) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*content = TextContent{Text: text, TextSignature: signature, Index: raw.Index}
+	*content = TextContent{Text: text, TextSignature: signature}
 	return nil
 }
 
@@ -851,30 +849,13 @@ func (content ThinkingContent) MarshalJSON() ([]byte, error) { return content.ap
 func (content ThinkingContent) appendWire(dst []byte) ([]byte, error) {
 	dst = jsonwire.AppendString(append(dst, `{"type":"thinking","thinking":`...), content.Thinking)
 	dst = appendOptionalString(dst, `,"thinkingSignature":`, content.ThinkingSignature)
-	if len(content.RedactedChunks) == 0 {
-		dst = appendOptionalBool(dst, `,"redacted":`, content.Redacted)
-		return append(appendOptionalInt(dst, `,"index":`, content.Index), '}'), nil
-	}
-	dst = appendOptionalInt(dst, `,"index":`, content.Index)
-	dst = append(appendOptionalBool(dst, `,"redacted":`, content.Redacted), `,"redactedChunks":[`...)
-	for index, chunk := range content.RedactedChunks {
-		if index > 0 {
-			dst = append(dst, ',')
-		}
-		var err error
-		if dst, err = jsonwire.AppendCompact(dst, chunk); err != nil {
-			return nil, err
-		}
-	}
-	return append(dst, ']', '}'), nil
+	return append(appendOptionalBool(dst, `,"redacted":`, content.Redacted), '}'), nil
 }
 func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		RedactedChunks    []json.RawMessage `json:"redactedChunks"`
-		Thinking          json.RawMessage   `json:"thinking"`
-		ThinkingSignature json.RawMessage   `json:"thinkingSignature"`
-		Redacted          *bool             `json:"redacted"`
-		Index             *int              `json:"index"`
+		Thinking          json.RawMessage `json:"thinking"`
+		ThinkingSignature json.RawMessage `json:"thinkingSignature"`
+		Redacted          *bool           `json:"redacted"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -887,7 +868,7 @@ func (content *ThinkingContent) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*content = ThinkingContent{RedactedChunks: raw.RedactedChunks, Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted, Index: raw.Index}
+	*content = ThinkingContent{Thinking: thinking, ThinkingSignature: signature, Redacted: raw.Redacted}
 	return nil
 }
 
@@ -938,12 +919,7 @@ func (content ToolCall) appendWire(dst []byte) ([]byte, error) {
 	} else if dst, err = jsonwire.AppendCompact(append(dst, `,"arguments":`...), arguments); err != nil {
 		return nil, err
 	}
-	// The streaming members are set together or not at all.
 	dst = appendOptionalString(dst, `,"namespace":`, content.Namespace)
-	dst = appendOptionalString(dst, `,"partialJson":`, content.PartialJSON)
-	dst = appendOptionalString(dst, `,"partialArgs":`, content.PartialArgs)
-	dst = appendOptionalInt(dst, `,"streamIndex":`, content.StreamIndex)
-	dst = appendOptionalInt(dst, `,"index":`, content.Index)
 	dst = appendOptionalString(dst, `,"thoughtSignature":`, content.ThoughtSignature)
 	if content.ArgumentsError != "" {
 		dst = jsonwire.AppendString(append(dst, `,"argumentsError":`...), content.ArgumentsError)
@@ -958,10 +934,6 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		Namespace        json.RawMessage `json:"namespace"`
 		ThoughtSignature json.RawMessage `json:"thoughtSignature"`
 		ArgumentsError   json.RawMessage `json:"argumentsError"`
-		PartialJSON      json.RawMessage `json:"partialJson"`
-		PartialArgs      json.RawMessage `json:"partialArgs"`
-		StreamIndex      *int            `json:"streamIndex,omitempty"`
-		Index            *int            `json:"index,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -978,14 +950,6 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	partialJSON, err := unmarshalOptionalWireString(raw.PartialJSON)
-	if err != nil {
-		return err
-	}
-	partialArgs, err := unmarshalOptionalWireString(raw.PartialArgs)
-	if err != nil {
-		return err
-	}
 	namespace, err := unmarshalOptionalWireString(raw.Namespace)
 	if err != nil {
 		return err
@@ -999,10 +963,6 @@ func (content *ToolCall) UnmarshalJSON(data []byte) error {
 		Name:             name,
 		ThoughtSignature: thoughtSignature,
 		Namespace:        namespace,
-		PartialJSON:      partialJSON,
-		PartialArgs:      partialArgs,
-		StreamIndex:      raw.StreamIndex,
-		Index:            raw.Index,
 	}
 	if argumentsError != nil {
 		content.ArgumentsError = *argumentsError
@@ -1247,14 +1207,6 @@ func toolCallArguments(content *ToolCall) (encoded []byte, stringified bool, err
 			}
 		} else if len(arguments) == 0 {
 			return content.rawArguments, true, nil
-		}
-	}
-	for _, partial := range []*string{content.PartialJSON, content.PartialArgs} {
-		if partial == nil {
-			continue
-		}
-		if encoded, err := partialjson.StringifyStreamingJSON(*partial); err == nil {
-			return encoded, true, nil
 		}
 	}
 	encoded, err = marshalJSON(stringifyJSONObject(arguments))

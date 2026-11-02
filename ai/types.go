@@ -63,17 +63,12 @@ type TextSignatureV1 struct {
 type TextContent struct {
 	Text          string  `json:"text"`
 	TextSignature *string `json:"textSignature,omitempty"`
-	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
-	Index *int `json:"index,omitempty"`
 }
 
 type ThinkingContent struct {
-	RedactedChunks    []json.RawMessage `json:"redactedChunks,omitempty"`
-	Thinking          string            `json:"thinking"`
-	ThinkingSignature *string           `json:"thinkingSignature,omitempty"`
-	Redacted          *bool             `json:"redacted,omitempty"`
-	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
-	Index *int `json:"index,omitempty"`
+	Thinking          string  `json:"thinking"`
+	ThinkingSignature *string `json:"thinkingSignature,omitempty"`
+	Redacted          *bool   `json:"redacted,omitempty"`
 }
 
 type ImageContent struct {
@@ -102,12 +97,6 @@ type ToolCall struct {
 	// rawValue is rawArguments decoded, kept apart from Arguments so a replay
 	// can tell whether Arguments changed without parsing rawArguments again.
 	rawValue any
-	// Provider adapters clear streaming scratch fields before a terminal message is persisted.
-	PartialJSON *string `json:"partialJson,omitempty"`
-	PartialArgs *string `json:"partialArgs,omitempty"`
-	StreamIndex *int    `json:"streamIndex,omitempty"`
-	// Index exists only while Anthropic content blocks are streaming and is cleared at block end.
-	Index *int `json:"index,omitempty"`
 }
 
 type UserContentBlock interface {
@@ -160,6 +149,8 @@ type Cost struct {
 	CacheRead  float64 `json:"cacheRead"`
 	CacheWrite float64 `json:"cacheWrite"`
 	Total      float64 `json:"total"`
+	// TotalFromProvider marks Total as the provider's billed cost; false or absent means a catalog estimate.
+	TotalFromProvider *bool `json:"totalFromProvider,omitempty"`
 }
 
 type Usage struct {

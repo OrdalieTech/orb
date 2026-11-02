@@ -244,17 +244,7 @@ func combinedUsage(left, right *ai.Usage) *ai.Usage {
 		copy := *right
 		return &copy
 	}
-	sum := *left
-	sum.Input += right.Input
-	sum.Output += right.Output
-	sum.CacheRead += right.CacheRead
-	sum.CacheWrite += right.CacheWrite
-	sum.TotalTokens += right.TotalTokens
-	sum.Cost.Input += right.Cost.Input
-	sum.Cost.Output += right.Cost.Output
-	sum.Cost.CacheRead += right.Cost.CacheRead
-	sum.Cost.CacheWrite += right.Cost.CacheWrite
-	sum.Cost.Total += right.Cost.Total
+	sum := ai.CombineUsage(*left, *right)
 	return &sum
 }
 

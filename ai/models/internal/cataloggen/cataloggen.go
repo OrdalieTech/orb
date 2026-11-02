@@ -1,4 +1,5 @@
-// Package cataloggen normalizes the models.dev api.json shape into pi models.
+// Package cataloggen builds the pi model catalog from the models.dev v2
+// catalog and the live provider listings, mirroring upstream catalog/.
 package cataloggen
 
 import (
@@ -7,22 +8,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Sources aggregates the generator inputs. ModelsDev is required. NvidiaNIM,
 // OpenRouter, and Vercel are the raw listings from the live provider APIs;
-// when absent, NVIDIA falls back to the curated snapshot below and the
-// OpenRouter and Vercel catalogs are omitted entirely (the bundled catalog
-// keeps serving them).
+// without a NIM listing NVIDIA has no models, and without the OpenRouter or
+// Vercel listing that catalog is omitted entirely (the bundled one keeps
+// serving it).
 type Sources struct {
-	ModelsDev  []byte // models.dev api.json snapshot
+	ModelsDev  []byte // models.dev v2 api.json
 	NvidiaNIM  []byte // NVIDIA NIM /v1/models listing
 	OpenRouter []byte // OpenRouter /api/v1/models listing
 	Vercel     []byte // Vercel AI Gateway /v1/models listing
@@ -31,218 +33,422 @@ type Sources struct {
 	GeneratedAt time.Time
 }
 
-type sourceProvider struct {
-	Models map[string]sourceModel `json:"models"`
-}
+type thinking map[ai.ModelThinkingLevel]*string
 
-type sourceReasoningOption struct {
-	Type   string    `json:"type"`
-	Values []*string `json:"values"`
-}
-
-type sourceModel struct {
-	ID               string                  `json:"id"`
-	Name             string                  `json:"name"`
-	ToolCall         bool                    `json:"tool_call"`
-	StructuredOutput bool                    `json:"structured_output"`
-	Reasoning        bool                    `json:"reasoning"`
-	ReasoningOptions []sourceReasoningOption `json:"reasoning_options"`
-	Status           string                  `json:"status"`
-	Modalities       struct {
-		Input  []string `json:"input"`
-		Output []string `json:"output"`
-	} `json:"modalities"`
-	Limit struct {
-		Context float64 `json:"context"`
-		Output  float64 `json:"output"`
-	} `json:"limit"`
-	Cost struct {
-		Input      float64 `json:"input"`
-		Output     float64 `json:"output"`
-		CacheRead  float64 `json:"cache_read"`
-		CacheWrite float64 `json:"cache_write"`
-		Tiers      []struct {
-			Input, Output, CacheRead, CacheWrite float64
-			Tier                                 struct {
-				Type string  `json:"type"`
-				Size float64 `json:"size"`
-			} `json:"tier"`
-		} `json:"tiers"`
-	} `json:"cost"`
-	Provider struct {
-		NPM string `json:"npm"`
-	} `json:"provider"`
-}
-
-func (model *sourceModel) UnmarshalJSON(data []byte) error {
-	type rawModel sourceModel
-	var value struct {
-		rawModel
-		Cost struct {
-			Input      float64 `json:"input"`
-			Output     float64 `json:"output"`
-			CacheRead  float64 `json:"cache_read"`
-			CacheWrite float64 `json:"cache_write"`
-			Tiers      []struct {
-				Input      *float64 `json:"input"`
-				Output     *float64 `json:"output"`
-				CacheRead  *float64 `json:"cache_read"`
-				CacheWrite *float64 `json:"cache_write"`
-				Tier       struct {
-					Type string  `json:"type"`
-					Size float64 `json:"size"`
-				} `json:"tier"`
-			} `json:"tiers"`
-		} `json:"cost"`
+func (levels thinking) pointer() *map[ai.ModelThinkingLevel]*string {
+	if levels == nil {
+		return nil
 	}
-	if err := json.Unmarshal(data, &value); err != nil {
-		return err
-	}
-	*model = sourceModel(value.rawModel)
-	model.Cost.Input = value.Cost.Input
-	model.Cost.Output = value.Cost.Output
-	model.Cost.CacheRead = value.Cost.CacheRead
-	model.Cost.CacheWrite = value.Cost.CacheWrite
-	for _, tier := range value.Cost.Tiers {
-		var normalized struct {
-			Input, Output, CacheRead, CacheWrite float64
-			Tier                                 struct {
-				Type string  `json:"type"`
-				Size float64 `json:"size"`
-			} `json:"tier"`
+	value := map[ai.ModelThinkingLevel]*string(levels)
+	return &value
+}
+
+// levels builds a thinking map from level/value pairs; an empty value is null.
+func levels(pairs ...string) thinking {
+	result := make(thinking, len(pairs)/2)
+	for index := 0; index < len(pairs); index += 2 {
+		result[ai.ModelThinkingLevel(pairs[index])] = nil
+		if pairs[index+1] != "" {
+			result[ai.ModelThinkingLevel(pairs[index])] = ptr(pairs[index+1])
 		}
-		// Rates a tier does not list keep the base price.
-		normalized.Input, normalized.Output = orBase(tier.Input, model.Cost.Input), orBase(tier.Output, model.Cost.Output)
-		normalized.CacheRead, normalized.CacheWrite = orBase(tier.CacheRead, model.Cost.CacheRead), orBase(tier.CacheWrite, model.Cost.CacheWrite)
-		normalized.Tier.Type, normalized.Tier.Size = tier.Tier.Type, tier.Tier.Size
-		model.Cost.Tiers = append(model.Cost.Tiers, normalized)
 	}
-	return nil
+	return result
 }
 
-func orBase(rate *float64, base float64) float64 {
-	if rate == nil {
-		return base
-	}
-	return *rate
+// model is a chat model under construction. compat keeps upstream's object
+// member order, since the catalog serializes it as written.
+type model struct {
+	ai.Model
+	compat jsonwire.OrderedObject
 }
 
-type rule struct {
-	source, provider string
+// compat builds an ordered compat object from name/value pairs.
+func compat(pairs ...any) jsonwire.OrderedObject {
+	object := make(jsonwire.OrderedObject, 0, len(pairs)/2)
+	for index := 0; index < len(pairs); index += 2 {
+		object = append(object, jsonwire.OrderedMember{Name: pairs[index].(string), Value: pairs[index+1]})
+	}
+	return object
+}
+
+// spread is JavaScript's {...a, ...b}; it never changes its arguments.
+func spread(objects ...jsonwire.OrderedObject) jsonwire.OrderedObject {
+	result := jsonwire.OrderedObject{}
+	for _, object := range objects {
+		for _, member := range object {
+			result.Set(member.Name, member.Value)
+		}
+	}
+	return result
+}
+
+func (m *model) mergeCompat(update jsonwire.OrderedObject) { m.compat = spread(m.compat, update) }
+
+func (m *model) compatValue(name string) any {
+	value, _ := m.compat.Value(name)
+	return value
+}
+
+func (m *model) thinking() thinking {
+	if m.ThinkingLevelMap == nil {
+		return nil
+	}
+	return *m.ThinkingLevelMap
+}
+
+func (m *model) setThinking(levels thinking) { m.ThinkingLevelMap = maps.Clone(levels).pointer() }
+
+func (m *model) mergeThinking(update thinking) {
+	merged := maps.Clone(m.thinking())
+	if merged == nil {
+		merged = thinking{}
+	}
+	maps.Copy(merged, update)
+	m.ThinkingLevelMap = merged.pointer()
+}
+
+func (m *model) hasImageInput() bool { return slices.Contains(m.Input, ai.InputImage) }
+
+// withInputLimits applies provider image limits; limits the model already
+// carries take precedence.
+func (m *model) withInputLimits(maxRequestBytes, maxPerRequest, maxPerMessage float64) {
+	if !m.hasImageInput() {
+		return
+	}
+	limits := ai.ModelInputLimits{Images: &ai.ModelImageInputLimits{}}
+	if m.InputLimits != nil {
+		limits = *m.InputLimits
+		images := ai.ModelImageInputLimits{}
+		if limits.Images != nil {
+			images = *limits.Images
+		}
+		limits.Images = &images
+	}
+	if limits.MaxRequestBytes == nil && maxRequestBytes != 0 {
+		limits.MaxRequestBytes = ptr(maxRequestBytes)
+	}
+	if limits.Images.MaxPerRequest == nil && maxPerRequest != 0 {
+		limits.Images.MaxPerRequest = ptr(maxPerRequest)
+	}
+	if limits.Images.MaxPerMessage == nil && maxPerMessage != 0 {
+		limits.Images.MaxPerMessage = ptr(maxPerMessage)
+	}
+	m.InputLimits = &limits
+}
+
+// clone copies the model so that no mutable storage is shared.
+func (m *model) clone() *model {
+	cloned := &model{Model: *m.Clone(), compat: slices.Clone(m.compat)}
+	if m.InputLimits != nil {
+		limits := *m.InputLimits
+		if limits.Images != nil {
+			images := *limits.Images
+			limits.Images = &images
+		}
+		cloned.InputLimits = &limits
+	}
+	return cloned
+}
+
+// addMissing appends additions upstream has not listed (yet).
+func addMissing(models []*model, additions ...*model) []*model {
+	for _, addition := range additions {
+		if !slices.ContainsFunc(models, func(existing *model) bool { return existing.ID == addition.ID }) {
+			models = append(models, addition)
+		}
+	}
+	return models
+}
+
+// provider is one built-in provider's catalog (upstream ProviderDefinition).
+// completionsCompat returns the defaults merged under each openai-completions
+// model's own compat.
+type provider struct {
+	id                string
+	models            func(*buildContext) []*model
+	completionsCompat func(*model) jsonwire.OrderedObject
+	finalize          func(*model, *buildContext)
+	finalizeAll       func([]*model)
+}
+
+func static(object jsonwire.OrderedObject) func(*model) jsonwire.OrderedObject {
+	return func(*model) jsonwire.OrderedObject { return object }
+}
+
+type buildContext struct {
+	providerID string
+	*builder
+}
+
+type builder struct {
+	modelsDev   map[string][]sourceModel
+	nvidiaIDs   map[string]string
+	openRouter  []*model
+	vercel      []*model
+	definitions map[string]provider
+	stageOne    map[string][]*model
+	building    map[string]bool
+	devSources  map[string]sourceModel
+}
+
+func modelKey(m *model) string { return string(m.Provider) + ":" + m.ID }
+
+// providerModels returns copies of another provider's models before shared rules run.
+func (ctx *buildContext) providerModels(id string) []*model {
+	models := ctx.buildModels(id)
+	copies := make([]*model, len(models))
+	for index, m := range models {
+		copies[index] = m.clone()
+	}
+	return copies
+}
+
+func (ctx *buildContext) modelsDevSource(m *model) (sourceModel, bool) {
+	source, ok := ctx.devSources[modelKey(m)]
+	return source, ok
+}
+
+func (b *builder) buildModels(id string) []*model {
+	if built, ok := b.stageOne[id]; ok {
+		return built
+	}
+	definition, ok := b.definitions[id]
+	if !ok {
+		panic("unknown catalog provider " + id)
+	}
+	if b.building[id] {
+		panic("catalog provider " + id + " depends on itself")
+	}
+	b.building[id] = true
+	var models []*model
+	if definition.models != nil {
+		models = definition.models(&buildContext{providerID: id, builder: b})
+	}
+	delete(b.building, id)
+	for _, m := range models {
+		if string(m.Provider) != id {
+			panic(id + " produced " + modelKey(m) + " for another provider")
+		}
+	}
+	b.stageOne[id] = models
+	return models
+}
+
+// devOptions are upstream ModelsDevOptions.
+type devOptions struct {
 	api              ai.API
 	baseURL          string
+	compat           jsonwire.OrderedObject
+	headers          map[string]string
+	protocol         string // only models models.dev lists on this API protocol
+	skipDeprecated   bool
+	skipReasoning    bool // keep models.dev effort levels away from the shared rules
+	defaultContext   float64
+	defaultMaxTokens float64
+	include          func(sourceModel) bool
+	mapModel         func(*model, sourceModel) *model // nil skips the model
 }
 
-var directRules = []rule{
-	{"amazon-bedrock", "amazon-bedrock", ai.APIBedrockConverse, "https://bedrock-runtime.us-east-1.amazonaws.com"},
-	{"alibaba-token-plan", "qwen-token-plan", ai.APIOpenAICompletions, "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"},
-	{"alibaba-token-plan-cn", "qwen-token-plan-cn", ai.APIOpenAICompletions, "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"},
-	{"anthropic", "anthropic", ai.APIAnthropicMessages, "https://api.anthropic.com"},
-	{"cerebras", "cerebras", ai.APIOpenAICompletions, "https://api.cerebras.ai/v1"},
-	{"cloudflare-workers-ai", "cloudflare-workers-ai", ai.APIOpenAICompletions, "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1"},
-	{"deepseek", "deepseek", ai.APIOpenAICompletions, "https://api.deepseek.com"},
-	{"fireworks-ai", "fireworks", ai.APIAnthropicMessages, "https://api.fireworks.ai/inference"},
-	{"google", "google", ai.APIGoogleGenerativeAI, "https://generativelanguage.googleapis.com/v1beta"},
-	{"google-vertex", "google-vertex", ai.APIGoogleVertex, "https://{location}-aiplatform.googleapis.com"},
-	{"groq", "groq", ai.APIOpenAICompletions, "https://api.groq.com/openai/v1"},
-	{"huggingface", "huggingface", ai.APIOpenAICompletions, "https://router.huggingface.co/v1"},
-	{"kimi-code-plan-global", "kimi-coding", ai.APIOpenAICompletions, "https://api.kimi.com/coding/v1"},
-	{"minimax", "minimax", ai.APIAnthropicMessages, "https://api.minimax.io/anthropic"},
-	{"minimax-cn", "minimax-cn", ai.APIAnthropicMessages, "https://api.minimaxi.com/anthropic"},
-	{"meta", "meta", ai.APIOpenAIResponses, "https://api.meta.ai/v1"},
-	{"mistral", "mistral", ai.APIMistralConversations, "https://api.mistral.ai"},
-	{"moonshotai", "moonshotai", ai.APIOpenAICompletions, "https://api.moonshot.ai/v1"},
-	{"moonshotai-cn", "moonshotai-cn", ai.APIOpenAICompletions, "https://api.moonshot.cn/v1"},
-	{"openai", "openai", ai.APIOpenAIResponses, "https://api.openai.com/v1"},
-	{"togetherai", "together", ai.APIOpenAICompletions, "https://api.together.ai/v1"},
-	{"xiaomi", "xiaomi", ai.APIOpenAICompletions, "https://api.xiaomimimo.com/v1"},
-	{"xiaomi-token-plan-ams", "xiaomi-token-plan-ams", ai.APIOpenAICompletions, "https://token-plan-ams.xiaomimimo.com/v1"},
-	{"xiaomi-token-plan-cn", "xiaomi-token-plan-cn", ai.APIOpenAICompletions, "https://token-plan-cn.xiaomimimo.com/v1"},
-	{"xiaomi-token-plan-sgp", "xiaomi-token-plan-sgp", ai.APIOpenAICompletions, "https://token-plan-sgp.xiaomimimo.com/v1"},
-	{"zai-coding-plan", "zai", ai.APIOpenAICompletions, "https://api.z.ai/api/coding/paas/v4"},
-	{"zhipuai-coding-plan", "zai-coding-cn", ai.APIOpenAICompletions, "https://open.bigmodel.cn/api/coding/paas/v4"},
-}
-
-var fireworksAdaptiveThinkingFallbackModels = map[string]struct{}{
-	"accounts/fireworks/models/deepseek-v4-flash-0731":       {},
-	"accounts/fireworks/models/deepseek-v4-flash-vision-exp": {},
-	"accounts/fireworks/models/deepseek-v4-pro-0813":         {},
-	"accounts/fireworks/models/qwen3p8-max":                  {},
-	"accounts/fireworks/models/qwen3p8-2p4t-a95b":            {},
-}
-
-func fireworksUsesAdaptiveThinking(id string, options []sourceReasoningOption) bool {
-	if _, verified := fireworksAdaptiveThinkingFallbackModels[id]; verified {
-		return true
+// modelsDevModels maps one models.dev provider's tool-capable chat models.
+func (ctx *buildContext) modelsDevModels(sourceProvider string, options devOptions) []*model {
+	var models []*model
+	for _, source := range ctx.modelsDev[sourceProvider] {
+		if !source.ToolCall ||
+			options.protocol != "" && !slices.ContainsFunc(source.APIs, func(api sourceAPI) bool { return api.Protocol == options.protocol }) ||
+			options.skipDeprecated && source.Status == "deprecated" ||
+			options.include != nil && !options.include(source) {
+			continue
+		}
+		name := source.Name
+		if name == "" {
+			name = source.ID
+		}
+		input := ai.InputModalities{ai.InputText}
+		if source.ImageInput {
+			input = append(input, ai.InputImage)
+		}
+		m := &model{Model: ai.Model{
+			ID: source.ID, Name: name, API: options.api, Provider: ai.ProviderID(ctx.providerID), BaseURL: options.baseURL,
+			Reasoning: source.Reasoning, Input: input, Cost: modelsDevCost(source.Cost),
+			ContextWindow: firstNonZero(source.ContextWindow, options.defaultContext, 4096),
+			MaxTokens:     firstNonZero(source.MaxTokens, options.defaultMaxTokens, 4096),
+		}}
+		if options.headers != nil {
+			headers := maps.Clone(options.headers)
+			m.Headers = &headers
+		}
+		if options.compat != nil {
+			m.compat = slices.Clone(options.compat)
+		}
+		if options.mapModel != nil {
+			if m = options.mapModel(m, source); m == nil {
+				continue
+			}
+		}
+		if !options.skipReasoning {
+			ctx.devSources[modelKey(m)] = source
+		}
+		models = append(models, m)
 	}
-	return slices.ContainsFunc(options, func(option sourceReasoningOption) bool { return option.Type == "effort" })
+	return models
 }
 
-// Generate converts the aggregated source listings. Radius is deliberately absent.
+// Generate builds every provider's chat catalog from the source listings.
+// Radius is deliberately absent.
 func Generate(sources Sources) (map[string]map[string]ai.Model, error) {
-	var source map[string]sourceProvider
-	if err := json.Unmarshal(sources.ModelsDev, &source); err != nil {
-		return nil, fmt.Errorf("parse models.dev api.json: %w", err)
+	modelsDev, err := parseModelsDev(sources.ModelsDev)
+	if err != nil {
+		return nil, err
+	}
+	b := &builder{modelsDev: modelsDev, stageOne: map[string][]*model{}, building: map[string]bool{}, devSources: map[string]sourceModel{}}
+	if b.nvidiaIDs, err = parseNvidiaIDs(sources.NvidiaNIM); err != nil {
+		return nil, err
+	}
+	definitions := providers()
+	b.definitions = make(map[string]provider, len(definitions))
+	for _, definition := range definitions {
+		b.definitions[definition.id] = definition
+	}
+	if len(sources.OpenRouter) != 0 {
+		if b.openRouter, err = parseOpenRouter(sources.OpenRouter); err != nil {
+			return nil, err
+		}
+	} else {
+		delete(b.definitions, "openrouter")
+	}
+	if len(sources.Vercel) != 0 {
+		if b.vercel, err = parseVercel(sources.Vercel); err != nil {
+			return nil, err
+		}
+	} else {
+		delete(b.definitions, "vercel-ai-gateway")
 	}
 	result := make(map[string]map[string]ai.Model)
-	for _, item := range directRules {
-		providerSource := source[item.source]
-		if item.source == "kimi-code-plan-global" && len(providerSource.Models) == 0 {
-			providerSource = source["kimi-for-coding"]
+	for _, definition := range definitions {
+		if _, ok := b.definitions[definition.id]; !ok {
+			continue
 		}
-		addRule(result, providerSource, item)
+		b.buildModels(definition.id)
 	}
-	addBaseten(result, source["baseten"])
-	addQwenTokenPlanIndividual(result, source["alibaba-token-plan"])
-	addCloudflareGateway(result, source["cloudflare-ai-gateway"])
-	for id, raw := range source["cloudflare-workers-ai"].Models {
-		if raw.ToolCall {
-			model := normalizedModel("workers-ai/"+id, raw.Name, raw, ai.APIOpenAICompletions, "cloudflare-ai-gateway", "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat")
-			model.Compat = mustCompatJSON(ai.OpenAICompletionsCompat{SendSessionAffinityHeaders: ptr(true)})
-			upsert(result, model)
+	for _, definition := range definitions {
+		if _, ok := b.definitions[definition.id]; !ok {
+			continue
 		}
+		ctx := &buildContext{providerID: definition.id, builder: b}
+		var chat []*model
+		seen := map[string]bool{}
+		for _, m := range b.stageOne[definition.id] {
+			// The first source listing a model wins.
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				chat = append(chat, m)
+			}
+		}
+		for _, m := range chat {
+			if definition.completionsCompat != nil && m.API == ai.APIOpenAICompletions {
+				m.compat = spread(definition.completionsCompat(m), m.compat)
+			}
+			applyDeepSeekCompatRules(m)
+			if source, ok := ctx.modelsDevSource(m); ok && source.ReasoningOptions != nil && sendsNativeEffort(m) {
+				if effort := effortThinkingLevels(source.ReasoningOptions); effort != nil {
+					m.mergeThinking(effort)
+				}
+			}
+			applyOpenAIFamilyRules(m)
+			applyClaudeFamilyRules(m)
+			applyDeepSeekFamilyRules(m)
+		}
+		if definition.finalize != nil {
+			for _, m := range chat {
+				definition.finalize(m, ctx)
+			}
+		}
+		for _, m := range chat {
+			applyImageResizeDefaults(m)
+		}
+		if definition.finalizeAll != nil {
+			definition.finalizeAll(chat)
+		}
+		if len(chat) == 0 {
+			continue
+		}
+		models := make(map[string]ai.Model, len(chat))
+		for _, m := range chat {
+			m.Compat = nil
+			if len(m.compat) != 0 {
+				raw, err := json.Marshal(m.compat)
+				if err != nil {
+					return nil, fmt.Errorf("marshal %s compat: %w", modelKey(m), err)
+				}
+				m.Compat = raw
+			}
+			m.Type = "chat"
+			models[m.ID] = m.Model
+		}
+		result[definition.id] = models
 	}
-	for _, provider := range []string{"zai", "zai-coding-cn"} {
-		for id, model := range result[provider] {
-			if ref, ok := source["zai"].Models[id]; ok {
-				model.Cost = modelCostWithTiers(ref)
-				result[provider][id] = model
+	return result, nil
+}
+
+// sendsNativeEffort reports whether the model's API sends models.dev effort
+// values to the host as-is.
+func sendsNativeEffort(m *model) bool {
+	switch m.API {
+	case ai.APIAnthropicMessages:
+		return m.compatValue("forceAdaptiveThinking") == true
+	case ai.APIOpenAIResponses, ai.APIAzureOpenAIResponses, ai.APIOpenAICodexResponses:
+		return true
+	case ai.APIOpenAICompletions:
+		format, effort := m.compatValue("thinkingFormat"), m.compatValue("supportsReasoningEffort")
+		return (format == nil || format == "openai") && (effort == nil || effort == true)
+	}
+	return false
+}
+
+// applyImageResizeDefaults keeps the generated default no less restrictive
+// than the historical cache-safe 2000px / 4.5 MiB image preprocessing.
+func applyImageResizeDefaults(m *model) {
+	if !m.hasImageInput() {
+		return
+	}
+	m.withInputLimits(0, 0, 0)
+	if m.InputLimits.Images.Resize == nil {
+		m.InputLimits.Images.Resize = &ai.ModelImageResizeOptions{MaxWidth: ptr(2000.0), MaxHeight: ptr(2000.0), MaxBytes: ptr(4.5 * 1024 * 1024), JPEGQuality: ptr(80.0)}
+	}
+}
+
+// effortThinkingLevels converts models.dev verified effort values into
+// selectable thinking levels (upstream getEffortThinkingLevelMap); values
+// without an equivalent (default, null) are omitted.
+func effortThinkingLevels(options []reasoningOption) thinking {
+	supported := map[string]bool{}
+	count := 0
+	for _, option := range options {
+		if option.Type != "effort" {
+			continue
+		}
+		for _, value := range option.Values {
+			count++
+			if value != nil {
+				supported[*value] = true
 			}
 		}
 	}
-	addOpenCode(result, source["opencode"], "opencode", "https://opencode.ai/inference")
-	addOpenCode(result, source["opencode-go"], "opencode-go", "https://opencode.ai/inference/go")
-	addCopilot(result, source["github-copilot"])
-	addXAI(result, source["xai"])
-	if err := addNvidia(result, source["nvidia"], sources.NvidiaNIM); err != nil {
-		return nil, err
+	all := []ai.ModelThinkingLevel{ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium, ai.ModelThinkingHigh, ai.ModelThinkingXHigh, ai.ModelThinkingMax}
+	if count == 0 || !supported["none"] && !slices.ContainsFunc(all, func(level ai.ModelThinkingLevel) bool { return supported[string(level)] }) {
+		return nil
 	}
-	if err := addOpenRouter(result, sources.OpenRouter); err != nil {
-		return nil, err
+	result := thinking{ai.ModelThinkingOff: nil}
+	if supported["none"] {
+		result[ai.ModelThinkingOff] = ptr("none")
 	}
-	if err := addVercelGateway(result, sources.Vercel); err != nil {
-		return nil, err
-	}
-	addCodex(result)
-	addAntLing(result)
-	addMissingOpenAI(result)
-	addMissingFrontierModels(result)
-	delete(result["deepseek"], "deepseek-v4-flash")
-	if model, ok := result["deepseek"]["deepseek-v4-pro"]; ok {
-		model.Cost = ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.32, Output: 3.96, CacheRead: .044}}
-		result["deepseek"][model.ID] = model
-	}
-	upsert(result, ai.Model{ID: "deepseek-flash", Name: "DeepSeek V4.1 Flash", API: ai.APIOpenAICompletions, Provider: "deepseek", BaseURL: "https://api.deepseek.com", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .3, Output: 1.2, CacheRead: .006}}, ContextWindow: 1000000, MaxTokens: 384000})
-	addAzure(result)
-	addProviderAliases(result)
-	for _, models := range result {
-		for id, model := range models {
-			applyGeneratedMetadata(&model)
-			models[id] = model
+	for _, level := range all {
+		result[level] = nil
+		if supported[string(level)] {
+			result[level] = ptr(string(level))
 		}
 	}
-	applyAnthropicFallbackMetadata(result["anthropic"])
-	return result, nil
+	return result
 }
 
 // Render converts the aggregated source listings into the checked-in Go source.
@@ -297,9 +503,9 @@ func validateCatalog(catalog map[string]map[string]ai.Model) error {
 		ai.APIAzureOpenAIResponses: true, ai.APIOpenAICodexResponses: true, ai.APIAnthropicMessages: true,
 		ai.APIBedrockConverse: true, ai.APIGoogleGenerativeAI: true, ai.APIGoogleVertex: true, ai.APIPiMessages: true,
 	}
-	for _, provider := range sortedKeys(catalog) {
+	for _, provider := range slices.Sorted(maps.Keys(catalog)) {
 		models := catalog[provider]
-		for _, id := range sortedKeys(models) {
+		for _, id := range slices.Sorted(maps.Keys(models)) {
 			model := models[id]
 			if model.ID != id {
 				return fmt.Errorf("validate model catalog: %s/%s declares id %q", provider, id, model.ID)
@@ -340,828 +546,4 @@ func validateCatalog(catalog map[string]map[string]ai.Model) error {
 	return nil
 }
 
-func addRule(result map[string]map[string]ai.Model, source sourceProvider, item rule) {
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		if !include(item, key, raw) {
-			continue
-		}
-		id, name := key, raw.Name
-		if raw.ID != "" {
-			id = raw.ID
-		}
-		if name == "" {
-			name = id
-		}
-		if item.provider == "kimi-coding" && (id == "k2p5" || id == "k2p6" || id == "k2p7") {
-			if _, exists := source.Models["kimi-for-coding"]; exists {
-				continue
-			}
-			id, name = "kimi-for-coding", "Kimi For Coding"
-		}
-		// Upstream QWEN_TOKEN_PLAN_EXCLUDED_MODEL_IDS (PR #7670) retires the
-		// preview id for the GA qwen3.8-max, which the pinned snapshot predates.
-		if isQwenTokenPlanProvider(item.provider) && id == "qwen3.8-max-preview" {
-			if _, exists := source.Models["qwen3.8-max"]; exists {
-				continue
-			}
-			id, name = "qwen3.8-max", "Qwen3.8 Max"
-		}
-		modelSource := raw
-		if item.provider == "google" || item.provider == "google-vertex" {
-			switch id {
-			case "gemini-flash-latest":
-				if current, exists := source.Models["gemini-3.5-flash"]; exists {
-					modelSource = current
-				}
-			case "gemini-flash-lite-latest":
-				if current, exists := source.Models["gemini-3.1-flash-lite"]; exists {
-					modelSource = current
-				}
-			}
-		}
-		model := normalizedModel(id, name, modelSource, item.api, item.provider, item.baseURL)
-		// Mistral models with effort values use reasoning_effort with these levels;
-		// reasoning models without them (Magistral) use prompt_mode.
-		if item.provider == "google" || item.provider == "google-vertex" || item.provider == "mistral" {
-			if thinking := effortThinkingLevelMap(modelSource.ReasoningOptions); thinking != nil {
-				model.ThinkingLevelMap = thinking
-			}
-		}
-		if item.provider == "fireworks" && model.API == ai.APIAnthropicMessages && fireworksUsesAdaptiveThinking(id, raw.ReasoningOptions) {
-			model.Compat = mustCompatJSON(ai.AnthropicMessagesCompat{ForceAdaptiveThinking: ptr(true)})
-			if thinking := effortThinkingLevelMap(raw.ReasoningOptions); thinking != nil {
-				model.ThinkingLevelMap = thinking
-			}
-			if id == "accounts/fireworks/models/qwen3p8-max" && model.ThinkingLevelMap == nil {
-				model.ThinkingLevelMap = effortThinkingLevelMap([]sourceReasoningOption{{Type: "effort", Values: []*string{ptr("low"), ptr("medium"), ptr("xhigh")}}})
-			}
-			if slices.ContainsFunc(raw.ReasoningOptions, func(option sourceReasoningOption) bool { return option.Type == "toggle" }) ||
-				id == "accounts/fireworks/models/qwen3p8-2p4t-a95b" {
-				mergeThinking(&model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "none"}))
-			}
-			if id == "accounts/fireworks/models/deepseek-v4-pro-0813" {
-				mergeThinking(&model, thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingLow: "low"}))
-			}
-		}
-		if item.provider == "fireworks" && strings.Contains(id, "glm-") {
-			model.API = ai.APIOpenAICompletions
-			model.BaseURL = "https://api.fireworks.ai/inference/v1"
-			applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
-		}
-		if item.provider == "mistral" && model.Cost.CacheRead == 0 && model.Cost.Input != 0 {
-			model.Cost.CacheRead = roundCost(model.Cost.Input * 0.1)
-		}
-		if item.provider == "google-vertex" {
-			model.Cost.CacheWrite = 0
-			if id == "gemini-2.5-flash" {
-				model.Cost.CacheRead = 0.03
-			}
-		}
-		if item.provider == "amazon-bedrock" && raw.StructuredOutput {
-			model.Compat = mustCompatJSON(struct {
-				SupportsStrictMode bool `json:"supportsStrictMode"`
-			}{true})
-		}
-		upsert(result, model)
-	}
-}
-
-func include(item rule, id string, model sourceModel) bool {
-	if !model.ToolCall {
-		return false
-	}
-	if (item.provider == "together" || item.provider == "xiaomi" || strings.HasPrefix(item.provider, "xiaomi-token-plan-")) && model.Status == "deprecated" {
-		return false
-	}
-	if item.provider == "amazon-bedrock" && (strings.HasPrefix(id, "ai21.jamba") || strings.HasPrefix(id, "mistral.mistral-7b-instruct-v0")) {
-		return false
-	}
-	if item.provider == "amazon-bedrock" && id == "anthropic.claude-opus-5" {
-		return false
-	}
-	if item.provider == "google-vertex" && (!strings.HasPrefix(id, "gemini-") || id == "gemini-3.1-flash-lite-preview") {
-		return false
-	}
-	if item.provider == "deepseek" && !strings.Contains(id, "deepseek-v4") {
-		return false
-	}
-	if item.provider == "together" && slices.Contains([]string{
-		"Qwen/Qwen3-235B-A22B-Instruct-2507-tput", "Qwen/Qwen3.5-397B-A17B", "essentialai/Rnj-1-Instruct", "zai-org/GLM-5", "zai-org/GLM-5.1",
-	}, id) {
-		return false
-	}
-	if (item.provider == "minimax" || item.provider == "minimax-cn") && !slices.Contains([]string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"}, id) {
-		return false
-	}
-	return item.provider != "openai" || id != "gpt-5.6"
-}
-
-func normalizedModel(id, name string, raw sourceModel, api ai.API, provider, baseURL string) ai.Model {
-	contextWindow, maxTokens := raw.Limit.Context, raw.Limit.Output
-	if contextWindow == 0 {
-		contextWindow = 4096
-	}
-	if maxTokens == 0 {
-		maxTokens = 4096
-	}
-	input := ai.InputModalities{ai.InputText}
-	if slices.Contains(raw.Modalities.Input, "image") {
-		input = append(input, ai.InputImage)
-	}
-	model := ai.Model{ID: id, Name: name, API: api, Provider: ai.ProviderID(provider), BaseURL: baseURL, Reasoning: raw.Reasoning, Input: input, Cost: modelCostWithTiers(raw), ContextWindow: contextWindow, MaxTokens: maxTokens}
-	if provider == "zai" || provider == "zai-coding-cn" || isQwenTokenPlanProvider(provider) {
-		model.ThinkingLevelMap = effortThinkingLevelMap(raw.ReasoningOptions)
-		if (provider == "zai" || provider == "zai-coding-cn") && model.ThinkingLevelMap != nil && (id == "glm-5.2" || id == "glm-5.2-highspeed") {
-			(*model.ThinkingLevelMap)[ai.ModelThinkingOff] = ptr("none")
-		}
-		if isQwenTokenPlanProvider(provider) && model.ThinkingLevelMap == nil && (id == "glm-5" || id == "glm-5.1") {
-			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max"})
-			for _, level := range []ai.ModelThinkingLevel{ai.ModelThinkingMinimal, ai.ModelThinkingLow, ai.ModelThinkingMedium, ai.ModelThinkingXHigh} {
-				values[level] = nil
-			}
-			model.ThinkingLevelMap = &values
-		}
-	} else {
-		applyModelsDevReasoningOptionMetadata(&model, raw.ReasoningOptions)
-	}
-	return model
-}
-
-// addBaseten mirrors upstream processBasetenModels (generate-models.ts): the
-// listing is taken as-is apart from deprecated entries (no tool_call filter),
-// and compat is authored here in full, so applyOpenAICompletionsCompat leaves
-// baseten models untouched.
-func addBaseten(result map[string]map[string]ai.Model, source sourceProvider) {
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		if raw.Status == "deprecated" {
-			continue
-		}
-		isGLM52 := key == "zai-org/GLM-5.2" || key == "zai-org/GLM-5.2-Fast"
-		supportsToggle, supportsEffort := isGLM52, isGLM52
-		for _, option := range raw.ReasoningOptions {
-			supportsToggle = supportsToggle || option.Type == "toggle"
-			supportsEffort = supportsEffort || option.Type == "effort"
-		}
-		compat := ai.OpenAICompletionsCompat{
-			SupportsStore: ptr(false), SupportsDeveloperRole: ptr(false),
-			SupportsReasoningEffort: ptr(supportsEffort), SupportsUsageInStreaming: ptr(true),
-			MaxTokensField: ptr(ai.MaxTokensFieldLegacy), SupportsStrictMode: ptr(true),
-			SupportsLongCacheRetention: ptr(false), SendSessionAffinityHeaders: ptr(true),
-		}
-		if supportsToggle {
-			compat.ThinkingFormat = ptr(ai.ThinkingFormatBaseten)
-			compat.ChatTemplateArgs = ptr(map[string]any{"enable_thinking": map[string]any{"$var": "thinking.enabled"}})
-		} else if supportsEffort {
-			compat.ThinkingFormat = ptr(ai.ThinkingFormatOpenAI)
-		}
-		model := normalizedModel(key, raw.Name, raw, ai.APIOpenAICompletions, "baseten", "https://inference.baseten.co/v1")
-		switch {
-		case isGLM52:
-			model.Input = ai.InputModalities{ai.InputText}
-			values := thinkingValues(map[ai.ModelThinkingLevel]string{
-				ai.ModelThinkingOff: "none", ai.ModelThinkingHigh: "high", ai.ModelThinkingMax: "max",
-			})
-			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh] = nil, nil, nil, nil
-			model.ThinkingLevelMap = &values
-		case supportsToggle:
-			values := thinkingValues(map[ai.ModelThinkingLevel]string{ai.ModelThinkingOff: "off", ai.ModelThinkingHigh: "high"})
-			values[ai.ModelThinkingMinimal], values[ai.ModelThinkingLow], values[ai.ModelThinkingMedium], values[ai.ModelThinkingXHigh], values[ai.ModelThinkingMax] = nil, nil, nil, nil, nil
-			model.ThinkingLevelMap = &values
-		}
-		model.Compat = mustCompatJSON(compat)
-		upsert(result, model)
-	}
-}
-
-// qwenTokenPlanIndividualModelIDs mirrors upstream
-// QWEN_TOKEN_PLAN_INDIVIDUAL_MODEL_IDS: the Individual plan reuses the
-// international source and endpoint with a narrower catalog.
-var qwenTokenPlanIndividualModelIDs = []string{
-	"deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2",
-	"qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max",
-}
-
-// addQwenTokenPlanIndividual filters the alibaba-token-plan source down to the
-// upstream Individual allowlist. IDs the pinned snapshot predates are
-// synthesized from qwen3.7-plus (the snapshot's first tool-capable entry),
-// matching the pinned F2 extraction shim.
-func addQwenTokenPlanIndividual(result map[string]map[string]ai.Model, source sourceProvider) {
-	for _, id := range qwenTokenPlanIndividualModelIDs {
-		raw, ok := source.Models[id]
-		name := raw.Name
-		if !ok {
-			raw, name = source.Models["qwen3.7-plus"], id
-		}
-		if !raw.ToolCall {
-			continue
-		}
-		upsert(result, normalizedModel(id, name, raw, ai.APIOpenAICompletions, "qwen-token-plan-individual",
-			"https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"))
-	}
-}
-
-func addCloudflareGateway(result map[string]map[string]ai.Model, source sourceProvider) {
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		if !raw.ToolCall {
-			continue
-		}
-		upstream, id, found := strings.Cut(key, "/")
-		if !found {
-			continue
-		}
-		var api ai.API
-		var baseURL string
-		switch upstream {
-		case "openai":
-			api, baseURL = ai.APIOpenAIResponses, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai"
-		case "anthropic":
-			// The /anthropic passthrough forwards the id unchanged and Anthropic only accepts dashed ones.
-			api, baseURL, id = ai.APIAnthropicMessages, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic", strings.ReplaceAll(id, ".", "-")
-		case "workers-ai":
-			api, baseURL, id = ai.APIOpenAICompletions, "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat", key
-		default:
-			continue
-		}
-		model := normalizedModel(id, raw.Name, raw, api, "cloudflare-ai-gateway", baseURL)
-		upsert(result, model)
-	}
-}
-
-func addOpenCode(result map[string]map[string]ai.Model, source sourceProvider, provider, basePath string) {
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		// hy3-free was dropped upstream (890b3547) but the pinned models.dev
-		// snapshot still lists it.
-		if !raw.ToolCall || raw.Status == "deprecated" || key == "gpt-5.3-codex-spark" || key == "hy3-free" {
-			continue
-		}
-		api, baseURL := ai.APIOpenAICompletions, basePath+"/v1"
-		switch raw.Provider.NPM {
-		case "@ai-sdk/openai":
-			api = ai.APIOpenAIResponses
-		case "@ai-sdk/anthropic":
-			api, baseURL = ai.APIAnthropicMessages, basePath
-		case "@ai-sdk/google":
-			api = ai.APIGoogleGenerativeAI
-		case "@ai-sdk/alibaba":
-			api = ai.APIOpenAICompletions
-		}
-		if provider == "opencode-go" && (key == "qwen3.5-plus" || key == "qwen3.6-plus") {
-			api, baseURL = ai.APIOpenAICompletions, basePath+"/v1"
-		}
-		if (provider == "opencode" || provider == "opencode-go") && key == "grok-4.5" {
-			api = ai.APIOpenAIResponses
-		}
-		model := normalizedModel(key, raw.Name, raw, api, provider, baseURL)
-		if api == ai.APIGoogleGenerativeAI || provider == "opencode-go" && key == "deepseek-v4.1-flash" {
-			model.ThinkingLevelMap = effortThinkingLevelMap(raw.ReasoningOptions)
-		}
-		if raw.Provider.NPM == "@ai-sdk/alibaba" {
-			model.Compat = mustCompatJSON(ai.OpenAICompletionsCompat{CacheControlFormat: ptr(ai.CacheControlAnthropic)})
-		}
-		upsert(result, model)
-	}
-}
-
-func addCopilot(result map[string]map[string]ai.Model, source sourceProvider) {
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		if !raw.ToolCall || raw.Status == "deprecated" {
-			continue
-		}
-		api := ai.APIOpenAICompletions
-		if isCopilotClaude(key) {
-			api = ai.APIAnthropicMessages
-		} else if strings.HasPrefix(key, "grok-") || strings.HasPrefix(key, "gpt-") || strings.HasPrefix(key, "oswe") || strings.HasPrefix(key, "mai-") {
-			api = ai.APIOpenAIResponses
-		}
-		model := normalizedModel(key, raw.Name, raw, api, "github-copilot", "https://api.individual.githubcopilot.com")
-		model.Cost = modelCostWithTiers(raw)
-		headers := map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"}
-		model.Headers = &headers
-		upsert(result, model)
-	}
-}
-
-func isCopilotClaude(id string) bool {
-	for _, family := range []string{"claude-haiku-", "claude-sonnet-", "claude-opus-", "claude-fable-"} {
-		if tail, ok := strings.CutPrefix(id, family); ok {
-			return strings.HasPrefix(tail, "4") || strings.HasPrefix(tail, "5")
-		}
-	}
-	return false
-}
-
-func modelCostWithTiers(raw sourceModel) ai.ModelCost {
-	cost := ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: raw.Cost.Input, Output: raw.Cost.Output, CacheRead: raw.Cost.CacheRead, CacheWrite: raw.Cost.CacheWrite}}
-	tiers := make([]ai.ModelCostTier, 0, len(raw.Cost.Tiers))
-	for _, tier := range raw.Cost.Tiers {
-		if tier.Tier.Type == "context" && tier.Tier.Size != 0 {
-			tiers = append(tiers, ai.ModelCostTier{InputTokensAbove: tier.Tier.Size, ModelCostRates: ai.ModelCostRates{Input: tier.Input, Output: tier.Output, CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite}})
-		}
-	}
-	if len(tiers) != 0 {
-		cost.Tiers = &tiers
-	}
-	return cost
-}
-
-func addXAI(result map[string]map[string]ai.Model, source sourceProvider) {
-	excluded := map[string]bool{"grok-3": true, "grok-3-fast": true, "grok-4.20-0309-non-reasoning": true, "grok-4.20-0309-reasoning": true, "grok-code-fast-1": true, "grok-build-0.1": true}
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		if !raw.ToolCall || excluded[key] {
-			continue
-		}
-		api := ai.APIOpenAIResponses
-		model := normalizedModel(key, raw.Name, raw, api, "xai", "https://api.x.ai/v1")
-		model.Cost = modelCostWithTiers(raw)
-		upsert(result, model)
-	}
-}
-
-const nvidiaBaseURL = "https://integrate.api.nvidia.com/v1"
-
-// nvidiaNIMUnsupportedModels mirrors upstream NVIDIA_NIM_UNSUPPORTED_MODELS
-// (generate-models.ts:195-214) and is matched against the live NIM listing id.
-var nvidiaNIMUnsupportedModels = []string{
-	"abacusai/dracarys-llama-3.1-70b-instruct", "bytedance/seed-oss-36b-instruct",
-	"deepseek-ai/deepseek-v4-flash", "deepseek-ai/deepseek-v4-pro", "google/gemma-2-2b-it",
-	"google/gemma-3n-e2b-it", "google/gemma-3n-e4b-it", "google/gemma-4-31b-it",
-	"meta/llama-3.2-1b-instruct", "meta/llama-4-maverick-17b-128e-instruct",
-	"microsoft/phi-4-mini-instruct", "minimaxai/minimax-m2.7", "mistralai/mistral-nemotron",
-	"nvidia/nemotron-mini-4b-instruct", "qwen/qwen3-next-80b-a3b-instruct",
-	"qwen/qwen3.5-397b-a17b", "sarvamai/sarvam-m", "upstage/solar-10.7b-instruct",
-	// orb-only entry: not in the upstream denylist and currently absent from
-	// the live NIM listing; kept so a NIM rollout cannot resurrect it silently.
-	"qwen/qwen3.5-122b-a10b",
-}
-
-// addNvidia intersects models.dev nvidia with the live NIM /v1/models listing,
-// normalizing IDs before the denylist check (generate-models.ts:764-766,
-// 1414-1446). Without the intersection models.dev leaks models NIM never serves.
-func addNvidia(result map[string]map[string]ai.Model, source sourceProvider, listing []byte) error {
-	liveIDs, err := nvidiaLiveIDs(listing)
-	if err != nil {
-		return err
-	}
-	for _, key := range sortedKeys(source.Models) {
-		raw := source.Models[key]
-		if !raw.ToolCall || !slices.Contains(raw.Modalities.Input, "text") || !slices.Contains(raw.Modalities.Output, "text") {
-			continue
-		}
-		liveID, ok := liveIDs[key]
-		if !ok {
-			liveID, ok = liveIDs[normalizeNvidiaModelID(key)]
-		}
-		if !ok || slices.Contains(nvidiaNIMUnsupportedModels, liveID) {
-			continue
-		}
-		name := raw.Name
-		if name == "" {
-			name = liveID
-		}
-		upsert(result, normalizedModel(liveID, name, raw, ai.APIOpenAICompletions, "nvidia", nvidiaBaseURL))
-	}
-	return nil
-}
-
-func nvidiaLiveIDs(listing []byte) (map[string]string, error) {
-	if len(listing) == 0 {
-		return map[string]string{}, nil
-	}
-	var parsed struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(listing, &parsed); err != nil {
-		return nil, fmt.Errorf("parse NVIDIA NIM models listing: %w", err)
-	}
-	ids := make([]string, 0, len(parsed.Data))
-	for _, model := range parsed.Data {
-		ids = append(ids, model.ID)
-	}
-	result := make(map[string]string, 2*len(ids))
-	for _, id := range ids {
-		result[id] = id
-		result[normalizeNvidiaModelID(id)] = id
-	}
-	return result, nil
-}
-
-func normalizeNvidiaModelID(id string) string {
-	return strings.ReplaceAll(strings.ToLower(id), "_", ".")
-}
-
-// addOpenRouter builds the OpenRouter catalog from the live /api/v1/models
-// listing filtered on tools support (generate-models.ts:818-878). When the
-// listing is absent the catalog is omitted and the bundled one keeps serving.
-func addOpenRouter(result map[string]map[string]ai.Model, listing []byte) error {
-	if len(listing) == 0 {
-		return nil
-	}
-	var parsed struct {
-		Data []struct {
-			ID                  string   `json:"id"`
-			Name                string   `json:"name"`
-			SupportedParameters []string `json:"supported_parameters"`
-			Reasoning           *struct {
-				Mandatory        bool      `json:"mandatory"`
-				SupportedEfforts []*string `json:"supported_efforts"`
-			} `json:"reasoning"`
-			ContextLength float64 `json:"context_length"`
-			Architecture  struct {
-				Modality string `json:"modality"`
-			} `json:"architecture"`
-			Pricing     openRouterPricing `json:"pricing"`
-			TopProvider struct {
-				ContextLength       float64 `json:"context_length"`
-				MaxCompletionTokens float64 `json:"max_completion_tokens"`
-			} `json:"top_provider"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(listing, &parsed); err != nil {
-		return fmt.Errorf("parse OpenRouter models listing: %w", err)
-	}
-	for _, model := range parsed.Data {
-		if !slices.Contains(model.SupportedParameters, "tools") {
-			continue
-		}
-		input := ai.InputModalities{ai.InputText}
-		if strings.Contains(model.Architecture.Modality, "image") {
-			input = append(input, ai.InputImage)
-		}
-		contextWindow := model.TopProvider.ContextLength
-		if contextWindow == 0 {
-			contextWindow = model.ContextLength
-		}
-		if contextWindow == 0 {
-			contextWindow = 4096
-		}
-		maxTokens := model.TopProvider.MaxCompletionTokens
-		if maxTokens == 0 {
-			maxTokens = 4096
-		}
-		api, baseURL := ai.APIOpenAICompletions, "https://openrouter.ai/api/v1"
-		if strings.HasPrefix(model.ID, "anthropic/") && !strings.HasSuffix(model.ID, ":batch") {
-			api = ai.APIAnthropicMessages
-			baseURL = "https://openrouter.ai/api"
-		}
-		var thinking *map[ai.ModelThinkingLevel]*string
-		if model.Reasoning != nil {
-			thinking = effortThinkingLevelMap([]sourceReasoningOption{{Type: "effort", Values: model.Reasoning.SupportedEfforts}})
-			if thinking != nil {
-				if model.Reasoning.Mandatory {
-					(*thinking)[ai.ModelThinkingOff] = nil
-				} else {
-					(*thinking)[ai.ModelThinkingOff] = ptr("none")
-				}
-			} else if model.Reasoning.Mandatory {
-				values := map[ai.ModelThinkingLevel]*string{ai.ModelThinkingOff: nil}
-				thinking = &values
-			}
-		}
-		upsert(result, ai.Model{
-			ID: model.ID, Name: model.Name, API: api, Provider: "openrouter", ThinkingLevelMap: thinking,
-			BaseURL:       baseURL,
-			Reasoning:     slices.Contains(model.SupportedParameters, "reasoning"),
-			Input:         input,
-			Cost:          model.Pricing.cost(),
-			ContextWindow: contextWindow, MaxTokens: maxTokens,
-		})
-	}
-	return nil
-}
-
-// addVercelGateway builds the Vercel AI Gateway catalog from the live
-// /v1/models listing filtered on the tool-use tag; every model rides the
-// anthropic-messages API (generate-models.ts:880-938). When the listing is
-// absent the catalog is omitted and the bundled one keeps serving.
-func addVercelGateway(result map[string]map[string]ai.Model, listing []byte) error {
-	if len(listing) == 0 {
-		return nil
-	}
-	var parsed struct {
-		Data []struct {
-			ID            string   `json:"id"`
-			Name          string   `json:"name"`
-			Tags          []string `json:"tags"`
-			ContextWindow float64  `json:"context_window"`
-			MaxTokens     float64  `json:"max_tokens"`
-			Pricing       struct {
-				Input           flexibleNumber `json:"input"`
-				Output          flexibleNumber `json:"output"`
-				InputCacheRead  flexibleNumber `json:"input_cache_read"`
-				InputCacheWrite flexibleNumber `json:"input_cache_write"`
-			} `json:"pricing"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(listing, &parsed); err != nil {
-		return fmt.Errorf("parse Vercel AI Gateway models listing: %w", err)
-	}
-	for _, model := range parsed.Data {
-		if !slices.Contains(model.Tags, "tool-use") {
-			continue
-		}
-		input := ai.InputModalities{ai.InputText}
-		if slices.Contains(model.Tags, "vision") {
-			input = append(input, ai.InputImage)
-		}
-		name := model.Name
-		if name == "" {
-			name = model.ID
-		}
-		contextWindow := model.ContextWindow
-		if contextWindow == 0 {
-			contextWindow = 4096
-		}
-		maxTokens := model.MaxTokens
-		if maxTokens == 0 {
-			maxTokens = 4096
-		}
-		upsert(result, ai.Model{
-			ID: model.ID, Name: name, API: ai.APIAnthropicMessages, Provider: "vercel-ai-gateway",
-			BaseURL:   "https://ai-gateway.vercel.sh",
-			Reasoning: slices.Contains(model.Tags, "reasoning"),
-			Input:     input,
-			Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{
-				Input: roundCost(float64(model.Pricing.Input) * 1000000), Output: roundCost(float64(model.Pricing.Output) * 1000000),
-				CacheRead: roundCost(float64(model.Pricing.InputCacheRead) * 1000000), CacheWrite: roundCost(float64(model.Pricing.InputCacheWrite) * 1000000),
-			}},
-			ContextWindow: contextWindow, MaxTokens: maxTokens,
-			Compat: mustCompatJSON(ai.AnthropicMessagesCompat{AllowEmptySignature: ptr(true)}),
-		})
-	}
-	return nil
-}
-
-// openRouterPricing is OpenRouter's $/token prices as decimal strings, and its conditional overrides.
-type openRouterPricing struct {
-	openRouterRates
-	Overrides []struct {
-		openRouterRates
-		MinPromptTokens *float64 `json:"min_prompt_tokens"`
-		UTCStart        *float64 `json:"utc_start"`
-		UTCEnd          *float64 `json:"utc_end"`
-		UTCDays         []string `json:"utc_days"`
-	} `json:"overrides"`
-}
-
-type openRouterRates struct {
-	Prompt          string `json:"prompt"`
-	Completion      string `json:"completion"`
-	InputCacheRead  string `json:"input_cache_read"`
-	InputCacheWrite string `json:"input_cache_write"`
-}
-
-// cost is upstream openRouterCost: negative placeholder prices (router models) fall back to 0, prompt-length
-// overrides become tiers that keep the base price for rates they omit, and time-of-day overrides are skipped.
-func (pricing openRouterPricing) cost() ai.ModelCost {
-	base := pricing.rates(ai.ModelCostRates{})
-	cost := ai.ModelCost{ModelCostRates: base}
-	var tiers []ai.ModelCostTier
-	for _, override := range pricing.Overrides {
-		if override.MinPromptTokens != nil && override.UTCStart == nil && override.UTCEnd == nil && override.UTCDays == nil {
-			tiers = append(tiers, ai.ModelCostTier{InputTokensAbove: *override.MinPromptTokens, ModelCostRates: override.rates(base)})
-		}
-	}
-	if len(tiers) != 0 {
-		cost.Tiers = &tiers
-	}
-	return cost
-}
-
-func (rates openRouterRates) rates(fallback ai.ModelCostRates) ai.ModelCostRates {
-	return ai.ModelCostRates{
-		Input: perMillionTokens(rates.Prompt, fallback.Input), Output: perMillionTokens(rates.Completion, fallback.Output),
-		CacheRead: perMillionTokens(rates.InputCacheRead, fallback.CacheRead), CacheWrite: perMillionTokens(rates.InputCacheWrite, fallback.CacheWrite),
-	}
-}
-
-// perMillionTokens converts an OpenRouter $/token price string to $/1M tokens; a missing, invalid or negative price is fallback.
-func perMillionTokens(value string, fallback float64) float64 {
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil || parsed < 0 {
-		return fallback
-	}
-	return roundCost(parsed * 1000000)
-}
-
-// flexibleNumber decodes a JSON number or numeric string; anything else is 0
-// (upstream toNumber in generate-models.ts:888-894).
-type flexibleNumber float64
-
-func (number *flexibleNumber) UnmarshalJSON(data []byte) error {
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" || trimmed == "null" {
-		*number = 0
-		return nil
-	}
-	if strings.HasPrefix(trimmed, `"`) {
-		var text string
-		if err := json.Unmarshal(data, &text); err != nil {
-			return err
-		}
-		parsed, err := strconv.ParseFloat(text, 64)
-		if err != nil {
-			*number = 0
-			return nil
-		}
-		*number = flexibleNumber(parsed)
-		return nil
-	}
-	var parsed float64
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		*number = 0
-		return nil
-	}
-	*number = flexibleNumber(parsed)
-	return nil
-}
-
-func addCodex(result map[string]map[string]ai.Model) {
-	items := []struct {
-		id, name string
-		context  float64
-		input    ai.InputModalities
-		cost     ai.ModelCostRates
-	}{
-		{"gpt-6.1-sol", "GPT-6.1 Sol", 500000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6.1-sol"]},
-		{"gpt-6-astra", "GPT-6 Astra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-astra"]},
-		{"gpt-6-sol", "GPT-6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-sol"]},
-		{"gpt-6-luna", "GPT-6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-6-luna"]},
-		{"gpt-5.6-luna", "GPT-5.6 Luna", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-luna"]},
-		{"gpt-5.6-sol", "GPT-5.6 Sol", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-sol"]},
-		{"gpt-5.6-terra", "GPT-5.6 Terra", 272000, ai.InputModalities{ai.InputText, ai.InputImage}, openAIStandardCosts["gpt-5.6-terra"]},
-	}
-	for _, item := range items {
-		model := ai.Model{ID: item.id, Name: item.name, API: ai.APIOpenAICodexResponses, Provider: "openai-codex", BaseURL: "https://chatgpt.com/backend-api", Reasoning: true, Input: item.input, Cost: ai.ModelCost{ModelCostRates: item.cost}, ContextWindow: item.context, MaxTokens: 128000}
-		upsert(result, model)
-	}
-}
-
-func addAntLing(result map[string]map[string]ai.Model) {
-	for _, model := range []ai.Model{
-		{ID: "Ling-2.6-flash", Name: "Ling 2.6 Flash", Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .01, Output: .02}}},
-		{ID: "Ling-2.6-1T", Name: "Ling 2.6 1T", Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .06, Output: .25}}},
-		{ID: "Ring-2.6-1T", Name: "Ring 2.6 1T", Reasoning: true, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: .06, Output: .25}}},
-	} {
-		model.API, model.Provider, model.BaseURL = ai.APIOpenAICompletions, "ant-ling", "https://api.ant-ling.com/v1"
-		model.Input, model.ContextWindow, model.MaxTokens = ai.InputModalities{ai.InputText}, 262144, 65536
-		upsert(result, model)
-	}
-}
-
-func addAzure(result map[string]map[string]ai.Model) {
-	for _, model := range result["openai"] {
-		clone := model
-		clone.API, clone.Provider, clone.BaseURL = ai.APIAzureOpenAIResponses, "azure", ""
-		clone.Compat = nil
-		clone.ThinkingLevelMap = nil
-		clone.Cost.Tiers = nil
-		if standard, ok := openAIStandardCosts[clone.ID]; ok {
-			clone.Cost.ModelCostRates = standard
-		}
-		if slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"}, clone.ID) {
-			clone.ContextWindow = 1050000
-		}
-		upsert(result, clone)
-	}
-}
-
-// openAIStandardCosts are OpenAI's list prices, authoritative until models.dev
-// and passthrough catalogs catch up (https://developers.openai.com/api/docs/pricing).
-var openAIStandardCosts = map[string]ai.ModelCostRates{
-	"gpt-5.6-luna":  {Input: .2, Output: 1.2, CacheRead: .02, CacheWrite: .25},
-	"gpt-5.6-sol":   {Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5},
-	"gpt-5.6-terra": {Input: 2, Output: 12, CacheRead: .2, CacheWrite: 2.5},
-	"gpt-6-astra":   {Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5},
-	"gpt-6-luna":    {Input: .1, Output: .5, CacheRead: .01, CacheWrite: .125},
-	"gpt-6-sol":     {Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5},
-	"gpt-6.1-sol":   {Input: 2, Output: 10, CacheRead: .1, CacheWrite: 2.5},
-}
-
-func addMissingOpenAI(result map[string]map[string]ai.Model) {
-	for _, item := range []struct{ id, name string }{
-		{"gpt-6.1-sol", "GPT-6.1 Sol"}, {"gpt-6-astra", "GPT-6 Astra"}, {"gpt-6-sol", "GPT-6 Sol"}, {"gpt-6-luna", "GPT-6 Luna"},
-	} {
-		upsert(result, ai.Model{
-			ID: item.id, Name: item.name, API: ai.APIOpenAIResponses, Provider: "openai",
-			BaseURL: "https://api.openai.com/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage},
-			Cost: ai.ModelCost{ModelCostRates: openAIStandardCosts[item.id]}, ContextWindow: 272000, MaxTokens: 128000,
-		})
-	}
-	upsert(result, ai.Model{
-		ID: "gpt-5-chat-latest", Name: "GPT-5 Chat Latest", API: ai.APIOpenAIResponses,
-		Provider: "openai", BaseURL: "https://api.openai.com/v1", Input: ai.InputModalities{ai.InputText, ai.InputImage},
-		Cost:          ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.25, Output: 10, CacheRead: .125}},
-		ContextWindow: 128000, MaxTokens: 16384,
-	})
-}
-
-// addMissingFrontierModels adds models their providers serve before models.dev
-// lists them: Claude Opus and Sonnet 5.5, and the Copilot catalog of 2026-09-22.
-func addMissingFrontierModels(result map[string]map[string]ai.Model) {
-	effort := func() *map[ai.ModelThinkingLevel]*string {
-		return &map[ai.ModelThinkingLevel]*string{
-			ai.ModelThinkingOff: nil, ai.ModelThinkingMinimal: nil, ai.ModelThinkingLow: ptr("low"), ai.ModelThinkingMedium: ptr("medium"),
-			ai.ModelThinkingHigh: ptr("high"), ai.ModelThinkingXHigh: ptr("xhigh"), ai.ModelThinkingMax: ptr("max"),
-		}
-	}
-	image := ai.InputModalities{ai.InputText, ai.InputImage}
-	opus := ai.ModelCostRates{Input: 4, Output: 20, CacheRead: .2, CacheWrite: 5}
-	for _, model := range []ai.Model{
-		{ID: "claude-opus-5-5", Name: "Claude Opus 5.5", Cost: ai.ModelCost{ModelCostRates: opus}},
-		{ID: "claude-sonnet-5-5", Name: "Claude Sonnet 5.5", Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5}}},
-	} {
-		model.API, model.Provider, model.BaseURL = ai.APIAnthropicMessages, "anthropic", "https://api.anthropic.com"
-		model.Reasoning, model.ThinkingLevelMap, model.Input, model.ContextWindow, model.MaxTokens = true, effort(), image, 1000000, 128000
-		upsert(result, model)
-	}
-	copilot := func(model ai.Model) ai.Model {
-		headers := map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"}
-		model.Provider, model.BaseURL, model.Headers = "github-copilot", "https://api.individual.githubcopilot.com", &headers
-		model.Reasoning, model.Input, model.ContextWindow, model.MaxTokens = true, image, 1000000, 128000
-		return model
-	}
-	upsert(result, copilot(ai.Model{ID: "claude-opus-5.5", Name: "Claude Opus 5.5", API: ai.APIAnthropicMessages, ThinkingLevelMap: effort(), Cost: ai.ModelCost{ModelCostRates: opus}}))
-	for _, item := range []struct{ id, name string }{{"gpt-6-sol", "GPT-6 Sol"}, {"gpt-6-luna", "GPT-6 Luna"}} {
-		upsert(result, copilot(ai.Model{ID: item.id, Name: item.name, API: ai.APIOpenAIResponses, Cost: ai.ModelCost{ModelCostRates: openAIStandardCosts[item.id]}}))
-	}
-}
-
-func applyGeneratedMetadata(model *ai.Model) {
-	applyCatalogMetadata(model)
-	applyImageInputMetadata(model)
-	model.Type = "chat"
-}
-
-// applyImageInputMetadata records provider image limits and the cache-safe
-// resize profile, never less restrictive than the historical 2000px / 4.5 MiB.
-func applyImageInputMetadata(model *ai.Model) {
-	if !slices.Contains(model.Input, ai.InputImage) {
-		return
-	}
-	var limits ai.ModelInputLimits
-	images := ai.ModelImageInputLimits{}
-	switch model.Provider {
-	case "anthropic":
-		perRequest := 600.0
-		if model.ContextWindow == 200000 {
-			perRequest = 100
-		}
-		limits.MaxRequestBytes, images.MaxPerRequest = ptr(32.0*1024*1024), &perRequest
-	case "amazon-bedrock":
-		images.MaxPerMessage = ptr(20.0)
-	case "openai":
-		limits.MaxRequestBytes, images.MaxPerRequest = ptr(512.0*1024*1024), ptr(1500.0)
-	case "google":
-		limits.MaxRequestBytes, images.MaxPerRequest = ptr(20.0*1024*1024), ptr(3600.0)
-	}
-	images.Resize = &ai.ModelImageResizeOptions{MaxWidth: ptr(2000.0), MaxHeight: ptr(2000.0), MaxBytes: ptr(4.5 * 1024 * 1024), JPEGQuality: ptr(80.0)}
-	limits.Images = &images
-	model.InputLimits = &limits
-}
-
-func addProviderAliases(result map[string]map[string]ai.Model) {
-	if _, ok := result["openrouter"]["auto"]; !ok {
-		upsert(result, ai.Model{ID: "auto", Name: "Auto", API: ai.APIOpenAICompletions, Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{}, ContextWindow: 2000000, MaxTokens: 30000})
-	}
-	if _, ok := result["openrouter"]["openrouter/fusion"]; !ok {
-		upsert(result, ai.Model{ID: "openrouter/fusion", Name: "OpenRouter: Fusion", API: ai.APIOpenAICompletions, Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Reasoning: true, Input: ai.InputModalities{ai.InputText}, Cost: ai.ModelCost{}, ContextWindow: 1000000, MaxTokens: 30000})
-	}
-	if _, ok := result["mistral"]["mistral-medium-3.5"]; !ok {
-		upsert(result, ai.Model{ID: "mistral-medium-3.5", Name: "Mistral Medium 3.5", API: ai.APIMistralConversations, Provider: "mistral", BaseURL: "https://api.mistral.ai", Reasoning: true,
-			ThinkingLevelMap: effortThinkingLevelMap([]sourceReasoningOption{{Type: "effort", Values: []*string{ptr("none"), ptr("high")}}}),
-			Input:            ai.InputModalities{ai.InputText, ai.InputImage}, Cost: ai.ModelCost{ModelCostRates: ai.ModelCostRates{Input: 1.5, Output: 7.5}}, ContextWindow: 262144, MaxTokens: 262144})
-	}
-}
-
-// roundCost matches upstream Number(value.toFixed(6)): half away from zero so
-// negative sentinel prices (e.g. OpenRouter auto routers) survive intact.
-func roundCost(value float64) float64 {
-	return math.Round(value*1000000) / 1000000
-}
-
-func upsert(result map[string]map[string]ai.Model, model ai.Model) {
-	provider := string(model.Provider)
-	if result[provider] == nil {
-		result[provider] = make(map[string]ai.Model)
-	}
-	if _, exists := result[provider][model.ID]; !exists {
-		result[provider][model.ID] = model
-	}
-}
-
-func sortedKeys[T any](values map[string]T) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
-}
+func ptr[T any](value T) *T { return &value }

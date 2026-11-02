@@ -17,9 +17,7 @@
       "query": "ndcv",
       "sortMode": "relevance",
       "nameFilter": "all",
-      "result": [
-        "child"
-      ]
+      "result": []
     },
     {
       "id": "exact-phrase",

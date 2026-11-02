@@ -128,7 +128,8 @@
                 "output": 4,
                 "cacheRead": 12,
                 "cacheWrite": 0,
-                "total": 24
+                "total": 24,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -169,7 +170,8 @@
                 "output": 4,
                 "cacheRead": 12,
                 "cacheWrite": 0,
-                "total": 24
+                "total": 24,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -210,7 +212,8 @@
                 "output": 4,
                 "cacheRead": 12,
                 "cacheWrite": 0,
-                "total": 24
+                "total": 24,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -251,7 +254,8 @@
                 "output": 4,
                 "cacheRead": 12,
                 "cacheWrite": 0,
-                "total": 24
+                "total": 24,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -291,7 +295,8 @@
                 "output": 4,
                 "cacheRead": 12,
                 "cacheWrite": 0,
-                "total": 24
+                "total": 24,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -530,7 +535,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 8
+                "total": 8,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -884,8 +890,7 @@
                 "type": "toolCall",
                 "id": "call_f2|fc_f2",
                 "name": "echo",
-                "arguments": {},
-                "partialJson": ""
+                "arguments": {}
               }
             ],
             "api": "openai-responses",
@@ -934,8 +939,7 @@
                 "arguments": {
                   "text": "hello",
                   "mode": "plain"
-                },
-                "partialJson": "{\"text\":\"hello\",\"mode\":\"plain\","
+                }
               }
             ],
             "api": "openai-responses",
@@ -987,8 +991,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialJson": "{\"text\":\"hello\",\"mode\":\"plain\",\"metadata\":{\"count\":2}}"
+                }
               }
             ],
             "api": "openai-responses",
@@ -1120,7 +1123,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 12,
-                "total": 47
+                "total": 47,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -1217,7 +1221,8 @@
                 "output": 24,
                 "cacheRead": 15,
                 "cacheWrite": 0,
-                "total": 64
+                "total": 64,
+                "totalFromProvider": false
               }
             },
             "stopReason": "error",
@@ -1530,7 +1535,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 8
+                "total": 8,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -1566,7 +1572,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 8
+                "total": 8,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -1601,7 +1608,8 @@
                 "output": 4,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 8
+                "total": 8,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",
@@ -1849,9 +1857,7 @@
                 "arguments": {
                   "text": "hello",
                   "mode": "plain"
-                },
-                "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",",
-                "streamIndex": 0
+                }
               }
             ],
             "api": "openai-completions",
@@ -1900,9 +1906,7 @@
                 "arguments": {
                   "text": "hello",
                   "mode": "plain"
-                },
-                "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",",
-                "streamIndex": 0
+                }
               }
             ],
             "api": "openai-completions",
@@ -1954,9 +1958,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",\"metadata\":{\"count\":2}}",
-                "streamIndex": 0
+                }
               }
             ],
             "api": "openai-completions",
@@ -2008,9 +2010,7 @@
                   "metadata": {
                     "count": 2
                   }
-                },
-                "partialArgs": "{\"text\":\"hello\",\"mode\":\"plain\",\"metadata\":{\"count\":2}}",
-                "streamIndex": 0
+                }
               }
             ],
             "api": "openai-completions",
@@ -2080,7 +2080,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 12,
-                "total": 47
+                "total": 47,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2134,7 +2135,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 12,
-                "total": 47
+                "total": 47,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2199,7 +2201,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 12,
-                "total": 47
+                "total": 47,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2252,7 +2255,8 @@
                 "output": 14,
                 "cacheRead": 6,
                 "cacheWrite": 12,
-                "total": 47
+                "total": 47,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -2355,7 +2359,8 @@
                 "output": 6,
                 "cacheRead": 3,
                 "cacheWrite": 0,
-                "total": 17
+                "total": 17,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -2391,7 +2396,8 @@
                 "output": 6,
                 "cacheRead": 3,
                 "cacheWrite": 0,
-                "total": 17
+                "total": 17,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -2427,7 +2433,8 @@
                 "output": 6,
                 "cacheRead": 3,
                 "cacheWrite": 0,
-                "total": 17
+                "total": 17,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -2462,7 +2469,8 @@
                 "output": 6,
                 "cacheRead": 3,
                 "cacheWrite": 0,
-                "total": 17
+                "total": 17,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -2702,7 +2710,8 @@
                 "output": 28,
                 "cacheRead": 12,
                 "cacheWrite": 24,
-                "total": 94
+                "total": 94,
+                "totalFromProvider": false
               }
             },
             "stopReason": "stop",

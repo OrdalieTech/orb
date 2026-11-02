@@ -286,10 +286,7 @@ func StreamAnthropicMessagesWithOptions(
 
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
-		fail := func(err error) {
-			clearAnthropicStreamingFields(output)
-			sink(anthropicStreamFailure(ctx, output, err))
-		}
+		fail := func(err error) { sink(anthropicStreamFailure(ctx, output, err)) }
 		if err := assertAnthropicAuth(model, streamOptions); err != nil {
 			fail(err)
 			return
@@ -322,6 +319,7 @@ func StreamAnthropicMessagesWithOptions(
 		}) {
 			// Anthropic refused the strict tool set as too large; once more with tools that only
 			// prefer strict sampling sent non-strict (upstream 1.2.0 #10409).
+			appendStrictToolsFallback(output, "anthropic", err)
 			response, isOAuth, err = send(true)
 		}
 		if err != nil {
@@ -669,7 +667,9 @@ func buildAnthropicMessagesPayload(
 			display = *options.ThinkingDisplay
 		}
 		payload.Thinking = jsonwire.OrderedObject{{Name: "type", Value: "adaptive"}, {Name: "display", Value: display}, {Name: "block_binding", Value: map[string]string{"prefix_mismatch_behavior": "drop_block"}}}
-		payload.OutputConfig = &anthropicOutputConfig{Effort: AnthropicEffortHigh}
+		// The top-level effort is part of the cached prompt, so it stays fixed while markers set each reply's
+		// level; "low" because an organization's effort cap rejects any level above it (upstream #10063).
+		payload.OutputConfig = &anthropicOutputConfig{Effort: AnthropicEffortLow}
 	} else if model.Reasoning {
 		switch {
 		case thinkingEnabled:
@@ -944,7 +944,6 @@ func convertAnthropicMessages(
 				result = append(result, AnthropicMessageParam{Role: "user", Content: blocks})
 			}
 		case *ai.AssistantMessage:
-			flushSystem()
 			blocks := make([]any, 0, len(message.Content))
 			for _, content := range message.Content {
 				switch block := content.(type) {
@@ -985,7 +984,10 @@ func convertAnthropicMessages(
 					blocks = append(blocks, anthropicToolUseBlock{Type: "tool_use", ID: block.ID, Name: name, Input: arguments})
 				}
 			}
+			// A held system update waits past an assistant message with nothing to send, so it never lands
+			// before a user message (upstream #11091).
 			if len(blocks) > 0 {
+				flushSystem()
 				if len(managedProvider) > 0 && managedProvider[0] != "" && string(message.Provider) == managedProvider[0] && message.API == ai.APIAnthropicMessages && message.ProviderThinkingLevel != nil {
 					switch AnthropicEffort(*message.ProviderThinkingLevel) {
 					case AnthropicEffortLow, AnthropicEffortMedium, AnthropicEffortHigh, AnthropicEffortXHigh, AnthropicEffortMax:
@@ -1396,6 +1398,17 @@ type anthropicRawUsage struct {
 	OutputTokensDetails *struct {
 		ThinkingTokens *int64 `json:"thinking_tokens"`
 	} `json:"output_tokens_details"`
+	// raw keeps the object for OpenRouter's billing fields, which the Anthropic schema does not type.
+	raw json.RawMessage
+}
+
+func (usage *anthropicRawUsage) UnmarshalJSON(data []byte) error {
+	type plain anthropicRawUsage
+	if err := json.Unmarshal(data, (*plain)(usage)); err != nil {
+		return err
+	}
+	usage.raw = data
+	return nil
 }
 
 func newAnthropicStreamProcessor(
@@ -1532,6 +1545,7 @@ func (processor *anthropicStreamProcessor) applyDeltaUsage(usage anthropicRawUsa
 		processor.output.Usage.Reasoning = usage.OutputTokensDetails.ThinkingTokens
 	}
 	processor.finishUsage()
+	applyOpenRouterReportedCost(processor.model, &processor.output.Usage, usage.raw)
 }
 
 func (processor *anthropicStreamProcessor) finishUsage() {
@@ -1552,7 +1566,7 @@ func (processor *anthropicStreamProcessor) startBlock(event anthropicRawEvent) e
 	slot := &anthropicOutputBlock{contentIndex: len(processor.output.Content)}
 	switch event.ContentBlock.Type {
 	case "text":
-		slot.text = &ai.TextContent{Text: "", Index: &index}
+		slot.text = &ai.TextContent{Text: ""}
 		processor.output.Content = append(processor.output.Content, slot.text)
 		processor.blocks[index] = slot
 		if !processor.sink(ai.TextStartEvent{ContentIndex: slot.contentIndex, Partial: processor.output}) {
@@ -1560,7 +1574,7 @@ func (processor *anthropicStreamProcessor) startBlock(event anthropicRawEvent) e
 		}
 	case "thinking":
 		signature := ""
-		slot.thinking = &ai.ThinkingContent{Thinking: "", ThinkingSignature: &signature, Index: &index}
+		slot.thinking = &ai.ThinkingContent{Thinking: "", ThinkingSignature: &signature}
 		processor.output.Content = append(processor.output.Content, slot.thinking)
 		processor.blocks[index] = slot
 		if !processor.sink(ai.ThinkingStartEvent{ContentIndex: slot.contentIndex, Partial: processor.output}) {
@@ -1569,7 +1583,7 @@ func (processor *anthropicStreamProcessor) startBlock(event anthropicRawEvent) e
 	case "redacted_thinking":
 		signature := event.ContentBlock.Data
 		redacted := true
-		slot.thinking = &ai.ThinkingContent{Thinking: "[Reasoning redacted]", ThinkingSignature: &signature, Redacted: &redacted, Index: &index}
+		slot.thinking = &ai.ThinkingContent{Thinking: "[Reasoning redacted]", ThinkingSignature: &signature, Redacted: &redacted}
 		processor.output.Content = append(processor.output.Content, slot.thinking)
 		processor.blocks[index] = slot
 		if !processor.sink(ai.ThinkingStartEvent{ContentIndex: slot.contentIndex, Partial: processor.output}) {
@@ -1580,8 +1594,7 @@ func (processor *anthropicStreamProcessor) startBlock(event anthropicRawEvent) e
 		if processor.oauth {
 			name = fromClaudeCodeToolName(name, processor.requestContext.Tools)
 		}
-		scratch := ""
-		slot.toolCall = &ai.ToolCall{ID: event.ContentBlock.ID, Name: name, Arguments: map[string]any{}, PartialJSON: &scratch, Index: &index}
+		slot.toolCall = &ai.ToolCall{ID: event.ContentBlock.ID, Name: name, Arguments: map[string]any{}}
 		if len(event.ContentBlock.Input) > 0 {
 			_ = ai.SetToolCallArgumentsJSON(slot.toolCall, event.ContentBlock.Input)
 		}
@@ -1625,7 +1638,6 @@ func (processor *anthropicStreamProcessor) updateBlock(event anthropicRawEvent) 
 	case "input_json_delta":
 		if slot.toolCall != nil {
 			slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta.PartialJSON)
-			*slot.toolCall.PartialJSON = slot.partialJSON
 			if slot.accumulated.shouldParse() {
 				setStreamingToolArguments(slot.toolCall, slot.partialJSON)
 			}
@@ -1645,19 +1657,15 @@ func (processor *anthropicStreamProcessor) stopBlock(index int) error {
 	delete(processor.blocks, index)
 	switch {
 	case slot.text != nil:
-		slot.text.Index = nil
 		if !processor.sink(ai.TextEndEvent{ContentIndex: slot.contentIndex, Content: slot.text.Text, Partial: processor.output}) {
 			return errStopSSE
 		}
 	case slot.thinking != nil:
-		slot.thinking.Index = nil
 		if !processor.sink(ai.ThinkingEndEvent{ContentIndex: slot.contentIndex, Content: slot.thinking.Thinking, Partial: processor.output}) {
 			return errStopSSE
 		}
 	case slot.toolCall != nil:
 		finishToolArguments(slot.toolCall, slot.partialJSON)
-		slot.toolCall.PartialJSON = nil
-		slot.toolCall.Index = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: slot.contentIndex, ToolCall: slot.toolCall, Partial: processor.output}) {
 			return errStopSSE
 		}
@@ -1691,20 +1699,6 @@ func anthropicJSONErrorMessage(err error) string {
 		return "Unexpected end of JSON input"
 	}
 	return err.Error()
-}
-
-func clearAnthropicStreamingFields(output *ai.AssistantMessage) {
-	for _, content := range output.Content {
-		switch block := content.(type) {
-		case *ai.TextContent:
-			block.Index = nil
-		case *ai.ThinkingContent:
-			block.Index = nil
-		case *ai.ToolCall:
-			block.Index = nil
-			block.PartialJSON = nil
-		}
-	}
 }
 
 func anthropicStreamFailure(ctx context.Context, output *ai.AssistantMessage, err error) ai.ErrorEvent {
@@ -1793,6 +1787,20 @@ func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAl
 		return nil
 	}
 	return *compat.AllowedFallbackModels
+}
+
+// appendStrictToolsFallback records that a provider refused the strict tool set as too large and the request
+// went again with preferred-strict tools relaxed.
+func appendStrictToolsFallback(output *ai.AssistantMessage, provider string, err error) {
+	diagnostics := []ai.AssistantMessageDiagnostic{}
+	if output.Diagnostics != nil {
+		diagnostics = append(diagnostics, *output.Diagnostics...)
+	}
+	diagnostics = append(diagnostics, ai.AssistantMessageDiagnostic{
+		Type: provider + "_strict_tools_fallback", Timestamp: openAINowUnixMilli(),
+		Error: &ai.DiagnosticErrorInfo{Message: err.Error()}, Details: json.RawMessage(`{"reason":"strict_tool_limits_exceeded"}`),
+	})
+	output.Diagnostics = &diagnostics
 }
 
 func anthropicStrictToolLimit(message string) bool {

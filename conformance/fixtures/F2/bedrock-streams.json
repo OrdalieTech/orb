@@ -196,8 +196,7 @@
               {
                 "type": "thinking",
                 "thinking": "reason",
-                "thinkingSignature": "",
-                "index": 0
+                "thinkingSignature": ""
               }
             ],
             "api": "bedrock-converse-stream",
@@ -231,8 +230,7 @@
               {
                 "type": "thinking",
                 "thinking": "reason",
-                "thinkingSignature": "",
-                "index": 0
+                "thinkingSignature": ""
               }
             ],
             "api": "bedrock-converse-stream",
@@ -303,8 +301,7 @@
               },
               {
                 "type": "text",
-                "text": "working",
-                "index": 1
+                "text": "working"
               }
             ],
             "api": "bedrock-converse-stream",
@@ -342,8 +339,7 @@
               },
               {
                 "type": "text",
-                "text": "working",
-                "index": 1
+                "text": "working"
               }
             ],
             "api": "bedrock-converse-stream",
@@ -424,9 +420,7 @@
                 "type": "toolCall",
                 "id": "toolu_stream",
                 "name": "echo",
-                "arguments": {},
-                "partialJson": "",
-                "index": 2
+                "arguments": {}
               }
             ],
             "api": "bedrock-converse-stream",
@@ -472,9 +466,7 @@
                 "name": "echo",
                 "arguments": {
                   "text": "hello"
-                },
-                "partialJson": "{\"text\":\"hello\",",
-                "index": 2
+                }
               }
             ],
             "api": "bedrock-converse-stream",
@@ -521,9 +513,7 @@
                 "arguments": {
                   "text": "hello",
                   "mode": "plain"
-                },
-                "partialJson": "{\"text\":\"hello\",\"mode\":\"plain\"}",
-                "index": 2
+                }
               }
             ],
             "api": "bedrock-converse-stream",
@@ -641,7 +631,8 @@
                 "output": 0.000105,
                 "cacheRead": 9e-7,
                 "cacheWrite": 0.00001875,
-                "total": 0.00015465
+                "total": 0.00015465,
+                "totalFromProvider": false
               }
             },
             "stopReason": "toolUse",
@@ -759,8 +750,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "partial",
-                "index": 0
+                "text": "partial"
               }
             ],
             "api": "bedrock-converse-stream",
@@ -793,8 +783,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "partial",
-                "index": 0
+                "text": "partial"
               }
             ],
             "api": "bedrock-converse-stream",
@@ -876,7 +865,8 @@
                 "output": 0.000045,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.000072
+                "total": 0.000072,
+                "totalFromProvider": false
               }
             },
             "stopReason": "length",
@@ -1169,8 +1159,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "part",
-                "index": 0
+                "text": "part"
               }
             ],
             "api": "bedrock-converse-stream",
@@ -1203,8 +1192,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "part",
-                "index": 0
+                "text": "part"
               }
             ],
             "api": "bedrock-converse-stream",
@@ -1390,15 +1378,7 @@
                 "type": "thinking",
                 "thinking": "[Reasoning redacted]",
                 "thinkingSignature": "",
-                "index": 0,
-                "redacted": true,
-                "redactedChunks": [
-                  {
-                    "0": 1,
-                    "1": 2,
-                    "2": 3
-                  }
-                ]
+                "redacted": true
               }
             ],
             "api": "bedrock-converse-stream",
@@ -1433,15 +1413,7 @@
                 "type": "thinking",
                 "thinking": "[Reasoning redacted]",
                 "thinkingSignature": "",
-                "index": 0,
-                "redacted": true,
-                "redactedChunks": [
-                  {
-                    "0": 1,
-                    "1": 2,
-                    "2": 3
-                  }
-                ]
+                "redacted": true
               }
             ],
             "api": "bedrock-converse-stream",
@@ -1650,15 +1622,7 @@
                 "type": "thinking",
                 "thinking": "[Reasoning redacted]",
                 "thinkingSignature": "",
-                "index": 0,
-                "redacted": true,
-                "redactedChunks": [
-                  {
-                    "0": 1,
-                    "1": 2,
-                    "2": 3
-                  }
-                ]
+                "redacted": true
               }
             ],
             "api": "bedrock-converse-stream",
@@ -1693,15 +1657,7 @@
                 "type": "thinking",
                 "thinking": "[Reasoning redacted]",
                 "thinkingSignature": "",
-                "index": 0,
-                "redacted": true,
-                "redactedChunks": [
-                  {
-                    "0": 1,
-                    "1": 2,
-                    "2": 3
-                  }
-                ]
+                "redacted": true
               }
             ],
             "api": "bedrock-converse-stream",

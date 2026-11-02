@@ -489,7 +489,7 @@ func applyPiCompatibilityPrompt(session *AgentSession) {
 func piCompatibilityText(text string) string {
 	return strings.ReplaceAll(text,
 		"You are an expert problem-solving assistant operating inside Orb, a general-purpose agent harness for work and software development. You help users investigate, plan, create, and complete tasks using the available tools, including working with files, executing commands, and editing code or documents.",
-		"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+		"You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
 	)
 }
 

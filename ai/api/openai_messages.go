@@ -210,14 +210,6 @@ func setStreamingToolArguments(call *ai.ToolCall, partial string) {
 	}
 }
 
-// parseToolArguments reads streaming tool arguments, repairing what it can.
-func parseToolArguments(text string) map[string]any {
-	if object, ok := partialjson.ParseStreamingJSON(text).(map[string]any); ok {
-		return object
-	}
-	return map[string]any{}
-}
-
 // finishToolArguments sets a finished call's arguments. Text that is no JSON object even repaired leaves them
 // empty and sets ArgumentsError, so the model sees what it sent instead of a run on the fields parsed before
 // the error.

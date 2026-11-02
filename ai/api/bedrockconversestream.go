@@ -300,7 +300,6 @@ func StreamBedrockConverseWithOptions(
 			if processor != nil {
 				processor.flushRedactedBlocks()
 			}
-			clearBedrockStreamingFields(output)
 			reason := ai.StopReasonError
 			if ctx.Err() != nil {
 				reason = ai.StopReasonAborted
@@ -318,17 +317,19 @@ func StreamBedrockConverseWithOptions(
 			yield(ai.ErrorEvent{Reason: reason, Error: output}, nil)
 		}
 
-		payload, err := buildBedrockPayload(model, requestContext, options)
-		if err != nil {
-			fail(err)
-			return
+		build := func(relaxPreferredStrict bool) (*BedrockConverseStreamPayload, bool, error) {
+			payload, preferredStrict, err := buildBedrockPayload(model, requestContext, options, relaxPreferredStrict)
+			if err != nil {
+				return nil, false, err
+			}
+			hooked, err := applyPayloadHook(ctx, model, streamOptions, payload)
+			if err != nil {
+				return nil, false, err
+			}
+			payload, err = coerceBedrockPayload(hooked)
+			return payload, preferredStrict, err
 		}
-		hooked, err := applyPayloadHook(ctx, model, streamOptions, payload)
-		if err != nil {
-			fail(err)
-			return
-		}
-		payload, err = coerceBedrockPayload(hooked)
+		payload, preferredStrict, err := build(false)
 		if err != nil {
 			fail(err)
 			return
@@ -355,6 +356,14 @@ func StreamBedrockConverseWithOptions(
 			return
 		}
 		response, err := transport.Send(ctx, payload)
+		// Bedrock checks tool schemas before it streams, so once more with tools that only prefer strict sampling
+		// sent non-strict never repeats output (upstream #11416).
+		if err != nil && ctx.Err() == nil && preferredStrict && extractBedrockErrorCode(err) == "ValidationException" && anthropicStrictToolLimit(err.Error()) {
+			appendStrictToolsFallback(output, "bedrock", err)
+			if payload, _, err = build(true); err == nil {
+				response, err = transport.Send(ctx, payload)
+			}
+		}
 		if err != nil {
 			fail(err)
 			return
@@ -413,7 +422,6 @@ func StreamBedrockConverseWithOptions(
 			return
 		}
 		processor.flushRedactedBlocks()
-		clearBedrockStreamingFields(output)
 		yield(ai.DoneEvent{Reason: output.StopReason, Message: output}, nil)
 	}, nil
 }
@@ -501,26 +509,29 @@ func bedrockPayloadExtras(members map[string]json.RawMessage) map[string]json.Ra
 	return extras
 }
 
+// buildBedrockPayload also reports whether a tool sent strict only prefers it, so relaxPreferredStrict could send
+// it non-strict.
 func buildBedrockPayload(
 	model *ai.Model,
 	requestContext ai.Context,
 	options *BedrockConverseStreamOptions,
-) (*BedrockConverseStreamPayload, error) {
+	relaxPreferredStrict bool,
+) (*BedrockConverseStreamPayload, bool, error) {
 	requestContext = collapseProviderContext(requestContext)
 	retention := resolveCacheRetention(bedrockStreamOptions(options))
 	messages, err := convertBedrockMessages(requestContext, model, retention, bedrockStreamOptions(options))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	system := buildBedrockSystemPrompt(requestContext.SystemPrompt, model, retention, bedrockStreamOptions(options))
 	compat, err := decodeCompat[ai.BedrockCompat](model)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	supportsStrictMode := compat.SupportsStrictMode != nil && *compat.SupportsStrictMode
-	toolConfig, err := convertBedrockToolConfig(requestContext.Tools, options, supportsStrictMode)
+	toolConfig, preferredStrict, err := convertBedrockToolConfig(requestContext.Tools, options, supportsStrictMode, relaxPreferredStrict)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	additional := buildBedrockAdditionalFields(model, options)
 
@@ -545,7 +556,7 @@ func buildBedrockPayload(
 		ToolConfig:                   toolConfig,
 		AdditionalModelRequestFields: additional,
 		RequestMetadata:              cloneBedrockMetadata(options),
-	}, nil
+	}, preferredStrict, nil
 }
 
 func cloneBedrockMetadata(options *BedrockConverseStreamOptions) map[string]string {
@@ -800,19 +811,27 @@ func convertBedrockToolConfig(
 	tools *[]ai.Tool,
 	options *BedrockConverseStreamOptions,
 	supportsStrictMode bool,
-) (*BedrockToolConfiguration, error) {
+	relaxPreferredStrict bool,
+) (*BedrockToolConfiguration, bool, error) {
 	if tools == nil || len(*tools) == 0 || options != nil && options.ToolChoice != nil && options.ToolChoice.Type == "none" {
-		return nil, nil
+		return nil, false, nil
 	}
 	result := &BedrockToolConfiguration{Tools: make([]BedrockTool, 0, len(*tools))}
+	preferredStrict := false
 	for _, tool := range *tools {
-		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode)
-		if err != nil {
-			return nil, err
+		preferred := tool.ConstrainedSampling != nil && tool.ConstrainedSampling.Type == ai.ConstrainedSamplingJSONSchema &&
+			tool.ConstrainedSampling.Strict == ai.ConstrainedSamplingPrefer
+		var strict *bool
+		if !relaxPreferredStrict || !preferred {
+			var err error
+			if strict, err = resolveJSONSchemaStrictSampling(tool, supportsStrictMode); err != nil {
+				return nil, false, err
+			}
 		}
+		preferredStrict = preferredStrict || preferred && strict != nil && *strict
 		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		result.Tools = append(result.Tools, BedrockTool{ToolSpec: BedrockToolSpecification{
 			Name: tool.Name, Description: tool.Description, InputSchema: BedrockToolInputSchema{JSON: parameters},
@@ -829,7 +848,7 @@ func convertBedrockToolConfig(
 			result.ToolChoice = map[string]any{"tool": map[string]any{"name": options.ToolChoice.Name}}
 		}
 	}
-	return result, nil
+	return result, preferredStrict, nil
 }
 
 func newBedrockCachePoint(retention ai.CacheRetention) *BedrockCachePoint {
@@ -1068,8 +1087,10 @@ type BedrockTransport interface {
 	Send(context.Context, *BedrockConverseStreamPayload) (BedrockResponse, error)
 }
 
+// bedrockBlock holds a block's stream state, kept off the content block so it never reaches a partial.
 type bedrockBlock struct {
 	redactedChunks []byte
+	partialJSON    string
 
 	content ai.AssistantContentBlock
 	index   int
@@ -1093,9 +1114,7 @@ func (processor *bedrockStreamProcessor) handle(item BedrockStreamItem) error {
 		processor.stopped = !processor.sink(ai.StartEvent{Partial: processor.output})
 	case BedrockItemContentStart:
 		if item.ToolUseID != "" || item.ToolName != "" {
-			partial := ""
-			index := item.ContentBlockIndex
-			block := &ai.ToolCall{ID: item.ToolUseID, Name: item.ToolName, Arguments: map[string]any{}, PartialJSON: &partial, Index: &index}
+			block := &ai.ToolCall{ID: item.ToolUseID, Name: item.ToolName, Arguments: map[string]any{}}
 			processor.output.Content = append(processor.output.Content, block)
 			processor.blocks = append(processor.blocks, bedrockBlock{content: block, index: item.ContentBlockIndex})
 			processor.stopped = !processor.sink(ai.ToolCallStartEvent{ContentIndex: len(processor.output.Content) - 1, Partial: processor.output})
@@ -1143,8 +1162,7 @@ func (processor *bedrockStreamProcessor) handleDelta(item BedrockStreamItem) {
 		// Upstream only creates a block when NO block exists at the stream
 		// index; a type-mismatched block drops the delta. (OT-m5)
 		if content == nil {
-			index := item.ContentBlockIndex
-			block := &ai.TextContent{Text: *item.Text, Index: &index}
+			block := &ai.TextContent{Text: *item.Text}
 			processor.output.Content = append(processor.output.Content, block)
 			position = len(processor.output.Content) - 1
 			processor.blocks = append(processor.blocks, bedrockBlock{content: block, index: item.ContentBlockIndex})
@@ -1160,15 +1178,10 @@ func (processor *bedrockStreamProcessor) handleDelta(item BedrockStreamItem) {
 	}
 	if item.ToolInput != nil {
 		if block, ok := content.(*ai.ToolCall); ok {
-			buffer := processor.buffers.at(item.ContentBlockIndex)
-			previous := ""
-			if block.PartialJSON != nil {
-				previous = *block.PartialJSON
-			}
-			partial := buffer.append(previous, *item.ToolInput)
-			block.PartialJSON = &partial
+			buffer, slot := processor.buffers.at(item.ContentBlockIndex), &processor.blocks[position]
+			slot.partialJSON = buffer.append(slot.partialJSON, *item.ToolInput)
 			if buffer.shouldParse() {
-				block.Arguments = parseToolArguments(partial)
+				setStreamingToolArguments(block, slot.partialJSON)
 			}
 			processor.stopped = !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: position, Delta: *item.ToolInput, Partial: processor.output})
 		}
@@ -1176,9 +1189,8 @@ func (processor *bedrockStreamProcessor) handleDelta(item BedrockStreamItem) {
 	}
 	if item.ReasoningText != nil || item.ReasoningSignature != nil || len(item.RedactedContent) > 0 {
 		if content == nil {
-			index := item.ContentBlockIndex
 			empty := ""
-			block := &ai.ThinkingContent{ThinkingSignature: &empty, Index: &index}
+			block := &ai.ThinkingContent{ThinkingSignature: &empty}
 			if item.ReasoningText != nil {
 				block.Thinking = *item.ReasoningText
 			}
@@ -1232,20 +1244,12 @@ func (processor *bedrockStreamProcessor) handleStop(streamIndex int) {
 	}
 	switch block := content.(type) {
 	case *ai.TextContent:
-		block.Index = nil
 		processor.stopped = !processor.sink(ai.TextEndEvent{ContentIndex: position, Content: block.Text, Partial: processor.output})
 	case *ai.ThinkingContent:
 		processor.flushRedactedBlock(position)
-		block.Index = nil
 		processor.stopped = !processor.sink(ai.ThinkingEndEvent{ContentIndex: position, Content: block.Thinking, Partial: processor.output})
 	case *ai.ToolCall:
-		partial := ""
-		if block.PartialJSON != nil {
-			partial = *block.PartialJSON
-		}
-		finishToolArguments(block, partial)
-		block.Index = nil
-		block.PartialJSON = nil
+		finishToolArguments(block, processor.blocks[position].partialJSON)
 		processor.stopped = !processor.sink(ai.ToolCallEndEvent{ContentIndex: position, ToolCall: block, Partial: processor.output})
 	}
 }
@@ -1264,20 +1268,6 @@ func mapBedrockStopReason(reason string) (ai.StopReason, *string) {
 		}
 		message := "Provider stopped with: " + reason
 		return ai.StopReasonError, &message
-	}
-}
-
-func clearBedrockStreamingFields(output *ai.AssistantMessage) {
-	for _, raw := range output.Content {
-		switch block := raw.(type) {
-		case *ai.TextContent:
-			block.Index = nil
-		case *ai.ThinkingContent:
-			block.Index = nil
-		case *ai.ToolCall:
-			block.Index = nil
-			block.PartialJSON = nil
-		}
 	}
 }
 
@@ -1635,7 +1625,6 @@ func (processor *bedrockStreamProcessor) flushRedactedBlock(position int) {
 	if block, ok := slot.content.(*ai.ThinkingContent); ok {
 		signature := base64.StdEncoding.EncodeToString(slot.redactedChunks)
 		block.ThinkingSignature = &signature
-		block.RedactedChunks = nil
 	}
 	slot.redactedChunks = nil
 }
@@ -1656,10 +1645,4 @@ func (processor *bedrockStreamProcessor) appendRedactedChunk(position int, data 
 		block.Thinking += "[Reasoning redacted]"
 	}
 	slot.redactedChunks = append(slot.redactedChunks, data...)
-	object := make(map[string]int, len(data))
-	for index, value := range data {
-		object[strconv.Itoa(index)] = int(value)
-	}
-	encoded, _ := ai.Marshal(object)
-	block.RedactedChunks = append(block.RedactedChunks, encoded)
 }

@@ -82,9 +82,6 @@ func cloneAssistantMessage(message *ai.AssistantMessage) *ai.AssistantMessage {
 				blockCopy := *block
 				blockCopy.Arguments, _ = ai.CloneJSONValue(block.Arguments).(map[string]any)
 				blockCopy.ThoughtSignature = ptr.Clone(block.ThoughtSignature)
-				blockCopy.PartialJSON = ptr.Clone(block.PartialJSON)
-				blockCopy.PartialArgs = ptr.Clone(block.PartialArgs)
-				blockCopy.StreamIndex = ptr.Clone(block.StreamIndex)
 				copy.Content[index] = &blockCopy
 			}
 		case *ai.UnknownContentBlock:

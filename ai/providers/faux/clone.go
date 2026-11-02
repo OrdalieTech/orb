@@ -52,9 +52,6 @@ func cloneMessage(source *ai.AssistantMessage) (*ai.AssistantMessage, error) {
 				ID:               block.ID,
 				Name:             block.Name,
 				ThoughtSignature: ptr.Clone(block.ThoughtSignature),
-				PartialJSON:      ptr.Clone(block.PartialJSON),
-				PartialArgs:      ptr.Clone(block.PartialArgs),
-				StreamIndex:      ptr.Clone(block.StreamIndex),
 			}
 			if err := ai.SetToolCallArgumentsJSON(copy, arguments); err != nil {
 				return nil, err

@@ -205,7 +205,8 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		message, _ := ai.Collect(stream)
 		return message
 	}
-	if message := run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}); message == nil || message.StopReason != ai.StopReasonStop {
+	if message := run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}); message == nil || message.StopReason != ai.StopReasonStop ||
+		message.Diagnostics == nil || (*message.Diagnostics)[0].Type != "anthropic_strict_tools_fallback" {
 		t.Fatalf("the relaxed request failed: %#v", message)
 	}
 	if len(requests) != 2 || !requests[0]["prefers"] || !requests[0]["requires"] || requests[1]["prefers"] || !requests[1]["requires"] {

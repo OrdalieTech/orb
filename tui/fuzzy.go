@@ -16,26 +16,11 @@ type FuzzyMatch struct {
 	Score   float64
 }
 
-func fuzzyMatchQuery(normalizedQuery, textLower []uint16) FuzzyMatch {
-	if len(normalizedQuery) == 0 {
-		return FuzzyMatch{Matches: true}
-	}
-	if len(normalizedQuery) > len(textLower) {
-		return FuzzyMatch{}
-	}
-	queryIndex := 0
+func scorePositions(textLower []uint16, positions []int) float64 {
 	score := 0.0
 	lastMatchIndex := -1
 	consecutiveMatches := 0
-	for i := 0; i < len(textLower) && queryIndex < len(normalizedQuery); i++ {
-		if textLower[i] != normalizedQuery[queryIndex] {
-			continue
-		}
-		previous := rune(0)
-		if i > 0 {
-			previous = rune(textLower[i-1])
-		}
-		isWordBoundary := i == 0 || strings.ContainsRune("-_./:", previous) || isWhitespaceChar(string(previous))
+	for _, i := range positions {
 		if lastMatchIndex == i-1 {
 			consecutiveMatches++
 			score -= float64(consecutiveMatches * 5)
@@ -45,20 +30,64 @@ func fuzzyMatchQuery(normalizedQuery, textLower []uint16) FuzzyMatch {
 				score += float64((i - lastMatchIndex - 1) * 2)
 			}
 		}
-		if isWordBoundary {
+		previous := rune(0)
+		if i > 0 {
+			previous = rune(textLower[i-1])
+		}
+		if i == 0 || strings.ContainsRune("-_./:", previous) || isWhitespaceChar(string(previous)) {
 			score -= 10
 		}
 		score += float64(i) * 0.1
 		lastMatchIndex = i
-		queryIndex++
 	}
-	if queryIndex < len(normalizedQuery) {
+	return score
+}
+
+func fuzzyMatchQuery(normalizedQuery, textLower []uint16) FuzzyMatch {
+	if len(normalizedQuery) == 0 {
+		return FuzzyMatch{Matches: true}
+	}
+	if len(normalizedQuery) > len(textLower) {
 		return FuzzyMatch{}
+	}
+	// Greedy alignment: each query character at its first occurrence after the previous one.
+	positions := make([]int, 0, len(normalizedQuery))
+	next := 0
+	for _, unit := range normalizedQuery {
+		i := indexUTF16(textLower[next:], []uint16{unit})
+		if i < 0 {
+			return FuzzyMatch{}
+		}
+		positions = append(positions, next+i)
+		next += i + 1
+	}
+	score := scorePositions(textLower, positions)
+	// The greedy alignment can scatter the query over an earlier, unrelated part of the text, so every
+	// contiguous occurrence is scored too and the best alignment kept.
+	for start := indexUTF16(textLower, normalizedQuery); start >= 0; {
+		for k := range positions {
+			positions[k] = start + k
+		}
+		score = min(score, scorePositions(textLower, positions))
+		following := indexUTF16(textLower[start+1:], normalizedQuery)
+		if following < 0 {
+			break
+		}
+		start += 1 + following
 	}
 	if slicesEqualUTF16(normalizedQuery, textLower) {
 		score -= 100
 	}
 	return FuzzyMatch{Matches: true, Score: score}
+}
+
+func indexUTF16(text, sub []uint16) int {
+	for i := 0; i+len(sub) <= len(text); i++ {
+		if slicesEqualUTF16(text[i:i+len(sub)], sub) {
+			return i
+		}
+	}
+	return -1
 }
 
 // splitAlphaNumeric splits an all-lowercase query of the form letters+digits

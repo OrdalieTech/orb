@@ -239,12 +239,17 @@ func StreamOpenAIResponsesWithOptions(
 		return nil, errors.New("ai/api: OpenAI Responses model is nil")
 	}
 	output := newAssistantMessage(model)
+	if compat, err := getOpenAIResponsesCompat(model); err == nil {
+		if effort := responsesConfigurationUpdateEffort(model, options, compat); effort != "" {
+			output.ProviderThinkingLevel = &effort
+			ai.SetAssistantMessageProviderThinkingLevelBeforeResponseID(output, true)
+		}
+	}
 	streamOptions := responsesStreamOptions(options)
 
 	return func(yield func(ai.AssistantMessageEvent, error) bool) {
 		sink := func(event ai.AssistantMessageEvent) bool { return yield(event, nil) }
 		fail := func(err error) {
-			clearResponsesStreamingFields(output)
 			provider := string(model.Provider)
 			if model.Provider == "openai" {
 				provider = "OpenAI"
@@ -265,6 +270,7 @@ func StreamOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
+
 		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
 		if err != nil {
 			fail(err)
@@ -326,7 +332,6 @@ func StreamOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
-		clearResponsesStreamingFields(output)
 		sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 	}, nil
 }
@@ -373,6 +378,7 @@ func buildOpenAIResponsesPayload(
 		toolChanges:                toolChanges,
 		initialTools:               initialTools,
 		toolOptions:                toolOptions,
+		configurationUpdateEffort:  responsesConfigurationUpdateEffort(model, options, compat),
 	})
 	if err != nil {
 		return nil, compat, err
@@ -421,7 +427,7 @@ func buildOpenAIResponsesPayload(
 			return nil, compat, err
 		}
 	}
-	applyResponsesReasoning(payload, model, options)
+	applyResponsesReasoning(payload, model, options, responsesConfigurationUpdateEffort(model, options, compat) != "")
 	payload.Extra = mergedSamplingParams(model, streamOptions)
 	return payload, compat, nil
 }
@@ -435,7 +441,9 @@ func isChatGPTSignIn(model *ai.Model, options *ai.StreamOptions) bool {
 		options != nil && options.APIKey != nil && !strings.HasPrefix(*options.APIKey, "sk-")
 }
 
-func applyResponsesReasoning(payload *OpenAIResponsesPayload, model *ai.Model, options *OpenAIResponsesOptions) {
+// applyResponsesReasoning sets reasoning; with configuration_update items carrying the level, the request
+// effort stays fixed at medium.
+func applyResponsesReasoning(payload *OpenAIResponsesPayload, model *ai.Model, options *OpenAIResponsesOptions, configurationUpdates bool) {
 	if !model.Reasoning {
 		return
 	}
@@ -443,7 +451,7 @@ func applyResponsesReasoning(payload *OpenAIResponsesPayload, model *ai.Model, o
 	summarySet := options != nil && options.ReasoningSummary != nil && *options.ReasoningSummary != ""
 	if effortSet || summarySet {
 		effort := "medium"
-		if effortSet {
+		if effortSet && !configurationUpdates {
 			effort = mappedThinkingLevel(model, *options.ReasoningEffort, *options.ReasoningEffort)
 		}
 		summary := "auto"
@@ -490,6 +498,7 @@ type openAIResponsesCompat struct {
 	supportsToolSearch              bool
 	supportsExplicitPromptCacheMode bool
 	supportsMaxOutputTokens         bool
+	supportsMidConvoEffort          bool
 }
 
 func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
@@ -505,6 +514,9 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 	}
 	if raw.SupportsMaxOutputTokens != nil {
 		compat.supportsMaxOutputTokens = *raw.SupportsMaxOutputTokens
+	}
+	if raw.SupportsMidConvoEffort != nil {
+		compat.supportsMidConvoEffort = *raw.SupportsMidConvoEffort
 	}
 	if raw.SupportsDeveloperRole != nil {
 		compat.supportsDeveloperRole = *raw.SupportsDeveloperRole
@@ -603,6 +615,33 @@ type responsesMessageOptions struct {
 	// removals as text: an item can add or replace tools but not remove one (pi 1.4.0).
 	toolChanges  bool
 	initialTools []ai.Tool
+	// configurationUpdateEffort, when set, sends the thinking level as configuration_update items, so a
+	// changing reasoning.effort never invalidates the prompt cache: one before each earlier reply of this
+	// model with the level recorded on it, and one with this effort at the end.
+	configurationUpdateEffort string
+}
+
+type responsesConfigurationUpdate struct {
+	Type      string `json:"type"`
+	Reasoning struct {
+		Effort string `json:"effort"`
+	} `json:"reasoning"`
+}
+
+func configurationUpdate(effort string) responsesConfigurationUpdate {
+	item := responsesConfigurationUpdate{Type: "configuration_update"}
+	item.Reasoning.Effort = effort
+	return item
+}
+
+// responsesConfigurationUpdateEffort is the effort to send in configuration_update items, or "" to send it as
+// reasoning.effort. Sign in with ChatGPT rejects the items.
+func responsesConfigurationUpdateEffort(model *ai.Model, options *OpenAIResponsesOptions, compat openAIResponsesCompat) string {
+	if !compat.supportsMidConvoEffort || options == nil || options.ReasoningEffort == nil || *options.ReasoningEffort == "" ||
+		isChatGPTSignIn(model, responsesStreamOptions(options)) {
+		return ""
+	}
+	return mappedThinkingLevel(model, *options.ReasoningEffort, *options.ReasoningEffort)
 }
 
 // responsesDeferredToolsMode picks the input item deferred tools ride on.
@@ -899,6 +938,9 @@ func convertResponsesMessagesWithOptions(
 			if len(output) == 0 {
 				continue
 			}
+			if options.configurationUpdateEffort != "" && isSameModel && value.ProviderThinkingLevel != nil {
+				result = append(result, configurationUpdate(*value.ProviderThinkingLevel))
+			}
 			result = append(result, output...)
 		case *ai.ToolResultMessage:
 			texts := make([]string, 0)
@@ -949,6 +991,9 @@ func convertResponsesMessagesWithOptions(
 
 		}
 		messageIndex++
+	}
+	if options.configurationUpdateEffort != "" {
+		result = append(result, configurationUpdate(options.configurationUpdateEffort))
 	}
 	return result, nil
 }
@@ -1188,7 +1233,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		}
 		slot.partialJSON = slot.accumulated.append(slot.partialJSON, event.Delta)
 		if slot.accumulated.shouldParse() {
-			slot.toolCall.Arguments = parseToolArguments(slot.partialJSON)
+			setStreamingToolArguments(slot.toolCall, slot.partialJSON)
 		}
 		if !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: event.Delta, Partial: processor.output}) {
 			return errStopSSE
@@ -1200,7 +1245,7 @@ func (processor *openAIResponsesProcessor) handle(raw json.RawMessage) error {
 		}
 		previous := slot.partialJSON
 		slot.partialJSON = event.Arguments
-		slot.toolCall.Arguments = parseToolArguments(slot.partialJSON)
+		setStreamingToolArguments(slot.toolCall, slot.partialJSON)
 		if strings.HasPrefix(event.Arguments, previous) {
 			delta := strings.TrimPrefix(event.Arguments, previous)
 			if delta != "" && !processor.sink(ai.ToolCallDeltaEvent{ContentIndex: slot.contentIndex, Delta: delta, Partial: processor.output}) {
@@ -1315,7 +1360,9 @@ func (processor *openAIResponsesProcessor) createSlot(outputIndex int, raw json.
 			toolCall:     block,
 			partialJSON:  item.Arguments,
 		}
-		block.PartialJSON = &slot.partialJSON
+		if item.Arguments != "" {
+			setStreamingToolArguments(block, item.Arguments)
+		}
 		processor.slots[outputIndex] = slot
 		if !processor.sink(ai.ToolCallStartEvent{ContentIndex: slot.contentIndex, Partial: processor.output}) {
 			return nil, errStopSSE
@@ -1445,7 +1492,6 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 		if item.Namespace != nil {
 			slot.toolCall.Namespace = item.Namespace
 		}
-		slot.toolCall.PartialJSON = nil
 		if !processor.sink(ai.ToolCallEndEvent{ContentIndex: slot.contentIndex, ToolCall: slot.toolCall, Partial: processor.output}) {
 			return errStopSSE
 		}
@@ -1478,16 +1524,6 @@ func (processor *openAIResponsesProcessor) finishItem(outputIndex int, raw json.
 func (processor *openAIResponsesProcessor) applyMessagePhaseStopReason(item responsesOutputItemEnvelope) {
 	if item.Type == "message" && item.Phase != nil && *item.Phase == "final_answer" {
 		processor.output.StopReason = ai.StopReasonStop
-	}
-}
-
-func clearResponsesStreamingFields(output *ai.AssistantMessage) {
-	for _, content := range output.Content {
-		if call, ok := content.(*ai.ToolCall); ok {
-			call.PartialJSON = nil
-			call.PartialArgs = nil
-			call.StreamIndex = nil
-		}
 	}
 }
 

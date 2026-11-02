@@ -468,7 +468,7 @@
       "api": "openai-completions",
       "model": {
         "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
-        "name": "DeepSeek V4 Pro",
+        "name": "DeepSeek V4 Pro 0813",
         "api": "openai-completions",
         "provider": "together",
         "baseUrl": "https://api.together.ai/v1",
@@ -477,12 +477,12 @@
           "text"
         ],
         "cost": {
-          "input": 1.74,
-          "output": 3.48,
-          "cacheRead": 0.2,
+          "input": 1.32,
+          "output": 3.96,
+          "cacheRead": 0.13,
           "cacheWrite": 0
         },
-        "contextWindow": 512000,
+        "contextWindow": 1048576,
         "maxTokens": 384000,
         "type": "chat",
         "thinkingLevelMap": {
@@ -1927,6 +1927,252 @@
           "x-initiator": "user"
         },
         "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"system\",\"content\":\"Inspect images.\"},{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_copilot\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"vision\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"tool caption\",\"tool_call_id\":\"call_copilot\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"user image\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,AQID\"}}]}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}]}"
+      }
+    },
+    {
+      "name": "responses-mid-convo-effort",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "compat": {
+          "supportsMidConvoEffort": true
+        }
+      },
+      "context": {
+        "systemPrompt": "Think as much as asked.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "first",
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "first answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-fixture-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121,
+            "providerThinkingLevel": "low"
+          },
+          {
+            "role": "user",
+            "content": "second",
+            "timestamp": 1700000000120
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "other model answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "another-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121,
+            "providerThinkingLevel": "medium"
+          },
+          {
+            "role": "user",
+            "content": "third",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "sk-fixture-key",
+        "cacheRetention": "none",
+        "reasoningEffort": "high"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "headers": {
+          "authorization": "Bearer sk-fixture-key",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"Think as much as asked.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"first\"}]},{\"type\":\"configuration_update\",\"reasoning\":{\"effort\":\"low\"}},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"first answer\",\"annotations\":[]}],\"status\":\"completed\",\"id\":\"msg_pi_1\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"second\"}]},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"other model answer\",\"annotations\":[]}],\"status\":\"completed\",\"id\":\"msg_pi_3\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"third\"}]},{\"type\":\"configuration_update\",\"reasoning\":{\"effort\":\"xhigh\"}}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"medium\",\"summary\":\"auto\"},\"include\":[\"reasoning.encrypted_content\"]}"
+      }
+    },
+    {
+      "name": "responses-mid-convo-effort-chatgpt-sign-in",
+      "api": "openai-responses",
+      "model": {
+        "id": "gpt-fixture-responses",
+        "name": "OpenAI Fixture Model",
+        "api": "openai-responses",
+        "provider": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 128000,
+        "maxTokens": 8192,
+        "thinkingLevelMap": {
+          "off": "none",
+          "high": "xhigh"
+        },
+        "compat": {
+          "supportsMidConvoEffort": true
+        }
+      },
+      "context": {
+        "systemPrompt": "Think as much as asked.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "first",
+            "timestamp": 1700000000119
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "first answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-fixture-responses",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121,
+            "providerThinkingLevel": "low"
+          },
+          {
+            "role": "user",
+            "content": "second",
+            "timestamp": 1700000000120
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "other model answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "another-model",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1700000000121,
+            "providerThinkingLevel": "medium"
+          },
+          {
+            "role": "user",
+            "content": "third",
+            "timestamp": 1700000000123
+          }
+        ]
+      },
+      "options": {
+        "apiKey": "chatgpt-access-token",
+        "cacheRetention": "none",
+        "reasoningEffort": "high"
+      },
+      "expected": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "headers": {
+          "authorization": "Bearer chatgpt-access-token",
+          "content-type": "application/json"
+        },
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"Think as much as asked.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"first\"}]},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"first answer\",\"annotations\":[]}],\"status\":\"completed\",\"id\":\"msg_pi_1\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"second\"}]},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"other model answer\",\"annotations\":[]}],\"status\":\"completed\",\"id\":\"msg_pi_3\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"third\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"auto\"},\"include\":[\"reasoning.encrypted_content\"]}"
       }
     },
     {

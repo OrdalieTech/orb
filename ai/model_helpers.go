@@ -33,6 +33,40 @@ func CalculateCost(model *Model, usage *Usage) {
 	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
 	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortWrite) + rates.Input*2*float64(longWrite)) / 1_000_000
 	usage.Cost.Total = TotalCost(usage.Cost)
+	usage.Cost.TotalFromProvider = new(bool)
+}
+
+// CombineUsage sums two usages, keeping the optional token splits either side reports. The sum's total is
+// provider-reported only when both are.
+func CombineUsage(first, second Usage) Usage {
+	combined := Usage{
+		Input: first.Input + second.Input, Output: first.Output + second.Output,
+		CacheRead: first.CacheRead + second.CacheRead, CacheWrite: first.CacheWrite + second.CacheWrite,
+		TotalTokens: first.TotalTokens + second.TotalTokens,
+		Cost: Cost{
+			Input: first.Cost.Input + second.Cost.Input, Output: first.Cost.Output + second.Cost.Output,
+			CacheRead: first.Cost.CacheRead + second.Cost.CacheRead, CacheWrite: first.Cost.CacheWrite + second.Cost.CacheWrite,
+			Total:             first.Cost.Total + second.Cost.Total,
+			TotalFromProvider: new(fromProvider(first.Cost) && fromProvider(second.Cost)),
+		},
+	}
+	if first.CacheWrite1h != nil || second.CacheWrite1h != nil {
+		combined.CacheWrite1h = new(usagePart(first.CacheWrite1h) + usagePart(second.CacheWrite1h))
+	}
+	if first.Reasoning != nil || second.Reasoning != nil {
+		combined.Reasoning = new(usagePart(first.Reasoning) + usagePart(second.Reasoning))
+	}
+	SetUsageOptionalsBeforeTotals(&combined)
+	return combined
+}
+
+func fromProvider(cost Cost) bool { return cost.TotalFromProvider != nil && *cost.TotalFromProvider }
+
+func usagePart(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 var extendedThinkingLevels = []ModelThinkingLevel{

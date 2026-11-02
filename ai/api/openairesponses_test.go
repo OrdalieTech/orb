@@ -123,7 +123,7 @@ func TestOpenAIResponsesProcessorTextToolUsageAndScratchCleanup(t *testing.T) {
 		t.Fatalf("text = %#v", text)
 	}
 	call := output.Content[1].(*ai.ToolCall)
-	if call.PartialJSON != nil || call.Arguments["path"] != "README.md" {
+	if call.Arguments["path"] != "README.md" {
 		t.Fatalf("tool call = %#v", call)
 	}
 	if len(events) != 7 {

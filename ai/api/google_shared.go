@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
@@ -481,10 +483,66 @@ func convertGoogleTools(tools []ai.Tool, supportsStrictMode bool) ([]GoogleTool,
 			return nil, err
 		}
 		declarations = append(declarations, GoogleFunctionDeclaration{
-			Name: tool.Name, Description: tool.Description, ParametersJSONSchema: parameters,
+			Name: tool.Name, Description: tool.Description, ParametersJSONSchema: rewriteConstAsEnum(parameters, false),
 		})
 	}
 	return []GoogleTool{{FunctionDeclarations: declarations}}, nil
+}
+
+// Keywords whose values map names to subschemas, and keywords holding a subschema or an array of them: everything
+// else under a schema is literal data that keeps any "const" it has.
+var (
+	jsonSchemaNameMaps   = []string{"properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"}
+	jsonSchemaSubschemas = []string{"additionalProperties", "unevaluatedProperties", "propertyNames", "items", "prefixItems",
+		"additionalItems", "unevaluatedItems", "contains", "allOf", "anyOf", "oneOf", "not", "if", "then", "else", "contentSchema"}
+)
+
+// rewriteConstAsEnum sends string and number "const" values as single-value enums, which Gemini honors in
+// parametersJsonSchema while it ignores "const" (upstream #11308). Member order is kept and the enum goes last.
+func rewriteConstAsEnum(schema []byte, nameMap bool) []byte {
+	if elements := jsonwire.Elements(schema); elements != nil {
+		out := []byte{'['}
+		for index, element := range elements {
+			if index > 0 {
+				out = append(out, ',')
+			}
+			out = append(out, rewriteConstAsEnum(element, false)...)
+		}
+		return append(out, ']')
+	}
+	members, ok := jsonwire.Members(schema)
+	if !ok || len(members) == 0 {
+		return schema
+	}
+	constant := members["const"]
+	_, hasEnum := members["enum"]
+	if nameMap || hasEnum || len(constant) == 0 || constant[0] != '"' && constant[0] != '-' && (constant[0] < '0' || constant[0] > '9') {
+		constant = nil
+	}
+	out := []byte{'{'}
+	jsonwire.EachMember(schema, func(name, value []byte) bool {
+		key := string(name)
+		switch {
+		case constant != nil && key == "const":
+			return true
+		case nameMap || slices.Contains(jsonSchemaSubschemas, key):
+			value = rewriteConstAsEnum(value, false)
+		case slices.Contains(jsonSchemaNameMaps, key):
+			value = rewriteConstAsEnum(value, true)
+		}
+		if len(out) > 1 {
+			out = append(out, ',')
+		}
+		out = append(append(jsonwire.AppendString(out, key), ':'), value...)
+		return true
+	})
+	if constant != nil {
+		if len(out) > 1 {
+			out = append(out, ',')
+		}
+		out = append(append(append(out, `"enum":[`...), constant...), ']')
+	}
+	return append(out, '}')
 }
 
 func mapGoogleToolChoice(choice GoogleToolChoice) string {

@@ -246,9 +246,8 @@ func (buffer *streamBuffer) append(accumulated, delta string) string {
 // ponytail: parse gated at 8 KB of accumulated arguments, then on each
 // doubling — below the floor (every fixture, every human-sized tool call) the
 // streamed arguments are byte-identical to upstream, above it only the live
-// preview lags while partialJson/partialArgs and the end event stay exact.
-// Upgrade path: a resumable partial-JSON parser that consumes only the
-// appended suffix.
+// preview lags while the end event stays exact. Upgrade path: upstream's
+// incremental parser (streaming-json.ts, pi 1.5.0), once a preview needs it.
 func (buffer *streamBuffer) shouldParse() bool {
 	size := buffer.accumulated.Len()
 	if size >= streamParseFloor && size < 2*buffer.parsed {

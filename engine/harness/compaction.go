@@ -582,7 +582,7 @@ func compact(ctx context.Context, preparation *CompactionPreparation, model *ai.
 		summary = history + "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix.Text
 		summaryUsage = prefix.Usage
 		if historyUsage != nil {
-			summaryUsage = combineUsage(*historyUsage, prefix.Usage)
+			summaryUsage = ai.CombineUsage(*historyUsage, prefix.Usage)
 		}
 	} else {
 		generated, err := generateSummaryWithUsage(ctx, preparation.MessagesToSummarize, model, complete,
@@ -756,36 +756,6 @@ func runSummary(ctx context.Context, prompt string, model *ai.Model, complete Co
 		}
 	}
 	return &SummaryResult{Text: strings.Join(texts, "\n"), Usage: response.Usage}, nil
-}
-
-func combineUsage(first, second ai.Usage) ai.Usage {
-	combined := ai.Usage{
-		Input: first.Input + second.Input, Output: first.Output + second.Output,
-		CacheRead: first.CacheRead + second.CacheRead, CacheWrite: first.CacheWrite + second.CacheWrite,
-		TotalTokens: first.TotalTokens + second.TotalTokens,
-		Cost: ai.Cost{
-			Input: first.Cost.Input + second.Cost.Input, Output: first.Cost.Output + second.Cost.Output,
-			CacheRead: first.Cost.CacheRead + second.Cost.CacheRead, CacheWrite: first.Cost.CacheWrite + second.Cost.CacheWrite,
-			Total: first.Cost.Total + second.Cost.Total,
-		},
-	}
-	if first.CacheWrite1h != nil || second.CacheWrite1h != nil {
-		value := usagePart(first.CacheWrite1h) + usagePart(second.CacheWrite1h)
-		combined.CacheWrite1h = &value
-	}
-	if first.Reasoning != nil || second.Reasoning != nil {
-		value := usagePart(first.Reasoning) + usagePart(second.Reasoning)
-		combined.Reasoning = &value
-	}
-	ai.SetUsageOptionalsBeforeTotals(&combined)
-	return combined
-}
-
-func usagePart(value *int64) int64 {
-	if value == nil {
-		return 0
-	}
-	return *value
 }
 
 func SerializeConversation(messages engine.AgentMessages) string {
