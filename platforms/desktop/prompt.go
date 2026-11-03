@@ -41,10 +41,6 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 		shade := map[bool]float32{true: 0.35, false: 0.07}[c.Theme().Dark]
 		box := ui.Column(c).FillWidth().MaxWidth(column).Margin(0, ui.Auto, 14).Radius(16).Background(pal.raised).
 			Border(1, pal.rule.Alpha(0.7)).Shadow(0, 6, 24, 0, ui.RGBA(0, 0, 0, shade))
-		// Focused, it is framed as a HUD frames its target.
-		if box.FocusWithin() {
-			box.DrawOver(func(pt *ui.Painter, r ui.Rect) { brackets(pt, r, pal.fg) })
-		}
 		box.Children(func() {
 			// Typing / opens the palette: the app's commands and the core's, filtered as you type.
 			type choice struct {
