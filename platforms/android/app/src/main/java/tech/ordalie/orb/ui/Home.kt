@@ -1,6 +1,7 @@
 package tech.ordalie.orb.ui
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.runtime.*
@@ -16,6 +17,7 @@ import tech.ordalie.orb.core.*
 fun ColumnScope.Home(c: Ctx) {
     val v = c.v
     Notice(c)
+    Magi(c)
     // Every thread on every machine in one list, newest first: where it lives is a detail of the row.
     // Machines narrow the list: all of them or one (whose folders open from here). New
     // conversations start from the prompt box, which also chooses where.
@@ -55,7 +57,51 @@ fun ColumnScope.Home(c: Ctx) {
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
-    PromptBox(null, c, c.palette(null), placeholder = "New session") { c.send(null, it) }
+    TitleCard(v.home.entries.size + 1, v.state.up)
+    PromptBox(null, c, c.palette(null), placeholder = "What should we work on?") { c.send(null, it) }
+}
+
+/** An Evangelion title card over the prompt box, as on the desktop: the episode, its name in Japanese, the title stretched tall. */
+@Composable
+private fun TitleCard(episode: Int, up: Boolean) = Column(Modifier.fillMaxWidth().padding(start = Margin + 4.dp, end = Margin, top = 6.dp, bottom = 6.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        T(if (up) "第%03d話".format(episode) else "第———話", size = 12.sp, weight = Strong, color = Ink.Rupture)
+        T("新規セッション · new session", label = true, color = p.meta, lines = 1)
+        Box(Modifier.weight(1f).height(1.dp).background(p.rule))
+    }
+    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Stretch("NEW SESSION", 40.dp, p.fg)
+        Box(Modifier.padding(bottom = 6.dp).size(9.dp).background(Ink.Rupture))
+    }
+}
+
+/**
+ * This phone's state put to three votes, as NERV's MAGI put each decision to their three
+ * computers: its Bridge is up, its paired machines are connected, its Orb is current. Each says
+ * 承認 (approved) or, in red, 否決 (refused); Bridge's open its screen.
+ */
+@Composable
+private fun Magi(c: Ctx) {
+    val v = c.v
+    val peers = v.home.machines.filter { !it.self }
+    val connected = peers.count { it.connected }
+    val current = v.state.latest.isEmpty() || !Release.newer(v.state.latest, c.rt.version)
+    Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(
+            Triple("bridge", if (v.state.up) "up" else "…", v.state.up),
+            Triple("peers", "$connected/${peers.size}", connected == peers.size),
+            Triple("orb", c.rt.version, current),
+        ).forEach { (name, value, yes) ->
+            val ink = if (yes) p.mute else Ink.Rupture
+            Column(Modifier.weight(1f).border(1.dp, p.rule.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).press(enabled = name != "orb") { c.nav.go(Screen.Bridge) }.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                T(name, label = true, color = p.mute)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    T(value, Modifier.weight(1f), size = 12.sp, color = ink, lines = 1)
+                    T(if (yes) "承認" else "否決", size = Size.Label, weight = Strong, color = ink)
+                }
+            }
+        }
+    }
 }
 
 fun ago(ms: Long): String {

@@ -6,19 +6,31 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.*
 import androidx.compose.ui.unit.*
 import tech.ordalie.orb.core.*
 
 /** A plugin stopping the world: the only place red fills space. The word names who is asking. */
 @Composable
 fun Interrupt(a: Ask, answer: (String?) -> Unit) {
-    val word = when (a.owner) { "permissions" -> "APPROVAL"; "bridge" -> "PAIR"; else -> "QUESTION" }
+    val (word, caption) = when (a.owner) {
+        "permissions" -> "APPROVAL" to "承認要求 · approval required"
+        "bridge" -> "PAIR" to "接続要求 · pairing request"
+        else -> "QUESTION" to "質問 · a question for you"
+    }
     var text by remember(a.id) { mutableStateOf("") }
     val ink = Ink.Charcoal
     Column(Modifier.fillMaxSize().background(Ink.Rupture).press {}.statusBarsPadding().navigationBarsPadding().imePadding()) {
+        // Framed in warning stripes, as an emergency is in Evangelion.
+        Hazard(14.dp, Ink.Rupture, ink)
         Row(Modifier.fillMaxWidth().padding(horizontal = Margin, vertical = 16.dp)) { T(a.owner, Modifier.weight(1f), label = true, color = ink); T("waiting on you", size = Size.Label, color = ink) }
         Rule(color = ink)
-        Stretch(word, 168.dp, ink, squeeze = if (word.length > 5) 0.6f else 1f, modifier = Modifier.padding(horizontal = Margin, vertical = 22.dp))
+        // The word wipes in from the left, then its caption: a rare moment, so it may take its time.
+        val wiped = reveal(a.id)
+        Stretch(word, 168.dp, ink, squeeze = if (word.length > 5) 0.6f else 1f, modifier = Modifier.padding(start = Margin, end = Margin, top = 22.dp, bottom = 10.dp)
+            .drawWithContent { clipRect(right = size.width * wiped) { this@drawWithContent.drawContent() } })
+        T(caption, Modifier.padding(start = Margin, bottom = 16.dp).alpha(reveal(a.id, 140)), label = true, color = ink)
         // Orb's prompts put the request on the first line and its evidence below.
         val lines = a.title.lines()
         T(lines.first(), Modifier.padding(horizontal = Margin), size = Size.Title, color = ink)
@@ -46,7 +58,7 @@ fun Interrupt(a: Ask, answer: (String?) -> Unit) {
         }
         Rule(color = ink)
         Box(Modifier.fillMaxWidth().press { answer(null) }.padding(16.dp)) { T("back  ·  dismiss", size = Size.Label, color = ink) }
-        Spacer(Modifier.height(4.dp))
+        Hazard(14.dp, Ink.Rupture, ink)
     }
 }
 

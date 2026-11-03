@@ -36,7 +36,8 @@ private val Hues = listOf(0xFF2F5FA8 to 0xFF6E9BE0, 0xFF1F7F73 to 0xFF4FBFAE, 0x
 fun hue(n: Int, phone: Color = p.mute): Color = if (n <= 0) phone else Hues[(n - 1) % Hues.size].let { (light, dark) -> Color(if (p == DarkPalette) dark else light) }
 val p: Palette @Composable get() = LocalPalette.current
 
-/** Ubuntu Sans Mono, variable, so its weights are real; set a touch tight, as words rather than a grid. */
+/** Ubuntu Sans Mono, variable, so its weights are real; set without tracking at reading sizes (a
+ *  monospace's cells are already tight), tracked out for small caps, in for titles. */
 val Mono = FontFamily(listOf(400, 500, 600, 700).map { Font(R.font.ubuntu_sans_mono, FontWeight(it), variationSettings = FontVariation.Settings(FontVariation.weight(it))) })
 
 /** One scale — title 19 · body 15 · label 11 — and three weights: regular reads, medium marks, semibold names. */
@@ -64,7 +65,7 @@ fun OrbTheme(corner: Int = 0, content: @Composable () -> Unit) = CompositionLoca
 )
 
 fun type(size: TextUnit = Size.Body, color: Color = Color.Unspecified, weight: FontWeight = FontWeight.Normal) =
-    TextStyle(fontFamily = Mono, fontSize = size, color = color, fontWeight = weight, letterSpacing = (-0.03).em, lineHeight = 1.4.em)
+    TextStyle(fontFamily = Mono, fontSize = size, color = color, fontWeight = weight, letterSpacing = if (size >= Size.Title) (-0.02).em else 0.em, lineHeight = 1.45.em)
 
 /** The only text primitive. Labels are small caps in medium weight; everything else is sentence case. */
 @Composable
@@ -73,6 +74,6 @@ fun T(
     weight: FontWeight = if (bold) Strong else Regular, label: Boolean = false, lines: Int = Int.MAX_VALUE,
 ) = BasicText(
     if (label) text.uppercase() else text, modifier,
-    if (label) type(Size.Label, color, Medium).copy(letterSpacing = 0.02.em) else type(size, color, weight),
+    if (label) type(Size.Label, color, Medium).copy(letterSpacing = 0.06.em) else type(size, color, weight),
     overflow = TextOverflow.Ellipsis, maxLines = lines,
 )

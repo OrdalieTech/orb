@@ -92,9 +92,19 @@ private fun Strip(t: Tab, usage: () -> Unit, terminal: () -> Unit) =
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         val state = when { t.busy -> "working"; !t.online -> "offline"; else -> "" }
         T(listOfNotNull(t.where.takeIf { t.remote }, state.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (t.busy) p.fg else p.meta, lines = 1)
-        if (t.context > 0) T("${(t.context * 100).roundToInt()}% context", size = 13.sp, color = if (t.context > 0.8) Ink.Rupture else p.meta)
+        // Context as a synchronisation rate, as Evangelion reads one out.
+        if (t.context > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Gauge(t.context, 0.8)
+            T("${(t.context * 100).roundToInt()}%", size = 13.sp, color = if (t.context > 0.8) Ink.Rupture else p.meta)
+        }
+        // 活動限界, the activity limit an EVA's battery counts down to: the plan's window nearest its end, and when it resets.
         t.usage?.windows?.minByOrNull { it.left }?.let { w ->
-            T("${w.name} ${w.left.roundToInt()}% left", Modifier.press(onClick = usage), size = 13.sp, color = if (w.left < 15) Ink.Rupture else p.meta, lines = 1)
+            val ink = if (w.left < 15) Ink.Rupture else p.meta
+            val reset = if (w.resets > 0) " · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(w.resets) else ""
+            Row(Modifier.press(onClick = usage), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                T("活動限界", size = Size.Label, color = ink)
+                T("${w.name} ${w.left.roundToInt()}%$reset", size = 13.sp, color = ink, lines = 1)
+            }
         }
         if (t.cost > 0.0) T("$" + "%.2f".format(java.util.Locale.ROOT, t.cost), size = 13.sp, color = p.meta)
         Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong) }
@@ -181,8 +191,15 @@ private fun tokens(text: String, fg: Color, bg: Color): AnnotatedString = buildA
 
 /** Another Orb is driving this phone. Blue fills space here and nowhere else. */
 @Composable
-fun PatternBlue(stop: () -> Unit) = Column(Modifier.fillMaxWidth().background(Ink.Blue).padding(horizontal = Margin, vertical = 14.dp)) {
+fun PatternBlue(stop: () -> Unit) = Column(Modifier.fillMaxWidth().background(Ink.Blue)) {
+    Hazard(6.dp, Ink.Blue, Ink.Texte.copy(alpha = 0.5f))
+    Column(Modifier.padding(horizontal = Margin, vertical = 14.dp)) { PatternBlueBody(stop) }
+}
+
+@Composable
+private fun PatternBlueBody(stop: () -> Unit) {
     Stretch("PATTERN BLUE", 30.dp, Ink.Texte)
+    T("パターン青 · another orb is driving", Modifier.padding(top = 6.dp), label = true, color = Ink.Texte.copy(alpha = 0.75f))
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         T("A peer is prompting this phone", Modifier.weight(1f), color = Ink.Texte, weight = Medium)
         Btn("stop", inverted = true, color = Ink.Texte, on = Ink.Blue, onClick = stop)

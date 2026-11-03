@@ -23,6 +23,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
+import androidx.compose.ui.graphics.drawscope.*
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import tech.ordalie.orb.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.*
 
@@ -107,21 +112,36 @@ fun MenuMark(onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).paddin
     }
 }
 
-/** The EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed. Reserved for events and identities. */
+/**
+ * The EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed. Reserved for
+ * events and identities. The capitals are the font's own outlines, stretched as vectors and filled
+ * at the screen's resolution: text scaled as a layer would stretch its pixels.
+ */
 @Composable
 fun Stretch(text: String, height: Dp, color: Color = p.fg, squeeze: Float = 1f, modifier: Modifier = Modifier) {
-    val size = (height.value / 1.9f / 0.7f).sp // cap height of Ubuntu Sans Mono ≈ 0.7em
-    BasicText(
-        text, modifier
-            .layout { m, c ->
-                val placeable = m.measure(c.copy(maxWidth = Int.MAX_VALUE))
-                val w = (placeable.width * squeeze).roundToInt().coerceAtMost(c.maxWidth)
-                // The line box scales about its own centre, so centring it centres the stretched caps.
-                layout(w, height.roundToPx()) { placeable.place(0, ((height.toPx() - placeable.height) / 2f).roundToInt()) }
-            }
-            .graphicsLayer { scaleY = 1.9f; scaleX = squeeze; transformOrigin = TransformOrigin(0f, 0.5f) },
-        type(size, color, androidx.compose.ui.text.font.FontWeight.Bold).copy(lineHeight = 1.em, letterSpacing = (-0.02).em), maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
-    )
+    val context = LocalContext.current
+    val face = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = context.resources.getFont(R.font.ubuntu_sans_mono)
+            fontVariationSettings = "'wght' 700"
+            textSize = 100f
+            letterSpacing = -0.02f
+        }
+    }
+    val caps = remember { android.graphics.Rect().also { face.getTextBounds("H", 0, 1, it) }.height().toFloat() }
+    val px = with(LocalDensity.current) { height.toPx() }
+    val sy = px / caps
+    val sx = sy / 1.9f * squeeze
+    val path = remember(text, sx, sy) {
+        android.graphics.Path().also {
+            face.getTextPath(text, 0, text.length, 0f, 0f, it)
+            it.transform(android.graphics.Matrix().apply { setScale(sx, sy) })
+        }
+    }
+    val fill = remember(color) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color = color.toArgb() } }
+    Canvas(modifier.size(with(LocalDensity.current) { (face.measureText(text) * sx).toDp() }, height)) {
+        drawIntoCanvas { it.nativeCanvas.save(); it.nativeCanvas.translate(0f, size.height); it.nativeCanvas.drawPath(path, fill); it.nativeCanvas.restore() }
+    }
 }
 
 /**
@@ -181,3 +201,45 @@ fun Context.copy(text: String, what: String = "copied") {
     Toast.makeText(this, what, Toast.LENGTH_SHORT).show()
 }
 fun Context.paste(): String = getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+
+// The NERV look, after Evangelion's interfaces, as on the desktop: spent where it says something
+// true (a takeover, a gauge, a vote), never on every row.
+
+/** A band of warning stripes, [ink] slanting over [ground], as an emergency is framed in Evangelion. */
+@Composable
+fun Hazard(height: Dp, ground: Color, ink: Color) = Canvas(Modifier.fillMaxWidth().height(height).background(ground)) {
+    val w = 6.dp.toPx()
+    var x = -size.height
+    while (x < size.width) {
+        drawPath(Path().apply { moveTo(x, size.height); lineTo(x + size.height, 0f); lineTo(x + size.height + w, 0f); lineTo(x + w, size.height); close() }, ink)
+        x += 2 * w
+    }
+}
+
+/** A reading in ten segments, as Evangelion shows a synchronisation rate: lit up to [value], red past [alarm]. */
+@Composable
+fun Gauge(value: Double, alarm: Double) = Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    val lit = (value * 10).roundToInt()
+    repeat(10) { i ->
+        val ink by animateColorAsState(when { i >= lit -> p.rule.copy(alpha = 0.6f); value > alarm -> Ink.Rupture; else -> p.mute }, tween(120, i * 25), label = "segment")
+        Box(Modifier.size(3.dp, 10.dp).background(ink))
+    }
+}
+
+/** A section's name as a HUD numbers it: its index in red, its name, a hairline to the edge. */
+@Composable
+fun HudLabel(index: Int, name: String, state: String = "", modifier: Modifier = Modifier) =
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        T("%02d".format(index), size = Size.Label, weight = Strong, color = Ink.Rupture)
+        T(name, label = true, color = p.meta, lines = 1)
+        Box(Modifier.weight(1f).height(1.dp).background(p.rule.copy(alpha = 0.7f)))
+        if (state.isNotEmpty()) T(state, size = Size.Label, color = p.meta)
+    }
+
+/** 0 to 1 over 260 ms, easing out, from the first composition: what wipes in plays it once. */
+@Composable
+fun reveal(key: Any?, delay: Int = 0): Float {
+    val v = remember(key) { Animatable(0f) }
+    LaunchedEffect(key) { v.animateTo(1f, tween(260, delay, CubicBezierEasing(0.23f, 1f, 0.32f, 1f))) }
+    return v.value
+}
