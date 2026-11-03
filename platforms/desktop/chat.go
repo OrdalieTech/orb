@@ -610,8 +610,11 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 				squeeze = 0.6
 			}
 			ui.Column(c).Padding(22, margin, 10).Gap(10).Children(func() {
-				stretch(c, word, 150, ink, squeeze)
-				label(c, caption).TextColor(ink)
+				// The word wipes in from the left, then its caption: a rare moment, so it may take its time.
+				title := stretch(c, word, 150, ink, squeeze)
+				wipe(title, reveal(title, ask.ID, 0), rupture)
+				cap := label(c, caption).TextColor(ink)
+				cap.Opacity(reveal(cap, ask.ID, 140*time.Millisecond))
 			})
 			// Orb's prompts put the request on the first line and its evidence below.
 			first, rest, _ := strings.Cut(ask.Title, "\n")

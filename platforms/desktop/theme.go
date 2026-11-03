@@ -321,9 +321,26 @@ func abs(x float32) float32 { return max(x, -x) }
 // The NERV look, after Evangelion's interfaces: spent where it carries meaning (focus, a takeover,
 // a gauge, a title card), never on every row.
 
-// brackets draws a HUD's corner ticks just inside r, as Evangelion frames what it targets.
-func brackets(p *ui.Painter, r ui.Rect, ink ui.Color) {
-	const length, width = 10, 1.5
+// reveal is 0 to 1 over 260 ms, easing out, the first time e is built with key: what wipes or
+// draws in plays it once. Reduce Motion skips to the end.
+func reveal(e ui.Element, key any, delay time.Duration) float32 {
+	return e.Keyframes(key, []ui.Keyframe{{At: 0, Value: 0}, {At: 260 * time.Millisecond, Value: 1, Ease: easeOut}}, ui.KeyframeOptions{Delay: delay})
+}
+
+// wipe hides what of e is right of v (0 to 1) under its ground, so e is uncovered from the left.
+func wipe(e ui.Element, v float32, ground ui.Color) {
+	if v < 1 {
+		e.DrawOver(func(p *ui.Painter, r ui.Rect) {
+			p.Fill(ui.Rect{X: r.X + r.W*v, Y: r.Y - 4, W: r.W*(1-v) + 1, H: r.H + 8}, ground, 0)
+		})
+	}
+}
+
+// brackets draws a HUD's corner ticks just inside r, as Evangelion frames what it targets; drawn
+// in, they grow to their length as reach goes from 0 to 1.
+func brackets(p *ui.Painter, r ui.Rect, ink ui.Color, reach float32) {
+	const width = 1.5
+	length := 10 * reach
 	for _, k := range [4][2]float32{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
 		x, y := r.X+k[0]*(r.W-width)+width/2, r.Y+k[1]*(r.H-width)+width/2
 		dx, dy := 1-2*k[0], 1-2*k[1] // inward
@@ -352,7 +369,9 @@ func gauge(c *ui.Context, value float64, alarm float64) ui.Element {
 			case i < lit:
 				ink = pal.mute
 			}
-			ui.Box(c.Key(i)).Size(3, 10).Background(ink)
+			// A change runs along the segments, 25 ms apart, as a reading climbs on a NERV screen.
+			seg := ui.Box(c.Key(i)).Size(3, 10)
+			seg.Background(seg.AnimateColor("lit", ink, ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut, Delay: time.Duration(i) * 25 * time.Millisecond}))
 		}
 	})
 }
