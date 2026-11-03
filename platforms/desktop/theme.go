@@ -151,16 +151,27 @@ func field(c *ui.Context, value *string, hint string, secret bool) ui.Element {
 	return in
 }
 
+// beat is the period of a dot's pulse, and beatRate the frames a second its fade looks as smooth
+// at as at the display's: something works for minutes, and the window draws only the dot meanwhile.
+const beat, beatRate = 1400 * time.Millisecond, 20
+
 // dot marks what lives: round, or square for where a session runs; it pulses while it works.
 func dot(c *ui.Context, color ui.Color, size float32, pulse, square bool) ui.Element {
-	e := ui.Box(c).Size(size, size).Background(color)
-	if !square {
-		e.Radius(size / 2)
+	e := ui.Box(c).Size(size, size)
+	radius := size / 2
+	if square {
+		radius = 0
 	}
-	if pulse {
-		e.Opacity(0.25 + 0.75*e.Loop("pulse", 1400*time.Millisecond, ui.EaseInOut))
+	if !pulse {
+		return e.Background(color).Radius(radius)
 	}
-	return e
+	// Painted, not built: a pulse built into the view (Element.Loop) builds the whole view every frame.
+	return e.Draw(func(p *ui.Painter, r ui.Rect) {
+		// It breathes: down and back up again in each beat.
+		at := float32(p.Now().UnixNano()%int64(beat)) / float32(beat)
+		p.Fill(r, color.Alpha(0.25+0.75*ui.EaseInOut(abs(1-2*at))), radius)
+		p.AnimationFrameRate(beatRate)
+	})
 }
 
 // where is where a session runs, as a square: the ink for this computer, a paired device's own hue,
@@ -268,3 +279,5 @@ func ago(ms int64) string {
 	}
 	return strconv.Itoa(int(m/1440)) + "d"
 }
+
+func abs(x float32) float32 { return max(x, -x) }

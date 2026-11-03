@@ -6,21 +6,39 @@ package main
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
 func main() {
+	// One app per user: two would each run `orb app` over the same Bridge and save its tabs over the other's.
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
+	// `orb app` waits for the login shell's environment, a third of a second or more: it starts
+	// now, while the window opens.
+	go environment()
 	a := &app{
 		drafts: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{}, term: map[string]bool{},
 		answer: map[string]string{}, split: map[string]float32{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
-		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272,
+		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
 	}
-	// A pairing code opened as a link (orb-bridge:…) joins from the Bridge screen.
-	mygo.App.OnOpenURL(func(url string) {
+	// A pairing code opened as a link (orb-bridge:…) joins from the Bridge screen; on Linux and
+	// Windows the link starts the app again, which hands it to this one.
+	join := func(url string) {
 		if strings.HasPrefix(url, "orb-bridge:") && a.o != nil {
 			a.o.win.Update(func() { a.push(screen{kind: "join", arg: url}) })
+		}
+	}
+	mygo.App.OnOpenURL(join)
+	mygo.App.OnSecondInstance(func(args []string, _ string) {
+		for _, arg := range args {
+			join(arg)
+		}
+		if a.o != nil {
+			a.o.win.Focus()
 		}
 	})
 	mygo.App.WhenReady(func() {

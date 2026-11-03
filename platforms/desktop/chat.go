@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -18,21 +19,21 @@ import (
 const size, column = 15, 820
 
 // turns groups rows by speaker: what the person said, or everything Orb said and did until the next one.
+// Turns are slices of rows, not copies, as the view groups them each frame: a patch writes the rows
+// to a new array (Orb.heard), never under turns a list still holds.
 func turns(rows []Row) [][]Row {
 	var out [][]Row
-	var run []Row
-	for _, r := range rows {
+	run := 0
+	for i, r := range rows {
 		if r.Kind == "you" {
-			if len(run) > 0 {
-				out = append(out, run)
+			if i > run {
+				out = append(out, rows[run:i])
 			}
-			out, run = append(out, []Row{r}), nil
-		} else {
-			run = append(run, r)
+			out, run = append(out, rows[i:i+1]), i+1
 		}
 	}
-	if len(run) > 0 {
-		out = append(out, run)
+	if run < len(rows) {
+		out = append(out, rows[run:])
 	}
 	return out
 }
@@ -205,9 +206,17 @@ func patternBlue(c *ui.Context, stop func()) {
 	})
 }
 
+// caret blinks, off then on, each half of its period; painted, it draws a frame at each change only.
 func caret(c *ui.Context) {
-	e := ui.Box(c).Size(size*0.55, size*1.1).Background(rupture)
-	e.Opacity(float32(math.Round(float64(e.Loop("caret", 1060*time.Millisecond, ui.Linear)))))
+	const half = 530 * time.Millisecond
+	ui.Box(c).Size(size*0.55, size*1.1).Draw(func(p *ui.Painter, r ui.Rect) {
+		at := time.Duration(p.Now().UnixNano()) % (2 * half)
+		if at >= half {
+			p.Fill(r, rupture, 0)
+			at -= half
+		}
+		p.After(half - at)
+	})
 }
 
 // turn: what the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb
@@ -375,6 +384,22 @@ func (a *app) pictures(c *ui.Context, refs []string, t *Tab) {
 	})
 }
 
+// decoded is an image as an Orb sends it, decoded with its reply, off the main thread: a picture
+// shown whole takes a frame or more to decode.
+type decoded struct{ b *ui.Bitmap }
+
+func (p *decoded) UnmarshalJSON(b []byte) error {
+	var r struct{ Data string }
+	if err := json.Unmarshal(b, &r); err != nil {
+		return err
+	}
+	raw, err := base64.StdEncoding.DecodeString(r.Data)
+	if err == nil {
+		p.b, err = ui.DecodeBitmap(raw)
+	}
+	return err
+}
+
 // picture is an image fetched at px, already fitted by its Orb, the first time it shows.
 func (a *app) picture(c *ui.Context, ref, tab string, px int) ui.Element {
 	key := fmt.Sprint(ref, ":", px)
@@ -383,9 +408,12 @@ func (a *app) picture(c *ui.Context, ref, tab string, px int) ui.Element {
 	}
 	if !a.loading[key] {
 		a.loading[key] = true
-		then(a.o, func(r struct{ Data string }, err error) {
-			if raw, e := base64.StdEncoding.DecodeString(r.Data); err == nil && e == nil {
-				a.pics[key], _ = ui.DecodeBitmap(raw)
+		then(a.o, func(r decoded, err error) {
+			if err == nil {
+				a.pics[key] = r.b
+			}
+			if a.pics[key] == nil {
+				delete(a.loading, key) // asked again when it next shows
 			}
 		}, "image", "tab", tab, "ref", ref, "px", px)
 	}
@@ -555,6 +583,12 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 		backdrop.Background(rupture)
 		panel.Fill().Background(rupture).Padding(c.TitleBar().Height, 0, 0)
 		reply := func(v string) { answer(&v) }
+		// A key answers only once the question has been on screen a moment, so typing meant for the
+		// prompt cannot answer it; a pairing takes a click, after reading the fingerprint.
+		if _, ok := a.asked[ask.ID]; !ok {
+			a.asked[ask.ID] = time.Now()
+		}
+		armed := ask.Owner != "bridge" && time.Since(a.asked[ask.ID]) > 800*time.Millisecond
 		ui.Column(c).FillWidth().MaxWidth(900).Margin(0, ui.Auto).Grow(1).Children(func() {
 			ui.Row(c).FillWidth().Padding(16, margin).Children(func() {
 				label(c, ask.Owner).Grow(1).TextColor(ink)
@@ -596,7 +630,7 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 					ui.Text(c, key).Width(36).FontWeight(strong).TextColor(fg)
 					ui.Text(c, text).TextColor(fg)
 				})
-				if press(row) || hotkey(panel, key) {
+				if press(row) || armed && hotkey(panel, key) {
 					reply(choice)
 				}
 			}
@@ -649,7 +683,12 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 	provider, name, _ := strings.Cut(t.Model, "/")
 	if a.accountsOf != t.Peer {
 		a.accountsOf, a.accounts = t.Peer, nil
-		then(o, func(list []Account, err error) { a.accounts = list }, "accounts", "machine", t.Peer)
+		peer := t.Peer
+		then(o, func(list []Account, err error) {
+			if a.accountsOf == peer {
+				a.accounts = list
+			}
+		}, "accounts", "machine", peer)
 	}
 	sheet(c, &open, 560, func() {
 		ui.Row(c).FillWidth().Padding(18, margin, 0).AlignItems(ui.End).Children(func() {

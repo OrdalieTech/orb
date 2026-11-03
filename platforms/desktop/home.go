@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -121,10 +120,19 @@ func (a *app) launching(c *ui.Context) {
 	})
 }
 
-// tidy writes a path the way its owner reads it: home as ~.
-var homeDir = regexp.MustCompile(`^/(Users|home)/[^/]+`)
-
-func tidy(p string) string { return homeDir.ReplaceAllString(p, "~") }
+// tidy writes a path the way its owner reads it: /home/name or /Users/name as ~. Rows call it each
+// frame, so it allocates only when it shortens a path.
+func tidy(p string) string {
+	for _, root := range []string{"/home/", "/Users/"} {
+		if rest, ok := strings.CutPrefix(p, root); ok && rest != "" && rest[0] != '/' {
+			if i := strings.IndexByte(rest, '/'); i >= 0 {
+				return "~" + rest[i:]
+			}
+			return "~"
+		}
+	}
+	return p
+}
 
 // deviceScreen is one machine: its folders, most recently worked in first, and any other folder by path.
 func (a *app) deviceScreen(c *ui.Context, peer string) {
