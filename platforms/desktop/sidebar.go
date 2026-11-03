@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -188,7 +189,7 @@ func (a *app) machineHeader(c *ui.Context, m Machine, index int) {
 func (a *app) foot(c *ui.Context) {
 	o, pal := a.o, p(c)
 	ui.Column(c).FillWidth().Padding(8, 10, 10).Gap(6).BorderWidth(1, 0, 0, 0).BorderColor(pal.rule).Children(func() {
-		a.update(c)
+		a.magi(c)
 		ui.Row(c).FillWidth().Gap(8).PaddingX(6).Children(func() {
 			ink := pal.meta
 			if strings.HasPrefix(o.state.Summary, "needs you") {
@@ -221,5 +222,61 @@ func (a *app) foot(c *ui.Context) {
 				}
 			}
 		})
+	})
+}
+
+// magi is this computer's state put to three votes, as NERV's MAGI put each decision to their
+// three computers: its Bridge is up, its paired machines are connected, its Orb is current. Each
+// says 承認 (approved) or 否決 (refused) in red; a refusal says why, and Bridge's open its screen.
+func (a *app) magi(c *ui.Context) {
+	o, pal := a.o, p(c)
+	var self *Machine
+	peers, connected := 0, 0
+	for i, m := range o.home.Machines {
+		switch {
+		case m.Self:
+			self = &o.home.Machines[i]
+		case m.Connected:
+			peers, connected = peers+1, connected+1
+		default:
+			peers++
+		}
+	}
+	version, current := "—", true
+	if self != nil && self.Version != "" {
+		version = self.Version
+		current = o.state.Latest == "" || !newer(o.state.Latest, self.Version)
+	}
+	bridgeTip := "Bridge is starting"
+	if o.state.Up {
+		bridgeTip = "Bridge is up on this computer"
+	}
+	votes := []struct {
+		name, value, tip string
+		yes, bridge      bool
+	}{
+		{"bridge", map[bool]string{true: "up", false: "…"}[o.state.Up], bridgeTip, o.state.Up, true},
+		{"peers", fmt.Sprintf("%d/%d", connected, peers), fmt.Sprintf("%d of %d paired machines connected", connected, peers), connected == peers, true},
+		{"orb", version, map[bool]string{true: "This computer runs the newest Orb", false: "Orb " + o.state.Latest + " is out: orb update, then orb bridge stop && orb bridge start"}[current], current, false},
+	}
+	ui.Row(c).FillWidth().Gap(4).Children(func() {
+		for _, v := range votes {
+			ink, verdict := pal.mute, "承認"
+			if !v.yes {
+				ink, verdict = rupture, "否決"
+			}
+			cell := ui.Column(c.Key(v.name)).Grow(1).Basis(0).MinWidth(0).Padding(5, 7).Gap(1).Radius(4).Border(1, pal.rule.Alpha(0.8)).Tooltip(v.tip)
+			cell.Children(func() {
+				ui.Row(c).FillWidth().Gap(4).Children(func() {
+					label(c, v.name).Grow(1).Basis(0).MinWidth(0)
+					ui.Text(c, verdict).FontSize(labelSize).FontWeight(strong).TextColor(ink)
+				})
+				ui.Text(c, v.value).FontSize(12).TextColor(ink).SingleLine()
+			})
+			if v.bridge && press(cell) {
+				reread()
+				a.stack = []screen{{kind: "bridge"}}
+			}
+		}
 	})
 }

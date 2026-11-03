@@ -28,6 +28,8 @@ type Orb struct {
 	alert   func(tab, title, text string)
 	visible bool
 	shown   []string
+	began   time.Time // when the app started
+	running string    // the orb `orb app` runs, once started
 
 	mu      sync.Mutex // guards what the reader and the askers share
 	in      *os.File
@@ -44,7 +46,7 @@ type reply struct {
 const device = "this computer"
 
 func newOrb(win *mygo.Window, alert func(tab, title, text string)) *Orb {
-	o := &Orb{win: win, alert: alert, rows: map[string][]Row{}, replies: map[string]chan reply{}}
+	o := &Orb{win: win, alert: alert, rows: map[string][]Row{}, replies: map[string]chan reply{}, began: time.Now()}
 	o.state.Summary = "starting Bridge…"
 	go o.run()
 	return o
@@ -145,6 +147,8 @@ func (o *Orb) serve() error {
 		o.send("hello", "budget", 4)
 		o.send("visible", "on", o.visible)
 		o.send("show", "tabs", o.shown)
+		o.running = cmd.Path
+		o.win.Invalidate()
 	})
 	// A line is as long as what it carries: a whole conversation, after hello or earlier messages.
 	lines := bufio.NewReaderSize(out, 64<<10)

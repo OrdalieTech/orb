@@ -18,7 +18,7 @@ func (a *app) homeScreen(c *ui.Context) {
 		// An Evangelion title card: the episode, its name in Japanese, the title stretched tall.
 		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
 			ui.Row(c).FillWidth().Gap(10).Children(func() {
-				ui.Text(c, fmt.Sprintf("第%03d話", len(o.home.Entries)+1)).FontSize(12).FontWeight(strong).TextColor(rupture)
+				ui.Text(c, map[bool]string{true: fmt.Sprintf("第%03d話", len(o.home.Entries)+1), false: "第———話"}[o.state.Up]).FontSize(12).FontWeight(strong).TextColor(rupture)
 				label(c, "新規セッション · new session").TextColor(pal.meta)
 				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
 			})
@@ -42,7 +42,8 @@ func (a *app) homeScreen(c *ui.Context) {
 				recent = append(recent, e)
 			}
 		}
-		if len(recent) > 0 {
+		a.boot(c)
+		if len(recent) > 0 && o.state.Up {
 			reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Children(func() {
 				label(c, "latest").TextColor(pal.meta).Margin(0, 0, 4)
 				for _, e := range recent {
@@ -68,24 +69,6 @@ func (a *app) homeScreen(c *ui.Context) {
 			})
 		}
 	})
-}
-
-// update is a line saying a newer Orb is out than this computer's Bridge runs.
-func (a *app) update(c *ui.Context) {
-	o, pal := a.o, p(c)
-	var self *Machine
-	for i := range o.home.Machines {
-		if o.home.Machines[i].Self {
-			self = &o.home.Machines[i]
-		}
-	}
-	if self == nil || o.state.Latest == "" || !newer(o.state.Latest, self.Version) {
-		return
-	}
-	ui.Row(c).FillWidth().Gap(8).PaddingX(6).Children(func() {
-		dot(c, rupture, 6, false, false)
-		ui.Text(c, "Orb "+o.state.Latest+" is out").Grow(1).Basis(0).FontSize(12).FontWeight(medium).TextColor(pal.mute).SingleLine()
-	}).Tooltip("This computer runs " + self.Version + ": orb update, then orb bridge stop && orb bridge start")
 }
 
 // sessionRow is one line per session: its title, then where it lives and its condition in words
@@ -245,4 +228,49 @@ func nonEmpty(s ...string) []string {
 		}
 	}
 	return out
+}
+
+// boot is what starting is doing, line by line as each part answers, as an EVA's entry plug reads
+// out its start: shown while this computer's Bridge is not up yet, and only when that takes long
+// enough to read (a Bridge already running answers before it would show).
+func (a *app) boot(c *ui.Context) {
+	o, pal := a.o, p(c)
+	if o.state.Up {
+		return
+	}
+	if wait := 300*time.Millisecond - time.Since(o.began); wait > 0 {
+		c.After(wait)
+		return
+	}
+	connected := 0
+	for _, m := range o.home.Machines {
+		if m.Connected && !m.Self {
+			connected++
+		}
+	}
+	type line struct{ step, jp, what string }
+	lines := []line{{"orb app", "起動", "starting"}}
+	if o.running != "" {
+		lines[0].what = tidy(o.running)
+		lines = append(lines, line{"bridge", "接続", "starting Bridge on this computer…"})
+	}
+	if len(o.home.Machines) > 0 {
+		lines = append(lines, line{"peers", "同期", fmt.Sprintf("%d of %d connected", connected, len(o.home.Machines)-1)})
+	}
+	if s := o.state.Summary; strings.HasPrefix(s, "orb app ended") {
+		lines = append(lines, line{"error", "否決", s})
+	}
+	reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Gap(4).Children(func() {
+		for _, l := range lines {
+			ink := pal.mute
+			if l.jp == "否決" {
+				ink = rupture
+			}
+			ui.Row(c.Key(l.step)).FillWidth().Gap(12).Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 4}, Animation: &opening}).Children(func() {
+				label(c, l.step).Width(64)
+				ui.Text(c, l.jp).FontSize(12).TextColor(rupture).Width(28)
+				ui.Text(c, l.what).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(ink).SingleLine()
+			})
+		}
+	})
 }
