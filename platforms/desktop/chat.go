@@ -164,7 +164,17 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 			if w.Left < 15 {
 				ink = rupture
 			}
-			if press(ui.Textf(c, "%s %d%% left", w.Name, int(math.Round(w.Left))).FontSize(12).TextColor(ink).SingleLine().Shrink(0)) {
+			// 活動限界, the activity limit an EVA's internal battery counts down to: what its plan's
+			// window nearest its end has left, and when it resets.
+			left := fmt.Sprintf("%s %d%%", w.Name, int(math.Round(w.Left)))
+			if w.Resets > 0 {
+				left += " · " + time.UnixMilli(w.Resets).Format("15:04")
+			}
+			limit := ui.Row(c).Gap(6).Shrink(0).Children(func() {
+				ui.Text(c, "活動限界").FontSize(labelSize).TextColor(ink)
+				ui.Text(c, left).FontSize(12).TextColor(ink).SingleLine()
+			})
+			if press(limit.Tooltip("Activity limit: the plan's window nearest its end, and when it resets")) {
 				a.usage(t)
 			}
 		}
