@@ -64,8 +64,12 @@ type app struct {
 	path       string  // a folder typed on a device's screen
 	side       float32 // the sidebar's width
 	sideHidden bool
-	search     string          // the sidebar's search
-	fold       map[string]bool // the machines whose threads the sidebar folds
+	search     string               // the sidebar's search
+	fold       map[string]bool      // the machines whose threads the sidebar folds
+	listing    time.Time            // until when a tab shown waits for the view to list it
+	termPane   ui.Handle            // the terminal on screen, which takes Control's keys off macOS
+	answered   string               // the pairing claim answered, until the view drops it
+	asked      map[string]time.Time // when each question showed: its keys arm a moment later
 }
 
 // cmd is the key that goes with the app's shortcuts: Command on macOS, Control elsewhere.
@@ -83,13 +87,14 @@ func (a *app) top() screen {
 	return a.stack[len(a.stack)-1]
 }
 
-func (a *app) push(s screen) { a.stack = append(a.stack, s) }
-func (a *app) back()         { a.stack = a.stack[:max(len(a.stack)-1, 0)] }
+func (a *app) push(s screen) { reread(); a.stack = append(a.stack, s) }
+func (a *app) back()         { reread(); a.stack = a.stack[:max(len(a.stack)-1, 0)] }
 
 // show shows a conversation by its tab id, Home for "", closing any screen above them.
 func (a *app) show(tab string) {
 	a.stack = nil
 	a.tab = tab
+	a.listing = time.Now().Add(5 * time.Second)
 }
 
 // say shows a line for a moment.
@@ -107,8 +112,16 @@ func (a *app) say(s string) {
 func (a *app) view(c *ui.Context) {
 	theme(c)
 	o, pal := a.o, p(c)
-	if a.tab != "" && o.tab(a.tab) == nil && o.state.Up {
-		a.tab = "" // closed elsewhere
+	// A tab just opened is shown before the view lists it; one it no longer lists was closed elsewhere.
+	if a.tab != "" && o.tab(a.tab) == nil && o.state.Up && time.Now().After(a.listing) {
+		a.tab = ""
+	}
+	// The terminals of conversations closed elsewhere end with them.
+	for id, s := range a.shells {
+		if o.state.Up && o.tab(id) == nil && id != a.tab {
+			s.close()
+			delete(a.shells, id)
+		}
 	}
 	if a.top().kind == "" && a.tab != "" {
 		o.show([]string{a.tab})
@@ -179,6 +192,7 @@ func (a *app) close(id string) {
 	}
 	if s := a.shells[id]; s != nil {
 		s.close()
+		delete(a.shells, id)
 	}
 	delete(a.term, id)
 	delete(a.drafts, id)
@@ -298,6 +312,10 @@ func (a *app) chooseModel(t *Tab) {
 // shortcuts are the menu's keys, as the Mac app had them.
 func (a *app) shortcuts(c *ui.Context) {
 	o := a.o
+	// Off macOS they are Control's keys, which a shell in the terminal needs (Ctrl+W, Ctrl+L…).
+	if runtime.GOOS != "darwin" && c.FocusWithin(a.termPane) {
+		return
+	}
 	c.OnShortcut(cmd, ui.KeyN, func() { a.show("") })
 	c.OnShortcut(cmd, ui.KeyW, func() {
 		if a.tab != "" {
@@ -340,8 +358,8 @@ func (a *app) move(by int) {
 		return
 	}
 	at := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == a.tab })
-	if at < 0 && by > 0 {
-		at = -1
+	if at < 0 && by < 0 {
+		at = 0 // from Home, back to the last
 	}
 	a.show(tabs[(at+by+len(tabs))%len(tabs)].ID)
 }
@@ -369,7 +387,7 @@ func (a *app) overlays(c *ui.Context) {
 	if asking != nil {
 		id := asking.ID
 		a.interrupt(c, *asking.Ask, func(v *string) { o.send("answer", "tab", id, "value", v) })
-	} else if cl := o.state.Claim; cl != nil {
+	} else if cl := o.state.Claim; cl != nil && cl.Claimant != a.answered {
 		a.pairRequest(c, *cl)
 	}
 	if a.picker != nil {

@@ -21,6 +21,7 @@ var pairing struct {
 	err        string
 	paired     time.Time         // when the other device said yes
 	inviting   bool              // an invitation is being made
+	invited    bool              // one was asked for since the app started
 	updating   map[string]string // what updating each device came to
 }
 
@@ -116,9 +117,10 @@ func (a *app) peerRow(c *ui.Context, m Machine) {
 	}
 	row := ui.Row(c).FillWidth().PaddingY(12).Gap(12)
 	row.Children(func() {
-		ink := pal.rule
-		if m.Connected {
-			ink = pal.fg
+		// Its own hue, as its threads have it; dim while it is away.
+		ink := hue(c, o.hue(m.ID), pal.fg)
+		if !m.Connected {
+			ink = pal.rule
 		}
 		dot(c, ink, 8, busy, false)
 		ui.Column(c).Grow(1).Basis(0).Children(func() {
@@ -192,7 +194,7 @@ func (a *app) inviteScreen(c *ui.Context) {
 		pairing.inviting = false
 	}
 	invite := func() {
-		pairing.inviting = true
+		pairing.inviting, pairing.invited = true, true
 		then(o, func(_ any, err error) {
 			if err != nil {
 				pairing.inviting = false
@@ -200,7 +202,8 @@ func (a *app) inviteScreen(c *ui.Context) {
 			}
 		}, "invite")
 	}
-	if inv == nil && !pairing.inviting {
+	// Asked for once on its own; again only by "new code", so a refusal is not asked again each frame.
+	if inv == nil && !pairing.invited {
 		invite()
 	}
 	page(c, func() { header(c, "Invite a device", "", a.back, nil) }, func() {
@@ -219,7 +222,7 @@ func (a *app) inviteScreen(c *ui.Context) {
 			command += "…"
 		}
 		ui.Row(c).FillWidth().Children(func() {
-			label(c, "on the other computer, run").Grow(1)
+			label(c, "photograph it with a phone, or run on the other computer").Grow(1)
 			ui.Text(c, left).FontSize(labelSize).TextColor(pal.meta)
 		})
 		ink := pal.meta
@@ -242,7 +245,7 @@ func (a *app) inviteScreen(c *ui.Context) {
 				mygo.Clipboard.WriteText(code)
 				a.say("copied")
 			}
-			if (inv != nil && !valid) && btn(c, "new code", true, pal.fg, pal.bg) {
+			if (inv == nil && !pairing.inviting || inv != nil && !valid) && btn(c, "new code", true, pal.fg, pal.bg) {
 				invite()
 			}
 		})
@@ -252,7 +255,7 @@ func (a *app) inviteScreen(c *ui.Context) {
 			dot(c, pal.mute, 8, true, false)
 			ui.Text(c, "waiting for the other device").TextColor(pal.mute)
 		})
-		ui.Text(c, "A phone pastes the code in its Bridge screen. You approve it here by fingerprint once it claims the code. The code works once, for ten minutes.").
+		ui.Text(c, "A phone photographs the code, or pastes it in its Bridge screen. You approve it here by fingerprint once it claims the code. The code works once, for ten minutes.").
 			FontSize(labelSize + 1).TextColor(pal.meta).PaddingY(4)
 	})
 }
@@ -372,6 +375,8 @@ func (a *app) pairRequest(c *ui.Context, claim Claim) {
 		Message: "Check the other device shows this fingerprint:\n" + claim.Claimant + "\nAllowing lets it read and drive this computer's conversations, run what they run, and start Orb here.",
 		Choices: []string{"allow", "deny"},
 	}, func(v *string) {
+		// Answered once: the claim stays in the view's state until its next reading of the machines.
+		a.answered = claim.Claimant
 		if v != nil && *v == "allow" {
 			a.o.send("approve")
 		} else {

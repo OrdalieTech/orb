@@ -38,9 +38,11 @@ func (a *app) sidebar(c *ui.Context) {
 				}
 			}
 			for _, m := range o.home.Machines {
-				var threads []Entry
-				for _, e := range o.home.Entries {
-					if e.Machine == m.ID && !e.Open && (q == "" || strings.Contains(strings.ToLower(e.Title), q)) {
+				// The first 60 threads show; nothing is copied, as this runs each frame.
+				threads := make([]*Entry, 0, 60)
+				for i := range o.home.Entries {
+					e := &o.home.Entries[i]
+					if len(threads) < cap(threads) && e.Machine == m.ID && !e.Open && (q == "" || strings.Contains(strings.ToLower(e.Title), q)) {
 						threads = append(threads, e)
 					}
 				}
@@ -51,8 +53,8 @@ func (a *app) sidebar(c *ui.Context) {
 				if a.fold[m.ID] {
 					continue
 				}
-				for _, e := range threads[:min(len(threads), 60)] {
-					a.threadRow(c.Key(e.Key), e)
+				for _, e := range threads {
+					a.threadRow(c.Key(e.Key), *e)
 				}
 			}
 		})
@@ -211,6 +213,7 @@ func (a *app) foot(c *ui.Context) {
 					e.Tooltip(s.tip)
 				}
 				if press(e) {
+					reread()
 					a.stack = []screen{{kind: s.kind, peer: o.state.Self}}
 				}
 			}

@@ -43,9 +43,6 @@ type reply struct {
 // device is what the view calls this machine.
 const device = "this computer"
 
-// maxFrame bounds a line of the view: a Bridge frame (1 MiB) and its envelope.
-const maxFrame = 1<<20 + 1024
-
 func newOrb(win *mygo.Window, alert func(tab, title, text string)) *Orb {
 	o := &Orb{win: win, alert: alert, rows: map[string][]Row{}, replies: map[string]chan reply{}}
 	o.state.Summary = "starting Bridge…"
@@ -81,7 +78,9 @@ func executable(p string) bool {
 // run keeps `orb app` running for as long as the app lives; one that ends starts again, hears what
 // this side shows, and sends everything again.
 func (o *Orb) run() {
+	wait := time.Second
 	for {
+		began := time.Now()
 		err := o.serve()
 		o.mu.Lock()
 		o.in = nil
@@ -90,19 +89,43 @@ func (o *Orb) run() {
 			delete(o.replies, id)
 		}
 		o.mu.Unlock()
-		if err != nil {
-			o.win.Update(func() { o.state.Summary = "orb did not start: " + err.Error() })
-			time.Sleep(5 * time.Second)
-		} else {
-			time.Sleep(time.Second)
+		// One that keeps failing is started less and less often, and says why.
+		if time.Since(began) > 30*time.Second {
+			wait = time.Second
 		}
+		o.win.Update(func() { o.state.Up, o.state.Summary = false, "orb app ended: "+err.Error() })
+		time.Sleep(wait)
+		wait = min(wait*2, 30*time.Second)
 	}
+}
+
+// tail keeps the end of what a process wrote, to say why it ended.
+type tail struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (t *tail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.b = append(t.b, p...)
+	t.b = t.b[max(len(t.b)-512, 0):]
+	return len(p), nil
+}
+
+func (t *tail) last() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	lines := strings.Split(strings.TrimSpace(string(t.b)), "\n")
+	return lines[len(lines)-1]
 }
 
 func (o *Orb) serve() error {
 	cmd := exec.Command(binary(), "app", "--name", device)
 	cmd.Env = environment()
 	cmd.Dir, _ = os.UserHomeDir()
+	errs := &tail{}
+	cmd.Stderr = errs
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -114,22 +137,35 @@ func (o *Orb) serve() error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	o.mu.Lock()
-	o.in = in.(*os.File)
-	o.mu.Unlock()
-	var visible bool
-	var shown []string
-	mygo.RunOnMain(func() { visible, shown = o.visible, o.shown })
-	o.send("hello", "budget", 4)
-	o.send("visible", "on", visible)
-	o.send("show", "tabs", shown)
-	lines := bufio.NewScanner(out)
-	lines.Buffer(make([]byte, 64<<10), maxFrame)
-	for lines.Scan() {
-		o.heard(lines.Bytes())
+	// On the main thread, so a `show` the view sends meanwhile cannot overtake this one.
+	mygo.RunOnMain(func() {
+		o.mu.Lock()
+		o.in = in.(*os.File)
+		o.mu.Unlock()
+		o.send("hello", "budget", 4)
+		o.send("visible", "on", o.visible)
+		o.send("show", "tabs", o.shown)
+	})
+	// A line is as long as what it carries: a whole conversation, after hello or earlier messages.
+	lines := bufio.NewReaderSize(out, 64<<10)
+	for {
+		line, err := lines.ReadBytes('\n')
+		if len(line) > 0 {
+			o.heard(line)
+		}
+		if err != nil {
+			break
+		}
 	}
-	return nil
+	_ = cmd.Process.Kill()
+	err = cmd.Wait()
+	if why := errs.last(); why != "" {
+		return errors.New(why)
+	}
+	if err == nil {
+		err = errors.New("it stopped")
+	}
+	return err
 }
 
 func (o *Orb) heard(line []byte) {
@@ -166,7 +202,8 @@ func (o *Orb) heard(line []byte) {
 			}
 		})
 	case "home":
-		home := o.home
+		// Whole each time, and never decoded into what the window draws: the view leaves out what is false.
+		var home Home
 		_ = json.Unmarshal(line, &home)
 		o.win.Update(func() { o.home = home })
 	case "rows":
@@ -230,6 +267,9 @@ func (o *Orb) ask(name string, args ...any) (json.RawMessage, error) {
 		}
 		return r.Result, nil
 	case <-time.After(2 * time.Minute):
+		o.mu.Lock()
+		delete(o.replies, id)
+		o.mu.Unlock()
 		return nil, errors.New("no answer")
 	}
 }

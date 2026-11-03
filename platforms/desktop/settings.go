@@ -38,6 +38,16 @@ var (
 	pluginPages   = map[string]*pluginPage{}
 )
 
+// reread has the screens of settings read their machine again the next time they show.
+func reread() {
+	for _, pg := range providerPages {
+		pg.loaded = false
+	}
+	for _, pg := range pluginPages {
+		pg.loaded = false
+	}
+}
+
 func (a *app) providerPage(peer string) *providerPage {
 	pg := providerPages[peer]
 	if pg == nil {
@@ -97,7 +107,9 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 		}
 	}
 	sub := a.machineName(peer) + " · reading Orb's providers…"
-	if len(pg.providers) > 0 {
+	if pg.note != "" && len(pg.providers) == 0 {
+		sub = a.machineName(peer)
+	} else if len(pg.providers) > 0 {
 		sub = fmt.Sprintf("%s · %d ready · %d to choose from", a.machineName(peer), ready, len(pg.providers))
 	}
 	page(c, func() {
@@ -110,11 +122,11 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 				accounts = append(accounts, ac)
 			}
 		}
+		if pg.note != "" {
+			ui.Text(c, pg.note).FontSize(small).TextColor(rupture).PaddingY(6)
+		}
 		if len(accounts) > 0 {
 			label(c, "accounts · quota left").Padding(22, 0, 4).TextColor(pal.meta)
-			if pg.note != "" {
-				ui.Text(c, pg.note).FontSize(small).TextColor(rupture).PaddingY(6)
-			}
 			for _, ac := range accounts {
 				a.accountRow(c.Key("a:"+ac.Provider+"/"+ac.ID), peer, ac)
 			}

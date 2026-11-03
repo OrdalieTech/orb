@@ -75,7 +75,7 @@ func (a *app) terminal(c *ui.Context, t *Tab) {
 		s = a.newShell(t)
 		a.shells[t.ID] = s
 	}
-	ui.Column(c).Fill().Background(pal.bg).Children(func() {
+	ui.Column(c).Fill().Background(pal.bg).Bind(&a.termPane).Children(func() {
 		rule(c, pal.rule)
 		ui.Row(c).FillWidth().Padding(4, 8, 4, margin).Gap(8).Children(func() {
 			at := device
