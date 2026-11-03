@@ -9,13 +9,17 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+// gutter is where the sidebar's grounds start (rows, fields, the MAGI); their text starts 8 in,
+// where the wordmark's does.
+const gutter = 12
+
 // sidebar is the conversations open, then each machine's threads, newest first, in sections that
 // fold; at the foot, how things stand and the screens of settings. Selecting a thread opens it.
 func (a *app) sidebar(c *ui.Context) {
 	o, pal := a.o, p(c)
 	tb := c.TitleBar()
 	ui.Column(c).Fill().Background(pal.raised).Children(func() {
-		ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, 10, 0, tb.Left+margin).DragWindow().Children(func() {
+		ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, 12, 0, tb.Left+gutter+8).DragWindow().Children(func() {
 			ink := pal.meta
 			if a.tab == "" && a.top().kind == "" {
 				ink = pal.fg
@@ -29,8 +33,8 @@ func (a *app) sidebar(c *ui.Context) {
 				a.focus++
 			}
 		})
-		field(c, &a.search, "Search threads", false).Margin(0, 10, 6).FontSize(small)
-		ui.Scroll(c).Grow(1).Basis(0).FillWidth().Padding(4, 8, 12).Children(func() {
+		field(c, &a.search, "Search threads", false).Margin(0, gutter, 8).PaddingX(8).FontSize(small)
+		ui.Scroll(c).Grow(1).Basis(0).FillWidth().Padding(4, gutter, 12).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.search))
 			section := 0 // numbered, as a HUD numbers its panels
 			if len(o.state.Tabs) > 0 && q == "" {
@@ -188,9 +192,9 @@ func (a *app) machineHeader(c *ui.Context, m Machine, index int) {
 // foot is how things stand (a newer Orb, a question waiting, work going on) and the settings.
 func (a *app) foot(c *ui.Context) {
 	o, pal := a.o, p(c)
-	ui.Column(c).FillWidth().Padding(8, 10, 10).Gap(6).BorderWidth(1, 0, 0, 0).BorderColor(pal.rule).Children(func() {
+	ui.Column(c).FillWidth().Padding(12, gutter).Gap(8).BorderWidth(1, 0, 0, 0).BorderColor(pal.rule).Children(func() {
 		a.magi(c)
-		ui.Row(c).FillWidth().Gap(8).PaddingX(6).Children(func() {
+		ui.Row(c).FillWidth().Gap(8).PaddingX(8).Children(func() {
 			ink := pal.meta
 			if strings.HasPrefix(o.state.Summary, "needs you") {
 				ink = rupture
@@ -201,7 +205,7 @@ func (a *app) foot(c *ui.Context) {
 		ui.Row(c).FillWidth().Gap(2).Children(func() {
 			for _, s := range []struct{ kind, name, tip string }{{"providers", "providers", keys(",")}, {"plugins", "plugins", ""}, {"bridge", "bridge", ""}} {
 				on := a.top().kind == s.kind
-				e := ui.Row(c.Key(s.kind)).Padding(5, 7).Radius(soft).Children(func() {
+				e := ui.Row(c.Key(s.kind)).Padding(4, 8).Radius(soft).Children(func() {
 					ink := pal.mute
 					if on {
 						ink = pal.fg
@@ -265,13 +269,13 @@ func (a *app) magi(c *ui.Context) {
 			if !v.yes {
 				ink, verdict = rupture, "否決"
 			}
-			cell := ui.Column(c.Key(v.name)).Grow(1).Basis(0).MinWidth(0).Padding(5, 7).Gap(1).Radius(4).Border(1, pal.rule.Alpha(0.8)).Tooltip(v.tip)
+			cell := ui.Column(c.Key(v.name)).Grow(1).Basis(0).MinWidth(0).Padding(6, 8).Gap(2).Radius(4).Border(1, pal.rule.Alpha(0.8)).Tooltip(v.tip)
 			cell.Children(func() {
+				label(c, v.name)
 				ui.Row(c).FillWidth().Gap(4).Children(func() {
-					label(c, v.name).Grow(1).Basis(0).MinWidth(0)
+					ui.Text(c, v.value).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(ink).SingleLine()
 					ui.Text(c, verdict).FontSize(labelSize).FontWeight(strong).TextColor(ink)
 				})
-				ui.Text(c, v.value).FontSize(12).TextColor(ink).SingleLine()
 			})
 			if v.bridge && press(cell) {
 				reread()

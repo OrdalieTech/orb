@@ -40,7 +40,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 	// is narrower.
 	ui.Column(c).FillWidth().PaddingX(margin).Children(func() {
 		shade := map[bool]float32{true: 0.35, false: 0.07}[c.Theme().Dark]
-		box := ui.Column(c).FillWidth().MaxWidth(column+48).Margin(0, ui.Auto, 14).Radius(16).Background(pal.raised).
+		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, 16).Radius(16).Background(pal.raised).
 			Border(1, pal.rule.Alpha(0.7)).Shadow(0, 6, 24, 0, ui.RGBA(0, 0, 0, shade))
 		box.Children(func() {
 			// Typing / opens the palette: the app's commands and the core's, filtered as you type.
@@ -112,7 +112,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			if busy {
 				hint = "steer or queue a message"
 			}
-			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(2, 12).FillWidth().Padding(16, 18, 10).FontSize(size).LineHeight(1.5).
+			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(3, 14).FillWidth().Padding(20, inset, 12).FontSize(size).LineHeight(1.5).
 				Placeholder(hint).PlaceholderColor(pal.meta).AutoFocus()
 			for _, m := range promptPattern.FindAllStringSubmatchIndex(draft, -1) {
 				start, end := m[0], m[1]
@@ -156,7 +156,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			}
 			// Below the text, on one line: where it runs and its model, as quiet controls that open out of
 			// themselves, and at right the one action, round, filled when there is something to send.
-			ui.Row(c).FillWidth().Padding(0, 8, 8, 8).Gap(2).Children(func() {
+			ui.Row(c).FillWidth().Padding(0, 12, 12, inset-9).Gap(2).Children(func() {
 				peer := o.state.Self
 				if t != nil {
 					peer = t.Peer
@@ -254,6 +254,10 @@ func quotePath(p string) string {
 	}
 	return p
 }
+
+// The box reaches past the reading column by overhang a side, and sets its text at inset, so the
+// text lines up with the column's and the controls' marks with the text.
+const overhang, inset = 16, overhang + margin
 
 // control is a quiet button in the prompt box: its content on no ground until the pointer is over it.
 func control(c *ui.Context, body func()) ui.Element {
