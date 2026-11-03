@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Orb.app for iOS, with Xcode: the SwiftUI app (platforms/apple, shared with macOS), the orb
+# Builds Orb.app for iOS, with Xcode: the SwiftUI app (platforms/apple), the orb
 # linked into it (cmd/orb as a static library, its entry core/app.go), and the face and mark it
 # shares with the Android app. A simulator build is signed ad hoc; a device build is signed, and
 # packed for App Store Connect, when an Apple Distribution identity and its profile are named.

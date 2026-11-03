@@ -431,12 +431,18 @@ Each holds until changed by owner-signed decision.
   packages and verifies them.
 - **Apps render `orb app`; their logic lives once, in Go.** `bridge/view` follows every
   conversation on Bridge and serves apps state and rows ready to draw; an app renders them and
-  sends intents back, so Android, macOS and the platforms that follow behave the same and a fix
-  lands everywhere. Each app bundles its `orb` and talks to the machine's Bridge, the CLI's own.
-- **The macOS app is SwiftUI built by SwiftPM, without an Xcode project.** `platforms/macos/build.sh`
-  assembles `Orb.app` with its `orb` as a helper, the Android app's face and mark, and a hardened
-  signature; it renders `orb app` like every app, its own code being the drawing and AppKit's text.
-  Its one dependency is SwiftTerm (MIT), a native terminal view: idle, it costs nothing.
+  sends intents back, so Android, iOS, the desktop and the platforms that follow behave the same
+  and a fix lands everywhere. Each app bundles its `orb` and talks to the machine's Bridge, the
+  CLI's own.
+- **The desktop app is Go, drawn by MyGo, on macOS, Linux and Windows.** `platforms/desktop` renders
+  `orb app` with MyGo's native UI (pure Go, the system's libraries reached through purego, no cgo),
+  in the Android app's look, as a desktop app: a sidebar of conversations by machine, the
+  conversation or a settings screen beside it. It is a Go module of its own, so the toolkit never
+  reaches Orb's module or the `orb` binary; it links one Orb package, `internal/qr`, for the
+  pairing code. `build.sh` builds each platform's `orb` into the app's resources and `mygo build`
+  packages and signs the apps. Its terminal is MyGo's plugin over Ghostty's libghostty-vt, a
+  native library pinned by SHA-256 that the build puts in the app, as SwiftTerm was the Mac app's.
+  It replaced the SwiftUI Mac app: `platforms/apple` is iOS's alone. Owner, 2026-11-03.
 - **The Android app runs the orb binary, not a gomobile library.** It executes the unmodified
   `CGO_ENABLED=0` CLI (`liborb.so`) as `orb app`, its own conversations included: the phone is a
   Bridge peer of itself (the owner reaches its own machine's instances and `host.*` with the

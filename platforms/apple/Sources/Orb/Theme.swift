@@ -1,23 +1,12 @@
 import SwiftUI
-#if os(macOS)
-import AppKit
-typealias NativeColor = NSColor
-typealias NativeFont = NSFont
-typealias NativeImage = NSImage
-#else
 import UIKit
 typealias NativeColor = UIColor
 typealias NativeFont = UIFont
 typealias NativeImage = UIImage
-#endif
 
 /// What the app calls the device it runs on, and whether its conversations can run on it: an
 /// iPhone runs no Orb of its own yet, and starts them on the machines it is paired with.
-#if os(macOS)
-let device = "this Mac", local = true
-#else
 let device = "this iPhone", local = false
-#endif
 
 /// Ordalie tokens, as on Android (ui/Theme.kt): paper and charcoal, one rupture red, a blue kept
 /// for remote Orbs acting here. Each tone follows the system's light or dark appearance.
@@ -40,11 +29,7 @@ enum Ink {
     }
 
     private static func tone(_ light: UInt32, _ dark: UInt32) -> Color {
-        #if os(macOS)
-        Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(rgb: dark) : NSColor(rgb: light) })
-        #else
         Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
-        #endif
     }
 }
 
@@ -65,21 +50,13 @@ extension Color {
 
 extension Image {
     init(native: NativeImage) {
-        #if os(macOS)
-        self.init(nsImage: native)
-        #else
         self.init(uiImage: native)
-        #endif
     }
 }
 
-/// One scale, the Mac's denser than the phone's: body 14 · small 12 · label 10 there.
+/// One scale: body 16 · small 13 · label 11.
 enum Size {
-    #if os(macOS)
-    static let body: CGFloat = 14, small: CGFloat = 12, label: CGFloat = 10
-    #else
     static let body: CGFloat = 16, small: CGFloat = 13, label: CGFloat = 11
-    #endif
 }
 
 extension Font {
@@ -128,7 +105,7 @@ struct Dot: View {
 }
 
 extension View {
-    /// The surface a box floats on over the conversation: Liquid Glass where macOS has it (built
+    /// The surface a box floats on over the conversation: Liquid Glass where iOS has it (built
     /// with its SDK), the raised ink with a hairline before; [accent] edges it either way.
     @ViewBuilder func surface(_ radius: CGFloat, accent: Color? = nil) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)
@@ -152,12 +129,7 @@ struct Rule: View {
 
 /// Puts [text] on the clipboard.
 @MainActor func copy(_ text: String) {
-    #if os(macOS)
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
-    #else
     UIPasteboard.general.string = text
-    #endif
 }
 
 /// Parts of a line that are there, between dots: "mac · orb · 3h".

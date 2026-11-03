@@ -1,0 +1,5 @@
+/dist/
+# What build.sh puts in the app: the orb it runs, its icon.
+/resources/
+/icon.png
+/desktop

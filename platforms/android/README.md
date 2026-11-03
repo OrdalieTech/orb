@@ -12,7 +12,7 @@ Compose UI ── core/View ── orb app (bridge/view) ── this phone's Bri
 - `core/Lines` is the only transport: one long-lived `orb app` process speaking JSON lines.
 - `core/View` keeps what the view sends (its state, Home, each followed conversation's rows) and
   sends intents back. Following Orbs, folding their events into rows, markdown, interrupts,
-  pairing and sign-in are the view's, in Go, shared with the macOS app.
+  pairing and sign-in are the view's, in Go, shared with the iOS and desktop apps.
 - `ui/` draws six primitives — session row, turn, tool line, prompt box, slot, interrupt — in
   Ubuntu Sans Mono (variable, so medium and semibold are real) on Ordalie's palette. One bar holds
   the wordmark (Home), a tab per open session once there are several, and the menu.

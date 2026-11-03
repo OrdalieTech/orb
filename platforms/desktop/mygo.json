@@ -1,0 +1,11 @@
+{
+  "name": "Orb",
+  "slug": "orb-desktop",
+  "identifier": "tech.ordalie.orb",
+  "version": "0.0.0-dev",
+  "copyright": "Ordalie",
+  "icon": "icon.png",
+  "resources": ["../android/app/src/main/res/font/ubuntu_sans_mono.ttf"],
+  "urlSchemes": ["orb-bridge"],
+  "macos": { "minimumSystemVersion": "13.0", "infoPlist": { "LSApplicationCategoryType": "public.app-category.developer-tools" } }
+}

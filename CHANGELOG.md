@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Orb for the desktop (`platforms/desktop`) replaces the SwiftUI Mac app, on macOS, Linux and Windows: Go drawn by MyGo's native UI, in the Android app's look, with a sidebar of the conversations open and every machine's threads, the conversation, providers, plugins and Bridge beside it, the pairing code as a QR code a phone photographs, and the terminal where a conversation runs under it (⌘J). `platforms/desktop/build.sh` packages each platform's app with its `orb`; `platforms/apple` now builds the iOS app only.
+
 - Orb follows pi 1.5.0 (`UPSTREAM.lock`). Streamed tool calls and Anthropic and Bedrock blocks no longer carry `partialJson`, `partialArgs`, `streamIndex`, `index` or `redactedChunks` in events or failed-stream transcripts, and usage costs record `totalFromProvider` (false for a catalog estimate; a sum is provider-reported only when every part is), as pi 1.5 writes them.
 
 - OpenRouter's billed cost is the turn total only with its full accounting: a BYOK key adds the upstream inference cost, and a response without `is_byok` keeps the catalog estimate. Claude through OpenRouter's Anthropic Messages endpoint gets it too.

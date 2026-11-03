@@ -29,6 +29,7 @@ orb/
 │                             selfupdate/, teamenv/ (team agent credentials received off the environment)
 ├── platforms/websocket/      Bridge's pinned TLS stream over WebSockets (browser, Worker, native listener)
 ├── platforms/agent/          container image for one team agent; harness/ is its entrypoint, orb-agent
+├── platforms/desktop/        the desktop app (macOS, Linux, Windows): `orb app` drawn by MyGo, a module of its own
 ├── engine/                    port of packages/agent     — loop, Agent, harness
 │   └── harness/              session repo, compaction, skills, system-prompt, env abstraction
 ├── tui/                      port of packages/tui       — renderer + components, zero framework
@@ -871,7 +872,7 @@ token resends one paragraph), `run` (thoughts and tool calls folded with their s
 outputs and thoughts in full come with `detail`) and `note`. Images are references fetched at
 the size shown. The app reports the tabs on screen and how many it can keep following off
 screen; the view paces the rest. Transports differ per platform (a pipe to the bundled `orb` on
-Android and macOS; in-process for iOS and wasm later); the protocol does not.
+Android and the desktop; in-process for iOS and wasm later); the protocol does not.
 
 
 ## 6. Conformance architecture
@@ -937,6 +938,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | coder/websocket v1.8.15 | optional Bridge WebSocket transport | Reuses the installed dependency for native and browser streams; Bridge retains pinned TLS authentication inside the stream |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
 | @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
+| egoist/mygo v0.7.4 | `platforms/desktop` (its own module) | native UI, windows and packaging for the desktop app in pure Go (purego, no cgo); its terminal plugin loads libghostty-vt, pinned and bundled by `mygo build`. Never imported by Orb's module |
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `platforms/native/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
 
 Rejected on measurement: `invopop/jsonschema` (`internal/jsonschema` emits TypeBox-style inline

@@ -14,9 +14,6 @@ struct Preferences: View {
             Devices().page("Bridge").tabItem { Label("Bridge", systemImage: "point.3.connected.trianglepath.dotted") }.tag("pair")
             Plugins().page("Plugins").tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }.tag("plugins")
         }
-        #if os(macOS)
-        .frame(width: 780, height: 600)
-        #endif
         .font(.mono())
     }
 }
@@ -24,15 +21,10 @@ struct Preferences: View {
 extension View {
     /// A pane of Settings: on the phone, a page of the sheet, titled, that Done closes.
     @ViewBuilder func page(_ title: String) -> some View {
-        #if os(macOS)
-        self
-        #else
         modifier(Page(title: title))
-        #endif
     }
 }
 
-#if os(iOS)
 private struct Page: ViewModifier {
     let title: String
     @Environment(\.dismiss) private var dismiss
@@ -42,7 +34,6 @@ private struct Page: ViewModifier {
         }
     }
 }
-#endif
 
 /// Every provider a machine offers and its accounts, as Internet Accounts shows them: the list at
 /// left, ready ones first, and what the selected one holds and offers at right; with none
@@ -69,16 +60,9 @@ private struct Providers: View {
         }
     }
 
-    /// The list beside what the selected provider holds, on the Mac; on the phone, a page it opens.
+    /// The providers; what one holds is a page it opens.
     @ViewBuilder private var split: some View {
-        #if os(macOS)
-        HSplitView {
-            list.padding(.top, 8).padding(.horizontal, 8).frame(minWidth: 230, idealWidth: 250, maxWidth: 300)
-            form(selected).frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
-        }
-        #else
         list.navigationDestination(for: String.self) { form($0) }
-        #endif
     }
 
     private var list: some View {
@@ -113,11 +97,7 @@ private struct Providers: View {
                 ForEach(rows) { p in
                     let label = Label(p.name, systemImage: p.ready ? "checkmark.circle.fill" : p.methods.contains(where: \.account) ? "person.crop.circle" : "key")
                         .badge(p.ready ? p.models : 0)
-                    #if os(macOS)
-                    label.tag(p.id)
-                    #else
                     NavigationLink(value: p.id) { label }
-                    #endif
                 }
             }
         }
@@ -254,9 +234,6 @@ private struct SignIn: View {
             }
         }
         .padding(24)
-        #if os(macOS)
-        .frame(width: 460)
-        #endif
         .font(.mono())
         .onChange(of: l.url, initial: true) { if ["browser", "code"].contains(l.state) { open(l.url) } }
         .onChange(of: l.code, initial: true) {
