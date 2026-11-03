@@ -40,7 +40,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 	// is narrower.
 	ui.Column(c).FillWidth().PaddingX(margin).Children(func() {
 		shade := map[bool]float32{true: 0.35, false: 0.07}[c.Theme().Dark]
-		box := ui.Column(c).FillWidth().MaxWidth(column+80).Margin(0, ui.Auto, 14).Radius(16).Background(pal.raised).
+		box := ui.Column(c).FillWidth().MaxWidth(column+48).Margin(0, ui.Auto, 14).Radius(16).Background(pal.raised).
 			Border(1, pal.rule.Alpha(0.7)).Shadow(0, 6, 24, 0, ui.RGBA(0, 0, 0, shade))
 		box.Children(func() {
 			// Typing / opens the palette: the app's commands and the core's, filtered as you type.
@@ -112,7 +112,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			if busy {
 				hint = "steer or queue a message"
 			}
-			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(1, 12).FillWidth().Padding(14, 16, 8).FontSize(size).LineHeight(1.5).
+			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(2, 12).FillWidth().Padding(16, 18, 10).FontSize(size).LineHeight(1.5).
 				Placeholder(hint).PlaceholderColor(pal.meta).AutoFocus()
 			for _, m := range promptPattern.FindAllStringSubmatchIndex(draft, -1) {
 				start, end := m[0], m[1]

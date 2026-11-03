@@ -69,6 +69,15 @@ func (a *app) sidebar(c *ui.Context) {
 func sideRow(c *ui.Context, on bool, body func()) ui.Element {
 	pal := p(c)
 	e := ui.Row(c).FillWidth().Padding(6, 8).Gap(9).Radius(8)
+	// A red tick at its left edge marks the row the pointer is on, and stays on the one shown: a
+	// HUD's target marker. It grows from the middle in 120 ms.
+	tick := e.AnimateTo("tick", map[bool]float32{true: 1, false: 0}[on || e.Hovered()], hovering)
+	if tick > 0 {
+		e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
+			h := (r.H - 12) * tick
+			pt.Fill(ui.Rect{X: r.X, Y: r.Y + (r.H-h)/2, W: 2, H: h}, rupture, 1)
+		})
+	}
 	if on {
 		return e.Background(pal.bg).Children(body)
 	}

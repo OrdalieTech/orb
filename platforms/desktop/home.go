@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -22,13 +23,19 @@ func (a *app) homeScreen(c *ui.Context) {
 				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
 			})
 			ui.Row(c).Margin(14, 0, 0).Gap(12).AlignItems(ui.End).Children(func() {
-				stretch(c, "NEW SESSION", 58, pal.fg, 1)
+				// The title wipes in the first time the app shows it, as an episode's card cuts in.
+				card := stretch(c, "NEW SESSION", 58, pal.fg, 1)
+				if !a.carded {
+					v := reveal(card, "card", 60*time.Millisecond)
+					wipe(card, v, pal.bg)
+					a.carded = v == 1
+				}
 				ui.Box(c).Size(12, 12).Background(rupture).Margin(0, 0, 10)
 			})
 			a.launching(c)
 		})
 		ui.Box(c).Height(14)
-		ui.Column(c).FillWidth().MaxWidth(680+80).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
+		ui.Column(c).FillWidth().MaxWidth(680+48).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
 			if !e.Open && len(recent) < 5 {
