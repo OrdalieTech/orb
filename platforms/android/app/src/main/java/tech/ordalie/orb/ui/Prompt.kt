@@ -135,15 +135,22 @@ fun PromptBox(
             AnimatedContent(mode, transitionSpec = { (fadeIn(tween(180)) + scaleIn(tween(180), 0.9f)) togetherWith fadeOut(tween(120)) }, label = "act") { m ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     when (m) {
-                        0 -> Btn("stop", color = Ink.Rupture, shape = Pill) { session?.let { c.v.send("abort", "tab" to it.id) } }
+                        0 -> Round("■", Ink.Rupture) { session?.let { c.v.send("abort", "tab" to it.id) } }
                         1 -> {
-                            Btn("queue", shape = Pill) { take()?.let(onSend) }
-                            Btn("steer", inverted = true, shape = Pill) { take()?.let { text -> session?.let { c.v.send("steer", "tab" to it.id, "text" to text) } } }
+                            Box(Modifier.press { take()?.let(onSend) }.padding(horizontal = 8.dp, vertical = 6.dp)) { T("queue", size = 14.sp, weight = Medium, color = p.mute) }
+                            Round("↑", p.fg) { take()?.let { text -> session?.let { c.v.send("steer", "tab" to it.id, "text" to text) } } }
                         }
-                        else -> Btn("send", inverted = true, shape = Pill) { take()?.let(onSend) }
+                        else -> Round("↑", if (value.text.isBlank() && cites.isEmpty()) p.rule else p.fg) { take()?.let(onSend) }
                     }
                 }
             }
         }
     }
 }
+
+/** The box's one action, as on the desktop: a filled circle with its mark. */
+@Composable
+private fun Round(mark: String, fill: Color, onClick: () -> Unit) =
+    Box(Modifier.press(onClick = onClick).size(36.dp).clip(Pill).background(fill), contentAlignment = Alignment.Center) {
+        T(mark, size = 17.sp, weight = Strong, color = p.bg)
+    }
