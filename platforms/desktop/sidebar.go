@@ -31,8 +31,10 @@ func (a *app) sidebar(c *ui.Context) {
 		field(c, &a.search, "Search threads", false).Margin(0, 10, 6).FontSize(small)
 		ui.Scroll(c).Grow(1).Basis(0).FillWidth().Padding(4, 8, 12).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.search))
+			section := 0 // numbered, as a HUD numbers its panels
 			if len(o.state.Tabs) > 0 && q == "" {
-				sideLabel(c, "open", "")
+				section++
+				hudLabel(c, section, "open", "").Padding(14, 8, 4)
 				for i, t := range o.state.Tabs {
 					a.tabRow(c.Key(t.ID), t, i)
 				}
@@ -49,7 +51,8 @@ func (a *app) sidebar(c *ui.Context) {
 				if len(threads) == 0 && (m.Self || q != "") {
 					continue
 				}
-				a.machineHeader(c.Key("m:"+m.ID), m)
+				section++
+				a.machineHeader(c.Key("m:"+m.ID), m, section)
 				if a.fold[m.ID] {
 					continue
 				}
@@ -62,24 +65,14 @@ func (a *app) sidebar(c *ui.Context) {
 	})
 }
 
-func sideLabel(c *ui.Context, name, state string) {
-	ui.Row(c).FillWidth().Padding(14, 8, 4).Children(func() {
-		label(c, name).Grow(1).TextColor(p(c).meta)
-		ui.Text(c, state).FontSize(labelSize).TextColor(p(c).meta)
-	})
-}
-
 // sideRow is one line of the sidebar: where it runs, its name, what it says at right.
 func sideRow(c *ui.Context, on bool, body func()) ui.Element {
 	pal := p(c)
-	e := ui.Row(c).FillWidth().Padding(6, 8).Gap(9).Radius(soft)
-	switch {
-	case on:
-		e.Background(pal.bg)
-	case e.Hovered():
-		e.Background(pal.bg.Alpha(0.6))
+	e := ui.Row(c).FillWidth().Padding(6, 8).Gap(9).Radius(8)
+	if on {
+		return e.Background(pal.bg).Children(body)
 	}
-	return e.Children(body)
+	return hover(e, pal.bg.Alpha(0.6)).Children(body)
 }
 
 func (a *app) tabRow(c *ui.Context, t Tab, at int) {
@@ -94,11 +87,11 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).FontWeight(w).SingleLine()
 		// Answers that came while it was out of sight, until it shows.
 		if t.Unread > 0 {
-			ui.Text(c, strconv.Itoa(t.Unread)).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
+			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}
-	}).Drag(t.ID).Tooltip(strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · "))
+	}).Drag(t.ID).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · ")), "\n"))
 	e.ContextMenu(func(m *ui.Menu) {
 		if m.Item("Rename…").Chosen() {
 			a.renameTab(t)
@@ -135,7 +128,7 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 			state = "open"
 		}
 		ui.Text(c, state).FontSize(12).TextColor(sink)
-	}).Tooltip(tidy(e.CWD))
+	}).Tooltip(strings.Join(nonEmpty(e.Title, tidy(e.CWD)), "\n"))
 	row.ContextMenu(func(m *ui.Menu) {
 		if m.Item("Rename…").Chosen() {
 			a.renameThread(e)
@@ -148,17 +141,18 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 
 // machineHeader names a machine in its hue; a click folds its threads, its menu reaches its folders,
 // providers and plugins.
-func (a *app) machineHeader(c *ui.Context, m Machine) {
+func (a *app) machineHeader(c *ui.Context, m Machine, index int) {
 	pal := p(c)
 	e := ui.Row(c).FillWidth().Padding(14, 8, 4).Gap(8).Children(func() {
-		dot(c, hue(c, a.o.hue(m.ID), pal.fg), 6, false, false)
-		label(c, m.Name).Grow(1).Basis(0)
+		state := ""
+		if !m.Connected && !m.Self {
+			state = "offline"
+		}
+		hudLabel(c, index, m.Name, state).Grow(1).Basis(0)
+		dot(c, hue(c, a.o.hue(m.ID), pal.fg), 6, false, true)
 		mark := "⌄"
 		if a.fold[m.ID] {
 			mark = "›"
-		}
-		if !m.Connected && !m.Self {
-			ui.Text(c, "offline").FontSize(labelSize).TextColor(pal.meta)
 		}
 		ui.Text(c, mark).FontSize(12).TextColor(pal.meta)
 	})

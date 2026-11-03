@@ -22,6 +22,7 @@ type picker struct {
 	options  []string
 	selected string
 	pick     func(string)
+	at       *ui.Handle // the trigger it opens out of; none, a dialog
 }
 
 // renaming is a name to change, with the current one ready to edit, and maybe a way to delete it.
@@ -70,6 +71,9 @@ type app struct {
 	termPane   ui.Handle            // the terminal on screen, which takes Control's keys off macOS
 	answered   string               // the pairing claim answered, until the view drops it
 	asked      map[string]time.Time // when each question showed: its keys arm a moment later
+	keyed      bool                 // what shows now was opened by a key, so it shows at once
+	whereAt    ui.Handle            // the prompt box's place and model, which their popovers open out of
+	modelAt    ui.Handle
 }
 
 // cmd is the key that goes with the app's shortcuts: Command on macOS, Control elsewhere.
@@ -163,7 +167,7 @@ func (a *app) view(c *ui.Context) {
 			}
 		})
 	}
-	ui.Column(c).Fill().Background(pal.bg).LetterSpacing(-0.4).Children(func() {
+	ui.Column(c).Fill().Background(pal.bg).LineHeight(1.45).Children(func() {
 		if a.sideHidden {
 			main()
 			return
@@ -237,7 +241,7 @@ func (a *app) send(t *Tab, text string) {
 		}
 		switch r.Nav {
 		case "model":
-			a.chooseModel(t)
+			a.chooseModel(t, true)
 		case "home":
 			a.show("")
 		case "pair":
@@ -269,6 +273,7 @@ func (a *app) opened(tab string, err error) {
 // chooseWhere chooses where the next message goes: a new conversation on this computer, an Orb
 // running somewhere, or a folder of a machine.
 func (a *app) chooseWhere() {
+	a.keyed = false
 	var running []Running
 	var hosts []Machine
 	for _, m := range a.o.home.Machines {
@@ -284,7 +289,7 @@ func (a *app) chooseWhere() {
 	for _, m := range hosts {
 		options = append(options, "a folder on "+m.Name+"…")
 	}
-	a.picker = &picker{title: "run on", options: options, pick: func(s string) {
+	a.picker = &picker{title: "run on", options: options, at: &a.whereAt, pick: func(s string) {
 		at := slices.Index(options, s)
 		switch {
 		case at == 0:
@@ -297,7 +302,8 @@ func (a *app) chooseWhere() {
 	}}
 }
 
-func (a *app) chooseModel(t *Tab) {
+func (a *app) chooseModel(t *Tab, keyed bool) {
+	a.keyed = keyed
 	if t == nil || len(t.Models) == 0 {
 		peer := a.o.state.Self
 		if t != nil {
@@ -333,7 +339,7 @@ func (a *app) shortcuts(c *ui.Context) {
 		}
 	})
 	c.OnShortcut(cmd, ui.KeyL, func() { a.focus++ })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyM, func() { a.chooseModel(o.tab(a.tab)) })
+	c.OnShortcut(cmd|ui.Shift, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyC, func() {
 		if t := o.tab(a.tab); t != nil {
 			a.send(t, "/copy")
@@ -404,51 +410,84 @@ func (a *app) overlays(c *ui.Context) {
 	if a.viewing[0] != "" {
 		a.viewer(c)
 	}
-	if a.notice != "" {
-		a.toast(c)
-	}
+	a.toast(c)
 }
 
-// sheet is a card rising from the bottom over a dimmed window; a click outside or Escape closes it.
-func sheet(c *ui.Context, open *bool, width float32, body func()) {
+// popover opens out of its trigger, which at is bound to: from 95% and transparent to whole in
+// 200 ms, easing out, growing from the trigger's side; a press outside or Escape closes it. One a
+// key opened shows at once, as anything a key does.
+func popover(c *ui.Context, at *ui.Handle, open *bool, width float32, keyed bool, body func()) {
 	pal := p(c)
-	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(0, 0, 0, 0.4)).Justify(ui.End).Padding(0, 0, 24, 0)
-		panel.Width(width).MaxHeightPercent(80).Radius(pane+4).Background(pal.bg).Border(1, pal.rule).
-			Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 40}, Animation: &ui.Smooth}).Shadow(0, 12, 40, 0, ui.RGBA(0, 0, 0, 0.25))
+	anchor := c.Resolve(*at)
+	if !anchor.Valid() {
+		*open = false
+		return
+	}
+	_, h := c.Size()
+	above := anchor.Bounds().Y > h/2 // where PopoverBase finds room for it
+	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
+		panel.Width(width).Margin(8, 0, 0, 0).Radius(12).Background(pal.bg).Border(1, pal.rule).Clip().
+			Shadow(0, 12, 32, 0, ui.RGBA(0, 0, 0, map[bool]float32{true: 0.4, false: 0.14}[c.Theme().Dark]))
+		if above {
+			panel.TransformOrigin(0, 1)
+		} else {
+			panel.TransformOrigin(0, 0)
+		}
+		panel.DrawOver(func(pt *ui.Painter, r ui.Rect) { brackets(pt, r, pal.meta) })
+		if !keyed {
+			panel.Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.95}, Exit: &ui.Motion{Scale: 0.95}, Animation: &opening})
+		}
 		body()
 	})
 }
 
+// modal is a dialog in the middle of the dimmed window, which it was not opened from, so it grows
+// from its centre: from 96% and transparent in 250 ms, easing out.
+func modal(c *ui.Context, open *bool, width float32, body func()) {
+	pal := p(c)
+	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
+		backdrop.Background(ui.RGBA(0, 0, 0, 0.32)).Transition(ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Animation: &showing})
+		panel.Width(width).MaxHeightPercent(80).Radius(14).Background(pal.bg).Border(1, pal.rule).Clip().
+			Shadow(0, 16, 48, 0, ui.RGBA(0, 0, 0, 0.25)).
+			Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Exit: &ui.Motion{Scale: 0.96}, Animation: &showing})
+		body()
+	})
+}
+
+// menuRow is a choice in a popover or a dialog: its text, and a dot by the one chosen.
+func menuRow(c *ui.Context, text string, chosen bool) ui.Element {
+	pal := p(c)
+	return hover(ui.Row(c).FillWidth().Padding(8, 12).Radius(8), pal.raised).Children(func() {
+		w := 400
+		if chosen {
+			w = strong
+		}
+		ui.Text(c, text).Grow(1).Basis(0).FontWeight(w).SingleLine().Tooltip(text)
+		if chosen {
+			dot(c, pal.fg, 6, false, false)
+		}
+	})
+}
+
 func (a *app) pickerSheet(c *ui.Context) {
-	pk, pal := a.picker, p(c)
+	pk := a.picker
 	open := true
-	sheet(c, &open, 460, func() {
-		label(c, pk.title).Padding(18, margin, 6)
-		ui.Scroll(c).MaxHeight(440).Children(func() {
+	list := func() {
+		label(c, pk.title).Padding(12, 16, 6)
+		ui.Scroll(c).MaxHeight(420).Padding(0, 4, 6).Children(func() {
 			for _, o := range pk.options {
-				sel := o == pk.selected
-				row := ui.Row(c.Key(o)).FillWidth().Padding(11, margin).Children(func() {
-					w := 400
-					if sel {
-						w = strong
-					}
-					ui.Text(c, o).Grow(1).FontSize(15).FontWeight(w).SingleLine()
-					if sel {
-						dot(c, pal.fg, 8, false, false)
-					}
-				})
-				if row.Hovered() {
-					row.Background(pal.raised)
-				}
-				if press(row) {
+				if press(menuRow(c.Key(o), o, o == pk.selected)) {
 					a.picker = nil
 					pk.pick(o)
 				}
 			}
 		})
-		ui.Box(c).Height(10)
-	})
+	}
+	if pk.at != nil {
+		popover(c, pk.at, &open, 300, a.keyed, list)
+	} else {
+		modal(c, &open, 420, list)
+	}
 	if !open {
 		a.picker = nil
 	}
@@ -458,7 +497,7 @@ func (a *app) pickerSheet(c *ui.Context) {
 func (a *app) renameSheet(c *ui.Context) {
 	r, pal := a.rename, p(c)
 	open := true
-	sheet(c, &open, 460, func() {
+	modal(c, &open, 460, func() {
 		label(c, "rename").Padding(18, margin, 0)
 		ui.Row(c).Padding(10, 12, 16, margin).Gap(8).Children(func() {
 			done := func() {
@@ -467,7 +506,7 @@ func (a *app) renameSheet(c *ui.Context) {
 				}
 				a.rename = nil
 			}
-			if ui.TextInputBase(c, &r.name).Grow(1).FontSize(17).FontWeight(medium).AutoFocus().Submitted() {
+			if ui.TextInputBase(c, &r.name).Grow(1).FontSize(17).FontWeight(medium).LetterSpacing(-0.3).AutoFocus().Submitted() {
 				done()
 			}
 			if r.delete != nil && btn(c, "delete", false, rupture, pal.bg) {
@@ -484,13 +523,19 @@ func (a *app) renameSheet(c *ui.Context) {
 	}
 }
 
-// toast is one line at the bottom that fades away.
+// toast is one line at the bottom: it rises in and sinks out the same way, slower and softer than
+// the rest, as a passing note.
 func (a *app) toast(c *ui.Context) {
 	pal := p(c)
 	ui.Overlay(c, func() {
-		e := ui.Row(c).Attach(ui.AnchorBottom, ui.AnchorBottom).Bottom(110).Padding(8, 14).Radius(soft).Background(pal.fg)
-		e.Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 12}}).Children(func() {
-			ui.Text(c, a.notice).FontSize(small).TextColor(pal.bg).MaxWidth(520).MaxLines(3)
+		ui.Column(c).Attach(ui.AnchorBottom, ui.AnchorBottom).Bottom(96).Children(func() {
+			if a.notice == "" {
+				return
+			}
+			slide := ui.Animation{Duration: 400 * time.Millisecond, Ease: ui.EaseInOut}
+			ui.Row(c.Key(a.notice)).Padding(8, 14).Radius(10).Background(pal.fg).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.18)).
+				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}, Animation: &slide}).
+				Children(func() { ui.Text(c, a.notice).FontSize(small).TextColor(pal.bg).MaxWidth(520).MaxLines(3) })
 		})
 	})
 }

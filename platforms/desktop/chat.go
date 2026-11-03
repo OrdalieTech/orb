@@ -15,8 +15,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// size is conversation text, in DIPs; column is how wide it reads.
-const size, column = 15, 820
+// size is conversation text, in DIPs; column is how wide it reads: some 80 characters of it.
+const size, column = 15, 720
 
 // turns groups rows by speaker: what the person said, or everything Orb said and did until the next one.
 // Turns are slices of rows, not copies, as the view groups them each frame: a patch writes the rows
@@ -147,13 +147,16 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 		case !t.Online:
 			parts = append(parts, "offline")
 		}
-		ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).FontSize(small).TextColor(ink).SingleLine()
+		ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).MinWidth(0).FontSize(small).TextColor(ink).SingleLine()
 		if t.Context > 0 {
 			ink := pal.meta
 			if t.Context > 0.8 {
 				ink = rupture
 			}
-			ui.Textf(c, "%d%% context", int(math.Round(t.Context*100))).FontSize(small).TextColor(ink)
+			ui.Row(c).Gap(6).Shrink(0).Tooltip("Context in use").Children(func() {
+				gauge(c, t.Context, 0.8)
+				ui.Textf(c, "%d%%", int(math.Round(t.Context*100))).FontSize(12).TextColor(ink).SingleLine()
+			})
 		}
 		if t.Usage != nil && len(t.Usage.Windows) > 0 {
 			w := slices.MinFunc(t.Usage.Windows, func(x, y Window) int { return int(x.Left - y.Left) })
@@ -161,14 +164,14 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 			if w.Left < 15 {
 				ink = rupture
 			}
-			if press(ui.Textf(c, "%s %d%% left", w.Name, int(math.Round(w.Left))).FontSize(small).TextColor(ink).SingleLine()) {
+			if press(ui.Textf(c, "%s %d%% left", w.Name, int(math.Round(w.Left))).FontSize(12).TextColor(ink).SingleLine().Shrink(0)) {
 				a.usage(t)
 			}
 		}
 		if t.Cost > 0 {
-			ui.Textf(c, "$%.2f", t.Cost).FontSize(small).TextColor(pal.meta)
+			ui.Textf(c, "$%.2f", t.Cost).FontSize(12).TextColor(pal.meta).SingleLine().Shrink(0)
 		}
-		term := ui.Row(c).Padding(4, 8).Radius(soft).Children(func() { ui.Text(c, ">_").FontWeight(strong) }).Tooltip("Terminal  " + keys("J"))
+		term := ui.Row(c).Padding(4, 8).Radius(soft).Shrink(0).Children(func() { ui.Text(c, ">_").FontWeight(strong) }).Tooltip("Terminal  " + keys("J"))
 		if a.term[t.ID] {
 			term.Background(pal.raised)
 		}
@@ -195,8 +198,10 @@ func (a *app) usage(t *Tab) {
 
 // patternBlue says another Orb is driving this computer. Blue fills space here and nowhere else.
 func patternBlue(c *ui.Context, stop func()) {
+	hazard(c, 6, blue, texte.Alpha(0.5))
 	ui.Column(c).FillWidth().Background(blue).Padding(14, margin).Children(func() {
 		stretch(c, "PATTERN BLUE", 30, texte, 1)
+		label(c, "パターン青 · ANOTHER ORB IS DRIVING").TextColor(texte.Alpha(0.75)).MarginY(6)
 		ui.Row(c).FillWidth().MarginY(10).Children(func() {
 			ui.Text(c, "A peer is prompting this computer").Grow(1).FontWeight(medium).TextColor(texte)
 			if btn(c, "stop", true, texte, blue) {
@@ -266,6 +271,9 @@ func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
 	})
 }
 
+// fold opens and closes what a line holds: its height and its ink together, in 200 ms.
+var fold = ui.ElementTransition{Enter: &ui.Motion{Collapse: true}, Exit: &ui.Motion{Collapse: true}, Animation: &opening}
+
 // worked folds a run of actions into one line, as the TUI folds exploration, naming what runs now;
 // it opens to the actions.
 func (a *app) worked(c *ui.Context, r Row, t *Tab) {
@@ -285,7 +293,7 @@ func (a *app) worked(c *ui.Context, r Row, t *Tab) {
 			a.expanded[t.ID+r.Key] = !open
 		}
 		if open {
-			ui.Column(c).FillWidth().PaddingStart(16).Children(func() {
+			ui.Column(c).FillWidth().PaddingStart(16).Transition(fold).Children(func() {
 				for _, x := range r.Actions {
 					a.action(c.Key(x.Key), x, t)
 				}
@@ -312,7 +320,7 @@ func (a *app) action(c *ui.Context, x Action, t *Tab) {
 			return
 		}
 		d := a.details[key]
-		ui.Column(c).FillWidth().Margin(4, 0, 0, 16).Padding(12).Gap(8).Radius(pane).Background(pal.raised).Border(1, pal.rule).Children(func() {
+		ui.Column(c).FillWidth().Margin(4, 0, 0, 16).Padding(12).Gap(8).Radius(pane).Background(pal.raised).Border(1, pal.rule).Transition(fold).Children(func() {
 			if x.Verb == "thought" {
 				ui.Text(c, d["text"]).FontSize(size - 2).TextColor(pal.mute)
 				return
@@ -448,7 +456,7 @@ func markdown(c *ui.Context, b Block, size float32, ink ui.Color) {
 		if b.Level <= 2 {
 			s = size + 3
 		}
-		spans(c, b.Spans).Margin(4, 0, 0, indent).FontSize(s).FontWeight(strong).TextColor(ink)
+		spans(c, b.Spans).Margin(6, 0, 0, indent).FontSize(s).FontWeight(strong).LetterSpacing(-0.02 * s).LineHeight(1.25).TextColor(ink)
 	case "li":
 		ui.Row(c).FillWidth().PaddingStart(indent).AlignItems(ui.Start).Children(func() {
 			w := size * 1.8
@@ -479,11 +487,11 @@ func markdown(c *ui.Context, b Block, size float32, ink ui.Color) {
 			if b.Type == "art" {
 				// A drawing scrolls, its lines flush.
 				ui.ScrollHorizontal(c).FillWidth().Children(func() {
-					ui.Text(c, b.Text).NoWrap().FontSize(size - 3).LineHeight(1.1).LetterSpacing(0)
+					ui.Text(c, b.Text).NoWrap().FontSize(size - 3).LineHeight(1.1)
 				})
 			} else {
 				// Tabs draw as nothing in a text: code keeps its indentation as spaces.
-				ui.Text(c, strings.ReplaceAll(b.Text, "\t", "    ")).FontSize(size - 3).TextColor(pal.fg)
+				ui.Text(c, strings.ReplaceAll(b.Text, "\t", "    ")).FontSize(size - 3).LineHeight(1.5).TextColor(pal.fg)
 			}
 		})
 	case "table":
@@ -514,7 +522,7 @@ func spans(c *ui.Context, ss []Span) ui.Element {
 				e.Strikethrough()
 			}
 			if s.Code {
-				e.TextColor(pal.mute).TextBackground(pal.raised)
+				e.FontSize(size - 1.5).TextColor(pal.mute).TextBackground(pal.raised)
 			}
 		}
 	})
@@ -570,18 +578,20 @@ func table(c *ui.Context, rows [][][]Span, size, indent float32) {
 // interrupt is a plugin stopping the world: the only place red fills space. The word names who is
 // asking; answer gets nil to dismiss it.
 func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
-	word := "QUESTION"
+	word, caption := "QUESTION", "質問 · A QUESTION FOR YOU"
 	switch ask.Owner {
 	case "permissions":
-		word = "APPROVAL"
+		word, caption = "APPROVAL", "承認要求 · APPROVAL REQUIRED"
 	case "bridge":
-		word = "PAIR"
+		word, caption = "PAIR", "接続要求 · PAIRING REQUEST"
 	}
 	ink := charcoal
 	open := true
 	ui.DialogBase(c, &open, func(backdrop, panel ui.Element) {
-		backdrop.Background(rupture)
-		panel.Fill().Background(rupture).Padding(c.TitleBar().Height, 0, 0)
+		backdrop.Background(rupture).Transition(ui.ElementTransition{Enter: &ui.Motion{}, Animation: &opening})
+		panel.Fill().Background(rupture).Padding(c.TitleBar().Height, 0, 0).Transition(ui.ElementTransition{Enter: &ui.Motion{}, Animation: &opening})
+		// Framed in warning stripes, as an emergency is in Evangelion.
+		hazard(c, 14, rupture, ink)
 		reply := func(v string) { answer(&v) }
 		// A key answers only once the question has been on screen a moment, so typing meant for the
 		// prompt cannot answer it; a pairing takes a click, after reading the fingerprint.
@@ -599,7 +609,10 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 			if len(word) > 5 {
 				squeeze = 0.6
 			}
-			ui.Box(c).Padding(22, margin).Children(func() { stretch(c, word, 150, ink, squeeze) })
+			ui.Column(c).Padding(22, margin, 10).Gap(10).Children(func() {
+				stretch(c, word, 150, ink, squeeze)
+				label(c, caption).TextColor(ink)
+			})
 			// Orb's prompts put the request on the first line and its evidence below.
 			first, rest, _ := strings.Cut(ask.Title, "\n")
 			ui.Text(c, first).PaddingX(margin).FontSize(title + 2).TextColor(ink)
@@ -651,6 +664,7 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 				open = false
 			}
 		})
+		hazard(c, 14, rupture, ink)
 	})
 	if !open {
 		answer(nil)
@@ -690,17 +704,17 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 			}
 		}, "accounts", "machine", peer)
 	}
-	sheet(c, &open, 560, func() {
-		ui.Row(c).FillWidth().Padding(18, margin, 0).AlignItems(ui.End).Children(func() {
-			ui.Column(c).Grow(1).Basis(0).Children(func() {
+	popover(c, &a.modelAt, &open, 400, a.keyed, func() {
+		ui.Row(c).FillWidth().Padding(14, 16, 0).AlignItems(ui.End).Children(func() {
+			ui.Column(c).Grow(1).Basis(0).Gap(2).Children(func() {
 				label(c, "model").TextColor(pal.meta)
-				ui.Text(c, cmp.Or(name, "none")).FontSize(title + 1).FontWeight(strong).SingleLine()
+				ui.Text(c, cmp.Or(name, "none")).FontSize(16).FontWeight(strong).SingleLine()
 			})
 			ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, t.Where}, func(s string) bool { return s == "" }), " · ")).
-				Margin(0, 0, 3, 12).FontSize(small).TextColor(pal.meta).SingleLine()
+				Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
 		})
-		field(c, &a.query, "Search models", false).Margin(10, 14).AutoFocus()
-		ui.Scroll(c).FillWidth().MaxHeight(380).Children(func() {
+		field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
+		ui.Scroll(c).FillWidth().MaxHeight(300).Padding(0, 4, 4).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.query))
 			var last string
 			for _, id := range t.Models {
@@ -710,22 +724,10 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				group, short, _ := strings.Cut(id, "/")
 				if group != last {
 					last = group
-					label(c.Key("h:"+group), group).TextColor(pal.meta).Padding(12, margin, 2)
+					label(c.Key("h:"+group), group).TextColor(pal.meta).Padding(10, 12, 2)
 				}
 				on := id == t.Model
-				row := ui.Row(c.Key(id)).FillWidth().Padding(9, margin).Children(func() {
-					w := 400
-					if on {
-						w = strong
-					}
-					ui.Text(c, short).Grow(1).FontSize(15).FontWeight(w).SingleLine()
-					if on {
-						dot(c, pal.fg, 8, false, false)
-					}
-				})
-				if row.Hovered() {
-					row.Background(pal.raised)
-				}
+				row := menuRow(c.Key(id), short, on)
 				if on && a.query == "" {
 					row.ScrollIntoView()
 				}
@@ -734,7 +736,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					a.model, a.query = "", ""
 				}
 			}
-			if press(ui.Text(c, "+ Provider").Padding(14, margin).FontWeight(medium).TextColor(pal.mute)) {
+			if press(menuRow(c, "+ provider", false).TextColor(pal.mute)) {
 				a.model = ""
 				a.push(screen{kind: "providers", peer: t.Peer})
 			}
@@ -743,7 +745,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 		// Reasoning is what changes most often: it sits last.
 		if len(t.Levels) > 0 {
 			rule(c, pal.rule)
-			ui.Column(c).FillWidth().Padding(12, margin, 16).Children(func() {
+			ui.Column(c).FillWidth().Padding(10, 16, 14).Children(func() {
 				ui.Row(c).FillWidth().Children(func() {
 					label(c, "reasoning").Grow(1).TextColor(pal.meta)
 					ui.Text(c, cmp.Or(reasoning[t.Thinking], t.Thinking)).FontSize(small).TextColor(pal.mute)
@@ -804,7 +806,7 @@ func (a *app) accountsOn(c *ui.Context, t *Tab, provider string) {
 					if win.Left < 15 {
 						ink = rupture
 					}
-					ui.Textf(c, "%s %d%% left", win.Name, int(math.Round(win.Left))).FontSize(small).TextColor(ink).SingleLine()
+					ui.Textf(c, "%s %d%% left", win.Name, int(math.Round(win.Left))).FontSize(12).TextColor(ink).SingleLine()
 				}
 			})
 			if !x.Active && press(row) {

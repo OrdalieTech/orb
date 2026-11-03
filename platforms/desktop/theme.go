@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,13 +33,27 @@ var (
 )
 
 // One scale, denser than the phone's: title 18 · body 14 · small 13 · label 10; three weights:
-// regular reads, medium marks, semibold names.
+// regular reads, medium marks, semibold names. One face, the Android app's: Ubuntu Sans Mono, set
+// without tracking at reading sizes (a monospace's cells are already tight), opened up for small
+// caps, closed a little for titles.
 const (
 	title, body, small, labelSize = 18, 14, 13, 10
 	medium, strong                = 500, 600
 	soft, pane                    = 6, 10 // radii: what you press or type in, what holds something
 	margin                        = 16
 	mono                          = "Ubuntu Sans Mono"
+)
+
+// Motion, in Emil Kowalski's terms: strong curves rather than the built-in ones, and UI under 300 ms.
+// Entering and pressing ease out; what moves on screen eases in and out. Nothing a key does animates.
+var (
+	easeOut   = ui.CubicBezier(0.23, 1, 0.32, 1)
+	easeInOut = ui.CubicBezier(0.77, 0, 0.175, 1)
+
+	pressing = ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut} // a press gives way
+	hovering = ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.EaseOut}
+	opening  = ui.Animation{Duration: 200 * time.Millisecond, Ease: easeOut} // popovers, folds
+	showing  = ui.Animation{Duration: 250 * time.Millisecond, Ease: easeOut} // dialogs
 )
 
 // p is the palette of the appearance the system shows.
@@ -85,18 +100,25 @@ func theme(c *ui.Context) {
 	c.SetTheme(&t)
 }
 
-// label is small caps in medium weight; everything else is sentence case.
+// label is small caps in medium weight, tracked out as small text wants; everything else is
+// sentence case.
 func label(c *ui.Context, s string) ui.Element {
-	return ui.Text(c, strings.ToUpper(s)).FontSize(labelSize).FontWeight(medium).LetterSpacing(0.2).TextColor(p(c).mute).SingleLine()
+	return ui.Text(c, strings.ToUpper(s)).FontSize(labelSize).FontWeight(medium).LetterSpacing(0.6).TextColor(p(c).mute).SingleLine()
 }
 
-// press makes e give way under the pointer, and reports a click on it.
+// press makes e give way under the pointer the moment it goes down (scaled to 0.97), and reports a
+// click on it.
 func press(e ui.Element) bool {
 	e.Cursor(ui.CursorPointer)
-	if e.Pressed() {
-		e.Opacity(0.75)
+	if s := e.AnimateTo("press", map[bool]float32{true: 0.97, false: 1}[e.Pressed()], pressing); s != 1 {
+		e.Scale(s, s)
 	}
 	return e.Clicked()
+}
+
+// hover is the ground an element takes under the pointer, eased in and out.
+func hover(e ui.Element, on ui.Color) ui.Element {
+	return e.Background(e.AnimateColor("hover", map[bool]ui.Color{true: on, false: on.Alpha(0)}[e.Hovered()], hovering))
 }
 
 // rule is a hairline separating regions (turns, rows of a table, the prompt), never words.
@@ -162,7 +184,8 @@ func dot(c *ui.Context, color ui.Color, size float32, pulse, square bool) ui.Ele
 	if square {
 		radius = 0
 	}
-	if !pulse {
+	// Reduce Motion keeps it still: a slow loop is what it asks to be spared.
+	if !pulse || c.Preferences().ReduceMotion {
 		return e.Background(color).Radius(radius)
 	}
 	// Painted, not built: a pulse built into the view (Element.Loop) builds the whole view every frame.
@@ -189,7 +212,7 @@ func where(c *ui.Context, n int, live, asks bool, here ui.Color) ui.Element {
 func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze float32) ui.Element {
 	size := height / 1.9 / 0.7 // the cap height of Ubuntu Sans Mono is about 0.7em
 	return ui.Row(c).Height(height).Children(func() {
-		ui.Text(c, text).Font(mono).FontSize(size).Bold().FixedLineHeight(size).LetterSpacing(-0.02*size).TextColor(color).NoWrap().
+		ui.Text(c, text).FontSize(size).Bold().FixedLineHeight(size).LetterSpacing(-0.02*size).TextColor(color).NoWrap().
 			Scale(squeeze, 1.9).TransformOrigin(0, 0.5)
 	})
 }
@@ -216,12 +239,12 @@ func actionLine(c *ui.Context, verb, target, result string, live, failed bool, o
 			}
 		})
 		ui.Text(c, verb).Width(80).FontSize(small).FontWeight(medium).TextColor(ink).SingleLine()
-		ui.Text(c, target).Grow(1).Basis(0).FontSize(small).TextColor(ink).SingleLine()
+		ui.Text(c, target).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine().Tooltip(target)
 		r := pal.meta
 		if failed {
 			r = rupture
 		}
-		ui.Text(c, result).MaxWidthPercent(30).MarginStart(8).FontSize(12).TextColor(r).SingleLine()
+		ui.Text(c, result).MaxWidthPercent(30).MarginStart(8).FontSize(11).TextColor(r).SingleLine()
 	})
 }
 
@@ -266,9 +289,10 @@ func section(c *ui.Context, name, state string, body func()) {
 	})
 }
 
-// ago is how long ago, in a word.
+// ago is how long ago, in a word, and a date past a week, which "45d" says worse.
 func ago(ms int64) string {
-	m := time.Since(time.UnixMilli(ms)).Minutes()
+	at := time.UnixMilli(ms)
+	m := time.Since(at).Minutes()
 	switch {
 	case m < 1:
 		return "now"
@@ -276,8 +300,72 @@ func ago(ms int64) string {
 		return strconv.Itoa(int(m)) + "m"
 	case m < 1440:
 		return strconv.Itoa(int(m/60)) + "h"
+	case m < 7*1440:
+		return strconv.Itoa(int(m/1440)) + "d"
+	case at.Year() == time.Now().Year():
+		return at.Format("Jan 2")
 	}
-	return strconv.Itoa(int(m/1440)) + "d"
+	return at.Format("Jan 2006")
+}
+
+// count says how many, singular for one: "1 thread", "3 threads".
+func count(n int, one string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + one + "s"
 }
 
 func abs(x float32) float32 { return max(x, -x) }
+
+// The NERV look, after Evangelion's interfaces: spent where it carries meaning (focus, a takeover,
+// a gauge, a title card), never on every row.
+
+// brackets draws a HUD's corner ticks just inside r, as Evangelion frames what it targets.
+func brackets(p *ui.Painter, r ui.Rect, ink ui.Color) {
+	const length, width = 10, 1.5
+	for _, k := range [4][2]float32{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+		x, y := r.X+k[0]*(r.W-width)+width/2, r.Y+k[1]*(r.H-width)+width/2
+		dx, dy := 1-2*k[0], 1-2*k[1] // inward
+		p.Line(x-dx*width/2, y, x+dx*length, y, width, ink)
+		p.Line(x, y-dy*width/2, x, y+dy*length, width, ink)
+	}
+}
+
+// hazard is a band of warning stripes: ink slanting over ground.
+func hazard(c *ui.Context, height float32, ground, ink ui.Color) ui.Element {
+	return ui.Box(c).FillWidth().Height(height).Background(ground).Stripes(ink, 6, 6, 45)
+}
+
+// gauge is a reading in segments, as Evangelion shows a synchronisation rate: lit up to value
+// (0 to 1), red past alarm.
+func gauge(c *ui.Context, value float64, alarm float64) ui.Element {
+	pal := p(c)
+	const segments = 10
+	lit := int(value*segments + 0.5)
+	return ui.Row(c).Gap(2).Shrink(0).Children(func() {
+		for i := range segments {
+			ink := pal.rule.Alpha(0.6)
+			switch {
+			case i < lit && value > alarm:
+				ink = rupture
+			case i < lit:
+				ink = pal.mute
+			}
+			ui.Box(c.Key(i)).Size(3, 10).Background(ink)
+		}
+	})
+}
+
+// hudLabel is a section's name as a HUD numbers it: its index, its name, a hairline to the edge.
+func hudLabel(c *ui.Context, index int, name, state string) ui.Element {
+	pal := p(c)
+	return ui.Row(c).FillWidth().Gap(8).Children(func() {
+		ui.Text(c, fmt.Sprintf("%02d", index)).FontSize(labelSize).FontWeight(strong).TextColor(rupture)
+		label(c, name).Shrink(1).MinWidth(0).TextColor(pal.meta)
+		ui.Box(c).Grow(1).Height(1).Background(pal.rule.Alpha(0.7))
+		if state != "" {
+			ui.Text(c, state).FontSize(labelSize).TextColor(pal.meta).Shrink(0)
+		}
+	})
+}
