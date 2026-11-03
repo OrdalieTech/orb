@@ -14,8 +14,20 @@ func (a *app) homeScreen(c *ui.Context) {
 	o, pal := a.o, p(c)
 	titleBar(c, func() {})
 	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
-		reading(c).MaxWidth(680).Gap(14).Children(func() {
-			stretch(c, "NEW SESSION", 34, pal.fg, 0.9)
+		// An Evangelion title card: the episode, its name in Japanese, the title stretched tall.
+		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
+			ui.Row(c).FillWidth().Gap(10).Children(func() {
+				ui.Text(c, fmt.Sprintf("第%03d話", len(o.home.Entries)+1)).FontSize(12).FontWeight(strong).TextColor(rupture)
+				label(c, "新規セッション · new session").TextColor(pal.meta)
+				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
+			})
+			ui.Column(c).Margin(14, 0, 0).Children(func() {
+				stretch(c, "NEW", 58, pal.fg, 1)
+				ui.Row(c).Gap(12).AlignItems(ui.End).Children(func() {
+					stretch(c, "SESSION", 58, pal.fg, 1)
+					ui.Box(c).Size(12, 12).Background(rupture).Margin(0, 0, 10)
+				})
+			})
 			a.launching(c)
 		})
 		ui.Box(c).Height(14)
