@@ -217,13 +217,16 @@ func where(c *ui.Context, n int, live, asks bool, here ui.Color) ui.Element {
 	return dot(c, color, 7, live, true)
 }
 
-// stretch is the EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed;
-// reserved for events and identities.
+// stretch is the EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed,
+// or with squeeze 0 compressed to fill its width; reserved for events and identities.
 //
 // The capitals are the font's own outlines, stretched as vectors and filled at the screen's
 // resolution: text laid out and then scaled would stretch its pixels.
 func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze float32) ui.Element {
 	if bold == nil {
+		if squeeze == 0 {
+			squeeze = 1
+		}
 		size := height / 1.9 / 0.7 // the cap height of Ubuntu Sans Mono is about 0.7em
 		return ui.Row(c).Height(height).Children(func() {
 			ui.Text(c, text).FontSize(size).Bold().FixedLineHeight(size).TextColor(color).NoWrap().Scale(squeeze, 1.9).TransformOrigin(0, 0.5)
@@ -233,17 +236,37 @@ func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze
 	caps, _ := bold.GlyphExtents(h)
 	sy := height / caps.YBearing // font units to DIPs, capitals filling the height
 	sx := sy / 1.9 * squeeze
-	track := -0.02 * float32(bold.Upem()) // a little tighter, as display type is set
-	var width float32
-	for _, r := range text {
-		g, _ := bold.NominalGlyph(r)
-		width += bold.HorizontalAdvance(g) + track
-	}
-	return ui.Box(c).Size((width-track)*sx, height).Label(text).Draw(func(p *ui.Painter, b ui.Rect) {
-		var path ui.Path
-		x := b.X
-		for _, r := range text {
+	// Letters are set by their ink, a fixed gap apart, as Matisse is: the mono's equal advances
+	// would leave an I or an S floating in its cell.
+	em := float32(bold.Upem())
+	set := func(at func(g ot.GID, x float32)) (x float32) {
+		for i, r := range text {
+			if r == ' ' {
+				x += 0.3 * em
+				continue
+			}
 			g, _ := bold.NominalGlyph(r)
+			ink, _ := bold.GlyphExtents(g)
+			if i > 0 && text[i-1] != ' ' {
+				x += 0.035 * em
+			}
+			at(g, x-ink.XBearing)
+			x += ink.Width
+		}
+		return x
+	}
+	width := set(func(ot.GID, float32) {})
+	e := ui.Box(c).Height(height).Label(text)
+	if squeeze == 0 {
+		e.FillWidth()
+	} else {
+		e.Width(width * sx)
+	}
+	return e.Draw(func(p *ui.Painter, b ui.Rect) {
+		var path ui.Path
+		sx := b.W / width
+		set(func(g ot.GID, gx float32) {
+			x := b.X + gx*sx
 			if o, ok := bold.GlyphDataOutline(g); ok {
 				for _, s := range o.Segments {
 					a := s.Args
@@ -265,8 +288,7 @@ func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze
 					}
 				}
 			}
-			x += (bold.HorizontalAdvance(g) + track) * sx
-		}
+		})
 		p.FillPath(&path, color)
 	})
 }
