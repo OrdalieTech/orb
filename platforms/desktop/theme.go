@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
 )
 
 // Ordalie tokens, as on Android (ui/Theme.kt): soft ink on sage paper, one rupture, a blue kept for
@@ -84,8 +87,15 @@ func loadFont() {
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "ubuntu_sans_mono.ttf")); err == nil {
 		_ = ui.RegisterFont(b, mono)
+		if face, err := font.ParseTTF(bytes.NewReader(b)); err == nil {
+			face.SetVariations([]font.Variation{{Tag: ot.MustNewTag("wght"), Value: 700}})
+			bold = face
+		}
 	}
 }
+
+// bold is Ubuntu Sans Mono Bold, whose outlines the title cards draw; nil without the font.
+var bold *font.Face
 
 // theme makes the system's light or dark theme Orb's: its face, its paper and ink.
 func theme(c *ui.Context) {
@@ -209,11 +219,55 @@ func where(c *ui.Context, n int, live, asks bool, here ui.Color) ui.Element {
 
 // stretch is the EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed;
 // reserved for events and identities.
+//
+// The capitals are the font's own outlines, stretched as vectors and filled at the screen's
+// resolution: text laid out and then scaled would stretch its pixels.
 func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze float32) ui.Element {
-	size := height / 1.9 / 0.7 // the cap height of Ubuntu Sans Mono is about 0.7em
-	return ui.Row(c).Height(height).Children(func() {
-		ui.Text(c, text).FontSize(size).Bold().FixedLineHeight(size).LetterSpacing(-0.02*size).TextColor(color).NoWrap().
-			Scale(squeeze, 1.9).TransformOrigin(0, 0.5)
+	if bold == nil {
+		size := height / 1.9 / 0.7 // the cap height of Ubuntu Sans Mono is about 0.7em
+		return ui.Row(c).Height(height).Children(func() {
+			ui.Text(c, text).FontSize(size).Bold().FixedLineHeight(size).TextColor(color).NoWrap().Scale(squeeze, 1.9).TransformOrigin(0, 0.5)
+		})
+	}
+	h, _ := bold.NominalGlyph('H')
+	caps, _ := bold.GlyphExtents(h)
+	sy := height / caps.YBearing // font units to DIPs, capitals filling the height
+	sx := sy / 1.9 * squeeze
+	track := -0.02 * float32(bold.Upem()) // a little tighter, as display type is set
+	var width float32
+	for _, r := range text {
+		g, _ := bold.NominalGlyph(r)
+		width += bold.HorizontalAdvance(g) + track
+	}
+	return ui.Box(c).Size((width-track)*sx, height).Label(text).Draw(func(p *ui.Painter, b ui.Rect) {
+		var path ui.Path
+		x := b.X
+		for _, r := range text {
+			g, _ := bold.NominalGlyph(r)
+			if o, ok := bold.GlyphDataOutline(g); ok {
+				for _, s := range o.Segments {
+					a := s.Args
+					px := func(i int) (float32, float32) { return x + a[i].X*sx, b.Y + height - a[i].Y*sy }
+					switch s.Op {
+					case ot.SegmentOpMoveTo:
+						path.MoveTo(px(0))
+					case ot.SegmentOpLineTo:
+						path.LineTo(px(0))
+					case ot.SegmentOpQuadTo:
+						x1, y1 := px(0)
+						x2, y2 := px(1)
+						path.QuadTo(x1, y1, x2, y2)
+					case ot.SegmentOpCubeTo:
+						x1, y1 := px(0)
+						x2, y2 := px(1)
+						x3, y3 := px(2)
+						path.CubeTo(x1, y1, x2, y2, x3, y3)
+					}
+				}
+			}
+			x += (bold.HorizontalAdvance(g) + track) * sx
+		}
+		p.FillPath(&path, color)
 	})
 }
 

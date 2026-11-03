@@ -35,7 +35,7 @@ func (a *app) homeScreen(c *ui.Context) {
 			a.launching(c)
 		})
 		ui.Box(c).Height(14)
-		ui.Column(c).FillWidth().MaxWidth(680+48).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
+		ui.Column(c).FillWidth().MaxWidth(680+2*overhang+2*margin).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
 			if !e.Open && len(recent) < 5 {
