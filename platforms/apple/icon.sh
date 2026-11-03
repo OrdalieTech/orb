@@ -1,6 +1,7 @@
 #!/bin/sh
 # Orb's icon at 1024 px: the Android mark (Ubuntu Mono Bold "ORB", stretched) on a dark tile inset
 # by <inset> px with rounded corners, as a Mac's; or, for 0, opaque and full bleed, as iOS wants it.
+# Drawn by AppKit on macOS, by librsvg's rsvg-convert elsewhere.
 #   icon.sh <out.png> <inset>
 set -eu
 res=$(cd "$(dirname "$0")/../android/app/src/main/res" && pwd)
@@ -13,6 +14,10 @@ awk -v i="$2" -v d="$mark" 'BEGIN {
 	printf "<rect x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\" rx=\"%g\" fill=\"#12151A\"/>\n", i, i, 1024 - 2 * i, 1024 - 2 * i, (i > 0 ? 185 * k : 0)
 	printf "<path transform=\"translate(%g %g) scale(%g)\" fill=\"#FAF9F6\" d=\"%s\"/>\n</svg>\n", i + 185 * k, i + 168 * k, 3.3 * k, d
 }' >"$tmp/icon.svg"
+if [ "$(uname)" != Darwin ]; then
+	rsvg-convert -w 1024 -h 1024 "$tmp/icon.svg" -o "$1"
+	exit
+fi
 cat >"$tmp/render.swift" <<'EOF'
 import AppKit
 let svg = NSImage(contentsOf: URL(filePath: CommandLine.arguments[1]))!

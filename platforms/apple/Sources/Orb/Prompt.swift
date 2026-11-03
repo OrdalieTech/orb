@@ -110,9 +110,6 @@ struct PromptBox<Place: View>: View {
                 }
                 return true
             }
-            #if os(macOS)
-            .frame(height: min(max(height, 22), 260))
-            #endif
             .overlay(alignment: .topLeading) {
                 if draft.wrappedValue.isEmpty {
                     Text(busy ? "steer or queue a message" : "What should we work on?").font(.mono(Size.body + 1)).foregroundStyle(Ink.meta).allowsHitTesting(false)
@@ -125,10 +122,6 @@ struct PromptBox<Place: View>: View {
                 Spacer(minLength: 0)
                 if let tab {
                     Gauges(t: tab)
-                    #if os(macOS)
-                    Button(">_") { nav.toggleTerminal(tab.id) }.buttonStyle(.plain).font(.mono(Size.body, .semibold))
-                        .foregroundStyle(nav.terminals.contains(tab.id) ? Ink.fg : Ink.mute).help("Terminal where it runs  ⌘J")
-                    #endif
                 }
                 if busy && draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Pill("stop", color: Ink.rupture) { orb.send("abort", ["tab": tab!.id]) }
@@ -265,11 +258,7 @@ private struct ModelPicker: View {
             .font(.mono(Size.small + 1)).padding(.horizontal, 14).padding(.vertical, 8)
             if !note.isEmpty { Text(note).font(.mono(Size.small)).foregroundStyle(Ink.rupture).padding(.horizontal, 14).padding(.bottom, 8) }
         }
-        #if os(macOS)
-        .frame(width: 380, height: 440)
-        #else
         .presentationDetents([.medium, .large])
-        #endif
         .onAppear {
             searching = true
             selected = t.model
@@ -395,15 +384,10 @@ struct Interrupt: View {
     }
 }
 
-#if os(macOS)
-private let shortcut = "⌘"
-#else
 private let shortcut = ""
-#endif
 
 enum Key { case enter, up, down, tab, escape }
 
-#if os(iOS)
 /// The text the prompt box edits: the system's own field, growing with what is typed, its cursor
 /// taken at the end; the box's buttons send.
 private struct Editor: View {
@@ -420,95 +404,3 @@ private struct Editor: View {
             .onChange(of: focus) { focused = true }
     }
 }
-#else
-/// The text the prompt box edits: AppKit's own, so typing, undo, dictation and the cursor behave as
-/// everywhere on the Mac; it reports its height and the keys the box acts on.
-private struct Editor: NSViewRepresentable {
-    @Binding var text: String
-    @Binding var cursor: Int
-    @Binding var height: CGFloat
-    let focus: Int // grows each time the box is asked for (⌘L)
-    let key: (Key) -> Bool
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        let view = scroll.documentView as! NSTextView
-        view.delegate = context.coordinator
-        view.font = .mono(Size.body + 1)
-        view.textColor = NSColor(Ink.fg)
-        view.insertionPointColor = NSColor(Ink.fg)
-        view.drawsBackground = false
-        view.isRichText = false
-        view.allowsUndo = true
-        view.isAutomaticQuoteSubstitutionEnabled = false
-        view.isAutomaticDashSubstitutionEnabled = false
-        view.textContainerInset = .zero
-        view.textContainer?.lineFragmentPadding = 0
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = false
-        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
-        return scroll
-    }
-
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        let view = scroll.documentView as! NSTextView
-        if focus != context.coordinator.parent.focus { view.window?.makeFirstResponder(view) }
-        context.coordinator.parent = self
-        if view.string != text {
-            view.string = text
-            view.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
-            context.coordinator.changed(view)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: Editor
-        init(_ parent: Editor) { self.parent = parent }
-
-        func textDidChange(_ note: Notification) {
-            guard let view = note.object as? NSTextView else { return }
-            parent.text = view.string
-            changed(view)
-        }
-
-        func textViewDidChangeSelection(_ note: Notification) {
-            guard let view = note.object as? NSTextView else { return }
-            let at = view.selectedRange().location
-            if parent.cursor != at { parent.cursor = at }
-        }
-
-        /// Tokens stay plain text on the wire; the box only draws them, skills inverted and citations underlined.
-        func changed(_ view: NSTextView) {
-            guard let store = view.textStorage, let layout = view.layoutManager, let container = view.textContainer else { return }
-            let all = NSRange(location: 0, length: store.length)
-            store.setAttributes([.font: NSFont.mono(Size.body + 1), .foregroundColor: NSColor(Ink.fg)], range: all)
-            for m in view.string.matches(of: /^\/[\w:.-]+|(?:^|\s)(\/skill:[\w.-]+|@\S+|#[\w-]+)/) {
-                let token = m.output.1 ?? m.output.0
-                let range = NSRange(token.startIndex..<token.endIndex, in: view.string)
-                if token.hasPrefix("/") {
-                    store.addAttributes([.foregroundColor: NSColor(Ink.bg), .backgroundColor: NSColor(Ink.fg)], range: range)
-                } else { store.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range) }
-            }
-            layout.ensureLayout(for: container)
-            let h = ceil(layout.usedRect(for: container).height)
-            if parent.height != h { parent.height = h }
-        }
-
-        func textView(_ view: NSTextView, doCommandBy selector: Selector) -> Bool {
-            switch selector {
-            case #selector(NSResponder.insertNewline(_:)):
-                // ⇧↩ and ⌥↩ break the line; ↩ alone is the box's.
-                if NSApp.currentEvent?.modifierFlags.intersection([.shift, .option]).isEmpty == false { return false }
-                return parent.key(.enter)
-            case #selector(NSResponder.moveUp(_:)): return parent.key(.up)
-            case #selector(NSResponder.moveDown(_:)): return parent.key(.down)
-            case #selector(NSResponder.insertTab(_:)): return parent.key(.tab)
-            case #selector(NSResponder.cancelOperation(_:)): return parent.key(.escape)
-            default: return false
-            }
-        }
-    }
-}
-#endif

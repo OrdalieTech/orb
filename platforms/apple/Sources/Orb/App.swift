@@ -2,13 +2,12 @@ import SwiftUI
 import UserNotifications
 
 /// Where the app is: the conversation shown (nil is the start screen, kept across launches), each
-/// one's draft and terminal, and Settings, its pane, and a pairing code to join there.
+/// one's draft, and Settings, its pane, and a pairing code to join there.
 @MainActor @Observable final class Nav {
     var tab = UserDefaults.standard.string(forKey: "tab") {
         didSet { UserDefaults.standard.set(tab, forKey: "tab") }
     }
     var drafts: [String: String] = [:]
-    var terminals: Set<String> = [] // the conversations whose terminal shows
     var inspector = false
     var picking = false // the model picker shows
     var focus = 0 // asked to focus the prompt box, each time it grows
@@ -17,18 +16,11 @@ import UserNotifications
     var machine = "" // the machine Settings shows the providers and plugins of: "" is this device
     var code = "" // a pairing code to join, from a link
     var answered = "" // the pairing claim already answered, until the view drops it
-    #if os(macOS)
-    @ObservationIgnored let shells = Terminals()
-    #endif
 
     /// Stops following a conversation; the one after it shows in its place.
     func close(_ id: String, _ orb: Orb) {
         let tabs = orb.state.tabs, rest = tabs.filter { $0.id != id }
         if tab == id, let at = tabs.firstIndex(where: { $0.id == id }) { tab = rest.isEmpty ? nil : rest[min(at, rest.count - 1)].id }
-        terminals.remove(id)
-        #if os(macOS)
-        shells.close(id)
-        #endif
         drafts[id] = nil
         orb.send("close", ["tab": id])
     }
@@ -38,11 +30,6 @@ import UserNotifications
         self.pane = pane
         machine = t?.remote == true ? t!.peer : ""
         settings = true
-    }
-
-    func toggleTerminal(_ id: String? = nil) {
-        guard let id = id ?? tab else { return }
-        if terminals.remove(id) == nil { terminals.insert(id) }
     }
 }
 
@@ -56,13 +43,8 @@ struct Outcome: Decodable, Empty {
 @main struct OrbApp: App {
     @State private var orb = Orb()
     @State private var nav = Nav()
-    #if os(macOS)
-    @NSApplicationDelegateAdaptor private var delegate: Delegate
-    #else
     @UIApplicationDelegateAdaptor private var delegate: Delegate
-    #endif
 
-    #if os(iOS)
     var body: some Scene {
         WindowGroup {
             Main().environment(orb).environment(nav)
@@ -72,61 +54,6 @@ struct Outcome: Decodable, Empty {
                 }
         }
     }
-    #else
-    var body: some Scene {
-        SwiftUI.Window("Orb", id: "main") {
-            Main().environment(orb).environment(nav)
-                .onAppear {
-                    orb.alert = delegate.notify
-                    delegate.open = { nav.tab = $0 }
-                }
-        }
-        .defaultSize(width: 980, height: 720)
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New Conversation") { nav.tab = nil }.keyboardShortcut("n")
-                Button("Close Conversation") { close() }.keyboardShortcut("w")
-            }
-            CommandMenu("Conversation") {
-                Button("Stop") { nav.tab.map { orb.send("abort", ["tab": $0]) } }.keyboardShortcut(".").disabled(nav.tab == nil)
-                Button("Model…") { nav.picking = true }.keyboardShortcut("m", modifiers: [.command, .shift]).disabled(nav.tab == nil)
-                Button("Terminal") { nav.toggleTerminal() }.keyboardShortcut("j").disabled(nav.tab == nil)
-                Button("Inspector") { nav.inspector.toggle() }.keyboardShortcut("i", modifiers: [.command, .option])
-                Button("Write a Message") { nav.focus += 1 }.keyboardShortcut("l")
-                Button("Copy Last Answer") {
-                    guard let tab = nav.tab else { return }
-                    Task {
-                        if let answer = try? await orb.ask("send", ["tab": tab, "text": "/copy"], as: Outcome.self).copy, !answer.isEmpty { copy(answer) }
-                    }
-                }
-                .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(nav.tab == nil)
-                Divider()
-                Button("Previous Conversation") { move(-1) }.keyboardShortcut("[", modifiers: [.command, .shift])
-                Button("Next Conversation") { move(1) }.keyboardShortcut("]", modifiers: [.command, .shift])
-            }
-        }
-        Settings { Preferences().environment(orb).environment(nav) }
-        MenuBarExtra { Status().environment(orb).environment(nav) } label: {
-            let tabs = orb.state.tabs
-            Image(systemName: tabs.contains { $0.ask != nil || $0.unread > 0 } ? "circle.inset.filled" : tabs.contains(where: \.busy) ? "circle.dotted" : "circle")
-        }
-    }
-
-    /// ⌘W closes the conversation shown in the main window; with none shown, or in another window, the window.
-    private func close() {
-        guard NSApp.keyWindow?.identifier?.rawValue == "main", let id = nav.tab, orb.tab(id) != nil else {
-            return NSApp.keyWindow?.performClose(nil) ?? ()
-        }
-        nav.close(id, orb)
-    }
-
-    private func move(_ by: Int) {
-        let tabs = orb.state.tabs
-        guard !tabs.isEmpty else { return }
-        let at = tabs.firstIndex { $0.id == nav.tab } ?? (by > 0 ? -1 : 0)
-        nav.tab = tabs[(at + by + tabs.count) % tabs.count].id
-    }
-    #endif
 }
 
 struct Main: View {
@@ -136,9 +63,6 @@ struct Main: View {
     var body: some View {
         @Bindable var nav = nav
         layout
-        #if os(macOS)
-        .frame(minWidth: 720, minHeight: 480)
-        #endif
         .font(.mono())
         .foregroundStyle(Ink.fg)
         .tint(Ink.fg)
@@ -174,21 +98,15 @@ struct Main: View {
 }
 
 extension Main {
-    /// The Mac lists conversations beside the one shown; the phone draws its own bar over it, as
-    /// the Android app does, with no system navigation.
+    /// The phone draws its own bar over the conversation, as the Android app does, with no system
+    /// navigation.
     @ViewBuilder private var layout: some View {
-        #if os(macOS)
-        NavigationSplitView {
-            Sidebar().navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 360)
-        } detail: { page }
-        #else
         VStack(spacing: 0) {
             Bar()
             Rule()
             page
         }
         .background(Ink.bg)
-        #endif
     }
 
     private var page: some View {
@@ -200,7 +118,6 @@ extension Main {
     }
 }
 
-#if os(iOS)
 /// The phone's one bar, as on Android: the wordmark, which is Home; a tab per open conversation,
 /// its square in the colour of the machine it runs on, red while it asks; the menu.
 private struct Bar: View {
@@ -240,28 +157,16 @@ private struct Bar: View {
         .overlay(alignment: .bottom) { Rectangle().fill(on ? Ink.fg : .clear).frame(height: 2) }
     }
 }
-#endif
 
 /// What the system tells the view and shows of it: whether the app is in front, a count on its
 /// icon of what waits for you (questions, answers not read yet), Settings, and links to pair.
 private struct Lifecycle: ViewModifier {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
-    #if os(macOS)
-    @Environment(\.openSettings) private var openSettings
-    #else
     @Environment(\.scenePhase) private var phase
-    #endif
 
     func body(content: Content) -> some View {
         let waiting = orb.state.tabs.reduce(0) { $0 + $1.unread + ($1.ask == nil ? 0 : 1) }
-        #if os(macOS)
-        content
-            .onChange(of: waiting, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in orb.visible(true) }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in orb.visible(false) }
-            .onChange(of: nav.settings) { if nav.settings { nav.settings = false; openSettings() } }
-        #else
         @Bindable var nav = nav
         content
             .onChange(of: waiting, initial: true) { _, n in UNUserNotificationCenter.current().setBadgeCount(n) }
@@ -278,35 +183,9 @@ private struct Lifecycle: ViewModifier {
                 nav.pane = "pair"
                 nav.settings = true
             }
-        #endif
     }
 }
 
-#if os(macOS)
-/// The menu bar's Orb: each open conversation, working or asking, a click from the window.
-private struct Status: View {
-    @Environment(Orb.self) private var orb
-    @Environment(Nav.self) private var nav
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Text(orb.state.summary)
-        Divider()
-        ForEach(orb.state.tabs) { t in
-            Button(dotted(t.ask != nil ? "needs you" : t.unread > 0 ? "\(t.unread) new" : t.busy ? "working" : "", t.title.isEmpty ? "new session" : t.title, t.remote ? t.where : "")) { show(t.id) }
-        }
-        Divider()
-        Button("Open Orb") { show(nav.tab) }
-        Button("Quit Orb") { NSApp.terminate(nil) }.keyboardShortcut("q")
-    }
-
-    private func show(_ tab: String?) {
-        nav.tab = tab
-        openWindow(id: "main")
-        NSApp.activate()
-    }
-}
-#endif
 
 /// Does what an intent came back with: show a tab, open a screen, copy.
 private struct Go: EnvironmentKey {
@@ -327,9 +206,6 @@ extension EnvironmentValues {
 
     func started() {
         center?.delegate = self
-        #if os(macOS)
-        center?.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        #endif
     }
 
     func notify(tab: String, title: String, text: String) {
@@ -348,25 +224,13 @@ extension EnvironmentValues {
         let tab = response.notification.request.content.userInfo["tab"] as? String ?? ""
         await MainActor.run {
             open(tab)
-            #if os(macOS)
-            NSApp.activate()
-            #endif
         }
     }
 }
 
-#if os(macOS)
-extension Delegate: NSApplicationDelegate {
-    /// Closing the window leaves Orb running: what finishes out of sight still says so.
-    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
-
-    func applicationDidFinishLaunching(_ notification: Notification) { started() }
-}
-#else
 extension Delegate: UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         started()
         return true
     }
 }
-#endif

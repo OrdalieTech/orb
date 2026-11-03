@@ -1,15 +1,11 @@
 import SwiftUI
-#if os(macOS)
-import AppKit
-#else
 import UIKit
 /// iOS lays out no text blocks: a quote indents instead of keeping its bar.
 private typealias NSTextBlock = Never
-#endif
 
 /// Consecutive paragraphs, headings, list items, quotes and rules of an answer as one native text:
 /// a selection runs across them, copies with their formatting, and gets the system's Look Up,
-/// Services and links; lists hang from their marks, quotes keep their bar (on the Mac).
+/// Services and links; lists hang from their marks, quotes keep their bar.
 struct Prose: Equatable {
     let blocks: [Block]
 
@@ -33,38 +29,19 @@ struct Prose: Equatable {
         style.lineSpacing = 4
         style.paragraphSpacing = 10
         style.paragraphSpacingBefore = before
-        #if os(macOS)
-        style.textBlocks = quotes
-        #endif
         style.firstLineHeadIndent = indent
         style.headIndent = indent
         switch b.type {
         case "quote":
             // A quote holds blocks of its own, its bar as tall as they are.
-            #if os(macOS)
-            let bar = NSTextBlock()
-            bar.setWidth(2, type: .absoluteValueType, for: .border, edge: .minX)
-            bar.setWidth(14, type: .absoluteValueType, for: .padding, edge: .minX)
-            bar.setBorderColor(NSColor(Ink.rule), for: .minX)
-            let inside = (quotes + [bar], indent)
-            #else
             let inside = (quotes, indent + 16)
-            #endif
             for (j, inner) in b.blocks.enumerated() {
                 if j > 0 { out.append(NSAttributedString(string: "\n")) }
                 append(inner, to: out, indent: inside.1, ink: NativeColor(Ink.mute), quotes: inside.0)
             }
             return
         case "rule":
-            #if os(macOS)
-            let line = NSTextBlock()
-            line.setWidth(1, type: .absoluteValueType, for: .border, edge: .maxY)
-            line.setBorderColor(NSColor(Ink.rule), for: .maxY)
-            style.textBlocks = quotes + [line]
-            out.append(NSAttributedString(string: " ", attributes: [.paragraphStyle: style, .font: NSFont.mono(4)]))
-            #else
             out.append(NSAttributedString(string: String(repeating: "─", count: 12), attributes: [.paragraphStyle: style, .font: UIFont.mono(Size.small), .foregroundColor: UIColor(Ink.rule)]))
-            #endif
             return
         case "h":
             style.paragraphSpacingBefore = max(before, 6)
@@ -102,40 +79,6 @@ private extension Array {
     var nonEmpty: Self? { isEmpty ? nil : self }
 }
 
-#if os(macOS)
-extension Prose: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSTextView {
-        // TextKit 1: quotes and rules are text blocks, which it lays out.
-        let view = NSTextView(usingTextLayoutManager: false)
-        view.isEditable = false
-        view.isSelectable = true
-        view.drawsBackground = false
-        view.textContainerInset = .zero
-        view.textContainer?.lineFragmentPadding = 0
-        view.textContainer?.widthTracksTextView = true
-        view.linkTextAttributes = [.foregroundColor: NSColor(Ink.fg), .underlineStyle: NSUnderlineStyle.single.rawValue, .cursor: NSCursor.pointingHand]
-        view.textStorage?.setAttributedString(Self.text(blocks))
-        return view
-    }
-
-    func updateNSView(_ view: NSTextView, context: Context) {
-        guard let storage = view.textStorage else { return }
-        let text = Self.text(blocks)
-        guard !storage.isEqual(to: text) else { return }
-        // A streamed answer grows under a reader's selection: it stays where it was.
-        let selected = view.selectedRanges
-        storage.setAttributedString(text)
-        view.selectedRanges = selected.filter { NSMaxRange($0.rangeValue) <= storage.length }.nonEmpty ?? [NSValue(range: NSRange(location: 0, length: 0))]
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView view: NSTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0, let container = view.textContainer, let layout = view.layoutManager else { return nil }
-        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        return CGSize(width: width, height: ceil(layout.usedRect(for: container).height))
-    }
-}
-#else
 extension Prose: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
@@ -164,17 +107,12 @@ extension Prose: UIViewRepresentable {
         return CGSize(width: width, height: ceil(view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height))
     }
 }
-#endif
 
 extension NativeFont {
     /// Ubuntu Sans Mono at a weight of its variable axis (400 regular, 500 medium, 600 semibold).
     static func mono(_ size: CGFloat, weight: CGFloat) -> NativeFont {
         let base = mono(size)
         let wght = NSNumber(value: 0x7767_6874) // 'wght'
-        #if os(macOS)
-        return NSFont(descriptor: base.fontDescriptor.addingAttributes([.variation: [wght: weight]]), size: size) ?? base
-        #else
         return UIFont(descriptor: base.fontDescriptor.addingAttributes([UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): [wght: weight]]), size: size)
-        #endif
     }
 }

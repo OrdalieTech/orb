@@ -1,8 +1,6 @@
 import Foundation
 import Observation
-#if os(iOS)
 import OrbCore
-#endif
 
 /// A message from `orb app`, decoded off the main thread.
 enum Message: Sendable {
@@ -84,17 +82,6 @@ struct Failure: LocalizedError { let errorDescription: String? }
 
     /// Starts `orb app` on the pipes, and returns what stops it.
     private static func start(_ into: Pipe, _ out: Pipe) async throws -> () -> Void {
-        #if os(macOS)
-        let p = Process()
-        p.executableURL = Orb.binary
-        p.arguments = ["app", "--name", device]
-        p.environment = await Task.detached { Orb.environment }.value
-        p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-        p.standardInput = into
-        p.standardOutput = out
-        try p.run()
-        return { p.terminate() }
-        #else
         // iOS runs no binary: the same orb, linked in, runs `orb app` on a thread of its own, on
         // copies of its ends of the pipes, which it closes when its input does.
         let input = dup(into.fileHandleForReading.fileDescriptor), output = dup(out.fileHandleForWriting.fileDescriptor)
@@ -103,7 +90,6 @@ struct Failure: LocalizedError { let errorDescription: String? }
         let home = NSHomeDirectory()
         Thread.detachNewThread { _ = OrbCore.OrbApp(home, input, output) }
         return { try? into.fileHandleForWriting.close() }
-        #endif
     }
 
     /// The view's messages, one per line (JSON keeps newlines escaped), read and decoded on a thread of their own.
@@ -185,40 +171,3 @@ private struct Reply<T: Decodable>: Decodable {
 /// A reply whose result does not matter, only whether it failed.
 struct Ignored: Decodable, Empty {}
 
-#if os(macOS)
-extension Orb {
-    /// The orb this app carries; run from a checkout (swift run), $ORB or the one on PATH.
-    nonisolated static let binary: URL = {
-        let bundled = Bundle.main.bundleURL.appending(path: "Contents/Helpers/orb")
-        if FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled }
-        if let orb = ProcessInfo.processInfo.environment["ORB"] { return URL(filePath: orb) }
-        let path = environment["PATH", default: ""].split(separator: ":").map { URL(filePath: String($0)).appending(path: "orb") }
-        return path.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? bundled
-    }()
-
-    /// The login shell's environment: an app opened from the Finder gets a bare PATH, and the Orbs
-    /// this machine's Bridge starts, when this app starts it, run with what the terminal has.
-    nonisolated static let environment: [String: String] = {
-        var env = ProcessInfo.processInfo.environment
-        let p = Process(), out = Pipe()
-        p.executableURL = URL(filePath: env["SHELL"] ?? "/bin/zsh")
-        p.arguments = ["-ilc", "printf '\\0\\0'; env -0"]
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return env }
-        let timeout = DispatchWorkItem { p.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeout)
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        timeout.cancel()
-        // What the shell's startup printed comes before the marker.
-        guard let marker = data.range(of: Data([0, 0])) else { return env }
-        for entry in data[marker.upperBound...].split(separator: 0) {
-            if let line = String(data: Data(entry), encoding: .utf8), let eq = line.firstIndex(of: "=") {
-                env[String(line[..<eq])] = String(line[line.index(after: eq)...])
-            }
-        }
-        return env
-    }()
-}
-#endif

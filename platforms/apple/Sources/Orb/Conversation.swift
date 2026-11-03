@@ -15,28 +15,14 @@ struct Conversation: View {
     var body: some View {
         split
             .navigationTitle(t.title.isEmpty ? "new session" : t.title)
-            #if os(macOS)
-            .navigationSubtitle(dotted(t.remote ? t.where : "", t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"), t.busy ? "working" : t.online ? "" : "offline"))
-            #endif
             .toolbar {
-                #if os(macOS)
-                Button { nav.toggleTerminal(t.id) } label: { Label("Terminal", systemImage: "terminal") }.help("Terminal where it runs  ⌘J")
-                #endif
                 Button { nav.inspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }.help("Model, usage and where it runs  ⌥⌘I")
             }
             .inspector(isPresented: Bindable(nav).inspector) { Details(t: t).inspectorColumnWidth(min: 260, ideal: 300, max: 400) }
     }
 
-    /// The conversation, and on the Mac the terminal where it runs under it.
     @ViewBuilder private var split: some View {
-        #if os(macOS)
-        VSplitView {
-            page
-            if nav.terminals.contains(t.id) { TerminalPane(t: t).frame(minHeight: 120, idealHeight: 280) }
-        }
-        #else
         page
-        #endif
     }
 
     private var page: some View {
@@ -443,12 +429,6 @@ private struct Details: View {
                 TextField("Name", text: $name).onSubmit { orb.send("rename", ["tab": t.id, "name": name]) }
                 LabeledContent("Machine", value: t.remote ? t.where : device)
                 LabeledContent("Folder") { Text(t.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~")).textSelection(.enabled) }
-                #if os(macOS)
-                HStack {
-                    Button("Terminal") { nav.toggleTerminal(t.id) }
-                    if !t.remote && !t.cwd.isEmpty { Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: t.cwd) } }
-                }
-                #endif
             }
             Section("Model") {
                 Picker("Model", selection: Binding { t.model } set: { orb.send("model", ["tab": t.id, "name": $0]) }) {
