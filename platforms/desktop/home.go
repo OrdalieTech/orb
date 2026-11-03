@@ -21,12 +21,9 @@ func (a *app) homeScreen(c *ui.Context) {
 				label(c, "新規セッション · new session").TextColor(pal.meta)
 				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
 			})
-			ui.Column(c).Margin(14, 0, 0).Children(func() {
-				stretch(c, "NEW", 58, pal.fg, 1)
-				ui.Row(c).Gap(12).AlignItems(ui.End).Children(func() {
-					stretch(c, "SESSION", 58, pal.fg, 1)
-					ui.Box(c).Size(12, 12).Background(rupture).Margin(0, 0, 10)
-				})
+			ui.Row(c).Margin(14, 0, 0).Gap(12).AlignItems(ui.End).Children(func() {
+				stretch(c, "NEW SESSION", 58, pal.fg, 1)
+				ui.Box(c).Size(12, 12).Background(rupture).Margin(0, 0, 10)
 			})
 			a.launching(c)
 		})
