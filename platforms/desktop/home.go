@@ -15,22 +15,24 @@ func (a *app) homeScreen(c *ui.Context) {
 	o, pal := a.o, p(c)
 	titleBar(c, func() {})
 	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
-		// An Evangelion title card: the episode, its name in Japanese, the title stretched tall.
+		// An Evangelion title card, as the series sets one: the episode, the title compressed to fill
+		// its frame, its name in Japanese under it.
 		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
-			ui.Row(c).FillWidth().Gap(10).Children(func() {
-				ui.Text(c, map[bool]string{true: fmt.Sprintf("第%03d話", len(o.home.Entries)+1), false: "第———話"}[o.state.Up]).FontSize(12).FontWeight(strong).TextColor(rupture)
-				label(c, "新規セッション · new session").TextColor(pal.meta)
+			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, map[bool]string{true: fmt.Sprintf("第%03d話", len(o.home.Entries)+1), false: "第———話"}[o.state.Up]).FontSize(13).FontWeight(strong).TextColor(rupture)
 				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
 			})
-			ui.Row(c).Margin(14, 0, 0).Gap(12).AlignItems(ui.End).Children(func() {
-				// The title wipes in the first time the app shows it, as an episode's card cuts in.
-				card := stretch(c, "NEW SESSION", 58, pal.fg, 1)
-				if !a.carded {
-					v := reveal(card, "card", 60*time.Millisecond)
-					wipe(card, v, pal.bg)
-					a.carded = v == 1
-				}
-				ui.Box(c).Size(12, 12).Background(rupture).Margin(0, 0, 10)
+			// The title wipes in the first time the app shows it, as an episode's card cuts in.
+			card := stretch(c, "NEW SESSION", 112, pal.fg, 0).Margin(12, 0, 0)
+			if !a.carded {
+				v := reveal(card, "card", 60*time.Millisecond)
+				wipe(card, v, pal.bg)
+				a.carded = v == 1
+			}
+			ui.Row(c).FillWidth().Margin(12, 0, 0).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "新規セッション").FontSize(20).FontWeight(strong)
+				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
+				ui.Box(c).Size(12, 12).Background(rupture)
 			})
 			a.launching(c)
 		})
