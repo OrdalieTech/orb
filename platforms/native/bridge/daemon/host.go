@@ -122,7 +122,7 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 		return s.update(ctx), nil
 	case "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel":
 		return s.login(ctx, method, params)
-	case "host.accounts", "host.accounts.use", "host.plugins", "host.plugins.set", "host.logout":
+	case "host.accounts", "host.accounts.use", "host.models", "host.models.use", "host.plugins", "host.plugins.set", "host.logout":
 		return s.cli(ctx, method, params)
 	case "host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
 		return s.terminal(ctx, method, params)
@@ -171,6 +171,10 @@ func (s *Service) cli(ctx context.Context, method string, params json.RawMessage
 		args = []string{"plugins", "list", "--json"}
 	case method == "host.accounts.use" && providerName.MatchString(q.Provider) && providerName.MatchString(q.ID):
 		args = []string{"accounts", "use", q.Provider, q.ID}
+	case method == "host.models":
+		args = []string{"models", "--json"}
+	case method == "host.models.use" && providerName.MatchString(q.Provider) && modelName.MatchString(q.ID):
+		args = []string{"models", "use", q.Provider, q.ID}
 	case method == "host.logout" && providerName.MatchString(q.Provider):
 		args = []string{"logout", q.Provider}
 	case method != "host.plugins.set" || !providerName.MatchString(q.Name):
@@ -184,8 +188,8 @@ func (s *Service) cli(ctx context.Context, method string, params json.RawMessage
 		return nil, bridge.Fail("invalid_params")
 	}
 	output, err := exec.CommandContext(ctx, exe, args...).Output()
-	if method == "host.plugins" || strings.HasPrefix(method, "host.accounts") {
-		// A refused account switch still says why, as an error line.
+	if method == "host.plugins" || strings.HasPrefix(method, "host.accounts") || strings.HasPrefix(method, "host.models") {
+		// A refused account or model switch still says why, as an error line.
 		if err != nil && (method == "host.plugins" || len(output) == 0) {
 			return nil, bridge.Fail("unavailable")
 		}
@@ -233,6 +237,9 @@ func (l *hostLogin) add(line json.RawMessage, done bool) {
 }
 
 var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// modelName is a model id as providers write them (claude-opus-4-5, openai/gpt-5:free, Qwen/Qwen3…).
+var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
 
 func (s *Service) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	exe, err := s.loginExecutable()

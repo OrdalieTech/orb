@@ -13,11 +13,12 @@ data class Ask(val id: String, val owner: String, val title: String, val message
 data class PluginSlot(val key: String, val lines: List<String>, val alarm: Boolean)
 data class Window(val name: String, val left: Double, val resets: Long)
 data class Usage(val plan: String, val at: Long, val windows: List<Window>)
+/** An open conversation; one with no id is Home's, what a new conversation will start on. */
 data class Tab(
-    val id: String, val title: String, val peer: String, val where: String, val remote: Boolean, val cwd: String, val busy: Boolean, val online: Boolean,
-    val loaded: Boolean, val earlier: Boolean, val streaming: Boolean, val status: String, val model: String, val thinking: String, val levels: List<String>,
-    val context: Double, val cost: Double, val usage: Usage?, val ask: Ask?, val unread: Int, val commands: List<Command>, val models: List<String>,
-    val slots: List<PluginSlot>,
+    val id: String = "", val title: String = "", val peer: String = "", val where: String = "", val remote: Boolean = false, val cwd: String = "", val busy: Boolean = false,
+    val online: Boolean = true, val loaded: Boolean = true, val earlier: Boolean = false, val streaming: Boolean = false, val status: String = "", val model: String = "",
+    val thinking: String = "", val levels: List<String> = emptyList(), val context: Double = 0.0, val cost: Double = 0.0, val usage: Usage? = null, val ask: Ask? = null,
+    val unread: Int = 0, val commands: List<Command> = emptyList(), val models: List<String> = emptyList(), val slots: List<PluginSlot> = emptyList(),
 )
 data class Claim(val invitation: String, val claimant: String)
 data class Invitation(val code: String, val expires: Long)
@@ -50,7 +51,7 @@ data class Completion(val text: String, val label: String, val detail: String)
 
 private fun <T> JSONArray?.map(f: (JSONObject) -> T): List<T> = this?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(f) } }.orEmpty()
 private fun <T> JSONObject.list(name: String, f: (JSONObject) -> T): List<T> = optJSONArray(name).map(f)
-private fun JSONObject.strings(name: String): List<String> = optJSONArray(name)?.let { a -> (0 until a.length()).map(a::optString) }.orEmpty()
+fun JSONObject.strings(name: String): List<String> = optJSONArray(name)?.let { a -> (0 until a.length()).map(a::optString) }.orEmpty()
 private fun JSONObject.obj(name: String) = optJSONObject(name)
 
 private fun command(o: JSONObject) = Command(o.optString("name"), o.optString("hint"), o.optBoolean("now"))

@@ -42,7 +42,9 @@ type app struct {
 	focus   int               // asked to focus the prompt box, each time it grows
 	picker  *picker
 	rename  *renaming
-	model   string    // the conversation whose model sheet shows
+	model   string    // the conversation whose model sheet shows, next for Home's
+	fresh   *Tab      // what a new conversation starts on: this computer's models and default, nil until read
+	reading bool      // fresh is being read
 	viewing [2]string // an image shown whole: its reference and conversation
 	notice  string    // one line that fades: copied, or why something failed
 	lists   map[string]*ui.ListState
@@ -92,12 +94,35 @@ func (a *app) top() screen {
 	return a.stack[len(a.stack)-1]
 }
 
-func (a *app) push(s screen) { reread(); a.stack = append(a.stack, s) }
-func (a *app) back()         { reread(); a.stack = a.stack[:max(len(a.stack)-1, 0)] }
+func (a *app) push(s screen) { reread(); a.fresh = nil; a.stack = append(a.stack, s) }
+func (a *app) back()         { reread(); a.fresh = nil; a.stack = a.stack[:max(len(a.stack)-1, 0)] }
+
+// next is the model sheet of the conversation Home starts.
+const next = "next"
+
+// starts is what a new conversation on this computer starts on, read once Bridge is up and again
+// after another screen or conversation showed (Providers signs in; a conversation's model change
+// becomes the default).
+func (a *app) starts() *Tab {
+	o := a.o
+	if a.fresh == nil && !a.reading && o.state.Up {
+		a.reading = true
+		self := o.state.Self
+		then(o, func(r struct {
+			Models  []string
+			Default string
+		}, err error) {
+			// A machine that cannot say leaves the model to Providers, until the next read.
+			a.reading = false
+			a.fresh = &Tab{Peer: self, Where: device, Model: r.Default, Models: r.Models, Loaded: err == nil}
+		}, "models", "machine", self)
+	}
+	return a.fresh
+}
 
 // show shows a conversation by its tab id, Home for "", closing any screen above them.
 func (a *app) show(tab string) {
-	a.stack = nil
+	a.stack, a.fresh = nil, nil
 	a.tab = tab
 	a.listing = time.Now().Add(5 * time.Second)
 }
@@ -305,6 +330,10 @@ func (a *app) chooseWhere() {
 
 func (a *app) chooseModel(t *Tab, keyed bool) {
 	a.keyed = keyed
+	if f := a.starts(); t == nil && f != nil && len(f.Models) > 0 {
+		a.model = next
+		return
+	}
 	if t == nil || len(t.Models) == 0 {
 		peer := a.o.state.Self
 		if t != nil {
@@ -400,7 +429,11 @@ func (a *app) overlays(c *ui.Context) {
 	if a.picker != nil {
 		a.pickerSheet(c)
 	}
-	if t := o.tab(a.model); t != nil {
+	t := o.tab(a.model)
+	if a.model == next {
+		t = a.fresh
+	}
+	if t != nil {
 		a.modelSheet(c, t)
 	} else {
 		a.model = ""
@@ -425,9 +458,14 @@ func popover(c *ui.Context, at *ui.Handle, open *bool, width float32, keyed bool
 		return
 	}
 	_, h := c.Size()
-	above := anchor.Bounds().Y > h/2 // where PopoverBase finds room for it
+	b := anchor.Bounds()
+	above := b.Y > h/2 // where PopoverBase finds room for it
+	room := h - b.Y - b.H
+	if above {
+		room = b.Y
+	}
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Width(width).Margin(8, 0, 0, 0).Radius(12).Background(pal.bg).Border(1, pal.rule).Clip().
+		panel.Width(width).MaxHeight(room-16).Margin(8, 0, 0, 0).Radius(12).Background(pal.bg).Border(1, pal.rule).Clip().
 			Shadow(0, 12, 32, 0, ui.RGBA(0, 0, 0, map[bool]float32{true: 0.4, false: 0.14}[c.Theme().Dark]))
 		if above {
 			panel.TransformOrigin(0, 1)

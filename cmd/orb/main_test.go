@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -930,3 +931,49 @@ func onlySessionFile(t *testing.T, directory string) string {
 type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("stdin was read") }
+
+func TestRunCLIModelsListsAndSetsTheDefault(t *testing.T) {
+	t.Setenv("ORB_AGENT_DIR", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	t.Chdir(t.TempDir())
+	models := func() (all []string, def string) {
+		var stdout bytes.Buffer
+		if code := runCLI(context.Background(), []string{"models", "--json"}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard}); code != 0 {
+			t.Fatalf("models --json: code %d, %s", code, stdout.String())
+		}
+		for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
+			var row struct {
+				Model   string
+				Default bool
+			}
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatalf("line %q: %v", line, err)
+			}
+			all = append(all, row.Model)
+			if row.Default {
+				def = row.Model
+			}
+		}
+		return all, def
+	}
+	all, def := models()
+	if len(all) == 0 || def == "" || !slices.Contains(all, def) {
+		t.Fatalf("models %v, default %q", all, def)
+	}
+	next := all[0]
+	if next == def {
+		next = all[1]
+	}
+	provider, id, _ := strings.Cut(next, "/")
+	var stdout bytes.Buffer
+	if code := runCLI(context.Background(), []string{"models", "use", provider, id}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard}); code != 0 {
+		t.Fatalf("models use: code %d, %s", code, stdout.String())
+	}
+	if _, now := models(); now != next {
+		t.Fatalf("default after use = %q, want %q", now, next)
+	}
+	if code := runCLI(context.Background(), []string{"models", "use", "nope", "x"}, cliStreams{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard}); code == 0 {
+		t.Fatal("models use accepted a model that is not signed in")
+	}
+}

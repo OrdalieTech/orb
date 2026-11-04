@@ -38,14 +38,18 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
             item(key = "h:$provider") { T("$provider · ${ids.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta) }
             items(ids, key = { it }) { id ->
                 val on = id == session.model
-                Row(Modifier.fillMaxWidth().press { c.v.send("model", "tab" to session.id, "name" to id); dismiss() }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().press {
+                    // Home's sheet sets the default new conversations start on, there.
+                    if (session.id.isEmpty()) c.v.send("default", "machine" to session.peer, "name" to id) else c.v.send("model", "tab" to session.id, "name" to id)
+                    dismiss()
+                }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                     T(id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
                     if (on) Dot(p.fg)
                 }
             }
         }
         item(key = "add") {
-            Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(session.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ Provider", weight = Medium, color = p.mute) }
+            Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(session.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ connect a provider", weight = Medium, color = p.mute) }
         }
     }
     Accounts(session, c)

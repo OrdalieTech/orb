@@ -168,6 +168,46 @@ func (a *App) slow(in intent) func() (any, error) {
 			}
 			return nil, err
 		})
+	case "models":
+		// What a new conversation there can run on, before one does: its models and the default.
+		return call(func() (any, error) {
+			var r struct {
+				Models []struct {
+					Model   string
+					Default bool
+				}
+			}
+			if err := host("host.models", "list its models", struct{}{}, &r); err != nil {
+				return nil, err
+			}
+			out := struct {
+				Models  []string `json:"models"`
+				Default string   `json:"default"`
+			}{Models: []string{}}
+			for _, m := range r.Models {
+				if m.Model != "" {
+					out.Models = append(out.Models, m.Model)
+				}
+				if m.Default {
+					out.Default = m.Model
+				}
+			}
+			return out, nil
+		})
+	case "default":
+		return call(func() (any, error) {
+			provider, id, _ := strings.Cut(in.Name, "/")
+			var r struct {
+				Models []struct{ Type, Message string }
+			}
+			err := host("host.models.use", "change its default model", map[string]string{"provider": provider, "id": id}, &r)
+			for _, row := range r.Models {
+				if row.Type == "error" {
+					return nil, errors.New(row.Message)
+				}
+			}
+			return nil, err
+		})
 	case "login":
 		return func() (any, error) { cancel(); a.signIn(machine, in.Provider, in.Auth); return nil, nil }
 	case "update":
