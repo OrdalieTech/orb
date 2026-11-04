@@ -217,16 +217,13 @@ func where(c *ui.Context, n int, live, asks bool, here ui.Color) ui.Element {
 	return dot(c, color, 7, live, true)
 }
 
-// stretch is the EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed,
-// or with squeeze 0 compressed to fill its width; reserved for events and identities.
+// stretch is the EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed;
+// reserved for events and identities.
 //
 // The capitals are the font's own outlines, stretched as vectors and filled at the screen's
 // resolution: text laid out and then scaled would stretch its pixels.
 func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze float32) ui.Element {
 	if bold == nil {
-		if squeeze == 0 {
-			squeeze = 1
-		}
 		size := height / 1.9 / 0.7 // the cap height of Ubuntu Sans Mono is about 0.7em
 		return ui.Row(c).Height(height).Children(func() {
 			ui.Text(c, text).FontSize(size).Bold().FixedLineHeight(size).TextColor(color).NoWrap().Scale(squeeze, 1.9).TransformOrigin(0, 0.5)
@@ -255,16 +252,8 @@ func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze
 		}
 		return x
 	}
-	width := set(func(ot.GID, float32) {})
-	e := ui.Box(c).Height(height).Label(text)
-	if squeeze == 0 {
-		e.FillWidth()
-	} else {
-		e.Width(width * sx)
-	}
-	return e.Draw(func(p *ui.Painter, b ui.Rect) {
+	return ui.Box(c).Size(set(func(ot.GID, float32) {})*sx, height).Label(text).Draw(func(p *ui.Painter, b ui.Rect) {
 		var path ui.Path
-		sx := b.W / width
 		set(func(g ot.GID, gx float32) {
 			x := b.X + gx*sx
 			if o, ok := bold.GlyphDataOutline(g); ok {
