@@ -19,7 +19,10 @@ data class Tab(
     val online: Boolean = true, val loaded: Boolean = true, val earlier: Boolean = false, val streaming: Boolean = false, val status: String = "", val model: String = "",
     val thinking: String = "", val levels: List<String> = emptyList(), val context: Double = 0.0, val cost: Double = 0.0, val usage: Usage? = null, val ask: Ask? = null,
     val unread: Int = 0, val commands: List<Command> = emptyList(), val models: List<String> = emptyList(), val slots: List<PluginSlot> = emptyList(),
-)
+) {
+    /** What a conversation whose Orb is not reachable is: asleep when its Orb ended (a message wakes it), else offline. */
+    val idleWord: String get() = if (status.startsWith("asleep")) "asleep" else "offline"
+}
 data class Claim(val invitation: String, val claimant: String)
 data class Invitation(val code: String, val expires: Long)
 data class Prompt(val kind: String, val message: String, val placeholder: String, val options: List<Pair<String, String>>)

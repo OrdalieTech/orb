@@ -94,7 +94,7 @@ private fun Card(t: Tab, c: Ctx, modifier: Modifier, open: () -> Unit) {
         val state = when {
             t.ask != null -> "asks · " + t.ask.title.ifEmpty { "approval" }
             t.busy -> "working"
-            !t.online -> "offline"
+            !t.online -> t.idleWord
             else -> t.model.substringAfter('/')
         }
         // Where it runs, named as its prompt box names it, then its state; a new state rises into the last one's place.

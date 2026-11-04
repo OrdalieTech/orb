@@ -138,6 +138,7 @@ type tab struct {
 	cursor, pulse          string
 	from                   int // the first message shown, once known: reloads keep the window, so rows keep their keys
 	stale, gone, reopening bool
+	wakes                  bool // on screen and among the last seen: it starts its Orb when none runs
 	ended                  bool // a turn ended since the last flush, as the stream said
 	watched, follows       bool
 	seen                   time.Time
@@ -157,7 +158,7 @@ type tab struct {
 // tail is how many messages a conversation opens with; earlier ones load on demand.
 const tail = 80
 
-const ended = "ended on that device · send a message to reopen it"
+const ended = "asleep · a message wakes it"
 
 func (a *App) newTab(peer, instance, where, session string) *tab {
 	t := &tab{a: a, Tab: Tab{ID: protocol.NewID(), Peer: peer, Where: where, Online: true}, instance: instance, session: session, from: -1, stale: true, wake: make(chan struct{}, 1), done: make(chan struct{})}
@@ -191,7 +192,7 @@ func (t *tab) follow() {
 func (t *tab) step() time.Duration {
 	a := t.a
 	a.mu.Lock()
-	reopen := (t.instance == "" || t.gone) && t.watched && time.Now().After(t.nextTry)
+	reopen := (t.instance == "" || t.gone) && t.wakes && time.Now().After(t.nextTry)
 	idle := t.instance == "" || t.gone
 	live, waits := t.watched || t.follows, t.info.Waits
 	describe := t.stale || !waits || !live

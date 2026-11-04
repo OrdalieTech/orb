@@ -150,7 +150,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			for _, f := range in.DroppedFiles() {
 				draft = strings.TrimRight(draft, " ") + " @" + quotePath(f) + " "
 			}
-			if a.focus != a.focused {
+			if a.focus != a.focused && a.building == a.active {
 				a.focused = a.focus
 				in.Focus()
 			}

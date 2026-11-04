@@ -30,6 +30,8 @@ import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.*
 import kotlin.math.abs
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.Tab
@@ -227,12 +229,15 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
         // The tab on screen scrolls into the strip whole, however it came to show: a send, a swipe, a notification.
         val strip = rememberLazyListState()
         val current = c.nav.open?.id
+        // Checked again as the tab widens (its × shows once it is on screen).
         LaunchedEffect(current, order) {
             val at = order.indexOf(current).takeIf { it >= 0 } ?: return@LaunchedEffect
-            snapshotFlow { strip.layoutInfo }.first { it.totalItemsCount > at }.let { info ->
-                val seen = info.visibleItemsInfo.firstOrNull { it.index == at }
-                if (seen == null || seen.offset < info.viewportStartOffset || seen.offset + seen.size > info.viewportEndOffset) strip.animateScrollToItem(at)
-            }
+            snapshotFlow { strip.layoutInfo.let { i -> if (i.totalItemsCount > at) i.visibleItemsInfo.firstOrNull { it.index == at }?.size ?: 0 else null } }
+                .filterNotNull().distinctUntilChanged().collect {
+                    val info = strip.layoutInfo
+                    val seen = info.visibleItemsInfo.firstOrNull { it.index == at }
+                    if (seen == null || seen.offset < info.viewportStartOffset || seen.offset + seen.size > info.viewportEndOffset) strip.animateScrollToItem(at)
+                }
         }
         val ground = p.bg
         // Tabs cut by the strip's end fade into it, rather than leaving a stray letter by the icons.

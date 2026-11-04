@@ -48,3 +48,22 @@ func TestTiles(t *testing.T) {
 		t.Fatalf("last tile %q", a.root.tab)
 	}
 }
+
+func TestTilesKeepTheirRoom(t *testing.T) {
+	a := &app{root: &tile{tab: "a", width: 1000}}
+	a.active = a.root
+	a.split(a.active, "right", &tile{tab: "b"})
+	a.root.room = 800
+	// Three columns in 800 would be under 300 each: the third is refused.
+	a.split(a.active, "right", &tile{tab: "c"})
+	if got := layoutOf(a); len(got) != 2 {
+		t.Fatalf("split past the room: %v", got)
+	}
+	// Closing a tile gives its room back to its whole line.
+	a.root.room = 0
+	a.split(a.active, "right", &tile{tab: "c"})
+	a.unsplit(a.showing("a"))
+	if s := a.root.share; s != 50 {
+		t.Fatalf("after closing a, b has %v%%, want half", s)
+	}
+}
