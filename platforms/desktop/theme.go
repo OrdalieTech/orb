@@ -428,13 +428,13 @@ func gauge(c *ui.Context, value float64, alarm float64) ui.Element {
 	})
 }
 
-// hudLabel is a section's name as a HUD numbers it: its index, its name, a hairline to the edge.
+// hudLabel is a section's name as a HUD numbers it: its index, its name, its state at the edge.
 func hudLabel(c *ui.Context, index int, name, state string) ui.Element {
 	pal := p(c)
 	return ui.Row(c).FillWidth().Gap(8).Children(func() {
 		ui.Text(c, fmt.Sprintf("%02d", index)).FontSize(labelSize).FontWeight(strong).TextColor(rupture)
 		label(c, name).Shrink(1).MinWidth(0).TextColor(pal.meta)
-		ui.Box(c).Grow(1).Height(1).Background(pal.rule.Alpha(0.7))
+		ui.Spacer(c)
 		if state != "" {
 			ui.Text(c, state).FontSize(labelSize).TextColor(pal.meta).Shrink(0)
 		}
