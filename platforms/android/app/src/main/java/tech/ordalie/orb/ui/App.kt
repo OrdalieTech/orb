@@ -216,7 +216,7 @@ private fun Deck(c: Ctx) = HorizontalPager(c.nav.pager, Modifier.fillMaxSize().b
 private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modifier.statusBarsPadding()) {
     val pager = c.nav.pager
     Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (pager.currentPage == 0 && !overview) p.fg else p.meta) }
+        Box(Modifier.press { if (overview) toggle(); c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (pager.currentPage == 0 && !overview) p.fg else p.meta) }
         // A tab held then dragged along the bar takes another place, its neighbours making room as it
         // passes them; held and let go, it opens its menu.
         val ids = c.rt.view.state.tabs.map { it.id }
@@ -253,35 +253,36 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
                 val drag = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = if (dragged == id) null else spring(stiffness = Spring.StiffnessMediumLow))
                     .onSizeChanged { widths[id] = it.width }.zIndex(if (dragged == id) 1f else 0f)
                     .graphicsLayer { translationX = if (dragged == id) dx else 0f }
-                    .pointerInput(id) {
-                        var net = 0f // how far the finger went, whatever the swaps: a hold that stays put opens the menu
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { dragged = id; dx = 0f; net = 0f; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
-                            onDrag = { change, d ->
-                                change.consume()
-                                dx += d.x
-                                net += d.x
-                                val at = order.indexOf(id)
-                                val next = order.getOrNull(at + 1)?.let { it to (widths[it] ?: 0) }
-                                val prev = order.getOrNull(at - 1)?.let { it to (widths[it] ?: 0) }
-                                if (next != null && dx > next.second / 2f) {
-                                    order = order.toMutableList().apply { removeAt(at); add(at + 1, id) }
-                                    dx -= next.second
-                                } else if (prev != null && dx < -prev.second / 2f) {
-                                    order = order.toMutableList().apply { removeAt(at); add(at - 1, id) }
-                                    dx += prev.second
-                                }
-                            },
-                            // Read live, never captured: this gesture outlives compositions, and the order with them.
-                            onDragCancel = { order = c.rt.view.state.tabs.map { it.id }; dragged = null; dx = 0f },
-                            onDragEnd = {
-                                if (abs(net) < viewConfiguration.touchSlop) c.tabMenu(t) else c.v.send("move", "tab" to id, "to" to order.indexOf(id))
-                                dragged = null
-                                dx = 0f
-                            },
-                        )
-                    }
-                TabMark(t, c.v.hue(t.peer), pager.currentPage == page, { (1f - abs(pager.getOffsetDistanceInPages(page))).coerceIn(0f, 1f) }, drag, { c.close(t) }) { c.nav.show(id) }
+                // Inside the tab's tap, which would otherwise take the touch before a hold is seen.
+                val hold = Modifier.pointerInput(id) {
+                    var net = 0f // how far the finger went, whatever the swaps: a hold that stays put opens the menu
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { dragged = id; dx = 0f; net = 0f; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+                        onDrag = { change, d ->
+                            change.consume()
+                            dx += d.x
+                            net += d.x
+                            val at = order.indexOf(id)
+                            val next = order.getOrNull(at + 1)?.let { it to (widths[it] ?: 0) }
+                            val prev = order.getOrNull(at - 1)?.let { it to (widths[it] ?: 0) }
+                            if (next != null && dx > next.second / 2f) {
+                                order = order.toMutableList().apply { removeAt(at); add(at + 1, id) }
+                                dx -= next.second
+                            } else if (prev != null && dx < -prev.second / 2f) {
+                                order = order.toMutableList().apply { removeAt(at); add(at - 1, id) }
+                                dx += prev.second
+                            }
+                        },
+                        // Read live, never captured: this gesture outlives compositions, and the order with them.
+                        onDragCancel = { order = c.rt.view.state.tabs.map { it.id }; dragged = null; dx = 0f },
+                        onDragEnd = {
+                            if (abs(net) < viewConfiguration.touchSlop) c.tabMenu(t) else c.v.send("move", "tab" to id, "to" to order.indexOf(id))
+                            dragged = null
+                            dx = 0f
+                        },
+                    )
+                }
+                TabMark(t, c.v.hue(t.peer), pager.currentPage == page, { (1f - abs(pager.getOffsetDistanceInPages(page))).coerceIn(0f, 1f) }, drag, hold, { c.close(t) }) { c.nav.show(id) }
             }
         }
         GridMark(overview, toggle)
@@ -292,8 +293,8 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
 
 /** [near] is how close the pager is to this tab's page, read at draw time so a swipe redraws only the line. */
 @Composable
-private fun TabMark(s: Tab, hue: Int, on: Boolean, near: () -> Float, modifier: Modifier, close: () -> Unit, open: () -> Unit) {
-    Column(modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onClick = open).padding(horizontal = 8.dp)) {
+private fun TabMark(s: Tab, hue: Int, on: Boolean, near: () -> Float, modifier: Modifier, hold: Modifier, close: () -> Unit, open: () -> Unit) {
+    Column(modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onClick = open).then(hold).padding(horizontal = 8.dp)) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Where(hue, s.busy, s.ask != null, if (on) p.fg else p.mute)
             Spacer(Modifier.width(7.dp))

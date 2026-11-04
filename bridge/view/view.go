@@ -471,7 +471,8 @@ func (a *App) alert() {
 		case known && asks && !was:
 			text = "Needs you · " + firstLine(t.Ask.Title, 160)
 		case ended:
-			text = cmp.Or(firstLine(strings.TrimSpace(t.tr.lastText()), 160), "Finished")
+			// A notification is plain text: a heading's marks or a bold's stars would show as typed.
+			text = cmp.Or(strings.ReplaceAll(strings.TrimLeft(firstLine(strings.TrimSpace(t.tr.lastText()), 160), "#> "), "**", ""), "Finished")
 			t.Unread++
 		default:
 			continue

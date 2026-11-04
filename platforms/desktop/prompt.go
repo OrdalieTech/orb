@@ -38,9 +38,11 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 	}
 	// The box reaches past the reading column on both sides, and keeps its margin when the window
 	// is narrower.
+	// A short tile keeps its box to a line, leaving the room to the transcript.
+	short := a.building != nil && a.building.height > 0 && a.building.height < 360
 	ui.Column(c).FillWidth().PaddingX(margin).Children(func() {
 		shade := map[bool]float32{true: 0.35, false: 0.07}[c.Theme().Dark]
-		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, 16).Radius(16).Background(pal.raised).
+		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, map[bool]float32{true: 8, false: 16}[short]).Radius(16).Background(pal.raised).
 			Border(1, pal.rule.Alpha(0.7)).Shadow(0, 6, 24, 0, ui.RGBA(0, 0, 0, shade))
 		box.Children(func() {
 			// Typing / opens the palette: the app's commands and the core's, filtered as you type.
@@ -112,7 +114,11 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			if busy {
 				hint = "steer or queue a message"
 			}
-			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(3, 14).FillWidth().Padding(20, inset, 12).FontSize(size).LineHeight(1.5).
+			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(3, 14).FillWidth().Padding(20, inset, 12)
+			if short {
+				in.Lines(1, 4).Padding(10, inset, 4)
+			}
+			in = in.FontSize(size).LineHeight(1.5).
 				Placeholder(hint).PlaceholderColor(pal.meta).AutoFocus()
 			for _, m := range promptPattern.FindAllStringSubmatchIndex(draft, -1) {
 				start, end := m[0], m[1]

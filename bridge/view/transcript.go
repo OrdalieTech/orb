@@ -1,6 +1,7 @@
 package view
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
@@ -417,7 +418,13 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 		pretty, _ := json.Marshal(args[keys[0]])
 		target = string(pretty)
 	}
-	pretty, _ := json.MarshalIndent(args, "", "  ")
+	// Shown as typed: a command's 2>&1 stays 2>&1, not \u003e\u0026.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(args)
+	pretty := bytes.TrimSpace(buf.Bytes())
 	if len(args) == 0 {
 		pretty = nil
 	}

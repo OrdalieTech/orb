@@ -13,11 +13,23 @@ import (
 // away, the latest threads under it. Every thread is in the sidebar.
 func (a *app) homeScreen(c *ui.Context) {
 	o, pal := a.o, p(c)
-	a.titleBar(c, func() { ui.Spacer(c) })
+	// Among tiles, its bar names it as the others name their conversation.
+	a.titleBar(c, func() {
+		if !a.root.leaf() {
+			ui.Text(c, "new session").FontSize(15).FontWeight(strong).TextColor(p(c).mute).SingleLine()
+		}
+		ui.Spacer(c)
+	})
+	// A small tile keeps Home to its prompt box.
+	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
 	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
 		// An Evangelion title card: the episode over a rule, the title stretched tall, its name in
 		// Japanese closing the line.
 		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
+			if small {
+				a.launching(c)
+				return
+			}
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, map[bool]string{true: fmt.Sprintf("第%03d話", len(o.home.Entries)+1), false: "第———話"}[o.state.Up]).FontSize(12).FontWeight(strong).TextColor(rupture)
 				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
@@ -45,7 +57,7 @@ func (a *app) homeScreen(c *ui.Context) {
 			}
 		}
 		a.boot(c)
-		if len(recent) > 0 && o.state.Up {
+		if len(recent) > 0 && o.state.Up && !small {
 			reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Children(func() {
 				label(c, "latest").TextColor(pal.meta).Margin(0, 0, 4)
 				for _, e := range recent {
@@ -59,7 +71,7 @@ func (a *app) homeScreen(c *ui.Context) {
 				}
 			})
 		}
-		if len(o.home.Machines) < 2 && o.state.Up {
+		if len(o.home.Machines) < 2 && o.state.Up && !small {
 			reading(c).MaxWidth(680).Margin(10, ui.Auto, 0).PaddingX(margin).Children(func() {
 				row := ui.Row(c).FillWidth().PaddingY(12).Children(func() {
 					ui.Text(c, "No paired devices").Grow(1).TextColor(pal.mute)

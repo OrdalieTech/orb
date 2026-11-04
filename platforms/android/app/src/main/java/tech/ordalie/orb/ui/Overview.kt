@@ -109,7 +109,8 @@ private fun Card(t: Tab, c: Ctx, modifier: Modifier, open: () -> Unit) {
             drawContent()
             drawRect(Brush.verticalGradient(listOf(ground, Color.Transparent), endY = size.height * 0.35f))
         }, contentAlignment = Alignment.BottomStart) {
-            T(lines.ifEmpty { if (t.loaded) "ready" else "standby" }, size = 11.sp, color = p.mute)
+            // Measured whole, so the box shows its last lines, not the first that fit with an ellipsis.
+            T(lines.ifEmpty { if (t.loaded) "ready" else "standby" }, Modifier.wrapContentHeight(Alignment.Bottom, unbounded = true), size = 11.sp, color = p.mute)
         }
         if (t.context > 0) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             val rule = p.rule
