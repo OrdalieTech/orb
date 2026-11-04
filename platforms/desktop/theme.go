@@ -401,19 +401,6 @@ func wipe(e ui.Element, v float32, ground ui.Color) {
 	}
 }
 
-// brackets draws a HUD's corner ticks just inside r, as Evangelion frames what it targets; drawn
-// in, they grow to their length as reach goes from 0 to 1.
-func brackets(p *ui.Painter, r ui.Rect, ink ui.Color, reach float32) {
-	const width = 1.5
-	length := 10 * reach
-	for _, k := range [4][2]float32{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
-		x, y := r.X+k[0]*(r.W-width)+width/2, r.Y+k[1]*(r.H-width)+width/2
-		dx, dy := 1-2*k[0], 1-2*k[1] // inward
-		p.Line(x-dx*width/2, y, x+dx*length, y, width, ink)
-		p.Line(x, y-dy*width/2, x, y+dy*length, width, ink)
-	}
-}
-
 // hazard is a band of warning stripes: ink slanting over ground.
 func hazard(c *ui.Context, height float32, ground, ink ui.Color) ui.Element {
 	return ui.Box(c).FillWidth().Height(height).Background(ground).Stripes(ink, 6, 6, 45)
