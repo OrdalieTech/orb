@@ -79,7 +79,9 @@ type app struct {
 	path       string  // a folder typed on a device's screen
 	side       float32 // the sidebar's width
 	sideHidden bool
-	search     string               // the sidebar's search
+	search     string // the sidebar's search
+	seek       int    // search asked for (⌘K), which its field takes once
+	sought     int
 	fold       map[string]bool      // the machines whose threads the sidebar folds
 	listing    time.Time            // until when a tab shown waits for the view to list it
 	answered   string               // the pairing claim answered, until the view drops it
@@ -420,7 +422,10 @@ func (a *app) shortcuts(c *ui.Context) {
 	if runtime.GOOS != "darwin" && a.active.shell && c.FocusWithin(a.active.at) {
 		return
 	}
-	c.OnShortcut(cmd, ui.KeyN, func() { a.show("") })
+	c.OnShortcut(cmd, ui.KeyN, a.newSession)
+	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
+	c.OnShortcut(ui.Ctrl, ui.KeyTab, func() { a.cycle(1) })
+	c.OnShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.cycle(-1) })
 	// Among tiles ⌘W closes the tile, its conversation staying open in the sidebar.
 	c.OnShortcut(cmd, ui.KeyW, func() {
 		if !a.root.leaf() {

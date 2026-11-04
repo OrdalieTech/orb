@@ -125,15 +125,7 @@ func (a *app) replace(x, n *tile) {
 // a line with no room for another tile says so instead.
 func (a *app) split(x *tile, side string, n *tile) {
 	below := side == "top" || side == "bottom"
-	line := x
-	for p := a.parent(line); p != nil && p.below == below; p = a.parent(p) {
-		line = p
-	}
-	room := line.room
-	if line.leaf() {
-		room = map[bool]float32{true: x.height, false: x.width}[below]
-	}
-	if room > 0 && room/float32(line.count(below)+1) < map[bool]float32{true: 180, false: 300}[below] {
+	if !a.fits(x, below) {
 		a.say("No room for another tile " + map[bool]string{true: "here", false: "in this row"}[below] + " · close one, or split the other way")
 		return
 	}
@@ -143,12 +135,44 @@ func (a *app) split(x *tile, side string, n *tile) {
 	}
 	a.replace(x, s)
 	// A new tile takes its share of its line, as in a tiling window manager.
-	line = s
+	line := s
 	for p := a.parent(line); p != nil && p.below == s.below; p = a.parent(p) {
 		line = p
 	}
 	line.even(false)
 	a.activate(n)
+}
+
+// fits reports whether x's line (beside it, or below) has room for another tile.
+func (a *app) fits(x *tile, below bool) bool {
+	line := x
+	for p := a.parent(line); p != nil && p.below == below; p = a.parent(p) {
+		line = p
+	}
+	room := line.room
+	if line.leaf() {
+		room = map[bool]float32{true: x.height, false: x.width}[below]
+	}
+	return room == 0 || room/float32(line.count(below)+1) >= map[bool]float32{true: 180, false: 300}[below]
+}
+
+// newSession shows Home: in the tile already showing it, else among tiles in a new one beside the
+// focused tile (or under it), so the conversations watched stay in sight; else in the lone tile.
+func (a *app) newSession() {
+	a.focus++
+	switch x := a.showing(""); {
+	case x != nil:
+		a.stack, a.fresh = nil, nil
+		a.activate(x)
+	case !a.root.leaf() && a.fits(a.active, false):
+		a.stack, a.fresh = nil, nil
+		a.split(a.active, "right", &tile{})
+	case !a.root.leaf() && a.fits(a.active, true):
+		a.stack, a.fresh = nil, nil
+		a.split(a.active, "bottom", &tile{})
+	default:
+		a.show("")
+	}
 }
 
 // unsplit takes x out of the layout, its sibling taking its room; the last tile turns Home.
@@ -433,7 +457,7 @@ func (a *app) tileTools(c *ui.Context) {
 		}) {
 			a.zoom(x)
 		}
-		if many && press(ui.Text(c.Key("close"), "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile  "+keys("W")).Transition(appear)) {
+		if many && press(ui.Text(c.Key("close"), "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile · its conversation stays open  "+keys("W")).Transition(appear)) {
 			a.unsplit(x)
 		}
 	}

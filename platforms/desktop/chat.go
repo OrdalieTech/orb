@@ -124,7 +124,8 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
 	a.titleBar(c, func() {
-		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() { a.renameTab(*t) }).Tooltip("Rename")
+		x := a.building
+		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() { a.activate(x); a.renameTab(*t) }).Tooltip("Rename")
 		a.carry(title, carried{tile: a.building})
 		var parts []string
 		if t.Remote {
@@ -137,6 +138,9 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 			parts, ink = append(parts, "working"), pal.fg
 		case !t.Online && !strings.HasPrefix(t.Status, "asleep"):
 			parts = append(parts, "offline")
+		}
+		if a.zoomed == x && x != nil {
+			parts = append(parts, "zoomed")
 		}
 		// A narrow tile keeps its bar to the title and the readings.
 		if a.narrow {

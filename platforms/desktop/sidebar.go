@@ -25,15 +25,18 @@ func (a *app) sidebar(c *ui.Context) {
 				ink = pal.fg
 			}
 			if press(ui.Row(c).Children(func() { stretch(c, "ORB", 17, ink, 1) }).Tooltip("New session  " + keys("N"))) {
-				a.show("")
+				a.newSession()
 			}
 			ui.Spacer(c)
 			if press(ui.Row(c).Padding(4, 8).Radius(soft).Children(func() { ui.Text(c, "+").FontSize(20).TextColor(pal.mute) }).Tooltip("New session  " + keys("N"))) {
-				a.show("")
-				a.focus++
+				a.newSession()
 			}
 		})
-		field(c, &a.search, "Search threads", false).Margin(0, gutter, 8).PaddingX(8).FontSize(small)
+		search := field(c, &a.search, "Search threads  "+keys("K"), false).Margin(0, gutter, 8).PaddingX(8).FontSize(small)
+		if a.seek != a.sought {
+			a.sought = a.seek
+			search.Focus()
+		}
 		if a.search != "" {
 			c.OnShortcut(0, ui.KeyEscape, func() { a.search = "" })
 		}
