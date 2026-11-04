@@ -472,12 +472,6 @@ func popover(c *ui.Context, at *ui.Handle, open *bool, width float32, keyed bool
 		} else {
 			panel.TransformOrigin(0, 0)
 		}
-		// Its corner brackets draw in as it opens, as a HUD locks onto a target.
-		reach := float32(1)
-		if !keyed {
-			reach = reveal(panel, "brackets", 80*time.Millisecond)
-		}
-		panel.DrawOver(func(pt *ui.Painter, r ui.Rect) { brackets(pt, r, pal.meta, reach) })
 		if !keyed {
 			panel.Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.95}, Exit: &ui.Motion{Scale: 0.95}, Animation: &opening})
 		}
