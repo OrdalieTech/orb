@@ -52,7 +52,7 @@ fun Overview(c: Ctx, done: () -> Unit) {
             Card(t, c, Modifier.animateItem()) { scope.launch { c.nav.pager.scrollToPage(1 + c.v.state.tabs.indexOfFirst { it.id == t.id }); done() } }
         }
         item(key = "new") {
-            Box(Modifier.height(72.dp).border(1.dp, p.rule, Soft).press { done(); c.nav.home() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.height(72.dp).border(1.dp, p.rule, Soft).press { done(); c.nav.home(); c.nav.compose = true }, contentAlignment = Alignment.Center) {
                 T("+ new session", size = 14.sp, weight = Medium, color = p.mute)
             }
         }
@@ -63,7 +63,8 @@ private val Tall = 216.dp
 
 @Composable
 private fun Card(t: Tab, c: Ctx, modifier: Modifier, open: () -> Unit) {
-    val ink by animateColorAsState(if (t.ask != null) Ink.Rupture else p.rule, tween(240), label = "ink")
+    // Its border says its state at a glance: red while it asks, ink while it works, quiet at rest.
+    val ink by animateColorAsState(if (t.ask != null) Ink.Rupture else if (t.busy) p.fg else p.rule, tween(240), label = "ink")
     // Swiped aside, it closes its conversation, as an app switcher's card does.
     val swipe = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
@@ -96,8 +97,8 @@ private fun Card(t: Tab, c: Ctx, modifier: Modifier, open: () -> Unit) {
             !t.online -> "offline"
             else -> t.model.substringAfter('/')
         }
-        // A new state takes the place of the last one, rising into it.
-        AnimatedContent(listOf(t.where.takeIf { t.remote }.orEmpty(), state).filter(String::isNotEmpty).joinToString(" · "), Modifier.padding(top = 2.dp),
+        // Where it runs, named as its prompt box names it, then its state; a new state rises into the last one's place.
+        AnimatedContent(listOf(t.where.takeIf { t.remote } ?: "phone", state).filter(String::isNotEmpty).joinToString(" · "), Modifier.padding(top = 2.dp),
             transitionSpec = { (fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 }) togetherWith fadeOut(tween(120)) }, label = "state") { line ->
             T(line, size = Size.Label, color = if (t.ask != null) Ink.Rupture else p.meta, lines = 1)
         }

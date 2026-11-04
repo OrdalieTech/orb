@@ -481,7 +481,7 @@ func (a *App) launch(peer, cwd, session string) (string, error) {
 	case "not_found":
 		return "", errors.New("no such folder or thread there")
 	case "resource_exhausted":
-		return "", errors.New("too many Orbs started there already")
+		return "", errors.New("every Orb that machine can start is in the middle of a turn · try again when one finishes")
 	case "busy":
 		return "", errors.New("this thread is open in another Orb on that device · continue it there, or turn on its bridge plugin to follow it here")
 	}
@@ -556,6 +556,13 @@ func (a *App) start(peer, cwd, session, text string) (any, error) {
 	}
 	a.launching = ""
 	t := a.newTab(peer, running, where, session)
+	// Titled from the start, so it never shows its folder's name while its Orb describes itself.
+	t.Title = firstLine(text, 48)
+	for _, th := range m.threads {
+		if th.id == session {
+			t.Title = th.title
+		}
+	}
 	if text != "" {
 		t.prompt(text)
 	}

@@ -3,7 +3,9 @@ package tech.ordalie.orb.ui
 import android.content.Context
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlin.math.roundToInt
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.*
 
@@ -20,6 +22,8 @@ class Ctx(
     /** Sends what the prompt box holds: the view runs commands and messages, and names what only the app does. */
     fun send(t: Tab?, text: String) = rt.scope.launch {
         val r = v.ask("send", "tab" to t?.id.orEmpty(), "text" to text)
+        // Refused (no Orb could start, say): the text goes back where it was typed.
+        if (r.error != null) nav.unsent = t?.id.orEmpty() to text
         r.obj?.optString("tab")?.takeIf { it.isNotEmpty() }?.let(nav::show)
         r.obj?.optString("copy")?.takeIf { it.isNotEmpty() }?.let { context.copy(it, "copied the last answer") }
         when (r.obj?.optString("nav")) {
@@ -65,14 +69,20 @@ class Ctx(
     fun renameThread(e: Entry) = rename(Rename(e.title, if (e.deletable) ({ v.send("delete", "key" to e.key) }) else null) { name -> v.send("rename", "key" to e.key, "name" to name) })
 
     /** A tab held down: rename its conversation, or stop following it. */
-    fun tabMenu(t: Tab) = pick(Picker(t.title.ifEmpty { "new session" }, listOf("rename", "close tab")) {
+    fun tabMenu(t: Tab) = pick(Picker(t.title.ifEmpty { "new session" }, listOf("rename", "close conversation")) {
         if (it == "rename") rename(Rename(t.title) { name -> v.send("rename", "tab" to t.id, "name" to name) }) else close(t)
     })
 
-    /** Stops following a conversation; Home shows if it was on screen. Its thread stays where it runs. */
+    /** Stops following a conversation; if it was on screen, its neighbour shows (the next, else the
+     *  previous), Home once none is left. Its thread stays where it runs. */
     fun close(t: Tab) {
-        if (nav.open?.id == t.id) nav.home()
+        val tabs = v.state.tabs
+        val at = tabs.indexOfFirst { it.id == t.id }
+        val shown = nav.open?.id == t.id
         v.send("close", "tab" to t.id)
+        if (!shown) return
+        val next = tabs.getOrNull(at + 1) ?: tabs.getOrNull(at - 1) ?: return nav.home()
+        rt.scope.launch { snapshotFlow { v.state.tabs.none { it.id == t.id } }.first { it }; nav.show(next.id) }
     }
 
     /** A conversation's plan windows: what is left of each and when it resets, from its Orb's last reading. */

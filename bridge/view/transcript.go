@@ -342,6 +342,9 @@ func (t *transcript) message(m wireMessage, final bool) {
 		if m.StopReason == "error" && (!t.replaying || t.index == t.last) {
 			t.note(errorText(cmp.Or(m.ErrorMessage, "error")), true)
 		}
+		if m.StopReason == "aborted" {
+			t.note("stopped", false)
+		}
 		s.live, t.said = false, nil
 		if strings.TrimSpace(s.text) == "" && strings.TrimSpace(s.thinking) == "" {
 			t.items = slices.DeleteFunc(t.items, func(it *item) bool { return it == s })

@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -14,15 +19,16 @@ type tile struct {
 	a, b  *tile
 	below bool    // b under a rather than beside it
 	share float32 // a's percentage of the room
+	room  float32 // that room's width (height below), as last drawn
 
 	tab     string // a tile's conversation, "" for Home
 	shell   bool   // the tile shows tab's terminal
 	at      ui.Handle
 	modelAt ui.Handle // its prompt box's model and place, which their popovers open out of
 	whereAt ui.Handle
-	over    string  // the side a drag over it would drop on
-	shown   string  // the side its drop preview shows, as it fades
-	width   float32 // as last drawn
+	over    string    // the side a drag over it would drop on
+	shown   string    // the side its drop preview shows, as it fades
+	width   float32   // as last drawn
 	showing [2]any    // what it shows, conversation and terminal or not
 	since   time.Time // since when: it fades in for a moment
 }
@@ -148,10 +154,14 @@ func (a *app) unsplit(x *tile) {
 	}
 }
 
-// activate makes x the tile the keys and the sidebar act on.
+// activate makes x the tile the keys and the sidebar act on; a zoom moves to it.
 func (a *app) activate(x *tile) {
 	a.active = x
 	a.tab = x.tab
+	if a.zoomed != nil && a.zoomed != x {
+		a.zoomed = x
+		a.reshape()
+	}
 }
 
 // showing is the tile showing a conversation (not its terminal), nil when none does.
@@ -215,12 +225,7 @@ func (a *app) cycle(by int) {
 	all := a.root.tiles(nil)
 	for i, t := range all {
 		if t == a.active {
-			next := all[(i+by+len(all))%len(all)]
-			a.activate(next)
-			if a.zoomed != nil {
-				a.zoomed = next
-				a.reshape()
-			}
+			a.activate(all[(i+by+len(all))%len(all)])
 			return
 		}
 	}
@@ -261,13 +266,18 @@ func (a *app) contains(x *tile) bool {
 // top right, where its controls are.
 func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 	if !x.leaf() {
+		// No tile gets narrower than a column of text, or lower than a few lines, while the room allows.
+		least := map[bool]float32{true: 180, false: 300}[x.below]
+		if lo, hi := 100*least*float32(x.a.count(x.below))/x.room, 100-100*least*float32(x.b.count(x.below))/x.room; x.room > 0 && lo < hi {
+			x.share = min(max(x.share, lo), hi)
+		}
 		first := func() { a.layout(c, x.a, corner && x.below) }
 		second := func() { a.layout(c, x.b, corner && !x.below) }
+		split := ui.SplitPercent
 		if x.below {
-			ui.SplitVerticalPercent(c, &x.share, first, second).Fill()
-		} else {
-			ui.SplitPercent(c, &x.share, first, second).Fill()
+			split = ui.SplitVerticalPercent
 		}
+		split(c, &x.share, first, second).Fill().DrawOver(func(_ *ui.Painter, r ui.Rect) { x.room = map[bool]float32{true: r.H, false: r.W}[x.below] })
 		return
 	}
 	a.building, a.corner = x, corner
@@ -356,15 +366,15 @@ func (a *app) zones(c *ui.Context, x *tile) {
 	}
 }
 
-// tileMenu is what a tile's bar offers the pointer, on hover and on its menu: split it, show its
-// conversation's terminal, close it.
-func (a *app) tileMenu(c *ui.Context, bar ui.Element, hovered bool) {
+// tileTools is what a tile's bar offers the pointer on hover: split it, zoom it, close it.
+func (a *app) tileTools(c *ui.Context) {
 	x, pal := a.building, p(c)
-	if x == nil {
+	if x == nil || a.tools {
 		return
 	}
+	a.tools = true
 	many := !a.root.leaf()
-	if hovered {
+	if a.barHover {
 		appear := ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, X: 4}, Exit: &ui.Motion{Opacity: 0}, Animation: &hovering}
 		icon := func(tip string, draw func(pt *ui.Painter, r ui.Rect)) bool {
 			e := ui.Box(c.Key(tip)).Size(24, 24).Radius(soft).Shrink(0).Tooltip(tip).Transition(appear)
@@ -398,25 +408,38 @@ func (a *app) tileMenu(c *ui.Context, bar ui.Element, hovered bool) {
 			a.unsplit(x)
 		}
 	}
+}
+
+// tileMenu is the rest on its bar's menu: its conversation's terminal, the layout, closing the
+// tile or its conversation; each with its keys, as the tooltips have them.
+func (a *app) tileMenu(bar ui.Element) {
+	x := a.building
+	if x == nil {
+		return
+	}
+	many := !a.root.leaf()
 	bar.ContextMenu(func(m *ui.Menu) {
-		if m.Item("Split right").Chosen() {
+		if m.Item("Split right").Shortcut(cmd, ui.KeyD).Chosen() {
 			a.split(x, "right", &tile{})
 		}
-		if m.Item("Split down").Chosen() {
+		if m.Item("Split down").Shortcut(cmd|ui.Shift, ui.KeyD).Chosen() {
 			a.split(x, "bottom", &tile{})
 		}
-		if x.tab != "" && !x.shell && m.Item("Terminal").Chosen() {
+		if x.tab != "" && !x.shell && m.Item("Terminal").Shortcut(cmd, ui.KeyJ).Chosen() {
 			a.terminalOf(x.tab)
 		}
-		if many && m.Item(map[bool]string{true: "Back to the tiles", false: "Zoom"}[a.zoomed == x]).Chosen() {
+		if many && m.Item(map[bool]string{true: "Back to the tiles", false: "Zoom"}[a.zoomed == x]).Shortcut(cmd|ui.Shift, ui.KeyEnter).Chosen() {
 			a.zoom(x)
 		}
-		if many && m.Item("Even out tiles").Chosen() {
+		if many && m.Item("Even out tiles").Shortcut(cmd, ui.KeyEqual).Chosen() {
 			a.root.even(true)
 			a.reshape()
 		}
-		if many && m.Item("Close tile").Chosen() {
+		if many && m.Item("Close tile").Shortcut(cmd, ui.KeyW).Chosen() {
 			a.unsplit(x)
+		}
+		if x.tab != "" && !x.shell && m.Item("Close conversation").Chosen() {
+			a.close(x.tab)
 		}
 	})
 }
@@ -428,5 +451,65 @@ func (a *app) carry(e ui.Element, v carried) {
 	}
 	if e.Drag(v).Dragging() {
 		a.dragNow = true
+	}
+}
+
+// kept is a tile as the next launch brings it back: conversations by their tab ids, which the view
+// keeps across launches.
+type kept struct {
+	A, B   *kept   `json:",omitempty"`
+	Below  bool    `json:",omitempty"`
+	Share  float32 `json:",omitempty"`
+	Tab    string  `json:",omitempty"`
+	Shell  bool    `json:",omitempty"`
+	Active bool    `json:",omitempty"`
+}
+
+func (a *app) keep(x *tile) *kept {
+	if x.leaf() {
+		return &kept{Tab: x.tab, Shell: x.shell, Active: x == a.active}
+	}
+	return &kept{A: a.keep(x.a), B: a.keep(x.b), Below: x.below, Share: x.share}
+}
+
+func (a *app) bringBack(k *kept) *tile {
+	if k.A == nil || k.B == nil {
+		x := &tile{tab: k.Tab, shell: k.Shell}
+		if k.Active {
+			a.active = x
+		}
+		return x
+	}
+	return &tile{a: a.bringBack(k.A), b: a.bringBack(k.B), below: k.Below, share: k.Share}
+}
+
+// tilesFile is where the layout waits for the next launch.
+func tilesFile() string {
+	dir, err := mygo.App.Path(mygo.PathUserData)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "tiles.json")
+}
+
+// loadTiles brings back the last launch's layout, a lone Home tile without one.
+func (a *app) loadTiles() {
+	a.root = &tile{}
+	var k kept
+	if b, err := os.ReadFile(tilesFile()); err == nil && json.Unmarshal(b, &k) == nil {
+		a.root = a.bringBack(&k)
+	}
+	if a.active == nil || !a.contains(a.active) {
+		a.active = a.root.tiles(nil)[0]
+	}
+	a.tab = a.active.tab
+}
+
+// saveTiles writes the layout when it changed.
+func (a *app) saveTiles() {
+	b, _ := json.Marshal(a.keep(a.root))
+	if !bytes.Equal(b, a.savedTiles) {
+		a.savedTiles = b
+		_ = os.WriteFile(tilesFile(), b, 0o600)
 	}
 }

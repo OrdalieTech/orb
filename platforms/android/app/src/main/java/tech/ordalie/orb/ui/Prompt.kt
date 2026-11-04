@@ -12,6 +12,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.*
@@ -43,11 +44,19 @@ private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTran
 
 @Composable
 fun PromptBox(
-    session: Tab?, c: Ctx, commands: List<Command>, placeholder: String = "What should we work on?", modifier: Modifier = Modifier, onSend: (String) -> Unit,
+    session: Tab?, c: Ctx, commands: List<Command>, placeholder: String = "What should we work on?", modifier: Modifier = Modifier,
+    focus: FocusRequester = remember { FocusRequester() }, onSend: (String) -> Unit,
 ) {
     val cites = c.cites
     // Saved per page: each tab keeps its draft while you swipe away.
     var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    // A message the view refused comes back to the box it was sent from, unless a new draft took its place.
+    LaunchedEffect(c.nav.unsent) {
+        val (tab, text) = c.nav.unsent ?: return@LaunchedEffect
+        if (tab != session?.id.orEmpty()) return@LaunchedEffect
+        if (value.text.isEmpty()) value = TextFieldValue(text, TextRange(text.length))
+        c.nav.unsent = null
+    }
     var extra by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val busy = session?.busy == true
@@ -107,7 +116,7 @@ fun PromptBox(
         }
         Box(Modifier.fillMaxWidth().heightIn(min = ((if (rows.isEmpty()) 52 else 40) + extra).dp, max = (240 + extra).dp).padding(horizontal = 14.dp, vertical = 6.dp)) {
             BasicTextField(
-                value, { value = it }, Modifier.fillMaxWidth(), textStyle = type(16.sp, p.fg), cursorBrush = SolidColor(p.fg),
+                value, { value = it }, Modifier.fillMaxWidth().focusRequester(focus), textStyle = type(16.sp, p.fg), cursorBrush = SolidColor(p.fg),
                 visualTransformation = tokens,
                 decorationBox = { inner -> if (value.text.isEmpty()) T(if (busy) "steer or queue a message" else placeholder, size = 16.sp, color = p.meta); inner() },
             )

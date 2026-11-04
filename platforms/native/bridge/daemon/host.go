@@ -29,7 +29,8 @@ import (
 )
 
 // maxLaunched bounds the Orbs one Bridge starts for its peers; each is a full agent process.
-// One that shows no activity for launchedIdle ends; its thread reopens with the next message.
+// One that shows no activity for launchedIdle ends, as does the one quiet the longest when another
+// would pass the bound; its thread reopens with the next message.
 const (
 	maxLaunched  = 8
 	launchedIdle = 30 * time.Minute
@@ -42,9 +43,10 @@ type launched struct {
 	input   io.Closer
 	session string
 	alias   string
-	id      string      // its instance, once on Bridge
-	turn    atomic.Bool // a turn is running
-	stale   atomic.Bool // it reads what changed only when it starts again: it ends after its turn
+	id      string       // its instance, once on Bridge
+	turn    atomic.Bool  // a turn is running
+	last    atomic.Int64 // when it last said something, in Unix nanoseconds
+	stale   atomic.Bool  // it reads what changed only when it starts again: it ends after its turn
 }
 
 // host serves a peer's machine-level calls. host.sessions pages the threads stored on this
@@ -590,8 +592,18 @@ func (s *Service) launch(ctx context.Context, p bridge.Principal, cwd, session s
 		}
 	}
 	if len(s.launched) >= maxLaunched {
-		s.mu.Unlock()
-		return nil, bridge.Fail("resource_exhausted")
+		var quiet *launched
+		for _, l := range s.launched {
+			if !l.turn.Load() && l.input != nil && (quiet == nil || l.last.Load() < quiet.last.Load()) {
+				quiet = l
+			}
+		}
+		if quiet == nil {
+			s.mu.Unlock()
+			return nil, bridge.Fail("resource_exhausted")
+		}
+		_ = quiet.input.Close()
+		delete(s.launched, quiet.alias)
 	}
 	// The slot is taken before the process starts, so concurrent launches cannot pass the cap.
 	l := &launched{session: session, alias: "launch-" + strings.ToLower(protocol.NewID()[:8])}
@@ -686,7 +698,7 @@ func (s *Service) holding(ctx context.Context, p bridge.Principal, session strin
 // idle reads a launched Orb's RPC events and closes its input — which ends it — once it has been
 // quiet for limit outside a turn. Reading also keeps its output from filling up and blocking it.
 func idle(events io.Reader, l *launched, limit time.Duration) {
-	var last atomic.Int64
+	last := &l.last
 	last.Store(time.Now().UnixNano())
 	done := make(chan struct{})
 	go func() {

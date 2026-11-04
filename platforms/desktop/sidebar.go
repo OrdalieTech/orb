@@ -36,20 +36,24 @@ func (a *app) sidebar(c *ui.Context) {
 		field(c, &a.search, "Search threads", false).Margin(0, gutter, 8).PaddingX(8).FontSize(small)
 		ui.Scroll(c).Grow(1).Basis(0).FillWidth().Padding(4, gutter, 12).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.search))
+			match := func(title string) bool { return q == "" || strings.Contains(strings.ToLower(title), q) }
 			section := 0 // numbered, as a HUD numbers its panels
-			if len(o.state.Tabs) > 0 && q == "" {
-				section++
-				hudLabel(c, section, "open", "").Padding(14, 8, 4)
-				for i, t := range o.state.Tabs {
-					a.tabRow(c.Key(t.ID), t, i)
+			for i, t := range o.state.Tabs {
+				if !match(t.Title) {
+					continue
 				}
+				if section == 0 {
+					section++
+					hudLabel(c, section, "open", "").Padding(14, 8, 4)
+				}
+				a.tabRow(c.Key(t.ID), t, i)
 			}
 			for _, m := range o.home.Machines {
 				// The first 60 threads show; nothing is copied, as this runs each frame.
 				threads := make([]*Entry, 0, 60)
 				for i := range o.home.Entries {
 					e := &o.home.Entries[i]
-					if len(threads) < cap(threads) && e.Machine == m.ID && !e.Open && (q == "" || strings.Contains(strings.ToLower(e.Title), q)) {
+					if len(threads) < cap(threads) && e.Machine == m.ID && !e.Open && match(e.Title) {
 						threads = append(threads, e)
 					}
 				}
@@ -65,6 +69,9 @@ func (a *app) sidebar(c *ui.Context) {
 					a.threadRow(c.Key(e.Key), *e)
 				}
 			}
+			if section == 0 && q != "" {
+				ui.Text(c, "No thread matches “"+strings.TrimSpace(a.search)+"”").Padding(14, 8).FontSize(12).TextColor(pal.meta)
+			}
 		})
 		a.foot(c)
 	})
@@ -74,9 +81,9 @@ func (a *app) sidebar(c *ui.Context) {
 func sideRow(c *ui.Context, on bool, body func()) ui.Element {
 	pal := p(c)
 	e := ui.Row(c).FillWidth().Padding(6, 8).Gap(9).Radius(8)
-	// A red tick at its left edge marks the row the pointer is on, and stays on the one shown: a
-	// HUD's target marker. It grows from the middle in 120 ms.
-	tick := e.AnimateTo("tick", map[bool]float32{true: 1, false: 0}[on || e.Hovered()], hovering)
+	// A red tick at its left edge marks the row shown in the active tile: a HUD's target marker. It
+	// grows from the middle in 120 ms.
+	tick := e.AnimateTo("tick", map[bool]float32{true: 1, false: 0}[on], hovering)
 	if tick > 0 {
 		e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
 			h := (r.H - 12) * tick
@@ -93,15 +100,24 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 	o, pal := a.o, p(c)
 	on := t.ID == a.tab && a.top().kind == ""
 	e := sideRow(c, on, func() {
-		where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, pal.fg)
+		// A conversation in a tile reads in full ink, one out of sight muted, as threads are.
+		ink := pal.mute
+		if x := a.showing(t.ID); x != nil && (a.zoomed == nil || a.zoomed == x) {
+			ink = pal.fg
+		}
+		where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, ink)
 		w := 400
 		if on || t.Unread > 0 {
 			w = strong
 		}
-		ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).FontWeight(w).SingleLine()
+		ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).FontWeight(w).TextColor(ink).SingleLine()
 		// Answers that came while it was out of sight, until it shows.
-		if t.Unread > 0 {
+		if t.Ask != nil {
+			ui.Text(c, "asks").FontSize(12).TextColor(rupture)
+		} else if t.Unread > 0 {
 			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
+		} else if t.Busy {
+			ui.Text(c, "working").FontSize(12).TextColor(pal.meta)
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}
@@ -114,7 +130,7 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		if m.Item("Rename…").Chosen() {
 			a.renameTab(t)
 		}
-		if m.Item("Close").Shortcut(cmd, ui.KeyW).Chosen() {
+		if m.Item("Close conversation").Chosen() {
 			a.close(t.ID)
 		}
 	})
