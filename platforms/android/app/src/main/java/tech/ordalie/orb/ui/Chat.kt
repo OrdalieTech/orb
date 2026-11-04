@@ -53,7 +53,7 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
     }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         val ghost by animateFloatAsState(if (turns.isEmpty()) 1f else 0f, tween(400), label = "standby")
-        if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T(if (t.loaded) "ready" else "standby", label = true, color = p.meta) }
+        if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T(t.empty, label = true, color = p.meta) }
         // Items never slide: a streamed line would set every row around it moving.
         LazyColumn(Modifier.fillMaxSize(), list) {
             if (t.earlier) item(key = "earlier") {

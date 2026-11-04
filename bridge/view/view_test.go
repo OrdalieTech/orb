@@ -286,7 +286,8 @@ func TestEarlierMessagesKeepTheRowsKeys(t *testing.T) {
 	}
 }
 
-// An answer that finishes out of sight alerts once and counts as unread until its tab shows.
+// An answer that finishes out of sight counts as unread until its tab shows, and alerts once
+// while the app itself is out of sight: on screen, its unread count says it.
 func TestAnAnswerOutOfSightIsUnreadUntilShown(t *testing.T) {
 	app, c, instance := orb(t, 0, faux.AssistantMessage("done"))
 	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
@@ -295,6 +296,7 @@ func TestAnAnswerOutOfSightIsUnreadUntilShown(t *testing.T) {
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)
 	c.until(t, "followed off screen", func() bool { return c.tab(opened.Tab).Loaded })
+	app.Do([]byte(`{"do":"visible","on":false}`))
 	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"go"}`))
 	c.until(t, "an unread answer", func() bool { return c.tab(opened.Tab).Unread == 1 && len(c.alerts) == 1 })
 	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))

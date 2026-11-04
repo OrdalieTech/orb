@@ -26,6 +26,7 @@ type Tab struct {
 	CWD       string    `json:"cwd,omitempty"`
 	Busy      bool      `json:"busy,omitempty"`
 	Online    bool      `json:"online"`
+	Asleep    bool      `json:"asleep,omitempty"` // its Orb ended (or never started since a restart): a message wakes it
 	Loaded    bool      `json:"loaded,omitempty"` // an empty conversation is ready, not still coming
 	Earlier   bool      `json:"earlier,omitempty"`
 	Streaming bool      `json:"streaming,omitempty"`

@@ -85,7 +85,7 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
 @Composable
 private fun ProviderRow(pr: Provider, modifier: Modifier, open: () -> Unit) = Line(
     pr.name, if (pr.ready) pr.holds else pr.methods.joinToString(" · ") { if (it.account) "account" else "api key" },
-    when { pr.ready -> "${pr.models} models"; pr.methods.any(Method::account) -> "sign in ›"; else -> "add key ›" }, pr.ready, modifier, open,
+    when { pr.ready -> "${pr.models} model${if (pr.models == 1) "" else "s"}"; pr.methods.any(Method::account) -> "sign in ›"; else -> "add key ›" }, pr.ready, modifier, open,
 )
 
 /** An account: tap to make it the one its provider uses; each plan-limit window below as a bar. */
@@ -157,7 +157,7 @@ fun ColumnScope.VendorScreen(c: Ctx, id: String, peer: String) {
     fun start(m: Method) { note = ""; c.v.send("login", "machine" to peer, "provider" to id, "auth" to m.auth) }
     Header(pr.name, sub = pr.methods.joinToString(" · ") { it.about }, back = c.nav::back)
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Margin).animateContentSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        T(if (pr.ready) "Ready through ${pr.holds} · ${pr.models} models" else "Not signed in", size = 15.sp, weight = Medium, color = if (pr.ready) p.fg else p.mute)
+        T(if (pr.ready) "Ready through ${pr.holds} · ${pr.models} model${if (pr.models == 1) "" else "s"}" else "Not signed in", size = 15.sp, weight = Medium, color = if (pr.ready) p.fg else p.mute)
         val f = flow
         AnimatedContent(f?.state?.takeUnless { it == "failed" } ?: "", transitionSpec = { (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 6 }) togetherWith fadeOut(tween(160)) }, label = "flow") { state ->
             if (state.isEmpty() || f == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

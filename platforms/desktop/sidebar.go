@@ -124,6 +124,8 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong).Tooltip("Answers since you last looked")
 		} else if t.Busy {
 			ui.Text(c, "working").FontSize(12).TextColor(pal.meta)
+		} else if t.Asleep {
+			ui.Text(c, "asleep").FontSize(12).TextColor(pal.meta)
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}

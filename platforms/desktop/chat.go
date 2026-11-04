@@ -96,7 +96,10 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 		}).Grow(1).Basis(0).FillWidth().Justify(ui.End)
 		if len(tt) == 0 {
 			word := "standby"
-			if t.Loaded {
+			switch {
+			case t.Asleep:
+				word = "asleep · a message wakes it"
+			case t.Loaded:
 				word = "ready"
 			}
 			label(c, word).TextColor(pal.meta).Attach(ui.AnchorCenter, ui.AnchorCenter)
@@ -125,7 +128,13 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
 	a.titleBar(c, func() {
 		x := a.building
-		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() { a.activate(x); a.renameTab(*t) }).Tooltip("Rename")
+		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() {
+			// A first click focuses its tile; on the focused tile it renames.
+			if a.active == x {
+				a.renameTab(*t)
+			}
+			a.activate(x)
+		}).Tooltip("Rename")
 		a.carry(title, carried{tile: a.building})
 		var parts []string
 		if t.Remote {
@@ -136,7 +145,7 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 		switch {
 		case t.Busy:
 			parts, ink = append(parts, "working"), pal.fg
-		case !t.Online && !strings.HasPrefix(t.Status, "asleep"):
+		case !t.Online && !t.Asleep:
 			parts = append(parts, "offline")
 		}
 		if a.zoomed == x && x != nil {

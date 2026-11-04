@@ -201,7 +201,7 @@ func (a *app) providerRow(c *ui.Context, peer string, pr Provider) {
 	sub, state := strings.Join(ways, " · "), "add key ›"
 	switch {
 	case pr.Ready:
-		sub, state = pr.Holds, fmt.Sprintf("%d models", pr.Models)
+		sub, state = pr.Holds, fmt.Sprintf("%d model%s", pr.Models, map[bool]string{true: "", false: "s"}[pr.Models == 1])
 	case account:
 		state = "sign in ›"
 	}
@@ -340,7 +340,7 @@ func (a *app) vendorScreen(c *ui.Context, id, peer string) {
 	page(c, func() { header(c, pr.Name, strings.Join(abouts, " · "), back, nil) }, func() {
 		ui.Column(c).FillWidth().Gap(18).Children(func() {
 			if pr.Ready {
-				ui.Text(c, fmt.Sprintf("Ready through %s · %d models", pr.Holds, pr.Models)).FontSize(15).FontWeight(medium)
+				ui.Text(c, fmt.Sprintf("Ready through %s · %d model%s", pr.Holds, pr.Models, map[bool]string{true: "", false: "s"}[pr.Models == 1])).FontSize(15).FontWeight(medium)
 			} else {
 				ui.Text(c, "Not signed in").FontSize(15).FontWeight(medium).TextColor(pal.mute)
 			}
