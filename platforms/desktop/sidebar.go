@@ -153,22 +153,26 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 	}
 }
 
-// machineHeader names a machine in its hue; a click folds its threads, its menu reaches its folders,
+// machineHeader names a machine; a click folds its threads (its rows carry its hue), its menu reaches its folders,
 // providers and plugins.
 func (a *app) machineHeader(c *ui.Context, m Machine, index int) {
 	pal := p(c)
-	e := ui.Row(c).FillWidth().Padding(14, 8, 4).Gap(8).Children(func() {
+	e := ui.Row(c).FillWidth().Padding(14, 8, 4).Gap(8).AlignItems(ui.Center).Children(func() {
 		state := ""
 		if !m.Connected && !m.Self {
 			state = "offline"
 		}
 		hudLabel(c, index, m.Name, state).Grow(1).Basis(0)
-		dot(c, hue(c, a.o.hue(m.ID), pal.fg), 6, false, true)
-		mark := "⌄"
-		if a.fold[m.ID] {
-			mark = "›"
-		}
-		ui.Text(c, mark).FontSize(12).TextColor(pal.meta)
+		// Drawn, not a glyph: ⌄ and › sit on the baseline, below the label's centre.
+		folded := a.fold[m.ID]
+		ui.Box(c).Size(8, 8).Draw(func(pt *ui.Painter, r ui.Rect) {
+			x, y := r.X+r.W/2, r.Y+r.H/2
+			points := [][2]float32{{x - 3.5, y - 1.75}, {x, y + 1.75}, {x + 3.5, y - 1.75}}
+			if folded {
+				points = [][2]float32{{x - 1.75, y - 3.5}, {x + 1.75, y}, {x - 1.75, y + 3.5}}
+			}
+			pt.StrokePolyline(points, 1.2, pal.meta)
+		})
 	})
 	e.ContextMenu(func(menu *ui.Menu) {
 		if m.Launch && menu.Item("Folders…").Chosen() {
@@ -192,7 +196,7 @@ func (a *app) machineHeader(c *ui.Context, m Machine, index int) {
 // foot is how things stand (a newer Orb, a question waiting, work going on) and the settings.
 func (a *app) foot(c *ui.Context) {
 	o, pal := a.o, p(c)
-	ui.Column(c).FillWidth().Padding(12, gutter).Gap(8).BorderWidth(1, 0, 0, 0).BorderColor(pal.rule).Children(func() {
+	ui.Column(c).FillWidth().Padding(12, gutter).Gap(8).Children(func() {
 		a.magi(c)
 		ui.Row(c).FillWidth().Gap(8).PaddingX(8).Children(func() {
 			ink := pal.meta
