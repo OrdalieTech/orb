@@ -7,6 +7,8 @@ shown by `/changelog`.
 
 - Orb for the desktop (`platforms/desktop`) replaces the SwiftUI Mac app, on macOS, Linux and Windows: Go drawn by MyGo's native UI, in the Android app's look, with a sidebar of the conversations open and every machine's threads, conversations tiled side by side or stacked as a tiling window manager does (⌘D, ⌘⇧D, ⌘W, ⌘[ ⌘], ⌘=, or dragging threads and tiles onto a tile's sides), providers, plugins and Bridge beside them, the pairing code as a QR code a phone photographs, and the terminal where a conversation runs under it (⌘J). `platforms/desktop/build.sh` packages each platform's app with its `orb`; `platforms/apple` now builds the iOS app only.
 
+- The Android app's overview (the four squares by the menu) shows every open conversation at once as a live card: where it runs, its title, its state (red while it asks), the end of its transcript as it streams and its context; a tap opens one, a hold its menu.
+
 - The apps' Home shows the model a new conversation starts on and lets you change it before one runs, on the desktop and on Android: `orb models --json` lists the models a new session can use with its default marked, `orb models use <provider> <id>` sets the default, and the Bridge offers both to paired controllers (`host.models`, `host.models.use`). On Android a conversation's machine is chosen on Home only, as on the desktop.
 
 - Orb follows pi 1.5.0 (`UPSTREAM.lock`). Streamed tool calls and Anthropic and Bedrock blocks no longer carry `partialJson`, `partialArgs`, `streamIndex`, `index` or `redactedChunks` in events or failed-stream transcripts, and usage costs record `totalFromProvider` (false for a catalog estimate; a sum is provider-reported only when every part is), as pi 1.5 writes them.
