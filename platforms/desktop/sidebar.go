@@ -34,6 +34,9 @@ func (a *app) sidebar(c *ui.Context) {
 			}
 		})
 		field(c, &a.search, "Search threads", false).Margin(0, gutter, 8).PaddingX(8).FontSize(small)
+		if a.search != "" {
+			c.OnShortcut(0, ui.KeyEscape, func() { a.search = "" })
+		}
 		ui.Scroll(c).Grow(1).Basis(0).FillWidth().Padding(4, gutter, 12).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.search))
 			match := func(title string) bool { return q == "" || strings.Contains(strings.ToLower(title), q) }
@@ -115,7 +118,7 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		if t.Ask != nil {
 			ui.Text(c, "asks").FontSize(12).TextColor(rupture)
 		} else if t.Unread > 0 {
-			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
+			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong).Tooltip("Answers since you last looked")
 		} else if t.Busy {
 			ui.Text(c, "working").FontSize(12).TextColor(pal.meta)
 		} else if t.Remote {

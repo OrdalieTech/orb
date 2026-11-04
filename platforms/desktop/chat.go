@@ -103,7 +103,7 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 		}
 		reading(c).Children(func() {
 			if t.Status != "" {
-				ui.Text(c, t.Status).Padding(4, margin+6).FontSize(small).TextColor(pal.meta).SingleLine()
+				ui.Text(c, t.Status).Padding(4, margin+6).FontSize(small).TextColor(pal.meta)
 			}
 			// What its plugins show beside it: the task list, a status, the last notice.
 			for _, s := range t.Slots {
@@ -135,7 +135,7 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 		switch {
 		case t.Busy:
 			parts, ink = append(parts, "working"), pal.fg
-		case !t.Online:
+		case !t.Online && !strings.HasPrefix(t.Status, "asleep"):
 			parts = append(parts, "offline")
 		}
 		// A narrow tile keeps its bar to the title and the readings.

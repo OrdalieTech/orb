@@ -134,6 +134,7 @@ func (a *app) starts() *Tab {
 func (a *app) show(tab string) {
 	a.stack, a.fresh = nil, nil
 	a.listing = time.Now().Add(5 * time.Second)
+	a.focus++ // its prompt box takes the keys, and with them its tile
 	if x := a.showing(tab); x != nil && tab != "" {
 		a.activate(x)
 		return
@@ -253,6 +254,9 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 		right = tb.Right + 12
 	}
 	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
+	if x := a.building; x != nil {
+		bar.OnClick(func() { a.activate(x) })
+	}
 	hovered := bar.Hovered()
 	bar.Children(func() {
 		a.tools, a.barHover = false, hovered

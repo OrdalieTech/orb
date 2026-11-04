@@ -26,9 +26,10 @@ type tile struct {
 	at      ui.Handle
 	modelAt ui.Handle // its prompt box's model and place, which their popovers open out of
 	whereAt ui.Handle
-	over    string    // the side a drag over it would drop on
-	shown   string    // the side its drop preview shows, as it fades
-	width   float32   // as last drawn
+	over    string  // the side a drag over it would drop on
+	shown   string  // the side its drop preview shows, as it fades
+	width   float32 // as last drawn
+	height  float32
 	showing [2]any    // what it shows, conversation and terminal or not
 	since   time.Time // since when: it fades in for a moment
 }
@@ -120,15 +121,29 @@ func (a *app) replace(x, n *tile) {
 	}
 }
 
-// split puts n on a side of x (left, right, top, bottom), sharing x's room evenly, and focuses it.
+// split puts n on a side of x (left, right, top, bottom), sharing x's room evenly, and focuses it;
+// a line with no room for another tile says so instead.
 func (a *app) split(x *tile, side string, n *tile) {
-	s := &tile{a: x, b: n, below: side == "top" || side == "bottom", share: 50}
+	below := side == "top" || side == "bottom"
+	line := x
+	for p := a.parent(line); p != nil && p.below == below; p = a.parent(p) {
+		line = p
+	}
+	room := line.room
+	if line.leaf() {
+		room = map[bool]float32{true: x.height, false: x.width}[below]
+	}
+	if room > 0 && room/float32(line.count(below)+1) < map[bool]float32{true: 180, false: 300}[below] {
+		a.say("No room for another tile " + map[bool]string{true: "here", false: "in this row"}[below] + " · close one, or split the other way")
+		return
+	}
+	s := &tile{a: x, b: n, below: below, share: 50}
 	if side == "left" || side == "top" {
 		s.a, s.b = n, x
 	}
 	a.replace(x, s)
 	// A new tile takes its share of its line, as in a tiling window manager.
-	line := s
+	line = s
 	for p := a.parent(line); p != nil && p.below == s.below; p = a.parent(p) {
 		line = p
 	}
@@ -149,6 +164,15 @@ func (a *app) unsplit(x *tile) {
 		other = p.b
 	}
 	a.replace(p, other)
+	// Its line shares the room it leaves, as a split takes its share.
+	if q := a.parent(other); q != nil && q.below == p.below {
+		for r := a.parent(q); r != nil && r.below == p.below; r = a.parent(r) {
+			q = r
+		}
+		q.even(false)
+	} else if !other.leaf() && other.below == p.below {
+		other.even(false)
+	}
 	if a.active == x {
 		a.activate(other.tiles(nil)[0])
 	}
@@ -323,7 +347,7 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 	drop := e.AnimateTo("drop", map[bool]float32{true: 1}[x.over != ""], hovering)
 	x.over = ""
 	e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
-		x.width = r.W
+		x.width, x.height = r.W, r.H
 		// The focused tile's top edge in the rupture, as the sidebar marks the conversation shown.
 		if focus > 0 {
 			pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 2}, rupture.Alpha(focus), 0)
@@ -374,7 +398,12 @@ func (a *app) tileTools(c *ui.Context) {
 	}
 	a.tools = true
 	many := !a.root.leaf()
-	if a.barHover {
+	// A tight tile keeps its bar to close; the rest is on its menu.
+	if a.barHover && a.tight && many {
+		if press(ui.Text(c.Key("close"), "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile  " + keys("W"))) {
+			a.unsplit(x)
+		}
+	} else if a.barHover {
 		appear := ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, X: 4}, Exit: &ui.Motion{Opacity: 0}, Animation: &hovering}
 		icon := func(tip string, draw func(pt *ui.Painter, r ui.Rect)) bool {
 			e := ui.Box(c.Key(tip)).Size(24, 24).Radius(soft).Shrink(0).Tooltip(tip).Transition(appear)

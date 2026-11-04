@@ -90,7 +90,7 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
 @Composable
 private fun Strip(t: Tab, usage: () -> Unit, terminal: () -> Unit) =
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        val state = when { t.busy -> "working"; !t.online -> "offline"; else -> "" }
+        val state = when { t.busy -> "working"; !t.online -> t.idleWord; else -> "" }
         T(listOfNotNull(t.where.takeIf { t.remote }, state.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (t.busy) p.fg else p.meta, lines = 1)
         // Context as a synchronisation rate, as Evangelion reads one out.
         if (t.context > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -348,13 +348,24 @@ func navigation(command string) string {
 func (a *App) balance() {
 	order := slices.Clone(a.tabs)
 	slices.SortStableFunc(order, func(x, y *tab) int { return y.seen.Compare(x.seen) })
+	woken := 0
 	for i, t := range order {
 		if follows := a.visible && i < a.budget; follows != t.follows {
 			t.follows = follows
 			t.wakeUp()
 		}
+		// Only the conversations on screen seen last start an Orb by themselves: a Bridge starts
+		// eight at most, and an overview of more would have them end each other in turn.
+		t.wakes = t.watched && woken < wakeable
+		if t.wakes {
+			woken++
+		}
 	}
 }
+
+// wakeable is how many conversations on screen start their Orb when it is not running; the others
+// wait for a message.
+const wakeable = 6
 
 // flush sends the app what changed: its state, the rows of the conversations it follows, and
 // alerts for what happened out of its sight. Called with the lock held.
@@ -387,6 +398,7 @@ func (a *App) state() State {
 		s.Login = &l
 	}
 	var asking, working *tab
+	busy := 0
 	for _, t := range a.tabs {
 		if m := a.machine(t.Peer); m != nil {
 			t.Where = a.name(m) // as named here, or as it calls itself once it said so
@@ -400,6 +412,9 @@ func (a *App) state() State {
 		}
 		if t.Busy && working == nil {
 			working = t
+		}
+		if t.Busy {
+			busy++
 		}
 		if you := lastYou(&t.tr); !t.Remote && t.Busy && you != nil && you.via != "" {
 			s.Acting = true
@@ -418,6 +433,9 @@ func (a *App) state() State {
 		s.Summary = "a peer is acting here"
 	case working != nil:
 		s.Summary = "working · " + working.Title
+		if busy > 1 {
+			s.Summary = fmt.Sprintf("%d working · %s and more", busy, working.Title)
+		}
 	default:
 		s.Summary = fmt.Sprintf("ready · %d peer%s", peers, map[bool]string{true: "", false: "s"}[peers == 1])
 	}
