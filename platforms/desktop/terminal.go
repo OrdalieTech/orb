@@ -55,7 +55,11 @@ func (a *app) newShell(t *Tab) *shell {
 		a.o.win.Update(func() {
 			if a.shells[id] == s {
 				delete(a.shells, id)
-				delete(a.term, id)
+				for _, x := range a.root.tiles(nil) {
+					if x.tab == id && x.shell {
+						a.unsplit(x)
+					}
+				}
 			}
 		})
 	}
@@ -67,26 +71,23 @@ func (a *app) newShell(t *Tab) *shell {
 	return s
 }
 
-// terminal is the pane under a conversation: where it runs, a ×, and the terminal filling the rest.
-func (a *app) terminal(c *ui.Context, t *Tab) {
+// terminal is the tile of a conversation's terminal: where it runs, and the terminal filling the
+// rest. Closed, its shell keeps its state while the conversation is open.
+func (a *app) terminal(c *ui.Context, t *Tab, x *tile) {
 	pal := p(c)
 	s := a.shells[t.ID]
 	if s == nil {
 		s = a.newShell(t)
 		a.shells[t.ID] = s
 	}
-	ui.Column(c).Fill().Background(pal.bg).Bind(&a.termPane).Children(func() {
-		rule(c, pal.rule)
-		ui.Row(c).FillWidth().Padding(4, 8, 4, margin).Gap(8).Children(func() {
+	ui.Column(c).Fill().Background(pal.bg).Children(func() {
+		a.titleBar(c, func() {
 			at := device
 			if t.Remote {
 				at = t.Where
 			}
-			label(c, "terminal").TextColor(pal.meta)
-			ui.Text(c, at+" · "+cmp.Or(tidy(t.CWD), "~")).Grow(1).Basis(0).FontSize(12).TextColor(pal.meta).SingleLine()
-			if press(ui.Text(c, "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Hide  " + keys("J"))) {
-				a.term[t.ID] = false
-			}
+			a.carry(label(c, "terminal").TextColor(pal.meta), carried{tile: x})
+			ui.Text(c, at+" · "+cmp.Or(tidy(t.CWD), "~")).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
 		})
 		if s.term == nil {
 			ui.Text(c, s.err).FontSize(small).TextColor(rupture).Padding(8, margin)

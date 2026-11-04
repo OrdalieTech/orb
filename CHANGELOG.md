@@ -5,7 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- Orb for the desktop (`platforms/desktop`) replaces the SwiftUI Mac app, on macOS, Linux and Windows: Go drawn by MyGo's native UI, in the Android app's look, with a sidebar of the conversations open and every machine's threads, the conversation, providers, plugins and Bridge beside it, the pairing code as a QR code a phone photographs, and the terminal where a conversation runs under it (⌘J). `platforms/desktop/build.sh` packages each platform's app with its `orb`; `platforms/apple` now builds the iOS app only.
+- Orb for the desktop (`platforms/desktop`) replaces the SwiftUI Mac app, on macOS, Linux and Windows: Go drawn by MyGo's native UI, in the Android app's look, with a sidebar of the conversations open and every machine's threads, conversations tiled side by side or stacked as a tiling window manager does (⌘D, ⌘⇧D, ⌘W, ⌘[ ⌘], ⌘=, or dragging threads and tiles onto a tile's sides), providers, plugins and Bridge beside them, the pairing code as a QR code a phone photographs, and the terminal where a conversation runs under it (⌘J). `platforms/desktop/build.sh` packages each platform's app with its `orb`; `platforms/apple` now builds the iOS app only.
 
 - The apps' Home shows the model a new conversation starts on and lets you change it before one runs, on the desktop and on Android: `orb models --json` lists the models a new session can use with its default marked, `orb models use <provider> <id>` sets the default, and the Bridge offers both to paired controllers (`host.models`, `host.models.use`). On Android a conversation's machine is chosen on Home only, as on the desktop.
 

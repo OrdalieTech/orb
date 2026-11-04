@@ -13,7 +13,7 @@ import (
 // away, the latest threads under it. Every thread is in the sidebar.
 func (a *app) homeScreen(c *ui.Context) {
 	o, pal := a.o, p(c)
-	titleBar(c, func() {})
+	a.titleBar(c, func() { ui.Spacer(c) })
 	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
 		// An Evangelion title card: the episode over a rule, the title stretched tall, its name in
 		// Japanese closing the line.

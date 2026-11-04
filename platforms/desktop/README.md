@@ -4,8 +4,17 @@ The desktop app for macOS, Linux and Windows draws `orb app` (`bridge/view`): th
 open on this computer's Bridge, the CLI's own, and on its paired machines. It holds no logic of
 its own; the view, shared with the Android and iOS apps, does. It is Go, drawn by
 [MyGo](https://github.com/egoist/mygo)'s native UI (no webview, no cgo), in the Android app's look:
-a sidebar of the conversations open and each machine's threads, the conversation or a settings
-screen beside it, and the terminal where a conversation runs under it (⌘J, Ctrl+J elsewhere).
+a sidebar of the conversations open and each machine's threads, and beside it tiles, as a tiling
+window manager cuts the window: conversations, Home, and the terminals where conversations run.
+
+Tiles work with the keys and the pointer alike (⌘ is Ctrl off macOS):
+
+- ⌘D splits a tile right, ⌘⇧D down; ⌘W closes it (its conversation stays open in the sidebar);
+  ⌘[ and ⌘] move between tiles; ⌘= evens them out; ⌘J opens a conversation's terminal under it.
+- A conversation or a thread dragged from the sidebar onto a tile opens there: on a side, in a new
+  tile on that side; in the middle, in place of what it shows. A tile dragged by its title moves the
+  same way. Dividers drag; a tile's bar shows split and close on hover, and its menu (right click)
+  has the rest.
 
 This directory is a Go module of its own, so MyGo never reaches Orb's module or the `orb` binary.
 The app runs `orb app` as a process and decodes what it prints into its own types (`model.go`).
