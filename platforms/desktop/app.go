@@ -35,32 +35,35 @@ type renaming struct {
 // app is everything the window shows that the view does not say: where it is, each conversation's
 // draft, the sheets open.
 type app struct {
-	o        *Orb
-	stack    []screen
-	tab      string            // the conversation shown, "" for Home
-	drafts   map[string]string // each conversation's draft, "" for Home's
-	focus    int               // asked to focus the prompt box, each time it grows
-	picker   *picker
-	rename   *renaming
-	root     *tile     // the window's tiles
-	active   *tile     // the tile the keys and the sidebar act on; a.tab is its conversation
-	building *tile     // the tile being built
-	corner   bool      // it reaches the window's top right, where the window's controls are
-	narrow   bool      // it is too narrow for its bar's details
-	tight    bool      // and for its gauges: a column among four or five
-	dragging bool      // something is dragged: the tiles show where it would drop
-	dragNow  bool      // a source said so in this frame
-	linger   int       // frames the tiles keep taking a drop after the drag, which arrives after release
-	morph    time.Time // until when the tiles glide to new places
-	zoomed   *tile     // the tile shown alone, nil for the layout
-	model    string    // the conversation whose model sheet shows, next for Home's
-	fresh    *Tab      // what a new conversation starts on: this computer's models and default, nil until read
-	reading  bool      // fresh is being read
-	viewing  [2]string // an image shown whole: its reference and conversation
-	notice   string    // one line that fades: copied, or why something failed
-	lists    map[string]*ui.ListState
-	shells   map[string]*shell // each conversation's terminal, while it lives
-	answer   map[string]string // the free answer typed to an interrupt
+	o          *Orb
+	stack      []screen
+	tab        string            // the conversation shown, "" for Home
+	drafts     map[string]string // each conversation's draft, "" for Home's
+	focus      int               // asked to focus the prompt box, each time it grows
+	picker     *picker
+	rename     *renaming
+	root       *tile     // the window's tiles
+	active     *tile     // the tile the keys and the sidebar act on; a.tab is its conversation
+	building   *tile     // the tile being built
+	corner     bool      // it reaches the window's top right, where the window's controls are
+	narrow     bool      // it is too narrow for its bar's details
+	tight      bool      // and for its gauges: a column among four or five
+	barHover   bool      // the pointer is on its bar, which shows its controls
+	tools      bool      // they are drawn: left of its readings, which then stay put
+	dragging   bool      // something is dragged: the tiles show where it would drop
+	dragNow    bool      // a source said so in this frame
+	linger     int       // frames the tiles keep taking a drop after the drag, which arrives after release
+	morph      time.Time // until when the tiles glide to new places
+	zoomed     *tile     // the tile shown alone, nil for the layout
+	savedTiles []byte    // the layout as last saved
+	model      string    // the conversation whose model sheet shows, next for Home's
+	fresh      *Tab      // what a new conversation starts on: this computer's models and default, nil until read
+	reading    bool      // fresh is being read
+	viewing    [2]string // an image shown whole: its reference and conversation
+	notice     string    // one line that fades: copied, or why something failed
+	lists      map[string]*ui.ListState
+	shells     map[string]*shell // each conversation's terminal, while it lives
+	answer     map[string]string // the free answer typed to an interrupt
 
 	expanded map[string]bool              // the actions open, by tab and key
 	details  map[string]map[string]string // what an open action was given and returned
@@ -206,6 +209,7 @@ func (a *app) view(c *ui.Context) {
 				}
 				a.layout(c, top, true)
 				a.building = nil
+				a.saveTiles()
 				return
 			}
 			// The window's controls keep their room above every other screen.
@@ -251,9 +255,11 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
 	hovered := bar.Hovered()
 	bar.Children(func() {
+		a.tools, a.barHover = false, hovered
 		body()
-		a.tileMenu(c, bar, hovered)
+		a.tileTools(c)
 	})
+	a.tileMenu(bar)
 }
 
 // close stops following a conversation; the one after it shows in its place, Home after the last.
@@ -306,6 +312,10 @@ func (a *app) send(t *Tab, text string) {
 	then(a.o, func(r struct{ Tab, Nav, Copy string }, err error) {
 		if err != nil {
 			a.say(err.Error())
+			// Refused (no Orb could start, say): the text goes back where it was typed.
+			if a.drafts[id] == "" {
+				a.drafts[id] = text
+			}
 			return
 		}
 		if r.Tab != "" {

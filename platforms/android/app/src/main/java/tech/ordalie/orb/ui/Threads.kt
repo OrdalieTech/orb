@@ -13,13 +13,19 @@ import androidx.compose.ui.unit.*
 /** A path the way its owner reads it: home as ~. */
 private fun tidy(path: String) = path.replace(Regex("^/(Users|home)/[^/]+"), "~")
 
-/** What starting Orb on a device is doing, on whichever screen started it. */
+/** What starting Orb on a device is doing, on whichever screen started it; why it failed until tapped away. */
 @Composable
-fun Launching(c: Ctx) = AnimatedVisibility(c.v.state.launching.isNotEmpty()) {
+fun Launching(c: Ctx) {
     val text = c.v.state.launching
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Dot(if (text.startsWith("starting")) p.mute else Ink.Rupture, pulse = text.startsWith("starting")); Spacer(Modifier.width(10.dp))
-        T(text, Modifier.weight(1f), size = 13.sp, color = if (text.startsWith("starting")) p.mute else Ink.Rupture, lines = 3)
+    var gone by remember { mutableStateOf("") } // the failure tapped away; the next start shows again
+    LaunchedEffect(text) { if (text != gone) gone = "" }
+    val starting = text.startsWith("starting")
+    AnimatedVisibility(text.isNotEmpty() && text != gone) {
+        Row(Modifier.fillMaxWidth().press(enabled = !starting) { gone = text }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Dot(if (starting) p.mute else Ink.Rupture, pulse = starting); Spacer(Modifier.width(10.dp))
+            T(text, Modifier.weight(1f), size = 13.sp, color = if (starting) p.mute else Ink.Rupture, lines = 3)
+            if (!starting) T("×", Modifier.padding(start = 10.dp), size = 16.sp, color = p.meta)
+        }
     }
 }
 

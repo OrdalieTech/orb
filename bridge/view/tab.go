@@ -285,13 +285,7 @@ func (t *tab) describe() bool {
 		t.Status = ""
 	}
 	t.session, t.CWD = d.Target.Session, d.CWD
-	t.Title = d.Name
-	if t.Title == "" {
-		t.Title = firstUserLine(&t.tr)
-	}
-	if t.Title == "" {
-		t.Title = path.Base(d.CWD)
-	}
+	t.Title = cmp.Or(d.Name, firstUserLine(&t.tr), t.Title, path.Base(d.CWD))
 	// The Orb names its model by display name and provider (an older one, the name alone); its
 	// catalog maps that to an id and the levels it takes.
 	t.Model, t.Levels, t.Models = d.Model, nil, nil

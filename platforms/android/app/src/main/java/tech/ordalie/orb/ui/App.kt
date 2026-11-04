@@ -11,13 +11,13 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.pager.*
-import androidx.compose.foundation.relocation.*
 import androidx.compose.foundation.text.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.focus.*
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -58,6 +58,10 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
     val pager = PagerState { 1 + rt.view.state.tabs.size }
     /** The conversation on screen, or the one a swipe is nearest; null on Home. */
     val open: Tab? get() = rt.view.state.tabs.getOrNull(pager.currentPage - 1)
+    /** A message the view refused, for the prompt box it came from to take back: its tab ("" for Home) and text. */
+    var unsent by mutableStateOf<Pair<String, String>?>(null)
+    /** Home's prompt box takes the keyboard when it next shows (the overview's new-session card). */
+    var compose by mutableStateOf(false)
     fun go(s: Screen) { forward = true; stack += s }
     fun back() { if (stack.size > 1) { forward = false; stack.removeAt(stack.lastIndex) } }
     fun home() = show(null)
@@ -68,7 +72,10 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
         while (stack.size > 1) stack.removeAt(stack.lastIndex)
         scope.launch {
             val page = if (tab == null) 0 else withTimeoutOrNull(5000) { snapshotFlow { rt.view.state.tabs.indexOfFirst { it.id == tab } }.first { it >= 0 } }?.plus(1) ?: return@launch
+            // A page just added is laid out a frame later; scrolled to before, the pager stops short of it.
+            withFrameNanos {}
             pager.animateScrollToPage(page)
+            if (pager.currentPage != page) pager.scrollToPage(page)
         }
     }
 }
@@ -217,7 +224,24 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
         val widths = remember { mutableStateMapOf<String, Int>() }
         val haptic = LocalHapticFeedback.current
         LaunchedEffect(ids) { if (dragged == null) order = ids }
-        LazyRow(Modifier.weight(1f).fillMaxHeight(), contentPadding = PaddingValues(start = 10.dp)) {
+        // The tab on screen scrolls into the strip whole, however it came to show: a send, a swipe, a notification.
+        val strip = rememberLazyListState()
+        val current = c.nav.open?.id
+        LaunchedEffect(current, order) {
+            val at = order.indexOf(current).takeIf { it >= 0 } ?: return@LaunchedEffect
+            snapshotFlow { strip.layoutInfo }.first { it.totalItemsCount > at }.let { info ->
+                val seen = info.visibleItemsInfo.firstOrNull { it.index == at }
+                if (seen == null || seen.offset < info.viewportStartOffset || seen.offset + seen.size > info.viewportEndOffset) strip.animateScrollToItem(at)
+            }
+        }
+        val ground = p.bg
+        // Tabs cut by the strip's end fade into it, rather than leaving a stray letter by the icons.
+        LazyRow(Modifier.weight(1f).fillMaxHeight().drawWithContent {
+            drawContent()
+            val fade = 28.dp.toPx()
+            if (strip.canScrollForward) drawRect(Brush.horizontalGradient(listOf(Color.Transparent, ground), startX = size.width - fade, endX = size.width))
+            if (strip.canScrollBackward) drawRect(Brush.horizontalGradient(listOf(ground, Color.Transparent), startX = 0f, endX = fade))
+        }, state = strip, contentPadding = PaddingValues(start = 10.dp)) {
             items(order, key = { it }) { id ->
                 val t = c.rt.view.state.tabs.firstOrNull { it.id == id } ?: return@items
                 val page = ids.indexOf(id) + 1
@@ -264,9 +288,7 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
 /** [near] is how close the pager is to this tab's page, read at draw time so a swipe redraws only the line. */
 @Composable
 private fun TabMark(s: Tab, hue: Int, on: Boolean, near: () -> Float, modifier: Modifier, close: () -> Unit, open: () -> Unit) {
-    val view = remember { BringIntoViewRequester() }
-    LaunchedEffect(on) { if (on) view.bringIntoView() }
-    Column(modifier.fillMaxHeight().width(IntrinsicSize.Max).bringIntoViewRequester(view).press(onClick = open).padding(horizontal = 8.dp)) {
+    Column(modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onClick = open).padding(horizontal = 8.dp)) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Where(hue, s.busy, s.ask != null, if (on) p.fg else p.mute)
             Spacer(Modifier.width(7.dp))

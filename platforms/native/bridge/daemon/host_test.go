@@ -83,8 +83,11 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 		t.Fatalf("launched a thread open elsewhere: %v", err)
 	}
 	_ = lock.Close()
+	// At the cap an Orb between turns gives way; Orbs all in a turn refuse the next.
 	for i := range maxLaunched {
-		s.launched[string(rune('a'+i))] = &launched{input: io.NopCloser(nil)}
+		l := &launched{input: io.NopCloser(nil)}
+		l.turn.Store(true)
+		s.launched[string(rune('a'+i))] = l
 	}
 	if _, err := s.host(t.Context(), p, "host.launch", bridge.JSON(map[string]string{"cwd": root})); bridge.Code(err) != "resource_exhausted" {
 		t.Fatalf("launch past the cap: %v", err)

@@ -84,7 +84,7 @@ class OverviewTest {
         }
         compose.waitForIdle()
         compose.onNodeWithText("fix flaky e2e").assertIsDisplayed()
-        compose.onNodeWithText("asks · run tests?").assertIsDisplayed()
+        compose.onNodeWithText("phone · asks · run tests?").assertIsDisplayed()
         compose.onNodeWithText("Tiles on the desktop", substring = true).assertIsDisplayed()
         compose.onNodeWithText("+ new session").assertIsDisplayed()
         System.getenv("ORB_OVERVIEW_PNG")?.let { path ->

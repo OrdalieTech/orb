@@ -25,8 +25,7 @@ func main() {
 		answer: map[string]string{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
 		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
 	}
-	a.root = &tile{}
-	a.active = a.root
+	a.loadTiles()
 	// A pairing code opened as a link (orb-bridge:…) joins from the Bridge screen; on Linux and
 	// Windows the link starts the app again, which hands it to this one.
 	join := func(url string) {

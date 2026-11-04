@@ -114,7 +114,7 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 				a.folded(c.Key(s.Key), strings.Join(s.Lines, "\n"), ink).PaddingX(margin + 6)
 			}
 		})
-		a.promptBox(c, t, "What should we work on?")
+		a.promptBox(c, t, "What next?")
 	})
 }
 
@@ -144,6 +144,7 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 		} else {
 			ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).MinWidth(0).FontSize(small).TextColor(ink).SingleLine()
 		}
+		a.tileTools(c)
 		// A tight tile under the window's controls has room for its title and its terminal only.
 		if t.Context > 0 && !(a.tight && a.corner) {
 			ink := pal.meta
