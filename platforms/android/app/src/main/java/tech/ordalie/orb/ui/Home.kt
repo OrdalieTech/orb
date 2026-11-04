@@ -61,19 +61,19 @@ fun ColumnScope.Home(c: Ctx) {
     PromptBox(null, c, c.palette(null), placeholder = "What should we work on?") { c.send(null, it) }
 }
 
-/** An Evangelion title card over the prompt box, as the series sets one and as on the desktop: the
- *  episode, the title compressed to fill its frame, its name in Japanese under it. */
+/** An Evangelion title card over the prompt box, as on the desktop: the episode over a rule, the
+ *  title stretched tall, its name in Japanese closing the line. */
 @Composable
-private fun TitleCard(episode: Int, up: Boolean) = Column(Modifier.fillMaxWidth().padding(horizontal = Margin + 4.dp, vertical = 8.dp)) {
+private fun TitleCard(episode: Int, up: Boolean) = Column(Modifier.fillMaxWidth().padding(start = Margin + 4.dp, end = Margin, top = 6.dp, bottom = 10.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        T(if (up) "第%03d話".format(episode) else "第———話", size = 13.sp, weight = Strong, color = Ink.Rupture)
+        T(if (up) "第%03d話".format(episode) else "第———話", size = 12.sp, weight = Strong, color = Ink.Rupture)
         Box(Modifier.weight(1f).height(1.dp).background(p.rule))
     }
-    Stretch("NEW SESSION", 64.dp, p.fg, squeeze = 0f, modifier = Modifier.padding(top = 10.dp))
-    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        T("新規セッション", size = 17.sp, weight = Strong, lines = 1)
-        Box(Modifier.weight(1f).height(1.dp).background(p.rule))
-        Box(Modifier.size(9.dp).background(Ink.Rupture))
+    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Stretch("NEW SESSION", 36.dp, p.fg)
+        Box(Modifier.padding(bottom = 2.dp).size(7.dp).background(Ink.Rupture))
+        Spacer(Modifier.weight(1f))
+        T("新規セッション", size = 12.sp, color = p.meta, lines = 1)
     }
 }
 

@@ -113,10 +113,9 @@ fun MenuMark(onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).paddin
 }
 
 /**
- * The EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed, or with
- * squeeze 0 compressed to fill its width. Reserved for events and identities. The capitals are the
- * font's own outlines, stretched as vectors and filled at the screen's resolution: text scaled as a
- * layer would stretch its pixels. Letters are set by their ink, a fixed gap apart, as Matisse is:
+ * The EVA title card: Ubuntu Sans Mono Bold stretched ×1.9 tall, squeezed as needed. Reserved for
+ * events and identities. The capitals are the font's own outlines, stretched as vectors and filled
+ * at the screen's resolution: text scaled as a layer would stretch its pixels. Letters are set by their ink, a fixed gap apart, as Matisse is:
  * the mono's equal advances would leave an I or an S floating in its cell.
  */
 @Composable
@@ -146,8 +145,7 @@ fun Stretch(text: String, height: Dp, color: Color = p.fg, squeeze: Float = 1f, 
     }
     val sy = with(LocalDensity.current) { height.toPx() } / caps
     val fill = remember(color) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color = color.toArgb() } }
-    val box = if (squeeze == 0f) modifier.fillMaxWidth().height(height) else modifier.size(with(LocalDensity.current) { (width * sy / 1.9f * squeeze).toDp() }, height)
-    Canvas(box) {
+    Canvas(modifier.size(with(LocalDensity.current) { (width * sy / 1.9f * squeeze).toDp() }, height)) {
         drawIntoCanvas {
             it.nativeCanvas.save(); it.nativeCanvas.translate(0f, size.height); it.nativeCanvas.scale(size.width / width, sy)
             it.nativeCanvas.drawPath(path, fill); it.nativeCanvas.restore()
