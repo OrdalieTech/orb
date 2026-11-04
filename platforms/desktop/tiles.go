@@ -1,6 +1,10 @@
 package main
 
-import "github.com/egoist/mygo/ui"
+import (
+	"time"
+
+	"github.com/egoist/mygo/ui"
+)
 
 // tile is a part of the window, as a tiling window manager cuts it: two tiles, side by side or one
 // above the other, or a tile showing a conversation (Home for none) or the terminal where one runs.
@@ -17,8 +21,14 @@ type tile struct {
 	modelAt ui.Handle // its prompt box's model and place, which their popovers open out of
 	whereAt ui.Handle
 	over    string  // the side a drag over it would drop on
+	shown   string  // the side its drop preview shows, as it fades
 	width   float32 // as last drawn
+	showing [2]any    // what it shows, conversation and terminal or not
+	since   time.Time // since when: it fades in for a moment
 }
+
+// match is a tile's identity across layouts: a tile moving between splits glides from where it was.
+type match struct{ t *tile }
 
 // carried is what a drag carries: an open conversation, a thread to open, or a tile to move.
 type carried struct {
@@ -77,8 +87,23 @@ func (a *app) parent(x *tile) *tile {
 	return find(a.root)
 }
 
+// reshape lets the tiles glide to their new places for a moment: between changes, a divider
+// dragged moves them at once.
+func (a *app) reshape() { a.morph = time.Now().Add(400 * time.Millisecond) }
+
+// zoom shows x alone, filling the tiles' room, or the layout again (⌘⇧↩).
+func (a *app) zoom(x *tile) {
+	if a.zoomed == x {
+		x = nil
+	}
+	a.zoomed = x
+	a.reshape()
+}
+
 // replace puts n where x is in the layout.
 func (a *app) replace(x, n *tile) {
+	a.reshape()
+	a.zoomed = nil
 	switch p := a.parent(x); {
 	case p == nil:
 		a.root = n
@@ -152,6 +177,7 @@ func (a *app) place(x *tile, side, tab string, shell bool) {
 	if side == "middle" {
 		x.tab, x.shell = tab, shell
 		a.activate(x)
+		a.reshape()
 		return
 	}
 	a.split(x, side, &tile{tab: tab, shell: shell})
@@ -189,7 +215,12 @@ func (a *app) cycle(by int) {
 	all := a.root.tiles(nil)
 	for i, t := range all {
 		if t == a.active {
-			a.activate(all[(i+by+len(all))%len(all)])
+			next := all[(i+by+len(all))%len(all)]
+			a.activate(next)
+			if a.zoomed != nil {
+				a.zoomed = next
+				a.reshape()
+			}
 			return
 		}
 	}
@@ -245,8 +276,23 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 		a.activate(x)
 	}
 	o, pal := a.o, p(c)
-	many := !a.root.leaf()
-	e := ui.Column(c).Fill().Background(pal.bg).Bind(&x.at).Children(func() {
+	many := !a.root.leaf() && a.zoomed == nil
+	// It glides from where it was as the layout changes, and fades in as it opens or shows another
+	// conversation.
+	glide := ui.ElementTransition{Match: match{x}, Position: true, Size: true, Duration: time.Millisecond}
+	if time.Now().Before(a.morph) {
+		glide.Animation = &opening
+	}
+	e := ui.Column(c).Fill().Background(pal.bg).Bind(&x.at).Transition(glide)
+	// The fade is the tile's, not its element's: a tile moving to another split is a new element.
+	if now := (time.Now()); x.showing != [2]any{x.tab, x.shell} || x.since.IsZero() {
+		x.showing, x.since = [2]any{x.tab, x.shell}, now
+	}
+	if in := float32(time.Since(x.since)) / float32(260*time.Millisecond); in < 1 && !c.Preferences().ReduceMotion {
+		e.Opacity(easeOut(in))
+		c.After(16 * time.Millisecond)
+	}
+	e.Children(func() {
 		t := o.tab(x.tab)
 		switch {
 		case t != nil && x.shell:
@@ -260,17 +306,21 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 			a.zones(c, x)
 		}
 	})
-	focused, over := many && a.active == x, x.over
+	if x.over != "" {
+		x.shown = x.over
+	}
+	focus := e.AnimateTo("focus", map[bool]float32{true: 1}[many && a.active == x], hovering)
+	drop := e.AnimateTo("drop", map[bool]float32{true: 1}[x.over != ""], hovering)
 	x.over = ""
 	e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
 		x.width = r.W
 		// The focused tile's top edge in the rupture, as the sidebar marks the conversation shown.
-		if focused {
-			pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 2}, rupture, 0)
+		if focus > 0 {
+			pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 2}, rupture.Alpha(focus), 0)
 		}
 		// Where a drop would put what is dragged: this half, or the whole tile.
 		h := r
-		switch over {
+		switch x.shown {
 		case "":
 			return
 		case "left":
@@ -282,8 +332,8 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 		case "bottom":
 			h.Y, h.H = h.Y+h.H/2, h.H/2
 		}
-		pt.Fill(h, rupture.Alpha(0.08), 0)
-		pt.Stroke(h, rupture.Alpha(0.6), 0, 1)
+		pt.Fill(h, rupture.Alpha(0.08*drop), 0)
+		pt.Stroke(h, rupture.Alpha(0.6*drop), 0, 1)
 	})
 }
 
@@ -315,8 +365,9 @@ func (a *app) tileMenu(c *ui.Context, bar ui.Element, hovered bool) {
 	}
 	many := !a.root.leaf()
 	if hovered {
+		appear := ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, X: 4}, Exit: &ui.Motion{Opacity: 0}, Animation: &hovering}
 		icon := func(tip string, draw func(pt *ui.Painter, r ui.Rect)) bool {
-			e := ui.Box(c.Key(tip)).Size(24, 24).Radius(soft).Shrink(0).Tooltip(tip)
+			e := ui.Box(c.Key(tip)).Size(24, 24).Radius(soft).Shrink(0).Tooltip(tip).Transition(appear)
 			hover(e, pal.raised)
 			e.Draw(func(pt *ui.Painter, r ui.Rect) {
 				draw(pt, ui.Rect{X: r.X + 6, Y: r.Y + 7, W: 12, H: 10})
@@ -335,7 +386,15 @@ func (a *app) tileMenu(c *ui.Context, bar ui.Element, hovered bool) {
 		}) {
 			a.split(x, "bottom", &tile{})
 		}
-		if many && press(ui.Text(c, "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile  "+keys("W"))) {
+		if many && icon(map[bool]string{true: "Back to the tiles  ", false: "Zoom  "}[a.zoomed == x]+keys("⇧↩"), func(pt *ui.Painter, r ui.Rect) {
+			pt.Stroke(r, pal.meta, 1.5, 1.2)
+			if a.zoomed != x {
+				pt.Fill(ui.Rect{X: r.X + 3, Y: r.Y + 3, W: r.W - 6, H: r.H - 6}, pal.meta, 0.5)
+			}
+		}) {
+			a.zoom(x)
+		}
+		if many && press(ui.Text(c.Key("close"), "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile  "+keys("W")).Transition(appear)) {
 			a.unsplit(x)
 		}
 	}
@@ -349,8 +408,12 @@ func (a *app) tileMenu(c *ui.Context, bar ui.Element, hovered bool) {
 		if x.tab != "" && !x.shell && m.Item("Terminal").Chosen() {
 			a.terminalOf(x.tab)
 		}
+		if many && m.Item(map[bool]string{true: "Back to the tiles", false: "Zoom"}[a.zoomed == x]).Chosen() {
+			a.zoom(x)
+		}
 		if many && m.Item("Even out tiles").Chosen() {
 			a.root.even(true)
+			a.reshape()
 		}
 		if many && m.Item("Close tile").Chosen() {
 			a.unsplit(x)

@@ -51,6 +51,8 @@ type app struct {
 	dragging bool      // something is dragged: the tiles show where it would drop
 	dragNow  bool      // a source said so in this frame
 	linger   int       // frames the tiles keep taking a drop after the drag, which arrives after release
+	morph    time.Time // until when the tiles glide to new places
+	zoomed   *tile     // the tile shown alone, nil for the layout
 	model    string    // the conversation whose model sheet shows, next for Home's
 	fresh    *Tab      // what a new conversation starts on: this computer's models and default, nil until read
 	reading  bool      // fresh is being read
@@ -196,7 +198,13 @@ func (a *app) view(c *ui.Context) {
 			top := a.top()
 			switch top.kind {
 			case "":
-				a.layout(c, a.root, true)
+				top := a.root
+				if a.zoomed != nil && a.contains(a.zoomed) {
+					top = a.zoomed
+				} else {
+					a.zoomed = nil
+				}
+				a.layout(c, top, true)
 				a.building = nil
 				return
 			}
@@ -411,7 +419,12 @@ func (a *app) shortcuts(c *ui.Context) {
 	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
 	c.OnShortcut(cmd, ui.KeyBracketRight, func() { a.cycle(1) })
-	c.OnShortcut(cmd, ui.KeyEqual, func() { a.root.even(true) })
+	c.OnShortcut(cmd, ui.KeyEqual, func() { a.root.even(true); a.reshape() })
+	c.OnShortcut(cmd|ui.Shift, ui.KeyEnter, func() {
+		if !a.root.leaf() {
+			a.zoom(a.active)
+		}
+	})
 	c.OnShortcut(cmd, ui.KeyPeriod, func() {
 		if a.tab != "" {
 			o.send("abort", "tab", a.tab)

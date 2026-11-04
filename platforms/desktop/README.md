@@ -10,7 +10,8 @@ window manager cuts the window: conversations, Home, and the terminals where con
 Tiles work with the keys and the pointer alike (⌘ is Ctrl off macOS):
 
 - ⌘D splits a tile right, ⌘⇧D down; ⌘W closes it (its conversation stays open in the sidebar);
-  ⌘[ and ⌘] move between tiles; ⌘= evens them out; ⌘J opens a conversation's terminal under it.
+  ⌘[ and ⌘] move between tiles; ⌘= evens them out; ⌘⇧↩ zooms one to fill the room, and back; ⌘J
+  opens a conversation's terminal under it. Tiles glide to their new places as the layout changes.
 - A conversation or a thread dragged from the sidebar onto a tile opens there: on a side, in a new
   tile on that side; in the middle, in place of what it shows. A tile dragged by its title moves the
   same way. Dividers drag; a tile's bar shows split and close on hover, and its menu (right click)

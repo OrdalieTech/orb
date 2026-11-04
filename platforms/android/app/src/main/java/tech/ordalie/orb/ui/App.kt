@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+
 package tech.ordalie.orb.ui
 
 import androidx.activity.compose.BackHandler
@@ -130,7 +132,12 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                 // Home's bar above and its prompt boxes below handle the edges.
                 Column(Modifier.fillMaxSize().then(if (s is Screen.Home) Modifier else Modifier.statusBarsPadding().navigationBarsPadding()).imePadding()) {
                     when (s) {
-                        Screen.Home -> Crossfade(overview, label = "overview") { if (it) Overview(ctx) { overview = false } else Deck(ctx) }
+                        // The overview and the deck trade places as a zoom: a card grows into its page, a page shrinks into its card.
+                        Screen.Home -> SharedTransitionLayout {
+                            AnimatedContent(overview, transitionSpec = { fadeIn(tween(220, 60)) togetherWith fadeOut(tween(160)) }, label = "overview") { on ->
+                                CompositionLocalProvider(LocalMorph provides Morph(this@SharedTransitionLayout, this)) { if (on) Overview(ctx) { overview = false } else Deck(ctx) }
+                            }
+                        }
                         Screen.Bridge -> BridgeScreen(ctx)
                         Screen.Invite -> InviteScreen(ctx)
                         is Screen.Join -> JoinScreen(ctx, s.text)
@@ -160,10 +167,13 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
 @Composable
 private fun GridMark(on: Boolean, onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).padding(10.dp)) {
     val ink = p.fg
+    val fill by animateFloatAsState(if (on) 1f else 0f, tween(200), label = "grid")
     Canvas(Modifier.size(13.dp)) {
         val s = size.width * 0.42f
+        val line = 1.2.dp.toPx()
         listOf(Offset.Zero, Offset(size.width - s, 0f), Offset(0f, size.height - s), Offset(size.width - s, size.height - s)).forEach { o ->
-            if (on) drawRect(ink, o, androidx.compose.ui.geometry.Size(s, s)) else drawRect(ink, o + Offset(0.6.dp.toPx(), 0.6.dp.toPx()), androidx.compose.ui.geometry.Size(s - 1.2.dp.toPx(), s - 1.2.dp.toPx()), style = Stroke(1.2.dp.toPx()))
+            drawRect(ink, o + Offset(line / 2, line / 2), androidx.compose.ui.geometry.Size(s - line, s - line), style = Stroke(line))
+            drawRect(ink.copy(alpha = fill), o, androidx.compose.ui.geometry.Size(s, s))
         }
     }
 }
@@ -184,7 +194,8 @@ private fun Viewer(ref: String, tab: String, c: Ctx, close: () -> Unit) {
 @Composable
 private fun Deck(c: Ctx) = HorizontalPager(c.nav.pager, Modifier.fillMaxSize().background(p.rule), pageSpacing = 1.dp,
     key = { if (it == 0) "home" else c.rt.view.state.tabs.getOrNull(it - 1)?.id ?: it }) { page ->
-    Column(Modifier.fillMaxSize().background(p.bg)) { if (page == 0) Home(c) else c.rt.view.state.tabs.getOrNull(page - 1)?.let { Chat(c, it) } }
+    val t = c.rt.view.state.tabs.getOrNull(page - 1)
+    Column(Modifier.fillMaxSize().then(if (t != null) Modifier.morph("tab-${t.id}") else Modifier).background(p.bg)) { if (t == null) Home(c) else Chat(c, t) }
 }
 
 /**
