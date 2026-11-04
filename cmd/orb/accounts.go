@@ -176,6 +176,65 @@ func (h *hostAccounts) Use(ctx context.Context, provider, id string) error {
 	return usage.ErrUnavailable
 }
 
+// openBook opens this machine's accounts, credentials, models and settings, for the commands the
+// apps run.
+func openBook(ctx context.Context) (accountBook, error) {
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return accountBook{}, err
+	}
+	if _, err = migrateAuthForContext(ctx, agentDir); err != nil {
+		return accountBook{}, err
+	}
+	state := stateFromContext(ctx)
+	storage, err := state.Auth(agentDir)
+	if err != nil {
+		return accountBook{}, err
+	}
+	cwd, _ := os.Getwd()
+	settings, err := state.Settings(cwd, agentDir)
+	if err != nil {
+		return accountBook{}, err
+	}
+	registry, err := state.Models(agentDir, storage, true)
+	if err != nil {
+		return accountBook{}, err
+	}
+	return accountBook{store: state.Accounts(agentDir, storage), credentials: storage, registry: registry, settings: settings, agentDir: agentDir}, nil
+}
+
+// runModels is the model choice for apps that draw their own screens, before any session runs.
+//
+//	orb models --json               one JSON line per model a new session can use, its default marked
+//	orb models use <provider> <id>  makes that model the one new sessions start on
+func runModels(ctx context.Context, args []string, streams cliStreams) int {
+	out := aiauth.NewJSONLines(streams.Stdout)
+	fail := func(err error) int { out.Emit(map[string]string{"type": "error", "message": err.Error()}); return 1 }
+	if !slices.Equal(args, []string{"--json"}) && (len(args) != 3 || args[0] != "use") {
+		return fail(errors.New("usage: orb models --json | orb models use <provider> <id>"))
+	}
+	book, err := openBook(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	if args[0] == "use" {
+		if _, ok := book.registry.Find(args[1], args[2]); !ok || !book.registry.HasConfiguredAuth(args[1], nil) {
+			return fail(errors.New("no signed-in model " + args[1] + "/" + args[2]))
+		}
+		book.settings.SetDefaultModelAndProvider(args[1], args[2])
+		if errs := book.settings.DrainErrors(); len(errs) > 0 {
+			return fail(errs[0].Err)
+		}
+		out.Emit(map[string]string{"type": "done"})
+		return 0
+	}
+	def := agent.DefaultModel(book.registry, book.settings)
+	for _, m := range book.registry.Available(nil) {
+		out.Emit(map[string]any{"model": string(m.Provider) + "/" + m.ID, "default": def != nil && def.Provider == m.Provider && def.ID == m.ID})
+	}
+	return 0
+}
+
 // runAccounts is the Providers view for apps that draw their own screens.
 //
 //	orb accounts --json               one JSON line per connected account, with its plan limits
@@ -186,28 +245,10 @@ func runAccounts(ctx context.Context, args []string, streams cliStreams) int {
 	if !slices.Equal(args, []string{"--json"}) && (len(args) != 3 || args[0] != "use") {
 		return fail(errors.New("usage: orb accounts --json | orb accounts use <provider> <id>"))
 	}
-	agentDir, err := config.GetAgentDir()
+	book, err := openBook(ctx)
 	if err != nil {
 		return fail(err)
 	}
-	if _, err = migrateAuthForContext(ctx, agentDir); err != nil {
-		return fail(err)
-	}
-	state := stateFromContext(ctx)
-	storage, err := state.Auth(agentDir)
-	if err != nil {
-		return fail(err)
-	}
-	cwd, _ := os.Getwd()
-	settings, err := state.Settings(cwd, agentDir)
-	if err != nil {
-		return fail(err)
-	}
-	registry, err := state.Models(agentDir, storage, true)
-	if err != nil {
-		return fail(err)
-	}
-	book := accountBook{store: state.Accounts(agentDir, storage), credentials: storage, registry: registry, settings: settings, agentDir: agentDir}
 	if args[0] == "use" {
 		if err := book.use(ctx, args[1], args[2]); err != nil {
 			return fail(err)

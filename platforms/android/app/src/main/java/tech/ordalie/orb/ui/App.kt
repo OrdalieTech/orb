@@ -29,6 +29,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.Tab
+import tech.ordalie.orb.core.strings
 
 sealed interface Screen {
     /** Home and the open conversations, side by side ([Nav.pager]). */
@@ -94,7 +95,18 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     // A notification asked for a conversation: show its tab.
     LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
-    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
+    // What a new conversation starts on, before one runs: this phone's models and its default,
+    // read again once the sheet closes, a screen (Providers) gives way, or another page shows (a
+    // conversation's model change becomes the default).
+    var fresh by remember { mutableStateOf<Tab?>(null) }
+    LaunchedEffect(rt.view.state.up, deck, nav.stack.size, nav.open?.id) {
+        val self = rt.view.state.self
+        if (!rt.view.state.up || deck != null) return@LaunchedEffect
+        rt.view.ask("models", "machine" to self).obj?.let { o ->
+            fresh = Tab(peer = self, where = "phone", model = o.optString("default"), models = o.strings("models"))
+        }
+    }
+    val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, fresh, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
     // The view follows the conversation a page shows at full pace.
     LaunchedEffect(nav) { snapshotFlow { nav.open?.id?.takeIf { nav.stack.last() is Screen.Home } }.collect { rt.view.show(listOfNotNull(it)) } }
     Box(Modifier.fillMaxSize().background(p.bg)) {
@@ -130,7 +142,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         Overlay(asking?.ask, rise = true) { Interrupt(it) { v -> asking?.let { t -> rt.view.send("answer", "tab" to t.id, "value" to v) } } }
         Overlay(rt.view.state.claim, rise = true) { PairRequest(it, ctx) }
         Overlay(picker) { pk -> PickerSheet(pk) { picker = null } }
-        Overlay(deck?.let(rt.view::tab)) { t -> ModelSheet(t, ctx) { deck = null } }
+        Overlay(deck?.let { if (it.isEmpty()) fresh else rt.view.tab(it) }) { t -> ModelSheet(t, ctx) { deck = null } }
         Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
         Overlay(viewing) { (ref, tab) -> Viewer(ref, tab, ctx) { viewing = null } }
     }

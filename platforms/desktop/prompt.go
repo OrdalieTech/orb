@@ -180,10 +180,16 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					wh.Tooltip(cmp.Or(tidy(t.CWD), t.Where))
 				}
 				model := control(c, func() {
-					name := "model"
-					if t != nil {
-						_, id, _ := strings.Cut(t.Model, "/")
-						name = cmp.Or(id, t.Model, name)
+					name, on := "model", t
+					if on == nil {
+						on = a.starts()
+					}
+					if on != nil {
+						_, id, _ := strings.Cut(on.Model, "/")
+						name = cmp.Or(id, on.Model, name)
+						if on.Model == "" && len(on.Models) == 0 && on.Loaded {
+							name = "connect a provider"
+						}
 					}
 					ui.Text(c, name).FontSize(small).FontWeight(medium).TextColor(pal.mute).SingleLine().Shrink(1)
 					// Reasoning as a small meter: one bar per level the model takes, lit up to the current one.

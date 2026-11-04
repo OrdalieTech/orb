@@ -506,6 +506,17 @@ func newSessionAgent(opts AgentSessionOptions, settings *config.SettingsManager,
 	return a
 }
 
+// DefaultModel is the model a new session starts on: the settings' default when its provider is
+// signed in, else the preferred available model; nil when none is.
+func DefaultModel(modelRegistry *config.ModelRegistry, settings *config.SettingsManager) *ai.Model {
+	if provider, id := settings.GetDefaultProvider(), settings.GetDefaultModel(); provider != "" && id != "" {
+		if found, ok := modelRegistry.Find(provider, id); ok && modelRegistry.HasConfiguredAuth(provider, nil) {
+			return &found
+		}
+	}
+	return PreferredAvailableModel(modelRegistry.Available(nil))
+}
+
 // initialModel picks a session's model and thinking level: the session's own
 // when it resumes one, else the settings' defaults, else the first available
 // model; fallback explains a model that could not be restored or found.
@@ -525,17 +536,7 @@ func initialModel(opts AgentSessionOptions, modelRegistry *config.ModelRegistry,
 
 	// Fall back to settings default, then first available model.
 	if model == nil {
-		defaultProvider := settings.GetDefaultProvider()
-		defaultModelID := settings.GetDefaultModel()
-		if defaultProvider != "" && defaultModelID != "" {
-			found, ok := modelRegistry.Find(defaultProvider, defaultModelID)
-			if ok && modelRegistry.HasConfiguredAuth(defaultProvider, nil) {
-				model = &found
-			}
-		}
-		if model == nil {
-			model = PreferredAvailableModel(modelRegistry.Available(nil))
-		}
+		model = DefaultModel(modelRegistry, settings)
 		if model == nil {
 			fallback = formatNoModelsAvailableMessage()
 		} else if fallback != "" {

@@ -727,7 +727,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
 		})
 		field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
-		ui.Scroll(c).FillWidth().MaxHeight(300).Padding(0, 4, 4).Children(func() {
+		ui.Scroll(c).FillWidth().MaxHeight(300).Shrink(1).Padding(0, 4, 4).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.query))
 			var last string
 			for _, id := range t.Models {
@@ -745,11 +745,17 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					row.ScrollIntoView()
 				}
 				if press(row) {
-					o.send("model", "tab", t.ID, "name", id)
+					if t.ID == "" {
+						// Home's sheet sets the default new conversations start on, there.
+						o.send("default", "machine", t.Peer, "name", id)
+						t.Model = id
+					} else {
+						o.send("model", "tab", t.ID, "name", id)
+					}
 					a.model, a.query = "", ""
 				}
 			}
-			if press(menuRow(c, "+ provider", false).TextColor(pal.mute)) {
+			if press(menuRow(c, "+ connect a provider", false).TextColor(pal.mute)) {
 				a.model = ""
 				a.push(screen{kind: "providers", peer: t.Peer})
 			}

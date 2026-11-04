@@ -116,13 +116,16 @@ fun PromptBox(
             Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(Modifier.press(onClick = c::chooseWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Where it runs is chosen on Home; a conversation stays where it started, as on the desktop.
+            Row(Modifier.press(enabled = session == null, onClick = c::chooseWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Where(c.v.hue(session?.peer), phone = p.fg); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
-                T((session?.where?.takeIf { session.remote } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + " ▾", size = 14.sp, weight = Strong, lines = 1)
+                T((session?.where?.takeIf { session.remote } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + if (session == null) " ▾" else "", size = 14.sp, weight = Strong, lines = 1)
             }
             Row(Modifier.weight(1f).press { c.chooseModel(session) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                T((session?.model?.substringAfter('/')?.ifEmpty { null } ?: "model") + " ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)
+                val on = session ?: c.fresh
+                val name = on?.model?.substringAfter('/')?.ifEmpty { null } ?: if (on?.loaded == true && on.models.isEmpty()) "connect a provider" else "model"
+                T("$name ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)
                 // Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
                 val levels = session?.levels.orEmpty()
                 val at = levels.indexOf(session?.thinking)

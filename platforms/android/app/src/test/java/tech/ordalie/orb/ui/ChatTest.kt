@@ -83,7 +83,7 @@ class ChatTest {
             it.setContent {
                 val scope = rememberCoroutineScope()
                 val nav = remember { Nav(rt, scope) }
-                val c = remember { Ctx(rt, nav, mutableStateListOf(), {}, app, {}, {}, {}) { _, _ -> } }
+                val c = remember { Ctx(rt, nav, mutableStateListOf(), {}, app, null, {}, {}, {}) { _, _ -> } }
                 OrbTheme { Column { rt.view.tab("t")?.let { Chat(c, it) } } }
             }
         }

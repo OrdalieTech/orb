@@ -484,6 +484,7 @@ Each holds until changed by owner-signed decision.
 | win32 console native addon | replaced | pure-Go console-mode calls (P2) |
 | Bundled llama.cpp extension, `packages/storage/sqlite-node` | excluded | native Node integrations cannot satisfy P2 |
 | `orb login` / `orb logout` subcommands | addition | headless auth lifecycle; bare `orb logout` lists stored credentials and requires an explicit provider |
+| `orb models` subcommand | addition | the apps' model choice before any session runs: `--json` lists the models a new session can use with its default marked, `use` sets `defaultProvider`/`defaultModel`; `orb models …` is no longer a prompt |
 | NVIDIA `qwen/qwen3.5-122b-a10b` denylist | addition | the live NIM endpoint advertises it, but its metadata cannot satisfy orb's chat-model contract |
 | `CompleteSimple` and common simple tool choice | Go API adaptation | Go exposes the collection directly and the portable `auto`/`none`/`required` intersection; a named choice is one advertised tool plus `required`, so no provider shape leaks into embedders |
 | No process-wide default stream | Go API adaptation | P10 forbids process globals: `engine.NewAgent` takes its stream explicitly, `NewAgentSession` defaults to `ai/api/all`, light assemblies build an `api.Registry` with only their providers, and `orb_nodefaultproviders` empties the default |

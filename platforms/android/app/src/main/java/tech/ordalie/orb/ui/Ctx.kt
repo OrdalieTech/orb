@@ -9,7 +9,7 @@ import tech.ordalie.orb.core.*
 
 /** What every screen needs, passed as one value, and the app's actions on conversations. */
 class Ctx(
-    val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context,
+    val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context, val fresh: Tab?,
     val deck: (String) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (ref: String, tab: String) -> Unit,
 ) {
     val v get() = rt.view
@@ -54,8 +54,11 @@ class Ctx(
         })
     }
 
+    /** The model sheet, for a conversation or (t null) for the next one; with no model to choose,
+     *  Providers, where one is connected. */
     fun chooseModel(t: Tab?) {
-        if (t == null || t.models.isEmpty()) nav.go(Screen.Providers(t?.peer ?: v.state.self)) else deck(t.id)
+        val on = t ?: fresh
+        if (on == null || on.models.isEmpty()) nav.go(Screen.Providers(on?.peer ?: v.state.self)) else deck(on.id)
     }
 
     /** Renames a Home row's thread through the Orb that has it open; [delete] offers deleting it. */
