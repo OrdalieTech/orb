@@ -406,6 +406,7 @@ func (a *App) state() State {
 		n := len(t.tr.items)
 		t.Streaming = n > 0 && t.tr.items[n-1].kind == "s" && t.tr.items[n-1].live
 		t.Remote = t.Peer != a.self
+		t.Asleep = t.gone || t.instance == ""
 		s.Tabs = append(s.Tabs, t.Tab)
 		if t.Ask != nil && asking == nil {
 			asking = t
@@ -475,6 +476,11 @@ func (a *App) alert() {
 			text = cmp.Or(strings.ReplaceAll(strings.TrimLeft(firstLine(strings.TrimSpace(t.tr.lastText()), 160), "#> "), "**", ""), "Finished")
 			t.Unread++
 		default:
+			continue
+		}
+		// While the app shows, its own marks say it (the unread count, the interrupt); the
+		// system's notifications are for when it does not.
+		if a.visible {
 			continue
 		}
 		a.o.Emit(map[string]string{"t": "alert", "tab": t.ID, "title": cmp.Or(t.Title, "Orb") + " · " + t.Where, "text": text})

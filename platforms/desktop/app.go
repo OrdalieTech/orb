@@ -418,14 +418,20 @@ func (a *app) chooseModel(t *Tab, keyed bool) {
 // shortcuts are the menu's keys, as the Mac app had them.
 func (a *app) shortcuts(c *ui.Context) {
 	o := a.o
-	// Off macOS they are Control's keys, which a shell in the terminal needs (Ctrl+W, Ctrl+L…).
+	// Off macOS they are Control's keys, which a shell in the terminal needs (Ctrl+W, Ctrl+L…):
+	// there only those no shell takes stay, enough to leave it.
+	c.OnShortcut(ui.Ctrl, ui.KeyTab, func() { a.cycle(1) })
+	c.OnShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.cycle(-1) })
+	c.OnShortcut(cmd|ui.Shift, ui.KeyEnter, func() {
+		if !a.root.leaf() {
+			a.zoom(a.active)
+		}
+	})
 	if runtime.GOOS != "darwin" && a.active.shell && c.FocusWithin(a.active.at) {
 		return
 	}
 	c.OnShortcut(cmd, ui.KeyN, a.newSession)
 	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
-	c.OnShortcut(ui.Ctrl, ui.KeyTab, func() { a.cycle(1) })
-	c.OnShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.cycle(-1) })
 	// Among tiles ⌘W closes the tile, its conversation staying open in the sidebar.
 	c.OnShortcut(cmd, ui.KeyW, func() {
 		if !a.root.leaf() {
@@ -439,11 +445,6 @@ func (a *app) shortcuts(c *ui.Context) {
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
 	c.OnShortcut(cmd, ui.KeyBracketRight, func() { a.cycle(1) })
 	c.OnShortcut(cmd, ui.KeyEqual, func() { a.root.even(true); a.reshape() })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyEnter, func() {
-		if !a.root.leaf() {
-			a.zoom(a.active)
-		}
-	})
 	c.OnShortcut(cmd, ui.KeyPeriod, func() {
 		if a.tab != "" {
 			o.send("abort", "tab", a.tab)

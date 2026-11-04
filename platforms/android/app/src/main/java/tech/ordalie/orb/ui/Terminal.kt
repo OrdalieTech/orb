@@ -115,7 +115,14 @@ fun ColumnScope.TerminalScreen(c: Ctx, on: Tab?) {
             }
         }, modifier = Modifier.fillMaxWidth(), update = { Shell.view = it })
     }
-    DisposableEffect(Unit) { onDispose { Shell.view = null } }
+    // Leaving, it takes its keyboard with it: the page under it did not ask for one.
+    val window = androidx.compose.ui.platform.LocalView.current // the app's, still attached once the terminal's is gone
+    DisposableEffect(Unit) {
+        onDispose {
+            window.context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)?.hideSoftInputFromWindow(window.windowToken, 0)
+            Shell.view = null
+        }
+    }
     Keys()
 }
 

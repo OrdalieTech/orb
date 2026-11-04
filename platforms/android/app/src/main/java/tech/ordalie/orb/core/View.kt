@@ -19,9 +19,12 @@ data class Tab(
     val online: Boolean = true, val loaded: Boolean = true, val earlier: Boolean = false, val streaming: Boolean = false, val status: String = "", val model: String = "",
     val thinking: String = "", val levels: List<String> = emptyList(), val context: Double = 0.0, val cost: Double = 0.0, val usage: Usage? = null, val ask: Ask? = null,
     val unread: Int = 0, val commands: List<Command> = emptyList(), val models: List<String> = emptyList(), val slots: List<PluginSlot> = emptyList(),
+    val asleep: Boolean = false,
 ) {
     /** What a conversation whose Orb is not reachable is: asleep when its Orb ended (a message wakes it), else offline. */
-    val idleWord: String get() = if (status.startsWith("asleep")) "asleep" else "offline"
+    val idleWord: String get() = if (asleep) "asleep" else "offline"
+    /** What its page says before anything shows. */
+    val empty: String get() = if (asleep) "asleep · a message wakes it" else if (loaded) "ready" else "standby"
 }
 data class Claim(val invitation: String, val claimant: String)
 data class Invitation(val code: String, val expires: Long)
@@ -65,7 +68,7 @@ private fun tab(o: JSONObject) = Tab(
     o.optDouble("context", 0.0), o.optDouble("cost", 0.0), o.obj("usage")?.let { Usage(it.optString("plan"), it.optLong("at"), it.list("windows", ::window)) },
     o.obj("ask")?.let { Ask(it.optString("id"), it.optString("owner"), it.optString("title"), it.optString("message"), it.strings("choices"), it.optBoolean("free")) },
     o.optInt("unread"), o.list("commands", ::command), o.strings("models"),
-    o.list("slots") { PluginSlot(it.optString("key"), it.strings("lines"), it.optBoolean("alarm")) },
+    o.list("slots") { PluginSlot(it.optString("key"), it.strings("lines"), it.optBoolean("alarm")) }, o.optBoolean("asleep"),
 )
 private fun state(o: JSONObject) = State(
     o.optString("self"), o.optBoolean("up"), o.list("tabs", ::tab), o.obj("claim")?.let { Claim(it.optString("invitation"), it.optString("claimant")) },

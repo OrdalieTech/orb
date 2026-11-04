@@ -156,6 +156,20 @@ func (a *app) fits(x *tile, below bool) bool {
 	return room == 0 || room/float32(line.count(below)+1) >= map[bool]float32{true: 180, false: 300}[below]
 }
 
+// inLine reports whether y shares x's line of tiles beside it (or below).
+func (a *app) inLine(y, x *tile, below bool) bool {
+	line := x
+	for p := a.parent(line); p != nil && p.below == below; p = a.parent(p) {
+		line = p
+	}
+	for _, t := range line.tiles(nil) {
+		if t == y {
+			return true
+		}
+	}
+	return false
+}
+
 // newSession shows Home: in the tile already showing it, else among tiles in a new one beside the
 // focused tile (or under it), so the conversations watched stay in sight; else in the lone tile.
 func (a *app) newSession() {
@@ -171,6 +185,17 @@ func (a *app) newSession() {
 		a.stack, a.fresh = nil, nil
 		a.split(a.active, "bottom", &tile{})
 	default:
+		// No room for another tile: Home takes one whose conversation is not working, so none
+		// working goes out of sight.
+		for _, t := range a.root.tiles(nil) {
+			if c := a.o.tab(a.active.tab); c == nil || !c.Busy {
+				break
+			}
+			if c := a.o.tab(t.tab); c == nil || !c.Busy {
+				a.activate(t)
+				break
+			}
+		}
 		a.show("")
 	}
 }
@@ -225,6 +250,10 @@ func (a *app) showing(tab string) *tile {
 // place shows tab in x, or (side not "middle") in a new tile on that side of x. A conversation
 // shows once: a tile already showing it gives way.
 func (a *app) place(x *tile, side, tab string, shell bool) {
+	if below := side == "top" || side == "bottom"; side != "middle" && !a.fits(x, below) {
+		a.split(x, side, nil) // says there is no room, and changes nothing
+		return
+	}
 	if tab != "" {
 		for _, t := range a.root.tiles(nil) {
 			if t != x && t.tab == tab && t.shell == shell {
@@ -245,13 +274,24 @@ func (a *app) place(x *tile, side, tab string, shell bool) {
 func (a *app) terminalOf(tab string) {
 	for _, t := range a.root.tiles(nil) {
 		if t.tab == tab && t.shell {
-			a.unsplit(t)
+			if a.showing(tab) == nil {
+				t.shell = false // shown in its conversation's place: the conversation comes back
+				a.activate(t)
+			} else {
+				a.unsplit(t)
+			}
 			return
 		}
 	}
 	x := a.showing(tab)
 	if x == nil {
 		x = a.active
+	}
+	// A tile too short for a terminal under it shows the terminal in its place.
+	if !a.fits(x, true) {
+		x.tab, x.shell = tab, true
+		a.activate(x)
+		return
 	}
 	s := &tile{a: x, b: &tile{tab: tab, shell: true}, below: true, share: 65}
 	a.replace(x, s)
@@ -284,6 +324,11 @@ func (a *app) dropped(x *tile, side string, v carried) {
 	switch {
 	case v.tile != nil:
 		if v.tile == x {
+			return
+		}
+		// A tile that cannot go there stays where it was; one moving along its own line frees its place.
+		if below := side == "top" || side == "bottom"; side != "middle" && !a.fits(x, below) && !a.inLine(v.tile, x, below) {
+			a.split(x, side, nil)
 			return
 		}
 		a.unsplit(v.tile)

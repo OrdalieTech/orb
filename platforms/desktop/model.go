@@ -28,6 +28,7 @@ type Tab struct {
 	CWD       string    `json:"cwd"`
 	Busy      bool      `json:"busy"`
 	Online    bool      `json:"online"`
+	Asleep    bool      `json:"asleep"`
 	Loaded    bool      `json:"loaded"`
 	Earlier   bool      `json:"earlier"`
 	Streaming bool      `json:"streaming"`
