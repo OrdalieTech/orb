@@ -12,10 +12,12 @@ import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.relocation.*
 import androidx.compose.foundation.text.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.*
@@ -83,6 +85,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     var deck by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<Rename?>(null) }
     var viewing by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var overview by rememberSaveable { mutableStateOf(false) } // every conversation at once, in place of the deck
     // Shared text is either a Bridge invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
@@ -90,8 +93,9 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         if (text.contains("invitation_id") || text.contains("orb-bridge:v1:")) nav.go(Screen.Join(text))
         else java.io.File(rt.orb.cwd, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
     }
-    BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || deck != null || renaming != null || viewing != null) {
-        if (viewing != null) viewing = null else if (renaming != null) renaming = null else if (picker != null) picker = null else if (deck != null) deck = null else if (nav.stack.size > 1) nav.back() else nav.home()
+    BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || deck != null || renaming != null || viewing != null || overview) {
+        if (viewing != null) viewing = null else if (renaming != null) renaming = null else if (picker != null) picker = null else if (deck != null) deck = null
+        else if (nav.stack.size > 1) nav.back() else if (overview) overview = false else nav.home()
     }
     // A notification asked for a conversation: show its tab.
     LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
@@ -107,13 +111,17 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         }
     }
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, fresh, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
-    // The view follows the conversation a page shows at full pace.
-    LaunchedEffect(nav) { snapshotFlow { nav.open?.id?.takeIf { nav.stack.last() is Screen.Home } }.collect { rt.view.show(listOfNotNull(it)) } }
+    // The view follows the conversation a page shows at full pace, and all of them in the overview.
+    LaunchedEffect(nav) {
+        snapshotFlow {
+            if (nav.stack.last() !is Screen.Home) emptyList() else if (overview) rt.view.state.tabs.map { it.id } else listOfNotNull(nav.open?.id)
+        }.collect { rt.view.show(it) }
+    }
     Box(Modifier.fillMaxSize().background(p.bg)) {
         val top = nav.stack.last()
         Column(Modifier.fillMaxSize()) {
             // Home and every conversation share one bar: switching sessions never leaves it.
-            AnimatedVisibility(top is Screen.Home, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { TopBar(ctx) }
+            AnimatedVisibility(top is Screen.Home, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { TopBar(ctx, overview) { overview = !overview } }
             AnimatedContent(top, Modifier.weight(1f), transitionSpec = {
                 val d = if (nav.forward) 1 else -1
                 (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { d * it / 4 } + fadeIn(tween(200, 40))) togetherWith
@@ -122,7 +130,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                 // Home's bar above and its prompt boxes below handle the edges.
                 Column(Modifier.fillMaxSize().then(if (s is Screen.Home) Modifier else Modifier.statusBarsPadding().navigationBarsPadding()).imePadding()) {
                     when (s) {
-                        Screen.Home -> Deck(ctx)
+                        Screen.Home -> Crossfade(overview, label = "overview") { if (it) Overview(ctx) { overview = false } else Deck(ctx) }
                         Screen.Bridge -> BridgeScreen(ctx)
                         Screen.Invite -> InviteScreen(ctx)
                         is Screen.Join -> JoinScreen(ctx, s.text)
@@ -145,6 +153,18 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         Overlay(deck?.let { if (it.isEmpty()) fresh else rt.view.tab(it) }) { t -> ModelSheet(t, ctx) { deck = null } }
         Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
         Overlay(viewing) { (ref, tab) -> Viewer(ref, tab, ctx) { viewing = null } }
+    }
+}
+
+/** Four squares, the overview: filled while it shows. */
+@Composable
+private fun GridMark(on: Boolean, onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).padding(10.dp)) {
+    val ink = p.fg
+    Canvas(Modifier.size(13.dp)) {
+        val s = size.width * 0.42f
+        listOf(Offset.Zero, Offset(size.width - s, 0f), Offset(0f, size.height - s), Offset(size.width - s, size.height - s)).forEach { o ->
+            if (on) drawRect(ink, o, androidx.compose.ui.geometry.Size(s, s)) else drawRect(ink, o + Offset(0.6.dp.toPx(), 0.6.dp.toPx()), androidx.compose.ui.geometry.Size(s - 1.2.dp.toPx(), s - 1.2.dp.toPx()), style = Stroke(1.2.dp.toPx()))
+        }
     }
 }
 
@@ -173,10 +193,10 @@ private fun Deck(c: Ctx) = HorizontalPager(c.nav.pager, Modifier.fillMaxSize().b
  * asks, pulsing while it works. Its underline follows a swipe.
  */
 @Composable
-private fun TopBar(c: Ctx) = Column(Modifier.statusBarsPadding()) {
+private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modifier.statusBarsPadding()) {
     val pager = c.nav.pager
     Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (pager.currentPage == 0) p.fg else p.meta) }
+        Box(Modifier.press { c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (pager.currentPage == 0 && !overview) p.fg else p.meta) }
         // A tab held then dragged along the bar takes another place, its neighbours making room as it
         // passes them; held and let go, it opens its menu.
         val ids = c.rt.view.state.tabs.map { it.id }
@@ -224,6 +244,7 @@ private fun TopBar(c: Ctx) = Column(Modifier.statusBarsPadding()) {
                 TabMark(t, c.v.hue(t.peer), pager.currentPage == page, { (1f - abs(pager.getOffsetDistanceInPages(page))).coerceIn(0f, 1f) }, drag, { c.close(t) }) { c.nav.show(id) }
             }
         }
+        GridMark(overview, toggle)
         MenuMark(c::menu)
     }
     Rule()
