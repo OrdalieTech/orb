@@ -21,10 +21,12 @@ func main() {
 	// now, while the window opens.
 	go environment()
 	a := &app{
-		drafts: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{}, term: map[string]bool{},
-		answer: map[string]string{}, split: map[string]float32{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
+		drafts: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{},
+		answer: map[string]string{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
 		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
 	}
+	a.root = &tile{}
+	a.active = a.root
 	// A pairing code opened as a link (orb-bridge:…) joins from the Bridge screen; on Linux and
 	// Windows the link starts the app again, which hands it to this one.
 	join := func(url string) {

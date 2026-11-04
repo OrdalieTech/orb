@@ -167,13 +167,17 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					if t != nil && t.Remote {
 						name = t.Where
 					}
-					ui.Text(c, name).FontSize(small).FontWeight(medium).TextColor(pal.mute).SingleLine().MaxWidth(150)
+					// A narrow tile leaves the model the room: its square says where.
+					if !a.narrow {
+						ui.Text(c, name).FontSize(small).FontWeight(medium).TextColor(pal.mute).SingleLine().MaxWidth(150)
+					}
 					if t == nil {
 						caretDown(c)
 					}
-				}).Bind(&a.whereAt)
+				}).Bind(&a.building.whereAt)
 				if t == nil {
 					if press(wh.Tooltip("Where it runs")) {
+						a.activate(a.building)
 						a.chooseWhere()
 					}
 				} else {
@@ -211,8 +215,9 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 						})
 					}
 					caretDown(c)
-				}).Shrink(1).Bind(&a.modelAt)
+				}).Shrink(1).Bind(&a.building.modelAt)
 				if press(model.Tooltip("Model and reasoning  " + keys("⇧M"))) {
+					a.activate(a.building)
 					a.chooseModel(t, false)
 				}
 				ui.Spacer(c)

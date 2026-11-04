@@ -45,17 +45,7 @@ func reading(c *ui.Context) ui.Element {
 
 func (a *app) chat(c *ui.Context, t *Tab) {
 	a.strip(c, t)
-	if !a.term[t.ID] {
-		a.conversation(c, t)
-		return
-	}
-	// The terminal where it runs, under it (⌘J): hidden, it keeps its state.
-	h := a.split[t.ID]
-	if h == 0 {
-		h = 280
-	}
-	ui.SplitVertical(c, &h, func() { a.conversation(c, t) }, func() { a.terminal(c, t) }).Grow(1).Basis(0).FillWidth()
-	a.split[t.ID] = h
+	a.conversation(c, t)
 }
 
 func (a *app) conversation(c *ui.Context, t *Tab) {
@@ -109,7 +99,7 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 			if t.Loaded {
 				word = "ready"
 			}
-			ui.Overlay(c, func() { label(c, word).TextColor(pal.meta).Attach(ui.AnchorCenter, ui.AnchorCenter) })
+			label(c, word).TextColor(pal.meta).Attach(ui.AnchorCenter, ui.AnchorCenter)
 		}
 		reading(c).Children(func() {
 			if t.Status != "" {
@@ -133,8 +123,9 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 // and the terminal where it runs.
 func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
-	titleBar(c, func() {
-		ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).OnClick(func() { a.renameTab(*t) }).Tooltip("Rename")
+	a.titleBar(c, func() {
+		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() { a.renameTab(*t) }).Tooltip("Rename")
+		a.carry(title, carried{tile: a.building})
 		var parts []string
 		if t.Remote {
 			parts = append(parts, t.Where)
@@ -147,18 +138,29 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 		case !t.Online:
 			parts = append(parts, "offline")
 		}
-		ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).MinWidth(0).FontSize(small).TextColor(ink).SingleLine()
-		if t.Context > 0 {
+		// A narrow tile keeps its bar to the title and the readings.
+		if a.narrow {
+			ui.Spacer(c)
+		} else {
+			ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).MinWidth(0).FontSize(small).TextColor(ink).SingleLine()
+		}
+		// A tight tile under the window's controls has room for its title and its terminal only.
+		if t.Context > 0 && !(a.tight && a.corner) {
 			ink := pal.meta
+			if a.tight {
+				ink = pal.mute
+			}
 			if t.Context > 0.8 {
 				ink = rupture
 			}
 			ui.Row(c).Gap(6).Shrink(0).Tooltip("Context in use").Children(func() {
-				gauge(c, t.Context, 0.8)
+				if !a.tight {
+					gauge(c, t.Context, 0.8)
+				}
 				ui.Textf(c, "%d%%", int(math.Round(t.Context*100))).FontSize(12).TextColor(ink).SingleLine()
 			})
 		}
-		if t.Usage != nil && len(t.Usage.Windows) > 0 {
+		if t.Usage != nil && len(t.Usage.Windows) > 0 && !a.tight {
 			w := slices.MinFunc(t.Usage.Windows, func(x, y Window) int { return int(x.Left - y.Left) })
 			ink := pal.meta
 			if w.Left < 15 {
@@ -171,22 +173,24 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 				left += " · " + time.UnixMilli(w.Resets).Format("15:04")
 			}
 			limit := ui.Row(c).Gap(6).Shrink(0).Children(func() {
-				ui.Text(c, "活動限界").FontSize(labelSize).TextColor(ink)
+				if !a.narrow {
+					ui.Text(c, "活動限界").FontSize(labelSize).TextColor(ink)
+				}
 				ui.Text(c, left).FontSize(12).TextColor(ink).SingleLine()
 			})
 			if press(limit.Tooltip("Activity limit: the plan's window nearest its end, and when it resets")) {
 				a.usage(t)
 			}
 		}
-		if t.Cost > 0 {
+		if t.Cost > 0 && !a.narrow {
 			ui.Textf(c, "$%.2f", t.Cost).FontSize(12).TextColor(pal.meta).SingleLine().Shrink(0)
 		}
 		term := ui.Row(c).Padding(4, 8).Radius(soft).Shrink(0).Children(func() { ui.Text(c, ">_").FontWeight(strong) }).Tooltip("Terminal  " + keys("J"))
-		if a.term[t.ID] {
+		if a.hasTerminal(t.ID) {
 			term.Background(pal.raised)
 		}
 		if press(term) {
-			a.term[t.ID] = !a.term[t.ID]
+			a.terminalOf(t.ID)
 		}
 	})
 }
@@ -717,7 +721,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 			}
 		}, "accounts", "machine", peer)
 	}
-	popover(c, &a.modelAt, &open, 400, a.keyed, func() {
+	popover(c, &a.active.modelAt, &open, 400, a.keyed, func() {
 		ui.Row(c).FillWidth().Padding(14, 16, 0).AlignItems(ui.End).Children(func() {
 			ui.Column(c).Grow(1).Basis(0).Gap(2).Children(func() {
 				label(c, "model").TextColor(pal.meta)

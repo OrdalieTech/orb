@@ -105,8 +105,12 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}
-	}).Drag(t.ID).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · ")), "\n"))
+	}).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · ")), "\n"))
+	a.carry(e, carried{tab: t.ID})
 	e.ContextMenu(func(m *ui.Menu) {
+		if m.Item("Open to the right").Chosen() {
+			a.place(a.active, "right", t.ID, false)
+		}
 		if m.Item("Rename…").Chosen() {
 			a.renameTab(t)
 		}
@@ -115,8 +119,8 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		}
 	})
 	// A tab dropped on another takes its place; the view keeps the order, for every app.
-	if id, ok := ui.Drop[string](e); ok && id != t.ID {
-		o.send("move", "tab", id, "to", at)
+	if v, ok := ui.Drop[carried](e); ok && v.tab != "" && v.tab != t.ID {
+		o.send("move", "tab", v.tab, "to", at)
 	}
 	if press(e) {
 		a.show(t.ID)
@@ -143,7 +147,11 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 		}
 		ui.Text(c, state).FontSize(12).TextColor(sink)
 	}).Tooltip(strings.Join(nonEmpty(e.Title, tidy(e.CWD)), "\n"))
+	a.carry(row, carried{key: e.Key})
 	row.ContextMenu(func(m *ui.Menu) {
+		if m.Item("Open to the right").Chosen() {
+			a.dropped(a.active, "right", carried{key: e.Key})
+		}
 		if m.Item("Rename…").Chosen() {
 			a.renameThread(e)
 		}

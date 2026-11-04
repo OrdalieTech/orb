@@ -35,23 +35,30 @@ type renaming struct {
 // app is everything the window shows that the view does not say: where it is, each conversation's
 // draft, the sheets open.
 type app struct {
-	o       *Orb
-	stack   []screen
-	tab     string            // the conversation shown, "" for Home
-	drafts  map[string]string // each conversation's draft, "" for Home's
-	focus   int               // asked to focus the prompt box, each time it grows
-	picker  *picker
-	rename  *renaming
-	model   string    // the conversation whose model sheet shows, next for Home's
-	fresh   *Tab      // what a new conversation starts on: this computer's models and default, nil until read
-	reading bool      // fresh is being read
-	viewing [2]string // an image shown whole: its reference and conversation
-	notice  string    // one line that fades: copied, or why something failed
-	lists   map[string]*ui.ListState
-	shells  map[string]*shell  // each conversation's terminal, while it lives
-	term    map[string]bool    // the conversations whose terminal shows
-	answer  map[string]string  // the free answer typed to an interrupt
-	split   map[string]float32 // the height of each conversation's terminal
+	o        *Orb
+	stack    []screen
+	tab      string            // the conversation shown, "" for Home
+	drafts   map[string]string // each conversation's draft, "" for Home's
+	focus    int               // asked to focus the prompt box, each time it grows
+	picker   *picker
+	rename   *renaming
+	root     *tile     // the window's tiles
+	active   *tile     // the tile the keys and the sidebar act on; a.tab is its conversation
+	building *tile     // the tile being built
+	corner   bool      // it reaches the window's top right, where the window's controls are
+	narrow   bool      // it is too narrow for its bar's details
+	tight    bool      // and for its gauges: a column among four or five
+	dragging bool      // something is dragged: the tiles show where it would drop
+	dragNow  bool      // a source said so in this frame
+	linger   int       // frames the tiles keep taking a drop after the drag, which arrives after release
+	model    string    // the conversation whose model sheet shows, next for Home's
+	fresh    *Tab      // what a new conversation starts on: this computer's models and default, nil until read
+	reading  bool      // fresh is being read
+	viewing  [2]string // an image shown whole: its reference and conversation
+	notice   string    // one line that fades: copied, or why something failed
+	lists    map[string]*ui.ListState
+	shells   map[string]*shell // each conversation's terminal, while it lives
+	answer   map[string]string // the free answer typed to an interrupt
 
 	expanded map[string]bool              // the actions open, by tab and key
 	details  map[string]map[string]string // what an open action was given and returned
@@ -70,13 +77,10 @@ type app struct {
 	search     string               // the sidebar's search
 	fold       map[string]bool      // the machines whose threads the sidebar folds
 	listing    time.Time            // until when a tab shown waits for the view to list it
-	termPane   ui.Handle            // the terminal on screen, which takes Control's keys off macOS
 	answered   string               // the pairing claim answered, until the view drops it
 	asked      map[string]time.Time // when each question showed: its keys arm a moment later
 	keyed      bool                 // what shows now was opened by a key, so it shows at once
 	carded     bool                 // the start screen's title has wiped in, once a launch
-	whereAt    ui.Handle            // the prompt box's place and model, which their popovers open out of
-	modelAt    ui.Handle
 }
 
 // cmd is the key that goes with the app's shortcuts: Command on macOS, Control elsewhere.
@@ -121,10 +125,23 @@ func (a *app) starts() *Tab {
 }
 
 // show shows a conversation by its tab id, Home for "", closing any screen above them.
+// In tiles, it focuses the tile already showing it, else shows it in the focused one.
 func (a *app) show(tab string) {
 	a.stack, a.fresh = nil, nil
-	a.tab = tab
 	a.listing = time.Now().Add(5 * time.Second)
+	if x := a.showing(tab); x != nil && tab != "" {
+		a.activate(x)
+		return
+	}
+	x := a.active
+	if x.shell {
+		if s := a.showing(x.tab); s != nil {
+			x = s
+		}
+		x.shell = false
+	}
+	x.tab = tab
+	a.activate(x)
 }
 
 // say shows a line for a moment.
@@ -143,9 +160,19 @@ func (a *app) view(c *ui.Context) {
 	theme(c)
 	o, pal := a.o, p(c)
 	// A tab just opened is shown before the view lists it; one it no longer lists was closed elsewhere.
-	if a.tab != "" && o.tab(a.tab) == nil && o.state.Up && time.Now().After(a.listing) {
-		a.tab = ""
+	if o.state.Up && time.Now().After(a.listing) {
+		for _, t := range a.root.tiles(nil) {
+			if t.tab != "" && o.tab(t.tab) == nil {
+				a.unsplit(t)
+			}
+		}
 	}
+	if a.dragNow {
+		a.linger = 3
+	} else if a.linger > 0 {
+		a.linger--
+	}
+	a.dragging, a.dragNow = a.linger > 0, false
 	// The terminals of conversations closed elsewhere end with them.
 	for id, s := range a.shells {
 		if o.state.Up && o.tab(id) == nil && id != a.tab {
@@ -153,22 +180,24 @@ func (a *app) view(c *ui.Context) {
 			delete(a.shells, id)
 		}
 	}
-	if a.top().kind == "" && a.tab != "" {
-		o.show([]string{a.tab})
-	} else {
-		o.show(nil)
+	// Every conversation on screen follows at full pace.
+	var shown []string
+	if a.top().kind == "" {
+		for _, t := range a.root.tiles(nil) {
+			if t.tab != "" && !slices.Contains(shown, t.tab) {
+				shown = append(shown, t.tab)
+			}
+		}
 	}
+	o.show(shown)
 	a.shortcuts(c)
 	main := func() {
 		ui.Column(c).Fill().Background(pal.bg).Children(func() {
 			top := a.top()
 			switch top.kind {
 			case "":
-				if t := o.tab(a.tab); t != nil {
-					a.chat(c, t)
-				} else {
-					a.homeScreen(c)
-				}
+				a.layout(c, a.root, true)
+				a.building = nil
 				return
 			}
 			// The window's controls keep their room above every other screen.
@@ -203,28 +232,45 @@ func (a *app) view(c *ui.Context) {
 	a.overlays(c)
 }
 
-// titleBar is the top of the main pane: it drags the window, and leaves the window's controls their room.
-func titleBar(c *ui.Context, body func()) {
+// titleBar is the top of a tile: it drags the window, leaves the window's controls their room in
+// the corner, and holds the tile's own controls while the pointer is on it.
+func (a *app) titleBar(c *ui.Context, body func()) {
 	tb := c.TitleBar()
-	ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, tb.Right+12, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).
-		DragWindow().Children(body)
+	right := float32(margin)
+	if a.corner {
+		right = tb.Right + 12
+	}
+	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
+	hovered := bar.Hovered()
+	bar.Children(func() {
+		body()
+		a.tileMenu(c, bar, hovered)
+	})
 }
 
 // close stops following a conversation; the one after it shows in its place, Home after the last.
+// Among tiles, its tiles close.
 func (a *app) close(id string) {
 	tabs := a.o.state.Tabs
-	if a.tab == id {
-		a.tab = ""
+	for _, t := range a.root.tiles(nil) {
+		if t.tab != id {
+			continue
+		}
+		if t.shell || !a.root.leaf() {
+			a.unsplit(t)
+			continue
+		}
+		t.tab = ""
 		if at := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == id }); at >= 0 && len(tabs) > 1 {
 			rest := slices.Delete(slices.Clone(tabs), at, at+1)
-			a.tab = rest[min(at, len(rest)-1)].ID
+			t.tab = rest[min(at, len(rest)-1)].ID
 		}
+		a.activate(t)
 	}
 	if s := a.shells[id]; s != nil {
 		s.close()
 		delete(a.shells, id)
 	}
-	delete(a.term, id)
 	delete(a.drafts, id)
 	a.o.send("close", "tab", id)
 }
@@ -315,7 +361,7 @@ func (a *app) chooseWhere() {
 	for _, m := range hosts {
 		options = append(options, "a folder on "+m.Name+"…")
 	}
-	a.picker = &picker{title: "run on", options: options, at: &a.whereAt, pick: func(s string) {
+	a.picker = &picker{title: "run on", options: options, at: &a.active.whereAt, pick: func(s string) {
 		at := slices.Index(options, s)
 		switch {
 		case at == 0:
@@ -349,15 +395,23 @@ func (a *app) chooseModel(t *Tab, keyed bool) {
 func (a *app) shortcuts(c *ui.Context) {
 	o := a.o
 	// Off macOS they are Control's keys, which a shell in the terminal needs (Ctrl+W, Ctrl+L…).
-	if runtime.GOOS != "darwin" && c.FocusWithin(a.termPane) {
+	if runtime.GOOS != "darwin" && a.active.shell && c.FocusWithin(a.active.at) {
 		return
 	}
 	c.OnShortcut(cmd, ui.KeyN, func() { a.show("") })
+	// Among tiles ⌘W closes the tile, its conversation staying open in the sidebar.
 	c.OnShortcut(cmd, ui.KeyW, func() {
-		if a.tab != "" {
+		if !a.root.leaf() {
+			a.unsplit(a.active)
+		} else if a.tab != "" {
 			a.close(a.tab)
 		}
 	})
+	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
+	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
+	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
+	c.OnShortcut(cmd, ui.KeyBracketRight, func() { a.cycle(1) })
+	c.OnShortcut(cmd, ui.KeyEqual, func() { a.root.even(true) })
 	c.OnShortcut(cmd, ui.KeyPeriod, func() {
 		if a.tab != "" {
 			o.send("abort", "tab", a.tab)
@@ -365,7 +419,7 @@ func (a *app) shortcuts(c *ui.Context) {
 	})
 	c.OnShortcut(cmd, ui.KeyJ, func() {
 		if a.tab != "" {
-			a.term[a.tab] = !a.term[a.tab]
+			a.terminalOf(a.tab)
 		}
 	})
 	c.OnShortcut(cmd, ui.KeyL, func() { a.focus++ })
