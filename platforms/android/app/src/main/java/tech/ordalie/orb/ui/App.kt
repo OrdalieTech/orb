@@ -36,7 +36,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.Tab
-import tech.ordalie.orb.core.strings
 
 sealed interface Screen {
     /** Home and the open conversations, side by side ([Nav.pager]). */
@@ -99,7 +98,8 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     val scope = rememberCoroutineScope()
     val nav = remember { Nav(rt, scope) }
     var picker by remember { mutableStateOf<Picker?>(null) }
-    var deck by remember { mutableStateOf<String?>(null) }
+    var menu by remember { mutableStateOf(false) }
+    var deck by remember { mutableStateOf<Tab?>(null) } // the model sheet's conversation, or with no id a machine's default
     var renaming by remember { mutableStateOf<Rename?>(null) }
     var viewing by remember { mutableStateOf<Pair<String, String>?>(null) }
     var overview by rememberSaveable { mutableStateOf(false) } // every conversation at once, in place of the deck
@@ -110,8 +110,8 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         if (text.contains("invitation_id") || text.contains("orb-bridge:v1:")) nav.go(Screen.Join(text))
         else java.io.File(rt.orb.cwd, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
     }
-    BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || deck != null || renaming != null || viewing != null || overview) {
-        if (viewing != null) viewing = null else if (renaming != null) renaming = null else if (picker != null) picker = null else if (deck != null) deck = null
+    BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || menu || deck != null || renaming != null || viewing != null || overview) {
+        if (viewing != null) viewing = null else if (renaming != null) renaming = null else if (picker != null) picker = null else if (menu) menu = false else if (deck != null) deck = null
         else if (nav.stack.size > 1) nav.back() else if (overview) overview = false else if (nav.fromOverview) overview = true else nav.home()
     }
     // A notification asked for a conversation: show its tab.
@@ -119,14 +119,10 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     // What a new conversation starts on, before one runs: this phone's models and its default,
     // read again once the sheet closes, a screen (Providers) gives way, or another page shows (a
     // conversation's model change becomes the default).
-    var fresh by remember { mutableStateOf<Tab?>(null) }
     LaunchedEffect(rt.view.state.up, deck, nav.stack.size, nav.open?.id) {
-        val self = rt.view.state.self
-        if (!rt.view.state.up || deck != null) return@LaunchedEffect
-        rt.view.ask("models", "machine" to self).obj?.let { o ->
-            fresh = Tab(peer = self, where = "phone", model = o.optString("default"), models = o.strings("models"))
-        }
+        if (rt.view.state.up && deck == null) rt.view.readDefault(rt.view.state.self)
     }
+    val fresh = rt.view.defaults[rt.view.state.self]
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, fresh, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
     // The view follows the conversation a page shows at full pace, and all of them in the overview.
     LaunchedEffect(nav) {
@@ -138,7 +134,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         val top = nav.stack.last()
         Column(Modifier.fillMaxSize()) {
             // Home and every conversation share one bar: switching sessions never leaves it.
-            AnimatedVisibility(top is Screen.Home, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { TopBar(ctx, overview) { overview = !overview } }
+            AnimatedVisibility(top is Screen.Home, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) { TopBar(ctx, overview, { menu = true }) { overview = !overview } }
             AnimatedContent(top, Modifier.weight(1f), transitionSpec = {
                 val d = if (nav.forward) 1 else -1
                 (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { d * it / 4 } + fadeIn(tween(200, 40))) togetherWith
@@ -182,7 +178,8 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         Overlay(asking?.ask, rise = true) { Interrupt(it) { v -> asking?.let { t -> rt.view.send("answer", "tab" to t.id, "value" to v) } } }
         Overlay(rt.view.state.claim, rise = true) { PairRequest(it, ctx) }
         Overlay(picker) { pk -> PickerSheet(pk) { picker = null } }
-        Overlay(deck?.let { if (it.isEmpty()) fresh else rt.view.tab(it) }) { t -> ModelSheet(t, ctx) { deck = null } }
+        Overlay(true.takeIf { menu }) { MenuSheet(ctx, nav.open) { menu = false } }
+        Overlay(deck?.let { if (it.id.isEmpty()) it else rt.view.tab(it.id) }) { t -> ModelSheet(t, ctx) { deck = null } }
         Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
         Overlay(viewing) { (ref, tab) -> Viewer(ref, tab, ctx) { viewing = null } }
     }
@@ -229,7 +226,7 @@ private fun Deck(c: Ctx) = HorizontalPager(c.nav.pager, Modifier.fillMaxSize().b
  * asks, pulsing while it works. Its underline follows a swipe.
  */
 @Composable
-private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modifier.statusBarsPadding()) {
+private fun TopBar(c: Ctx, overview: Boolean, menu: () -> Unit, toggle: () -> Unit) = Column(Modifier.statusBarsPadding()) {
     val pager = c.nav.pager
     Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.press { if (overview) toggle(); c.nav.home() }.padding(horizontal = 6.dp, vertical = 8.dp)) { Stretch("ORB", 18.dp, if (pager.currentPage == 0 && !overview) p.fg else p.meta) }
@@ -302,7 +299,7 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
             }
         }
         GridMark(overview, toggle)
-        MenuMark(c::menu)
+        MenuMark(menu)
     }
     Rule()
 }
@@ -353,6 +350,47 @@ fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Sheet
         }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+/**
+ * The menu, sorted by what each thing acts on: the conversation on screen, the machine it runs on
+ * (this phone on Home), and the Bridge that links them.
+ */
+@Composable
+fun AnimatedVisibilityScope.MenuSheet(c: Ctx, t: Tab?, dismiss: () -> Unit) = Sheet(dismiss) {
+    val v = c.v
+    val peer = t?.peer ?: v.state.self
+    @Composable fun Section(name: String) = T(name, Modifier.padding(start = Margin, end = Margin, top = 18.dp, bottom = 2.dp), label = true, color = p.meta, lines = 1)
+    @Composable fun Item(name: String, meta: String = "", act: () -> Unit) =
+        Row(Modifier.fillMaxWidth().press { dismiss(); act() }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            T(name, Modifier.weight(1f), size = 16.sp, lines = 1)
+            T(meta, Modifier.padding(start = 16.dp).widthIn(max = 220.dp), size = 13.sp, color = p.meta, lines = 1)
+        }
+    if (t != null) {
+        Row(Modifier.padding(start = Margin, end = Margin, top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Where(v.hue(t.peer), t.busy, t.ask != null)
+            Spacer(Modifier.width(9.dp))
+            Column {
+                T(t.name, size = 17.sp, weight = Strong, lines = 1)
+                T(listOf(t.model.substringAfter('/'), t.where).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = p.meta, lines = 1)
+            }
+        }
+        Item("rename") { c.rename(Rename(t.title) { name -> v.send("rename", "tab" to t.id, "name" to name) }) }
+        Item("terminal", tidy(t.cwd)) { c.nav.go(Screen.Terminal(t)) }
+        Item("close conversation") { c.close(t) }
+        Rule(Modifier.padding(top = 6.dp))
+    }
+    Section(if (peer == v.state.self) "this phone" else v.machine(peer)?.name ?: "its machine")
+    Item("providers") { c.nav.go(Screen.Providers(peer)) }
+    Item("plugins") { c.nav.go(Screen.Plugins(peer)) }
+    if (t == null) Item("terminal") { c.nav.go(Screen.Terminal()) }
+    Rule(Modifier.padding(top = 6.dp))
+    Section("bridge")
+    Item("devices", v.state.summary) { c.nav.go(Screen.Bridge) }
+    Row(Modifier.padding(start = Margin, top = 8.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Ordalie(11.dp, p.meta)
+        T("orb ${c.rt.version}", size = 12.sp, color = p.meta)
+    }
 }
 
 /** A long-pressed row's name, in a field over the list; done saves it, outside or back leaves it. */

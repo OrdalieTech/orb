@@ -17,19 +17,20 @@ func main() {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
-	// `orb app` waits for the login shell's environment, a third of a second or more: it starts
-	// now, while the window opens.
-	go environment()
 	a := &app{
 		drafts: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{},
 		answer: map[string]string{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
 		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
+		defaults: map[string]*Tab{},
 	}
 	a.loadTiles()
+	// `orb app` (after the login shell's environment, a third of a second or more) starts now and
+	// boots while the window opens.
+	a.o = newOrb(a.notify)
 	// A pairing code opened as a link (orb-bridge:…) joins from the Bridge screen; on Linux and
 	// Windows the link starts the app again, which hands it to this one.
 	join := func(url string) {
-		if strings.HasPrefix(url, "orb-bridge:") && a.o != nil {
+		if strings.HasPrefix(url, "orb-bridge:") && a.o.win != nil {
 			a.o.win.Update(func() { a.push(screen{kind: "join", arg: url}) })
 		}
 	}
@@ -38,7 +39,7 @@ func main() {
 		for _, arg := range args {
 			join(arg)
 		}
-		if a.o != nil {
+		if a.o.win != nil {
 			a.o.win.Focus()
 		}
 	})
@@ -49,7 +50,7 @@ func main() {
 			TitleBarStyle: mygo.TitleBarHidden,
 			Content:       ui.View(a.view),
 		})
-		a.o = newOrb(win, a.notify)
+		a.o.open(win)
 		// The view follows what shows at full pace, and the rest at the pace of a window out of sight.
 		win.OnFocus(func() { a.o.setVisible(true) })
 		win.OnBlur(func() { a.o.setVisible(false) })

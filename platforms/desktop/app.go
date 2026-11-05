@@ -56,7 +56,8 @@ type app struct {
 	morph      time.Time // until when the tiles glide to new places
 	zoomed     *tile     // the tile shown alone, nil for the layout
 	savedTiles []byte    // the layout as last saved
-	model      string    // the conversation whose model sheet shows, next for Home's
+	model      string    // the conversation whose model sheet shows, next for a machine's default
+	defaultOf  string    // that machine
 	fresh      *Tab      // what a new conversation starts on: this computer's models and default, nil until read
 	reading    bool      // fresh is being read
 	viewing    [2]string // an image shown whole: its reference and conversation
@@ -65,6 +66,7 @@ type app struct {
 	lists      map[string]*ui.ListState
 	shells     map[string]*shell // each conversation's terminal, while it lives
 	answer     map[string]string // the free answer typed to an interrupt
+	defaults   map[string]*Tab   // what a new conversation on each machine starts on, as it last said
 
 	expanded map[string]bool              // the actions open, by tab and key
 	details  map[string]map[string]string // what an open action was given and returned
@@ -89,6 +91,7 @@ type app struct {
 	asked      map[string]time.Time // when each question showed: its keys arm a moment later
 	keyed      bool                 // what shows now was opened by a key, so it shows at once
 	carded     bool                 // the start screen's title has wiped in, once a launch
+	opening    string               // the thread being opened, until its Orb answers
 }
 
 // cmd is the key that goes with the app's shortcuts: Command on macOS, Control elsewhere.
@@ -116,27 +119,56 @@ func (a *app) back() {
 	}
 }
 
-// next is the model sheet of the conversation Home starts.
+// next is the model sheet of a machine's default: what a new conversation there starts on.
 const next = "next"
 
 // starts is what a new conversation on this computer starts on, read once Bridge is up and again
 // after another screen or conversation showed (Providers signs in; a conversation's model change
 // becomes the default).
 func (a *app) starts() *Tab {
-	o := a.o
-	if a.fresh == nil && !a.reading && o.state.Up {
+	if a.fresh == nil && !a.reading && a.o.state.Up {
 		a.reading = true
-		self := o.state.Self
-		then(o, func(r struct {
-			Models  []string
-			Default string
-		}, err error) {
-			// A machine that cannot say leaves the model to Providers, until the next read.
-			a.reading = false
-			a.fresh = &Tab{Peer: self, Where: device, Model: r.Default, Models: r.Models, Loaded: err == nil}
-		}, "models", "machine", self)
+		a.readDefault(a.o.state.Self, func(t *Tab) { a.reading, a.fresh = false, t })
 	}
 	return a.fresh
+}
+
+// readDefault reads what a new conversation on a machine starts on: its models, the default and
+// the default's reasoning. A machine that cannot say leaves the model to Providers, until the next read.
+func (a *app) readDefault(peer string, done func(*Tab)) {
+	then(a.o, func(r struct {
+		Models, Levels    []string
+		Default, Thinking string
+	}, err error) {
+		t := &Tab{Peer: peer, Where: device, Model: r.Default, Models: r.Models, Thinking: r.Thinking, Levels: r.Levels, Loaded: err == nil}
+		if peer != a.o.state.Self {
+			t.Where = a.machineName(peer)
+		}
+		a.defaults[peer] = t
+		if done != nil {
+			done(t)
+		}
+	}, "models", "machine", peer)
+}
+
+// makeDefault makes a model, at a reasoning level ("" keeps the level), the default for new
+// conversations on a machine.
+func (a *app) makeDefault(peer, model, level string) {
+	for _, t := range []*Tab{a.defaults[peer], a.fresh} {
+		if t != nil && t.Peer == peer {
+			t.Model, t.Thinking = model, cmp.Or(level, t.Thinking)
+		}
+	}
+	then(a.o, func(_ struct{}, err error) {
+		if err != nil {
+			a.say(err.Error())
+		}
+		a.readDefault(peer, func(t *Tab) {
+			if peer == a.o.state.Self {
+				a.fresh = t
+			}
+		})
+	}, "default", "machine", peer, "name", model, "level", level)
 }
 
 // show shows a conversation by its tab id, Home for "", closing any screen above them.
@@ -323,11 +355,15 @@ func (a *app) renameTab(t Tab) {
 	a.rename = &renaming{name: t.Title, apply: func(name string) { a.o.send("rename", "tab", t.ID, "name", name) }}
 }
 
+func (a *app) renameThread(e Entry) {
+	a.rename = &renaming{name: e.Title, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
+}
+
 // threadMenu is a thread's menu, as the phone's: rename it through the Orb that has it open, or
 // delete one no Orb has open, which unlike closing cannot come back, so it asks first.
 func (a *app) threadMenu(m *ui.Menu, e Entry) {
 	if m.Item("Rename…").Chosen() {
-		a.rename = &renaming{name: e.Title, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
+		a.renameThread(e)
 	}
 	if e.Deletable && m.Item("Delete forever…").Chosen() {
 		a.picker = &picker{title: "delete “" + e.Title + "”? it cannot come back", options: []string{"delete forever", "keep it"}, pick: func(s string) {
@@ -380,7 +416,13 @@ func (a *app) send(t *Tab, text string) {
 
 // open opens a Home row or a running Orb in its tab.
 func (a *app) open(key string) {
-	then(a.o, func(r struct{ Tab string }, err error) { a.opened(r.Tab, err) }, "open", "key", key)
+	a.opening = key
+	then(a.o, func(r struct{ Tab string }, err error) {
+		if a.opening == key {
+			a.opening = ""
+		}
+		a.opened(r.Tab, err)
+	}, "open", "key", key)
 }
 
 // start starts Orb on a machine, in a folder or (cwd empty) where it starts, and opens it.
@@ -432,11 +474,12 @@ func (a *app) chooseWhere() {
 	}}
 }
 
+// chooseModel opens the model sheet of a conversation, or with no id of a machine's default (t
+// nil: this computer's); with no model to choose, Providers, where one is connected.
 func (a *app) chooseModel(t *Tab, keyed bool) {
 	a.keyed = keyed
-	if f := a.starts(); t == nil && f != nil && len(f.Models) > 0 {
-		a.model = next
-		return
+	if t == nil {
+		t = a.starts()
 	}
 	if t == nil || len(t.Models) == 0 {
 		peer := a.o.state.Self
@@ -446,7 +489,12 @@ func (a *app) chooseModel(t *Tab, keyed bool) {
 		a.push(screen{kind: "providers", peer: peer})
 		return
 	}
-	a.model = t.ID
+	a.model, a.defaultOf = cmp.Or(t.ID, next), t.Peer
+	if t.ID == "" {
+		a.defaults[t.Peer] = t
+	}
+	// Asked as it opens: a conversation elsewhere may have changed it.
+	a.readDefault(t.Peer, nil)
 }
 
 // shortcuts are the menu's keys, as the Mac app had them.
@@ -546,7 +594,7 @@ func (a *app) overlays(c *ui.Context) {
 	}
 	t := o.tab(a.model)
 	if a.model == next {
-		t = a.fresh
+		t = a.defaults[a.defaultOf]
 	}
 	if t != nil {
 		a.modelSheet(c, t)
@@ -607,15 +655,19 @@ func modal(c *ui.Context, open *bool, width float32, body func()) {
 	})
 }
 
-// menuRow is a choice in a popover or a dialog: its text, and a dot by the one chosen.
-func menuRow(c *ui.Context, text string, chosen bool) ui.Element {
+// menuRow is a choice in a popover or a dialog: its text, a note by it (the default), and a dot by
+// the one chosen.
+func menuRow(c *ui.Context, text, note string, chosen bool) ui.Element {
 	pal := p(c)
-	return hover(ui.Row(c).FillWidth().Padding(8, 12).Radius(8), pal.raised).Children(func() {
+	return hover(ui.Row(c).FillWidth().Padding(8, 12).Radius(8).Gap(10), pal.raised).Children(func() {
 		w := 400
 		if chosen {
 			w = strong
 		}
 		ui.Text(c, text).Grow(1).Basis(0).FontWeight(w).SingleLine().Tooltip(text)
+		if note != "" {
+			label(c, note).TextColor(pal.meta)
+		}
 		if chosen {
 			dot(c, pal.fg, 6, false, false)
 		}
@@ -629,7 +681,7 @@ func (a *app) pickerSheet(c *ui.Context) {
 		label(c, pk.title).Padding(12, 16, 6)
 		ui.Scroll(c).MaxHeight(420).Padding(0, 4, 6).Children(func() {
 			for _, o := range pk.options {
-				if press(menuRow(c.Key(o), o, o == pk.selected)) {
+				if press(menuRow(c.Key(o), o, "", o == pk.selected)) {
 					a.picker = nil
 					pk.pick(o)
 				}

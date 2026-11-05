@@ -35,6 +35,7 @@ type Orb struct {
 	in      *os.File
 	asked   int
 	replies map[string]chan reply
+	ready   chan struct{} // closed once win is set: what `orb app` says waits for it
 }
 
 type reply struct {
@@ -45,11 +46,17 @@ type reply struct {
 // device is what the view calls this machine.
 const device = "this computer"
 
-func newOrb(win *mygo.Window, alert func(tab, title, text string)) *Orb {
-	o := &Orb{win: win, alert: alert, rows: map[string][]Row{}, replies: map[string]chan reply{}, began: time.Now()}
+func newOrb(alert func(tab, title, text string)) *Orb {
+	o := &Orb{alert: alert, rows: map[string][]Row{}, replies: map[string]chan reply{}, began: time.Now(), ready: make(chan struct{})}
 	o.state.Summary = "starting Bridge…"
 	go o.run()
 	return o
+}
+
+// open gives the Orb the window it draws in.
+func (o *Orb) open(win *mygo.Window) {
+	o.win = win
+	close(o.ready)
 }
 
 // binary is $ORB, else the orb this app carries, else the one on PATH.
@@ -84,6 +91,7 @@ func (o *Orb) run() {
 	for {
 		began := time.Now()
 		err := o.serve()
+		<-o.ready
 		o.mu.Lock()
 		o.in = nil
 		for id, r := range o.replies {
@@ -139,6 +147,7 @@ func (o *Orb) serve() error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	<-o.ready
 	// On the main thread, so a `show` the view sends meanwhile cannot overtake this one.
 	mygo.RunOnMain(func() {
 		o.mu.Lock()
@@ -336,8 +345,24 @@ func (o *Orb) hue(peer string) int {
 
 // environment is the login shell's: an app opened from the Finder or a desktop launcher gets a bare
 // PATH, and the Orbs this machine's Bridge starts, when this app starts it, run with what the
-// terminal has.
+// terminal has. Reading it takes the shell's startup (a third of a second or more), so `orb app`
+// starts with the one the last launch read, kept private in the user's cache, while this launch
+// reads it again for the next: a changed profile counts from the launch after.
 var environment = sync.OnceValue(func() []string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return loginEnv("")
+	}
+	kept := filepath.Join(dir, "orb", "login-env")
+	if b, err := os.ReadFile(kept); err == nil && len(b) > 0 {
+		go loginEnv(kept)
+		return strings.Split(string(b), "\x00")
+	}
+	return loginEnv(kept)
+})
+
+// loginEnv reads the login shell's environment, and keeps it at kept when it is not empty.
+func loginEnv(kept string) []string {
 	env := os.Environ()
 	shell := os.Getenv("SHELL")
 	if runtime.GOOS == "windows" || shell == "" {
@@ -353,5 +378,9 @@ var environment = sync.OnceValue(func() []string {
 	if err != nil || !ok {
 		return env
 	}
-	return strings.Split(strings.TrimSuffix(vars, "\x00"), "\x00")
-})
+	vars = strings.TrimSuffix(vars, "\x00")
+	if kept != "" && os.MkdirAll(filepath.Dir(kept), 0o700) == nil {
+		_ = os.WriteFile(kept, []byte(vars), 0o600)
+	}
+	return strings.Split(vars, "\x00")
+}

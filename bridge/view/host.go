@@ -169,38 +169,43 @@ func (a *App) slow(in intent) func() (any, error) {
 			return nil, err
 		})
 	case "models":
-		// What a new conversation there can run on, before one does: its models and the default.
+		// What a new conversation there can run on, before one does: its models, the default and
+		// the default's reasoning (the level it starts at, those it takes).
 		return call(func() (any, error) {
 			var r struct {
 				Models []struct {
-					Model   string
-					Default bool
+					Model, Thinking string
+					Default         bool
+					Levels          []string
 				}
 			}
 			if err := host("host.models", "list its models", struct{}{}, &r); err != nil {
 				return nil, err
 			}
 			out := struct {
-				Models  []string `json:"models"`
-				Default string   `json:"default"`
+				Models   []string `json:"models"`
+				Default  string   `json:"default"`
+				Thinking string   `json:"thinking,omitempty"`
+				Levels   []string `json:"levels,omitempty"`
 			}{Models: []string{}}
 			for _, m := range r.Models {
 				if m.Model != "" {
 					out.Models = append(out.Models, m.Model)
 				}
 				if m.Default {
-					out.Default = m.Model
+					out.Default, out.Thinking, out.Levels = m.Model, m.Thinking, m.Levels
 				}
 			}
 			return out, nil
 		})
 	case "default":
+		// A level, when given, goes with the model: the default reasoning new conversations start at.
 		return call(func() (any, error) {
 			provider, id, _ := strings.Cut(in.Name, "/")
 			var r struct {
 				Models []struct{ Type, Message string }
 			}
-			err := host("host.models.use", "change its default model", map[string]string{"provider": provider, "id": id}, &r)
+			err := host("host.models.use", "change its default model", map[string]string{"provider": provider, "id": id, "level": in.Level}, &r)
 			for _, row := range r.Models {
 				if row.Type == "error" {
 					return nil, errors.New(row.Message)

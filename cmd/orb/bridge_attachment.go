@@ -151,7 +151,7 @@ func attachEnabledBridge(lifetime context.Context, host attach.Host, args CLIArg
 	link.mu.Unlock()
 	quota := &providerUsage{cache: args.usageCache}
 	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Status: func(s *agent.AgentSession) string {
-		if model := s.State().Model; model != nil && model.Provider == claudesessions.Name {
+		if model := s.Agent().Model(); model != nil && model.Provider == claudesessions.Name {
 			return claudesessions.LimitsStatus(s.Manager(), time.Now())
 		}
 		return ""
@@ -417,7 +417,7 @@ type providerUsage struct {
 }
 
 func (u *providerUsage) read(s *agent.AgentSession) *usage.Snapshot {
-	model := s.State().Model
+	model := s.Agent().Model()
 	if model == nil {
 		return nil
 	}

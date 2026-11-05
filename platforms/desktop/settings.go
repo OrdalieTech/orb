@@ -90,6 +90,7 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 		pg.loaded = true
 		a.reloadProviders(peer)
 		a.reloadAccounts(peer)
+		a.readDefault(peer, nil)
 	}
 	q := strings.ToLower(strings.TrimSpace(pg.query))
 	has := func(s ...string) bool {
@@ -124,6 +125,12 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 		}
 		if pg.note != "" {
 			ui.Text(c, pg.note).FontSize(small).TextColor(rupture).PaddingY(6)
+		}
+		if d := a.defaults[peer]; d != nil && len(d.Models) > 0 {
+			_, model, _ := strings.Cut(d.Model, "/")
+			if press(settingsLine(c.Key("default"), "default model", strings.Trim(model+" · "+d.Thinking, " ·"), "change ›", true)) {
+				a.chooseModel(d, false)
+			}
 		}
 		if len(accounts) > 0 {
 			label(c, "accounts · quota left").Padding(22, 0, 4).TextColor(pal.meta)

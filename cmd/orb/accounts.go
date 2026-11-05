@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
@@ -205,23 +207,39 @@ func openBook(ctx context.Context) (accountBook, error) {
 
 // runModels is the model choice for apps that draw their own screens, before any session runs.
 //
-//	orb models --json               one JSON line per model a new session can use, its default marked
-//	orb models use <provider> <id>  makes that model the one new sessions start on
+//	orb models --json                       one JSON line per model a new session can use: its
+//	                                        reasoning levels, the one it starts at, the default marked
+//	orb models use <provider> <id> [level]  makes that model, at that level, the one new sessions start on
 func runModels(ctx context.Context, args []string, streams cliStreams) int {
 	out := aiauth.NewJSONLines(streams.Stdout)
 	fail := func(err error) int { out.Emit(map[string]string{"type": "error", "message": err.Error()}); return 1 }
-	if !slices.Equal(args, []string{"--json"}) && (len(args) != 3 || args[0] != "use") {
-		return fail(errors.New("usage: orb models --json | orb models use <provider> <id>"))
+	if !slices.Equal(args, []string{"--json"}) && (len(args) < 3 || len(args) > 4 || args[0] != "use") {
+		return fail(errors.New("usage: orb models --json | orb models use <provider> <id> [level]"))
 	}
 	book, err := openBook(ctx)
 	if err != nil {
 		return fail(err)
 	}
 	if args[0] == "use" {
-		if _, ok := book.registry.Find(args[1], args[2]); !ok || !book.registry.HasConfiguredAuth(args[1], nil) {
+		m, ok := book.registry.Find(args[1], args[2])
+		if !ok || !book.registry.HasConfiguredAuth(args[1], nil) {
 			return fail(errors.New("no signed-in model " + args[1] + "/" + args[2]))
 		}
+		var level ai.ModelThinkingLevel
+		if len(args) == 4 {
+			if level = ai.ModelThinkingLevel(args[3]); !slices.Contains(ai.SupportedThinkingLevels(&m), level) {
+				return fail(errors.New(args[1] + "/" + args[2] + " has no reasoning level " + args[3]))
+			}
+		}
 		book.settings.SetDefaultModelAndProvider(args[1], args[2])
+		switch {
+		case level == "":
+		case book.settings.GetModelThinkingLevel(args[1], args[2]) != "":
+			// A level kept for the model itself wins over the default when a session starts.
+			book.settings.SetModelThinkingLevel(args[1], args[2], level)
+		default:
+			book.settings.SetDefaultThinkingLevel(level)
+		}
 		if errs := book.settings.DrainErrors(); len(errs) > 0 {
 			return fail(errs[0].Err)
 		}
@@ -230,7 +248,10 @@ func runModels(ctx context.Context, args []string, streams cliStreams) int {
 	}
 	def := agent.DefaultModel(book.registry, book.settings)
 	for _, m := range book.registry.Available(nil) {
-		out.Emit(map[string]any{"model": string(m.Provider) + "/" + m.ID, "default": def != nil && def.Provider == m.Provider && def.ID == m.ID})
+		// As a new session picks it: the model's own level, else the default, else medium.
+		level := cmp.Or(book.settings.GetModelThinkingLevel(string(m.Provider), m.ID), book.settings.GetDefaultThinkingLevel(), ai.ModelThinkingMedium)
+		out.Emit(map[string]any{"model": string(m.Provider) + "/" + m.ID, "default": def != nil && def.Provider == m.Provider && def.ID == m.ID,
+			"levels": ai.SupportedThinkingLevels(&m), "thinking": ai.ClampThinkingLevel(&m, level)})
 	}
 	return 0
 }

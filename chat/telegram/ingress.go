@@ -13,7 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 )
 
 // secretTokenHeader carries the webhook secret set via setWebhook.

@@ -16,7 +16,7 @@ android {
         versionName = orbVersion
         versionCode = orbVersion.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() }.let { (it + listOf(0, 0, 0)).take(3) }
             .fold(0) { code, part -> code * 1000 + part }.coerceAtLeast(1)
-        ndk { abiFilters += "arm64-v8a" }
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // UXLAB-LOCAL
     }
     // Development builds are signed with the release key when this machine has it, so they install
     // over a released app (and it over them) without losing its data. See release.sh.
@@ -28,6 +28,11 @@ android {
         keyPassword = storePassword
     }
     buildTypes.getByName("debug") { signingConfigs.findByName("orb")?.let { signingConfig = it } }
+    buildTypes.getByName("release") {
+        isMinifyEnabled = true
+        isShrinkResources = true
+        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+    }
     buildFeatures { compose = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
     // No fragments here: an old one only arrives transitively, so its activity-result check misfires.

@@ -442,7 +442,7 @@ func (a *Attachment) inspect(known string) json.RawMessage {
 	d := Descriptor{InstanceID: a.options.InstanceID, Service: protocol.Service, Generation: generation, State: a.pulse(), Target: a.control.Target(), Methods: methods, Waits: true}
 	if session := a.host.Session(); session != nil {
 		d.CWD = session.Manager().GetCWD()
-		state := session.State()
+		state := session.Agent().StateWithoutMessages()
 		if state.Model != nil {
 			d.Model, d.Provider = state.Model.Name, string(state.Model.Provider)
 		}
@@ -1028,7 +1028,8 @@ func (a *Attachment) pulse() string {
 	if s == nil {
 		return ""
 	}
-	t, state, input, name := a.control.Target(), s.State(), "", ""
+	// Without the transcript: a long poll reads the pulse ten times a second.
+	t, state, input, name := a.control.Target(), s.Agent().StateWithoutMessages(), "", ""
 	if in := s.PendingInput(); in != nil {
 		input = in.ID
 	}

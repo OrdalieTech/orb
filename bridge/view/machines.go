@@ -342,7 +342,8 @@ func (a *App) loadThreads(peer string) {
 // machinesState is the machines and Home as the app draws them.
 func (a *App) machinesState() ([]Machine, []Entry) {
 	machines, home := []Machine{}, []Entry{}
-	now := time.Now().UnixMilli()
+	// To the next minute: still "now" in an app, and Home is not sent again on every flush.
+	now := time.Now().Truncate(time.Minute).Add(time.Minute).UnixMilli()
 	hues := hues(a.machines, a.self)
 	for _, m := range a.machines {
 		name := a.name(m)

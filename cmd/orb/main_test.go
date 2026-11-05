@@ -933,47 +933,62 @@ type errorReader struct{}
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("stdin was read") }
 
 func TestRunCLIModelsListsAndSetsTheDefault(t *testing.T) {
-	t.Setenv("ORB_AGENT_DIR", t.TempDir())
+	agentDir := t.TempDir()
+	t.Setenv("ORB_AGENT_DIR", agentDir)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "test")
 	t.Chdir(t.TempDir())
-	models := func() (all []string, def string) {
+	type model struct {
+		Model, Thinking string
+		Default         bool
+		Levels          []string
+	}
+	models := func() (all []model, def model) {
 		var stdout bytes.Buffer
 		if code := runCLI(context.Background(), []string{"models", "--json"}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard}); code != 0 {
 			t.Fatalf("models --json: code %d, %s", code, stdout.String())
 		}
 		for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
-			var row struct {
-				Model   string
-				Default bool
-			}
+			var row model
 			if err := json.Unmarshal([]byte(line), &row); err != nil {
 				t.Fatalf("line %q: %v", line, err)
 			}
-			all = append(all, row.Model)
+			all = append(all, row)
 			if row.Default {
-				def = row.Model
+				def = row
 			}
 		}
 		return all, def
 	}
 	all, def := models()
-	if len(all) == 0 || def == "" || !slices.Contains(all, def) {
-		t.Fatalf("models %v, default %q", all, def)
+	if len(all) == 0 || def.Model == "" || !slices.Contains(def.Levels, def.Thinking) {
+		t.Fatalf("models %v, default %+v", all, def)
 	}
-	next := all[0]
-	if next == def {
-		next = all[1]
+	use := func(args ...string) int {
+		return runCLI(context.Background(), append([]string{"models", "use"}, args...), cliStreams{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard})
 	}
-	provider, id, _ := strings.Cut(next, "/")
-	var stdout bytes.Buffer
-	if code := runCLI(context.Background(), []string{"models", "use", provider, id}, cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard}); code != 0 {
-		t.Fatalf("models use: code %d, %s", code, stdout.String())
+	next := all[slices.IndexFunc(all, func(m model) bool { return m.Model != def.Model && slices.Contains(m.Levels, "low") })]
+	provider, id, _ := strings.Cut(next.Model, "/")
+	if code := use(provider, id); code != 0 {
+		t.Fatalf("models use: code %d", code)
 	}
-	if _, now := models(); now != next {
-		t.Fatalf("default after use = %q, want %q", now, next)
+	if _, now := models(); now.Model != next.Model {
+		t.Fatalf("default after use = %q, want %q", now.Model, next.Model)
 	}
-	if code := runCLI(context.Background(), []string{"models", "use", "nope", "x"}, cliStreams{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard}); code == 0 {
+	if code := use(provider, id, "low"); code != 0 {
+		t.Fatalf("models use with a level: code %d", code)
+	}
+	if _, now := models(); now.Model != next.Model || now.Thinking != "low" {
+		t.Fatalf("default after use with a level = %+v, want %s at low", now, next.Model)
+	}
+	var settings struct{ DefaultThinkingLevel string }
+	if raw, err := os.ReadFile(filepath.Join(agentDir, "settings.json")); err != nil || json.Unmarshal(raw, &settings) != nil || settings.DefaultThinkingLevel != "low" {
+		t.Fatalf("settings.json defaultThinkingLevel = %q (%v)", settings.DefaultThinkingLevel, err)
+	}
+	if code := use(provider, id, "loud"); code == 0 {
+		t.Fatal("models use accepted a level the model does not take")
+	}
+	if code := use("nope", "x"); code == 0 {
 		t.Fatal("models use accepted a model that is not signed in")
 	}
 }

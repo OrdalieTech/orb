@@ -169,6 +169,24 @@ class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int,
         return Reply(r.opt("result").takeUnless { it == JSONObject.NULL }, r.optJSONObject("error")?.optString("message") ?: r.optString("error").ifEmpty { null })
     }
 
+    /** What a new conversation on each machine starts on, as it last said: a tab with no id, its
+     *  models, the default and the default's reasoning. */
+    val defaults = mutableStateMapOf<String, Tab>()
+
+    suspend fun readDefault(peer: String) {
+        ask("models", "machine" to peer).obj?.let { o ->
+            defaults[peer] = Tab(peer = peer, where = if (peer == state.self) "phone" else machine(peer)?.name.orEmpty(), model = o.optString("default"),
+                thinking = o.optString("thinking"), levels = o.strings("levels"), models = o.strings("models"))
+        }
+    }
+
+    /** Makes a model, at a reasoning level ("" keeps the level), the default for new conversations on a machine. */
+    suspend fun makeDefault(peer: String, model: String, level: String = "") {
+        defaults[peer]?.let { defaults[peer] = it.copy(model = model, thinking = level.ifEmpty { it.thinking }) }
+        ask("default", "machine" to peer, "name" to model, "level" to level)
+        readDefault(peer)
+    }
+
     fun visible(on: Boolean) { visible = on; send("visible", "on" to on) }
     fun show(tabs: List<String>) { if (tabs != shown) { shown = tabs; send("show", "tabs" to JSONArray(tabs)) } }
     fun tab(id: String?) = state.tabs.firstOrNull { it.id == id }

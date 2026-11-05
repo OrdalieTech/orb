@@ -17,44 +17,55 @@ import tech.ordalie.orb.core.*
 
 /**
  * The model sheet rises from the bottom: the model and its reasoning on top, every model below,
- * grouped by provider and narrowed by search. Choices are remembered for the sessions that follow.
+ * those in use first, then grouped by provider and narrowed by search. With no conversation (Home,
+ * Providers) it chooses the default new conversations start on, on its machine.
  */
 @Composable
 fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit) = Sheet(dismiss, Modifier.heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.8f)) {
     var query by remember { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { keyboard?.hide() }
-    val groups = session.models.filter { query.isBlank() || it.contains(query.trim(), ignoreCase = true) }.groupBy { it.substringBefore('/') }
+    // Asked as it opens: a conversation elsewhere may have changed it.
+    LaunchedEffect(session.peer) { c.v.readDefault(session.peer) }
+    val def = c.v.defaults[session.peer]
+    val home = session.id.isEmpty()
+    val s = if (home) def ?: session else session
+    // Run past the sheet, which a pick closes.
+    fun default(model: String, level: String = "") = c.rt.scope.launch { c.v.makeDefault(s.peer, model, level) }
+    fun match(id: String) = query.isBlank() || id.contains(query.trim(), ignoreCase = true)
+    val used = (listOfNotNull(def?.model) + c.v.state.tabs.filter { it.peer == s.peer }.map { it.model }).distinct().filter { it in s.models && match(it) }
+    val groups = mapOf("in use" to used) + s.models.filter(::match).groupBy { it.substringBefore('/') }
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 18.dp), verticalAlignment = Alignment.Bottom) {
         Column(Modifier.weight(1f)) {
-            T("model", label = true, color = p.meta)
-            T(session.model.substringAfter('/').ifEmpty { "none" }, size = 19.sp, weight = Strong, lines = 1)
+            T(if (!home) "model" else "default · " + if (s.peer == c.v.state.self) "this phone" else s.where, label = true, color = p.meta, lines = 1)
+            T(s.model.substringAfter('/').ifEmpty { "none" }, size = 19.sp, weight = Strong, lines = 1)
         }
-        T(listOf(session.model.substringBefore('/'), session.where).filter(String::isNotEmpty).joinToString(" · "), Modifier.padding(start = 12.dp, bottom = 3.dp), size = 13.sp, color = p.meta, lines = 1)
+        if (!home && def != null && s.model.isNotEmpty() && s.model != def.model) Btn("make default", modifier = Modifier.padding(start = 12.dp)) { default(s.model, s.thinking) }
+        else T(listOf(s.model.substringBefore('/'), if (home) "" else s.where).filter(String::isNotEmpty).joinToString(" · "), Modifier.padding(start = 12.dp, bottom = 3.dp), size = 13.sp, color = p.meta, lines = 1)
     }
     Field(query, "Search models", Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) { query = it }
-    LazyColumn(Modifier.weight(1f, fill = false), state = rememberLazyListState(groups.values.flatten().indexOf(session.model).coerceAtLeast(0))) {
-        groups.forEach { (provider, ids) ->
-            item(key = "h:$provider") { T("$provider · ${ids.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta) }
-            items(ids, key = { it }) { id ->
-                val on = id == session.model
+    LazyColumn(Modifier.weight(1f, fill = false)) {
+        groups.filterValues { it.isNotEmpty() }.forEach { (group, ids) ->
+            item(key = "h:$group") { T(if (group == "in use") group else "$group · ${ids.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta) }
+            items(ids, key = { "$group:$it" }) { id ->
+                val on = id == s.model
                 Row(Modifier.fillMaxWidth().press {
-                    // Home's sheet sets the default new conversations start on, there.
-                    if (session.id.isEmpty()) c.v.send("default", "machine" to session.peer, "name" to id) else c.v.send("model", "tab" to session.id, "name" to id)
+                    if (home) default(id) else c.v.send("model", "tab" to s.id, "name" to id)
                     dismiss()
                 }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T(id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
+                    T(if (group == "in use") id else id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
+                    if (id == def?.model) T("default", Modifier.padding(start = 10.dp, end = 10.dp), label = true, color = p.meta)
                     if (on) Dot(p.fg)
                 }
             }
         }
         item(key = "add") {
-            Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(session.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ connect a provider", weight = Medium, color = p.mute) }
+            Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(s.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ connect a provider", weight = Medium, color = p.mute) }
         }
     }
-    Accounts(session, c)
+    Accounts(s, c)
     // Reasoning is what changes most often: it sits last, where the thumb already is.
-    if (session.levels.isNotEmpty()) { Rule(); Reasoning(session.levels, session.thinking) { c.v.send("thinking", "tab" to session.id, "name" to it) } }
+    if (s.levels.isNotEmpty()) { Rule(); Reasoning(s.levels, s.thinking) { if (home) default(s.model, it) else c.v.send("thinking", "tab" to s.id, "name" to it) } }
 }
 
 /**

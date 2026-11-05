@@ -148,6 +148,7 @@ type intent struct {
 	Provider string   `json:"provider"`
 	Account  string   `json:"account"`
 	Auth     string   `json:"auth"`
+	Level    string   `json:"level"`
 }
 
 // Do runs one intent. Those that wait on a machine run on their own; the rest apply at once and

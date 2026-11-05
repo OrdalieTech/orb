@@ -136,8 +136,8 @@ fun PromptBox(
                 val name = on?.model?.substringAfter('/')?.ifEmpty { null } ?: if (on?.loaded == true && !on.asleep && on.models.isEmpty()) "connect a provider" else "model"
                 T("$name ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)
                 // Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
-                val levels = session?.levels.orEmpty()
-                val at = levels.indexOf(session?.thinking)
+                val levels = on?.levels.orEmpty()
+                val at = levels.indexOf(on?.thinking)
                 if (levels.isNotEmpty()) Row(Modifier.padding(start = 8.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
                     levels.forEachIndexed { i, l -> Box(Modifier.size(3.dp, (5 + 2 * i).dp).background(if (i <= at && l != "off") p.fg else p.rule)) }
                 }

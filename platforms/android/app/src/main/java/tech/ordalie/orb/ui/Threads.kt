@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.*
 // these screens are the way down into one machine.
 
 /** A path the way its owner reads it: home as ~. */
-private fun tidy(path: String) = path.replace(Regex("^/(Users|home)/[^/]+"), "~")
+fun tidy(path: String) = path.replace(Regex("^/(Users|home)/[^/]+"), "~")
 
 /** What starting Orb on a device is doing, on whichever screen started it; why it failed until tapped away. */
 @Composable
@@ -37,6 +37,7 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
     var path by remember { mutableStateOf("") }
     Header(peer.name, sub = listOfNotNull("${folders.size} folders · ${folders.sumOf { it.threads }} threads", peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), back = c.nav::back) {
         Btn("providers") { c.nav.go(Screen.Providers(peer.id)) }
+        Btn("plugins") { c.nav.go(Screen.Plugins(peer.id)) }
     }
     Column(Modifier.padding(horizontal = Margin)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

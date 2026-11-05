@@ -23,19 +23,15 @@ func (a *app) homeScreen(c *ui.Context) {
 	// A small tile keeps Home to its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
 	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
-		// An Evangelion title card: the episode over a rule, the title stretched tall, its name in
-		// Japanese closing the line.
+		// An Evangelion title card: a rule, the title stretched tall.
 		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
 			if small {
 				a.launching(c)
 				return
 			}
-			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, map[bool]string{true: fmt.Sprintf("第%03d話", len(o.home.Entries)+1), false: "第———話"}[o.state.Up]).FontSize(12).FontWeight(strong).TextColor(rupture)
-				ui.Box(c).Grow(1).Height(1).Background(pal.rule)
-			})
+			ui.Box(c).FillWidth().Height(1).Background(pal.rule)
 			ui.Row(c).FillWidth().Margin(12, 0, 0).Gap(10).AlignItems(ui.End).Children(func() {
-				// The title wipes in the first time the app shows it, as an episode's card cuts in.
+				// The title wipes in the first time the app shows it, as a title card cuts in.
 				card := stretch(c, "NEW SESSION", 46, pal.fg, 1)
 				if !a.carded {
 					v := reveal(card, "card", 60*time.Millisecond)
@@ -43,8 +39,6 @@ func (a *app) homeScreen(c *ui.Context) {
 					a.carded = v == 1
 				}
 				ui.Box(c).Size(9, 9).Background(rupture).Margin(0, 0, 3)
-				ui.Box(c).Grow(1)
-				ui.Text(c, "新規セッション").FontSize(12).TextColor(pal.meta)
 			})
 			a.launching(c)
 		})
@@ -258,27 +252,26 @@ func (a *app) boot(c *ui.Context) {
 			connected++
 		}
 	}
-	type line struct{ step, jp, what string }
-	lines := []line{{"orb app", "起動", "starting"}}
+	type line struct{ step, what string }
+	lines := []line{{"orb app", "starting"}}
 	if o.running != "" {
 		lines[0].what = tidy(o.running)
-		lines = append(lines, line{"bridge", "接続", "starting Bridge on this computer…"})
+		lines = append(lines, line{"bridge", "starting Bridge on this computer…"})
 	}
 	if len(o.home.Machines) > 0 {
-		lines = append(lines, line{"peers", "同期", fmt.Sprintf("%d of %d connected", connected, len(o.home.Machines)-1)})
+		lines = append(lines, line{"peers", fmt.Sprintf("%d of %d connected", connected, len(o.home.Machines)-1)})
 	}
 	if s := o.state.Summary; strings.HasPrefix(s, "orb app ended") {
-		lines = append(lines, line{"error", "否決", s})
+		lines = append(lines, line{"error", s})
 	}
 	reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Gap(4).Children(func() {
 		for _, l := range lines {
 			ink := pal.mute
-			if l.jp == "否決" {
+			if l.step == "error" {
 				ink = rupture
 			}
 			ui.Row(c.Key(l.step)).FillWidth().Gap(12).Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 4}, Animation: &opening}).Children(func() {
 				label(c, l.step).Width(64)
-				ui.Text(c, l.jp).FontSize(12).TextColor(rupture).Width(28)
 				ui.Text(c, l.what).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(ink).SingleLine()
 			})
 		}
