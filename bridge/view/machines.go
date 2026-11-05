@@ -125,8 +125,8 @@ func (a *App) wakeMachines() {
 
 // keepMachines reads the machines on Bridge: often while the app shows, rarely when it does not.
 func (a *App) keepMachines() {
-	for {
-		a.refresh()
+	for first := true; ; first = false {
+		a.refresh(first)
 		a.mu.Lock()
 		wait := 15 * time.Second
 		if a.visible {
@@ -146,8 +146,9 @@ func (a *App) keepMachines() {
 }
 
 // refresh publishes the machines at once; their Orbs and threads follow as each answers, so a
-// slow or unreachable one never holds the others up. Only a shown app reads them.
-func (a *App) refresh() {
+// slow or unreachable one never holds the others up. Only a shown app reads them, and the first
+// time: an app starting has Home ready as it shows.
+func (a *App) refresh(first bool) {
 	var s struct {
 		PeerID  string              `json:"peer_id"`
 		Peers   []string            `json:"peers"`
@@ -197,7 +198,7 @@ func (a *App) refresh() {
 	}) {
 		a.invitation = nil
 	}
-	if !a.visible {
+	if !a.visible && !first {
 		return
 	}
 	for _, m := range a.machines {

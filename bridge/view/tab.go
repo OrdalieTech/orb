@@ -200,15 +200,16 @@ func (t *tab) step() time.Duration {
 	idle := t.instance == "" || t.gone
 	live, waits := t.watched || t.follows, t.info.Waits
 	describe := t.stale || !waits || !live
-	unread := idle && !reopen && live && !t.threadRead && len(t.tr.items) == 0 && t.session != ""
+	unread := idle && live && !t.threadRead && len(t.tr.items) == 0 && t.session != ""
 	a.mu.Unlock()
-	// A tab whose Orb is not running (restored, or ended there) starts one once shown; one left
-	// asleep shows its thread as it was.
+	// A tab whose Orb is not running (restored, or ended there) shows its thread as it was, and
+	// starts one once shown.
 	if idle {
+		if unread {
+			t.readThread(reopen)
+		}
 		if reopen {
 			t.reopen("")
-		} else if unread {
-			t.readThread()
 		}
 		return time.Second
 	}
@@ -279,7 +280,7 @@ func (t *tab) describe() bool {
 		t.Status = map[bool]string{true: ended, false: "offline · read-only · reconnecting"}[t.gone || t.Peer == a.self]
 		return false
 	}
-	if d.Target.Session != t.info.Target.Session {
+	if d.Target.Session != t.session {
 		t.cursor, t.from, t.Loaded = "", -1, false
 		t.tr.clear()
 	}
@@ -448,8 +449,9 @@ func (t *tab) snapshot() {
 	t.cursor, t.Loaded = cursor, true
 }
 
-// readThread reads the thread's last messages from its machine, which keeps them (host.read).
-func (t *tab) readThread() {
+// readThread reads the thread's last messages from its machine, which keeps them (host.read);
+// one about to wake is not said asleep.
+func (t *tab) readThread(waking bool) {
 	var r struct {
 		Messages []json.RawMessage `json:"messages"`
 		From     int               `json:"from"`
@@ -461,7 +463,10 @@ func (t *tab) readThread() {
 	t.threadRead = true
 	if err == nil && len(t.tr.items) == 0 && (t.instance == "" || t.gone) {
 		t.tr.load(r.Messages, r.From)
-		t.Loaded, t.Status = true, ended
+		t.Loaded = true
+		if !waking {
+			t.Status = ended
+		}
 		a.flush()
 	}
 }
